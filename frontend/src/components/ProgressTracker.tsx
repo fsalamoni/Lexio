@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { DEMO_MODE } from '../api/client'
+import { simulatePipelineProgress } from '../api/mock'
 
 interface Progress {
   phase: string
@@ -10,6 +12,12 @@ export default function ProgressTracker({ documentId }: { documentId: string }) 
   const [progress, setProgress] = useState<Progress | null>(null)
 
   useEffect(() => {
+    if (DEMO_MODE) {
+      // Simulate pipeline progress in demo mode
+      const cleanup = simulatePipelineProgress((data) => setProgress(data))
+      return cleanup
+    }
+
     const ws = new WebSocket(`${location.origin.replace('http', 'ws')}/ws/document/${documentId}`)
     ws.onmessage = (e) => {
       try {
