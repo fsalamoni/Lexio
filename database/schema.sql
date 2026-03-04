@@ -1,0 +1,123 @@
+-- Lexio — Database Schema
+-- PostgreSQL 16 — Executed on first container startup
+
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Organizations (multi-tenant root)
+CREATE TABLE IF NOT EXISTS organizations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(200) NOT NULL,
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    plan VARCHAR(50) DEFAULT 'free',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Users
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(200) NOT NULL,
+    role VARCHAR(50) DEFAULT 'user',
+    title VARCHAR(200),
+    is_active BOOLEAN DEFAULT TRUE,
+    organization_id UUID NOT NULL REFERENCES organizations(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_org ON users(organization_id);
+
+-- Legal Areas (registry)
+CREATE TABLE IF NOT EXISTS legal_areas (
+    id VARCHAR(100) PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    description VARCHAR(500),
+    module_path VARCHAR(300) NOT NULL,
+    is_enabled BOOLEAN DEFAULT TRUE,
+    config JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Document Types (registry)
+CREATE TABLE IF NOT EXISTS document_types (
+    id VARCHAR(100) PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    description VARCHAR(500),
+    category VARCHAR(100) DEFAULT 'general',
+    module_path VARCHAR(300) NOT NULL,
+    pipeline_config JSONB,
+    is_enabled BOOLEAN DEFAULT TRUE,
+    config JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Documents (main entity — generalized from Parecer)
+CREATE TABLE IF NOT EXISTS documents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    document_type_id VARCHAR(100) NOT NULL,
+    legal_area_ids TEXT[] DEFAULT '{}',
+    template_variant VARCHAR(100),
+    original_request TEXT NOT NULL,
+    tema VARCHAR(500),
+    palavras_chave JSONB,
+    area_direito VARCHAR(200),
+    texto_completo TEXT,
+    docx_path VARCHAR(500),
+    quality_score INTEGER,
+    quality_issues JSONB,
+    status VARCHAR(50) DEFAULT 'processando',
+    origem VARCHAR(50) DEFAULT 'web',
+    metadata JSONB,
+    author_id UUID REFERENCES users(id),
+    organization_id UUID NOT NULL REFERENCES organizations(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_documents_org ON documents(organization_id);
+CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
+CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type_id);
+
+-- Executions (tracks each LLM agent call)
+CREATE TABLE IF NOT EXISTS executions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL REFERENCES organizations(id),
+    agent_name VARCHAR(100) NOT NULL,
+    phase VARCHAR(100) NOT NULL,
+    model VARCHAR(200),
+    tokens_in INTEGER,
+    tokens_out INTEGER,
+    cost_usd DOUBLE PRECISION,
+    duration_ms INTEGER,
+    input_preview TEXT,
+    output_preview TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_executions_doc ON executions(document_id);
+CREATE INDEX IF NOT EXISTS idx_executions_org ON executions(organization_id);
+
+-- Uploaded Documents (files for vector indexing)
+CREATE TABLE IF NOT EXISTS uploaded_documents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    filename VARCHAR(500) NOT NULL,
+    content_type VARCHAR(100),
+    size_bytes INTEGER,
+    chunks_indexed INTEGER DEFAULT 0,
+    collection_name VARCHAR(200),
+    status VARCHAR(50) DEFAULT 'pending',
+    uploaded_by UUID REFERENCES users(id),
+    organization_id UUID NOT NULL REFERENCES organizations(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_uploads_org ON uploaded_documents(organization_id);
+
+-- Default organization
+INSERT INTO organizations (name, slug, plan)
+VALUES ('Lexio Demo', 'lexio-demo', 'free')
+ON CONFLICT (slug) DO NOTHING;

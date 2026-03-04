@@ -1,0 +1,14 @@
+{
+    "permissions": {
+        "allow": [
+            "bash:docker compose *",
+            "bash:docker logs *",
+            "bash:curl *",
+            "bash:npm *",
+            "bash:pip *",
+            "bash:python *",
+            "bash:git *",
+            "bash:gh *"
+        ]
+    }
+}

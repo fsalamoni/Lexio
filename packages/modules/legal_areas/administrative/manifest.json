@@ -1,0 +1,28 @@
+{
+    "id": "administrative",
+    "name": "Direito Administrativo",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Área do Direito Administrativo: licitações, improbidade, servidores públicos, atos administrativos, concessões, regulação.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "licitacoes",
+        "improbidade",
+        "servidores_publicos",
+        "atos_administrativos",
+        "concessoes",
+        "regulacao"
+    ],
+    "guides": [
+        "licitacoes.md",
+        "improbidade.md",
+        "servidores.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

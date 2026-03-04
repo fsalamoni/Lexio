@@ -1,0 +1,105 @@
+version: "3.8"
+
+services:
+  # === Backend API ===
+  backend:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    container_name: lexio-backend
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./output:/app/output
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks:
+      - lexio
+
+  # === Frontend ===
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: lexio-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - lexio
+
+  # === PostgreSQL ===
+  postgres:
+    image: postgres:16-alpine
+    container_name: lexio-postgres
+    environment:
+      POSTGRES_USER: lexio
+      POSTGRES_PASSWORD: lexio
+      POSTGRES_DB: lexio
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexio"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lexio
+
+  # === Qdrant (Vector DB) ===
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: lexio-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__API_KEY: lexio_qdrant_key_2026
+    networks:
+      - lexio
+
+  # === Ollama (Embeddings) ===
+  ollama:
+    image: ollama/ollama:latest
+    container_name: lexio-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - lexio
+
+  # === SearXNG (Web Search) ===
+  searxng:
+    image: searxng/searxng:latest
+    container_name: lexio-searxng
+    ports:
+      - "8888:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888
+    volumes:
+      - searxng_data:/etc/searxng
+    networks:
+      - lexio
+
+volumes:
+  pgdata:
+  qdrant_data:
+  ollama_data:
+  searxng_data:
+
+networks:
+  lexio:
+    driver: bridge

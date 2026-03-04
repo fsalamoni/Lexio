@@ -1,0 +1,16 @@
+{
+    "id": "parecer",
+    "name": "Parecer Jurídico",
+    "type": "document_type",
+    "version": "1.0.0",
+    "description": "Geração de pareceres jurídicos com pipeline multi-agente. Suporta variantes MPRS/CAOPP e genérica.",
+    "category": "mp",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "templates": ["mprs_caopp", "generic"],
+    "pipeline_agents": [
+        "triagem", "moderador_agenda", "jurista", "advogado_diabo",
+        "jurista_v2", "fact_checker", "moderador_plano", "redator", "revisor"
+    ]
+}

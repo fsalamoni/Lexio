@@ -1,0 +1,1 @@
+"""Lexio API — Pydantic schemas."""
