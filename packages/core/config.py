@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     database_url: str = Field(default="postgresql+asyncpg://lexio:lexio@postgres:5432/lexio")
 
     # DataJud (CNJ)
-    datajud_api_key: str = Field(default="")
+    datajud_api_key: str = Field(default="cnjKey=2026")
     datajud_url: str = Field(default="https://api-publica.datajud.cnj.jus.br/api_publica_tjrs/_search")
 
     # SearXNG
