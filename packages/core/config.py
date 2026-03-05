@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     default_org_name: str = Field(default="Lexio Demo")
     default_org_slug: str = Field(default="lexio-demo")
 
+    # Evolution API (WhatsApp)
+    evolution_api_url: str = Field(default="http://evolution:8080")
+    evolution_api_key: str = Field(default="")
+    evolution_instance: str = Field(default="lexio")
+    whatsapp_enabled: bool = Field(default=False)
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
