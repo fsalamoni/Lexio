@@ -1,0 +1,10 @@
+{
+  "id": "whatsapp_bot",
+  "name": "WhatsApp Bot",
+  "type": "integration",
+  "version": "1.0.0",
+  "description": "Bot conversacional via WhatsApp (Evolution API) para solicitar documentos jurídicos",
+  "entry_point": "packages.modules.whatsapp_bot",
+  "enabled": true,
+  "dependencies": []
+}

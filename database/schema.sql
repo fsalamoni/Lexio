@@ -206,3 +206,35 @@ CREATE INDEX IF NOT EXISTS idx_theses_doc_type ON theses(document_type_id);
 INSERT INTO organizations (name, slug, plan)
 VALUES ('Lexio Demo', 'lexio-demo', 'free')
 ON CONFLICT (slug) DO NOTHING;
+
+-- ── WhatsApp Sessions (Fase 4) ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES organizations(id),
+
+    -- Contact info
+    phone VARCHAR(100) NOT NULL,
+    contact_name VARCHAR(200),
+
+    -- Conversation state machine
+    state VARCHAR(50) NOT NULL DEFAULT 'welcome',
+    -- welcome | awaiting_doc_type | awaiting_content | processing | complete | error
+
+    -- Collected inputs
+    selected_doc_type VARCHAR(100),
+    selected_legal_area VARCHAR(100),
+    collected_content TEXT,
+
+    -- Generated document
+    document_id UUID REFERENCES documents(id),
+
+    -- Extra turn context
+    context JSONB,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_sessions_org ON whatsapp_sessions(organization_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_sessions_phone ON whatsapp_sessions(phone);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_sessions_org_phone ON whatsapp_sessions(organization_id, phone);
