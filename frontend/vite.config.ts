@@ -3,8 +3,10 @@ import react from '@vitejs/plugin-react'
 
 const backendUrl = process.env.VITE_BACKEND_URL || 'http://localhost:8000'
 const backendWs = backendUrl.replace('http', 'ws')
+const isDemo = process.env.VITE_DEMO_MODE === 'true'
 
 export default defineConfig({
+  base: isDemo ? '/Lexio/' : '/',
   plugins: [react()],
   build: {
     outDir: 'dist',
