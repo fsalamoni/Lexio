@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   Shield, CheckCircle, XCircle, Activity, Server, Database, Brain, Search,
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
+  Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -33,6 +34,17 @@ interface StatsData {
   total_cost_usd: number
 }
 
+interface ApiKeyDef {
+  key: string
+  label: string
+  description: string
+  placeholder: string
+  link: string
+  is_set: boolean
+  masked_value: string | null
+  source: string
+}
+
 const serviceIcons: Record<string, typeof Server> = {
   postgres: Database,
   qdrant: Database,
@@ -41,6 +53,168 @@ const serviceIcons: Record<string, typeof Server> = {
 }
 
 const PIE_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe']
+
+// ── API Keys Card ────────────────────────────────────────────────────
+
+function ApiKeysCard() {
+  const [apiKeys, setApiKeys] = useState<ApiKeyDef[]>([])
+  const [visible, setVisible] = useState<Record<string, boolean>>({})
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchSettings = async () => {
+    try {
+      const res = await api.get('/admin/settings')
+      setApiKeys(res.data.settings)
+    } catch {
+      setError('Não foi possível carregar as configurações.')
+    }
+  }
+
+  useEffect(() => { fetchSettings() }, [])
+
+  const handleSave = async () => {
+    const updates: Record<string, string> = {}
+    for (const [k, v] of Object.entries(edits)) {
+      if (v !== undefined) updates[k] = v
+    }
+    if (Object.keys(updates).length === 0) return
+
+    setSaving(true)
+    setError(null)
+    try {
+      await api.patch('/admin/settings', { updates })
+      setSaved(true)
+      setEdits({})
+      await fetchSettings()
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Erro ao salvar configurações.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const hasPendingChanges = Object.keys(edits).length > 0
+
+  return (
+    <div className="bg-white rounded-xl border p-6 mb-6">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Key className="w-5 h-5 text-brand-600" />
+          Chaves de API
+        </h2>
+        <div className="flex items-center gap-3">
+          {saved && (
+            <span className="flex items-center gap-1 text-sm text-green-600">
+              <CheckCircle2 className="w-4 h-4" /> Salvo
+            </span>
+          )}
+          {error && (
+            <span className="flex items-center gap-1 text-sm text-red-600">
+              <AlertCircle className="w-4 h-4" /> {error}
+            </span>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={!hasPendingChanges || saving}
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? 'Salvando…' : 'Salvar'}
+          </button>
+        </div>
+      </div>
+
+      <p className="text-sm text-gray-500 mb-5">
+        As chaves inseridas aqui são aplicadas imediatamente e persistidas no banco de dados,
+        sobrescrevendo variáveis de ambiente. Apenas administradores têm acesso a esta seção.
+      </p>
+
+      <div className="space-y-5">
+        {apiKeys.map((def) => {
+          const isEditing = edits[def.key] !== undefined
+          const currentValue = isEditing ? edits[def.key] : ''
+          const isShown = visible[def.key]
+
+          return (
+            <div key={def.key} className="border rounded-lg p-4">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-gray-900 text-sm">{def.label}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      def.is_set
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {def.is_set ? `configurado · ${def.source}` : 'não configurado'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">{def.description}</p>
+                </div>
+                <a
+                  href={def.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-brand-600 hover:underline flex items-center gap-1 ml-4 shrink-0"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Obter chave
+                </a>
+              </div>
+
+              {def.is_set && !isEditing && (
+                <div className="flex items-center gap-2 mb-2">
+                  <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono text-gray-700 flex-1">
+                    {def.masked_value}
+                  </code>
+                </div>
+              )}
+
+              <div className="flex gap-2 mt-2">
+                <div className="relative flex-1">
+                  <input
+                    type={isShown ? 'text' : 'password'}
+                    value={currentValue}
+                    onChange={(e) => setEdits(prev => ({ ...prev, [def.key]: e.target.value }))}
+                    placeholder={def.is_set ? 'Nova chave (deixe vazio para manter)' : def.placeholder}
+                    className="w-full text-sm border rounded-lg px-3 py-2 pr-10 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    onFocus={() => !isEditing && setEdits(prev => ({ ...prev, [def.key]: '' }))}
+                    onBlur={() => {
+                      if (isEditing && edits[def.key] === '') {
+                        setEdits(prev => { const n = { ...prev }; delete n[def.key]; return n })
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setVisible(prev => ({ ...prev, [def.key]: !prev[def.key] }))}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {isShown ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {isEditing && edits[def.key] !== '' && (
+                  <button
+                    onClick={() => setEdits(prev => { const n = { ...prev }; delete n[def.key]; return n })}
+                    className="text-xs text-gray-500 hover:text-gray-700 px-2"
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Main Admin Panel ─────────────────────────────────────────────────
 
 export default function AdminPanel() {
   const [modules, setModules] = useState<ModuleInfo[]>([])
@@ -89,7 +263,7 @@ export default function AdminPanel() {
         <Shield className="w-8 h-8 text-brand-600" />
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Painel Administrativo</h1>
-          <p className="text-gray-500">Monitoramento de módulos, serviços e métricas</p>
+          <p className="text-gray-500">Configurações, módulos, serviços e métricas</p>
         </div>
       </div>
 
@@ -135,6 +309,9 @@ export default function AdminPanel() {
           <p className="text-2xl font-bold text-gray-900">{healthyModules}/{modules.length}</p>
         </div>
       </div>
+
+      {/* API Keys */}
+      <ApiKeysCard />
 
       {/* System Health + Module Pie */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -224,7 +401,6 @@ export default function AdminPanel() {
         </div>
       </div>
 
-      {/* Feature Modules */}
       {features.length > 0 && (
         <div className="bg-white rounded-xl border p-6">
           <h2 className="text-lg font-semibold mb-4">Módulos Funcionais ({features.length})</h2>

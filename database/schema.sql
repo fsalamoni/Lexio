@@ -238,3 +238,11 @@ CREATE TABLE IF NOT EXISTS whatsapp_sessions (
 CREATE INDEX IF NOT EXISTS idx_whatsapp_sessions_org ON whatsapp_sessions(organization_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_sessions_phone ON whatsapp_sessions(phone);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_sessions_org_phone ON whatsapp_sessions(organization_id, phone);
+
+-- ── Platform Settings (Admin API Keys) ──────────────────────────────
+CREATE TABLE IF NOT EXISTS platform_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value TEXT,
+    description VARCHAR(500),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
