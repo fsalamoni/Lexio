@@ -1,0 +1,9 @@
+{
+  "name": "anamnesis",
+  "display_name": "Anamnese Jurídica",
+  "type": "feature",
+  "version": "1.0.0",
+  "description": "Sistema de anamnese jurídica em 2 camadas: perfil profissional + contexto por pedido",
+  "enabled": true,
+  "provides": ["onboarding", "request_context", "auto_extract"]
+}

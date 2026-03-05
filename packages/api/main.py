@@ -14,7 +14,11 @@ from packages.core.database.base import Base
 from packages.core.module_loader import discover_and_load_modules, module_registry
 from packages.core.websocket import progress_manager
 
-from packages.api.routes import auth, documents, document_types, legal_areas, uploads, stats, health, webhooks, admin
+from packages.api.routes import auth, documents, document_types, legal_areas, uploads, stats, health, webhooks, admin, anamnesis, thesis_bank
+
+# Ensure models are imported for table creation
+from packages.core.database.models.user_profile import UserProfile  # noqa: F401
+from packages.core.database.models.thesis import Thesis  # noqa: F401
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,6 +77,8 @@ app.include_router(uploads.router, prefix="/api/v1/uploads", tags=["Uploads"])
 app.include_router(stats.router, prefix="/api/v1/stats", tags=["Stats"])
 app.include_router(webhooks.router, prefix="/webhook", tags=["Webhooks"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
+app.include_router(anamnesis.router, prefix="/api/v1", tags=["Anamnesis"])
+app.include_router(thesis_bank.router, prefix="/api/v1/theses", tags=["Thesis Bank"])
 
 
 # WebSocket for pipeline progress

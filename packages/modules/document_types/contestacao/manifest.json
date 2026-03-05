@@ -1,0 +1,16 @@
+{
+    "id": "contestacao",
+    "name": "Contestação",
+    "type": "document_type",
+    "version": "1.0.0",
+    "description": "Geração de contestações (peças de defesa) com pipeline multi-agente. Estrutura conforme CPC/2015, arts. 335-342.",
+    "category": "advocacy",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "templates": ["generic"],
+    "pipeline_agents": [
+        "triagem", "pesquisador", "jurista", "advogado_diabo",
+        "jurista_v2", "fact_checker", "redator", "revisor"
+    ]
+}

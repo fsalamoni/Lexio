@@ -4,15 +4,23 @@ import react from '@vitejs/plugin-react'
 const backendUrl = process.env.VITE_BACKEND_URL || 'http://localhost:8000'
 const backendWs = backendUrl.replace('http', 'ws')
 
-// GitHub Pages deploys to /Lexio/ subpath
-const isGHPages = process.env.GITHUB_PAGES === 'true' || process.env.NODE_ENV === 'production'
-
 export default defineConfig({
   plugins: [react()],
-  base: isGHPages ? '/Lexio/' : '/',
   build: {
     outDir: 'dist',
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('@tiptap') || id.includes('prosemirror')) {
+            return 'tiptap'
+          }
+          if (id.includes('recharts') || id.includes('d3-')) {
+            return 'recharts'
+          }
+        },
+      },
+    },
   },
   server: {
     port: 3000,

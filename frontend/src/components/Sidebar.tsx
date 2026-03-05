@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, FileText, PlusCircle, Upload, Scale, LogOut, Shield } from 'lucide-react'
+import { LayoutDashboard, FileText, PlusCircle, Upload, Scale, LogOut, Shield, BookOpen } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -7,6 +7,7 @@ const links = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/documents', label: 'Documentos', icon: FileText },
   { to: '/documents/new', label: 'Novo Documento', icon: PlusCircle },
+  { to: '/theses', label: 'Banco de Teses', icon: BookOpen },
   { to: '/upload', label: 'Upload', icon: Upload },
 ]
 

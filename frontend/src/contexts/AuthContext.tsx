@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, ReactNode } from 'react'
-import api, { DEMO_MODE } from '../api/client'
-import { DEMO_USER } from '../api/mock'
+import api from '../api/client'
 
 interface AuthContextType {
   token: string | null

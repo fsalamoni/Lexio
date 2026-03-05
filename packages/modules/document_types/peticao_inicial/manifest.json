@@ -1,0 +1,16 @@
+{
+    "id": "peticao_inicial",
+    "name": "Petição Inicial",
+    "type": "document_type",
+    "version": "1.0.0",
+    "description": "Geração de petições iniciais para ações judiciais com pipeline multi-agente. Suporta variantes genérica, ordinário e sumário.",
+    "category": "advocacy",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "templates": ["generic", "ordinario", "sumario"],
+    "pipeline_agents": [
+        "triagem", "pesquisador", "jurista", "advogado_diabo",
+        "jurista_v2", "fact_checker", "redator", "revisor"
+    ]
+}

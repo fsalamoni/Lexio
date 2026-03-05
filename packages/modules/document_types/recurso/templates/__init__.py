@@ -1,0 +1,1 @@
+"""Lexio — Recurso: template variants."""

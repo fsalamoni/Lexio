@@ -1,0 +1,27 @@
+{
+    "id": "labor",
+    "name": "Direito do Trabalho",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Área do Direito do Trabalho: direito individual, coletivo, terceirização, processo do trabalho, acidente de trabalho.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "individual",
+        "coletivo",
+        "terceirizacao",
+        "processo_trabalho",
+        "acidente_trabalho"
+    ],
+    "guides": [
+        "individual.md",
+        "coletivo.md",
+        "terceirizacao.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

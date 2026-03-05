@@ -4,6 +4,7 @@ import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -98,3 +99,53 @@ async def get_document(
     if not doc:
         raise HTTPException(404, "Documento não encontrado")
     return DocumentResponse.from_orm(doc)
+
+
+class ContentUpdate(BaseModel):
+    content: str
+
+
+@router.put("/{document_id}/content")
+async def update_document_content(
+    document_id: str,
+    req: ContentUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update document text content (from TipTap editor)."""
+    stmt = select(Document).where(
+        Document.id == uuid.UUID(document_id),
+        Document.organization_id == user.organization_id,
+    )
+    result = await db.execute(stmt)
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Documento não encontrado")
+
+    doc.texto_completo = req.content
+    await db.commit()
+    return {"updated": True, "document_id": document_id}
+
+
+@router.get("/{document_id}/content")
+async def get_document_content(
+    document_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get raw document text content for editor."""
+    stmt = select(Document).where(
+        Document.id == uuid.UUID(document_id),
+        Document.organization_id == user.organization_id,
+    )
+    result = await db.execute(stmt)
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Documento não encontrado")
+
+    return {
+        "document_id": document_id,
+        "content": doc.texto_completo or "",
+        "document_type_id": doc.document_type_id,
+        "tema": doc.tema,
+    }

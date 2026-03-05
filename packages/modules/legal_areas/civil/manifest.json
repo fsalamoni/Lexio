@@ -1,0 +1,27 @@
+{
+    "id": "civil",
+    "name": "Direito Civil",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Área do Direito Civil: obrigações, contratos, responsabilidade civil, direitos reais, família e sucessões.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "obrigacoes",
+        "contratos",
+        "responsabilidade_civil",
+        "direitos_reais",
+        "familia_sucessoes"
+    ],
+    "guides": [
+        "obrigacoes.md",
+        "contratos.md",
+        "responsabilidade_civil.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

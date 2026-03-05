@@ -117,6 +117,91 @@ CREATE TABLE IF NOT EXISTS uploaded_documents (
 
 CREATE INDEX IF NOT EXISTS idx_uploads_org ON uploaded_documents(organization_id);
 
+-- User Profiles (anamnesis Layer 1)
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+
+    -- Professional profile
+    institution VARCHAR(300),
+    position VARCHAR(200),
+    jurisdiction VARCHAR(200),
+    experience_years INTEGER,
+    primary_areas JSONB,
+    specializations JSONB,
+
+    -- Writing preferences
+    formality_level VARCHAR(50),
+    connective_style VARCHAR(50),
+    citation_style VARCHAR(50),
+    preferred_expressions JSONB,
+    avoided_expressions JSONB,
+    paragraph_length VARCHAR(50),
+
+    -- Document preferences
+    default_document_type VARCHAR(100),
+    default_template VARCHAR(100),
+    signature_block TEXT,
+    header_text TEXT,
+
+    -- AI preferences
+    preferred_model VARCHAR(200),
+    detail_level VARCHAR(50),
+    argument_depth VARCHAR(50),
+    include_opposing_view BOOLEAN DEFAULT TRUE,
+
+    -- Metadata
+    onboarding_completed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_profiles_user ON user_profiles(user_id);
+
+-- Theses (Thesis Bank)
+CREATE TABLE IF NOT EXISTS theses (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID NOT NULL REFERENCES organizations(id),
+
+    -- Content
+    title VARCHAR(500) NOT NULL,
+    content TEXT NOT NULL,
+    summary TEXT,
+
+    -- Classification
+    legal_area_id VARCHAR(100) NOT NULL,
+    document_type_id VARCHAR(100),
+    tags TEXT[],
+    category VARCHAR(100),
+
+    -- Legal basis
+    legal_basis JSONB,
+    precedents JSONB,
+
+    -- Metrics
+    quality_score DOUBLE PRECISION,
+    usage_count INTEGER DEFAULT 0,
+    success_rate DOUBLE PRECISION,
+
+    -- Source
+    source_document_id UUID REFERENCES documents(id),
+    source_type VARCHAR(50) DEFAULT 'auto_extracted',
+    author_id UUID REFERENCES users(id),
+
+    -- Status
+    status VARCHAR(50) DEFAULT 'active',
+
+    -- Metadata
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_theses_org ON theses(organization_id);
+CREATE INDEX IF NOT EXISTS idx_theses_area ON theses(legal_area_id);
+CREATE INDEX IF NOT EXISTS idx_theses_status ON theses(status);
+CREATE INDEX IF NOT EXISTS idx_theses_doc_type ON theses(document_type_id);
+
 -- Default organization
 INSERT INTO organizations (name, slug, plan)
 VALUES ('Lexio Demo', 'lexio-demo', 'free')

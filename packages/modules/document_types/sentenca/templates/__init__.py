@@ -1,0 +1,1 @@
+"""Lexio — Sentenca: template variants."""
