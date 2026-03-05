@@ -19,6 +19,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { token, role } = useAuth()
+  if (!token) return <Navigate to="/login" replace />
+  if (role !== "admin") return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -37,7 +44,7 @@ function AppRoutes() {
                 <Route path="/documents/:id/edit" element={<DocumentEditor />} />
                 <Route path="/upload" element={<Upload />} />
                 <Route path="/theses" element={<ThesisBank />} />
-                <Route path="/admin" element={<AdminPanel />} />
+                <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
                 <Route path="/onboarding" element={<Onboarding />} />
               </Routes>
             </Layout>
