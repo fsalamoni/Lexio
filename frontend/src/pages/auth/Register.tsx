@@ -21,7 +21,7 @@ export default function Register() {
       await register(email, password, fullName, title || undefined)
       navigate('/')
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Erro ao cadastrar')
+      setError(err.message || err.response?.data?.detail || 'Erro ao cadastrar')
     } finally {
       setLoading(false)
     }

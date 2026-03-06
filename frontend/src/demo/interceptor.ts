@@ -19,11 +19,15 @@ import {
   DEMO_THESES_STATS,
 } from './data'
 
-export const IS_DEMO = import.meta.env.VITE_DEMO_MODE === 'true'
+export const IS_DEMO     = import.meta.env.VITE_DEMO_MODE === 'true'
+const IS_FIREBASE_CONFIGURED = Boolean(import.meta.env.VITE_FIREBASE_API_KEY)
 
-/** Auto-login in demo mode. */
+/**
+ * Auto-login only in pure demo mode (no Firebase configured).
+ * When Firebase is active, the user must authenticate for real.
+ */
 export function seedDemoAuth(): void {
-  if (!IS_DEMO) return
+  if (!IS_DEMO || IS_FIREBASE_CONFIGURED) return
   if (!localStorage.getItem('lexio_token')) {
     localStorage.setItem('lexio_token', DEMO_USER.access_token)
     localStorage.setItem('lexio_user_id', DEMO_USER.user_id)
