@@ -28,3 +28,10 @@ class EventType:
     # Auth
     USER_REGISTERED = "user.registered"
     USER_LOGGED_IN = "user.logged_in"
+
+    # WhatsApp
+    WHATSAPP_MESSAGE_RECEIVED = "whatsapp.message_received"
+    WHATSAPP_MESSAGE_SENT = "whatsapp.message_sent"
+    WHATSAPP_SESSION_STARTED = "whatsapp.session_started"
+    WHATSAPP_DOCUMENT_REQUESTED = "whatsapp.document_requested"
+    WHATSAPP_DOCUMENT_DELIVERED = "whatsapp.document_delivered"
