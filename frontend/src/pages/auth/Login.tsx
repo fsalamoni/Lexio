@@ -19,7 +19,7 @@ export default function Login() {
       await login(email, password)
       navigate('/')
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Erro ao fazer login')
+      setError(err.message || err.response?.data?.detail || 'Erro ao fazer login')
     } finally {
       setLoading(false)
     }

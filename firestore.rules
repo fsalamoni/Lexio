@@ -1,0 +1,33 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: check if the requester has admin role
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    // Each user can read/write their own profile.
+    // Admins can read all user profiles.
+    match /users/{userId} {
+      allow read:  if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if isAdmin();
+    }
+
+    // ── Settings (API Keys, etc.) ─────────────────────────────────────────────
+    // Admin-only: read and write platform settings.
+    match /settings/{document} {
+      allow read, write: if isAdmin();
+    }
+
+    // Default: deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
+import { loadApiKeys, saveApiKeys, type ApiKeyEntry } from '../lib/settings-store'
 
 interface ModuleInfo {
   id: string
@@ -35,18 +36,7 @@ interface StatsData {
   total_cost_usd: number
 }
 
-interface ApiKeyDef {
-  key: string
-  label: string
-  description: string
-  placeholder: string
-  link: string
-  guide: string[]
-  is_auto: boolean
-  is_set: boolean
-  masked_value: string | null
-  source: string
-}
+// ApiKeyDef is now imported as ApiKeyEntry from settings-store
 
 const serviceIcons: Record<string, typeof Server> = {
   postgres: Database,
@@ -60,7 +50,7 @@ const PIE_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe']
 // ── API Keys Card ─────────────────────────────────────────────────────────────
 
 function ApiKeysCard() {
-  const [apiKeys, setApiKeys] = useState<ApiKeyDef[]>([])
+  const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([])
   const [visible, setVisible] = useState<Record<string, boolean>>({})
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [edits, setEdits] = useState<Record<string, string>>({})
@@ -71,8 +61,8 @@ function ApiKeysCard() {
 
   const fetchSettings = async () => {
     try {
-      const res = await api.get('/admin/settings')
-      setApiKeys(res.data.settings)
+      const entries = await loadApiKeys()
+      setApiKeys(entries)
     } catch {
       setError('Não foi possível carregar as configurações.')
     } finally {
@@ -85,20 +75,20 @@ function ApiKeysCard() {
   const handleSave = async () => {
     const updates: Record<string, string> = {}
     for (const [k, v] of Object.entries(edits)) {
-      if (v !== undefined) updates[k] = v
+      if (v !== undefined && v !== '') updates[k] = v
     }
     if (Object.keys(updates).length === 0) return
 
     setSaving(true)
     setError(null)
     try {
-      await api.patch('/admin/settings', { updates })
+      await saveApiKeys(updates)
       setSaved(true)
       setEdits({})
       await fetchSettings()
       setTimeout(() => setSaved(false), 3000)
     } catch (e: any) {
-      setError(e?.response?.data?.detail || 'Erro ao salvar configurações.')
+      setError(e instanceof Error ? e.message : 'Erro ao salvar configurações.')
     } finally {
       setSaving(false)
     }
