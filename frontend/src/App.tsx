@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { IS_DEMO } from './demo/interceptor'
 import Layout from './components/Layout'
 import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
@@ -16,6 +17,13 @@ import ThesisBank from './pages/ThesisBank'
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth()
   if (!token) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { token, role } = useAuth()
+  if (!token) return <Navigate to="/login" replace />
+  if (role !== "admin") return <Navigate to="/" replace />
   return <>{children}</>
 }
 
@@ -37,7 +45,7 @@ function AppRoutes() {
                 <Route path="/documents/:id/edit" element={<DocumentEditor />} />
                 <Route path="/upload" element={<Upload />} />
                 <Route path="/theses" element={<ThesisBank />} />
-                <Route path="/admin" element={<AdminPanel />} />
+                <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
                 <Route path="/onboarding" element={<Onboarding />} />
               </Routes>
             </Layout>
@@ -50,7 +58,7 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={IS_DEMO ? '/Lexio' : '/'}>
       <AuthProvider>
         <AppRoutes />
       </AuthProvider>

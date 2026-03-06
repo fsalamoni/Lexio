@@ -19,6 +19,8 @@ from packages.api.routes import auth, documents, document_types, legal_areas, up
 # Ensure models are imported for table creation
 from packages.core.database.models.user_profile import UserProfile  # noqa: F401
 from packages.core.database.models.thesis import Thesis  # noqa: F401
+from packages.core.database.models.whatsapp_session import WhatsAppSession  # noqa: F401
+from packages.core.database.models.platform_setting import PlatformSetting  # noqa: F401
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,11 +39,22 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables created/verified")
 
+    # Load admin-managed API keys from DB (override env values)
+    from packages.api.routes.admin import load_settings_from_db
+    async with async_session() as _db:
+        await load_settings_from_db(_db)
+    logger.info("Platform settings loaded from DB")
+
     # Load modules
     await discover_and_load_modules()
     logger.info(
         f"Modules loaded: {module_registry.healthy_count}/{module_registry.total_count} healthy"
     )
+
+    # Initialize WhatsApp bot module (registers event listeners)
+    from packages.modules.whatsapp_bot import create_module as create_whatsapp_bot
+    whatsapp_bot = create_whatsapp_bot()
+    await whatsapp_bot.initialize()
 
     yield
 

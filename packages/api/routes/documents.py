@@ -1,6 +1,7 @@
 """Lexio API — Document CRUD routes."""
 
 import asyncio
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,6 +17,9 @@ from packages.pipeline.orchestrator import PipelineOrchestrator
 from packages.api.schemas.documents import (
     DocumentCreate, DocumentResponse, DocumentListResponse,
 )
+from packages.modules.anamnesis.wizard import build_pipeline_context
+
+logger = logging.getLogger("lexio.api.documents")
 
 router = APIRouter()
 
@@ -49,8 +53,22 @@ async def create_document(
     # Get pipeline config from document type module
     pipeline_config = doc_type_info.instance.get_pipeline_config(req.template_variant)
 
+    # Build anamnesis context (profile prefs + per-request structured fields)
+    try:
+        anamnesis_ctx = await build_pipeline_context(
+            db=db,
+            user_id=str(user.id),
+            document_type_id=req.document_type_id,
+            original_request=req.original_request,
+            request_context=req.request_context,
+            auto_extract=bool(not req.request_context),
+        )
+    except Exception as exc:
+        logger.warning(f"Anamnesis context build failed (non-fatal): {exc}")
+        anamnesis_ctx = {}
+
     # Run pipeline in background
-    orchestrator = PipelineOrchestrator(str(doc.id), pipeline_config)
+    orchestrator = PipelineOrchestrator(str(doc.id), pipeline_config, anamnesis_context=anamnesis_ctx)
     asyncio.create_task(orchestrator.run())
 
     return DocumentResponse.from_orm(doc)

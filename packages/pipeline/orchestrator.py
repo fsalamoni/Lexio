@@ -27,6 +27,7 @@ from packages.pipeline.pipeline_config import PipelineConfig
 from packages.pipeline.quality_gate import evaluate_quality
 from packages.pipeline.integrator import integrate_document
 from packages.pipeline.docx_generator import generate_docx
+from packages.pipeline.multi_area_deliberation import deliberate_multi_area
 
 logger = logging.getLogger("lexio.pipeline")
 
@@ -34,9 +35,15 @@ logger = logging.getLogger("lexio.pipeline")
 class PipelineOrchestrator:
     """Orchestrates the full document generation pipeline."""
 
-    def __init__(self, document_id: str, pipeline_config: PipelineConfig):
+    def __init__(
+        self,
+        document_id: str,
+        pipeline_config: PipelineConfig,
+        anamnesis_context: dict | None = None,
+    ):
         self.document_id = document_id
         self.config = pipeline_config
+        self.anamnesis_context = anamnesis_context or {}
         self.context: dict = {}
         self.cost_tracker = CostTracker()
 
@@ -60,8 +67,36 @@ class PipelineOrchestrator:
                 self.context["document_type"] = self.config.document_type_id
                 self.context["org_id"] = str(doc.organization_id)
 
+                # Inject anamnesis context (profile prefs + enriched request)
+                if self.anamnesis_context:
+                    self.context.update(self.anamnesis_context)
+                    # Prefer enriched request when available
+                    if self.anamnesis_context.get("msgEnriquecida"):
+                        self.context["msgOriginal"] = self.anamnesis_context["msgEnriquecida"]
+
                 # 2. Research phase (search)
                 await self._research_phase(db)
+
+                # 2b. Multi-area deliberation (when ≥1 legal area selected)
+                legal_area_ids = doc.legal_area_ids or []
+                if legal_area_ids:
+                    await self._send_progress(
+                        "deliberacao",
+                        f"Deliberação entre {len(legal_area_ids)} área(s) jurídica(s)...",
+                        8,
+                    )
+                    try:
+                        deliberation = await deliberate_multi_area(
+                            legal_area_ids=legal_area_ids,
+                            context=self.context,
+                            model=self.config.model_main,
+                        )
+                        self.context.update(deliberation)
+                        logger.info(
+                            f"Multi-area deliberation complete: {legal_area_ids}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Multi-area deliberation failed (non-fatal): {e}")
 
                 # 3. Execute agents in sequence
                 total_agents = len(self.config.agents)
@@ -153,6 +188,18 @@ class PipelineOrchestrator:
                     f"cost=${self.cost_tracker.total_cost:.4f} time={duration_s}s"
                 )
 
+                # Auto-populate thesis bank (fire-and-forget, non-blocking)
+                asyncio.create_task(
+                    self._auto_populate_theses(
+                        document_id=doc_id,
+                        organization_id=str(doc.organization_id),
+                        author_id=str(doc.author_id) if doc.author_id else None,
+                        text=texto_final,
+                        document_type_id=self.config.document_type_id,
+                        legal_area_ids=doc.legal_area_ids or [],
+                    )
+                )
+
             except Exception as e:
                 logger.error(f"Pipeline failed for doc={doc_id}: {e}")
                 doc = await self._load_document(db)
@@ -228,3 +275,33 @@ class PipelineOrchestrator:
             "message": message,
             "progress": progress,
         })
+
+    async def _auto_populate_theses(
+        self,
+        document_id: str,
+        organization_id: str,
+        author_id: str | None,
+        text: str,
+        document_type_id: str,
+        legal_area_ids: list[str],
+    ):
+        """Extract theses from completed document and store in thesis bank."""
+        try:
+            from packages.modules.thesis_bank.auto_populate import extract_theses_from_document
+            async with async_session() as db:
+                created = await extract_theses_from_document(
+                    db=db,
+                    organization_id=uuid.UUID(organization_id),
+                    document_id=uuid.UUID(document_id),
+                    document_text=text,
+                    document_type_id=document_type_id,
+                    legal_area_ids=legal_area_ids,
+                    author_id=uuid.UUID(author_id) if author_id else None,
+                )
+            if created:
+                logger.info(
+                    f"Thesis bank auto-populated: {len(created)} theses "
+                    f"from doc={document_id}"
+                )
+        except Exception as e:
+            logger.warning(f"Thesis auto-populate failed for doc={document_id}: {e}")

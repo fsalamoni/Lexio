@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     database_url: str = Field(default="postgresql+asyncpg://lexio:lexio@postgres:5432/lexio")
 
     # DataJud (CNJ)
-    datajud_api_key: str = Field(default="")
+    datajud_api_key: str = Field(default="cnjKey=2026")
     datajud_url: str = Field(default="https://api-publica.datajud.cnj.jus.br/api_publica_tjrs/_search")
 
     # SearXNG
@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # Default Organization
     default_org_name: str = Field(default="Lexio Demo")
     default_org_slug: str = Field(default="lexio-demo")
+
+    # Evolution API (WhatsApp)
+    evolution_api_url: str = Field(default="http://evolution:8080")
+    evolution_api_key: str = Field(default="")
+    evolution_instance: str = Field(default="lexio")
+    whatsapp_enabled: bool = Field(default=False)
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

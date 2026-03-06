@@ -10,6 +10,7 @@ class DocumentCreate(BaseModel):
     legal_area_ids: list[str] | None = None  # e.g. ["administrative"]
     template_variant: str | None = None  # e.g. "mprs_caopp" or "generic"
     origem: str | None = "web"
+    request_context: dict | None = None  # Anamnesis Layer 2 (structured fields per doc type)
 
 
 class DocumentResponse(BaseModel):
