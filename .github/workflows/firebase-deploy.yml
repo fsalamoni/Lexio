@@ -41,13 +41,18 @@ jobs:
       - name: SPA fallback
         run: cp frontend/dist/index.html frontend/dist/404.html
 
-      # ── Deploy to Firebase ────────────────────────────────────────────────
+      # ── Authenticate Firebase CLI via Service Account ─────────────────────
+      - name: Write service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/firebase-sa.json
+
       - name: Install Firebase CLI
         run: npm install -g firebase-tools@latest
 
-      - name: Deploy Hosting + Firestore Rules
+      # ── Deploy Hosting + Firestore Rules ──────────────────────────────────
+      - name: Deploy to Firebase
         run: |
           firebase deploy \
             --only hosting:lexio,firestore:rules,firestore:indexes \
-            --project hocapp-44760 \
-            --token "${{ secrets.FIREBASE_TOKEN }}"
+            --project hocapp-44760
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
