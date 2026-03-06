@@ -16,6 +16,7 @@ import {
   DEMO_LEGAL_AREAS,
   DEMO_SETTINGS,
   DEMO_THESES,
+  DEMO_THESES_STATS,
 } from './data'
 
 export const IS_DEMO = import.meta.env.VITE_DEMO_MODE === 'true'
@@ -103,13 +104,20 @@ function routeDemo(url: string, method: string, body?: any): any {
   }
   if (url.includes('/admin/settings')) return DEMO_SETTINGS
 
-  // Theses
+  // Theses — stats before list
+  if (url.includes('/theses/stats')) return DEMO_THESES_STATS
   if (url.includes('/theses')) return { items: DEMO_THESES, total: DEMO_THESES.length }
 
   // Uploads
   if (url.includes('/uploads')) return { items: [], total: 0 }
 
-  // Anamnesis / profile
+  // Anamnesis — wizard, request-fields, onboarding, profile
+  if (url.includes('/anamnesis/wizard') || url.includes('/anamnesis/onboarding')) {
+    return { onboarding_completed: true, onboarding_steps: [], profile: null }
+  }
+  if (url.match(/\/anamnesis\/request-fields\/[^/]+$/)) {
+    return { fields: [] }
+  }
   if (url.includes('/profile') || url.includes('/anamnesis')) return { onboarding_completed: true }
 
   // Fallback
