@@ -1,31 +1,58 @@
 rules_version = '2';
+// Lexio — Firestore Security Rules (produção)
+// Projeto: hocapp-44760  |  App: LexIO  |  lexio.web.app
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: check if the requester has admin role
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    // Checks that the caller is authenticated
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Checks that the caller has admin role stored in /users/{uid}
     function isAdmin() {
-      return request.auth != null &&
+      return isAuth() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // ── Users ─────────────────────────────────────────────────────────────────
-    // Each user can read/write their own profile.
-    // Admins can read all user profiles.
-    match /users/{userId} {
-      allow read:  if request.auth != null && (request.auth.uid == userId || isAdmin());
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if isAdmin();
+    // The caller is accessing their own user document
+    function isSelf(userId) {
+      return isAuth() && request.auth.uid == userId;
     }
 
-    // ── Settings (API Keys, etc.) ─────────────────────────────────────────────
-    // Admin-only: read and write platform settings.
+    // ── /users/{userId} ───────────────────────────────────────────────────────
+    // Users can read/write their own profile.
+    // Admins can read all profiles (for management).
+    match /users/{userId} {
+      allow read:   if isSelf(userId) || isAdmin();
+      allow create: if isSelf(userId) && isValidUserCreate();
+      allow update: if isSelf(userId) && isValidUserUpdate();
+      allow delete: if isAdmin();
+
+      function isValidUserCreate() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['email', 'full_name', 'role', 'created_at'])
+          && data.role in ['admin', 'user']
+          && data.email == request.auth.token.email;
+      }
+
+      function isValidUserUpdate() {
+        // Users cannot change their own role
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
+      }
+    }
+
+    // ── /settings/{document} ─────────────────────────────────────────────────
+    // Platform settings (API keys, etc.) — admin-only.
     match /settings/{document} {
       allow read, write: if isAdmin();
     }
 
-    // Default: deny everything else
+    // ── Default: deny everything else ─────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }
