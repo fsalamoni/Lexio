@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     evolution_api_key: str = Field(default="")
     evolution_instance: str = Field(default="lexio")
     whatsapp_enabled: bool = Field(default=False)
+    # Prefixo para iniciar conversa com o Lexio bot.
+    # Mensagens sem prefixo de usuários sem sessão ativa são ignoradas.
+    # Permite coexistir com outros bots no mesmo número (ex: bot que usa "!").
+    whatsapp_prefix: str = Field(default="/lexio")
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
