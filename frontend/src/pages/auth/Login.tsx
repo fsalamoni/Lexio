@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Scale } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
-import { IS_FIREBASE } from '../../lib/firebase'
 
 function GoogleIcon() {
   return (
@@ -63,25 +62,21 @@ export default function Login() {
           <h2 className="text-xl font-semibold text-center mb-4">Entrar</h2>
           {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
-          {IS_FIREBASE && (
-            <>
-              <button
-                type="button"
-                onClick={handleGoogle}
-                disabled={googleLoading}
-                className="w-full flex items-center justify-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 hover:bg-gray-50 disabled:opacity-50 font-medium text-gray-700 transition-colors"
-              >
-                <GoogleIcon />
-                {googleLoading ? 'Entrando...' : 'Entrar com Google'}
-              </button>
+          <button
+            type="button"
+            onClick={handleGoogle}
+            disabled={googleLoading}
+            className="w-full flex items-center justify-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 hover:bg-gray-50 disabled:opacity-50 font-medium text-gray-700 transition-colors"
+          >
+            <GoogleIcon />
+            {googleLoading ? 'Entrando...' : 'Entrar com Google'}
+          </button>
 
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-gray-200" />
-                <span className="text-xs text-gray-400">ou</span>
-                <div className="flex-1 h-px bg-gray-200" />
-              </div>
-            </>
-          )}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs text-gray-400">ou</span>
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
