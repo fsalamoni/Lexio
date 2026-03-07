@@ -6,14 +6,16 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,6 +26,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
       - run: npm install
 
@@ -39,13 +43,21 @@ jobs:
           VITE_FIREBASE_APP_ID:              '1:143237037612:web:85bd9ddaf81973d5031b89'
           VITE_ADMIN_EMAIL:                  ${{ secrets.VITE_ADMIN_EMAIL }}
 
-      # SPA fallback — copy index.html to 404.html for client-side routing
+      # SPA fallback
       - run: cp dist/index.html dist/404.html
 
-      - name: Deploy to gh-pages branch
-        uses: peaceiris/actions-gh-pages@v4
+      - uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./frontend/dist
-          publish_branch: gh-pages
-          force_orphan: true
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Só executa se foi disparado pelo branch main
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
