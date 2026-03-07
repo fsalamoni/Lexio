@@ -11,6 +11,7 @@ from packages.core.database.models.whatsapp_session import WhatsAppSession
 from packages.core.database.models.organization import Organization
 from packages.core.whatsapp import whatsapp_client
 from packages.core.events import event_bus, EventType
+from packages.core.config import settings
 
 logger = logging.getLogger("lexio.whatsapp_bot")
 
@@ -55,17 +56,37 @@ class ConversationHandler:
         self.org_id = org_id
 
     async def handle(self, phone: str, message: str, contact_name: str = "") -> None:
-        """Process an incoming WhatsApp message and advance the conversation."""
+        """Process an incoming WhatsApp message and advance the conversation.
+
+        Prefix logic:
+        - If the user has NO active session (state == 'welcome'), the message MUST
+          start with settings.whatsapp_prefix (default '/lexio') to be processed.
+          This allows coexistence with other bots (e.g. a bot that uses '!').
+        - Once a session is active, all messages are processed normally — the user
+          is already in a guided conversation and should not need to re-type the prefix.
+        """
         text = message.strip()
+        prefix = settings.whatsapp_prefix.strip().lower()
+
+        # Load or create session to check current state
+        session = await self._get_or_create_session(phone, contact_name)
+
+        # If no active session, require prefix to start
+        if session.state == "welcome":
+            text_lower = text.lower()
+            if prefix and not text_lower.startswith(prefix):
+                # Message is for another bot — silently ignore
+                logger.debug(f"Ignored message without prefix '{prefix}' from {phone[:6]}***")
+                return
+            # Strip prefix from text before processing (e.g. "/lexio parecer" → "parecer")
+            if prefix and text_lower.startswith(prefix):
+                text = text[len(prefix):].strip()
 
         await event_bus.emit(EventType.WHATSAPP_MESSAGE_RECEIVED, {
             "phone": phone,
             "org_id": str(self.org_id),
             "message_preview": text[:100],
         })
-
-        # Load or create session
-        session = await self._get_or_create_session(phone, contact_name)
 
         # Reset command — always works regardless of state
         if text.lower() in RESET_KEYWORDS:
@@ -76,8 +97,11 @@ class ConversationHandler:
         # Route by current state
         state = session.state
         if state == "welcome":
+            # If text remains after stripping prefix, treat it as the doc type choice
             await self._send_welcome(phone, contact_name or session.contact_name or "")
             await self._set_state(session, "awaiting_doc_type")
+            if text:
+                await self._handle_doc_type(session, phone, text)
 
         elif state == "awaiting_doc_type":
             await self._handle_doc_type(session, phone, text)
