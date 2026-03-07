@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write   # necessário para google-github-actions/auth
 
 jobs:
   deploy:
@@ -39,9 +40,11 @@ jobs:
       - name: SPA fallback
         run: cp frontend/dist/index.html frontend/dist/404.html
 
-      # ── Authenticate Firebase CLI via Service Account ─────────────────────
-      - name: Write service account key
-        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/firebase-sa.json
+      # ── Autenticação via Service Account (método robusto) ─────────────────
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Install Firebase CLI
         run: npm install -g firebase-tools@latest
@@ -51,6 +54,5 @@ jobs:
         run: |
           firebase deploy \
             --only hosting:lexio,firestore:rules,firestore:indexes \
-            --project hocapp-44760
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
+            --project hocapp-44760 \
+            --non-interactive
