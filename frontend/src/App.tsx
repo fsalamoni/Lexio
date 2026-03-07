@@ -56,9 +56,15 @@ function AppRoutes() {
   )
 }
 
+// VITE_BASE_PATH controls the router base (no trailing slash).
+// Falls back to /Lexio in demo mode (GitHub Pages) or / otherwise.
+const BASENAME =
+  (import.meta.env.VITE_BASE_PATH as string | undefined)?.replace(/\/$/, '') ||
+  (IS_DEMO ? '/Lexio' : '/')
+
 export default function App() {
   return (
-    <BrowserRouter basename={IS_DEMO ? '/Lexio' : '/'}>
+    <BrowserRouter basename={BASENAME}>
       <AuthProvider>
         <AppRoutes />
       </AuthProvider>

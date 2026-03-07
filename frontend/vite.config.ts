@@ -4,9 +4,12 @@ import react from '@vitejs/plugin-react'
 const backendUrl = process.env.VITE_BACKEND_URL || 'http://localhost:8000'
 const backendWs = backendUrl.replace('http', 'ws')
 const isDemo = process.env.VITE_DEMO_MODE === 'true'
+// VITE_BASE_PATH overrides the isDemo default.
+// GitHub Pages sets it to /Lexio/ ; Firebase Hosting sets it to /
+const basePath = process.env.VITE_BASE_PATH ?? (isDemo ? '/Lexio/' : '/')
 
 export default defineConfig({
-  base: isDemo ? '/Lexio/' : '/',
+  base: basePath,
   plugins: [react()],
   build: {
     outDir: 'dist',
