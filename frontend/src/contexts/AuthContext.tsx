@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { firebaseAuth, IS_FIREBASE } from '../lib/firebase'
-import { firebaseLogin, firebaseRegister, firebaseLogout, translateFirebaseError } from '../lib/auth-service'
+import { firebaseLogin, firebaseRegister, firebaseLogout, firebaseGoogleLogin, translateFirebaseError } from '../lib/auth-service'
 import api from '../api/client'
 
 interface AuthContextType {
@@ -11,6 +11,7 @@ interface AuthContextType {
   fullName: string | null
   isReady: boolean
   login: (email: string, password: string) => Promise<void>
+  loginWithGoogle: () => Promise<void>
   register: (email: string, password: string, fullName: string, title?: string) => Promise<void>
   logout: () => void
 }
@@ -76,6 +77,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const loginWithGoogle = async () => {
+    try {
+      const r = await firebaseGoogleLogin()
+      persist(r.token, r.uid, r.role, r.full_name)
+      setToken(r.token); setUserId(r.uid); setRole(r.role); setFullName(r.full_name)
+    } catch (err: any) {
+      throw new Error(translateFirebaseError(err.code ?? ''))
+    }
+  }
+
   const register = async (email: string, password: string, fullNameInput: string, _title?: string) => {
     if (IS_FIREBASE) {
       try {
@@ -109,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ token, userId, role, fullName, isReady, login, register, logout }}>
+    <AuthContext.Provider value={{ token, userId, role, fullName, isReady, login, loginWithGoogle, register, logout }}>
       {children}
     </AuthContext.Provider>
   )

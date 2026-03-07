@@ -52,6 +52,7 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET:      hocapp-44760.firebasestorage.app
           VITE_FIREBASE_MESSAGING_SENDER_ID: '143237037612'
           VITE_FIREBASE_APP_ID:              '1:143237037612:web:85bd9ddaf81973d5031b89'
+          VITE_ADMIN_EMAIL:                  ${{ secrets.VITE_ADMIN_EMAIL }}
 
       - name: SPA fallback
         run: cp frontend/dist/index.html frontend/dist/404.html
