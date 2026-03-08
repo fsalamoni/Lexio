@@ -1,6 +1,6 @@
 """Lexio API — Auth schemas."""
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 
 class RegisterRequest(BaseModel):
@@ -20,3 +20,4 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_id: str
     role: str
+    full_name: str = ""

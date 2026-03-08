@@ -26,3 +26,6 @@ pydantic==2.10.4
 
 # Utilities
 python-dateutil==2.9.0
+
+# PDF text extraction
+pypdf==5.1.0
