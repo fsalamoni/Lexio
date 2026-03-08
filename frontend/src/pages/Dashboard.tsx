@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react'
-import { FileText, CheckCircle, Clock, DollarSign } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import {
+  FileText, CheckCircle, Clock, DollarSign, TrendingUp,
+  Activity, ChevronRight,
+} from 'lucide-react'
+import {
+  BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer,
+} from 'recharts'
+import { format, parseISO } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
+import StatusBadge from '../components/StatusBadge'
 
 interface Stats {
   total_documents: number
@@ -8,44 +19,300 @@ interface Stats {
   processing_documents: number
   average_quality_score: number | null
   total_cost_usd: number
+  average_duration_ms: number | null
+}
+
+interface DailyPoint {
+  dia: string
+  total: number
+  concluidos: number
+  custo: number
+}
+
+interface AgentStat {
+  agent_name: string
+  chamadas: number
+  custo_total: number
+  tempo_medio_ms: number
+}
+
+interface RecentDoc {
+  id: string
+  document_type_id: string
+  tema: string | null
+  status: string
+  quality_score: number | null
+  created_at: string
+}
+
+const DOCTYPE_LABELS: Record<string, string> = {
+  parecer: 'Parecer',
+  peticao_inicial: 'Petição Inicial',
+  contestacao: 'Contestação',
+  recurso: 'Recurso',
+  sentenca: 'Sentença',
+  acao_civil_publica: 'ACP',
+}
+
+function fmtCost(usd: number) {
+  return usd < 0.001 ? `$${usd.toFixed(5)}` : `$${usd.toFixed(4)}`
+}
+
+function fmtDuration(ms: number | null) {
+  if (!ms) return '—'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+// Custom tooltip for charts
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-white border rounded-lg shadow-lg p-3 text-sm">
+      <p className="font-medium text-gray-700 mb-1">{label}</p>
+      {payload.map((p: any) => (
+        <p key={p.name} style={{ color: p.color }}>
+          {p.name}: <strong>{typeof p.value === 'number' && p.name.includes('$')
+            ? fmtCost(p.value) : p.value}</strong>
+        </p>
+      ))}
+    </div>
+  )
 }
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
+  const [daily, setDaily] = useState<DailyPoint[]>([])
+  const [agents, setAgents] = useState<AgentStat[]>([])
+  const [recent, setRecent] = useState<RecentDoc[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.get('/stats').then((res) => setStats(res.data)).catch(() => {})
+    const p1 = api.get('/stats').then(r => setStats(r.data)).catch(() => {})
+    const p2 = api.get('/stats/daily').then(r => setDaily(r.data)).catch(() => {})
+    const p3 = api.get('/stats/agents').then(r => setAgents(r.data)).catch(() => {})
+    const p4 = api.get('/stats/recent').then(r => setRecent(r.data)).catch(() => {})
+    Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
   }, [])
 
-  const cards = stats
-    ? [
-        { label: 'Total de Documentos', value: stats.total_documents, icon: FileText, color: 'blue' },
-        { label: 'Concluídos', value: stats.completed_documents, icon: CheckCircle, color: 'green' },
-        { label: 'Em Processamento', value: stats.processing_documents, icon: Clock, color: 'yellow' },
-        { label: 'Score Médio', value: stats.average_quality_score ?? '—', icon: CheckCircle, color: 'purple' },
-      ]
-    : []
+  // Build cumulative cost series
+  const costSeries = daily.reduce<{ dia: string; custo_acumulado: number }[]>((acc, d) => {
+    const prev = acc.length > 0 ? acc[acc.length - 1].custo_acumulado : 0
+    acc.push({ dia: d.dia, custo_acumulado: +(prev + d.custo).toFixed(5) })
+    return acc
+  }, [])
+
+  const formatDia = (dia: string) => {
+    try { return format(parseISO(dia), 'dd/MM', { locale: ptBR }) }
+    catch { return dia }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="bg-white rounded-xl border p-6 animate-pulse h-28" />
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {cards.map((card) => (
-          <div key={card.label} className="bg-white rounded-xl border p-6">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-sm text-gray-500">{card.label}</span>
-              <card.icon className="w-5 h-5 text-gray-400" />
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{card.value}</p>
-          </div>
-        ))}
-      </div>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+
+      {/* Stat cards */}
       {stats && (
-        <div className="mt-6 bg-white rounded-xl border p-6">
-          <h2 className="text-lg font-semibold mb-2">Custo Total</h2>
-          <p className="text-2xl font-bold text-brand-600">${stats.total_cost_usd.toFixed(4)}</p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Total de Documentos', value: stats.total_documents, icon: FileText, color: 'blue' },
+            { label: 'Concluídos', value: stats.completed_documents, icon: CheckCircle, color: 'green' },
+            {
+              label: 'Score Médio',
+              value: stats.average_quality_score != null ? `${stats.average_quality_score}/100` : '—',
+              icon: Activity,
+              color: 'purple',
+            },
+            {
+              label: 'Custo Total',
+              value: fmtCost(stats.total_cost_usd),
+              icon: DollarSign,
+              color: 'amber',
+            },
+          ].map(card => (
+            <div key={card.label} className="bg-white rounded-xl border p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{card.label}</span>
+                <card.icon className="w-4 h-4 text-gray-400" />
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+              {card.label === 'Total de Documentos' && stats.processing_documents > 0 && (
+                <p className="text-xs text-yellow-600 mt-1 flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> {stats.processing_documents} em processamento
+                </p>
+              )}
+              {card.label === 'Custo Total' && stats.average_duration_ms && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Tempo médio: {fmtDuration(stats.average_duration_ms)}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       )}
+
+      {/* Charts row */}
+      {daily.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Docs per day */}
+          <div className="bg-white rounded-xl border p-5">
+            <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-brand-600" />
+              Documentos por dia (últimos 30 dias)
+            </h2>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={daily} barSize={12}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis
+                  dataKey="dia"
+                  tickFormatter={formatDia}
+                  tick={{ fontSize: 10 }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="concluidos" name="Concluídos" fill="#22c55e" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="total" name="Total" fill="#e2e8f0" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Cumulative cost */}
+          <div className="bg-white rounded-xl border p-5">
+            <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-brand-600" />
+              Custo acumulado (USD)
+            </h2>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={costSeries}>
+                <defs>
+                  <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#7c3aed" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis
+                  dataKey="dia"
+                  tickFormatter={formatDia}
+                  tick={{ fontSize: 10 }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  tickFormatter={v => `$${v.toFixed(3)}`}
+                />
+                <Tooltip
+                  formatter={(v: number) => [fmtCost(v), 'Custo acumulado']}
+                  labelFormatter={formatDia}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="custo_acumulado"
+                  stroke="#7c3aed"
+                  strokeWidth={2}
+                  fill="url(#costGrad)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom row: recent docs + agent stats */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent documents */}
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b">
+            <h2 className="text-sm font-semibold text-gray-700">Documentos Recentes</h2>
+            <Link to="/documents" className="text-xs text-brand-600 hover:underline flex items-center gap-0.5">
+              Ver todos <ChevronRight className="w-3 h-3" />
+            </Link>
+          </div>
+          {recent.length === 0 ? (
+            <div className="p-8 text-center">
+              <FileText className="w-10 h-10 text-gray-200 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">Nenhum documento ainda</p>
+              <Link
+                to="/documents/new"
+                className="mt-3 inline-block text-xs bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700"
+              >
+                Criar primeiro documento
+              </Link>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {recent.map(doc => (
+                <Link
+                  key={doc.id}
+                  to={`/documents/${doc.id}`}
+                  className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {doc.tema || DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id} ·{' '}
+                      {format(new Date(doc.created_at), 'dd/MM HH:mm', { locale: ptBR })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <StatusBadge status={doc.status} />
+                    {doc.quality_score != null && (
+                      <span className={`text-xs font-semibold ${
+                        doc.quality_score >= 80 ? 'text-green-600'
+                          : doc.quality_score >= 60 ? 'text-yellow-600'
+                          : 'text-red-600'
+                      }`}>
+                        {doc.quality_score}
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Agent stats */}
+        {agents.length > 0 && (
+          <div className="bg-white rounded-xl border overflow-hidden">
+            <div className="px-5 py-4 border-b">
+              <h2 className="text-sm font-semibold text-gray-700">Agentes LLM — Custo por Fase</h2>
+            </div>
+            <div className="divide-y">
+              {agents.slice(0, 8).map(a => (
+                <div key={a.agent_name} className="flex items-center gap-3 px-5 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800">{a.agent_name}</p>
+                    <p className="text-xs text-gray-400">
+                      {a.chamadas} chamada{a.chamadas !== 1 ? 's' : ''} ·{' '}
+                      {fmtDuration(a.tempo_medio_ms)} média
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono text-amber-700 flex-shrink-0">
+                    {fmtCost(a.custo_total)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
