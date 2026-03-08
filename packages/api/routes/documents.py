@@ -15,6 +15,7 @@ from packages.core.database.models.user import User
 from packages.core.module_loader import module_registry
 from packages.pipeline.orchestrator import PipelineOrchestrator
 from packages.api.schemas.documents import (
+    DocumentDetailResponse,
     DocumentCreate, DocumentResponse, DocumentListResponse,
 )
 from packages.modules.anamnesis.wizard import build_pipeline_context
@@ -102,7 +103,7 @@ async def list_documents(
     return DocumentListResponse(items=[DocumentResponse.from_orm(d) for d in docs], total=total)
 
 
-@router.get("/{document_id}", response_model=DocumentResponse)
+@router.get("/{document_id}", response_model=DocumentDetailResponse)
 async def get_document(
     document_id: str,
     user: User = Depends(get_current_user),
@@ -116,7 +117,7 @@ async def get_document(
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(404, "Documento não encontrado")
-    return DocumentResponse.from_orm(doc)
+    return DocumentDetailResponse.from_orm(doc)
 
 
 class ContentUpdate(BaseModel):

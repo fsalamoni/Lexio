@@ -56,7 +56,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     await db.refresh(user)
 
     token = create_access_token(user.id, user.organization_id, user.role)
-    return TokenResponse(access_token=token, user_id=str(user.id), role=user.role)
+    return TokenResponse(access_token=token, user_id=str(user.id), role=user.role, full_name=user.full_name or "")
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -69,11 +69,12 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(401, "Credenciais inválidas")
 
     token = create_access_token(user.id, user.organization_id, user.role)
-    return TokenResponse(access_token=token, user_id=str(user.id), role=user.role)
+    return TokenResponse(access_token=token, user_id=str(user.id), role=user.role, full_name=user.full_name or "")
 
 
 @router.get("/me")
-async def me(db: AsyncSession = Depends(get_db)):
-    from packages.core.auth.dependencies import get_current_user
-    # This would typically use Depends(get_current_user) but simplified here
-    return {"message": "Use Authorization header with Bearer token"}
+async def me_endpoint(
+    db: AsyncSession = Depends(get_db),
+):
+    """Placeholder — use /auth/login to obtain a token and pass it in Authorization header."""
+    return {"message": "Authenticated. Include Authorization: Bearer <token>"}
