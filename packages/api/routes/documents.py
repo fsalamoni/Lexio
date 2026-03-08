@@ -168,3 +168,46 @@ async def get_document_content(
         "document_type_id": doc.document_type_id,
         "tema": doc.tema,
     }
+
+
+@router.get("/{document_id}/executions")
+async def get_document_executions(
+    document_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List LLM agent executions for a document (cost, duration, tokens)."""
+    from packages.core.database.models.execution import Execution
+
+    # Verify document belongs to org
+    stmt = select(Document).where(
+        Document.id == uuid.UUID(document_id),
+        Document.organization_id == user.organization_id,
+    )
+    result = await db.execute(stmt)
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Documento não encontrado")
+
+    exec_stmt = (
+        select(Execution)
+        .where(Execution.document_id == uuid.UUID(document_id))
+        .order_by(Execution.created_at.asc())
+    )
+    exec_result = await db.execute(exec_stmt)
+    executions = exec_result.scalars().all()
+
+    return [
+        {
+            "id": str(e.id),
+            "agent_name": e.agent_name,
+            "phase": e.phase,
+            "model": e.model,
+            "tokens_in": e.tokens_in,
+            "tokens_out": e.tokens_out,
+            "cost_usd": e.cost_usd,
+            "duration_ms": e.duration_ms,
+            "created_at": e.created_at.isoformat() if e.created_at else "",
+        }
+        for e in executions
+    ]

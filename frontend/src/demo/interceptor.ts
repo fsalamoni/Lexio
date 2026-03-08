@@ -17,6 +17,10 @@ import {
   DEMO_SETTINGS,
   DEMO_THESES,
   DEMO_THESES_STATS,
+  DEMO_STATS_DAILY,
+  DEMO_STATS_AGENTS,
+  DEMO_STATS_RECENT,
+  DEMO_EXECUTIONS,
 } from './data'
 
 export const IS_DEMO     = import.meta.env.VITE_DEMO_MODE === 'true'
@@ -70,7 +74,13 @@ function routeDemo(url: string, method: string, body?: any): any {
   if (url.includes('/health')) return DEMO_HEALTH
 
   // Stats
-  if (url.includes('/stats')) return DEMO_STATS
+  if (url.includes('/stats/daily')) return DEMO_STATS_DAILY
+  if (url.includes('/stats/agents')) return DEMO_STATS_AGENTS
+  if (url.includes('/stats/recent')) return DEMO_STATS_RECENT
+  if (url.includes('/stats')) return { ...DEMO_STATS, average_duration_ms: 143100 }
+
+  // Executions for a document
+  if (url.match(/\/documents\/[^/]+\/executions$/) && method === 'get') return DEMO_EXECUTIONS
 
   // Documents
   if (url.match(/\/documents\/[^/]+$/) && method === 'get') {
