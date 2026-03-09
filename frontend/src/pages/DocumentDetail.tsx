@@ -105,7 +105,7 @@ export default function DocumentDetail() {
   useEffect(() => {
     if (!id || !doc || doc.status !== 'concluido') return
     api.get(`/documents/${id}/executions`)
-      .then(res => setExecutions(res.data))
+      .then(res => setExecutions(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
   }, [id, doc?.status])
 
