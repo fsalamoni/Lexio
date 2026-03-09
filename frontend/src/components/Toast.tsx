@@ -92,7 +92,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               role="alert"
               className={`
                 pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3
-                shadow-lg shadow-black/5 animate-in slide-in-from-right-5
+                shadow-lg shadow-black/5 toast-enter
                 ${STYLES[toast.type]}
               `}
             >

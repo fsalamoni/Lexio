@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff } from 'lucide-react'
 import api from '../api/client'
@@ -87,7 +87,17 @@ export default function DocumentDetail() {
 
   useEffect(() => {
     fetchDoc()
-    const interval = setInterval(fetchDoc, 5000)
+    // Stop polling once the document is no longer processing
+    const interval = setInterval(() => {
+      setDoc(d => {
+        if (d && d.status !== 'processando') {
+          clearInterval(interval)
+          return d
+        }
+        fetchDoc()
+        return d
+      })
+    }, 5000)
     return () => clearInterval(interval)
   }, [fetchDoc])
 
@@ -120,8 +130,18 @@ export default function DocumentDetail() {
     }
   }
 
-  if (loading) return <p className="text-gray-500">Carregando...</p>
-  if (!doc) return <p className="text-red-500">Documento não encontrado</p>
+  if (loading) return (
+    <div className="max-w-4xl space-y-6">
+      <div className="h-8 skeleton w-48" />
+      <div className="h-40 skeleton rounded-xl" />
+      <div className="h-32 skeleton rounded-xl" />
+    </div>
+  )
+  if (!doc) return (
+    <div className="text-center py-20 text-gray-500">
+      <p>Documento não encontrado.</p>
+    </div>
+  )
 
   const docLabel = DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id
   const totalCost = executions.reduce((sum, e) => sum + (e.cost_usd || 0), 0)
@@ -242,7 +262,7 @@ export default function DocumentDetail() {
             <h2 className="text-sm font-medium text-gray-700">Pré-visualização DOCX</h2>
           </div>
           <div
-            className="p-8 prose prose-sm max-w-none"
+            className="p-8 docx-preview text-sm"
             dangerouslySetInnerHTML={{ __html: docxHtml }}
           />
         </div>

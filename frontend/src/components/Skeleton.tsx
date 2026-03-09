@@ -7,7 +7,7 @@ interface SkeletonProps {
 
 export function Skeleton({ className }: SkeletonProps) {
   return (
-    <div className={clsx('animate-pulse bg-gray-200 rounded', className)} />
+    <div className={clsx('skeleton', className)} />
   )
 }
 

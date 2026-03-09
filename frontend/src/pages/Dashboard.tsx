@@ -12,6 +12,8 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
 import StatusBadge from '../components/StatusBadge'
+import { useToast } from '../components/Toast'
+import { SkeletonCard } from '../components/Skeleton'
 
 interface Stats {
   total_documents: number
@@ -86,14 +88,15 @@ export default function Dashboard() {
   const [agents, setAgents] = useState<AgentStat[]>([])
   const [recent, setRecent] = useState<RecentDoc[]>([])
   const [loading, setLoading] = useState(true)
+  const toast = useToast()
 
   useEffect(() => {
-    const p1 = api.get('/stats').then(r => setStats(r.data)).catch(() => {})
+    const p1 = api.get('/stats').then(r => setStats(r.data)).catch(() => toast.error('Erro ao carregar estatísticas'))
     const p2 = api.get('/stats/daily').then(r => setDaily(r.data)).catch(() => {})
     const p3 = api.get('/stats/agents').then(r => setAgents(r.data)).catch(() => {})
     const p4 = api.get('/stats/recent').then(r => setRecent(r.data)).catch(() => {})
     Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
-  }, [])
+  }, []) // eslint-disable-line
 
   // Build cumulative cost series
   const costSeries = daily.reduce<{ dia: string; custo_acumulado: number }[]>((acc, d) => {
@@ -111,10 +114,8 @@ export default function Dashboard() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="bg-white rounded-xl border p-6 animate-pulse h-28" />
-          ))}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       </div>
     )

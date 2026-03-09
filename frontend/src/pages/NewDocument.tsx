@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, FileText } from 'lucide-react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
+import { Skeleton } from '../components/Skeleton'
 
 interface DocType {
   id: string
@@ -38,12 +39,17 @@ export default function NewDocument() {
   const [contextData, setContextData] = useState<Record<string, any>>({})
   const [showContext, setShowContext] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [loadingTypes, setLoadingTypes] = useState(true)
   const navigate = useNavigate()
   const toast = useToast()
 
+  const MAX_REQUEST = 2000
+
   useEffect(() => {
-    api.get('/document-types').then((res) => setDocTypes(res.data)).catch(() => {})
-    api.get('/legal-areas').then((res) => setLegalAreas(res.data)).catch(() => {})
+    Promise.all([
+      api.get('/document-types').then(res => setDocTypes(res.data)),
+      api.get('/legal-areas').then(res => setLegalAreas(res.data)),
+    ]).catch(() => {}).finally(() => setLoadingTypes(false))
   }, [])
 
   // Load context fields when document type changes
@@ -89,23 +95,37 @@ export default function NewDocument() {
 
   return (
     <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Novo Documento</h1>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0">
+          <FileText className="w-5 h-5 text-brand-600" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Novo Documento</h1>
+          <p className="text-sm text-gray-500">Preencha os campos abaixo para iniciar a geração</p>
+        </div>
+      </div>
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Main form */}
-        <div className="bg-white rounded-xl border p-6 space-y-6">
+        <div className="bg-white rounded-xl border shadow-sm p-6 space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Documento</label>
-            <select
-              value={selectedType}
-              onChange={(e) => { setSelectedType(e.target.value); setSelectedTemplate(''); }}
-              className="w-full border rounded-lg px-4 py-2"
-              required
-            >
-              <option value="">Selecione...</option>
-              {docTypes.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Tipo de Documento <span className="text-red-500">*</span>
+            </label>
+            {loadingTypes ? (
+              <Skeleton className="h-10 w-full rounded-lg" />
+            ) : (
+              <select
+                value={selectedType}
+                onChange={(e) => { setSelectedType(e.target.value); setSelectedTemplate(''); }}
+                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-white text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                required
+              >
+                <option value="">Selecione o tipo...</option>
+                {docTypes.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           {currentType && currentType.templates.length > 0 && (
@@ -149,15 +169,25 @@ export default function NewDocument() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Solicitação</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Solicitação <span className="text-red-500">*</span>
+              </label>
+              <span className={`text-xs tabular-nums ${request.length > MAX_REQUEST * 0.9 ? 'text-amber-600' : 'text-gray-400'}`}>
+                {request.length}/{MAX_REQUEST}
+              </span>
+            </div>
             <textarea
               value={request}
-              onChange={(e) => setRequest(e.target.value)}
+              onChange={(e) => setRequest(e.target.value.slice(0, MAX_REQUEST))}
               rows={6}
-              className="w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-brand-500"
+              className="w-full border border-gray-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm resize-y"
               placeholder="Descreva a questão jurídica que deseja analisar..."
               required
             />
+            <p className="text-xs text-gray-400 mt-1">
+              Seja específico — inclua fatos, legislação aplicável e o resultado esperado.
+            </p>
           </div>
         </div>
 
@@ -236,10 +266,18 @@ export default function NewDocument() {
 
         <button
           type="submit"
-          disabled={loading || !selectedType || !request.trim()}
-          className="w-full bg-brand-600 text-white py-3 rounded-lg hover:bg-brand-700 disabled:opacity-50 font-medium"
+          disabled={loading || loadingTypes || !selectedType || !request.trim()}
+          className="w-full bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 font-semibold text-sm transition-colors shadow-sm disabled:cursor-not-allowed"
         >
-          {loading ? 'Criando...' : 'Gerar Documento'}
+          {loading ? (
+            <span className="inline-flex items-center gap-2">
+              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              Gerando documento...
+            </span>
+          ) : 'Gerar Documento com IA'}
         </button>
       </form>
     </div>

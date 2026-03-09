@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw } from 'lucide-react'
 import api from '../api/client'
+import { useToast } from '../components/Toast'
 
 interface UploadedFile {
   id: string
@@ -25,6 +26,7 @@ export default function Upload() {
   const [history, setHistory] = useState<UploadedFile[]>([])
   const [localFiles, setLocalFiles] = useState<{ name: string; status: 'uploading' | 'error' }[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
+  const toast = useToast()
 
   const fetchHistory = () => {
     api.get('/uploads').then(res => setHistory(res.data.items || [])).catch(() => {})
@@ -49,10 +51,11 @@ export default function Upload() {
         await api.post('/uploads', formData)
         setLocalFiles(prev => prev.filter(f => f.name !== file.name))
         fetchHistory()
-      } catch {
+      } catch (err: any) {
         setLocalFiles(prev =>
           prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
         )
+        toast.error(`Erro ao enviar ${file.name}`, err?.response?.data?.detail)
       }
     }
     setUploading(false)

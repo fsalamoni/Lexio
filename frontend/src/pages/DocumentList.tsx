@@ -5,6 +5,8 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
 import StatusBadge from '../components/StatusBadge'
+import { useToast } from '../components/Toast'
+import { SkeletonRow } from '../components/Skeleton'
 
 interface Document {
   id: string
@@ -33,6 +35,7 @@ export default function DocumentList() {
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
+  const toast = useToast()
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -49,9 +52,9 @@ export default function DocumentList() {
         setDocs(res.data.items)
         setTotal(res.data.total)
       })
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar documentos'))
       .finally(() => setLoading(false))
-  }, [page, statusFilter])
+  }, [page, statusFilter]) // eslint-disable-line
 
   const handleStatusFilter = (s: string) => {
     setStatusFilter(prev => prev === s ? '' : s)
@@ -97,49 +100,78 @@ export default function DocumentList() {
       </div>
 
       {loading ? (
-        <p className="text-gray-500">Carregando...</p>
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Tema</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Score</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">Data</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
+            </tbody>
+          </table>
+        </div>
       ) : docs.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-xl border">
-          <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500">Nenhum documento encontrado</p>
+        <div className="text-center py-16 bg-white rounded-xl border">
+          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <FileText className="w-8 h-8 text-gray-300" />
+          </div>
+          <p className="font-medium text-gray-700 mb-1">Nenhum documento encontrado</p>
+          <p className="text-sm text-gray-400">
+            {statusFilter ? 'Nenhum documento com esse status.' : 'Crie seu primeiro documento usando o botão acima.'}
+          </p>
         </div>
       ) : (
         <>
+          {/* Mobile-scrollable table wrapper */}
           <div className="bg-white rounded-xl border overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tema</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {docs.map((doc) => (
-                  <tr key={doc.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <Link to={`/documents/${doc.id}`} className="text-brand-600 hover:underline font-medium">
-                        {DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id}
-                      </Link>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-700 max-w-xs truncate">{doc.tema || '—'}</td>
-                    <td className="px-6 py-4"><StatusBadge status={doc.status} /></td>
-                    <td className="px-6 py-4 text-sm">
-                      {doc.quality_score != null ? (
-                        <span className={`font-medium ${doc.quality_score >= 80 ? 'text-green-600' : doc.quality_score >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
-                          {doc.quality_score}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
-                      {format(new Date(doc.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px]">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Tipo</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Tema</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Score</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Data</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {docs.map((doc) => (
+                    <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <Link to={`/documents/${doc.id}`} className="text-brand-600 hover:text-brand-800 hover:underline font-medium text-sm">
+                          {DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id}
+                        </Link>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-700 max-w-xs">
+                        <span className="line-clamp-1">{doc.tema || <span className="text-gray-400">—</span>}</span>
+                      </td>
+                      <td className="px-6 py-4"><StatusBadge status={doc.status} /></td>
+                      <td className="px-6 py-4 text-sm">
+                        {doc.quality_score != null ? (
+                          <span className={`font-semibold ${
+                            doc.quality_score >= 80 ? 'text-green-600'
+                            : doc.quality_score >= 60 ? 'text-amber-600'
+                            : 'text-red-600'
+                          }`}>
+                            {doc.quality_score}/100
+                          </span>
+                        ) : <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                        {format(new Date(doc.created_at), "dd/MM/yy HH:mm", { locale: ptBR })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Pagination */}
