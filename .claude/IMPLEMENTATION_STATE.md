@@ -2,6 +2,13 @@
 ## Atualizado: 2026-03-09
 
 ### Estado Atual (Concluído)
+- ✅ demo/interceptor.ts: /documents/{id}/content (GET + PUT) routes added
+- ✅ demo/data.ts: typo fix (tokens_out_meio → tokens_out_medio)
+- ✅ index.css: TipTap editor prose styles (.ProseMirror) — replaces missing @tailwindcss/typography
+- ✅ RichTextEditor: onWordCount prop, status bar (keystrokes hint), no broken prose class
+- ✅ DocumentEditor: word count display, skeleton loading, Download DOCX button in header, success toast on save
+- ✅ Login: spinner on submit button, font-semibold improvements
+
 - ✅ Toast system (Toast.tsx) — useToast() hook, auto-dismiss, slide-in
 - ✅ ErrorBoundary (ErrorBoundary.tsx)
 - ✅ Skeleton loaders (Skeleton.tsx) — SkeletonRow/Card/Item

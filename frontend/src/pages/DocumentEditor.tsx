@@ -1,9 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Save, ArrowLeft, FileText, Check } from 'lucide-react'
+import { Save, ArrowLeft, FileText, Check, Download } from 'lucide-react'
 import api from '../api/client'
 import RichTextEditor from '../components/RichTextEditor'
 import { useToast } from '../components/Toast'
+
+const DOCTYPE_LABELS: Record<string, string> = {
+  parecer: 'Parecer',
+  peticao_inicial: 'Petição Inicial',
+  contestacao: 'Contestação',
+  recurso: 'Recurso',
+  sentenca: 'Sentença',
+  acao_civil_publica: 'Ação Civil Pública',
+}
 
 export default function DocumentEditor() {
   const { id } = useParams<{ id: string }>()
@@ -12,11 +21,14 @@ export default function DocumentEditor() {
   const [docInfo, setDocInfo] = useState<{
     document_type_id: string
     tema: string | null
+    docx_path?: string | null
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
+  const [wordCount, setWordCount] = useState(0)
+  const [charCount, setCharCount] = useState(0)
   const toast = useToast()
 
   // Warn before navigating away with unsaved changes
@@ -32,25 +44,33 @@ export default function DocumentEditor() {
 
   useEffect(() => {
     if (!id) return
-    api.get(`/documents/${id}/content`)
-      .then(res => {
-        // Convert plain text to basic HTML paragraphs if needed
-        const raw = res.data.content || ''
+    Promise.all([
+      api.get(`/documents/${id}/content`),
+      api.get(`/documents/${id}`),
+    ])
+      .then(([contentRes, docRes]) => {
+        const raw = contentRes.data.content || ''
         const html = raw.includes('<') ? raw : textToHtml(raw)
         setContent(html)
         setDocInfo({
-          document_type_id: res.data.document_type_id,
-          tema: res.data.tema,
+          document_type_id: contentRes.data.document_type_id || docRes.data.document_type_id,
+          tema: contentRes.data.tema || docRes.data.tema,
+          docx_path: docRes.data.docx_path,
         })
       })
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar documento'))
       .finally(() => setLoading(false))
-  }, [id])
+  }, [id]) // eslint-disable-line
 
   const handleChange = useCallback((html: string) => {
     setContent(html)
     setHasChanges(true)
     setSaved(false)
+  }, [])
+
+  const handleWordCount = useCallback((words: number, chars: number) => {
+    setWordCount(words)
+    setCharCount(chars)
   }, [])
 
   const handleSave = async () => {
@@ -60,7 +80,8 @@ export default function DocumentEditor() {
       await api.put(`/documents/${id}/content`, { content })
       setSaved(true)
       setHasChanges(false)
-      setTimeout(() => setSaved(false), 2000)
+      setTimeout(() => setSaved(false), 2500)
+      toast.success('Documento salvo com sucesso')
     } catch (err: any) {
       toast.error('Erro ao salvar documento', err?.response?.data?.detail || err?.message)
     } finally {
@@ -68,46 +89,74 @@ export default function DocumentEditor() {
     }
   }
 
-  if (loading) return <p className="text-gray-500">Carregando editor...</p>
+  if (loading) {
+    return (
+      <div className="max-w-4xl space-y-4">
+        <div className="flex items-center gap-4">
+          <div className="w-9 h-9 skeleton rounded-lg" />
+          <div className="space-y-2">
+            <div className="h-5 skeleton w-40" />
+            <div className="h-3 skeleton w-56" />
+          </div>
+        </div>
+        <div className="h-[500px] skeleton rounded-xl" />
+      </div>
+    )
+  }
+
+  const docLabel = DOCTYPE_LABELS[docInfo?.document_type_id || ''] || docInfo?.document_type_id || 'Documento'
 
   return (
     <div className="max-w-4xl">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
+      <div className="flex items-start justify-between mb-6 gap-4">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => navigate(`/documents/${id}`)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Voltar ao documento"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
           >
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
-          <div className="flex items-center gap-3">
-            <FileText className="w-6 h-6 text-brand-600" />
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">
-                Editor de Documento
-              </h1>
-              <p className="text-sm text-gray-500">
-                {docInfo?.tema || docInfo?.document_type_id || 'Documento'}
-              </p>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+              <FileText className="w-4 h-4 text-brand-600" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold text-gray-900 leading-tight">{docLabel}</h1>
+              <p className="text-sm text-gray-500 truncate">{docInfo?.tema || 'Sem título'}</p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Save status indicator */}
           {saved && (
-            <span className="flex items-center gap-1 text-sm text-green-600">
-              <Check className="w-4 h-4" />
-              Salvo
+            <span className="flex items-center gap-1 text-sm text-green-600 font-medium">
+              <Check className="w-4 h-4" /> Salvo
             </span>
           )}
           {hasChanges && !saved && (
-            <span className="text-sm text-amber-600">Alterações não salvas</span>
+            <span className="text-sm text-amber-500 font-medium">Não salvo</span>
           )}
+
+          {/* Download button */}
+          {docInfo?.docx_path && (
+            <a
+              href={`/api/v1/documents/${id}/download`}
+              title="Baixar DOCX"
+              className="inline-flex items-center gap-2 px-3 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">DOCX</span>
+            </a>
+          )}
+
+          {/* Save button */}
           <button
             onClick={handleSave}
             disabled={saving || !hasChanges}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors text-sm font-medium disabled:cursor-not-allowed"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Salvando...' : 'Salvar'}
@@ -115,17 +164,28 @@ export default function DocumentEditor() {
         </div>
       </div>
 
+      {/* Word count bar */}
+      {wordCount > 0 && (
+        <div className="flex items-center gap-4 text-xs text-gray-400 mb-3 px-1">
+          <span>{wordCount.toLocaleString('pt-BR')} palavras</span>
+          <span>·</span>
+          <span>{charCount.toLocaleString('pt-BR')} caracteres</span>
+          {wordCount > 0 && (
+            <>
+              <span>·</span>
+              <span>~{Math.ceil(wordCount / 200)} min de leitura</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Editor */}
       <RichTextEditor
         content={content}
         onChange={handleChange}
+        onWordCount={handleWordCount}
         placeholder="O conteúdo do documento aparecerá aqui..."
       />
-
-      {/* Keyboard shortcut hint */}
-      <p className="text-xs text-gray-400 mt-3 text-right">
-        Ctrl+B negrito · Ctrl+I itálico · Ctrl+U sublinhado
-      </p>
     </div>
   )
 }

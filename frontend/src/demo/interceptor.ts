@@ -82,6 +82,18 @@ function routeDemo(url: string, method: string, body?: any): any {
   // Executions for a document
   if (url.match(/\/documents\/[^/]+\/executions$/) && method === 'get') return DEMO_EXECUTIONS
 
+  // Document content (editor)
+  if (url.match(/\/documents\/[^/]+\/content$/) && method === 'get') {
+    const id = url.split('/').slice(-2)[0]
+    const doc = DEMO_DOCUMENTS.find(d => d.id === id) || DEMO_DOCUMENTS[0]
+    return {
+      content: `<h1>${doc.document_type_id.toUpperCase()} — ${doc.tema || 'Documento Demonstração'}</h1>\n<p>Este é o conteúdo de demonstração do documento. Na versão com backend completo, o texto gerado pelos agentes de IA será exibido aqui no editor.</p>\n<h2>Fundamentação Jurídica</h2>\n<p>A análise jurídica é elaborada por 9 agentes especializados em sequência: triagem → moderador → jurista → advogado do diabo → revisão → fact-checker → redator → revisor.</p>\n<h2>Conclusão</h2>\n<p>Para acessar documentos reais, configure o ambiente de produção com Docker Compose e gere um novo documento através do formulário.</p>`,
+      document_type_id: doc.document_type_id,
+      tema: doc.tema,
+    }
+  }
+  if (url.match(/\/documents\/[^/]+\/content$/) && method === 'put') return { ok: true }
+
   // Documents
   if (url.match(/\/documents\/[^/]+$/) && method === 'get') {
     const id = url.split('/').pop()

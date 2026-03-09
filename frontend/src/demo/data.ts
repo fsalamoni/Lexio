@@ -303,7 +303,7 @@ export const DEMO_STATS_AGENTS = [
   { agent_name: 'jurista', chamadas: 42, tokens_in_medio: 7600, tokens_out_medio: 2800, custo_total: 2.04, tempo_medio_ms: 18700 },
   { agent_name: 'jurista_v2', chamadas: 42, tokens_in_medio: 6200, tokens_out_medio: 2400, custo_total: 1.68, tempo_medio_ms: 15900 },
   { agent_name: 'fact_checker', chamadas: 42, tokens_in_medio: 5400, tokens_out_medio: 1800, custo_total: 1.18, tempo_medio_ms: 12300 },
-  { agent_name: 'moderador_plano', chamadas: 42, tokens_in_medio: 4800, tokens_out_meio: 1600, custo_total: 0.84, tempo_medio_ms: 10400 },
+  { agent_name: 'moderador_plano', chamadas: 42, tokens_in_medio: 4800, tokens_out_medio: 1600, custo_total: 0.84, tempo_medio_ms: 10400 },
   { agent_name: 'advogado_diabo', chamadas: 42, tokens_in_medio: 4600, tokens_out_medio: 1500, custo_total: 0.79, tempo_medio_ms: 9800 },
   { agent_name: 'triagem', chamadas: 42, tokens_in_medio: 280, tokens_out_medio: 120, custo_total: 0.04, tempo_medio_ms: 1200 },
 ]
