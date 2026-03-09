@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.auth import create_access_token, hash_password, verify_password
+from packages.core.auth.dependencies import get_current_user
 from packages.core.database.engine import async_session
 from packages.core.database.models.user import User
 from packages.core.database.models.organization import Organization
@@ -73,8 +74,15 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/me")
-async def me_endpoint(
-    db: AsyncSession = Depends(get_db),
-):
-    """Placeholder — use /auth/login to obtain a token and pass it in Authorization header."""
-    return {"message": "Authenticated. Include Authorization: Bearer <token>"}
+async def me_endpoint(user: User = Depends(get_current_user)):
+    """Return authenticated user profile."""
+    return {
+        "user_id": str(user.id),
+        "email": user.email,
+        "full_name": user.full_name,
+        "title": user.title,
+        "role": user.role,
+        "organization_id": str(user.organization_id),
+        "is_active": user.is_active,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+    }
