@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { ToastProvider } from './components/Toast'
 import { IS_DEMO } from './demo/interceptor'
 import Layout from './components/Layout'
 import Login from './pages/auth/Login'
@@ -66,7 +67,9 @@ export default function App() {
   return (
     <BrowserRouter basename={BASENAME}>
       <AuthProvider>
-        <AppRoutes />
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   )
