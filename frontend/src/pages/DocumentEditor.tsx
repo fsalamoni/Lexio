@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Save, ArrowLeft, FileText, Check } from 'lucide-react'
 import api from '../api/client'
 import RichTextEditor from '../components/RichTextEditor'
+import { useToast } from '../components/Toast'
 
 export default function DocumentEditor() {
   const { id } = useParams<{ id: string }>()
@@ -16,6 +17,18 @@ export default function DocumentEditor() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
+  const toast = useToast()
+
+  // Warn before navigating away with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!hasChanges) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [hasChanges])
 
   useEffect(() => {
     if (!id) return
@@ -48,8 +61,8 @@ export default function DocumentEditor() {
       setSaved(true)
       setHasChanges(false)
       setTimeout(() => setSaved(false), 2000)
-    } catch {
-      alert('Erro ao salvar documento')
+    } catch (err: any) {
+      toast.error('Erro ao salvar documento', err?.response?.data?.detail || err?.message)
     } finally {
       setSaving(false)
     }

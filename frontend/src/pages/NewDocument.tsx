@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../api/client'
+import { useToast } from '../components/Toast'
 
 interface DocType {
   id: string
@@ -38,6 +39,7 @@ export default function NewDocument() {
   const [showContext, setShowContext] = useState(false)
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+  const toast = useToast()
 
   useEffect(() => {
     api.get('/document-types').then((res) => setDocTypes(res.data)).catch(() => {})
@@ -78,8 +80,8 @@ export default function NewDocument() {
         request_context: Object.keys(contextData).length > 0 ? contextData : null,
       })
       navigate(`/documents/${res.data.id}`)
-    } catch {
-      alert('Erro ao criar documento')
+    } catch (err: any) {
+      toast.error('Erro ao criar documento', err?.response?.data?.detail || err?.message)
     } finally {
       setLoading(false)
     }

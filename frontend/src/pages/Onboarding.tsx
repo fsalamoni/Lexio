@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Scale, ChevronRight, ChevronLeft, Check } from 'lucide-react'
 import api from '../api/client'
+import { useToast } from '../components/Toast'
 
 interface WizardStep {
   step: number
@@ -27,6 +28,7 @@ export default function Onboarding() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const navigate = useNavigate()
+  const toast = useToast()
 
   useEffect(() => {
     api.get('/anamnesis/wizard')
@@ -74,8 +76,8 @@ export default function Onboarding() {
     try {
       await api.post('/anamnesis/onboarding', data)
       navigate('/')
-    } catch {
-      alert('Erro ao salvar perfil')
+    } catch (err: any) {
+      toast.error('Erro ao salvar perfil', err?.response?.data?.detail || err?.message)
     } finally {
       setSaving(false)
     }
