@@ -83,8 +83,8 @@ export default function ThesisBank() {
     setLoading(true)
     api.get(`/theses?${params.toString()}`)
       .then(res => {
-        setTheses(res.data.items)
-        setTotal(res.data.total)
+        setTheses(Array.isArray(res.data?.items) ? res.data.items : [])
+        setTotal(typeof res.data?.total === 'number' ? res.data.total : 0)
       })
       .catch(() => toast.error('Erro ao carregar teses'))
       .finally(() => setLoading(false))
