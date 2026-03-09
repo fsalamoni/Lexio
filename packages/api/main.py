@@ -3,16 +3,20 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from packages.core.config import settings
 from packages.core.database.engine import async_engine, async_session
 from packages.core.database.base import Base
 from packages.core.module_loader import discover_and_load_modules, module_registry
 from packages.core.websocket import progress_manager
+from packages.api.middleware.rate_limit import limiter
 
 from packages.api.routes import auth, documents, document_types, legal_areas, uploads, stats, health, webhooks, admin, anamnesis, thesis_bank
 
@@ -69,6 +73,11 @@ app = FastAPI(
     description="Lexio — SaaS de produção jurídica com IA",
     lifespan=lifespan,
 )
+
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # CORS
 origins = [o.strip() for o in settings.cors_origins.split(",")]

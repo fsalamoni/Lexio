@@ -29,3 +29,6 @@ python-dateutil==2.9.0
 
 # PDF text extraction
 pypdf==5.1.0
+
+# Rate limiting
+slowapi==0.1.9
