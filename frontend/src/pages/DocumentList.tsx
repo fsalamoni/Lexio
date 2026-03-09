@@ -49,8 +49,8 @@ export default function DocumentList() {
 
     api.get(`/documents?${params}`)
       .then(res => {
-        setDocs(res.data.items)
-        setTotal(res.data.total)
+        setDocs(Array.isArray(res.data?.items) ? res.data.items : [])
+        setTotal(typeof res.data?.total === 'number' ? res.data.total : 0)
       })
       .catch(() => toast.error('Erro ao carregar documentos'))
       .finally(() => setLoading(false))

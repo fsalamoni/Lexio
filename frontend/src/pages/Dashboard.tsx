@@ -56,7 +56,8 @@ const DOCTYPE_LABELS: Record<string, string> = {
   acao_civil_publica: 'ACP',
 }
 
-function fmtCost(usd: number) {
+function fmtCost(usd: number | null | undefined) {
+  if (usd == null || isNaN(usd)) return '—'
   return usd < 0.001 ? `$${usd.toFixed(5)}` : `$${usd.toFixed(4)}`
 }
 
@@ -91,17 +92,19 @@ export default function Dashboard() {
   const toast = useToast()
 
   useEffect(() => {
-    const p1 = api.get('/stats').then(r => setStats(r.data)).catch(() => toast.error('Erro ao carregar estatísticas'))
-    const p2 = api.get('/stats/daily').then(r => setDaily(r.data)).catch(() => {})
-    const p3 = api.get('/stats/agents').then(r => setAgents(r.data)).catch(() => {})
-    const p4 = api.get('/stats/recent').then(r => setRecent(r.data)).catch(() => {})
+    const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
+    const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
+    const p2 = api.get('/stats/daily').then(r => setDaily(toArr(r.data))).catch(() => {})
+    const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => {})
+    const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => {})
     Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
   }, []) // eslint-disable-line
 
-  // Build cumulative cost series
+  // Build cumulative cost series (guard against missing custo field)
   const costSeries = daily.reduce<{ dia: string; custo_acumulado: number }[]>((acc, d) => {
     const prev = acc.length > 0 ? acc[acc.length - 1].custo_acumulado : 0
-    acc.push({ dia: d.dia, custo_acumulado: +(prev + d.custo).toFixed(5) })
+    const custo = typeof d.custo === 'number' ? d.custo : 0
+    acc.push({ dia: d.dia, custo_acumulado: +(prev + custo).toFixed(5) })
     return acc
   }, [])
 
