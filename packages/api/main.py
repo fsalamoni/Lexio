@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from packages.core.config import settings
-from packages.core.database.engine import async_engine
+from packages.core.database.engine import async_engine, async_session
 from packages.core.database.base import Base
 from packages.core.module_loader import discover_and_load_modules, module_registry
 from packages.core.websocket import progress_manager
@@ -111,7 +111,6 @@ async def ws_document_progress(ws: WebSocket, document_id: str):
 @app.get("/api/v1/documents/{document_id}/download")
 async def download_docx(document_id: str):
     from sqlalchemy import select
-    from packages.core.database.engine import async_session
     from packages.core.database.models.document import Document
     import uuid
 

@@ -286,3 +286,46 @@ export const DEMO_THESES_STATS = {
     { id: 't004', title: 'Prequestionamento implícito e Tema 988/STJ', usage_count: 9 },
   ],
 }
+
+// ── Daily stats (last 14 days) ─────────────────────────────────────────────
+export const DEMO_STATS_DAILY = Array.from({ length: 14 }, (_, i) => {
+  const d = new Date()
+  d.setDate(d.getDate() - (13 - i))
+  const dia = d.toISOString().split('T')[0]
+  const total = Math.floor(Math.random() * 5) + 1
+  return { dia, total, concluidos: total - (Math.random() > 0.8 ? 1 : 0), custo: +(Math.random() * 0.4).toFixed(4) }
+})
+
+// ── Agent stats ────────────────────────────────────────────────────────────
+export const DEMO_STATS_AGENTS = [
+  { agent_name: 'redator', chamadas: 42, tokens_in_medio: 9800, tokens_out_medio: 6200, custo_total: 4.12, tempo_medio_ms: 34200 },
+  { agent_name: 'revisor', chamadas: 42, tokens_in_medio: 8100, tokens_out_medio: 5800, custo_total: 3.78, tempo_medio_ms: 28500 },
+  { agent_name: 'jurista', chamadas: 42, tokens_in_medio: 7600, tokens_out_medio: 2800, custo_total: 2.04, tempo_medio_ms: 18700 },
+  { agent_name: 'jurista_v2', chamadas: 42, tokens_in_medio: 6200, tokens_out_medio: 2400, custo_total: 1.68, tempo_medio_ms: 15900 },
+  { agent_name: 'fact_checker', chamadas: 42, tokens_in_medio: 5400, tokens_out_medio: 1800, custo_total: 1.18, tempo_medio_ms: 12300 },
+  { agent_name: 'moderador_plano', chamadas: 42, tokens_in_medio: 4800, tokens_out_medio: 1600, custo_total: 0.84, tempo_medio_ms: 10400 },
+  { agent_name: 'advogado_diabo', chamadas: 42, tokens_in_medio: 4600, tokens_out_medio: 1500, custo_total: 0.79, tempo_medio_ms: 9800 },
+  { agent_name: 'triagem', chamadas: 42, tokens_in_medio: 280, tokens_out_medio: 120, custo_total: 0.04, tempo_medio_ms: 1200 },
+]
+
+// ── Recent docs ─────────────────────────────────────────────────────────────
+export const DEMO_STATS_RECENT = [
+  { id: 'doc-1', document_type_id: 'parecer', tema: 'Nepotismo cruzado no serviço público municipal', status: 'concluido', quality_score: 95, created_at: new Date(Date.now() - 2e6).toISOString() },
+  { id: 'doc-2', document_type_id: 'parecer', tema: 'Improbidade administrativa em contrato de locação', status: 'concluido', quality_score: 91, created_at: new Date(Date.now() - 8e6).toISOString() },
+  { id: 'doc-3', document_type_id: 'peticao_inicial', tema: 'Irregularidades em licitação — Lei 14.133/21', status: 'concluido', quality_score: 88, created_at: new Date(Date.now() - 2e7).toISOString() },
+  { id: 'doc-4', document_type_id: 'contestacao', tema: 'Defesa em ação de improbidade', status: 'processando', quality_score: null, created_at: new Date(Date.now() - 3e5).toISOString() },
+  { id: 'doc-5', document_type_id: 'recurso', tema: 'Apelação — contrato irregular de serviços', status: 'concluido', quality_score: 82, created_at: new Date(Date.now() - 4e7).toISOString() },
+]
+
+// ── Executions for demo doc ─────────────────────────────────────────────────
+export const DEMO_EXECUTIONS = [
+  { id: 'ex-1', agent_name: 'triagem', phase: 'triagem', model: 'anthropic/claude-3.5-haiku', tokens_in: 280, tokens_out: 118, cost_usd: 0.0009, duration_ms: 1240, created_at: new Date(Date.now() - 60e4).toISOString() },
+  { id: 'ex-2', agent_name: 'moderador_agenda', phase: 'deliberacao', model: 'anthropic/claude-sonnet-4', tokens_in: 6200, tokens_out: 1840, cost_usd: 0.0461, duration_ms: 12800, created_at: new Date(Date.now() - 58e4).toISOString() },
+  { id: 'ex-3', agent_name: 'jurista', phase: 'deliberacao', model: 'anthropic/claude-sonnet-4', tokens_in: 7600, tokens_out: 2780, cost_usd: 0.0645, duration_ms: 18700, created_at: new Date(Date.now() - 45e4).toISOString() },
+  { id: 'ex-4', agent_name: 'advogado_diabo', phase: 'deliberacao', model: 'anthropic/claude-sonnet-4', tokens_in: 4600, tokens_out: 1480, cost_usd: 0.0360, duration_ms: 9800, created_at: new Date(Date.now() - 36e4).toISOString() },
+  { id: 'ex-5', agent_name: 'jurista_v2', phase: 'deliberacao', model: 'anthropic/claude-sonnet-4', tokens_in: 6200, tokens_out: 2400, cost_usd: 0.0546, duration_ms: 15900, created_at: new Date(Date.now() - 26e4).toISOString() },
+  { id: 'ex-6', agent_name: 'fact_checker', phase: 'verificacao', model: 'anthropic/claude-sonnet-4', tokens_in: 5400, tokens_out: 1800, cost_usd: 0.0432, duration_ms: 12300, created_at: new Date(Date.now() - 20e4).toISOString() },
+  { id: 'ex-7', agent_name: 'moderador_plano', phase: 'planejamento', model: 'anthropic/claude-sonnet-4', tokens_in: 4800, tokens_out: 1600, cost_usd: 0.0384, duration_ms: 10400, created_at: new Date(Date.now() - 14e4).toISOString() },
+  { id: 'ex-8', agent_name: 'redator', phase: 'redacao', model: 'anthropic/claude-sonnet-4', tokens_in: 9800, tokens_out: 6200, cost_usd: 0.1224, duration_ms: 34200, created_at: new Date(Date.now() - 8e4).toISOString() },
+  { id: 'ex-9', agent_name: 'revisor', phase: 'revisao', model: 'anthropic/claude-sonnet-4', tokens_in: 8100, tokens_out: 5800, cost_usd: 0.1113, duration_ms: 28500, created_at: new Date(Date.now() - 2e4).toISOString() },
+]
