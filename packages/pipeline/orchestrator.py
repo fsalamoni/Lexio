@@ -4,6 +4,7 @@ Loads pipeline configuration from the document_type module and executes
 agents in sequence, managing shared context and progress reporting.
 """
 
+import asyncio
 import logging
 import time
 import uuid

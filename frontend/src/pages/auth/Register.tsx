@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Scale } from 'lucide-react'
+import { Scale, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function Register() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
   const [fullName, setFullName] = useState('')
   const [title, setTitle] = useState('')
   const [error, setError] = useState('')
@@ -60,14 +61,25 @@ export default function Register() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-              required
-              minLength={6}
-            />
+            <div className="relative">
+              <input
+                type={showPw ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full border rounded-lg px-4 py-2 pr-10 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                required
+                minLength={8}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw(p => !p)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                aria-label={showPw ? 'Ocultar senha' : 'Mostrar senha'}
+              >
+                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Mínimo de 8 caracteres</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Cargo (opcional)</label>

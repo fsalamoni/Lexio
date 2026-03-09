@@ -1,4 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react'
+import { useEffect } from 'react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import TextAlign from '@tiptap/extension-text-align'
@@ -17,6 +18,7 @@ interface RichTextEditorProps {
   onChange: (html: string) => void
   placeholder?: string
   editable?: boolean
+  onWordCount?: (words: number, chars: number) => void
 }
 
 function ToolbarButton({
@@ -54,6 +56,7 @@ export default function RichTextEditor({
   onChange,
   placeholder = 'Comece a editar o documento...',
   editable = true,
+  onWordCount,
 }: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
@@ -70,11 +73,18 @@ export default function RichTextEditor({
     content,
     editable,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML())
+      const html = editor.getHTML()
+      onChange(html)
+      if (onWordCount) {
+        const text = editor.getText()
+        const words = text.trim() ? text.trim().split(/\s+/).length : 0
+        const chars = text.length
+        onWordCount(words, chars)
+      }
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm max-w-none focus:outline-none min-h-[400px] px-6 py-4',
+        class: 'focus:outline-none',
       },
     },
   })
@@ -222,6 +232,14 @@ export default function RichTextEditor({
 
       {/* Editor content */}
       <EditorContent editor={editor} />
+
+      {/* Status bar */}
+      {editable && (
+        <div className="flex items-center justify-between px-4 py-2 border-t bg-gray-50 text-xs text-gray-400 select-none">
+          <span>Ctrl+B negrito · Ctrl+I itálico · Ctrl+U sublinhado</span>
+          <span id="rte-wordcount" className="tabular-nums" />
+        </div>
+      )}
     </div>
   )
 }
