@@ -284,9 +284,9 @@ export default function AdminPanel() {
 
   const fetchData = () => {
     Promise.all([
-      api.get('/admin/modules').then(res => setModules(res.data)).catch(() => {}),
-      api.get('/health').then(res => setHealth(res.data)).catch(() => {}),
-      api.get('/stats').then(res => setStats(res.data)).catch(() => {}),
+      api.get('/admin/modules').then(res => setModules(Array.isArray(res.data) ? res.data : [])).catch(() => {}),
+      api.get('/health').then(res => { if (res.data && typeof res.data === 'object') setHealth(res.data) }).catch(() => {}),
+      api.get('/stats').then(res => { if (res.data && typeof res.data === 'object') setStats(res.data) }).catch(() => {}),
     ]).finally(() => setLoading(false))
   }
 

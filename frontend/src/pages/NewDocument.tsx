@@ -47,8 +47,8 @@ export default function NewDocument() {
 
   useEffect(() => {
     Promise.all([
-      api.get('/document-types').then(res => setDocTypes(res.data)),
-      api.get('/legal-areas').then(res => setLegalAreas(res.data)),
+      api.get('/document-types').then(res => setDocTypes(Array.isArray(res.data) ? res.data : [])),
+      api.get('/legal-areas').then(res => setLegalAreas(Array.isArray(res.data) ? res.data : [])),
     ]).catch(() => {}).finally(() => setLoadingTypes(false))
   }, [])
 
@@ -128,7 +128,7 @@ export default function NewDocument() {
             )}
           </div>
 
-          {currentType && currentType.templates.length > 0 && (
+          {currentType?.templates && currentType.templates.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Template</label>
               <select
