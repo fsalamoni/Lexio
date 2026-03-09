@@ -21,16 +21,17 @@ services:
     networks:
       - lexio
 
-  # === Frontend ===
+  # === Frontend (nginx, production build) ===
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_DEMO_MODE: "false"
+        VITE_BASE_PATH: "/"
     container_name: lexio-frontend
     ports:
-      - "3000:3000"
-    environment:
-      - VITE_BACKEND_URL=http://backend:8000
+      - "3000:80"
     depends_on:
       - backend
     networks:
