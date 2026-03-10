@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ToastProvider } from './components/Toast'
-import { IS_DEMO } from './demo/interceptor'
 import Layout from './components/Layout'
 import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
@@ -60,10 +59,8 @@ function AppRoutes() {
 }
 
 // VITE_BASE_PATH controls the router base (no trailing slash).
-// Falls back to /Lexio in demo mode (GitHub Pages) or / otherwise.
 const BASENAME =
-  (import.meta.env.VITE_BASE_PATH as string | undefined)?.replace(/\/$/, '') ||
-  (IS_DEMO ? '/Lexio' : '/')
+  (import.meta.env.VITE_BASE_PATH as string | undefined)?.replace(/\/$/, '') || '/'
 
 export default function App() {
   return (

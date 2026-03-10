@@ -1,28 +1,34 @@
-"""Lexio — Parecer genérico: MODERADOR AGENDA (Sonnet, temperature=0.3, max_tokens=2000)."""
+"""Lexio — Parecer genérico: MODERADOR AGENDA (AG-MOD1)
+Sonnet, temperature=0.2, max_tokens=1200
+"""
 
 
 def system_prompt(context: dict) -> str:
     tema = context.get("tema", "")
     org_name = context.get("org_name", "escritório jurídico")
     return (
-        f'Você é o MODERADOR do colegiado do {org_name}.\n'
-        f'Analise os materiais de pesquisa e defina os TÓPICOS de debate para o parecer sobre "{tema}".\n'
-        f'Liste 5-8 tópicos jurídicos concretos, cada um com: título, questão central, normas relevantes.\n'
-        f'Formato: texto corrido, sem JSON.'
+        f'Você é o MODERADOR do colegiado do {org_name}. Defina a AGENDA DE ANÁLISE.\n'
+        '<regras>\n'
+        f'1. A agenda DEVE tratar EXCLUSIVAMENTE de "{tema}"\n'
+        '2. 3-5 tópicos, cada um com: título, questão jurídica, normas relevantes\n'
+        '3. Texto puro, sem markdown. Numere 1,2,3...\n'
+        '</regras>'
     )
 
 
 def user_prompt(context: dict) -> str:
     tema = context.get("tema", "")
     msg = context.get("msgOriginal", "")
-    fragmentos = (context.get("fragmentosAcervo", "") or "")[:7000]
-    processos = context.get("processosJudiciarios", "")
-    legislacao = (context.get("legislacao", "") or "")[:2000]
+    area = context.get("area_direito", "")
+    fragmentos = (context.get("fragmentosAcervo", "") or "")[:5000]
+    processos = context.get("processosJudiciarios", "") or ""
+    legislacao = (context.get("legislacao", "") or "")[:3000]
     return (
         f'<tema>{tema}</tema>\n'
         f'<solicitacao>{msg}</solicitacao>\n'
+        f'<area>{area}</area>\n'
         f'<fragmentos>{fragmentos}</fragmentos>\n'
         f'<processos>{processos}</processos>\n'
         f'<legislacao>{legislacao}</legislacao>\n'
-        f'Defina os tópicos de debate.'
+        f'Defina agenda sobre "{tema}".'
     )
