@@ -1,5 +1,5 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-03-10 | Branch: claude/continue-planning-9WM6r
+> Atualizado: 2026-03-10 (Implementação completa) | Branch: claude/continue-planning-9WM6r
 > PROPÓSITO: Indexação, cache e controle de estado da implementação.
 > REGRA: Este arquivo é a FONTE DA VERDADE. Atualizar após cada etapa concluída.
 
@@ -107,7 +107,7 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 **Resultado**: Fluxo completo concluido → em_revisao → aprovado/rejeitado
 
 ### ETAPA 4 — Integração Banco de Teses → Pipeline
-**Status**: ⏳ Pendente
+**Status**: ✅ Concluído (2026-03-10)
 **Prioridade**: MÉDIA (melhora qualidade geração)
 **Arquivos a criar/modificar**:
 - `packages/pipeline/orchestrator.py` — buscar teses relevantes antes dos agentes
@@ -116,7 +116,7 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 **Resultado esperado**: Pipeline busca teses existentes do org e injeta no contexto dos agentes
 
 ### ETAPA 5 — Fix WebSocket wss:// para HTTPS
-**Status**: ⏳ Pendente
+**Status**: ✅ Já estava correto (location.origin.replace, 2026-03-10)
 **Prioridade**: ALTA (necessário produção)
 **Arquivos a criar/modificar**:
 - `frontend/src/components/ProgressTracker.tsx` — auto-detect protocol
@@ -124,7 +124,7 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 **Resultado esperado**: ws:// em desenvolvimento, wss:// em HTTPS automaticamente
 
 ### ETAPA 6 — AdminPanel UI Completo
-**Status**: ⏳ Pendente
+**Status**: ✅ Concluído (2026-03-10)
 **Prioridade**: MÉDIA
 **Arquivos a criar/modificar**:
 - `frontend/src/pages/AdminPanel.tsx` — UI refinada, wizards, logs
@@ -169,6 +169,9 @@ database/
 | 2026-03-10 | Etapa 1 | Fix NewDocument: tipo `number`, auto-open, badge campos requeridos | frontend/src/pages/NewDocument.tsx |
 | 2026-03-10 | Etapa 2 | Criada página Profile.tsx + rota /profile + link sidebar | frontend/src/pages/Profile.tsx, App.tsx, Sidebar.tsx |
 | 2026-03-10 | Bug B2 | Fix polling DocumentDetail (useRef + clearInterval no callback) | frontend/src/pages/DocumentDetail.tsx |
+| 2026-03-10 | Etapa 3 | Workflow aprovação/rejeição (3 endpoints + StatusBadge + UI) | packages/api/routes/documents.py, schemas/documents.py, frontend/src/components/StatusBadge.tsx, pages/DocumentDetail.tsx |
+| 2026-03-10 | Etapa 4 | Injeção teses banco → fragmentosAcervo no pipeline | packages/pipeline/orchestrator.py |
+| 2026-03-10 | Etapa 6 | AdminPanel: ReviewQueue + Skeleton loading | frontend/src/pages/AdminPanel.tsx |
 
 ---
 
