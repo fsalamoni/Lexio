@@ -1,5 +1,5 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-03-10 (Etapas 11-14 concluídas) | Branch: claude/continue-planning-9WM6r
+> Atualizado: 2026-03-10 (Etapas 15-16 concluídas) | Branch: claude/continue-planning-9WM6r
 > PROPÓSITO: Indexação, cache e controle de estado da implementação.
 > REGRA: Este arquivo é a FONTE DA VERDADE. Atualizar após cada etapa concluída.
 
@@ -180,6 +180,8 @@ database/
 | 2026-03-10 | Etapa 11 | Busca textual em documentos: param q backend (ilike tema+pedido) + search input debounced + type filter select | packages/api/routes/documents.py, frontend/src/pages/DocumentList.tsx |
 | 2026-03-10 | Etapa 12 | AdminPanel: pending_review_documents em StatsData + card "Em Revisão" com destaque azul; grid md:grid-cols-6 | frontend/src/pages/AdminPanel.tsx |
 | 2026-03-10 | Etapa 13 | Sidebar: badge azul em "Administração" com contagem de pendentes, poll a cada 60s | frontend/src/components/Sidebar.tsx |
+| 2026-03-10 | Etapa 15 | DELETE /documents/{id}: admin ou autor, bloqueado em processando; botão Excluir no DocumentDetail com confirm | packages/api/routes/documents.py, frontend/src/pages/DocumentDetail.tsx |
+| 2026-03-10 | Etapa 16 | Gerenciamento de usuários: GET/PATCH /admin/users + UsersSection no AdminPanel (role select + toggle ativo) | packages/api/routes/admin.py, frontend/src/pages/AdminPanel.tsx |
 
 
 ---

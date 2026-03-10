@@ -220,6 +220,74 @@ async def update_settings(
     return {"updated": updated, "message": "Configurações salvas e aplicadas com sucesso."}
 
 
+# ── User management ───────────────────────────────────────────────────────────
+
+@router.get("/users")
+async def list_users(
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all users in the admin's organization."""
+    result = await db.execute(
+        select(User)
+        .where(User.organization_id == admin.organization_id)
+        .order_by(User.created_at.asc())
+    )
+    users = result.scalars().all()
+    return [
+        {
+            "id": str(u.id),
+            "email": u.email,
+            "full_name": u.full_name,
+            "title": u.title,
+            "role": u.role,
+            "is_active": u.is_active,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+        for u in users
+    ]
+
+
+class UserPatch(BaseModel):
+    role: str | None = None       # "admin" | "user" | "viewer"
+    is_active: bool | None = None
+
+
+@router.patch("/users/{user_id}")
+async def update_user(
+    user_id: str,
+    body: UserPatch,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update user role or active status. Admin cannot modify themselves."""
+    import uuid as _uuid
+    result = await db.execute(
+        select(User).where(
+            User.id == _uuid.UUID(user_id),
+            User.organization_id == admin.organization_id,
+        )
+    )
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "Usuário não encontrado")
+    if target.id == admin.id:
+        raise HTTPException(400, "Não é possível alterar sua própria conta")
+    if body.role is not None:
+        if body.role not in ("admin", "user", "viewer"):
+            raise HTTPException(400, "Role inválido. Use: admin, user, viewer")
+        target.role = body.role
+    if body.is_active is not None:
+        target.is_active = body.is_active
+    await db.commit()
+    return {
+        "id": str(target.id),
+        "role": target.role,
+        "is_active": target.is_active,
+        "message": "Usuário atualizado com sucesso",
+    }
+
+
 async def load_settings_from_db(db: AsyncSession) -> None:
     """Called at startup to override env settings with DB-stored values."""
     try:

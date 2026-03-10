@@ -4,7 +4,7 @@ import {
   Shield, CheckCircle, XCircle, Activity, Server, Database, Brain, Search,
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
-  ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown,
+  ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -645,13 +645,115 @@ export default function AdminPanel() {
       </div>
 
       {features.length > 0 && (
-        <div className="bg-white rounded-xl border p-6">
+        <div className="bg-white rounded-xl border p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4">Módulos Funcionais ({features.length})</h2>
           <div className="space-y-3">
             {features.map(m => (
               <ModuleRow key={m.id} module={m} onToggle={handleToggle} toggling={toggling} />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* User Management */}
+      <UsersSection />
+    </div>
+  )
+}
+
+// ── Users Section ─────────────────────────────────────────────────────────────
+
+interface OrgUser {
+  id: string
+  email: string
+  full_name: string
+  title: string | null
+  role: string
+  is_active: boolean
+  created_at: string | null
+}
+
+function UsersSection() {
+  const [users, setUsers] = useState<OrgUser[]>([])
+  const [loading, setLoading] = useState(true)
+  const [updating, setUpdating] = useState<string | null>(null)
+  const toast = useToast()
+
+  useEffect(() => {
+    api.get('/admin/users')
+      .then(res => setUsers(Array.isArray(res.data) ? res.data : []))
+      .catch(() => toast.error('Erro ao carregar usuários'))
+      .finally(() => setLoading(false))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleUpdate = async (userId: string, patch: { role?: string; is_active?: boolean }) => {
+    setUpdating(userId)
+    try {
+      const res = await api.patch(`/admin/users/${userId}`, patch)
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...res.data } : u))
+      toast.success('Usuário atualizado')
+    } catch (err: any) {
+      toast.error('Erro ao atualizar usuário', err?.response?.data?.detail)
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  const ROLE_LABELS: Record<string, string> = { admin: 'Admin', user: 'Usuário', viewer: 'Leitor' }
+  const ROLE_COLORS: Record<string, string> = {
+    admin: 'bg-purple-100 text-purple-700',
+    user: 'bg-blue-100 text-blue-700',
+    viewer: 'bg-gray-100 text-gray-600',
+  }
+
+  return (
+    <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="px-6 py-4 border-b flex items-center gap-2">
+        <Users className="w-5 h-5 text-brand-600" />
+        <h2 className="text-lg font-semibold">Usuários ({users.length})</h2>
+      </div>
+
+      {loading ? (
+        <div className="p-6 space-y-3">
+          {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 rounded-lg" />)}
+        </div>
+      ) : users.length === 0 ? (
+        <p className="p-6 text-sm text-gray-400 text-center">Nenhum usuário encontrado.</p>
+      ) : (
+        <div className="divide-y">
+          {users.map(u => (
+            <div key={u.id} className={`flex items-center gap-4 px-6 py-3 ${!u.is_active ? 'opacity-50 bg-gray-50' : ''}`}>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{u.full_name}</p>
+                <p className="text-xs text-gray-500 truncate">{u.email}{u.title ? ` — ${u.title}` : ''}</p>
+              </div>
+
+              {/* Role selector */}
+              <select
+                value={u.role}
+                disabled={updating === u.id}
+                onChange={e => handleUpdate(u.id, { role: e.target.value })}
+                className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-brand-500 ${ROLE_COLORS[u.role] || 'bg-gray-100 text-gray-600'}`}
+              >
+                <option value="admin">Admin</option>
+                <option value="user">Usuário</option>
+                <option value="viewer">Leitor</option>
+              </select>
+
+              {/* Active toggle */}
+              <button
+                onClick={() => handleUpdate(u.id, { is_active: !u.is_active })}
+                disabled={updating === u.id}
+                title={u.is_active ? 'Desativar conta' : 'Ativar conta'}
+                className="transition-colors disabled:opacity-50"
+              >
+                {u.is_active
+                  ? <ToggleRight className="w-6 h-6 text-green-600" />
+                  : <ToggleLeft className="w-6 h-6 text-gray-400" />
+                }
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

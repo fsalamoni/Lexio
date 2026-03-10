@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle } from 'lucide-react'
+import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, Trash2 } from 'lucide-react'
 import api from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import ProgressTracker from '../components/ProgressTracker'
@@ -90,6 +90,7 @@ export default function DocumentDetail() {
   const [workflowLoading, setWorkflowLoading] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectForm, setShowRejectForm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchDoc = useCallback(() => {
@@ -142,6 +143,21 @@ export default function DocumentDetail() {
       setShowPreview(false)
     } finally {
       setLoadingDocx(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!id || !doc) return
+    if (!window.confirm(`Excluir este documento permanentemente? Esta ação não pode ser desfeita.`)) return
+    setDeleting(true)
+    try {
+      await api.delete(`/documents/${id}`)
+      toast.success('Documento excluído')
+      navigate('/documents')
+    } catch (err: any) {
+      toast.error('Erro ao excluir documento', err?.response?.data?.detail || err?.message)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -295,6 +311,18 @@ export default function DocumentDetail() {
                 </>
               )}
             </div>
+
+            {/* Delete button — not while processando */}
+            {doc.status !== 'processando' && (
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 border border-red-200 text-red-500 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors text-sm disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                {deleting ? 'Excluindo…' : 'Excluir'}
+              </button>
+            )}
 
             {/* Workflow actions */}
             <div className="flex flex-wrap items-center gap-3">

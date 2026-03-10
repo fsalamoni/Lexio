@@ -304,3 +304,25 @@ async def reject_document(
     doc.metadata_ = metadata
     await db.commit()
     return {"status": "rejeitado", "document_id": document_id, "reason": req.reason}
+
+
+# ── Delete ───────────────────────────────────────────────────────────────────
+
+@router.delete("/{document_id}", status_code=204)
+async def delete_document(
+    document_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a document. Admins can delete any; users only their own non-processing docs."""
+    doc = await _get_doc_for_user(document_id, user, db)
+
+    if doc.status == "processando":
+        raise HTTPException(400, "Não é possível excluir um documento em processamento")
+
+    # Non-admins can only delete their own documents
+    if user.role != "admin" and doc.author_id != user.id:
+        raise HTTPException(403, "Sem permissão para excluir este documento")
+
+    await db.delete(doc)
+    await db.commit()
