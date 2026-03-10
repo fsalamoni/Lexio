@@ -94,9 +94,9 @@ export default function Dashboard() {
   useEffect(() => {
     const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
     const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
-    const p2 = api.get('/stats/daily').then(r => setDaily(toArr(r.data))).catch(() => {})
-    const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => {})
-    const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => {})
+    const p2 = api.get('/stats/daily').then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
+    const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => toast.error('Erro ao carregar estatísticas de agentes'))
+    const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => toast.error('Erro ao carregar documentos recentes'))
     Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
   }, []) // eslint-disable-line
 

@@ -8,6 +8,7 @@ import {
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
 import { loadApiKeys, saveApiKeys, type ApiKeyEntry } from '../lib/settings-store'
+import { useToast } from '../components/Toast'
 
 interface ModuleInfo {
   id: string
@@ -281,16 +282,17 @@ export default function AdminPanel() {
   const [stats, setStats] = useState<StatsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState<string | null>(null)
+  const toast = useToast()
 
   const fetchData = () => {
     Promise.all([
-      api.get('/admin/modules').then(res => setModules(Array.isArray(res.data) ? res.data : [])).catch(() => {}),
-      api.get('/health').then(res => { if (res.data && typeof res.data === 'object') setHealth(res.data) }).catch(() => {}),
-      api.get('/stats').then(res => { if (res.data && typeof res.data === 'object') setStats(res.data) }).catch(() => {}),
+      api.get('/admin/modules').then(res => setModules(Array.isArray(res.data) ? res.data : [])).catch(() => toast.error('Erro ao carregar módulos')),
+      api.get('/health').then(res => { if (res.data && typeof res.data === 'object') setHealth(res.data) }).catch(() => toast.error('Erro ao verificar saúde do sistema')),
+      api.get('/stats').then(res => { if (res.data && typeof res.data === 'object') setStats(res.data) }).catch(() => toast.error('Erro ao carregar estatísticas')),
     ]).finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { fetchData() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggle = async (moduleId: string) => {
     setToggling(moduleId)
@@ -299,7 +301,10 @@ export default function AdminPanel() {
       setModules(prev =>
         prev.map(m => m.id === moduleId ? { ...m, is_enabled: res.data.is_enabled } : m)
       )
-    } catch {}
+      toast.success(res.data.is_enabled ? 'Módulo ativado' : 'Módulo desativado')
+    } catch {
+      toast.error('Erro ao alterar estado do módulo')
+    }
     setToggling(null)
   }
 
