@@ -67,6 +67,8 @@ export default function ThesisBank() {
   const [theses, setTheses] = useState<ThesisItem[]>([])
   const [stats, setStats] = useState<ThesisStats | null>(null)
   const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [areaFilter, setAreaFilter] = useState('')
@@ -74,13 +76,17 @@ export default function ThesisBank() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
 
+  const PAGE = 50
+
   const fetchTheses = useCallback((q: string, area: string) => {
     const params = new URLSearchParams()
     if (q)    params.set('q', q)
     if (area) params.set('legal_area_id', area)
-    params.set('limit', '50')
+    params.set('limit', String(PAGE))
+    params.set('skip', '0')
 
     setLoading(true)
+    setOffset(0)
     api.get(`/theses?${params.toString()}`)
       .then(res => {
         setTheses(Array.isArray(res.data?.items) ? res.data.items : [])
@@ -90,6 +96,25 @@ export default function ThesisBank() {
       .finally(() => setLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const loadMore = () => {
+    const nextOffset = offset + PAGE
+    const params = new URLSearchParams()
+    if (search)     params.set('q', search)
+    if (areaFilter) params.set('legal_area_id', areaFilter)
+    params.set('limit', String(PAGE))
+    params.set('skip', String(nextOffset))
+
+    setLoadingMore(true)
+    api.get(`/theses?${params.toString()}`)
+      .then(res => {
+        const items = Array.isArray(res.data?.items) ? res.data.items : []
+        setTheses(prev => [...prev, ...items])
+        setOffset(nextOffset)
+      })
+      .catch(() => toast.error('Erro ao carregar mais teses'))
+      .finally(() => setLoadingMore(false))
+  }
 
   useEffect(() => {
     fetchTheses('', '')
@@ -233,10 +258,19 @@ export default function ThesisBank() {
               areaColor={areaColor(thesis.legal_area_id)}
             />
           ))}
-          {total > 50 && (
-            <p className="text-sm text-gray-400 text-center pt-2">
-              Mostrando 50 de {total} teses. Refine a busca para ver resultados mais específicos.
-            </p>
+          {theses.length < total && (
+            <div className="text-center pt-2">
+              <p className="text-xs text-gray-400 mb-2">
+                Mostrando {theses.length} de {total} teses
+              </p>
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg bg-white hover:bg-gray-50 text-gray-600 disabled:opacity-50 transition-colors"
+              >
+                {loadingMore ? 'Carregando…' : 'Carregar mais 50'}
+              </button>
+            </div>
           )}
         </div>
       )}

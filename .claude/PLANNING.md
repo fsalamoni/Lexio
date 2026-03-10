@@ -1,5 +1,5 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-03-10 (Etapas 19-23 concluídas) | Branch: claude/continue-planning-9WM6r
+> Atualizado: 2026-03-10 (Etapas 24-27 concluídas) | Branch: claude/continue-planning-9WM6r
 > PROPÓSITO: Indexação, cache e controle de estado da implementação.
 > REGRA: Este arquivo é a FONTE DA VERDADE. Atualizar após cada etapa concluída.
 
@@ -190,6 +190,10 @@ database/
 | 2026-03-10 | Etapa 21 | ThesisBank: botão "Exportar JSON" (client-side Blob download das teses visíveis) | frontend/src/pages/ThesisBank.tsx |
 | 2026-03-10 | Etapa 22 | DocumentList: sort select (Mais recente/antigo, Maior/menor score); backend sort_by+sort_dir params | frontend/src/pages/DocumentList.tsx, packages/api/routes/documents.py |
 | 2026-03-10 | Etapa 23 | Rate limit 429: CustomEvent lexio:rate-limit no client.ts; listener em Layout.tsx com toast.error | frontend/src/api/client.ts, frontend/src/components/Layout.tsx |
+| 2026-03-10 | Etapa 24 | DocumentList filtro por período (date_from/date_to): dois date inputs + backend date range query | frontend/src/pages/DocumentList.tsx, packages/api/routes/documents.py |
+| 2026-03-10 | Etapa 25 | ThesisBank "Carregar mais 50": paginação incremental com skip; botão append ao estado | frontend/src/pages/ThesisBank.tsx |
+| 2026-03-10 | Etapa 26 | Dashboard recent docs — já eram clickable com Link (N/A) | — |
+| 2026-03-10 | Etapa 27 | DocumentList: badge de origem (WhatsApp/API) inline na coluna Tipo para origens não-web | frontend/src/pages/DocumentList.tsx |
 
 
 ---
