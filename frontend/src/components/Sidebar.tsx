@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, PlusCircle, Upload,
-  Scale, LogOut, Shield, BookOpen, ChevronRight,
+  Scale, LogOut, Shield, BookOpen, ChevronRight, UserCircle,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../contexts/AuthContext'
@@ -12,6 +12,7 @@ const links = [
   { to: '/documents/new', label: 'Novo Documento', icon: PlusCircle },
   { to: '/theses', label: 'Banco de Teses', icon: BookOpen },
   { to: '/upload', label: 'Acervo', icon: Upload },
+  { to: '/avatar', label: 'Meu Avatar', icon: UserCircle },
 ]
 
 interface SidebarProps {

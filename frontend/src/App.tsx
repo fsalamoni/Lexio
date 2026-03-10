@@ -14,6 +14,7 @@ import Upload from './pages/Upload'
 import AdminPanel from './pages/AdminPanel'
 import Onboarding from './pages/Onboarding'
 import ThesisBank from './pages/ThesisBank'
+import AvatarBuilder from './pages/AvatarBuilder'
 import NotFound from './pages/NotFound'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -47,6 +48,7 @@ function AppRoutes() {
                 <Route path="/documents/:id/edit" element={<DocumentEditor />} />
                 <Route path="/upload" element={<Upload />} />
                 <Route path="/theses" element={<ThesisBank />} />
+                <Route path="/avatar" element={<AvatarBuilder />} />
                 <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
                 <Route path="/onboarding" element={<Onboarding />} />
                 <Route path="*" element={<NotFound />} />
