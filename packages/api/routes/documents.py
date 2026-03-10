@@ -4,7 +4,7 @@ import asyncio
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from packages.api.schemas.documents import (
     DocumentCreate, DocumentResponse, DocumentListResponse,
 )
 from packages.modules.anamnesis.wizard import build_pipeline_context
+from packages.api.middleware.rate_limit import limiter
 
 logger = logging.getLogger("lexio.api.documents")
 
@@ -26,7 +27,9 @@ router = APIRouter()
 
 
 @router.post("/", response_model=DocumentResponse)
+@limiter.limit("20/minute")
 async def create_document(
+    request: Request,
     req: DocumentCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

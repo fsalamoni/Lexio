@@ -5,7 +5,7 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.auth.dependencies import get_current_user, get_db
@@ -13,11 +13,25 @@ from packages.core.database.models.user import User
 from packages.core.database.models.uploaded_document import UploadedDocument
 from packages.core.database.engine import async_session
 from packages.core.search.indexer import index_document, COLLECTION
+from packages.api.middleware.rate_limit import limiter
 
 router = APIRouter()
 logger = logging.getLogger("lexio.uploads")
 
 UPLOAD_DIR = Path("/app/uploads") if Path("/app").exists() else Path("uploads")
+
+# 50 MB max upload size
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+# Allowed MIME types
+ALLOWED_CONTENT_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "text/plain",
+    "text/html",
+    "application/rtf",
+}
 
 
 async def _index_in_background(
@@ -61,20 +75,43 @@ async def _index_in_background(
                 doc = result.scalar_one_or_none()
                 if doc:
                     doc.status = "index_error"
+                    doc.index_error = str(e)[:500]
                     await db.commit()
         except Exception:
             pass
 
 
 @router.post("/")
+@limiter.limit("10/minute")
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate content type
+    if file.content_type and file.content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Tipo de arquivo não suportado: {file.content_type}. "
+                   f"Use PDF, DOCX, DOC, TXT, HTML ou RTF.",
+        )
+
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     content = await file.read()
+
+    # Validate file size
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Arquivo muito grande: {len(content) / 1024 / 1024:.1f}MB. "
+                   f"Máximo permitido: {MAX_UPLOAD_BYTES // 1024 // 1024}MB.",
+        )
+
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+
     file_path = UPLOAD_DIR / f"{uuid.uuid4().hex}_{file.filename}"
     file_path.write_bytes(content)
 

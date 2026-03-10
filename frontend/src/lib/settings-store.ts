@@ -66,7 +66,7 @@ export async function loadApiKeys(): Promise<ApiKeyEntry[]> {
 
   // Production: use backend API
   const res = await api.get('/admin/settings')
-  return res.data.settings as ApiKeyEntry[]
+  return Array.isArray(res.data?.settings) ? res.data.settings : []
 }
 
 // ── Save ──────────────────────────────────────────────────────────────────────

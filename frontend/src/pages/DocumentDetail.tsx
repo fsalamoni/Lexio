@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff } from 'lucide-react'
 import api from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import ProgressTracker from '../components/ProgressTracker'
+import { useToast } from '../components/Toast'
 
 interface DocumentData {
   id: string
@@ -70,6 +71,7 @@ function fmtModel(model: string | null): string {
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const toast = useToast()
   const [doc, setDoc] = useState<DocumentData | null>(null)
   const [executions, setExecutions] = useState<Execution[]>([])
   const [docxHtml, setDocxHtml] = useState<string | null>(null)
@@ -81,9 +83,9 @@ export default function DocumentDetail() {
     if (!id) return
     api.get(`/documents/${id}`)
       .then(res => setDoc(res.data))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar documento'))
       .finally(() => setLoading(false))
-  }, [id])
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchDoc()
@@ -106,7 +108,7 @@ export default function DocumentDetail() {
     if (!id || !doc || doc.status !== 'concluido') return
     api.get(`/documents/${id}/executions`)
       .then(res => setExecutions(Array.isArray(res.data) ? res.data : []))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar timeline de execução'))
   }, [id, doc?.status])
 
   // Load DOCX preview with mammoth
@@ -122,7 +124,7 @@ export default function DocumentDetail() {
       setDocxHtml(result.value)
       setShowPreview(true)
     } catch {
-      // Fallback to plain text
+      toast.error('Não foi possível carregar a prévia do DOCX')
       setDocxHtml(null)
       setShowPreview(false)
     } finally {

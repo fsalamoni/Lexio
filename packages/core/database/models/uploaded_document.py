@@ -22,6 +22,7 @@ class UploadedDocument(Base, OrgScopedMixin):
     chunks_indexed: Mapped[int] = mapped_column(Integer, default=0)
     collection_name: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(50), default="pending")
+    index_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"),
     )
