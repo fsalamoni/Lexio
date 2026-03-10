@@ -80,7 +80,9 @@ class PipelineOrchestrator:
                 self.context["document_id"] = str(doc.id)
                 self.context["document_type"] = self.config.document_type_id
                 self.context["org_id"] = str(doc.organization_id)
+                self.context["org_uuid"] = doc.organization_id
                 self.context["template_variant"] = doc.template_variant or ""
+                self.context["legal_area_ids"] = doc.legal_area_ids or []
 
                 # Inject anamnesis context (profile prefs + enriched request)
                 if self.anamnesis_context:
@@ -361,6 +363,88 @@ class PipelineOrchestrator:
         self.context["fragmentosAcervo"] = fragments
         self.context["processosJudiciarios"] = processos
         self.context["legislacao"] = legislacao
+
+        # Inject relevant theses from thesis bank (non-blocking, non-fatal)
+        await self._inject_theses(db)
+
+    async def _inject_theses(self, db: AsyncSession):
+        """Fetch relevant theses from thesis bank and prepend to fragmentosAcervo.
+
+        Uses the organization's thesis bank to retrieve high-quality, active theses
+        that match the current document type and/or legal area. Theses are prepended
+        to fragmentosAcervo so all agents that use {fragmentosAcervo} benefit
+        without any prompt modifications.
+        """
+        try:
+            from packages.modules.thesis_bank.service import list_theses
+
+            org_uuid = self.context.get("org_uuid")
+            if not org_uuid:
+                return
+
+            doc_type = self.config.document_type_id
+            legal_area_ids: list = self.context.get("legal_area_ids", [])
+            primary_area = legal_area_ids[0] if legal_area_ids else None
+
+            # Try area + type first; fallback to just area or just type
+            theses_list, total = await list_theses(
+                db=db,
+                organization_id=org_uuid,
+                legal_area_id=primary_area,
+                document_type_id=doc_type,
+                status="active",
+                limit=5,
+            )
+
+            # If too few results, broaden query to area only
+            if len(theses_list) < 3 and primary_area:
+                broader, _ = await list_theses(
+                    db=db,
+                    organization_id=org_uuid,
+                    legal_area_id=primary_area,
+                    status="active",
+                    limit=5,
+                )
+                # Merge, de-duplicate by id
+                seen = {t.id for t in theses_list}
+                for t in broader:
+                    if t.id not in seen:
+                        theses_list.append(t)
+                        seen.add(t.id)
+                        if len(theses_list) >= 5:
+                            break
+
+            if not theses_list:
+                return
+
+            # Format theses as context block
+            thesis_lines = ["TESES JURÍDICAS REUTILIZÁVEIS (Banco da Organização):"]
+            for i, thesis in enumerate(theses_list[:5], 1):
+                thesis_lines.append(f"\n[Tese {i}] {thesis.title}")
+                if thesis.summary:
+                    thesis_lines.append(f"Resumo: {thesis.summary}")
+                thesis_lines.append(f"Conteúdo: {thesis.content[:600]}")
+                if thesis.legal_basis:
+                    bases = [f"{b.get('law', '')} art. {b.get('article', '')}"
+                             for b in thesis.legal_basis[:3] if isinstance(b, dict)]
+                    if bases:
+                        thesis_lines.append(f"Base legal: {', '.join(bases)}")
+                if thesis.quality_score:
+                    thesis_lines.append(f"Score de qualidade: {thesis.quality_score}/100")
+
+            thesis_block = "\n".join(thesis_lines) + "\n---\n"
+
+            # Prepend to fragmentosAcervo (all agents with {fragmentosAcervo} benefit)
+            existing = self.context.get("fragmentosAcervo", "")
+            self.context["fragmentosAcervo"] = thesis_block + existing
+
+            logger.info(
+                f"Injected {len(theses_list)} theses into fragmentosAcervo "
+                f"(org={self.context.get('org_id')}, area={primary_area}, type={doc_type})"
+            )
+
+        except Exception as e:
+            logger.warning(f"Thesis injection failed (non-fatal): {e}")
 
     async def _save_execution(self, db: AsyncSession, doc: Document, result: dict):
         execution = Execution(
