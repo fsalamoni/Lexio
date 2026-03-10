@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Shield, CheckCircle, XCircle, Activity, Server, Database, Brain, Search,
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
-  ChevronDown, ChevronUp, BookOpen, Zap,
+  ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
 import { loadApiKeys, saveApiKeys, type ApiKeyEntry } from '../lib/settings-store'
 import { useToast } from '../components/Toast'
+import { Skeleton } from '../components/Skeleton'
 
 interface ModuleInfo {
   id: string
@@ -274,6 +276,169 @@ function ApiKeysCard() {
   )
 }
 
+// ── Review Queue ──────────────────────────────────────────────────────────────
+
+interface ReviewDoc {
+  id: string
+  document_type_id: string
+  tema: string | null
+  original_request: string
+  created_at: string
+  quality_score: number | null
+}
+
+const DOCTYPE_LABELS: Record<string, string> = {
+  parecer: 'Parecer',
+  peticao_inicial: 'Petição Inicial',
+  contestacao: 'Contestação',
+  recurso: 'Recurso',
+  sentenca: 'Sentença',
+  acao_civil_publica: 'Ação Civil Pública',
+}
+
+function ReviewQueue() {
+  const [docs, setDocs] = useState<ReviewDoc[]>([])
+  const [loading, setLoading] = useState(true)
+  const [actioning, setActioning] = useState<string | null>(null)
+  const [rejectForm, setRejectForm] = useState<{ id: string; reason: string } | null>(null)
+  const navigate = useNavigate()
+  const toast = useToast()
+
+  const fetchQueue = () => {
+    api.get('/documents', { params: { status: 'em_revisao', limit: 20 } })
+      .then(res => setDocs(res.data?.items || []))
+      .catch(() => toast.error('Erro ao carregar fila de revisão'))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { fetchQueue() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleAction = async (docId: string, action: 'approve' | 'reject', reason?: string) => {
+    setActioning(docId)
+    try {
+      if (action === 'approve') {
+        await api.post(`/documents/${docId}/approve`)
+        toast.success('Documento aprovado')
+      } else {
+        await api.post(`/documents/${docId}/reject`, { reason: reason || '' })
+        toast.success('Documento rejeitado')
+        setRejectForm(null)
+      }
+      setDocs(prev => prev.filter(d => d.id !== docId))
+    } catch (err: any) {
+      toast.error('Erro ao processar revisão', err?.response?.data?.detail)
+    } finally {
+      setActioning(null)
+    }
+  }
+
+  if (loading) return (
+    <div className="bg-white rounded-xl border p-6 mb-6 space-y-3">
+      <Skeleton className="h-6 w-48" />
+      <Skeleton className="h-16 rounded-lg" />
+      <Skeleton className="h-16 rounded-lg" />
+    </div>
+  )
+
+  return (
+    <div className="bg-white rounded-xl border p-6 mb-6">
+      <div className="flex items-center gap-2 mb-4">
+        <Clock className="w-5 h-5 text-blue-600" />
+        <h2 className="text-lg font-semibold">Fila de Revisão</h2>
+        {docs.length > 0 && (
+          <span className="ml-1 bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
+            {docs.length}
+          </span>
+        )}
+      </div>
+
+      {docs.length === 0 ? (
+        <p className="text-sm text-gray-400 py-4 text-center">Nenhum documento aguardando revisão.</p>
+      ) : (
+        <div className="space-y-3">
+          {docs.map(doc => (
+            <div key={doc.id} className="border rounded-xl overflow-hidden">
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">
+                      {DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id}
+                      {doc.tema && <span className="text-gray-500 font-normal"> — {doc.tema}</span>}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{doc.original_request}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-xs text-gray-400">
+                        {new Date(doc.created_at).toLocaleDateString('pt-BR')}
+                      </span>
+                      {doc.quality_score != null && (
+                        <span className={`text-xs font-medium ${
+                          doc.quality_score >= 80 ? 'text-green-600' : doc.quality_score >= 60 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>Score: {doc.quality_score}/100</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => navigate(`/documents/${doc.id}`)}
+                      className="text-xs text-brand-600 hover:underline border rounded-lg px-3 py-1.5"
+                    >
+                      Ver
+                    </button>
+                    <button
+                      onClick={() => handleAction(doc.id, 'approve')}
+                      disabled={actioning === doc.id}
+                      className="inline-flex items-center gap-1 bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      <ThumbsUp className="w-3.5 h-3.5" />
+                      Aprovar
+                    </button>
+                    <button
+                      onClick={() => setRejectForm({ id: doc.id, reason: '' })}
+                      disabled={actioning === doc.id}
+                      className="inline-flex items-center gap-1 bg-orange-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-orange-600 disabled:opacity-50"
+                    >
+                      <ThumbsDown className="w-3.5 h-3.5" />
+                      Rejeitar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Reject form inline */}
+                {rejectForm?.id === doc.id && (
+                  <div className="mt-3 space-y-2">
+                    <textarea
+                      value={rejectForm.reason}
+                      onChange={e => setRejectForm(f => f ? { ...f, reason: e.target.value } : null)}
+                      placeholder="Motivo da rejeição (opcional)..."
+                      rows={2}
+                      className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-orange-400"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleAction(doc.id, 'reject', rejectForm.reason)}
+                        disabled={actioning === doc.id}
+                        className="bg-orange-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-orange-600 disabled:opacity-50"
+                      >
+                        Confirmar Rejeição
+                      </button>
+                      <button
+                        onClick={() => setRejectForm(null)}
+                        className="border text-gray-600 text-xs px-3 py-1.5 rounded-lg hover:bg-gray-50"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Admin Panel ──────────────────────────────────────────────────────────
 
 export default function AdminPanel() {
@@ -308,7 +473,16 @@ export default function AdminPanel() {
     setToggling(null)
   }
 
-  if (loading) return <p className="text-gray-500">Carregando painel admin...</p>
+  if (loading) return (
+    <div className="space-y-6">
+      <Skeleton className="h-10 w-64" />
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+      </div>
+      <Skeleton className="h-48 rounded-xl" />
+      <Skeleton className="h-32 rounded-xl" />
+    </div>
+  )
 
   const docTypes = modules.filter(m => m.type === 'document_type')
   const legalAreas = modules.filter(m => m.type === 'legal_area')
@@ -373,6 +547,9 @@ export default function AdminPanel() {
           <p className="text-2xl font-bold text-gray-900">{healthyModules}/{modules.length}</p>
         </div>
       </div>
+
+      {/* Review Queue */}
+      <ReviewQueue />
 
       {/* API Keys */}
       <ApiKeysCard />
