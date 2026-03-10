@@ -19,6 +19,7 @@ interface Stats {
   total_documents: number
   completed_documents: number
   processing_documents: number
+  pending_review_documents: number
   average_quality_score: number | null
   total_cost_usd: number
   average_duration_ms: number | null
@@ -117,8 +118,8 @@ export default function Dashboard() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       </div>
     )
@@ -130,10 +131,11 @@ export default function Dashboard() {
 
       {/* Stat cards */}
       {stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
             { label: 'Total de Documentos', value: stats.total_documents, icon: FileText, color: 'blue' },
             { label: 'Concluídos', value: stats.completed_documents, icon: CheckCircle, color: 'green' },
+            { label: 'Em Revisão', value: stats.pending_review_documents, icon: Clock, color: 'blue' },
             {
               label: 'Score Médio',
               value: stats.average_quality_score != null ? `${stats.average_quality_score}/100` : '—',
@@ -147,16 +149,19 @@ export default function Dashboard() {
               color: 'amber',
             },
           ].map(card => (
-            <div key={card.label} className="bg-white rounded-xl border p-5">
+            <div key={card.label} className={`bg-white rounded-xl border p-5${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? ' border-blue-200 ring-1 ring-blue-100' : ''}`}>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{card.label}</span>
-                <card.icon className="w-4 h-4 text-gray-400" />
+                <card.icon className={`w-4 h-4 ${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? 'text-blue-500' : 'text-gray-400'}`} />
               </div>
               <p className="text-2xl font-bold text-gray-900">{card.value}</p>
               {card.label === 'Total de Documentos' && stats.processing_documents > 0 && (
                 <p className="text-xs text-yellow-600 mt-1 flex items-center gap-1">
                   <Clock className="w-3 h-3" /> {stats.processing_documents} em processamento
                 </p>
+              )}
+              {card.label === 'Em Revisão' && stats.pending_review_documents > 0 && (
+                <p className="text-xs text-blue-600 mt-1">Aguardando aprovação</p>
               )}
               {card.label === 'Custo Total' && stats.average_duration_ms && (
                 <p className="text-xs text-gray-400 mt-1">

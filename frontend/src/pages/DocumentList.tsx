@@ -75,18 +75,25 @@ export default function DocumentList() {
       </div>
 
       {/* Status filter chips */}
-      <div className="flex gap-2 mb-4">
-        {['processando', 'concluido', 'erro'].map(s => (
+      <div className="flex flex-wrap gap-2 mb-4">
+        {([
+          { key: 'processando', label: 'Em processamento' },
+          { key: 'concluido', label: 'Concluídos' },
+          { key: 'em_revisao', label: 'Em revisão' },
+          { key: 'aprovado', label: 'Aprovados' },
+          { key: 'rejeitado', label: 'Rejeitados' },
+          { key: 'erro', label: 'Com erro' },
+        ] as const).map(({ key, label }) => (
           <button
-            key={s}
-            onClick={() => handleStatusFilter(s)}
-            className={`px-3 py-1 rounded-full text-xs border transition-colors capitalize ${
-              statusFilter === s
+            key={key}
+            onClick={() => handleStatusFilter(key)}
+            className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+              statusFilter === key
                 ? 'bg-brand-600 text-white border-brand-600'
                 : 'bg-white text-gray-600 hover:bg-gray-50'
             }`}
           >
-            {s === 'processando' ? 'Em processamento' : s === 'concluido' ? 'Concluídos' : 'Com erro'}
+            {label}
           </button>
         ))}
         {statusFilter && (
