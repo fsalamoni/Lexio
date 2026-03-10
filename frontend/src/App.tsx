@@ -13,6 +13,7 @@ import Upload from './pages/Upload'
 import AdminPanel from './pages/AdminPanel'
 import Onboarding from './pages/Onboarding'
 import ThesisBank from './pages/ThesisBank'
+import Profile from './pages/Profile'
 import NotFound from './pages/NotFound'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -48,6 +49,7 @@ function AppRoutes() {
                 <Route path="/theses" element={<ThesisBank />} />
                 <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
                 <Route path="/onboarding" element={<Onboarding />} />
+                <Route path="/profile" element={<Profile />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Layout>
