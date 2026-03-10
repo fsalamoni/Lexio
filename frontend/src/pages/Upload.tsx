@@ -42,8 +42,8 @@ export default function Upload() {
   const toast = useToast()
 
   const fetchHistory = useCallback(() => {
-    api.get('/uploads').then(res => setHistory(res.data.items || [])).catch(() => {})
-  }, [])
+    api.get('/uploads').then(res => setHistory(res.data.items || [])).catch(() => toast.error('Erro ao carregar histórico de uploads'))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchHistory()

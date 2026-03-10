@@ -49,7 +49,7 @@ export default function NewDocument() {
     Promise.all([
       api.get('/document-types').then(res => setDocTypes(Array.isArray(res.data) ? res.data : [])),
       api.get('/legal-areas').then(res => setLegalAreas(Array.isArray(res.data) ? res.data : [])),
-    ]).catch(() => {}).finally(() => setLoadingTypes(false))
+    ]).catch(() => toast.error('Erro ao carregar tipos de documento e áreas disponíveis')).finally(() => setLoadingTypes(false))
   }, [])
 
   // Load context fields when document type changes

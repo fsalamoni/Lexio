@@ -52,6 +52,12 @@ function NavItem({
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const { logout, role, fullName } = useAuth()
 
+  const handleLogout = () => {
+    if (window.confirm('Deseja realmente sair da sua conta?')) {
+      logout()
+    }
+  }
+
   const sidebar = (
     <aside className="w-64 bg-brand-900 text-white h-full flex flex-col">
       {/* Logo */}
@@ -84,7 +90,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           </div>
         )}
         <button
-          onClick={logout}
+          onClick={handleLogout}
           className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-brand-200 hover:bg-white/10 hover:text-white w-full transition-colors"
           aria-label="Sair da conta"
         >

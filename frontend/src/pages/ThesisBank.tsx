@@ -95,7 +95,7 @@ export default function ThesisBank() {
     fetchTheses('', '')
     api.get('/theses/stats')
       .then(res => setStats(res.data))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar estatísticas do banco de teses'))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
