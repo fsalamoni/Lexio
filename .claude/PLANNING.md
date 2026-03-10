@@ -1,5 +1,5 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-03-10 (Etapas 24-27 concluídas) | Branch: claude/continue-planning-9WM6r
+> Atualizado: 2026-03-10 (Etapas 28-31 concluídas) | Branch: claude/continue-planning-9WM6r
 > PROPÓSITO: Indexação, cache e controle de estado da implementação.
 > REGRA: Este arquivo é a FONTE DA VERDADE. Atualizar após cada etapa concluída.
 
@@ -194,6 +194,10 @@ database/
 | 2026-03-10 | Etapa 25 | ThesisBank "Carregar mais 50": paginação incremental com skip; botão append ao estado | frontend/src/pages/ThesisBank.tsx |
 | 2026-03-10 | Etapa 26 | Dashboard recent docs — já eram clickable com Link (N/A) | — |
 | 2026-03-10 | Etapa 27 | DocumentList: badge de origem (WhatsApp/API) inline na coluna Tipo para origens não-web | frontend/src/pages/DocumentList.tsx |
+| 2026-03-10 | Etapa 28 | DocumentDetail timeline — tokens/custo já implementados anteriormente (N/A) | — |
+| 2026-03-10 | Etapa 29 | DocumentList: checkboxes + bulk delete (barra flutuante, indeterminate select-all, DELETE sequencial) | frontend/src/pages/DocumentList.tsx |
+| 2026-03-10 | Etapa 30 | ThesisBank: exportar CSV com BOM UTF-8 (compatível Excel) além de JSON; dois botões no header | frontend/src/pages/ThesisBank.tsx |
+| 2026-03-10 | Etapa 31 | GET /stats/by-type: docs + avg_score por document_type_id; tabela no Dashboard | packages/api/routes/stats.py, frontend/src/pages/Dashboard.tsx |
 
 
 ---

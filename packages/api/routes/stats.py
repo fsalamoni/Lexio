@@ -164,6 +164,32 @@ async def get_agent_stats(
     ]
 
 
+@router.get("/by-type")
+async def get_stats_by_type(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Documents count and avg quality score per document_type_id."""
+    rows = (await db.execute(
+        select(
+            Document.document_type_id,
+            func.count(Document.id).label("total"),
+            func.avg(Document.quality_score).label("avg_score"),
+        )
+        .where(Document.organization_id == user.organization_id)
+        .group_by(Document.document_type_id)
+        .order_by(func.count(Document.id).desc())
+    )).all()
+    return [
+        {
+            "document_type_id": r.document_type_id,
+            "total": r.total,
+            "avg_score": round(float(r.avg_score), 1) if r.avg_score else None,
+        }
+        for r in rows
+    ]
+
+
 @router.get("/recent")
 async def get_recent_documents(
     limit: int = Query(5, ge=1, le=20),
