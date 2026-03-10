@@ -1,5 +1,5 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-03-10 (Etapas 7-10 concluídas) | Branch: claude/continue-planning-9WM6r
+> Atualizado: 2026-03-10 (Etapas 11-14 concluídas) | Branch: claude/continue-planning-9WM6r
 > PROPÓSITO: Indexação, cache e controle de estado da implementação.
 > REGRA: Este arquivo é a FONTE DA VERDADE. Atualizar após cada etapa concluída.
 
@@ -176,6 +176,10 @@ database/
 | 2026-03-10 | Etapa 8 | B3/B4 verificados — já tinham toast.error; DocumentEditor sem polling loop | — |
 | 2026-03-10 | Etapa 9 | Demo mode não existe no repo — N/A | — |
 | 2026-03-10 | Etapa 10 | Inter font carregada via Google Fonts em index.html | frontend/index.html |
+| 2026-03-10 | Bug B5 | Fix processing_documents: era total-completed (errado), agora conta status=processando | packages/api/routes/stats.py |
+| 2026-03-10 | Etapa 11 | Busca textual em documentos: param q backend (ilike tema+pedido) + search input debounced + type filter select | packages/api/routes/documents.py, frontend/src/pages/DocumentList.tsx |
+| 2026-03-10 | Etapa 12 | AdminPanel: pending_review_documents em StatsData + card "Em Revisão" com destaque azul; grid md:grid-cols-6 | frontend/src/pages/AdminPanel.tsx |
+| 2026-03-10 | Etapa 13 | Sidebar: badge azul em "Administração" com contagem de pendentes, poll a cada 60s | frontend/src/components/Sidebar.tsx |
 
 
 ---

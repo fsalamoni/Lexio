@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import { FileText, Plus, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
@@ -35,9 +35,23 @@ export default function DocumentList() {
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  // Debounce search input → searchQuery
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    searchDebounceRef.current = setTimeout(() => {
+      setSearchQuery(searchInput.trim())
+      setPage(0)
+    }, 350)
+    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current) }
+  }, [searchInput])
 
   useEffect(() => {
     setLoading(true)
@@ -46,6 +60,8 @@ export default function DocumentList() {
       limit: String(PAGE_SIZE),
     })
     if (statusFilter) params.set('status', statusFilter)
+    if (typeFilter) params.set('document_type_id', typeFilter)
+    if (searchQuery) params.set('q', searchQuery)
 
     api.get(`/documents?${params}`)
       .then(res => {
@@ -54,10 +70,20 @@ export default function DocumentList() {
       })
       .catch(() => toast.error('Erro ao carregar documentos'))
       .finally(() => setLoading(false))
-  }, [page, statusFilter]) // eslint-disable-line
+  }, [page, statusFilter, typeFilter, searchQuery]) // eslint-disable-line
 
   const handleStatusFilter = (s: string) => {
     setStatusFilter(prev => prev === s ? '' : s)
+    setPage(0)
+  }
+
+  const hasActiveFilters = statusFilter || typeFilter || searchQuery
+
+  const clearAll = () => {
+    setStatusFilter('')
+    setTypeFilter('')
+    setSearchInput('')
+    setSearchQuery('')
     setPage(0)
   }
 
@@ -72,6 +98,41 @@ export default function DocumentList() {
           <Plus className="w-4 h-4" />
           Novo Documento
         </Link>
+      </div>
+
+      {/* Search + type filter row */}
+      <div className="flex gap-3 mb-3">
+        {/* Search input */}
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            placeholder="Buscar por tema ou pedido…"
+            className="w-full pl-9 pr-8 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+          />
+          {searchInput && (
+            <button
+              onClick={() => { setSearchInput(''); setSearchQuery('') }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Type filter */}
+        <select
+          value={typeFilter}
+          onChange={e => { setTypeFilter(e.target.value); setPage(0) }}
+          className="text-sm border rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">Todos os tipos</option>
+          {Object.entries(DOCTYPE_LABELS).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
+        </select>
       </div>
 
       {/* Status filter chips */}
@@ -96,12 +157,12 @@ export default function DocumentList() {
             {label}
           </button>
         ))}
-        {statusFilter && (
+        {hasActiveFilters && (
           <button
-            onClick={() => { setStatusFilter(''); setPage(0) }}
-            className="px-3 py-1 rounded-full text-xs border text-gray-400 hover:text-gray-600"
+            onClick={clearAll}
+            className="px-3 py-1 rounded-full text-xs border text-gray-400 hover:text-gray-600 flex items-center gap-1"
           >
-            Limpar filtro
+            <X className="w-3 h-3" /> Limpar filtros
           </button>
         )}
       </div>
@@ -130,8 +191,13 @@ export default function DocumentList() {
           </div>
           <p className="font-medium text-gray-700 mb-1">Nenhum documento encontrado</p>
           <p className="text-sm text-gray-400">
-            {statusFilter ? 'Nenhum documento com esse status.' : 'Crie seu primeiro documento usando o botão acima.'}
+            {hasActiveFilters ? 'Nenhum documento corresponde aos filtros ativos.' : 'Crie seu primeiro documento usando o botão acima.'}
           </p>
+          {hasActiveFilters && (
+            <button onClick={clearAll} className="mt-3 text-sm text-brand-600 hover:underline">
+              Limpar filtros
+            </button>
+          )}
         </div>
       ) : (
         <>
