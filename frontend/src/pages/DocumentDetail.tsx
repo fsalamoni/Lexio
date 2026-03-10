@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff } from 'lucide-react'
+import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle } from 'lucide-react'
 import api from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import ProgressTracker from '../components/ProgressTracker'
 import { useToast } from '../components/Toast'
+import { useAuth } from '../contexts/AuthContext'
 
 interface DocumentData {
   id: string
@@ -17,6 +18,13 @@ interface DocumentData {
   docx_path: string | null
   legal_area_ids: string[]
   texto_completo: string | null
+  metadata_?: {
+    rejection_reason?: string
+    rejected_by_name?: string
+    rejected_at?: string
+    approved_by_name?: string
+    approved_at?: string
+  }
 }
 
 interface Execution {
@@ -72,35 +80,40 @@ export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const toast = useToast()
+  const { role } = useAuth()
   const [doc, setDoc] = useState<DocumentData | null>(null)
   const [executions, setExecutions] = useState<Execution[]>([])
   const [docxHtml, setDocxHtml] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [loadingDocx, setLoadingDocx] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [workflowLoading, setWorkflowLoading] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [showRejectForm, setShowRejectForm] = useState(false)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchDoc = useCallback(() => {
     if (!id) return
     api.get(`/documents/${id}`)
-      .then(res => setDoc(res.data))
+      .then(res => {
+        const data = res.data
+        setDoc(data)
+        // Stop polling once no longer processing
+        if (data.status !== 'processando' && intervalRef.current) {
+          clearInterval(intervalRef.current)
+          intervalRef.current = null
+        }
+      })
       .catch(() => toast.error('Erro ao carregar documento'))
       .finally(() => setLoading(false))
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchDoc()
-    // Stop polling once the document is no longer processing
-    const interval = setInterval(() => {
-      setDoc(d => {
-        if (d && d.status !== 'processando') {
-          clearInterval(interval)
-          return d
-        }
-        fetchDoc()
-        return d
-      })
-    }, 5000)
-    return () => clearInterval(interval)
+    intervalRef.current = setInterval(fetchDoc, 5000)
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
   }, [fetchDoc])
 
   // Load executions when document is complete
@@ -129,6 +142,30 @@ export default function DocumentDetail() {
       setShowPreview(false)
     } finally {
       setLoadingDocx(false)
+    }
+  }
+
+  const handleWorkflowAction = async (action: 'submit-review' | 'approve' | 'reject') => {
+    if (!id) return
+    setWorkflowLoading(true)
+    try {
+      if (action === 'reject') {
+        await api.post(`/documents/${id}/reject`, { reason: rejectReason })
+        setShowRejectForm(false)
+        setRejectReason('')
+        toast.success('Documento rejeitado')
+      } else if (action === 'approve') {
+        await api.post(`/documents/${id}/approve`)
+        toast.success('Documento aprovado')
+      } else {
+        await api.post(`/documents/${id}/submit-review`)
+        toast.success('Documento enviado para revisão')
+      }
+      fetchDoc()
+    } catch (err: any) {
+      toast.error('Erro na ação de revisão', err?.response?.data?.detail || err?.message)
+    } finally {
+      setWorkflowLoading(false)
     }
   }
 
@@ -225,33 +262,139 @@ export default function DocumentDetail() {
         </div>
 
         {/* Actions */}
-        {doc.status === 'concluido' && (
-          <div className="flex flex-wrap items-center gap-3 pt-2 border-t">
-            <button
-              onClick={() => navigate(`/documents/${doc.id}/edit`)}
-              className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors text-sm"
-            >
-              <Edit3 className="w-4 h-4" />
-              Editar Documento
-            </button>
-            {doc.docx_path && (
-              <>
-                <a
-                  href={`/api/v1/documents/${doc.id}/download`}
-                  className="inline-flex items-center gap-2 border border-brand-600 text-brand-600 px-4 py-2 rounded-lg hover:bg-brand-50 transition-colors text-sm"
-                >
-                  <Download className="w-4 h-4" />
-                  Baixar DOCX
-                </a>
+        {['concluido', 'em_revisao', 'aprovado', 'rejeitado'].includes(doc.status) && (
+          <div className="space-y-3 pt-2 border-t">
+            {/* Primary document actions */}
+            <div className="flex flex-wrap items-center gap-3">
+              {doc.status !== 'aprovado' && (
                 <button
-                  onClick={loadDocxPreview}
-                  disabled={loadingDocx}
-                  className="inline-flex items-center gap-2 border text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
+                  onClick={() => navigate(`/documents/${doc.id}/edit`)}
+                  className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors text-sm"
                 >
-                  {showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  {loadingDocx ? 'Carregando...' : showPreview ? 'Ocultar DOCX' : 'Ver DOCX'}
+                  <Edit3 className="w-4 h-4" />
+                  Editar
                 </button>
-              </>
+              )}
+              {doc.docx_path && (
+                <>
+                  <a
+                    href={`/api/v1/documents/${doc.id}/download`}
+                    className="inline-flex items-center gap-2 border border-brand-600 text-brand-600 px-4 py-2 rounded-lg hover:bg-brand-50 transition-colors text-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    Baixar DOCX
+                  </a>
+                  <button
+                    onClick={loadDocxPreview}
+                    disabled={loadingDocx}
+                    className="inline-flex items-center gap-2 border text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
+                  >
+                    {showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {loadingDocx ? 'Carregando...' : showPreview ? 'Ocultar DOCX' : 'Ver DOCX'}
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Workflow actions */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Submit for review — author, when concluido or rejeitado */}
+              {(doc.status === 'concluido' || doc.status === 'rejeitado') && (
+                <button
+                  onClick={() => handleWorkflowAction('submit-review')}
+                  disabled={workflowLoading}
+                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:opacity-50"
+                >
+                  <Send className="w-4 h-4" />
+                  Enviar para Revisão
+                </button>
+              )}
+
+              {/* Admin actions — approve/reject when em_revisao */}
+              {doc.status === 'em_revisao' && role === 'admin' && !showRejectForm && (
+                <>
+                  <button
+                    onClick={() => handleWorkflowAction('approve')}
+                    disabled={workflowLoading}
+                    className="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50"
+                  >
+                    <ThumbsUp className="w-4 h-4" />
+                    Aprovar
+                  </button>
+                  <button
+                    onClick={() => setShowRejectForm(true)}
+                    disabled={workflowLoading}
+                    className="inline-flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors text-sm disabled:opacity-50"
+                  >
+                    <ThumbsDown className="w-4 h-4" />
+                    Rejeitar
+                  </button>
+                </>
+              )}
+
+              {/* Reopen from approved — admin only */}
+              {doc.status === 'aprovado' && role === 'admin' && (
+                <button
+                  onClick={() => handleWorkflowAction('submit-review')}
+                  disabled={workflowLoading}
+                  className="inline-flex items-center gap-2 border border-gray-300 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Reabrir para Revisão
+                </button>
+              )}
+            </div>
+
+            {/* Reject form */}
+            {showRejectForm && doc.status === 'em_revisao' && role === 'admin' && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-3">
+                <p className="text-sm font-medium text-orange-800">Motivo da rejeição (opcional)</p>
+                <textarea
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="Descreva o motivo da rejeição para orientar o autor..."
+                  rows={3}
+                  className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 resize-y bg-white"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleWorkflowAction('reject')}
+                    disabled={workflowLoading}
+                    className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 text-sm disabled:opacity-50"
+                  >
+                    Confirmar Rejeição
+                  </button>
+                  <button
+                    onClick={() => { setShowRejectForm(false); setRejectReason('') }}
+                    className="border text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 text-sm"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Rejection info */}
+            {doc.status === 'rejeitado' && doc.metadata_?.rejection_reason && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 flex gap-3">
+                <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-orange-800">
+                    Rejeitado por {doc.metadata_.rejected_by_name || 'administrador'}
+                  </p>
+                  <p className="text-sm text-orange-700 mt-1">{doc.metadata_.rejection_reason}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Approval info */}
+            {doc.status === 'aprovado' && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+                <ThumbsUp className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <p className="text-sm text-emerald-700">
+                  Aprovado por <strong>{doc.metadata_?.approved_by_name || 'administrador'}</strong>
+                </p>
+              </div>
             )}
           </div>
         )}

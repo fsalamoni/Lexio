@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { Loader2, CheckCircle, XCircle } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, Clock, ThumbsUp, ThumbsDown } from 'lucide-react'
 
 const statusConfig: Record<string, {
   label: string
@@ -17,6 +17,21 @@ const statusConfig: Record<string, {
     label: 'Concluído',
     className: 'bg-green-50 text-green-700 border border-green-200',
     icon: CheckCircle,
+  },
+  em_revisao: {
+    label: 'Em Revisão',
+    className: 'bg-blue-50 text-blue-700 border border-blue-200',
+    icon: Clock,
+  },
+  aprovado: {
+    label: 'Aprovado',
+    className: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+    icon: ThumbsUp,
+  },
+  rejeitado: {
+    label: 'Rejeitado',
+    className: 'bg-orange-50 text-orange-700 border border-orange-200',
+    icon: ThumbsDown,
   },
   erro: {
     label: 'Erro',

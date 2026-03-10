@@ -57,13 +57,17 @@ export default function NewDocument() {
     if (selectedType) {
       api.get(`/anamnesis/request-fields/${selectedType}`)
         .then(res => {
-          setContextFields(res.data.fields || [])
+          const fields: ContextField[] = res.data.fields || []
+          setContextFields(fields)
           setContextData({})
+          // Auto-open if there are required fields
+          setShowContext(fields.some(f => f.required))
         })
         .catch(() => setContextFields([]))
     } else {
       setContextFields([])
       setContextData({})
+      setShowContext(false)
     }
   }, [selectedType])
 
@@ -201,7 +205,13 @@ export default function NewDocument() {
             >
               <div>
                 <span className="text-sm font-medium text-gray-700">Contexto detalhado</span>
-                <span className="text-xs text-gray-400 ml-2">(opcional — melhora a qualidade)</span>
+                {contextFields.some(f => f.required) ? (
+                  <span className="text-xs text-brand-600 ml-2 font-medium">
+                    {contextFields.filter(f => f.required).length} campo(s) recomendado(s)
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-400 ml-2">(opcional — melhora a qualidade)</span>
+                )}
               </div>
               {showContext
                 ? <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -216,11 +226,20 @@ export default function NewDocument() {
                       {field.label}
                       {field.required && <span className="text-red-500 ml-1">*</span>}
                     </label>
-                    {(field.type === 'text') && (
+                    {field.type === 'text' && (
                       <input
                         type="text"
                         value={contextData[field.key] || ''}
                         onChange={e => updateContextField(field.key, e.target.value)}
+                        placeholder={field.placeholder}
+                        className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
+                      />
+                    )}
+                    {field.type === 'number' && (
+                      <input
+                        type="number"
+                        value={contextData[field.key] || ''}
+                        onChange={e => updateContextField(field.key, parseInt(e.target.value) || '')}
                         placeholder={field.placeholder}
                         className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
                       />
