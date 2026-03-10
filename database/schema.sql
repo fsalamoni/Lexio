@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS uploaded_documents (
     chunks_indexed INTEGER DEFAULT 0,
     collection_name VARCHAR(200),
     status VARCHAR(50) DEFAULT 'pending',
+    index_error VARCHAR(500),
     uploaded_by UUID REFERENCES users(id),
     organization_id UUID NOT NULL REFERENCES organizations(id),
     created_at TIMESTAMPTZ DEFAULT NOW()
