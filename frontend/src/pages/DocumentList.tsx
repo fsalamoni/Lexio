@@ -39,6 +39,8 @@ export default function DocumentList() {
   const [searchInput, setSearchInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState('date_desc')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
 
@@ -63,6 +65,8 @@ export default function DocumentList() {
     if (statusFilter) params.set('status', statusFilter)
     if (typeFilter) params.set('document_type_id', typeFilter)
     if (searchQuery) params.set('q', searchQuery)
+    if (dateFrom) params.set('date_from', dateFrom)
+    if (dateTo) params.set('date_to', dateTo)
     const [sbField, sbDir] = sortBy.split('_')
     params.set('sort_by', sbField === 'date' ? 'created_at' : 'quality_score')
     params.set('sort_dir', sbDir)
@@ -74,14 +78,14 @@ export default function DocumentList() {
       })
       .catch(() => toast.error('Erro ao carregar documentos'))
       .finally(() => setLoading(false))
-  }, [page, statusFilter, typeFilter, searchQuery, sortBy]) // eslint-disable-line
+  }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo]) // eslint-disable-line
 
   const handleStatusFilter = (s: string) => {
     setStatusFilter(prev => prev === s ? '' : s)
     setPage(0)
   }
 
-  const hasActiveFilters = statusFilter || typeFilter || searchQuery
+  const hasActiveFilters = statusFilter || typeFilter || searchQuery || dateFrom || dateTo
 
   const clearAll = () => {
     setStatusFilter('')
@@ -89,6 +93,8 @@ export default function DocumentList() {
     setSearchInput('')
     setSearchQuery('')
     setSortBy('date_desc')
+    setDateFrom('')
+    setDateTo('')
     setPage(0)
   }
 
@@ -150,6 +156,34 @@ export default function DocumentList() {
           <option value="quality_desc">Maior score</option>
           <option value="quality_asc">Menor score</option>
         </select>
+      </div>
+
+      {/* Date range filter row */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <span className="text-xs text-gray-500 whitespace-nowrap">Período:</span>
+        <input
+          type="date"
+          value={dateFrom}
+          max={dateTo || undefined}
+          onChange={e => { setDateFrom(e.target.value); setPage(0) }}
+          className="text-sm border rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+        <span className="text-xs text-gray-400">até</span>
+        <input
+          type="date"
+          value={dateTo}
+          min={dateFrom || undefined}
+          onChange={e => { setDateTo(e.target.value); setPage(0) }}
+          className="text-sm border rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+        {(dateFrom || dateTo) && (
+          <button
+            onClick={() => { setDateFrom(''); setDateTo(''); setPage(0) }}
+            className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
+          >
+            <X className="w-3 h-3" /> Limpar datas
+          </button>
+        )}
       </div>
 
       {/* Status filter chips */}
@@ -238,6 +272,15 @@ export default function DocumentList() {
                         <Link to={`/documents/${doc.id}`} className="text-brand-600 hover:text-brand-800 hover:underline font-medium text-sm">
                           {DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id}
                         </Link>
+                        {doc.origem && doc.origem !== 'web' && (
+                          <span className={`ml-2 inline-block px-1.5 py-0.5 text-[10px] font-medium rounded ${
+                            doc.origem === 'whatsapp'
+                              ? 'bg-green-50 text-green-700'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {doc.origem === 'whatsapp' ? 'WhatsApp' : doc.origem.toUpperCase()}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700 max-w-xs">
                         <span className="line-clamp-1">{doc.tema || <span className="text-gray-400">—</span>}</span>

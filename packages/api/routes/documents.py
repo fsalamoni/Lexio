@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import uuid
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -87,6 +88,8 @@ async def list_documents(
     q: str | None = Query(None, max_length=200),
     sort_by: str = Query("created_at", pattern="^(created_at|quality_score)$"),
     sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -99,6 +102,14 @@ async def list_documents(
     if document_type_id:
         stmt = stmt.where(Document.document_type_id == document_type_id)
         count_stmt = count_stmt.where(Document.document_type_id == document_type_id)
+    if date_from:
+        dt_from = datetime(date_from.year, date_from.month, date_from.day, tzinfo=timezone.utc)
+        stmt = stmt.where(Document.created_at >= dt_from)
+        count_stmt = count_stmt.where(Document.created_at >= dt_from)
+    if date_to:
+        dt_to = datetime(date_to.year, date_to.month, date_to.day, 23, 59, 59, tzinfo=timezone.utc)
+        stmt = stmt.where(Document.created_at <= dt_to)
+        count_stmt = count_stmt.where(Document.created_at <= dt_to)
     if q:
         q_like = f"%{q}%"
         search_filter = or_(
