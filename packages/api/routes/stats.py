@@ -30,6 +30,13 @@ async def get_stats(
         )
     )).scalar() or 0
 
+    processing_docs = (await db.execute(
+        select(func.count(Document.id)).where(
+            Document.organization_id == org_id,
+            Document.status == "processando",
+        )
+    )).scalar() or 0
+
     avg_score = (await db.execute(
         select(func.avg(Document.quality_score)).where(
             Document.organization_id == org_id,
@@ -58,7 +65,7 @@ async def get_stats(
     return {
         "total_documents": total_docs,
         "completed_documents": completed_docs,
-        "processing_documents": total_docs - completed_docs,
+        "processing_documents": processing_docs,
         "pending_review_documents": pending_review_docs,
         "average_quality_score": round(avg_score, 1) if avg_score else None,
         "total_cost_usd": round(total_cost, 4),

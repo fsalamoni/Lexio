@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.auth.dependencies import get_current_user, get_current_admin, get_db
@@ -84,6 +84,7 @@ async def list_documents(
     limit: int = Query(20, ge=1, le=100),
     status: str | None = None,
     document_type_id: str | None = None,
+    q: str | None = Query(None, max_length=200),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -96,6 +97,14 @@ async def list_documents(
     if document_type_id:
         stmt = stmt.where(Document.document_type_id == document_type_id)
         count_stmt = count_stmt.where(Document.document_type_id == document_type_id)
+    if q:
+        q_like = f"%{q}%"
+        search_filter = or_(
+            Document.tema.ilike(q_like),
+            Document.original_request.ilike(q_like),
+        )
+        stmt = stmt.where(search_filter)
+        count_stmt = count_stmt.where(search_filter)
 
     stmt = stmt.order_by(Document.created_at.desc()).offset(skip).limit(limit)
 

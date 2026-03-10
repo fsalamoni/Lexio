@@ -35,6 +35,7 @@ interface StatsData {
   total_documents: number
   completed_documents: number
   processing_documents: number
+  pending_review_documents: number
   average_quality_score: number | null
   total_cost_usd: number
 }
@@ -506,7 +507,7 @@ export default function AdminPanel() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
         <div className="bg-white rounded-xl border p-4">
           <div className="flex items-center gap-2 mb-1">
             <FileText className="w-4 h-4 text-brand-600" />
@@ -520,6 +521,15 @@ export default function AdminPanel() {
             <span className="text-xs text-gray-500">Concluídos</span>
           </div>
           <p className="text-2xl font-bold text-gray-900">{stats?.completed_documents || 0}</p>
+        </div>
+        <div className={`rounded-xl border p-4 ${stats?.pending_review_documents ? 'bg-blue-50 border-blue-200' : 'bg-white'}`}>
+          <div className="flex items-center gap-2 mb-1">
+            <Clock className={`w-4 h-4 ${stats?.pending_review_documents ? 'text-blue-600' : 'text-gray-400'}`} />
+            <span className="text-xs text-gray-500">Em Revisão</span>
+          </div>
+          <p className={`text-2xl font-bold ${stats?.pending_review_documents ? 'text-blue-700' : 'text-gray-900'}`}>
+            {stats?.pending_review_documents || 0}
+          </p>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <div className="flex items-center gap-2 mb-1">
