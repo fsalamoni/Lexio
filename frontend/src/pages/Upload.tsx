@@ -104,7 +104,7 @@ export default function Upload() {
 
 
   const handleDeleteUpload = async (id: string, filename: string) => {
-    if (!window.confirm(`Remover "" do acervo permanentemente?`)) return
+    if (!window.confirm(`Remover "${filename}" do acervo permanentemente?`)) return
     setDeletingId(id)
     try {
       await api.delete(`/uploads/${id}`)

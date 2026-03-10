@@ -85,6 +85,8 @@ async def list_documents(
     status: str | None = None,
     document_type_id: str | None = None,
     q: str | None = Query(None, max_length=200),
+    sort_by: str = Query("created_at", pattern="^(created_at|quality_score)$"),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -106,7 +108,9 @@ async def list_documents(
         stmt = stmt.where(search_filter)
         count_stmt = count_stmt.where(search_filter)
 
-    stmt = stmt.order_by(Document.created_at.desc()).offset(skip).limit(limit)
+    sort_col = Document.quality_score if sort_by == "quality_score" else Document.created_at
+    order_expr = sort_col.asc() if sort_dir == "asc" else sort_col.desc()
+    stmt = stmt.order_by(order_expr).offset(skip).limit(limit)
 
     result = await db.execute(stmt)
     docs = result.scalars().all()

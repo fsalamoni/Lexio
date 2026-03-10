@@ -1,5 +1,5 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-03-10 (Etapas 17-18 concluídas) | Branch: claude/continue-planning-9WM6r
+> Atualizado: 2026-03-10 (Etapas 19-23 concluídas) | Branch: claude/continue-planning-9WM6r
 > PROPÓSITO: Indexação, cache e controle de estado da implementação.
 > REGRA: Este arquivo é a FONTE DA VERDADE. Atualizar após cada etapa concluída.
 
@@ -184,6 +184,12 @@ database/
 | 2026-03-10 | Etapa 16 | Gerenciamento de usuários: GET/PATCH /admin/users + UsersSection no AdminPanel (role select + toggle ativo) | packages/api/routes/admin.py, frontend/src/pages/AdminPanel.tsx |
 | 2026-03-10 | Etapa 17 | Upload progress bar real: onUploadProgress axios → localFiles.progress → barra animada + % | frontend/src/pages/Upload.tsx |
 | 2026-03-10 | Etapa 18 | DELETE /uploads/{id}: remove do DB + Qdrant (best-effort); botão Trash2 no histórico com confirm | packages/api/routes/uploads.py, frontend/src/pages/Upload.tsx |
+| 2026-03-10 | Bug fix | Upload.tsx: fix template literal ${filename} na confirmação de exclusão | frontend/src/pages/Upload.tsx |
+| 2026-03-10 | Etapa 19 | Onboarding redirect — já funcionava corretamente (N/A) | — |
+| 2026-03-10 | Etapa 20 | NewDocument double-submit — já implementado com loading state + disabled button (N/A) | — |
+| 2026-03-10 | Etapa 21 | ThesisBank: botão "Exportar JSON" (client-side Blob download das teses visíveis) | frontend/src/pages/ThesisBank.tsx |
+| 2026-03-10 | Etapa 22 | DocumentList: sort select (Mais recente/antigo, Maior/menor score); backend sort_by+sort_dir params | frontend/src/pages/DocumentList.tsx, packages/api/routes/documents.py |
+| 2026-03-10 | Etapa 23 | Rate limit 429: CustomEvent lexio:rate-limit no client.ts; listener em Layout.tsx com toast.error | frontend/src/api/client.ts, frontend/src/components/Layout.tsx |
 
 
 ---

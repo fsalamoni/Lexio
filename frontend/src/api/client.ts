@@ -19,6 +19,9 @@ api.interceptors.response.use(
       localStorage.removeItem('lexio_token')
       window.location.href = '/login'
     }
+    if (error.response?.status === 429) {
+      window.dispatchEvent(new CustomEvent('lexio:rate-limit'))
+    }
     return Promise.reject(error)
   }
 )
