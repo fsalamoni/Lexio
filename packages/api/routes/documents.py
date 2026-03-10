@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from packages.core.auth.dependencies import get_current_user, get_db
+from packages.core.auth.dependencies import get_current_user, get_current_admin, get_db
 from packages.core.database.models.document import Document
 from packages.core.database.models.user import User
 from packages.core.module_loader import module_registry
@@ -214,3 +214,84 @@ async def get_document_executions(
         }
         for e in executions
     ]
+
+
+# ── Workflow: Review / Approve / Reject ─────────────────────────────────────
+
+class ReviewAction(BaseModel):
+    reason: str | None = None  # Used for rejection reason
+
+
+async def _get_doc_for_user(document_id: str, user: User, db: AsyncSession) -> Document:
+    """Helper: load document scoped to user's org, raise 404 if missing."""
+    stmt = select(Document).where(
+        Document.id == uuid.UUID(document_id),
+        Document.organization_id == user.organization_id,
+    )
+    result = await db.execute(stmt)
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Documento não encontrado")
+    return doc
+
+
+@router.post("/{document_id}/submit-review")
+async def submit_for_review(
+    document_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit a completed document for review (concluido → em_revisao)."""
+    doc = await _get_doc_for_user(document_id, user, db)
+    if doc.status not in ("concluido", "rejeitado"):
+        raise HTTPException(400, f"Documento com status '{doc.status}' não pode ser enviado para revisão")
+    doc.status = "em_revisao"
+    metadata = dict(doc.metadata_ or {})
+    metadata["review_submitted_by"] = str(user.id)
+    metadata["review_submitted_at"] = __import__("datetime").datetime.utcnow().isoformat()
+    doc.metadata_ = metadata
+    await db.commit()
+    return {"status": "em_revisao", "document_id": document_id}
+
+
+@router.post("/{document_id}/approve")
+async def approve_document(
+    document_id: str,
+    user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Approve a document under review (em_revisao → aprovado). Admin only."""
+    doc = await _get_doc_for_user(document_id, user, db)
+    if doc.status != "em_revisao":
+        raise HTTPException(400, f"Documento com status '{doc.status}' não pode ser aprovado")
+    doc.status = "aprovado"
+    metadata = dict(doc.metadata_ or {})
+    metadata["approved_by"] = str(user.id)
+    metadata["approved_by_name"] = user.full_name
+    metadata["approved_at"] = __import__("datetime").datetime.utcnow().isoformat()
+    metadata.pop("rejection_reason", None)
+    doc.metadata_ = metadata
+    await db.commit()
+    return {"status": "aprovado", "document_id": document_id}
+
+
+@router.post("/{document_id}/reject")
+async def reject_document(
+    document_id: str,
+    req: ReviewAction,
+    user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reject a document under review (em_revisao → rejeitado). Admin only."""
+    doc = await _get_doc_for_user(document_id, user, db)
+    if doc.status != "em_revisao":
+        raise HTTPException(400, f"Documento com status '{doc.status}' não pode ser rejeitado")
+    doc.status = "rejeitado"
+    metadata = dict(doc.metadata_ or {})
+    metadata["rejected_by"] = str(user.id)
+    metadata["rejected_by_name"] = user.full_name
+    metadata["rejected_at"] = __import__("datetime").datetime.utcnow().isoformat()
+    metadata["rejection_reason"] = req.reason or ""
+    doc.metadata_ = metadata
+    await db.commit()
+    return {"status": "rejeitado", "document_id": document_id, "reason": req.reason}

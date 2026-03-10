@@ -101,14 +101,10 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 **Resultado esperado**: Usuário edita perfil profissional e preferências sem refazer onboarding
 
 ### ETAPA 3 — Workflow de Aprovação/Rejeição de Documentos
-**Status**: ⬅️ PRÓXIMA
-**Prioridade**: ALTA (essencial para produção jurídica real)
-**Arquivos a criar/modificar**:
-- `database/schema.sql` — status adicional (em_revisao, aprovado, rejeitado)
-- `packages/api/routes/documents.py` — endpoints PATCH /documents/{id}/approve, /reject, /request-review
-- `frontend/src/pages/DocumentDetail.tsx` — botões de workflow
-- `frontend/src/components/ReviewWorkflow.tsx` — componente de revisão (CRIAR)
-**Resultado esperado**: Fluxo processando → concluido → em_revisao → aprovado/rejeitado
+**Status**: ✅ Concluído (2026-03-10)
+**Prioridade**: ALTA
+**Implementado**: 3 endpoints (submit-review, approve, reject), StatusBadge novos estados, botões no DocumentDetail por status e role, formulário de rejeição inline, metadata_ exposto no schema
+**Resultado**: Fluxo completo concluido → em_revisao → aprovado/rejeitado
 
 ### ETAPA 4 — Integração Banco de Teses → Pipeline
 **Status**: ⏳ Pendente
