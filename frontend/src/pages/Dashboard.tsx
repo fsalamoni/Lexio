@@ -48,6 +48,12 @@ interface RecentDoc {
   created_at: string
 }
 
+interface TypeStat {
+  document_type_id: string
+  total: number
+  avg_score: number | null
+}
+
 const DOCTYPE_LABELS: Record<string, string> = {
   parecer: 'Parecer',
   peticao_inicial: 'Petição Inicial',
@@ -89,6 +95,7 @@ export default function Dashboard() {
   const [daily, setDaily] = useState<DailyPoint[]>([])
   const [agents, setAgents] = useState<AgentStat[]>([])
   const [recent, setRecent] = useState<RecentDoc[]>([])
+  const [byType, setByType] = useState<TypeStat[]>([])
   const [loading, setLoading] = useState(true)
   const toast = useToast()
 
@@ -98,7 +105,8 @@ export default function Dashboard() {
     const p2 = api.get('/stats/daily').then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
     const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => toast.error('Erro ao carregar estatísticas de agentes'))
     const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => toast.error('Erro ao carregar documentos recentes'))
-    Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
+    const p5 = api.get('/stats/by-type').then(r => setByType(toArr(r.data))).catch(() => {/* non-critical */})
+    Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
   }, []) // eslint-disable-line
 
   // Build cumulative cost series (guard against missing custo field)
@@ -322,6 +330,45 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Stats by document type */}
+      {byType.length > 0 && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="px-5 py-4 border-b">
+            <h2 className="text-sm font-semibold text-gray-700">Documentos por Tipo</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                <tr>
+                  <th className="px-5 py-2 text-left">Tipo</th>
+                  <th className="px-5 py-2 text-right">Total</th>
+                  <th className="px-5 py-2 text-right">Score Médio</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {byType.map(row => (
+                  <tr key={row.document_type_id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-2.5 text-sm text-gray-800">
+                      {DOCTYPE_LABELS[row.document_type_id] || row.document_type_id}
+                    </td>
+                    <td className="px-5 py-2.5 text-sm text-right text-gray-600 font-medium">{row.total}</td>
+                    <td className="px-5 py-2.5 text-sm text-right">
+                      {row.avg_score != null ? (
+                        <span className={`font-semibold ${
+                          row.avg_score >= 80 ? 'text-green-600'
+                            : row.avg_score >= 60 ? 'text-amber-600'
+                            : 'text-red-600'
+                        }`}>{row.avg_score}/100</span>
+                      ) : <span className="text-gray-400">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

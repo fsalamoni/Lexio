@@ -151,6 +151,27 @@ export default function ThesisBank() {
     URL.revokeObjectURL(url)
   }
 
+  const handleExportCSV = () => {
+    const escape = (v: string) => `"${String(v).replace(/"/g, '""')}"`
+    const header = ['id', 'title', 'legal_area_id', 'quality_score', 'usage_count', 'tags', 'summary', 'content']
+    const rows = theses.map(t => [
+      t.id, t.title, t.legal_area_id,
+      t.quality_score ?? '',
+      t.usage_count,
+      (t.tags || []).join(';'),
+      t.summary ?? '',
+      t.content,
+    ].map(v => escape(String(v))).join(','))
+    const csv = [header.join(','), ...rows].join('\n')
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `teses-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div>
       {/* Header */}
@@ -170,14 +191,24 @@ export default function ThesisBank() {
           </p>
         </div>
         {theses.length > 0 && (
-          <button
-            onClick={handleExport}
-            title="Exportar teses visíveis como JSON"
-            className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-2 rounded-lg transition-colors bg-white"
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Exportar JSON</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportCSV}
+              title="Exportar teses visíveis como CSV"
+              className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-2 rounded-lg transition-colors bg-white"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">CSV</span>
+            </button>
+            <button
+              onClick={handleExport}
+              title="Exportar teses visíveis como JSON"
+              className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-2 rounded-lg transition-colors bg-white"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">JSON</span>
+            </button>
+          </div>
         )}
       </div>
 
