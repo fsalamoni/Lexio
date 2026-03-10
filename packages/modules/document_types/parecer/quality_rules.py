@@ -1,12 +1,12 @@
-"""Lexio Module — Parecer: Quality rules specific to legal opinions."""
+"""Lexio Module — Parecer: Quality rules (equivalente ao Quality Gate do OpenClaw n8n v25.4)."""
 
 import re
 
 QUALITY_RULES = [
     {
         "id": "min_length",
-        "description": "Parecer deve ter pelo menos 2000 caracteres",
-        "check": lambda text, ctx: len(text) >= 2000,
+        "description": "Parecer deve ter pelo menos 3000 caracteres",
+        "check": lambda text, ctx: len(text) >= 3000,
         "weight": 10,
     },
     {
@@ -35,9 +35,10 @@ QUALITY_RULES = [
     },
     {
         "id": "has_legal_basis",
-        "description": "Deve citar base legal (art., lei, decreto, CF)",
+        "description": "Deve citar base legal (art., lei, decreto, CF, súmula)",
         "check": lambda text, ctx: any(
-            term in text.lower() for term in ["art.", "lei ", "decreto", "constituição", "súmula"]
+            term in text.lower()
+            for term in ["art.", "lei ", "decreto", "constituição", "súmula", "inciso"]
         ),
         "weight": 12,
     },
@@ -55,8 +56,8 @@ QUALITY_RULES = [
     },
     {
         "id": "has_sources",
-        "description": "Deve conter pelo menos 2 referências [Fonte:]",
-        "check": lambda text, ctx: text.count("[Fonte:") >= 2,
+        "description": "Deve conter pelo menos 3 referências [Fonte:]",
+        "check": lambda text, ctx: text.count("[Fonte:") >= 3,
         "weight": 10,
     },
     {
@@ -67,21 +68,27 @@ QUALITY_RULES = [
     },
     {
         "id": "proper_paragraphs",
-        "description": "Deve ter pelo menos 5 parágrafos separados",
-        "check": lambda text, ctx: text.count("\n\n") >= 5,
+        "description": "Deve ter pelo menos 8 parágrafos (mínimo exigido pelo redator)",
+        "check": lambda text, ctx: text.count("\n\n") >= 8,
         "weight": 5,
     },
     {
         "id": "tema_relevance",
         "description": "Tema deve aparecer no texto (relevância)",
         "check": lambda text, ctx: _check_tema_relevance(text, ctx),
+        "weight": 10,
+    },
+    {
+        "id": "no_invented_jurisprudence",
+        "description": "Não deve conter jurisprudência com padrão suspeito (REsp/RE sem fonte)",
+        "check": lambda text, ctx: _check_no_invented_jurisprudence(text),
         "weight": 5,
     },
 ]
 
 
 def _check_connectives(text: str) -> bool:
-    """Check that no connective appears more than 2 times."""
+    """Check that no connective appears more than 2 times (n8n Quality Gate rule)."""
     conectivos = [
         "nesse sentido", "outrossim", "com efeito", "nessa esteira",
         "dessa sorte", "ademais", "importa destacar", "cumpre observar",
@@ -97,7 +104,7 @@ def _check_connectives(text: str) -> bool:
 
 
 def _check_tema_relevance(text: str, ctx: dict) -> bool:
-    """Check that the theme keywords appear in the text."""
+    """Check that the theme keywords appear sufficiently in the text."""
     tema = ctx.get("tema", "")
     if not tema:
         return True
@@ -106,3 +113,17 @@ def _check_tema_relevance(text: str, ctx: dict) -> bool:
         return True
     matches = sum(1 for w in words if w in text.lower())
     return matches >= len(words) * 0.5
+
+
+def _check_no_invented_jurisprudence(text: str) -> bool:
+    """Detect suspicious jurisprudence patterns without source attribution.
+
+    Flags: REsp/RE/MS numbers without [Fonte:] nearby (possible hallucination).
+    """
+    # Find patterns like REsp 123.456/XX, RE 123456, MS 12345
+    suspicious = re.findall(r'\b(?:REsp|RE|MS|HC|RMS|AgRg)\s+[\d.]+/[A-Z]{2}', text)
+    sources_count = text.count("[Fonte:")
+    # If suspicious patterns found but no sources at all — likely hallucinated
+    if len(suspicious) > 2 and sources_count == 0:
+        return False
+    return True
