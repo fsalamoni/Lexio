@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, PlusCircle, Upload,
-  Scale, LogOut, Shield, BookOpen, ChevronRight,
+  Scale, LogOut, Shield, BookOpen, ChevronRight, UserCircle,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../contexts/AuthContext'
@@ -84,10 +84,24 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Footer */}
       <div className="p-3 border-t border-white/10 space-y-1">
         {fullName && (
-          <div className="px-4 py-2">
-            <p className="text-xs text-brand-300 truncate">{fullName}</p>
-            <p className="text-xs text-brand-400 capitalize">{role || 'user'}</p>
-          </div>
+          <NavLink
+            to="/profile"
+            onClick={onClose}
+            className={({ isActive }) =>
+              clsx(
+                'flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm transition-all',
+                isActive
+                  ? 'bg-white/15 text-white font-medium'
+                  : 'text-brand-200 hover:bg-white/10 hover:text-white'
+              )
+            }
+          >
+            <UserCircle className="w-5 h-5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs truncate font-medium">{fullName}</p>
+              <p className="text-xs text-brand-400 capitalize">{role || 'user'}</p>
+            </div>
+          </NavLink>
         )}
         <button
           onClick={handleLogout}

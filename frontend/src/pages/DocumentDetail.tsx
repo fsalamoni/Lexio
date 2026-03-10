@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff } from 'lucide-react'
 import api from '../api/client'
@@ -78,29 +78,30 @@ export default function DocumentDetail() {
   const [showPreview, setShowPreview] = useState(false)
   const [loadingDocx, setLoadingDocx] = useState(false)
   const [loading, setLoading] = useState(true)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchDoc = useCallback(() => {
     if (!id) return
     api.get(`/documents/${id}`)
-      .then(res => setDoc(res.data))
+      .then(res => {
+        const data = res.data
+        setDoc(data)
+        // Stop polling once no longer processing
+        if (data.status !== 'processando' && intervalRef.current) {
+          clearInterval(intervalRef.current)
+          intervalRef.current = null
+        }
+      })
       .catch(() => toast.error('Erro ao carregar documento'))
       .finally(() => setLoading(false))
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchDoc()
-    // Stop polling once the document is no longer processing
-    const interval = setInterval(() => {
-      setDoc(d => {
-        if (d && d.status !== 'processando') {
-          clearInterval(interval)
-          return d
-        }
-        fetchDoc()
-        return d
-      })
-    }, 5000)
-    return () => clearInterval(interval)
+    intervalRef.current = setInterval(fetchDoc, 5000)
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
   }, [fetchDoc])
 
   // Load executions when document is complete
