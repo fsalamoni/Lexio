@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon } from 'lucide-react'
+import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download } from 'lucide-react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
 import { SkeletonItem } from '../components/Skeleton'
@@ -116,6 +116,16 @@ export default function ThesisBank() {
   const areaColor = (area: string) =>
     AREA_COLORS[area] ?? 'bg-gray-50 text-gray-700 border-gray-200'
 
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify(theses, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `teses-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div>
       {/* Header */}
@@ -123,7 +133,7 @@ export default function ThesisBank() {
         <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0">
           <BookOpen className="w-5 h-5 text-brand-600" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900">Banco de Teses</h1>
           <p className="text-sm text-gray-500">
             {total} teses jurídicas
@@ -134,6 +144,16 @@ export default function ThesisBank() {
             )}
           </p>
         </div>
+        {theses.length > 0 && (
+          <button
+            onClick={handleExport}
+            title="Exportar teses visíveis como JSON"
+            className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-2 rounded-lg transition-colors bg-white"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Exportar JSON</span>
+          </button>
+        )}
       </div>
 
       {/* Area stat cards */}

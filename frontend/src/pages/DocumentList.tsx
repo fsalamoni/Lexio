@@ -38,6 +38,7 @@ export default function DocumentList() {
   const [typeFilter, setTypeFilter] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState('date_desc')
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
 
@@ -62,6 +63,9 @@ export default function DocumentList() {
     if (statusFilter) params.set('status', statusFilter)
     if (typeFilter) params.set('document_type_id', typeFilter)
     if (searchQuery) params.set('q', searchQuery)
+    const [sbField, sbDir] = sortBy.split('_')
+    params.set('sort_by', sbField === 'date' ? 'created_at' : 'quality_score')
+    params.set('sort_dir', sbDir)
 
     api.get(`/documents?${params}`)
       .then(res => {
@@ -70,7 +74,7 @@ export default function DocumentList() {
       })
       .catch(() => toast.error('Erro ao carregar documentos'))
       .finally(() => setLoading(false))
-  }, [page, statusFilter, typeFilter, searchQuery]) // eslint-disable-line
+  }, [page, statusFilter, typeFilter, searchQuery, sortBy]) // eslint-disable-line
 
   const handleStatusFilter = (s: string) => {
     setStatusFilter(prev => prev === s ? '' : s)
@@ -84,6 +88,7 @@ export default function DocumentList() {
     setTypeFilter('')
     setSearchInput('')
     setSearchQuery('')
+    setSortBy('date_desc')
     setPage(0)
   }
 
@@ -132,6 +137,18 @@ export default function DocumentList() {
           {Object.entries(DOCTYPE_LABELS).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
+        </select>
+
+        {/* Sort */}
+        <select
+          value={sortBy}
+          onChange={e => { setSortBy(e.target.value); setPage(0) }}
+          className="text-sm border rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="date_desc">Mais recente</option>
+          <option value="date_asc">Mais antigo</option>
+          <option value="quality_desc">Maior score</option>
+          <option value="quality_asc">Menor score</option>
         </select>
       </div>
 

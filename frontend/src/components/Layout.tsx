@@ -1,9 +1,17 @@
-import { useState, ReactNode } from 'react'
+import { useState, useEffect, ReactNode } from 'react'
 import { Menu } from 'lucide-react'
 import Sidebar from './Sidebar'
 import { ErrorBoundary } from './ErrorBoundary'
+import { useToast } from './Toast'
 export default function Layout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const toast = useToast()
+
+  useEffect(() => {
+    const handler = () => toast.error('Muitas requisições', 'Aguarde um momento e tente novamente.')
+    window.addEventListener('lexio:rate-limit', handler)
+    return () => window.removeEventListener('lexio:rate-limit', handler)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex min-h-screen bg-gray-50">
