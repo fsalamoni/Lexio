@@ -1,5 +1,5 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-03-10 (Implementação completa) | Branch: claude/continue-planning-9WM6r
+> Atualizado: 2026-03-10 (Etapas 7-10 concluídas) | Branch: claude/continue-planning-9WM6r
 > PROPÓSITO: Indexação, cache e controle de estado da implementação.
 > REGRA: Este arquivo é a FONTE DA VERDADE. Atualizar após cada etapa concluída.
 
@@ -73,8 +73,8 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 |----|-------|-----------|-----------|
 | B1 | ProgressTracker.tsx | WS URL deve ser wss:// em HTTPS | ✅ Já correto (replace /^http/, 'ws') |
 | B2 | DocumentDetail.tsx | Polling não para quando status=concluido | ✅ Corrigido com useRef |
-| B3 | Dashboard.tsx | .catch(() => {}) silencioso → deve usar toast | Baixa |
-| B4 | ThesisBank.tsx | .catch(() => {}) silencioso → deve usar toast | Baixa |
+| B3 | Dashboard.tsx | .catch(() => {}) silencioso → deve usar toast | ✅ Já estava com toast.error |
+| B4 | ThesisBank.tsx | .catch(() => {}) silencioso → deve usar toast | ✅ Já estava com toast.error |
 
 ---
 
@@ -172,6 +172,11 @@ database/
 | 2026-03-10 | Etapa 3 | Workflow aprovação/rejeição (3 endpoints + StatusBadge + UI) | packages/api/routes/documents.py, schemas/documents.py, frontend/src/components/StatusBadge.tsx, pages/DocumentDetail.tsx |
 | 2026-03-10 | Etapa 4 | Injeção teses banco → fragmentosAcervo no pipeline | packages/pipeline/orchestrator.py |
 | 2026-03-10 | Etapa 6 | AdminPanel: ReviewQueue + Skeleton loading | frontend/src/pages/AdminPanel.tsx |
+| 2026-03-10 | Etapa 7 | DocumentList: 6 chips status; Dashboard: card "Em Revisão" + stats.pending_review | frontend/src/pages/DocumentList.tsx, Dashboard.tsx, packages/api/routes/stats.py |
+| 2026-03-10 | Etapa 8 | B3/B4 verificados — já tinham toast.error; DocumentEditor sem polling loop | — |
+| 2026-03-10 | Etapa 9 | Demo mode não existe no repo — N/A | — |
+| 2026-03-10 | Etapa 10 | Inter font carregada via Google Fonts em index.html | frontend/index.html |
+
 
 ---
 

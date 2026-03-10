@@ -48,10 +48,18 @@ async def get_stats(
         )
     )).scalar()
 
+    pending_review_docs = (await db.execute(
+        select(func.count(Document.id)).where(
+            Document.organization_id == org_id,
+            Document.status == "em_revisao",
+        )
+    )).scalar() or 0
+
     return {
         "total_documents": total_docs,
         "completed_documents": completed_docs,
         "processing_documents": total_docs - completed_docs,
+        "pending_review_documents": pending_review_docs,
         "average_quality_score": round(avg_score, 1) if avg_score else None,
         "total_cost_usd": round(total_cost, 4),
         "average_duration_ms": int(avg_duration_ms) if avg_duration_ms else None,
