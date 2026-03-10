@@ -20,6 +20,21 @@ services:
         condition: service_started
     networks:
       - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   # === Frontend (nginx, production build) ===
   frontend:
@@ -36,6 +51,15 @@ services:
       - backend
     networks:
       - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
 
   # === PostgreSQL ===
   postgres:
@@ -50,6 +74,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./backups:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lexio"]
       interval: 5s
@@ -57,6 +82,15 @@ services:
       retries: 5
     networks:
       - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 256M
 
   # === Qdrant (Vector DB) ===
   qdrant:
@@ -70,6 +104,15 @@ services:
       QDRANT__SERVICE__API_KEY: lexio_qdrant_key_2026
     networks:
       - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 256M
 
   # === Ollama (Embeddings) ===
   ollama:
@@ -81,6 +124,15 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.1'
+          memory: 512M
 
   # === SearXNG (Web Search) ===
   searxng:
@@ -92,6 +144,33 @@ services:
       - SEARXNG_BASE_URL=http://localhost:8888
     volumes:
       - searxng_data:/etc/searxng
+    networks:
+      - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.05'
+          memory: 128M
+
+  # === Backup (on-demand via `make backup` or daily cron) ===
+  backup:
+    image: postgres:16-alpine
+    container_name: lexio-backup
+    profiles:
+      - backup
+    environment:
+      PGPASSWORD: lexio
+    volumes:
+      - ./backups:/backups
+      - ./scripts:/scripts
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - lexio
 

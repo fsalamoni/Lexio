@@ -1,11 +1,12 @@
 """Lexio API Gateway — FastAPI application entry point."""
 
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -17,6 +18,7 @@ from packages.core.database.base import Base
 from packages.core.module_loader import discover_and_load_modules, module_registry
 from packages.core.websocket import progress_manager
 from packages.api.middleware.rate_limit import limiter
+from packages.api.middleware.metrics import record_request, render_prometheus
 
 from packages.api.routes import auth, documents, document_types, legal_areas, uploads, stats, health, webhooks, admin, anamnesis, thesis_bank
 
@@ -89,6 +91,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Metrics middleware — records every request's method, path, status, duration
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start
+    record_request(
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        duration_s=duration,
+    )
+    return response
+
+
 # API routes
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
@@ -101,6 +119,67 @@ app.include_router(webhooks.router, prefix="/webhook", tags=["Webhooks"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(anamnesis.router, prefix="/api/v1", tags=["Anamnesis"])
 app.include_router(thesis_bank.router, prefix="/api/v1/theses", tags=["Thesis Bank"])
+
+
+# Prometheus metrics endpoint
+@app.get("/api/v1/metrics", include_in_schema=False)
+async def prometheus_metrics():
+    """Prometheus-compatible metrics. Scrape at 15s intervals."""
+    from sqlalchemy import select, func
+    from packages.core.database.models.document import Document
+
+    business: list[str] = []
+    try:
+        async with async_session() as db:
+            rows = (await db.execute(
+                select(Document.status, func.count(Document.id).label("n"))
+                .group_by(Document.status)
+            )).all()
+
+            business.append("# HELP lexio_documents_total Total documents by status.")
+            business.append("# TYPE lexio_documents_total gauge")
+            for row in rows:
+                business.append(f'lexio_documents_total{{status="{row.status}"}} {row.n}')
+
+            type_rows = (await db.execute(
+                select(Document.document_type_id, func.count(Document.id).label("n"))
+                .group_by(Document.document_type_id)
+            )).all()
+
+            business.append("# HELP lexio_documents_by_type Documents by document type.")
+            business.append("# TYPE lexio_documents_by_type gauge")
+            for row in type_rows:
+                business.append(
+                    f'lexio_documents_by_type{{type="{row.document_type_id}"}} {row.n}'
+                )
+
+            avg_score = (await db.execute(
+                select(func.avg(Document.quality_score)).where(
+                    Document.quality_score.isnot(None)
+                )
+            )).scalar()
+
+            business.append("# HELP lexio_quality_score_average Average quality score.")
+            business.append("# TYPE lexio_quality_score_average gauge")
+            business.append(
+                f'lexio_quality_score_average {round(float(avg_score), 2) if avg_score else 0}'
+            )
+
+            business.append("# HELP lexio_modules_healthy Healthy modules count.")
+            business.append("# TYPE lexio_modules_healthy gauge")
+            business.append(f'lexio_modules_healthy {module_registry.healthy_count}')
+            business.append("# HELP lexio_modules_total Total registered modules.")
+            business.append("# TYPE lexio_modules_total gauge")
+            business.append(f'lexio_modules_total {module_registry.total_count}')
+
+    except Exception as e:
+        logger.warning(f"Metrics DB query failed: {e}")
+        business.append(f"# WARN db_error: {e}")
+
+    return PlainTextResponse(
+        render_prometheus(extra_metrics=business),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 # WebSocket for pipeline progress
