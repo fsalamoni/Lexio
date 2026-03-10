@@ -68,6 +68,7 @@ async def deliberate_multi_area(
                     pass
 
             area_name = getattr(area_instance, "name", area_id)
+            guides_section = ("Guias de referência:\n" + guides[:3000]) if guides else ""
             thesis_result = await call_llm(
                 system=(
                     f"Você é um JURISTA especialista em {area_name}.\n"
@@ -75,7 +76,7 @@ async def deliberate_multi_area(
                     f"sob a ótica do {area_name}.\n"
                     f"Cite artigos de lei, jurisprudência e doutrina.\n"
                     f"Formato: texto corrido, organizado por tese.\n\n"
-                    f"{'Guias de referência:\n' + guides[:3000] if guides else ''}"
+                    f"{guides_section}"
                 ),
                 user=f"Questão: {msg_original}",
                 model=model,

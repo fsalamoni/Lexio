@@ -41,9 +41,9 @@ export default function Onboarding() {
           navigate('/')
         }
       })
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar configurações de perfil'))
       .finally(() => setLoading(false))
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateField = (key: string, value: any) => {
     setData(prev => ({ ...prev, [key]: value }))

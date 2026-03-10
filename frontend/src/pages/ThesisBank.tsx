@@ -83,8 +83,8 @@ export default function ThesisBank() {
     setLoading(true)
     api.get(`/theses?${params.toString()}`)
       .then(res => {
-        setTheses(res.data.items)
-        setTotal(res.data.total)
+        setTheses(Array.isArray(res.data?.items) ? res.data.items : [])
+        setTotal(typeof res.data?.total === 'number' ? res.data.total : 0)
       })
       .catch(() => toast.error('Erro ao carregar teses'))
       .finally(() => setLoading(false))
@@ -95,7 +95,7 @@ export default function ThesisBank() {
     fetchTheses('', '')
     api.get('/theses/stats')
       .then(res => setStats(res.data))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar estatísticas do banco de teses'))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

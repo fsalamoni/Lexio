@@ -1,0 +1,19 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install project deps + test deps
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+# Copy source code and tests
+COPY packages/ ./packages/
+COPY tests/ ./tests/
+COPY pytest.ini ./
+
+# Default: run full unit test suite (fast, no external services)
+CMD ["python", "-m", "pytest", "tests/", "-v", "--tb=short", "-x"]

@@ -116,12 +116,12 @@ export const DEMO_STATS = {
 
 // ── Mock document types ───────────────────────────────────────────────
 export const DEMO_DOC_TYPES = [
-  { id: 'parecer', name: 'Parecer Jurídico', description: 'Análise técnico-jurídica sobre questão específica', template_variants: ['generic', 'mprs', 'caopp'] },
-  { id: 'peticao_inicial', name: 'Petição Inicial', description: 'Peça processual que inicia a ação judicial', template_variants: ['generic'] },
-  { id: 'contestacao', name: 'Contestação', description: 'Defesa do réu com impugnação específica dos fatos', template_variants: ['generic'] },
-  { id: 'recurso', name: 'Recurso', description: 'Recurso de apelação, agravo ou embargos', template_variants: ['generic'] },
-  { id: 'sentenca', name: 'Sentença', description: 'Decisão judicial com fundamentação completa', template_variants: ['generic'] },
-  { id: 'acao_civil_publica', name: 'Ação Civil Pública', description: 'Ação coletiva para tutela de interesses difusos', template_variants: ['generic'] },
+  { id: 'parecer', name: 'Parecer Jurídico', description: 'Análise técnico-jurídica sobre questão específica', templates: ['generic', 'mprs', 'caopp'] },
+  { id: 'peticao_inicial', name: 'Petição Inicial', description: 'Peça processual que inicia a ação judicial', templates: ['generic'] },
+  { id: 'contestacao', name: 'Contestação', description: 'Defesa do réu com impugnação específica dos fatos', templates: ['generic'] },
+  { id: 'recurso', name: 'Recurso', description: 'Recurso de apelação, agravo ou embargos', templates: ['generic'] },
+  { id: 'sentenca', name: 'Sentença', description: 'Decisão judicial com fundamentação completa', templates: ['generic'] },
+  { id: 'acao_civil_publica', name: 'Ação Civil Pública', description: 'Ação coletiva para tutela de interesses difusos', templates: ['generic'] },
 ]
 
 // ── Mock legal areas ──────────────────────────────────────────────────
