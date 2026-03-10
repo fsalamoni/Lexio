@@ -1,12 +1,8 @@
 import axios from 'axios'
-import { installDemoInterceptor } from '../demo/interceptor'
 
 const api = axios.create({
   baseURL: '/api/v1',
 })
-
-// Demo mode interceptor (must be first — before auth header)
-installDemoInterceptor(api)
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('lexio_token')

@@ -2,10 +2,16 @@
 
 Loads pipeline configuration from the document_type module and executes
 agents in sequence, managing shared context and progress reporting.
+
+CRITICAL FIX: Triagem must run FIRST (before research) so that the extracted
+tema is used for semantic search. The JSON output is then parsed to populate
+context["tema"], context["palavras_chave"], etc. before calling any search.
 """
 
 import asyncio
+import json
 import logging
+import re
 import time
 import uuid
 
@@ -24,13 +30,20 @@ from packages.core.events import event_bus, EventType
 from packages.core.module_loader import module_registry
 
 from packages.pipeline.agent import BaseAgent
-from packages.pipeline.pipeline_config import PipelineConfig
+from packages.pipeline.pipeline_config import AgentConfig, PipelineConfig
 from packages.pipeline.quality_gate import evaluate_quality
 from packages.pipeline.integrator import integrate_document
 from packages.pipeline.docx_generator import generate_docx
 from packages.pipeline.multi_area_deliberation import deliberate_multi_area
 
 logger = logging.getLogger("lexio.pipeline")
+
+# Temas genéricos/inválidos que o triador pode retornar — fallback para msgOriginal
+_BAD_TEMAS = [
+    'resumo', 'tema em', 'palavras', 'exemplo', 'proteção do patrimônio',
+    'orientação jurídica', 'sem conteúdo', 'solicitação vazia', 'não especificado',
+    'não identificado', 'campo vazio', 'tema jurídico', 'análise jurídica',
+]
 
 
 class PipelineOrchestrator:
@@ -67,24 +80,44 @@ class PipelineOrchestrator:
                 self.context["document_id"] = str(doc.id)
                 self.context["document_type"] = self.config.document_type_id
                 self.context["org_id"] = str(doc.organization_id)
+                self.context["org_uuid"] = doc.organization_id
+                self.context["template_variant"] = doc.template_variant or ""
+                self.context["legal_area_ids"] = doc.legal_area_ids or []
 
                 # Inject anamnesis context (profile prefs + enriched request)
                 if self.anamnesis_context:
                     self.context.update(self.anamnesis_context)
-                    # Prefer enriched request when available
                     if self.anamnesis_context.get("msgEnriquecida"):
                         self.context["msgOriginal"] = self.anamnesis_context["msgEnriquecida"]
 
-                # 2. Research phase (search)
+                # Separate triagem agent from the rest
+                triagem_config = None
+                remaining_agents = []
+                for ac in self.config.agents:
+                    if "triagem" in ac.name.lower() and triagem_config is None:
+                        triagem_config = ac
+                    else:
+                        remaining_agents.append(ac)
+
+                # 2. Run TRIAGEM FIRST — extract tema before search
+                if triagem_config:
+                    await self._run_triagem(db, doc, triagem_config)
+                else:
+                    # No triagem agent: fallback tema from msgOriginal
+                    msg = self.context.get("msgOriginal", "")
+                    self.context.setdefault("tema", msg[:300])
+                    self.context.setdefault("area_direito", "direito administrativo")
+
+                # 3. Research phase (now uses correctly extracted tema)
                 await self._research_phase(db)
 
-                # 2b. Multi-area deliberation (when ≥1 legal area selected)
+                # 4. Multi-area deliberation (when ≥1 legal area selected)
                 legal_area_ids = doc.legal_area_ids or []
                 if legal_area_ids:
                     await self._send_progress(
                         "deliberacao",
                         f"Deliberação entre {len(legal_area_ids)} área(s) jurídica(s)...",
-                        8,
+                        12,
                     )
                     try:
                         deliberation = await deliberate_multi_area(
@@ -93,16 +126,14 @@ class PipelineOrchestrator:
                             model=self.config.model_main,
                         )
                         self.context.update(deliberation)
-                        logger.info(
-                            f"Multi-area deliberation complete: {legal_area_ids}"
-                        )
+                        logger.info(f"Multi-area deliberation complete: {legal_area_ids}")
                     except Exception as e:
                         logger.warning(f"Multi-area deliberation failed (non-fatal): {e}")
 
-                # 3. Execute agents in sequence
-                total_agents = len(self.config.agents)
-                for i, agent_config in enumerate(self.config.agents):
-                    progress_pct = int(((i + 1) / total_agents) * 90) + 5
+                # 5. Execute remaining agents in sequence
+                total_agents = len(remaining_agents)
+                for i, agent_config in enumerate(remaining_agents):
+                    progress_pct = int(((i + 1) / max(total_agents, 1)) * 75) + 15
                     phase_name = agent_config.phase
 
                     await self._send_progress(
@@ -118,17 +149,13 @@ class PipelineOrchestrator:
 
                     agent = BaseAgent(agent_config)
                     model = agent_config.model or self.config.model_main
-                    if "triagem" in agent_config.name.lower():
-                        model = self.config.model_triage
 
                     try:
                         result = await agent.execute(self.context, model_override=model)
 
-                        # Store output in context
                         output_key = agent_config.output_key or agent_config.name
                         self.context[output_key] = result["content"]
 
-                        # Track costs
                         self.cost_tracker.add(
                             model=result["model"],
                             tokens_in=result["tokens_in"],
@@ -137,7 +164,6 @@ class PipelineOrchestrator:
                             agent=agent_config.name,
                         )
 
-                        # Save execution record
                         await self._save_execution(db, doc, result)
 
                     except Exception as e:
@@ -147,22 +173,22 @@ class PipelineOrchestrator:
                         else:
                             logger.warning(f"Skipping optional agent [{agent_config.name}]")
 
-                # 4. Integration (post-processing)
+                # 6. Integration (post-processing)
                 await self._send_progress("integracao", "Integrando documento...", 92)
                 texto_final = await integrate_document(self.context, self.config)
                 self.context["texto_final"] = texto_final
 
-                # 5. Quality gate
+                # 7. Quality gate
                 await self._send_progress("qualidade", "Avaliando qualidade...", 95)
                 quality = await evaluate_quality(texto_final, self.context, self.config)
                 quality_score = quality.get("score", 0)
                 quality_issues = quality.get("issues", [])
 
-                # 6. DOCX generation
+                # 8. DOCX generation
                 await self._send_progress("docx", "Gerando DOCX...", 97)
                 docx_path = await generate_docx(texto_final, self.context, self.config)
 
-                # 7. Finalize
+                # 9. Finalize
                 duration_s = int(time.time() - t0)
                 doc.texto_completo = texto_final
                 doc.docx_path = docx_path
@@ -213,21 +239,106 @@ class PipelineOrchestrator:
                     "document_id": doc_id, "error": str(e),
                 })
 
+    async def _run_triagem(self, db: AsyncSession, doc: Document, agent_config: AgentConfig):
+        """Run triagem agent FIRST and parse JSON output to populate tema in context.
+
+        This is the 'Parsear Triagem' step from OpenClaw n8n — without this,
+        all subsequent agents receive tema="" which produces generic garbage output.
+        """
+        await self._send_progress("triagem", "Triagem: extraindo tema jurídico...", 2)
+        await event_bus.emit(EventType.PIPELINE_PHASE_CHANGED, {
+            "document_id": self.document_id,
+            "phase": "triagem",
+            "agent": agent_config.name,
+        })
+
+        agent = BaseAgent(agent_config)
+        model = self.config.model_triage
+
+        try:
+            result = await agent.execute(self.context, model_override=model)
+            raw_text = result["content"]
+
+            # Store raw output
+            output_key = agent_config.output_key or agent_config.name
+            self.context[output_key] = raw_text
+
+            # Parse JSON and populate context keys for all downstream agents
+            self._parse_triagem_output(raw_text)
+
+            self.cost_tracker.add(
+                model=result["model"],
+                tokens_in=result["tokens_in"],
+                tokens_out=result["tokens_out"],
+                cost=result["cost_usd"],
+                agent=agent_config.name,
+            )
+            await self._save_execution(db, doc, result)
+
+        except Exception as e:
+            logger.error(f"Triagem agent failed: {e}")
+            # Fallback: use msgOriginal as tema so pipeline can continue
+            msg = self.context.get("msgOriginal", "")
+            self.context["tema"] = msg[:300] if msg else "tema não identificado"
+            self.context["palavras_chave"] = [w for w in msg.split() if len(w) > 3][:10]
+            self.context["area_direito"] = "direito administrativo"
+            self.context["tipo_ilicito"] = "a definir"
+            self.context["subtemas"] = []
+
+    def _parse_triagem_output(self, raw_text: str):
+        """Parse triagem JSON output and set context keys with n8n-style fallbacks."""
+        msg = self.context.get("msgOriginal", "")
+        parsed: dict = {}
+
+        try:
+            m = re.search(r'\{[\s\S]*\}', raw_text)
+            if m:
+                parsed = json.loads(m.group(0))
+        except Exception:
+            logger.warning("Triagem JSON parse failed — using msgOriginal as fallback tema")
+
+        # Validate tema (n8n 'Parsear Triagem' logic)
+        tema = (parsed.get("tema") or "").strip()
+        if not tema or len(tema) < 5 or any(bad in tema.lower() for bad in _BAD_TEMAS):
+            tema = msg[:300] if msg else "tema não identificado"
+
+        # Validate keywords
+        kw = parsed.get("palavras_chave") or []
+        if not isinstance(kw, list) or not kw:
+            kw = [w for w in msg.split() if len(w) > 3][:10]
+
+        self.context["tema"] = tema
+        self.context["palavras_chave"] = kw
+        self.context["area_direito"] = (parsed.get("area_direito") or "direito administrativo").strip()
+        self.context["tipo_ilicito"] = (parsed.get("tipo_ilicito") or "a definir").strip()
+        self.context["subtemas"] = parsed.get("subtemas") or []
+
+        logger.info(
+            f"Triagem → tema='{tema[:80]}' area='{self.context['area_direito']}' "
+            f"kw={kw[:3]}"
+        )
+
     async def _load_document(self, db: AsyncSession) -> Document | None:
         stmt = select(Document).where(Document.id == uuid.UUID(self.document_id))
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def _research_phase(self, db: AsyncSession):
-        """Run all search services in parallel."""
+        """Run all search services in parallel using the tema extracted from triagem."""
         msg = self.context.get("msgOriginal", "")
         tema = self.context.get("tema", msg[:200])
+        kw = self.context.get("palavras_chave", [])
+
+        # Build richer search query: tema + keywords (mirrors n8n embedding input)
+        search_query = tema
+        if kw:
+            search_query = f"{tema} {' '.join(str(k) for k in kw[:5])}"
 
         await self._send_progress("pesquisa", "Pesquisando acervo e jurisprudência...", 5)
 
         # Generate embedding for vector search
         try:
-            vector = await generate_embedding(tema)
+            vector = await generate_embedding(search_query)
         except Exception as e:
             logger.warning(f"Embedding failed: {e}")
             vector = []
@@ -252,6 +363,88 @@ class PipelineOrchestrator:
         self.context["fragmentosAcervo"] = fragments
         self.context["processosJudiciarios"] = processos
         self.context["legislacao"] = legislacao
+
+        # Inject relevant theses from thesis bank (non-blocking, non-fatal)
+        await self._inject_theses(db)
+
+    async def _inject_theses(self, db: AsyncSession):
+        """Fetch relevant theses from thesis bank and prepend to fragmentosAcervo.
+
+        Uses the organization's thesis bank to retrieve high-quality, active theses
+        that match the current document type and/or legal area. Theses are prepended
+        to fragmentosAcervo so all agents that use {fragmentosAcervo} benefit
+        without any prompt modifications.
+        """
+        try:
+            from packages.modules.thesis_bank.service import list_theses
+
+            org_uuid = self.context.get("org_uuid")
+            if not org_uuid:
+                return
+
+            doc_type = self.config.document_type_id
+            legal_area_ids: list = self.context.get("legal_area_ids", [])
+            primary_area = legal_area_ids[0] if legal_area_ids else None
+
+            # Try area + type first; fallback to just area or just type
+            theses_list, total = await list_theses(
+                db=db,
+                organization_id=org_uuid,
+                legal_area_id=primary_area,
+                document_type_id=doc_type,
+                status="active",
+                limit=5,
+            )
+
+            # If too few results, broaden query to area only
+            if len(theses_list) < 3 and primary_area:
+                broader, _ = await list_theses(
+                    db=db,
+                    organization_id=org_uuid,
+                    legal_area_id=primary_area,
+                    status="active",
+                    limit=5,
+                )
+                # Merge, de-duplicate by id
+                seen = {t.id for t in theses_list}
+                for t in broader:
+                    if t.id not in seen:
+                        theses_list.append(t)
+                        seen.add(t.id)
+                        if len(theses_list) >= 5:
+                            break
+
+            if not theses_list:
+                return
+
+            # Format theses as context block
+            thesis_lines = ["TESES JURÍDICAS REUTILIZÁVEIS (Banco da Organização):"]
+            for i, thesis in enumerate(theses_list[:5], 1):
+                thesis_lines.append(f"\n[Tese {i}] {thesis.title}")
+                if thesis.summary:
+                    thesis_lines.append(f"Resumo: {thesis.summary}")
+                thesis_lines.append(f"Conteúdo: {thesis.content[:600]}")
+                if thesis.legal_basis:
+                    bases = [f"{b.get('law', '')} art. {b.get('article', '')}"
+                             for b in thesis.legal_basis[:3] if isinstance(b, dict)]
+                    if bases:
+                        thesis_lines.append(f"Base legal: {', '.join(bases)}")
+                if thesis.quality_score:
+                    thesis_lines.append(f"Score de qualidade: {thesis.quality_score}/100")
+
+            thesis_block = "\n".join(thesis_lines) + "\n---\n"
+
+            # Prepend to fragmentosAcervo (all agents with {fragmentosAcervo} benefit)
+            existing = self.context.get("fragmentosAcervo", "")
+            self.context["fragmentosAcervo"] = thesis_block + existing
+
+            logger.info(
+                f"Injected {len(theses_list)} theses into fragmentosAcervo "
+                f"(org={self.context.get('org_id')}, area={primary_area}, type={doc_type})"
+            )
+
+        except Exception as e:
+            logger.warning(f"Thesis injection failed (non-fatal): {e}")
 
     async def _save_execution(self, db: AsyncSession, doc: Document, result: dict):
         execution = Execution(

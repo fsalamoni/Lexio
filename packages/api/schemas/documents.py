@@ -49,11 +49,12 @@ class DocumentResponse(BaseModel):
 class DocumentDetailResponse(DocumentResponse):
     """Full document response including body text (single-document endpoints only)."""
     texto_completo: str | None = None
+    metadata_: dict | None = None
 
     @classmethod
     def from_orm(cls, obj):
         base = super().from_orm(obj)
-        return cls(**base.model_dump(), texto_completo=obj.texto_completo)
+        return cls(**base.model_dump(), texto_completo=obj.texto_completo, metadata_=obj.metadata_)
 
 
 class DocumentListResponse(BaseModel):

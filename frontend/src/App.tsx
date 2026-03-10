@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ToastProvider } from './components/Toast'
-import { IS_DEMO } from './demo/interceptor'
 import Layout from './components/Layout'
 import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
@@ -14,6 +13,7 @@ import Upload from './pages/Upload'
 import AdminPanel from './pages/AdminPanel'
 import Onboarding from './pages/Onboarding'
 import ThesisBank from './pages/ThesisBank'
+import Profile from './pages/Profile'
 import NotFound from './pages/NotFound'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -49,6 +49,7 @@ function AppRoutes() {
                 <Route path="/theses" element={<ThesisBank />} />
                 <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
                 <Route path="/onboarding" element={<Onboarding />} />
+                <Route path="/profile" element={<Profile />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Layout>
@@ -60,10 +61,8 @@ function AppRoutes() {
 }
 
 // VITE_BASE_PATH controls the router base (no trailing slash).
-// Falls back to /Lexio in demo mode (GitHub Pages) or / otherwise.
 const BASENAME =
-  (import.meta.env.VITE_BASE_PATH as string | undefined)?.replace(/\/$/, '') ||
-  (IS_DEMO ? '/Lexio' : '/')
+  (import.meta.env.VITE_BASE_PATH as string | undefined)?.replace(/\/$/, '') || '/'
 
 export default function App() {
   return (
