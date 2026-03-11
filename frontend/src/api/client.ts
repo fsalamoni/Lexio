@@ -1,4 +1,7 @@
 import axios from 'axios'
+import { installDemoInterceptor } from '../demo/interceptor'
+
+const IS_DEMO = import.meta.env.VITE_DEMO_MODE === 'true'
 
 // ── In-memory GET cache with TTL + inflight deduplication ────────────────────
 
@@ -68,6 +71,12 @@ api.interceptors.response.use(
     return Promise.reject(error)
   },
 )
+
+// ── Demo mode — return mock data when the real backend is unavailable ─────────
+
+if (IS_DEMO) {
+  installDemoInterceptor(api)
+}
 
 // ── Override api.get with caching ────────────────────────────────────────────
 
