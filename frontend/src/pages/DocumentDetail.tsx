@@ -6,6 +6,8 @@ import StatusBadge from '../components/StatusBadge'
 import ProgressTracker from '../components/ProgressTracker'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
+import { IS_FIREBASE } from '../lib/firebase'
+import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
 
 interface QualityIssue {
   type: string
@@ -88,7 +90,7 @@ export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const toast = useToast()
-  const { role } = useAuth()
+  const { role, userId } = useAuth()
   const [doc, setDoc] = useState<DocumentData | null>(null)
   const [executions, setExecutions] = useState<Execution[]>([])
   const [docxHtml, setDocxHtml] = useState<string | null>(null)
@@ -104,18 +106,32 @@ export default function DocumentDetail() {
 
   const fetchDoc = useCallback(() => {
     if (!id) return
-    api.get(`/documents/${id}`)
-      .then(res => {
-        const data = res.data
-        setDoc(data)
-        // Stop polling once no longer processing
-        if (data.status !== 'processando' && intervalRef.current) {
-          clearInterval(intervalRef.current)
-          intervalRef.current = null
-        }
-      })
-      .catch(() => toast.error('Erro ao carregar documento'))
-      .finally(() => setLoading(false))
+    if (IS_FIREBASE && userId) {
+      getDocument(userId, id)
+        .then(data => {
+          if (data) {
+            setDoc(data as unknown as DocumentData)
+            if (data.status !== 'processando' && intervalRef.current) {
+              clearInterval(intervalRef.current)
+              intervalRef.current = null
+            }
+          }
+        })
+        .catch(() => toast.error('Erro ao carregar documento'))
+        .finally(() => setLoading(false))
+    } else {
+      api.get(`/documents/${id}`)
+        .then(res => {
+          const data = res.data
+          setDoc(data)
+          if (data.status !== 'processando' && intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+          }
+        })
+        .catch(() => toast.error('Erro ao carregar documento'))
+        .finally(() => setLoading(false))
+    }
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -160,7 +176,11 @@ export default function DocumentDetail() {
     if (!window.confirm(`Excluir este documento permanentemente? Esta ação não pode ser desfeita.`)) return
     setDeleting(true)
     try {
-      await api.delete(`/documents/${id}`)
+      if (IS_FIREBASE && userId) {
+        await firestoreDeleteDoc(userId, id)
+      } else {
+        await api.delete(`/documents/${id}`)
+      }
       invalidateApiCache('/stats')
       toast.success('Documento excluído')
       navigate('/documents')

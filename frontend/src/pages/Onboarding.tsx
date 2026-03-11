@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Scale, ChevronRight, ChevronLeft, Check } from 'lucide-react'
 import api from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
+import { IS_FIREBASE } from '../lib/firebase'
+import { getWizardData, completeOnboarding } from '../lib/firestore-service'
 
 interface WizardStep {
   step: number
@@ -27,22 +30,38 @@ export default function Onboarding() {
   const [data, setData] = useState<Record<string, any>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const { userId } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
 
   useEffect(() => {
-    api.get('/anamnesis/wizard')
-      .then(res => {
-        setSteps(res.data.onboarding_steps || [])
-        if (res.data.profile) {
-          setData(res.data.profile)
-        }
-        if (res.data.onboarding_completed) {
-          navigate('/')
-        }
-      })
-      .catch(() => toast.error('Erro ao carregar configurações de perfil'))
-      .finally(() => setLoading(false))
+    if (IS_FIREBASE && userId) {
+      getWizardData(userId)
+        .then(result => {
+          setSteps(result.onboarding_steps || [])
+          if (result.profile) {
+            setData(result.profile)
+          }
+          if (result.onboarding_completed) {
+            navigate('/')
+          }
+        })
+        .catch(() => toast.error('Erro ao carregar configurações de perfil'))
+        .finally(() => setLoading(false))
+    } else {
+      api.get('/anamnesis/wizard')
+        .then(res => {
+          setSteps(res.data.onboarding_steps || [])
+          if (res.data.profile) {
+            setData(res.data.profile)
+          }
+          if (res.data.onboarding_completed) {
+            navigate('/')
+          }
+        })
+        .catch(() => toast.error('Erro ao carregar configurações de perfil'))
+        .finally(() => setLoading(false))
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateField = (key: string, value: any) => {
@@ -74,7 +93,11 @@ export default function Onboarding() {
   const handleComplete = async () => {
     setSaving(true)
     try {
-      await api.post('/anamnesis/onboarding', data)
+      if (IS_FIREBASE && userId) {
+        await completeOnboarding(userId, data)
+      } else {
+        await api.post('/anamnesis/onboarding', data)
+      }
       navigate('/')
     } catch (err: any) {
       toast.error('Erro ao salvar perfil', err?.response?.data?.detail || err?.message)
@@ -86,7 +109,11 @@ export default function Onboarding() {
   const handleSkip = async () => {
     setSaving(true)
     try {
-      await api.post('/anamnesis/onboarding', {})
+      if (IS_FIREBASE && userId) {
+        await completeOnboarding(userId, {})
+      } else {
+        await api.post('/anamnesis/onboarding', {})
+      }
       navigate('/')
     } catch {
       navigate('/')
