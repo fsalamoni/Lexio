@@ -73,6 +73,39 @@ function resolve(url: string, method?: string): unknown {
     return { id: 'demo-' + Date.now(), status: 'rascunho' }
   }
 
+  // Auth endpoints — return mock login/register responses
+  if (url === '/auth/login' && method === 'post') {
+    return {
+      access_token: 'demo-token-' + Date.now(),
+      user_id: 'demo-user',
+      role: 'admin',
+      full_name: 'Usuário Demo',
+    }
+  }
+  if (url === '/auth/register' && method === 'post') {
+    return {
+      access_token: 'demo-token-' + Date.now(),
+      user_id: 'demo-user',
+      role: 'admin',
+      full_name: 'Usuário Demo',
+    }
+  }
+
+  // Password change / reset — acknowledge success
+  if (url.startsWith('/auth/') && method === 'post') {
+    return { success: true }
+  }
+
+  // Profile save — acknowledge success
+  if (url === '/anamnesis/profile' && (method === 'patch' || method === 'put')) {
+    return { success: true }
+  }
+
+  // Onboarding save — acknowledge success
+  if (url === '/anamnesis/onboarding' && method === 'post') {
+    return { success: true }
+  }
+
   // Wizard data
   if (url === '/anamnesis/wizard') {
     return { onboarding_completed: false, profile: {}, onboarding_steps: [] }
