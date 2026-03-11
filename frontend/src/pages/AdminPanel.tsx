@@ -4,7 +4,7 @@ import {
   Shield, CheckCircle, XCircle, Activity, Server, Database, Brain, Search,
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
-  ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users,
+  ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -655,8 +655,137 @@ export default function AdminPanel() {
         </div>
       )}
 
+      {/* Pipeline Execution Logs */}
+      <PipelineLogs />
+
       {/* User Management */}
       <UsersSection />
+    </div>
+  )
+}
+
+// ── Pipeline Logs ─────────────────────────────────────────────────────────────
+
+interface PipelineLog {
+  id: string
+  document_id: string
+  document_type: string
+  tema: string | null
+  doc_status: string
+  agent_name: string
+  phase: string
+  model: string | null
+  tokens_in: number | null
+  tokens_out: number | null
+  cost_usd: number | null
+  duration_ms: number | null
+  created_at: string | null
+}
+
+function PipelineLogs() {
+  const [logs, setLogs] = useState<PipelineLog[]>([])
+  const [loading, setLoading] = useState(true)
+  const [open, setOpen] = useState(false)
+  const toast = useToast()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!open) return
+    setLoading(true)
+    api.get('/admin/pipeline-logs', { params: { limit: 30 } })
+      .then(res => setLogs(Array.isArray(res.data) ? res.data : []))
+      .catch(() => toast.error('Erro ao carregar logs de pipeline'))
+      .finally(() => setLoading(false))
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const statusColor: Record<string, string> = {
+    concluido: 'bg-green-100 text-green-700',
+    processando: 'bg-blue-100 text-blue-700',
+    erro: 'bg-red-100 text-red-700',
+    em_revisao: 'bg-amber-100 text-amber-700',
+  }
+
+  return (
+    <div className="bg-white rounded-xl border overflow-hidden mb-6">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Terminal className="w-5 h-5 text-brand-600" />
+          <h2 className="text-lg font-semibold">Logs de Execução do Pipeline</h2>
+        </div>
+        {open ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+      </button>
+
+      {open && (
+        <div className="border-t">
+          {loading ? (
+            <div className="p-6 space-y-2">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-8 rounded" />)}
+            </div>
+          ) : logs.length === 0 ? (
+            <p className="p-6 text-sm text-gray-400 text-center">Nenhum log de execução encontrado.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 border-b text-gray-500 uppercase tracking-wide">
+                    <th className="px-4 py-2 text-left">Documento</th>
+                    <th className="px-4 py-2 text-left">Agente / Fase</th>
+                    <th className="px-4 py-2 text-left">Modelo</th>
+                    <th className="px-4 py-2 text-right">Tokens</th>
+                    <th className="px-4 py-2 text-right">Custo</th>
+                    <th className="px-4 py-2 text-right">Duração</th>
+                    <th className="px-4 py-2 text-left">Data</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {logs.map(log => (
+                    <tr key={log.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-2">
+                        <button
+                          onClick={() => navigate(`/documents/${log.document_id}`)}
+                          className="text-left hover:text-brand-600 transition-colors"
+                        >
+                          <p className="font-medium text-gray-800">{log.document_type}</p>
+                          {log.tema && <p className="text-gray-400 truncate max-w-[180px]">{log.tema}</p>}
+                        </button>
+                        <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${statusColor[log.doc_status] || 'bg-gray-100 text-gray-600'}`}>
+                          {log.doc_status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">
+                        <p className="font-medium text-gray-800">{log.agent_name}</p>
+                        <p className="text-gray-400">{log.phase}</p>
+                      </td>
+                      <td className="px-4 py-2 text-gray-500 font-mono">
+                        {log.model ? log.model.split('/').pop() : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-600">
+                        {log.tokens_in != null && log.tokens_out != null
+                          ? `${(log.tokens_in + log.tokens_out).toLocaleString()}`
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-600">
+                        {log.cost_usd != null ? `$${log.cost_usd.toFixed(4)}` : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-600">
+                        {log.duration_ms != null ? `${(log.duration_ms / 1000).toFixed(1)}s` : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-gray-400 whitespace-nowrap">
+                        {log.created_at
+                          ? new Date(log.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

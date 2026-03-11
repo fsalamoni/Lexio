@@ -1,13 +1,15 @@
 """Lexio API — Admin routes (module management, health, metrics, platform settings)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.auth.dependencies import get_current_admin, get_db
 from packages.core.database.models.user import User
 from packages.core.database.models.platform_setting import PlatformSetting
+from packages.core.database.models.execution import Execution
+from packages.core.database.models.document import Document
 from packages.core.module_loader import module_registry, check_all_modules_health
 from packages.core.config import settings
 
@@ -286,6 +288,41 @@ async def update_user(
         "is_active": target.is_active,
         "message": "Usuário atualizado com sucesso",
     }
+
+
+@router.get("/pipeline-logs")
+async def pipeline_logs(
+    limit: int = Query(30, ge=1, le=100),
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return recent pipeline execution logs for the organization."""
+    result = await db.execute(
+        select(Execution, Document.document_type_id, Document.tema, Document.status)
+        .join(Document, Execution.document_id == Document.id)
+        .where(Execution.organization_id == admin.organization_id)
+        .order_by(desc(Execution.created_at))
+        .limit(limit)
+    )
+    rows = result.all()
+    return [
+        {
+            "id": str(e.id),
+            "document_id": str(e.document_id),
+            "document_type": doc_type,
+            "tema": tema,
+            "doc_status": doc_status,
+            "agent_name": e.agent_name,
+            "phase": e.phase,
+            "model": e.model,
+            "tokens_in": e.tokens_in,
+            "tokens_out": e.tokens_out,
+            "cost_usd": e.cost_usd,
+            "duration_ms": e.duration_ms,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e, doc_type, tema, doc_status in rows
+    ]
 
 
 async def load_settings_from_db(db: AsyncSession) -> None:

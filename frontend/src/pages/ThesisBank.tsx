@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download } from 'lucide-react'
+import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, X } from 'lucide-react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
 import { SkeletonItem } from '../components/Skeleton'
@@ -26,6 +26,15 @@ interface ThesisStats {
   most_used: { id: string; title: string; usage_count: number }[]
 }
 
+interface ThesisFormData {
+  title: string
+  content: string
+  summary: string
+  legal_area_id: string
+  tags: string
+  quality_score: string
+}
+
 const AREA_LABELS: Record<string, string> = {
   administrative: 'Administrativo',
   constitutional: 'Constitucional',
@@ -40,6 +49,15 @@ const AREA_COLORS: Record<string, string> = {
   civil:           'bg-blue-50   text-blue-700   border-blue-200',
   tax:             'bg-orange-50 text-orange-700 border-orange-200',
   labor:           'bg-teal-50   text-teal-700   border-teal-200',
+}
+
+const EMPTY_FORM: ThesisFormData = {
+  title: '',
+  content: '',
+  summary: '',
+  legal_area_id: 'administrative',
+  tags: '',
+  quality_score: '',
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -63,6 +81,176 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+// ── Thesis Form Modal ─────────────────────────────────────────────────────────
+
+function ThesisModal({
+  thesis,
+  onClose,
+  onSaved,
+}: {
+  thesis: ThesisItem | null  // null = create mode
+  onClose: () => void
+  onSaved: (saved: ThesisItem) => void
+}) {
+  const [form, setForm] = useState<ThesisFormData>(
+    thesis
+      ? {
+          title: thesis.title,
+          content: thesis.content,
+          summary: thesis.summary || '',
+          legal_area_id: thesis.legal_area_id,
+          tags: (thesis.tags || []).join(', '),
+          quality_score: thesis.quality_score != null ? String(thesis.quality_score) : '',
+        }
+      : EMPTY_FORM
+  )
+  const [saving, setSaving] = useState(false)
+  const toast = useToast()
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!form.title.trim() || !form.content.trim()) {
+      toast.error('Título e conteúdo são obrigatórios')
+      return
+    }
+    setSaving(true)
+    const payload = {
+      title: form.title.trim(),
+      content: form.content.trim(),
+      summary: form.summary.trim() || undefined,
+      legal_area_id: form.legal_area_id,
+      tags: form.tags ? form.tags.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+      quality_score: form.quality_score ? parseFloat(form.quality_score) : undefined,
+    }
+    try {
+      let res
+      if (thesis) {
+        res = await api.patch(`/theses/${thesis.id}`, payload)
+        toast.success('Tese atualizada')
+      } else {
+        res = await api.post('/theses/', payload)
+        toast.success('Tese criada')
+      }
+      onSaved(res.data)
+      onClose()
+    } catch (err: any) {
+      toast.error('Erro ao salvar tese', err?.response?.data?.detail || err?.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <h2 className="text-lg font-semibold text-gray-900">
+            {thesis ? 'Editar Tese' : 'Nova Tese'}
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Título *</label>
+            <input
+              type="text"
+              value={form.title}
+              onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              placeholder="Título da tese jurídica"
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Área do Direito *</label>
+            <select
+              value={form.legal_area_id}
+              onChange={e => setForm(f => ({ ...f, legal_area_id: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+            >
+              {Object.entries(AREA_LABELS).map(([val, label]) => (
+                <option key={val} value={val}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Resumo</label>
+            <input
+              type="text"
+              value={form.summary}
+              onChange={e => setForm(f => ({ ...f, summary: e.target.value }))}
+              placeholder="Resumo curto (opcional)"
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Conteúdo *</label>
+            <textarea
+              value={form.content}
+              onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
+              placeholder="Texto completo da tese..."
+              rows={8}
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm resize-y focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Tags</label>
+              <input
+                type="text"
+                value={form.tags}
+                onChange={e => setForm(f => ({ ...f, tags: e.target.value }))}
+                placeholder="Separe por vírgula"
+                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Score de qualidade (0-100)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={form.quality_score}
+                onChange={e => setForm(f => ({ ...f, quality_score: e.target.value }))}
+                placeholder="Ex: 85"
+                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              />
+            </div>
+          </div>
+        </form>
+
+        <div className="px-6 py-4 border-t flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={saving}
+            className="px-4 py-2 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+          >
+            {saving ? 'Salvando...' : thesis ? 'Salvar alterações' : 'Criar tese'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
 export default function ThesisBank() {
   const [theses, setTheses] = useState<ThesisItem[]>([])
   const [stats, setStats] = useState<ThesisStats | null>(null)
@@ -73,6 +261,8 @@ export default function ThesisBank() {
   const [search, setSearch] = useState('')
   const [areaFilter, setAreaFilter] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingThesis, setEditingThesis] = useState<ThesisItem | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
 
@@ -172,8 +362,31 @@ export default function ThesisBank() {
     URL.revokeObjectURL(url)
   }
 
+  const handleThesisSaved = (saved: ThesisItem) => {
+    setTheses(prev => {
+      const idx = prev.findIndex(t => t.id === saved.id)
+      if (idx >= 0) {
+        const next = [...prev]
+        next[idx] = saved
+        return next
+      }
+      return [saved, ...prev]
+    })
+    if (!editingThesis) setTotal(t => t + 1)
+    setEditingThesis(null)
+    setModalOpen(false)
+  }
+
   return (
     <div>
+      {(modalOpen || editingThesis) && (
+        <ThesisModal
+          thesis={editingThesis}
+          onClose={() => { setModalOpen(false); setEditingThesis(null) }}
+          onSaved={handleThesisSaved}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0">
@@ -190,26 +403,35 @@ export default function ThesisBank() {
             )}
           </p>
         </div>
-        {theses.length > 0 && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportCSV}
-              title="Exportar teses visíveis como CSV"
-              className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-2 rounded-lg transition-colors bg-white"
-            >
-              <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">CSV</span>
-            </button>
-            <button
-              onClick={handleExport}
-              title="Exportar teses visíveis como JSON"
-              className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-2 rounded-lg transition-colors bg-white"
-            >
-              <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">JSON</span>
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setEditingThesis(null); setModalOpen(true) }}
+            className="inline-flex items-center gap-2 bg-brand-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Nova Tese
+          </button>
+          {theses.length > 0 && (
+            <>
+              <button
+                onClick={handleExportCSV}
+                title="Exportar teses visíveis como CSV"
+                className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-2 rounded-lg transition-colors bg-white"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">CSV</span>
+              </button>
+              <button
+                onClick={handleExport}
+                title="Exportar teses visíveis como JSON"
+                className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-2 rounded-lg transition-colors bg-white"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">JSON</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Area stat cards */}
@@ -286,6 +508,7 @@ export default function ThesisBank() {
               thesis={thesis}
               expanded={expandedId === thesis.id}
               onToggle={() => setExpandedId(expandedId === thesis.id ? null : thesis.id)}
+              onEdit={() => setEditingThesis(thesis)}
               areaColor={areaColor(thesis.legal_area_id)}
             />
           ))}
@@ -309,10 +532,11 @@ export default function ThesisBank() {
   )
 }
 
-function ThesisCard({ thesis, expanded, onToggle, areaColor }: {
+function ThesisCard({ thesis, expanded, onToggle, onEdit, areaColor }: {
   thesis: ThesisItem
   expanded: boolean
   onToggle: () => void
+  onEdit: () => void
   areaColor: string
 }) {
   const scoreColor = !thesis.quality_score ? 'text-gray-400'
@@ -365,7 +589,16 @@ function ThesisCard({ thesis, expanded, onToggle, areaColor }: {
         <div className="border-t border-gray-100 px-4 pb-4 pt-3 space-y-3 bg-gray-50/50">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Conteúdo Completo</h4>
-            <CopyButton text={thesis.content} />
+            <div className="flex items-center gap-3">
+              <button
+                onClick={e => { e.stopPropagation(); onEdit() }}
+                className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-600 transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Editar
+              </button>
+              <CopyButton text={thesis.content} />
+            </div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{thesis.content}</p>
