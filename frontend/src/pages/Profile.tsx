@@ -135,7 +135,7 @@ export default function Profile() {
         .catch(() => toast.error('Erro ao carregar perfil'))
         .finally(() => setLoading(false))
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateField = (key: string, value: any) => {
     setProfile(prev => ({ ...prev, [key]: value }))

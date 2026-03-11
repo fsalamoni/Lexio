@@ -115,8 +115,8 @@ export default function Dashboard() {
     if (IS_FIREBASE && userId) {
       const p1 = firestoreGetStats(userId).then(s => setStats(s)).catch(() => toast.error('Erro ao carregar estatísticas'))
       const p2 = getRecentDocuments(userId, 5).then(docs => {
-        setRecent(docs.map(d => ({
-          id: d.id!,
+        setRecent(docs.filter(d => d.id).map(d => ({
+          id: d.id as string,
           document_type_id: d.document_type_id,
           tema: d.tema ?? null,
           status: d.status,

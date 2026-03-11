@@ -11,7 +11,8 @@
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc,
   collection, getDocs, addDoc, query, orderBy, limit, where,
-  serverTimestamp, Timestamp,
+  serverTimestamp,
+  type QueryConstraint,
 } from 'firebase/firestore'
 import { firestore, IS_FIREBASE } from './firebase'
 
@@ -268,7 +269,7 @@ export async function listDocuments(uid: string, opts?: {
   const colRef = collection(db, 'users', uid, 'documents')
 
   // Build query constraints
-  const constraints: Parameters<typeof query>[1][] = []
+  const constraints: QueryConstraint[] = []
 
   if (opts?.status) {
     constraints.push(where('status', '==', opts.status))

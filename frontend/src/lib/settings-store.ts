@@ -83,5 +83,5 @@ export async function saveApiKeys(updates: Record<string, string>): Promise<void
 
 function maskValue(value: string): string {
   if (value.length <= 8) return '••••••••'
-  return value.slice(0, 4) + '••••' + value.slice(-4)
+  return '••••••••' + value.slice(-4)
 }
