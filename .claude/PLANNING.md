@@ -1,5 +1,5 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-03-10 (Implementação completa) | Branch: claude/continue-planning-9WM6r
+> Atualizado: 2026-03-10 (Etapas 28-31 concluídas) | Branch: claude/continue-planning-9WM6r
 > PROPÓSITO: Indexação, cache e controle de estado da implementação.
 > REGRA: Este arquivo é a FONTE DA VERDADE. Atualizar após cada etapa concluída.
 
@@ -73,8 +73,8 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 |----|-------|-----------|-----------|
 | B1 | ProgressTracker.tsx | WS URL deve ser wss:// em HTTPS | ✅ Já correto (replace /^http/, 'ws') |
 | B2 | DocumentDetail.tsx | Polling não para quando status=concluido | ✅ Corrigido com useRef |
-| B3 | Dashboard.tsx | .catch(() => {}) silencioso → deve usar toast | Baixa |
-| B4 | ThesisBank.tsx | .catch(() => {}) silencioso → deve usar toast | Baixa |
+| B3 | Dashboard.tsx | .catch(() => {}) silencioso → deve usar toast | ✅ Já estava com toast.error |
+| B4 | ThesisBank.tsx | .catch(() => {}) silencioso → deve usar toast | ✅ Já estava com toast.error |
 
 ---
 
@@ -172,6 +172,33 @@ database/
 | 2026-03-10 | Etapa 3 | Workflow aprovação/rejeição (3 endpoints + StatusBadge + UI) | packages/api/routes/documents.py, schemas/documents.py, frontend/src/components/StatusBadge.tsx, pages/DocumentDetail.tsx |
 | 2026-03-10 | Etapa 4 | Injeção teses banco → fragmentosAcervo no pipeline | packages/pipeline/orchestrator.py |
 | 2026-03-10 | Etapa 6 | AdminPanel: ReviewQueue + Skeleton loading | frontend/src/pages/AdminPanel.tsx |
+| 2026-03-10 | Etapa 7 | DocumentList: 6 chips status; Dashboard: card "Em Revisão" + stats.pending_review | frontend/src/pages/DocumentList.tsx, Dashboard.tsx, packages/api/routes/stats.py |
+| 2026-03-10 | Etapa 8 | B3/B4 verificados — já tinham toast.error; DocumentEditor sem polling loop | — |
+| 2026-03-10 | Etapa 9 | Demo mode não existe no repo — N/A | — |
+| 2026-03-10 | Etapa 10 | Inter font carregada via Google Fonts em index.html | frontend/index.html |
+| 2026-03-10 | Bug B5 | Fix processing_documents: era total-completed (errado), agora conta status=processando | packages/api/routes/stats.py |
+| 2026-03-10 | Etapa 11 | Busca textual em documentos: param q backend (ilike tema+pedido) + search input debounced + type filter select | packages/api/routes/documents.py, frontend/src/pages/DocumentList.tsx |
+| 2026-03-10 | Etapa 12 | AdminPanel: pending_review_documents em StatsData + card "Em Revisão" com destaque azul; grid md:grid-cols-6 | frontend/src/pages/AdminPanel.tsx |
+| 2026-03-10 | Etapa 13 | Sidebar: badge azul em "Administração" com contagem de pendentes, poll a cada 60s | frontend/src/components/Sidebar.tsx |
+| 2026-03-10 | Etapa 15 | DELETE /documents/{id}: admin ou autor, bloqueado em processando; botão Excluir no DocumentDetail com confirm | packages/api/routes/documents.py, frontend/src/pages/DocumentDetail.tsx |
+| 2026-03-10 | Etapa 16 | Gerenciamento de usuários: GET/PATCH /admin/users + UsersSection no AdminPanel (role select + toggle ativo) | packages/api/routes/admin.py, frontend/src/pages/AdminPanel.tsx |
+| 2026-03-10 | Etapa 17 | Upload progress bar real: onUploadProgress axios → localFiles.progress → barra animada + % | frontend/src/pages/Upload.tsx |
+| 2026-03-10 | Etapa 18 | DELETE /uploads/{id}: remove do DB + Qdrant (best-effort); botão Trash2 no histórico com confirm | packages/api/routes/uploads.py, frontend/src/pages/Upload.tsx |
+| 2026-03-10 | Bug fix | Upload.tsx: fix template literal ${filename} na confirmação de exclusão | frontend/src/pages/Upload.tsx |
+| 2026-03-10 | Etapa 19 | Onboarding redirect — já funcionava corretamente (N/A) | — |
+| 2026-03-10 | Etapa 20 | NewDocument double-submit — já implementado com loading state + disabled button (N/A) | — |
+| 2026-03-10 | Etapa 21 | ThesisBank: botão "Exportar JSON" (client-side Blob download das teses visíveis) | frontend/src/pages/ThesisBank.tsx |
+| 2026-03-10 | Etapa 22 | DocumentList: sort select (Mais recente/antigo, Maior/menor score); backend sort_by+sort_dir params | frontend/src/pages/DocumentList.tsx, packages/api/routes/documents.py |
+| 2026-03-10 | Etapa 23 | Rate limit 429: CustomEvent lexio:rate-limit no client.ts; listener em Layout.tsx com toast.error | frontend/src/api/client.ts, frontend/src/components/Layout.tsx |
+| 2026-03-10 | Etapa 24 | DocumentList filtro por período (date_from/date_to): dois date inputs + backend date range query | frontend/src/pages/DocumentList.tsx, packages/api/routes/documents.py |
+| 2026-03-10 | Etapa 25 | ThesisBank "Carregar mais 50": paginação incremental com skip; botão append ao estado | frontend/src/pages/ThesisBank.tsx |
+| 2026-03-10 | Etapa 26 | Dashboard recent docs — já eram clickable com Link (N/A) | — |
+| 2026-03-10 | Etapa 27 | DocumentList: badge de origem (WhatsApp/API) inline na coluna Tipo para origens não-web | frontend/src/pages/DocumentList.tsx |
+| 2026-03-10 | Etapa 28 | DocumentDetail timeline — tokens/custo já implementados anteriormente (N/A) | — |
+| 2026-03-10 | Etapa 29 | DocumentList: checkboxes + bulk delete (barra flutuante, indeterminate select-all, DELETE sequencial) | frontend/src/pages/DocumentList.tsx |
+| 2026-03-10 | Etapa 30 | ThesisBank: exportar CSV com BOM UTF-8 (compatível Excel) além de JSON; dois botões no header | frontend/src/pages/ThesisBank.tsx |
+| 2026-03-10 | Etapa 31 | GET /stats/by-type: docs + avg_score por document_type_id; tabela no Dashboard | packages/api/routes/stats.py, frontend/src/pages/Dashboard.tsx |
+
 
 ---
 
