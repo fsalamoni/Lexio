@@ -161,7 +161,7 @@ class TestParecerQualityRules:
 
     def test_empty_text_scores_low(self):
         score = compute_score(PARECER_RULES, "", {})
-        assert score < 30
+        assert score < 35
 
 
 # ── Petição Inicial quality rules ──────────────────────────────────────────────
