@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { installDemoInterceptor } from './demo-interceptor'
 
 // ── In-memory GET cache with TTL + inflight deduplication ────────────────────
 
@@ -60,7 +61,8 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('lexio_token')
-      window.location.href = '/login'
+      const base = (import.meta.env.VITE_BASE_PATH as string | undefined)?.replace(/\/$/, '') || ''
+      window.location.href = `${base}/login`
     }
     if (error.response?.status === 429) {
       window.dispatchEvent(new CustomEvent('lexio:rate-limit'))
@@ -68,6 +70,12 @@ api.interceptors.response.use(
     return Promise.reject(error)
   },
 )
+
+// ── Demo mode: return mock data when backend is unavailable ──────────────────
+
+if (import.meta.env.VITE_DEMO_MODE === 'true') {
+  installDemoInterceptor(api)
+}
 
 // ── Override api.get with caching ────────────────────────────────────────────
 
