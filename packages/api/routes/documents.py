@@ -1,12 +1,16 @@
 """Lexio API — Document CRUD routes."""
 
 import asyncio
+import io
 import logging
 import uuid
+import zipfile
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.auth.dependencies import get_current_user, get_current_admin, get_db
@@ -84,7 +88,11 @@ async def list_documents(
     limit: int = Query(20, ge=1, le=100),
     status: str | None = None,
     document_type_id: str | None = None,
-    q: str | None = Query(None, description="Full-text search in tema and original_request"),
+    q: str | None = Query(None, max_length=200),
+    sort_by: str = Query("created_at", pattern="^(created_at|quality_score)$"),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -98,15 +106,26 @@ async def list_documents(
     if document_type_id:
         stmt = stmt.where(Document.document_type_id == document_type_id)
         count_stmt = count_stmt.where(Document.document_type_id == document_type_id)
+    if date_from:
+        dt_from = datetime(date_from.year, date_from.month, date_from.day, tzinfo=timezone.utc)
+        stmt = stmt.where(Document.created_at >= dt_from)
+        count_stmt = count_stmt.where(Document.created_at >= dt_from)
+    if date_to:
+        dt_to = datetime(date_to.year, date_to.month, date_to.day, 23, 59, 59, tzinfo=timezone.utc)
+        stmt = stmt.where(Document.created_at <= dt_to)
+        count_stmt = count_stmt.where(Document.created_at <= dt_to)
     if q:
+        q_like = f"%{q}%"
         search_filter = or_(
-            Document.tema.ilike(f"%{q}%"),
-            Document.original_request.ilike(f"%{q}%"),
+            Document.tema.ilike(q_like),
+            Document.original_request.ilike(q_like),
         )
         stmt = stmt.where(search_filter)
         count_stmt = count_stmt.where(search_filter)
 
-    stmt = stmt.order_by(Document.created_at.desc()).offset(skip).limit(limit)
+    sort_col = Document.quality_score if sort_by == "quality_score" else Document.created_at
+    order_expr = sort_col.asc() if sort_dir == "asc" else sort_col.desc()
+    stmt = stmt.order_by(order_expr).offset(skip).limit(limit)
 
     result = await db.execute(stmt)
     docs = result.scalars().all()
@@ -353,3 +372,114 @@ async def reject_document(
             pass
 
     return {"status": "rejeitado", "document_id": document_id, "reason": req.reason}
+
+
+# ── Bulk Export (ZIP) ────────────────────────────────────────────────────────
+
+_DOCTYPE_LABELS = {
+    "parecer": "Parecer",
+    "peticao_inicial": "Peticao_Inicial",
+    "contestacao": "Contestacao",
+    "recurso": "Recurso",
+    "sentenca": "Sentenca",
+    "acao_civil_publica": "ACP",
+}
+
+
+class BulkExportRequest(BaseModel):
+    ids: list[str]
+
+
+@router.post("/bulk-export")
+async def bulk_export_documents(
+    req: BulkExportRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream a ZIP archive of selected documents as .txt files."""
+    if not req.ids:
+        raise HTTPException(400, "Nenhum documento selecionado")
+    if len(req.ids) > 50:
+        raise HTTPException(400, "Máximo de 50 documentos por exportação")
+
+    try:
+        uuids = [uuid.UUID(i) for i in req.ids]
+    except ValueError:
+        raise HTTPException(400, "IDs inválidos na requisição")
+
+    stmt = select(Document).where(
+        Document.id.in_(uuids),
+        Document.organization_id == user.organization_id,
+        Document.texto_completo.isnot(None),
+    )
+    result = await db.execute(stmt)
+    docs = result.scalars().all()
+
+    if not docs:
+        raise HTTPException(404, "Nenhum documento com conteúdo encontrado")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for doc in docs:
+            label = _DOCTYPE_LABELS.get(doc.document_type_id, doc.document_type_id)
+            tema_safe = (doc.tema or "sem-tema")[:50].replace("/", "-").replace("\\", "-")
+            filename = f"{label}_{tema_safe}_{str(doc.id)[:8]}.txt"
+            zf.writestr(filename, doc.texto_completo or "")
+    buf.seek(0)
+
+    today = date.today().isoformat()
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=lexio-{today}.zip"},
+    )
+
+
+# ── Retry Failed Document ─────────────────────────────────────────────────────
+
+@router.post("/{document_id}/retry")
+async def retry_document(
+    document_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reprocess a document that failed (status=erro)."""
+    doc = await _get_doc_for_user(document_id, user, db)
+    if doc.status != "erro":
+        raise HTTPException(400, f"Apenas documentos com status 'erro' podem ser reprocessados")
+
+    doc_type_info = module_registry.get(doc.document_type_id)
+    if not doc_type_info or not doc_type_info.instance:
+        raise HTTPException(400, f"Tipo de documento '{doc.document_type_id}' não disponível")
+
+    doc.status = "processando"
+    await db.commit()
+    await db.refresh(doc)
+
+    pipeline_config = doc_type_info.instance.get_pipeline_config(doc.template_variant)
+    orchestrator = PipelineOrchestrator(str(doc.id), pipeline_config)
+    asyncio.create_task(orchestrator.run())
+
+    return {"status": "processando", "document_id": document_id}
+
+
+# ── Delete ───────────────────────────────────────────────────────────────────
+
+@router.delete("/{document_id}", status_code=204)
+async def delete_document(
+    document_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a document. Admins can delete any; users only their own non-processing docs."""
+    doc = await _get_doc_for_user(document_id, user, db)
+
+    if doc.status == "processando":
+        raise HTTPException(400, "Não é possível excluir um documento em processamento")
+
+    # Non-admins can only delete their own documents
+    if user.role != "admin" and doc.author_id != user.id:
+        raise HTTPException(403, "Sem permissão para excluir este documento")
+
+    await db.delete(doc)
+    await db.commit()

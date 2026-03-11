@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X } from 'lucide-react'
+import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2 } from 'lucide-react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
 
@@ -39,6 +39,7 @@ export default function Upload() {
   const [localFiles, setLocalFiles] = useState<{ name: string; size: number; status: 'uploading' | 'error'; progress?: number }[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const toast = useToast()
 
   const fetchHistory = useCallback(() => {
@@ -73,11 +74,20 @@ export default function Upload() {
         continue
       }
 
-      setLocalFiles(prev => [...prev, { name: file.name, size: file.size, status: 'uploading' }])
+      setLocalFiles(prev => [...prev, { name: file.name, size: file.size, status: 'uploading', progress: 0 }])
       try {
         const formData = new FormData()
         formData.append('file', file)
-        await api.post('/uploads', formData)
+        await api.post('/uploads', formData, {
+          onUploadProgress: (evt) => {
+            if (evt.total) {
+              const pct = Math.round((evt.loaded / evt.total) * 100)
+              setLocalFiles(prev =>
+                prev.map(f => f.name === file.name ? { ...f, progress: pct } : f)
+              )
+            }
+          },
+        })
         setLocalFiles(prev => prev.filter(f => f.name !== file.name))
         fetchHistory()
       } catch (err: any) {
@@ -90,6 +100,21 @@ export default function Upload() {
 
     setUploading(false)
     if (inputRef.current) inputRef.current.value = ''
+  }
+
+
+  const handleDeleteUpload = async (id: string, filename: string) => {
+    if (!window.confirm(`Remover "${filename}" do acervo permanentemente?`)) return
+    setDeletingId(id)
+    try {
+      await api.delete(`/uploads/${id}`)
+      setHistory(prev => prev.filter(f => f.id !== id))
+      toast.success('Arquivo removido do acervo')
+    } catch (err: any) {
+      toast.error('Erro ao remover arquivo', err?.response?.data?.detail)
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -195,31 +220,35 @@ export default function Upload() {
       {localFiles.length > 0 && (
         <div className="space-y-2 mb-4">
           {localFiles.map((f, i) => (
-            <div key={i} className="flex items-center gap-3 bg-white rounded-lg border p-3 group">
-              <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-800 truncate">{f.name}</p>
-                <p className="text-xs text-gray-400">{formatSize(f.size)}</p>
+            <div key={i} className="bg-white rounded-lg border p-3">
+              <div className="flex items-center gap-3">
+                <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">{f.name}</p>
+                  <p className="text-xs text-gray-400">{formatSize(f.size)}</p>
+                </div>
+                {f.status === 'uploading' && (
+                  <span className="text-xs text-brand-600 font-medium flex-shrink-0">{f.progress ?? 0}%</span>
+                )}
+                {f.status === 'error' && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <AlertCircle className="w-4 h-4 text-red-500" />
+                    <span className="text-xs text-red-500">Erro</span>
+                    <button
+                      onClick={() => removeLocalFile(f.name)}
+                      className="ml-1 text-gray-300 hover:text-gray-500 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
               {f.status === 'uploading' && (
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <svg className="animate-spin w-4 h-4 text-brand-500" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                  </svg>
-                  <span className="text-xs text-gray-500">Enviando...</span>
-                </div>
-              )}
-              {f.status === 'error' && (
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <AlertCircle className="w-4 h-4 text-red-500" />
-                  <span className="text-xs text-red-500">Erro</span>
-                  <button
-                    onClick={() => removeLocalFile(f.name)}
-                    className="ml-1 text-gray-300 hover:text-gray-500 transition-colors"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                <div className="mt-2 w-full bg-gray-100 rounded-full h-1.5">
+                  <div
+                    className="bg-brand-500 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${f.progress ?? 0}%` }}
+                  />
                 </div>
               )}
             </div>
@@ -253,6 +282,14 @@ export default function Upload() {
                     <Icon className={['w-4 h-4', doc.status === 'indexing' ? 'animate-spin' : ''].join(' ')} />
                     <span className="hidden sm:inline">{s.label}</span>
                   </div>
+                  <button
+                    onClick={() => handleDeleteUpload(doc.id, doc.filename)}
+                    disabled={deletingId === doc.id}
+                    className="ml-1 text-gray-300 hover:text-red-400 transition-colors disabled:opacity-40 flex-shrink-0"
+                    title="Remover do acervo"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )
             })}
