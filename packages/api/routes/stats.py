@@ -30,6 +30,13 @@ async def get_stats(
         )
     )).scalar() or 0
 
+    processing_docs = (await db.execute(
+        select(func.count(Document.id)).where(
+            Document.organization_id == org_id,
+            Document.status == "processando",
+        )
+    )).scalar() or 0
+
     avg_score = (await db.execute(
         select(func.avg(Document.quality_score)).where(
             Document.organization_id == org_id,
@@ -48,10 +55,18 @@ async def get_stats(
         )
     )).scalar()
 
+    pending_review_docs = (await db.execute(
+        select(func.count(Document.id)).where(
+            Document.organization_id == org_id,
+            Document.status == "em_revisao",
+        )
+    )).scalar() or 0
+
     return {
         "total_documents": total_docs,
         "completed_documents": completed_docs,
-        "processing_documents": total_docs - completed_docs,
+        "processing_documents": processing_docs,
+        "pending_review_documents": pending_review_docs,
         "average_quality_score": round(avg_score, 1) if avg_score else None,
         "total_cost_usd": round(total_cost, 4),
         "average_duration_ms": int(avg_duration_ms) if avg_duration_ms else None,
@@ -146,6 +161,32 @@ async def get_agent_stats(
             "tempo_medio_ms": int(row.tempo_medio_ms or 0),
         }
         for row in rows
+    ]
+
+
+@router.get("/by-type")
+async def get_stats_by_type(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Documents count and avg quality score per document_type_id."""
+    rows = (await db.execute(
+        select(
+            Document.document_type_id,
+            func.count(Document.id).label("total"),
+            func.avg(Document.quality_score).label("avg_score"),
+        )
+        .where(Document.organization_id == user.organization_id)
+        .group_by(Document.document_type_id)
+        .order_by(func.count(Document.id).desc())
+    )).all()
+    return [
+        {
+            "document_type_id": r.document_type_id,
+            "total": r.total,
+            "avg_score": round(float(r.avg_score), 1) if r.avg_score else None,
+        }
+        for r in rows
     ]
 
 

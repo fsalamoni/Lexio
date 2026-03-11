@@ -4,7 +4,9 @@ import {
   Scale, LogOut, Shield, BookOpen, ChevronRight, UserCircle,
 } from 'lucide-react'
 import clsx from 'clsx'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import api from '../api/client'
 
 const links = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -20,9 +22,9 @@ interface SidebarProps {
 }
 
 function NavItem({
-  to, label, icon: Icon, end, onClick,
+  to, label, icon: Icon, end, onClick, badge,
 }: {
-  to: string; label: string; icon: React.ElementType; end?: boolean; onClick?: () => void
+  to: string; label: string; icon: React.ElementType; end?: boolean; onClick?: () => void; badge?: number
 }) {
   return (
     <NavLink
@@ -42,7 +44,12 @@ function NavItem({
         <>
           <Icon className={clsx('w-5 h-5 flex-shrink-0 transition-transform', !isActive && 'group-hover:scale-110')} />
           <span className="flex-1">{label}</span>
-          {isActive && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
+          {badge != null && badge > 0 && (
+            <span className="bg-blue-500 text-white text-xs font-bold min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-1">
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
+          {isActive && !badge && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
         </>
       )}
     </NavLink>
@@ -51,6 +58,20 @@ function NavItem({
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const { logout, role, fullName } = useAuth()
+  const [pendingReview, setPendingReview] = useState(0)
+
+  // Poll pending review count for admins every 60s
+  useEffect(() => {
+    if (role !== 'admin') return
+    const fetchPending = () => {
+      api.get('/stats').then(res => {
+        setPendingReview(res.data?.pending_review_documents || 0)
+      }).catch(() => {/* non-critical */})
+    }
+    fetchPending()
+    const interval = setInterval(fetchPending, 60_000)
+    return () => clearInterval(interval)
+  }, [role])
 
   const handleLogout = () => {
     if (window.confirm('Deseja realmente sair da sua conta?')) {
@@ -77,7 +98,13 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           <NavItem key={to} to={to} label={label} icon={icon} end={to === '/'} onClick={onClose} />
         ))}
         {role === 'admin' && (
-          <NavItem to="/admin" label="Administração" icon={Shield} onClick={onClose} />
+          <NavItem
+            to="/admin"
+            label="Administração"
+            icon={Shield}
+            onClick={onClose}
+            badge={pendingReview}
+          />
         )}
       </nav>
 

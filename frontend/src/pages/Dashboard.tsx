@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   FileText, CheckCircle, Clock, DollarSign, TrendingUp,
-  Activity, ChevronRight,
+  Activity, ChevronRight, Download,
 } from 'lucide-react'
 import {
   BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -19,6 +19,7 @@ interface Stats {
   total_documents: number
   completed_documents: number
   processing_documents: number
+  pending_review_documents: number
   average_quality_score: number | null
   total_cost_usd: number
   average_duration_ms: number | null
@@ -45,6 +46,12 @@ interface RecentDoc {
   status: string
   quality_score: number | null
   created_at: string
+}
+
+interface TypeStat {
+  document_type_id: string
+  total: number
+  avg_score: number | null
 }
 
 const DOCTYPE_LABELS: Record<string, string> = {
@@ -83,22 +90,42 @@ function CustomTooltip({ active, payload, label }: any) {
   )
 }
 
+const PERIOD_OPTIONS = [
+  { label: '7 dias', days: 7 },
+  { label: '30 dias', days: 30 },
+  { label: '90 dias', days: 90 },
+]
+
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [daily, setDaily] = useState<DailyPoint[]>([])
   const [agents, setAgents] = useState<AgentStat[]>([])
   const [recent, setRecent] = useState<RecentDoc[]>([])
+  const [byType, setByType] = useState<TypeStat[]>([])
   const [loading, setLoading] = useState(true)
+  const [periodDays, setPeriodDays] = useState(30)
+  const [chartLoading, setChartLoading] = useState(false)
   const toast = useToast()
 
   useEffect(() => {
     const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
     const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
-    const p2 = api.get('/stats/daily').then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
+    const p2 = api.get('/stats/daily', { params: { days: periodDays } }).then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
     const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => toast.error('Erro ao carregar estatísticas de agentes'))
     const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => toast.error('Erro ao carregar documentos recentes'))
-    Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
+    const p5 = api.get('/stats/by-type').then(r => setByType(toArr(r.data))).catch(() => {/* non-critical */})
+    Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
   }, []) // eslint-disable-line
+
+  // Reload chart data when period changes (after initial load)
+  useEffect(() => {
+    if (loading) return
+    setChartLoading(true)
+    api.get('/stats/daily', { params: { days: periodDays }, noCache: true } as any)
+      .then(r => setDaily(Array.isArray(r.data) ? r.data : []))
+      .catch(() => toast.error('Erro ao carregar histórico'))
+      .finally(() => setChartLoading(false))
+  }, [periodDays]) // eslint-disable-line
 
   // Build cumulative cost series (guard against missing custo field)
   const costSeries = daily.reduce<{ dia: string; custo_acumulado: number }[]>((acc, d) => {
@@ -113,12 +140,27 @@ export default function Dashboard() {
     catch { return dia }
   }
 
+  const handleExportCSV = () => {
+    const rows = [
+      ['Data', 'Total', 'Concluídos', 'Custo (USD)'],
+      ...daily.map(d => [d.dia, d.total, d.concluidos, d.custo?.toFixed(5) ?? '0']),
+    ]
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `lexio-stats-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       </div>
     )
@@ -126,14 +168,43 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <div className="flex items-center gap-3">
+          {daily.length > 0 && (
+            <button
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border rounded-lg px-3 py-1.5 bg-white hover:bg-gray-50 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Exportar CSV
+            </button>
+          )}
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+          {PERIOD_OPTIONS.map(opt => (
+            <button
+              key={opt.days}
+              onClick={() => setPeriodDays(opt.days)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                periodDays === opt.days
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        </div>
+      </div>
 
       {/* Stat cards */}
       {stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
             { label: 'Total de Documentos', value: stats.total_documents, icon: FileText, color: 'blue' },
             { label: 'Concluídos', value: stats.completed_documents, icon: CheckCircle, color: 'green' },
+            { label: 'Em Revisão', value: stats.pending_review_documents, icon: Clock, color: 'blue' },
             {
               label: 'Score Médio',
               value: stats.average_quality_score != null ? `${stats.average_quality_score}/100` : '—',
@@ -147,16 +218,19 @@ export default function Dashboard() {
               color: 'amber',
             },
           ].map(card => (
-            <div key={card.label} className="bg-white rounded-xl border p-5">
+            <div key={card.label} className={`bg-white rounded-xl border p-5${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? ' border-blue-200 ring-1 ring-blue-100' : ''}`}>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{card.label}</span>
-                <card.icon className="w-4 h-4 text-gray-400" />
+                <card.icon className={`w-4 h-4 ${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? 'text-blue-500' : 'text-gray-400'}`} />
               </div>
               <p className="text-2xl font-bold text-gray-900">{card.value}</p>
               {card.label === 'Total de Documentos' && stats.processing_documents > 0 && (
                 <p className="text-xs text-yellow-600 mt-1 flex items-center gap-1">
                   <Clock className="w-3 h-3" /> {stats.processing_documents} em processamento
                 </p>
+              )}
+              {card.label === 'Em Revisão' && stats.pending_review_documents > 0 && (
+                <p className="text-xs text-blue-600 mt-1">Aguardando aprovação</p>
               )}
               {card.label === 'Custo Total' && stats.average_duration_ms && (
                 <p className="text-xs text-gray-400 mt-1">
@@ -175,7 +249,8 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl border p-5">
             <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-brand-600" />
-              Documentos por dia (últimos 30 dias)
+              Documentos por dia (últimos {periodDays} dias)
+              {chartLoading && <span className="text-xs text-gray-400 font-normal ml-auto">Atualizando...</span>}
             </h2>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={daily} barSize={12}>
@@ -317,6 +392,45 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Stats by document type */}
+      {byType.length > 0 && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="px-5 py-4 border-b">
+            <h2 className="text-sm font-semibold text-gray-700">Documentos por Tipo</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                <tr>
+                  <th className="px-5 py-2 text-left">Tipo</th>
+                  <th className="px-5 py-2 text-right">Total</th>
+                  <th className="px-5 py-2 text-right">Score Médio</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {byType.map(row => (
+                  <tr key={row.document_type_id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-2.5 text-sm text-gray-800">
+                      {DOCTYPE_LABELS[row.document_type_id] || row.document_type_id}
+                    </td>
+                    <td className="px-5 py-2.5 text-sm text-right text-gray-600 font-medium">{row.total}</td>
+                    <td className="px-5 py-2.5 text-sm text-right">
+                      {row.avg_score != null ? (
+                        <span className={`font-semibold ${
+                          row.avg_score >= 80 ? 'text-green-600'
+                            : row.avg_score >= 60 ? 'text-amber-600'
+                            : 'text-red-600'
+                        }`}>{row.avg_score}/100</span>
+                      ) : <span className="text-gray-400">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

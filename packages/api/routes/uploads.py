@@ -147,6 +147,43 @@ async def upload_file(
     }
 
 
+
+@router.delete("/{upload_id}", status_code=204)
+async def delete_upload(
+    upload_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an uploaded document from DB and Qdrant (best-effort)."""
+    from sqlalchemy import select as _select
+    result = await db.execute(
+        _select(UploadedDocument).where(
+            UploadedDocument.id == uuid.UUID(upload_id),
+            UploadedDocument.organization_id == user.organization_id,
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Arquivo não encontrado")
+
+    # Remove vectors from Qdrant (best-effort, non-critical)
+    if doc.collection_name and doc.chunks_indexed > 0:
+        try:
+            import httpx
+            from packages.core.config import settings as _settings
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(
+                    f"{_settings.qdrant_url}/collections/{doc.collection_name}/points/delete",
+                    headers={"api-key": _settings.qdrant_api_key},
+                    json={"filter": {"must": [{"key": "document_id", "match": {"value": str(doc.id)}}]}},
+                )
+        except Exception as e:
+            logger.warning(f"Qdrant cleanup failed for {upload_id}: {e}")
+
+    await db.delete(doc)
+    await db.commit()
+
+
 @router.get("/")
 async def list_uploads(
     user: User = Depends(get_current_user),

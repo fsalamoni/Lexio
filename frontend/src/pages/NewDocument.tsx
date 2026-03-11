@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronUp, FileText } from 'lucide-react'
-import api from '../api/client'
+import api, { invalidateApiCache } from '../api/client'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 
@@ -89,6 +89,7 @@ export default function NewDocument() {
         legal_area_ids: selectedAreas.length > 0 ? selectedAreas : null,
         request_context: Object.keys(contextData).length > 0 ? contextData : null,
       })
+      invalidateApiCache('/stats')
       navigate(`/documents/${res.data.id}`)
     } catch (err: any) {
       toast.error('Erro ao criar documento', err?.response?.data?.detail || err?.message)

@@ -1,11 +1,61 @@
-import { useState, ReactNode } from 'react'
+import { useState, useEffect, useRef, ReactNode } from 'react'
 import { Menu } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import { ErrorBoundary } from './ErrorBoundary'
 import NotificationBell from './NotificationBell'
+import { useToast } from './Toast'
+import api from '../api/client'
+
+const POLL_INTERVAL = 30_000 // 30 seconds
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const toast = useToast()
+  const navigate = useNavigate()
+  const processingRef = useRef<Set<string>>(new Set())
+  const initializedRef = useRef(false)
+
+  useEffect(() => {
+    const handler = () => toast.error('Muitas requisições', 'Aguarde um momento e tente novamente.')
+    window.addEventListener('lexio:rate-limit', handler)
+    return () => window.removeEventListener('lexio:rate-limit', handler)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll for document completion every 30s
+  useEffect(() => {
+    const fetchAndCheck = async () => {
+      try {
+        const res = await api.get('/documents', { params: { limit: 50 } })
+        const docs: Array<{ id: string; status: string; document_type_id: string; tema?: string }> =
+          res.data?.items || []
+
+        if (!initializedRef.current) {
+          docs.filter(d => d.status === 'processando').forEach(d => processingRef.current.add(d.id))
+          initializedRef.current = true
+          return
+        }
+
+        const nowProcessing = new Set(docs.filter(d => d.status === 'processando').map(d => d.id))
+
+        for (const doc of docs) {
+          if (processingRef.current.has(doc.id) && doc.status === 'concluido') {
+            toast.success('Documento concluído', doc.tema || doc.document_type_id)
+            const docId = doc.id
+            setTimeout(() => navigate(`/documents/${docId}`), 300)
+          }
+        }
+
+        processingRef.current = nowProcessing
+      } catch {
+        // Silently ignore poll errors
+      }
+    }
+
+    fetchAndCheck()
+    const timer = setInterval(fetchAndCheck, POLL_INTERVAL)
+    return () => clearInterval(timer)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex min-h-screen bg-gray-50">
