@@ -1,7 +1,7 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
 > Atualizado: 2026-03-11 | Branch: claude/continue-project-work-mTkMc
-> PROPÓSITO: Indexação, cache e controle de estado da implementação.
-> REGRA: Este arquivo é a FONTE DA VERDADE. Atualizar após cada etapa concluída.
+> PROPÓSITO: Fonte única da verdade — estado do sistema, roadmap e decisões técnicas.
+> REGRA: Atualizar após cada etapa concluída. IMPLEMENTATION_STATE.md foi arquivado (obsoleto).
 
 ---
 
@@ -13,7 +13,7 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 - Backend: Python 3.12, FastAPI, SQLAlchemy async, PostgreSQL 16
 - Frontend: React 18 + TypeScript + Vite + Tailwind CSS
 - LLM: OpenRouter (Claude Sonnet/Haiku), Embedding: Ollama (mxbai-embed-large)
-- Vector DB: Qdrant | Search: SearXNG, DataJud | Container: Docker Compose
+- Vector DB: Qdrant | Search: SearXNG, DataJud | Container: Docker Compose (6 serviços)
 
 ### Regras Críticas
 1. Módulos INDEPENDENTES — isolamento total
@@ -26,58 +26,85 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 
 ## ESTADO ATUAL DO SISTEMA (2026-03-11)
 
-### ✅ IMPLEMENTADO E FUNCIONANDO
+### ✅ BACKEND — IMPLEMENTADO
 
-#### Backend
-- Auth: JWT, bcrypt, registro, login, /me
-- Auth: Recuperação de senha (forgot-password, reset-password, validate-reset-token)
-- Documents: CRUD, pipeline trigger, content GET/PUT, executions list
-- Documents: Workflow aprovação/rejeição (submit-review, approve, reject)
-- Documents: Busca full-text por tema e original_request (param `q`)
-- Stats: /, /daily, /agents, /recent
-- Document Types: GET /document-types (6 tipos)
-- Legal Areas: GET /legal-areas (5 áreas)
+#### Auth
+- JWT, bcrypt, registro, login, `/me`
+- Recuperação de senha: `POST /auth/forgot-password`, `POST /auth/reset-password`, `GET /auth/validate-reset-token/{token}`
+- ⚠️ `dev_reset_token` exposto na API — remover em produção, enviar por email
+
+#### Documents
+- CRUD completo, pipeline trigger, content GET/PUT, executions list
+- Workflow: submit-review, approve, reject
+- Busca full-text por tema e original_request (param `q`, ILIKE)
+
+#### Notificações
+- `GET /api/v1/notifications` — lista com contagem não-lidas
+- `PATCH /api/v1/notifications/{id}/read` — marcar como lida
+- `PATCH /api/v1/notifications/read-all` — marcar todas como lidas
+- Criadas automaticamente: document_completed, document_approved, document_rejected
+
+#### Outros Endpoints
+- Stats: `/stats`, `/stats/daily`, `/stats/agents`, `/stats/recent`
+- Document Types: `GET /document-types` (6 tipos)
+- Legal Areas: `GET /legal-areas` (5 áreas)
 - Thesis Bank: CRUD + stats + auto-extraction pós-pipeline + injeção no pipeline
 - Uploads: POST + GET, background indexing → Qdrant
 - Anamnesis: wizard, profile, onboarding, build-context, request-fields
 - Admin: modules list/health/toggle/test, settings GET/POST
-- Notifications: GET + PATCH read + PATCH read-all (in-app, criadas ao gerar/aprovar/rejeitar)
-- WebSocket: /ws/document/{id} (progresso em tempo real)
-- Health: /health (PostgreSQL, Qdrant, Ollama, SearXNG)
+- WebSocket: `/ws/document/{id}` (progresso em tempo real)
+- Health: `/health` (PostgreSQL, Qdrant, Ollama, SearXNG)
 
-#### Frontend Pages
-- Login.tsx ✅ (spinner, password toggle, link "Esqueci minha senha")
-- Register.tsx ✅ (password toggle)
-- ForgotPassword.tsx ✅ (formulário, success state, dev token link)
-- ResetPassword.tsx ✅ (token validation, nova senha, redirect automático)
-- Dashboard.tsx ✅ (Recharts BarChart+AreaChart, skeletons, agent table)
-- DocumentList.tsx ✅ (busca full-text, filtros por status e tipo, paginação, mobile)
-- NewDocument.tsx ✅ (tipo, template, áreas, request, context fields Layer 2)
-- DocumentDetail.tsx ✅ (execution timeline, DOCX preview mammoth, workflow aprovação)
-- DocumentEditor.tsx ✅ (TipTap, word count, DOCX download, toast save, beforeunload)
-- Upload.tsx ✅ (file history, polling status)
-- ThesisBank.tsx ✅ (search debounced, filters, create/edit/delete, copy)
-- AdminPanel.tsx ✅ (módulos, API keys, fila de revisão, health, stats, pie chart)
-- Onboarding.tsx ✅ (4-step wizard → user_profiles)
-- Profile.tsx ✅ (perfil profissional, preferências, defaults)
-- NotFound.tsx ✅
-
-#### Frontend Components
-- ErrorBoundary.tsx ✅ | Layout.tsx ✅ (mobile hamburger, NotificationBell integrado)
-- Sidebar.tsx ✅ (mobile responsive) | ProgressTracker.tsx ✅
-- RichTextEditor.tsx ✅ | StatusBadge.tsx ✅ | Toast.tsx ✅ | Skeleton.tsx ✅
-- NotificationBell.tsx ✅ (dropdown, unread badge, mark all read, polling 30s)
-
-#### Módulos Backend
-- document_types: parecer, peticao_inicial, contestacao, recurso, sentenca, acao_civil_publica ✅
-- legal_areas: administrative, civil, constitutional, labor, tax ✅
-- anamnesis ✅ | thesis_bank ✅
-- whatsapp_bot ✅ (fix event_bus.subscribe, handler signature, etapa de área jurídica)
+#### Módulos
+- document_types: parecer, peticao_inicial, contestacao, recurso, sentenca, acao_civil_publica
+- legal_areas: administrative, civil, constitutional, labor, tax
+- anamnesis, thesis_bank
+- whatsapp_bot (fix event_bus.subscribe + handler signature + etapa awaiting_legal_area)
 
 #### Database
-- organizations, users (+ reset_token), documents, document_types, legal_areas
-- executions, uploaded_documents, theses, whatsapp_sessions, user_profiles
-- platform_settings, notifications ✅ (nova tabela Stage 10)
+```
+organizations, users (+ reset_token, reset_token_expires_at)
+documents, document_types, legal_areas
+executions, uploaded_documents
+theses, whatsapp_sessions, user_profiles
+platform_settings, notifications
+```
+
+---
+
+### ✅ FRONTEND — IMPLEMENTADO
+
+#### Páginas
+| Página | Estado | Notas |
+|--------|--------|-------|
+| Login.tsx | ✅ | spinner, password toggle, link "Esqueci minha senha" |
+| Register.tsx | ✅ | password toggle |
+| ForgotPassword.tsx | ✅ | formulário, success state, dev token link |
+| ResetPassword.tsx | ✅ | token validation, nova senha, redirect automático |
+| Dashboard.tsx | ✅ | Recharts BarChart+AreaChart, skeletons, agent table |
+| DocumentList.tsx | ✅ | busca full-text debounce 400ms, filtros tipo/status, paginação |
+| NewDocument.tsx | ✅ | tipo, template, áreas, request, context fields Layer 2 |
+| DocumentDetail.tsx | ✅ | execution timeline, DOCX preview mammoth, workflow aprovação |
+| DocumentEditor.tsx | ✅ | TipTap, word count, DOCX download, toast save, beforeunload |
+| Upload.tsx | ✅ | file history, polling status |
+| ThesisBank.tsx | ✅ | search debounced, filters, create/edit/delete, copy |
+| AdminPanel.tsx | ✅ | módulos, API keys, fila de revisão, health, stats, pie chart |
+| Onboarding.tsx | ✅ | 4-step wizard → user_profiles |
+| Profile.tsx | ✅ | perfil profissional, preferências, defaults |
+| NotFound.tsx | ✅ | |
+
+#### Componentes
+| Componente | Estado | Notas |
+|-----------|--------|-------|
+| ErrorBoundary.tsx | ✅ | |
+| Layout.tsx | ✅ | mobile hamburger, NotificationBell integrado |
+| Sidebar.tsx | ✅ | mobile responsive |
+| ProgressTracker.tsx | ✅ | phase steps, gradient bar |
+| RichTextEditor.tsx | ✅ | TipTap, word count, prose styles |
+| StatusBadge.tsx | ✅ | icons (Loader2/CheckCircle/XCircle) |
+| Toast.tsx | ✅ | useToast hook, auto-dismiss, slide-in |
+| Skeleton.tsx | ✅ | SkeletonRow/Card/Item |
+| NotificationBell.tsx | ✅ | dropdown, unread badge, mark all read, polling 30s |
 
 ---
 
@@ -89,115 +116,237 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 | B2 | DocumentDetail.tsx | Polling não para quando status=concluido | ✅ Corrigido |
 | B3 | Dashboard.tsx | .catch() silencioso | ✅ Corrigido |
 | B4 | ThesisBank.tsx | .catch() silencioso | ✅ Corrigido |
-| B5 | whatsapp_bot/__init__.py | event_bus.on() não existe (AttributeError) | ✅ Corrigido |
-| B6 | whatsapp_bot/__init__.py | Handler signature errada (event_type, data) | ✅ Corrigido |
+| B5 | whatsapp_bot/__init__.py | event_bus.on() não existe | ✅ Corrigido → subscribe() |
+| B6 | whatsapp_bot/__init__.py | Handler signature errada | ✅ Corrigido |
+| B7 | auth.py:141 | dev_reset_token exposto na API | ⚠️ Pendente (requer email service) |
 
 ---
 
 ## ROADMAP DE IMPLEMENTAÇÃO
 
-### ETAPA 1 — Campos de Contexto Layer 2 no NewDocument
-**Status**: ✅ Concluído (2026-03-10)
+### ✅ ETAPAS CONCLUÍDAS
 
-### ETAPA 2 — Página Meu Perfil (Edição de Anamnese Layer 1)
-**Status**: ✅ Concluído (2026-03-10)
-
-### ETAPA 3 — Workflow de Aprovação/Rejeição de Documentos
-**Status**: ✅ Concluído (2026-03-10)
-
-### ETAPA 4 — Integração Banco de Teses → Pipeline
-**Status**: ✅ Concluído (2026-03-10)
-
-### ETAPA 5 — Fix WebSocket wss:// para HTTPS
-**Status**: ✅ Já estava correto (2026-03-10)
-
-### ETAPA 6 — AdminPanel UI Completo
-**Status**: ✅ Concluído (2026-03-10)
-
-### ETAPA 7 — Fix WhatsApp Bot + Etapa Área Jurídica
-**Status**: ✅ Concluído (2026-03-11)
-**O que foi implementado**:
-- Fix crítico: `event_bus.on()` → `event_bus.subscribe()` (método correto)
-- Fix crítico: handler signature `_on_document_requested(self, event_type, data)` 
-- Adicionado passo `awaiting_legal_area` na state machine da conversa
-- Usuário pode escolher área (1-5) ou "pular" para continuar sem especificar
-- legal_area_ids passados para o pipeline_trigger e injetados no documento
-**Arquivos**:
-- `packages/modules/whatsapp_bot/__init__.py`
-- `packages/modules/whatsapp_bot/conversation.py`
-- `packages/modules/whatsapp_bot/pipeline_trigger.py`
-
-### ETAPA 8 — Recuperação de Senha
-**Status**: ✅ Concluído (2026-03-11)
-**O que foi implementado**:
-- Backend: `reset_token` e `reset_token_expires_at` no modelo User
-- Backend: `POST /auth/forgot-password` — gera token JWT seguro (15 min)
-- Backend: `POST /auth/reset-password` — valida token, atualiza senha
-- Backend: `GET /auth/validate-reset-token/{token}` — valida sem consumir token
-- Frontend: `ForgotPassword.tsx` — formulário de email + success state + dev_token link
-- Frontend: `ResetPassword.tsx` — nova senha com validação de token
-- Frontend: Link "Esqueci minha senha" no Login.tsx
-- Frontend: Rotas `/forgot-password` e `/reset-password` em App.tsx
-**Arquivos**:
-- `packages/core/database/models/user.py`
-- `packages/api/routes/auth.py`
-- `frontend/src/pages/auth/ForgotPassword.tsx` (NOVO)
-- `frontend/src/pages/auth/ResetPassword.tsx` (NOVO)
-- `frontend/src/App.tsx`
-- `frontend/src/pages/auth/Login.tsx`
-
-### ETAPA 9 — Busca de Documentos
-**Status**: ✅ Concluído (2026-03-11)
-**O que foi implementado**:
-- Backend: param `q` para busca full-text (ILIKE) em `tema` e `original_request`
-- Frontend: barra de busca com debounce 400ms no DocumentList
-- Frontend: filtros por tipo de documento (chips clicáveis)
-- Frontend: contador de resultados quando filtros ativos
-- Frontend: badge "WhatsApp" para docs gerados via bot
-**Arquivos**:
-- `packages/api/routes/documents.py`
-- `frontend/src/pages/DocumentList.tsx`
-
-### ETAPA 10 — Notificações In-App
-**Status**: ✅ Concluído (2026-03-11)
-**O que foi implementado**:
-- Backend: modelo `Notification` (organization_id, user_id, type, title, message, document_id, is_read)
-- Backend: `GET /api/v1/notifications` — lista com contagem de não-lidas
-- Backend: `PATCH /api/v1/notifications/{id}/read` — marcar como lida
-- Backend: `PATCH /api/v1/notifications/read-all` — marcar todas como lidas
-- Pipeline: cria notificação `document_completed` ao concluir geração
-- Documents: cria notificação `document_approved` ao aprovar
-- Documents: cria notificação `document_rejected` ao rejeitar
-- Frontend: `NotificationBell.tsx` — ícone com badge, dropdown, polling 30s
-- Frontend: Layout.tsx — bell integrado no mobile header e desktop top-right
-**Arquivos**:
-- `packages/core/database/models/notification.py` (NOVO)
-- `packages/api/routes/notifications.py` (NOVO)
-- `packages/api/main.py`
-- `packages/pipeline/orchestrator.py`
-- `packages/api/routes/documents.py`
-- `database/schema.sql`
-- `frontend/src/components/NotificationBell.tsx` (NOVO)
-- `frontend/src/components/Layout.tsx`
+| Etapa | Descrição | Data |
+|-------|-----------|------|
+| 1 | Context fields Layer 2 no NewDocument | 2026-03-10 |
+| 2 | Página Meu Perfil (anamnese Layer 1) | 2026-03-10 |
+| 3 | Workflow aprovação/rejeição de documentos | 2026-03-10 |
+| 4 | Integração Banco de Teses → Pipeline | 2026-03-10 |
+| 5 | Fix WebSocket wss:// para HTTPS | 2026-03-10 |
+| 6 | AdminPanel UI completo | 2026-03-10 |
+| 7 | Fix WhatsApp Bot + etapa área jurídica | 2026-03-11 |
+| 8 | Recuperação de senha (frontend + backend) | 2026-03-11 |
+| 9 | Busca full-text de documentos | 2026-03-11 |
+| 10 | Notificações in-app | 2026-03-11 |
 
 ---
 
-## PRÓXIMOS PASSOS (Backlog)
+### 🔴 ETAPA 11 — Email Service (SMTP/Sendgrid)
+**Prioridade**: Alta — Bloqueia produção real (dev_reset_token exposto)
+**Dependências**: nenhuma
 
-### Alta Prioridade
-1. **Email Service** — Integrar SMTP/Sendgrid para enviar emails de recuperação de senha e notificações
-2. **Document versioning** — Guardar histórico de edições do documento
-3. **Export/Share** — Gerar link público de acesso temporário a um documento aprovado
+**O que implementar**:
+- `packages/core/email.py` — serviço genérico com suporte SMTP e Sendgrid
+- Variáveis de ambiente: `EMAIL_PROVIDER`, `SMTP_HOST/PORT/USER/PASS`, `SENDGRID_API_KEY`, `EMAIL_FROM`
+- Template HTML para email de recuperação de senha
+- Template HTML para notificações por email (opcional)
+- Remover `dev_reset_token` do response de `POST /auth/forgot-password`
+- Enviar email real no `forgot-password`
 
-### Média Prioridade
-4. **Organization Settings** — Página de configurações da organização (nome, logo, membros)
-5. **Bulk operations** — Aprovar/rejeitar múltiplos documentos de uma vez
-6. **WhatsApp session expiry** — Limpeza automática de sessões inativas há 24h
+**Arquivos afetados**:
+- `packages/core/email.py` (NOVO)
+- `packages/api/routes/auth.py` (remover dev_reset_token, chamar email service)
+- `packages/core/config.py` (novas env vars)
+- `docker-compose.yml` (vars de ambiente)
+- `.env.example` (documentar vars)
 
-### Baixa Prioridade
-7. **Audit log** — Log imutável de ações (aprovações, rejeições, edições)
-8. **Statistics export** — Download de relatório CSV/Excel de uso
-9. **Dark mode** — Suporte a tema escuro
+---
+
+### 🔴 ETAPA 12 — Versionamento de Documentos
+**Prioridade**: Alta — Usuários editam documentos sem histórico
+**Dependências**: nenhuma
+
+**O que implementar**:
+- Tabela `document_versions` (document_id, version_number, content, created_by, created_at, comment)
+- `POST /documents/{id}/versions` — salvar versão manual (ao clicar "Salvar")
+- `GET /documents/{id}/versions` — listar versões
+- `GET /documents/{id}/versions/{version_id}` — obter conteúdo de versão
+- `POST /documents/{id}/versions/{version_id}/restore` — restaurar versão
+- Auto-save de versão a cada aprovação/rejeição
+- Frontend: painel "Histórico" no DocumentDetail.tsx com diff visual (opcional)
+
+**Arquivos afetados**:
+- `database/schema.sql`
+- `packages/core/database/models/document_version.py` (NOVO)
+- `packages/api/routes/documents.py`
+- `frontend/src/pages/DocumentDetail.tsx`
+- `frontend/src/pages/DocumentEditor.tsx`
+
+---
+
+### 🔴 ETAPA 13 — Export/Share de Documentos
+**Prioridade**: Alta — Funcionalidade core para escritórios
+**Dependências**: nenhuma
+
+**O que implementar**:
+- `POST /documents/{id}/share` — gera link público temporário (token JWT 7 dias)
+- `GET /share/{token}` — endpoint público (sem auth) para visualizar documento aprovado
+- Frontend: botão "Compartilhar" no DocumentDetail.tsx (apenas para docs aprovados)
+- Frontend: modal com link copiável + QR code (opcional)
+- Frontend: página pública `/share/{token}` (layout simplificado)
+
+**Arquivos afetados**:
+- `packages/api/routes/documents.py`
+- `packages/api/main.py` (rota pública)
+- `frontend/src/pages/DocumentDetail.tsx`
+- `frontend/src/pages/SharedDocument.tsx` (NOVO)
+- `frontend/src/App.tsx` (rota pública)
+
+---
+
+### 🟡 ETAPA 14 — Organization Settings
+**Prioridade**: Média
+**Dependências**: nenhuma
+
+**O que implementar**:
+- `GET/PUT /organizations/me` — nome, logo, timezone, defaults
+- `GET/POST/DELETE /organizations/me/members` — gestão de membros
+- `POST /organizations/me/members/{user_id}/role` — promover/rebaixar (admin/member)
+- Frontend: página `OrganizationSettings.tsx` com 3 abas: Geral, Membros, Plano
+- Sidebar: link "Organização" no painel admin
+
+**Arquivos afetados**:
+- `packages/api/routes/organizations.py` (NOVO)
+- `packages/api/main.py`
+- `frontend/src/pages/OrganizationSettings.tsx` (NOVO)
+- `frontend/src/components/Sidebar.tsx`
+- `frontend/src/App.tsx`
+
+---
+
+### 🟡 ETAPA 15 — Operações em Lote (Bulk)
+**Prioridade**: Média
+**Dependências**: nenhuma
+
+**O que implementar**:
+- `POST /documents/bulk-approve` — aprovar lista de IDs
+- `POST /documents/bulk-reject` — rejeitar lista de IDs
+- `DELETE /documents/bulk` — arquivar lista de IDs
+- Frontend: checkboxes na DocumentList.tsx
+- Frontend: toolbar flutuante com ações em lote quando há seleção
+- Frontend: confirmação antes de ações destrutivas
+
+**Arquivos afetados**:
+- `packages/api/routes/documents.py`
+- `frontend/src/pages/DocumentList.tsx`
+
+---
+
+### 🟡 ETAPA 16 — Expiração de Sessões WhatsApp
+**Prioridade**: Média
+**Dependências**: nenhuma
+
+**O que implementar**:
+- `AsyncSession` background task (rodar a cada hora via APScheduler)
+- Limpar `whatsapp_sessions` com `updated_at < NOW() - INTERVAL '24 hours'`
+- `GET /admin/whatsapp-sessions` — listar sessões ativas (para AdminPanel)
+- Frontend: card de sessões WhatsApp no AdminPanel.tsx
+
+**Arquivos afetados**:
+- `packages/modules/whatsapp_bot/__init__.py` (schedule task)
+- `packages/api/routes/admin.py`
+- `frontend/src/pages/AdminPanel.tsx`
+
+---
+
+### 🟢 ETAPA 17 — Audit Log
+**Prioridade**: Baixa
+**Dependências**: nenhuma
+
+**O que implementar**:
+- Tabela `audit_logs` (organization_id, user_id, action, entity_type, entity_id, metadata JSONB, created_at)
+- Middleware FastAPI para logar automaticamente mutações (POST/PUT/DELETE)
+- `GET /admin/audit-logs` — com filtros por user, action, entity, date range
+- Frontend: página `AuditLog.tsx` no AdminPanel (aba nova)
+
+**Arquivos afetados**:
+- `database/schema.sql`
+- `packages/core/database/models/audit_log.py` (NOVO)
+- `packages/api/middleware/audit.py` (NOVO)
+- `packages/api/routes/admin.py`
+- `frontend/src/pages/AdminPanel.tsx`
+
+---
+
+### 🟢 ETAPA 18 — Export de Estatísticas (CSV/Excel)
+**Prioridade**: Baixa
+**Dependências**: nenhuma
+
+**O que implementar**:
+- `GET /stats/export?format=csv&from=&to=` — exportar uso em CSV
+- `GET /stats/export?format=xlsx` — exportar em Excel (via openpyxl)
+- Frontend: botão "Exportar" no Dashboard.tsx com dropdown CSV/Excel
+
+**Arquivos afetados**:
+- `packages/api/routes/stats.py`
+- `frontend/src/pages/Dashboard.tsx`
+
+---
+
+### 🟢 ETAPA 19 — Dark Mode
+**Prioridade**: Baixa
+**Dependências**: nenhuma
+
+**O que implementar**:
+- Tailwind `darkMode: 'class'` no `tailwind.config.js`
+- Toggle em `ThemeContext.tsx` (NOVO) com persistência em localStorage
+- Adicionar classes `dark:` nos componentes principais
+- Botão de toggle no sidebar/profile
+
+**Arquivos afetados**:
+- `tailwind.config.js`
+- `frontend/src/contexts/ThemeContext.tsx` (NOVO)
+- Todos os componentes e páginas (refactor gradual)
+
+---
+
+## NOTAS TÉCNICAS
+
+### Password Reset Token
+- Gerado com `secrets.token_urlsafe(32)` — 43 chars URL-safe
+- TTL: 15 minutos | Um uso por token (limpo após uso)
+- ⚠️ **dev_reset_token** retornado no response enquanto email service não existe
+- Produção: remover dev_reset_token + enviar por SMTP/Sendgrid (ETAPA 11)
+
+### Notifications
+- Criadas de forma assíncrona (fire-and-forget, não bloqueiam pipeline)
+- Polling no frontend: 30 segundos
+- Tipos: `document_completed` | `document_approved` | `document_rejected`
+- `user_id NULL` = notificação org-wide (visível para todos os admins)
+
+### WhatsApp Bot Flow
+```
+WELCOME → AWAITING_DOC_TYPE → AWAITING_LEGAL_AREA → AWAITING_CONTENT → PROCESSING → COMPLETE
+                                                   ↗ (pular → sem área)
+```
+- Reset: "menu", "início", "cancelar", "reiniciar"
+- Pular área: "pular", "skip", "geral", "qualquer", "0"
+
+### Anamnesis API
+Endpoint: `GET /anamnesis/request-fields/{document_type_id}`
+Retorna campos específicos por tipo. Exemplo para `peticao_inicial`:
+```json
+[
+  {"id": "partes",     "label": "Partes do processo",  "type": "text",     "required": true},
+  {"id": "fatos",      "label": "Fatos relevantes",    "type": "textarea", "required": true},
+  {"id": "pedidos",    "label": "Pedidos",              "type": "textarea", "required": true},
+  {"id": "valor_causa","label": "Valor da causa",       "type": "text",     "required": false}
+]
+```
+
+### Pipeline Context Building
+`POST /anamnesis/build-context` — recebe `{document_type_id, legal_area_ids, request, context_fields}`,
+retorna contexto completo para o pipeline.
 
 ---
 
@@ -207,84 +356,49 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 frontend/src/
   pages/
     auth/
-      ForgotPassword.tsx      — Recuperação de senha (ETAPA 8)
-      ResetPassword.tsx       — Redefinição de senha (ETAPA 8)
-    DocumentList.tsx          — Lista com busca + filtros (ETAPA 9)
+      ForgotPassword.tsx      — Recuperação de senha
+      ResetPassword.tsx       — Redefinição de senha
+    DocumentList.tsx          — Lista com busca + filtros
+    Dashboard.tsx             — Stats + charts
+    AdminPanel.tsx            — Painel admin completo
   components/
-    NotificationBell.tsx      — Notificações in-app (ETAPA 10)
-    Layout.tsx                — Bell integrado (ETAPA 10)
+    NotificationBell.tsx      — Notificações in-app
+    Layout.tsx                — Bell integrado
 
 packages/
   api/routes/
-    auth.py                   — forgot/reset-password (ETAPA 8)
-    documents.py              — busca q param + notificações (ETAPAS 9, 10)
-    notifications.py          — CRUD notificações (ETAPA 10) [NOVO]
+    auth.py                   — forgot/reset-password
+    documents.py              — busca + notificações + workflow
+    notifications.py          — CRUD notificações
+    admin.py                  — módulos + settings
+    stats.py                  — dashboard stats
   core/database/models/
-    user.py                   — reset_token fields (ETAPA 8)
-    notification.py           — Modelo Notification (ETAPA 10) [NOVO]
-  pipeline/orchestrator.py    — _create_completion_notification (ETAPA 10)
+    user.py                   — reset_token fields
+    notification.py           — Modelo Notification
+  pipeline/orchestrator.py    — _create_completion_notification
   modules/whatsapp_bot/
-    __init__.py               — fix subscribe + handler signature (ETAPA 7)
-    conversation.py           — awaiting_legal_area step (ETAPA 7)
-    pipeline_trigger.py       — legal_area_ids support (ETAPA 7)
+    __init__.py               — subscribe + handler
+    conversation.py           — awaiting_legal_area
+    pipeline_trigger.py       — legal_area_ids support
 
 database/
-  schema.sql                  — notifications table + reset_token cols
+  schema.sql                  — schema completo (notifications + reset_token)
 ```
 
 ---
 
 ## LOG DE IMPLEMENTAÇÃO
 
-| Data | Etapa | Ação | Arquivos |
-|------|-------|------|---------|
-| 2026-03-10 | Setup | Criado PLANNING.md | .claude/PLANNING.md |
-| 2026-03-10 | Etapa 1 | Context fields Layer 2 | NewDocument.tsx |
-| 2026-03-10 | Etapa 2 | Página Profile.tsx | Profile.tsx, App.tsx, Sidebar.tsx |
-| 2026-03-10 | Etapa 3 | Workflow aprovação/rejeição | documents.py, StatusBadge.tsx, DocumentDetail.tsx |
-| 2026-03-10 | Etapa 4 | Injeção teses no pipeline | orchestrator.py |
-| 2026-03-10 | Etapa 6 | AdminPanel completo | AdminPanel.tsx |
-| 2026-03-11 | Etapa 7 | Fix WhatsApp Bot + área jurídica | whatsapp_bot/__init__.py, conversation.py, pipeline_trigger.py |
-| 2026-03-11 | Etapa 8 | Recuperação de senha | user.py, auth.py, ForgotPassword.tsx, ResetPassword.tsx, Login.tsx, App.tsx |
-| 2026-03-11 | Etapa 9 | Busca de documentos | documents.py, DocumentList.tsx |
-| 2026-03-11 | Etapa 10 | Notificações in-app | notification.py, notifications.py, orchestrator.py, documents.py, NotificationBell.tsx, Layout.tsx |
-
----
-
-## NOTAS TÉCNICAS
-
-### Password Reset Token
-- Gerado com `secrets.token_urlsafe(32)` — 43 chars URL-safe
-- TTL: 15 minutos
-- Um uso por token (limpo após uso)
-- Sem serviço de email configurado: token retornado em `dev_reset_token` no response
-- TODO: em produção, remover dev_reset_token e enviar por email (Sendgrid/SMTP)
-
-### Notifications
-- Criadas de forma assíncrona (fire-and-forget, não bloqueiam a pipeline)
-- Polling no frontend: 30 segundos
-- Tipos: document_completed | document_approved | document_rejected
-- user_id NULL = notificação org-wide (visível para todos os admins)
-
-### WhatsApp Bot Flow
-```
-WELCOME → AWAITING_DOC_TYPE → AWAITING_LEGAL_AREA → AWAITING_CONTENT → PROCESSING → COMPLETE
-                                                    ↗ (pular → sem área)
-```
-- Reset: "menu", "início", "cancelar", "reiniciar"
-- Pular área: "pular", "skip", "geral", "qualquer", "0"
-
-### Anamnesis API — Estrutura de Campos por Tipo
-Endpoint: `GET /anamnesis/request-fields/{document_type_id}`
-Retorna lista de campos específicos por tipo. Exemplo para `peticao_inicial`:
-```json
-[
-  {"id": "partes", "label": "Partes do processo", "type": "text", "required": true},
-  {"id": "fatos", "label": "Fatos relevantes", "type": "textarea", "required": true},
-  {"id": "pedidos", "label": "Pedidos", "type": "textarea", "required": true},
-  {"id": "valor_causa", "label": "Valor da causa", "type": "text", "required": false}
-]
-```
-
-### Pipeline Context Building
-`POST /anamnesis/build-context` — recebe `{document_type_id, legal_area_ids, request, context_fields}`, retorna contexto completo para o pipeline.
+| Data | Etapa | Ação |
+|------|-------|------|
+| 2026-03-09 | Setup | Codebase inicial — UI base, demo data, backend core |
+| 2026-03-10 | Etapa 1 | Context fields Layer 2 no NewDocument.tsx |
+| 2026-03-10 | Etapa 2 | Página Profile.tsx — anamnese Layer 1 |
+| 2026-03-10 | Etapa 3 | Workflow aprovação/rejeição (submit-review, approve, reject) |
+| 2026-03-10 | Etapa 4 | Injeção de teses do banco no contexto do pipeline |
+| 2026-03-10 | Etapa 5 | WebSocket wss:// — já estava correto |
+| 2026-03-10 | Etapa 6 | AdminPanel UI completo (fila de revisão, módulos, pie chart) |
+| 2026-03-11 | Etapa 7 | Fix WhatsApp Bot (subscribe, handler, awaiting_legal_area) |
+| 2026-03-11 | Etapa 8 | Recuperação de senha (backend + frontend) |
+| 2026-03-11 | Etapa 9 | Busca full-text de documentos |
+| 2026-03-11 | Etapa 10 | Notificações in-app (backend + frontend) |
