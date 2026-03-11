@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Save, ArrowLeft, FileText, Check, Download } from 'lucide-react'
 import api from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 import RichTextEditor from '../components/RichTextEditor'
 import { useToast } from '../components/Toast'
+import { IS_FIREBASE } from '../lib/firebase'
+import { getDocument, updateDocument } from '../lib/firestore-service'
 
 const DOCTYPE_LABELS: Record<string, string> = {
   parecer: 'Parecer',
@@ -29,6 +32,7 @@ export default function DocumentEditor() {
   const [hasChanges, setHasChanges] = useState(false)
   const [wordCount, setWordCount] = useState(0)
   const [charCount, setCharCount] = useState(0)
+  const { userId } = useAuth()
   const toast = useToast()
 
   // Warn before navigating away with unsaved changes
@@ -44,22 +48,39 @@ export default function DocumentEditor() {
 
   useEffect(() => {
     if (!id) return
-    Promise.all([
-      api.get(`/documents/${id}/content`),
-      api.get(`/documents/${id}`),
-    ])
-      .then(([contentRes, docRes]) => {
-        const raw = contentRes.data.content || ''
-        const html = raw.includes('<') ? raw : textToHtml(raw)
-        setContent(html)
-        setDocInfo({
-          document_type_id: contentRes.data.document_type_id || docRes.data.document_type_id,
-          tema: contentRes.data.tema || docRes.data.tema,
-          docx_path: docRes.data.docx_path,
+    if (IS_FIREBASE && userId) {
+      getDocument(userId, id)
+        .then(doc => {
+          if (doc) {
+            const raw = doc.texto_completo || ''
+            const html = raw.includes('<') ? raw : textToHtml(raw)
+            setContent(html)
+            setDocInfo({
+              document_type_id: doc.document_type_id,
+              tema: doc.tema ?? null,
+            })
+          }
         })
-      })
-      .catch(() => toast.error('Erro ao carregar documento'))
-      .finally(() => setLoading(false))
+        .catch(() => toast.error('Erro ao carregar documento'))
+        .finally(() => setLoading(false))
+    } else {
+      Promise.all([
+        api.get(`/documents/${id}/content`),
+        api.get(`/documents/${id}`),
+      ])
+        .then(([contentRes, docRes]) => {
+          const raw = contentRes.data.content || ''
+          const html = raw.includes('<') ? raw : textToHtml(raw)
+          setContent(html)
+          setDocInfo({
+            document_type_id: contentRes.data.document_type_id || docRes.data.document_type_id,
+            tema: contentRes.data.tema || docRes.data.tema,
+            docx_path: docRes.data.docx_path,
+          })
+        })
+        .catch(() => toast.error('Erro ao carregar documento'))
+        .finally(() => setLoading(false))
+    }
   }, [id]) // eslint-disable-line
 
   const handleChange = useCallback((html: string) => {
@@ -77,7 +98,11 @@ export default function DocumentEditor() {
     if (!id) return
     setSaving(true)
     try {
-      await api.put(`/documents/${id}/content`, { content })
+      if (IS_FIREBASE && userId) {
+        await updateDocument(userId, id, { texto_completo: content })
+      } else {
+        await api.put(`/documents/${id}/content`, { content })
+      }
       setSaved(true)
       setHasChanges(false)
       setTimeout(() => setSaved(false), 2500)
