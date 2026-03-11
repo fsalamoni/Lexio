@@ -38,7 +38,9 @@ function resolve(url: string): unknown {
  * are still propagated so auth logic keeps working.
  */
 export function installDemoInterceptor(api: AxiosInstance): void {
-  api.interceptors.response.use(undefined, (error: AxiosError) => {
+  api.interceptors.response.use(
+    (response) => response,
+    (error: AxiosError) => {
     const status = error.response?.status
 
     // Let auth/rate-limit errors through so existing handlers work
