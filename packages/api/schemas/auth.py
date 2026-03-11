@@ -21,3 +21,8 @@ class TokenResponse(BaseModel):
     user_id: str
     role: str
     full_name: str = ""
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str

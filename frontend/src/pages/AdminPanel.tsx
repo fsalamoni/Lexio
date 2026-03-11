@@ -4,7 +4,7 @@ import {
   Shield, CheckCircle, XCircle, Activity, Server, Database, Brain, Search,
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
-  ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown,
+  ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal, RefreshCw,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -35,6 +35,7 @@ interface StatsData {
   total_documents: number
   completed_documents: number
   processing_documents: number
+  pending_review_documents: number
   average_quality_score: number | null
   total_cost_usd: number
 }
@@ -439,6 +440,79 @@ function ReviewQueue() {
   )
 }
 
+// ── Reindex Card ──────────────────────────────────────────────────────────────
+
+interface ReindexResult {
+  indexed_documents: number
+  total_documents: number
+  total_chunks: number
+  errors: number
+  message: string
+}
+
+function ReindexCard() {
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<ReindexResult | null>(null)
+  const toast = useToast()
+
+  const handleReindex = async () => {
+    if (!window.confirm('Reindexar todos os documentos concluídos/aprovados no Qdrant? Isso pode demorar alguns minutos.')) return
+    setLoading(true)
+    setResult(null)
+    try {
+      const res = await api.post('/admin/reindex')
+      setResult(res.data)
+      toast.success('Reindexação concluída', res.data.message)
+    } catch (err: any) {
+      toast.error('Erro na reindexação', err?.response?.data?.detail || err?.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border p-6 mb-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <RefreshCw className="w-5 h-5 text-brand-600" />
+          <div>
+            <h2 className="text-lg font-semibold">Reindexação Vetorial</h2>
+            <p className="text-sm text-gray-500">Re-indexa documentos concluídos/aprovados no Qdrant para busca semântica</p>
+          </div>
+        </div>
+        <button
+          onClick={handleReindex}
+          disabled={loading}
+          className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          {loading ? 'Reindexando...' : 'Reindexar Documentos'}
+        </button>
+      </div>
+      {result && (
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-gray-900">{result.indexed_documents}</p>
+            <p className="text-xs text-gray-500">Indexados</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-gray-900">{result.total_documents}</p>
+            <p className="text-xs text-gray-500">Total</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-brand-700">{result.total_chunks}</p>
+            <p className="text-xs text-gray-500">Chunks</p>
+          </div>
+          <div className={`rounded-lg p-3 text-center ${result.errors > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+            <p className={`text-2xl font-bold ${result.errors > 0 ? 'text-red-700' : 'text-green-700'}`}>{result.errors}</p>
+            <p className="text-xs text-gray-500">Erros</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Admin Panel ──────────────────────────────────────────────────────────
 
 export default function AdminPanel() {
@@ -506,7 +580,7 @@ export default function AdminPanel() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
         <div className="bg-white rounded-xl border p-4">
           <div className="flex items-center gap-2 mb-1">
             <FileText className="w-4 h-4 text-brand-600" />
@@ -520,6 +594,15 @@ export default function AdminPanel() {
             <span className="text-xs text-gray-500">Concluídos</span>
           </div>
           <p className="text-2xl font-bold text-gray-900">{stats?.completed_documents || 0}</p>
+        </div>
+        <div className={`rounded-xl border p-4 ${stats?.pending_review_documents ? 'bg-blue-50 border-blue-200' : 'bg-white'}`}>
+          <div className="flex items-center gap-2 mb-1">
+            <Clock className={`w-4 h-4 ${stats?.pending_review_documents ? 'text-blue-600' : 'text-gray-400'}`} />
+            <span className="text-xs text-gray-500">Em Revisão</span>
+          </div>
+          <p className={`text-2xl font-bold ${stats?.pending_review_documents ? 'text-blue-700' : 'text-gray-900'}`}>
+            {stats?.pending_review_documents || 0}
+          </p>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -550,6 +633,9 @@ export default function AdminPanel() {
 
       {/* Review Queue */}
       <ReviewQueue />
+
+      {/* Reindex */}
+      <ReindexCard />
 
       {/* API Keys */}
       <ApiKeysCard />
@@ -635,13 +721,244 @@ export default function AdminPanel() {
       </div>
 
       {features.length > 0 && (
-        <div className="bg-white rounded-xl border p-6">
+        <div className="bg-white rounded-xl border p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4">Módulos Funcionais ({features.length})</h2>
           <div className="space-y-3">
             {features.map(m => (
               <ModuleRow key={m.id} module={m} onToggle={handleToggle} toggling={toggling} />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Pipeline Execution Logs */}
+      <PipelineLogs />
+
+      {/* User Management */}
+      <UsersSection />
+    </div>
+  )
+}
+
+// ── Pipeline Logs ─────────────────────────────────────────────────────────────
+
+interface PipelineLog {
+  id: string
+  document_id: string
+  document_type: string
+  tema: string | null
+  doc_status: string
+  agent_name: string
+  phase: string
+  model: string | null
+  tokens_in: number | null
+  tokens_out: number | null
+  cost_usd: number | null
+  duration_ms: number | null
+  created_at: string | null
+}
+
+function PipelineLogs() {
+  const [logs, setLogs] = useState<PipelineLog[]>([])
+  const [loading, setLoading] = useState(true)
+  const [open, setOpen] = useState(false)
+  const toast = useToast()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!open) return
+    setLoading(true)
+    api.get('/admin/pipeline-logs', { params: { limit: 30 } })
+      .then(res => setLogs(Array.isArray(res.data) ? res.data : []))
+      .catch(() => toast.error('Erro ao carregar logs de pipeline'))
+      .finally(() => setLoading(false))
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const statusColor: Record<string, string> = {
+    concluido: 'bg-green-100 text-green-700',
+    processando: 'bg-blue-100 text-blue-700',
+    erro: 'bg-red-100 text-red-700',
+    em_revisao: 'bg-amber-100 text-amber-700',
+  }
+
+  return (
+    <div className="bg-white rounded-xl border overflow-hidden mb-6">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Terminal className="w-5 h-5 text-brand-600" />
+          <h2 className="text-lg font-semibold">Logs de Execução do Pipeline</h2>
+        </div>
+        {open ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+      </button>
+
+      {open && (
+        <div className="border-t">
+          {loading ? (
+            <div className="p-6 space-y-2">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-8 rounded" />)}
+            </div>
+          ) : logs.length === 0 ? (
+            <p className="p-6 text-sm text-gray-400 text-center">Nenhum log de execução encontrado.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 border-b text-gray-500 uppercase tracking-wide">
+                    <th className="px-4 py-2 text-left">Documento</th>
+                    <th className="px-4 py-2 text-left">Agente / Fase</th>
+                    <th className="px-4 py-2 text-left">Modelo</th>
+                    <th className="px-4 py-2 text-right">Tokens</th>
+                    <th className="px-4 py-2 text-right">Custo</th>
+                    <th className="px-4 py-2 text-right">Duração</th>
+                    <th className="px-4 py-2 text-left">Data</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {logs.map(log => (
+                    <tr key={log.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-2">
+                        <button
+                          onClick={() => navigate(`/documents/${log.document_id}`)}
+                          className="text-left hover:text-brand-600 transition-colors"
+                        >
+                          <p className="font-medium text-gray-800">{log.document_type}</p>
+                          {log.tema && <p className="text-gray-400 truncate max-w-[180px]">{log.tema}</p>}
+                        </button>
+                        <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${statusColor[log.doc_status] || 'bg-gray-100 text-gray-600'}`}>
+                          {log.doc_status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">
+                        <p className="font-medium text-gray-800">{log.agent_name}</p>
+                        <p className="text-gray-400">{log.phase}</p>
+                      </td>
+                      <td className="px-4 py-2 text-gray-500 font-mono">
+                        {log.model ? log.model.split('/').pop() : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-600">
+                        {log.tokens_in != null && log.tokens_out != null
+                          ? `${(log.tokens_in + log.tokens_out).toLocaleString()}`
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-600">
+                        {log.cost_usd != null ? `$${log.cost_usd.toFixed(4)}` : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-600">
+                        {log.duration_ms != null ? `${(log.duration_ms / 1000).toFixed(1)}s` : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-gray-400 whitespace-nowrap">
+                        {log.created_at
+                          ? new Date(log.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Users Section ─────────────────────────────────────────────────────────────
+
+interface OrgUser {
+  id: string
+  email: string
+  full_name: string
+  title: string | null
+  role: string
+  is_active: boolean
+  created_at: string | null
+}
+
+function UsersSection() {
+  const [users, setUsers] = useState<OrgUser[]>([])
+  const [loading, setLoading] = useState(true)
+  const [updating, setUpdating] = useState<string | null>(null)
+  const toast = useToast()
+
+  useEffect(() => {
+    api.get('/admin/users')
+      .then(res => setUsers(Array.isArray(res.data) ? res.data : []))
+      .catch(() => toast.error('Erro ao carregar usuários'))
+      .finally(() => setLoading(false))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleUpdate = async (userId: string, patch: { role?: string; is_active?: boolean }) => {
+    setUpdating(userId)
+    try {
+      const res = await api.patch(`/admin/users/${userId}`, patch)
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...res.data } : u))
+      toast.success('Usuário atualizado')
+    } catch (err: any) {
+      toast.error('Erro ao atualizar usuário', err?.response?.data?.detail)
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  const ROLE_LABELS: Record<string, string> = { admin: 'Admin', user: 'Usuário', viewer: 'Leitor' }
+  const ROLE_COLORS: Record<string, string> = {
+    admin: 'bg-purple-100 text-purple-700',
+    user: 'bg-blue-100 text-blue-700',
+    viewer: 'bg-gray-100 text-gray-600',
+  }
+
+  return (
+    <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="px-6 py-4 border-b flex items-center gap-2">
+        <Users className="w-5 h-5 text-brand-600" />
+        <h2 className="text-lg font-semibold">Usuários ({users.length})</h2>
+      </div>
+
+      {loading ? (
+        <div className="p-6 space-y-3">
+          {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 rounded-lg" />)}
+        </div>
+      ) : users.length === 0 ? (
+        <p className="p-6 text-sm text-gray-400 text-center">Nenhum usuário encontrado.</p>
+      ) : (
+        <div className="divide-y">
+          {users.map(u => (
+            <div key={u.id} className={`flex items-center gap-4 px-6 py-3 ${!u.is_active ? 'opacity-50 bg-gray-50' : ''}`}>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{u.full_name}</p>
+                <p className="text-xs text-gray-500 truncate">{u.email}{u.title ? ` — ${u.title}` : ''}</p>
+              </div>
+
+              {/* Role selector */}
+              <select
+                value={u.role}
+                disabled={updating === u.id}
+                onChange={e => handleUpdate(u.id, { role: e.target.value })}
+                className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-brand-500 ${ROLE_COLORS[u.role] || 'bg-gray-100 text-gray-600'}`}
+              >
+                <option value="admin">Admin</option>
+                <option value="user">Usuário</option>
+                <option value="viewer">Leitor</option>
+              </select>
+
+              {/* Active toggle */}
+              <button
+                onClick={() => handleUpdate(u.id, { is_active: !u.is_active })}
+                disabled={updating === u.id}
+                title={u.is_active ? 'Desativar conta' : 'Ativar conta'}
+                className="transition-colors disabled:opacity-50"
+              >
+                {u.is_active
+                  ? <ToggleRight className="w-6 h-6 text-green-600" />
+                  : <ToggleLeft className="w-6 h-6 text-gray-400" />
+                }
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
