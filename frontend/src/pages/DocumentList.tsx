@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, Plus, ChevronLeft, ChevronRight, Search, X, Trash2 } from 'lucide-react'
+import { FileText, Plus, ChevronLeft, ChevronRight, Search, X, Trash2, Download } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
@@ -43,6 +43,7 @@ export default function DocumentList() {
   const [dateTo, setDateTo] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkExporting, setBulkExporting] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
@@ -117,6 +118,24 @@ export default function DocumentList() {
       ? new Set()
       : new Set(docs.map(d => d.id))
     )
+  }
+
+  const handleBulkExport = async () => {
+    if (!selected.size) return
+    setBulkExporting(true)
+    try {
+      const res = await api.post('/documents/bulk-export', { ids: Array.from(selected) }, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `lexio-${new Date().toISOString().slice(0, 10)}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      toast.error('Erro ao exportar documentos', err?.response?.data?.detail || err?.message)
+    } finally {
+      setBulkExporting(false)
+    }
   }
 
   const handleBulkDelete = async () => {
@@ -304,6 +323,14 @@ export default function DocumentList() {
                 className="text-xs text-brand-500 hover:text-brand-700"
               >
                 Desmarcar
+              </button>
+              <button
+                onClick={handleBulkExport}
+                disabled={bulkExporting}
+                className="inline-flex items-center gap-1.5 text-xs bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                {bulkExporting ? 'Exportando…' : 'Baixar .zip'}
               </button>
               <button
                 onClick={handleBulkDelete}

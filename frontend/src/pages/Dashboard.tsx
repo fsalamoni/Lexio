@@ -90,6 +90,12 @@ function CustomTooltip({ active, payload, label }: any) {
   )
 }
 
+const PERIOD_OPTIONS = [
+  { label: '7 dias', days: 7 },
+  { label: '30 dias', days: 30 },
+  { label: '90 dias', days: 90 },
+]
+
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [daily, setDaily] = useState<DailyPoint[]>([])
@@ -97,17 +103,29 @@ export default function Dashboard() {
   const [recent, setRecent] = useState<RecentDoc[]>([])
   const [byType, setByType] = useState<TypeStat[]>([])
   const [loading, setLoading] = useState(true)
+  const [periodDays, setPeriodDays] = useState(30)
+  const [chartLoading, setChartLoading] = useState(false)
   const toast = useToast()
 
   useEffect(() => {
     const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
     const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
-    const p2 = api.get('/stats/daily').then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
+    const p2 = api.get('/stats/daily', { params: { days: periodDays } }).then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
     const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => toast.error('Erro ao carregar estatísticas de agentes'))
     const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => toast.error('Erro ao carregar documentos recentes'))
     const p5 = api.get('/stats/by-type').then(r => setByType(toArr(r.data))).catch(() => {/* non-critical */})
     Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
   }, []) // eslint-disable-line
+
+  // Reload chart data when period changes (after initial load)
+  useEffect(() => {
+    if (loading) return
+    setChartLoading(true)
+    api.get('/stats/daily', { params: { days: periodDays }, noCache: true } as any)
+      .then(r => setDaily(Array.isArray(r.data) ? r.data : []))
+      .catch(() => toast.error('Erro ao carregar histórico'))
+      .finally(() => setChartLoading(false))
+  }, [periodDays]) // eslint-disable-line
 
   // Build cumulative cost series (guard against missing custo field)
   const costSeries = daily.reduce<{ dia: string; custo_acumulado: number }[]>((acc, d) => {
@@ -135,7 +153,24 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+          {PERIOD_OPTIONS.map(opt => (
+            <button
+              key={opt.days}
+              onClick={() => setPeriodDays(opt.days)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                periodDays === opt.days
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Stat cards */}
       {stats && (
@@ -188,7 +223,8 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl border p-5">
             <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-brand-600" />
-              Documentos por dia (últimos 30 dias)
+              Documentos por dia (últimos {periodDays} dias)
+              {chartLoading && <span className="text-xs text-gray-400 font-normal ml-auto">Atualizando...</span>}
             </h2>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={daily} barSize={12}>

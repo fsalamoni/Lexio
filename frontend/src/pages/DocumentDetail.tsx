@@ -88,6 +88,7 @@ export default function DocumentDetail() {
   const [loadingDocx, setLoadingDocx] = useState(false)
   const [loading, setLoading] = useState(true)
   const [workflowLoading, setWorkflowLoading] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -158,6 +159,24 @@ export default function DocumentDetail() {
       toast.error('Erro ao excluir documento', err?.response?.data?.detail || err?.message)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleRetry = async () => {
+    if (!id) return
+    setRetrying(true)
+    try {
+      await api.post(`/documents/${id}/retry`)
+      toast.success('Reprocessamento iniciado')
+      fetchDoc()
+      // Resume polling
+      if (!intervalRef.current) {
+        intervalRef.current = setInterval(fetchDoc, 5000)
+      }
+    } catch (err: any) {
+      toast.error('Erro ao reprocessar', err?.response?.data?.detail || err?.message)
+    } finally {
+      setRetrying(false)
     }
   }
 
@@ -278,6 +297,27 @@ export default function DocumentDetail() {
         </div>
 
         {/* Actions */}
+        {/* Retry for failed documents */}
+        {doc.status === 'erro' && (
+          <div className="space-y-3 pt-2 border-t">
+            <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-800">Falha no processamento</p>
+                <p className="text-xs text-red-600 mt-0.5">O pipeline encontrou um erro. Você pode tentar reprocessar.</p>
+              </div>
+              <button
+                onClick={handleRetry}
+                disabled={retrying}
+                className="inline-flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors text-sm font-medium"
+              >
+                <RotateCcw className={`w-4 h-4 ${retrying ? 'animate-spin' : ''}`} />
+                {retrying ? 'Reprocessando...' : 'Reprocessar'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {['concluido', 'em_revisao', 'aprovado', 'rejeitado'].includes(doc.status) && (
           <div className="space-y-3 pt-2 border-t">
             {/* Primary document actions */}
