@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { User, Save, ChevronDown, ChevronUp, Lock } from 'lucide-react'
-import api from '../api/client'
+import api, { invalidateApiCache } from '../api/client'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 
@@ -152,6 +152,7 @@ export default function Profile() {
     setSaving(true)
     try {
       await api.patch('/anamnesis/profile', profile)
+      invalidateApiCache('/anamnesis/profile')
       toast.success('Perfil atualizado com sucesso')
     } catch (err: any) {
       toast.error('Erro ao salvar perfil', err?.response?.data?.detail || err?.message)

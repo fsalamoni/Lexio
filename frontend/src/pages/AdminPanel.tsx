@@ -4,7 +4,7 @@ import {
   Shield, CheckCircle, XCircle, Activity, Server, Database, Brain, Search,
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
-  ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal,
+  ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal, RefreshCw,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -440,6 +440,79 @@ function ReviewQueue() {
   )
 }
 
+// ── Reindex Card ──────────────────────────────────────────────────────────────
+
+interface ReindexResult {
+  indexed_documents: number
+  total_documents: number
+  total_chunks: number
+  errors: number
+  message: string
+}
+
+function ReindexCard() {
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<ReindexResult | null>(null)
+  const toast = useToast()
+
+  const handleReindex = async () => {
+    if (!window.confirm('Reindexar todos os documentos concluídos/aprovados no Qdrant? Isso pode demorar alguns minutos.')) return
+    setLoading(true)
+    setResult(null)
+    try {
+      const res = await api.post('/admin/reindex')
+      setResult(res.data)
+      toast.success('Reindexação concluída', res.data.message)
+    } catch (err: any) {
+      toast.error('Erro na reindexação', err?.response?.data?.detail || err?.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border p-6 mb-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <RefreshCw className="w-5 h-5 text-brand-600" />
+          <div>
+            <h2 className="text-lg font-semibold">Reindexação Vetorial</h2>
+            <p className="text-sm text-gray-500">Re-indexa documentos concluídos/aprovados no Qdrant para busca semântica</p>
+          </div>
+        </div>
+        <button
+          onClick={handleReindex}
+          disabled={loading}
+          className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          {loading ? 'Reindexando...' : 'Reindexar Documentos'}
+        </button>
+      </div>
+      {result && (
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-gray-900">{result.indexed_documents}</p>
+            <p className="text-xs text-gray-500">Indexados</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-gray-900">{result.total_documents}</p>
+            <p className="text-xs text-gray-500">Total</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-brand-700">{result.total_chunks}</p>
+            <p className="text-xs text-gray-500">Chunks</p>
+          </div>
+          <div className={`rounded-lg p-3 text-center ${result.errors > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+            <p className={`text-2xl font-bold ${result.errors > 0 ? 'text-red-700' : 'text-green-700'}`}>{result.errors}</p>
+            <p className="text-xs text-gray-500">Erros</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Admin Panel ──────────────────────────────────────────────────────────
 
 export default function AdminPanel() {
@@ -560,6 +633,9 @@ export default function AdminPanel() {
 
       {/* Review Queue */}
       <ReviewQueue />
+
+      {/* Reindex */}
+      <ReindexCard />
 
       {/* API Keys */}
       <ApiKeysCard />
