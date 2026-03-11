@@ -1,6 +1,9 @@
 """Lexio API — Authentication routes."""
 
 import uuid
+import secrets
+from datetime import datetime, timezone, timedelta
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -89,3 +92,104 @@ async def me_endpoint(user: User = Depends(get_current_user)):
         "is_active": user.is_active,
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
+
+
+# ── Password Reset ────────────────────────────────────────────────────────────
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/forgot-password")
+@limiter.limit("3/minute")
+async def forgot_password(request: Request, req: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Generate a password reset token. Token expires in 15 minutes.
+
+    NOTE: In production, send the token via email. Currently it is returned
+    in the response body for development/testing purposes. Set up an email
+    service (e.g. Sendgrid) and remove 'dev_reset_token' from this response.
+    """
+    stmt = select(User).where(User.email == req.email, User.is_active == True)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    # Always return the same message to prevent user enumeration
+    generic_msg = "Se o email estiver cadastrado, você receberá um link de redefinição em breve."
+
+    if not user:
+        return {"message": generic_msg}
+
+    # Generate cryptographically secure token
+    token = secrets.token_urlsafe(32)
+    user.reset_token = token
+    user.reset_token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+    await db.commit()
+
+    import logging
+    logging.getLogger("lexio.auth").info(
+        f"Password reset requested for {user.email} — token: {token}"
+    )
+
+    return {
+        "message": generic_msg,
+        # TODO: Remove dev_reset_token in production and send via email instead
+        "dev_reset_token": token,
+    }
+
+
+@router.post("/reset-password")
+@limiter.limit("5/minute")
+async def reset_password(request: Request, req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Reset password using a valid reset token."""
+    if len(req.new_password) < 8:
+        raise HTTPException(400, "A nova senha deve ter pelo menos 8 caracteres")
+
+    stmt = select(User).where(User.reset_token == req.token, User.is_active == True)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(400, "Token inválido ou expirado")
+
+    # Check expiry
+    if user.reset_token_expires_at:
+        expires = user.reset_token_expires_at
+        # Make both timezone-aware for comparison
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
+            raise HTTPException(400, "Token inválido ou expirado")
+
+    # Update password and clear token
+    user.hashed_password = hash_password(req.new_password)
+    user.reset_token = None
+    user.reset_token_expires_at = None
+    await db.commit()
+
+    return {"message": "Senha redefinida com sucesso. Faça login com a nova senha."}
+
+
+@router.get("/validate-reset-token/{token}")
+async def validate_reset_token(token: str, db: AsyncSession = Depends(get_db)):
+    """Check if a reset token is valid (not expired, not used)."""
+    stmt = select(User).where(User.reset_token == token, User.is_active == True)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return {"valid": False, "reason": "Token não encontrado"}
+
+    if user.reset_token_expires_at:
+        expires = user.reset_token_expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
+            return {"valid": False, "reason": "Token expirado"}
+
+    return {"valid": True, "email": user.email}

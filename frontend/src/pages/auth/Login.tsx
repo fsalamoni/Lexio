@@ -127,10 +127,15 @@ export default function Login() {
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-500">
-            Não tem conta?{' '}
-            <Link to="/register" className="text-brand-600 hover:underline font-medium">Cadastre-se</Link>
-          </p>
+          <div className="text-center space-y-1">
+            <p className="text-sm text-gray-500">
+              Não tem conta?{' '}
+              <Link to="/register" className="text-brand-600 hover:underline font-medium">Cadastre-se</Link>
+            </p>
+            <p className="text-sm">
+              <Link to="/forgot-password" className="text-gray-400 hover:text-gray-600 hover:underline text-xs">Esqueci minha senha</Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>

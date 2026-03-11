@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import { FileText, Plus, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
@@ -27,6 +27,15 @@ const DOCTYPE_LABELS: Record<string, string> = {
   acao_civil_publica: 'Ação Civil Pública',
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  processando: 'Em processamento',
+  concluido: 'Concluídos',
+  em_revisao: 'Em revisão',
+  aprovado: 'Aprovados',
+  rejeitado: 'Rejeitados',
+  erro: 'Com erro',
+}
+
 const PAGE_SIZE = 20
 
 export default function DocumentList() {
@@ -35,9 +44,23 @@ export default function DocumentList() {
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  // Debounce search input
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(0)
+    }, 400)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [search])
 
   useEffect(() => {
     setLoading(true)
@@ -46,6 +69,8 @@ export default function DocumentList() {
       limit: String(PAGE_SIZE),
     })
     if (statusFilter) params.set('status', statusFilter)
+    if (typeFilter) params.set('document_type_id', typeFilter)
+    if (debouncedSearch.trim()) params.set('q', debouncedSearch.trim())
 
     api.get(`/documents?${params}`)
       .then(res => {
@@ -54,12 +79,17 @@ export default function DocumentList() {
       })
       .catch(() => toast.error('Erro ao carregar documentos'))
       .finally(() => setLoading(false))
-  }, [page, statusFilter]) // eslint-disable-line
+  }, [page, statusFilter, typeFilter, debouncedSearch]) // eslint-disable-line
 
-  const handleStatusFilter = (s: string) => {
-    setStatusFilter(prev => prev === s ? '' : s)
+  const clearFilters = () => {
+    setSearch('')
+    setDebouncedSearch('')
+    setStatusFilter('')
+    setTypeFilter('')
     setPage(0)
   }
+
+  const hasActiveFilters = statusFilter || typeFilter || debouncedSearch
 
   return (
     <div>
@@ -74,27 +104,59 @@ export default function DocumentList() {
         </Link>
       </div>
 
-      {/* Status filter chips */}
-      <div className="flex gap-2 mb-4">
-        {['processando', 'concluido', 'erro'].map(s => (
+      {/* Search bar */}
+      <div className="relative mb-3">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        <input
+          type="search"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Buscar por tema ou descrição..."
+          className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+        />
+      </div>
+
+      {/* Filter row */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {/* Status filters */}
+        {(['processando', 'concluido', 'em_revisao', 'aprovado', 'rejeitado', 'erro'] as const).map(s => (
           <button
             key={s}
-            onClick={() => handleStatusFilter(s)}
-            className={`px-3 py-1 rounded-full text-xs border transition-colors capitalize ${
+            onClick={() => { setStatusFilter(prev => prev === s ? '' : s); setPage(0) }}
+            className={`px-3 py-1 rounded-full text-xs border transition-colors ${
               statusFilter === s
                 ? 'bg-brand-600 text-white border-brand-600'
                 : 'bg-white text-gray-600 hover:bg-gray-50'
             }`}
           >
-            {s === 'processando' ? 'Em processamento' : s === 'concluido' ? 'Concluídos' : 'Com erro'}
+            {STATUS_LABELS[s]}
           </button>
         ))}
-        {statusFilter && (
+
+        {/* Separator */}
+        <span className="w-px bg-gray-200 my-0.5" />
+
+        {/* Type filters */}
+        {Object.entries(DOCTYPE_LABELS).map(([id, label]) => (
           <button
-            onClick={() => { setStatusFilter(''); setPage(0) }}
-            className="px-3 py-1 rounded-full text-xs border text-gray-400 hover:text-gray-600"
+            key={id}
+            onClick={() => { setTypeFilter(prev => prev === id ? '' : id); setPage(0) }}
+            className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+              typeFilter === id
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
           >
-            Limpar filtro
+            {label}
+          </button>
+        ))}
+
+        {hasActiveFilters && (
+          <button
+            onClick={clearFilters}
+            className="flex items-center gap-1 px-3 py-1 rounded-full text-xs border text-gray-400 hover:text-gray-600"
+          >
+            <X className="w-3 h-3" /> Limpar filtros
           </button>
         )}
       </div>
@@ -123,11 +185,26 @@ export default function DocumentList() {
           </div>
           <p className="font-medium text-gray-700 mb-1">Nenhum documento encontrado</p>
           <p className="text-sm text-gray-400">
-            {statusFilter ? 'Nenhum documento com esse status.' : 'Crie seu primeiro documento usando o botão acima.'}
+            {hasActiveFilters
+              ? 'Nenhum resultado com os filtros aplicados.'
+              : 'Crie seu primeiro documento usando o botão acima.'}
           </p>
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="mt-3 text-xs text-brand-600 hover:underline"
+            >
+              Limpar filtros
+            </button>
+          )}
         </div>
       ) : (
         <>
+          {/* Result count when searching */}
+          {hasActiveFilters && (
+            <p className="text-xs text-gray-500 mb-2">{total} resultado{total !== 1 ? 's' : ''} encontrado{total !== 1 ? 's' : ''}</p>
+          )}
+
           {/* Mobile-scrollable table wrapper */}
           <div className="bg-white rounded-xl border overflow-hidden">
             <div className="overflow-x-auto">
@@ -148,6 +225,9 @@ export default function DocumentList() {
                         <Link to={`/documents/${doc.id}`} className="text-brand-600 hover:text-brand-800 hover:underline font-medium text-sm">
                           {DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id}
                         </Link>
+                        {doc.origem === 'whatsapp' && (
+                          <span className="ml-1.5 text-xs text-green-600 font-medium">WhatsApp</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700 max-w-xs">
                         <span className="line-clamp-1">{doc.tema || <span className="text-gray-400">—</span>}</span>
