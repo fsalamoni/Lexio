@@ -11,9 +11,12 @@ import {
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 import StatusBadge from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
 import { SkeletonCard } from '../components/Skeleton'
+import { IS_FIREBASE } from '../lib/firebase'
+import { getStats as firestoreGetStats, getRecentDocuments } from '../lib/firestore-service'
 
 interface Stats {
   total_documents: number
@@ -105,16 +108,32 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [periodDays, setPeriodDays] = useState(30)
   const [chartLoading, setChartLoading] = useState(false)
+  const { userId } = useAuth()
   const toast = useToast()
 
   useEffect(() => {
-    const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
-    const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
-    const p2 = api.get('/stats/daily', { params: { days: periodDays } }).then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
-    const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => toast.error('Erro ao carregar estatísticas de agentes'))
-    const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => toast.error('Erro ao carregar documentos recentes'))
-    const p5 = api.get('/stats/by-type').then(r => setByType(toArr(r.data))).catch(() => {/* non-critical */})
-    Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
+    if (IS_FIREBASE && userId) {
+      const p1 = firestoreGetStats(userId).then(s => setStats(s)).catch(() => toast.error('Erro ao carregar estatísticas'))
+      const p2 = getRecentDocuments(userId, 5).then(docs => {
+        setRecent(docs.map(d => ({
+          id: d.id!,
+          document_type_id: d.document_type_id,
+          tema: d.tema ?? null,
+          status: d.status,
+          quality_score: d.quality_score ?? null,
+          created_at: d.created_at,
+        })))
+      }).catch(() => toast.error('Erro ao carregar documentos recentes'))
+      Promise.all([p1, p2]).finally(() => setLoading(false))
+    } else {
+      const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
+      const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
+      const p2 = api.get('/stats/daily', { params: { days: periodDays } }).then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
+      const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => toast.error('Erro ao carregar estatísticas de agentes'))
+      const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => toast.error('Erro ao carregar documentos recentes'))
+      const p5 = api.get('/stats/by-type').then(r => setByType(toArr(r.data))).catch(() => {/* non-critical */})
+      Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
+    }
   }, []) // eslint-disable-line
 
   // Reload chart data when period changes (after initial load)
