@@ -56,6 +56,10 @@ const DOCTYPE_LABELS: Record<string, string> = {
   recurso: 'Recurso',
   sentenca: 'Sentença',
   acao_civil_publica: 'Ação Civil Pública',
+  mandado_seguranca: 'Mandado de Segurança',
+  habeas_corpus: 'Habeas Corpus',
+  agravo: 'Agravo de Instrumento',
+  embargos_declaracao: 'Embargos de Declaração',
 }
 
 const AREA_LABELS: Record<string, string> = {
@@ -64,6 +68,18 @@ const AREA_LABELS: Record<string, string> = {
   civil: 'Civil',
   tax: 'Tributário',
   labor: 'Trabalhista',
+  criminal: 'Penal',
+  criminal_procedure: 'Processo Penal',
+  civil_procedure: 'Processo Civil',
+  consumer: 'Consumidor',
+  environmental: 'Ambiental',
+  business: 'Empresarial',
+  family: 'Família',
+  inheritance: 'Sucessões',
+  social_security: 'Previdenciário',
+  electoral: 'Eleitoral',
+  international: 'Internacional',
+  digital: 'Digital',
 }
 
 function fmtDuration(ms: number | null): string {

@@ -41,6 +41,18 @@ const AREA_LABELS: Record<string, string> = {
   civil: 'Civil',
   tax: 'Tributário',
   labor: 'Trabalho',
+  criminal: 'Penal',
+  criminal_procedure: 'Processo Penal',
+  civil_procedure: 'Processo Civil',
+  consumer: 'Consumidor',
+  environmental: 'Ambiental',
+  business: 'Empresarial',
+  family: 'Família',
+  inheritance: 'Sucessões',
+  social_security: 'Previdenciário',
+  electoral: 'Eleitoral',
+  international: 'Internacional',
+  digital: 'Digital',
 }
 
 const AREA_COLORS: Record<string, string> = {
@@ -49,6 +61,18 @@ const AREA_COLORS: Record<string, string> = {
   civil:           'bg-blue-50   text-blue-700   border-blue-200',
   tax:             'bg-orange-50 text-orange-700 border-orange-200',
   labor:           'bg-teal-50   text-teal-700   border-teal-200',
+  criminal:        'bg-rose-50   text-rose-700   border-rose-200',
+  criminal_procedure: 'bg-pink-50 text-pink-700  border-pink-200',
+  civil_procedure: 'bg-sky-50    text-sky-700    border-sky-200',
+  consumer:        'bg-amber-50  text-amber-700  border-amber-200',
+  environmental:   'bg-emerald-50 text-emerald-700 border-emerald-200',
+  business:        'bg-indigo-50 text-indigo-700 border-indigo-200',
+  family:          'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200',
+  inheritance:     'bg-violet-50 text-violet-700 border-violet-200',
+  social_security: 'bg-cyan-50   text-cyan-700   border-cyan-200',
+  electoral:       'bg-lime-50   text-lime-700   border-lime-200',
+  international:   'bg-slate-50  text-slate-700  border-slate-200',
+  digital:         'bg-zinc-50   text-zinc-700   border-zinc-200',
 }
 
 const EMPTY_FORM: ThesisFormData = {

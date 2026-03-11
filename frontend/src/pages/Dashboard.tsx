@@ -64,6 +64,10 @@ const DOCTYPE_LABELS: Record<string, string> = {
   recurso: 'Recurso',
   sentenca: 'Sentença',
   acao_civil_publica: 'ACP',
+  mandado_seguranca: 'MS',
+  habeas_corpus: 'HC',
+  agravo: 'Agravo',
+  embargos_declaracao: 'Embargos',
 }
 
 function fmtCost(usd: number | null | undefined) {
