@@ -10,6 +10,7 @@ import { useToast } from '../components/Toast'
 import { SkeletonRow } from '../components/Skeleton'
 import { IS_FIREBASE } from '../lib/firebase'
 import { listDocuments, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
+import { DOCTYPE_LABELS } from '../lib/constants'
 
 interface Document {
   id: string
@@ -19,19 +20,6 @@ interface Document {
   quality_score: number | null
   created_at: string
   origem: string
-}
-
-const DOCTYPE_LABELS: Record<string, string> = {
-  parecer: 'Parecer',
-  peticao_inicial: 'Petição Inicial',
-  contestacao: 'Contestação',
-  recurso: 'Recurso',
-  sentenca: 'Sentença',
-  acao_civil_publica: 'Ação Civil Pública',
-  mandado_seguranca: 'Mandado de Segurança',
-  habeas_corpus: 'Habeas Corpus',
-  agravo: 'Agravo de Instrumento',
-  embargos_declaracao: 'Embargos de Declaração',
 }
 
 const PAGE_SIZE = 20

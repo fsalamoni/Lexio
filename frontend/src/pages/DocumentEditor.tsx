@@ -7,19 +7,7 @@ import RichTextEditor from '../components/RichTextEditor'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getDocument, updateDocument } from '../lib/firestore-service'
-
-const DOCTYPE_LABELS: Record<string, string> = {
-  parecer: 'Parecer',
-  peticao_inicial: 'Petição Inicial',
-  contestacao: 'Contestação',
-  recurso: 'Recurso',
-  sentenca: 'Sentença',
-  acao_civil_publica: 'Ação Civil Pública',
-  mandado_seguranca: 'Mandado de Segurança',
-  habeas_corpus: 'Habeas Corpus',
-  agravo: 'Agravo de Instrumento',
-  embargos_declaracao: 'Embargos de Declaração',
-}
+import { DOCTYPE_LABELS } from '../lib/constants'
 
 export default function DocumentEditor() {
   const { id } = useParams<{ id: string }>()
