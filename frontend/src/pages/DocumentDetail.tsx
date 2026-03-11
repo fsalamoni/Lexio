@@ -1,11 +1,18 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, Trash2 } from 'lucide-react'
-import api from '../api/client'
+import api, { invalidateApiCache } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import ProgressTracker from '../components/ProgressTracker'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
+
+interface QualityIssue {
+  type: string
+  severity: 'low' | 'medium' | 'high'
+  description: string
+  suggestion?: string
+}
 
 interface DocumentData {
   id: string
@@ -13,6 +20,7 @@ interface DocumentData {
   tema: string | null
   status: string
   quality_score: number | null
+  quality_issues: QualityIssue[] | null
   original_request: string
   created_at: string
   docx_path: string | null
@@ -153,6 +161,7 @@ export default function DocumentDetail() {
     setDeleting(true)
     try {
       await api.delete(`/documents/${id}`)
+      invalidateApiCache('/stats')
       toast.success('Documento excluído')
       navigate('/documents')
     } catch (err: any) {
@@ -502,6 +511,51 @@ export default function DocumentDetail() {
                 : doc.texto_completo
               }
             </pre>
+          </div>
+        </div>
+      )}
+
+      {/* Quality issues */}
+      {doc.quality_issues && doc.quality_issues.length > 0 && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="px-6 py-4 border-b bg-gray-50">
+            <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-500" />
+              Problemas de Qualidade Detectados ({doc.quality_issues.length})
+            </h2>
+          </div>
+          <div className="divide-y">
+            {doc.quality_issues.map((issue, i) => {
+              const severityColors = {
+                high: 'bg-red-50 border-l-4 border-red-400',
+                medium: 'bg-amber-50 border-l-4 border-amber-400',
+                low: 'bg-blue-50 border-l-4 border-blue-300',
+              }
+              const severityLabels = { high: 'Alto', medium: 'Médio', low: 'Baixo' }
+              const severityTextColors = { high: 'text-red-700', medium: 'text-amber-700', low: 'text-blue-700' }
+              return (
+                <div key={i} className={`px-6 py-4 ${severityColors[issue.severity] || ''}`}>
+                  <div className="flex items-start gap-3">
+                    <span className={`text-xs font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                      issue.severity === 'high' ? 'bg-red-100 text-red-700'
+                        : issue.severity === 'medium' ? 'bg-amber-100 text-amber-700'
+                        : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {severityLabels[issue.severity] || issue.severity}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium ${severityTextColors[issue.severity] || 'text-gray-700'}`}>
+                        {issue.type}
+                      </p>
+                      <p className="text-sm text-gray-600 mt-0.5">{issue.description}</p>
+                      {issue.suggestion && (
+                        <p className="text-xs text-gray-500 mt-1 italic">Sugestão: {issue.suggestion}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

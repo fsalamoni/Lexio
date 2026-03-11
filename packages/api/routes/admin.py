@@ -325,6 +325,55 @@ async def pipeline_logs(
     ]
 
 
+@router.post("/reindex")
+async def reindex_documents(
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-index all completed org documents into Qdrant (lexio_documents collection)."""
+    import logging as _logging
+    from packages.core.search.indexer import index_document
+
+    _log = _logging.getLogger("lexio.api.admin")
+
+    result = await db.execute(
+        select(Document).where(
+            Document.organization_id == admin.organization_id,
+            Document.texto_completo.isnot(None),
+            Document.status.in_(["concluido", "aprovado"]),
+        )
+    )
+    docs = result.scalars().all()
+
+    indexed = 0
+    total_chunks = 0
+    errors: list[str] = []
+
+    for doc in docs:
+        try:
+            chunks = await index_document(
+                content=doc.texto_completo.encode("utf-8"),
+                content_type="text/plain",
+                filename=f"{doc.document_type_id}_{str(doc.id)[:8]}.txt",
+                organization_id=str(admin.organization_id),
+                document_id=str(doc.id),
+                collection="lexio_documents",
+            )
+            total_chunks += chunks
+            indexed += 1
+        except Exception as exc:
+            errors.append(str(doc.id))
+            _log.warning(f"Reindex failed for {doc.id}: {exc}")
+
+    return {
+        "indexed_documents": indexed,
+        "total_documents": len(docs),
+        "total_chunks": total_chunks,
+        "errors": len(errors),
+        "message": f"{indexed}/{len(docs)} documentos reindexados ({total_chunks} chunks)",
+    }
+
+
 async def load_settings_from_db(db: AsyncSession) -> None:
     """Called at startup to override env settings with DB-stored values."""
     try:

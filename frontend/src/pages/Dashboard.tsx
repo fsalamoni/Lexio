@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   FileText, CheckCircle, Clock, DollarSign, TrendingUp,
-  Activity, ChevronRight,
+  Activity, ChevronRight, Download,
 } from 'lucide-react'
 import {
   BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -140,6 +140,21 @@ export default function Dashboard() {
     catch { return dia }
   }
 
+  const handleExportCSV = () => {
+    const rows = [
+      ['Data', 'Total', 'Concluídos', 'Custo (USD)'],
+      ...daily.map(d => [d.dia, d.total, d.concluidos, d.custo?.toFixed(5) ?? '0']),
+    ]
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `lexio-stats-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -155,6 +170,16 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <div className="flex items-center gap-3">
+          {daily.length > 0 && (
+            <button
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border rounded-lg px-3 py-1.5 bg-white hover:bg-gray-50 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Exportar CSV
+            </button>
+          )}
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
           {PERIOD_OPTIONS.map(opt => (
             <button
@@ -169,6 +194,7 @@ export default function Dashboard() {
               {opt.label}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
