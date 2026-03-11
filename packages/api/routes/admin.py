@@ -1,13 +1,15 @@
 """Lexio API — Admin routes (module management, health, metrics, platform settings)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.auth.dependencies import get_current_admin, get_db
 from packages.core.database.models.user import User
 from packages.core.database.models.platform_setting import PlatformSetting
+from packages.core.database.models.execution import Execution
+from packages.core.database.models.document import Document
 from packages.core.module_loader import module_registry, check_all_modules_health
 from packages.core.config import settings
 
@@ -218,6 +220,158 @@ async def update_settings(
 
     await db.commit()
     return {"updated": updated, "message": "Configurações salvas e aplicadas com sucesso."}
+
+
+# ── User management ───────────────────────────────────────────────────────────
+
+@router.get("/users")
+async def list_users(
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all users in the admin's organization."""
+    result = await db.execute(
+        select(User)
+        .where(User.organization_id == admin.organization_id)
+        .order_by(User.created_at.asc())
+    )
+    users = result.scalars().all()
+    return [
+        {
+            "id": str(u.id),
+            "email": u.email,
+            "full_name": u.full_name,
+            "title": u.title,
+            "role": u.role,
+            "is_active": u.is_active,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+        for u in users
+    ]
+
+
+class UserPatch(BaseModel):
+    role: str | None = None       # "admin" | "user" | "viewer"
+    is_active: bool | None = None
+
+
+@router.patch("/users/{user_id}")
+async def update_user(
+    user_id: str,
+    body: UserPatch,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update user role or active status. Admin cannot modify themselves."""
+    import uuid as _uuid
+    result = await db.execute(
+        select(User).where(
+            User.id == _uuid.UUID(user_id),
+            User.organization_id == admin.organization_id,
+        )
+    )
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "Usuário não encontrado")
+    if target.id == admin.id:
+        raise HTTPException(400, "Não é possível alterar sua própria conta")
+    if body.role is not None:
+        if body.role not in ("admin", "user", "viewer"):
+            raise HTTPException(400, "Role inválido. Use: admin, user, viewer")
+        target.role = body.role
+    if body.is_active is not None:
+        target.is_active = body.is_active
+    await db.commit()
+    return {
+        "id": str(target.id),
+        "role": target.role,
+        "is_active": target.is_active,
+        "message": "Usuário atualizado com sucesso",
+    }
+
+
+@router.get("/pipeline-logs")
+async def pipeline_logs(
+    limit: int = Query(30, ge=1, le=100),
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return recent pipeline execution logs for the organization."""
+    result = await db.execute(
+        select(Execution, Document.document_type_id, Document.tema, Document.status)
+        .join(Document, Execution.document_id == Document.id)
+        .where(Execution.organization_id == admin.organization_id)
+        .order_by(desc(Execution.created_at))
+        .limit(limit)
+    )
+    rows = result.all()
+    return [
+        {
+            "id": str(e.id),
+            "document_id": str(e.document_id),
+            "document_type": doc_type,
+            "tema": tema,
+            "doc_status": doc_status,
+            "agent_name": e.agent_name,
+            "phase": e.phase,
+            "model": e.model,
+            "tokens_in": e.tokens_in,
+            "tokens_out": e.tokens_out,
+            "cost_usd": e.cost_usd,
+            "duration_ms": e.duration_ms,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e, doc_type, tema, doc_status in rows
+    ]
+
+
+@router.post("/reindex")
+async def reindex_documents(
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-index all completed org documents into Qdrant (lexio_documents collection)."""
+    import logging as _logging
+    from packages.core.search.indexer import index_document
+
+    _log = _logging.getLogger("lexio.api.admin")
+
+    result = await db.execute(
+        select(Document).where(
+            Document.organization_id == admin.organization_id,
+            Document.texto_completo.isnot(None),
+            Document.status.in_(["concluido", "aprovado"]),
+        )
+    )
+    docs = result.scalars().all()
+
+    indexed = 0
+    total_chunks = 0
+    errors: list[str] = []
+
+    for doc in docs:
+        try:
+            chunks = await index_document(
+                content=doc.texto_completo.encode("utf-8"),
+                content_type="text/plain",
+                filename=f"{doc.document_type_id}_{str(doc.id)[:8]}.txt",
+                organization_id=str(admin.organization_id),
+                document_id=str(doc.id),
+                collection="lexio_documents",
+            )
+            total_chunks += chunks
+            indexed += 1
+        except Exception as exc:
+            errors.append(str(doc.id))
+            _log.warning(f"Reindex failed for {doc.id}: {exc}")
+
+    return {
+        "indexed_documents": indexed,
+        "total_documents": len(docs),
+        "total_chunks": total_chunks,
+        "errors": len(errors),
+        "message": f"{indexed}/{len(docs)} documentos reindexados ({total_chunks} chunks)",
+    }
 
 
 async def load_settings_from_db(db: AsyncSession) -> None:

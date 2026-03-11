@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { User, Save, ChevronDown, ChevronUp } from 'lucide-react'
-import api from '../api/client'
+import { User, Save, ChevronDown, ChevronUp, Lock } from 'lucide-react'
+import api, { invalidateApiCache } from '../api/client'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 
@@ -115,6 +115,8 @@ export default function Profile() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['professional']))
+  const [pwForm, setPwForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
+  const [savingPw, setSavingPw] = useState(false)
   const toast = useToast()
 
   useEffect(() => {
@@ -150,11 +152,36 @@ export default function Profile() {
     setSaving(true)
     try {
       await api.patch('/anamnesis/profile', profile)
+      invalidateApiCache('/anamnesis/profile')
       toast.success('Perfil atualizado com sucesso')
     } catch (err: any) {
       toast.error('Erro ao salvar perfil', err?.response?.data?.detail || err?.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handlePasswordChange = async () => {
+    if (pwForm.new_password !== pwForm.confirm_password) {
+      toast.error('As senhas não coincidem')
+      return
+    }
+    if (pwForm.new_password.length < 8) {
+      toast.error('A nova senha deve ter pelo menos 8 caracteres')
+      return
+    }
+    setSavingPw(true)
+    try {
+      await api.post('/auth/change-password', {
+        current_password: pwForm.current_password,
+        new_password: pwForm.new_password,
+      })
+      toast.success('Senha alterada com sucesso')
+      setPwForm({ current_password: '', new_password: '', confirm_password: '' })
+    } catch (err: any) {
+      toast.error('Erro ao alterar senha', err?.response?.data?.detail || err?.message)
+    } finally {
+      setSavingPw(false)
     }
   }
 
@@ -315,6 +342,53 @@ export default function Profile() {
             </div>
           )
         })}
+      </div>
+
+      {/* Security / Change Password */}
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden mt-4">
+        <button
+          type="button"
+          onClick={() => toggleSection('security')}
+          className="w-full flex items-center justify-between p-5 text-left hover:bg-gray-50 transition-colors"
+        >
+          <div>
+            <p className="text-sm font-semibold text-gray-800">Segurança</p>
+            <p className="text-xs text-gray-500 mt-0.5">Alterar sua senha de acesso</p>
+          </div>
+          {openSections.has('security')
+            ? <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            : <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          }
+        </button>
+        {openSections.has('security') && (
+          <div className="px-5 pb-5 border-t">
+            <div className="pt-4 space-y-4">
+              {(['current_password', 'new_password', 'confirm_password'] as const).map(key => (
+                <div key={key}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {key === 'current_password' ? 'Senha atual' : key === 'new_password' ? 'Nova senha' : 'Confirmar nova senha'}
+                  </label>
+                  <input
+                    type="password"
+                    value={pwForm[key]}
+                    onChange={e => setPwForm(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={key === 'current_password' ? 'Digite sua senha atual' : 'Mínimo 8 caracteres'}
+                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+                  />
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={handlePasswordChange}
+                disabled={savingPw || !pwForm.current_password || !pwForm.new_password || !pwForm.confirm_password}
+                className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+              >
+                <Lock className="w-4 h-4" />
+                {savingPw ? 'Alterando...' : 'Alterar Senha'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-6">
