@@ -1,11 +1,14 @@
 """Lexio API — Document CRUD routes."""
 
 import asyncio
+import io
 import logging
 import uuid
+import zipfile
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -319,6 +322,95 @@ async def reject_document(
     doc.metadata_ = metadata
     await db.commit()
     return {"status": "rejeitado", "document_id": document_id, "reason": req.reason}
+
+
+# ── Bulk Export (ZIP) ────────────────────────────────────────────────────────
+
+_DOCTYPE_LABELS = {
+    "parecer": "Parecer",
+    "peticao_inicial": "Peticao_Inicial",
+    "contestacao": "Contestacao",
+    "recurso": "Recurso",
+    "sentenca": "Sentenca",
+    "acao_civil_publica": "ACP",
+}
+
+
+class BulkExportRequest(BaseModel):
+    ids: list[str]
+
+
+@router.post("/bulk-export")
+async def bulk_export_documents(
+    req: BulkExportRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream a ZIP archive of selected documents as .txt files."""
+    if not req.ids:
+        raise HTTPException(400, "Nenhum documento selecionado")
+    if len(req.ids) > 50:
+        raise HTTPException(400, "Máximo de 50 documentos por exportação")
+
+    try:
+        uuids = [uuid.UUID(i) for i in req.ids]
+    except ValueError:
+        raise HTTPException(400, "IDs inválidos na requisição")
+
+    stmt = select(Document).where(
+        Document.id.in_(uuids),
+        Document.organization_id == user.organization_id,
+        Document.texto_completo.isnot(None),
+    )
+    result = await db.execute(stmt)
+    docs = result.scalars().all()
+
+    if not docs:
+        raise HTTPException(404, "Nenhum documento com conteúdo encontrado")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for doc in docs:
+            label = _DOCTYPE_LABELS.get(doc.document_type_id, doc.document_type_id)
+            tema_safe = (doc.tema or "sem-tema")[:50].replace("/", "-").replace("\\", "-")
+            filename = f"{label}_{tema_safe}_{str(doc.id)[:8]}.txt"
+            zf.writestr(filename, doc.texto_completo or "")
+    buf.seek(0)
+
+    today = date.today().isoformat()
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=lexio-{today}.zip"},
+    )
+
+
+# ── Retry Failed Document ─────────────────────────────────────────────────────
+
+@router.post("/{document_id}/retry")
+async def retry_document(
+    document_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reprocess a document that failed (status=erro)."""
+    doc = await _get_doc_for_user(document_id, user, db)
+    if doc.status != "erro":
+        raise HTTPException(400, f"Apenas documentos com status 'erro' podem ser reprocessados")
+
+    doc_type_info = module_registry.get(doc.document_type_id)
+    if not doc_type_info or not doc_type_info.instance:
+        raise HTTPException(400, f"Tipo de documento '{doc.document_type_id}' não disponível")
+
+    doc.status = "processando"
+    await db.commit()
+    await db.refresh(doc)
+
+    pipeline_config = doc_type_info.instance.get_pipeline_config(doc.template_variant)
+    orchestrator = PipelineOrchestrator(str(doc.id), pipeline_config)
+    asyncio.create_task(orchestrator.run())
+
+    return {"status": "processando", "document_id": document_id}
 
 
 # ── Delete ───────────────────────────────────────────────────────────────────
