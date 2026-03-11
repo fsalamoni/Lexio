@@ -11,6 +11,7 @@ import api from '../api/client'
 import { loadApiKeys, saveApiKeys, type ApiKeyEntry } from '../lib/settings-store'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
+import { DOCTYPE_LABELS } from '../lib/constants'
 
 interface ModuleInfo {
   id: string
@@ -286,15 +287,6 @@ interface ReviewDoc {
   original_request: string
   created_at: string
   quality_score: number | null
-}
-
-const DOCTYPE_LABELS: Record<string, string> = {
-  parecer: 'Parecer',
-  peticao_inicial: 'Petição Inicial',
-  contestacao: 'Contestação',
-  recurso: 'Recurso',
-  sentenca: 'Sentença',
-  acao_civil_publica: 'Ação Civil Pública',
 }
 
 function ReviewQueue() {

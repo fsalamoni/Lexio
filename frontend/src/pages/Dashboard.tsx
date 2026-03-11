@@ -17,6 +17,7 @@ import { useToast } from '../components/Toast'
 import { SkeletonCard } from '../components/Skeleton'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getStats as firestoreGetStats, getRecentDocuments } from '../lib/firestore-service'
+import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../lib/constants'
 
 interface Stats {
   total_documents: number
@@ -55,19 +56,6 @@ interface TypeStat {
   document_type_id: string
   total: number
   avg_score: number | null
-}
-
-const DOCTYPE_LABELS: Record<string, string> = {
-  parecer: 'Parecer',
-  peticao_inicial: 'Petição Inicial',
-  contestacao: 'Contestação',
-  recurso: 'Recurso',
-  sentenca: 'Sentença',
-  acao_civil_publica: 'ACP',
-  mandado_seguranca: 'MS',
-  habeas_corpus: 'HC',
-  agravo: 'Agravo',
-  embargos_declaracao: 'Embargos',
 }
 
 function fmtCost(usd: number | null | undefined) {
