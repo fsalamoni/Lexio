@@ -84,9 +84,11 @@ async def list_documents(
     limit: int = Query(20, ge=1, le=100),
     status: str | None = None,
     document_type_id: str | None = None,
+    q: str | None = Query(None, description="Full-text search in tema and original_request"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from sqlalchemy import or_, cast, String as SAString
     stmt = select(Document).where(Document.organization_id == user.organization_id)
     count_stmt = select(func.count(Document.id)).where(Document.organization_id == user.organization_id)
 
@@ -96,6 +98,13 @@ async def list_documents(
     if document_type_id:
         stmt = stmt.where(Document.document_type_id == document_type_id)
         count_stmt = count_stmt.where(Document.document_type_id == document_type_id)
+    if q:
+        search_filter = or_(
+            Document.tema.ilike(f"%{q}%"),
+            Document.original_request.ilike(f"%{q}%"),
+        )
+        stmt = stmt.where(search_filter)
+        count_stmt = count_stmt.where(search_filter)
 
     stmt = stmt.order_by(Document.created_at.desc()).offset(skip).limit(limit)
 
@@ -272,6 +281,30 @@ async def approve_document(
     metadata.pop("rejection_reason", None)
     doc.metadata_ = metadata
     await db.commit()
+
+    # Create notification for document author
+    if doc.author_id:
+        try:
+            from packages.core.database.models.notification import Notification
+            doc_type_labels = {
+                "parecer": "Parecer Jurídico", "peticao_inicial": "Petição Inicial",
+                "contestacao": "Contestação", "recurso": "Recurso",
+                "sentenca": "Sentença", "acao_civil_publica": "Ação Civil Pública",
+            }
+            label = doc_type_labels.get(doc.document_type_id, doc.document_type_id)
+            notif = Notification(
+                organization_id=doc.organization_id,
+                user_id=doc.author_id,
+                type="document_approved",
+                title=f"{label} aprovado!",
+                message=f"Seu documento foi aprovado por {user.full_name}.",
+                document_id=doc.id,
+            )
+            db.add(notif)
+            await db.commit()
+        except Exception:
+            pass
+
     return {"status": "aprovado", "document_id": document_id}
 
 
@@ -294,4 +327,29 @@ async def reject_document(
     metadata["rejection_reason"] = req.reason or ""
     doc.metadata_ = metadata
     await db.commit()
+
+    # Create notification for document author
+    if doc.author_id:
+        try:
+            from packages.core.database.models.notification import Notification
+            doc_type_labels = {
+                "parecer": "Parecer Jurídico", "peticao_inicial": "Petição Inicial",
+                "contestacao": "Contestação", "recurso": "Recurso",
+                "sentenca": "Sentença", "acao_civil_publica": "Ação Civil Pública",
+            }
+            label = doc_type_labels.get(doc.document_type_id, doc.document_type_id)
+            reason_text = f": {req.reason}" if req.reason else ""
+            notif = Notification(
+                organization_id=doc.organization_id,
+                user_id=doc.author_id,
+                type="document_rejected",
+                title=f"{label} rejeitado",
+                message=f"Seu documento foi rejeitado por {user.full_name}{reason_text}. Revise e reenvie para aprovação.",
+                document_id=doc.id,
+            )
+            db.add(notif)
+            await db.commit()
+        except Exception:
+            pass
+
     return {"status": "rejeitado", "document_id": document_id, "reason": req.reason}

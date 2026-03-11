@@ -29,8 +29,11 @@ async def trigger_pipeline(
     session_id: str,
     doc_type: str,
     content: str,
+    legal_area_ids: list[str] | None = None,
 ) -> None:
     """Create a document and run the pipeline, then deliver via WhatsApp."""
+    legal_areas = legal_area_ids or []
+
     async with async_session() as db:
         # Validate doc type
         doc_type_info = module_registry.get(doc_type)
@@ -48,7 +51,7 @@ async def trigger_pipeline(
         # Create document record with origem=whatsapp
         doc = Document(
             document_type_id=doc_type,
-            legal_area_ids=[],
+            legal_area_ids=legal_areas,
             original_request=content,
             organization_id=org_uuid,
             status="processando",

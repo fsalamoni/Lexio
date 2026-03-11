@@ -215,6 +215,17 @@ class PipelineOrchestrator:
                     f"cost=${self.cost_tracker.total_cost:.4f} time={duration_s}s"
                 )
 
+                # Create in-app notification for document author
+                asyncio.create_task(
+                    self._create_completion_notification(
+                        document_id=doc_id,
+                        author_id=str(doc.author_id) if doc.author_id else None,
+                        organization_id=str(doc.organization_id),
+                        quality_score=quality_score,
+                        document_type_id=self.config.document_type_id,
+                    )
+                )
+
                 # Auto-populate thesis bank (fire-and-forget, non-blocking)
                 asyncio.create_task(
                     self._auto_populate_theses(
@@ -499,3 +510,40 @@ class PipelineOrchestrator:
                 )
         except Exception as e:
             logger.warning(f"Thesis auto-populate failed for doc={document_id}: {e}")
+
+    async def _create_completion_notification(
+        self,
+        document_id: str,
+        author_id: str | None,
+        organization_id: str,
+        quality_score: int,
+        document_type_id: str,
+    ):
+        """Create an in-app notification when a document is successfully generated."""
+        try:
+            from packages.core.database.models.notification import Notification
+
+            doc_type_labels = {
+                "parecer": "Parecer Jurídico",
+                "peticao_inicial": "Petição Inicial",
+                "contestacao": "Contestação",
+                "recurso": "Recurso",
+                "sentenca": "Sentença",
+                "acao_civil_publica": "Ação Civil Pública",
+            }
+            label = doc_type_labels.get(document_type_id, document_type_id)
+            score_text = f" (score {quality_score}/100)" if quality_score else ""
+
+            notif = Notification(
+                organization_id=uuid.UUID(organization_id),
+                user_id=uuid.UUID(author_id) if author_id else None,
+                type="document_completed",
+                title=f"{label} gerado com sucesso!",
+                message=f"Seu documento foi gerado{score_text}. Revise e aprove ou envie para revisão.",
+                document_id=uuid.UUID(document_id),
+            )
+            async with async_session() as db:
+                db.add(notif)
+                await db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to create completion notification: {e}")
