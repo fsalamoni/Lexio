@@ -143,6 +143,18 @@ const ONBOARDING_STEPS: WizardStep[] = [
           { value: 'civil', label: 'Direito Civil' },
           { value: 'tax', label: 'Direito Tributário' },
           { value: 'labor', label: 'Direito do Trabalho' },
+          { value: 'criminal', label: 'Direito Penal' },
+          { value: 'criminal_procedure', label: 'Processo Penal' },
+          { value: 'civil_procedure', label: 'Processo Civil' },
+          { value: 'consumer', label: 'Direito do Consumidor' },
+          { value: 'environmental', label: 'Direito Ambiental' },
+          { value: 'business', label: 'Direito Empresarial' },
+          { value: 'family', label: 'Direito de Família' },
+          { value: 'inheritance', label: 'Direito das Sucessões' },
+          { value: 'social_security', label: 'Direito Previdenciário' },
+          { value: 'electoral', label: 'Direito Eleitoral' },
+          { value: 'international', label: 'Direito Internacional' },
+          { value: 'digital', label: 'Direito Digital' },
         ],
       },
       { key: 'specializations', label: 'Especializações', type: 'tags', placeholder: 'Separe por vírgula: licitações, improbidade...' },
@@ -338,14 +350,32 @@ const DOCUMENT_TYPES = [
   { id: 'recurso', name: 'Recurso', description: 'Peça recursal para reforma de decisão judicial', templates: ['generic'] },
   { id: 'acao_civil_publica', name: 'Ação Civil Pública', description: 'Ação para tutela de direitos difusos e coletivos', templates: ['generic'] },
   { id: 'sentenca', name: 'Sentença', description: 'Decisão judicial que resolve o mérito da causa', templates: ['generic'] },
+  { id: 'mandado_seguranca', name: 'Mandado de Segurança', description: 'Remédio constitucional contra ato ilegal de autoridade pública', templates: ['generic'] },
+  { id: 'habeas_corpus', name: 'Habeas Corpus', description: 'Remédio constitucional contra violação da liberdade de locomoção', templates: ['generic'] },
+  { id: 'agravo', name: 'Agravo de Instrumento', description: 'Recurso contra decisões interlocutórias', templates: ['generic'] },
+  { id: 'embargos_declaracao', name: 'Embargos de Declaração', description: 'Recurso para sanar omissão, contradição ou obscuridade', templates: ['generic'] },
 ]
 
 const LEGAL_AREAS = [
+  // ── Áreas clássicas (já implementadas no backend) ─────────────────────────
   { id: 'administrative', name: 'Direito Administrativo', description: 'Licitações, contratos administrativos, improbidade, servidores públicos' },
   { id: 'constitutional', name: 'Direito Constitucional', description: 'Direitos fundamentais, controle de constitucionalidade, organização do Estado' },
   { id: 'civil', name: 'Direito Civil', description: 'Obrigações, contratos, responsabilidade civil, direitos reais, família e sucessões' },
   { id: 'tax', name: 'Direito Tributário', description: 'Tributos, contribuições, isenções, planejamento tributário' },
   { id: 'labor', name: 'Direito do Trabalho', description: 'Relações de trabalho, CLT, direitos trabalhistas, previdência' },
+  // ── Novas áreas ───────────────────────────────────────────────────────────
+  { id: 'criminal', name: 'Direito Penal', description: 'Crimes, penas, execução penal, legislação penal especial' },
+  { id: 'criminal_procedure', name: 'Processo Penal', description: 'Inquérito, ação penal, provas, recursos criminais, execução penal' },
+  { id: 'civil_procedure', name: 'Processo Civil', description: 'Procedimentos, recursos, execução, tutelas provisórias, CPC/2015' },
+  { id: 'consumer', name: 'Direito do Consumidor', description: 'Relações de consumo, CDC, responsabilidade do fornecedor, práticas abusivas' },
+  { id: 'environmental', name: 'Direito Ambiental', description: 'Proteção ambiental, licenciamento, crimes ambientais, responsabilidade ambiental' },
+  { id: 'business', name: 'Direito Empresarial', description: 'Sociedades, contratos mercantis, recuperação judicial, falência, propriedade intelectual' },
+  { id: 'family', name: 'Direito de Família', description: 'Casamento, divórcio, guarda, alimentos, adoção, união estável' },
+  { id: 'inheritance', name: 'Direito das Sucessões', description: 'Herança, testamento, inventário, partilha, sucessão legítima e testamentária' },
+  { id: 'social_security', name: 'Direito Previdenciário', description: 'Aposentadoria, benefícios do INSS, auxílios, pensão por morte, BPC/LOAS' },
+  { id: 'electoral', name: 'Direito Eleitoral', description: 'Eleições, partidos políticos, propaganda eleitoral, prestação de contas' },
+  { id: 'international', name: 'Direito Internacional', description: 'Tratados, direito internacional público e privado, extradição, cooperação jurídica' },
+  { id: 'digital', name: 'Direito Digital', description: 'LGPD, Marco Civil, crimes cibernéticos, proteção de dados, e-commerce' },
 ]
 
 export function getDocumentTypes() { return DOCUMENT_TYPES }
@@ -405,6 +435,44 @@ const REQUEST_FIELDS: Record<string, WizardField[]> = {
       { value: 'improcedente', label: 'Improcedente' },
       { value: 'parcialmente_procedente', label: 'Parcialmente procedente' },
     ]},
+  ],
+  mandado_seguranca: [
+    { key: 'impetrante', label: 'Impetrante', type: 'text', placeholder: 'Nome do impetrante', required: true },
+    { key: 'autoridade_coatora', label: 'Autoridade coatora', type: 'text', placeholder: 'Autoridade que praticou o ato', required: true },
+    { key: 'ato_impugnado', label: 'Ato impugnado', type: 'textarea', placeholder: 'Descreva o ato ilegal ou abusivo', required: true },
+    { key: 'direito_liquido_certo', label: 'Direito líquido e certo', type: 'textarea', placeholder: 'Fundamente o direito líquido e certo violado' },
+    { key: 'pedido_liminar', label: 'Pedido liminar', type: 'boolean', default: true },
+  ],
+  habeas_corpus: [
+    { key: 'paciente', label: 'Paciente', type: 'text', placeholder: 'Nome do paciente (pessoa presa/ameaçada)', required: true },
+    { key: 'autoridade_coatora', label: 'Autoridade coatora', type: 'text', placeholder: 'Juiz, delegado ou autoridade responsável', required: true },
+    { key: 'tipo_constrangimento', label: 'Tipo de constrangimento', type: 'select', options: [
+      { value: 'prisao_ilegal', label: 'Prisão ilegal' },
+      { value: 'excesso_prazo', label: 'Excesso de prazo' },
+      { value: 'falta_fundamentacao', label: 'Falta de fundamentação' },
+      { value: 'constrangimento_iminente', label: 'Constrangimento iminente' },
+      { value: 'outro', label: 'Outro' },
+    ]},
+    { key: 'fatos', label: 'Fatos', type: 'textarea', placeholder: 'Descreva a situação de constrangimento ilegal', required: true },
+    { key: 'pedido_liminar', label: 'Pedido liminar', type: 'boolean', default: true },
+  ],
+  agravo: [
+    { key: 'agravante', label: 'Agravante', type: 'text', placeholder: 'Nome do agravante', required: true },
+    { key: 'agravado', label: 'Agravado', type: 'text', placeholder: 'Nome do agravado' },
+    { key: 'decisao_agravada', label: 'Decisão agravada', type: 'textarea', placeholder: 'Resuma a decisão interlocutória impugnada', required: true },
+    { key: 'razoes', label: 'Razões do agravo', type: 'textarea', placeholder: 'Fundamentos para reforma da decisão' },
+    { key: 'pedido_efeito_suspensivo', label: 'Pedido de efeito suspensivo', type: 'boolean', default: false },
+  ],
+  embargos_declaracao: [
+    { key: 'embargante', label: 'Embargante', type: 'text', placeholder: 'Nome do embargante', required: true },
+    { key: 'vicio', label: 'Vício apontado', type: 'select', options: [
+      { value: 'omissao', label: 'Omissão' },
+      { value: 'contradicao', label: 'Contradição' },
+      { value: 'obscuridade', label: 'Obscuridade' },
+      { value: 'erro_material', label: 'Erro material' },
+    ], required: true },
+    { key: 'ponto_omisso', label: 'Ponto omisso/contraditório/obscuro', type: 'textarea', placeholder: 'Descreva o vício na decisão', required: true },
+    { key: 'efeitos_infringentes', label: 'Efeitos infringentes (modificativos)', type: 'boolean', default: false },
   ],
 }
 

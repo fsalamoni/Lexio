@@ -28,6 +28,10 @@ const DOCTYPE_LABELS: Record<string, string> = {
   recurso: 'Recurso',
   sentenca: 'Sentença',
   acao_civil_publica: 'Ação Civil Pública',
+  mandado_seguranca: 'Mandado de Segurança',
+  habeas_corpus: 'Habeas Corpus',
+  agravo: 'Agravo de Instrumento',
+  embargos_declaracao: 'Embargos de Declaração',
 }
 
 const PAGE_SIZE = 20
