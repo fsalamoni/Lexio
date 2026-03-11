@@ -110,8 +110,21 @@ export default function DocumentDetail() {
       getDocument(userId, id)
         .then(data => {
           if (data) {
-            setDoc(data as unknown as DocumentData)
-            if (data.status !== 'processando' && intervalRef.current) {
+            const docData: DocumentData = {
+              id: data.id ?? id,
+              document_type_id: data.document_type_id,
+              tema: data.tema ?? null,
+              status: data.status,
+              quality_score: data.quality_score ?? null,
+              quality_issues: null,
+              original_request: data.original_request,
+              created_at: data.created_at,
+              docx_path: null,
+              legal_area_ids: data.legal_area_ids ?? [],
+              texto_completo: data.texto_completo ?? null,
+            }
+            setDoc(docData)
+            if (docData.status !== 'processando' && intervalRef.current) {
               clearInterval(intervalRef.current)
               intervalRef.current = null
             }
@@ -132,7 +145,7 @@ export default function DocumentDetail() {
         .catch(() => toast.error('Erro ao carregar documento'))
         .finally(() => setLoading(false))
     }
-  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchDoc()

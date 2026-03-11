@@ -87,10 +87,12 @@ export default function DocumentList() {
           }
           // Client-side date filtering for Firebase mode
           if (dateFrom) {
-            items = items.filter(d => d.created_at >= dateFrom)
+            const fromDate = new Date(dateFrom).toISOString()
+            items = items.filter(d => d.created_at >= fromDate)
           }
           if (dateTo) {
-            items = items.filter(d => d.created_at <= dateTo + 'T23:59:59')
+            const toDate = new Date(dateTo + 'T23:59:59').toISOString()
+            items = items.filter(d => d.created_at <= toDate)
           }
           const totalFiltered = items.length
           // Client-side pagination

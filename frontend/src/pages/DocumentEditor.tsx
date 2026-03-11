@@ -81,7 +81,7 @@ export default function DocumentEditor() {
         .catch(() => toast.error('Erro ao carregar documento'))
         .finally(() => setLoading(false))
     }
-  }, [id]) // eslint-disable-line
+  }, [id, userId]) // eslint-disable-line
 
   const handleChange = useCallback((html: string) => {
     setContent(html)
