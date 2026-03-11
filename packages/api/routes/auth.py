@@ -12,7 +12,7 @@ from packages.core.database.engine import async_session
 from packages.core.database.models.user import User
 from packages.core.database.models.organization import Organization
 from packages.core.config import settings
-from packages.api.schemas.auth import RegisterRequest, LoginRequest, TokenResponse
+from packages.api.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, ChangePasswordRequest
 from packages.api.middleware.rate_limit import limiter
 
 router = APIRouter()
@@ -89,3 +89,21 @@ async def me_endpoint(user: User = Depends(get_current_user)):
         "is_active": user.is_active,
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
+
+
+@router.post("/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the authenticated user's password."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user or not verify_password(req.current_password, db_user.hashed_password):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Senha atual incorreta")
+    if len(req.new_password) < 8:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A nova senha deve ter pelo menos 8 caracteres")
+    db_user.hashed_password = hash_password(req.new_password)
+    await db.commit()
+    return {"message": "Senha alterada com sucesso"}
