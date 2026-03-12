@@ -1,1 +1,1 @@
-"""Lexio Core — Database models."""
+"""Lexio Core — Database models package."""

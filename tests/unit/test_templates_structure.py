@@ -65,6 +65,41 @@ TEMPLATE_MODULES = {
         "packages.modules.document_types.acao_civil_publica.templates.generic.redator",
         "packages.modules.document_types.acao_civil_publica.templates.generic.revisor",
     ],
+    "mandado_seguranca": [
+        "packages.modules.document_types.mandado_seguranca.templates.generic.triagem",
+        "packages.modules.document_types.mandado_seguranca.templates.generic.pesquisador",
+        "packages.modules.document_types.mandado_seguranca.templates.generic.jurista",
+        "packages.modules.document_types.mandado_seguranca.templates.generic.advogado_diabo",
+        "packages.modules.document_types.mandado_seguranca.templates.generic.jurista_v2",
+        "packages.modules.document_types.mandado_seguranca.templates.generic.fact_checker",
+        "packages.modules.document_types.mandado_seguranca.templates.generic.redator",
+        "packages.modules.document_types.mandado_seguranca.templates.generic.revisor",
+    ],
+    "habeas_corpus": [
+        "packages.modules.document_types.habeas_corpus.templates.generic.triagem",
+        "packages.modules.document_types.habeas_corpus.templates.generic.pesquisador",
+        "packages.modules.document_types.habeas_corpus.templates.generic.jurista",
+        "packages.modules.document_types.habeas_corpus.templates.generic.fact_checker",
+        "packages.modules.document_types.habeas_corpus.templates.generic.redator",
+        "packages.modules.document_types.habeas_corpus.templates.generic.revisor",
+    ],
+    "agravo": [
+        "packages.modules.document_types.agravo.templates.generic.triagem",
+        "packages.modules.document_types.agravo.templates.generic.pesquisador",
+        "packages.modules.document_types.agravo.templates.generic.jurista",
+        "packages.modules.document_types.agravo.templates.generic.advogado_diabo",
+        "packages.modules.document_types.agravo.templates.generic.fact_checker",
+        "packages.modules.document_types.agravo.templates.generic.redator",
+        "packages.modules.document_types.agravo.templates.generic.revisor",
+    ],
+    "embargos_declaracao": [
+        "packages.modules.document_types.embargos_declaracao.templates.generic.triagem",
+        "packages.modules.document_types.embargos_declaracao.templates.generic.pesquisador",
+        "packages.modules.document_types.embargos_declaracao.templates.generic.jurista",
+        "packages.modules.document_types.embargos_declaracao.templates.generic.fact_checker",
+        "packages.modules.document_types.embargos_declaracao.templates.generic.redator",
+        "packages.modules.document_types.embargos_declaracao.templates.generic.revisor",
+    ],
 }
 
 # Flatten all modules for parametrize
@@ -163,6 +198,18 @@ class TestTemplateCount:
     def test_acp_has_eight_templates(self):
         assert len(TEMPLATE_MODULES["acao_civil_publica"]) == 8
 
+    def test_mandado_seguranca_has_eight_templates(self):
+        assert len(TEMPLATE_MODULES["mandado_seguranca"]) == 8
+
+    def test_habeas_corpus_has_six_templates(self):
+        assert len(TEMPLATE_MODULES["habeas_corpus"]) == 6
+
+    def test_agravo_has_seven_templates(self):
+        assert len(TEMPLATE_MODULES["agravo"]) == 7
+
+    def test_embargos_declaracao_has_six_templates(self):
+        assert len(TEMPLATE_MODULES["embargos_declaracao"]) == 6
+
     def test_total_template_count(self):
         total = sum(len(v) for v in TEMPLATE_MODULES.values())
-        assert total == 47  # 9 + 8 + 8 + 8 + 6 + 8
+        assert total == 74  # 9 + 8 + 8 + 8 + 6 + 8 + 8 + 6 + 7 + 6

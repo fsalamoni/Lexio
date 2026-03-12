@@ -1,8 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, X } from 'lucide-react'
+import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, X, Trash2 } from 'lucide-react'
 import api from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { SkeletonItem } from '../components/Skeleton'
+import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
+import { IS_FIREBASE } from '../lib/firebase'
+import {
+  listTheses, createThesis, updateThesis, deleteThesis, getThesisStats,
+  type ThesisData,
+} from '../lib/firestore-service'
 
 interface ThesisItem {
   id: string
@@ -33,22 +40,6 @@ interface ThesisFormData {
   legal_area_id: string
   tags: string
   quality_score: string
-}
-
-const AREA_LABELS: Record<string, string> = {
-  administrative: 'Administrativo',
-  constitutional: 'Constitucional',
-  civil: 'Civil',
-  tax: 'Tributário',
-  labor: 'Trabalho',
-}
-
-const AREA_COLORS: Record<string, string> = {
-  administrative: 'bg-purple-50 text-purple-700 border-purple-200',
-  constitutional:  'bg-red-50    text-red-700    border-red-200',
-  civil:           'bg-blue-50   text-blue-700   border-blue-200',
-  tax:             'bg-orange-50 text-orange-700 border-orange-200',
-  labor:           'bg-teal-50   text-teal-700   border-teal-200',
 }
 
 const EMPTY_FORM: ThesisFormData = {
@@ -106,6 +97,7 @@ function ThesisModal({
   )
   const [saving, setSaving] = useState(false)
   const toast = useToast()
+  const { userId } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -123,15 +115,29 @@ function ThesisModal({
       quality_score: form.quality_score ? parseFloat(form.quality_score) : undefined,
     }
     try {
-      let res
-      if (thesis) {
-        res = await api.patch(`/theses/${thesis.id}`, payload)
-        toast.success('Tese atualizada')
+      let saved: ThesisItem
+      if (IS_FIREBASE && userId) {
+        if (thesis) {
+          const result = await updateThesis(userId, thesis.id, payload)
+          saved = { ...result, id: result.id!, usage_count: result.usage_count ?? 0, source_type: result.source_type ?? 'manual' } as ThesisItem
+          toast.success('Tese atualizada')
+        } else {
+          const result = await createThesis(userId, payload)
+          saved = { ...result, id: result.id!, usage_count: 0, source_type: 'manual' } as ThesisItem
+          toast.success('Tese criada')
+        }
       } else {
-        res = await api.post('/theses/', payload)
-        toast.success('Tese criada')
+        let res
+        if (thesis) {
+          res = await api.patch(`/theses/${thesis.id}`, payload)
+          toast.success('Tese atualizada')
+        } else {
+          res = await api.post('/theses/', payload)
+          toast.success('Tese criada')
+        }
+        saved = res.data
       }
-      onSaved(res.data)
+      onSaved(saved)
       onClose()
     } catch (err: any) {
       toast.error('Erro ao salvar tese', err?.response?.data?.detail || err?.message)
@@ -265,52 +271,84 @@ export default function ThesisBank() {
   const [editingThesis, setEditingThesis] = useState<ThesisItem | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
+  const { userId } = useAuth()
 
   const PAGE = 50
 
   const fetchTheses = useCallback((q: string, area: string) => {
-    const params = new URLSearchParams()
-    if (q)    params.set('q', q)
-    if (area) params.set('legal_area_id', area)
-    params.set('limit', String(PAGE))
-    params.set('skip', '0')
-
     setLoading(true)
     setOffset(0)
-    api.get(`/theses?${params.toString()}`)
-      .then(res => {
-        setTheses(Array.isArray(res.data?.items) ? res.data.items : [])
-        setTotal(typeof res.data?.total === 'number' ? res.data.total : 0)
-      })
-      .catch(() => toast.error('Erro ao carregar teses'))
-      .finally(() => setLoading(false))
+
+    if (IS_FIREBASE && userId) {
+      listTheses(userId, { q: q || undefined, legalAreaId: area || undefined, limit: PAGE })
+        .then(result => {
+          setTheses(result.items.map(t => ({ ...t, id: t.id! } as ThesisItem)))
+          setTotal(result.total)
+        })
+        .catch(() => toast.error('Erro ao carregar teses'))
+        .finally(() => setLoading(false))
+    } else {
+      const params = new URLSearchParams()
+      if (q)    params.set('q', q)
+      if (area) params.set('legal_area_id', area)
+      params.set('limit', String(PAGE))
+      params.set('skip', '0')
+      api.get(`/theses?${params.toString()}`)
+        .then(res => {
+          setTheses(Array.isArray(res.data?.items) ? res.data.items : [])
+          setTotal(typeof res.data?.total === 'number' ? res.data.total : 0)
+        })
+        .catch(() => toast.error('Erro ao carregar teses'))
+        .finally(() => setLoading(false))
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [userId])
 
   const loadMore = () => {
     const nextOffset = offset + PAGE
-    const params = new URLSearchParams()
-    if (search)     params.set('q', search)
-    if (areaFilter) params.set('legal_area_id', areaFilter)
-    params.set('limit', String(PAGE))
-    params.set('skip', String(nextOffset))
-
     setLoadingMore(true)
-    api.get(`/theses?${params.toString()}`)
-      .then(res => {
-        const items = Array.isArray(res.data?.items) ? res.data.items : []
-        setTheses(prev => [...prev, ...items])
-        setOffset(nextOffset)
+
+    if (IS_FIREBASE && userId) {
+      listTheses(userId, {
+        q: search || undefined,
+        legalAreaId: areaFilter || undefined,
+        limit: PAGE,
+        skip: nextOffset,
       })
-      .catch(() => toast.error('Erro ao carregar mais teses'))
-      .finally(() => setLoadingMore(false))
+        .then(result => {
+          setTheses(prev => [...prev, ...result.items.map(t => ({ ...t, id: t.id! } as ThesisItem))])
+          setOffset(nextOffset)
+        })
+        .catch(() => toast.error('Erro ao carregar mais teses'))
+        .finally(() => setLoadingMore(false))
+    } else {
+      const params = new URLSearchParams()
+      if (search)     params.set('q', search)
+      if (areaFilter) params.set('legal_area_id', areaFilter)
+      params.set('limit', String(PAGE))
+      params.set('skip', String(nextOffset))
+      api.get(`/theses?${params.toString()}`)
+        .then(res => {
+          const items = Array.isArray(res.data?.items) ? res.data.items : []
+          setTheses(prev => [...prev, ...items])
+          setOffset(nextOffset)
+        })
+        .catch(() => toast.error('Erro ao carregar mais teses'))
+        .finally(() => setLoadingMore(false))
+    }
   }
 
   useEffect(() => {
     fetchTheses('', '')
-    api.get('/theses/stats')
-      .then(res => setStats(res.data))
-      .catch(() => toast.error('Erro ao carregar estatísticas do banco de teses'))
+    if (IS_FIREBASE && userId) {
+      getThesisStats(userId)
+        .then(s => setStats(s))
+        .catch(() => {})
+    } else {
+      api.get('/theses/stats')
+        .then(res => setStats(res.data))
+        .catch(() => toast.error('Erro ao carregar estatísticas do banco de teses'))
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -375,6 +413,23 @@ export default function ThesisBank() {
     if (!editingThesis) setTotal(t => t + 1)
     setEditingThesis(null)
     setModalOpen(false)
+  }
+
+  const handleThesisDelete = async (thesisId: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta tese?')) return
+    try {
+      if (IS_FIREBASE && userId) {
+        await deleteThesis(userId, thesisId)
+      } else {
+        await api.delete(`/theses/${thesisId}`)
+      }
+      setTheses(prev => prev.filter(t => t.id !== thesisId))
+      setTotal(t => t - 1)
+      if (expandedId === thesisId) setExpandedId(null)
+      toast.success('Tese excluída com sucesso')
+    } catch {
+      toast.error('Erro ao excluir tese')
+    }
   }
 
   return (
@@ -509,6 +564,7 @@ export default function ThesisBank() {
               expanded={expandedId === thesis.id}
               onToggle={() => setExpandedId(expandedId === thesis.id ? null : thesis.id)}
               onEdit={() => setEditingThesis(thesis)}
+              onDelete={() => handleThesisDelete(thesis.id)}
               areaColor={areaColor(thesis.legal_area_id)}
             />
           ))}
@@ -532,11 +588,12 @@ export default function ThesisBank() {
   )
 }
 
-function ThesisCard({ thesis, expanded, onToggle, onEdit, areaColor }: {
+function ThesisCard({ thesis, expanded, onToggle, onEdit, onDelete, areaColor }: {
   thesis: ThesisItem
   expanded: boolean
   onToggle: () => void
   onEdit: () => void
+  onDelete: () => void
   areaColor: string
 }) {
   const scoreColor = !thesis.quality_score ? 'text-gray-400'
@@ -596,6 +653,13 @@ function ThesisCard({ thesis, expanded, onToggle, onEdit, areaColor }: {
               >
                 <Pencil className="w-3.5 h-3.5" />
                 Editar
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); onDelete() }}
+                className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-600 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Excluir
               </button>
               <CopyButton text={thesis.content} />
             </div>

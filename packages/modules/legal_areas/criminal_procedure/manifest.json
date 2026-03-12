@@ -1,0 +1,27 @@
+{
+    "id": "criminal_procedure",
+    "name": "Direito Processual Penal",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Inquérito policial, ação penal, provas, medidas cautelares, recursos e execução penal.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "inquerito_policial",
+        "acao_penal",
+        "provas_penais",
+        "medidas_cautelares_penais",
+        "recursos_penais"
+    ],
+    "guides": [
+        "inquerito_acao_penal.md",
+        "provas_penais.md",
+        "prisao_cautelar.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

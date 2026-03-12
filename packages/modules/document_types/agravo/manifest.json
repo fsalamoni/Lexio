@@ -1,0 +1,23 @@
+{
+    "id": "agravo",
+    "name": "Agravo de Instrumento",
+    "type": "document_type",
+    "version": "1.0.0",
+    "description": "Geração de agravos de instrumento com pipeline multi-agente. Recurso contra decisões interlocutórias — art. 1.015 CPC/2015.",
+    "category": "advocacy",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "templates": [
+        "generic"
+    ],
+    "pipeline_agents": [
+        "triagem",
+        "pesquisador",
+        "jurista",
+        "advogado_diabo",
+        "fact_checker",
+        "redator",
+        "revisor"
+    ]
+}

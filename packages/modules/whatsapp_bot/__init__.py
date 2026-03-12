@@ -28,11 +28,12 @@ class WhatsAppBotModule:
         if self._registered:
             return
 
-        event_bus.on(EventType.WHATSAPP_DOCUMENT_REQUESTED, self._on_document_requested)
+        # Fix: use subscribe() (not on()), and handler accepts (event_type, data)
+        event_bus.subscribe(EventType.WHATSAPP_DOCUMENT_REQUESTED, self._on_document_requested)
         self._registered = True
         logger.info("WhatsApp Bot module initialized — listening for document requests")
 
-    async def _on_document_requested(self, data: dict) -> None:
+    async def _on_document_requested(self, event_type: str, data: dict) -> None:
         """Handle WHATSAPP_DOCUMENT_REQUESTED event by launching pipeline in background."""
         phone = data.get("phone", "")
         org_id = data.get("org_id", "")

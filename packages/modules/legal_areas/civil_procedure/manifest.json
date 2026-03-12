@@ -1,0 +1,27 @@
+{
+    "id": "civil_procedure",
+    "name": "Direito Processual Civil",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Processo de conhecimento, cumprimento de sentença, execução, recursos e tutelas provisórias.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "processo_conhecimento",
+        "cumprimento_sentenca",
+        "execucao",
+        "recursos_civeis",
+        "tutelas_provisorias"
+    ],
+    "guides": [
+        "processo_conhecimento.md",
+        "recursos_civeis.md",
+        "tutelas_provisorias.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

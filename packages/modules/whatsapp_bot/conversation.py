@@ -45,7 +45,33 @@ DOC_TYPE_LABELS = {
     "acao_civil_publica": "Ação Civil Pública",
 }
 
+# Mapping for legal area selection
+LEGAL_AREA_MAP = {
+    "1": "administrative",
+    "2": "civil",
+    "3": "constitutional",
+    "4": "labor",
+    "5": "tax",
+    "administrativo": "administrative",
+    "civil": "civil",
+    "constitucional": "constitutional",
+    "trabalhista": "labor",
+    "trabalho": "labor",
+    "tributário": "tax",
+    "tributario": "tax",
+    "fiscal": "tax",
+}
+
+LEGAL_AREA_LABELS = {
+    "administrative": "Direito Administrativo",
+    "civil": "Direito Civil",
+    "constitutional": "Direito Constitucional",
+    "labor": "Direito do Trabalho",
+    "tax": "Direito Tributário",
+}
+
 RESET_KEYWORDS = {"menu", "início", "inicio", "recomeçar", "recomecar", "reiniciar", "cancelar", "cancel"}
+SKIP_KEYWORDS = {"pular", "skip", "geral", "qualquer", "nenhum", "0"}
 
 
 class ConversationHandler:
@@ -106,6 +132,9 @@ class ConversationHandler:
         elif state == "awaiting_doc_type":
             await self._handle_doc_type(session, phone, text)
 
+        elif state == "awaiting_legal_area":
+            await self._handle_legal_area(session, phone, text)
+
         elif state == "awaiting_content":
             await self._handle_content(session, phone, text)
 
@@ -162,11 +191,51 @@ class ConversationHandler:
         session.selected_doc_type = doc_type
         label = DOC_TYPE_LABELS[doc_type]
 
-        await self._set_state(session, "awaiting_content")
+        # Transition to legal area selection step
+        await self._set_state(session, "awaiting_legal_area")
         await whatsapp_client.send_text(
             phone,
             f"Ótimo! Vou gerar um *{label}* para você. 📄\n\n"
-            "Agora me descreva o caso com detalhes:\n"
+            "Qual é a área jurídica do caso?\n\n"
+            "1️⃣ Direito Administrativo\n"
+            "2️⃣ Direito Civil\n"
+            "3️⃣ Direito Constitucional\n"
+            "4️⃣ Direito do Trabalho\n"
+            "5️⃣ Direito Tributário\n\n"
+            "Responda com o número ou envie *pular* para continuar sem especificar.",
+        )
+
+    async def _handle_legal_area(self, session: WhatsAppSession, phone: str, text: str) -> None:
+        key = text.lower().strip()
+
+        if key in SKIP_KEYWORDS:
+            # User opted to skip legal area selection
+            session.selected_legal_area = None
+        else:
+            legal_area = LEGAL_AREA_MAP.get(key)
+            if not legal_area:
+                await whatsapp_client.send_text(
+                    phone,
+                    "Não reconheci essa área. Responda com um número de 1 a 5:\n\n"
+                    "1 - Administrativo\n2 - Civil\n3 - Constitucional\n"
+                    "4 - Trabalho\n5 - Tributário\n\n"
+                    "Ou envie *pular* para continuar sem especificar.",
+                )
+                return
+            session.selected_legal_area = legal_area
+
+        await self._set_state(session, "awaiting_content")
+
+        area_label = (
+            LEGAL_AREA_LABELS.get(session.selected_legal_area, "")
+            if session.selected_legal_area
+            else ""
+        )
+        area_info = f" ({area_label})" if area_label else ""
+
+        await whatsapp_client.send_text(
+            phone,
+            f"Perfeito{area_info}! Agora me descreva o caso com detalhes:\n\n"
             "• Fatos relevantes\n"
             "• Fundamentos jurídicos desejados\n"
             "• Pedidos ou teses principais\n"
@@ -193,12 +262,18 @@ class ConversationHandler:
             "_Envie *menu* a qualquer momento para cancelar._",
         )
 
+        # Include selected legal area in the event payload
+        legal_area_ids = (
+            [session.selected_legal_area] if session.selected_legal_area else []
+        )
+
         await event_bus.emit(EventType.WHATSAPP_DOCUMENT_REQUESTED, {
             "phone": phone,
             "org_id": str(self.org_id),
             "session_id": str(session.id),
             "doc_type": session.selected_doc_type,
             "content": text,
+            "legal_area_ids": legal_area_ids,
         })
 
     # ── Helpers ──

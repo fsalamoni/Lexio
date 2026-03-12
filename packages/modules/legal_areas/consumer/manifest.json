@@ -1,0 +1,26 @@
+{
+    "id": "consumer",
+    "name": "Direito do Consumidor",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Relações de consumo, responsabilidade do fornecedor, práticas abusivas e defesa do consumidor.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "responsabilidade_fornecedor",
+        "praticas_abusivas",
+        "contratos_consumo",
+        "direitos_basicos"
+    ],
+    "guides": [
+        "responsabilidade_fornecedor.md",
+        "praticas_abusivas.md",
+        "contratos_consumo.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}
