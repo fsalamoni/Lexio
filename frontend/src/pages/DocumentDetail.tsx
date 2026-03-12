@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
 import { generateDocument } from '../lib/generation-service'
+import { generateAndDownloadDocx } from '../lib/docx-generator'
 import { DOCTYPE_LABELS, AREA_LABELS } from '../lib/constants'
 
 interface QualityIssue {
@@ -404,6 +405,21 @@ export default function DocumentDetail() {
                     {loadingDocx ? 'Carregando...' : showPreview ? 'Ocultar DOCX' : 'Ver DOCX'}
                   </button>
                 </>
+              )}
+              {/* Client-side DOCX for Firebase mode (no docx_path) */}
+              {IS_FIREBASE && !doc.docx_path && doc.texto_completo && (
+                <button
+                  onClick={() => generateAndDownloadDocx(
+                    doc.texto_completo!,
+                    `${doc.document_type_id}_${doc.id}`,
+                    DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id,
+                    doc.tema || undefined,
+                  )}
+                  className="inline-flex items-center gap-2 border border-brand-600 text-brand-600 px-4 py-2 rounded-lg hover:bg-brand-50 transition-colors text-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  Baixar DOCX
+                </button>
               )}
             </div>
 

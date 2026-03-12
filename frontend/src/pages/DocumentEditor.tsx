@@ -7,6 +7,7 @@ import RichTextEditor from '../components/RichTextEditor'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getDocument, updateDocument } from '../lib/firestore-service'
+import { generateAndDownloadDocx } from '../lib/docx-generator'
 import { DOCTYPE_LABELS } from '../lib/constants'
 
 export default function DocumentEditor() {
@@ -167,6 +168,28 @@ export default function DocumentEditor() {
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">DOCX</span>
             </a>
+          )}
+          {/* Client-side DOCX for Firebase mode */}
+          {IS_FIREBASE && !docInfo?.docx_path && content && (
+            <button
+              onClick={() => {
+                // Strip HTML to plain text for DOCX
+                const tmp = document.createElement('div')
+                tmp.innerHTML = content
+                const plain = tmp.textContent || tmp.innerText || ''
+                generateAndDownloadDocx(
+                  plain,
+                  `${docInfo?.document_type_id || 'documento'}_${id}`,
+                  docLabel,
+                  docInfo?.tema || undefined,
+                )
+              }}
+              title="Baixar DOCX"
+              className="inline-flex items-center gap-2 px-3 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">DOCX</span>
+            </button>
           )}
 
           {/* Save button */}
