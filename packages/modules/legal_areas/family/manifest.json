@@ -1,0 +1,26 @@
+{
+    "id": "family",
+    "name": "Direito de Família",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Casamento, divórcio, guarda, alimentos, regime de bens e união estável.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "casamento_divorcio",
+        "guarda_alimentos",
+        "regime_bens",
+        "uniao_estavel"
+    ],
+    "guides": [
+        "casamento_divorcio.md",
+        "guarda_alimentos.md",
+        "regime_bens.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

@@ -4,9 +4,13 @@ import { FileText, Plus, ChevronLeft, ChevronRight, Search, X, Trash2, Download 
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 import StatusBadge from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
 import { SkeletonRow } from '../components/Skeleton'
+import { IS_FIREBASE } from '../lib/firebase'
+import { listDocuments, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
+import { DOCTYPE_LABELS } from '../lib/constants'
 
 interface Document {
   id: string
@@ -16,15 +20,6 @@ interface Document {
   quality_score: number | null
   created_at: string
   origem: string
-}
-
-const DOCTYPE_LABELS: Record<string, string> = {
-  parecer: 'Parecer',
-  peticao_inicial: 'Petição Inicial',
-  contestacao: 'Contestação',
-  recurso: 'Recurso',
-  sentenca: 'Sentença',
-  acao_civil_publica: 'Ação Civil Pública',
 }
 
 const PAGE_SIZE = 20
@@ -46,6 +41,7 @@ export default function DocumentList() {
   const [bulkExporting, setBulkExporting] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { userId } = useAuth()
   const toast = useToast()
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -62,26 +58,65 @@ export default function DocumentList() {
 
   useEffect(() => {
     setLoading(true)
-    const params = new URLSearchParams({
-      skip: String(page * PAGE_SIZE),
-      limit: String(PAGE_SIZE),
-    })
-    if (statusFilter) params.set('status', statusFilter)
-    if (typeFilter) params.set('document_type_id', typeFilter)
-    if (searchQuery) params.set('q', searchQuery)
-    if (dateFrom) params.set('date_from', dateFrom)
-    if (dateTo) params.set('date_to', dateTo)
-    const [sbField, sbDir] = sortBy.split('_')
-    params.set('sort_by', sbField === 'date' ? 'created_at' : 'quality_score')
-    params.set('sort_dir', sbDir)
 
-    api.get(`/documents?${params}`)
-      .then(res => {
-        setDocs(Array.isArray(res.data?.items) ? res.data.items : [])
-        setTotal(typeof res.data?.total === 'number' ? res.data.total : 0)
+    if (IS_FIREBASE && userId) {
+      const [sbField, sbDir] = sortBy.split('_')
+      listDocuments(userId, {
+        status: statusFilter || undefined,
+        document_type_id: typeFilter || undefined,
+        sortBy: sbField === 'date' ? 'created_at' : 'quality_score',
+        sortDir: sbDir,
       })
-      .catch(() => toast.error('Erro ao carregar documentos'))
-      .finally(() => setLoading(false))
+        .then(result => {
+          let items = result.items.map(d => ({ ...d, origem: (d as any).origem || 'web' })) as Document[]
+          // Client-side search filtering for Firebase mode
+          if (searchQuery) {
+            const q = searchQuery.toLowerCase()
+            items = items.filter(d =>
+              (d.tema && d.tema.toLowerCase().includes(q)) ||
+              d.document_type_id.toLowerCase().includes(q)
+            )
+          }
+          // Client-side date filtering for Firebase mode
+          if (dateFrom) {
+            const fromDate = new Date(dateFrom).toISOString()
+            items = items.filter(d => d.created_at >= fromDate)
+          }
+          if (dateTo) {
+            const toDate = new Date(dateTo + 'T23:59:59').toISOString()
+            items = items.filter(d => d.created_at <= toDate)
+          }
+          const totalFiltered = items.length
+          // Client-side pagination
+          const start = page * PAGE_SIZE
+          items = items.slice(start, start + PAGE_SIZE)
+          setDocs(items)
+          setTotal(totalFiltered)
+        })
+        .catch(() => toast.error('Erro ao carregar documentos'))
+        .finally(() => setLoading(false))
+    } else {
+      const params = new URLSearchParams({
+        skip: String(page * PAGE_SIZE),
+        limit: String(PAGE_SIZE),
+      })
+      if (statusFilter) params.set('status', statusFilter)
+      if (typeFilter) params.set('document_type_id', typeFilter)
+      if (searchQuery) params.set('q', searchQuery)
+      if (dateFrom) params.set('date_from', dateFrom)
+      if (dateTo) params.set('date_to', dateTo)
+      const [sbField, sbDir] = sortBy.split('_')
+      params.set('sort_by', sbField === 'date' ? 'created_at' : 'quality_score')
+      params.set('sort_dir', sbDir)
+
+      api.get(`/documents?${params}`)
+        .then(res => {
+          setDocs(Array.isArray(res.data?.items) ? res.data.items : [])
+          setTotal(typeof res.data?.total === 'number' ? res.data.total : 0)
+        })
+        .catch(() => toast.error('Erro ao carregar documentos'))
+        .finally(() => setLoading(false))
+    }
   }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo, refreshKey]) // eslint-disable-line
 
   const handleStatusFilter = (s: string) => {
@@ -145,8 +180,13 @@ export default function DocumentList() {
     const ids = Array.from(selected)
     let errors = 0
     for (const docId of ids) {
-      try { await api.delete(`/documents/${docId}`) }
-      catch { errors++ }
+      try {
+        if (IS_FIREBASE && userId) {
+          await firestoreDeleteDoc(userId, docId)
+        } else {
+          await api.delete(`/documents/${docId}`)
+        }
+      } catch { errors++ }
     }
     setBulkDeleting(false)
     setSelected(new Set())

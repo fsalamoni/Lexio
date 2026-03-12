@@ -24,9 +24,13 @@ CREATE TABLE IF NOT EXISTS users (
     title VARCHAR(200),
     is_active BOOLEAN DEFAULT TRUE,
     organization_id UUID NOT NULL REFERENCES organizations(id),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    -- Password reset fields (Stage 8 — 2026-03-11)
+    reset_token VARCHAR(255),
+    reset_token_expires_at TIMESTAMPTZ
 );
 
+CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_org ON users(organization_id);
 
@@ -247,3 +251,20 @@ CREATE TABLE IF NOT EXISTS platform_settings (
     description VARCHAR(500),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ── Notifications (Stage 10 — 2026-03-11) ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS notifications (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id     UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    user_id             UUID REFERENCES users(id) ON DELETE CASCADE,
+    type                VARCHAR(100) NOT NULL,
+    title               VARCHAR(300) NOT NULL,
+    message             TEXT NOT NULL,
+    document_id         UUID REFERENCES documents(id) ON DELETE CASCADE,
+    is_read             BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_org_user ON notifications(organization_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_org_unread ON notifications(organization_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);

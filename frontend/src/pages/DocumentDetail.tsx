@@ -6,6 +6,11 @@ import StatusBadge from '../components/StatusBadge'
 import ProgressTracker from '../components/ProgressTracker'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
+import { IS_FIREBASE } from '../lib/firebase'
+import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
+import { generateDocument } from '../lib/generation-service'
+import { generateAndDownloadDocx } from '../lib/docx-generator'
+import { DOCTYPE_LABELS, AREA_LABELS } from '../lib/constants'
 
 interface QualityIssue {
   type: string
@@ -47,23 +52,6 @@ interface Execution {
   created_at: string
 }
 
-const DOCTYPE_LABELS: Record<string, string> = {
-  parecer: 'Parecer',
-  peticao_inicial: 'Petição Inicial',
-  contestacao: 'Contestação',
-  recurso: 'Recurso',
-  sentenca: 'Sentença',
-  acao_civil_publica: 'Ação Civil Pública',
-}
-
-const AREA_LABELS: Record<string, string> = {
-  administrative: 'Administrativo',
-  constitutional: 'Constitucional',
-  civil: 'Civil',
-  tax: 'Tributário',
-  labor: 'Trabalhista',
-}
-
 function fmtDuration(ms: number | null): string {
   if (!ms) return '—'
   if (ms < 1000) return `${ms}ms`
@@ -88,7 +76,7 @@ export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const toast = useToast()
-  const { role } = useAuth()
+  const { role, userId } = useAuth()
   const [doc, setDoc] = useState<DocumentData | null>(null)
   const [executions, setExecutions] = useState<Execution[]>([])
   const [docxHtml, setDocxHtml] = useState<string | null>(null)
@@ -104,34 +92,75 @@ export default function DocumentDetail() {
 
   const fetchDoc = useCallback(() => {
     if (!id) return
-    api.get(`/documents/${id}`)
-      .then(res => {
-        const data = res.data
-        setDoc(data)
-        // Stop polling once no longer processing
-        if (data.status !== 'processando' && intervalRef.current) {
-          clearInterval(intervalRef.current)
-          intervalRef.current = null
-        }
-      })
-      .catch(() => toast.error('Erro ao carregar documento'))
-      .finally(() => setLoading(false))
-  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (IS_FIREBASE && userId) {
+      getDocument(userId, id)
+        .then(data => {
+          if (data) {
+            const docData: DocumentData = {
+              id: data.id ?? id,
+              document_type_id: data.document_type_id,
+              tema: data.tema ?? null,
+              status: data.status,
+              quality_score: data.quality_score ?? null,
+              quality_issues: (data as any).quality_issues ?? null,
+              original_request: data.original_request,
+              created_at: data.created_at,
+              docx_path: (data as any).docx_path ?? null,
+              legal_area_ids: data.legal_area_ids ?? [],
+              texto_completo: data.texto_completo ?? null,
+              metadata_: (data as any).metadata_ ?? undefined,
+            }
+            setDoc(docData)
+            if (docData.status !== 'processando' && intervalRef.current) {
+              clearInterval(intervalRef.current)
+              intervalRef.current = null
+            }
+          }
+        })
+        .catch(() => toast.error('Erro ao carregar documento'))
+        .finally(() => setLoading(false))
+    } else {
+      api.get(`/documents/${id}`)
+        .then(res => {
+          const data = res.data
+          setDoc(data)
+          if (data.status !== 'processando' && intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+          }
+        })
+        .catch(() => toast.error('Erro ao carregar documento'))
+        .finally(() => setLoading(false))
+    }
+  }, [id, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchDoc()
+    // Only poll while the document is being processed
     intervalRef.current = setInterval(fetchDoc, 5000)
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
     }
   }, [fetchDoc])
 
-  // Load executions when document is complete
+  // Stop polling once document is no longer processing
+  useEffect(() => {
+    if (doc && doc.status !== 'processando' && intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }, [doc])
+
+  // Load executions when document is complete (API mode only — Firebase stores in document itself)
   useEffect(() => {
     if (!id || !doc || doc.status !== 'concluido') return
+    if (IS_FIREBASE) return // Executions not available in Firebase mode
     api.get(`/documents/${id}/executions`)
       .then(res => setExecutions(Array.isArray(res.data) ? res.data : []))
-      .catch(() => toast.error('Erro ao carregar timeline de execução'))
+      .catch(() => {/* non-critical: executions timeline may not be available */})
   }, [id, doc?.status])
 
   // Load DOCX preview with mammoth
@@ -160,7 +189,11 @@ export default function DocumentDetail() {
     if (!window.confirm(`Excluir este documento permanentemente? Esta ação não pode ser desfeita.`)) return
     setDeleting(true)
     try {
-      await api.delete(`/documents/${id}`)
+      if (IS_FIREBASE && userId) {
+        await firestoreDeleteDoc(userId, id)
+      } else {
+        await api.delete(`/documents/${id}`)
+      }
       invalidateApiCache('/stats')
       toast.success('Documento excluído')
       navigate('/documents')
@@ -175,8 +208,20 @@ export default function DocumentDetail() {
     if (!id) return
     setRetrying(true)
     try {
-      await api.post(`/documents/${id}/retry`)
-      toast.success('Reprocessamento iniciado')
+      if (IS_FIREBASE && userId && doc) {
+        // Re-trigger generation in Firebase mode
+        generateDocument(
+          userId,
+          id,
+          doc.document_type_id,
+          doc.original_request,
+          doc.legal_area_ids ?? [],
+        ).catch(err => console.error('Retry generation failed:', err))
+        toast.success('Reprocessamento iniciado')
+      } else {
+        await api.post(`/documents/${id}/retry`)
+        toast.success('Reprocessamento iniciado')
+      }
       fetchDoc()
       // Resume polling
       if (!intervalRef.current) {
@@ -193,17 +238,33 @@ export default function DocumentDetail() {
     if (!id) return
     setWorkflowLoading(true)
     try {
-      if (action === 'reject') {
-        await api.post(`/documents/${id}/reject`, { reason: rejectReason })
-        setShowRejectForm(false)
-        setRejectReason('')
-        toast.success('Documento rejeitado')
-      } else if (action === 'approve') {
-        await api.post(`/documents/${id}/approve`)
-        toast.success('Documento aprovado')
+      if (IS_FIREBASE && userId) {
+        // Firebase mode: update status directly in Firestore
+        const statusMap: Record<string, string> = {
+          'submit-review': 'em_revisao',
+          'approve': 'aprovado',
+          'reject': 'rejeitado',
+        }
+        const updates: Record<string, unknown> = { status: statusMap[action] }
+        if (action === 'reject' && rejectReason) {
+          updates.metadata_ = { rejection_reason: rejectReason, rejected_at: new Date().toISOString() }
+        }
+        await updateDocument(userId, id, updates as any)
+        if (action === 'reject') { setShowRejectForm(false); setRejectReason('') }
+        toast.success(action === 'approve' ? 'Documento aprovado' : action === 'reject' ? 'Documento rejeitado' : 'Documento enviado para revisão')
       } else {
-        await api.post(`/documents/${id}/submit-review`)
-        toast.success('Documento enviado para revisão')
+        if (action === 'reject') {
+          await api.post(`/documents/${id}/reject`, { reason: rejectReason })
+          setShowRejectForm(false)
+          setRejectReason('')
+          toast.success('Documento rejeitado')
+        } else if (action === 'approve') {
+          await api.post(`/documents/${id}/approve`)
+          toast.success('Documento aprovado')
+        } else {
+          await api.post(`/documents/${id}/submit-review`)
+          toast.success('Documento enviado para revisão')
+        }
       }
       fetchDoc()
     } catch (err: any) {
@@ -358,6 +419,21 @@ export default function DocumentDetail() {
                     {loadingDocx ? 'Carregando...' : showPreview ? 'Ocultar DOCX' : 'Ver DOCX'}
                   </button>
                 </>
+              )}
+              {/* Client-side DOCX for Firebase mode (no docx_path) */}
+              {IS_FIREBASE && !doc.docx_path && doc.texto_completo && (
+                <button
+                  onClick={() => generateAndDownloadDocx(
+                    doc.texto_completo!,
+                    `${doc.document_type_id}_${doc.id}`,
+                    DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id,
+                    doc.tema || undefined,
+                  )}
+                  className="inline-flex items-center gap-2 border border-brand-600 text-brand-600 px-4 py-2 rounded-lg hover:bg-brand-50 transition-colors text-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  Baixar DOCX
+                </button>
               )}
             </div>
 

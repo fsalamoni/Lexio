@@ -15,8 +15,8 @@ async def search_qdrant(
     top_k: int = 10,
     score_threshold: float = 0.35,
 ) -> str:
-    """Search Qdrant for similar fragments. Collection defaults to org-specific."""
-    collection = collection or "lexio_acervo"
+    """Search Qdrant for similar fragments. Collection defaults to settings.qdrant_collection."""
+    collection = collection or settings.qdrant_collection
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:

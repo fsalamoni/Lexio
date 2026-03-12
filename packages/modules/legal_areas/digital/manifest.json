@@ -1,0 +1,26 @@
+{
+    "id": "digital",
+    "name": "Direito Digital",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Proteção de dados, crimes cibernéticos, Marco Civil da Internet e inteligência artificial.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "protecao_dados",
+        "crimes_ciberneticos",
+        "marco_civil_internet",
+        "inteligencia_artificial"
+    ],
+    "guides": [
+        "protecao_dados.md",
+        "marco_civil.md",
+        "crimes_ciberneticos.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

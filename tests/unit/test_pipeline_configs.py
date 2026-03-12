@@ -1,4 +1,4 @@
-"""Tests for pipeline configuration of all 5 document types."""
+"""Tests for pipeline configuration of all 10 document types."""
 
 import pytest
 
@@ -8,6 +8,10 @@ from packages.modules.document_types.contestacao.document_type import Contestaca
 from packages.modules.document_types.recurso.document_type import RecursoDocumentType
 from packages.modules.document_types.sentenca.document_type import SentencaDocumentType
 from packages.modules.document_types.acao_civil_publica.document_type import AcaoCivilPublicaDocumentType
+from packages.modules.document_types.mandado_seguranca.document_type import MandadoSegurancaDocumentType
+from packages.modules.document_types.habeas_corpus.document_type import HabeasCorpusDocumentType
+from packages.modules.document_types.agravo.document_type import AgravoDocumentType
+from packages.modules.document_types.embargos_declaracao.document_type import EmbargosDeclaracaoDocumentType
 from packages.pipeline.pipeline_config import PipelineConfig, AgentConfig
 
 ALL_TYPES = [
@@ -17,6 +21,10 @@ ALL_TYPES = [
     RecursoDocumentType,
     SentencaDocumentType,
     AcaoCivilPublicaDocumentType,
+    MandadoSegurancaDocumentType,
+    HabeasCorpusDocumentType,
+    AgravoDocumentType,
+    EmbargosDeclaracaoDocumentType,
 ]
 
 EXPECTED_IDS = {
@@ -26,6 +34,10 @@ EXPECTED_IDS = {
     RecursoDocumentType: "recurso",
     SentencaDocumentType: "sentenca",
     AcaoCivilPublicaDocumentType: "acao_civil_publica",
+    MandadoSegurancaDocumentType: "mandado_seguranca",
+    HabeasCorpusDocumentType: "habeas_corpus",
+    AgravoDocumentType: "agravo",
+    EmbargosDeclaracaoDocumentType: "embargos_declaracao",
 }
 
 
@@ -134,6 +146,18 @@ class TestDocumentTypeInterface:
         dt = DocType()
         cfg = dt.get_pipeline_config()
         assert 0 <= cfg.min_score <= 100
+
+    def test_search_collections_configured(self, DocType):
+        dt = DocType()
+        cfg = dt.get_pipeline_config()
+        assert isinstance(cfg.search_collections, list)
+        assert len(cfg.search_collections) >= 1, "search_collections must be set"
+        assert "acervo_juridico" in cfg.search_collections, "Must search acervo_juridico"
+
+    def test_search_collections_includes_memoria_pessoal(self, DocType):
+        dt = DocType()
+        cfg = dt.get_pipeline_config()
+        assert "memoria_pessoal" in cfg.search_collections, "Must search memoria_pessoal"
 
 
 class TestSentencaSpecific:

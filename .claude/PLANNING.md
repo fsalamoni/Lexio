@@ -1,7 +1,7 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-03-10 (Etapas 28-31 concluídas) | Branch: claude/continue-planning-9WM6r
-> PROPÓSITO: Indexação, cache e controle de estado da implementação.
-> REGRA: Este arquivo é a FONTE DA VERDADE. Atualizar após cada etapa concluída.
+> Atualizado: 2026-03-11 | Branch: claude/continue-project-work-mTkMc
+> PROPÓSITO: Fonte única da verdade — estado do sistema, roadmap e decisões técnicas.
+> REGRA: Atualizar após cada etapa concluída. IMPLEMENTATION_STATE.md foi arquivado (obsoleto).
 
 ---
 
@@ -13,7 +13,7 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 - Backend: Python 3.12, FastAPI, SQLAlchemy async, PostgreSQL 16
 - Frontend: React 18 + TypeScript + Vite + Tailwind CSS
 - LLM: OpenRouter (Claude Sonnet/Haiku), Embedding: Ollama (mxbai-embed-large)
-- Vector DB: Qdrant | Search: SearXNG, DataJud | Container: Docker Compose
+- Vector DB: Qdrant | Search: SearXNG, DataJud | Container: Docker Compose (6 serviços)
 
 ### Regras Críticas
 1. Módulos INDEPENDENTES — isolamento total
@@ -24,111 +24,329 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 
 ---
 
-## ESTADO ATUAL DO SISTEMA (2026-03-10)
+## ESTADO ATUAL DO SISTEMA (2026-03-11)
 
-### ✅ IMPLEMENTADO E FUNCIONANDO
+### ✅ BACKEND — IMPLEMENTADO
 
-#### Backend
-- Auth: JWT, bcrypt, registro, login, /me
-- Documents: CRUD, pipeline trigger, content GET/PUT, executions list
-- Stats: /, /daily, /agents, /recent
-- Document Types: GET /document-types (6 tipos)
-- Legal Areas: GET /legal-areas (5 áreas)
-- Thesis Bank: CRUD + stats + auto-extraction pós-pipeline
+#### Auth
+- JWT, bcrypt, registro, login, `/me`
+- Recuperação de senha: `POST /auth/forgot-password`, `POST /auth/reset-password`, `GET /auth/validate-reset-token/{token}`
+- ⚠️ `dev_reset_token` exposto na API — remover em produção, enviar por email
+
+#### Documents
+- CRUD completo, pipeline trigger, content GET/PUT, executions list
+- Workflow: submit-review, approve, reject
+- Busca full-text por tema e original_request (param `q`, ILIKE)
+
+#### Notificações
+- `GET /api/v1/notifications` — lista com contagem não-lidas
+- `PATCH /api/v1/notifications/{id}/read` — marcar como lida
+- `PATCH /api/v1/notifications/read-all` — marcar todas como lidas
+- Criadas automaticamente: document_completed, document_approved, document_rejected
+
+#### Outros Endpoints
+- Stats: `/stats`, `/stats/daily`, `/stats/agents`, `/stats/recent`
+- Document Types: `GET /document-types` (6 tipos)
+- Legal Areas: `GET /legal-areas` (5 áreas)
+- Thesis Bank: CRUD + stats + auto-extraction pós-pipeline + injeção no pipeline
 - Uploads: POST + GET, background indexing → Qdrant
 - Anamnesis: wizard, profile, onboarding, build-context, request-fields
 - Admin: modules list/health/toggle/test, settings GET/POST
-- WebSocket: /ws/document/{id} (progresso em tempo real)
-- Health: /health (PostgreSQL, Qdrant, Ollama, SearXNG)
+- WebSocket: `/ws/document/{id}` (progresso em tempo real)
+- Health: `/health` (PostgreSQL, Qdrant, Ollama, SearXNG)
 
-#### Frontend Pages
-- Login.tsx ✅ (spinner, password toggle)
-- Register.tsx ✅ (password toggle)
-- Dashboard.tsx ✅ (Recharts BarChart+AreaChart, skeletons, agent table)
-- DocumentList.tsx ✅ (paginação, filter, quality colors, mobile)
-- NewDocument.tsx ✅ (tipo, template, áreas, request, context fields básicos)
-- DocumentDetail.tsx ✅ (execution timeline, DOCX preview mammoth)
-- DocumentEditor.tsx ✅ (TipTap, word count, DOCX download, toast save, beforeunload)
-- Upload.tsx ✅ (file history, polling status)
-- ThesisBank.tsx ✅ (search debounced, filters, create/edit/delete, copy)
-- AdminPanel.tsx 🟡 (módulos e API keys, restante placeholder)
-- Onboarding.tsx ✅ (4-step wizard → user_profiles)
-- NotFound.tsx ✅
+#### Módulos
+- document_types: parecer, peticao_inicial, contestacao, recurso, sentenca, acao_civil_publica
+- legal_areas: administrative, civil, constitutional, labor, tax
+- anamnesis, thesis_bank
+- whatsapp_bot (fix event_bus.subscribe + handler signature + etapa awaiting_legal_area)
 
-#### Frontend Components
-- ErrorBoundary.tsx ✅ | Layout.tsx ✅ | Sidebar.tsx ✅ (mobile hamburger)
-- ProgressTracker.tsx ✅ | RichTextEditor.tsx ✅ | StatusBadge.tsx ✅
-- Toast.tsx ✅ (useToast, auto-dismiss, slide-in) | Skeleton.tsx ✅
+#### Database
+```
+organizations, users (+ reset_token, reset_token_expires_at)
+documents, document_types, legal_areas
+executions, uploaded_documents
+theses, whatsapp_sessions, user_profiles
+platform_settings, notifications
+```
 
-#### Módulos Backend
-- document_types: parecer, peticao_inicial, contestacao, recurso, sentenca, acao_civil_publica ✅
-- legal_areas: administrative, civil, constitutional, labor, tax ✅
-- anamnesis ✅ | thesis_bank ✅ | whatsapp_bot 🟡
+---
+
+### ✅ FRONTEND — IMPLEMENTADO
+
+#### Páginas
+| Página | Estado | Notas |
+|--------|--------|-------|
+| Login.tsx | ✅ | spinner, password toggle, link "Esqueci minha senha" |
+| Register.tsx | ✅ | password toggle |
+| ForgotPassword.tsx | ✅ | formulário, success state, dev token link |
+| ResetPassword.tsx | ✅ | token validation, nova senha, redirect automático |
+| Dashboard.tsx | ✅ | Recharts BarChart+AreaChart, skeletons, agent table |
+| DocumentList.tsx | ✅ | busca full-text debounce 400ms, filtros tipo/status, paginação |
+| NewDocument.tsx | ✅ | tipo, template, áreas, request, context fields Layer 2 |
+| DocumentDetail.tsx | ✅ | execution timeline, DOCX preview mammoth, workflow aprovação |
+| DocumentEditor.tsx | ✅ | TipTap, word count, DOCX download, toast save, beforeunload |
+| Upload.tsx | ✅ | file history, polling status |
+| ThesisBank.tsx | ✅ | search debounced, filters, create/edit/delete, copy |
+| AdminPanel.tsx | ✅ | módulos, API keys, fila de revisão, health, stats, pie chart |
+| Onboarding.tsx | ✅ | 4-step wizard → user_profiles |
+| Profile.tsx | ✅ | perfil profissional, preferências, defaults |
+| NotFound.tsx | ✅ | |
+
+#### Componentes
+| Componente | Estado | Notas |
+|-----------|--------|-------|
+| ErrorBoundary.tsx | ✅ | |
+| Layout.tsx | ✅ | mobile hamburger, NotificationBell integrado |
+| Sidebar.tsx | ✅ | mobile responsive |
+| ProgressTracker.tsx | ✅ | phase steps, gradient bar |
+| RichTextEditor.tsx | ✅ | TipTap, word count, prose styles |
+| StatusBadge.tsx | ✅ | icons (Loader2/CheckCircle/XCircle) |
+| Toast.tsx | ✅ | useToast hook, auto-dismiss, slide-in |
+| Skeleton.tsx | ✅ | SkeletonRow/Card/Item |
+| NotificationBell.tsx | ✅ | dropdown, unread badge, mark all read, polling 30s |
 
 ---
 
 ## BUGS CONHECIDOS
 
-| ID | Local | Descrição | Prioridade |
-|----|-------|-----------|-----------|
-| B1 | ProgressTracker.tsx | WS URL deve ser wss:// em HTTPS | ✅ Já correto (replace /^http/, 'ws') |
-| B2 | DocumentDetail.tsx | Polling não para quando status=concluido | ✅ Corrigido com useRef |
-| B3 | Dashboard.tsx | .catch(() => {}) silencioso → deve usar toast | ✅ Já estava com toast.error |
-| B4 | ThesisBank.tsx | .catch(() => {}) silencioso → deve usar toast | ✅ Já estava com toast.error |
+| ID | Local | Descrição | Status |
+|----|-------|-----------|--------|
+| B1 | ProgressTracker.tsx | WS URL deve ser wss:// em HTTPS | ✅ Já correto |
+| B2 | DocumentDetail.tsx | Polling não para quando status=concluido | ✅ Corrigido |
+| B3 | Dashboard.tsx | .catch() silencioso | ✅ Corrigido |
+| B4 | ThesisBank.tsx | .catch() silencioso | ✅ Corrigido |
+| B5 | whatsapp_bot/__init__.py | event_bus.on() não existe | ✅ Corrigido → subscribe() |
+| B6 | whatsapp_bot/__init__.py | Handler signature errada | ✅ Corrigido |
+| B7 | auth.py:141 | dev_reset_token exposto na API | ⚠️ Pendente (requer email service) |
 
 ---
 
 ## ROADMAP DE IMPLEMENTAÇÃO
 
-### ETAPA 1 — Campos de Contexto Layer 2 no NewDocument
-**Status**: ✅ Concluído (2026-03-10)
-**Prioridade**: ALTA (impacta qualidade de todos os documentos)
-**Arquivos a criar/modificar**:
-- `frontend/src/pages/NewDocument.tsx` — exibir campos dinâmicos por tipo de documento
-- `frontend/src/hooks/useAnamnesisFields.ts` — hook para buscar campos via API
-- `frontend/src/components/AnamnesisContextForm.tsx` — formulário de campos estruturados
-**API usada**: `GET /anamnesis/request-fields/{document_type_id}`
-**Resultado esperado**: Ao selecionar tipo de documento, campos específicos aparecem (partes, pedidos, fatos, etc.)
+### ✅ ETAPAS CONCLUÍDAS
 
-### ETAPA 2 — Página Meu Perfil (Edição de Anamnese Layer 1)
-**Status**: ✅ Concluído (2026-03-10)
-**Prioridade**: ALTA (UX, usuário precisa atualizar dados)
-**Arquivos a criar/modificar**:
-- `frontend/src/pages/Profile.tsx` — nova página (CRIAR)
-- `frontend/src/App.tsx` — adicionar rota /profile
-- `frontend/src/components/Sidebar.tsx` — adicionar link no menu
-**API usada**: `GET /anamnesis/profile`, `PATCH /anamnesis/profile`
-**Resultado esperado**: Usuário edita perfil profissional e preferências sem refazer onboarding
+| Etapa | Descrição | Data |
+|-------|-----------|------|
+| 1 | Context fields Layer 2 no NewDocument | 2026-03-10 |
+| 2 | Página Meu Perfil (anamnese Layer 1) | 2026-03-10 |
+| 3 | Workflow aprovação/rejeição de documentos | 2026-03-10 |
+| 4 | Integração Banco de Teses → Pipeline | 2026-03-10 |
+| 5 | Fix WebSocket wss:// para HTTPS | 2026-03-10 |
+| 6 | AdminPanel UI completo | 2026-03-10 |
+| 7 | Fix WhatsApp Bot + etapa área jurídica | 2026-03-11 |
+| 8 | Recuperação de senha (frontend + backend) | 2026-03-11 |
+| 9 | Busca full-text de documentos | 2026-03-11 |
+| 10 | Notificações in-app | 2026-03-11 |
 
-### ETAPA 3 — Workflow de Aprovação/Rejeição de Documentos
-**Status**: ✅ Concluído (2026-03-10)
-**Prioridade**: ALTA
-**Implementado**: 3 endpoints (submit-review, approve, reject), StatusBadge novos estados, botões no DocumentDetail por status e role, formulário de rejeição inline, metadata_ exposto no schema
-**Resultado**: Fluxo completo concluido → em_revisao → aprovado/rejeitado
+---
 
-### ETAPA 4 — Integração Banco de Teses → Pipeline
-**Status**: ✅ Concluído (2026-03-10)
-**Prioridade**: MÉDIA (melhora qualidade geração)
-**Arquivos a criar/modificar**:
-- `packages/pipeline/orchestrator.py` — buscar teses relevantes antes dos agentes
-- `packages/modules/thesis_bank/search.py` — função de busca por relevância
-- `packages/core/` — injetar teses no contexto do agente
-**Resultado esperado**: Pipeline busca teses existentes do org e injeta no contexto dos agentes
+### 🔴 ETAPA 11 — Email Service (SMTP/Sendgrid)
+**Prioridade**: Alta — Bloqueia produção real (dev_reset_token exposto)
+**Dependências**: nenhuma
 
-### ETAPA 5 — Fix WebSocket wss:// para HTTPS
-**Status**: ✅ Já estava correto (location.origin.replace, 2026-03-10)
-**Prioridade**: ALTA (necessário produção)
-**Arquivos a criar/modificar**:
-- `frontend/src/components/ProgressTracker.tsx` — auto-detect protocol
-- `frontend/src/api/client.ts` — WS_URL dinâmica
-**Resultado esperado**: ws:// em desenvolvimento, wss:// em HTTPS automaticamente
+**O que implementar**:
+- `packages/core/email.py` — serviço genérico com suporte SMTP e Sendgrid
+- Variáveis de ambiente: `EMAIL_PROVIDER`, `SMTP_HOST/PORT/USER/PASS`, `SENDGRID_API_KEY`, `EMAIL_FROM`
+- Template HTML para email de recuperação de senha
+- Template HTML para notificações por email (opcional)
+- Remover `dev_reset_token` do response de `POST /auth/forgot-password`
+- Enviar email real no `forgot-password`
 
-### ETAPA 6 — AdminPanel UI Completo
-**Status**: ✅ Concluído (2026-03-10)
-**Prioridade**: MÉDIA
-**Arquivos a criar/modificar**:
-- `frontend/src/pages/AdminPanel.tsx` — UI refinada, wizards, logs
-**Resultado esperado**: Painel admin completo e funcional
+**Arquivos afetados**:
+- `packages/core/email.py` (NOVO)
+- `packages/api/routes/auth.py` (remover dev_reset_token, chamar email service)
+- `packages/core/config.py` (novas env vars)
+- `docker-compose.yml` (vars de ambiente)
+- `.env.example` (documentar vars)
+
+---
+
+### 🔴 ETAPA 12 — Versionamento de Documentos
+**Prioridade**: Alta — Usuários editam documentos sem histórico
+**Dependências**: nenhuma
+
+**O que implementar**:
+- Tabela `document_versions` (document_id, version_number, content, created_by, created_at, comment)
+- `POST /documents/{id}/versions` — salvar versão manual (ao clicar "Salvar")
+- `GET /documents/{id}/versions` — listar versões
+- `GET /documents/{id}/versions/{version_id}` — obter conteúdo de versão
+- `POST /documents/{id}/versions/{version_id}/restore` — restaurar versão
+- Auto-save de versão a cada aprovação/rejeição
+- Frontend: painel "Histórico" no DocumentDetail.tsx com diff visual (opcional)
+
+**Arquivos afetados**:
+- `database/schema.sql`
+- `packages/core/database/models/document_version.py` (NOVO)
+- `packages/api/routes/documents.py`
+- `frontend/src/pages/DocumentDetail.tsx`
+- `frontend/src/pages/DocumentEditor.tsx`
+
+---
+
+### 🔴 ETAPA 13 — Export/Share de Documentos
+**Prioridade**: Alta — Funcionalidade core para escritórios
+**Dependências**: nenhuma
+
+**O que implementar**:
+- `POST /documents/{id}/share` — gera link público temporário (token JWT 7 dias)
+- `GET /share/{token}` — endpoint público (sem auth) para visualizar documento aprovado
+- Frontend: botão "Compartilhar" no DocumentDetail.tsx (apenas para docs aprovados)
+- Frontend: modal com link copiável + QR code (opcional)
+- Frontend: página pública `/share/{token}` (layout simplificado)
+
+**Arquivos afetados**:
+- `packages/api/routes/documents.py`
+- `packages/api/main.py` (rota pública)
+- `frontend/src/pages/DocumentDetail.tsx`
+- `frontend/src/pages/SharedDocument.tsx` (NOVO)
+- `frontend/src/App.tsx` (rota pública)
+
+---
+
+### 🟡 ETAPA 14 — Organization Settings
+**Prioridade**: Média
+**Dependências**: nenhuma
+
+**O que implementar**:
+- `GET/PUT /organizations/me` — nome, logo, timezone, defaults
+- `GET/POST/DELETE /organizations/me/members` — gestão de membros
+- `POST /organizations/me/members/{user_id}/role` — promover/rebaixar (admin/member)
+- Frontend: página `OrganizationSettings.tsx` com 3 abas: Geral, Membros, Plano
+- Sidebar: link "Organização" no painel admin
+
+**Arquivos afetados**:
+- `packages/api/routes/organizations.py` (NOVO)
+- `packages/api/main.py`
+- `frontend/src/pages/OrganizationSettings.tsx` (NOVO)
+- `frontend/src/components/Sidebar.tsx`
+- `frontend/src/App.tsx`
+
+---
+
+### 🟡 ETAPA 15 — Operações em Lote (Bulk)
+**Prioridade**: Média
+**Dependências**: nenhuma
+
+**O que implementar**:
+- `POST /documents/bulk-approve` — aprovar lista de IDs
+- `POST /documents/bulk-reject` — rejeitar lista de IDs
+- `DELETE /documents/bulk` — arquivar lista de IDs
+- Frontend: checkboxes na DocumentList.tsx
+- Frontend: toolbar flutuante com ações em lote quando há seleção
+- Frontend: confirmação antes de ações destrutivas
+
+**Arquivos afetados**:
+- `packages/api/routes/documents.py`
+- `frontend/src/pages/DocumentList.tsx`
+
+---
+
+### 🟡 ETAPA 16 — Expiração de Sessões WhatsApp
+**Prioridade**: Média
+**Dependências**: nenhuma
+
+**O que implementar**:
+- `AsyncSession` background task (rodar a cada hora via APScheduler)
+- Limpar `whatsapp_sessions` com `updated_at < NOW() - INTERVAL '24 hours'`
+- `GET /admin/whatsapp-sessions` — listar sessões ativas (para AdminPanel)
+- Frontend: card de sessões WhatsApp no AdminPanel.tsx
+
+**Arquivos afetados**:
+- `packages/modules/whatsapp_bot/__init__.py` (schedule task)
+- `packages/api/routes/admin.py`
+- `frontend/src/pages/AdminPanel.tsx`
+
+---
+
+### 🟢 ETAPA 17 — Audit Log
+**Prioridade**: Baixa
+**Dependências**: nenhuma
+
+**O que implementar**:
+- Tabela `audit_logs` (organization_id, user_id, action, entity_type, entity_id, metadata JSONB, created_at)
+- Middleware FastAPI para logar automaticamente mutações (POST/PUT/DELETE)
+- `GET /admin/audit-logs` — com filtros por user, action, entity, date range
+- Frontend: página `AuditLog.tsx` no AdminPanel (aba nova)
+
+**Arquivos afetados**:
+- `database/schema.sql`
+- `packages/core/database/models/audit_log.py` (NOVO)
+- `packages/api/middleware/audit.py` (NOVO)
+- `packages/api/routes/admin.py`
+- `frontend/src/pages/AdminPanel.tsx`
+
+---
+
+### 🟢 ETAPA 18 — Export de Estatísticas (CSV/Excel)
+**Prioridade**: Baixa
+**Dependências**: nenhuma
+
+**O que implementar**:
+- `GET /stats/export?format=csv&from=&to=` — exportar uso em CSV
+- `GET /stats/export?format=xlsx` — exportar em Excel (via openpyxl)
+- Frontend: botão "Exportar" no Dashboard.tsx com dropdown CSV/Excel
+
+**Arquivos afetados**:
+- `packages/api/routes/stats.py`
+- `frontend/src/pages/Dashboard.tsx`
+
+---
+
+### 🟢 ETAPA 19 — Dark Mode
+**Prioridade**: Baixa
+**Dependências**: nenhuma
+
+**O que implementar**:
+- Tailwind `darkMode: 'class'` no `tailwind.config.js`
+- Toggle em `ThemeContext.tsx` (NOVO) com persistência em localStorage
+- Adicionar classes `dark:` nos componentes principais
+- Botão de toggle no sidebar/profile
+
+**Arquivos afetados**:
+- `tailwind.config.js`
+- `frontend/src/contexts/ThemeContext.tsx` (NOVO)
+- Todos os componentes e páginas (refactor gradual)
+
+---
+
+## NOTAS TÉCNICAS
+
+### Password Reset Token
+- Gerado com `secrets.token_urlsafe(32)` — 43 chars URL-safe
+- TTL: 15 minutos | Um uso por token (limpo após uso)
+- ⚠️ **dev_reset_token** retornado no response enquanto email service não existe
+- Produção: remover dev_reset_token + enviar por SMTP/Sendgrid (ETAPA 11)
+
+### Notifications
+- Criadas de forma assíncrona (fire-and-forget, não bloqueiam pipeline)
+- Polling no frontend: 30 segundos
+- Tipos: `document_completed` | `document_approved` | `document_rejected`
+- `user_id NULL` = notificação org-wide (visível para todos os admins)
+
+### WhatsApp Bot Flow
+```
+WELCOME → AWAITING_DOC_TYPE → AWAITING_LEGAL_AREA → AWAITING_CONTENT → PROCESSING → COMPLETE
+                                                   ↗ (pular → sem área)
+```
+- Reset: "menu", "início", "cancelar", "reiniciar"
+- Pular área: "pular", "skip", "geral", "qualquer", "0"
+
+### Anamnesis API
+Endpoint: `GET /anamnesis/request-fields/{document_type_id}`
+Retorna campos específicos por tipo. Exemplo para `peticao_inicial`:
+```json
+[
+  {"id": "partes",     "label": "Partes do processo",  "type": "text",     "required": true},
+  {"id": "fatos",      "label": "Fatos relevantes",    "type": "textarea", "required": true},
+  {"id": "pedidos",    "label": "Pedidos",              "type": "textarea", "required": true},
+  {"id": "valor_causa","label": "Valor da causa",       "type": "text",     "required": false}
+]
+```
+
+### Pipeline Context Building
+`POST /anamnesis/build-context` — recebe `{document_type_id, legal_area_ids, request, context_fields}`,
+retorna contexto completo para o pipeline.
 
 ---
 
@@ -137,89 +355,50 @@ Lexio é um SaaS de produção jurídica com IA. Gera documentos jurídicos via 
 ```
 frontend/src/
   pages/
-    NewDocument.tsx         — Criação de documentos (ETAPA 1)
-    Profile.tsx             — Perfil usuário (CRIAR - ETAPA 2)
-    DocumentDetail.tsx      — Detalhes + workflow (ETAPA 3)
-    AdminPanel.tsx          — Admin (ETAPA 6)
+    auth/
+      ForgotPassword.tsx      — Recuperação de senha
+      ResetPassword.tsx       — Redefinição de senha
+    DocumentList.tsx          — Lista com busca + filtros
+    Dashboard.tsx             — Stats + charts
+    AdminPanel.tsx            — Painel admin completo
   components/
-    AnamnesisContextForm.tsx — Campos Layer 2 (CRIAR - ETAPA 1)
-    ReviewWorkflow.tsx       — Workflow aprovação (CRIAR - ETAPA 3)
-    ProgressTracker.tsx      — WS URL fix (ETAPA 5)
-  hooks/
-    useAnamnesisFields.ts   — Hook campos dinâmicos (CRIAR - ETAPA 1)
-  api/
-    client.ts               — WS_URL (ETAPA 5)
+    NotificationBell.tsx      — Notificações in-app
+    Layout.tsx                — Bell integrado
 
 packages/
-  api/routes/documents.py   — Endpoints workflow (ETAPA 3)
-  pipeline/orchestrator.py  — Injeção teses (ETAPA 4)
-  modules/thesis_bank/search.py — Busca teses (ETAPA 4)
+  api/routes/
+    auth.py                   — forgot/reset-password
+    documents.py              — busca + notificações + workflow
+    notifications.py          — CRUD notificações
+    admin.py                  — módulos + settings
+    stats.py                  — dashboard stats
+  core/database/models/
+    user.py                   — reset_token fields
+    notification.py           — Modelo Notification
+  pipeline/orchestrator.py    — _create_completion_notification
+  modules/whatsapp_bot/
+    __init__.py               — subscribe + handler
+    conversation.py           — awaiting_legal_area
+    pipeline_trigger.py       — legal_area_ids support
 
 database/
-  schema.sql                — Status workflow (ETAPA 3)
+  schema.sql                  — schema completo (notifications + reset_token)
 ```
 
 ---
 
 ## LOG DE IMPLEMENTAÇÃO
 
-| Data | Etapa | Ação | Arquivos |
-|------|-------|------|---------|
-| 2026-03-10 | Setup | Criado PLANNING.md | .claude/PLANNING.md |
-| 2026-03-10 | Etapa 1 | Fix NewDocument: tipo `number`, auto-open, badge campos requeridos | frontend/src/pages/NewDocument.tsx |
-| 2026-03-10 | Etapa 2 | Criada página Profile.tsx + rota /profile + link sidebar | frontend/src/pages/Profile.tsx, App.tsx, Sidebar.tsx |
-| 2026-03-10 | Bug B2 | Fix polling DocumentDetail (useRef + clearInterval no callback) | frontend/src/pages/DocumentDetail.tsx |
-| 2026-03-10 | Etapa 3 | Workflow aprovação/rejeição (3 endpoints + StatusBadge + UI) | packages/api/routes/documents.py, schemas/documents.py, frontend/src/components/StatusBadge.tsx, pages/DocumentDetail.tsx |
-| 2026-03-10 | Etapa 4 | Injeção teses banco → fragmentosAcervo no pipeline | packages/pipeline/orchestrator.py |
-| 2026-03-10 | Etapa 6 | AdminPanel: ReviewQueue + Skeleton loading | frontend/src/pages/AdminPanel.tsx |
-| 2026-03-10 | Etapa 7 | DocumentList: 6 chips status; Dashboard: card "Em Revisão" + stats.pending_review | frontend/src/pages/DocumentList.tsx, Dashboard.tsx, packages/api/routes/stats.py |
-| 2026-03-10 | Etapa 8 | B3/B4 verificados — já tinham toast.error; DocumentEditor sem polling loop | — |
-| 2026-03-10 | Etapa 9 | Demo mode não existe no repo — N/A | — |
-| 2026-03-10 | Etapa 10 | Inter font carregada via Google Fonts em index.html | frontend/index.html |
-| 2026-03-10 | Bug B5 | Fix processing_documents: era total-completed (errado), agora conta status=processando | packages/api/routes/stats.py |
-| 2026-03-10 | Etapa 11 | Busca textual em documentos: param q backend (ilike tema+pedido) + search input debounced + type filter select | packages/api/routes/documents.py, frontend/src/pages/DocumentList.tsx |
-| 2026-03-10 | Etapa 12 | AdminPanel: pending_review_documents em StatsData + card "Em Revisão" com destaque azul; grid md:grid-cols-6 | frontend/src/pages/AdminPanel.tsx |
-| 2026-03-10 | Etapa 13 | Sidebar: badge azul em "Administração" com contagem de pendentes, poll a cada 60s | frontend/src/components/Sidebar.tsx |
-| 2026-03-10 | Etapa 15 | DELETE /documents/{id}: admin ou autor, bloqueado em processando; botão Excluir no DocumentDetail com confirm | packages/api/routes/documents.py, frontend/src/pages/DocumentDetail.tsx |
-| 2026-03-10 | Etapa 16 | Gerenciamento de usuários: GET/PATCH /admin/users + UsersSection no AdminPanel (role select + toggle ativo) | packages/api/routes/admin.py, frontend/src/pages/AdminPanel.tsx |
-| 2026-03-10 | Etapa 17 | Upload progress bar real: onUploadProgress axios → localFiles.progress → barra animada + % | frontend/src/pages/Upload.tsx |
-| 2026-03-10 | Etapa 18 | DELETE /uploads/{id}: remove do DB + Qdrant (best-effort); botão Trash2 no histórico com confirm | packages/api/routes/uploads.py, frontend/src/pages/Upload.tsx |
-| 2026-03-10 | Bug fix | Upload.tsx: fix template literal ${filename} na confirmação de exclusão | frontend/src/pages/Upload.tsx |
-| 2026-03-10 | Etapa 19 | Onboarding redirect — já funcionava corretamente (N/A) | — |
-| 2026-03-10 | Etapa 20 | NewDocument double-submit — já implementado com loading state + disabled button (N/A) | — |
-| 2026-03-10 | Etapa 21 | ThesisBank: botão "Exportar JSON" (client-side Blob download das teses visíveis) | frontend/src/pages/ThesisBank.tsx |
-| 2026-03-10 | Etapa 22 | DocumentList: sort select (Mais recente/antigo, Maior/menor score); backend sort_by+sort_dir params | frontend/src/pages/DocumentList.tsx, packages/api/routes/documents.py |
-| 2026-03-10 | Etapa 23 | Rate limit 429: CustomEvent lexio:rate-limit no client.ts; listener em Layout.tsx com toast.error | frontend/src/api/client.ts, frontend/src/components/Layout.tsx |
-| 2026-03-10 | Etapa 24 | DocumentList filtro por período (date_from/date_to): dois date inputs + backend date range query | frontend/src/pages/DocumentList.tsx, packages/api/routes/documents.py |
-| 2026-03-10 | Etapa 25 | ThesisBank "Carregar mais 50": paginação incremental com skip; botão append ao estado | frontend/src/pages/ThesisBank.tsx |
-| 2026-03-10 | Etapa 26 | Dashboard recent docs — já eram clickable com Link (N/A) | — |
-| 2026-03-10 | Etapa 27 | DocumentList: badge de origem (WhatsApp/API) inline na coluna Tipo para origens não-web | frontend/src/pages/DocumentList.tsx |
-| 2026-03-10 | Etapa 28 | DocumentDetail timeline — tokens/custo já implementados anteriormente (N/A) | — |
-| 2026-03-10 | Etapa 29 | DocumentList: checkboxes + bulk delete (barra flutuante, indeterminate select-all, DELETE sequencial) | frontend/src/pages/DocumentList.tsx |
-| 2026-03-10 | Etapa 30 | ThesisBank: exportar CSV com BOM UTF-8 (compatível Excel) além de JSON; dois botões no header | frontend/src/pages/ThesisBank.tsx |
-| 2026-03-10 | Etapa 31 | GET /stats/by-type: docs + avg_score por document_type_id; tabela no Dashboard | packages/api/routes/stats.py, frontend/src/pages/Dashboard.tsx |
-
-
----
-
-## NOTAS TÉCNICAS
-
-### Anamnesis API — Estrutura de Campos por Tipo
-Endpoint: `GET /anamnesis/request-fields/{document_type_id}`
-Retorna lista de campos específicos por tipo. Exemplo para `peticao_inicial`:
-```json
-[
-  {"id": "partes", "label": "Partes do processo", "type": "text", "required": true},
-  {"id": "fatos", "label": "Fatos relevantes", "type": "textarea", "required": true},
-  {"id": "pedidos", "label": "Pedidos", "type": "textarea", "required": true},
-  {"id": "valor_causa", "label": "Valor da causa", "type": "text", "required": false}
-]
-```
-
-### Pipeline Context Building
-`POST /anamnesis/build-context` — recebe `{document_type_id, legal_area_ids, request, context_fields}`, retorna contexto completo para o pipeline.
-
-### Demo Mode
-O frontend tem interceptor de requisições para demo. Ao implementar novas features:
-- Adicionar mock data em `frontend/src/demo/data.ts`
-- Adicionar interceptor em `frontend/src/demo/interceptor.ts`
+| Data | Etapa | Ação |
+|------|-------|------|
+| 2026-03-09 | Setup | Codebase inicial — UI base, demo data, backend core |
+| 2026-03-10 | Etapa 1 | Context fields Layer 2 no NewDocument.tsx |
+| 2026-03-10 | Etapa 2 | Página Profile.tsx — anamnese Layer 1 |
+| 2026-03-10 | Etapa 3 | Workflow aprovação/rejeição (submit-review, approve, reject) |
+| 2026-03-10 | Etapa 4 | Injeção de teses do banco no contexto do pipeline |
+| 2026-03-10 | Etapa 5 | WebSocket wss:// — já estava correto |
+| 2026-03-10 | Etapa 6 | AdminPanel UI completo (fila de revisão, módulos, pie chart) |
+| 2026-03-11 | Etapa 7 | Fix WhatsApp Bot (subscribe, handler, awaiting_legal_area) |
+| 2026-03-11 | Etapa 8 | Recuperação de senha (backend + frontend) |
+| 2026-03-11 | Etapa 9 | Busca full-text de documentos |
+| 2026-03-11 | Etapa 10 | Notificações in-app (backend + frontend) |

@@ -13,7 +13,7 @@ logger = logging.getLogger("lexio.search.indexer")
 
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 100
-COLLECTION = "lexio_acervo"
+COLLECTION = settings.qdrant_collection
 
 
 def _extract_text(content: bytes, content_type: str, filename: str) -> str:

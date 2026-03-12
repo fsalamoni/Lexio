@@ -1,0 +1,24 @@
+{
+    "id": "mandado_seguranca",
+    "name": "Mandado de Segurança",
+    "type": "document_type",
+    "version": "1.0.0",
+    "description": "Geração de mandados de segurança com pipeline multi-agente. Direito líquido e certo — art. 5º LXIX CF, Lei 12.016/09.",
+    "category": "advocacy",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "templates": [
+        "generic"
+    ],
+    "pipeline_agents": [
+        "triagem",
+        "pesquisador",
+        "jurista",
+        "advogado_diabo",
+        "jurista_v2",
+        "fact_checker",
+        "redator",
+        "revisor"
+    ]
+}
