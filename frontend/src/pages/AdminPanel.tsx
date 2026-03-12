@@ -12,6 +12,9 @@ import { loadApiKeys, saveApiKeys, type ApiKeyEntry } from '../lib/settings-stor
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { DOCTYPE_LABELS } from '../lib/constants'
+import { IS_FIREBASE } from '../lib/firebase'
+import { getStats as firestoreGetStats, getDocumentTypes, getLegalAreas, listDocuments, updateDocument } from '../lib/firestore-service'
+import { useAuth } from '../contexts/AuthContext'
 
 interface ModuleInfo {
   id: string
@@ -296,12 +299,24 @@ function ReviewQueue() {
   const [rejectForm, setRejectForm] = useState<{ id: string; reason: string } | null>(null)
   const navigate = useNavigate()
   const toast = useToast()
+  const { userId } = useAuth()
 
   const fetchQueue = () => {
-    api.get('/documents', { params: { status: 'em_revisao', limit: 20 } })
-      .then(res => setDocs(res.data?.items || []))
-      .catch(() => toast.error('Erro ao carregar fila de revisão'))
-      .finally(() => setLoading(false))
+    if (IS_FIREBASE && userId) {
+      listDocuments(userId, { status: 'em_revisao' })
+        .then(result => setDocs(result.items.filter(d => d.id).map(d => ({
+          id: d.id!, document_type_id: d.document_type_id,
+          tema: d.tema ?? null, original_request: d.original_request,
+          created_at: d.created_at, quality_score: d.quality_score ?? null,
+        }))))
+        .catch(() => toast.error('Erro ao carregar fila de revisão'))
+        .finally(() => setLoading(false))
+    } else {
+      api.get('/documents', { params: { status: 'em_revisao', limit: 20 } })
+        .then(res => setDocs(res.data?.items || []))
+        .catch(() => toast.error('Erro ao carregar fila de revisão'))
+        .finally(() => setLoading(false))
+    }
   }
 
   useEffect(() => { fetchQueue() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -309,13 +324,20 @@ function ReviewQueue() {
   const handleAction = async (docId: string, action: 'approve' | 'reject', reason?: string) => {
     setActioning(docId)
     try {
-      if (action === 'approve') {
-        await api.post(`/documents/${docId}/approve`)
-        toast.success('Documento aprovado')
+      if (IS_FIREBASE && userId) {
+        const newStatus = action === 'approve' ? 'aprovado' : 'rejeitado'
+        await updateDocument(userId, docId, { status: newStatus } as any)
+        toast.success(action === 'approve' ? 'Documento aprovado' : 'Documento rejeitado')
+        if (action === 'reject') setRejectForm(null)
       } else {
-        await api.post(`/documents/${docId}/reject`, { reason: reason || '' })
-        toast.success('Documento rejeitado')
-        setRejectForm(null)
+        if (action === 'approve') {
+          await api.post(`/documents/${docId}/approve`)
+          toast.success('Documento aprovado')
+        } else {
+          await api.post(`/documents/${docId}/reject`, { reason: reason || '' })
+          toast.success('Documento rejeitado')
+          setRejectForm(null)
+        }
       }
       setDocs(prev => prev.filter(d => d.id !== docId))
     } catch (err: any) {
@@ -514,13 +536,40 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState<string | null>(null)
   const toast = useToast()
+  const { userId } = useAuth()
 
   const fetchData = () => {
-    Promise.all([
-      api.get('/admin/modules').then(res => setModules(Array.isArray(res.data) ? res.data : [])).catch(() => toast.error('Erro ao carregar módulos')),
-      api.get('/health').then(res => { if (res.data && typeof res.data === 'object') setHealth(res.data) }).catch(() => toast.error('Erro ao verificar saúde do sistema')),
-      api.get('/stats').then(res => { if (res.data && typeof res.data === 'object') setStats(res.data) }).catch(() => toast.error('Erro ao carregar estatísticas')),
-    ]).finally(() => setLoading(false))
+    if (IS_FIREBASE && userId) {
+      // Firebase mode: build data from Firestore + static definitions
+      const docTypes = getDocumentTypes().map(dt => ({
+        id: dt.id, name: dt.name, type: 'document_type' as const, version: '1.0.0',
+        is_enabled: true, is_healthy: true, error: null, description: dt.description,
+      }))
+      const areas = getLegalAreas().map(la => ({
+        id: la.id, name: la.name, type: 'legal_area' as const, version: '1.0.0',
+        is_enabled: true, is_healthy: true, error: null, description: la.description,
+      }))
+      setModules([...docTypes, ...areas])
+      setHealth({
+        status: 'ok', app: 'Lexio', version: '1.0.0',
+        services: { firebase: 'ok', openrouter: 'ok' },
+        modules: { total: docTypes.length + areas.length, healthy: docTypes.length + areas.length },
+      })
+      firestoreGetStats(userId).then(s => setStats({
+        total_documents: s.total_documents,
+        completed_documents: s.completed_documents,
+        processing_documents: s.processing_documents,
+        pending_review_documents: s.pending_review_documents,
+        average_quality_score: s.average_quality_score,
+        total_cost_usd: s.total_cost_usd,
+      })).catch(() => {}).finally(() => setLoading(false))
+    } else {
+      Promise.all([
+        api.get('/admin/modules').then(res => setModules(Array.isArray(res.data) ? res.data : [])).catch(() => toast.error('Erro ao carregar módulos')),
+        api.get('/health').then(res => { if (res.data && typeof res.data === 'object') setHealth(res.data) }).catch(() => toast.error('Erro ao verificar saúde do sistema')),
+        api.get('/stats').then(res => { if (res.data && typeof res.data === 'object') setStats(res.data) }).catch(() => toast.error('Erro ao carregar estatísticas')),
+      ]).finally(() => setLoading(false))
+    }
   }
 
   useEffect(() => { fetchData() }, []) // eslint-disable-line react-hooks/exhaustive-deps
