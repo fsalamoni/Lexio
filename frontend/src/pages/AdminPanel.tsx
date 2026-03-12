@@ -675,8 +675,8 @@ export default function AdminPanel() {
       {/* Review Queue */}
       <ReviewQueue />
 
-      {/* Reindex */}
-      <ReindexCard />
+      {/* Reindex — API mode only */}
+      {!IS_FIREBASE && <ReindexCard />}
 
       {/* API Keys */}
       <ApiKeysCard />
@@ -772,11 +772,11 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Pipeline Execution Logs */}
-      <PipelineLogs />
+      {/* Pipeline Execution Logs — API mode only */}
+      {!IS_FIREBASE && <PipelineLogs />}
 
-      {/* User Management */}
-      <UsersSection />
+      {/* User Management — API mode only */}
+      {!IS_FIREBASE && <UsersSection />}
     </div>
   )
 }

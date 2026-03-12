@@ -283,8 +283,11 @@ export default function NewDocument() {
                     {field.type === 'number' && (
                       <input
                         type="number"
-                        value={contextData[field.key] || ''}
-                        onChange={e => updateContextField(field.key, parseInt(e.target.value) || '')}
+                        value={contextData[field.key] ?? ''}
+                        onChange={e => {
+                          const num = parseInt(e.target.value)
+                          updateContextField(field.key, isNaN(num) ? null : num)
+                        }}
                         placeholder={field.placeholder}
                         className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
                       />

@@ -102,12 +102,13 @@ export default function DocumentDetail() {
               tema: data.tema ?? null,
               status: data.status,
               quality_score: data.quality_score ?? null,
-              quality_issues: null,
+              quality_issues: (data as any).quality_issues ?? null,
               original_request: data.original_request,
               created_at: data.created_at,
-              docx_path: null,
+              docx_path: (data as any).docx_path ?? null,
               legal_area_ids: data.legal_area_ids ?? [],
               texto_completo: data.texto_completo ?? null,
+              metadata_: (data as any).metadata_ ?? undefined,
             }
             setDoc(docData)
             if (docData.status !== 'processando' && intervalRef.current) {
