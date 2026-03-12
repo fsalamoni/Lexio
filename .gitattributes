@@ -2,7 +2,7 @@
 data/qdrant_storage/**/*.bin filter=lfs diff=lfs merge=lfs -text
 data/qdrant_storage/**/*.dat filter=lfs diff=lfs merge=lfs -text
 data/qdrant_storage/**/*.idx filter=lfs diff=lfs merge=lfs -text
-data/qdrant_storage/**/*.wal filter=lfs diff=lfs merge=lfs -text
+# WAL files excluded — they are transient runtime files (see .gitignore)
 data/qdrant_storage/**/*.segment filter=lfs diff=lfs merge=lfs -text
 data/qdrant_storage/**/*.hnsw filter=lfs diff=lfs merge=lfs -text
 data/qdrant_storage/**/*.quantization filter=lfs diff=lfs merge=lfs -text

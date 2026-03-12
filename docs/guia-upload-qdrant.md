@@ -36,6 +36,9 @@ git lfs version
 
 Deve mostrar algo como `git-lfs/3.x.x`. Se aparecer erro, reinicie o PC.
 
+> **Nota:** Nos comandos abaixo, substitua `NOME_DO_BRANCH` pelo branch atual do PR.
+> No momento, o branch é: `copilot/organize-repository-files-and-docs`
+
 ---
 
 ### 2️⃣ Clonar o repositório (se ainda não fez)
@@ -49,7 +52,7 @@ cd D:\Lexio
 > Se já tem o repositório clonado, entre na pasta dele:
 > ```powershell
 > cd D:\Lexio   # ou onde quer que esteja seu clone
-> git pull origin copilot/organize-repository-files-and-docs
+> git pull
 > ```
 
 ---
@@ -114,7 +117,7 @@ git status
 git commit -m "feat: add Qdrant vector database with pre-indexed legal documents"
 
 # Enviar para o GitHub (isso pode demorar — 761MB de upload!)
-git push origin copilot/organize-repository-files-and-docs
+git push
 ```
 
 > ⏳ **O push pode levar de 10 a 30 minutos** dependendo da sua internet.
