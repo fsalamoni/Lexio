@@ -367,7 +367,8 @@ export async function getDailyStats(uid: string, days = 30) {
   }
 
   for (const doc of items) {
-    const day = (doc.created_at ?? '').slice(0, 10)
+    if (!doc.created_at) continue // skip docs without a creation date
+    const day = doc.created_at.slice(0, 10)
     if (day >= cutoff) {
       const entry = dayMap.get(day)
       if (entry) {
@@ -392,6 +393,7 @@ export async function getByTypeStats(uid: string) {
 
   for (const doc of items) {
     const t = doc.document_type_id
+    if (!t) continue // skip docs without a valid type
     if (!typeMap.has(t)) typeMap.set(t, { total: 0, scores: [] })
     const entry = typeMap.get(t)!
     entry.total++
