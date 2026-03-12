@@ -1,4 +1,4 @@
-"""Tests for all 5 legal area implementations."""
+"""Tests for all 17 legal area implementations."""
 
 import importlib
 import pytest
@@ -8,6 +8,18 @@ from packages.modules.legal_areas.civil.area import CivilArea
 from packages.modules.legal_areas.constitutional.area import ConstitutionalArea
 from packages.modules.legal_areas.labor.area import LaborArea
 from packages.modules.legal_areas.tax.area import TaxArea
+from packages.modules.legal_areas.criminal.area import CriminalArea
+from packages.modules.legal_areas.criminal_procedure.area import CriminalProcedureArea
+from packages.modules.legal_areas.civil_procedure.area import CivilProcedureArea
+from packages.modules.legal_areas.consumer.area import ConsumerArea
+from packages.modules.legal_areas.environmental.area import EnvironmentalArea
+from packages.modules.legal_areas.business.area import BusinessArea
+from packages.modules.legal_areas.family.area import FamilyArea
+from packages.modules.legal_areas.inheritance.area import InheritanceArea
+from packages.modules.legal_areas.social_security.area import SocialSecurityArea
+from packages.modules.legal_areas.electoral.area import ElectoralArea
+from packages.modules.legal_areas.international.area import InternationalArea
+from packages.modules.legal_areas.digital.area import DigitalArea
 
 ALL_AREAS = [
     ("administrative", AdministrativeArea),
@@ -15,15 +27,21 @@ ALL_AREAS = [
     ("constitutional", ConstitutionalArea),
     ("labor", LaborArea),
     ("tax", TaxArea),
+    ("criminal", CriminalArea),
+    ("criminal_procedure", CriminalProcedureArea),
+    ("civil_procedure", CivilProcedureArea),
+    ("consumer", ConsumerArea),
+    ("environmental", EnvironmentalArea),
+    ("business", BusinessArea),
+    ("family", FamilyArea),
+    ("inheritance", InheritanceArea),
+    ("social_security", SocialSecurityArea),
+    ("electoral", ElectoralArea),
+    ("international", InternationalArea),
+    ("digital", DigitalArea),
 ]
 
-EXPECTED_IDS = {
-    AdministrativeArea: "administrative",
-    CivilArea: "civil",
-    ConstitutionalArea: "constitutional",
-    LaborArea: "labor",
-    TaxArea: "tax",
-}
+EXPECTED_IDS = {cls: name for name, cls in ALL_AREAS}
 
 
 @pytest.mark.parametrize("name,AreaClass", ALL_AREAS)

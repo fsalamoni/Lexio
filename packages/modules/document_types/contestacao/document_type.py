@@ -102,6 +102,7 @@ class ContestacaoDocumentType(BaseDocumentType):
             ],
             quality_module="packages.modules.document_types.contestacao.quality_rules",
             integrator_module="packages.modules.document_types.contestacao.integrator_rules",
+            search_collections=["acervo_juridico", "memoria_pessoal"],
             search_datajud=True,
             search_web=True,
             min_score=60,

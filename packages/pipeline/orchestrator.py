@@ -238,6 +238,16 @@ class PipelineOrchestrator:
                     )
                 )
 
+                # Auto-index completed document into memoria_pessoal (fire-and-forget)
+                asyncio.create_task(
+                    self._auto_index_to_memoria(
+                        document_id=doc_id,
+                        organization_id=str(doc.organization_id),
+                        text=texto_final,
+                        document_type_id=self.config.document_type_id,
+                    )
+                )
+
             except Exception as e:
                 logger.error(f"Pipeline failed for doc={doc_id}: {e}")
                 doc = await self._load_document(db)
@@ -357,7 +367,7 @@ class PipelineOrchestrator:
         # Search sources
         fragments = ""
         if vector:
-            collections = self.config.search_collections or ["lexio_acervo"]
+            collections = self.config.search_collections or settings.qdrant_collections.split(",")
             for coll in collections:
                 result = await search_qdrant(vector, collection=coll)
                 if result:
@@ -510,6 +520,37 @@ class PipelineOrchestrator:
                 )
         except Exception as e:
             logger.warning(f"Thesis auto-populate failed for doc={document_id}: {e}")
+
+    async def _auto_index_to_memoria(
+        self,
+        document_id: str,
+        organization_id: str,
+        text: str,
+        document_type_id: str,
+    ):
+        """Auto-index completed document text into memoria_pessoal Qdrant collection.
+
+        This builds the user's personal knowledge base: every document produced
+        becomes searchable reference material for future work.
+        """
+        try:
+            from packages.core.search.indexer import index_document
+
+            chunks = await index_document(
+                content=text.encode("utf-8"),
+                content_type="text/plain",
+                filename=f"{document_type_id}_{document_id[:8]}.txt",
+                organization_id=organization_id,
+                document_id=document_id,
+                collection="memoria_pessoal",
+            )
+            if chunks:
+                logger.info(
+                    f"Auto-indexed {chunks} chunks into memoria_pessoal "
+                    f"from doc={document_id}"
+                )
+        except Exception as e:
+            logger.warning(f"Auto-index to memoria_pessoal failed for doc={document_id}: {e}")
 
     async def _create_completion_notification(
         self,
