@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
+import { generateDocument } from '../lib/generation-service'
 import { DOCTYPE_LABELS, AREA_LABELS } from '../lib/constants'
 
 interface QualityIssue {
@@ -192,8 +193,20 @@ export default function DocumentDetail() {
     if (!id) return
     setRetrying(true)
     try {
-      await api.post(`/documents/${id}/retry`)
-      toast.success('Reprocessamento iniciado')
+      if (IS_FIREBASE && userId && doc) {
+        // Re-trigger generation in Firebase mode
+        generateDocument(
+          userId,
+          id,
+          doc.document_type_id,
+          doc.original_request,
+          doc.legal_area_ids ?? [],
+        ).catch(err => console.error('Retry generation failed:', err))
+        toast.success('Reprocessamento iniciado')
+      } else {
+        await api.post(`/documents/${id}/retry`)
+        toast.success('Reprocessamento iniciado')
+      }
       fetchDoc()
       // Resume polling
       if (!intervalRef.current) {
@@ -210,17 +223,33 @@ export default function DocumentDetail() {
     if (!id) return
     setWorkflowLoading(true)
     try {
-      if (action === 'reject') {
-        await api.post(`/documents/${id}/reject`, { reason: rejectReason })
-        setShowRejectForm(false)
-        setRejectReason('')
-        toast.success('Documento rejeitado')
-      } else if (action === 'approve') {
-        await api.post(`/documents/${id}/approve`)
-        toast.success('Documento aprovado')
+      if (IS_FIREBASE && userId) {
+        // Firebase mode: update status directly in Firestore
+        const statusMap: Record<string, string> = {
+          'submit-review': 'em_revisao',
+          'approve': 'aprovado',
+          'reject': 'rejeitado',
+        }
+        const updates: Record<string, unknown> = { status: statusMap[action] }
+        if (action === 'reject' && rejectReason) {
+          updates.metadata_ = { rejection_reason: rejectReason, rejected_at: new Date().toISOString() }
+        }
+        await updateDocument(userId, id, updates as any)
+        if (action === 'reject') { setShowRejectForm(false); setRejectReason('') }
+        toast.success(action === 'approve' ? 'Documento aprovado' : action === 'reject' ? 'Documento rejeitado' : 'Documento enviado para revisão')
       } else {
-        await api.post(`/documents/${id}/submit-review`)
-        toast.success('Documento enviado para revisão')
+        if (action === 'reject') {
+          await api.post(`/documents/${id}/reject`, { reason: rejectReason })
+          setShowRejectForm(false)
+          setRejectReason('')
+          toast.success('Documento rejeitado')
+        } else if (action === 'approve') {
+          await api.post(`/documents/${id}/approve`)
+          toast.success('Documento aprovado')
+        } else {
+          await api.post(`/documents/${id}/submit-review`)
+          toast.success('Documento enviado para revisão')
+        }
       }
       fetchDoc()
     } catch (err: any) {

@@ -10,6 +10,7 @@ import {
   getDocumentTypes, getLegalAreas, getRequestFields,
   createDocument,
 } from '../lib/firestore-service'
+import { generateDocument } from '../lib/generation-service'
 
 interface DocType {
   id: string
@@ -103,7 +104,7 @@ export default function NewDocument() {
     setLoading(true)
     try {
       if (IS_FIREBASE && userId) {
-        const doc = await createDocument(userId, {
+        const newDoc = await createDocument(userId, {
           document_type_id: selectedType,
           original_request: request,
           template_variant: selectedTemplate || null,
@@ -111,7 +112,18 @@ export default function NewDocument() {
           request_context: Object.keys(contextData).length > 0 ? contextData : null,
         })
         invalidateApiCache('/stats')
-        navigate(`/documents/${doc.id}`)
+        navigate(`/documents/${newDoc.id}`)
+        // Trigger LLM generation in the background (don't await — user sees progress on detail page)
+        generateDocument(
+          userId,
+          newDoc.id!,
+          selectedType,
+          request,
+          selectedAreas,
+          Object.keys(contextData).length > 0 ? contextData : null,
+        ).catch(err => {
+          console.error('Generation failed:', err)
+        })
       } else {
         const res = await api.post('/documents', {
           document_type_id: selectedType,
