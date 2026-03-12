@@ -45,3 +45,7 @@ output/
 
 # Alembic
 alembic/versions/*.pyc
+
+# Qdrant lock files (data tracked via Git LFS)
+data/qdrant_storage/.lock
+data/qdrant_storage/.wal/
