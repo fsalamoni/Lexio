@@ -11,9 +11,13 @@ import {
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 import StatusBadge from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
 import { SkeletonCard } from '../components/Skeleton'
+import { IS_FIREBASE } from '../lib/firebase'
+import { getStats as firestoreGetStats, getRecentDocuments, getDailyStats, getByTypeStats } from '../lib/firestore-service'
+import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../lib/constants'
 
 interface Stats {
   total_documents: number
@@ -52,15 +56,6 @@ interface TypeStat {
   document_type_id: string
   total: number
   avg_score: number | null
-}
-
-const DOCTYPE_LABELS: Record<string, string> = {
-  parecer: 'Parecer',
-  peticao_inicial: 'Petição Inicial',
-  contestacao: 'Contestação',
-  recurso: 'Recurso',
-  sentenca: 'Sentença',
-  acao_civil_publica: 'ACP',
 }
 
 function fmtCost(usd: number | null | undefined) {
@@ -105,26 +100,51 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [periodDays, setPeriodDays] = useState(30)
   const [chartLoading, setChartLoading] = useState(false)
+  const { userId } = useAuth()
   const toast = useToast()
 
   useEffect(() => {
-    const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
-    const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
-    const p2 = api.get('/stats/daily', { params: { days: periodDays } }).then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
-    const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => toast.error('Erro ao carregar estatísticas de agentes'))
-    const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => toast.error('Erro ao carregar documentos recentes'))
-    const p5 = api.get('/stats/by-type').then(r => setByType(toArr(r.data))).catch(() => {/* non-critical */})
-    Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
+    if (IS_FIREBASE && userId) {
+      const p1 = firestoreGetStats(userId).then(s => setStats(s)).catch(() => toast.error('Erro ao carregar estatísticas'))
+      const p2 = getRecentDocuments(userId, 5).then(docs => {
+        setRecent(docs.filter(d => d.id).map(d => ({
+          id: d.id as string,
+          document_type_id: d.document_type_id,
+          tema: d.tema ?? null,
+          status: d.status,
+          quality_score: d.quality_score ?? null,
+          created_at: d.created_at,
+        })))
+      }).catch(() => toast.error('Erro ao carregar documentos recentes'))
+      const p3 = getDailyStats(userId, periodDays).then(d => setDaily(d)).catch(() => {/* non-critical */})
+      const p4 = getByTypeStats(userId).then(bt => setByType(bt)).catch(() => {/* non-critical */})
+      Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
+    } else {
+      const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
+      const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
+      const p2 = api.get('/stats/daily', { params: { days: periodDays } }).then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
+      const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => toast.error('Erro ao carregar estatísticas de agentes'))
+      const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => toast.error('Erro ao carregar documentos recentes'))
+      const p5 = api.get('/stats/by-type').then(r => setByType(toArr(r.data))).catch(() => {/* non-critical */})
+      Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
+    }
   }, []) // eslint-disable-line
 
   // Reload chart data when period changes (after initial load)
   useEffect(() => {
     if (loading) return
     setChartLoading(true)
-    api.get('/stats/daily', { params: { days: periodDays }, noCache: true } as any)
-      .then(r => setDaily(Array.isArray(r.data) ? r.data : []))
-      .catch(() => toast.error('Erro ao carregar histórico'))
-      .finally(() => setChartLoading(false))
+    if (IS_FIREBASE && userId) {
+      getDailyStats(userId, periodDays)
+        .then(d => setDaily(d))
+        .catch(() => toast.error('Erro ao carregar histórico'))
+        .finally(() => setChartLoading(false))
+    } else {
+      api.get('/stats/daily', { params: { days: periodDays }, noCache: true } as any)
+        .then(r => setDaily(Array.isArray(r.data) ? r.data : []))
+        .catch(() => toast.error('Erro ao carregar histórico'))
+        .finally(() => setChartLoading(false))
+    }
   }, [periodDays]) // eslint-disable-line
 
   // Build cumulative cost series (guard against missing custo field)

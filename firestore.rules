@@ -44,6 +44,24 @@ service cloud.firestore {
         // Users cannot change their own role
         return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
       }
+
+      // ── /users/{userId}/profile/{doc} ────────────────────────────────────
+      // Anamnesis / professional profile data — user can read/write their own.
+      match /profile/{document} {
+        allow read, write: if isSelf(userId);
+      }
+
+      // ── /users/{userId}/documents/{docId} ────────────────────────────────
+      // User's generated documents — user can CRUD their own.
+      match /documents/{docId} {
+        allow read, write: if isSelf(userId);
+      }
+
+      // ── /users/{userId}/theses/{thesisId} ─────────────────────────────────
+      // User's thesis bank — user can CRUD their own theses.
+      match /theses/{thesisId} {
+        allow read, write: if isSelf(userId);
+      }
     }
 
     // ── /settings/{document} ─────────────────────────────────────────────────

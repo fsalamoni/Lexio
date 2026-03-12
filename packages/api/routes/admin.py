@@ -330,7 +330,7 @@ async def reindex_documents(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Re-index all completed org documents into Qdrant (lexio_documents collection)."""
+    """Re-index all completed org documents into Qdrant (memoria_pessoal collection)."""
     import logging as _logging
     from packages.core.search.indexer import index_document
 
@@ -357,7 +357,7 @@ async def reindex_documents(
                 filename=f"{doc.document_type_id}_{str(doc.id)[:8]}.txt",
                 organization_id=str(admin.organization_id),
                 document_id=str(doc.id),
-                collection="lexio_documents",
+                collection="memoria_pessoal",
             )
             total_chunks += chunks
             indexed += 1
