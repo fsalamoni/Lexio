@@ -135,11 +135,23 @@ export default function DocumentDetail() {
 
   useEffect(() => {
     fetchDoc()
+    // Only poll while the document is being processed
     intervalRef.current = setInterval(fetchDoc, 5000)
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
     }
   }, [fetchDoc])
+
+  // Stop polling once document is no longer processing
+  useEffect(() => {
+    if (doc && doc.status !== 'processando' && intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }, [doc?.status])
 
   // Load executions when document is complete
   useEffect(() => {

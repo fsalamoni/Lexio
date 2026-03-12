@@ -13,13 +13,13 @@
 import type { AxiosInstance, AxiosError } from 'axios'
 
 const DEMO_STATS = {
-  total_documents: 0,
-  completed_documents: 0,
-  processing_documents: 0,
-  pending_review_documents: 0,
-  average_quality_score: null,
-  total_cost_usd: 0,
-  average_duration_ms: null,
+  total_documents: 12,
+  completed_documents: 8,
+  processing_documents: 1,
+  pending_review_documents: 3,
+  average_quality_score: 78,
+  total_cost_usd: 0.04523,
+  average_duration_ms: 45000,
 }
 
 const DEMO_DOCUMENT_TYPES = [
@@ -67,10 +67,34 @@ const OBJECT_ENDPOINTS: Record<string, unknown> = {
 const ARRAY_ENDPOINTS: Record<string, unknown[]> = {
   '/document-types': DEMO_DOCUMENT_TYPES,
   '/legal-areas': DEMO_LEGAL_AREAS,
-  '/stats/daily': [],
-  '/stats/agents': [],
-  '/stats/recent': [],
-  '/stats/by-type': [],
+  '/stats/daily': [
+    { dia: new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10), total: 2, concluidos: 1, custo: 0.0052 },
+    { dia: new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10), total: 3, concluidos: 2, custo: 0.0078 },
+    { dia: new Date(Date.now() - 4 * 86400000).toISOString().slice(0, 10), total: 1, concluidos: 1, custo: 0.0041 },
+    { dia: new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10), total: 2, concluidos: 2, custo: 0.0063 },
+    { dia: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10), total: 3, concluidos: 1, custo: 0.0095 },
+    { dia: new Date(Date.now() - 1 * 86400000).toISOString().slice(0, 10), total: 1, concluidos: 1, custo: 0.0034 },
+    { dia: new Date().toISOString().slice(0, 10), total: 0, concluidos: 0, custo: 0 },
+  ],
+  '/stats/agents': [
+    { agent_name: 'triagem', chamadas: 12, tempo_medio_ms: 2100, custo_total: 0.0021 },
+    { agent_name: 'pesquisador', chamadas: 12, tempo_medio_ms: 5400, custo_total: 0.0089 },
+    { agent_name: 'jurista', chamadas: 12, tempo_medio_ms: 6200, custo_total: 0.0102 },
+    { agent_name: 'advogado_diabo', chamadas: 10, tempo_medio_ms: 4800, custo_total: 0.0078 },
+    { agent_name: 'redator', chamadas: 12, tempo_medio_ms: 8100, custo_total: 0.0131 },
+  ],
+  '/stats/recent': [
+    { id: 'demo-1', document_type_id: 'parecer', tema: 'Análise de licitação pública', status: 'concluido', quality_score: 85, created_at: new Date(Date.now() - 2 * 86400000).toISOString() },
+    { id: 'demo-2', document_type_id: 'peticao_inicial', tema: 'Ação de indenização por danos morais', status: 'concluido', quality_score: 78, created_at: new Date(Date.now() - 3 * 86400000).toISOString() },
+    { id: 'demo-3', document_type_id: 'contestacao', tema: 'Defesa em ação trabalhista', status: 'revisao', quality_score: 72, created_at: new Date(Date.now() - 4 * 86400000).toISOString() },
+  ],
+  '/stats/by-type': [
+    { document_type_id: 'parecer', total: 4, avg_score: 82 },
+    { document_type_id: 'peticao_inicial', total: 3, avg_score: 76 },
+    { document_type_id: 'contestacao', total: 2, avg_score: 74 },
+    { document_type_id: 'recurso', total: 2, avg_score: 79 },
+    { document_type_id: 'sentenca', total: 1, avg_score: 88 },
+  ],
 }
 
 function resolve(url: string, method?: string): unknown {
@@ -79,9 +103,25 @@ function resolve(url: string, method?: string): unknown {
   // Exact-match array endpoints
   if (url in ARRAY_ENDPOINTS) return ARRAY_ENDPOINTS[url]
 
+  // Notifications endpoint — return empty list with unread count
+  if (url.startsWith('/notifications')) {
+    if (method === 'get') return { items: [], unread_count: 0 }
+    return { success: true }
+  }
+
   // Document list endpoint returns paginated structure
   if (url.startsWith('/documents') && method === 'get' && !url.includes('/documents/')) {
     return { items: [], total: 0 }
+  }
+
+  // Single document detail
+  if (/^\/documents\/[^/]+$/.test(url) && method === 'get') {
+    return null
+  }
+
+  // Document executions
+  if (url.includes('/executions') && method === 'get') {
+    return []
   }
 
   // POST to create document — return a mock ID

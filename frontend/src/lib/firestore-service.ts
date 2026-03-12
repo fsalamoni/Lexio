@@ -321,7 +321,7 @@ export async function listDocuments(uid: string, opts?: {
 export async function updateDocument(uid: string, docId: string, data: Partial<DocumentData>): Promise<void> {
   const db = ensureFirestore()
   const ref = doc(db, 'users', uid, 'documents', docId)
-  await updateDoc(ref, { ...data, updated_at: new Date().toISOString() })
+  await updateDoc(ref, { ...data, updated_at: serverTimestamp() })
 }
 
 export async function deleteDocument(uid: string, docId: string): Promise<void> {
@@ -547,7 +547,7 @@ export async function createThesis(uid: string, data: Partial<ThesisData>): Prom
 export async function updateThesis(uid: string, thesisId: string, data: Partial<ThesisData>): Promise<ThesisData> {
   const db = ensureFirestore()
   const ref = doc(db, 'users', uid, 'theses', thesisId)
-  const updates = { ...data, updated_at: new Date().toISOString() }
+  const updates = { ...data, updated_at: serverTimestamp() }
   delete updates.id
   await updateDoc(ref, updates)
   const snap = await getDoc(ref)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, X } from 'lucide-react'
+import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, X, Trash2 } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -7,7 +7,7 @@ import { SkeletonItem } from '../components/Skeleton'
 import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
-  listTheses, createThesis, updateThesis, getThesisStats,
+  listTheses, createThesis, updateThesis, deleteThesis, getThesisStats,
   type ThesisData,
 } from '../lib/firestore-service'
 
@@ -415,6 +415,23 @@ export default function ThesisBank() {
     setModalOpen(false)
   }
 
+  const handleThesisDelete = async (thesisId: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta tese?')) return
+    try {
+      if (IS_FIREBASE && userId) {
+        await deleteThesis(userId, thesisId)
+      } else {
+        await api.delete(`/theses/${thesisId}`)
+      }
+      setTheses(prev => prev.filter(t => t.id !== thesisId))
+      setTotal(t => t - 1)
+      if (expandedId === thesisId) setExpandedId(null)
+      toast.success('Tese excluída com sucesso')
+    } catch {
+      toast.error('Erro ao excluir tese')
+    }
+  }
+
   return (
     <div>
       {(modalOpen || editingThesis) && (
@@ -547,6 +564,7 @@ export default function ThesisBank() {
               expanded={expandedId === thesis.id}
               onToggle={() => setExpandedId(expandedId === thesis.id ? null : thesis.id)}
               onEdit={() => setEditingThesis(thesis)}
+              onDelete={() => handleThesisDelete(thesis.id)}
               areaColor={areaColor(thesis.legal_area_id)}
             />
           ))}
@@ -570,11 +588,12 @@ export default function ThesisBank() {
   )
 }
 
-function ThesisCard({ thesis, expanded, onToggle, onEdit, areaColor }: {
+function ThesisCard({ thesis, expanded, onToggle, onEdit, onDelete, areaColor }: {
   thesis: ThesisItem
   expanded: boolean
   onToggle: () => void
   onEdit: () => void
+  onDelete: () => void
   areaColor: string
 }) {
   const scoreColor = !thesis.quality_score ? 'text-gray-400'
@@ -634,6 +653,13 @@ function ThesisCard({ thesis, expanded, onToggle, onEdit, areaColor }: {
               >
                 <Pencil className="w-3.5 h-3.5" />
                 Editar
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); onDelete() }}
+                className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-600 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Excluir
               </button>
               <CopyButton text={thesis.content} />
             </div>
