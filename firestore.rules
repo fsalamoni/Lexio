@@ -56,6 +56,12 @@ service cloud.firestore {
       match /documents/{docId} {
         allow read, write: if isSelf(userId);
       }
+
+      // ── /users/{userId}/theses/{thesisId} ─────────────────────────────────
+      // User's thesis bank — user can CRUD their own theses.
+      match /theses/{thesisId} {
+        allow read, write: if isSelf(userId);
+      }
     }
 
     // ── /settings/{document} ─────────────────────────────────────────────────

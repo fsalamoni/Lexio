@@ -58,6 +58,22 @@ export interface DocumentData {
   origem?: string
 }
 
+export interface ThesisData {
+  id?: string
+  title: string
+  content: string
+  summary?: string | null
+  legal_area_id: string
+  document_type_id?: string | null
+  tags?: string[] | null
+  category?: string | null
+  quality_score?: number | null
+  usage_count: number
+  source_type: string
+  created_at: string
+  updated_at?: string
+}
+
 export interface WizardData {
   onboarding_completed: boolean
   profile: ProfileData
@@ -478,6 +494,96 @@ const REQUEST_FIELDS: Record<string, WizardField[]> = {
 
 export function getRequestFields(documentTypeId: string): { fields: WizardField[] } {
   return { fields: REQUEST_FIELDS[documentTypeId] ?? [] }
+}
+
+// ── Theses (Firestore /users/{uid}/theses subcollection) ────────────────────
+
+export async function listTheses(
+  uid: string,
+  opts: { q?: string; legalAreaId?: string; limit?: number; skip?: number } = {},
+): Promise<{ items: ThesisData[]; total: number }> {
+  const db = ensureFirestore()
+  const constraints: QueryConstraint[] = [orderBy('created_at', 'desc')]
+  if (opts.legalAreaId) constraints.push(where('legal_area_id', '==', opts.legalAreaId))
+  if (opts.limit) constraints.push(limit(opts.limit + (opts.skip ?? 0)))
+  const snap = await getDocs(query(collection(db, 'users', uid, 'theses'), ...constraints))
+  let items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
+  // Client-side text search
+  if (opts.q) {
+    const q = opts.q.toLowerCase()
+    items = items.filter(t =>
+      t.title.toLowerCase().includes(q) ||
+      t.content.toLowerCase().includes(q) ||
+      (t.summary?.toLowerCase().includes(q) ?? false)
+    )
+  }
+  const total = items.length
+  if (opts.skip) items = items.slice(opts.skip)
+  if (opts.limit) items = items.slice(0, opts.limit)
+  return { items, total }
+}
+
+export async function createThesis(uid: string, data: Partial<ThesisData>): Promise<ThesisData> {
+  const db = ensureFirestore()
+  const now = new Date().toISOString()
+  const thesis: Omit<ThesisData, 'id'> = {
+    title: data.title || '',
+    content: data.content || '',
+    summary: data.summary ?? null,
+    legal_area_id: data.legal_area_id || 'civil',
+    document_type_id: data.document_type_id ?? null,
+    tags: data.tags ?? null,
+    category: data.category ?? null,
+    quality_score: data.quality_score ?? null,
+    usage_count: 0,
+    source_type: data.source_type || 'manual',
+    created_at: now,
+    updated_at: now,
+  }
+  const ref = await addDoc(collection(db, 'users', uid, 'theses'), thesis)
+  return { id: ref.id, ...thesis }
+}
+
+export async function updateThesis(uid: string, thesisId: string, data: Partial<ThesisData>): Promise<ThesisData> {
+  const db = ensureFirestore()
+  const ref = doc(db, 'users', uid, 'theses', thesisId)
+  const updates = { ...data, updated_at: new Date().toISOString() }
+  delete updates.id
+  await updateDoc(ref, updates)
+  const snap = await getDoc(ref)
+  return { id: snap.id, ...snap.data() } as ThesisData
+}
+
+export async function deleteThesis(uid: string, thesisId: string): Promise<void> {
+  const db = ensureFirestore()
+  await deleteDoc(doc(db, 'users', uid, 'theses', thesisId))
+}
+
+export async function getThesisStats(uid: string): Promise<{
+  total_theses: number
+  by_area: Record<string, number>
+  average_quality_score: number | null
+  most_used: { id: string; title: string; usage_count: number }[]
+}> {
+  const db = ensureFirestore()
+  const snap = await getDocs(query(collection(db, 'users', uid, 'theses'), orderBy('created_at', 'desc')))
+  const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
+
+  const by_area: Record<string, number> = {}
+  let scoreSum = 0
+  let scoreCount = 0
+  for (const t of items) {
+    by_area[t.legal_area_id] = (by_area[t.legal_area_id] ?? 0) + 1
+    if (t.quality_score != null) { scoreSum += t.quality_score; scoreCount++ }
+  }
+
+  const sorted = [...items].sort((a, b) => (b.usage_count ?? 0) - (a.usage_count ?? 0))
+  return {
+    total_theses: items.length,
+    by_area,
+    average_quality_score: scoreCount ? Math.round(scoreSum / scoreCount) : null,
+    most_used: sorted.slice(0, 5).map(t => ({ id: t.id!, title: t.title, usage_count: t.usage_count })),
+  }
 }
 
 // ── Admin settings (Firestore /settings collection) ──────────────────────────
