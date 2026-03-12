@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     # Qdrant
     qdrant_url: str = Field(default="http://qdrant:6333")
     qdrant_api_key: str = Field(default="lexio_qdrant_key_2026")
+    qdrant_collection: str = Field(default="acervo_mprs")
+    qdrant_collections: str = Field(default="acervo_mprs,memoria_pessoal")
 
     # Ollama (embeddings)
     ollama_url: str = Field(default="http://ollama:11434")

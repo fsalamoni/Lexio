@@ -1,46 +1,26 @@
 # Qdrant Vector Database Storage
 
-This directory contains the Qdrant vector database with pre-indexed legal documents for the Lexio platform.
+> **Nota:** A base de dados principal está na pasta `Teses/` na raiz do repositório.
+> O `docker-compose.yml` monta `./Teses:/qdrant/storage`.
+>
+> Este diretório pode ser usado como alternativa local para dados customizados.
+> Para usar esta pasta em vez de `Teses/`, altere o volume no `docker-compose.yml`:
+> ```yaml
+> volumes:
+>   - ./data/qdrant_storage:/qdrant/storage
+> ```
 
-## Structure
+## Coleções da base principal (`Teses/`)
 
-```
-qdrant_storage/
-├── collections/          # Vector collections (jurisprudencia, legislacao, etc.)
-│   └── <collection>/
-│       ├── segments/     # Data segments with vectors and payloads
-│       └── config.json   # Collection configuration
-├── aliases/              # Collection aliases
-└── .lock                 # Lock file
-```
-
-## Usage
-
-### With Docker Compose (recommended)
-
-The `docker-compose.yml` is configured to mount this directory automatically:
-
-```bash
-docker compose up qdrant
-```
-
-### Manual Qdrant
-
-Point your Qdrant instance to this directory:
-
-```bash
-docker run -p 6333:6333 -v ./data/qdrant_storage:/qdrant/storage qdrant/qdrant
-```
+| Coleção | Descrição |
+|---------|-----------|
+| `acervo_mprs` | Acervo jurídico do MPRS — teses, jurisprudência, fundamentação legal |
+| `memoria_pessoal` | Memória pessoal — notas jurídicas e referências individuais |
 
 ## Git LFS
 
-These files are tracked via **Git LFS** (Large File Storage) due to their size.
-After cloning, run:
+Arquivos binários são rastreados via **Git LFS**. Após clonar:
 
 ```bash
 git lfs pull
 ```
-
-## Size
-
-~761 MB of pre-indexed legal vectors.

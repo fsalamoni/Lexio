@@ -99,7 +99,7 @@ services:
     ports:
       - "6333:6333"
     volumes:
-      - ./data/qdrant_storage:/qdrant/storage
+      - ./Teses:/qdrant/storage
     environment:
       QDRANT__SERVICE__API_KEY: lexio_qdrant_key_2026
     networks:

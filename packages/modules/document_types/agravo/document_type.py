@@ -94,6 +94,7 @@ class AgravoDocumentType(BaseDocumentType):
             ],
             quality_module="packages.modules.document_types.agravo.quality_rules",
             integrator_module="packages.modules.document_types.agravo.integrator_rules",
+            search_collections=["acervo_mprs", "memoria_pessoal"],
             search_datajud=True,
             search_web=True,
             min_score=60,

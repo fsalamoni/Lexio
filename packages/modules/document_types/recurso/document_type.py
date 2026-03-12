@@ -105,6 +105,7 @@ class RecursoDocumentType(BaseDocumentType):
             ],
             quality_module="packages.modules.document_types.recurso.quality_rules",
             integrator_module="packages.modules.document_types.recurso.integrator_rules",
+            search_collections=["acervo_mprs", "memoria_pessoal"],
             search_datajud=True,
             search_web=True,
             min_score=60,

@@ -108,6 +108,7 @@ class AcaoCivilPublicaDocumentType(BaseDocumentType):
             ],
             quality_module="packages.modules.document_types.acao_civil_publica.quality_rules",
             integrator_module="packages.modules.document_types.acao_civil_publica.integrator_rules",
+            search_collections=["acervo_mprs", "memoria_pessoal"],
             search_datajud=True,
             search_web=True,
             min_score=65,

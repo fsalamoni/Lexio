@@ -357,7 +357,7 @@ class PipelineOrchestrator:
         # Search sources
         fragments = ""
         if vector:
-            collections = self.config.search_collections or ["lexio_acervo"]
+            collections = self.config.search_collections or settings.qdrant_collections.split(",")
             for coll in collections:
                 result = await search_qdrant(vector, collection=coll)
                 if result:

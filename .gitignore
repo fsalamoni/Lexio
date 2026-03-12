@@ -47,6 +47,6 @@ output/
 alembic/versions/*.pyc
 
 # Qdrant runtime files (data tracked via Git LFS)
-data/qdrant_storage/.lock
-data/qdrant_storage/**/.wal/
-data/qdrant_storage/**/.lock
+Teses/.lock
+Teses/**/.wal/
+Teses/**/.lock
