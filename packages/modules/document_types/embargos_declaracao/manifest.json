@@ -1,0 +1,22 @@
+{
+    "id": "embargos_declaracao",
+    "name": "Embargos de Declaração",
+    "type": "document_type",
+    "version": "1.0.0",
+    "description": "Geração de embargos de declaração com pipeline multi-agente. Correção de omissão, contradição ou obscuridade — art. 1.022 CPC/2015.",
+    "category": "general",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "templates": [
+        "generic"
+    ],
+    "pipeline_agents": [
+        "triagem",
+        "pesquisador",
+        "jurista",
+        "fact_checker",
+        "redator",
+        "revisor"
+    ]
+}

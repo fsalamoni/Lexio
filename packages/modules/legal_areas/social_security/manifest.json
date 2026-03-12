@@ -1,0 +1,26 @@
+{
+    "id": "social_security",
+    "name": "Direito Previdenciário",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Benefícios previdenciários, aposentadoria, auxílio-doença, pensão por morte e LOAS.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "aposentadoria",
+        "auxilio_doenca",
+        "pensao_morte",
+        "beneficio_assistencial"
+    ],
+    "guides": [
+        "aposentadoria.md",
+        "beneficios_incapacidade.md",
+        "beneficio_assistencial.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

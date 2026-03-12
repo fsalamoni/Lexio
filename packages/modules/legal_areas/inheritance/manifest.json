@@ -1,0 +1,26 @@
+{
+    "id": "inheritance",
+    "name": "Direito das Sucessões",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Sucessão legítima, testamentária, inventário, partilha e direito dos herdeiros.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "sucessao_legitima",
+        "sucessao_testamentaria",
+        "inventario_partilha",
+        "direitos_herdeiros"
+    ],
+    "guides": [
+        "sucessao_legitima.md",
+        "testamentos.md",
+        "inventario_partilha.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}
