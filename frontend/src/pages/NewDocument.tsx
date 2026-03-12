@@ -2,8 +2,15 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronUp, FileText } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
+import { IS_FIREBASE } from '../lib/firebase'
+import {
+  getDocumentTypes, getLegalAreas, getRequestFields,
+  createDocument,
+} from '../lib/firestore-service'
+import { generateDocument } from '../lib/generation-service'
 
 interface DocType {
   id: string
@@ -40,30 +47,44 @@ export default function NewDocument() {
   const [showContext, setShowContext] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingTypes, setLoadingTypes] = useState(true)
+  const { userId } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
 
   const MAX_REQUEST = 2000
 
   useEffect(() => {
-    Promise.all([
-      api.get('/document-types').then(res => setDocTypes(Array.isArray(res.data) ? res.data : [])),
-      api.get('/legal-areas').then(res => setLegalAreas(Array.isArray(res.data) ? res.data : [])),
-    ]).catch(() => toast.error('Erro ao carregar tipos de documento e áreas disponíveis')).finally(() => setLoadingTypes(false))
+    if (IS_FIREBASE) {
+      setDocTypes(getDocumentTypes())
+      setLegalAreas(getLegalAreas())
+      setLoadingTypes(false)
+    } else {
+      Promise.all([
+        api.get('/document-types').then(res => setDocTypes(Array.isArray(res.data) ? res.data : [])),
+        api.get('/legal-areas').then(res => setLegalAreas(Array.isArray(res.data) ? res.data : [])),
+      ]).catch(() => toast.error('Erro ao carregar tipos de documento e áreas disponíveis')).finally(() => setLoadingTypes(false))
+    }
   }, [])
 
   // Load context fields when document type changes
   useEffect(() => {
     if (selectedType) {
-      api.get(`/anamnesis/request-fields/${selectedType}`)
-        .then(res => {
-          const fields: ContextField[] = res.data.fields || []
-          setContextFields(fields)
-          setContextData({})
-          // Auto-open if there are required fields
-          setShowContext(fields.some(f => f.required))
-        })
-        .catch(() => setContextFields([]))
+      if (IS_FIREBASE) {
+        const result = getRequestFields(selectedType)
+        const fields: ContextField[] = result.fields || []
+        setContextFields(fields)
+        setContextData({})
+        setShowContext(fields.some(f => f.required))
+      } else {
+        api.get(`/anamnesis/request-fields/${selectedType}`)
+          .then(res => {
+            const fields: ContextField[] = res.data.fields || []
+            setContextFields(fields)
+            setContextData({})
+            setShowContext(fields.some(f => f.required))
+          })
+          .catch(() => setContextFields([]))
+      }
     } else {
       setContextFields([])
       setContextData({})
@@ -82,15 +103,38 @@ export default function NewDocument() {
     if (!selectedType || !request.trim()) return
     setLoading(true)
     try {
-      const res = await api.post('/documents', {
-        document_type_id: selectedType,
-        original_request: request,
-        template_variant: selectedTemplate || null,
-        legal_area_ids: selectedAreas.length > 0 ? selectedAreas : null,
-        request_context: Object.keys(contextData).length > 0 ? contextData : null,
-      })
-      invalidateApiCache('/stats')
-      navigate(`/documents/${res.data.id}`)
+      if (IS_FIREBASE && userId) {
+        const newDoc = await createDocument(userId, {
+          document_type_id: selectedType,
+          original_request: request,
+          template_variant: selectedTemplate || null,
+          legal_area_ids: selectedAreas.length > 0 ? selectedAreas : null,
+          request_context: Object.keys(contextData).length > 0 ? contextData : null,
+        })
+        invalidateApiCache('/stats')
+        navigate(`/documents/${newDoc.id}`)
+        // Trigger LLM generation in the background (don't await — user sees progress on detail page)
+        generateDocument(
+          userId,
+          newDoc.id!,
+          selectedType,
+          request,
+          selectedAreas,
+          Object.keys(contextData).length > 0 ? contextData : null,
+        ).catch(err => {
+          console.error('Generation failed:', err)
+        })
+      } else {
+        const res = await api.post('/documents', {
+          document_type_id: selectedType,
+          original_request: request,
+          template_variant: selectedTemplate || null,
+          legal_area_ids: selectedAreas.length > 0 ? selectedAreas : null,
+          request_context: Object.keys(contextData).length > 0 ? contextData : null,
+        })
+        invalidateApiCache('/stats')
+        navigate(`/documents/${res.data.id}`)
+      }
     } catch (err: any) {
       toast.error('Erro ao criar documento', err?.response?.data?.detail || err?.message)
     } finally {
@@ -239,8 +283,11 @@ export default function NewDocument() {
                     {field.type === 'number' && (
                       <input
                         type="number"
-                        value={contextData[field.key] || ''}
-                        onChange={e => updateContextField(field.key, parseInt(e.target.value) || '')}
+                        value={contextData[field.key] ?? ''}
+                        onChange={e => {
+                          const num = parseInt(e.target.value)
+                          updateContextField(field.key, isNaN(num) ? null : num)
+                        }}
                         placeholder={field.placeholder}
                         className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
                       />

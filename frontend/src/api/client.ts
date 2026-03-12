@@ -1,7 +1,5 @@
 import axios from 'axios'
-import { installDemoInterceptor } from '../demo/interceptor'
-
-const IS_DEMO = import.meta.env.VITE_DEMO_MODE === 'true'
+import { installDemoInterceptor } from './demo-interceptor'
 
 // ── In-memory GET cache with TTL + inflight deduplication ────────────────────
 
@@ -63,7 +61,8 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('lexio_token')
-      window.location.href = '/login'
+      const base = (import.meta.env.VITE_BASE_PATH as string | undefined)?.replace(/\/$/, '') || ''
+      window.location.href = `${base}/login`
     }
     if (error.response?.status === 429) {
       window.dispatchEvent(new CustomEvent('lexio:rate-limit'))
@@ -72,9 +71,14 @@ api.interceptors.response.use(
   },
 )
 
-// ── Demo mode — return mock data when the real backend is unavailable ─────────
+// ── Demo mode: return mock data when backend is unavailable ──────────────────
+// Only activate demo interceptor when there is NO Firebase config (pure demo).
+// When IS_FIREBASE=true, pages use Firestore directly — demo mock data must
+// never mask real errors from residual API calls.
 
-if (IS_DEMO) {
+import { IS_FIREBASE } from '../lib/firebase'
+
+if (import.meta.env.VITE_DEMO_MODE === 'true' && !IS_FIREBASE) {
   installDemoInterceptor(api)
 }
 

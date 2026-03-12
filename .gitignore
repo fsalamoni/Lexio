@@ -45,3 +45,8 @@ output/
 
 # Alembic
 alembic/versions/*.pyc
+
+# Qdrant runtime files (data tracked via Git LFS)
+Teses/.lock
+Teses/**/.wal/
+Teses/**/.lock

@@ -1,0 +1,26 @@
+{
+    "id": "criminal",
+    "name": "Direito Penal",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Crimes, penas, tipicidade, ilicitude, culpabilidade e política criminal.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "crimes_contra_pessoa",
+        "crimes_contra_patrimonio",
+        "crimes_contra_administracao",
+        "legislacao_penal_especial"
+    ],
+    "guides": [
+        "tipicidade_ilicitude.md",
+        "culpabilidade.md",
+        "dosimetria_pena.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

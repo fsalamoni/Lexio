@@ -20,13 +20,14 @@ from packages.core.websocket import progress_manager
 from packages.api.middleware.rate_limit import limiter
 from packages.api.middleware.metrics import record_request, render_prometheus
 
-from packages.api.routes import auth, documents, document_types, legal_areas, uploads, stats, health, webhooks, admin, anamnesis, thesis_bank
+from packages.api.routes import auth, documents, document_types, legal_areas, uploads, stats, health, webhooks, admin, anamnesis, thesis_bank, notifications
 
 # Ensure models are imported for table creation
 from packages.core.database.models.user_profile import UserProfile  # noqa: F401
 from packages.core.database.models.thesis import Thesis  # noqa: F401
 from packages.core.database.models.whatsapp_session import WhatsAppSession  # noqa: F401
 from packages.core.database.models.platform_setting import PlatformSetting  # noqa: F401
+from packages.core.database.models.notification import Notification  # noqa: F401
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,6 +120,7 @@ app.include_router(webhooks.router, prefix="/webhook", tags=["Webhooks"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(anamnesis.router, prefix="/api/v1", tags=["Anamnesis"])
 app.include_router(thesis_bank.router, prefix="/api/v1/theses", tags=["Thesis Bank"])
+app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
 
 
 # Prometheus metrics endpoint

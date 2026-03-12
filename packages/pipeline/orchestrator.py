@@ -215,6 +215,17 @@ class PipelineOrchestrator:
                     f"cost=${self.cost_tracker.total_cost:.4f} time={duration_s}s"
                 )
 
+                # Create in-app notification for document author
+                asyncio.create_task(
+                    self._create_completion_notification(
+                        document_id=doc_id,
+                        author_id=str(doc.author_id) if doc.author_id else None,
+                        organization_id=str(doc.organization_id),
+                        quality_score=quality_score,
+                        document_type_id=self.config.document_type_id,
+                    )
+                )
+
                 # Auto-populate thesis bank (fire-and-forget, non-blocking)
                 asyncio.create_task(
                     self._auto_populate_theses(
@@ -224,6 +235,16 @@ class PipelineOrchestrator:
                         text=texto_final,
                         document_type_id=self.config.document_type_id,
                         legal_area_ids=doc.legal_area_ids or [],
+                    )
+                )
+
+                # Auto-index completed document into memoria_pessoal (fire-and-forget)
+                asyncio.create_task(
+                    self._auto_index_to_memoria(
+                        document_id=doc_id,
+                        organization_id=str(doc.organization_id),
+                        text=texto_final,
+                        document_type_id=self.config.document_type_id,
                     )
                 )
 
@@ -346,7 +367,7 @@ class PipelineOrchestrator:
         # Search sources
         fragments = ""
         if vector:
-            collections = self.config.search_collections or ["lexio_acervo"]
+            collections = self.config.search_collections or settings.qdrant_collections.split(",")
             for coll in collections:
                 result = await search_qdrant(vector, collection=coll)
                 if result:
@@ -499,3 +520,71 @@ class PipelineOrchestrator:
                 )
         except Exception as e:
             logger.warning(f"Thesis auto-populate failed for doc={document_id}: {e}")
+
+    async def _auto_index_to_memoria(
+        self,
+        document_id: str,
+        organization_id: str,
+        text: str,
+        document_type_id: str,
+    ):
+        """Auto-index completed document text into memoria_pessoal Qdrant collection.
+
+        This builds the user's personal knowledge base: every document produced
+        becomes searchable reference material for future work.
+        """
+        try:
+            from packages.core.search.indexer import index_document
+
+            chunks = await index_document(
+                content=text.encode("utf-8"),
+                content_type="text/plain",
+                filename=f"{document_type_id}_{document_id[:8]}.txt",
+                organization_id=organization_id,
+                document_id=document_id,
+                collection="memoria_pessoal",
+            )
+            if chunks:
+                logger.info(
+                    f"Auto-indexed {chunks} chunks into memoria_pessoal "
+                    f"from doc={document_id}"
+                )
+        except Exception as e:
+            logger.warning(f"Auto-index to memoria_pessoal failed for doc={document_id}: {e}")
+
+    async def _create_completion_notification(
+        self,
+        document_id: str,
+        author_id: str | None,
+        organization_id: str,
+        quality_score: int,
+        document_type_id: str,
+    ):
+        """Create an in-app notification when a document is successfully generated."""
+        try:
+            from packages.core.database.models.notification import Notification
+
+            doc_type_labels = {
+                "parecer": "Parecer Jurídico",
+                "peticao_inicial": "Petição Inicial",
+                "contestacao": "Contestação",
+                "recurso": "Recurso",
+                "sentenca": "Sentença",
+                "acao_civil_publica": "Ação Civil Pública",
+            }
+            label = doc_type_labels.get(document_type_id, document_type_id)
+            score_text = f" (score {quality_score}/100)" if quality_score else ""
+
+            notif = Notification(
+                organization_id=uuid.UUID(organization_id),
+                user_id=uuid.UUID(author_id) if author_id else None,
+                type="document_completed",
+                title=f"{label} gerado com sucesso!",
+                message=f"Seu documento foi gerado{score_text}. Revise e aprove ou envie para revisão.",
+                document_id=uuid.UUID(document_id),
+            )
+            async with async_session() as db:
+                db.add(notif)
+                await db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to create completion notification: {e}")

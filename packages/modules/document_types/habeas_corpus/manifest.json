@@ -1,0 +1,22 @@
+{
+    "id": "habeas_corpus",
+    "name": "Habeas Corpus",
+    "type": "document_type",
+    "version": "1.0.0",
+    "description": "Geração de habeas corpus com pipeline multi-agente. Proteção da liberdade de locomoção — art. 5º LXVIII CF, arts. 647-667 CPP.",
+    "category": "advocacy",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "templates": [
+        "generic"
+    ],
+    "pipeline_agents": [
+        "triagem",
+        "pesquisador",
+        "jurista",
+        "fact_checker",
+        "redator",
+        "revisor"
+    ]
+}

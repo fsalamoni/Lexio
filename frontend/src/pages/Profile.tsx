@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
 import { User, Save, ChevronDown, ChevronUp, Lock } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
+import { IS_FIREBASE, firebaseAuth } from '../lib/firebase'
+import { getProfile, saveProfile } from '../lib/firestore-service'
 
 interface ProfileData {
   institution?: string
@@ -50,6 +53,18 @@ const SECTIONS = [
         { value: 'civil', label: 'Direito Civil' },
         { value: 'tax', label: 'Direito Tributário' },
         { value: 'labor', label: 'Direito do Trabalho' },
+        { value: 'criminal', label: 'Direito Penal' },
+        { value: 'criminal_procedure', label: 'Processo Penal' },
+        { value: 'civil_procedure', label: 'Processo Civil' },
+        { value: 'consumer', label: 'Direito do Consumidor' },
+        { value: 'environmental', label: 'Direito Ambiental' },
+        { value: 'business', label: 'Direito Empresarial' },
+        { value: 'family', label: 'Direito de Família' },
+        { value: 'inheritance', label: 'Direito das Sucessões' },
+        { value: 'social_security', label: 'Direito Previdenciário' },
+        { value: 'electoral', label: 'Direito Eleitoral' },
+        { value: 'international', label: 'Direito Internacional' },
+        { value: 'digital', label: 'Direito Digital' },
       ]},
       { key: 'specializations', label: 'Especializações', type: 'tags', placeholder: 'Separe por vírgula: licitações, improbidade...' },
     ],
@@ -117,14 +132,22 @@ export default function Profile() {
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['professional']))
   const [pwForm, setPwForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
   const [savingPw, setSavingPw] = useState(false)
+  const { userId } = useAuth()
   const toast = useToast()
 
   useEffect(() => {
-    api.get('/anamnesis/profile')
-      .then(res => setProfile(res.data || {}))
-      .catch(() => toast.error('Erro ao carregar perfil'))
-      .finally(() => setLoading(false))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (IS_FIREBASE && userId) {
+      getProfile(userId)
+        .then(data => setProfile(data || {}))
+        .catch(() => toast.error('Erro ao carregar perfil'))
+        .finally(() => setLoading(false))
+    } else {
+      api.get('/anamnesis/profile')
+        .then(res => setProfile(res.data || {}))
+        .catch(() => toast.error('Erro ao carregar perfil'))
+        .finally(() => setLoading(false))
+    }
+  }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateField = (key: string, value: any) => {
     setProfile(prev => ({ ...prev, [key]: value }))
@@ -151,7 +174,11 @@ export default function Profile() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await api.patch('/anamnesis/profile', profile)
+      if (IS_FIREBASE && userId) {
+        await saveProfile(userId, profile)
+      } else {
+        await api.patch('/anamnesis/profile', profile)
+      }
       invalidateApiCache('/anamnesis/profile')
       toast.success('Perfil atualizado com sucesso')
     } catch (err: any) {
@@ -172,10 +199,20 @@ export default function Profile() {
     }
     setSavingPw(true)
     try {
-      await api.post('/auth/change-password', {
-        current_password: pwForm.current_password,
-        new_password: pwForm.new_password,
-      })
+      if (IS_FIREBASE && firebaseAuth?.currentUser) {
+        const { updatePassword, EmailAuthProvider, reauthenticateWithCredential } = await import('firebase/auth')
+        const credential = EmailAuthProvider.credential(
+          firebaseAuth.currentUser.email!,
+          pwForm.current_password,
+        )
+        await reauthenticateWithCredential(firebaseAuth.currentUser, credential)
+        await updatePassword(firebaseAuth.currentUser, pwForm.new_password)
+      } else {
+        await api.post('/auth/change-password', {
+          current_password: pwForm.current_password,
+          new_password: pwForm.new_password,
+        })
+      }
       toast.success('Senha alterada com sucesso')
       setPwForm({ current_password: '', new_password: '', confirm_password: '' })
     } catch (err: any) {
@@ -203,8 +240,11 @@ export default function Profile() {
       return (
         <input
           type="number"
-          value={(value as number) || ''}
-          onChange={e => updateField(field.key, parseInt(e.target.value) || null)}
+          value={(value as number) ?? ''}
+          onChange={e => {
+            const num = parseInt(e.target.value)
+            updateField(field.key, isNaN(num) ? null : num)
+          }}
           placeholder={field.placeholder}
           className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
         />
