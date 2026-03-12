@@ -151,7 +151,7 @@ export default function DocumentDetail() {
       clearInterval(intervalRef.current)
       intervalRef.current = null
     }
-  }, [doc?.status])
+  }, [doc])
 
   // Load executions when document is complete
   useEffect(() => {

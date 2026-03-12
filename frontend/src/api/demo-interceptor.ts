@@ -64,16 +64,17 @@ const OBJECT_ENDPOINTS: Record<string, unknown> = {
 }
 
 /** URL patterns that return an array with specific content. */
+const MS_PER_DAY = 86_400_000
 const ARRAY_ENDPOINTS: Record<string, unknown[]> = {
   '/document-types': DEMO_DOCUMENT_TYPES,
   '/legal-areas': DEMO_LEGAL_AREAS,
   '/stats/daily': [
-    { dia: new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10), total: 2, concluidos: 1, custo: 0.0052 },
-    { dia: new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10), total: 3, concluidos: 2, custo: 0.0078 },
-    { dia: new Date(Date.now() - 4 * 86400000).toISOString().slice(0, 10), total: 1, concluidos: 1, custo: 0.0041 },
-    { dia: new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10), total: 2, concluidos: 2, custo: 0.0063 },
-    { dia: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10), total: 3, concluidos: 1, custo: 0.0095 },
-    { dia: new Date(Date.now() - 1 * 86400000).toISOString().slice(0, 10), total: 1, concluidos: 1, custo: 0.0034 },
+    { dia: new Date(Date.now() - 6 * MS_PER_DAY).toISOString().slice(0, 10), total: 2, concluidos: 1, custo: 0.0052 },
+    { dia: new Date(Date.now() - 5 * MS_PER_DAY).toISOString().slice(0, 10), total: 3, concluidos: 2, custo: 0.0078 },
+    { dia: new Date(Date.now() - 4 * MS_PER_DAY).toISOString().slice(0, 10), total: 1, concluidos: 1, custo: 0.0041 },
+    { dia: new Date(Date.now() - 3 * MS_PER_DAY).toISOString().slice(0, 10), total: 2, concluidos: 2, custo: 0.0063 },
+    { dia: new Date(Date.now() - 2 * MS_PER_DAY).toISOString().slice(0, 10), total: 3, concluidos: 1, custo: 0.0095 },
+    { dia: new Date(Date.now() - 1 * MS_PER_DAY).toISOString().slice(0, 10), total: 1, concluidos: 1, custo: 0.0034 },
     { dia: new Date().toISOString().slice(0, 10), total: 0, concluidos: 0, custo: 0 },
   ],
   '/stats/agents': [
@@ -84,9 +85,9 @@ const ARRAY_ENDPOINTS: Record<string, unknown[]> = {
     { agent_name: 'redator', chamadas: 12, tempo_medio_ms: 8100, custo_total: 0.0131 },
   ],
   '/stats/recent': [
-    { id: 'demo-1', document_type_id: 'parecer', tema: 'Análise de licitação pública', status: 'concluido', quality_score: 85, created_at: new Date(Date.now() - 2 * 86400000).toISOString() },
-    { id: 'demo-2', document_type_id: 'peticao_inicial', tema: 'Ação de indenização por danos morais', status: 'concluido', quality_score: 78, created_at: new Date(Date.now() - 3 * 86400000).toISOString() },
-    { id: 'demo-3', document_type_id: 'contestacao', tema: 'Defesa em ação trabalhista', status: 'revisao', quality_score: 72, created_at: new Date(Date.now() - 4 * 86400000).toISOString() },
+    { id: 'demo-1', document_type_id: 'parecer', tema: 'Análise de licitação pública', status: 'concluido', quality_score: 85, created_at: new Date(Date.now() - 2 * MS_PER_DAY).toISOString() },
+    { id: 'demo-2', document_type_id: 'peticao_inicial', tema: 'Ação de indenização por danos morais', status: 'concluido', quality_score: 78, created_at: new Date(Date.now() - 3 * MS_PER_DAY).toISOString() },
+    { id: 'demo-3', document_type_id: 'contestacao', tema: 'Defesa em ação trabalhista', status: 'revisao', quality_score: 72, created_at: new Date(Date.now() - 4 * MS_PER_DAY).toISOString() },
   ],
   '/stats/by-type': [
     { document_type_id: 'parecer', total: 4, avg_score: 82 },
