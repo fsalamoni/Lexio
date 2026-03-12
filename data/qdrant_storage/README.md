@@ -14,8 +14,8 @@
 
 | Coleção | Descrição |
 |---------|-----------|
-| `acervo_mprs` | Acervo jurídico do MPRS — teses, jurisprudência, fundamentação legal |
-| `memoria_pessoal` | Memória pessoal — notas jurídicas e referências individuais |
+| `acervo_juridico` | Acervo jurídico geral — teses, jurisprudência, fundamentação legal para todas as áreas do direito |
+| `memoria_pessoal` | Memória pessoal — documentos produzidos pelo usuário, auto-indexados para referência futura |
 
 ## Git LFS
 

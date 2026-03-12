@@ -152,7 +152,7 @@ class TestDocumentTypeInterface:
         cfg = dt.get_pipeline_config()
         assert isinstance(cfg.search_collections, list)
         assert len(cfg.search_collections) >= 1, "search_collections must be set"
-        assert "acervo_mprs" in cfg.search_collections, "Must search acervo_mprs"
+        assert "acervo_juridico" in cfg.search_collections, "Must search acervo_juridico"
 
     def test_search_collections_includes_memoria_pessoal(self, DocType):
         dt = DocType()
