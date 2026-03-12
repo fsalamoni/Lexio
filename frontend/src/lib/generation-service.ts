@@ -34,12 +34,17 @@ type ProgressCallback = (p: GenerationProgress) => void
 // ── API key retrieval ─────────────────────────────────────────────────────────
 
 async function getOpenRouterKey(): Promise<string> {
+  // Try environment variable first (works without Firestore admin setup)
+  const envKey = import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined
+  if (envKey && envKey.startsWith('sk-')) return envKey
+
+  // Fall back to Firestore /settings/platform
   if (!firestore) throw new Error('Firestore não configurado')
   const ref = doc(firestore, 'settings', 'platform')
   const snap = await getDoc(ref)
   if (!snap.exists()) {
     throw new Error(
-      'Configurações não encontradas. Configure a API key do OpenRouter no Painel Administrativo.',
+      'Configurações não encontradas. Configure a API key do OpenRouter no Painel Administrativo ou defina VITE_OPENROUTER_API_KEY.',
     )
   }
   const data = snap.data()

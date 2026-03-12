@@ -72,8 +72,13 @@ api.interceptors.response.use(
 )
 
 // ── Demo mode: return mock data when backend is unavailable ──────────────────
+// Only activate demo interceptor when there is NO Firebase config (pure demo).
+// When IS_FIREBASE=true, pages use Firestore directly — demo mock data must
+// never mask real errors from residual API calls.
 
-if (import.meta.env.VITE_DEMO_MODE === 'true') {
+import { IS_FIREBASE } from '../lib/firebase'
+
+if (import.meta.env.VITE_DEMO_MODE === 'true' && !IS_FIREBASE) {
   installDemoInterceptor(api)
 }
 

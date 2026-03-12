@@ -153,12 +153,13 @@ export default function DocumentDetail() {
     }
   }, [doc])
 
-  // Load executions when document is complete
+  // Load executions when document is complete (API mode only — Firebase stores in document itself)
   useEffect(() => {
     if (!id || !doc || doc.status !== 'concluido') return
+    if (IS_FIREBASE) return // Executions not available in Firebase mode
     api.get(`/documents/${id}/executions`)
       .then(res => setExecutions(Array.isArray(res.data) ? res.data : []))
-      .catch(() => toast.error('Erro ao carregar timeline de execução'))
+      .catch(() => {/* non-critical: executions timeline may not be available */})
   }, [id, doc?.status])
 
   // Load DOCX preview with mammoth

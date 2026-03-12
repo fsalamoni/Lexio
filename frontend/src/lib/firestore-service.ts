@@ -352,6 +352,61 @@ export async function getStats(uid: string) {
   }
 }
 
+/** Compute daily document counts from real Firestore documents for the last N days. */
+export async function getDailyStats(uid: string, days = 30) {
+  const { items } = await listDocuments(uid)
+  const now = Date.now()
+  const msPerDay = 86_400_000
+  const cutoff = new Date(now - days * msPerDay).toISOString().slice(0, 10)
+
+  // Build a day→counts map
+  const dayMap = new Map<string, { total: number; concluidos: number }>()
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now - i * msPerDay).toISOString().slice(0, 10)
+    dayMap.set(d, { total: 0, concluidos: 0 })
+  }
+
+  for (const doc of items) {
+    const day = (doc.created_at ?? '').slice(0, 10)
+    if (day >= cutoff) {
+      const entry = dayMap.get(day)
+      if (entry) {
+        entry.total++
+        if (doc.status === 'concluido' || doc.status === 'aprovado') entry.concluidos++
+      }
+    }
+  }
+
+  return Array.from(dayMap.entries()).map(([dia, v]) => ({
+    dia,
+    total: v.total,
+    concluidos: v.concluidos,
+    custo: 0,
+  }))
+}
+
+/** Compute document counts by type from real Firestore documents. */
+export async function getByTypeStats(uid: string) {
+  const { items } = await listDocuments(uid)
+  const typeMap = new Map<string, { total: number; scores: number[] }>()
+
+  for (const doc of items) {
+    const t = doc.document_type_id
+    if (!typeMap.has(t)) typeMap.set(t, { total: 0, scores: [] })
+    const entry = typeMap.get(t)!
+    entry.total++
+    if (doc.quality_score != null) entry.scores.push(doc.quality_score)
+  }
+
+  return Array.from(typeMap.entries()).map(([document_type_id, v]) => ({
+    document_type_id,
+    total: v.total,
+    avg_score: v.scores.length > 0
+      ? Math.round(v.scores.reduce((a, b) => a + b, 0) / v.scores.length)
+      : null,
+  }))
+}
+
 export async function getRecentDocuments(uid: string, count = 5): Promise<DocumentData[]> {
   const { items } = await listDocuments(uid, { limit: count })
   return items

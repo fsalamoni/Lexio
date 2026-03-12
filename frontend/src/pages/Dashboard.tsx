@@ -16,7 +16,7 @@ import StatusBadge from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
 import { SkeletonCard } from '../components/Skeleton'
 import { IS_FIREBASE } from '../lib/firebase'
-import { getStats as firestoreGetStats, getRecentDocuments } from '../lib/firestore-service'
+import { getStats as firestoreGetStats, getRecentDocuments, getDailyStats, getByTypeStats } from '../lib/firestore-service'
 import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../lib/constants'
 
 interface Stats {
@@ -116,7 +116,9 @@ export default function Dashboard() {
           created_at: d.created_at,
         })))
       }).catch(() => toast.error('Erro ao carregar documentos recentes'))
-      Promise.all([p1, p2]).finally(() => setLoading(false))
+      const p3 = getDailyStats(userId, periodDays).then(d => setDaily(d)).catch(() => {/* non-critical */})
+      const p4 = getByTypeStats(userId).then(bt => setByType(bt)).catch(() => {/* non-critical */})
+      Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
     } else {
       const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
       const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
@@ -132,10 +134,17 @@ export default function Dashboard() {
   useEffect(() => {
     if (loading) return
     setChartLoading(true)
-    api.get('/stats/daily', { params: { days: periodDays }, noCache: true } as any)
-      .then(r => setDaily(Array.isArray(r.data) ? r.data : []))
-      .catch(() => toast.error('Erro ao carregar histórico'))
-      .finally(() => setChartLoading(false))
+    if (IS_FIREBASE && userId) {
+      getDailyStats(userId, periodDays)
+        .then(d => setDaily(d))
+        .catch(() => toast.error('Erro ao carregar histórico'))
+        .finally(() => setChartLoading(false))
+    } else {
+      api.get('/stats/daily', { params: { days: periodDays }, noCache: true } as any)
+        .then(r => setDaily(Array.isArray(r.data) ? r.data : []))
+        .catch(() => toast.error('Erro ao carregar histórico'))
+        .finally(() => setChartLoading(false))
+    }
   }, [periodDays]) // eslint-disable-line
 
   // Build cumulative cost series (guard against missing custo field)

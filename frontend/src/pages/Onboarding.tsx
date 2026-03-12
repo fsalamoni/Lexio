@@ -167,8 +167,11 @@ export default function Onboarding() {
                 {field.type === 'number' && (
                   <input
                     type="number"
-                    value={data[field.key] || ''}
-                    onChange={e => updateField(field.key, parseInt(e.target.value) || null)}
+                    value={data[field.key] ?? ''}
+                    onChange={e => {
+                      const num = parseInt(e.target.value)
+                      updateField(field.key, isNaN(num) ? null : num)
+                    }}
                     placeholder={field.placeholder}
                     className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
                   />
