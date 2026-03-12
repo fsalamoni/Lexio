@@ -1,0 +1,26 @@
+{
+    "id": "business",
+    "name": "Direito Empresarial",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Sociedades, contratos empresariais, falência, recuperação judicial e propriedade intelectual.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "sociedades",
+        "contratos_empresariais",
+        "falencia_recuperacao",
+        "propriedade_intelectual"
+    ],
+    "guides": [
+        "sociedades.md",
+        "falencia_recuperacao.md",
+        "propriedade_intelectual.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

@@ -1,0 +1,26 @@
+{
+    "id": "environmental",
+    "name": "Direito Ambiental",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Proteção ambiental, licenciamento, responsabilidade ambiental e crimes ambientais.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "licenciamento_ambiental",
+        "responsabilidade_ambiental",
+        "crimes_ambientais",
+        "areas_protegidas"
+    ],
+    "guides": [
+        "licenciamento.md",
+        "responsabilidade_ambiental.md",
+        "crimes_ambientais.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

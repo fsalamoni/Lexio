@@ -1,0 +1,26 @@
+{
+    "id": "electoral",
+    "name": "Direito Eleitoral",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Eleições, partidos políticos, propaganda eleitoral, crimes eleitorais e inelegibilidade.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "processo_eleitoral",
+        "propaganda_eleitoral",
+        "crimes_eleitorais",
+        "inelegibilidade"
+    ],
+    "guides": [
+        "processo_eleitoral.md",
+        "propaganda_eleitoral.md",
+        "inelegibilidade.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}
