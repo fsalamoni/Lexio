@@ -30,6 +30,24 @@ export interface GenerationProgress {
   percent: number
 }
 
+/** Subset of user profile relevant to document generation. */
+export interface UserProfileForGeneration {
+  institution?: string
+  position?: string
+  jurisdiction?: string
+  primary_areas?: string[]
+  specializations?: string[]
+  formality_level?: string
+  connective_style?: string
+  citation_style?: string
+  preferred_expressions?: string[]
+  avoided_expressions?: string[]
+  paragraph_length?: string
+  detail_level?: string
+  argument_depth?: string
+  include_opposing_view?: boolean
+}
+
 type ProgressCallback = (p: GenerationProgress) => void
 
 // ── API key retrieval ─────────────────────────────────────────────────────────
@@ -95,6 +113,87 @@ const AREA_NAMES: Record<string, string> = {
   digital: 'Direito Digital',
 }
 
+// ── Profile-aware prompt helpers ──────────────────────────────────────────────
+
+/**
+ * Build a contextual block that injects user profile preferences into prompts,
+ * so agents adapt style, depth and citations to the user's professional role.
+ */
+function buildProfileBlock(profile?: UserProfileForGeneration | null): string {
+  if (!profile) return ''
+  const parts: string[] = []
+
+  if (profile.institution || profile.position) {
+    const role = [profile.position, profile.institution].filter(Boolean).join(' — ')
+    parts.push(`<perfil_profissional>O usuário é ${role}.`)
+    if (profile.jurisdiction) parts.push(`Jurisdição: ${profile.jurisdiction}.`)
+    if (profile.specializations?.length) {
+      parts.push(`Especializações: ${profile.specializations.join(', ')}.`)
+    }
+    parts.push('Adapte a linguagem e as referências legais ao contexto profissional do usuário.</perfil_profissional>')
+  }
+
+  const styleParts: string[] = []
+  if (profile.formality_level === 'formal') {
+    styleParts.push('linguagem jurídica clássica e formal')
+  } else if (profile.formality_level === 'semiformal') {
+    styleParts.push('linguagem clara e objetiva')
+  }
+  if (profile.connective_style === 'classico') {
+    styleParts.push('conectivos clássicos (destarte, outrossim, mormente)')
+  } else if (profile.connective_style === 'moderno') {
+    styleParts.push('conectivos modernos (portanto, além disso, nesse sentido)')
+  }
+  if (profile.paragraph_length === 'curto') {
+    styleParts.push('parágrafos curtos (3-5 linhas)')
+  } else if (profile.paragraph_length === 'longo') {
+    styleParts.push('parágrafos longos e densos (10+ linhas)')
+  }
+  if (profile.citation_style === 'footnote') {
+    styleParts.push('citações em notas de rodapé quando possível')
+  } else if (profile.citation_style === 'abnt') {
+    styleParts.push('citações no formato ABNT')
+  }
+  if (styleParts.length > 0) {
+    parts.push(`<estilo_redacao>Preferências de redação: ${styleParts.join('; ')}.</estilo_redacao>`)
+  }
+
+  if (profile.preferred_expressions?.length) {
+    parts.push(`<expressoes_preferidas>Use quando adequado: ${profile.preferred_expressions.join(', ')}.</expressoes_preferidas>`)
+  }
+  if (profile.avoided_expressions?.length) {
+    parts.push(`<expressoes_evitar>NUNCA use: ${profile.avoided_expressions.join(', ')}.</expressoes_evitar>`)
+  }
+
+  // Depth directives
+  if (profile.argument_depth === 'profundo' || profile.detail_level === 'exaustivo') {
+    parts.push(
+      '<profundidade>',
+      'O usuário solicita análise EXAUSTIVA e PROFUNDA.',
+      'Para CADA argumento: transcreva o artigo de lei citado entre aspas,',
+      'cite súmulas com número e enunciado completo,',
+      'mencione autores doutrinários com nome, obra e posição,',
+      'e aplique ao caso concreto com subsunção detalhada.',
+      'Mínimo de 5 referências legislativas, 3 jurisprudenciais e 2 doutrinárias por tese.',
+      '</profundidade>',
+    )
+  } else if (profile.argument_depth === 'moderado' || profile.detail_level === 'detalhado') {
+    parts.push(
+      '<profundidade>',
+      'Análise DETALHADA com fundamentação sólida.',
+      'Transcreva artigos de lei relevantes, cite jurisprudência consolidada',
+      'e mencione posições doutrinárias quando pertinente.',
+      '</profundidade>',
+    )
+  }
+
+  if (profile.include_opposing_view) {
+    parts.push('<visao_contraria>Inclua análise da visão contrária e contra-argumentação em cada tese.</visao_contraria>')
+  }
+
+  return parts.length > 0 ? '\n' + parts.join('\n') : ''
+}
+
 // ── Prompt builders ───────────────────────────────────────────────────────────
 
 function buildTriageSystem(docType: string): string {
@@ -136,15 +235,19 @@ function buildTriageUser(
 function buildRedatorSystem(
   docType: string,
   tema: string,
+  profile?: UserProfileForGeneration | null,
 ): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  const profileBlock = buildProfileBlock(profile)
   return [
     `Você é REDATOR JURÍDICO SÊNIOR com vasta experiência, especialista em ${typeName}.`,
+    profileBlock,
     '',
     '<regra_absoluta>',
     `CADA parágrafo deve tratar de "${tema}". Conteúdo genérico = REJEITADO.`,
     `O documento deve ser PERSUASIVO — escrito para CONVENCER o julgador.`,
-    'A fundamentação deve ser DENSA e PROFUNDA, com citações precisas.',
+    'A fundamentação deve ser DENSA e PROFUNDA, com citações precisas e detalhadas.',
+    'O nível de qualidade deve ser equivalente ao de peça produzida por escritório de excelência.',
     '</regra_absoluta>',
     '',
     '<anti_alucinacao>',
@@ -153,6 +256,7 @@ function buildRedatorSystem(
     'CPC/1973 REVOGADO — use CPC/2015 (Lei 13.105/15).',
     'CC/1916 REVOGADO — use CC/2002 (Lei 10.406/02).',
     'CLT: considere a reforma trabalhista (Lei 13.467/17).',
+    'Lei de Improbidade (Lei 8.429/92): considere alterações pela Lei 14.230/21.',
     'Use APENAS leis notórias que você sabe que existem.',
     'Para jurisprudência: cite súmulas por número e tribunal (ex: "Súmula 331 do TST"),',
     'teses fixadas (ex: "Tema 1.046 de repercussão geral do STF"),',
@@ -161,24 +265,64 @@ function buildRedatorSystem(
     '</anti_alucinacao>',
     '',
     '<citacoes_obrigatorias>',
-    'O documento DEVE conter:',
-    '- Pelo menos 5 referências a artigos de lei com número, ano e dispositivo',
-    '- Pelo menos 3 menções a jurisprudência (súmulas, teses fixadas, entendimento)',
-    '- Pelo menos 2 referências doutrinárias (autor e obra)',
-    '- Menção a princípios constitucionais pertinentes com artigo da CF/88',
-    'Integre as citações NATURALMENTE no texto, como em peça jurídica real.',
+    'O documento DEVE conter, NO MÍNIMO:',
+    '',
+    'LEGISLAÇÃO (mínimo 8 referências):',
+    '- Artigos da CF/88 com inciso, alínea e TEXTO TRANSCRITO entre aspas',
+    '  Exemplo: "Nos termos do art. 5º, XXXV, da CF/88: \'a lei não excluirá',
+    '  da apreciação do Poder Judiciário lesão ou ameaça a direito\'."',
+    '- Artigos de lei com número, ano, dispositivo e TEXTO TRANSCRITO',
+    '  Exemplo: "Dispõe o art. 186 do CC/2002: \'Aquele que, por ação ou omissão',
+    '  voluntária, negligência ou imprudência, violar direito e causar dano a',
+    '  outrem, ainda que exclusivamente moral, comete ato ilícito.\'',
+    '- Legislação especial pertinente com dispositivos transcritos',
+    '',
+    'JURISPRUDÊNCIA (mínimo 5 referências):',
+    '- Súmulas com número e ENUNCIADO COMPLETO transcrito',
+    '  Exemplo: "Nesse sentido, a Súmula 479 do STJ: \'As instituições financeiras',
+    '  respondem objetivamente pelos danos gerados por fortuito interno relativo',
+    '  a fraudes e delitos praticados por terceiros no âmbito de operações',
+    '  bancárias.\'"',
+    '- Temas de repercussão geral/repetitivos com NÚMERO e TESE FIRMADA',
+    '  Exemplo: "O STF, no Tema 725, fixou a seguinte tese: \'É constitucional...\'"',
+    '- Entendimentos consolidados dos tribunais superiores',
+    '',
+    'DOUTRINA (mínimo 3 referências):',
+    '- Autor com NOME COMPLETO, OBRA e, preferencialmente, EDITORA',
+    '- POSIÇÃO do autor sobre o tema específico',
+    '  Exemplo: "Conforme leciona Hely Lopes Meirelles (Direito Administrativo',
+    '  Brasileiro, Malheiros): \'o ato administrativo...\'."',
+    '',
+    'PRINCÍPIOS (mínimo 2):',
+    '- Princípio com fundamento constitucional (artigo + texto)',
+    '- Aplicação concreta ao caso',
+    '',
+    'Integre TODAS as citações NATURALMENTE no texto, como em peça jurídica real.',
+    'TRANSCREVA os dispositivos legais e enunciados de súmula entre aspas.',
     '</citacoes_obrigatorias>',
     '',
     '<estrutura>',
     `Redija ${typeName} COMPLETO com:`,
     '- Qualificação das partes (use dados fornecidos ou ___ como placeholder)',
-    '- Dos Fatos (narração cronológica, mínimo 4 parágrafos densos)',
-    '- Do Direito (fundamentação legal robusta, mínimo 4 subseções):',
-    '  * Fundamentação constitucional',
-    '  * Fundamentação legal infraconstitucional',
-    '  * Fundamentação jurisprudencial',
-    '  * Fundamentação doutrinária',
-    '- Dos Pedidos (claros, determinados, específicos, com base legal)',
+    '- Dos Fatos (narração cronológica, mínimo 4 parágrafos densos):',
+    '  * Contextualize com referências legais quando pertinente',
+    '  * Destaque os fatos juridicamente relevantes',
+    '- Do Direito (fundamentação legal robusta, mínimo 4 subseções DENSAS):',
+    '  * DA FUNDAMENTAÇÃO CONSTITUCIONAL:',
+    '    - Princípios e direitos fundamentais aplicáveis',
+    '    - TRANSCREVA artigos da CF/88',
+    '  * DA FUNDAMENTAÇÃO LEGAL:',
+    '    - Artigos da legislação infraconstitucional TRANSCRITOS',
+    '    - Interpretação sistemática e teleológica',
+    '    - Subsunção dos fatos à norma',
+    '  * DA FUNDAMENTAÇÃO JURISPRUDENCIAL:',
+    '    - Súmulas com ENUNCIADO COMPLETO transcrito',
+    '    - Temas de repercussão geral/repetitivos com TESE FIRMADA',
+    '    - Entendimentos consolidados dos tribunais',
+    '  * DA FUNDAMENTAÇÃO DOUTRINÁRIA:',
+    '    - Autores de referência com OBRA e POSIÇÃO',
+    '    - Trechos doutrinários relevantes entre aspas',
+    '- Dos Pedidos (claros, determinados, específicos, com base legal para cada pedido)',
     '- Valor da causa (se aplicável)',
     '</estrutura>',
     '',
@@ -187,7 +331,8 @@ function buildRedatorSystem(
     'Nesse sentido | Outrossim | Com efeito | Nessa esteira | Dessa sorte |',
     'Ademais | Importa destacar | Cumpre observar | De outro lado | Por sua vez |',
     'Destarte | Vale dizer | Convém ressaltar | Sob essa ótica | Ante o exposto |',
-    'Nessa toada | É cediço que | Data maxima venia | Salvo melhor juízo',
+    'Nessa toada | É cediço que | Data maxima venia | Salvo melhor juízo |',
+    'De igual modo | Por conseguinte | Sendo assim | In casu',
     '</conectivos>',
     '',
     '<formato>',
@@ -226,6 +371,10 @@ function buildRedatorUser(
   parts.push(
     `Redija ${typeName} COMPLETO sobre o tema indicado na triagem.`,
     'Siga a estrutura exigida. Texto puro, sem markdown.',
+    'OBRIGATÓRIO: TRANSCREVA entre aspas todos os artigos de lei citados.',
+    'OBRIGATÓRIO: TRANSCREVA entre aspas todos os enunciados de súmulas citadas.',
+    'OBRIGATÓRIO: Para cada referência doutrinária, inclua autor, obra e posição.',
+    'A fundamentação deve ser DENSA, PROFUNDA e com citações PRECISAS.',
     'Separe cada parágrafo com linha em branco.',
   )
   return parts.join('\n')
@@ -233,59 +382,125 @@ function buildRedatorUser(
 
 // ── Advanced agent prompt builders ────────────────────────────────────────────
 
-function buildPesquisadorSystem(docType: string, tema: string): string {
+function buildPesquisadorSystem(docType: string, tema: string, profile?: UserProfileForGeneration | null): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  const profileBlock = buildProfileBlock(profile)
   return [
     `Você é PESQUISADOR JURÍDICO SÊNIOR, preparando material aprofundado para ${typeName}.`,
     '',
     `Tema: "${tema}"`,
+    profileBlock,
     '',
-    'Sua função é produzir uma PESQUISA JURÍDICA EXAUSTIVA:',
+    'Sua função é produzir uma PESQUISA JURÍDICA EXAUSTIVA e DETALHADA.',
+    'O material que você produzir será a BASE para toda a fundamentação do documento.',
+    'Portanto, seja EXTREMAMENTE minucioso e completo.',
     '',
-    '1. LEGISLAÇÃO APLICÁVEL (mínimo 5 referências):',
-    '   - Cite artigos específicos da Constituição Federal/1988 com inciso e alínea',
-    '   - Leis federais e estaduais aplicáveis com número e ano (ex: Lei 14.133/2021, art. 5º, II)',
+    '1. LEGISLAÇÃO APLICÁVEL (mínimo 8 referências):',
+    '   - Cite artigos ESPECÍFICOS da Constituição Federal/1988 com inciso, alínea e parágrafo',
+    '   - TRANSCREVA o texto literal dos artigos mais importantes entre aspas',
+    '     Exemplo: Art. 5º, XXXV, CF: "a lei não excluirá da apreciação do Poder Judiciário lesão ou ameaça a direito"',
+    '   - Leis federais e estaduais aplicáveis com número completo, ano e dispositivo',
+    '     Exemplo: Lei 14.133/2021, art. 5º, II — cite o texto do dispositivo',
     '   - Decretos regulamentadores, resoluções, portarias pertinentes',
-    '   - Súmulas vinculantes e súmulas do STF/STJ aplicáveis',
+    '   - Súmulas vinculantes com número e enunciado COMPLETO',
+    '     Exemplo: Súmula Vinculante 13: "A nomeação de cônjuge, companheiro ou parente..."',
+    '   - Súmulas do STF e STJ com número e texto integral',
     '',
-    '2. JURISPRUDÊNCIA CONSOLIDADA (mínimo 3 referências):',
-    '   - Teses fixadas em repercussão geral e recursos repetitivos',
-    '   - Referências genéricas como "conforme jurisprudência pacífica do STF" ou "segundo entendimento consolidado do STJ"',
-    '   - Súmulas vinculantes e súmulas do STJ aplicáveis (citar número)',
+    '2. JURISPRUDÊNCIA CONSOLIDADA (mínimo 5 referências):',
+    '   - Teses fixadas em repercussão geral: cite o TEMA por número e a tese completa',
+    '     Exemplo: "Tema 725/STF: É constitucional a imposição de..."',
+    '   - Teses firmadas em recursos repetitivos do STJ: cite o TEMA e a tese',
+    '   - Súmulas vinculantes e súmulas do STJ/STF aplicáveis (citar número e ENUNCIADO COMPLETO)',
+    '   - Posições consolidadas: "conforme jurisprudência pacífica do STF" ou "segundo entendimento consolidado do STJ"',
+    '   - Para cada referência jurisprudencial, EXPLIQUE como se aplica ao caso',
     '   - NUNCA invente números de processo, recurso ou relator',
     '',
-    '3. DOUTRINA RELEVANTE (mínimo 2 referências):',
-    '   - Cite autores reconhecidos e suas obras (ex: Hely Lopes Meirelles, Direito Administrativo Brasileiro)',
-    '   - Celso Antônio Bandeira de Mello, Maria Sylvia Di Pietro, Luís Roberto Barroso, etc.',
-    '   - Caio Mário, Pontes de Miranda, Nelson Nery Jr., Fredie Didier, Daniel Amorim, etc.',
-    '   - Inclua a posição doutrinária de cada autor sobre o tema',
+    '3. DOUTRINA RELEVANTE (mínimo 3 referências):',
+    '   - Cite autores reconhecidos com NOME COMPLETO, OBRA e EDITORA quando possível',
+    '   - Inclua a POSIÇÃO DOUTRINÁRIA de cada autor sobre o tema',
+    '   - Transcreva trechos relevantes entre aspas quando citar posição específica',
+    '   - Autores de referência por área:',
+    '     * Direito Administrativo: Hely Lopes Meirelles, Celso Antônio Bandeira de Mello, Maria Sylvia Di Pietro',
+    '     * Direito Constitucional: Luís Roberto Barroso, Gilmar Mendes, José Afonso da Silva',
+    '     * Direito Civil: Caio Mário da Silva Pereira, Pontes de Miranda, Flávio Tartuce, Pablo Stolze',
+    '     * Processo Civil: Fredie Didier Jr., Nelson Nery Jr., Daniel Amorim Assumpção Neves, Humberto Theodoro Jr.',
+    '     * Direito Penal: Cezar Roberto Bitencourt, Rogério Greco, Cleber Masson',
+    '     * Direito do Trabalho: Maurício Godinho Delgado, Sérgio Pinto Martins',
+    '     * Direito Tributário: Eduardo Sabbag, Hugo de Brito Machado, Roque Carrazza',
+    '     * Direito do Consumidor: Cláudia Lima Marques, Nelson Nery Jr., Rizzatto Nunes',
     '',
-    '4. PRINCÍPIOS CONSTITUCIONAIS E GERAIS DO DIREITO:',
+    '4. PRINCÍPIOS CONSTITUCIONAIS E GERAIS DO DIREITO (mínimo 3):',
     '   - Princípios diretamente aplicáveis ao caso (legalidade, proporcionalidade, etc.)',
-    '   - Fundamente cada princípio com artigo constitucional',
+    '   - Fundamente CADA princípio com artigo constitucional ESPECÍFICO e TEXTO do dispositivo',
+    '   - Mostre como cada princípio se aplica concretamente ao caso',
+    '   - Inclua princípios infraconstitucionais da legislação especial aplicável',
+    '',
+    '5. ANÁLISE COMPARATIVA (quando pertinente):',
+    '   - Como tribunais diferentes tratam a questão',
+    '   - Evolução jurisprudencial sobre o tema',
+    '   - Divergências doutrinárias relevantes',
     '',
     'REGRA ABSOLUTA: NUNCA invente leis, artigos, números de processo ou autores.',
     'Use APENAS referências notórias que você tem certeza de que existem.',
     'Responda em texto estruturado com seções claras e bem fundamentadas.',
+    'Para cada citação, TRANSCREVA o dispositivo legal ou enunciado de súmula entre aspas.',
   ].join('\n')
 }
 
-function buildJuristaSystem(docType: string, tema: string): string {
+function buildJuristaSystem(docType: string, tema: string, profile?: UserProfileForGeneration | null): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  const profileBlock = buildProfileBlock(profile)
   return [
     `Você é JURISTA SÊNIOR com décadas de experiência, desenvolvendo teses para ${typeName}.`,
     '',
     `Tema: "${tema}"`,
+    profileBlock,
     '',
-    'Desenvolva 3 a 5 teses jurídicas ROBUSTAS e BEM FUNDAMENTADAS:',
+    'Desenvolva 3 a 5 teses jurídicas ROBUSTAS e BEM FUNDAMENTADAS.',
+    'As teses devem ter PROFUNDIDADE DOUTRINÁRIA e JURISPRUDENCIAL equivalente',
+    'a uma peça produzida por escritório de advocacia de excelência.',
     '',
-    'Para CADA tese, inclua obrigatoriamente:',
+    'Para CADA tese, inclua OBRIGATORIAMENTE todos os elementos:',
+    '',
     '1. TÍTULO claro e objetivo da tese',
-    '2. FUNDAMENTO LEGAL específico (lei, artigo, inciso, alínea)',
-    '3. ARGUMENTAÇÃO jurídica aprofundada (mínimo 2 parágrafos)',
-    '4. JURISPRUDÊNCIA de apoio (súmulas, teses fixadas, entendimento consolidado)',
-    '5. DOUTRINA favorável (autor, obra, posição)',
-    '6. PRINCÍPIOS constitucionais que sustentam a tese',
+    '',
+    '2. FUNDAMENTO CONSTITUCIONAL (quando aplicável):',
+    '   - Cite o artigo da CF/88 com inciso, alínea e parágrafo',
+    '   - TRANSCREVA o texto do dispositivo entre aspas',
+    '   - Explique a interpretação constitucional que sustenta a tese',
+    '',
+    '3. FUNDAMENTO LEGAL específico:',
+    '   - Cite lei, artigo, inciso, alínea e parágrafo',
+    '   - TRANSCREVA o texto integral do dispositivo entre aspas',
+    '     Exemplo: "Art. 186, CC/2002: \'Aquele que, por ação ou omissão voluntária,',
+    '     negligência ou imprudência, violar direito e causar dano a outrem, ainda',
+    '     que exclusivamente moral, comete ato ilícito.\'"',
+    '   - Demonstre como o dispositivo se aplica ao caso concreto',
+    '',
+    '4. ARGUMENTAÇÃO jurídica aprofundada (mínimo 3 parágrafos densos):',
+    '   - Interpretação teleológica, sistemática e histórica da norma',
+    '   - Subsunção dos fatos à norma jurídica',
+    '   - Demonstração lógica do enquadramento',
+    '',
+    '5. JURISPRUDÊNCIA de apoio (obrigatório para cada tese):',
+    '   - Súmulas: cite NÚMERO e ENUNCIADO COMPLETO',
+    '     Exemplo: "Súmula 479/STJ: \'As instituições financeiras respondem',
+    '     objetivamente pelos danos gerados por fortuito interno relativo',
+    '     a fraudes e delitos praticados por terceiros.\'"',
+    '   - Temas de repercussão geral: cite NÚMERO DO TEMA e TESE FIRMADA',
+    '   - Entendimento consolidado com menção ao tribunal',
+    '   - NUNCA invente números de REsp, RE, MS, AgInt, HC ou relator',
+    '',
+    '6. DOUTRINA favorável (obrigatório para cada tese):',
+    '   - Cite AUTOR COMPLETO, OBRA e EDITORA',
+    '   - Inclua a POSIÇÃO do autor sobre o tema específico',
+    '   - Transcreva trecho doutrinário relevante entre aspas quando possível',
+    '     Exemplo: "Conforme leciona Fredie Didier Jr. (Curso de Direito',
+    '     Processual Civil, JusPodivm): \'a tutela provisória...\'"',
+    '',
+    '7. PRINCÍPIOS constitucionais que sustentam a tese:',
+    '   - Princípio com fundamento constitucional (artigo da CF/88)',
+    '   - Aplicação concreta do princípio ao caso',
     '',
     'As teses devem ser COMPLEMENTARES, não redundantes.',
     'Ordene da mais forte (principal) para a subsidiária.',
@@ -294,63 +509,125 @@ function buildJuristaSystem(docType: string, tema: string): string {
     '',
     'NUNCA invente leis, jurisprudência, números de processo ou autores.',
     'Use apenas referências notórias e verificáveis.',
+    'Lei 8.666/93 REVOGADA — use 14.133/21.',
+    'CPC/1973 REVOGADO — use CPC/2015 (Lei 13.105/15).',
   ].join('\n')
 }
 
-function buildAdvogadoDiaboSystem(tema: string): string {
+function buildAdvogadoDiaboSystem(tema: string, profile?: UserProfileForGeneration | null): string {
+  const profileBlock = buildProfileBlock(profile)
   return [
     'Você é ADVOGADO DO DIABO — crítico implacável de argumentos jurídicos.',
     '',
     `Tema: "${tema}"`,
+    profileBlock,
     '',
-    'Analise as teses apresentadas e:',
-    '1. Identifique FRAQUEZAS em cada argumento',
-    '2. Aponte possíveis contra-argumentos da parte adversa',
-    '3. Verifique se há leis revogadas ou jurisprudência superada',
-    '4. Sugira MELHORIAS específicas para fortalecer cada tese',
+    'Analise as teses apresentadas com RIGOR ABSOLUTO:',
+    '',
+    '1. Para CADA tese, verifique:',
+    '   - O fundamento legal está correto e atualizado?',
+    '   - Os artigos transcritos são fiéis ao texto legal?',
+    '   - A jurisprudência citada é pertinente e atual?',
+    '   - A doutrina citada é reconhecida na área?',
+    '   - A subsunção dos fatos à norma é logicamente sólida?',
+    '',
+    '2. Identifique FRAQUEZAS em cada argumento:',
+    '   - Lacunas na fundamentação',
+    '   - Pontos vulneráveis à impugnação',
+    '   - Argumentos circulares ou falaciosos',
+    '',
+    '3. Aponte possíveis CONTRA-ARGUMENTOS da parte adversa:',
+    '   - Teses contrárias com fundamento legal',
+    '   - Jurisprudência desfavorável',
+    '   - Entendimentos divergentes',
+    '',
+    '4. Verifique se há leis REVOGADAS ou jurisprudência SUPERADA:',
+    '   - Lei 8.666/93 → deve ser Lei 14.133/21',
+    '   - CPC/1973 → deve ser CPC/2015',
+    '   - Súmulas canceladas ou teses revisadas',
+    '',
+    '5. Sugira MELHORIAS ESPECÍFICAS para fortalecer cada tese:',
+    '   - Artigos adicionais que devem ser citados (com texto do dispositivo)',
+    '   - Súmulas e temas de repercussão geral que reforçam o argumento',
+    '   - Doutrina adicional que pode ser mencionada',
+    '   - Princípios constitucionais não explorados',
     '',
     'Seja rigoroso mas construtivo. O objetivo é fortalecer o documento.',
   ].join('\n')
 }
 
-function buildJuristaV2System(docType: string, tema: string): string {
+function buildJuristaV2System(docType: string, tema: string, profile?: UserProfileForGeneration | null): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  const profileBlock = buildProfileBlock(profile)
   return [
-    `Você é JURISTA SÊNIOR (revisão), refinando teses para ${typeName}.`,
+    `Você é JURISTA SÊNIOR (revisão final), refinando teses para ${typeName}.`,
     '',
     `Tema: "${tema}"`,
+    profileBlock,
     '',
     'Com base nas teses originais E nas críticas do advogado do diabo:',
-    '1. FORTALEÇA cada tese incorporando as sugestões válidas',
+    '',
+    '1. FORTALEÇA cada tese incorporando as sugestões válidas:',
+    '   - Adicione fundamentação legal que estava faltando',
+    '   - TRANSCREVA artigos de lei entre aspas quando citados',
+    '   - Reforce a jurisprudência com súmulas (número + enunciado completo)',
+    '   - Inclua temas de repercussão geral (número + tese firmada)',
+    '   - Adicione referências doutrinárias (autor + obra + posição)',
+    '',
     '2. DESCARTE teses que não resistiram à crítica',
-    '3. ADICIONE novas teses se necessário',
-    '4. Garanta que cada tese tenha fundamento legal sólido',
+    '',
+    '3. ADICIONE novas teses se necessário para cobrir lacunas identificadas',
+    '',
+    '4. Garanta que CADA tese tenha TODOS os elementos:',
+    '   - Fundamento constitucional (artigo CF + texto)',
+    '   - Fundamento legal (artigo + texto transcrito entre aspas)',
+    '   - Jurisprudência (súmula com enunciado OU tema de repercussão com tese)',
+    '   - Doutrina (autor + obra + posição)',
+    '   - Aplicação ao caso concreto (subsunção detalhada)',
+    '',
+    '5. Verifique a COERÊNCIA entre as teses:',
+    '   - As teses não devem se contradizer',
+    '   - Cada tese deve reforçar as demais',
+    '   - A argumentação em cascata deve ser lógica',
     '',
     'NUNCA invente leis ou jurisprudência. Use apenas referências notórias.',
     'Lei 8.666/93 REVOGADA — use 14.133/21.',
-    'CPC/1973 REVOGADO — use CPC/2015.',
+    'CPC/1973 REVOGADO — use CPC/2015 (Lei 13.105/15).',
+    'CC/1916 REVOGADO — use CC/2002 (Lei 10.406/02).',
   ].join('\n')
 }
 
 function buildFactCheckerSystem(): string {
   return [
-    'Você é FACT-CHECKER JURÍDICO com rigor máximo e expertise em legislação brasileira.',
+    'Você é FACT-CHECKER JURÍDICO com rigor máximo e expertise em legislação brasileira vigente.',
     '',
-    'Verifique as teses jurídicas apresentadas com EXTREMO RIGOR:',
+    'Verifique as teses jurídicas apresentadas com EXTREMO RIGOR.',
+    'Uma citação falsa pode causar sanções processuais e responsabilidade disciplinar.',
     '',
     '1. Para CADA lei/artigo citado:',
-    '   - CONFIRME se a lei existe e está VIGENTE',
-    '   - Verifique se o artigo citado trata do assunto referido',
+    '   - CONFIRME se a lei existe e está VIGENTE (não revogada)',
+    '   - Verifique se o artigo citado EXISTE nessa lei e trata do assunto referido',
+    '   - Se um artigo foi TRANSCRITO, verifique se o texto está correto',
     '   - Identifique se houve alterações recentes no dispositivo',
+    '   - Verifique incisos, alíneas e parágrafos específicos',
     '',
     '2. Para CADA referência jurisprudencial:',
     '   - Verifique se a súmula citada existe e seu conteúdo é pertinente',
-    '   - Verifique se o entendimento mencionado é atual',
+    '   - Se o enunciado da súmula foi transcrito, verifique se está correto',
+    '   - Verifique se o entendimento mencionado é atual (não superado)',
     '   - Identifique se houve superação ou revisão de tese',
+    '   - Confirme que temas de repercussão geral existem com o número indicado',
     '',
     '3. Para CADA referência doutrinária:',
     '   - Verifique se o autor é reconhecido na área',
     '   - Verifique se a obra citada existe',
+    '   - Confirme que a posição atribuída ao autor é plausível',
+    '',
+    '4. ENRIQUEÇA a fundamentação quando necessário:',
+    '   - Se faltam transcrições de artigos de lei, ADICIONE o texto do dispositivo',
+    '   - Se faltam enunciados de súmula, ADICIONE o enunciado completo',
+    '   - Se a doutrina é fraca, SUGIRA autores adicionais pertinentes',
+    '   - Se princípios constitucionais não foram vinculados a artigo da CF, ADICIONE',
     '',
     'Leis sabidamente REVOGADAS (verificar sempre):',
     '- Lei 8.666/93 → usar Lei 14.133/21 (Nova Lei de Licitações)',
@@ -359,38 +636,61 @@ function buildFactCheckerSystem(): string {
     '- CLT: verificar reformas de 2017 (Lei 13.467/17)',
     '- Lei 11.101/05: verificar alterações pela Lei 14.112/20',
     '- CDC (Lei 8.078/90): verificar atualizações',
+    '- Lei de Improbidade (Lei 8.429/92): verificar alterações pela Lei 14.230/21',
     '',
-    'Retorne as teses CORRIGIDAS, marcando alterações com [CORRIGIDO].',
-    'ADICIONE citações faltantes onde necessário com [ADICIONADO].',
-    'Se tudo estiver correto, retorne as teses com [VERIFICADO].',
+    'Retorne as teses CORRIGIDAS e ENRIQUECIDAS:',
+    '- [VERIFICADO] para citações corretas mantidas',
+    '- [CORRIGIDO: motivo] para citações alteradas',
+    '- [ADICIONADO] para novas citações incluídas para enriquecer a fundamentação',
+    '- [REMOVIDO: motivo] para citações eliminadas',
   ].join('\n')
 }
 
-function buildModeradorSystem(docType: string, tema: string): string {
+function buildModeradorSystem(docType: string, tema: string, profile?: UserProfileForGeneration | null): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  const profileBlock = buildProfileBlock(profile)
   return [
     `Você é MODERADOR/PLANEJADOR especialista em ${typeName}.`,
     '',
     `Tema: "${tema}"`,
+    profileBlock,
     '',
     `Com base em toda a pesquisa e teses verificadas, elabore um PLANO DETALHADO para ${typeName}:`,
     '',
-    '1. ESTRUTURA do documento (seções e subseções com títulos)',
-    '2. Para cada seção:',
-    '   - Quais argumentos e teses usar',
-    '   - Quais leis e artigos ESPECÍFICOS citar (número, ano, dispositivo)',
-    '   - Quais súmulas e jurisprudência mencionar',
-    '   - Qual doutrina referenciar (autor + obra)',
-    '   - Tom e linguagem adequados',
+    '1. ESTRUTURA do documento (seções e subseções com títulos descritivos)',
+    '',
+    '2. Para CADA seção, especifique:',
+    '   a) Quais argumentos e teses usar',
+    '   b) Quais artigos de lei citar — inclua o TEXTO do dispositivo a ser transcrito',
+    '   c) Quais súmulas mencionar — inclua NÚMERO e ENUNCIADO a ser transcrito',
+    '   d) Quais temas de repercussão geral citar — inclua NÚMERO e TESE FIRMADA',
+    '   e) Qual doutrina referenciar — inclua AUTOR + OBRA + POSIÇÃO a ser citada',
+    '   f) Quais princípios constitucionais invocar — inclua ARTIGO DA CF + TEXTO',
+    '   g) Tom e linguagem adequados à seção',
+    '',
     '3. ORDEM de apresentação (do mais forte ao subsidiário)',
+    '',
     '4. CONEXÕES lógicas entre seções (como cada parte reforça a seguinte)',
-    '5. CITAÇÕES MÍNIMAS por seção:',
+    '',
+    '5. CITAÇÕES MÍNIMAS OBRIGATÓRIAS por seção:',
     '   - Dos Fatos: 1-2 referências legais contextuais',
-    '   - Do Direito: 3-5 artigos de lei + 2-3 jurisprudência + 1-2 doutrina por subseção',
-    '   - Dos Pedidos: referência legal para cada pedido',
+    '   - Do Direito / Fundamentação (cada subseção):',
+    '     * 3-5 artigos de lei (com texto transcrito)',
+    '     * 2-3 referências jurisprudenciais (súmulas com enunciado ou temas com tese)',
+    '     * 1-2 referências doutrinárias (autor + obra + posição)',
+    '     * 1-2 princípios constitucionais (com artigo da CF)',
+    '   - Dos Pedidos: referência legal ESPECÍFICA para cada pedido',
+    '',
+    '6. CHECKLIST de fundamentação:',
+    '   - Toda tese tem artigo de lei transcrito? ✓',
+    '   - Toda tese tem jurisprudência de apoio? ✓',
+    '   - Toda tese tem referência doutrinária? ✓',
+    '   - Há subsunção fato-norma em cada tese? ✓',
+    '   - Os pedidos decorrem logicamente das teses? ✓',
     '',
     'O plano deve ser COMPLETO e DETALHADO — o redator seguirá este roteiro.',
     'Priorize PROFUNDIDADE e PRECISÃO nas referências legais.',
+    'O documento final deve ter qualidade de peça jurídica de excelência.',
   ].join('\n')
 }
 
@@ -417,6 +717,7 @@ export async function generateDocument(
   areas: string[],
   context?: Record<string, unknown> | null,
   onProgress?: ProgressCallback,
+  profile?: UserProfileForGeneration | null,
 ): Promise<void> {
   if (!firestore) throw new Error('Firestore não configurado')
 
@@ -467,36 +768,36 @@ export async function generateDocument(
     onProgress?.({ phase: 'pesquisador', message: 'Pesquisando legislação e jurisprudência...', percent: 15 })
     const pesquisaResult = await callLLM(
       apiKey,
-      buildPesquisadorSystem(docType, tema),
-      `<triagem>${triageResult.content}</triagem>\n<solicitacao>${request}</solicitacao>\nRealize pesquisa jurídica EXAUSTIVA sobre o tema. Inclua legislação, jurisprudência, doutrina e princípios constitucionais.`,
-      modelPesquisador, 4000, 0.3,
+      buildPesquisadorSystem(docType, tema, profile),
+      `<triagem>${triageResult.content}</triagem>\n<solicitacao>${request}</solicitacao>\nRealize pesquisa jurídica EXAUSTIVA sobre o tema. TRANSCREVA artigos de lei entre aspas. Inclua legislação com texto dos dispositivos, jurisprudência com enunciados de súmulas, doutrina com autor e obra, e princípios constitucionais.`,
+      modelPesquisador, 6000, 0.3,
     )
 
     // 4. Jurista — initial thesis development
     onProgress?.({ phase: 'jurista', message: 'Desenvolvendo teses jurídicas...', percent: 28 })
     const juristaResult = await callLLM(
       apiKey,
-      buildJuristaSystem(docType, tema),
-      `<triagem>${triageResult.content}</triagem>\n<pesquisa>${pesquisaResult.content}</pesquisa>\nDesenvolva teses jurídicas ROBUSTAS e BEM FUNDAMENTADAS com citações legais precisas.`,
-      modelJurista, 4000, 0.3,
+      buildJuristaSystem(docType, tema, profile),
+      `<triagem>${triageResult.content}</triagem>\n<pesquisa>${pesquisaResult.content}</pesquisa>\nDesenvolva teses jurídicas ROBUSTAS e BEM FUNDAMENTADAS. Para cada tese: TRANSCREVA os artigos de lei citados entre aspas, cite súmulas com enunciado completo, mencione doutrina com autor e obra, e faça subsunção detalhada dos fatos à norma.`,
+      modelJurista, 6000, 0.3,
     )
 
     // 5. Advogado do Diabo — critique
     onProgress?.({ phase: 'advogado_diabo', message: 'Analisando contra-argumentos...', percent: 40 })
     const criticaResult = await callLLM(
       apiKey,
-      buildAdvogadoDiaboSystem(tema),
-      `<teses>${juristaResult.content}</teses>\nCritique estas teses rigorosamente. Identifique fraquezas e sugira melhorias específicas.`,
-      modelAdvDiabo, 2500, 0.4,
+      buildAdvogadoDiaboSystem(tema, profile),
+      `<teses>${juristaResult.content}</teses>\nCritique estas teses rigorosamente. Verifique se os artigos foram transcritos corretamente, se as súmulas existem, se a doutrina é pertinente. Identifique fraquezas e sugira melhorias específicas com referências legais concretas.`,
+      modelAdvDiabo, 3000, 0.4,
     )
 
     // 6. Jurista v2 — refined theses
     onProgress?.({ phase: 'jurista_v2', message: 'Refinando teses após crítica...', percent: 52 })
     const juristaV2Result = await callLLM(
       apiKey,
-      buildJuristaV2System(docType, tema),
-      `<teses_originais>${juristaResult.content}</teses_originais>\n<criticas>${criticaResult.content}</criticas>\nRefine as teses incorporando as críticas válidas. Fortaleça a fundamentação legal.`,
-      modelJuristaV2, 4000, 0.3,
+      buildJuristaV2System(docType, tema, profile),
+      `<teses_originais>${juristaResult.content}</teses_originais>\n<criticas>${criticaResult.content}</criticas>\nRefine as teses incorporando as críticas válidas. Fortaleça a fundamentação: TRANSCREVA artigos de lei, cite enunciados completos de súmulas, inclua referências doutrinárias com autor e obra.`,
+      modelJuristaV2, 6000, 0.3,
     )
 
     // 7. Fact-checker — verify legal citations
@@ -504,29 +805,29 @@ export async function generateDocument(
     const factCheckResult = await callLLM(
       apiKey,
       buildFactCheckerSystem(),
-      `<teses>${juristaV2Result.content}</teses>\nVerifique TODAS as citações legais. Corrija imprecisões e adicione referências faltantes.`,
-      modelFactChecker, 4000, 0.1,
+      `<teses>${juristaV2Result.content}</teses>\nVerifique TODAS as citações legais. Corrija imprecisões. ADICIONE transcrições de artigos que foram citados sem texto. ADICIONE enunciados de súmulas que foram citadas sem texto completo. Enriqueça a fundamentação.`,
+      modelFactChecker, 6000, 0.1,
     )
 
     // 8. Moderador — document plan
     onProgress?.({ phase: 'moderador', message: 'Planejando estrutura do documento...', percent: 72 })
     const planoResult = await callLLM(
       apiKey,
-      buildModeradorSystem(docType, tema),
-      `<pesquisa>${pesquisaResult.content}</pesquisa>\n<teses_verificadas>${factCheckResult.content}</teses_verificadas>\nElabore plano DETALHADO com citações específicas para cada seção.`,
-      modelModerador, 2000, 0.2,
+      buildModeradorSystem(docType, tema, profile),
+      `<pesquisa>${pesquisaResult.content}</pesquisa>\n<teses_verificadas>${factCheckResult.content}</teses_verificadas>\nElabore plano DETALHADO. Para cada seção, especifique: artigos de lei a TRANSCREVER, súmulas com ENUNCIADO COMPLETO, doutrina com AUTOR e OBRA, princípios com ARTIGO DA CF.`,
+      modelModerador, 3000, 0.2,
     )
 
     // 9. Redator — write the full document
     onProgress?.({ phase: 'redacao', message: 'Redigindo documento completo...', percent: 82 })
     const docResult = await callLLM(
       apiKey,
-      buildRedatorSystem(docType, tema),
+      buildRedatorSystem(docType, tema, profile),
       buildRedatorUser(
         docType, request, triageResult.content, areas, context,
         pesquisaResult.content, factCheckResult.content, planoResult.content,
       ),
-      modelRedator, 10000, 0.3,
+      modelRedator, 12000, 0.3,
     )
 
     // 10. Save the generated text
