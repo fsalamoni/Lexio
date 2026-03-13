@@ -486,14 +486,23 @@ const POSITION_DOCTYPE_MAP: Record<string, string[]> = {
 
 /**
  * Returns document types filtered by the user's professional position.
+ * Uses word-boundary matching to avoid false positives (e.g., "assessor"
+ * inside "Assessor Jurídico" should match, but partial matches inside
+ * other words should not).
  * Falls back to the full list when no profile or position match is found.
  */
 export function getDocumentTypesForProfile(profile: ProfileData | null): typeof DOCUMENT_TYPES {
   if (!profile?.position) return DOCUMENT_TYPES
 
   const posLower = profile.position.toLowerCase()
-  for (const [keyword, allowedIds] of Object.entries(POSITION_DOCTYPE_MAP)) {
-    if (posLower.includes(keyword)) {
+  // Sort keywords longest-first so more specific titles match before generic ones
+  const sortedEntries = Object.entries(POSITION_DOCTYPE_MAP)
+    .sort(([a], [b]) => b.length - a.length)
+
+  for (const [keyword, allowedIds] of sortedEntries) {
+    // Use word-boundary regex to avoid partial substring matches
+    const regex = new RegExp(`\\b${keyword}\\b`, 'i')
+    if (regex.test(posLower)) {
       const filtered = DOCUMENT_TYPES.filter(dt => allowedIds.includes(dt.id))
       return filtered.length > 0 ? filtered : DOCUMENT_TYPES
     }
