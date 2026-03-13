@@ -70,7 +70,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         listDocuments(userId, { status: 'em_revisao' })
           .then(result => setPendingReview(result.items.length))
           .catch(() => {/* non-critical */})
-      } else if (!IS_FIREBASE) {
+      } else {
         api.get('/stats').then(res => {
           setPendingReview(res.data?.pending_review_documents || 0)
         }).catch(() => {/* non-critical */})
