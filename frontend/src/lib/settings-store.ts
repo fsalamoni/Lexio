@@ -45,7 +45,7 @@ const DEFAULT_KEY_DEFS: Omit<ApiKeyEntry, 'is_set' | 'masked_value' | 'source'>[
     description: 'Chave para acesso à base de jurisprudência do CNJ',
     placeholder: 'cDZH...',
     link: 'https://datajud-wiki.cnj.jus.br/',
-    guide: ['Acesse o portal DataJud', 'Solicite acesso à API', 'Cole a chave fornecida'],
+    guide: ['Acesse https://datajud-wiki.cnj.jus.br/api-publica/', 'Copie a chave pública atualizada', 'Cole a chave fornecida aqui'],
     is_auto: false,
   },
 ]
