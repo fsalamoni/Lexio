@@ -152,8 +152,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
   return (
     <>
-      {/* Desktop */}
-      <div className="hidden md:flex flex-col min-h-screen">
+      {/* Desktop — sticky so profile & logout stay visible */}
+      <div className="hidden md:flex flex-col h-screen sticky top-0">
         {sidebar}
       </div>
 
