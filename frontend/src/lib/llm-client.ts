@@ -64,7 +64,21 @@ export async function callLLM(
     throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
   }
 
-  const data = await resp.json()
+  const rawText = await resp.text()
+  if (!rawText || rawText.trim().length === 0) {
+    throw new Error('OpenRouter returned empty response body')
+  }
+
+  let data: any
+  try {
+    data = JSON.parse(rawText)
+  } catch (parseErr) {
+    throw new Error(
+      `OpenRouter returned invalid JSON (${(parseErr as Error).message}). ` +
+      `Response starts with: ${rawText.slice(0, 200)}`,
+    )
+  }
+
   const choice = data.choices?.[0]
   if (!choice?.message?.content) {
     throw new Error('OpenRouter returned empty response')

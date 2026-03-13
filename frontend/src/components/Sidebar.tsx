@@ -7,6 +7,8 @@ import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../api/client'
+import { IS_FIREBASE } from '../lib/firebase'
+import { listDocuments } from '../lib/firestore-service'
 
 const links = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -57,21 +59,27 @@ function NavItem({
 }
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
-  const { logout, role, fullName } = useAuth()
+  const { logout, role, fullName, userId } = useAuth()
   const [pendingReview, setPendingReview] = useState(0)
 
   // Poll pending review count for admins every 60s
   useEffect(() => {
     if (role !== 'admin') return
     const fetchPending = () => {
-      api.get('/stats').then(res => {
-        setPendingReview(res.data?.pending_review_documents || 0)
-      }).catch(() => {/* non-critical */})
+      if (IS_FIREBASE && userId) {
+        listDocuments(userId, { status: 'em_revisao' })
+          .then(result => setPendingReview(result.items.length))
+          .catch(() => {/* non-critical */})
+      } else if (!IS_FIREBASE) {
+        api.get('/stats').then(res => {
+          setPendingReview(res.data?.pending_review_documents || 0)
+        }).catch(() => {/* non-critical */})
+      }
     }
     fetchPending()
     const interval = setInterval(fetchPending, 60_000)
     return () => clearInterval(interval)
-  }, [role])
+  }, [role, userId])
 
   const handleLogout = () => {
     if (window.confirm('Deseja realmente sair da sua conta?')) {
