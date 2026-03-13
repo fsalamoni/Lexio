@@ -710,6 +710,24 @@ export async function getThesisStats(uid: string): Promise<{
   }
 }
 
+/**
+ * Seed the thesis bank with imported theses from the vectorized legal corpus.
+ * Idempotent: skips theses whose title already exists.
+ * Returns the number of theses created.
+ */
+export async function seedThesesIfEmpty(uid: string): Promise<number> {
+  const { items } = await listTheses(uid, { limit: 1 })
+  if (items.length > 0) return 0                 // already has data
+
+  const { SEED_THESES } = await import('../data/seed-theses')
+  let created = 0
+  for (const t of SEED_THESES) {
+    await createThesis(uid, t)
+    created++
+  }
+  return created
+}
+
 // ── Admin settings (Firestore /settings collection) ──────────────────────────
 
 export async function getSettings(): Promise<Record<string, unknown>> {
