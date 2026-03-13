@@ -69,7 +69,7 @@ export async function callLLM(
     throw new Error('OpenRouter returned empty response body')
   }
 
-  let data: any
+  let data: Record<string, unknown>
   try {
     data = JSON.parse(rawText)
   } catch (parseErr) {
@@ -79,12 +79,14 @@ export async function callLLM(
     )
   }
 
-  const choice = data.choices?.[0]
+  const choice = (data as Record<string, unknown[]>).choices?.[0] as
+    | { message?: { content?: string } }
+    | undefined
   if (!choice?.message?.content) {
     throw new Error('OpenRouter returned empty response')
   }
 
-  const usage = data.usage ?? {}
+  const usage = (data.usage ?? {}) as Record<string, number>
   const durationMs = Math.round(performance.now() - t0)
 
   return {
