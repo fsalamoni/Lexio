@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronUp, FileText } from 'lucide-react'
+import { ChevronDown, ChevronUp, FileText, ArrowRight } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -10,7 +10,12 @@ import {
   getDocumentTypes, getLegalAreas, getRequestFields,
   createDocument,
 } from '../lib/firestore-service'
-import { generateDocument } from '../lib/generation-service'
+import { generateDocument, type GenerationProgress } from '../lib/generation-service'
+import PipelineProgressPanel, {
+  PIPELINE_AGENTS,
+  PHASE_COMPLETED,
+  type AgentStep,
+} from '../components/PipelineProgressPanel'
 
 interface DocType {
   id: string
@@ -47,11 +52,76 @@ export default function NewDocument() {
   const [showContext, setShowContext] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingTypes, setLoadingTypes] = useState(true)
+  const [generating, setGenerating] = useState(false)
+  const [generatedDocId, setGeneratedDocId] = useState<string | null>(null)
+  const [pipelineAgents, setPipelineAgents] = useState<AgentStep[]>([])
+  const [pipelinePercent, setPipelinePercent] = useState(0)
+  const [pipelineMessage, setPipelineMessage] = useState('')
+  const [pipelineComplete, setPipelineComplete] = useState(false)
+  const [pipelineError, setPipelineError] = useState(false)
+  const agentTimers = useRef<Record<string, number>>({})
   const { userId } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
 
   const MAX_REQUEST = 2000
+
+  // Initialise pipeline agents state from template
+  const initPipeline = useCallback(() => {
+    setPipelineAgents(
+      PIPELINE_AGENTS.map(a => ({ ...a, status: 'pending' as const })),
+    )
+    setPipelinePercent(0)
+    setPipelineMessage('')
+    setPipelineComplete(false)
+    setPipelineError(false)
+    agentTimers.current = {}
+  }, [])
+
+  // Handle progress updates from the generation service
+  const handleProgress = useCallback((p: GenerationProgress) => {
+    const now = Date.now()
+
+    setPipelineAgents(prev => {
+      const phaseKey = p.phase
+      // Find the index of the current phase in the pipeline
+      const phaseIdx = prev.findIndex(a => a.key === phaseKey)
+      return prev.map((agent, idx) => {
+        if (agent.key === phaseKey && agent.status !== 'completed') {
+          // Mark this agent as active and record start time
+          if (!agentTimers.current[phaseKey]) {
+            agentTimers.current[phaseKey] = now
+          }
+          return { ...agent, status: 'active' as const, startedAt: agentTimers.current[phaseKey] }
+        }
+        // Mark all agents before the current phase as completed
+        if (idx < phaseIdx && agent.status === 'active') {
+          return {
+            ...agent,
+            status: 'completed' as const,
+            completedAt: now,
+          }
+        }
+        return agent
+      })
+    })
+
+    setPipelinePercent(p.percent)
+    setPipelineMessage(p.message)
+
+    if (p.phase === PHASE_COMPLETED) {
+      // Mark all agents as completed
+      setPipelineAgents(prev =>
+        prev.map(a =>
+          a.status === 'active'
+            ? { ...a, status: 'completed' as const, completedAt: now }
+            : a,
+        ),
+      )
+      setPipelinePercent(100)
+      setPipelineComplete(true)
+    }
+  }, [])
 
   useEffect(() => {
     if (IS_FIREBASE) {
@@ -112,18 +182,37 @@ export default function NewDocument() {
           request_context: Object.keys(contextData).length > 0 ? contextData : null,
         })
         invalidateApiCache('/stats')
-        navigate(`/documents/${newDoc.id}`)
-        // Trigger LLM generation in the background (don't await — user sees progress on detail page)
-        generateDocument(
-          userId,
-          newDoc.id!,
-          selectedType,
-          request,
-          selectedAreas,
-          Object.keys(contextData).length > 0 ? contextData : null,
-        ).catch(err => {
+
+        // Stay on page and show pipeline progress
+        initPipeline()
+        setGenerating(true)
+        setGeneratedDocId(newDoc.id!)
+        setLoading(false)
+
+        try {
+          await generateDocument(
+            userId,
+            newDoc.id!,
+            selectedType,
+            request,
+            selectedAreas,
+            Object.keys(contextData).length > 0 ? contextData : null,
+            handleProgress,
+          )
+        } catch (err: any) {
           console.error('Generation failed:', err)
-        })
+          setPipelineError(true)
+          setPipelineMessage(err?.message || 'Erro na geração')
+          // Mark active agent as error
+          setPipelineAgents(prev =>
+            prev.map(a =>
+              a.status === 'active'
+                ? { ...a, status: 'error' as const, completedAt: Date.now() }
+                : a,
+            ),
+          )
+          toast.error('Erro na geração', err?.message)
+        }
       } else {
         const res = await api.post('/documents', {
           document_type_id: selectedType,
@@ -333,7 +422,7 @@ export default function NewDocument() {
 
         <button
           type="submit"
-          disabled={loading || loadingTypes || !selectedType || !request.trim()}
+          disabled={loading || loadingTypes || !selectedType || !request.trim() || generating}
           className="w-full bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 font-semibold text-sm transition-colors shadow-sm disabled:cursor-not-allowed"
         >
           {loading ? (
@@ -342,11 +431,36 @@ export default function NewDocument() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
               </svg>
-              Gerando documento...
+              Criando documento...
             </span>
-          ) : 'Gerar Documento com IA'}
+          ) : generating ? 'Geração em andamento...' : 'Gerar Documento com IA'}
         </button>
       </form>
+
+      {/* Pipeline progress panel — shown during/after generation */}
+      {generating && (
+        <div className="mt-6 space-y-4">
+          <PipelineProgressPanel
+            agents={pipelineAgents}
+            percent={pipelinePercent}
+            currentMessage={pipelineMessage}
+            isComplete={pipelineComplete}
+            hasError={pipelineError}
+          />
+
+          {/* Navigation button when complete or on error */}
+          {(pipelineComplete || pipelineError) && generatedDocId && (
+            <button
+              type="button"
+              onClick={() => navigate(`/documents/${generatedDocId}`)}
+              className="w-full flex items-center justify-center gap-2 bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 font-semibold text-sm transition-colors shadow-sm"
+            >
+              {pipelineComplete ? 'Ver Documento Gerado' : 'Ver Documento'}
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
