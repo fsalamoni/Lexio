@@ -57,6 +57,12 @@ export interface AgentModelDef {
   icon: string
 }
 
+/**
+ * Agent definitions for model configuration.
+ * Keys here are agent names (matching generation-service model lookups).
+ * Note: PipelineProgressPanel uses phase names (e.g. 'redacao') for progress tracking,
+ * which is a separate system. Agent key 'redator' maps to progress phase 'redacao'.
+ */
 export const PIPELINE_AGENT_DEFS: AgentModelDef[] = [
   {
     key: 'triagem',
