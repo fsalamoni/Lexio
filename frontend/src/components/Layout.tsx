@@ -6,6 +6,7 @@ import { ErrorBoundary } from './ErrorBoundary'
 import NotificationBell from './NotificationBell'
 import { useToast } from './Toast'
 import api from '../api/client'
+import { IS_FIREBASE } from '../lib/firebase'
 
 const POLL_INTERVAL = 30_000 // 30 seconds
 
@@ -22,8 +23,9 @@ export default function Layout({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('lexio:rate-limit', handler)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll for document completion every 30s
+  // Poll for document completion every 30s (API mode only)
   useEffect(() => {
+    if (IS_FIREBASE) return // Firebase mode handles completion via Firestore
     const fetchAndCheck = async () => {
       try {
         const res = await api.get('/documents', { params: { limit: 50 } })

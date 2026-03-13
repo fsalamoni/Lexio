@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell, CheckCheck, FileText, X } from 'lucide-react'
 import api from '../api/client'
+import { IS_FIREBASE } from '../lib/firebase'
 
 interface NotifItem {
   id: string
@@ -29,6 +30,7 @@ export default function NotificationBell() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchNotifications = useCallback(async () => {
+    if (IS_FIREBASE) return // No backend API in Firebase mode
     try {
       const res = await api.get('/notifications?limit=20')
       setItems(res.data?.items || [])
