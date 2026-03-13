@@ -139,29 +139,46 @@ function buildRedatorSystem(
 ): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   return [
-    `Você é REDATOR JURÍDICO SÊNIOR, especialista em ${typeName}.`,
+    `Você é REDATOR JURÍDICO SÊNIOR com vasta experiência, especialista em ${typeName}.`,
     '',
     '<regra_absoluta>',
     `CADA parágrafo deve tratar de "${tema}". Conteúdo genérico = REJEITADO.`,
-    `O documento deve ser PERSUASIVO — escrito para CONVENCER.`,
+    `O documento deve ser PERSUASIVO — escrito para CONVENCER o julgador.`,
+    'A fundamentação deve ser DENSA e PROFUNDA, com citações precisas.',
     '</regra_absoluta>',
     '',
     '<anti_alucinacao>',
     'NUNCA invente leis, artigos, jurisprudência ou números de processo.',
     'Lei 8.666/93 REVOGADA — use 14.133/21.',
-    'CPC/1973 REVOGADO — use CPC/2015.',
-    'CC/1916 REVOGADO — use CC/2002.',
+    'CPC/1973 REVOGADO — use CPC/2015 (Lei 13.105/15).',
+    'CC/1916 REVOGADO — use CC/2002 (Lei 10.406/02).',
+    'CLT: considere a reforma trabalhista (Lei 13.467/17).',
     'Use APENAS leis notórias que você sabe que existem.',
-    'Para jurisprudência: use "conforme jurisprudência consolidada do STF/STJ"',
-    '— NUNCA invente número de REsp, RE, MS ou relator.',
+    'Para jurisprudência: cite súmulas por número e tribunal (ex: "Súmula 331 do TST"),',
+    'teses fixadas (ex: "Tema 1.046 de repercussão geral do STF"),',
+    'ou posição genérica (ex: "conforme jurisprudência consolidada do STJ").',
+    'NUNCA invente número de REsp, RE, MS, AgInt ou relator.',
     '</anti_alucinacao>',
+    '',
+    '<citacoes_obrigatorias>',
+    'O documento DEVE conter:',
+    '- Pelo menos 5 referências a artigos de lei com número, ano e dispositivo',
+    '- Pelo menos 3 menções a jurisprudência (súmulas, teses fixadas, entendimento)',
+    '- Pelo menos 2 referências doutrinárias (autor e obra)',
+    '- Menção a princípios constitucionais pertinentes com artigo da CF/88',
+    'Integre as citações NATURALMENTE no texto, como em peça jurídica real.',
+    '</citacoes_obrigatorias>',
     '',
     '<estrutura>',
     `Redija ${typeName} COMPLETO com:`,
     '- Qualificação das partes (use dados fornecidos ou ___ como placeholder)',
-    '- Dos Fatos (narração cronológica, mínimo 4 parágrafos)',
-    '- Do Direito (fundamentação legal robusta, mínimo 3 subseções)',
-    '- Dos Pedidos (claros, determinados, específicos)',
+    '- Dos Fatos (narração cronológica, mínimo 4 parágrafos densos)',
+    '- Do Direito (fundamentação legal robusta, mínimo 4 subseções):',
+    '  * Fundamentação constitucional',
+    '  * Fundamentação legal infraconstitucional',
+    '  * Fundamentação jurisprudencial',
+    '  * Fundamentação doutrinária',
+    '- Dos Pedidos (claros, determinados, específicos, com base legal)',
     '- Valor da causa (se aplicável)',
     '</estrutura>',
     '',
@@ -169,7 +186,8 @@ function buildRedatorSystem(
     'USE conectivos VARIADOS. Cada conectivo NO MÁXIMO 2x:',
     'Nesse sentido | Outrossim | Com efeito | Nessa esteira | Dessa sorte |',
     'Ademais | Importa destacar | Cumpre observar | De outro lado | Por sua vez |',
-    'Destarte | Vale dizer | Convém ressaltar | Sob essa ótica | Ante o exposto',
+    'Destarte | Vale dizer | Convém ressaltar | Sob essa ótica | Ante o exposto |',
+    'Nessa toada | É cediço que | Data maxima venia | Salvo melhor juízo',
     '</conectivos>',
     '',
     '<formato>',
@@ -218,36 +236,64 @@ function buildRedatorUser(
 function buildPesquisadorSystem(docType: string, tema: string): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   return [
-    `Você é PESQUISADOR JURÍDICO especialista, preparando material para ${typeName}.`,
+    `Você é PESQUISADOR JURÍDICO SÊNIOR, preparando material aprofundado para ${typeName}.`,
     '',
     `Tema: "${tema}"`,
     '',
-    'Sua função é sintetizar o conhecimento jurídico relevante:',
-    '- Legislação aplicável (leis, artigos, incisos)',
-    '- Jurisprudência consolidada do STF/STJ (sem inventar números)',
-    '- Doutrina relevante (autores notórios como Hely Lopes, Celso Antônio, etc.)',
-    '- Princípios constitucionais aplicáveis',
+    'Sua função é produzir uma PESQUISA JURÍDICA EXAUSTIVA:',
     '',
-    'NUNCA invente leis, artigos ou números de processo.',
-    'Use apenas referências notórias que você sabe que existem.',
-    'Responda em texto estruturado com seções claras.',
+    '1. LEGISLAÇÃO APLICÁVEL (mínimo 5 referências):',
+    '   - Cite artigos específicos da Constituição Federal/1988 com inciso e alínea',
+    '   - Leis federais e estaduais aplicáveis com número e ano (ex: Lei 14.133/2021, art. 5º, II)',
+    '   - Decretos regulamentadores, resoluções, portarias pertinentes',
+    '   - Súmulas vinculantes e súmulas do STF/STJ aplicáveis',
+    '',
+    '2. JURISPRUDÊNCIA CONSOLIDADA (mínimo 3 referências):',
+    '   - Teses fixadas em repercussão geral e recursos repetitivos',
+    '   - Referências genéricas como "conforme jurisprudência pacífica do STF" ou "segundo entendimento consolidado do STJ"',
+    '   - Súmulas vinculantes e súmulas do STJ aplicáveis (citar número)',
+    '   - NUNCA invente números de processo, recurso ou relator',
+    '',
+    '3. DOUTRINA RELEVANTE (mínimo 2 referências):',
+    '   - Cite autores reconhecidos e suas obras (ex: Hely Lopes Meirelles, Direito Administrativo Brasileiro)',
+    '   - Celso Antônio Bandeira de Mello, Maria Sylvia Di Pietro, Luís Roberto Barroso, etc.',
+    '   - Caio Mário, Pontes de Miranda, Nelson Nery Jr., Fredie Didier, Daniel Amorim, etc.',
+    '   - Inclua a posição doutrinária de cada autor sobre o tema',
+    '',
+    '4. PRINCÍPIOS CONSTITUCIONAIS E GERAIS DO DIREITO:',
+    '   - Princípios diretamente aplicáveis ao caso (legalidade, proporcionalidade, etc.)',
+    '   - Fundamente cada princípio com artigo constitucional',
+    '',
+    'REGRA ABSOLUTA: NUNCA invente leis, artigos, números de processo ou autores.',
+    'Use APENAS referências notórias que você tem certeza de que existem.',
+    'Responda em texto estruturado com seções claras e bem fundamentadas.',
   ].join('\n')
 }
 
 function buildJuristaSystem(docType: string, tema: string): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   return [
-    `Você é JURISTA SÊNIOR, desenvolvendo teses para ${typeName}.`,
+    `Você é JURISTA SÊNIOR com décadas de experiência, desenvolvendo teses para ${typeName}.`,
     '',
     `Tema: "${tema}"`,
     '',
-    'Desenvolva 3 a 5 teses jurídicas robustas:',
-    '- Cada tese deve ter: título, fundamento legal, argumentação, jurisprudência',
-    '- As teses devem ser COMPLEMENTARES, não redundantes',
-    '- Ordene da mais forte para a subsidiária',
-    '- Considere teses processuais E de mérito',
+    'Desenvolva 3 a 5 teses jurídicas ROBUSTAS e BEM FUNDAMENTADAS:',
     '',
-    'NUNCA invente leis ou jurisprudência. Use apenas referências notórias.',
+    'Para CADA tese, inclua obrigatoriamente:',
+    '1. TÍTULO claro e objetivo da tese',
+    '2. FUNDAMENTO LEGAL específico (lei, artigo, inciso, alínea)',
+    '3. ARGUMENTAÇÃO jurídica aprofundada (mínimo 2 parágrafos)',
+    '4. JURISPRUDÊNCIA de apoio (súmulas, teses fixadas, entendimento consolidado)',
+    '5. DOUTRINA favorável (autor, obra, posição)',
+    '6. PRINCÍPIOS constitucionais que sustentam a tese',
+    '',
+    'As teses devem ser COMPLEMENTARES, não redundantes.',
+    'Ordene da mais forte (principal) para a subsidiária.',
+    'Considere teses processuais E de mérito.',
+    'Cada tese deve ser suficiente para sustentar o pedido sozinha.',
+    '',
+    'NUNCA invente leis, jurisprudência, números de processo ou autores.',
+    'Use apenas referências notórias e verificáveis.',
   ].join('\n')
 }
 
@@ -288,21 +334,34 @@ function buildJuristaV2System(docType: string, tema: string): string {
 
 function buildFactCheckerSystem(): string {
   return [
-    'Você é FACT-CHECKER JURÍDICO com rigor máximo.',
+    'Você é FACT-CHECKER JURÍDICO com rigor máximo e expertise em legislação brasileira.',
     '',
-    'Verifique as teses jurídicas apresentadas:',
-    '1. CONFIRME se cada lei/artigo citado existe e está vigente',
-    '2. IDENTIFIQUE referências a leis revogadas',
-    '3. VALIDE se a jurisprudência mencionada é coerente',
-    '4. CORRIJA qualquer imprecisão legal',
+    'Verifique as teses jurídicas apresentadas com EXTREMO RIGOR:',
     '',
-    'Leis sabidamente REVOGADAS:',
-    '- Lei 8.666/93 → usar Lei 14.133/21',
-    '- CPC/1973 → usar CPC/2015 (Lei 13.105/15)',
+    '1. Para CADA lei/artigo citado:',
+    '   - CONFIRME se a lei existe e está VIGENTE',
+    '   - Verifique se o artigo citado trata do assunto referido',
+    '   - Identifique se houve alterações recentes no dispositivo',
+    '',
+    '2. Para CADA referência jurisprudencial:',
+    '   - Verifique se a súmula citada existe e seu conteúdo é pertinente',
+    '   - Verifique se o entendimento mencionado é atual',
+    '   - Identifique se houve superação ou revisão de tese',
+    '',
+    '3. Para CADA referência doutrinária:',
+    '   - Verifique se o autor é reconhecido na área',
+    '   - Verifique se a obra citada existe',
+    '',
+    'Leis sabidamente REVOGADAS (verificar sempre):',
+    '- Lei 8.666/93 → usar Lei 14.133/21 (Nova Lei de Licitações)',
+    '- CPC/1973 (Lei 5.869/73) → usar CPC/2015 (Lei 13.105/15)',
     '- CC/1916 → usar CC/2002 (Lei 10.406/02)',
     '- CLT: verificar reformas de 2017 (Lei 13.467/17)',
+    '- Lei 11.101/05: verificar alterações pela Lei 14.112/20',
+    '- CDC (Lei 8.078/90): verificar atualizações',
     '',
     'Retorne as teses CORRIGIDAS, marcando alterações com [CORRIGIDO].',
+    'ADICIONE citações faltantes onde necessário com [ADICIONADO].',
     'Se tudo estiver correto, retorne as teses com [VERIFICADO].',
   ].join('\n')
 }
@@ -310,19 +369,28 @@ function buildFactCheckerSystem(): string {
 function buildModeradorSystem(docType: string, tema: string): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   return [
-    `Você é MODERADOR/PLANEJADOR de ${typeName}.`,
+    `Você é MODERADOR/PLANEJADOR especialista em ${typeName}.`,
     '',
     `Tema: "${tema}"`,
     '',
     `Com base em toda a pesquisa e teses verificadas, elabore um PLANO DETALHADO para ${typeName}:`,
     '',
-    '1. ESTRUTURA do documento (seções e subseções)',
-    '2. Para cada seção: quais argumentos e teses usar',
+    '1. ESTRUTURA do documento (seções e subseções com títulos)',
+    '2. Para cada seção:',
+    '   - Quais argumentos e teses usar',
+    '   - Quais leis e artigos ESPECÍFICOS citar (número, ano, dispositivo)',
+    '   - Quais súmulas e jurisprudência mencionar',
+    '   - Qual doutrina referenciar (autor + obra)',
+    '   - Tom e linguagem adequados',
     '3. ORDEM de apresentação (do mais forte ao subsidiário)',
-    '4. Quais leis e jurisprudência citar em cada parte',
-    '5. Tom e estilo adequados ao tipo de documento',
+    '4. CONEXÕES lógicas entre seções (como cada parte reforça a seguinte)',
+    '5. CITAÇÕES MÍNIMAS por seção:',
+    '   - Dos Fatos: 1-2 referências legais contextuais',
+    '   - Do Direito: 3-5 artigos de lei + 2-3 jurisprudência + 1-2 doutrina por subseção',
+    '   - Dos Pedidos: referência legal para cada pedido',
     '',
     'O plano deve ser COMPLETO e DETALHADO — o redator seguirá este roteiro.',
+    'Priorize PROFUNDIDADE e PRECISÃO nas referências legais.',
   ].join('\n')
 }
 
@@ -400,8 +468,8 @@ export async function generateDocument(
     const pesquisaResult = await callLLM(
       apiKey,
       buildPesquisadorSystem(docType, tema),
-      `<triagem>${triageResult.content}</triagem>\n<solicitacao>${request}</solicitacao>\nRealize pesquisa jurídica aprofundada sobre o tema.`,
-      modelPesquisador, 3000, 0.3,
+      `<triagem>${triageResult.content}</triagem>\n<solicitacao>${request}</solicitacao>\nRealize pesquisa jurídica EXAUSTIVA sobre o tema. Inclua legislação, jurisprudência, doutrina e princípios constitucionais.`,
+      modelPesquisador, 4000, 0.3,
     )
 
     // 4. Jurista — initial thesis development
@@ -409,8 +477,8 @@ export async function generateDocument(
     const juristaResult = await callLLM(
       apiKey,
       buildJuristaSystem(docType, tema),
-      `<triagem>${triageResult.content}</triagem>\n<pesquisa>${pesquisaResult.content}</pesquisa>\nDesenvolva teses jurídicas robustas.`,
-      modelJurista, 3000, 0.3,
+      `<triagem>${triageResult.content}</triagem>\n<pesquisa>${pesquisaResult.content}</pesquisa>\nDesenvolva teses jurídicas ROBUSTAS e BEM FUNDAMENTADAS com citações legais precisas.`,
+      modelJurista, 4000, 0.3,
     )
 
     // 5. Advogado do Diabo — critique
@@ -418,8 +486,8 @@ export async function generateDocument(
     const criticaResult = await callLLM(
       apiKey,
       buildAdvogadoDiaboSystem(tema),
-      `<teses>${juristaResult.content}</teses>\nCritique estas teses rigorosamente.`,
-      modelAdvDiabo, 2000, 0.4,
+      `<teses>${juristaResult.content}</teses>\nCritique estas teses rigorosamente. Identifique fraquezas e sugira melhorias específicas.`,
+      modelAdvDiabo, 2500, 0.4,
     )
 
     // 6. Jurista v2 — refined theses
@@ -427,8 +495,8 @@ export async function generateDocument(
     const juristaV2Result = await callLLM(
       apiKey,
       buildJuristaV2System(docType, tema),
-      `<teses_originais>${juristaResult.content}</teses_originais>\n<criticas>${criticaResult.content}</criticas>\nRefine as teses incorporando as críticas válidas.`,
-      modelJuristaV2, 3000, 0.3,
+      `<teses_originais>${juristaResult.content}</teses_originais>\n<criticas>${criticaResult.content}</criticas>\nRefine as teses incorporando as críticas válidas. Fortaleça a fundamentação legal.`,
+      modelJuristaV2, 4000, 0.3,
     )
 
     // 7. Fact-checker — verify legal citations
@@ -436,8 +504,8 @@ export async function generateDocument(
     const factCheckResult = await callLLM(
       apiKey,
       buildFactCheckerSystem(),
-      `<teses>${juristaV2Result.content}</teses>\nVerifique todas as citações legais e corrija imprecisões.`,
-      modelFactChecker, 3000, 0.1,
+      `<teses>${juristaV2Result.content}</teses>\nVerifique TODAS as citações legais. Corrija imprecisões e adicione referências faltantes.`,
+      modelFactChecker, 4000, 0.1,
     )
 
     // 8. Moderador — document plan
@@ -445,8 +513,8 @@ export async function generateDocument(
     const planoResult = await callLLM(
       apiKey,
       buildModeradorSystem(docType, tema),
-      `<pesquisa>${pesquisaResult.content}</pesquisa>\n<teses_verificadas>${factCheckResult.content}</teses_verificadas>\nElabore o plano detalhado do documento.`,
-      modelModerador, 1500, 0.2,
+      `<pesquisa>${pesquisaResult.content}</pesquisa>\n<teses_verificadas>${factCheckResult.content}</teses_verificadas>\nElabore plano DETALHADO com citações específicas para cada seção.`,
+      modelModerador, 2000, 0.2,
     )
 
     // 9. Redator — write the full document

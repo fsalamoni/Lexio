@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2 } from 'lucide-react'
+import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info } from 'lucide-react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
+import { IS_FIREBASE } from '../lib/firebase'
 
 interface UploadedFile {
   id: string
@@ -43,6 +44,7 @@ export default function Upload() {
   const toast = useToast()
 
   const fetchHistory = useCallback(() => {
+    if (IS_FIREBASE) return // No backend uploads API in Firebase mode
     api.get('/uploads').then(res => setHistory(res.data.items || [])).catch(() => toast.error('Erro ao carregar histórico de uploads'))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -161,14 +163,31 @@ export default function Upload() {
     <div className="max-w-2xl">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Upload de Documentos</h1>
-        <button
-          onClick={fetchHistory}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          title="Atualizar"
-        >
-          <RefreshCw className="w-5 h-5" />
-        </button>
+        {!IS_FIREBASE && (
+          <button
+            onClick={fetchHistory}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+            title="Atualizar"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </button>
+        )}
       </div>
+
+      {/* Firebase mode: no backend upload — show guidance */}
+      {IS_FIREBASE && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6 flex gap-3">
+          <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-blue-800">Acervo vetorial disponível apenas no modo servidor</p>
+            <p className="text-xs text-blue-600 mt-1">
+              O upload e indexação de documentos requer o backend com Qdrant.
+              No modo Firebase, o pipeline de geração utiliza o conhecimento interno dos modelos de IA.
+              Para habilitar o acervo vetorial, execute a plataforma com <code className="bg-blue-100 px-1 rounded">docker compose up</code>.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Drop zone */}
       <div
