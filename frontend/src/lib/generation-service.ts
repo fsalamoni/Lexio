@@ -20,6 +20,7 @@
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { firestore } from './firebase'
 import { callLLM } from './llm-client'
+import { loadAgentModels, type AgentModelMap } from './model-config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -360,12 +361,20 @@ export async function generateDocument(
   })
 
   try {
-    // 1. Get API key
+    // 1. Get API key and model configuration
     onProgress?.({ phase: 'config', message: 'Carregando configurações...', percent: 2 })
     const apiKey = await getOpenRouterKey()
+    const agentModels: AgentModelMap = await loadAgentModels()
 
-    const HAIKU = 'anthropic/claude-3.5-haiku'
-    const SONNET = 'anthropic/claude-sonnet-4'
+    // Model shortcuts — use admin-configured models, falling back to defaults
+    const modelTriagem      = agentModels.triagem       ?? 'anthropic/claude-3.5-haiku'
+    const modelPesquisador  = agentModels.pesquisador    ?? 'anthropic/claude-sonnet-4'
+    const modelJurista      = agentModels.jurista        ?? 'anthropic/claude-sonnet-4'
+    const modelAdvDiabo     = agentModels.advogado_diabo ?? 'anthropic/claude-sonnet-4'
+    const modelJuristaV2    = agentModels.jurista_v2     ?? 'anthropic/claude-sonnet-4'
+    const modelFactChecker  = agentModels.fact_checker   ?? 'anthropic/claude-3.5-haiku'
+    const modelModerador    = agentModels.moderador      ?? 'anthropic/claude-sonnet-4'
+    const modelRedator      = agentModels.redator        ?? 'anthropic/claude-sonnet-4'
 
     // 2. Triage — extract structured info from the request
     onProgress?.({ phase: 'triagem', message: 'Analisando solicitação...', percent: 5 })
@@ -373,7 +382,7 @@ export async function generateDocument(
       apiKey,
       buildTriageSystem(docType),
       buildTriageUser(request, areas, context),
-      HAIKU, 800, 0.1,
+      modelTriagem, 800, 0.1,
     )
 
     // Extract tema from triage JSON
@@ -392,7 +401,7 @@ export async function generateDocument(
       apiKey,
       buildPesquisadorSystem(docType, tema),
       `<triagem>${triageResult.content}</triagem>\n<solicitacao>${request}</solicitacao>\nRealize pesquisa jurídica aprofundada sobre o tema.`,
-      SONNET, 3000, 0.3,
+      modelPesquisador, 3000, 0.3,
     )
 
     // 4. Jurista — initial thesis development
@@ -401,7 +410,7 @@ export async function generateDocument(
       apiKey,
       buildJuristaSystem(docType, tema),
       `<triagem>${triageResult.content}</triagem>\n<pesquisa>${pesquisaResult.content}</pesquisa>\nDesenvolva teses jurídicas robustas.`,
-      SONNET, 3000, 0.3,
+      modelJurista, 3000, 0.3,
     )
 
     // 5. Advogado do Diabo — critique
@@ -410,7 +419,7 @@ export async function generateDocument(
       apiKey,
       buildAdvogadoDiaboSystem(tema),
       `<teses>${juristaResult.content}</teses>\nCritique estas teses rigorosamente.`,
-      SONNET, 2000, 0.4,
+      modelAdvDiabo, 2000, 0.4,
     )
 
     // 6. Jurista v2 — refined theses
@@ -419,7 +428,7 @@ export async function generateDocument(
       apiKey,
       buildJuristaV2System(docType, tema),
       `<teses_originais>${juristaResult.content}</teses_originais>\n<criticas>${criticaResult.content}</criticas>\nRefine as teses incorporando as críticas válidas.`,
-      SONNET, 3000, 0.3,
+      modelJuristaV2, 3000, 0.3,
     )
 
     // 7. Fact-checker — verify legal citations
@@ -428,7 +437,7 @@ export async function generateDocument(
       apiKey,
       buildFactCheckerSystem(),
       `<teses>${juristaV2Result.content}</teses>\nVerifique todas as citações legais e corrija imprecisões.`,
-      HAIKU, 3000, 0.1,
+      modelFactChecker, 3000, 0.1,
     )
 
     // 8. Moderador — document plan
@@ -437,7 +446,7 @@ export async function generateDocument(
       apiKey,
       buildModeradorSystem(docType, tema),
       `<pesquisa>${pesquisaResult.content}</pesquisa>\n<teses_verificadas>${factCheckResult.content}</teses_verificadas>\nElabore o plano detalhado do documento.`,
-      SONNET, 1500, 0.2,
+      modelModerador, 1500, 0.2,
     )
 
     // 9. Redator — write the full document
@@ -449,7 +458,7 @@ export async function generateDocument(
         docType, request, triageResult.content, areas, context,
         pesquisaResult.content, factCheckResult.content, planoResult.content,
       ),
-      SONNET, 10000, 0.3,
+      modelRedator, 10000, 0.3,
     )
 
     // 10. Save the generated text
