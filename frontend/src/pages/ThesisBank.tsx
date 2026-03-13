@@ -339,6 +339,7 @@ export default function ThesisBank() {
   }
 
   useEffect(() => {
+    if (IS_FIREBASE && !userId) return // Wait for auth
     fetchTheses('', '')
     if (IS_FIREBASE && userId) {
       getThesisStats(userId)
@@ -350,7 +351,7 @@ export default function ThesisBank() {
         .catch(() => toast.error('Erro ao carregar estatísticas do banco de teses'))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [userId])
 
   // Debounced search (400ms)
   useEffect(() => {
