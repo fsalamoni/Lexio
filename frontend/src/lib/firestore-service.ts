@@ -454,6 +454,64 @@ const LEGAL_AREAS = [
 export function getDocumentTypes() { return DOCUMENT_TYPES }
 export function getLegalAreas() { return LEGAL_AREAS }
 
+// ── Profile-based filtering ─────────────────────────────────────────────────
+
+/**
+ * Maps user positions/roles to the document types most relevant to them.
+ * When a position keyword is detected, only those doc types are shown.
+ * If no match is found, all document types are returned.
+ */
+const POSITION_DOCTYPE_MAP: Record<string, string[]> = {
+  // Judges / Magistrates → produce judgments, not petitions
+  juiz: ['sentenca', 'embargos_declaracao'],
+  juiza: ['sentenca', 'embargos_declaracao'],
+  magistrado: ['sentenca', 'embargos_declaracao'],
+  magistrada: ['sentenca', 'embargos_declaracao'],
+  desembargador: ['sentenca', 'embargos_declaracao', 'recurso'],
+  desembargadora: ['sentenca', 'embargos_declaracao', 'recurso'],
+  // Prosecutors / MP → opinions, public civil actions, HC
+  promotor: ['parecer', 'acao_civil_publica', 'recurso', 'mandado_seguranca', 'habeas_corpus', 'agravo', 'embargos_declaracao'],
+  promotora: ['parecer', 'acao_civil_publica', 'recurso', 'mandado_seguranca', 'habeas_corpus', 'agravo', 'embargos_declaracao'],
+  procurador: ['parecer', 'acao_civil_publica', 'recurso', 'mandado_seguranca', 'contestacao', 'agravo', 'embargos_declaracao'],
+  procuradora: ['parecer', 'acao_civil_publica', 'recurso', 'mandado_seguranca', 'contestacao', 'agravo', 'embargos_declaracao'],
+  assessor: ['parecer', 'acao_civil_publica', 'recurso', 'mandado_seguranca', 'habeas_corpus', 'agravo', 'embargos_declaracao'],
+  assessora: ['parecer', 'acao_civil_publica', 'recurso', 'mandado_seguranca', 'habeas_corpus', 'agravo', 'embargos_declaracao'],
+  // Defenders → petitions, HC, defenses
+  defensor: ['peticao_inicial', 'contestacao', 'recurso', 'habeas_corpus', 'mandado_seguranca', 'agravo', 'embargos_declaracao'],
+  defensora: ['peticao_inicial', 'contestacao', 'recurso', 'habeas_corpus', 'mandado_seguranca', 'agravo', 'embargos_declaracao'],
+  // Lawyers → broad set, but excluding sentenca
+  advogado: ['peticao_inicial', 'contestacao', 'recurso', 'acao_civil_publica', 'mandado_seguranca', 'habeas_corpus', 'agravo', 'embargos_declaracao'],
+  advogada: ['peticao_inicial', 'contestacao', 'recurso', 'acao_civil_publica', 'mandado_seguranca', 'habeas_corpus', 'agravo', 'embargos_declaracao'],
+}
+
+/**
+ * Returns document types filtered by the user's professional position.
+ * Falls back to the full list when no profile or position match is found.
+ */
+export function getDocumentTypesForProfile(profile: ProfileData | null): typeof DOCUMENT_TYPES {
+  if (!profile?.position) return DOCUMENT_TYPES
+
+  const posLower = profile.position.toLowerCase()
+  for (const [keyword, allowedIds] of Object.entries(POSITION_DOCTYPE_MAP)) {
+    if (posLower.includes(keyword)) {
+      const filtered = DOCUMENT_TYPES.filter(dt => allowedIds.includes(dt.id))
+      return filtered.length > 0 ? filtered : DOCUMENT_TYPES
+    }
+  }
+  return DOCUMENT_TYPES
+}
+
+/**
+ * Returns legal areas sorted so the user's primary areas appear first.
+ */
+export function getLegalAreasForProfile(profile: ProfileData | null): typeof LEGAL_AREAS {
+  if (!profile?.primary_areas || profile.primary_areas.length === 0) return LEGAL_AREAS
+  const primarySet = new Set(profile.primary_areas)
+  const primary = LEGAL_AREAS.filter(a => primarySet.has(a.id))
+  const others = LEGAL_AREAS.filter(a => !primarySet.has(a.id))
+  return [...primary, ...others]
+}
+
 // ── Request context fields (per document type, static definitions) ───────────
 
 const REQUEST_FIELDS: Record<string, WizardField[]> = {
