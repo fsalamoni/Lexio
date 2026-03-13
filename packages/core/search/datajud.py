@@ -1,7 +1,6 @@
 """Lexio Core — DataJud (CNJ) judicial process search."""
 
 import logging
-from typing import List
 
 import httpx
 
@@ -11,15 +10,6 @@ logger = logging.getLogger("lexio.search.datajud")
 
 # Public CNJ API key — updated periodically at https://datajud-wiki.cnj.jus.br/api-publica/
 _FALLBACK_PUBLIC_KEY = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
-
-# Available tribunal endpoints for broader search
-_TRIBUNAL_ENDPOINTS: List[str] = [
-    "api_publica_tjrs",
-    "api_publica_tjsp",
-    "api_publica_stj",
-    "api_publica_stf",
-    "api_publica_trf4",
-]
 
 
 async def _try_search(api_key: str, url: str, tema: str, size: int) -> httpx.Response | None:

@@ -275,11 +275,16 @@ export default function DocumentDetail() {
         } catch (err: any) {
           console.error('Retry generation failed:', err)
           setPipelineError(true)
-          setPipelineMessage(err?.message || 'Erro na geração')
+          const errorMsg = err?.message?.includes('API key')
+            ? 'Chave de API não configurada ou inválida'
+            : err?.message?.includes('fetch') || err?.message?.includes('network')
+              ? 'Erro de conexão durante a geração'
+              : err?.message || 'Erro inesperado durante a geração'
+          setPipelineMessage(errorMsg)
           setPipelineAgents(prev =>
             prev.map(a => a.status === 'active' ? { ...a, status: 'error' as const, completedAt: Date.now() } : a),
           )
-          toast.error('Erro na geração', err?.message)
+          toast.error('Erro na geração', errorMsg)
         }
       } else {
         await api.post(`/documents/${id}/retry`)
