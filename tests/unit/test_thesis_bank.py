@@ -31,6 +31,8 @@ class TestSeedDataStructure:
         assert isinstance(SEED_THESES, list)
 
     def test_seed_data_has_entries(self):
+        # Threshold of 30 is a lower bound; actual count is 42 as of initial extraction.
+        # Kept flexible in case theses are merged or refined in the future.
         assert len(SEED_THESES) >= 30, "Expected at least 30 seed theses"
 
     def test_each_entry_has_required_fields(self):

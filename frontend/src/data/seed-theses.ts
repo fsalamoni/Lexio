@@ -8,7 +8,7 @@
 
 import type { ThesisData } from '../lib/firestore-service'
 
-export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
+export const SEED_THESES: Omit<ThesisData, 'id' | 'created_at' | 'updated_at'>[] = [
   // ===========================================================================
   // DIREITO ADMINISTRATIVO
   // ===========================================================================
@@ -31,7 +31,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 92,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Nepotismo decorre diretamente dos princípios constitucionais — Súmula Vinculante 13',
@@ -52,7 +51,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 95,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Ofensa a princípios administrativos como modalidade autônoma de improbidade',
@@ -72,7 +70,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 90,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Agente público para fins de improbidade — conceito amplo do art. 2º da LIA',
@@ -92,7 +89,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 88,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Tipologia de rachadinhas — desvio de remuneração de servidores',
@@ -114,7 +110,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 91,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Responsabilidade objetiva da pessoa jurídica na Lei Anticorrupção',
@@ -133,7 +128,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 89,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Limites de gastos com folha de pagamento da Câmara Municipal',
@@ -152,7 +146,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 87,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
 
   // ===========================================================================
@@ -176,7 +169,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 85,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Contratação temporária por excepcional interesse público — requisitos constitucionais',
@@ -195,7 +187,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 93,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Acumulação de mandato eletivo de vereador com cargo público',
@@ -214,7 +205,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 86,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Heteroidentificação em concursos públicos — cotas raciais',
@@ -233,7 +223,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 84,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
 
   // ===========================================================================
@@ -257,7 +246,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 91,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Multa judicial (astreintes) como meio coercitivo atípico',
@@ -276,7 +264,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 85,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Improbidade administrativa — transmissibilidade aos herdeiros',
@@ -295,7 +282,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 89,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Acordo de Não Persecução Cível (ANPC) — reparação integral do dano',
@@ -313,7 +299,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 87,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
 
   // ===========================================================================
@@ -336,7 +321,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 88,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
 
   // ===========================================================================
@@ -359,7 +343,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 84,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Concomitância da paternidade socioafetiva e biológica',
@@ -378,7 +361,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 92,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
 
   // ===========================================================================
@@ -401,7 +383,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 86,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
 
   // ===========================================================================
@@ -423,7 +404,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 87,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
 
   // ===========================================================================
@@ -446,7 +426,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 83,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Grupo econômico — controle e sincronia de atuação empresarial',
@@ -465,7 +444,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 80,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
 
   // ===========================================================================
@@ -488,7 +466,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 88,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Pessoa com deficiência — garantias e proteção integral',
@@ -507,7 +484,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 86,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Transtorno do Espectro Autista — direitos e políticas públicas',
@@ -526,7 +502,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 85,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
 
   // ===========================================================================
@@ -550,7 +525,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 83,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Controle interno municipal — criação e implantação obrigatória',
@@ -569,7 +543,6 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 82,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
   {
     title: 'Marco Regulatório das Organizações da Sociedade Civil (MROSC)',
@@ -589,6 +562,5 @@ export const SEED_THESES: Omit<ThesisData, 'id'>[] = [
     quality_score: 84,
     usage_count: 0,
     source_type: 'imported',
-    created_at: new Date().toISOString(),
   },
 ]
