@@ -303,7 +303,8 @@ function ReviewQueue() {
   const { userId } = useAuth()
 
   const fetchQueue = () => {
-    if (IS_FIREBASE && userId) {
+    if (IS_FIREBASE) {
+      if (!userId) { setLoading(false); return }
       listDocuments(userId, { status: 'em_revisao' })
         .then(result => setDocs(result.items.filter(d => d.id).map(d => ({
           id: d.id!, document_type_id: d.document_type_id,
@@ -320,7 +321,7 @@ function ReviewQueue() {
     }
   }
 
-  useEffect(() => { fetchQueue() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchQueue() }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAction = async (docId: string, action: 'approve' | 'reject', reason?: string) => {
     setActioning(docId)
@@ -540,7 +541,8 @@ export default function AdminPanel() {
   const { userId } = useAuth()
 
   const fetchData = () => {
-    if (IS_FIREBASE && userId) {
+    if (IS_FIREBASE) {
+      if (!userId) { setLoading(false); return }
       // Firebase mode: build data from Firestore + static definitions
       const docTypes = getDocumentTypes().map(dt => ({
         id: dt.id, name: dt.name, type: 'document_type' as const, version: '1.0.0',
@@ -573,7 +575,7 @@ export default function AdminPanel() {
     }
   }
 
-  useEffect(() => { fetchData() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchData() }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggle = async (moduleId: string) => {
     setToggling(moduleId)
