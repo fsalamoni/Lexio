@@ -9,8 +9,11 @@ import { IS_FIREBASE } from '../lib/firebase'
 import {
   getDocumentTypes, getLegalAreas, getRequestFields,
   createDocument,
+  getDocumentTypesForProfile, getLegalAreasForProfile,
+  getProfile, type ProfileData,
 } from '../lib/firestore-service'
 import { generateDocument, type GenerationProgress } from '../lib/generation-service'
+import type { UserProfileForGeneration } from '../lib/generation-service'
 import PipelineProgressPanel, {
   PIPELINE_AGENTS,
   PHASE_COMPLETED,
@@ -59,6 +62,7 @@ export default function NewDocument() {
   const [pipelineMessage, setPipelineMessage] = useState('')
   const [pipelineComplete, setPipelineComplete] = useState(false)
   const [pipelineError, setPipelineError] = useState(false)
+  const [userProfile, setUserProfile] = useState<UserProfileForGeneration | null>(null)
   const agentTimers = useRef<Record<string, number>>({})
   const { userId } = useAuth()
   const navigate = useNavigate()
@@ -124,7 +128,26 @@ export default function NewDocument() {
   }, [])
 
   useEffect(() => {
-    if (IS_FIREBASE) {
+    if (IS_FIREBASE && userId) {
+      // Load user profile first, then filter doc types/areas accordingly
+      getProfile(userId).then((profile: ProfileData | null) => {
+        setUserProfile(profile ?? null)
+        setDocTypes(getDocumentTypesForProfile(profile ?? null))
+        const sortedAreas = getLegalAreasForProfile(profile ?? null)
+        setLegalAreas(sortedAreas)
+        // Pre-select user's primary legal areas
+        if (profile?.primary_areas && profile.primary_areas.length > 0) {
+          setSelectedAreas(profile.primary_areas)
+        }
+        // Pre-select default document type if set in profile
+        if (profile?.default_document_type) {
+          setSelectedType(profile.default_document_type)
+        }
+      }).catch(() => {
+        setDocTypes(getDocumentTypes())
+        setLegalAreas(getLegalAreas())
+      }).finally(() => setLoadingTypes(false))
+    } else if (IS_FIREBASE) {
       setDocTypes(getDocumentTypes())
       setLegalAreas(getLegalAreas())
       setLoadingTypes(false)
@@ -134,7 +157,7 @@ export default function NewDocument() {
         api.get('/legal-areas').then(res => setLegalAreas(Array.isArray(res.data) ? res.data : [])),
       ]).catch(() => toast.error('Erro ao carregar tipos de documento e áreas disponíveis')).finally(() => setLoadingTypes(false))
     }
-  }, [])
+  }, [userId])
 
   // Load context fields when document type changes
   useEffect(() => {
@@ -198,6 +221,7 @@ export default function NewDocument() {
             selectedAreas,
             Object.keys(contextData).length > 0 ? contextData : null,
             handleProgress,
+            userProfile,
           )
         } catch (err: any) {
           console.error('Generation failed:', err)
