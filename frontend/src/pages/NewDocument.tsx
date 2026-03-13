@@ -13,6 +13,7 @@ import {
 import { generateDocument, type GenerationProgress } from '../lib/generation-service'
 import PipelineProgressPanel, {
   PIPELINE_AGENTS,
+  PHASE_COMPLETED,
   type AgentStep,
 } from '../components/PipelineProgressPanel'
 
@@ -83,7 +84,9 @@ export default function NewDocument() {
 
     setPipelineAgents(prev => {
       const phaseKey = p.phase
-      return prev.map(agent => {
+      // Find the index of the current phase in the pipeline
+      const phaseIdx = prev.findIndex(a => a.key === phaseKey)
+      return prev.map((agent, idx) => {
         if (agent.key === phaseKey && agent.status !== 'completed') {
           // Mark this agent as active and record start time
           if (!agentTimers.current[phaseKey]) {
@@ -91,8 +94,8 @@ export default function NewDocument() {
           }
           return { ...agent, status: 'active' as const, startedAt: agentTimers.current[phaseKey] }
         }
-        if (agent.status === 'active' && agent.key !== phaseKey) {
-          // Mark previously active agent as completed
+        // Mark all agents before the current phase as completed
+        if (idx < phaseIdx && agent.status === 'active') {
           return {
             ...agent,
             status: 'completed' as const,
@@ -106,7 +109,7 @@ export default function NewDocument() {
     setPipelinePercent(p.percent)
     setPipelineMessage(p.message)
 
-    if (p.phase === 'concluido') {
+    if (p.phase === PHASE_COMPLETED) {
       // Mark all agents as completed
       setPipelineAgents(prev =>
         prev.map(a =>

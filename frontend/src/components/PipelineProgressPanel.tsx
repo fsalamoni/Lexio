@@ -45,6 +45,9 @@ const AGENT_ICONS: Record<string, React.ElementType> = {
   salvando:      Save,
 }
 
+/** Phase key emitted by generation-service when the pipeline finishes. */
+export const PHASE_COMPLETED = 'concluido'
+
 export const PIPELINE_AGENTS: Omit<AgentStep, 'status'>[] = [
   { key: 'config',        label: 'Configuração',          description: 'Carregando chaves de API',              model: '—' },
   { key: 'triagem',       label: 'Triagem',               description: 'Extração de tema e palavras-chave',    model: 'Haiku' },
