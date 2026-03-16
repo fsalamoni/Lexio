@@ -743,6 +743,9 @@ export async function seedThesesIfEmpty(uid: string): Promise<number> {
 
 // ── Acervo Documents (Firestore /users/{uid}/acervo subcollection) ───────────
 
+const ACERVO_CHUNK_SIZE = 500
+const ACERVO_MAX_EXCERPT_LENGTH = 2000
+
 /**
  * List acervo (reference) documents for a user.
  */
@@ -768,7 +771,7 @@ export async function createAcervoDocument(
   const db = ensureFirestore()
   const now = new Date().toISOString()
   const text = data.text_content.trim()
-  const chunks = text.length > 0 ? Math.ceil(text.length / 500) : 0
+  const chunks = text.length > 0 ? Math.ceil(text.length / ACERVO_CHUNK_SIZE) : 0
   const acervoDoc: Omit<AcervoDocumentData, 'id'> = {
     filename: data.filename,
     content_type: data.content_type,
@@ -804,7 +807,7 @@ export async function getAcervoContext(uid: string, maxChars = 8000): Promise<st
   for (const d of snap.docs) {
     const data = d.data() as AcervoDocumentData
     if (!data.text_content) continue
-    const excerpt = data.text_content.slice(0, 2000)
+    const excerpt = data.text_content.slice(0, ACERVO_MAX_EXCERPT_LENGTH)
     if (total + excerpt.length > maxChars) break
     parts.push(`[${data.filename}]\n${excerpt}`)
     total += excerpt.length
