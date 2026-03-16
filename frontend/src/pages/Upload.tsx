@@ -82,8 +82,14 @@ export default function Upload() {
     return null
   }
 
-  /** Read text content from a File object (client-side). */
+  /** Read text content from a File object (client-side).
+   *  Binary formats (PDF, DOCX, DOC) cannot be decoded as plain text — returns empty string for those. */
   const readFileText = (file: File): Promise<string> => {
+    const binaryExts = ['.pdf', '.docx', '.doc']
+    const ext = '.' + (file.name.split('.').pop()?.toLowerCase() ?? '')
+    if (binaryExts.includes(ext)) {
+      return Promise.resolve('')
+    }
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
@@ -105,8 +111,15 @@ export default function Upload() {
 
       setLocalFiles(prev => [...prev, { name: file.name, size: file.size, status: 'uploading', progress: 0 }])
 
-      if (IS_FIREBASE && userId) {
+      if (IS_FIREBASE) {
         // Firebase mode: read text client-side and store in Firestore
+        if (!userId) {
+          setLocalFiles(prev =>
+            prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
+          )
+          toast.error(`Usuário não autenticado. Faça login novamente.`)
+          continue
+        }
         try {
           setLocalFiles(prev =>
             prev.map(f => f.name === file.name ? { ...f, progress: 30 } : f)
@@ -169,7 +182,8 @@ export default function Upload() {
     if (!window.confirm(`Remover "${filename}" do acervo permanentemente?`)) return
     setDeletingId(id)
     try {
-      if (IS_FIREBASE && userId) {
+      if (IS_FIREBASE) {
+        if (!userId) { toast.error('Usuário não autenticado. Faça login novamente.'); setDeletingId(null); return }
         await deleteAcervoDocument(userId, id)
         setFirebaseHistory(prev => prev.filter(f => f.id !== id))
       } else {
