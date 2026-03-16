@@ -115,6 +115,19 @@ async def upload_file(
     file_path = UPLOAD_DIR / f"{uuid.uuid4().hex}_{file.filename}"
     file_path.write_bytes(content)
 
+    # Dedup: remove older documents with the same filename (last upload wins)
+    from sqlalchemy import select as _sel
+    existing = (await db.execute(
+        _sel(UploadedDocument).where(
+            UploadedDocument.organization_id == user.organization_id,
+            UploadedDocument.filename == file.filename,
+        )
+    )).scalars().all()
+    for old_doc in existing:
+        await db.delete(old_doc)
+    if existing:
+        await db.flush()
+
     doc = UploadedDocument(
         filename=file.filename,
         content_type=file.content_type,
