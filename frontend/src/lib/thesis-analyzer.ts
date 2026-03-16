@@ -335,14 +335,15 @@ export async function analyzeThesisBank(
   notify('thesis_analista', 'running', 'Analisando redundâncias nos grupos...')
 
   // Build full-content view for all theses in groups
-  const groupThesisIds = new Set(similarGroups.flatMap(g => g.ids))
   const thesisById = new Map(theses.filter(t => t.id).map(t => [t.id!, t]))
   const groupsWithContent = similarGroups.map(group => ({
     ...group,
-    theses_content: group.ids.map(id => {
-      const t = thesisById.get(id)
-      return t ? { id, title: t.title, content: t.content.slice(0, 800) } : null
-    }).filter(Boolean),
+    theses_content: group.ids
+      .map(id => {
+        const t = thesisById.get(id)
+        return t ? { id, title: t.title, content: t.content.slice(0, 800) } : null
+      })
+      .filter((x): x is { id: string; title: string; content: string } => x !== null),
   }))
 
   let analysisMergeGroups: Array<{

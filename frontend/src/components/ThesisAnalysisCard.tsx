@@ -26,10 +26,10 @@ import {
   createThesis,
   updateThesis,
   deleteThesis,
+  getSettings,
   type ThesisData,
   type ThesisAnalysisSessionData,
 } from '../lib/firestore-service'
-import { getSettings } from '../lib/firestore-service'
 import {
   analyzeThesisBank,
   type AnalysisSuggestion,
@@ -332,23 +332,34 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
       }
       setSuggestionStates(states)
 
-      // Mark analyzed docs in Firestore
+      // Mark analyzed docs in Firestore (non-critical — don't abort analysis if this fails)
       if (unanalyzedDocs.length > 0) {
-        await markAcervoDocumentsAnalyzed(userId, unanalyzedDocs.map(d => d.id!).filter(Boolean))
+        try {
+          await markAcervoDocumentsAnalyzed(
+            userId,
+            unanalyzedDocs.map(d => d.id).filter((id): id is string => !!id),
+          )
+        } catch {
+          console.warn('Failed to mark acervo docs as analyzed (non-fatal)')
+        }
       }
 
-      // Persist session metadata
-      await saveThesisAnalysisSession(userId, {
-        created_at: analysis.created_at,
-        total_theses_analyzed: analysis.total_theses_analyzed,
-        total_docs_analyzed: analysis.total_docs_analyzed,
-        total_new_docs: analysis.new_doc_count,
-        suggestions_count: analysis.suggestions.length,
-        accepted_count: 0,
-        rejected_count: 0,
-        executive_summary: analysis.executive_summary,
-        status: 'completed',
-      })
+      // Persist session metadata (non-critical)
+      try {
+        await saveThesisAnalysisSession(userId, {
+          created_at: analysis.created_at,
+          total_theses_analyzed: analysis.total_theses_analyzed,
+          total_docs_analyzed: analysis.total_docs_analyzed,
+          total_new_docs: analysis.new_doc_count,
+          suggestions_count: analysis.suggestions.length,
+          accepted_count: 0,
+          rejected_count: 0,
+          executive_summary: analysis.executive_summary,
+          status: 'completed',
+        })
+      } catch {
+        console.warn('Failed to persist analysis session (non-fatal)')
+      }
 
       await loadStats()
 
