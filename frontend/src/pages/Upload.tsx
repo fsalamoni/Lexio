@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info } from 'lucide-react'
+import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye } from 'lucide-react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
@@ -40,12 +40,105 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+// ── Document view modal ──────────────────────────────────────────────────────
+
+function AcervoDocModal({ doc, onClose }: { doc: AcervoDocumentData; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <div className="flex items-center gap-2 min-w-0">
+            <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+            <span className="font-semibold text-gray-900 truncate text-sm">{doc.filename}</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-3">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {/* Meta */}
+        <div className="flex gap-4 px-5 py-2 border-b bg-gray-50 text-xs text-gray-500">
+          <span>{formatSize(doc.size_bytes)}</span>
+          {doc.chunks_count > 0 && <span>{doc.chunks_count} fragmentos</span>}
+          <span>{new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
+        </div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {doc.text_content ? (
+            <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans leading-relaxed">{doc.text_content}</pre>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+              <AlertCircle className="w-10 h-10 mb-3" />
+              <p className="text-sm font-medium">Sem conteúdo de texto</p>
+              <p className="text-xs mt-1">Este documento não possui texto extraível (ex.: PDF escaneado ou formato binário sem suporte).</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Text extraction ──────────────────────────────────────────────────────────
+
+/** Extract text from a File client-side. Handles DOCX, DOC (mammoth), PDF (pdfjs CDN), and plain text. */
+async function extractFileText(file: File): Promise<string> {
+  const ext = '.' + (file.name.split('.').pop()?.toLowerCase() ?? '')
+
+  // DOCX / DOC — use mammoth (bundled dependency)
+  if (ext === '.docx' || ext === '.doc') {
+    const arrayBuffer = await file.arrayBuffer()
+    const mammoth = await import('mammoth')
+    const result = await mammoth.extractRawText({ arrayBuffer })
+    return result.value.trim()
+  }
+
+  // PDF — load pdfjs from CDN at runtime (no build dependency)
+  if (ext === '.pdf') {
+    return extractPdfText(file)
+  }
+
+  // TXT / MD / others — plain UTF-8 text
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result.trim() : '')
+    reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
+    reader.readAsText(file, 'UTF-8')
+  })
+}
+
+const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs'
+const PDFJS_WORKER_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs'
+
+async function extractPdfText(file: File): Promise<string> {
+  const pdfjsLib = await import(/* @vite-ignore */ PDFJS_CDN) as any
+  pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
+  const pages: string[] = []
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    const pageText = content.items
+      .map((item: any) => ('str' in item ? item.str : ''))
+      .join(' ')
+    pages.push(pageText)
+  }
+  return pages.join('\n').trim()
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
+
 export default function Upload() {
   const [isDragging, setIsDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [history, setHistory] = useState<UploadedFile[]>([])
   const [firebaseHistory, setFirebaseHistory] = useState<AcervoDocumentData[]>([])
   const [localFiles, setLocalFiles] = useState<{ name: string; size: number; status: 'uploading' | 'error'; progress?: number }[]>([])
+  const [viewDoc, setViewDoc] = useState<AcervoDocumentData | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -82,22 +175,6 @@ export default function Upload() {
     return null
   }
 
-  /** Read text content from a File object (client-side).
-   *  Binary formats (PDF, DOCX, DOC) cannot be decoded as plain text — returns empty string for those. */
-  const readFileText = (file: File): Promise<string> => {
-    const binaryExts = ['.pdf', '.docx', '.doc']
-    const ext = '.' + (file.name.split('.').pop()?.toLowerCase() ?? '')
-    if (binaryExts.includes(ext)) {
-      return Promise.resolve('')
-    }
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
-      reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
-      reader.readAsText(file, 'UTF-8')
-    })
-  }
-
   const processFiles = async (files: File[]) => {
     if (!files.length) return
     setUploading(true)
@@ -112,21 +189,21 @@ export default function Upload() {
       setLocalFiles(prev => [...prev, { name: file.name, size: file.size, status: 'uploading', progress: 0 }])
 
       if (IS_FIREBASE) {
-        // Firebase mode: read text client-side and store in Firestore
+        // Firebase mode: extract text client-side and store in Firestore
         if (!userId) {
           setLocalFiles(prev =>
             prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
           )
-          toast.error(`Usuário não autenticado. Faça login novamente.`)
+          toast.error('Usuário não autenticado. Faça login novamente.')
           continue
         }
         try {
           setLocalFiles(prev =>
-            prev.map(f => f.name === file.name ? { ...f, progress: 30 } : f)
+            prev.map(f => f.name === file.name ? { ...f, progress: 20 } : f)
           )
-          const textContent = await readFileText(file)
+          const textContent = await extractFileText(file)
           setLocalFiles(prev =>
-            prev.map(f => f.name === file.name ? { ...f, progress: 70 } : f)
+            prev.map(f => f.name === file.name ? { ...f, progress: 80 } : f)
           )
           const result = await createAcervoDocument(userId, {
             filename: file.name,
@@ -240,6 +317,9 @@ export default function Upload() {
 
   return (
     <div className="max-w-2xl">
+      {/* View modal */}
+      {viewDoc && <AcervoDocModal doc={viewDoc} onClose={() => setViewDoc(null)} />}
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Upload de Documentos</h1>
         <button
@@ -377,6 +457,15 @@ export default function Upload() {
                     <Icon className="w-4 h-4" />
                     <span className="hidden sm:inline">{s.label}</span>
                   </div>
+                  {acervoDoc.text_content && (
+                    <button
+                      onClick={() => setViewDoc(acervoDoc)}
+                      className="text-gray-300 hover:text-brand-500 transition-colors flex-shrink-0"
+                      title="Ver conteúdo"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDeleteUpload(acervoDoc.id!, acervoDoc.filename)}
                     disabled={deletingId === acervoDoc.id}
