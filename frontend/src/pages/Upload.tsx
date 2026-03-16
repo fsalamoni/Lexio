@@ -84,11 +84,11 @@ function AcervoDocModal({ doc, onClose }: { doc: AcervoDocumentData; onClose: ()
 
 // ── Text extraction ──────────────────────────────────────────────────────────
 
-/** Extract text from a File client-side. Handles DOCX, DOC (mammoth), PDF (pdfjs), and plain text. */
+/** Extract text from a File client-side. Handles DOCX, DOC (mammoth), PDF (pdfjs CDN), and plain text. */
 async function extractFileText(file: File): Promise<string> {
   const ext = '.' + (file.name.split('.').pop()?.toLowerCase() ?? '')
 
-  // DOCX / DOC — use mammoth
+  // DOCX / DOC — use mammoth (bundled dependency)
   if (ext === '.docx' || ext === '.doc') {
     const arrayBuffer = await file.arrayBuffer()
     const mammoth = await import('mammoth')
@@ -96,26 +96,9 @@ async function extractFileText(file: File): Promise<string> {
     return result.value.trim()
   }
 
-  // PDF — use pdfjs-dist
+  // PDF — load pdfjs from CDN at runtime (no build dependency)
   if (ext === '.pdf') {
-    const arrayBuffer = await file.arrayBuffer()
-    const pdfjsLib = await import('pdfjs-dist')
-    // Point to the bundled worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.min.mjs',
-      import.meta.url,
-    ).href
-    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
-    const pages: string[] = []
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const content = await page.getTextContent()
-      const pageText = content.items
-        .map((item: any) => ('str' in item ? item.str : ''))
-        .join(' ')
-      pages.push(pageText)
-    }
-    return pages.join('\n').trim()
+    return extractPdfText(file)
   }
 
   // TXT / MD / others — plain UTF-8 text
@@ -125,6 +108,26 @@ async function extractFileText(file: File): Promise<string> {
     reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
     reader.readAsText(file, 'UTF-8')
   })
+}
+
+const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs'
+const PDFJS_WORKER_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs'
+
+async function extractPdfText(file: File): Promise<string> {
+  const pdfjsLib = await import(/* @vite-ignore */ PDFJS_CDN) as any
+  pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
+  const pages: string[] = []
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    const pageText = content.items
+      .map((item: any) => ('str' in item ? item.str : ''))
+      .join(' ')
+    pages.push(pageText)
+  }
+  return pages.join('\n').trim()
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
