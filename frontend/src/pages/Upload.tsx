@@ -8,10 +8,8 @@ import {
   listAcervoDocuments,
   createAcervoDocument,
   deleteAcervoDocument,
-  getSettings,
   type AcervoDocumentData,
 } from '../lib/firestore-service'
-import { extractAndStoreTheses } from '../lib/thesis-extractor'
 
 interface UploadedFile {
   id: string
@@ -166,33 +164,6 @@ export default function Upload() {
     }
   }, [fetchHistory])
 
-  /** Fire-and-forget: extract theses from uploaded acervo text via LLM. */
-  const extractThesesFromAcervo = (uid: string, text: string, filename: string) => {
-    // Resolve API key then run extraction in background
-    const getKey = async (): Promise<string> => {
-      const envKey = import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined
-      if (envKey && envKey.startsWith('sk-')) return envKey
-      const settings = await getSettings()
-      const apiKeys = (settings?.api_keys ?? {}) as Record<string, string>
-      return apiKeys.openrouter_api_key ?? (settings?.openrouter_api_key as string) ?? ''
-    }
-
-    getKey().then(apiKey => {
-      if (!apiKey || !apiKey.startsWith('sk-')) return // no key configured, skip silently
-      return extractAndStoreTheses(apiKey, uid, text, {
-        sourceType: 'auto_extracted',
-      })
-    }).then(result => {
-      if (result && (result.created > 0 || result.merged > 0)) {
-        const parts: string[] = []
-        if (result.created > 0) parts.push(`${result.created} nova(s)`)
-        if (result.merged > 0) parts.push(`${result.merged} atualizada(s)`)
-        toast.success(`Teses ${parts.join(', ')} a partir de "${filename}"`)
-      }
-    }).catch(err => {
-      console.warn('Thesis extraction from acervo failed (non-fatal):', err)
-    })
-  }
 
   const validateFile = (file: File): string | null => {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase()
@@ -248,11 +219,6 @@ export default function Upload() {
             toast.success(`${file.name} adicionado ao acervo`)
           }
           fetchHistory()
-
-          // Fire-and-forget: extract reusable theses from the uploaded document
-          if (textContent.length >= 300) {
-            extractThesesFromAcervo(userId, textContent, file.name)
-          }
         } catch (err: any) {
           setLocalFiles(prev =>
             prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
