@@ -5,6 +5,8 @@
  *   /users/{uid}                  — user profile (auth-service already handles basic fields)
  *   /users/{uid}/profile          — anamnesis/professional profile (subcollection with single doc "data")
  *   /users/{uid}/documents/{docId}— user's documents
+ *   /users/{uid}/theses/{thesisId}— user's thesis bank
+ *   /users/{uid}/acervo/{docId}   — user's reference documents (acervo)
  *   /settings/{key}               — platform settings (admin-only)
  */
 
@@ -72,6 +74,17 @@ export interface ThesisData {
   source_type: string
   created_at: string
   updated_at?: string
+}
+
+export interface AcervoDocumentData {
+  id?: string
+  filename: string
+  content_type: string
+  size_bytes: number
+  text_content: string
+  chunks_count: number
+  status: 'indexed' | 'index_empty' | 'index_error'
+  created_at: string
 }
 
 export interface WizardData {
@@ -726,6 +739,77 @@ export async function seedThesesIfEmpty(uid: string): Promise<number> {
     created++
   }
   return created
+}
+
+// ── Acervo Documents (Firestore /users/{uid}/acervo subcollection) ───────────
+
+/**
+ * List acervo (reference) documents for a user.
+ */
+export async function listAcervoDocuments(
+  uid: string,
+  opts: { limit?: number } = {},
+): Promise<{ items: AcervoDocumentData[]; total: number }> {
+  const db = ensureFirestore()
+  const constraints: QueryConstraint[] = [orderBy('created_at', 'desc')]
+  if (opts.limit) constraints.push(limit(opts.limit))
+  const snap = await getDocs(query(collection(db, 'users', uid, 'acervo'), ...constraints))
+  const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as AcervoDocumentData))
+  return { items, total: items.length }
+}
+
+/**
+ * Create an acervo document from uploaded file text content.
+ */
+export async function createAcervoDocument(
+  uid: string,
+  data: { filename: string; content_type: string; size_bytes: number; text_content: string },
+): Promise<AcervoDocumentData> {
+  const db = ensureFirestore()
+  const now = new Date().toISOString()
+  const text = data.text_content.trim()
+  const chunks = text.length > 0 ? Math.ceil(text.length / 500) : 0
+  const acervoDoc: Omit<AcervoDocumentData, 'id'> = {
+    filename: data.filename,
+    content_type: data.content_type,
+    size_bytes: data.size_bytes,
+    text_content: text,
+    chunks_count: chunks,
+    status: text.length > 0 ? 'indexed' : 'index_empty',
+    created_at: now,
+  }
+  const ref = await addDoc(collection(db, 'users', uid, 'acervo'), acervoDoc)
+  return { id: ref.id, ...acervoDoc }
+}
+
+/**
+ * Delete an acervo document.
+ */
+export async function deleteAcervoDocument(uid: string, docId: string): Promise<void> {
+  const db = ensureFirestore()
+  await deleteDoc(doc(db, 'users', uid, 'acervo', docId))
+}
+
+/**
+ * Get text content from all indexed acervo documents (for generation context).
+ * Returns concatenated text excerpts up to `maxChars` total characters.
+ */
+export async function getAcervoContext(uid: string, maxChars = 8000): Promise<string> {
+  const db = ensureFirestore()
+  const snap = await getDocs(
+    query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
+  )
+  const parts: string[] = []
+  let total = 0
+  for (const d of snap.docs) {
+    const data = d.data() as AcervoDocumentData
+    if (!data.text_content) continue
+    const excerpt = data.text_content.slice(0, 2000)
+    if (total + excerpt.length > maxChars) break
+    parts.push(`[${data.filename}]\n${excerpt}`)
+    total += excerpt.length
+  }
+  return parts.join('\n\n---\n\n')
 }
 
 // ── Admin settings (Firestore /settings collection) ──────────────────────────
