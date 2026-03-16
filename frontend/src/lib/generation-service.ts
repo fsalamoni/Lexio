@@ -902,12 +902,24 @@ export async function generateDocument(
       modelRedator, 12000, 0.3,
     )
 
+    // Accumulate LLM usage across all pipeline agents for Dashboard metrics
+    const allResults = [
+      triageResult, pesquisaResult, juristaResult, criticaResult,
+      juristaV2Result, factCheckResult, planoResult, docResult,
+    ]
+    const llm_tokens_in  = allResults.reduce((s, r) => s + r.tokens_in,  0)
+    const llm_tokens_out = allResults.reduce((s, r) => s + r.tokens_out, 0)
+    const llm_cost_usd   = parseFloat(allResults.reduce((s, r) => s + r.cost_usd, 0).toFixed(6))
+
     // 10. Save the generated text
     onProgress?.({ phase: 'salvando', message: 'Salvando documento...', percent: 95 })
     await updateDoc(docRef, {
       texto_completo: docResult.content,
       status: 'concluido',
       quality_score: 80,
+      llm_tokens_in,
+      llm_tokens_out,
+      llm_cost_usd,
       updated_at: new Date().toISOString(),
     })
 
