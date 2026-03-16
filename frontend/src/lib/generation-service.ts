@@ -21,6 +21,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { firestore } from './firebase'
 import { callLLM } from './llm-client'
 import { loadAgentModels, type AgentModelMap } from './model-config'
+import { listTheses, getAcervoContext, type ThesisData } from './firestore-service'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,19 @@ export interface UserProfileForGeneration {
 }
 
 type ProgressCallback = (p: GenerationProgress) => void
+
+// ── Knowledge base limits ─────────────────────────────────────────────────────
+// These cap how much thesis / acervo text is injected into the Pesquisador
+// prompt to balance context richness vs. model token budget.
+
+/** Max theses fetched per legal area when areas are specified. */
+const MAX_THESES_PER_AREA = 10
+/** Max theses fetched when no specific area is selected. */
+const MAX_THESES_FALLBACK = 20
+/** Max theses actually injected into the prompt after dedup. */
+const MAX_THESES_INJECTED = 15
+/** Max total characters of acervo reference excerpts. */
+const MAX_ACERVO_CONTEXT_CHARS = 6000
 
 // ── API key retrieval ─────────────────────────────────────────────────────────
 
@@ -442,6 +456,8 @@ function buildPesquisadorSystem(docType: string, tema: string, profile?: UserPro
     '',
     'REGRA ABSOLUTA: NUNCA invente leis, artigos, números de processo ou autores.',
     'Use APENAS referências notórias que você tem certeza de que existem.',
+    'Se receber um banco de teses ou acervo de referência, INCORPORE as teses relevantes ao tema,',
+    'VALIDANDO e ENRIQUECENDO-as com legislação, jurisprudência e doutrina adicionais.',
     'Responda em texto estruturado com seções claras e bem fundamentadas.',
     'Para cada citação, TRANSCREVA o dispositivo legal ou enunciado de súmula entre aspas.',
   ].join('\n')
@@ -764,12 +780,68 @@ export async function generateDocument(
     }
     await updateDoc(docRef, { tema })
 
+    // 2b. Load knowledge base — theses + acervo documents
+    onProgress?.({ phase: 'pesquisador', message: 'Carregando base de conhecimento...', percent: 10 })
+    let knowledgeBase = ''
+
+    // Load relevant theses from thesis bank
+    try {
+      const thesesByArea = areas.length > 0
+        ? await Promise.all(areas.map(area => listTheses(uid, { legalAreaId: area, limit: MAX_THESES_PER_AREA })))
+        : [await listTheses(uid, { limit: MAX_THESES_FALLBACK })]
+      const allTheses: ThesisData[] = []
+      const seenIds = new Set<string>()
+      for (const result of thesesByArea) {
+        for (const t of result.items) {
+          if (t.id && !seenIds.has(t.id)) {
+            seenIds.add(t.id)
+            allTheses.push(t)
+          }
+        }
+      }
+      if (allTheses.length > 0) {
+        const thesesText = allTheses
+          .slice(0, MAX_THESES_INJECTED)
+          .map(t => `• ${t.title}\n  ${t.content}${t.summary ? `\n  Resumo: ${t.summary}` : ''}`)
+          .join('\n\n')
+        knowledgeBase += `<banco_de_teses>\n${thesesText}\n</banco_de_teses>\n\n`
+      }
+    } catch (e) {
+      console.warn('Failed to load thesis bank:', e)
+    }
+
+    // Load acervo reference documents
+    try {
+      const acervoContext = await getAcervoContext(uid, MAX_ACERVO_CONTEXT_CHARS)
+      if (acervoContext) {
+        knowledgeBase += `<acervo_referencia>\n${acervoContext}\n</acervo_referencia>\n\n`
+      }
+    } catch (e) {
+      console.warn('Failed to load acervo context:', e)
+    }
+
     // 3. Pesquisador — legal research synthesis
     onProgress?.({ phase: 'pesquisador', message: 'Pesquisando legislação e jurisprudência...', percent: 15 })
+    const pesquisadorUserParts = [
+      `<triagem>${triageResult.content}</triagem>`,
+      `<solicitacao>${request}</solicitacao>`,
+    ]
+    if (knowledgeBase) {
+      pesquisadorUserParts.push(
+        '<base_conhecimento>',
+        'Use as teses e documentos de referência abaixo como material COMPLEMENTAR à sua pesquisa.',
+        'Incorpore as teses relevantes, mas SEMPRE verifique e enriqueça com suas próprias referências.',
+        knowledgeBase,
+        '</base_conhecimento>',
+      )
+    }
+    pesquisadorUserParts.push(
+      'Realize pesquisa jurídica EXAUSTIVA sobre o tema. TRANSCREVA artigos de lei entre aspas. Inclua legislação com texto dos dispositivos, jurisprudência com enunciados de súmulas, doutrina com autor e obra, e princípios constitucionais.',
+    )
     const pesquisaResult = await callLLM(
       apiKey,
       buildPesquisadorSystem(docType, tema, profile),
-      `<triagem>${triageResult.content}</triagem>\n<solicitacao>${request}</solicitacao>\nRealize pesquisa jurídica EXAUSTIVA sobre o tema. TRANSCREVA artigos de lei entre aspas. Inclua legislação com texto dos dispositivos, jurisprudência com enunciados de súmulas, doutrina com autor e obra, e princípios constitucionais.`,
+      pesquisadorUserParts.join('\n'),
       modelPesquisador, 6000, 0.3,
     )
 
