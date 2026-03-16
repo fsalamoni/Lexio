@@ -11,9 +11,6 @@ const basePath = process.env.VITE_BASE_PATH ?? (isDemo ? '/Lexio/' : '/')
 export default defineConfig({
   base: basePath,
   plugins: [react()],
-  optimizeDeps: {
-    exclude: ['pdfjs-dist'],
-  },
   build: {
     outDir: 'dist',
     sourcemap: false,
