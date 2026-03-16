@@ -51,6 +51,13 @@ export interface UserProfileForGeneration {
 
 type ProgressCallback = (p: GenerationProgress) => void
 
+// ── Knowledge base limits ─────────────────────────────────────────────────────
+
+const MAX_THESES_PER_AREA = 10
+const MAX_THESES_FALLBACK = 20
+const MAX_THESES_INJECTED = 15
+const MAX_ACERVO_CONTEXT_CHARS = 6000
+
 // ── API key retrieval ─────────────────────────────────────────────────────────
 
 async function getOpenRouterKey(): Promise<string> {
@@ -773,8 +780,8 @@ export async function generateDocument(
     try {
       // Load relevant theses from thesis bank
       const thesesByArea = areas.length > 0
-        ? await Promise.all(areas.map(area => listTheses(uid, { legalAreaId: area, limit: 10 })))
-        : [await listTheses(uid, { limit: 20 })]
+        ? await Promise.all(areas.map(area => listTheses(uid, { legalAreaId: area, limit: MAX_THESES_PER_AREA })))
+        : [await listTheses(uid, { limit: MAX_THESES_FALLBACK })]
       const allTheses: ThesisData[] = []
       const seenIds = new Set<string>()
       for (const result of thesesByArea) {
@@ -787,14 +794,14 @@ export async function generateDocument(
       }
       if (allTheses.length > 0) {
         const thesesText = allTheses
-          .slice(0, 15)
+          .slice(0, MAX_THESES_INJECTED)
           .map(t => `• ${t.title}\n  ${t.content}${t.summary ? `\n  Resumo: ${t.summary}` : ''}`)
           .join('\n\n')
         knowledgeBase += `<banco_de_teses>\n${thesesText}\n</banco_de_teses>\n\n`
       }
 
       // Load acervo reference documents
-      const acervoContext = await getAcervoContext(uid, 6000)
+      const acervoContext = await getAcervoContext(uid, MAX_ACERVO_CONTEXT_CHARS)
       if (acervoContext) {
         knowledgeBase += `<acervo_referencia>\n${acervoContext}\n</acervo_referencia>\n\n`
       }
