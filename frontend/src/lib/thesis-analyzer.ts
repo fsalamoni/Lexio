@@ -81,22 +81,36 @@ function uid4(): string {
 
 function parseJson(raw: string): unknown {
   let content = raw.trim()
-  if (content.includes('```json')) {
-    content = content.split('```json')[1].split('```')[0].trim()
-  } else if (content.includes('```')) {
-    content = content.split('```')[1].split('```')[0].trim()
+
+  // 1. Extract from ```json ... ``` block first
+  const jsonBlockMatch = content.match(/```json\s*([\s\S]*?)```/)
+  if (jsonBlockMatch) {
+    content = jsonBlockMatch[1].trim()
+  } else {
+    const codeBlockMatch = content.match(/```\s*([\s\S]*?)```/)
+    if (codeBlockMatch) content = codeBlockMatch[1].trim()
   }
-  // Attempt lenient parse: find the first [ or { and last ] or }
-  const start = Math.min(
-    content.indexOf('[') === -1 ? Infinity : content.indexOf('['),
-    content.indexOf('{') === -1 ? Infinity : content.indexOf('{'),
-  )
-  if (start !== Infinity) {
+
+  // 2. Try direct parse first (fast path)
+  try { return JSON.parse(content) } catch { /* fall through */ }
+
+  // 3. Find the outermost JSON object or array boundary
+  const objStart = content.indexOf('{')
+  const arrStart = content.indexOf('[')
+  const start = objStart === -1 ? arrStart
+    : arrStart === -1 ? objStart
+    : Math.min(objStart, arrStart)
+
+  if (start !== -1) {
     const isArray = content[start] === '['
     const end = isArray ? content.lastIndexOf(']') : content.lastIndexOf('}')
-    if (end > start) content = content.slice(start, end + 1)
+    if (end > start) {
+      try { return JSON.parse(content.slice(start, end + 1)) } catch { /* fall through */ }
+    }
   }
-  return JSON.parse(content)
+
+  // 4. Last resort: throw with context
+  throw new SyntaxError(`Cannot extract JSON from LLM response. Preview: ${content.slice(0, 120)}`)
 }
 
 function parseJsonArray(raw: string): unknown[] {
@@ -219,40 +233,35 @@ Retorne APENAS um JSON array com esta estrutura:
 
 // ── Agent 5: Revisor Final ────────────────────────────────────────────────────
 
-const REVISOR_SYSTEM = `Você é o Revisor Final do processo de análise do banco de teses.
-Recebe um conjunto de sugestões brutas dos agentes anteriores e deve:
-1. Validar cada sugestão (rejeitar as de baixo valor ou incoerentes)
-2. Enriquecer as justificativas com contexto jurídico relevante
-3. Atribuir prioridade: "high" (impacto alto), "medium", "low"
-4. Atribuir impact_score de 1-10 (utilidade real para o banco de teses)
+const REVISOR_SYSTEM = `Você é o Revisor Final do processo de análise do banco de teses jurídicas.
+Recebe sugestões brutas e deve:
+1. Validar cada sugestão (descartar as de baixo valor ou incoerentes)
+2. Enriquecer as justificativas com contexto jurídico
+3. Atribuir priority: "high" | "medium" | "low"
+4. Atribuir impact_score 1-10
 5. Ordenar do mais para o menos impactante
-6. Produzir um executive_summary do resultado global
+6. Escrever executive_summary em 3-5 frases
 
-Retorne APENAS um JSON válido com esta estrutura:
+IMPORTANTE: Responda EXCLUSIVAMENTE com um bloco \`\`\`json ... \`\`\` sem nenhum texto antes ou depois.
+Estrutura obrigatória:
+\`\`\`json
 {
   "suggestions": [
     {
-      "temp_id": "id interno para rastreamento",
+      "temp_id": "mesmo temp_id recebido",
       "type": "merge|delete|create|improve",
       "priority": "high|medium|low",
       "impact_score": 8,
       "title": "título da sugestão",
-      "description": "descrição do que será feito",
-      "rationale": "justificativa jurídica detalhada",
+      "description": "descrição concisa",
+      "rationale": "justificativa jurídica",
       "affected_thesis_ids": ["id1"],
-      "affected_thesis_titles": ["título1"],
-      "proposed_thesis": {
-        "title": "...",
-        "content": "...",
-        "summary": "...",
-        "legal_area_id": "...",
-        "tags": [],
-        "quality_score": 85
-      }
+      "affected_thesis_titles": ["título1"]
     }
   ],
-  "executive_summary": "resumo executivo em 3-5 frases"
-}`
+  "executive_summary": "resumo executivo"
+}
+\`\`\``
 
 // ── Pipeline orchestrator ─────────────────────────────────────────────────────
 
@@ -494,6 +503,23 @@ export async function analyzeThesisBank(
     })),
   ]
 
+  // Slim version for the Revisor — strip full thesis content to keep the prompt small
+  const revisorPayload = rawSuggestions.map(s => {
+    if (s.type === 'merge') {
+      const d = s.data as { source_ids: string[]; source_titles: string[] }
+      return { temp_id: s.temp_id, type: s.type, source_ids: d.source_ids, source_titles: d.source_titles }
+    }
+    if (s.type === 'delete') {
+      const d = s.data as { id: string; title: string; reason: string }
+      return { temp_id: s.temp_id, type: s.type, id: d.id, title: d.title, reason: d.reason }
+    }
+    if (s.type === 'create') {
+      const d = s.data as { title: string; summary: string; legal_area_id: string; tags: string[] }
+      return { temp_id: s.temp_id, type: s.type, title: d.title, summary: d.summary?.slice(0, 200), legal_area_id: d.legal_area_id, tags: d.tags }
+    }
+    return { temp_id: s.temp_id, type: s.type }
+  })
+
   let finalSuggestions: AnalysisSuggestion[] = []
   let executiveSummary = 'Análise concluída. Revise as sugestões abaixo.'
 
@@ -502,7 +528,7 @@ export async function analyzeThesisBank(
       const res = await callLLM(
         apiKey,
         REVISOR_SYSTEM,
-        `Banco atual: ${theses.length} teses.\n\nSugestões para revisão:\n${JSON.stringify(rawSuggestions, null, 2)}`,
+        `Banco atual: ${theses.length} teses.\n\nSugestões para revisão:\n${JSON.stringify(revisorPayload, null, 2)}`,
         modelMap['thesis_revisor'],
         4000,
         0.1,
