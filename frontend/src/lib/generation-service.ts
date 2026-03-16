@@ -22,6 +22,7 @@ import { firestore } from './firebase'
 import { callLLM } from './llm-client'
 import { loadAgentModels, type AgentModelMap } from './model-config'
 import { listTheses, getAcervoContext, type ThesisData } from './firestore-service'
+import { extractAndStoreTheses } from './thesis-extractor'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -909,6 +910,19 @@ export async function generateDocument(
       status: 'concluido',
       quality_score: 80,
       updated_at: new Date().toISOString(),
+    })
+
+    // 11. Auto-extract theses from the generated document (fire-and-forget)
+    extractAndStoreTheses(apiKey, uid, docResult.content, {
+      legalAreaId: areas[0] || 'geral',
+      documentTypeId: docType,
+      sourceType: 'auto_extracted',
+    }).then(result => {
+      if (result.created > 0 || result.merged > 0) {
+        console.info(`Auto-extracted theses from document ${docId}: ${result.created} new, ${result.merged} merged`)
+      }
+    }).catch(err => {
+      console.warn('Auto thesis extraction failed (non-fatal):', err)
     })
 
     onProgress?.({ phase: 'concluido', message: 'Documento gerado com sucesso!', percent: 100 })
