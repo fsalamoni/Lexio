@@ -8,6 +8,7 @@ import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
   listTheses, createThesis, updateThesis, deleteThesis, getThesisStats,
+  seedThesesIfEmpty,
   type ThesisData,
 } from '../lib/firestore-service'
 
@@ -340,16 +341,32 @@ export default function ThesisBank() {
 
   useEffect(() => {
     if (IS_FIREBASE && !userId) return // Wait for auth
-    fetchTheses('', '')
-    if (IS_FIREBASE && userId) {
-      getThesisStats(userId)
-        .then(s => setStats(s))
-        .catch(() => {})
-    } else {
-      api.get('/theses/stats')
-        .then(res => setStats(res.data))
-        .catch(() => toast.error('Erro ao carregar estatísticas do banco de teses'))
+
+    // Auto-seed thesis bank on first load if empty (Firebase mode only)
+    const initAndFetch = async () => {
+      if (IS_FIREBASE && userId) {
+        try {
+          const seeded = await seedThesesIfEmpty(userId)
+          if (seeded > 0) {
+            toast.success(`Banco de teses populado com ${seeded} teses do acervo jurídico`)
+          }
+        } catch (e) {
+          console.warn('Thesis seed check failed:', e)
+        }
+      }
+      fetchTheses('', '')
+      if (IS_FIREBASE && userId) {
+        getThesisStats(userId)
+          .then(s => setStats(s))
+          .catch(() => {})
+      } else {
+        api.get('/theses/stats')
+          .then(res => setStats(res.data))
+          .catch(() => toast.error('Erro ao carregar estatísticas do banco de teses'))
+      }
     }
+
+    initAndFetch()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
