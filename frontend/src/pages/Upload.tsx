@@ -115,14 +115,18 @@ export default function Upload() {
           setLocalFiles(prev =>
             prev.map(f => f.name === file.name ? { ...f, progress: 70 } : f)
           )
-          await createAcervoDocument(userId, {
+          const result = await createAcervoDocument(userId, {
             filename: file.name,
             content_type: file.type || 'text/plain',
             size_bytes: file.size,
             text_content: textContent,
           })
           setLocalFiles(prev => prev.filter(f => f.name !== file.name))
-          toast.success(`${file.name} adicionado ao acervo`)
+          if (result.truncated) {
+            toast.success(`${file.name} adicionado ao acervo (texto truncado por exceder o limite)`)
+          } else {
+            toast.success(`${file.name} adicionado ao acervo`)
+          }
           fetchHistory()
         } catch (err: any) {
           setLocalFiles(prev =>

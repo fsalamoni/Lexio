@@ -745,6 +745,12 @@ export async function seedThesesIfEmpty(uid: string): Promise<number> {
 
 const ACERVO_CHUNK_SIZE = 500
 const ACERVO_MAX_EXCERPT_LENGTH = 2000
+/**
+ * Firestore has a 1 MiB (1,048,576 bytes) document size limit.
+ * ~900 KB of text leaves headroom for metadata fields, field names,
+ * and multi-byte UTF-8 characters that expand beyond their char count.
+ */
+const ACERVO_MAX_TEXT_LENGTH = 900_000
 
 /**
  * List acervo (reference) documents for a user.
@@ -767,10 +773,15 @@ export async function listAcervoDocuments(
 export async function createAcervoDocument(
   uid: string,
   data: { filename: string; content_type: string; size_bytes: number; text_content: string },
-): Promise<AcervoDocumentData> {
+): Promise<AcervoDocumentData & { truncated?: boolean }> {
   const db = ensureFirestore()
   const now = new Date().toISOString()
-  const text = data.text_content.trim()
+  const raw = data.text_content.trim()
+  const truncated = raw.length > ACERVO_MAX_TEXT_LENGTH
+  if (truncated) {
+    console.warn(`Acervo document "${data.filename}" truncated from ${raw.length} to ${ACERVO_MAX_TEXT_LENGTH} chars`)
+  }
+  const text = raw.slice(0, ACERVO_MAX_TEXT_LENGTH)
   const chunks = text.length > 0 ? Math.ceil(text.length / ACERVO_CHUNK_SIZE) : 0
   const acervoDoc: Omit<AcervoDocumentData, 'id'> = {
     filename: data.filename,
@@ -782,7 +793,7 @@ export async function createAcervoDocument(
     created_at: now,
   }
   const ref = await addDoc(collection(db, 'users', uid, 'acervo'), acervoDoc)
-  return { id: ref.id, ...acervoDoc }
+  return { id: ref.id, ...acervoDoc, truncated }
 }
 
 /**

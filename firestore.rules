@@ -62,6 +62,13 @@ service cloud.firestore {
       match /theses/{thesisId} {
         allow read, write: if isSelf(userId);
       }
+
+      // ── /users/{userId}/acervo/{docId} ──────────────────────────────────
+      // User's reference documents (acervo) — uploaded texts used as
+      // knowledge base during document generation.  Owner-only access.
+      match /acervo/{docId} {
+        allow read, write: if isSelf(userId);
+      }
     }
 
     // ── /settings/{document} ─────────────────────────────────────────────────
