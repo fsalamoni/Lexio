@@ -769,6 +769,9 @@ export async function listAcervoDocuments(
 
 /**
  * Create an acervo document from uploaded file text content.
+ *
+ * **Dedup rule**: If a document with the same filename already exists,
+ * the older version is deleted so the newest upload always wins.
  */
 export async function createAcervoDocument(
   uid: string,
@@ -776,6 +779,22 @@ export async function createAcervoDocument(
 ): Promise<AcervoDocumentData & { truncated?: boolean }> {
   const db = ensureFirestore()
   const now = new Date().toISOString()
+
+  // Remove previous versions with the same filename (last upload wins)
+  try {
+    const existing = await getDocs(
+      query(
+        collection(db, 'users', uid, 'acervo'),
+        where('filename', '==', data.filename),
+      ),
+    )
+    for (const snap of existing.docs) {
+      await deleteDoc(snap.ref)
+    }
+  } catch (err) {
+    console.warn('Acervo dedup check failed (non-fatal):', err)
+  }
+
   const raw = data.text_content.trim()
   const truncated = raw.length > ACERVO_MAX_TEXT_LENGTH
   if (truncated) {

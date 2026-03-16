@@ -183,8 +183,11 @@ export default function Upload() {
         sourceType: 'auto_extracted',
       })
     }).then(result => {
-      if (result && result.created > 0) {
-        toast.success(`${result.created} tese(s) extraída(s) de "${filename}" para o Banco de Teses`)
+      if (result && (result.created > 0 || result.merged > 0)) {
+        const parts: string[] = []
+        if (result.created > 0) parts.push(`${result.created} nova(s)`)
+        if (result.merged > 0) parts.push(`${result.merged} atualizada(s)`)
+        toast.success(`Teses ${parts.join(', ')} a partir de "${filename}"`)
       }
     }).catch(err => {
       console.warn('Thesis extraction from acervo failed (non-fatal):', err)
