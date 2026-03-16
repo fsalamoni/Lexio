@@ -918,8 +918,8 @@ export async function generateDocument(
       documentTypeId: docType,
       sourceType: 'auto_extracted',
     }).then(result => {
-      if (result.created > 0) {
-        console.info(`Auto-extracted ${result.created} theses from generated document ${docId}`)
+      if (result.created > 0 || result.merged > 0) {
+        console.info(`Auto-extracted theses from document ${docId}: ${result.created} new, ${result.merged} merged`)
       }
     }).catch(err => {
       console.warn('Auto thesis extraction failed (non-fatal):', err)
