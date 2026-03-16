@@ -3,6 +3,13 @@ import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, Refres
 import api from '../api/client'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
+import { useAuth } from '../contexts/AuthContext'
+import {
+  listAcervoDocuments,
+  createAcervoDocument,
+  deleteAcervoDocument,
+  type AcervoDocumentData,
+} from '../lib/firestore-service'
 
 interface UploadedFile {
   id: string
@@ -37,21 +44,31 @@ export default function Upload() {
   const [isDragging, setIsDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [history, setHistory] = useState<UploadedFile[]>([])
+  const [firebaseHistory, setFirebaseHistory] = useState<AcervoDocumentData[]>([])
   const [localFiles, setLocalFiles] = useState<{ name: string; size: number; status: 'uploading' | 'error'; progress?: number }[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const toast = useToast()
+  const { userId } = useAuth()
 
   const fetchHistory = useCallback(() => {
-    if (IS_FIREBASE) return // No backend uploads API in Firebase mode
+    if (IS_FIREBASE && userId) {
+      listAcervoDocuments(userId)
+        .then(res => setFirebaseHistory(res.items))
+        .catch(() => toast.error('Erro ao carregar histórico do acervo'))
+      return
+    }
+    if (IS_FIREBASE) return
     api.get('/uploads').then(res => setHistory(res.data.items || [])).catch(() => toast.error('Erro ao carregar histórico de uploads'))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchHistory()
-    const interval = setInterval(fetchHistory, 5000)
-    return () => clearInterval(interval)
+    if (!IS_FIREBASE) {
+      const interval = setInterval(fetchHistory, 5000)
+      return () => clearInterval(interval)
+    }
   }, [fetchHistory])
 
   const validateFile = (file: File): string | null => {
@@ -63,6 +80,16 @@ export default function Upload() {
       return `Arquivo muito grande (máx. ${MAX_SIZE_MB} MB)`
     }
     return null
+  }
+
+  /** Read text content from a File object (client-side). */
+  const readFileText = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+      reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
+      reader.readAsText(file, 'UTF-8')
+    })
   }
 
   const processFiles = async (files: File[]) => {
@@ -77,26 +104,59 @@ export default function Upload() {
       }
 
       setLocalFiles(prev => [...prev, { name: file.name, size: file.size, status: 'uploading', progress: 0 }])
-      try {
-        const formData = new FormData()
-        formData.append('file', file)
-        await api.post('/uploads', formData, {
-          onUploadProgress: (evt) => {
-            if (evt.total) {
-              const pct = Math.round((evt.loaded / evt.total) * 100)
-              setLocalFiles(prev =>
-                prev.map(f => f.name === file.name ? { ...f, progress: pct } : f)
-              )
-            }
-          },
-        })
-        setLocalFiles(prev => prev.filter(f => f.name !== file.name))
-        fetchHistory()
-      } catch (err: any) {
-        setLocalFiles(prev =>
-          prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
-        )
-        toast.error(`Erro ao enviar ${file.name}`, err?.response?.data?.detail || err?.message)
+
+      if (IS_FIREBASE && userId) {
+        // Firebase mode: read text client-side and store in Firestore
+        try {
+          setLocalFiles(prev =>
+            prev.map(f => f.name === file.name ? { ...f, progress: 30 } : f)
+          )
+          const textContent = await readFileText(file)
+          setLocalFiles(prev =>
+            prev.map(f => f.name === file.name ? { ...f, progress: 70 } : f)
+          )
+          const result = await createAcervoDocument(userId, {
+            filename: file.name,
+            content_type: file.type || 'text/plain',
+            size_bytes: file.size,
+            text_content: textContent,
+          })
+          setLocalFiles(prev => prev.filter(f => f.name !== file.name))
+          if (result.truncated) {
+            toast.success(`${file.name} adicionado ao acervo (texto truncado por exceder o limite)`)
+          } else {
+            toast.success(`${file.name} adicionado ao acervo`)
+          }
+          fetchHistory()
+        } catch (err: any) {
+          setLocalFiles(prev =>
+            prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
+          )
+          toast.error(`Erro ao processar ${file.name}`, err?.message)
+        }
+      } else {
+        // Server mode: upload to backend API
+        try {
+          const formData = new FormData()
+          formData.append('file', file)
+          await api.post('/uploads', formData, {
+            onUploadProgress: (evt) => {
+              if (evt.total) {
+                const pct = Math.round((evt.loaded / evt.total) * 100)
+                setLocalFiles(prev =>
+                  prev.map(f => f.name === file.name ? { ...f, progress: pct } : f)
+                )
+              }
+            },
+          })
+          setLocalFiles(prev => prev.filter(f => f.name !== file.name))
+          fetchHistory()
+        } catch (err: any) {
+          setLocalFiles(prev =>
+            prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
+          )
+          toast.error(`Erro ao enviar ${file.name}`, err?.response?.data?.detail || err?.message)
+        }
       }
     }
 
@@ -109,11 +169,16 @@ export default function Upload() {
     if (!window.confirm(`Remover "${filename}" do acervo permanentemente?`)) return
     setDeletingId(id)
     try {
-      await api.delete(`/uploads/${id}`)
-      setHistory(prev => prev.filter(f => f.id !== id))
+      if (IS_FIREBASE && userId) {
+        await deleteAcervoDocument(userId, id)
+        setFirebaseHistory(prev => prev.filter(f => f.id !== id))
+      } else {
+        await api.delete(`/uploads/${id}`)
+        setHistory(prev => prev.filter(f => f.id !== id))
+      }
       toast.success('Arquivo removido do acervo')
     } catch (err: any) {
-      toast.error('Erro ao remover arquivo', err?.response?.data?.detail)
+      toast.error('Erro ao remover arquivo', err?.response?.data?.detail ?? err?.message)
     } finally {
       setDeletingId(null)
     }
@@ -163,27 +228,25 @@ export default function Upload() {
     <div className="max-w-2xl">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Upload de Documentos</h1>
-        {!IS_FIREBASE && (
-          <button
-            onClick={fetchHistory}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-            title="Atualizar"
-          >
-            <RefreshCw className="w-5 h-5" />
-          </button>
-        )}
+        <button
+          onClick={fetchHistory}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title="Atualizar"
+        >
+          <RefreshCw className="w-5 h-5" />
+        </button>
       </div>
 
-      {/* Firebase mode: no backend upload — show guidance */}
+      {/* Firebase mode: guidance on how acervo works */}
       {IS_FIREBASE && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6 flex gap-3">
           <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-blue-800">Acervo vetorial disponível apenas no modo servidor</p>
+            <p className="text-sm font-medium text-blue-800">Acervo de documentos de referência</p>
             <p className="text-xs text-blue-600 mt-1">
-              O upload e indexação de documentos requer o backend com Qdrant.
-              No modo Firebase, o pipeline de geração utiliza o conhecimento interno dos modelos de IA.
-              Para habilitar o acervo vetorial, execute a plataforma com <code className="bg-blue-100 px-1 rounded">docker compose up</code>.
+              Envie documentos de texto (.txt, .md, .doc, .docx, .pdf) que servirão como base de conhecimento
+              na elaboração de novos documentos. O conteúdo textual será armazenado e utilizado pelo
+              pipeline de geração junto com as teses do banco de teses.
             </p>
           </div>
         </div>
@@ -275,8 +338,48 @@ export default function Upload() {
         </div>
       )}
 
-      {/* Indexed history */}
-      {history.length > 0 && (
+      {/* Indexed history — Firebase mode */}
+      {IS_FIREBASE && firebaseHistory.length > 0 && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700">Acervo de referência</h2>
+            <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-2 py-0.5">{firebaseHistory.length}</span>
+          </div>
+          <div className="divide-y max-h-96 overflow-y-auto">
+            {firebaseHistory.map(acervoDoc => {
+              const s = STATUS_LABELS[acervoDoc.status] || STATUS_LABELS.uploaded
+              const Icon = s.icon
+              return (
+                <div key={acervoDoc.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
+                  <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{acervoDoc.filename}</p>
+                    <p className="text-xs text-gray-400">
+                      {formatSize(acervoDoc.size_bytes)}
+                      {acervoDoc.chunks_count > 0 && ` · ${acervoDoc.chunks_count} fragmentos`}
+                    </p>
+                  </div>
+                  <div className={`flex items-center gap-1 text-xs ${s.color} flex-shrink-0`}>
+                    <Icon className="w-4 h-4" />
+                    <span className="hidden sm:inline">{s.label}</span>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteUpload(acervoDoc.id!, acervoDoc.filename)}
+                    disabled={deletingId === acervoDoc.id}
+                    className="ml-1 text-gray-300 hover:text-red-400 transition-colors disabled:opacity-40 flex-shrink-0"
+                    title="Remover do acervo"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Indexed history — Server mode */}
+      {!IS_FIREBASE && history.length > 0 && (
         <div className="bg-white rounded-xl border overflow-hidden">
           <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-700">Acervo indexado</h2>
@@ -316,13 +419,13 @@ export default function Upload() {
         </div>
       )}
 
-      {history.length === 0 && localFiles.length === 0 && !uploading && (
+      {((IS_FIREBASE ? firebaseHistory.length : history.length) === 0) && localFiles.length === 0 && !uploading && (
         <div className="text-center py-8">
           <p className="text-sm text-gray-400">
-            Nenhum documento indexado ainda.
+            Nenhum documento no acervo ainda.
           </p>
           <p className="text-xs text-gray-300 mt-1">
-            Os uploads alimentam o acervo vetorial usado durante a geração de documentos.
+            Os documentos enviados servirão como base de conhecimento na elaboração de novos documentos.
           </p>
         </div>
       )}
