@@ -16,6 +16,7 @@ import { IS_FIREBASE } from '../lib/firebase'
 import { getStats as firestoreGetStats, getDocumentTypes, getLegalAreas, listDocuments, updateDocument } from '../lib/firestore-service'
 import { useAuth } from '../contexts/AuthContext'
 import ModelConfigCard from '../components/ModelConfigCard'
+import ThesisAnalystConfigCard from '../components/ThesisAnalystConfigCard'
 
 interface ModuleInfo {
   id: string
@@ -686,6 +687,9 @@ export default function AdminPanel() {
 
       {/* Model Configuration — Firebase mode */}
       {IS_FIREBASE && <ModelConfigCard />}
+
+      {/* Thesis Analyst Model Configuration — Firebase mode */}
+      {IS_FIREBASE && <ThesisAnalystConfigCard />}
 
       {/* System Health + Module Pie */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">

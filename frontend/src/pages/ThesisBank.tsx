@@ -11,6 +11,7 @@ import {
   seedThesesIfEmpty,
   type ThesisData,
 } from '../lib/firestore-service'
+import ThesisAnalysisCard from '../components/ThesisAnalysisCard'
 
 interface ThesisItem {
   id: string
@@ -457,6 +458,18 @@ export default function ThesisBank() {
           thesis={editingThesis}
           onClose={() => { setModalOpen(false); setEditingThesis(null) }}
           onSaved={handleThesisSaved}
+        />
+      )}
+
+      {/* Analysis card — manual thesis curation pipeline (Firebase mode only) */}
+      {IS_FIREBASE && userId && (
+        <ThesisAnalysisCard
+          onThesesChanged={() => {
+            fetchTheses(search, areaFilter)
+            if (userId) {
+              getThesisStats(userId).then(s => setStats(s)).catch(() => {})
+            }
+          }}
         />
       )}
 
