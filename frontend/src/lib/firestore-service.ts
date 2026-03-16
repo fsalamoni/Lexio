@@ -85,6 +85,24 @@ export interface AcervoDocumentData {
   chunks_count: number
   status: 'indexed' | 'index_empty' | 'index_error'
   created_at: string
+  /** Whether this document has been included in a thesis bank analysis run. */
+  analyzed_for_theses?: boolean
+}
+
+// ── Thesis Analysis Sessions ──────────────────────────────────────────────────
+
+export interface ThesisAnalysisSessionData {
+  id?: string
+  created_at: string
+  total_theses_analyzed: number
+  total_docs_analyzed: number
+  total_new_docs: number
+  suggestions_count: number
+  accepted_count: number
+  rejected_count: number
+  /** Snapshot: summary text produced by the Revisor agent. */
+  executive_summary: string
+  status: 'completed' | 'partially_applied'
 }
 
 export interface WizardData {
@@ -859,6 +877,87 @@ export async function saveSettings(data: Record<string, unknown>): Promise<void>
   const db = ensureFirestore()
   const ref = doc(db, 'settings', 'platform')
   await setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true })
+}
+
+// ── Acervo analysis tracking ──────────────────────────────────────────────────
+
+/**
+ * Mark a set of acervo documents as analyzed for theses.
+ * Called after a successful thesis analysis run.
+ */
+export async function markAcervoDocumentsAnalyzed(
+  uid: string,
+  docIds: string[],
+): Promise<void> {
+  const db = ensureFirestore()
+  for (const docId of docIds) {
+    try {
+      await updateDoc(doc(db, 'users', uid, 'acervo', docId), {
+        analyzed_for_theses: true,
+      })
+    } catch {
+      // Non-fatal: if a doc no longer exists, skip silently
+    }
+  }
+}
+
+/**
+ * Get acervo documents grouped by analysis status.
+ * Returns { analyzed, unanalyzed } counts and the unanalyzed document list.
+ */
+export async function getAcervoAnalysisStatus(uid: string): Promise<{
+  analyzed_count: number
+  unanalyzed_count: number
+  unanalyzed_docs: AcervoDocumentData[]
+}> {
+  const db = ensureFirestore()
+  const snap = await getDocs(
+    query(collection(db, 'users', uid, 'acervo'), orderBy('created_at', 'desc')),
+  )
+  const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as AcervoDocumentData))
+  const analyzed = all.filter(d => d.analyzed_for_theses === true)
+  const unanalyzed = all.filter(d => d.analyzed_for_theses !== true && d.status === 'indexed' && d.text_content?.length > 0)
+  return {
+    analyzed_count: analyzed.length,
+    unanalyzed_count: unanalyzed.length,
+    unanalyzed_docs: unanalyzed,
+  }
+}
+
+// ── Thesis Analysis Session persistence ──────────────────────────────────────
+
+/**
+ * Save a thesis analysis session record (for display on next visit).
+ */
+export async function saveThesisAnalysisSession(
+  uid: string,
+  data: Omit<ThesisAnalysisSessionData, 'id'>,
+): Promise<string> {
+  const db = ensureFirestore()
+  const ref = await addDoc(collection(db, 'users', uid, 'thesis_analysis_sessions'), {
+    ...data,
+    created_at: data.created_at ?? new Date().toISOString(),
+  })
+  return ref.id
+}
+
+/**
+ * Get the most recent thesis analysis session.
+ */
+export async function getLastThesisAnalysisSession(
+  uid: string,
+): Promise<ThesisAnalysisSessionData | null> {
+  const db = ensureFirestore()
+  const snap = await getDocs(
+    query(
+      collection(db, 'users', uid, 'thesis_analysis_sessions'),
+      orderBy('created_at', 'desc'),
+      limit(1),
+    ),
+  )
+  if (snap.empty) return null
+  const d = snap.docs[0]
+  return { id: d.id, ...d.data() } as ThesisAnalysisSessionData
 }
 
 // ── Password change via Firebase Auth ────────────────────────────────────────

@@ -198,3 +198,114 @@ export async function resetAgentModels(): Promise<void> {
   if (!IS_FIREBASE) return
   await saveSettings({ agent_models: {} })
 }
+
+// ── Thesis Analyst Agent Definitions ─────────────────────────────────────────
+
+/**
+ * Five-agent pipeline for the manual "Analisar Teses" feature.
+ *
+ * Agent execution order:
+ *  1. Catalogador    — inventory & similarity clustering
+ *  2. Analista       — deep redundancy analysis per cluster
+ *  3. Compilador     — draft merged thesis for each merge group
+ *  4. Curador        — extract new theses from unanalyzed acervo docs
+ *  5. Revisor        — rank, annotate and finalise all suggestions
+ */
+export const THESIS_ANALYST_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'thesis_catalogador',
+    label: 'Catalogador',
+    description: 'Faz inventário das teses existentes e agrupa candidatas a duplicatas ou compilação',
+    defaultModel: 'anthropic/claude-3.5-haiku',
+    recommendedTier: 'fast',
+    icon: 'search',
+  },
+  {
+    key: 'thesis_analista',
+    label: 'Analista de Redundâncias',
+    description: 'Analisa profundamente cada grupo, identificando duplicatas, complementares e contradições',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'scale',
+  },
+  {
+    key: 'thesis_compilador',
+    label: 'Compilador',
+    description: 'Redige a versão compilada de cada grupo a mesclar, preservando todos os argumentos únicos',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'refresh-cw',
+  },
+  {
+    key: 'thesis_curador',
+    label: 'Curador de Lacunas',
+    description: 'Extrai novas teses de documentos ainda não analisados, focando em lacunas temáticas',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'book-open',
+  },
+  {
+    key: 'thesis_revisor',
+    label: 'Revisor Final',
+    description: 'Revisa, prioriza e anota todas as sugestões produzidas pelos agentes anteriores',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'clipboard-check',
+  },
+]
+
+/** Map from thesis-analyst agent key → model ID */
+export type ThesisAnalystModelMap = Record<string, string>
+
+/** Default model map for the thesis analyst pipeline. */
+export function getDefaultThesisAnalystModelMap(): ThesisAnalystModelMap {
+  const map: ThesisAnalystModelMap = {}
+  for (const def of THESIS_ANALYST_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/**
+ * Load thesis analyst model configuration.
+ * Returns saved overrides merged with defaults.
+ */
+export async function loadThesisAnalystModels(): Promise<ThesisAnalystModelMap> {
+  const defaults = getDefaultThesisAnalystModelMap()
+  if (!IS_FIREBASE) return defaults
+  try {
+    const settings = await getSettings()
+    const saved = (settings.thesis_analyst_models ?? {}) as Record<string, string>
+    for (const def of THESIS_ANALYST_AGENT_DEFS) {
+      if (saved[def.key] && typeof saved[def.key] === 'string') {
+        defaults[def.key] = saved[def.key]
+      }
+    }
+  } catch {
+    // Fall back to defaults silently
+  }
+  return defaults
+}
+
+/**
+ * Save thesis analyst model configuration to Firestore.
+ * Only stores non-default values to keep data minimal.
+ */
+export async function saveThesisAnalystModels(models: ThesisAnalystModelMap): Promise<void> {
+  if (!IS_FIREBASE) return
+  const defaults = getDefaultThesisAnalystModelMap()
+  const overrides: ThesisAnalystModelMap = {}
+  for (const def of THESIS_ANALYST_AGENT_DEFS) {
+    const model = models[def.key]
+    if (model && model !== defaults[def.key]) {
+      overrides[def.key] = model
+    }
+  }
+  await saveSettings({ thesis_analyst_models: overrides })
+}
+
+/** Reset thesis analyst models to defaults. */
+export async function resetThesisAnalystModels(): Promise<void> {
+  if (!IS_FIREBASE) return
+  await saveSettings({ thesis_analyst_models: {} })
+}
