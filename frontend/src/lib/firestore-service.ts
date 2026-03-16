@@ -58,6 +58,9 @@ export interface DocumentData {
   created_at: string
   updated_at?: string
   origem?: string
+  llm_tokens_in?: number
+  llm_tokens_out?: number
+  llm_cost_usd?: number
 }
 
 export interface ThesisData {
@@ -372,13 +375,16 @@ export async function getStats(uid: string) {
   const scores = items.map(d => d.quality_score).filter((s): s is number => s != null)
   const average_quality_score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null
 
+  const costs = items.map(d => d.llm_cost_usd).filter((c): c is number => typeof c === 'number' && c > 0)
+  const total_cost_usd = parseFloat(costs.reduce((a, b) => a + b, 0).toFixed(6))
+
   return {
     total_documents,
     completed_documents,
     processing_documents,
     pending_review_documents,
     average_quality_score,
-    total_cost_usd: 0,
+    total_cost_usd,
     average_duration_ms: null,
   }
 }
@@ -391,10 +397,10 @@ export async function getDailyStats(uid: string, days = 30) {
   const cutoff = new Date(now - days * msPerDay).toISOString().slice(0, 10)
 
   // Build a day→counts map
-  const dayMap = new Map<string, { total: number; concluidos: number }>()
+  const dayMap = new Map<string, { total: number; concluidos: number; custo: number }>()
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(now - i * msPerDay).toISOString().slice(0, 10)
-    dayMap.set(d, { total: 0, concluidos: 0 })
+    dayMap.set(d, { total: 0, concluidos: 0, custo: 0 })
   }
 
   for (const doc of items) {
@@ -405,6 +411,8 @@ export async function getDailyStats(uid: string, days = 30) {
       if (entry) {
         entry.total++
         if (doc.status === 'concluido' || doc.status === 'aprovado') entry.concluidos++
+        const cost = doc.llm_cost_usd
+        if (typeof cost === 'number') entry.custo += cost
       }
     }
   }
@@ -413,7 +421,7 @@ export async function getDailyStats(uid: string, days = 30) {
     dia,
     total: v.total,
     concluidos: v.concluidos,
-    custo: 0,
+    custo: parseFloat(v.custo.toFixed(6)),
   }))
 }
 
@@ -658,11 +666,19 @@ export async function listTheses(
   opts: { q?: string; legalAreaId?: string; limit?: number; skip?: number } = {},
 ): Promise<{ items: ThesisData[]; total: number }> {
   const db = ensureFirestore()
-  const constraints: QueryConstraint[] = [orderBy('created_at', 'desc')]
-  if (opts.legalAreaId) constraints.push(where('legal_area_id', '==', opts.legalAreaId))
-  if (opts.limit) constraints.push(limit(opts.limit + (opts.skip ?? 0)))
+  // Combining where() on one field with orderBy() on a different field requires a composite
+  // Firestore index that may not exist. When filtering by area we skip the server-side orderBy
+  // and sort client-side instead.
+  const constraints: QueryConstraint[] = opts.legalAreaId
+    ? [where('legal_area_id', '==', opts.legalAreaId)]
+    : [orderBy('created_at', 'desc')]
+  if (!opts.legalAreaId && opts.limit) constraints.push(limit(opts.limit + (opts.skip ?? 0)))
   const snap = await getDocs(query(collection(db, 'users', uid, 'theses'), ...constraints))
   let items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
+  // When area filter is active, sort client-side (avoids composite index requirement)
+  if (opts.legalAreaId) {
+    items.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+  }
   // Client-side text search
   if (opts.q) {
     const q = opts.q.toLowerCase()
