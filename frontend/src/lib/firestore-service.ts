@@ -611,6 +611,65 @@ const LEGAL_AREAS = [
 export function getDocumentTypes() { return DOCUMENT_TYPES }
 export function getLegalAreas() { return LEGAL_AREAS }
 
+// ── Admin CRUD for Document Types (Firestore /settings/admin_document_types) ─
+
+export interface AdminDocumentType {
+  id: string
+  name: string
+  description: string
+  templates: string[]
+  is_enabled: boolean
+}
+
+export async function loadAdminDocumentTypes(): Promise<AdminDocumentType[]> {
+  if (!IS_FIREBASE) return DOCUMENT_TYPES.map(dt => ({ ...dt, is_enabled: true }))
+  try {
+    const db = ensureFirestore()
+    const ref = doc(db, 'settings', 'admin_document_types')
+    const snap = await getDoc(ref)
+    if (snap.exists()) {
+      const data = snap.data()
+      if (Array.isArray(data?.items) && data.items.length > 0) return data.items
+    }
+  } catch { /* fallback to defaults */ }
+  return DOCUMENT_TYPES.map(dt => ({ ...dt, is_enabled: true }))
+}
+
+export async function saveAdminDocumentTypes(items: AdminDocumentType[]): Promise<void> {
+  const db = ensureFirestore()
+  const ref = doc(db, 'settings', 'admin_document_types')
+  await setDoc(ref, { items, updated_at: serverTimestamp() })
+}
+
+// ── Admin CRUD for Legal Areas (Firestore /settings/admin_legal_areas) ───────
+
+export interface AdminLegalArea {
+  id: string
+  name: string
+  description: string
+  is_enabled: boolean
+}
+
+export async function loadAdminLegalAreas(): Promise<AdminLegalArea[]> {
+  if (!IS_FIREBASE) return LEGAL_AREAS.map(la => ({ ...la, is_enabled: true }))
+  try {
+    const db = ensureFirestore()
+    const ref = doc(db, 'settings', 'admin_legal_areas')
+    const snap = await getDoc(ref)
+    if (snap.exists()) {
+      const data = snap.data()
+      if (Array.isArray(data?.items) && data.items.length > 0) return data.items
+    }
+  } catch { /* fallback to defaults */ }
+  return LEGAL_AREAS.map(la => ({ ...la, is_enabled: true }))
+}
+
+export async function saveAdminLegalAreas(items: AdminLegalArea[]): Promise<void> {
+  const db = ensureFirestore()
+  const ref = doc(db, 'settings', 'admin_legal_areas')
+  await setDoc(ref, { items, updated_at: serverTimestamp() })
+}
+
 // ── Profile-based filtering ─────────────────────────────────────────────────
 
 /**
