@@ -113,7 +113,13 @@ function ApiKeysCard() {
   )
 
   return (
-    <div className="bg-white rounded-xl border p-6 mb-6">
+    <form
+      className="bg-white rounded-xl border p-6 mb-6"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void handleSave()
+      }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -132,7 +138,7 @@ function ApiKeysCard() {
             </span>
           )}
           <button
-            onClick={handleSave}
+            type="submit"
             disabled={!hasPendingChanges || saving}
             className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
@@ -195,10 +201,11 @@ function ApiKeysCard() {
                       Site
                     </a>
                     {hasGuide && (
-                      <button
-                        onClick={() => setExpanded(prev => ({ ...prev, [def.key]: !prev[def.key] }))}
-                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 border rounded px-2 py-1"
-                      >
+                        <button
+                          type="button"
+                          onClick={() => setExpanded(prev => ({ ...prev, [def.key]: !prev[def.key] }))}
+                          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 border rounded px-2 py-1"
+                        >
                         <BookOpen className="w-3 h-3" />
                         {isExpanded ? 'Fechar guia' : 'Como configurar'}
                         {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -224,6 +231,7 @@ function ApiKeysCard() {
                       value={currentValue}
                       onChange={(e) => setEdits(prev => ({ ...prev, [def.key]: e.target.value }))}
                       placeholder={def.is_set ? 'Nova chave (deixe vazio para manter a atual)' : def.placeholder}
+                      autoComplete="new-password"
                       className="w-full text-sm border rounded-lg px-3 py-2 pr-10 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
                       onFocus={() => !isEditing && setEdits(prev => ({ ...prev, [def.key]: '' }))}
                       onBlur={() => {
@@ -241,10 +249,11 @@ function ApiKeysCard() {
                     </button>
                   </div>
                   {isEditing && edits[def.key] !== '' && (
-                    <button
-                      onClick={() => setEdits(prev => { const n = { ...prev }; delete n[def.key]; return n })}
-                      className="text-xs text-gray-500 hover:text-gray-700 border rounded-lg px-3"
-                    >
+                      <button
+                        type="button"
+                        onClick={() => setEdits(prev => { const n = { ...prev }; delete n[def.key]; return n })}
+                        className="text-xs text-gray-500 hover:text-gray-700 border rounded-lg px-3"
+                      >
                       Cancelar
                     </button>
                   )}
@@ -279,7 +288,7 @@ function ApiKeysCard() {
           )
         })}
       </div>
-    </div>
+    </form>
   )
 }
 
