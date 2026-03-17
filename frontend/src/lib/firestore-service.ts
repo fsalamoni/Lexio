@@ -157,6 +157,43 @@ function round6(value: number) {
   return Number(value.toFixed(6))
 }
 
+function matchesDocumentFilters(doc: DocumentData, opts?: {
+  status?: string
+  document_type_id?: string
+}) {
+  if (opts?.status && doc.status !== opts.status) return false
+  if (opts?.document_type_id && doc.document_type_id !== opts.document_type_id) return false
+  return true
+}
+
+function getDocumentCreatedAtValue(value: unknown) {
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+  if (typeof value === 'number') return value
+  if (value && typeof value === 'object' && 'toMillis' in value && typeof value.toMillis === 'function') {
+    return value.toMillis()
+  }
+  return 0
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return 'Erro desconhecido'
+}
+
+function sortDocuments(items: DocumentData[], sortDir?: string) {
+  const direction = sortDir === 'asc' ? 1 : -1
+  return [...items].sort((a, b) =>
+    (getDocumentCreatedAtValue(a.created_at) - getDocumentCreatedAtValue(b.created_at)) * direction,
+  )
+}
+
 // ── Profile (Anamnesis Layer 1) ──────────────────────────────────────────────
 
 export async function getProfile(uid: string): Promise<ProfileData> {
@@ -364,9 +401,30 @@ export async function listDocuments(uid: string, opts?: {
   }
 
   const q = query(colRef, ...constraints)
-  const snap = await getDocs(q)
-  const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentData))
-  return { items, total: items.length }
+  try {
+    const snap = await getDocs(q)
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentData))
+    return { items, total: items.length }
+  } catch (error) {
+    if (!(opts?.status || opts?.document_type_id)) {
+      throw error
+    }
+    try {
+      console.warn('Filtered Firestore document query failed; using client-side fallback:', getErrorMessage(error))
+      const fallbackSnap = await getDocs(colRef)
+      const filteredItems = sortDocuments(
+        fallbackSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as DocumentData))
+          .filter(doc => matchesDocumentFilters(doc, opts)),
+        opts?.sortDir,
+      )
+      const limitedItems = opts?.limit ? filteredItems.slice(0, opts.limit) : filteredItems
+      return { items: limitedItems, total: filteredItems.length }
+    } catch (fallbackError) {
+      console.warn('Firestore document fallback query also failed:', getErrorMessage(fallbackError))
+      throw fallbackError
+    }
+  }
 }
 
 export async function updateDocument(uid: string, docId: string, data: Partial<DocumentData>): Promise<void> {
