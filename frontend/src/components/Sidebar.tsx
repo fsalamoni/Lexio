@@ -1,7 +1,7 @@
 import { NavLink, matchPath, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, PlusCircle, Upload,
-  Scale, LogOut, Shield, BookOpen, ChevronRight, UserCircle,
+  Scale, LogOut, Shield, BookOpen, ChevronRight, UserCircle, DollarSign,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useEffect, useMemo, useState } from 'react'
@@ -151,6 +151,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             icon={Shield}
             onClick={onClose}
             badge={pendingReview}
+          />
+        )}
+        {role === 'admin' && (
+          <NavItem
+            to="/admin/costs"
+            label="Custos e Tokens"
+            icon={DollarSign}
+            onClick={onClose}
           />
         )}
       </nav>

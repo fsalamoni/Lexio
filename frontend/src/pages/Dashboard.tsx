@@ -15,16 +15,13 @@ import { useAuth } from '../contexts/AuthContext'
 import StatusBadge from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
 import { SkeletonCard } from '../components/Skeleton'
-import CostBreakdownModal from '../components/CostBreakdownModal'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
   getStats as firestoreGetStats,
   getRecentDocuments,
   getDailyStats,
   getByTypeStats,
-  getCostBreakdown as firestoreGetCostBreakdown,
 } from '../lib/firestore-service'
-import type { CostBreakdown } from '../lib/cost-analytics'
 import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../lib/constants'
 
 interface Stats {
@@ -105,9 +102,6 @@ export default function Dashboard() {
   const [agents, setAgents] = useState<AgentStat[]>([])
   const [recent, setRecent] = useState<RecentDoc[]>([])
   const [byType, setByType] = useState<TypeStat[]>([])
-  const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null)
-  const [showCostBreakdownModal, setShowCostBreakdownModal] = useState(false)
-  const [costBreakdownLoading, setCostBreakdownLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [periodDays, setPeriodDays] = useState(30)
   const [chartLoading, setChartLoading] = useState(false)
@@ -162,30 +156,6 @@ export default function Dashboard() {
         .finally(() => setChartLoading(false))
     }
   }, [periodDays, shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const loadCostBreakdown = async () => {
-    if (costBreakdownLoading) return
-    if (shouldWaitForFirebaseUser) return
-
-    setCostBreakdownLoading(true)
-    try {
-      if (IS_FIREBASE && userId) {
-        setCostBreakdown(await firestoreGetCostBreakdown(userId))
-      } else {
-        const response = await api.get('/stats/cost-breakdown')
-        setCostBreakdown(response.data as CostBreakdown)
-      }
-    } catch {
-      toast.error('Erro ao carregar detalhamento de custos')
-    } finally {
-      setCostBreakdownLoading(false)
-    }
-  }
-
-  const handleOpenCostBreakdown = async () => {
-    setShowCostBreakdownModal(true)
-    await loadCostBreakdown()
-  }
 
   // Build cumulative cost series (guard against missing custo field)
   const costSeries = daily.reduce<{ dia: string; custo_acumulado: number }[]>((acc, d) => {
@@ -276,15 +246,11 @@ export default function Dashboard() {
               value: fmtCost(stats.total_cost_usd),
               icon: DollarSign,
               color: 'amber',
-              onClick: handleOpenCostBreakdown,
             },
           ].map(card => (
-            <button
+            <div
               key={card.label}
-              type="button"
-              onClick={card.onClick}
-              disabled={!card.onClick}
-              className={`bg-white rounded-xl border p-5 text-left disabled:cursor-default${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? ' border-blue-200 ring-1 ring-blue-100' : ''}${card.onClick ? ' hover:border-amber-200 hover:ring-1 hover:ring-amber-100 transition-all cursor-pointer' : ''}`}
+              className={`bg-white rounded-xl border p-5 text-left${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? ' border-blue-200 ring-1 ring-blue-100' : ''}`}
             >
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{card.label}</span>
@@ -304,10 +270,7 @@ export default function Dashboard() {
                   Tempo médio: {fmtDuration(stats.average_duration_ms)}
                 </p>
               )}
-              {card.label === 'Custo Total' && (
-                <p className="text-xs text-gray-400 mt-1">Clique para ver o detalhamento completo</p>
-              )}
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -502,12 +465,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      <CostBreakdownModal
-        open={showCostBreakdownModal}
-        breakdown={costBreakdown}
-        loading={costBreakdownLoading}
-        onClose={() => setShowCostBreakdownModal(false)}
-      />
     </div>
   )
 }
