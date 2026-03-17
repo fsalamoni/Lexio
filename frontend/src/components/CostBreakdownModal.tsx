@@ -64,23 +64,24 @@ function BreakdownTable({
         <div className="px-5 py-6 text-sm text-gray-400">{emptyLabel}</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[920px] table-fixed" aria-label={`Tabela de ${title}`}>
             <thead className="sticky top-0 bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
               <tr>
-                <th className="px-5 py-2 text-left">Grupo</th>
-                <th className="px-5 py-2 text-right">Chamadas</th>
-                <th className="px-5 py-2 text-right">Entrada</th>
-                <th className="px-5 py-2 text-right">Saída</th>
-                <th className="px-5 py-2 text-right">Tokens</th>
-                <th className="px-5 py-2 text-right">USD</th>
-                <th className="px-5 py-2 text-right">R$</th>
+                <th className="w-[34%] px-5 py-2 text-left">Grupo</th>
+                <th className="w-[11%] px-5 py-2 text-right">Chamadas</th>
+                <th className="w-[11%] px-5 py-2 text-right">Entrada</th>
+                <th className="w-[11%] px-5 py-2 text-right">Saída</th>
+                <th className="w-[11%] px-5 py-2 text-right">Tokens</th>
+                <th className="w-[11%] px-5 py-2 text-right">USD</th>
+                <th className="w-[11%] px-5 py-2 text-right">R$</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {rows.map(row => (
                 <tr key={row.key} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-5 py-2.5 text-sm text-gray-800 max-w-[260px]">
-                    <span className="block truncate" title={row.label}>{row.label}</span>
+                  <td className="px-5 py-2.5 text-sm text-gray-800">
+                    <span className="block truncate" aria-hidden="true" title={row.label}>{row.label}</span>
+                    <span className="sr-only">{row.label}</span>
                   </td>
                   <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.calls)}</td>
                   <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.tokens_in)}</td>
