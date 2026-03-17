@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from packages.api.stats_breakdown import build_cost_breakdown
 from packages.core.auth.dependencies import get_current_user, get_db
 from packages.core.database.models.document import Document
 from packages.core.database.models.execution import Execution
@@ -162,6 +163,43 @@ async def get_agent_stats(
         }
         for row in rows
     ]
+
+
+@router.get("/cost-breakdown")
+async def get_cost_breakdown(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Detailed LLM cost/tokens breakdown for dashboard analytics."""
+    rows = (await db.execute(
+        select(
+            Execution.model,
+            Execution.phase,
+            Execution.agent_name,
+            Execution.tokens_in,
+            Execution.tokens_out,
+            Execution.cost_usd,
+            Execution.duration_ms,
+            Document.document_type_id,
+        )
+        .join(Document, Document.id == Execution.document_id)
+        .where(Execution.organization_id == user.organization_id)
+        .order_by(Execution.created_at.desc())
+    )).all()
+
+    return build_cost_breakdown([
+        {
+            "model": row.model,
+            "phase": row.phase,
+            "agent_name": row.agent_name,
+            "tokens_in": row.tokens_in,
+            "tokens_out": row.tokens_out,
+            "cost_usd": row.cost_usd,
+            "duration_ms": row.duration_ms,
+            "document_type_id": row.document_type_id,
+        }
+        for row in rows
+    ])
 
 
 @router.get("/by-type")
