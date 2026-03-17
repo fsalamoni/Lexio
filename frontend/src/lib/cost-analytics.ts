@@ -259,8 +259,8 @@ export function buildCostBreakdown(
     by_agent: aggregateBreakdown(executions, execution => execution.agent_name, execution => execution.agent_name, exchangeRateBrl),
     by_agent_function: aggregateBreakdown(
       executions,
-      execution => `${execution.function_key}::${execution.agent_name}`,
-      execution => `${execution.function_label} · ${execution.agent_name}`,
+      execution => `${execution.function_key}::${execution.agent_name || 'unknown_agent'}`,
+      execution => `${execution.function_label} · ${execution.agent_name || 'Não informado'}`,
       exchangeRateBrl,
     ),
     by_document_type: aggregateBreakdown(
