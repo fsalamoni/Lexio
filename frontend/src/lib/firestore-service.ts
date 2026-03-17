@@ -178,6 +178,15 @@ function getDocumentCreatedAtValue(value: unknown) {
   return 0
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return 'Erro desconhecido'
+}
+
 function sortDocuments(items: DocumentData[], sortDir?: string) {
   const direction = sortDir === 'asc' ? 1 : -1
   return [...items].sort((a, b) =>
@@ -401,7 +410,7 @@ export async function listDocuments(uid: string, opts?: {
       throw error
     }
     try {
-      console.warn('Filtered Firestore document query failed; using client-side fallback.', error)
+      console.warn('Filtered Firestore document query failed; using client-side fallback:', getErrorMessage(error))
       const fallbackSnap = await getDocs(colRef)
       const filteredItems = sortDocuments(
         fallbackSnap.docs
@@ -412,7 +421,7 @@ export async function listDocuments(uid: string, opts?: {
       const limitedItems = opts?.limit ? filteredItems.slice(0, opts.limit) : filteredItems
       return { items: limitedItems, total: filteredItems.length }
     } catch (fallbackError) {
-      console.warn('Firestore document fallback query also failed.', fallbackError)
+      console.warn('Firestore document fallback query also failed:', getErrorMessage(fallbackError))
       throw fallbackError
     }
   }
