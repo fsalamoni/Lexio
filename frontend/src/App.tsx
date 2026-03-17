@@ -13,6 +13,7 @@ import DocumentDetail from './pages/DocumentDetail'
 import DocumentEditor from './pages/DocumentEditor'
 import Upload from './pages/Upload'
 import AdminPanel from './pages/AdminPanel'
+import CostTokensPage from './pages/CostTokensPage'
 import Onboarding from './pages/Onboarding'
 import ThesisBank from './pages/ThesisBank'
 import Profile from './pages/Profile'
@@ -52,6 +53,7 @@ function AppRoutes() {
                 <Route path="/upload" element={<Upload />} />
                 <Route path="/theses" element={<ThesisBank />} />
                 <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
+                <Route path="/admin/costs" element={<AdminRoute><CostTokensPage /></AdminRoute>} />
                 <Route path="/onboarding" element={<Onboarding />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="*" element={<NotFound />} />

@@ -11,8 +11,7 @@ import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getCostBreakdown as firestoreGetCostBreakdown } from '../lib/firestore-service'
 import api from '../api/client'
-import type { CostBreakdown, CostBreakdownItem, UsageExecutionRecord } from '../lib/cost-analytics'
-import { buildCostBreakdown } from '../lib/cost-analytics'
+import type { CostBreakdown, CostBreakdownItem } from '../lib/cost-analytics'
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 
