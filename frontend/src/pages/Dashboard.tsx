@@ -15,8 +15,16 @@ import { useAuth } from '../contexts/AuthContext'
 import StatusBadge from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
 import { SkeletonCard } from '../components/Skeleton'
+import CostBreakdownModal from '../components/CostBreakdownModal'
 import { IS_FIREBASE } from '../lib/firebase'
-import { getStats as firestoreGetStats, getRecentDocuments, getDailyStats, getByTypeStats } from '../lib/firestore-service'
+import {
+  getStats as firestoreGetStats,
+  getRecentDocuments,
+  getDailyStats,
+  getByTypeStats,
+  getCostBreakdown as firestoreGetCostBreakdown,
+} from '../lib/firestore-service'
+import type { CostBreakdown } from '../lib/cost-analytics'
 import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../lib/constants'
 
 interface Stats {
@@ -97,13 +105,20 @@ export default function Dashboard() {
   const [agents, setAgents] = useState<AgentStat[]>([])
   const [recent, setRecent] = useState<RecentDoc[]>([])
   const [byType, setByType] = useState<TypeStat[]>([])
+  const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null)
+  const [showCostBreakdownModal, setShowCostBreakdownModal] = useState(false)
+  const [costBreakdownLoading, setCostBreakdownLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [periodDays, setPeriodDays] = useState(30)
   const [chartLoading, setChartLoading] = useState(false)
   const { userId } = useAuth()
   const toast = useToast()
+  const shouldWaitForFirebaseUser = IS_FIREBASE && !userId
 
   useEffect(() => {
+    if (shouldWaitForFirebaseUser) return
+    setLoading(true)
+
     if (IS_FIREBASE && userId) {
       const p1 = firestoreGetStats(userId).then(s => setStats(s)).catch(() => toast.error('Erro ao carregar estatísticas'))
       const p2 = getRecentDocuments(userId, 5).then(docs => {
@@ -128,11 +143,12 @@ export default function Dashboard() {
       const p5 = api.get('/stats/by-type').then(r => setByType(toArr(r.data))).catch(() => {/* non-critical */})
       Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
     }
-  }, []) // eslint-disable-line
+  }, [shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reload chart data when period changes (after initial load)
   useEffect(() => {
     if (loading) return
+    if (shouldWaitForFirebaseUser) return
     setChartLoading(true)
     if (IS_FIREBASE && userId) {
       getDailyStats(userId, periodDays)
@@ -145,7 +161,31 @@ export default function Dashboard() {
         .catch(() => toast.error('Erro ao carregar histórico'))
         .finally(() => setChartLoading(false))
     }
-  }, [periodDays]) // eslint-disable-line
+  }, [periodDays, shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadCostBreakdown = async () => {
+    if (costBreakdownLoading) return
+    if (shouldWaitForFirebaseUser) return
+
+    setCostBreakdownLoading(true)
+    try {
+      if (IS_FIREBASE && userId) {
+        setCostBreakdown(await firestoreGetCostBreakdown(userId))
+      } else {
+        const response = await api.get('/stats/cost-breakdown')
+        setCostBreakdown(response.data as CostBreakdown)
+      }
+    } catch {
+      toast.error('Erro ao carregar detalhamento de custos')
+    } finally {
+      setCostBreakdownLoading(false)
+    }
+  }
+
+  const handleOpenCostBreakdown = async () => {
+    setShowCostBreakdownModal(true)
+    await loadCostBreakdown()
+  }
 
   // Build cumulative cost series (guard against missing custo field)
   const costSeries = daily.reduce<{ dia: string; custo_acumulado: number }[]>((acc, d) => {
@@ -236,9 +276,16 @@ export default function Dashboard() {
               value: fmtCost(stats.total_cost_usd),
               icon: DollarSign,
               color: 'amber',
+              onClick: handleOpenCostBreakdown,
             },
           ].map(card => (
-            <div key={card.label} className={`bg-white rounded-xl border p-5${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? ' border-blue-200 ring-1 ring-blue-100' : ''}`}>
+            <button
+              key={card.label}
+              type="button"
+              onClick={card.onClick}
+              disabled={!card.onClick}
+              className={`bg-white rounded-xl border p-5 text-left disabled:cursor-default${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? ' border-blue-200 ring-1 ring-blue-100' : ''}${card.onClick ? ' hover:border-amber-200 hover:ring-1 hover:ring-amber-100 transition-all cursor-pointer' : ''}`}
+            >
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{card.label}</span>
                 <card.icon className={`w-4 h-4 ${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? 'text-blue-500' : 'text-gray-400'}`} />
@@ -257,7 +304,10 @@ export default function Dashboard() {
                   Tempo médio: {fmtDuration(stats.average_duration_ms)}
                 </p>
               )}
-            </div>
+              {card.label === 'Custo Total' && (
+                <p className="text-xs text-gray-400 mt-1">Clique para ver o detalhamento completo</p>
+              )}
+            </button>
           ))}
         </div>
       )}
@@ -451,6 +501,13 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      <CostBreakdownModal
+        open={showCostBreakdownModal}
+        breakdown={costBreakdown}
+        loading={costBreakdownLoading}
+        onClose={() => setShowCostBreakdownModal(false)}
+      />
     </div>
   )
 }

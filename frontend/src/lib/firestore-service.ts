@@ -17,6 +17,15 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore'
 import { firestore, IS_FIREBASE } from './firebase'
+import {
+  buildCostBreakdown,
+  buildUsageSummary,
+  extractDocumentUsageExecutions,
+  extractThesisSessionExecutions,
+  type CostBreakdown,
+  type UsageExecutionRecord,
+  type UsageSummary,
+} from './cost-analytics'
 
 // ── Type definitions ──────────────────────────────────────────────────────────
 
@@ -61,6 +70,8 @@ export interface DocumentData {
   llm_tokens_in?: number
   llm_tokens_out?: number
   llm_cost_usd?: number
+  llm_executions?: UsageExecutionRecord[]
+  usage_summary?: UsageSummary
 }
 
 export interface ThesisData {
@@ -106,6 +117,8 @@ export interface ThesisAnalysisSessionData {
   /** Snapshot: summary text produced by the Revisor agent. */
   executive_summary: string
   status: 'completed' | 'partially_applied'
+  usage_summary?: UsageSummary
+  llm_executions?: UsageExecutionRecord[]
 }
 
 export interface WizardData {
@@ -138,6 +151,10 @@ function ensureFirestore() {
     throw new Error('Firestore não está configurado')
   }
   return firestore
+}
+
+function round6(value: number) {
+  return Number(value.toFixed(6))
 }
 
 // ── Profile (Anamnesis Layer 1) ──────────────────────────────────────────────
@@ -367,7 +384,10 @@ export async function deleteDocument(uid: string, docId: string): Promise<void> 
 // ── Stats (computed from Firestore data) ─────────────────────────────────────
 
 export async function getStats(uid: string) {
-  const { items } = await listDocuments(uid)
+  const [{ items }, sessions] = await Promise.all([
+    listDocuments(uid),
+    listThesisAnalysisSessions(uid).catch(() => []),
+  ])
   const total_documents = items.length
   const completed_documents = items.filter(d => d.status === 'concluido' || d.status === 'aprovado').length
   const processing_documents = items.filter(d => d.status === 'processando').length
@@ -376,7 +396,11 @@ export async function getStats(uid: string) {
   const average_quality_score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null
 
   const costs = items.map(d => d.llm_cost_usd).filter((c): c is number => typeof c === 'number' && c > 0)
-  const total_cost_usd = parseFloat(costs.reduce((a, b) => a + b, 0).toFixed(6))
+  const analysisCosts = sessions
+    .map(session => buildUsageSummary(extractThesisSessionExecutions(session)).total_cost_usd)
+    .filter(cost => cost > 0)
+  const total_cost_usd = round6(costs.reduce((a, b) => a + b, 0))
+  const total_analysis_cost_usd = round6(analysisCosts.reduce((a, b) => a + b, 0))
 
   return {
     total_documents,
@@ -384,14 +408,17 @@ export async function getStats(uid: string) {
     processing_documents,
     pending_review_documents,
     average_quality_score,
-    total_cost_usd,
+    total_cost_usd: round6(total_cost_usd + total_analysis_cost_usd),
     average_duration_ms: null,
   }
 }
 
 /** Compute daily document counts from real Firestore documents for the last N days. */
 export async function getDailyStats(uid: string, days = 30) {
-  const { items } = await listDocuments(uid)
+  const [{ items }, sessions] = await Promise.all([
+    listDocuments(uid),
+    listThesisAnalysisSessions(uid).catch(() => []),
+  ])
   const now = Date.now()
   const msPerDay = 86_400_000
   const cutoff = new Date(now - days * msPerDay).toISOString().slice(0, 10)
@@ -417,11 +444,21 @@ export async function getDailyStats(uid: string, days = 30) {
     }
   }
 
+  for (const session of sessions) {
+    if (!session.created_at) continue
+    const day = session.created_at.slice(0, 10)
+    if (day >= cutoff) {
+      const entry = dayMap.get(day)
+      const cost = buildUsageSummary(extractThesisSessionExecutions(session)).total_cost_usd
+      if (entry && cost > 0) entry.custo += cost
+    }
+  }
+
   return Array.from(dayMap.entries()).map(([dia, v]) => ({
     dia,
     total: v.total,
     concluidos: v.concluidos,
-    custo: parseFloat(v.custo.toFixed(6)),
+    custo: round6(v.custo),
   }))
 }
 
@@ -451,6 +488,28 @@ export async function getByTypeStats(uid: string) {
 export async function getRecentDocuments(uid: string, count = 5): Promise<DocumentData[]> {
   const { items } = await listDocuments(uid, { limit: count })
   return items
+}
+
+export async function listThesisAnalysisSessions(uid: string): Promise<ThesisAnalysisSessionData[]> {
+  const db = ensureFirestore()
+  const snap = await getDocs(
+    query(collection(db, 'users', uid, 'thesis_analysis_sessions'), orderBy('created_at', 'desc')),
+  )
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisAnalysisSessionData))
+}
+
+export async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
+  const [{ items }, sessions] = await Promise.all([
+    listDocuments(uid),
+    listThesisAnalysisSessions(uid).catch(() => []),
+  ])
+
+  const executions = [
+    ...items.flatMap(doc => extractDocumentUsageExecutions(doc)),
+    ...sessions.flatMap(session => extractThesisSessionExecutions(session)),
+  ]
+
+  return buildCostBreakdown(executions)
 }
 
 // ── Document types & legal areas (static definitions for Firebase mode) ──────

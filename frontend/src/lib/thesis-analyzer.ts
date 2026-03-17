@@ -14,6 +14,7 @@
 
 import { callLLM } from './llm-client'
 import { type ThesisData, type AcervoDocumentData } from './firestore-service'
+import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord, type UsageSummary } from './cost-analytics'
 import { type ThesisAnalystModelMap } from './model-config'
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -69,6 +70,8 @@ export interface ThesisAnalysisResult {
   new_doc_count: number
   suggestions: AnalysisSuggestion[]
   executive_summary: string
+  usage_summary: UsageSummary
+  llm_executions: UsageExecutionRecord[]
 }
 
 export type ProgressCallback = (agents: AgentProgress[]) => void
@@ -287,6 +290,7 @@ export async function analyzeThesisBank(
 
   const sessionId = uid4()
   const now = new Date().toISOString()
+  const llmExecutions: UsageExecutionRecord[] = []
 
   // Initialise progress state
   const agents: AgentProgress[] = [
@@ -328,6 +332,18 @@ export async function analyzeThesisBank(
       3000,
       0.1,
     )
+    llmExecutions.push(createUsageExecutionRecord({
+      source_type: 'thesis_analysis',
+      source_id: sessionId,
+      created_at: now,
+      phase: 'thesis_catalogador',
+      agent_name: 'Catalogador',
+      model: res.model,
+      tokens_in: res.tokens_in,
+      tokens_out: res.tokens_out,
+      cost_usd: res.cost_usd,
+      duration_ms: res.duration_ms,
+    }))
     catalogueResult = parseJsonObject(res.content) as typeof catalogueResult
     notify('thesis_catalogador', 'done', `${catalogueResult.similar_groups?.length ?? 0} grupos identificados`)
   } catch (err) {
@@ -373,6 +389,18 @@ export async function analyzeThesisBank(
         4000,
         0.1,
       )
+      llmExecutions.push(createUsageExecutionRecord({
+        source_type: 'thesis_analysis',
+        source_id: sessionId,
+        created_at: now,
+        phase: 'thesis_analista',
+        agent_name: 'Analista de Redundâncias',
+        model: res.model,
+        tokens_in: res.tokens_in,
+        tokens_out: res.tokens_out,
+        cost_usd: res.cost_usd,
+        duration_ms: res.duration_ms,
+      }))
       const parsed = parseJsonObject(res.content) as { analysis?: typeof analysisMergeGroups }
       analysisMergeGroups = (parsed.analysis ?? []).filter(g => g.action === 'merge')
     }
@@ -418,6 +446,18 @@ export async function analyzeThesisBank(
         2500,
         0.15,
       )
+      llmExecutions.push(createUsageExecutionRecord({
+        source_type: 'thesis_analysis',
+        source_id: sessionId,
+        created_at: now,
+        phase: 'thesis_compilador',
+        agent_name: 'Compilador',
+        model: res.model,
+        tokens_in: res.tokens_in,
+        tokens_out: res.tokens_out,
+        cost_usd: res.cost_usd,
+        duration_ms: res.duration_ms,
+      }))
       const compiled = parseJsonObject(res.content) as typeof compiledGroups[0]['compiled']
       compiledGroups.push({
         source_ids: group.group_ids,
@@ -459,6 +499,18 @@ export async function analyzeThesisBank(
         3500,
         0.2,
       )
+      llmExecutions.push(createUsageExecutionRecord({
+        source_type: 'thesis_analysis',
+        source_id: sessionId,
+        created_at: now,
+        phase: 'thesis_curador',
+        agent_name: 'Curador de Lacunas',
+        model: res.model,
+        tokens_in: res.tokens_in,
+        tokens_out: res.tokens_out,
+        cost_usd: res.cost_usd,
+        duration_ms: res.duration_ms,
+      }))
       const proposals = parseJsonArray(res.content) as typeof newThesisProposals
       newThesisProposals.push(...proposals.filter(p => p.title && p.content))
     } catch (err) {
@@ -533,6 +585,18 @@ export async function analyzeThesisBank(
         4000,
         0.1,
       )
+      llmExecutions.push(createUsageExecutionRecord({
+        source_type: 'thesis_analysis',
+        source_id: sessionId,
+        created_at: now,
+        phase: 'thesis_revisor',
+        agent_name: 'Revisor Final',
+        model: res.model,
+        tokens_in: res.tokens_in,
+        tokens_out: res.tokens_out,
+        cost_usd: res.cost_usd,
+        duration_ms: res.duration_ms,
+      }))
       const parsed = parseJsonObject(res.content) as {
         suggestions?: Array<{
           temp_id?: string
@@ -668,6 +732,8 @@ export async function analyzeThesisBank(
     new_doc_count: acervoDocs.length,
     suggestions: finalSuggestions,
     executive_summary: executiveSummary,
+    usage_summary: buildUsageSummary(llmExecutions),
+    llm_executions: llmExecutions,
   }
 }
 

@@ -22,6 +22,39 @@ const DEMO_STATS = {
   average_duration_ms: 45000,
 }
 
+const DEMO_COST_BREAKDOWN = {
+  total_cost_usd: 0.04523,
+  total_cost_brl: 0.25781,
+  total_tokens_in: 25800,
+  total_tokens_out: 11200,
+  total_tokens: 37000,
+  total_calls: 18,
+  exchange_rate_brl: 5.7,
+  by_model: [
+    { key: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet', calls: 7, tokens_in: 14800, tokens_out: 6400, total_tokens: 21200, cost_usd: 0.0265, cost_brl: 0.15105, avg_duration_ms: 5600 },
+    { key: 'anthropic/claude-opus-4', label: 'Claude Opus', calls: 3, tokens_in: 6800, tokens_out: 3200, total_tokens: 10000, cost_usd: 0.0142, cost_brl: 0.08094, avg_duration_ms: 7200 },
+    { key: 'anthropic/claude-3.5-haiku', label: 'Claude Haiku', calls: 8, tokens_in: 4200, tokens_out: 1600, total_tokens: 5800, cost_usd: 0.00453, cost_brl: 0.02582, avg_duration_ms: 1800 },
+  ],
+  by_function: [
+    { key: 'document_generation', label: 'Geração de documentos', calls: 14, tokens_in: 22000, tokens_out: 9300, total_tokens: 31300, cost_usd: 0.0369, cost_brl: 0.21033, avg_duration_ms: 4900 },
+    { key: 'thesis_analysis', label: 'Análise de teses', calls: 4, tokens_in: 3800, tokens_out: 1900, total_tokens: 5700, cost_usd: 0.00833, cost_brl: 0.04748, avg_duration_ms: 3600 },
+  ],
+  by_phase: [
+    { key: 'pesquisador', label: 'Pesquisador', calls: 4, tokens_in: 9000, tokens_out: 3200, total_tokens: 12200, cost_usd: 0.0153, cost_brl: 0.08721, avg_duration_ms: 5400 },
+    { key: 'redacao', label: 'Redação', calls: 4, tokens_in: 6100, tokens_out: 4500, total_tokens: 10600, cost_usd: 0.0149, cost_brl: 0.08493, avg_duration_ms: 8100 },
+    { key: 'thesis_curador', label: 'Curador de Lacunas', calls: 2, tokens_in: 1800, tokens_out: 900, total_tokens: 2700, cost_usd: 0.0042, cost_brl: 0.02394, avg_duration_ms: 4100 },
+  ],
+  by_agent: [
+    { key: 'Pesquisador', label: 'Pesquisador', calls: 4, tokens_in: 9000, tokens_out: 3200, total_tokens: 12200, cost_usd: 0.0153, cost_brl: 0.08721, avg_duration_ms: 5400 },
+    { key: 'Redator', label: 'Redator', calls: 4, tokens_in: 6100, tokens_out: 4500, total_tokens: 10600, cost_usd: 0.0149, cost_brl: 0.08493, avg_duration_ms: 8100 },
+    { key: 'Curador de Lacunas', label: 'Curador de Lacunas', calls: 2, tokens_in: 1800, tokens_out: 900, total_tokens: 2700, cost_usd: 0.0042, cost_brl: 0.02394, avg_duration_ms: 4100 },
+  ],
+  by_document_type: [
+    { key: 'parecer', label: 'Parecer', calls: 8, tokens_in: 12400, tokens_out: 4800, total_tokens: 17200, cost_usd: 0.0216, cost_brl: 0.12312, avg_duration_ms: 5200 },
+    { key: 'peticao_inicial', label: 'Petição Inicial', calls: 6, tokens_in: 9600, tokens_out: 3800, total_tokens: 13400, cost_usd: 0.0153, cost_brl: 0.08721, avg_duration_ms: 4700 },
+  ],
+}
+
 const DEMO_DOCUMENT_TYPES = [
   { id: 'parecer', name: 'Parecer Jurídico', description: 'Opinião técnico-jurídica fundamentada sobre questão de direito', templates: ['mprs_caopp', 'generic'] },
   { id: 'peticao_inicial', name: 'Petição Inicial', description: 'Peça inaugural de ação judicial', templates: ['generic'] },
@@ -58,6 +91,7 @@ const DEMO_LEGAL_AREAS = [
 /** URL patterns that return an object (not an array). */
 const OBJECT_ENDPOINTS: Record<string, unknown> = {
   '/stats': DEMO_STATS,
+  '/stats/cost-breakdown': DEMO_COST_BREAKDOWN,
   '/anamnesis/profile': { preferences: {} },
   '/health': { status: 'demo', app: 'Lexio', version: '1.0.0', services: {}, modules: { total: 0, healthy: 0 } },
   '/admin/settings': { settings: [] },
