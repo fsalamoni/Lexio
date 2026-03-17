@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Shield, CheckCircle, XCircle, Activity, Server, Database, Brain, Search,
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
   ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal, RefreshCw,
+  Plus, Pencil, Trash2, X, Scale,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -13,7 +14,13 @@ import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { DOCTYPE_LABELS } from '../lib/constants'
 import { IS_FIREBASE } from '../lib/firebase'
-import { getStats as firestoreGetStats, getDocumentTypes, getLegalAreas, listDocuments, updateDocument } from '../lib/firestore-service'
+import {
+  getStats as firestoreGetStats, getDocumentTypes, getLegalAreas,
+  listDocuments, updateDocument,
+  loadAdminDocumentTypes, saveAdminDocumentTypes,
+  loadAdminLegalAreas, saveAdminLegalAreas,
+  type AdminDocumentType, type AdminLegalArea,
+} from '../lib/firestore-service'
 import { useAuth } from '../contexts/AuthContext'
 import ModelConfigCard from '../components/ModelConfigCard'
 import ThesisAnalystConfigCard from '../components/ThesisAnalystConfigCard'
@@ -56,6 +63,79 @@ const serviceIcons: Record<string, typeof Server> = {
 }
 
 const PIE_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe']
+
+// ── Collapse state persistence ───────────────────────────────────────────────
+
+const ADMIN_COLLAPSE_KEY = 'lexio_admin_collapse_state'
+
+function loadAdminCollapseState(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(ADMIN_COLLAPSE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveAdminCollapseState(state: Record<string, boolean>) {
+  try {
+    localStorage.setItem(ADMIN_COLLAPSE_KEY, JSON.stringify(state))
+  } catch { /* non-critical */ }
+}
+
+// ── Collapsible Section wrapper ──────────────────────────────────────────────
+
+function AdminCollapsibleSection({
+  id,
+  title,
+  icon: Icon,
+  iconColor,
+  badge,
+  children,
+  collapseState,
+  onToggle,
+  defaultOpen = true,
+}: {
+  id: string
+  title: string
+  icon: React.ElementType
+  iconColor?: string
+  badge?: string | number
+  children: React.ReactNode
+  collapseState: Record<string, boolean>
+  onToggle: (id: string) => void
+  defaultOpen?: boolean
+}) {
+  const isOpen = collapseState[id] ?? defaultOpen
+  return (
+    <div className="bg-white rounded-xl border overflow-hidden mb-6">
+      <button
+        type="button"
+        onClick={() => onToggle(id)}
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Icon className={`w-5 h-5 ${iconColor || 'text-brand-600'}`} />
+          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          {badge != null && (
+            <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{badge}</span>
+          )}
+        </div>
+        {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+      </button>
+      {isOpen && <div className="px-6 pb-6">{children}</div>}
+    </div>
+  )
+}
+
+/** Generate a normalized slug ID from a display name. */
+function generateSlugId(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+}
 
 // ── API Keys Card ─────────────────────────────────────────────────────────────
 
@@ -107,45 +187,38 @@ function ApiKeysCard() {
   const hasPendingChanges = Object.values(edits).some(v => v !== '')
 
   if (loading) return (
-    <div className="bg-white rounded-xl border p-6 mb-6">
+    <div>
       <p className="text-gray-400 text-sm">Carregando configurações...</p>
     </div>
   )
 
   return (
     <form
-      className="bg-white rounded-xl border p-6 mb-6"
       onSubmit={(e) => {
         e.preventDefault()
         void handleSave()
       }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Key className="w-5 h-5 text-brand-600" />
-          Chaves de API
-        </h2>
-        <div className="flex items-center gap-3">
-          {saved && (
-            <span className="flex items-center gap-1 text-sm text-green-600 font-medium">
-              <CheckCircle2 className="w-4 h-4" /> Salvo com sucesso
-            </span>
-          )}
-          {error && (
-            <span className="flex items-center gap-1 text-sm text-red-600">
-              <AlertCircle className="w-4 h-4" /> {error}
-            </span>
-          )}
-          <button
-            type="submit"
-            disabled={!hasPendingChanges || saving}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? 'Salvando…' : 'Salvar alterações'}
-          </button>
-        </div>
+      {/* Save button bar */}
+      <div className="flex items-center justify-end gap-3 mb-4">
+        {saved && (
+          <span className="flex items-center gap-1 text-sm text-green-600 font-medium">
+            <CheckCircle2 className="w-4 h-4" /> Salvo com sucesso
+          </span>
+        )}
+        {error && (
+          <span className="flex items-center gap-1 text-sm text-red-600">
+            <AlertCircle className="w-4 h-4" /> {error}
+          </span>
+        )}
+        <button
+          type="submit"
+          disabled={!hasPendingChanges || saving}
+          className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <Save className="w-4 h-4" />
+          {saving ? 'Salvando…' : 'Salvar alterações'}
+        </button>
       </div>
 
       <p className="text-sm text-gray-500 mb-6">
@@ -360,7 +433,7 @@ function ReviewQueue() {
   }
 
   if (loading) return (
-    <div className="bg-white rounded-xl border p-6 mb-6 space-y-3">
+    <div className="space-y-3">
       <Skeleton className="h-6 w-48" />
       <Skeleton className="h-16 rounded-lg" />
       <Skeleton className="h-16 rounded-lg" />
@@ -368,17 +441,7 @@ function ReviewQueue() {
   )
 
   return (
-    <div className="bg-white rounded-xl border p-6 mb-6">
-      <div className="flex items-center gap-2 mb-4">
-        <Clock className="w-5 h-5 text-blue-600" />
-        <h2 className="text-lg font-semibold">Fila de Revisão</h2>
-        {docs.length > 0 && (
-          <span className="ml-1 bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
-            {docs.length}
-          </span>
-        )}
-      </div>
-
+    <div>
       {docs.length === 0 ? (
         <p className="text-sm text-gray-400 py-4 text-center">Nenhum documento aguardando revisão.</p>
       ) : (
@@ -497,15 +560,9 @@ function ReindexCard() {
   }
 
   return (
-    <div className="bg-white rounded-xl border p-6 mb-6">
+    <div>
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <RefreshCw className="w-5 h-5 text-brand-600" />
-          <div>
-            <h2 className="text-lg font-semibold">Reindexação Vetorial</h2>
-            <p className="text-sm text-gray-500">Re-indexa documentos concluídos/aprovados no Qdrant para busca semântica</p>
-          </div>
-        </div>
+        <p className="text-sm text-gray-500">Re-indexa documentos concluídos/aprovados no Qdrant para busca semântica</p>
         <button
           onClick={handleReindex}
           disabled={loading}
@@ -547,8 +604,17 @@ export default function AdminPanel() {
   const [stats, setStats] = useState<StatsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState<string | null>(null)
+  const [collapseState, setCollapseState] = useState<Record<string, boolean>>(loadAdminCollapseState)
   const toast = useToast()
   const { userId } = useAuth()
+
+  const toggleCollapse = useCallback((id: string) => {
+    setCollapseState(prev => {
+      const next = { ...prev, [id]: prev[id] === undefined ? false : !prev[id] }
+      saveAdminCollapseState(next)
+      return next
+    })
+  }, [])
 
   const fetchData = () => {
     if (IS_FIREBASE) {
@@ -612,14 +678,15 @@ export default function AdminPanel() {
     </div>
   )
 
-  const docTypes = modules.filter(m => m.type === 'document_type')
-  const legalAreas = modules.filter(m => m.type === 'legal_area')
   const features = modules.filter(m => m.type === 'feature')
   const healthyModules = modules.filter(m => m.is_healthy).length
 
+  const docTypesCount = modules.filter(m => m.type === 'document_type').length
+  const legalAreasCount = modules.filter(m => m.type === 'legal_area').length
+
   const moduleTypePieData = [
-    { name: 'Tipos Documento', value: docTypes.length },
-    { name: 'Áreas Direito', value: legalAreas.length },
+    { name: 'Tipos Documento', value: docTypesCount },
+    { name: 'Áreas Direito', value: legalAreasCount },
     { name: 'Features', value: features.length },
   ].filter(d => d.value > 0)
 
@@ -633,7 +700,7 @@ export default function AdminPanel() {
         </div>
       </div>
 
-      {/* Quick Stats */}
+      {/* Quick Stats — always visible */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
         <div className="bg-white rounded-xl border p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -686,116 +753,190 @@ export default function AdminPanel() {
       </div>
 
       {/* Review Queue */}
-      <ReviewQueue />
+      <AdminCollapsibleSection
+        id="section_review_queue"
+        title="Fila de Revisão"
+        icon={Clock}
+        iconColor="text-blue-600"
+        collapseState={collapseState}
+        onToggle={toggleCollapse}
+      >
+        <ReviewQueue />
+      </AdminCollapsibleSection>
 
       {/* Reindex — API mode only */}
-      {!IS_FIREBASE && <ReindexCard />}
+      {!IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_reindex"
+          title="Reindexação Vetorial"
+          icon={RefreshCw}
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ReindexCard />
+        </AdminCollapsibleSection>
+      )}
 
       {/* API Keys */}
-      <ApiKeysCard />
+      <AdminCollapsibleSection
+        id="section_api_keys"
+        title="Chaves de API"
+        icon={Key}
+        collapseState={collapseState}
+        onToggle={toggleCollapse}
+      >
+        <ApiKeysCard />
+      </AdminCollapsibleSection>
 
       {/* Model Configuration — Firebase mode */}
-      {IS_FIREBASE && <ModelConfigCard />}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_model_config"
+          title="Configuração de Modelos"
+          icon={Brain}
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ModelConfigCard />
+        </AdminCollapsibleSection>
+      )}
 
       {/* Thesis Analyst Model Configuration — Firebase mode */}
-      {IS_FIREBASE && <ThesisAnalystConfigCard />}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_thesis_config"
+          title="Configuração do Analista de Teses"
+          icon={BookOpen}
+          iconColor="text-purple-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ThesisAnalystConfigCard />
+        </AdminCollapsibleSection>
+      )}
 
       {/* System Health + Module Pie */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        {health && (
-          <div className="bg-white rounded-xl border p-6 md:col-span-2">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Activity className="w-5 h-5 text-brand-600" />
-              Saúde do Sistema
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Object.entries(health.services).map(([name, status]) => {
-                const Icon = serviceIcons[name] || Server
-                const isOk = status === 'ok'
-                return (
-                  <div key={name} className={`rounded-lg border p-4 ${isOk ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <Icon className={`w-4 h-4 ${isOk ? 'text-green-600' : 'text-red-600'}`} />
-                      <span className="text-sm font-medium capitalize">{name}</span>
+      <AdminCollapsibleSection
+        id="section_health"
+        title="Saúde do Sistema"
+        icon={Activity}
+        collapseState={collapseState}
+        onToggle={toggleCollapse}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {health && (
+            <div className="md:col-span-2">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {Object.entries(health.services).map(([name, status]) => {
+                  const Icon = serviceIcons[name] || Server
+                  const isOk = status === 'ok'
+                  return (
+                    <div key={name} className={`rounded-lg border p-4 ${isOk ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Icon className={`w-4 h-4 ${isOk ? 'text-green-600' : 'text-red-600'}`} />
+                        <span className="text-sm font-medium capitalize">{name}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {isOk ? <CheckCircle className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-red-500" />}
+                        <span className={`text-xs ${isOk ? 'text-green-700' : 'text-red-700'}`}>
+                          {isOk ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {isOk ? <CheckCircle className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-red-500" />}
-                      <span className={`text-xs ${isOk ? 'text-green-700' : 'text-red-700'}`}>
-                        {isOk ? 'Online' : 'Offline'}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+              <div className="mt-4 flex items-center gap-4 text-sm text-gray-600">
+                <span>App: <strong>{health.app} v{health.version}</strong></span>
+                <span>Módulos: <strong>{health.modules.healthy}/{health.modules.total}</strong> saudáveis</span>
+              </div>
             </div>
-            <div className="mt-4 flex items-center gap-4 text-sm text-gray-600">
-              <span>App: <strong>{health.app} v{health.version}</strong></span>
-              <span>Módulos: <strong>{health.modules.healthy}/{health.modules.total}</strong> saudáveis</span>
-            </div>
-          </div>
-        )}
+          )}
 
-        {moduleTypePieData.length > 0 && (
-          <div className="bg-white rounded-xl border p-6">
-            <h2 className="text-lg font-semibold mb-4">Módulos por Tipo</h2>
-            <ResponsiveContainer width="100%" height={180}>
-              <PieChart>
-                <Pie data={moduleTypePieData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={5} dataKey="value">
-                  {moduleTypePieData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex flex-wrap gap-2 mt-2 justify-center">
-              {moduleTypePieData.map((d, i) => (
-                <span key={d.name} className="flex items-center gap-1 text-xs text-gray-600">
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PIE_COLORS[i] }} />
-                  {d.name} ({d.value})
-                </span>
-              ))}
+          {moduleTypePieData.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Módulos por Tipo</h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie data={moduleTypePieData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={5} dataKey="value">
+                    {moduleTypePieData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="flex flex-wrap gap-2 mt-2 justify-center">
+                {moduleTypePieData.map((d, i) => (
+                  <span key={d.name} className="flex items-center gap-1 text-xs text-gray-600">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PIE_COLORS[i] }} />
+                    {d.name} ({d.value})
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Document Type Modules */}
-      <div className="bg-white rounded-xl border p-6 mb-6">
-        <h2 className="text-lg font-semibold mb-4">Tipos de Documento ({docTypes.length})</h2>
-        <div className="space-y-3">
-          {docTypes.map(m => (
-            <ModuleRow key={m.id} module={m} onToggle={handleToggle} toggling={toggling} />
-          ))}
+          )}
         </div>
-      </div>
+      </AdminCollapsibleSection>
 
-      {/* Legal Area Modules */}
-      <div className="bg-white rounded-xl border p-6 mb-6">
-        <h2 className="text-lg font-semibold mb-4">Áreas do Direito ({legalAreas.length})</h2>
-        <div className="space-y-3">
-          {legalAreas.map(m => (
-            <ModuleRow key={m.id} module={m} onToggle={handleToggle} toggling={toggling} />
-          ))}
-        </div>
-      </div>
+      {/* Document Types — CRUD */}
+      <AdminCollapsibleSection
+        id="section_document_types"
+        title="Tipos de Documento"
+        icon={FileText}
+        iconColor="text-blue-600"
+        badge={docTypesCount}
+        collapseState={collapseState}
+        onToggle={toggleCollapse}
+      >
+        <DocumentTypesCrud />
+      </AdminCollapsibleSection>
 
+      {/* Legal Areas — CRUD */}
+      <AdminCollapsibleSection
+        id="section_legal_areas"
+        title="Áreas do Direito"
+        icon={Scale}
+        iconColor="text-purple-600"
+        badge={legalAreasCount}
+        collapseState={collapseState}
+        onToggle={toggleCollapse}
+      >
+        <LegalAreasCrud />
+      </AdminCollapsibleSection>
+
+      {/* Features */}
       {features.length > 0 && (
-        <div className="bg-white rounded-xl border p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">Módulos Funcionais ({features.length})</h2>
+        <AdminCollapsibleSection
+          id="section_features"
+          title={`Módulos Funcionais (${features.length})`}
+          icon={Zap}
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
           <div className="space-y-3">
             {features.map(m => (
               <ModuleRow key={m.id} module={m} onToggle={handleToggle} toggling={toggling} />
             ))}
           </div>
-        </div>
+        </AdminCollapsibleSection>
       )}
 
       {/* Pipeline Execution Logs — API mode only */}
       {!IS_FIREBASE && <PipelineLogs />}
 
       {/* User Management — API mode only */}
-      {!IS_FIREBASE && <UsersSection />}
+      {!IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_users"
+          title="Usuários"
+          icon={Users}
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <UsersSection />
+        </AdminCollapsibleSection>
+      )}
     </div>
   )
 }
@@ -972,20 +1113,15 @@ function UsersSection() {
   }
 
   return (
-    <div className="bg-white rounded-xl border overflow-hidden">
-      <div className="px-6 py-4 border-b flex items-center gap-2">
-        <Users className="w-5 h-5 text-brand-600" />
-        <h2 className="text-lg font-semibold">Usuários ({users.length})</h2>
-      </div>
-
+    <div>
       {loading ? (
-        <div className="p-6 space-y-3">
+        <div className="space-y-3">
           {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 rounded-lg" />)}
         </div>
       ) : users.length === 0 ? (
-        <p className="p-6 text-sm text-gray-400 text-center">Nenhum usuário encontrado.</p>
+        <p className="text-sm text-gray-400 text-center">Nenhum usuário encontrado.</p>
       ) : (
-        <div className="divide-y">
+        <div className="divide-y border rounded-xl overflow-hidden">
           {users.map(u => (
             <div key={u.id} className={`flex items-center gap-4 px-6 py-3 ${!u.is_active ? 'opacity-50 bg-gray-50' : ''}`}>
               <div className="flex-1 min-w-0">
@@ -1021,6 +1157,403 @@ function UsersSection() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Document Types CRUD Section ───────────────────────────────────────────────
+
+function DocumentTypesCrud() {
+  const [items, setItems] = useState<AdminDocumentType[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [editingItem, setEditingItem] = useState<AdminDocumentType | null>(null)
+  const [isCreating, setIsCreating] = useState(false)
+  const toast = useToast()
+
+  useEffect(() => {
+    loadAdminDocumentTypes()
+      .then(setItems)
+      .catch(() => toast.error('Erro ao carregar tipos de documento'))
+      .finally(() => setLoading(false))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSave = async (updated: AdminDocumentType[]) => {
+    setSaving(true)
+    try {
+      if (IS_FIREBASE) {
+        await saveAdminDocumentTypes(updated)
+      }
+      setItems(updated)
+      toast.success('Tipos de documento atualizados')
+    } catch {
+      toast.error('Erro ao salvar tipos de documento')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleToggle = async (id: string) => {
+    const updated = items.map(item =>
+      item.id === id ? { ...item, is_enabled: !item.is_enabled } : item
+    )
+    await handleSave(updated)
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este tipo de documento?')) return
+    const updated = items.filter(item => item.id !== id)
+    await handleSave(updated)
+  }
+
+  const handleEdit = (item: AdminDocumentType) => {
+    setEditingItem({ ...item })
+    setIsCreating(false)
+  }
+
+  const handleCreate = () => {
+    setEditingItem({ id: '', name: '', description: '', templates: ['generic'], is_enabled: true })
+    setIsCreating(true)
+  }
+
+  const handleEditSave = async () => {
+    if (!editingItem) return
+    if (!editingItem.name.trim()) { toast.error('Nome é obrigatório'); return }
+
+    const itemToSave = { ...editingItem }
+    if (isCreating) {
+      // Generate ID from name
+      itemToSave.id = editingItem.id.trim() || generateSlugId(editingItem.name)
+      if (items.some(i => i.id === itemToSave.id)) {
+        toast.error('Já existe um tipo de documento com este ID')
+        return
+      }
+      await handleSave([...items, itemToSave])
+    } else {
+      const updated = items.map(item => item.id === editingItem.id ? itemToSave : item)
+      await handleSave(updated)
+    }
+    setEditingItem(null)
+    setIsCreating(false)
+  }
+
+  if (loading) return <p className="text-sm text-gray-400 py-4">Carregando...</p>
+
+  return (
+    <div className="space-y-3">
+      {/* Edit/Create modal */}
+      {editingItem && (
+        <div className="border rounded-xl p-5 bg-blue-50 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-700">
+              {isCreating ? 'Novo Tipo de Documento' : `Editar: ${editingItem.name}`}
+            </h3>
+            <button onClick={() => setEditingItem(null)} className="text-gray-400 hover:text-gray-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {isCreating && (
+            <div>
+              <label className="text-xs text-gray-600 font-medium">ID (gerado automaticamente se vazio)</label>
+              <input
+                type="text"
+                value={editingItem.id}
+                onChange={e => setEditingItem({ ...editingItem, id: e.target.value })}
+                className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500"
+                placeholder="ex: recurso_especial"
+              />
+            </div>
+          )}
+          <div>
+            <label className="text-xs text-gray-600 font-medium">Nome</label>
+            <input
+              type="text"
+              value={editingItem.name}
+              onChange={e => setEditingItem({ ...editingItem, name: e.target.value })}
+              className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500"
+              placeholder="Nome do tipo de documento"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 font-medium">Descrição</label>
+            <textarea
+              value={editingItem.description}
+              onChange={e => setEditingItem({ ...editingItem, description: e.target.value })}
+              className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500 resize-none"
+              rows={2}
+              placeholder="Descrição do tipo de documento"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleEditSave}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+            <button
+              onClick={() => { setEditingItem(null); setIsCreating(false) }}
+              className="text-sm text-gray-600 px-4 py-2 border rounded-lg hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Items list */}
+      {items.map(item => (
+        <div
+          key={item.id}
+          className={`flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors ${!item.is_enabled ? 'opacity-50 bg-gray-50' : ''}`}
+        >
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <CheckCircle className={`w-5 h-5 flex-shrink-0 ${item.is_enabled ? 'text-green-500' : 'text-gray-300'}`} />
+            <div className="min-w-0">
+              <p className="font-medium text-gray-900">{item.name}</p>
+              <p className="text-sm text-gray-500 truncate">{item.description}</p>
+              <p className="text-xs text-gray-400 mt-0.5">ID: {item.id} · Templates: {item.templates.join(', ')}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+            <button
+              onClick={() => handleEdit(item)}
+              className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+              title="Editar"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleDelete(item.id)}
+              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Excluir"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleToggle(item.id)}
+              disabled={saving}
+              className="transition-colors"
+              title={item.is_enabled ? 'Desativar' : 'Ativar'}
+            >
+              {item.is_enabled ? (
+                <ToggleRight className="w-6 h-6 text-green-600" />
+              ) : (
+                <ToggleLeft className="w-6 h-6 text-gray-400" />
+              )}
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {/* Add new button */}
+      <button
+        onClick={handleCreate}
+        className="w-full flex items-center justify-center gap-2 p-3 border-2 border-dashed rounded-lg text-sm text-gray-500 hover:text-brand-600 hover:border-brand-300 transition-colors"
+      >
+        <Plus className="w-4 h-4" />
+        Adicionar novo tipo de documento
+      </button>
+    </div>
+  )
+}
+
+// ── Legal Areas CRUD Section ─────────────────────────────────────────────────
+
+function LegalAreasCrud() {
+  const [items, setItems] = useState<AdminLegalArea[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [editingItem, setEditingItem] = useState<AdminLegalArea | null>(null)
+  const [isCreating, setIsCreating] = useState(false)
+  const toast = useToast()
+
+  useEffect(() => {
+    loadAdminLegalAreas()
+      .then(setItems)
+      .catch(() => toast.error('Erro ao carregar áreas do direito'))
+      .finally(() => setLoading(false))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSave = async (updated: AdminLegalArea[]) => {
+    setSaving(true)
+    try {
+      if (IS_FIREBASE) {
+        await saveAdminLegalAreas(updated)
+      }
+      setItems(updated)
+      toast.success('Áreas do direito atualizadas')
+    } catch {
+      toast.error('Erro ao salvar áreas do direito')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleToggle = async (id: string) => {
+    const updated = items.map(item =>
+      item.id === id ? { ...item, is_enabled: !item.is_enabled } : item
+    )
+    await handleSave(updated)
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir esta área do direito?')) return
+    const updated = items.filter(item => item.id !== id)
+    await handleSave(updated)
+  }
+
+  const handleEdit = (item: AdminLegalArea) => {
+    setEditingItem({ ...item })
+    setIsCreating(false)
+  }
+
+  const handleCreate = () => {
+    setEditingItem({ id: '', name: '', description: '', is_enabled: true })
+    setIsCreating(true)
+  }
+
+  const handleEditSave = async () => {
+    if (!editingItem) return
+    if (!editingItem.name.trim()) { toast.error('Nome é obrigatório'); return }
+
+    const itemToSave = { ...editingItem }
+    if (isCreating) {
+      itemToSave.id = editingItem.id.trim() || generateSlugId(editingItem.name)
+      if (items.some(i => i.id === itemToSave.id)) {
+        toast.error('Já existe uma área com este ID')
+        return
+      }
+      await handleSave([...items, itemToSave])
+    } else {
+      const updated = items.map(item => item.id === editingItem.id ? itemToSave : item)
+      await handleSave(updated)
+    }
+    setEditingItem(null)
+    setIsCreating(false)
+  }
+
+  if (loading) return <p className="text-sm text-gray-400 py-4">Carregando...</p>
+
+  return (
+    <div className="space-y-3">
+      {/* Edit/Create form */}
+      {editingItem && (
+        <div className="border rounded-xl p-5 bg-purple-50 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-700">
+              {isCreating ? 'Nova Área do Direito' : `Editar: ${editingItem.name}`}
+            </h3>
+            <button onClick={() => setEditingItem(null)} className="text-gray-400 hover:text-gray-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {isCreating && (
+            <div>
+              <label className="text-xs text-gray-600 font-medium">ID (gerado automaticamente se vazio)</label>
+              <input
+                type="text"
+                value={editingItem.id}
+                onChange={e => setEditingItem({ ...editingItem, id: e.target.value })}
+                className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500"
+                placeholder="ex: direito_ambiental"
+              />
+            </div>
+          )}
+          <div>
+            <label className="text-xs text-gray-600 font-medium">Nome</label>
+            <input
+              type="text"
+              value={editingItem.name}
+              onChange={e => setEditingItem({ ...editingItem, name: e.target.value })}
+              className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500"
+              placeholder="Nome da área do direito"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 font-medium">Descrição</label>
+            <textarea
+              value={editingItem.description}
+              onChange={e => setEditingItem({ ...editingItem, description: e.target.value })}
+              className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500 resize-none"
+              rows={2}
+              placeholder="Descrição da área do direito"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleEditSave}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+            <button
+              onClick={() => { setEditingItem(null); setIsCreating(false) }}
+              className="text-sm text-gray-600 px-4 py-2 border rounded-lg hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Items list */}
+      {items.map(item => (
+        <div
+          key={item.id}
+          className={`flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors ${!item.is_enabled ? 'opacity-50 bg-gray-50' : ''}`}
+        >
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <Scale className={`w-5 h-5 flex-shrink-0 ${item.is_enabled ? 'text-purple-500' : 'text-gray-300'}`} />
+            <div className="min-w-0">
+              <p className="font-medium text-gray-900">{item.name}</p>
+              <p className="text-sm text-gray-500 truncate">{item.description}</p>
+              <p className="text-xs text-gray-400 mt-0.5">ID: {item.id}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+            <button
+              onClick={() => handleEdit(item)}
+              className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+              title="Editar"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleDelete(item.id)}
+              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Excluir"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleToggle(item.id)}
+              disabled={saving}
+              className="transition-colors"
+              title={item.is_enabled ? 'Desativar' : 'Ativar'}
+            >
+              {item.is_enabled ? (
+                <ToggleRight className="w-6 h-6 text-green-600" />
+              ) : (
+                <ToggleLeft className="w-6 h-6 text-gray-400" />
+              )}
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {/* Add new button */}
+      <button
+        onClick={handleCreate}
+        className="w-full flex items-center justify-center gap-2 p-3 border-2 border-dashed rounded-lg text-sm text-gray-500 hover:text-brand-600 hover:border-brand-300 transition-colors"
+      >
+        <Plus className="w-4 h-4" />
+        Adicionar nova área do direito
+      </button>
     </div>
   )
 }
