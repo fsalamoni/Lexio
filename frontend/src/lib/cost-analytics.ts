@@ -45,10 +45,12 @@ export interface CostBreakdownItem {
 export interface CostBreakdown extends UsageSummary {
   total_cost_brl: number
   exchange_rate_brl: number
+  by_provider: CostBreakdownItem[]
   by_model: CostBreakdownItem[]
   by_function: CostBreakdownItem[]
   by_phase: CostBreakdownItem[]
   by_agent: CostBreakdownItem[]
+  by_agent_function: CostBreakdownItem[]
   by_document_type: CostBreakdownItem[]
 }
 
@@ -60,6 +62,7 @@ export interface UsageDocumentSummary {
   llm_tokens_out?: number
   llm_cost_usd?: number
   llm_executions?: UsageExecutionRecord[]
+  usage_summary?: Partial<UsageSummary>
 }
 
 export interface ThesisUsageSessionSummary {
@@ -125,6 +128,22 @@ export function getModelLabel(model?: string | null): string {
   if (normalized.includes('gemini')) return 'Gemini'
   if (normalized.includes('llama')) return 'Llama'
   return model.split('/').pop() ?? model
+}
+
+export function getProviderKey(model?: string | null): string {
+  if (!model) return 'unknown_provider'
+  const [provider] = model.split('/')
+  return provider?.trim().toLowerCase() || 'unknown_provider'
+}
+
+export function getProviderLabel(model?: string | null): string {
+  const providerKey = getProviderKey(model)
+  if (providerKey === 'anthropic') return 'Anthropic'
+  if (providerKey === 'openai') return 'OpenAI'
+  if (providerKey === 'google') return 'Google'
+  if (providerKey === 'meta') return 'Meta'
+  if (providerKey === 'unknown_provider') return 'Não identificado'
+  return providerKey.charAt(0).toUpperCase() + providerKey.slice(1)
 }
 
 export function createUsageExecutionRecord(input: {
@@ -233,10 +252,17 @@ export function buildCostBreakdown(
     ...summary,
     total_cost_brl: round2(summary.total_cost_usd * exchangeRateBrl),
     exchange_rate_brl: exchangeRateBrl,
+    by_provider: aggregateBreakdown(executions, execution => getProviderKey(execution.model), execution => getProviderLabel(execution.model), exchangeRateBrl),
     by_model: aggregateBreakdown(executions, execution => execution.model || 'unknown_model', execution => execution.model_label, exchangeRateBrl),
     by_function: aggregateBreakdown(executions, execution => execution.function_key, execution => execution.function_label, exchangeRateBrl),
     by_phase: aggregateBreakdown(executions, execution => execution.phase, execution => execution.phase_label, exchangeRateBrl),
     by_agent: aggregateBreakdown(executions, execution => execution.agent_name, execution => execution.agent_name, exchangeRateBrl),
+    by_agent_function: aggregateBreakdown(
+      executions,
+      execution => `${execution.function_key}::${execution.agent_name}`,
+      execution => `${execution.function_label} · ${execution.agent_name}`,
+      exchangeRateBrl,
+    ),
     by_document_type: aggregateBreakdown(
       executions.filter(execution => !!execution.document_type_id),
       execution => execution.document_type_id || 'unknown_document_type',
@@ -263,9 +289,9 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
     }))
   }
 
-  const tokensIn = document.llm_tokens_in ?? 0
-  const tokensOut = document.llm_tokens_out ?? 0
-  const costUsd = document.llm_cost_usd ?? 0
+  const tokensIn = document.usage_summary?.total_tokens_in ?? document.llm_tokens_in ?? 0
+  const tokensOut = document.usage_summary?.total_tokens_out ?? document.llm_tokens_out ?? 0
+  const costUsd = document.usage_summary?.total_cost_usd ?? document.llm_cost_usd ?? 0
 
   if (tokensIn <= 0 && tokensOut <= 0 && costUsd <= 0) return []
 

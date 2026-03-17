@@ -77,6 +77,28 @@ def get_model_label(model: str | None) -> str:
     return normalized_model.split("/")[-1] or normalized_model
 
 
+def get_provider_key(model: str | None) -> str:
+    if not model:
+        return "unknown_provider"
+    provider = model.split("/", maxsplit=1)[0].strip().lower()
+    return provider or "unknown_provider"
+
+
+def get_provider_label(model: str | None) -> str:
+    provider_key = get_provider_key(model)
+    if provider_key == "anthropic":
+        return "Anthropic"
+    if provider_key == "openai":
+        return "OpenAI"
+    if provider_key == "google":
+        return "Google"
+    if provider_key == "meta":
+        return "Meta"
+    if provider_key == "unknown_provider":
+        return "Não identificado"
+    return provider_key.capitalize()
+
+
 def get_phase_label(phase: str | None) -> str:
     if not phase:
         return "Não informado"
@@ -162,6 +184,8 @@ def build_cost_breakdown(rows: Iterable[dict], brl_rate: float = DEFAULT_BRL_PER
         agent_name = row.get("agent_name")
         function_key = get_function_key(phase, agent_name)
         normalized = {
+            "provider_key": get_provider_key(row.get("model")),
+            "provider_label": get_provider_label(row.get("model")),
             "model_key": row.get("model") or "unknown_model",
             "model_label": get_model_label(row.get("model")),
             "function_key": function_key,
@@ -170,6 +194,8 @@ def build_cost_breakdown(rows: Iterable[dict], brl_rate: float = DEFAULT_BRL_PER
             "phase_label": get_phase_label(phase),
             "agent_key": agent_name or "unknown_agent",
             "agent_label": agent_name or "Não informado",
+            "agent_function_key": f"{function_key}::{agent_name or 'unknown_agent'}",
+            "agent_function_label": f"{FUNCTION_LABELS[function_key]} · {agent_name or 'Não informado'}",
             "document_type_key": row.get("document_type_id") or "unknown_document_type",
             "document_type_label": row.get("document_type_label") or get_document_type_label(row.get("document_type_id")),
             "tokens_in": tokens_in,
@@ -193,9 +219,11 @@ def build_cost_breakdown(rows: Iterable[dict], brl_rate: float = DEFAULT_BRL_PER
         "total_tokens": int(totals["total_tokens"]),
         "total_calls": total_calls,
         "exchange_rate_brl": brl_rate,
+        "by_provider": _aggregate(normalized_rows, key_field="provider_key", label_field="provider_label", brl_rate=brl_rate),
         "by_model": _aggregate(normalized_rows, key_field="model_key", label_field="model_label", brl_rate=brl_rate),
         "by_function": _aggregate(normalized_rows, key_field="function_key", label_field="function_label", brl_rate=brl_rate),
         "by_phase": _aggregate(normalized_rows, key_field="phase_key", label_field="phase_label", brl_rate=brl_rate),
         "by_agent": _aggregate(normalized_rows, key_field="agent_key", label_field="agent_label", brl_rate=brl_rate),
+        "by_agent_function": _aggregate(normalized_rows, key_field="agent_function_key", label_field="agent_function_label", brl_rate=brl_rate),
         "by_document_type": _aggregate(normalized_rows, key_field="document_type_key", label_field="document_type_label", brl_rate=brl_rate),
     }
