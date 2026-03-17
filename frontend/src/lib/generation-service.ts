@@ -22,6 +22,7 @@ import { firestore } from './firebase'
 import { callLLM } from './llm-client'
 import { loadAgentModels, type AgentModelMap } from './model-config'
 import { listTheses, getAcervoContext, type ThesisData } from './firestore-service'
+import { buildUsageSummary, createUsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -904,6 +905,104 @@ export async function generateDocument(
     )
 
     // Accumulate LLM usage across all pipeline agents for Dashboard metrics
+    const llmExecutions = [
+      createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'triagem',
+        agent_name: 'Triagem',
+        model: triageResult.model,
+        tokens_in: triageResult.tokens_in,
+        tokens_out: triageResult.tokens_out,
+        cost_usd: triageResult.cost_usd,
+        duration_ms: triageResult.duration_ms,
+        document_type_id: docType,
+      }),
+      createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'pesquisador',
+        agent_name: 'Pesquisador',
+        model: pesquisaResult.model,
+        tokens_in: pesquisaResult.tokens_in,
+        tokens_out: pesquisaResult.tokens_out,
+        cost_usd: pesquisaResult.cost_usd,
+        duration_ms: pesquisaResult.duration_ms,
+        document_type_id: docType,
+      }),
+      createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'jurista',
+        agent_name: 'Jurista',
+        model: juristaResult.model,
+        tokens_in: juristaResult.tokens_in,
+        tokens_out: juristaResult.tokens_out,
+        cost_usd: juristaResult.cost_usd,
+        duration_ms: juristaResult.duration_ms,
+        document_type_id: docType,
+      }),
+      createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'advogado_diabo',
+        agent_name: 'Advogado do Diabo',
+        model: criticaResult.model,
+        tokens_in: criticaResult.tokens_in,
+        tokens_out: criticaResult.tokens_out,
+        cost_usd: criticaResult.cost_usd,
+        duration_ms: criticaResult.duration_ms,
+        document_type_id: docType,
+      }),
+      createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'jurista_v2',
+        agent_name: 'Jurista v2',
+        model: juristaV2Result.model,
+        tokens_in: juristaV2Result.tokens_in,
+        tokens_out: juristaV2Result.tokens_out,
+        cost_usd: juristaV2Result.cost_usd,
+        duration_ms: juristaV2Result.duration_ms,
+        document_type_id: docType,
+      }),
+      createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'fact_checker',
+        agent_name: 'Fact-checker',
+        model: factCheckResult.model,
+        tokens_in: factCheckResult.tokens_in,
+        tokens_out: factCheckResult.tokens_out,
+        cost_usd: factCheckResult.cost_usd,
+        duration_ms: factCheckResult.duration_ms,
+        document_type_id: docType,
+      }),
+      createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'moderador',
+        agent_name: 'Moderador',
+        model: planoResult.model,
+        tokens_in: planoResult.tokens_in,
+        tokens_out: planoResult.tokens_out,
+        cost_usd: planoResult.cost_usd,
+        duration_ms: planoResult.duration_ms,
+        document_type_id: docType,
+      }),
+      createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'redacao',
+        agent_name: 'Redator',
+        model: docResult.model,
+        tokens_in: docResult.tokens_in,
+        tokens_out: docResult.tokens_out,
+        cost_usd: docResult.cost_usd,
+        duration_ms: docResult.duration_ms,
+        document_type_id: docType,
+      }),
+    ]
     const allResults = [
       triageResult, pesquisaResult, juristaResult, criticaResult,
       juristaV2Result, factCheckResult, planoResult, docResult,
@@ -911,6 +1010,7 @@ export async function generateDocument(
     const llm_tokens_in  = allResults.reduce((s, r) => s + r.tokens_in,  0)
     const llm_tokens_out = allResults.reduce((s, r) => s + r.tokens_out, 0)
     const llm_cost_usd   = parseFloat(allResults.reduce((s, r) => s + r.cost_usd, 0).toFixed(6))
+    const usage_summary = buildUsageSummary(llmExecutions)
 
     // 10. Quality evaluation — run document-type-specific rules
     onProgress?.({ phase: 'qualidade', message: 'Avaliando qualidade do documento...', percent: 93 })
@@ -926,6 +1026,8 @@ export async function generateDocument(
       llm_tokens_in,
       llm_tokens_out,
       llm_cost_usd,
+      llm_executions: llmExecutions,
+      usage_summary,
       updated_at: new Date().toISOString(),
     })
 
