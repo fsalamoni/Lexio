@@ -401,6 +401,7 @@ export async function listDocuments(uid: string, opts?: {
       throw error
     }
     try {
+      console.warn('Filtered Firestore document query failed; using client-side fallback.', error)
       const fallbackSnap = await getDocs(colRef)
       const filteredItems = sortDocuments(
         fallbackSnap.docs
@@ -410,8 +411,9 @@ export async function listDocuments(uid: string, opts?: {
       )
       const limitedItems = opts?.limit ? filteredItems.slice(0, opts.limit) : filteredItems
       return { items: limitedItems, total: filteredItems.length }
-    } catch {
-      throw error
+    } catch (fallbackError) {
+      console.warn('Firestore document fallback query also failed.', fallbackError)
+      throw fallbackError
     }
   }
 }
