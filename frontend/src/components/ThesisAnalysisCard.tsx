@@ -356,6 +356,8 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
           rejected_count: 0,
           executive_summary: analysis.executive_summary,
           status: 'completed',
+          usage_summary: analysis.usage_summary,
+          llm_executions: analysis.llm_executions,
         })
       } catch {
         console.warn('Failed to persist analysis session (non-fatal)')

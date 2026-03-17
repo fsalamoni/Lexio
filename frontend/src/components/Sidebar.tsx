@@ -1,10 +1,10 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, matchPath, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, PlusCircle, Upload,
   Scale, LogOut, Shield, BookOpen, ChevronRight, UserCircle,
 } from 'lucide-react'
 import clsx from 'clsx'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../api/client'
 import { IS_FIREBASE } from '../lib/firebase'
@@ -12,8 +12,19 @@ import { listDocuments } from '../lib/firestore-service'
 
 const links = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/documents', label: 'Documentos', icon: FileText },
-  { to: '/documents/new', label: 'Novo Documento', icon: PlusCircle },
+  {
+    to: '/documents',
+    label: 'Documentos',
+    icon: FileText,
+    activePatterns: ['/documents', '/documents/:id', '/documents/:id/edit'],
+    inactivePatterns: ['/documents/new'],
+  },
+  {
+    to: '/documents/new',
+    label: 'Novo Documento',
+    icon: PlusCircle,
+    activePatterns: ['/documents/new'],
+  },
   { to: '/theses', label: 'Banco de Teses', icon: BookOpen },
   { to: '/upload', label: 'Acervo', icon: Upload },
 ]
@@ -24,10 +35,26 @@ interface SidebarProps {
 }
 
 function NavItem({
-  to, label, icon: Icon, end, onClick, badge,
+  to, label, icon: Icon, end, onClick, badge, activePatterns, inactivePatterns,
 }: {
-  to: string; label: string; icon: React.ElementType; end?: boolean; onClick?: () => void; badge?: number
+  to: string
+  label: string
+  icon: React.ElementType
+  end?: boolean
+  onClick?: () => void
+  badge?: number
+  activePatterns?: string[]
+  inactivePatterns?: string[]
 }) {
+  const { pathname } = useLocation()
+  const matchesInactivePattern = useMemo(() => inactivePatterns?.some(pattern =>
+    !!matchPath({ path: pattern, end: true }, pathname),
+  ), [inactivePatterns, pathname])
+  const matchesCustomPattern = useMemo(() => activePatterns?.some(pattern =>
+    !!matchPath({ path: pattern, end: true }, pathname),
+  ), [activePatterns, pathname])
+  const resolvedActive = matchesInactivePattern ? false : (matchesCustomPattern ?? undefined)
+
   return (
     <NavLink
       to={to}
@@ -36,24 +63,27 @@ function NavItem({
       className={({ isActive }) =>
         clsx(
           'group flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm transition-all duration-150',
-          isActive
+          (resolvedActive ?? isActive)
             ? 'bg-white/15 text-white font-medium'
             : 'text-brand-200 hover:bg-white/10 hover:text-white'
         )
       }
     >
-      {({ isActive }) => (
+      {({ isActive }) => {
+        const active = resolvedActive ?? isActive
+        return (
         <>
-          <Icon className={clsx('w-5 h-5 flex-shrink-0 transition-transform', !isActive && 'group-hover:scale-110')} />
+          <Icon className={clsx('w-5 h-5 flex-shrink-0 transition-transform', !active && 'group-hover:scale-110')} />
           <span className="flex-1">{label}</span>
           {badge != null && badge > 0 && (
             <span className="bg-blue-500 text-white text-xs font-bold min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-1">
               {badge > 99 ? '99+' : badge}
             </span>
           )}
-          {isActive && !badge && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
+          {active && !badge && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
         </>
-      )}
+        )
+      }}
     </NavLink>
   )
 }
@@ -102,8 +132,17 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-        {links.map(({ to, label, icon }) => (
-          <NavItem key={to} to={to} label={label} icon={icon} end={to === '/'} onClick={onClose} />
+        {links.map(({ to, label, icon, activePatterns, inactivePatterns }) => (
+          <NavItem
+            key={to}
+            to={to}
+            label={label}
+            icon={icon}
+            end={to === '/'}
+            onClick={onClose}
+            activePatterns={activePatterns}
+            inactivePatterns={inactivePatterns}
+          />
         ))}
         {role === 'admin' && (
           <NavItem
