@@ -1,4 +1,4 @@
-"""Tests for quality rules of all 5 document types."""
+"""Tests for quality rules of all document types."""
 
 import pytest
 from tests.conftest import make_parecer_text, make_peticao_text
@@ -9,6 +9,10 @@ from packages.modules.document_types.contestacao.quality_rules import QUALITY_RU
 from packages.modules.document_types.recurso.quality_rules import QUALITY_RULES as RECURSO_RULES
 from packages.modules.document_types.sentenca.quality_rules import QUALITY_RULES as SENTENCA_RULES
 from packages.modules.document_types.acao_civil_publica.quality_rules import QUALITY_RULES as ACP_RULES
+from packages.modules.document_types.embargos_declaracao.quality_rules import QUALITY_RULES as EMBARGOS_RULES
+from packages.modules.document_types.habeas_corpus.quality_rules import QUALITY_RULES as HC_RULES
+from packages.modules.document_types.mandado_seguranca.quality_rules import QUALITY_RULES as MS_RULES
+from packages.modules.document_types.agravo.quality_rules import QUALITY_RULES as AGRAVO_RULES
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
@@ -389,3 +393,167 @@ class TestAcaoCivilPublicaQualityRules:
     def test_no_lei_8666_fail(self):
         text = self.TEXT + " conforme Lei 8.666/93"
         assert run_rule(ACP_RULES, "no_lei_8666", text) is False
+
+
+# ── Embargos de Declaração quality rules ───────────────────────────────────────
+
+class TestEmbargosDeclaracaoQualityRules:
+    TEXT = (
+        "EMBARGOS DE DECLARAÇÃO\n\n"
+        "DECISÃO EMBARGADA: Acórdão proferido pela 1ª Câmara Cível.\n\n"
+        "O embargante aponta OMISSÃO no julgado, uma vez que o acórdão não enfrentou "
+        "questão relevante suscitada nas razões de apelação.\n\n"
+        "FUNDAMENTAÇÃO: O art. 1.022 do CPC prevê o cabimento dos embargos quando "
+        "houver omissão, contradição ou obscuridade no julgado.\n\n"
+        "PEDIDO: Requer o acolhimento dos presentes embargos para SANAR a omissão apontada.\n\n"
+        "Serve, ainda, para fins de PREQUESTIONAMENTO da matéria constitucional, nos termos "
+        "do art. 1.025 do CPC.\n\n" + "x " * 500
+    )
+
+    def test_has_decisao_embargada(self):
+        assert run_rule(EMBARGOS_RULES, "has_decisao_embargada", self.TEXT) is True
+
+    def test_has_vicio(self):
+        assert run_rule(EMBARGOS_RULES, "has_vicio", self.TEXT) is True
+
+    def test_has_fundamentacao(self):
+        assert run_rule(EMBARGOS_RULES, "has_fundamentacao", self.TEXT) is True
+
+    def test_has_pedido(self):
+        assert run_rule(EMBARGOS_RULES, "has_pedido", self.TEXT) is True
+
+    def test_has_prequestionamento_pass(self):
+        assert run_rule(EMBARGOS_RULES, "has_prequestionamento", self.TEXT) is True
+
+    def test_has_prequestionamento_fail(self):
+        """After fixing 'or True' bug, text without prequestionamento terms should fail."""
+        text = "Texto simples sem termos relevantes para esta verificação."
+        assert run_rule(EMBARGOS_RULES, "has_prequestionamento", text) is False
+
+    def test_empty_text_scores_low(self):
+        """Empty text should not score high — validates no vacuous passes."""
+        score = compute_score(EMBARGOS_RULES, "", {})
+        assert score < 30
+
+
+# ── Agravo quality rules ──────────────────────────────────────────────────────
+
+class TestAgravoQualityRules:
+    TEXT = (
+        "AGRAVO DE INSTRUMENTO\n\n"
+        "DECISÃO AGRAVADA: Decisão interlocutória que indeferiu tutela de urgência.\n\n"
+        "DO CABIMENTO: O presente recurso é cabível com fundamento no art. 1.015 CPC.\n\n"
+        "FUNDAMENTAÇÃO: O agravante demonstra que a decisão merece reforma.\n\n"
+        "PEDIDO DE EFEITO SUSPENSIVO: Requer a concessão de efeito suspensivo.\n\n"
+        "PEDIDO DE PROVIMENTO: Requer o provimento do agravo para reforma da decisão.\n\n"
+        + "x " * 900
+    )
+
+    def test_has_decisao_agravada(self):
+        assert run_rule(AGRAVO_RULES, "has_decisao_agravada", self.TEXT) is True
+
+    def test_has_cabimento(self):
+        assert run_rule(AGRAVO_RULES, "has_cabimento", self.TEXT) is True
+
+    def test_has_fundamentacao(self):
+        assert run_rule(AGRAVO_RULES, "has_fundamentacao", self.TEXT) is True
+
+    def test_has_pedido_efeito(self):
+        assert run_rule(AGRAVO_RULES, "has_pedido_efeito", self.TEXT) is True
+
+    def test_has_pedido_provimento(self):
+        assert run_rule(AGRAVO_RULES, "has_pedido_provimento", self.TEXT) is True
+
+
+# ── Habeas Corpus quality rules ───────────────────────────────────────────────
+
+class TestHabeasCorpusQualityRules:
+    TEXT = (
+        "HABEAS CORPUS\n\n"
+        "PACIENTE: João da Silva, preso preventivamente.\n\n"
+        "AUTORIDADE COATORA: Juiz da 1ª Vara Criminal.\n\n"
+        "Demonstra-se CONSTRANGIMENTO ILEGAL na prisão decretada sem fundamentação.\n\n"
+        "Art. 5º, LXVIII, CF e arts. 647-648 CPP.\n\n"
+        "Requer a concessão de LIMINAR para expedição de alvará de soltura.\n\n"
+        + "x " * 600
+    )
+
+    def test_has_paciente(self):
+        assert run_rule(HC_RULES, "has_paciente", self.TEXT) is True
+
+    def test_has_autoridade_coatora(self):
+        assert run_rule(HC_RULES, "has_autoridade_coatora", self.TEXT) is True
+
+    def test_has_constrangimento(self):
+        assert run_rule(HC_RULES, "has_constrangimento", self.TEXT) is True
+
+    def test_has_pedido_liminar(self):
+        assert run_rule(HC_RULES, "has_pedido_liminar", self.TEXT) is True
+
+
+# ── Mandado de Segurança quality rules ────────────────────────────────────────
+
+class TestMandadoSegurancaQualityRules:
+    TEXT = (
+        "MANDADO DE SEGURANÇA\n\n"
+        "Visa a proteção de DIREITO LÍQUIDO E CERTO violado pela AUTORIDADE COATORA.\n\n"
+        "FUNDAMENTAÇÃO jurídica: A Lei 12.016/09 disciplina o mandado de segurança.\n\n"
+        "PEDIDO de concessão de LIMINAR e segurança definitiva.\n\n"
+        + "x " * 900
+    )
+
+    def test_has_direito_liquido_certo(self):
+        assert run_rule(MS_RULES, "has_direito_liquido_certo", self.TEXT) is True
+
+    def test_has_autoridade_coatora(self):
+        assert run_rule(MS_RULES, "has_autoridade_coatora", self.TEXT) is True
+
+    def test_has_fundamentacao(self):
+        assert run_rule(MS_RULES, "has_fundamentacao", self.TEXT) is True
+
+    def test_has_pedido_liminar(self):
+        assert run_rule(MS_RULES, "has_pedido_liminar", self.TEXT) is True
+
+    def test_cites_lei_12016(self):
+        assert run_rule(MS_RULES, "cites_lei_12016", self.TEXT) is True
+
+
+# ── Structural tests for all document types (expanded) ─────────────────────────
+
+class TestAllDocTypeStructure:
+    """Ensure all 10 document type rule sets have valid structure."""
+
+    @pytest.mark.parametrize("rules,name", [
+        (EMBARGOS_RULES, "embargos"),
+        (HC_RULES, "habeas_corpus"),
+        (MS_RULES, "mandado_seguranca"),
+        (AGRAVO_RULES, "agravo"),
+    ])
+    def test_simplified_rules_non_empty(self, rules, name):
+        assert isinstance(rules, list)
+        assert len(rules) >= 5, f"{name} has fewer than 5 quality rules"
+
+    @pytest.mark.parametrize("rules,name", [
+        (EMBARGOS_RULES, "embargos"),
+        (HC_RULES, "habeas_corpus"),
+        (MS_RULES, "mandado_seguranca"),
+        (AGRAVO_RULES, "agravo"),
+    ])
+    def test_simplified_rules_have_required_keys(self, rules, name):
+        for rule in rules:
+            assert "id" in rule, f"{name}: rule missing 'id'"
+            assert "description" in rule, f"{name}: rule '{rule.get('id')}' missing description"
+            assert "check" in rule, f"{name}: rule '{rule.get('id')}' missing check"
+            assert "weight" in rule, f"{name}: rule '{rule.get('id')}' missing weight"
+            assert callable(rule["check"]), f"{name}: rule '{rule.get('id')}' check not callable"
+            assert rule["weight"] > 0, f"{name}: rule '{rule.get('id')}' weight must be > 0"
+
+    @pytest.mark.parametrize("rules,name", [
+        (EMBARGOS_RULES, "embargos"),
+        (HC_RULES, "habeas_corpus"),
+        (MS_RULES, "mandado_seguranca"),
+        (AGRAVO_RULES, "agravo"),
+    ])
+    def test_simplified_no_duplicate_ids(self, rules, name):
+        ids = [r["id"] for r in rules]
+        assert len(ids) == len(set(ids)), f"{name}: duplicate rule IDs found"

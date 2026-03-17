@@ -167,9 +167,9 @@ const PARECER_RULES: QualityRule[] = [
 
 function checkQualificacao(text: string): boolean {
   const lower = text.toLowerCase()
-  const hasAuthor = hasAny(lower, ['autor', 'requerente', 'demandante', 'suplicante', 'postulante'], true)
+  const hasAuthor = hasAny(lower, ['autor', 'requerente', 'demandante', 'suplicante', 'postulante'])
   const hasData = hasAny(lower, ['cpf', 'cnpj', 'inscrito', 'portador', 'residente', 'domiciliado',
-    'nacionalidade', 'estado civil', 'profissão', 'profissao'], true)
+    'nacionalidade', 'estado civil', 'profissão', 'profissao'])
   return hasAuthor && hasData
 }
 
@@ -598,10 +598,10 @@ function checkRelatorioCompleto(text: string): boolean {
   const lower = text.toLowerCase()
   const hasParties = hasAny(lower, [
     'autor', 'autora', 'requerente', 'réu', 'ré', 'requerido', 'requerida',
-  ], true)
+  ])
   const hasContext = hasAny(lower, [
     'ação', 'inicial', 'contestação', 'pretensão', 'autos', 'processo',
-  ], true)
+  ])
   return hasParties && hasContext
 }
 
@@ -611,7 +611,7 @@ function checkFundamentacaoAdequada(text: string): boolean {
     'no caso concreto', 'no caso em tela', 'na hipótese',
     'in casu', 'aplica-se', 'verifica-se que', 'constata-se',
     'na espécie', 'no presente caso',
-  ], true)
+  ])
   const hasNorms = /art\.\s*\d+/.test(lower)
   return hasApplication && hasNorms
 }
@@ -628,10 +628,10 @@ function checkDispositivoClaro(text: string): boolean {
 
 function checkCoerencia(text: string): boolean {
   const lower = text.toLowerCase()
-  const fundPositive = hasAny(lower, ['restou comprovado', 'logrou êxito', 'demonstrou', 'ficou provado'], true)
-  const dispPositive = hasAny(lower, ['julgo procedente', 'acolho', 'condeno'], true)
-  const fundNegative = hasAny(lower, ['não comprovou', 'não demonstrou', 'não logrou', 'não restou'], true)
-  const dispNegative = hasAny(lower, ['julgo improcedente', 'rejeito', 'julgo extinto'], true)
+  const fundPositive = hasAny(lower, ['restou comprovado', 'logrou êxito', 'demonstrou', 'ficou provado'])
+  const dispPositive = hasAny(lower, ['julgo procedente', 'acolho', 'condeno'])
+  const fundNegative = hasAny(lower, ['não comprovou', 'não demonstrou', 'não logrou', 'não restou'])
+  const dispNegative = hasAny(lower, ['julgo improcedente', 'rejeito', 'julgo extinto'])
   if (fundPositive && dispNegative && !fundNegative) return false
   if (fundNegative && dispPositive && !fundPositive) return false
   return true
@@ -734,13 +734,13 @@ function checkLegitimidadeAtiva(text: string): boolean {
   const hasSection = hasAny(lower, [
     'legitimidade', 'legitimado', 'art. 5', 'artigo 5',
     'lei 7.347', 'ministério público',
-  ], true)
+  ])
   const hasEntity = hasAny(lower, [
     'ministério público', 'mp', 'promotor', 'procurador',
     'defensoria', 'união', 'estado', 'município',
     'autarquia', 'empresa pública', 'fundação',
     'associação', 'sociedade de economia mista',
-  ], true)
+  ])
   return hasSection && hasEntity
 }
 
@@ -777,7 +777,7 @@ function checkDanoMoralColetivo(text: string, ctx: EvalContext): boolean {
     'ambiental', 'meio ambiente', 'poluição', 'contaminação',
     'consumidor', 'propaganda enganosa', 'produto defeituoso',
     'saúde pública', 'patrimônio',
-  ], true)
+  ])
   return !requires
 }
 
