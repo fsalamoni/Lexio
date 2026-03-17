@@ -22,6 +22,7 @@ import { firestore } from './firebase'
 import { callLLM } from './llm-client'
 import { loadAgentModels, type AgentModelMap } from './model-config'
 import { listTheses, getAcervoContext, type ThesisData } from './firestore-service'
+import { evaluateQuality } from './quality-evaluator'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -911,12 +912,17 @@ export async function generateDocument(
     const llm_tokens_out = allResults.reduce((s, r) => s + r.tokens_out, 0)
     const llm_cost_usd   = parseFloat(allResults.reduce((s, r) => s + r.cost_usd, 0).toFixed(6))
 
-    // 10. Save the generated text
+    // 10. Quality evaluation — run document-type-specific rules
+    onProgress?.({ phase: 'qualidade', message: 'Avaliando qualidade do documento...', percent: 93 })
+    const qualityResult = evaluateQuality(docResult.content, docType, { tema })
+    const quality_score = qualityResult.score
+
+    // 11. Save the generated text
     onProgress?.({ phase: 'salvando', message: 'Salvando documento...', percent: 95 })
     await updateDoc(docRef, {
       texto_completo: docResult.content,
       status: 'concluido',
-      quality_score: 80,
+      quality_score,
       llm_tokens_in,
       llm_tokens_out,
       llm_cost_usd,
