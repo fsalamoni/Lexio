@@ -128,6 +128,15 @@ function AdminCollapsibleSection({
   )
 }
 
+/** Generate a normalized slug ID from a display name. */
+function generateSlugId(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+}
+
 // ── API Keys Card ─────────────────────────────────────────────────────────────
 
 function ApiKeysCard() {
@@ -1214,11 +1223,7 @@ function DocumentTypesCrud() {
     const itemToSave = { ...editingItem }
     if (isCreating) {
       // Generate ID from name
-      itemToSave.id = editingItem.id.trim() || editingItem.name
-        .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, '_')
-        .replace(/[^a-z0-9_]/g, '')
+      itemToSave.id = editingItem.id.trim() || generateSlugId(editingItem.name)
       if (items.some(i => i.id === itemToSave.id)) {
         toast.error('Já existe um tipo de documento com este ID')
         return
@@ -1416,11 +1421,7 @@ function LegalAreasCrud() {
 
     const itemToSave = { ...editingItem }
     if (isCreating) {
-      itemToSave.id = editingItem.id.trim() || editingItem.name
-        .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, '_')
-        .replace(/[^a-z0-9_]/g, '')
+      itemToSave.id = editingItem.id.trim() || generateSlugId(editingItem.name)
       if (items.some(i => i.id === itemToSave.id)) {
         toast.error('Já existe uma área com este ID')
         return
