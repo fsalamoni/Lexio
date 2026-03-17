@@ -47,8 +47,11 @@ function BreakdownTable({
               <tr>
                 <th className="px-5 py-2 text-left">Grupo</th>
                 <th className="px-5 py-2 text-right">Chamadas</th>
+                <th className="px-5 py-2 text-right">Entrada</th>
+                <th className="px-5 py-2 text-right">Saída</th>
                 <th className="px-5 py-2 text-right">Tokens</th>
                 <th className="px-5 py-2 text-right">USD</th>
+                <th className="px-5 py-2 text-right">R$</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -56,8 +59,11 @@ function BreakdownTable({
                 <tr key={row.key} className="hover:bg-gray-50 transition-colors">
                   <td className="px-5 py-2.5 text-sm text-gray-800">{row.label}</td>
                   <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.calls)}</td>
+                  <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.tokens_in)}</td>
+                  <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.tokens_out)}</td>
                   <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.total_tokens)}</td>
                   <td className="px-5 py-2.5 text-sm text-right font-medium text-amber-700">{fmtUsd(row.cost_usd)}</td>
+                  <td className="px-5 py-2.5 text-sm text-right font-medium text-emerald-700">{fmtBrl(row.cost_brl)}</td>
                 </tr>
               ))}
             </tbody>
@@ -74,10 +80,25 @@ export default function CostBreakdownModal({
   loading = false,
   onClose,
 }: CostBreakdownModalProps) {
+  const byProvider = breakdown?.by_provider ?? []
+  const byAgentFunction = breakdown?.by_agent_function ?? []
   const modelCostChart = useMemo(() => breakdown?.by_model.slice(0, 8).map(row => ({
     name: row.label,
     usd: row.cost_usd,
     brl: row.cost_brl,
+  })) ?? [], [breakdown])
+  const modelTokensChart = useMemo(() => breakdown?.by_model.slice(0, 8).map(row => ({
+    name: row.label,
+    entrada: row.tokens_in,
+    saida: row.tokens_out,
+  })) ?? [], [breakdown])
+  const functionCostChart = useMemo(() => breakdown?.by_function.slice(0, 8).map(row => ({
+    name: row.label,
+    brl: row.cost_brl,
+  })) ?? [], [breakdown])
+  const documentTypeTokensChart = useMemo(() => breakdown?.by_document_type.slice(0, 8).map(row => ({
+    name: row.label,
+    total: row.total_tokens,
   })) ?? [], [breakdown])
 
   if (!open) return null
@@ -95,7 +116,7 @@ export default function CostBreakdownModal({
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Detalhamento de custos e tokens</h2>
             <p className="text-sm text-gray-500 mt-1">
-              Visão consolidada por modelo, função, fase, tipo de documento e agente.
+              Visão consolidada por API, modelo, função, fase, tipo de documento e agentes.
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
@@ -114,10 +135,12 @@ export default function CostBreakdownModal({
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
                 {[
                   { label: 'Custo total (USD)', value: fmtUsd(breakdown.total_cost_usd), icon: DollarSign, color: 'text-amber-600' },
                   { label: 'Custo total (R$)', value: fmtBrl(breakdown.total_cost_brl), icon: BrainCircuit, color: 'text-emerald-600' },
+                  { label: 'Tokens de entrada', value: fmtInt(breakdown.total_tokens_in), icon: Coins, color: 'text-sky-600' },
+                  { label: 'Tokens de saída', value: fmtInt(breakdown.total_tokens_out), icon: Coins, color: 'text-fuchsia-600' },
                   { label: 'Tokens totais', value: fmtInt(breakdown.total_tokens), icon: Coins, color: 'text-violet-600' },
                   { label: 'Chamadas LLM', value: fmtInt(breakdown.total_calls), icon: Cpu, color: 'text-blue-600' },
                 ].map(card => (
@@ -163,15 +186,65 @@ export default function CostBreakdownModal({
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="bg-white rounded-xl border p-5">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-4">Tokens por modelo</h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={modelTokensChart} layout="vertical" margin={{ left: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis type="number" tickFormatter={value => fmtInt(Number(value))} />
+                      <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(value: number) => [fmtInt(value), 'Tokens']} />
+                      <Bar dataKey="entrada" stackId="tokens" fill="#0284c7" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="saida" stackId="tokens" fill="#c026d3" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="bg-white rounded-xl border p-5">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-4">Custo por função / modalidade (R$)</h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={functionCostChart} layout="vertical" margin={{ left: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis type="number" tickFormatter={value => fmtBrl(Number(value))} />
+                      <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(value: number) => [fmtBrl(value), 'BRL']} />
+                      <Bar dataKey="brl" fill="#7c3aed" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="bg-white rounded-xl border p-5">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-4">Tokens por tipo de documento</h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={documentTypeTokensChart} layout="vertical" margin={{ left: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis type="number" tickFormatter={value => fmtInt(Number(value))} />
+                      <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(value: number) => [fmtInt(value), 'Tokens']} />
+                      <Bar dataKey="total" fill="#2563eb" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <BreakdownTable
+                  title="Por API / provedor"
+                  rows={byProvider}
+                  emptyLabel="Nenhuma API/provedor com consumo registrado."
+                />
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <BreakdownTable
+                  title="Por modelo"
+                  rows={breakdown.by_model}
+                  emptyLabel="Nenhum modelo com consumo registrado."
+                />
                 <BreakdownTable
                   title="Por função / modalidade"
                   rows={breakdown.by_function}
                   emptyLabel="Nenhuma função consolidada ainda."
-                />
-                <BreakdownTable
-                  title="Por fase"
-                  rows={breakdown.by_phase}
-                  emptyLabel="Nenhuma fase consolidada ainda."
                 />
               </div>
 
@@ -182,17 +255,24 @@ export default function CostBreakdownModal({
                   emptyLabel="Nenhum tipo de documento com consumo registrado."
                 />
                 <BreakdownTable
+                  title="Por fase"
+                  rows={breakdown.by_phase}
+                  emptyLabel="Nenhuma fase consolidada ainda."
+                />
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <BreakdownTable
                   title="Por agente"
                   rows={breakdown.by_agent}
                   emptyLabel="Nenhum agente com consumo registrado."
                 />
+                <BreakdownTable
+                  title="Agentes por função"
+                  rows={byAgentFunction}
+                  emptyLabel="Nenhum agente/função com consumo registrado."
+                />
               </div>
-
-              <BreakdownTable
-                title="Por modelo"
-                rows={breakdown.by_model}
-                emptyLabel="Nenhum modelo com consumo registrado."
-              />
             </>
           )}
         </div>
