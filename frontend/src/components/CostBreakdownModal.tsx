@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { X, DollarSign, Coins, Cpu, BrainCircuit } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -24,6 +24,28 @@ function fmtInt(value: number) {
   return value.toLocaleString('pt-BR')
 }
 
+function fmtPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function HighlightCard({
+  label,
+  value,
+  meta,
+}: {
+  label: string
+  value: string
+  meta: string
+}) {
+  return (
+    <div className="bg-white rounded-xl border p-5">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{label}</span>
+      <p className="mt-2 text-base font-semibold text-gray-900">{value}</p>
+      <p className="mt-1 text-xs text-gray-500">{meta}</p>
+    </div>
+  )
+}
+
 function BreakdownTable({
   title,
   rows,
@@ -43,7 +65,7 @@ function BreakdownTable({
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
+            <thead className="sticky top-0 bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
               <tr>
                 <th className="px-5 py-2 text-left">Grupo</th>
                 <th className="px-5 py-2 text-right">Chamadas</th>
@@ -57,7 +79,9 @@ function BreakdownTable({
             <tbody className="divide-y divide-gray-100">
               {rows.map(row => (
                 <tr key={row.key} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-5 py-2.5 text-sm text-gray-800">{row.label}</td>
+                  <td className="px-5 py-2.5 text-sm text-gray-800 max-w-[260px]">
+                    <span className="block truncate" title={row.label}>{row.label}</span>
+                  </td>
                   <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.calls)}</td>
                   <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.tokens_in)}</td>
                   <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.tokens_out)}</td>
@@ -82,6 +106,24 @@ export default function CostBreakdownModal({
 }: CostBreakdownModalProps) {
   const byProvider = breakdown?.by_provider ?? []
   const byAgentFunction = breakdown?.by_agent_function ?? []
+
+  useEffect(() => {
+    if (!open) return undefined
+
+    const previousOverflow = document.body.style.overflow
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open, onClose])
+
   const modelCostChart = useMemo(() => breakdown?.by_model.slice(0, 8).map(row => ({
     name: row.label,
     usd: row.cost_usd,
@@ -100,6 +142,24 @@ export default function CostBreakdownModal({
     name: row.label,
     total: row.total_tokens,
   })) ?? [], [breakdown])
+  const highlights = useMemo(() => {
+    if (!breakdown || breakdown.total_cost_usd <= 0) return []
+
+    const entries = [
+      { label: 'Maior custo por API', row: breakdown.by_provider[0] },
+      { label: 'Modelo mais oneroso', row: breakdown.by_model[0] },
+      { label: 'Função mais onerosa', row: breakdown.by_function[0] },
+      { label: 'Documento mais oneroso', row: breakdown.by_document_type[0] },
+    ]
+
+    return entries
+      .filter((entry): entry is { label: string; row: CostBreakdownItem } => !!entry.row)
+      .map(entry => ({
+        label: entry.label,
+        value: entry.row.label,
+        meta: `${fmtBrl(entry.row.cost_brl)} · ${fmtPercent(entry.row.cost_usd / breakdown.total_cost_usd)} do custo`,
+      }))
+  }, [breakdown])
 
   if (!open) return null
 
@@ -118,6 +178,11 @@ export default function CostBreakdownModal({
             <p className="text-sm text-gray-500 mt-1">
               Visão consolidada por API, modelo, função, fase, tipo de documento e agentes.
             </p>
+            {breakdown && (
+              <p className="text-xs text-gray-400 mt-2">
+                Tabelas ordenadas por maior custo, com apoio visual para identificar rapidamente os principais pontos de consumo.
+              </p>
+            )}
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X className="w-5 h-5" />
@@ -153,6 +218,19 @@ export default function CostBreakdownModal({
                   </div>
                 ))}
               </div>
+
+              {highlights.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                  {highlights.map(item => (
+                    <HighlightCard
+                      key={item.label}
+                      label={item.label}
+                      value={item.value}
+                      meta={item.meta}
+                    />
+                  ))}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <div className="bg-white rounded-xl border p-5">
