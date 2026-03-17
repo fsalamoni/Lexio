@@ -1,4 +1,9 @@
-from packages.api.stats_breakdown import build_cost_breakdown, get_function_key, get_model_label
+from packages.api.stats_breakdown import (
+    build_cost_breakdown,
+    get_function_key,
+    get_model_label,
+    get_provider_label,
+)
 
 
 def test_get_model_label_groups_known_model_families():
@@ -11,6 +16,12 @@ def test_get_model_label_groups_known_model_families():
 def test_get_function_key_identifies_thesis_phases():
     assert get_function_key("thesis_curador", "Curador de Lacunas") == "thesis_analysis"
     assert get_function_key("triagem", "Triagem") == "document_generation"
+
+
+def test_get_provider_label_groups_known_providers():
+    assert get_provider_label("anthropic/claude-opus-4") == "Anthropic"
+    assert get_provider_label("openai/gpt-4o-mini") == "OpenAI"
+    assert get_provider_label(None) == "Não identificado"
 
 
 def test_build_cost_breakdown_aggregates_by_model_function_phase_agent_and_document_type():
@@ -63,6 +74,10 @@ def test_build_cost_breakdown_aggregates_by_model_function_phase_agent_and_docum
     assert by_model["Claude Opus"]["cost_usd"] == 0.25
     assert by_model["Claude Haiku"]["total_tokens"] == 200
 
+    by_provider = {item["label"]: item for item in breakdown["by_provider"]}
+    assert by_provider["Anthropic"]["calls"] == 3
+    assert by_provider["Anthropic"]["cost_usd"] == 0.34
+
     by_function = {item["key"]: item for item in breakdown["by_function"]}
     assert by_function["document_generation"]["calls"] == 2
     assert by_function["thesis_analysis"]["cost_usd"] == 0.08
@@ -73,6 +88,10 @@ def test_build_cost_breakdown_aggregates_by_model_function_phase_agent_and_docum
 
     by_agent = {item["key"]: item for item in breakdown["by_agent"]}
     assert by_agent["Redator"]["avg_duration_ms"] == 10000
+
+    by_agent_function = {item["key"]: item for item in breakdown["by_agent_function"]}
+    assert by_agent_function["document_generation::Redator"]["cost_usd"] == 0.25
+    assert by_agent_function["thesis_analysis::Curador de Lacunas"]["calls"] == 1
 
     by_document_type = {item["key"]: item for item in breakdown["by_document_type"]}
     assert by_document_type["parecer"]["calls"] == 2

@@ -446,6 +446,11 @@ export async function getStats(uid: string) {
     listDocuments(uid),
     listThesisAnalysisSessions(uid).catch(() => []),
   ])
+  const executions = [
+    ...items.flatMap(doc => extractDocumentUsageExecutions(doc)),
+    ...sessions.flatMap(session => extractThesisSessionExecutions(session)),
+  ]
+  const usageSummary = buildUsageSummary(executions)
   const total_documents = items.length
   const completed_documents = items.filter(d => d.status === 'concluido' || d.status === 'aprovado').length
   const processing_documents = items.filter(d => d.status === 'processando').length
@@ -453,20 +458,13 @@ export async function getStats(uid: string) {
   const scores = items.map(d => d.quality_score).filter((s): s is number => s != null)
   const average_quality_score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null
 
-  const costs = items.map(d => d.llm_cost_usd).filter((c): c is number => typeof c === 'number' && c > 0)
-  const analysisCosts = sessions
-    .map(session => buildUsageSummary(extractThesisSessionExecutions(session)).total_cost_usd)
-    .filter(cost => cost > 0)
-  const total_cost_usd = round6(costs.reduce((a, b) => a + b, 0))
-  const total_analysis_cost_usd = round6(analysisCosts.reduce((a, b) => a + b, 0))
-
   return {
     total_documents,
     completed_documents,
     processing_documents,
     pending_review_documents,
     average_quality_score,
-    total_cost_usd: round6(total_cost_usd + total_analysis_cost_usd),
+    total_cost_usd: round6(usageSummary.total_cost_usd),
     average_duration_ms: null,
   }
 }
@@ -477,6 +475,10 @@ export async function getDailyStats(uid: string, days = 30) {
     listDocuments(uid),
     listThesisAnalysisSessions(uid).catch(() => []),
   ])
+  const executions = [
+    ...items.flatMap(doc => extractDocumentUsageExecutions(doc)),
+    ...sessions.flatMap(session => extractThesisSessionExecutions(session)),
+  ]
   const now = Date.now()
   const msPerDay = 86_400_000
   const cutoff = new Date(now - days * msPerDay).toISOString().slice(0, 10)
@@ -502,14 +504,13 @@ export async function getDailyStats(uid: string, days = 30) {
     }
   }
 
-  for (const session of sessions) {
-    if (!session.created_at) continue
-    const day = session.created_at.slice(0, 10)
-    if (day >= cutoff) {
-      const entry = dayMap.get(day)
-      const cost = buildUsageSummary(extractThesisSessionExecutions(session)).total_cost_usd
-      if (entry && cost > 0) entry.custo += cost
-    }
+  for (const execution of executions) {
+    if (!execution.created_at) continue
+    const day = execution.created_at.slice(0, 10)
+    if (day < cutoff) continue
+
+    const entry = dayMap.get(day)
+    if (entry) entry.custo += execution.cost_usd
   }
 
   return Array.from(dayMap.entries()).map(([dia, v]) => ({
