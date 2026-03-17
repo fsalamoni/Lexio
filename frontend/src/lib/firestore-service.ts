@@ -185,16 +185,6 @@ function sortDocuments(items: DocumentData[], sortDir?: string) {
   )
 }
 
-function isMissingIndexError(error: unknown) {
-  if (!error || typeof error !== 'object') return false
-  const code = 'code' in error ? error.code : null
-  const message = 'message' in error ? error.message : null
-  if (code !== 'failed-precondition' || typeof message !== 'string') return false
-  const normalizedMessage = message.toLowerCase()
-  return normalizedMessage.includes('requires an index') ||
-    normalizedMessage.includes('index not defined')
-}
-
 // ── Profile (Anamnesis Layer 1) ──────────────────────────────────────────────
 
 export async function getProfile(uid: string): Promise<ProfileData> {
@@ -407,19 +397,22 @@ export async function listDocuments(uid: string, opts?: {
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentData))
     return { items, total: items.length }
   } catch (error) {
-    if (!(opts?.status || opts?.document_type_id) || !isMissingIndexError(error)) {
+    if (!(opts?.status || opts?.document_type_id)) {
       throw error
     }
-
-    const fallbackSnap = await getDocs(colRef)
-    const filteredItems = sortDocuments(
-      fallbackSnap.docs
-        .map(d => ({ id: d.id, ...d.data() } as DocumentData))
-        .filter(doc => matchesDocumentFilters(doc, opts)),
-      opts?.sortDir,
-    )
-    const limitedItems = opts?.limit ? filteredItems.slice(0, opts.limit) : filteredItems
-    return { items: limitedItems, total: filteredItems.length }
+    try {
+      const fallbackSnap = await getDocs(colRef)
+      const filteredItems = sortDocuments(
+        fallbackSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as DocumentData))
+          .filter(doc => matchesDocumentFilters(doc, opts)),
+        opts?.sortDir,
+      )
+      const limitedItems = opts?.limit ? filteredItems.slice(0, opts.limit) : filteredItems
+      return { items: limitedItems, total: filteredItems.length }
+    } catch {
+      throw error
+    }
   }
 }
 
