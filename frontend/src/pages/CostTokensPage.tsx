@@ -142,11 +142,11 @@ function HighlightCard({ label, value, meta }: { label: string; value: string; m
 
 // ── Breakdown Table ──────────────────────────────────────────────────────────
 
-function BreakdownTable({ rows, emptyLabel }: { rows: CostBreakdownItem[]; emptyLabel: string }) {
+function BreakdownTable({ rows, emptyLabel, title }: { rows: CostBreakdownItem[]; emptyLabel: string; title?: string }) {
   if (rows.length === 0) return <p className="text-sm text-gray-400 py-4">{emptyLabel}</p>
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[800px] table-fixed" aria-label="Tabela de detalhamento">
+      <table className="w-full min-w-[800px] table-fixed" aria-label={title ? `Tabela de ${title}` : 'Tabela de detalhamento de custos'}>
         <thead className="sticky top-0 bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
           <tr>
             <th className="w-[30%] px-4 py-2 text-left">Grupo</th>
@@ -316,7 +316,10 @@ export default function CostTokensPage() {
   }, [])
 
   useEffect(() => {
-    if (IS_FIREBASE && !userId) { setLoading(false); return }
+    if (IS_FIREBASE && !userId) {
+      setLoading(false)
+      return
+    }
 
     const load = async () => {
       setLoading(true)
