@@ -166,21 +166,33 @@ function matchesDocumentFilters(doc: DocumentData, opts?: {
   return true
 }
 
+function getDocumentCreatedAtValue(value: unknown) {
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+  if (typeof value === 'number') return value
+  if (value && typeof value === 'object' && 'toMillis' in value && typeof value.toMillis === 'function') {
+    return value.toMillis()
+  }
+  return 0
+}
+
 function sortDocuments(items: DocumentData[], sortDir?: string) {
   const direction = sortDir === 'asc' ? 1 : -1
-  return [...items].sort((a, b) => {
-    const left = a.created_at ?? ''
-    const right = b.created_at ?? ''
-    return left.localeCompare(right) * direction
-  })
+  return [...items].sort((a, b) =>
+    (getDocumentCreatedAtValue(a.created_at) - getDocumentCreatedAtValue(b.created_at)) * direction,
+  )
 }
 
 function isMissingIndexError(error: unknown) {
   if (!error || typeof error !== 'object') return false
   const code = 'code' in error ? error.code : null
   const message = 'message' in error ? error.message : null
-  return code === 'failed-precondition' ||
-    (typeof message === 'string' && message.toLowerCase().includes('index'))
+  if (code !== 'failed-precondition' || typeof message !== 'string') return false
+  const normalizedMessage = message.toLowerCase()
+  return normalizedMessage.includes('requires an index') ||
+    normalizedMessage.includes('index not defined')
 }
 
 // ── Profile (Anamnesis Layer 1) ──────────────────────────────────────────────
