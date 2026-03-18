@@ -1,6 +1,6 @@
 import { DOCTYPE_LABELS } from './constants'
 
-export type UsageFunctionKey = 'document_generation' | 'thesis_analysis'
+export type UsageFunctionKey = 'document_generation' | 'thesis_analysis' | 'context_detail'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -77,6 +77,7 @@ export const DEFAULT_BRL_PER_USD = 5.7
 const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   document_generation: 'Geração de documentos',
   thesis_analysis: 'Análise de teses',
+  context_detail: 'Detalhamento de contexto',
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -88,6 +89,7 @@ const PHASE_LABELS: Record<string, string> = {
   fact_checker: 'Fact-checker',
   moderador: 'Moderador',
   redacao: 'Redação',
+  context_detail: 'Detalhamento de Contexto',
   thesis_catalogador: 'Catalogador',
   thesis_analista: 'Analista de Redundâncias',
   thesis_compilador: 'Compilador',
