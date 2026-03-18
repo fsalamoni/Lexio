@@ -12,7 +12,7 @@ import PipelineProgressPanel, {
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
-import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
+import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc, type ContextDetailData } from '../lib/firestore-service'
 import { generateDocument, type GenerationProgress } from '../lib/generation-service'
 import { generateAndDownloadDocx } from '../lib/docx-generator'
 import { DOCTYPE_LABELS, AREA_LABELS } from '../lib/constants'
@@ -36,6 +36,7 @@ interface DocumentData {
   docx_path: string | null
   legal_area_ids: string[]
   texto_completo: string | null
+  context_detail?: ContextDetailData | null
   metadata_?: {
     rejection_reason?: string
     rejected_by_name?: string
@@ -157,6 +158,7 @@ export default function DocumentDetail() {
               docx_path: (data as any).docx_path ?? null,
               legal_area_ids: data.legal_area_ids ?? [],
               texto_completo: data.texto_completo ?? null,
+              context_detail: data.context_detail ?? null,
               metadata_: (data as any).metadata_ ?? undefined,
             }
             setDoc(docData)
@@ -419,17 +421,17 @@ export default function DocumentDetail() {
         )}
 
         {/* Context Detail — AI-generated Q&A */}
-        {(doc as any).context_detail && (doc as any).context_detail.questions?.length > 0 && (
+        {doc.context_detail && doc.context_detail.questions?.length > 0 && (
           <div className="pt-2 border-t">
             <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Detalhamento de Contexto</h2>
-            {(doc as any).context_detail.analysis_summary && (
+            {doc.context_detail.analysis_summary && (
               <div className="bg-purple-50 rounded-lg p-3 mb-3">
                 <p className="text-xs font-medium text-purple-700 mb-0.5">Análise preliminar</p>
-                <p className="text-sm text-purple-900">{(doc as any).context_detail.analysis_summary}</p>
+                <p className="text-sm text-purple-900">{doc.context_detail.analysis_summary}</p>
               </div>
             )}
             <div className="space-y-3">
-              {(doc as any).context_detail.questions.map((q: { id: string; question: string; answer: string }, idx: number) => (
+              {doc.context_detail.questions.map((q: { id: string; question: string; answer: string }, idx: number) => (
                 <div key={q.id} className="bg-gray-50 rounded-lg p-3">
                   <p className="text-sm font-medium text-gray-700">
                     <span className="text-purple-600 mr-1">{idx + 1}.</span>
