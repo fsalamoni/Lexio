@@ -823,11 +823,12 @@ export async function generateDocument(
     try {
       const adminDocTypes = await loadAdminDocumentTypes()
       const adminDocType = adminDocTypes.find(dt => dt.id === docType)
-      if (adminDocType?.structure?.trim()) {
-        customStructure = adminDocType.structure.trim()
+      const trimmedStructure = adminDocType?.structure?.trim()
+      if (trimmedStructure) {
+        customStructure = trimmedStructure
       }
-    } catch {
-      // fallback — proceed without custom structure
+    } catch (e) {
+      console.warn('Failed to load admin document type structure:', e)
     }
 
     // 2. Triage — extract structured info from the request
