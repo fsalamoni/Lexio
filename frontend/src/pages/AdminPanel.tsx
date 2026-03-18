@@ -24,6 +24,7 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import ModelConfigCard from '../components/ModelConfigCard'
 import ThesisAnalystConfigCard from '../components/ThesisAnalystConfigCard'
+import ContextDetailConfigCard from '../components/ContextDetailConfigCard'
 
 interface ModuleInfo {
   id: string
@@ -812,6 +813,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <ThesisAnalystConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Context Detail Model Configuration — Firebase mode */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_context_detail_config"
+          title="Configuração do Detalhamento de Contexto"
+          icon={Brain}
+          iconColor="text-purple-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ContextDetailConfigCard />
         </AdminCollapsibleSection>
       )}
 
