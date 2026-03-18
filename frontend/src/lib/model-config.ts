@@ -309,3 +309,78 @@ export async function resetThesisAnalystModels(): Promise<void> {
   if (!IS_FIREBASE) return
   await saveSettings({ thesis_analyst_models: {} })
 }
+
+// ── Context Detail Agent Definition ──────────────────────────────────────────
+
+/**
+ * Single-agent definition for the optional "Detalhar contexto" feature.
+ *
+ * This agent analyses the user's request, document type and legal areas
+ * to generate 3-10 targeted questions that help refine the document brief.
+ */
+export const CONTEXT_DETAIL_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'context_detail',
+    label: 'Detalhamento de Contexto',
+    description: 'Analisa a solicitação e gera perguntas para refinar o contexto do documento',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'search',
+  },
+]
+
+/** Map from context-detail agent key → model ID */
+export type ContextDetailModelMap = Record<string, string>
+
+/** Default model map for the context detail agent. */
+export function getDefaultContextDetailModelMap(): ContextDetailModelMap {
+  const map: ContextDetailModelMap = {}
+  for (const def of CONTEXT_DETAIL_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/**
+ * Load context detail model configuration.
+ * Returns saved overrides merged with defaults.
+ */
+export async function loadContextDetailModels(): Promise<ContextDetailModelMap> {
+  const defaults = getDefaultContextDetailModelMap()
+  if (!IS_FIREBASE) return defaults
+  try {
+    const settings = await getSettings()
+    const saved = (settings.context_detail_models ?? {}) as Record<string, string>
+    for (const def of CONTEXT_DETAIL_AGENT_DEFS) {
+      if (saved[def.key] && typeof saved[def.key] === 'string') {
+        defaults[def.key] = saved[def.key]
+      }
+    }
+  } catch {
+    // Fall back to defaults silently
+  }
+  return defaults
+}
+
+/**
+ * Save context detail model configuration to Firestore.
+ * Only stores non-default values to keep data minimal.
+ */
+export async function saveContextDetailModels(models: ContextDetailModelMap): Promise<void> {
+  if (!IS_FIREBASE) return
+  const defaults = getDefaultContextDetailModelMap()
+  const overrides: ContextDetailModelMap = {}
+  for (const def of CONTEXT_DETAIL_AGENT_DEFS) {
+    const model = models[def.key]
+    if (model && model !== defaults[def.key]) {
+      overrides[def.key] = model
+    }
+  }
+  await saveSettings({ context_detail_models: overrides })
+}
+
+/** Reset context detail models to defaults. */
+export async function resetContextDetailModels(): Promise<void> {
+  if (!IS_FIREBASE) return
+  await saveSettings({ context_detail_models: {} })
+}

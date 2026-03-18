@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DollarSign, Coins, Cpu, BrainCircuit, ChevronDown, ChevronUp,
-  FileText, BookOpen, TrendingUp, Loader2,
+  FileText, BookOpen, TrendingUp, Loader2, MessageCircleQuestion,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -340,9 +340,9 @@ export default function CostTokensPage() {
     load()
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split executions into document_generation and thesis_analysis
-  const { docBreakdown, thesisBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, highlights: [] }
+  // Split executions into document_generation, thesis_analysis and context_detail
+  const { docBreakdown, thesisBreakdown, contextDetailBreakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
@@ -350,10 +350,12 @@ export default function CostTokensPage() {
     // The by_agent_function data contains function-keyed agent entries.
     const docItems = breakdown.by_agent_function.filter(item => item.key.startsWith('document_generation::'))
     const thesisItems = breakdown.by_agent_function.filter(item => item.key.startsWith('thesis_analysis::'))
+    const contextDetailItems = breakdown.by_agent_function.filter(item => item.key.startsWith('context_detail::'))
 
     // Build approximate sub-breakdowns using available summary data
     const docFunc = breakdown.by_function.find(f => f.key === 'document_generation')
     const thesisFunc = breakdown.by_function.find(f => f.key === 'thesis_analysis')
+    const contextDetailFunc = breakdown.by_function.find(f => f.key === 'context_detail')
 
     const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[]): CostBreakdown | null => {
       if (!func && agentItems.length === 0) return null
@@ -385,6 +387,7 @@ export default function CostTokensPage() {
 
     const docBd = makeSub(docFunc, docItems)
     const thesisBd = makeSub(thesisFunc, thesisItems)
+    const contextDetailBd = makeSub(contextDetailFunc, contextDetailItems)
 
     // Build highlights
     const hl: { label: string; value: string; meta: string }[] = []
@@ -406,7 +409,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, thesisBreakdown: thesisBd, highlights: hl }
+    return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, highlights: hl }
   }, [breakdown])
 
   if (loading) {
@@ -536,6 +539,28 @@ export default function CostTokensPage() {
               />
             ) : (
               <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para análise de teses.</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 4: Context Detail ──────────────────────────────── */}
+          <CollapsibleSection
+            id="section_context_detail"
+            title="Detalhamento de Contexto"
+            icon={MessageCircleQuestion}
+            iconColor="text-purple-600"
+            badge={contextDetailBreakdown ? fmtUsd(contextDetailBreakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {contextDetailBreakdown ? (
+              <SectionBreakdown
+                sectionId="context_detail"
+                breakdown={contextDetailBreakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para detalhamento de contexto.</p>
             )}
           </CollapsibleSection>
         </>

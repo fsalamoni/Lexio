@@ -53,6 +53,18 @@ export interface ProfileData {
   onboarding_completed?: boolean
 }
 
+export interface ContextDetailQuestion {
+  id: string
+  question: string
+  answer: string
+}
+
+export interface ContextDetailData {
+  analysis_summary: string
+  questions: ContextDetailQuestion[]
+  llm_execution?: UsageExecutionRecord
+}
+
 export interface DocumentData {
   id?: string
   document_type_id: string
@@ -60,6 +72,7 @@ export interface DocumentData {
   template_variant?: string | null
   legal_area_ids?: string[] | null
   request_context?: Record<string, unknown> | null
+  context_detail?: ContextDetailData | null
   tema?: string | null
   status: string
   quality_score?: number | null
@@ -344,6 +357,7 @@ export async function createDocument(uid: string, input: {
   template_variant?: string | null
   legal_area_ids?: string[] | null
   request_context?: Record<string, unknown> | null
+  context_detail?: ContextDetailData | null
 }): Promise<DocumentData> {
   const db = ensureFirestore()
   const colRef = collection(db, 'users', uid, 'documents')
@@ -354,6 +368,7 @@ export async function createDocument(uid: string, input: {
     template_variant: input.template_variant ?? null,
     legal_area_ids: input.legal_area_ids ?? [],
     request_context: input.request_context ?? null,
+    context_detail: input.context_detail ?? null,
     tema: null,
     status: 'rascunho',
     quality_score: null,
