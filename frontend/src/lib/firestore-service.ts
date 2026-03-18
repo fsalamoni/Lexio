@@ -634,6 +634,7 @@ export interface AdminDocumentType {
   description: string
   templates: string[]
   is_enabled: boolean
+  structure?: string
 }
 
 export async function loadAdminDocumentTypes(): Promise<AdminDocumentType[]> {

@@ -1227,7 +1227,7 @@ function DocumentTypesCrud() {
   }
 
   const handleCreate = () => {
-    setEditingItem({ id: '', name: '', description: '', templates: ['generic'], is_enabled: true })
+    setEditingItem({ id: '', name: '', description: '', templates: ['generic'], is_enabled: true, structure: '' })
     setIsCreating(true)
   }
 
@@ -1299,6 +1299,19 @@ function DocumentTypesCrud() {
               placeholder="Descrição do tipo de documento"
             />
           </div>
+          <div>
+            <label className="text-xs text-gray-600 font-medium">Estrutura do Documento (Markdown)</label>
+            <p className="text-xs text-gray-400 mt-0.5 mb-1">
+              Defina a estrutura/modelo que será utilizado para gerar este tipo de documento. Use formato Markdown.
+            </p>
+            <textarea
+              value={editingItem.structure || ''}
+              onChange={e => setEditingItem({ ...editingItem, structure: e.target.value })}
+              className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500 resize-y font-mono"
+              rows={12}
+              placeholder={`Exemplo de estrutura em Markdown:\n\n# TÍTULO DO DOCUMENTO\n\n## 1. QUALIFICAÇÃO DAS PARTES\n- Nome, qualificação e endereço\n\n## 2. DOS FATOS\n- Narração cronológica dos fatos\n- Contextualização com referências legais\n\n## 3. DO DIREITO\n### 3.1 Fundamentação Constitucional\n### 3.2 Fundamentação Legal\n### 3.3 Fundamentação Jurisprudencial\n\n## 4. DOS PEDIDOS\n- Pedidos claros e específicos`}
+            />
+          </div>
           <div className="flex gap-2">
             <button
               onClick={handleEditSave}
@@ -1329,7 +1342,7 @@ function DocumentTypesCrud() {
             <div className="min-w-0">
               <p className="font-medium text-gray-900">{item.name}</p>
               <p className="text-sm text-gray-500 truncate">{item.description}</p>
-              <p className="text-xs text-gray-400 mt-0.5">ID: {item.id} · Templates: {item.templates.join(', ')}</p>
+              <p className="text-xs text-gray-400 mt-0.5">ID: {item.id} · Templates: {item.templates.join(', ')}{item.structure ? ' · 📄 Estrutura definida' : ''}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 ml-3">
