@@ -20,9 +20,9 @@
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { firestore } from './firebase'
 import { callLLM } from './llm-client'
-import { loadAgentModels, type AgentModelMap } from './model-config'
-import { listTheses, getAcervoContext, type ThesisData } from './firestore-service'
-import { buildUsageSummary, createUsageExecutionRecord } from './cost-analytics'
+import { loadAgentModels, loadContextDetailModels, type AgentModelMap } from './model-config'
+import { listTheses, getAcervoContext, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
+import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -237,12 +237,27 @@ function buildTriageUser(
   request: string,
   areas: string[],
   context?: Record<string, unknown> | null,
+  contextDetail?: ContextDetailData | null,
 ): string {
   const areaNames = areas.map(a => AREA_NAMES[a] ?? a).join(', ')
   const parts = [`<solicitacao>${request}</solicitacao>`]
   if (areaNames) parts.push(`<areas>${areaNames}</areas>`)
   if (context && Object.keys(context).length > 0) {
     parts.push(`<contexto>${JSON.stringify(context)}</contexto>`)
+  }
+  if (contextDetail && contextDetail.questions.length > 0) {
+    const answeredQA = contextDetail.questions
+      .filter(q => q.answer.trim())
+      .map(q => `P: ${q.question}\nR: ${q.answer}`)
+      .join('\n\n')
+    if (answeredQA) {
+      parts.push(
+        '<detalhamento_contexto>',
+        `<analise_preliminar>${contextDetail.analysis_summary}</analise_preliminar>`,
+        `<perguntas_respostas>\n${answeredQA}\n</perguntas_respostas>`,
+        '</detalhamento_contexto>',
+      )
+    }
   }
   parts.push('Analise a solicitação e extraia as informações. Responda APENAS em JSON.')
   return parts.join('\n')
@@ -369,6 +384,7 @@ function buildRedatorUser(
   pesquisa?: string,
   tesesVerificadas?: string,
   plano?: string,
+  contextDetail?: ContextDetailData | null,
 ): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   const areaNames = areas.map(a => AREA_NAMES[a] ?? a).join(', ')
@@ -380,6 +396,21 @@ function buildRedatorUser(
   if (areaNames) parts.push(`<areas>${areaNames}</areas>`)
   if (context && Object.keys(context).length > 0) {
     parts.push(`<contexto>${JSON.stringify(context)}</contexto>`)
+  }
+  if (contextDetail && contextDetail.questions.length > 0) {
+    const answeredQA = contextDetail.questions
+      .filter(q => q.answer.trim())
+      .map(q => `P: ${q.question}\nR: ${q.answer}`)
+      .join('\n\n')
+    if (answeredQA) {
+      parts.push(
+        '<detalhamento_contexto>',
+        'O usuário forneceu as seguintes informações adicionais que DEVEM ser consideradas na redação:',
+        `<analise_preliminar>${contextDetail.analysis_summary}</analise_preliminar>`,
+        `<perguntas_respostas>\n${answeredQA}\n</perguntas_respostas>`,
+        '</detalhamento_contexto>',
+      )
+    }
   }
   if (pesquisa) parts.push(`<pesquisa>${pesquisa}</pesquisa>`)
   if (tesesVerificadas) parts.push(`<teses_verificadas>${tesesVerificadas}</teses_verificadas>`)
@@ -736,6 +767,7 @@ export async function generateDocument(
   context?: Record<string, unknown> | null,
   onProgress?: ProgressCallback,
   profile?: UserProfileForGeneration | null,
+  contextDetail?: ContextDetailData | null,
 ): Promise<void> {
   if (!firestore) throw new Error('Firestore não configurado')
 
@@ -768,7 +800,7 @@ export async function generateDocument(
     const triageResult = await callLLM(
       apiKey,
       buildTriageSystem(docType),
-      buildTriageUser(request, areas, context),
+      buildTriageUser(request, areas, context, contextDetail),
       modelTriagem, 800, 0.1,
     )
 
@@ -900,12 +932,20 @@ export async function generateDocument(
       buildRedatorUser(
         docType, request, triageResult.content, areas, context,
         pesquisaResult.content, factCheckResult.content, planoResult.content,
+        contextDetail,
       ),
       modelRedator, 12000, 0.3,
     )
 
     // Accumulate LLM usage across all pipeline agents for Dashboard metrics
     const llmExecutions = [
+      // Include context detail execution if available (pre-generation step)
+      ...(contextDetail?.llm_execution ? [{
+        ...contextDetail.llm_execution,
+        source_id: docId,
+        document_type_id: docType,
+        document_type_label: DOC_TYPE_NAMES[docType] ?? docType,
+      }] : []),
       createUsageExecutionRecord({
         source_type: 'document_generation',
         source_id: docId,
@@ -1040,4 +1080,123 @@ export async function generateDocument(
     }).catch(() => {}) // Ignore update errors
     throw err
   }
+}
+
+// ── Context Detail — AI-assisted context enrichment ──────────────────────────
+
+/**
+ * Generate targeted context questions for a document request.
+ *
+ * This is an optional pre-generation step where an AI agent analyses
+ * the request, document type and legal areas to produce 3-10 clarifying
+ * questions that help the user refine the document brief.
+ *
+ * @returns Object with analysis_summary, questions array, and LLM usage record
+ */
+export async function generateContextQuestions(
+  docType: string,
+  request: string,
+  areas: string[],
+): Promise<{ analysis_summary: string; questions: ContextDetailQuestion[]; llm_execution: UsageExecutionRecord }> {
+  const apiKey = await getOpenRouterKey()
+  const contextDetailModels = await loadContextDetailModels()
+  const model = contextDetailModels.context_detail ?? 'anthropic/claude-sonnet-4'
+
+  const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  const areaNames = areas.map(a => AREA_NAMES[a] ?? a).filter(Boolean).join(', ')
+
+  const systemPrompt = [
+    `Você é um ANALISTA JURÍDICO SÊNIOR especialista em ${typeName}.`,
+    '',
+    'Sua função é realizar uma análise preliminar abrangente da solicitação do usuário,',
+    'considerando o tipo de documento, as áreas do direito envolvidas e todos os aspectos',
+    'jurídicos relevantes. A partir dessa análise, você deve formular perguntas direcionadas',
+    'ao usuário para esclarecer pontos fundamentais que impactarão a qualidade do documento.',
+    '',
+    'INSTRUÇÕES:',
+    '1. Analise a solicitação identificando TODOS os pontos jurídicos relevantes',
+    '2. Identifique os caminhos de fundamentação possíveis',
+    '3. Formule entre 3 e 10 perguntas OBJETIVAS e RELEVANTES',
+    '4. Cada pergunta deve abordar um ponto específico que pode alterar o rumo da fundamentação',
+    '5. As perguntas devem ser claras e diretas, facilitando a resposta do usuário',
+    '6. Considere aspectos como: fatos específicos do caso, enquadramento legal,',
+    '   princípios aplicáveis, jurisprudência relevante, resultados esperados,',
+    '   circunstâncias atenuantes/agravantes, e quaisquer nuances que possam ser relevantes',
+    '',
+    'Responda APENAS em JSON válido no seguinte formato:',
+    '{',
+    '  "analysis_summary": "Resumo da análise preliminar em 2-4 frases, explicando os principais pontos identificados",',
+    '  "questions": [',
+    '    {',
+    '      "id": "q1",',
+    '      "question": "Texto da pergunta objetiva e clara"',
+    '    }',
+    '  ]',
+    '}',
+  ].join('\n')
+
+  const userPrompt = [
+    `<tipo_documento>${typeName}</tipo_documento>`,
+    areaNames ? `<areas_direito>${areaNames}</areas_direito>` : '',
+    `<solicitacao>${request}</solicitacao>`,
+    '',
+    'Realize a análise preliminar e formule as perguntas conforme instruído.',
+    'Responda APENAS em JSON válido.',
+  ].filter(Boolean).join('\n')
+
+  const result = await callLLM(apiKey, systemPrompt, userPrompt, model, 3000, 0.3)
+
+  // Parse the JSON response
+  let analysis_summary = ''
+  let questions: ContextDetailQuestion[] = []
+
+  try {
+    // Strip markdown code fences if present
+    let content = result.content.trim()
+    if (content.startsWith('```')) {
+      content = content.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '')
+    }
+    const parsed = JSON.parse(content)
+    analysis_summary = parsed.analysis_summary || ''
+    if (Array.isArray(parsed.questions)) {
+      questions = parsed.questions
+        .filter((q: { id?: string; question?: string }) => q && q.question)
+        .map((q: { id?: string; question?: string }, idx: number) => ({
+          id: q.id || `q${idx + 1}`,
+          question: q.question!,
+          answer: '',
+        }))
+    }
+  } catch {
+    // If JSON parsing fails, try to extract questions from plain text
+    analysis_summary = 'Análise realizada (formato simplificado).'
+    const lines = result.content.split('\n').filter(l => l.trim())
+    questions = lines
+      .filter(l => l.match(/^\d+[\.\)]/))
+      .slice(0, 10)
+      .map((l, idx) => ({
+        id: `q${idx + 1}`,
+        question: l.replace(/^\d+[\.\)]\s*/, '').trim(),
+        answer: '',
+      }))
+  }
+
+  // Ensure at least 3 questions
+  if (questions.length < 3) {
+    throw new Error(`O agente gerou apenas ${questions.length} pergunta(s), mas são necessárias pelo menos 3. Tente novamente.`)
+  }
+
+  const llm_execution = createUsageExecutionRecord({
+    source_type: 'context_detail',
+    source_id: 'pre_generation',
+    phase: 'context_detail',
+    agent_name: 'Detalhamento de Contexto',
+    model: result.model,
+    tokens_in: result.tokens_in,
+    tokens_out: result.tokens_out,
+    cost_usd: result.cost_usd,
+    duration_ms: result.duration_ms,
+  })
+
+  return { analysis_summary, questions, llm_execution }
 }

@@ -418,6 +418,34 @@ export default function DocumentDetail() {
           </div>
         )}
 
+        {/* Context Detail — AI-generated Q&A */}
+        {(doc as any).context_detail && (doc as any).context_detail.questions?.length > 0 && (
+          <div className="pt-2 border-t">
+            <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Detalhamento de Contexto</h2>
+            {(doc as any).context_detail.analysis_summary && (
+              <div className="bg-purple-50 rounded-lg p-3 mb-3">
+                <p className="text-xs font-medium text-purple-700 mb-0.5">Análise preliminar</p>
+                <p className="text-sm text-purple-900">{(doc as any).context_detail.analysis_summary}</p>
+              </div>
+            )}
+            <div className="space-y-3">
+              {(doc as any).context_detail.questions.map((q: { id: string; question: string; answer: string }, idx: number) => (
+                <div key={q.id} className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-sm font-medium text-gray-700">
+                    <span className="text-purple-600 mr-1">{idx + 1}.</span>
+                    {q.question}
+                  </p>
+                  {q.answer ? (
+                    <p className="text-sm text-gray-600 mt-1 pl-4 border-l-2 border-purple-200">{q.answer}</p>
+                  ) : (
+                    <p className="text-xs text-gray-400 mt-1 italic">Não respondida</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 text-sm">
           <div>
             <p className="text-gray-400 text-xs">Criado em</p>

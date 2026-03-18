@@ -1,18 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronUp, FileText, ArrowRight } from 'lucide-react'
+import { ChevronDown, ChevronUp, FileText, ArrowRight, Sparkles, Loader2, MessageCircleQuestion } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
-  getDocumentTypes, getLegalAreas, getRequestFields,
+  getDocumentTypes, getLegalAreas,
   createDocument,
   getDocumentTypesForProfile, getLegalAreasForProfile,
   getProfile, type ProfileData,
+  type ContextDetailData, type ContextDetailQuestion,
 } from '../lib/firestore-service'
-import { generateDocument, type GenerationProgress } from '../lib/generation-service'
+import { generateDocument, generateContextQuestions, type GenerationProgress } from '../lib/generation-service'
 import type { UserProfileForGeneration } from '../lib/generation-service'
 import PipelineProgressPanel, {
   PIPELINE_AGENTS,
@@ -33,26 +34,13 @@ interface LegalAreaOption {
   description: string
 }
 
-interface ContextField {
-  key: string
-  label: string
-  type: string
-  placeholder?: string
-  required?: boolean
-  options?: { value: string; label: string }[]
-  default?: any
-}
-
 export default function NewDocument() {
   const [docTypes, setDocTypes] = useState<DocType[]>([])
   const [legalAreas, setLegalAreas] = useState<LegalAreaOption[]>([])
-  const [contextFields, setContextFields] = useState<ContextField[]>([])
   const [selectedType, setSelectedType] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const [selectedAreas, setSelectedAreas] = useState<string[]>([])
   const [request, setRequest] = useState('')
-  const [contextData, setContextData] = useState<Record<string, any>>({})
-  const [showContext, setShowContext] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingTypes, setLoadingTypes] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -64,11 +52,20 @@ export default function NewDocument() {
   const [pipelineError, setPipelineError] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfileForGeneration | null>(null)
   const agentTimers = useRef<Record<string, number>>({})
+
+  // Context detail state
+  const [contextDetail, setContextDetail] = useState<ContextDetailData | null>(null)
+  const [loadingContextDetail, setLoadingContextDetail] = useState(false)
+  const [showContextDetail, setShowContextDetail] = useState(false)
+
   const { userId } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
 
   const MAX_REQUEST = 2000
+
+  // Whether the main form fields are ready for generation
+  const formReady = !!selectedType && request.trim().length > 0
 
   // Initialise pipeline agents state from template
   const initPipeline = useCallback(() => {
@@ -159,36 +156,38 @@ export default function NewDocument() {
     }
   }, [userId])
 
-  // Load context fields when document type changes
-  useEffect(() => {
-    if (selectedType) {
-      if (IS_FIREBASE) {
-        const result = getRequestFields(selectedType)
-        const fields: ContextField[] = result.fields || []
-        setContextFields(fields)
-        setContextData({})
-        setShowContext(fields.some(f => f.required))
-      } else {
-        api.get(`/anamnesis/request-fields/${selectedType}`)
-          .then(res => {
-            const fields: ContextField[] = res.data.fields || []
-            setContextFields(fields)
-            setContextData({})
-            setShowContext(fields.some(f => f.required))
-          })
-          .catch(() => setContextFields([]))
-      }
-    } else {
-      setContextFields([])
-      setContextData({})
-      setShowContext(false)
-    }
-  }, [selectedType])
-
   const currentType = docTypes.find((t) => t.id === selectedType)
 
-  const updateContextField = (key: string, value: any) => {
-    setContextData(prev => ({ ...prev, [key]: value }))
+  // Handle "Detalhar contexto" — AI generates clarifying questions
+  const handleDetailContext = async () => {
+    if (!formReady) return
+    setLoadingContextDetail(true)
+    try {
+      const result = await generateContextQuestions(selectedType, request, selectedAreas)
+      setContextDetail({
+        analysis_summary: result.analysis_summary,
+        questions: result.questions,
+        llm_execution: result.llm_execution,
+      })
+      setShowContextDetail(true)
+    } catch (err: any) {
+      toast.error('Erro ao detalhar contexto', err?.message || 'Tente novamente')
+    } finally {
+      setLoadingContextDetail(false)
+    }
+  }
+
+  // Update a single question answer
+  const updateAnswer = (questionId: string, answer: string) => {
+    setContextDetail(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        questions: prev.questions.map(q =>
+          q.id === questionId ? { ...q, answer } : q,
+        ),
+      }
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -202,7 +201,7 @@ export default function NewDocument() {
           original_request: request,
           template_variant: selectedTemplate || null,
           legal_area_ids: selectedAreas.length > 0 ? selectedAreas : null,
-          request_context: Object.keys(contextData).length > 0 ? contextData : null,
+          context_detail: contextDetail,
         })
         invalidateApiCache('/stats')
 
@@ -219,9 +218,10 @@ export default function NewDocument() {
             selectedType,
             request,
             selectedAreas,
-            Object.keys(contextData).length > 0 ? contextData : null,
+            null,
             handleProgress,
             userProfile,
+            contextDetail,
           )
         } catch (err: any) {
           console.error('Generation failed:', err)
@@ -243,7 +243,6 @@ export default function NewDocument() {
           original_request: request,
           template_variant: selectedTemplate || null,
           legal_area_ids: selectedAreas.length > 0 ? selectedAreas : null,
-          request_context: Object.keys(contextData).length > 0 ? contextData : null,
         })
         invalidateApiCache('/stats')
         navigate(`/documents/${res.data.id}`)
@@ -278,7 +277,7 @@ export default function NewDocument() {
             ) : (
               <select
                 value={selectedType}
-                onChange={(e) => { setSelectedType(e.target.value); setSelectedTemplate(''); }}
+                onChange={(e) => { setSelectedType(e.target.value); setSelectedTemplate(''); setContextDetail(null); setShowContextDetail(false) }}
                 className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-white text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                 required
               >
@@ -353,112 +352,99 @@ export default function NewDocument() {
           </div>
         </div>
 
-        {/* Anamnesis context fields (collapsible) */}
-        {contextFields.length > 0 && (
+        {/* Context Detail — AI-assisted Q&A section */}
+        {contextDetail && (
           <div className="bg-white rounded-xl border overflow-hidden">
             <button
               type="button"
-              onClick={() => setShowContext(!showContext)}
+              onClick={() => setShowContextDetail(prev => !prev)}
               className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
             >
-              <div>
-                <span className="text-sm font-medium text-gray-700">Contexto detalhado</span>
-                {contextFields.some(f => f.required) ? (
-                  <span className="text-xs text-brand-600 ml-2 font-medium">
-                    {contextFields.filter(f => f.required).length} campo(s) recomendado(s)
-                  </span>
-                ) : (
-                  <span className="text-xs text-gray-400 ml-2">(opcional — melhora a qualidade)</span>
-                )}
+              <div className="flex items-center gap-2">
+                <MessageCircleQuestion className="w-4 h-4 text-purple-600" />
+                <span className="text-sm font-medium text-gray-700">Detalhamento de Contexto</span>
+                <span className="text-xs text-purple-600 font-medium">
+                  {contextDetail.questions.filter(q => q.answer.trim()).length}/{contextDetail.questions.length} respondidas
+                </span>
               </div>
-              {showContext
+              {showContextDetail
                 ? <ChevronUp className="w-4 h-4 text-gray-400" />
                 : <ChevronDown className="w-4 h-4 text-gray-400" />
               }
             </button>
-            {showContext && (
-              <div className="p-6 pt-0 space-y-4">
-                {contextFields.map(field => (
-                  <div key={field.key}>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {field.label}
-                      {field.required && <span className="text-red-500 ml-1">*</span>}
-                    </label>
-                    {field.type === 'text' && (
-                      <input
-                        type="text"
-                        value={contextData[field.key] || ''}
-                        onChange={e => updateContextField(field.key, e.target.value)}
-                        placeholder={field.placeholder}
-                        className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
-                      />
-                    )}
-                    {field.type === 'number' && (
-                      <input
-                        type="number"
-                        value={contextData[field.key] ?? ''}
-                        onChange={e => {
-                          const num = parseInt(e.target.value)
-                          updateContextField(field.key, isNaN(num) ? null : num)
-                        }}
-                        placeholder={field.placeholder}
-                        className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
-                      />
-                    )}
-                    {field.type === 'textarea' && (
-                      <textarea
-                        value={contextData[field.key] || ''}
-                        onChange={e => updateContextField(field.key, e.target.value)}
-                        placeholder={field.placeholder}
-                        rows={3}
-                        className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
-                      />
-                    )}
-                    {field.type === 'select' && (
-                      <select
-                        value={contextData[field.key] || ''}
-                        onChange={e => updateContextField(field.key, e.target.value)}
-                        className="w-full border rounded-lg px-4 py-2"
-                      >
-                        <option value="">Selecione...</option>
-                        {field.options?.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    )}
-                    {field.type === 'boolean' && (
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={contextData[field.key] ?? field.default ?? false}
-                          onChange={e => updateContextField(field.key, e.target.checked)}
-                          className="w-4 h-4 rounded border-gray-300 text-brand-600"
-                        />
-                        <span className="text-sm text-gray-600">Sim</span>
-                      </label>
-                    )}
-                  </div>
-                ))}
+            {showContextDetail && (
+            <div className="px-6 pb-6 space-y-5">
+              {/* Analysis summary */}
+              <div className="bg-purple-50 rounded-lg p-4">
+                <p className="text-xs font-medium text-purple-700 mb-1">Análise preliminar</p>
+                <p className="text-sm text-purple-900">{contextDetail.analysis_summary}</p>
               </div>
+
+              {/* Questions */}
+              {contextDetail.questions.map((q, idx) => (
+                <div key={q.id}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    <span className="text-purple-600 font-semibold mr-1">{idx + 1}.</span>
+                    {q.question}
+                  </label>
+                  <textarea
+                    value={q.answer}
+                    onChange={(e) => updateAnswer(q.id, e.target.value)}
+                    rows={2}
+                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm resize-y"
+                    placeholder="Sua resposta (opcional)..."
+                  />
+                </div>
+              ))}
+              <p className="text-xs text-gray-400">
+                Responda as perguntas que considerar relevantes. Perguntas sem resposta serão ignoradas.
+              </p>
+            </div>
             )}
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={loading || loadingTypes || !selectedType || !request.trim() || generating}
-          className="w-full bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 font-semibold text-sm transition-colors shadow-sm disabled:cursor-not-allowed"
-        >
-          {loading ? (
-            <span className="inline-flex items-center gap-2">
-              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-              </svg>
-              Criando documento...
-            </span>
-          ) : generating ? 'Geração em andamento...' : 'Gerar Documento com IA'}
-        </button>
+        {/* Action buttons */}
+        <div className="flex gap-3">
+          {/* Detalhar contexto button — optional AI-assisted step */}
+          {formReady && !generating && IS_FIREBASE && (
+            <button
+              type="button"
+              onClick={handleDetailContext}
+              disabled={loadingContextDetail || generating}
+              className="flex items-center justify-center gap-2 border border-purple-300 text-purple-700 px-4 py-3.5 rounded-xl hover:bg-purple-50 disabled:opacity-50 font-semibold text-sm transition-colors disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {loadingContextDetail ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Analisando...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  {contextDetail ? 'Refazer perguntas' : 'Detalhar contexto'}
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Generate button */}
+          <button
+            type="submit"
+            disabled={loading || loadingTypes || !selectedType || !request.trim() || generating}
+            className="flex-1 bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 font-semibold text-sm transition-colors shadow-sm disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <span className="inline-flex items-center gap-2">
+                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                Criando documento...
+              </span>
+            ) : generating ? 'Geração em andamento...' : 'Gerar Documento com IA'}
+          </button>
+        </div>
       </form>
 
       {/* Pipeline progress panel — shown during/after generation */}
