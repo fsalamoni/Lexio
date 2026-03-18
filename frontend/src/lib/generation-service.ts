@@ -1169,7 +1169,7 @@ export async function generateContextQuestions(
     }
   } catch {
     // If JSON parsing fails, try to extract questions from plain text
-    analysis_summary = 'Análise realizada com sucesso.'
+    analysis_summary = 'Análise realizada (formato simplificado).'
     const lines = result.content.split('\n').filter(l => l.trim())
     questions = lines
       .filter(l => l.match(/^\d+[\.\)]/))
@@ -1183,7 +1183,7 @@ export async function generateContextQuestions(
 
   // Ensure at least 3 questions
   if (questions.length < 3) {
-    throw new Error('O agente não conseguiu gerar perguntas suficientes. Tente novamente.')
+    throw new Error(`O agente gerou apenas ${questions.length} pergunta(s), mas são necessárias pelo menos 3. Tente novamente.`)
   }
 
   const llm_execution = createUsageExecutionRecord({

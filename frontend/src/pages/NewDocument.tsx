@@ -353,11 +353,11 @@ export default function NewDocument() {
         </div>
 
         {/* Context Detail — AI-assisted Q&A section */}
-        {showContextDetail && contextDetail && (
+        {contextDetail && (
           <div className="bg-white rounded-xl border overflow-hidden">
             <button
               type="button"
-              onClick={() => setShowContextDetail(!showContextDetail)}
+              onClick={() => setShowContextDetail(prev => !prev)}
               className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
             >
               <div className="flex items-center gap-2">
@@ -367,8 +367,12 @@ export default function NewDocument() {
                   {contextDetail.questions.filter(q => q.answer.trim()).length}/{contextDetail.questions.length} respondidas
                 </span>
               </div>
-              <ChevronUp className="w-4 h-4 text-gray-400" />
+              {showContextDetail
+                ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                : <ChevronDown className="w-4 h-4 text-gray-400" />
+              }
             </button>
+            {showContextDetail && (
             <div className="px-6 pb-6 space-y-5">
               {/* Analysis summary */}
               <div className="bg-purple-50 rounded-lg p-4">
@@ -396,6 +400,7 @@ export default function NewDocument() {
                 Responda as perguntas que considerar relevantes. Perguntas sem resposta serão ignoradas.
               </p>
             </div>
+            )}
           </div>
         )}
 
