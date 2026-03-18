@@ -21,7 +21,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { firestore } from './firebase'
 import { callLLM } from './llm-client'
 import { loadAgentModels, loadContextDetailModels, type AgentModelMap } from './model-config'
-import { listTheses, getAcervoContext, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
+import { listTheses, getAcervoContext, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
 
@@ -267,6 +267,7 @@ function buildRedatorSystem(
   docType: string,
   tema: string,
   profile?: UserProfileForGeneration | null,
+  customStructure?: string,
 ): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   const profileBlock = buildProfileBlock(profile)
@@ -333,28 +334,36 @@ function buildRedatorSystem(
     '</citacoes_obrigatorias>',
     '',
     '<estrutura>',
-    `Redija ${typeName} COMPLETO com:`,
-    '- Qualificação das partes (use dados fornecidos ou ___ como placeholder)',
-    '- Dos Fatos (narração cronológica, mínimo 4 parágrafos densos):',
-    '  * Contextualize com referências legais quando pertinente',
-    '  * Destaque os fatos juridicamente relevantes',
-    '- Do Direito (fundamentação legal robusta, mínimo 4 subseções DENSAS):',
-    '  * DA FUNDAMENTAÇÃO CONSTITUCIONAL:',
-    '    - Princípios e direitos fundamentais aplicáveis',
-    '    - TRANSCREVA artigos da CF/88',
-    '  * DA FUNDAMENTAÇÃO LEGAL:',
-    '    - Artigos da legislação infraconstitucional TRANSCRITOS',
-    '    - Interpretação sistemática e teleológica',
-    '    - Subsunção dos fatos à norma',
-    '  * DA FUNDAMENTAÇÃO JURISPRUDENCIAL:',
-    '    - Súmulas com ENUNCIADO COMPLETO transcrito',
-    '    - Temas de repercussão geral/repetitivos com TESE FIRMADA',
-    '    - Entendimentos consolidados dos tribunais',
-    '  * DA FUNDAMENTAÇÃO DOUTRINÁRIA:',
-    '    - Autores de referência com OBRA e POSIÇÃO',
-    '    - Trechos doutrinários relevantes entre aspas',
-    '- Dos Pedidos (claros, determinados, específicos, com base legal para cada pedido)',
-    '- Valor da causa (se aplicável)',
+    ...(customStructure
+      ? [
+          `Redija ${typeName} COMPLETO seguindo OBRIGATORIAMENTE a estrutura abaixo definida pelo administrador:`,
+          '',
+          customStructure,
+        ]
+      : [
+          `Redija ${typeName} COMPLETO com:`,
+          '- Qualificação das partes (use dados fornecidos ou ___ como placeholder)',
+          '- Dos Fatos (narração cronológica, mínimo 4 parágrafos densos):',
+          '  * Contextualize com referências legais quando pertinente',
+          '  * Destaque os fatos juridicamente relevantes',
+          '- Do Direito (fundamentação legal robusta, mínimo 4 subseções DENSAS):',
+          '  * DA FUNDAMENTAÇÃO CONSTITUCIONAL:',
+          '    - Princípios e direitos fundamentais aplicáveis',
+          '    - TRANSCREVA artigos da CF/88',
+          '  * DA FUNDAMENTAÇÃO LEGAL:',
+          '    - Artigos da legislação infraconstitucional TRANSCRITOS',
+          '    - Interpretação sistemática e teleológica',
+          '    - Subsunção dos fatos à norma',
+          '  * DA FUNDAMENTAÇÃO JURISPRUDENCIAL:',
+          '    - Súmulas com ENUNCIADO COMPLETO transcrito',
+          '    - Temas de repercussão geral/repetitivos com TESE FIRMADA',
+          '    - Entendimentos consolidados dos tribunais',
+          '  * DA FUNDAMENTAÇÃO DOUTRINÁRIA:',
+          '    - Autores de referência com OBRA e POSIÇÃO',
+          '    - Trechos doutrinários relevantes entre aspas',
+          '- Dos Pedidos (claros, determinados, específicos, com base legal para cada pedido)',
+          '- Valor da causa (se aplicável)',
+        ]),
     '</estrutura>',
     '',
     '<conectivos>',
@@ -695,18 +704,32 @@ function buildFactCheckerSystem(): string {
   ].join('\n')
 }
 
-function buildModeradorSystem(docType: string, tema: string, profile?: UserProfileForGeneration | null): string {
+function buildModeradorSystem(docType: string, tema: string, profile?: UserProfileForGeneration | null, customStructure?: string): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   const profileBlock = buildProfileBlock(profile)
+  const structureBlock = customStructure
+    ? [
+        '',
+        '<estrutura_obrigatoria>',
+        'O administrador definiu a seguinte estrutura que DEVE ser seguida rigorosamente:',
+        '',
+        customStructure,
+        '</estrutura_obrigatoria>',
+        '',
+        `Com base em toda a pesquisa e teses verificadas, elabore um PLANO DETALHADO para ${typeName} seguindo a estrutura acima:`,
+      ]
+    : [
+        '',
+        `Com base em toda a pesquisa e teses verificadas, elabore um PLANO DETALHADO para ${typeName}:`,
+        '',
+        '1. ESTRUTURA do documento (seções e subseções com títulos descritivos)',
+      ]
   return [
     `Você é MODERADOR/PLANEJADOR especialista em ${typeName}.`,
     '',
     `Tema: "${tema}"`,
     profileBlock,
-    '',
-    `Com base em toda a pesquisa e teses verificadas, elabore um PLANO DETALHADO para ${typeName}:`,
-    '',
-    '1. ESTRUTURA do documento (seções e subseções com títulos descritivos)',
+    ...structureBlock,
     '',
     '2. Para CADA seção, especifique:',
     '   a) Quais argumentos e teses usar',
@@ -794,6 +817,19 @@ export async function generateDocument(
     const modelFactChecker  = agentModels.fact_checker   ?? 'anthropic/claude-3.5-haiku'
     const modelModerador    = agentModels.moderador      ?? 'anthropic/claude-sonnet-4'
     const modelRedator      = agentModels.redator        ?? 'anthropic/claude-sonnet-4'
+
+    // Load admin-configured document type structure template (if defined)
+    let customStructure: string | undefined
+    try {
+      const adminDocTypes = await loadAdminDocumentTypes()
+      const adminDocType = adminDocTypes.find(dt => dt.id === docType)
+      const trimmedStructure = adminDocType?.structure?.trim()
+      if (trimmedStructure) {
+        customStructure = trimmedStructure
+      }
+    } catch (e) {
+      console.warn('Failed to load admin document type structure:', e)
+    }
 
     // 2. Triage — extract structured info from the request
     onProgress?.({ phase: 'triagem', message: 'Analisando solicitação...', percent: 5 })
@@ -919,7 +955,7 @@ export async function generateDocument(
     onProgress?.({ phase: 'moderador', message: 'Planejando estrutura do documento...', percent: 72 })
     const planoResult = await callLLM(
       apiKey,
-      buildModeradorSystem(docType, tema, profile),
+      buildModeradorSystem(docType, tema, profile, customStructure),
       `<pesquisa>${pesquisaResult.content}</pesquisa>\n<teses_verificadas>${factCheckResult.content}</teses_verificadas>\nElabore plano DETALHADO. Para cada seção, especifique: artigos de lei a TRANSCREVER, súmulas com ENUNCIADO COMPLETO, doutrina com AUTOR e OBRA, princípios com ARTIGO DA CF.`,
       modelModerador, 3000, 0.2,
     )
@@ -928,7 +964,7 @@ export async function generateDocument(
     onProgress?.({ phase: 'redacao', message: 'Redigindo documento completo...', percent: 82 })
     const docResult = await callLLM(
       apiKey,
-      buildRedatorSystem(docType, tema, profile),
+      buildRedatorSystem(docType, tema, profile, customStructure),
       buildRedatorUser(
         docType, request, triageResult.content, areas, context,
         pesquisaResult.content, factCheckResult.content, planoResult.content,
