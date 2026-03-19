@@ -12,7 +12,11 @@ import {
   getDocumentTypesForProfile, getLegalAreasForProfile,
   getProfile, type ProfileData,
   type ContextDetailData, type ContextDetailQuestion,
+  type WizardField,
 } from '../lib/firestore-service'
+
+// Alias to match usage in this file
+type ContextField = WizardField
 import { generateDocument, generateContextQuestions, type GenerationProgress } from '../lib/generation-service'
 import type { UserProfileForGeneration } from '../lib/generation-service'
 import PipelineProgressPanel, {
@@ -52,6 +56,11 @@ export default function NewDocument() {
   const [pipelineError, setPipelineError] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfileForGeneration | null>(null)
   const agentTimers = useRef<Record<string, number>>({})
+
+  // Context fields (per document type)
+  const [contextFields, setContextFields] = useState<ContextField[]>([])
+  const [contextData, setContextData] = useState<Record<string, string>>({})
+  const [showContext, setShowContext] = useState(false)
 
   // Context detail state
   const [contextDetail, setContextDetail] = useState<ContextDetailData | null>(null)
@@ -393,7 +402,59 @@ export default function NewDocument() {
           </div>
         </div>
 
-        {/* Context Detail — AI-assisted Q&A section */}
+        {/* Per-document-type context fields */}
+        {showContext && contextFields.length > 0 && (
+          <div className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
+            <p className="text-sm font-medium text-gray-700">Dados complementares</p>
+            {contextFields.map((field) => (
+              <div key={field.key}>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {field.label}
+                  {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                </label>
+                {field.type === 'textarea' ? (
+                  <textarea
+                    value={contextData[field.key] ?? ''}
+                    onChange={(e) => setContextData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    rows={3}
+                    placeholder={field.placeholder}
+                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm resize-y"
+                  />
+                ) : field.type === 'select' && field.options ? (
+                  <select
+                    value={contextData[field.key] ?? ''}
+                    onChange={(e) => setContextData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-white text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  >
+                    <option value="">Selecione...</option>
+                    {field.options.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                ) : field.type === 'boolean' ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id={`ctx-${field.key}`}
+                      checked={contextData[field.key] === 'true' || (contextData[field.key] === undefined && Boolean(field.default))}
+                      onChange={(e) => setContextData(prev => ({ ...prev, [field.key]: String(e.target.checked) }))}
+                      className="w-4 h-4 text-brand-600 rounded"
+                    />
+                    <label htmlFor={`ctx-${field.key}`} className="text-sm text-gray-600">{field.placeholder ?? field.label}</label>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={contextData[field.key] ?? ''}
+                    onChange={(e) => setContextData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    placeholder={field.placeholder}
+                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {contextDetail && (
           <div className="bg-white rounded-xl border overflow-hidden">
             <button
