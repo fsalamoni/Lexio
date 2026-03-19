@@ -57,15 +57,15 @@ API_KEY_DEFS = [
         "key": "datajud_api_key",
         "label": "DataJud API Key (CNJ)",
         "description": "Chave para consulta de jurisprudência via DataJud — API Pública do CNJ",
-        "placeholder": "cnjKey=...",
+        "placeholder": "cDZH...",
         "link": "https://datajud-wiki.cnj.jus.br",
-        "auto_value": "cnjKey=2026",
+        "auto_value": "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==",
         "guide": [
-            "Esta chave já vem pré-configurada com a chave pública padrão do CNJ (cnjKey=2026).",
-            "Se precisar de uma chave personalizada, acesse https://datajud-wiki.cnj.jus.br.",
-            "Clique em 'Solicitar Acesso' e preencha o formulário de registro.",
-            "Após aprovação, você receberá sua chave por e-mail no formato cnjKey=XXXXX.",
-            "Substitua o valor padrão pela sua chave personalizada e clique em 'Salvar'.",
+            "Esta chave já vem pré-configurada com a chave pública padrão do CNJ.",
+            "A chave pública é atualizada periodicamente pelo CNJ.",
+            "Se a consulta parar de funcionar, acesse https://datajud-wiki.cnj.jus.br/api-publica/ para obter a chave atualizada.",
+            "O sistema tenta automaticamente a chave pública padrão se a configurada falhar.",
+            "Para chave personalizada, acesse https://datajud-wiki.cnj.jus.br e solicite acesso.",
         ],
     },
 ]
@@ -331,6 +331,7 @@ async def reindex_documents(
     db: AsyncSession = Depends(get_db),
 ):
     """Re-index all completed org documents into Qdrant (lexio_documents collection)."""
+    """Re-index all completed org documents into Qdrant (memoria_pessoal collection)."""
     import logging as _logging
     from packages.core.search.indexer import index_document
 
@@ -358,6 +359,7 @@ async def reindex_documents(
                 organization_id=str(admin.organization_id),
                 document_id=str(doc.id),
                 collection="lexio_documents",
+                collection="memoria_pessoal",
             )
             total_chunks += chunks
             indexed += 1

@@ -69,6 +69,7 @@ export default function DocumentList() {
       })
         .then(result => {
           let items = result.items as Document[]
+          let items = result.items.map(d => ({ ...d, origem: (d as any).origem || 'web' })) as Document[]
           // Client-side search filtering for Firebase mode
           if (searchQuery) {
             const q = searchQuery.toLowerCase()

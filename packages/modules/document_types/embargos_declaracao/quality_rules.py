@@ -35,6 +35,7 @@ QUALITY_RULES = [
         "id": "has_prequestionamento",
         "description": "Deve conter prequestionamento (se aplicável)",
         "check": lambda text, ctx: 'PREQUESTIONAMENTO' in text.upper() or 'PREQUESTIONAR' in text.upper() or '1.025' in text or True,
+        "check": lambda text, ctx: 'PREQUESTIONAMENTO' in text.upper() or 'PREQUESTIONAR' in text.upper() or '1.025' in text,
         "weight": 5,
     },
 ]

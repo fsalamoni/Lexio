@@ -240,8 +240,11 @@ export default function Profile() {
       return (
         <input
           type="number"
-          value={(value as number) || ''}
-          onChange={e => updateField(field.key, parseInt(e.target.value) || null)}
+          value={(value as number) ?? ''}
+          onChange={e => {
+            const num = parseInt(e.target.value)
+            updateField(field.key, isNaN(num) ? null : num)
+          }}
           placeholder={field.placeholder}
           className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
         />

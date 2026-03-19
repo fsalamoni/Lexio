@@ -64,21 +64,77 @@ export async function callLLM(
     throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
   }
 
-  const data = await resp.json()
-  const choice = data.choices?.[0]
+  const rawText = await resp.text()
+  if (!rawText || rawText.trim().length === 0) {
+    throw new Error('OpenRouter returned empty response body')
+  }
+
+  let data: Record<string, unknown>
+  try {
+    data = JSON.parse(rawText)
+  } catch (parseErr) {
+    throw new Error(
+      `OpenRouter returned invalid JSON (${(parseErr as Error).message}). ` +
+      `Response starts with: ${rawText.slice(0, 200)}`,
+    )
+  }
+
+  const choice = (data as Record<string, unknown[]>).choices?.[0] as
+    | { message?: { content?: string } }
+    | undefined
   if (!choice?.message?.content) {
     throw new Error('OpenRouter returned empty response')
   }
 
-  const usage = data.usage ?? {}
+  const usage = (data.usage ?? {}) as Record<string, number>
   const durationMs = Math.round(performance.now() - t0)
+
+  const tokensIn  = usage.prompt_tokens ?? 0
+  const tokensOut = usage.completion_tokens ?? 0
+
+  // OpenRouter may return the generation cost directly in usage.cost (USD).
+  // If not present, estimate from token counts using known model pricing.
+  const cost_usd: number = typeof usage.cost === 'number' && usage.cost > 0
+    ? usage.cost
+    : estimateCost(model, tokensIn, tokensOut)
 
   return {
     content: choice.message.content,
     model,
-    tokens_in: usage.prompt_tokens ?? 0,
-    tokens_out: usage.completion_tokens ?? 0,
-    cost_usd: 0, // Cost is tracked by OpenRouter
+    tokens_in: tokensIn,
+    tokens_out: tokensOut,
+    cost_usd,
     duration_ms: durationMs,
   }
+}
+
+/**
+ * Estimate LLM cost from token counts using a model pricing table (USD per 1M tokens).
+ * Values sourced from OpenRouter pricing page (approximate).
+ */
+function estimateCost(model: string, tokensIn: number, tokensOut: number): number {
+  const PRICING: Record<string, [number, number]> = {
+    // [input $/1M, output $/1M]
+    'anthropic/claude-3.5-haiku':         [0.80,  4.00],
+    'anthropic/claude-3-haiku':           [0.25,  1.25],
+    'anthropic/claude-haiku-4-5':         [0.80,  4.00],
+    'anthropic/claude-sonnet-4':          [3.00, 15.00],
+    'anthropic/claude-sonnet-4-5':        [3.00, 15.00],
+    'anthropic/claude-3.5-sonnet':        [3.00, 15.00],
+    'anthropic/claude-3-opus':            [15.00, 75.00],
+    'anthropic/claude-opus-4':            [15.00, 75.00],
+    'openai/gpt-4o':                      [2.50, 10.00],
+    'openai/gpt-4o-mini':                 [0.15,  0.60],
+    'google/gemini-2.0-flash':            [0.075, 0.30],
+    'google/gemini-2.0-flash-lite':       [0.038, 0.15],
+    'meta-llama/llama-3.1-8b-instruct':   [0.06,  0.06],
+  }
+
+  // Exact match first, then prefix match
+  let rates = PRICING[model]
+  if (!rates) {
+    const key = Object.keys(PRICING).find(k => model.startsWith(k.split('/')[0]))
+    rates = key ? PRICING[key] : [1.00, 5.00] // conservative fallback
+  }
+  return parseFloat(((tokensIn * rates[0] + tokensOut * rates[1]) / 1_000_000).toFixed(6))
 }

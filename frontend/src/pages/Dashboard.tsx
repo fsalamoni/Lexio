@@ -17,6 +17,12 @@ import { useToast } from '../components/Toast'
 import { SkeletonCard } from '../components/Skeleton'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getStats as firestoreGetStats, getRecentDocuments } from '../lib/firestore-service'
+import {
+  getStats as firestoreGetStats,
+  getRecentDocuments,
+  getDailyStats,
+  getByTypeStats,
+} from '../lib/firestore-service'
 import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../lib/constants'
 
 interface Stats {
@@ -102,8 +108,12 @@ export default function Dashboard() {
   const [chartLoading, setChartLoading] = useState(false)
   const { userId } = useAuth()
   const toast = useToast()
+  const shouldWaitForFirebaseUser = IS_FIREBASE && !userId
 
   useEffect(() => {
+    if (shouldWaitForFirebaseUser) return
+    setLoading(true)
+
     if (IS_FIREBASE && userId) {
       const p1 = firestoreGetStats(userId).then(s => setStats(s)).catch(() => toast.error('Erro ao carregar estatísticas'))
       const p2 = getRecentDocuments(userId, 5).then(docs => {
@@ -117,6 +127,9 @@ export default function Dashboard() {
         })))
       }).catch(() => toast.error('Erro ao carregar documentos recentes'))
       Promise.all([p1, p2]).finally(() => setLoading(false))
+      const p3 = getDailyStats(userId, periodDays).then(d => setDaily(d)).catch(() => {/* non-critical */})
+      const p4 = getByTypeStats(userId).then(bt => setByType(bt)).catch(() => {/* non-critical */})
+      Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
     } else {
       const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
       const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
@@ -127,6 +140,25 @@ export default function Dashboard() {
       Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
     }
   }, []) // eslint-disable-line
+  }, [shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reload chart data when period changes (after initial load)
+  useEffect(() => {
+    if (loading) return
+    if (shouldWaitForFirebaseUser) return
+    setChartLoading(true)
+    if (IS_FIREBASE && userId) {
+      getDailyStats(userId, periodDays)
+        .then(d => setDaily(d))
+        .catch(() => toast.error('Erro ao carregar histórico'))
+        .finally(() => setChartLoading(false))
+    } else {
+      api.get('/stats/daily', { params: { days: periodDays }, noCache: true } as any)
+        .then(r => setDaily(Array.isArray(r.data) ? r.data : []))
+        .catch(() => toast.error('Erro ao carregar histórico'))
+        .finally(() => setChartLoading(false))
+    }
+  }, [periodDays, shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reload chart data when period changes (after initial load)
   useEffect(() => {
@@ -230,6 +262,10 @@ export default function Dashboard() {
             },
           ].map(card => (
             <div key={card.label} className={`bg-white rounded-xl border p-5${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? ' border-blue-200 ring-1 ring-blue-100' : ''}`}>
+            <div
+              key={card.label}
+              className={`bg-white rounded-xl border p-5 text-left${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? ' border-blue-200 ring-1 ring-blue-100' : ''}`}
+            >
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{card.label}</span>
                 <card.icon className={`w-4 h-4 ${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? 'text-blue-500' : 'text-gray-400'}`} />

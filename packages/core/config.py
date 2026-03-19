@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     # Qdrant
     qdrant_url: str = Field(default="http://qdrant:6333")
     qdrant_api_key: str = Field(default="lexio_qdrant_key_2026")
+    qdrant_collection: str = Field(default="acervo_juridico")
+    qdrant_collections: str = Field(default="acervo_juridico,memoria_pessoal")
 
     # Ollama (embeddings)
     ollama_url: str = Field(default="http://ollama:11434")
@@ -23,7 +25,7 @@ class Settings(BaseSettings):
     database_url: str = Field(default="postgresql+asyncpg://lexio:lexio@postgres:5432/lexio")
 
     # DataJud (CNJ)
-    datajud_api_key: str = Field(default="cnjKey=2026")
+    datajud_api_key: str = Field(default="cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==")
     datajud_url: str = Field(default="https://api-publica.datajud.cnj.jus.br/api_publica_tjrs/_search")
 
     # SearXNG

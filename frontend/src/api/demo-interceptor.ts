@@ -13,13 +13,55 @@
 import type { AxiosInstance, AxiosError } from 'axios'
 
 const DEMO_STATS = {
-  total_documents: 0,
-  completed_documents: 0,
-  processing_documents: 0,
-  pending_review_documents: 0,
-  average_quality_score: null,
-  total_cost_usd: 0,
-  average_duration_ms: null,
+  total_documents: 12,
+  completed_documents: 8,
+  processing_documents: 1,
+  pending_review_documents: 3,
+  average_quality_score: 78,
+  total_cost_usd: 0.04523,
+  average_duration_ms: 45000,
+}
+
+const DEMO_COST_BREAKDOWN = {
+  total_cost_usd: 0.04523,
+  total_cost_brl: 0.25781,
+  total_tokens_in: 25800,
+  total_tokens_out: 11200,
+  total_tokens: 37000,
+  total_calls: 18,
+  exchange_rate_brl: 5.7,
+  by_provider: [
+    { key: 'anthropic', label: 'Anthropic', calls: 15, tokens_in: 21600, tokens_out: 9200, total_tokens: 30800, cost_usd: 0.0407, cost_brl: 0.23199, avg_duration_ms: 5100 },
+    { key: 'openai', label: 'OpenAI', calls: 3, tokens_in: 4200, tokens_out: 2000, total_tokens: 6200, cost_usd: 0.00453, cost_brl: 0.02582, avg_duration_ms: 1800 },
+  ],
+  by_model: [
+    { key: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet', calls: 7, tokens_in: 14800, tokens_out: 6400, total_tokens: 21200, cost_usd: 0.0265, cost_brl: 0.15105, avg_duration_ms: 5600 },
+    { key: 'anthropic/claude-opus-4', label: 'Claude Opus', calls: 3, tokens_in: 6800, tokens_out: 3200, total_tokens: 10000, cost_usd: 0.0142, cost_brl: 0.08094, avg_duration_ms: 7200 },
+    { key: 'openai/gpt-4o-mini', label: 'GPT', calls: 8, tokens_in: 4200, tokens_out: 1600, total_tokens: 5800, cost_usd: 0.00453, cost_brl: 0.02582, avg_duration_ms: 1800 },
+  ],
+  by_function: [
+    { key: 'document_generation', label: 'Geração de documentos', calls: 14, tokens_in: 22000, tokens_out: 9300, total_tokens: 31300, cost_usd: 0.0369, cost_brl: 0.21033, avg_duration_ms: 4900 },
+    { key: 'thesis_analysis', label: 'Análise de teses', calls: 4, tokens_in: 3800, tokens_out: 1900, total_tokens: 5700, cost_usd: 0.00833, cost_brl: 0.04748, avg_duration_ms: 3600 },
+  ],
+  by_phase: [
+    { key: 'pesquisador', label: 'Pesquisador', calls: 4, tokens_in: 9000, tokens_out: 3200, total_tokens: 12200, cost_usd: 0.0153, cost_brl: 0.08721, avg_duration_ms: 5400 },
+    { key: 'redacao', label: 'Redação', calls: 4, tokens_in: 6100, tokens_out: 4500, total_tokens: 10600, cost_usd: 0.0149, cost_brl: 0.08493, avg_duration_ms: 8100 },
+    { key: 'thesis_curador', label: 'Curador de Lacunas', calls: 2, tokens_in: 1800, tokens_out: 900, total_tokens: 2700, cost_usd: 0.0042, cost_brl: 0.02394, avg_duration_ms: 4100 },
+  ],
+  by_agent: [
+    { key: 'Pesquisador', label: 'Pesquisador', calls: 4, tokens_in: 9000, tokens_out: 3200, total_tokens: 12200, cost_usd: 0.0153, cost_brl: 0.08721, avg_duration_ms: 5400 },
+    { key: 'Redator', label: 'Redator', calls: 4, tokens_in: 6100, tokens_out: 4500, total_tokens: 10600, cost_usd: 0.0149, cost_brl: 0.08493, avg_duration_ms: 8100 },
+    { key: 'Curador de Lacunas', label: 'Curador de Lacunas', calls: 2, tokens_in: 1800, tokens_out: 900, total_tokens: 2700, cost_usd: 0.0042, cost_brl: 0.02394, avg_duration_ms: 4100 },
+  ],
+  by_agent_function: [
+    { key: 'document_generation::Pesquisador', label: 'Geração de documentos · Pesquisador', calls: 4, tokens_in: 9000, tokens_out: 3200, total_tokens: 12200, cost_usd: 0.0153, cost_brl: 0.08721, avg_duration_ms: 5400 },
+    { key: 'document_generation::Redator', label: 'Geração de documentos · Redator', calls: 4, tokens_in: 6100, tokens_out: 4500, total_tokens: 10600, cost_usd: 0.0149, cost_brl: 0.08493, avg_duration_ms: 8100 },
+    { key: 'thesis_analysis::Curador de Lacunas', label: 'Análise de teses · Curador de Lacunas', calls: 2, tokens_in: 1800, tokens_out: 900, total_tokens: 2700, cost_usd: 0.0042, cost_brl: 0.02394, avg_duration_ms: 4100 },
+  ],
+  by_document_type: [
+    { key: 'parecer', label: 'Parecer', calls: 8, tokens_in: 12400, tokens_out: 4800, total_tokens: 17200, cost_usd: 0.0216, cost_brl: 0.12312, avg_duration_ms: 5200 },
+    { key: 'peticao_inicial', label: 'Petição Inicial', calls: 6, tokens_in: 9600, tokens_out: 3800, total_tokens: 13400, cost_usd: 0.0153, cost_brl: 0.08721, avg_duration_ms: 4700 },
+  ],
 }
 
 const DEMO_DOCUMENT_TYPES = [
@@ -58,19 +100,45 @@ const DEMO_LEGAL_AREAS = [
 /** URL patterns that return an object (not an array). */
 const OBJECT_ENDPOINTS: Record<string, unknown> = {
   '/stats': DEMO_STATS,
+  '/stats/cost-breakdown': DEMO_COST_BREAKDOWN,
   '/anamnesis/profile': { preferences: {} },
   '/health': { status: 'demo', app: 'Lexio', version: '1.0.0', services: {}, modules: { total: 0, healthy: 0 } },
   '/admin/settings': { settings: [] },
 }
 
 /** URL patterns that return an array with specific content. */
+const MS_PER_DAY = 86_400_000
 const ARRAY_ENDPOINTS: Record<string, unknown[]> = {
   '/document-types': DEMO_DOCUMENT_TYPES,
   '/legal-areas': DEMO_LEGAL_AREAS,
-  '/stats/daily': [],
-  '/stats/agents': [],
-  '/stats/recent': [],
-  '/stats/by-type': [],
+  '/stats/daily': [
+    { dia: new Date(Date.now() - 6 * MS_PER_DAY).toISOString().slice(0, 10), total: 2, concluidos: 1, custo: 0.0052 },
+    { dia: new Date(Date.now() - 5 * MS_PER_DAY).toISOString().slice(0, 10), total: 3, concluidos: 2, custo: 0.0078 },
+    { dia: new Date(Date.now() - 4 * MS_PER_DAY).toISOString().slice(0, 10), total: 1, concluidos: 1, custo: 0.0041 },
+    { dia: new Date(Date.now() - 3 * MS_PER_DAY).toISOString().slice(0, 10), total: 2, concluidos: 2, custo: 0.0063 },
+    { dia: new Date(Date.now() - 2 * MS_PER_DAY).toISOString().slice(0, 10), total: 3, concluidos: 1, custo: 0.0095 },
+    { dia: new Date(Date.now() - 1 * MS_PER_DAY).toISOString().slice(0, 10), total: 1, concluidos: 1, custo: 0.0034 },
+    { dia: new Date().toISOString().slice(0, 10), total: 0, concluidos: 0, custo: 0 },
+  ],
+  '/stats/agents': [
+    { agent_name: 'triagem', chamadas: 12, tempo_medio_ms: 2100, custo_total: 0.0021 },
+    { agent_name: 'pesquisador', chamadas: 12, tempo_medio_ms: 5400, custo_total: 0.0089 },
+    { agent_name: 'jurista', chamadas: 12, tempo_medio_ms: 6200, custo_total: 0.0102 },
+    { agent_name: 'advogado_diabo', chamadas: 10, tempo_medio_ms: 4800, custo_total: 0.0078 },
+    { agent_name: 'redator', chamadas: 12, tempo_medio_ms: 8100, custo_total: 0.0131 },
+  ],
+  '/stats/recent': [
+    { id: 'demo-1', document_type_id: 'parecer', tema: 'Análise de licitação pública', status: 'concluido', quality_score: 85, created_at: new Date(Date.now() - 2 * MS_PER_DAY).toISOString() },
+    { id: 'demo-2', document_type_id: 'peticao_inicial', tema: 'Ação de indenização por danos morais', status: 'concluido', quality_score: 78, created_at: new Date(Date.now() - 3 * MS_PER_DAY).toISOString() },
+    { id: 'demo-3', document_type_id: 'contestacao', tema: 'Defesa em ação trabalhista', status: 'revisao', quality_score: 72, created_at: new Date(Date.now() - 4 * MS_PER_DAY).toISOString() },
+  ],
+  '/stats/by-type': [
+    { document_type_id: 'parecer', total: 4, avg_score: 82 },
+    { document_type_id: 'peticao_inicial', total: 3, avg_score: 76 },
+    { document_type_id: 'contestacao', total: 2, avg_score: 74 },
+    { document_type_id: 'recurso', total: 2, avg_score: 79 },
+    { document_type_id: 'sentenca', total: 1, avg_score: 88 },
+  ],
 }
 
 function resolve(url: string, method?: string): unknown {
@@ -79,9 +147,25 @@ function resolve(url: string, method?: string): unknown {
   // Exact-match array endpoints
   if (url in ARRAY_ENDPOINTS) return ARRAY_ENDPOINTS[url]
 
+  // Notifications endpoint — return empty list with unread count
+  if (url.startsWith('/notifications')) {
+    if (method === 'get') return { items: [], unread_count: 0 }
+    return { success: true }
+  }
+
   // Document list endpoint returns paginated structure
   if (url.startsWith('/documents') && method === 'get' && !url.includes('/documents/')) {
     return { items: [], total: 0 }
+  }
+
+  // Single document detail
+  if (/^\/documents\/[^/]+$/.test(url) && method === 'get') {
+    return null
+  }
+
+  // Document executions
+  if (url.includes('/executions') && method === 'get') {
+    return []
   }
 
   // POST to create document — return a mock ID

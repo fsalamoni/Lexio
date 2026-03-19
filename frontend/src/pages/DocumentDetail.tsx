@@ -4,11 +4,18 @@ import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, T
 import api, { invalidateApiCache } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import ProgressTracker from '../components/ProgressTracker'
+import PipelineProgressPanel, {
+  PIPELINE_AGENTS,
+  PHASE_COMPLETED,
+  type AgentStep,
+} from '../components/PipelineProgressPanel'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
 import { generateDocument } from '../lib/generation-service'
+import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc, type ContextDetailData } from '../lib/firestore-service'
+import { generateDocument, type GenerationProgress } from '../lib/generation-service'
 import { generateAndDownloadDocx } from '../lib/docx-generator'
 import { DOCTYPE_LABELS, AREA_LABELS } from '../lib/constants'
 
@@ -31,6 +38,7 @@ interface DocumentData {
   docx_path: string | null
   legal_area_ids: string[]
   texto_completo: string | null
+  context_detail?: ContextDetailData | null
   metadata_?: {
     rejection_reason?: string
     rejected_by_name?: string
@@ -90,6 +98,50 @@ export default function DocumentDetail() {
   const [deleting, setDeleting] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Pipeline progress state for retry flow (Firebase mode)
+  const [retryPipeline, setRetryPipeline] = useState(false)
+  const [pipelineAgents, setPipelineAgents] = useState<AgentStep[]>([])
+  const [pipelinePercent, setPipelinePercent] = useState(0)
+  const [pipelineMessage, setPipelineMessage] = useState('')
+  const [pipelineComplete, setPipelineComplete] = useState(false)
+  const [pipelineError, setPipelineError] = useState(false)
+  const agentTimers = useRef<Record<string, number>>({})
+
+  const initPipeline = useCallback(() => {
+    setPipelineAgents(PIPELINE_AGENTS.map(a => ({ ...a, status: 'pending' as const })))
+    setPipelinePercent(0)
+    setPipelineMessage('')
+    setPipelineComplete(false)
+    setPipelineError(false)
+    agentTimers.current = {}
+  }, [])
+
+  const handleRetryProgress = useCallback((p: GenerationProgress) => {
+    const now = Date.now()
+    setPipelineAgents(prev => {
+      const phaseIdx = prev.findIndex(a => a.key === p.phase)
+      return prev.map((agent, idx) => {
+        if (agent.key === p.phase && agent.status !== 'completed') {
+          if (!agentTimers.current[p.phase]) agentTimers.current[p.phase] = now
+          return { ...agent, status: 'active' as const, startedAt: agentTimers.current[p.phase] }
+        }
+        if (idx < phaseIdx && agent.status === 'active') {
+          return { ...agent, status: 'completed' as const, completedAt: now }
+        }
+        return agent
+      })
+    })
+    setPipelinePercent(p.percent)
+    setPipelineMessage(p.message)
+    if (p.phase === PHASE_COMPLETED) {
+      setPipelineAgents(prev =>
+        prev.map(a => a.status === 'active' ? { ...a, status: 'completed' as const, completedAt: now } : a),
+      )
+      setPipelinePercent(100)
+      setPipelineComplete(true)
+    }
+  }, [])
+
   const fetchDoc = useCallback(() => {
     if (!id) return
     if (IS_FIREBASE && userId) {
@@ -108,6 +160,14 @@ export default function DocumentDetail() {
               docx_path: null,
               legal_area_ids: data.legal_area_ids ?? [],
               texto_completo: data.texto_completo ?? null,
+              quality_issues: (data as any).quality_issues ?? null,
+              original_request: data.original_request,
+              created_at: data.created_at,
+              docx_path: (data as any).docx_path ?? null,
+              legal_area_ids: data.legal_area_ids ?? [],
+              texto_completo: data.texto_completo ?? null,
+              context_detail: data.context_detail ?? null,
+              metadata_: (data as any).metadata_ ?? undefined,
             }
             setDoc(docData)
             if (docData.status !== 'processando' && intervalRef.current) {
@@ -135,18 +195,31 @@ export default function DocumentDetail() {
 
   useEffect(() => {
     fetchDoc()
+    // Only poll while the document is being processed
     intervalRef.current = setInterval(fetchDoc, 5000)
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
     }
   }, [fetchDoc])
 
-  // Load executions when document is complete
+  // Stop polling once document is no longer processing
+  useEffect(() => {
+    if (doc && doc.status !== 'processando' && intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }, [doc])
+
+  // Load executions when document is complete (API mode only — Firebase stores in document itself)
   useEffect(() => {
     if (!id || !doc || doc.status !== 'concluido') return
+    if (IS_FIREBASE) return // Executions not available in Firebase mode
     api.get(`/documents/${id}/executions`)
       .then(res => setExecutions(Array.isArray(res.data) ? res.data : []))
-      .catch(() => toast.error('Erro ao carregar timeline de execução'))
+      .catch(() => {/* non-critical: executions timeline may not be available */})
   }, [id, doc?.status])
 
   // Load DOCX preview with mammoth
@@ -204,6 +277,34 @@ export default function DocumentDetail() {
           doc.legal_area_ids ?? [],
         ).catch(err => console.error('Retry generation failed:', err))
         toast.success('Reprocessamento iniciado')
+        // Show pipeline progress and re-trigger generation in Firebase mode
+        initPipeline()
+        setRetryPipeline(true)
+        toast.success('Reprocessamento iniciado')
+        try {
+          await generateDocument(
+            userId,
+            id,
+            doc.document_type_id,
+            doc.original_request,
+            doc.legal_area_ids ?? [],
+            undefined,
+            handleRetryProgress,
+          )
+        } catch (err: any) {
+          console.error('Retry generation failed:', err)
+          setPipelineError(true)
+          const errorMsg = err?.message?.includes('API key')
+            ? 'Chave de API não configurada ou inválida'
+            : err?.message?.includes('fetch') || err?.message?.includes('network')
+              ? 'Erro de conexão durante a geração'
+              : err?.message || 'Erro inesperado durante a geração'
+          setPipelineMessage(errorMsg)
+          setPipelineAgents(prev =>
+            prev.map(a => a.status === 'active' ? { ...a, status: 'error' as const, completedAt: Date.now() } : a),
+          )
+          toast.error('Erro na geração', errorMsg)
+        }
       } else {
         await api.post(`/documents/${id}/retry`)
         toast.success('Reprocessamento iniciado')
@@ -305,6 +406,17 @@ export default function DocumentDetail() {
         <ProgressTracker documentId={id} />
       )}
 
+      {/* Pipeline progress panel for Firebase retry flow */}
+      {retryPipeline && (
+        <PipelineProgressPanel
+          agents={pipelineAgents}
+          percent={pipelinePercent}
+          currentMessage={pipelineMessage}
+          isComplete={pipelineComplete}
+          hasError={pipelineError}
+        />
+      )}
+
       {/* Main info + actions */}
       <div className="bg-white rounded-xl border p-6 space-y-4">
         <div>
@@ -320,6 +432,34 @@ export default function DocumentDetail() {
                 <span key={area} className="px-2 py-0.5 bg-brand-50 text-brand-700 text-xs rounded-full">
                   {AREA_LABELS[area] || area}
                 </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Context Detail — AI-generated Q&A */}
+        {doc.context_detail && doc.context_detail.questions?.length > 0 && (
+          <div className="pt-2 border-t">
+            <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Detalhamento de Contexto</h2>
+            {doc.context_detail.analysis_summary && (
+              <div className="bg-purple-50 rounded-lg p-3 mb-3">
+                <p className="text-xs font-medium text-purple-700 mb-0.5">Análise preliminar</p>
+                <p className="text-sm text-purple-900">{doc.context_detail.analysis_summary}</p>
+              </div>
+            )}
+            <div className="space-y-3">
+              {doc.context_detail.questions.map((q: { id: string; question: string; answer: string }, idx: number) => (
+                <div key={q.id} className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-sm font-medium text-gray-700">
+                    <span className="text-purple-600 mr-1">{idx + 1}.</span>
+                    {q.question}
+                  </p>
+                  {q.answer ? (
+                    <p className="text-sm text-gray-600 mt-1 pl-4 border-l-2 border-purple-200">{q.answer}</p>
+                  ) : (
+                    <p className="text-xs text-gray-400 mt-1 italic">Não respondida</p>
+                  )}
+                </div>
               ))}
             </div>
           </div>
