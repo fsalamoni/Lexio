@@ -17,6 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    continue-on-error: true   # não bloqueia se GitHub Pages não estiver habilitado
     defaults:
       run:
         working-directory: frontend
@@ -53,6 +54,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    continue-on-error: true   # não bloqueia se Pages não estiver habilitado
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
