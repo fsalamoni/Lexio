@@ -12,8 +12,6 @@ import PipelineProgressPanel, {
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
-import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
-import { generateDocument } from '../lib/generation-service'
 import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc, type ContextDetailData } from '../lib/firestore-service'
 import { generateDocument, type GenerationProgress } from '../lib/generation-service'
 import { generateAndDownloadDocx } from '../lib/docx-generator'

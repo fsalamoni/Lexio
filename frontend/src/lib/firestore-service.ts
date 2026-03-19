@@ -416,9 +416,6 @@ export async function listDocuments(uid: string, opts?: {
   }
 
   const q = query(colRef, ...constraints)
-  const snap = await getDocs(q)
-  const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentData))
-  return { items, total: items.length }
   try {
     const snap = await getDocs(q)
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentData))
@@ -436,7 +433,7 @@ export async function listDocuments(uid: string, opts?: {
           .filter(doc => matchesDocumentFilters(doc, opts)),
         opts?.sortDir,
       )
-      const limitedItems = opts?.limit ? filteredItems.slice(0, opts.limit) : filteredItems
+      const limitedItems = opts?.limit ? filteredItems.slice(0, opts?.limit) : filteredItems
       return { items: limitedItems, total: filteredItems.length }
     } catch (fallbackError) {
       console.warn('Firestore document fallback query also failed:', getErrorMessage(fallbackError))

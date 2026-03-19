@@ -16,7 +16,6 @@ import StatusBadge from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
 import { SkeletonCard } from '../components/Skeleton'
 import { IS_FIREBASE } from '../lib/firebase'
-import { getStats as firestoreGetStats, getRecentDocuments } from '../lib/firestore-service'
 import {
   getStats as firestoreGetStats,
   getRecentDocuments,
