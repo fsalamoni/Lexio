@@ -24,7 +24,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { firestore } from './firebase'
 import { callLLM } from './llm-client'
 import { loadAgentModels, loadContextDetailModels, type AgentModelMap } from './model-config'
-import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
+import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, updateAcervoEmenta, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
 
@@ -68,12 +68,14 @@ const MAX_THESES_FALLBACK = 20
 const MAX_THESES_INJECTED = 15
 /** Max total characters of acervo reference excerpts. */
 const MAX_ACERVO_CONTEXT_CHARS = 6000
-/** Max chars of acervo doc summary sent to buscador for ranking. */
-const MAX_ACERVO_SUMMARY_CHARS = 3000
 /** Max acervo documents the buscador can select. */
 const MAX_ACERVO_SELECTED_DOCS = 5
 /** Max total characters sent to the compilador agent. */
 const MAX_ACERVO_COMPILADOR_CHARS = 120000
+/** Max chars of document text used to generate an ementa. */
+const MAX_EMENTA_SOURCE_CHARS = 8000
+/** Max pre-filtered documents sent to the buscador LLM. */
+const MAX_PREFILTERED_DOCS = 30
 
 // ── API key retrieval ─────────────────────────────────────────────────────────
 
@@ -487,25 +489,24 @@ function buildRedatorUser(
 function buildAcervoBuscadorSystem(): string {
   return [
     'Você é um ESPECIALISTA EM RECUPERAÇÃO DE DOCUMENTOS JURÍDICOS.',
-    'Sua função é analisar uma lista de documentos do acervo do usuário e selecionar os mais relevantes para a nova solicitação.',
+    'Sua função é analisar uma lista de documentos do acervo (com ementas ou nomes de arquivo) e selecionar os mais relevantes.',
     '',
     '<regras>',
-    '1. Analise o NOME DO ARQUIVO — ele geralmente contém o tema principal (ex: "NEPOTISMO", "IMPROBIDADE", etc.).',
-    '2. Analise o CONTEÚDO RESUMIDO — verifique se trata do mesmo assunto jurídico.',
-    '3. Priorize documentos do MESMO TIPO e sobre o MESMO TEMA ou tema muito semelhante.',
-    '4. Entre documentos sobre o mesmo tema, priorize os MAIS RECENTES (data mais próxima do presente).',
-    '5. Entre documentos de relevância similar, priorize os MAIS ESPECÍFICOS (mais detalhados).',
-    '6. Selecione entre 0 e 5 documentos. Se nenhum for relevante, retorne lista vazia.',
-    '7. Seja GENEROSO na seleção — se houver QUALQUER semelhança temática, inclua o documento com score adequado.',
-    '8. Documentos sobre a mesma área jurídica E mesmo tipo de situação DEVEM receber score >= 0.7.',
+    '1. Analise o NOME DO ARQUIVO — contém o tema principal (ex: "NEPOTISMO", "IMPROBIDADE").',
+    '2. Analise a EMENTA (quando disponível) — contém tipo, assunto, síntese, áreas e tópicos.',
+    '3. Priorize documentos do MESMO TIPO e MESMO TEMA ou tema muito semelhante.',
+    '4. Entre documentos sobre o mesmo tema, priorize os MAIS RECENTES.',
+    '5. Selecione entre 0 e 5 documentos. Se nenhum for relevante, retorne lista vazia.',
+    '6. Seja GENEROSO — se houver QUALQUER semelhança temática, inclua com score adequado.',
+    '7. Documentos sobre a mesma área jurídica E mesmo tipo de situação devem receber score >= 0.7.',
     '</regras>',
     '',
     '<formato_resposta>',
-    'Responda APENAS com JSON puro (sem markdown, sem ```), no seguinte formato:',
-    '{"selected": [{"id": "doc_id_exato", "score": 0.95, "reason": "Motivo da seleção"}]}',
+    'Responda APENAS com JSON puro (sem markdown, sem ```), no formato:',
+    '{"selected": [{"id": "doc_id_exato", "score": 0.95, "reason": "Motivo"}]}',
     'Onde score é de 0.0 a 1.0 (1.0 = tema idêntico).',
-    'IMPORTANTE: O campo "id" deve conter o ID EXATO do documento, conforme fornecido na lista.',
-    'Se nenhum documento for relevante, retorne: {"selected": []}',
+    'O campo "id" deve conter o ID EXATO do documento.',
+    'Se nenhum for relevante: {"selected": []}',
     '</formato_resposta>',
   ].join('\n')
 }
@@ -518,7 +519,7 @@ function buildAcervoBuscadorUser(
 ): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   const docsListStr = acervoDocs.map((d, i) =>
-    `[${i + 1}] ID: ${d.id}\n    Arquivo: ${d.filename}\n    Data: ${d.created_at}\n    Resumo: ${d.summary}`,
+    `[${i + 1}] ID: ${d.id}\n    Arquivo: ${d.filename}\n    Data: ${d.created_at}\n    Ementa: ${d.summary}`,
   ).join('\n\n')
 
   return [
@@ -665,6 +666,147 @@ function buildAcervoRevisorUser(
     'Mantenha todas as marcações [COMPLEMENTAR] para os agentes seguintes.',
     'Preserve todas as citações literalmente.',
   ].join('\n')
+}
+
+// ── Ementa generation ─────────────────────────────────────────────────────────
+
+/**
+ * Generate a structured ementa for an acervo document.
+ * Called once per document (at upload or in batch).
+ */
+export async function generateAcervoEmenta(
+  apiKey: string,
+  filename: string,
+  textContent: string,
+  model = 'anthropic/claude-3.5-haiku',
+): Promise<{ ementa: string; keywords: string[] }> {
+  const systemPrompt = [
+    'Você é um indexador de documentos jurídicos.',
+    'Sua tarefa é gerar uma ementa estruturada para indexação e busca.',
+    '',
+    '<formato>',
+    'Responda APENAS com JSON puro (sem markdown), no formato:',
+    '{',
+    '  "tipo": "Parecer|Petição|ACP|Sentença|Recurso|Outro",',
+    '  "assunto": "Tema principal em 1-2 palavras (ex: Nepotismo, Licitação, Improbidade)",',
+    '  "sintese": "Síntese do caso em 1-2 frases curtas",',
+    '  "areas": ["Direito Administrativo", "Direito Constitucional"],',
+    '  "topicos": ["Súmula Vinculante 13", "Princípios da Administração", "União Estável"],',
+    '  "conclusao": "Conclusão em 1 frase",',
+    '  "keywords": ["nepotismo", "cargo político", "união estável", "súmula vinculante 13"]',
+    '}',
+    '</formato>',
+    '',
+    'IMPORTANTE: As keywords devem incluir TODAS as palavras-chave relevantes para busca,',
+    'incluindo sinônimos e termos relacionados. Mínimo 5, máximo 20 keywords.',
+  ].join('\n')
+
+  const sourceText = textContent.slice(0, MAX_EMENTA_SOURCE_CHARS)
+  const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere a ementa e keywords para este documento.`
+
+  const result = await callLLM(apiKey, systemPrompt, userPrompt, model, 1000, 0.1)
+
+  let jsonStr = result.content.trim()
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) jsonStr = jsonMatch[1].trim()
+  const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
+  if (braceMatch) jsonStr = braceMatch[0]
+
+  const parsed = JSON.parse(jsonStr)
+
+  const ementaParts = [
+    `Tipo: ${parsed.tipo || 'N/A'}`,
+    `Assunto: ${parsed.assunto || 'N/A'}`,
+    `Síntese: ${parsed.sintese || 'N/A'}`,
+    `Áreas: ${(parsed.areas || []).join(', ')}`,
+    `Tópicos: ${(parsed.topicos || []).join(', ')}`,
+    `Conclusão: ${parsed.conclusao || 'N/A'}`,
+  ]
+
+  const keywords = (parsed.keywords || []).map((k: string) => k.toLowerCase().trim())
+  // Also extract keywords from filename
+  const filenameKeywords = filename
+    .replace(/\d{8}\s*-\s*/, '')
+    .replace(/\.docx?$/i, '')
+    .split(/[.\s,;]+/)
+    .filter(w => w.length > 2)
+    .map(w => w.toLowerCase())
+
+  const allKeywords = [...new Set([...keywords, ...filenameKeywords])]
+
+  return { ementa: ementaParts.join(' | '), keywords: allKeywords }
+}
+
+/**
+ * Pre-filter acervo documents by keyword matching against filenames and ementas.
+ * Returns documents sorted by relevance (most keyword matches first).
+ */
+function preFilterAcervoDocs(
+  docs: Array<{ id: string; filename: string; created_at: string; ementa?: string; ementa_keywords?: string[] }>,
+  searchKeywords: string[],
+): typeof docs {
+  if (searchKeywords.length === 0) return docs.slice(0, MAX_PREFILTERED_DOCS)
+
+  const normalizedSearch = searchKeywords.map(k => k.toLowerCase().trim())
+
+  const scored = docs.map(d => {
+    let score = 0
+    const filenameLower = d.filename.toLowerCase()
+    const ementaLower = (d.ementa || '').toLowerCase()
+
+    for (const keyword of normalizedSearch) {
+      // Filename match (high weight — filenames are curated by user)
+      if (filenameLower.includes(keyword)) score += 3
+      // Ementa keyword match (medium weight)
+      if (d.ementa_keywords?.some(ek => ek.includes(keyword) || keyword.includes(ek))) score += 2
+      // Ementa text match (lower weight)
+      if (ementaLower.includes(keyword)) score += 1
+    }
+
+    return { ...d, score }
+  })
+
+  return scored
+    .filter(d => d.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_PREFILTERED_DOCS)
+}
+
+/**
+ * Extract search keywords from triage result for pre-filtering.
+ */
+function extractSearchKeywords(triageContent: string, request: string): string[] {
+  const keywords: string[] = []
+
+  // Try to parse triage JSON for structured keywords
+  try {
+    const triage = JSON.parse(triageContent)
+    if (triage.tema) keywords.push(...triage.tema.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3))
+    if (triage.subtemas) {
+      for (const sub of triage.subtemas) {
+        keywords.push(...sub.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3))
+      }
+    }
+    if (triage.palavras_chave) {
+      for (const kw of triage.palavras_chave) {
+        keywords.push(kw.toLowerCase().trim())
+      }
+    }
+  } catch {
+    // Not JSON, extract from raw text
+    keywords.push(...triageContent.toLowerCase().split(/\s+/).filter(w => w.length > 4))
+  }
+
+  // Also extract main keywords from the request itself
+  const requestWords = request.toLowerCase()
+    .replace(/[.,;:!?()"]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 4)
+    .filter(w => !['sobre', 'entre', 'sendo', 'quando', 'como', 'para', 'com', 'qual', 'quais', 'possível', 'prática', 'envolvendo', 'municipal'].includes(w))
+  keywords.push(...requestWords)
+
+  // Deduplicate
+  return [...new Set(keywords)]
 }
 
 // ── Advanced agent prompt builders ────────────────────────────────────────────
@@ -1091,10 +1233,10 @@ export async function generateDocument(
     await updateDoc(docRef, { tema })
 
     // ── 2b. Acervo-based pre-generation agents ──────────────────────────────
-    // These 3 agents run BEFORE the main argumentation pipeline.
-    // They search the user's document archive for prior work on the same topic,
-    // compile a unified base document, and review it for coherence.
-    // If no relevant documents are found, the pipeline proceeds normally.
+    // Two-layer search:
+    // Layer 1 (zero-cost): Pre-filter by keywords from triage against filenames/ementas
+    // Layer 2 (cheap LLM): Buscador ranks pre-filtered ementas, selects top docs
+    // Then: Compilador + Revisor process full text of selected docs
 
     let acervoBase = '' // Will hold the compiled base document (if any)
     let buscadorResult: Awaited<ReturnType<typeof callLLM>> | null = null
@@ -1102,97 +1244,120 @@ export async function generateDocument(
     let revisorBaseResult: Awaited<ReturnType<typeof callLLM>> | null = null
 
     try {
-      // Load all acervo documents for intelligent search
       const allAcervoDocs = await getAllAcervoDocumentsForSearch(uid)
-      console.log(`[Acervo Pipeline] Found ${allAcervoDocs.length} indexed documents in acervo`,
-        allAcervoDocs.map(d => `${d.filename} (${d.text_content.length} chars, ${d.created_at})`))
+      console.log(`[Acervo Pipeline] Found ${allAcervoDocs.length} indexed documents in acervo`)
 
       if (allAcervoDocs.length > 0) {
-        // ── Agent 1: Acervo Buscador — rank & select relevant documents
         onProgress?.({ phase: 'acervo_buscador', message: 'Buscando documentos similares no acervo...', percent: 8 })
 
-        const docSummaries = allAcervoDocs.map(d => ({
-          id: d.id,
-          filename: d.filename,
-          summary: d.text_content.slice(0, MAX_ACERVO_SUMMARY_CHARS),
-          created_at: d.created_at,
-        }))
+        // ── Layer 1: Zero-cost keyword pre-filter ──
+        const searchKeywords = extractSearchKeywords(triageResult.content, request)
+        console.log(`[Acervo Pre-filter] Search keywords:`, searchKeywords)
 
-        buscadorResult = await callLLM(
-          apiKey,
-          buildAcervoBuscadorSystem(),
-          buildAcervoBuscadorUser(triageResult.content, request, docType, docSummaries),
-          modelAcervoBuscador, 2000, 0.1,
-        )
+        const preFiltered = preFilterAcervoDocs(allAcervoDocs, searchKeywords)
+        console.log(`[Acervo Pre-filter] ${allAcervoDocs.length} docs → ${preFiltered.length} candidates after keyword filter`)
 
-        // Parse buscador response to get selected document IDs
-        let selectedIds: string[] = []
-        try {
-          // The LLM might wrap JSON in markdown code blocks — extract it
-          let jsonStr = buscadorResult.content.trim()
-          const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
-          if (jsonMatch) jsonStr = jsonMatch[1].trim()
-          // Also try to extract JSON object if LLM added text around it
-          const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
-          if (braceMatch) jsonStr = braceMatch[0]
-
-          const parsed = JSON.parse(jsonStr)
-          const allSelected = parsed.selected || []
-          console.log(`[Acervo Buscador] Found ${allAcervoDocs.length} docs in acervo, LLM selected ${allSelected.length}:`,
-            allSelected.map((s: { id: string; score?: number; reason?: string }) => `${s.id} (score: ${s.score}, reason: ${s.reason?.slice(0, 60)})`))
-
-          selectedIds = allSelected
-            .filter((s: { score?: number }) => (s.score ?? 0) >= 0.15)
-            .slice(0, MAX_ACERVO_SELECTED_DOCS)
-            .map((s: { id: string }) => s.id)
-
-          if (selectedIds.length === 0 && allSelected.length > 0) {
-            console.warn('[Acervo Buscador] All selected docs filtered out by score threshold (0.15). Scores:',
-              allSelected.map((s: { id: string; score?: number }) => `${s.id}: ${s.score}`))
-          }
-        } catch (parseErr) {
-          console.warn('[Acervo Buscador] Failed to parse response:', parseErr, 'Raw response:', buscadorResult.content.slice(0, 500))
+        // Generate ementas for pre-filtered docs that don't have one yet (async, non-blocking for future runs)
+        const docsNeedingEmenta = preFiltered.filter(d => !d.ementa)
+        if (docsNeedingEmenta.length > 0) {
+          console.log(`[Acervo Ementa] ${docsNeedingEmenta.length} of ${preFiltered.length} pre-filtered docs need ementa generation`)
+          // Generate ementas in background for up to 10 docs (don't block generation)
+          const ementaPromises = docsNeedingEmenta.slice(0, 10).map(async d => {
+            try {
+              const fullDoc = allAcervoDocs.find(ad => ad.id === d.id)
+              if (!fullDoc) return
+              const { ementa, keywords } = await generateAcervoEmenta(apiKey, d.filename, fullDoc.text_content, modelAcervoBuscador)
+              await updateAcervoEmenta(uid, d.id, ementa, keywords)
+              // Update in-memory reference
+              d.ementa = ementa
+              d.ementa_keywords = keywords
+              console.log(`[Acervo Ementa] Generated ementa for "${d.filename}": ${ementa.slice(0, 100)}...`)
+            } catch (err) {
+              console.warn(`[Acervo Ementa] Failed for "${d.filename}":`, err)
+            }
+          })
+          await Promise.all(ementaPromises)
         }
 
-        if (selectedIds.length > 0) {
-          // Get full text of selected documents
-          const selectedDocs = allAcervoDocs
-            .filter(d => selectedIds.includes(d.id))
-            .map(d => ({
-              filename: d.filename,
-              text_content: d.text_content.slice(0, Math.floor(MAX_ACERVO_COMPILADOR_CHARS / selectedIds.length)),
-              created_at: d.created_at,
-            }))
+        if (preFiltered.length > 0) {
+          // ── Layer 2: LLM Buscador ranks pre-filtered ementas ──
+          const docSummaries = preFiltered.map(d => ({
+            id: d.id,
+            filename: d.filename,
+            summary: d.ementa || d.filename, // Use ementa if available, otherwise just filename
+            created_at: d.created_at,
+          }))
 
-          console.log(`[Acervo Compilador] Compiling base from ${selectedDocs.length} documents:`,
-            selectedDocs.map(d => `${d.filename} (${d.text_content.length} chars)`))
+          buscadorResult = await callLLM(
+            apiKey,
+            buildAcervoBuscadorSystem(),
+            buildAcervoBuscadorUser(triageResult.content, request, docType, docSummaries),
+            modelAcervoBuscador, 2000, 0.1,
+          )
 
-          if (selectedDocs.length === 0) {
-            console.warn('[Acervo Compilador] No documents matched selectedIds — IDs may not match Firestore IDs')
+          // Parse buscador response
+          let selectedIds: string[] = []
+          try {
+            let jsonStr = buscadorResult.content.trim()
+            const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+            if (jsonMatch) jsonStr = jsonMatch[1].trim()
+            const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
+            if (braceMatch) jsonStr = braceMatch[0]
+
+            const parsed = JSON.parse(jsonStr)
+            const allSelected = parsed.selected || []
+            console.log(`[Acervo Buscador] LLM selected ${allSelected.length} from ${preFiltered.length} candidates:`,
+              allSelected.map((s: { id: string; score?: number; reason?: string }) =>
+                `${s.id.slice(0, 8)}... (score: ${s.score}, ${s.reason?.slice(0, 50)})`,
+              ))
+
+            selectedIds = allSelected
+              .filter((s: { score?: number }) => (s.score ?? 0) >= 0.15)
+              .slice(0, MAX_ACERVO_SELECTED_DOCS)
+              .map((s: { id: string }) => s.id)
+          } catch (parseErr) {
+            console.warn('[Acervo Buscador] Parse error:', parseErr, 'Raw:', buscadorResult.content.slice(0, 300))
+          }
+
+          if (selectedIds.length > 0) {
+            const selectedDocs = allAcervoDocs
+              .filter(d => selectedIds.includes(d.id))
+              .map(d => ({
+                filename: d.filename,
+                text_content: d.text_content.slice(0, Math.floor(MAX_ACERVO_COMPILADOR_CHARS / selectedIds.length)),
+                created_at: d.created_at,
+              }))
+
+            console.log(`[Acervo Compilador] Compiling from ${selectedDocs.length} docs:`,
+              selectedDocs.map(d => `${d.filename} (${d.text_content.length} chars)`))
+
+            if (selectedDocs.length > 0) {
+              // ── Agent 2: Compilador ──
+              onProgress?.({ phase: 'acervo_compilador', message: `Compilando base a partir de ${selectedDocs.length} documento(s)...`, percent: 12 })
+              compiladorResult = await callLLM(
+                apiKey,
+                buildAcervoCompiladorSystem(docType, tema, profile),
+                buildAcervoCompiladorUser(request, triageResult.content, docType, selectedDocs),
+                modelAcervoCompilador, 12000, 0.2,
+              )
+
+              // ── Agent 3: Revisor ──
+              onProgress?.({ phase: 'acervo_revisor', message: 'Revisando documento base compilado...', percent: 16 })
+              revisorBaseResult = await callLLM(
+                apiKey,
+                buildAcervoRevisorSystem(docType, tema, profile),
+                buildAcervoRevisorUser(request, triageResult.content, docType, compiladorResult.content),
+                modelAcervoRevisor, 12000, 0.2,
+              )
+
+              acervoBase = revisorBaseResult.content
+              console.log(`[Acervo Revisor] Base document compiled: ${acervoBase.length} chars`)
+            }
           } else {
-
-          // ── Agent 2: Acervo Compilador — merge into unified base
-          onProgress?.({ phase: 'acervo_compilador', message: `Compilando base a partir de ${selectedDocs.length} documento(s)...`, percent: 12 })
-
-          compiladorResult = await callLLM(
-            apiKey,
-            buildAcervoCompiladorSystem(docType, tema, profile),
-            buildAcervoCompiladorUser(request, triageResult.content, docType, selectedDocs),
-            modelAcervoCompilador, 12000, 0.2,
-          )
-
-          // ── Agent 3: Acervo Revisor — review compiled base
-          onProgress?.({ phase: 'acervo_revisor', message: 'Revisando documento base compilado...', percent: 16 })
-
-          revisorBaseResult = await callLLM(
-            apiKey,
-            buildAcervoRevisorSystem(docType, tema, profile),
-            buildAcervoRevisorUser(request, triageResult.content, docType, compiladorResult.content),
-            modelAcervoRevisor, 12000, 0.2,
-          )
-
-          acervoBase = revisorBaseResult.content
-          } // end else (selectedDocs.length > 0)
+            console.log('[Acervo Buscador] No relevant documents selected from acervo')
+          }
+        } else {
+          console.log('[Acervo Pre-filter] No documents matched keywords, skipping acervo agents')
         }
       }
     } catch (e) {

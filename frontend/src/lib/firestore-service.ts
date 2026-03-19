@@ -114,6 +114,10 @@ export interface AcervoDocumentData {
   created_at: string
   /** Whether this document has been included in a thesis bank analysis run. */
   analyzed_for_theses?: boolean
+  /** Structured summary for intelligent search (generated once at upload/indexing). */
+  ementa?: string
+  /** Keywords extracted from the ementa for fast pre-filtering. */
+  ementa_keywords?: string[]
 }
 
 // ── Thesis Analysis Sessions ──────────────────────────────────────────────────
@@ -1611,7 +1615,7 @@ export async function deleteAcervoDocument(uid: string, docId: string): Promise<
  */
 export async function getAllAcervoDocumentsForSearch(
   uid: string,
-): Promise<Array<{ id: string; filename: string; text_content: string; created_at: string }>> {
+): Promise<Array<{ id: string; filename: string; text_content: string; created_at: string; ementa?: string; ementa_keywords?: string[] }>> {
   const db = ensureFirestore()
   const snap = await getDocs(
     query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
@@ -1624,9 +1628,46 @@ export async function getAllAcervoDocumentsForSearch(
         filename: data.filename,
         text_content: data.text_content || '',
         created_at: data.created_at,
+        ementa: data.ementa,
+        ementa_keywords: data.ementa_keywords,
       }
     })
     .filter(d => d.text_content.length > 0)
+}
+
+/**
+ * Update the ementa and keywords for an acervo document.
+ */
+export async function updateAcervoEmenta(
+  uid: string,
+  docId: string,
+  ementa: string,
+  keywords: string[],
+): Promise<void> {
+  const db = ensureFirestore()
+  await updateDoc(doc(db, 'users', uid, 'acervo', docId), {
+    ementa,
+    ementa_keywords: keywords,
+  })
+}
+
+/**
+ * Get acervo documents that do NOT have ementas yet.
+ */
+export async function getAcervoDocsWithoutEmenta(
+  uid: string,
+): Promise<Array<{ id: string; filename: string; text_content: string }>> {
+  const db = ensureFirestore()
+  const snap = await getDocs(
+    query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
+  )
+  return snap.docs
+    .map(d => {
+      const data = d.data() as AcervoDocumentData
+      return { id: d.id, filename: data.filename, text_content: data.text_content || '', ementa: data.ementa }
+    })
+    .filter(d => d.text_content.length > 0 && !d.ementa)
+    .map(({ ementa: _, ...rest }) => rest)
 }
 
 /**
