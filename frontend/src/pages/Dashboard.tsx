@@ -126,7 +126,6 @@ export default function Dashboard() {
           created_at: d.created_at,
         })))
       }).catch(() => toast.error('Erro ao carregar documentos recentes'))
-      Promise.all([p1, p2]).finally(() => setLoading(false))
       const p3 = getDailyStats(userId, periodDays).then(d => setDaily(d)).catch(() => {/* non-critical */})
       const p4 = getByTypeStats(userId).then(bt => setByType(bt)).catch(() => {/* non-critical */})
       Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
@@ -139,7 +138,6 @@ export default function Dashboard() {
       const p5 = api.get('/stats/by-type').then(r => setByType(toArr(r.data))).catch(() => {/* non-critical */})
       Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
     }
-  }, []) // eslint-disable-line
   }, [shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reload chart data when period changes (after initial load)
@@ -160,17 +158,7 @@ export default function Dashboard() {
     }
   }, [periodDays, shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reload chart data when period changes (after initial load)
-  useEffect(() => {
-    if (loading) return
-    setChartLoading(true)
-    api.get('/stats/daily', { params: { days: periodDays }, noCache: true } as any)
-      .then(r => setDaily(Array.isArray(r.data) ? r.data : []))
-      .catch(() => toast.error('Erro ao carregar histórico'))
-      .finally(() => setChartLoading(false))
-  }, [periodDays]) // eslint-disable-line
-
-  // Build cumulative cost series (guard against missing custo field)
+  // Build cumulative cost series(guard against missing custo field)
   const costSeries = daily.reduce<{ dia: string; custo_acumulado: number }[]>((acc, d) => {
     const prev = acc.length > 0 ? acc[acc.length - 1].custo_acumulado : 0
     const custo = typeof d.custo === 'number' ? d.custo : 0
@@ -261,7 +249,6 @@ export default function Dashboard() {
               color: 'amber',
             },
           ].map(card => (
-            <div key={card.label} className={`bg-white rounded-xl border p-5${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? ' border-blue-200 ring-1 ring-blue-100' : ''}`}>
             <div
               key={card.label}
               className={`bg-white rounded-xl border p-5 text-left${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? ' border-blue-200 ring-1 ring-blue-100' : ''}`}

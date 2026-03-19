@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2 } from 'lucide-react'
 import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye } from 'lucide-react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
@@ -189,26 +188,6 @@ export default function Upload() {
       }
 
       setLocalFiles(prev => [...prev, { name: file.name, size: file.size, status: 'uploading', progress: 0 }])
-      try {
-        const formData = new FormData()
-        formData.append('file', file)
-        await api.post('/uploads', formData, {
-          onUploadProgress: (evt) => {
-            if (evt.total) {
-              const pct = Math.round((evt.loaded / evt.total) * 100)
-              setLocalFiles(prev =>
-                prev.map(f => f.name === file.name ? { ...f, progress: pct } : f)
-              )
-            }
-          },
-        })
-        setLocalFiles(prev => prev.filter(f => f.name !== file.name))
-        fetchHistory()
-      } catch (err: any) {
-        setLocalFiles(prev =>
-          prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
-        )
-        toast.error(`Erro ao enviar ${file.name}`, err?.response?.data?.detail || err?.message)
 
       if (IS_FIREBASE) {
         // Firebase mode: extract text client-side and store in Firestore
@@ -281,11 +260,6 @@ export default function Upload() {
     if (!window.confirm(`Remover "${filename}" do acervo permanentemente?`)) return
     setDeletingId(id)
     try {
-      await api.delete(`/uploads/${id}`)
-      setHistory(prev => prev.filter(f => f.id !== id))
-      toast.success('Arquivo removido do acervo')
-    } catch (err: any) {
-      toast.error('Erro ao remover arquivo', err?.response?.data?.detail)
       if (IS_FIREBASE) {
         if (!userId) { toast.error('Usuário não autenticado. Faça login novamente.'); setDeletingId(null); return }
         await deleteAcervoDocument(userId, id)

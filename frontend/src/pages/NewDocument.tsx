@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronUp, FileText } from 'lucide-react'
 import { ChevronDown, ChevronUp, FileText, ArrowRight, Sparkles, Loader2, MessageCircleQuestion } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
@@ -9,10 +8,6 @@ import { Skeleton } from '../components/Skeleton'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
   getDocumentTypes, getLegalAreas, getRequestFields,
-  createDocument,
-} from '../lib/firestore-service'
-import { generateDocument } from '../lib/generation-service'
-  getDocumentTypes, getLegalAreas,
   createDocument,
   getDocumentTypesForProfile, getLegalAreasForProfile,
   getProfile, type ProfileData,
@@ -105,6 +100,9 @@ export default function NewDocument() {
       setContextFields([])
       setContextData({})
       setShowContext(false)
+    }
+  }, [selectedType]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Whether the main form fields are ready for generation
   const formReady = !!selectedType && request.trim().length > 0
 
@@ -243,20 +241,6 @@ export default function NewDocument() {
           template_variant: selectedTemplate || null,
           legal_area_ids: selectedAreas.length > 0 ? selectedAreas : null,
           request_context: Object.keys(contextData).length > 0 ? contextData : null,
-        })
-        invalidateApiCache('/stats')
-        navigate(`/documents/${newDoc.id}`)
-        // Trigger LLM generation in the background (don't await — user sees progress on detail page)
-        generateDocument(
-          userId,
-          newDoc.id!,
-          selectedType,
-          request,
-          selectedAreas,
-          Object.keys(contextData).length > 0 ? contextData : null,
-        ).catch(err => {
-          console.error('Generation failed:', err)
-        })
           context_detail: contextDetail,
         })
         invalidateApiCache('/stats')

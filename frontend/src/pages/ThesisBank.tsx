@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, X } from 'lucide-react'
 import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, X, Trash2 } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
@@ -8,9 +7,6 @@ import { SkeletonItem } from '../components/Skeleton'
 import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
-  listTheses, createThesis, updateThesis, getThesisStats,
-  type ThesisData,
-} from '../lib/firestore-service'
   listTheses, createThesis, updateThesis, deleteThesis, getThesisStats,
   seedThesesIfEmpty,
   type ThesisData,
@@ -633,7 +629,6 @@ export default function ThesisBank() {
   )
 }
 
-function ThesisCard({ thesis, expanded, onToggle, onEdit, areaColor }: {
 function ThesisCard({ thesis, expanded, onToggle, onEdit, onDelete, areaColor }: {
   thesis: ThesisItem
   expanded: boolean

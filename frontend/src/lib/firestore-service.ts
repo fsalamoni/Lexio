@@ -461,7 +461,6 @@ export async function deleteDocument(uid: string, docId: string): Promise<void> 
 // ── Stats (computed from Firestore data) ─────────────────────────────────────
 
 export async function getStats(uid: string) {
-  const { items } = await listDocuments(uid)
   const [{ items }, sessions] = await Promise.all([
     listDocuments(uid),
     listThesisAnalysisSessions(uid).catch(() => []),
@@ -484,7 +483,6 @@ export async function getStats(uid: string) {
     processing_documents,
     pending_review_documents,
     average_quality_score,
-    total_cost_usd: 0,
     total_cost_usd: round6(usageSummary.total_cost_usd),
     average_duration_ms: null,
   }
@@ -1419,11 +1417,6 @@ export async function listTheses(
   opts: { q?: string; legalAreaId?: string; limit?: number; skip?: number } = {},
 ): Promise<{ items: ThesisData[]; total: number }> {
   const db = ensureFirestore()
-  const constraints: QueryConstraint[] = [orderBy('created_at', 'desc')]
-  if (opts.legalAreaId) constraints.push(where('legal_area_id', '==', opts.legalAreaId))
-  if (opts.limit) constraints.push(limit(opts.limit + (opts.skip ?? 0)))
-  const snap = await getDocs(query(collection(db, 'users', uid, 'theses'), ...constraints))
-  let items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
   // Combining where() on one field with orderBy() on a different field requires a composite
   // Firestore index that may not exist. When filtering by area we skip the server-side orderBy
   // and sort client-side instead.
@@ -1476,7 +1469,6 @@ export async function createThesis(uid: string, data: Partial<ThesisData>): Prom
 export async function updateThesis(uid: string, thesisId: string, data: Partial<ThesisData>): Promise<ThesisData> {
   const db = ensureFirestore()
   const ref = doc(db, 'users', uid, 'theses', thesisId)
-  const updates = { ...data, updated_at: new Date().toISOString() }
   const updates = { ...data, updated_at: serverTimestamp() }
   delete updates.id
   await updateDoc(ref, updates)
