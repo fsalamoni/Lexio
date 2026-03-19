@@ -5,14 +5,17 @@
  * document generation pipeline directly in the browser via OpenRouter:
  *
  * Pipeline stages (mirrors backend orchestrator):
- * 1. Triagem       — Extract structured info (Haiku, fast)
- * 2. Pesquisador   — Legal research synthesis (Sonnet)
- * 3. Jurista       — Initial thesis development (Sonnet)
- * 4. Advogado Diabo — Counter-arguments critique (Sonnet)
- * 5. Jurista v2    — Refined theses after critique (Sonnet)
- * 6. Fact-checker  — Verify legal citations (Haiku, strict)
- * 7. Moderador     — Outline/plan the final document (Sonnet)
- * 8. Redator       — Write the full document (Sonnet, 10k tokens)
+ * 1.  Triagem            — Extract structured info (Haiku, fast)
+ * 2a. Acervo Buscador    — Search user archive for relevant docs (Haiku, conditional)
+ * 2b. Acervo Compilador  — Compile archive docs into base document (Sonnet, conditional)
+ * 2c. Acervo Revisor     — Review compiled base for coherence (Sonnet, conditional)
+ * 3.  Pesquisador        — Legal research synthesis (Sonnet)
+ * 4.  Jurista            — Initial thesis development (Sonnet)
+ * 5.  Advogado Diabo     — Counter-arguments critique (Sonnet)
+ * 6.  Jurista v2         — Refined theses after critique (Sonnet)
+ * 7.  Fact-checker        — Verify legal citations (Haiku, strict)
+ * 8.  Moderador          — Outline/plan the final document (Sonnet)
+ * 9.  Redator            — Write the full document (Sonnet, 12k tokens)
  *
  * The API key is read from Firestore /settings/platform (admin-only).
  */
@@ -21,7 +24,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { firestore } from './firebase'
 import { callLLM } from './llm-client'
 import { loadAgentModels, loadContextDetailModels, type AgentModelMap } from './model-config'
-import { listTheses, getAcervoContext, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
+import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
 
@@ -65,6 +68,12 @@ const MAX_THESES_FALLBACK = 20
 const MAX_THESES_INJECTED = 15
 /** Max total characters of acervo reference excerpts. */
 const MAX_ACERVO_CONTEXT_CHARS = 6000
+/** Max chars of acervo doc summary sent to buscador for ranking. */
+const MAX_ACERVO_SUMMARY_CHARS = 500
+/** Max acervo documents the buscador can select. */
+const MAX_ACERVO_SELECTED_DOCS = 5
+/** Max total characters sent to the compilador agent. */
+const MAX_ACERVO_COMPILADOR_CHARS = 120000
 
 // ── API key retrieval ─────────────────────────────────────────────────────────
 
@@ -409,6 +418,7 @@ function buildRedatorUser(
   tesesVerificadas?: string,
   plano?: string,
   contextDetail?: ContextDetailData | null,
+  acervoBase?: string,
 ): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   const areaNames = areas.map(a => AREA_NAMES[a] ?? a).join(', ')
@@ -439,16 +449,218 @@ function buildRedatorUser(
   if (pesquisa) parts.push(`<pesquisa>${pesquisa}</pesquisa>`)
   if (tesesVerificadas) parts.push(`<teses_verificadas>${tesesVerificadas}</teses_verificadas>`)
   if (plano) parts.push(`<plano>${plano}</plano>`)
+  if (acervoBase) {
+    parts.push(
+      '<documento_base_acervo>',
+      'IMPORTANTE: O texto abaixo é um documento base compilado a partir do acervo do usuário.',
+      'Este texto contém a fundamentação jurídica consolidada pelo usuário em trabalhos anteriores.',
+      'Você DEVE usar este texto como REFERÊNCIA PRINCIPAL para a redação.',
+      'PRESERVE as citações, fundamentações e argumentações existentes.',
+      'Adapte ao novo caso conforme necessário, mas NÃO descarte o conteúdo base.',
+      'Preencha as seções marcadas com [COMPLEMENTAR] usando a pesquisa e teses fornecidas.',
+      acervoBase,
+      '</documento_base_acervo>',
+    )
+  }
   parts.push(
     `Redija ${typeName} COMPLETO sobre o tema indicado na triagem.`,
-    'Siga a estrutura exigida. Texto puro, sem markdown.',
+    acervoBase
+      ? 'Use o documento base do acervo como REFERÊNCIA PRINCIPAL. Preserve sua fundamentação e estilo. Complemente apenas onde necessário ([COMPLEMENTAR]).'
+      : 'Siga a estrutura exigida. Texto puro, sem markdown.',
     'OBRIGATÓRIO: TRANSCREVA entre aspas todos os artigos de lei citados.',
     'OBRIGATÓRIO: TRANSCREVA entre aspas todos os enunciados de súmulas citadas.',
     'OBRIGATÓRIO: Para cada referência doutrinária, inclua autor, obra e posição.',
     'A fundamentação deve ser DENSA, PROFUNDA e com citações PRECISAS.',
     'Separe cada parágrafo com linha em branco.',
+    'Texto puro, sem markdown.',
   )
   return parts.join('\n')
+}
+
+// ── Acervo-based pre-generation agents ────────────────────────────────────────
+
+/**
+ * Buscador de Acervo — Ranks acervo documents by relevance to the new request.
+ * Uses triage output (tema, keywords, subtopics) to find the most relevant
+ * prior documents. Returns a JSON array of selected document IDs.
+ */
+function buildAcervoBuscadorSystem(): string {
+  return [
+    'Você é um ESPECIALISTA EM RECUPERAÇÃO DE DOCUMENTOS JURÍDICOS.',
+    'Sua função é analisar uma lista de documentos do acervo do usuário e selecionar os mais relevantes para a nova solicitação.',
+    '',
+    '<regras>',
+    '1. Priorize documentos do MESMO TIPO e sobre o MESMO TEMA ou tema muito semelhante.',
+    '2. Entre documentos sobre o mesmo tema, priorize os MAIS RECENTES (data mais próxima do presente).',
+    '3. Entre documentos de relevância similar, priorize os MAIS ESPECÍFICOS (mais detalhados).',
+    '4. Selecione entre 0 e 5 documentos. Se nenhum for relevante, retorne lista vazia.',
+    '5. Considere o conteúdo, a área jurídica e a argumentação — não apenas o título.',
+    '</regras>',
+    '',
+    '<formato_resposta>',
+    'Responda APENAS com um JSON válido no seguinte formato:',
+    '{"selected": [{"id": "doc_id", "score": 0.95, "reason": "Motivo da seleção"}]}',
+    'Onde score é de 0.0 a 1.0 (1.0 = tema idêntico).',
+    'Se nenhum documento for relevante, retorne: {"selected": []}',
+    '</formato_resposta>',
+  ].join('\n')
+}
+
+function buildAcervoBuscadorUser(
+  triagem: string,
+  request: string,
+  docType: string,
+  acervoDocs: Array<{ id: string; filename: string; summary: string; created_at: string }>,
+): string {
+  const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  const docsListStr = acervoDocs.map((d, i) =>
+    `[${i + 1}] ID: ${d.id}\n    Arquivo: ${d.filename}\n    Data: ${d.created_at}\n    Resumo: ${d.summary}`,
+  ).join('\n\n')
+
+  return [
+    `<tipo_documento>${typeName}</tipo_documento>`,
+    `<solicitacao>${request}</solicitacao>`,
+    `<triagem>${triagem}</triagem>`,
+    '',
+    `<acervo_disponivel>`,
+    `Total de documentos: ${acervoDocs.length}`,
+    '',
+    docsListStr,
+    `</acervo_disponivel>`,
+    '',
+    'Analise a solicitação e a triagem e selecione os documentos do acervo que são RELEVANTES para esta nova solicitação.',
+    'Priorize: (1) mesmo tema, (2) mais recentes, (3) mais específicos.',
+  ].join('\n')
+}
+
+/**
+ * Compilador de Base — Merges selected acervo documents into a unified base document.
+ */
+function buildAcervoCompiladorSystem(
+  docType: string,
+  tema: string,
+  profile?: UserProfileForGeneration | null,
+): string {
+  const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  const profileBlock = buildProfileBlock(profile)
+  return [
+    `Você é um COMPILADOR JURÍDICO ESPECIALISTA, responsável por criar um documento base a partir de documentos anteriores do acervo do usuário.`,
+    profileBlock,
+    '',
+    `<objetivo>`,
+    `Criar um ${typeName} BASE sobre o tema "${tema}" a partir dos documentos de referência fornecidos.`,
+    `O usuário reutiliza fundamentações de documentos anteriores — sua tarefa é compilar e unificar.`,
+    `</objetivo>`,
+    '',
+    '<regras_compilacao>',
+    '1. PRESERVAR ipsis litteris todas as citações jurisprudenciais (ementas, acórdãos, súmulas) — NÃO altere nem resuma.',
+    '2. PRESERVAR ipsis litteris todas as citações doutrinárias (trechos entre aspas com autor e obra) — NÃO altere.',
+    '3. PRESERVAR ipsis litteris todas as transcrições de dispositivos legais (artigos de lei).',
+    '4. Quando textos IDÊNTICOS aparecerem em mais de um documento, mantenha APENAS UMA cópia.',
+    '5. Quando textos SEMELHANTES (mas não idênticos) existirem, priorize:',
+    '   a) O texto mais ESPECÍFICO (com mais detalhes e fundamentação)',
+    '   b) O texto mais RECENTE (do documento com data mais recente)',
+    '6. ADAPTE cabeçalhos, nomes de partes, localidades e datas ao NOVO CASO descrito na solicitação.',
+    '7. MANTENHA a estrutura lógica do tipo de documento (ementa, relatório, fundamentação, conclusão).',
+    '8. Marque com [ADAPTAR] trechos que contenham dados do caso anterior e precisam ser ajustados ao novo caso.',
+    '9. Marque com [COMPLEMENTAR] seções da nova solicitação que NÃO foram cobertas pelos documentos de referência.',
+    '10. NÃO invente conteúdo novo — apenas compile o que já existe nos documentos de referência.',
+    '</regras_compilacao>',
+    '',
+    '<formato>',
+    'Texto PURO. Sem markdown. Títulos em MAIÚSCULAS.',
+    'Parágrafos separados por duas quebras de linha.',
+    '</formato>',
+  ].join('\n')
+}
+
+function buildAcervoCompiladorUser(
+  request: string,
+  triagem: string,
+  docType: string,
+  selectedDocs: Array<{ filename: string; text_content: string; created_at: string }>,
+): string {
+  const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  const docsStr = selectedDocs.map((d, i) =>
+    `<documento_referencia_${i + 1}>\nArquivo: ${d.filename}\nData: ${d.created_at}\n\n${d.text_content}\n</documento_referencia_${i + 1}>`,
+  ).join('\n\n')
+
+  return [
+    `<tipo_documento>${typeName}</tipo_documento>`,
+    `<solicitacao>${request}</solicitacao>`,
+    `<triagem>${triagem}</triagem>`,
+    '',
+    '<documentos_de_referencia>',
+    docsStr,
+    '</documentos_de_referencia>',
+    '',
+    `Compile os documentos de referência acima em um ${typeName} BASE unificado.`,
+    'Siga TODAS as regras de compilação. Preserve citações literalmente.',
+    'Remova duplicatas. Priorize textos mais específicos e recentes.',
+    'Adapte os dados factuais ao novo caso descrito na solicitação.',
+    'Marque com [ADAPTAR] e [COMPLEMENTAR] onde necessário.',
+  ].join('\n')
+}
+
+/**
+ * Revisor de Base — Reviews the compiled base document for coherence and completeness.
+ */
+function buildAcervoRevisorSystem(
+  docType: string,
+  tema: string,
+  profile?: UserProfileForGeneration | null,
+): string {
+  const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  const profileBlock = buildProfileBlock(profile)
+  return [
+    `Você é REVISOR JURÍDICO SÊNIOR, especialista em ${typeName}.`,
+    profileBlock,
+    '',
+    `<objetivo>`,
+    `Revisar o documento base compilado sobre "${tema}" e entregá-lo pronto para as etapas seguintes do pipeline de geração.`,
+    `</objetivo>`,
+    '',
+    '<regras_revisao>',
+    '1. Verifique se NÃO restaram dados do caso anterior (nomes, localidades, datas erradas) — corrija para os dados do NOVO caso.',
+    '2. Substitua todas as marcações [ADAPTAR] por dados reais do novo caso (extraídos da solicitação e triagem).',
+    '3. MANTENHA as marcações [COMPLEMENTAR] — elas serão preenchidas pelos agentes seguintes.',
+    '4. Verifique a COERÊNCIA do fluxo lógico: introdução → fundamentação → conclusão.',
+    '5. Verifique se as TRANSIÇÕES entre parágrafos fazem sentido após a compilação.',
+    '6. NÃO altere citações jurisprudenciais, doutrinárias ou transcrições de lei — elas devem permanecer LITERAIS.',
+    '7. NÃO invente conteúdo novo — apenas revise e ajuste o que já existe.',
+    '8. NÃO remova conteúdo válido — apenas reorganize se necessário para melhor fluxo.',
+    '9. Se o texto está bom, retorne-o como está, sem alterações desnecessárias.',
+    '</regras_revisao>',
+    '',
+    '<formato>',
+    'Texto PURO. Sem markdown. Títulos em MAIÚSCULAS.',
+    'Parágrafos separados por duas quebras de linha.',
+    '</formato>',
+  ].join('\n')
+}
+
+function buildAcervoRevisorUser(
+  request: string,
+  triagem: string,
+  docType: string,
+  compiledBase: string,
+): string {
+  const typeName = DOC_TYPE_NAMES[docType] ?? docType
+  return [
+    `<tipo_documento>${typeName}</tipo_documento>`,
+    `<solicitacao>${request}</solicitacao>`,
+    `<triagem>${triagem}</triagem>`,
+    '',
+    '<documento_base_compilado>',
+    compiledBase,
+    '</documento_base_compilado>',
+    '',
+    `Revise este ${typeName} base compilado.`,
+    'Corrija dados do caso anterior que não foram adaptados.',
+    'Verifique coerência e fluxo lógico.',
+    'Mantenha todas as marcações [COMPLEMENTAR] para os agentes seguintes.',
+    'Preserve todas as citações literalmente.',
+  ].join('\n')
 }
 
 // ── Advanced agent prompt builders ────────────────────────────────────────────
@@ -838,6 +1050,9 @@ export async function generateDocument(
     const modelFactChecker  = agentModels.fact_checker   ?? 'anthropic/claude-3.5-haiku'
     const modelModerador    = agentModels.moderador      ?? 'anthropic/claude-sonnet-4'
     const modelRedator      = agentModels.redator        ?? 'anthropic/claude-sonnet-4'
+    const modelAcervoBuscador    = agentModels.acervo_buscador    ?? 'anthropic/claude-3.5-haiku'
+    const modelAcervoCompilador  = agentModels.acervo_compilador  ?? 'anthropic/claude-sonnet-4'
+    const modelAcervoRevisor     = agentModels.acervo_revisor     ?? 'anthropic/claude-sonnet-4'
 
     // Load admin-configured document type structure template (if defined)
     let customStructure: string | undefined
@@ -871,8 +1086,90 @@ export async function generateDocument(
     }
     await updateDoc(docRef, { tema })
 
-    // 2b. Load knowledge base — theses + acervo documents
-    onProgress?.({ phase: 'pesquisador', message: 'Carregando base de conhecimento...', percent: 10 })
+    // ── 2b. Acervo-based pre-generation agents ──────────────────────────────
+    // These 3 agents run BEFORE the main argumentation pipeline.
+    // They search the user's document archive for prior work on the same topic,
+    // compile a unified base document, and review it for coherence.
+    // If no relevant documents are found, the pipeline proceeds normally.
+
+    let acervoBase = '' // Will hold the compiled base document (if any)
+    let buscadorResult: Awaited<ReturnType<typeof callLLM>> | null = null
+    let compiladorResult: Awaited<ReturnType<typeof callLLM>> | null = null
+    let revisorBaseResult: Awaited<ReturnType<typeof callLLM>> | null = null
+
+    try {
+      // Load all acervo documents for intelligent search
+      const allAcervoDocs = await getAllAcervoDocumentsForSearch(uid)
+
+      if (allAcervoDocs.length > 0) {
+        // ── Agent 1: Acervo Buscador — rank & select relevant documents
+        onProgress?.({ phase: 'acervo_buscador', message: 'Buscando documentos similares no acervo...', percent: 8 })
+
+        const docSummaries = allAcervoDocs.map(d => ({
+          id: d.id,
+          filename: d.filename,
+          summary: d.text_content.slice(0, MAX_ACERVO_SUMMARY_CHARS),
+          created_at: d.created_at,
+        }))
+
+        buscadorResult = await callLLM(
+          apiKey,
+          buildAcervoBuscadorSystem(),
+          buildAcervoBuscadorUser(triageResult.content, request, docType, docSummaries),
+          modelAcervoBuscador, 2000, 0.1,
+        )
+
+        // Parse buscador response to get selected document IDs
+        let selectedIds: string[] = []
+        try {
+          const parsed = JSON.parse(buscadorResult.content)
+          selectedIds = (parsed.selected || [])
+            .filter((s: { score?: number }) => (s.score ?? 0) >= 0.3)
+            .slice(0, MAX_ACERVO_SELECTED_DOCS)
+            .map((s: { id: string }) => s.id)
+        } catch {
+          console.warn('Failed to parse buscador response, skipping acervo compilation')
+        }
+
+        if (selectedIds.length > 0) {
+          // Get full text of selected documents
+          const selectedDocs = allAcervoDocs
+            .filter(d => selectedIds.includes(d.id))
+            .map(d => ({
+              filename: d.filename,
+              text_content: d.text_content.slice(0, Math.floor(MAX_ACERVO_COMPILADOR_CHARS / selectedIds.length)),
+              created_at: d.created_at,
+            }))
+
+          // ── Agent 2: Acervo Compilador — merge into unified base
+          onProgress?.({ phase: 'acervo_compilador', message: `Compilando base a partir de ${selectedDocs.length} documento(s)...`, percent: 12 })
+
+          compiladorResult = await callLLM(
+            apiKey,
+            buildAcervoCompiladorSystem(docType, tema, profile),
+            buildAcervoCompiladorUser(request, triageResult.content, docType, selectedDocs),
+            modelAcervoCompilador, 12000, 0.2,
+          )
+
+          // ── Agent 3: Acervo Revisor — review compiled base
+          onProgress?.({ phase: 'acervo_revisor', message: 'Revisando documento base compilado...', percent: 16 })
+
+          revisorBaseResult = await callLLM(
+            apiKey,
+            buildAcervoRevisorSystem(docType, tema, profile),
+            buildAcervoRevisorUser(request, triageResult.content, docType, compiladorResult.content),
+            modelAcervoRevisor, 12000, 0.2,
+          )
+
+          acervoBase = revisorBaseResult.content
+        }
+      }
+    } catch (e) {
+      console.warn('Acervo pre-generation agents failed (non-fatal, proceeding without base):', e)
+    }
+
+    // ── 2c. Load knowledge base — theses + acervo excerpts ──────────────────
+    onProgress?.({ phase: 'pesquisador', message: 'Carregando base de conhecimento...', percent: 18 })
     let knowledgeBase = ''
 
     // Load relevant theses from thesis bank
@@ -901,22 +1198,36 @@ export async function generateDocument(
       console.warn('Failed to load thesis bank:', e)
     }
 
-    // Load acervo reference documents
-    try {
-      const acervoContext = await getAcervoContext(uid, MAX_ACERVO_CONTEXT_CHARS)
-      if (acervoContext) {
-        knowledgeBase += `<acervo_referencia>\n${acervoContext}\n</acervo_referencia>\n\n`
+    // Load acervo excerpts (lightweight context — separate from the full acervo base above)
+    if (!acervoBase) {
+      // Only load excerpts if acervo agents didn't produce a compiled base
+      try {
+        const acervoContext = await getAcervoContext(uid, MAX_ACERVO_CONTEXT_CHARS)
+        if (acervoContext) {
+          knowledgeBase += `<acervo_referencia>\n${acervoContext}\n</acervo_referencia>\n\n`
+        }
+      } catch (e) {
+        console.warn('Failed to load acervo context:', e)
       }
-    } catch (e) {
-      console.warn('Failed to load acervo context:', e)
     }
 
     // 3. Pesquisador — legal research synthesis
-    onProgress?.({ phase: 'pesquisador', message: 'Pesquisando legislação e jurisprudência...', percent: 15 })
+    onProgress?.({ phase: 'pesquisador', message: 'Pesquisando legislação e jurisprudência...', percent: 22 })
     const pesquisadorUserParts = [
       `<triagem>${triageResult.content}</triagem>`,
       `<solicitacao>${request}</solicitacao>`,
     ]
+    if (acervoBase) {
+      pesquisadorUserParts.push(
+        '<documento_base_acervo>',
+        'O texto abaixo é um documento base compilado a partir de documentos anteriores do acervo do usuário.',
+        'Ele contém fundamentação jurídica já consolidada pelo usuário em trabalhos anteriores.',
+        'Use-o como REFERÊNCIA PRINCIPAL. Foque sua pesquisa nas seções marcadas com [COMPLEMENTAR]',
+        'e em enriquecer a fundamentação existente. NÃO descarte o conteúdo do acervo — ele é a base.',
+        acervoBase,
+        '</documento_base_acervo>',
+      )
+    }
     if (knowledgeBase) {
       pesquisadorUserParts.push(
         '<base_conhecimento>',
@@ -927,7 +1238,9 @@ export async function generateDocument(
       )
     }
     pesquisadorUserParts.push(
-      'Realize pesquisa jurídica EXAUSTIVA sobre o tema. TRANSCREVA artigos de lei entre aspas. Inclua legislação com texto dos dispositivos, jurisprudência com enunciados de súmulas, doutrina com autor e obra, e princípios constitucionais.',
+      acervoBase
+        ? 'Realize pesquisa jurídica COMPLEMENTAR ao documento base do acervo. Foque nas lacunas marcadas com [COMPLEMENTAR]. TRANSCREVA artigos de lei entre aspas. Inclua legislação, jurisprudência e doutrina que COMPLEMENTEM a fundamentação já existente.'
+        : 'Realize pesquisa jurídica EXAUSTIVA sobre o tema. TRANSCREVA artigos de lei entre aspas. Inclua legislação com texto dos dispositivos, jurisprudência com enunciados de súmulas, doutrina com autor e obra, e princípios constitucionais.',
     )
     const pesquisaResult = await callLLM(
       apiKey,
@@ -989,7 +1302,7 @@ export async function generateDocument(
       buildRedatorUser(
         docType, request, triageResult.content, areas, context,
         pesquisaResult.content, factCheckResult.content, planoResult.content,
-        contextDetail,
+        contextDetail, acervoBase || undefined,
       ),
       modelRedator, 12000, 0.3,
     )
@@ -1015,6 +1328,43 @@ export async function generateDocument(
         duration_ms: triageResult.duration_ms,
         document_type_id: docType,
       }),
+      // Acervo agents (conditionally included)
+      ...(buscadorResult ? [createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'acervo_buscador',
+        agent_name: 'Buscador de Acervo',
+        model: buscadorResult.model,
+        tokens_in: buscadorResult.tokens_in,
+        tokens_out: buscadorResult.tokens_out,
+        cost_usd: buscadorResult.cost_usd,
+        duration_ms: buscadorResult.duration_ms,
+        document_type_id: docType,
+      })] : []),
+      ...(compiladorResult ? [createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'acervo_compilador',
+        agent_name: 'Compilador de Base',
+        model: compiladorResult.model,
+        tokens_in: compiladorResult.tokens_in,
+        tokens_out: compiladorResult.tokens_out,
+        cost_usd: compiladorResult.cost_usd,
+        duration_ms: compiladorResult.duration_ms,
+        document_type_id: docType,
+      })] : []),
+      ...(revisorBaseResult ? [createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'acervo_revisor',
+        agent_name: 'Revisor de Base',
+        model: revisorBaseResult.model,
+        tokens_in: revisorBaseResult.tokens_in,
+        tokens_out: revisorBaseResult.tokens_out,
+        cost_usd: revisorBaseResult.cost_usd,
+        duration_ms: revisorBaseResult.duration_ms,
+        document_type_id: docType,
+      })] : []),
       createUsageExecutionRecord({
         source_type: 'document_generation',
         source_id: docId,
@@ -1101,7 +1451,11 @@ export async function generateDocument(
       }),
     ]
     const allResults = [
-      triageResult, pesquisaResult, juristaResult, criticaResult,
+      triageResult,
+      ...(buscadorResult ? [buscadorResult] : []),
+      ...(compiladorResult ? [compiladorResult] : []),
+      ...(revisorBaseResult ? [revisorBaseResult] : []),
+      pesquisaResult, juristaResult, criticaResult,
       juristaV2Result, factCheckResult, planoResult, docResult,
     ]
     const llm_tokens_in  = allResults.reduce((s, r) => s + r.tokens_in,  0)

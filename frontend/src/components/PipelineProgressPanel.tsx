@@ -14,6 +14,9 @@ import {
   AlertCircle,
   Settings,
   Save,
+  Library,
+  Layers,
+  ScanSearch,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -33,32 +36,38 @@ export interface AgentStep {
 // ── Pipeline stage definitions ────────────────────────────────────────────────
 
 const AGENT_ICONS: Record<string, React.ElementType> = {
-  config:        Settings,
-  triagem:       Search,
-  pesquisador:   BookOpen,
-  jurista:       Scale,
-  advogado_diabo: Shield,
-  jurista_v2:    RefreshCw,
-  fact_checker:  ClipboardCheck,
-  moderador:     Scale,
-  redacao:       FileText,
-  salvando:      Save,
+  config:           Settings,
+  triagem:          Search,
+  acervo_buscador:  Library,
+  acervo_compilador: Layers,
+  acervo_revisor:   ScanSearch,
+  pesquisador:      BookOpen,
+  jurista:          Scale,
+  advogado_diabo:   Shield,
+  jurista_v2:       RefreshCw,
+  fact_checker:     ClipboardCheck,
+  moderador:        Scale,
+  redacao:          FileText,
+  salvando:         Save,
 }
 
 /** Phase key emitted by generation-service when the pipeline finishes. */
 export const PHASE_COMPLETED = 'concluido'
 
 export const PIPELINE_AGENTS: Omit<AgentStep, 'status'>[] = [
-  { key: 'config',        label: 'Configuração',          description: 'Carregando chaves de API',              model: '—' },
-  { key: 'triagem',       label: 'Triagem',               description: 'Extração de tema e palavras-chave',    model: 'Haiku' },
-  { key: 'pesquisador',   label: 'Pesquisador',           description: 'Pesquisa de legislação e jurisprudência', model: 'Sonnet' },
-  { key: 'jurista',       label: 'Jurista',               description: 'Desenvolvimento de teses jurídicas',   model: 'Sonnet' },
-  { key: 'advogado_diabo', label: 'Advogado do Diabo',    description: 'Crítica e contra-argumentação',         model: 'Sonnet' },
-  { key: 'jurista_v2',    label: 'Jurista (revisão)',      description: 'Refinamento de teses após crítica',    model: 'Sonnet' },
-  { key: 'fact_checker',  label: 'Fact-Checker',          description: 'Verificação de citações legais',        model: 'Haiku' },
-  { key: 'moderador',     label: 'Moderador',             description: 'Planejamento da estrutura do documento', model: 'Sonnet' },
-  { key: 'redacao',       label: 'Redator',               description: 'Redação completa do documento',         model: 'Sonnet' },
-  { key: 'salvando',      label: 'Salvando',              description: 'Persistindo resultado no banco',        model: '—' },
+  { key: 'config',            label: 'Configuração',          description: 'Carregando chaves de API',               model: '—' },
+  { key: 'triagem',           label: 'Triagem',               description: 'Extração de tema e palavras-chave',     model: 'Haiku' },
+  { key: 'acervo_buscador',   label: 'Buscador de Acervo',    description: 'Buscando documentos similares no acervo', model: 'Haiku' },
+  { key: 'acervo_compilador', label: 'Compilador de Base',    description: 'Compilando base a partir do acervo',     model: 'Sonnet' },
+  { key: 'acervo_revisor',    label: 'Revisor de Base',       description: 'Revisando documento base compilado',     model: 'Sonnet' },
+  { key: 'pesquisador',       label: 'Pesquisador',           description: 'Pesquisa de legislação e jurisprudência', model: 'Sonnet' },
+  { key: 'jurista',           label: 'Jurista',               description: 'Desenvolvimento de teses jurídicas',    model: 'Sonnet' },
+  { key: 'advogado_diabo',    label: 'Advogado do Diabo',     description: 'Crítica e contra-argumentação',          model: 'Sonnet' },
+  { key: 'jurista_v2',        label: 'Jurista (revisão)',      description: 'Refinamento de teses após crítica',     model: 'Sonnet' },
+  { key: 'fact_checker',      label: 'Fact-Checker',          description: 'Verificação de citações legais',         model: 'Haiku' },
+  { key: 'moderador',         label: 'Moderador',             description: 'Planejamento da estrutura do documento', model: 'Sonnet' },
+  { key: 'redacao',           label: 'Redator',               description: 'Redação completa do documento',          model: 'Sonnet' },
+  { key: 'salvando',          label: 'Salvando',              description: 'Persistindo resultado no banco',         model: '—' },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

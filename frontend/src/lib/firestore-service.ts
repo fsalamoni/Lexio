@@ -1606,6 +1606,30 @@ export async function deleteAcervoDocument(uid: string, docId: string): Promise<
 }
 
 /**
+ * Get ALL indexed acervo documents with full text content (for acervo-based generation).
+ * Returns an array of { id, filename, text_content, created_at } for the buscador agent.
+ */
+export async function getAllAcervoDocumentsForSearch(
+  uid: string,
+): Promise<Array<{ id: string; filename: string; text_content: string; created_at: string }>> {
+  const db = ensureFirestore()
+  const snap = await getDocs(
+    query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
+  )
+  return snap.docs
+    .map(d => {
+      const data = d.data() as AcervoDocumentData
+      return {
+        id: d.id,
+        filename: data.filename,
+        text_content: data.text_content || '',
+        created_at: data.created_at,
+      }
+    })
+    .filter(d => d.text_content.length > 0)
+}
+
+/**
  * Get text content from all indexed acervo documents (for generation context).
  * Returns concatenated text excerpts up to `maxChars` total characters.
  */
