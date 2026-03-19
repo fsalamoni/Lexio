@@ -2,25 +2,19 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, 'claude/*']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write   # necessário para push na branch gh-pages
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    continue-on-error: true   # não bloqueia se GitHub Pages não estiver habilitado
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -30,9 +24,13 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - run: npm ci
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: frontend
 
-      - run: npm run build
+      - name: Build
+        run: npm run build
+        working-directory: frontend
         env:
           VITE_DEMO_MODE: 'false'
           VITE_BASE_PATH: /Lexio/
@@ -45,21 +43,14 @@ jobs:
           VITE_ADMIN_EMAIL:                  ${{ secrets.VITE_ADMIN_EMAIL }}
 
       # SPA fallback
-      - run: cp dist/index.html dist/404.html
+      - name: SPA fallback
+        run: cp frontend/dist/index.html frontend/dist/404.html
 
-      - uses: actions/upload-pages-artifact@v3
+      # Push direto para a branch gh-pages (compatível com "Deploy from a branch")
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: frontend/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    continue-on-error: true   # não bloqueia se Pages não estiver habilitado
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    # Só executa se foi disparado pelo branch main
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: frontend/dist
+          publish_branch: gh-pages
+          force_orphan: false

@@ -72,17 +72,9 @@ jobs:
       # Firebase CLI usa FIREBASE_TOKEN se setado, caso contrário usa GOOGLE_APPLICATION_CREDENTIALS
       - name: Deploy to Firebase
         run: |
-          if [ -n "$FIREBASE_TOKEN" ] || [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
-            firebase deploy \
-              --only hosting:lexio,firestore:rules,firestore:indexes \
-              --project hocapp-44760 \
-              --non-interactive
-          else
-            echo "⚠️  Nenhuma credencial Firebase configurada — deploy pulado."
-            echo "   Configure o secret FIREBASE_TOKEN no GitHub:"
-            echo "   1. Execute localmente: firebase login:ci"
-            echo "   2. Vá em: GitHub → Settings → Secrets → Actions → New secret"
-            echo "   3. Nome: FIREBASE_TOKEN  |  Valor: <token gerado>"
-          fi
+          firebase deploy \
+            --only hosting:lexio,firestore:rules,firestore:indexes \
+            --project hocapp-44760 \
+            --non-interactive
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
