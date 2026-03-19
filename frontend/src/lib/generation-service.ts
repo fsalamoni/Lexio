@@ -69,7 +69,7 @@ const MAX_THESES_INJECTED = 15
 /** Max total characters of acervo reference excerpts. */
 const MAX_ACERVO_CONTEXT_CHARS = 6000
 /** Max chars of acervo doc summary sent to buscador for ranking. */
-const MAX_ACERVO_SUMMARY_CHARS = 500
+const MAX_ACERVO_SUMMARY_CHARS = 3000
 /** Max acervo documents the buscador can select. */
 const MAX_ACERVO_SELECTED_DOCS = 5
 /** Max total characters sent to the compilador agent. */
@@ -490,17 +490,21 @@ function buildAcervoBuscadorSystem(): string {
     'Sua função é analisar uma lista de documentos do acervo do usuário e selecionar os mais relevantes para a nova solicitação.',
     '',
     '<regras>',
-    '1. Priorize documentos do MESMO TIPO e sobre o MESMO TEMA ou tema muito semelhante.',
-    '2. Entre documentos sobre o mesmo tema, priorize os MAIS RECENTES (data mais próxima do presente).',
-    '3. Entre documentos de relevância similar, priorize os MAIS ESPECÍFICOS (mais detalhados).',
-    '4. Selecione entre 0 e 5 documentos. Se nenhum for relevante, retorne lista vazia.',
-    '5. Considere o conteúdo, a área jurídica e a argumentação — não apenas o título.',
+    '1. Analise o NOME DO ARQUIVO — ele geralmente contém o tema principal (ex: "NEPOTISMO", "IMPROBIDADE", etc.).',
+    '2. Analise o CONTEÚDO RESUMIDO — verifique se trata do mesmo assunto jurídico.',
+    '3. Priorize documentos do MESMO TIPO e sobre o MESMO TEMA ou tema muito semelhante.',
+    '4. Entre documentos sobre o mesmo tema, priorize os MAIS RECENTES (data mais próxima do presente).',
+    '5. Entre documentos de relevância similar, priorize os MAIS ESPECÍFICOS (mais detalhados).',
+    '6. Selecione entre 0 e 5 documentos. Se nenhum for relevante, retorne lista vazia.',
+    '7. Seja GENEROSO na seleção — se houver QUALQUER semelhança temática, inclua o documento com score adequado.',
+    '8. Documentos sobre a mesma área jurídica E mesmo tipo de situação DEVEM receber score >= 0.7.',
     '</regras>',
     '',
     '<formato_resposta>',
-    'Responda APENAS com um JSON válido no seguinte formato:',
-    '{"selected": [{"id": "doc_id", "score": 0.95, "reason": "Motivo da seleção"}]}',
+    'Responda APENAS com JSON puro (sem markdown, sem ```), no seguinte formato:',
+    '{"selected": [{"id": "doc_id_exato", "score": 0.95, "reason": "Motivo da seleção"}]}',
     'Onde score é de 0.0 a 1.0 (1.0 = tema idêntico).',
+    'IMPORTANTE: O campo "id" deve conter o ID EXATO do documento, conforme fornecido na lista.',
     'Se nenhum documento for relevante, retorne: {"selected": []}',
     '</formato_resposta>',
   ].join('\n')
@@ -1100,6 +1104,8 @@ export async function generateDocument(
     try {
       // Load all acervo documents for intelligent search
       const allAcervoDocs = await getAllAcervoDocumentsForSearch(uid)
+      console.log(`[Acervo Pipeline] Found ${allAcervoDocs.length} indexed documents in acervo`,
+        allAcervoDocs.map(d => `${d.filename} (${d.text_content.length} chars, ${d.created_at})`))
 
       if (allAcervoDocs.length > 0) {
         // ── Agent 1: Acervo Buscador — rank & select relevant documents
@@ -1122,13 +1128,30 @@ export async function generateDocument(
         // Parse buscador response to get selected document IDs
         let selectedIds: string[] = []
         try {
-          const parsed = JSON.parse(buscadorResult.content)
-          selectedIds = (parsed.selected || [])
-            .filter((s: { score?: number }) => (s.score ?? 0) >= 0.3)
+          // The LLM might wrap JSON in markdown code blocks — extract it
+          let jsonStr = buscadorResult.content.trim()
+          const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+          if (jsonMatch) jsonStr = jsonMatch[1].trim()
+          // Also try to extract JSON object if LLM added text around it
+          const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
+          if (braceMatch) jsonStr = braceMatch[0]
+
+          const parsed = JSON.parse(jsonStr)
+          const allSelected = parsed.selected || []
+          console.log(`[Acervo Buscador] Found ${allAcervoDocs.length} docs in acervo, LLM selected ${allSelected.length}:`,
+            allSelected.map((s: { id: string; score?: number; reason?: string }) => `${s.id} (score: ${s.score}, reason: ${s.reason?.slice(0, 60)})`))
+
+          selectedIds = allSelected
+            .filter((s: { score?: number }) => (s.score ?? 0) >= 0.15)
             .slice(0, MAX_ACERVO_SELECTED_DOCS)
             .map((s: { id: string }) => s.id)
-        } catch {
-          console.warn('Failed to parse buscador response, skipping acervo compilation')
+
+          if (selectedIds.length === 0 && allSelected.length > 0) {
+            console.warn('[Acervo Buscador] All selected docs filtered out by score threshold (0.15). Scores:',
+              allSelected.map((s: { id: string; score?: number }) => `${s.id}: ${s.score}`))
+          }
+        } catch (parseErr) {
+          console.warn('[Acervo Buscador] Failed to parse response:', parseErr, 'Raw response:', buscadorResult.content.slice(0, 500))
         }
 
         if (selectedIds.length > 0) {
@@ -1140,6 +1163,13 @@ export async function generateDocument(
               text_content: d.text_content.slice(0, Math.floor(MAX_ACERVO_COMPILADOR_CHARS / selectedIds.length)),
               created_at: d.created_at,
             }))
+
+          console.log(`[Acervo Compilador] Compiling base from ${selectedDocs.length} documents:`,
+            selectedDocs.map(d => `${d.filename} (${d.text_content.length} chars)`))
+
+          if (selectedDocs.length === 0) {
+            console.warn('[Acervo Compilador] No documents matched selectedIds — IDs may not match Firestore IDs')
+          } else {
 
           // ── Agent 2: Acervo Compilador — merge into unified base
           onProgress?.({ phase: 'acervo_compilador', message: `Compilando base a partir de ${selectedDocs.length} documento(s)...`, percent: 12 })
@@ -1162,6 +1192,7 @@ export async function generateDocument(
           )
 
           acervoBase = revisorBaseResult.content
+          } // end else (selectedDocs.length > 0)
         }
       }
     } catch (e) {
