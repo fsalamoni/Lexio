@@ -14,13 +14,11 @@ import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { DOCTYPE_LABELS } from '../lib/constants'
 import { IS_FIREBASE } from '../lib/firebase'
-import { getStats as firestoreGetStats, getDocumentTypes, getLegalAreas, listDocuments, updateDocument } from '../lib/firestore-service'
-import { useAuth } from '../contexts/AuthContext'
-import {
-  getStats as firestoreGetStats, getDocumentTypes, getLegalAreas,
+import { getStats as firestoreGetStats, getDocumentTypes, getLegalAreas,
   listDocuments, updateDocument,
   loadAdminDocumentTypes, saveAdminDocumentTypes,
   loadAdminLegalAreas, saveAdminLegalAreas,
+  DEFAULT_DOC_STRUCTURES,
   type AdminDocumentType, type AdminLegalArea,
 } from '../lib/firestore-service'
 import { useAuth } from '../contexts/AuthContext'
@@ -1235,7 +1233,10 @@ function DocumentTypesCrud() {
   }
 
   const handleEdit = (item: AdminDocumentType) => {
-    setEditingItem({ ...item })
+    const structure = item.structure?.trim()
+      ? item.structure
+      : (DEFAULT_DOC_STRUCTURES[item.id] ?? '')
+    setEditingItem({ ...item, structure })
     setIsCreating(false)
   }
 
