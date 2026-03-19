@@ -14,9 +14,6 @@ import {
   type ContextDetailData, type ContextDetailQuestion,
   type WizardField,
 } from '../lib/firestore-service'
-
-// Alias to match usage in this file
-type ContextField = WizardField
 import { generateDocument, generateContextQuestions, type GenerationProgress } from '../lib/generation-service'
 import type { UserProfileForGeneration } from '../lib/generation-service'
 import PipelineProgressPanel, {
@@ -24,6 +21,9 @@ import PipelineProgressPanel, {
   PHASE_COMPLETED,
   type AgentStep,
 } from '../components/PipelineProgressPanel'
+
+// Alias to match usage in this file
+type ContextField = WizardField
 
 interface DocType {
   id: string
@@ -72,19 +72,6 @@ export default function NewDocument() {
   const toast = useToast()
 
   const MAX_REQUEST = 2000
-
-  useEffect(() => {
-    if (IS_FIREBASE) {
-      setDocTypes(getDocumentTypes())
-      setLegalAreas(getLegalAreas())
-      setLoadingTypes(false)
-    } else {
-      Promise.all([
-        api.get('/document-types').then(res => setDocTypes(Array.isArray(res.data) ? res.data : [])),
-        api.get('/legal-areas').then(res => setLegalAreas(Array.isArray(res.data) ? res.data : [])),
-      ]).catch(() => toast.error('Erro ao carregar tipos de documento e áreas disponíveis')).finally(() => setLoadingTypes(false))
-    }
-  }, [])
 
   // Load context fields when document type changes
   useEffect(() => {
@@ -172,6 +159,7 @@ export default function NewDocument() {
     }
   }, [])
 
+  // Load document types and legal areas (with user profile support)
   useEffect(() => {
     if (IS_FIREBASE && userId) {
       // Load user profile first, then filter doc types/areas accordingly
