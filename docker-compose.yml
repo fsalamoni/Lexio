@@ -66,9 +66,9 @@ services:
     image: postgres:16-alpine
     container_name: lexio-postgres
     environment:
-      POSTGRES_USER: lexio
-      POSTGRES_PASSWORD: lexio
-      POSTGRES_DB: lexio
+      POSTGRES_USER: ${POSTGRES_USER:-lexio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — copy .env.example to .env}
+      POSTGRES_DB: ${POSTGRES_DB:-lexio}
     ports:
       - "5432:5432"
     volumes:
@@ -101,7 +101,7 @@ services:
     volumes:
       - ./Teses:/qdrant/storage
     environment:
-      QDRANT__SERVICE__API_KEY: lexio_qdrant_key_2026
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required — copy .env.example to .env}
     networks:
       - lexio
     restart: unless-stopped
@@ -163,7 +163,7 @@ services:
     profiles:
       - backup
     environment:
-      PGPASSWORD: lexio
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - ./backups:/backups
       - ./scripts:/scripts

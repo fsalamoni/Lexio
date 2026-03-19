@@ -9,7 +9,7 @@ build/
 .eggs/
 *.egg
 
-# Environments
+# Environments — NEVER commit .env
 .env
 .env.local
 .env.*.local
@@ -35,8 +35,9 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 
-# Output
+# Output & uploads (may contain user data)
 output/
+uploads/
 *.docx
 
 # Database
@@ -45,6 +46,20 @@ output/
 
 # Alembic
 alembic/versions/*.pyc
+
+# Backups (may contain sensitive database data)
+backups/*.sql.gz
+backups/*.dump
+
+# Test artifacts
+test-results.xml
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Firebase local cache
+.firebase/
+.firebaserc.local
 
 # Qdrant runtime files (data tracked via Git LFS)
 Teses/.lock
