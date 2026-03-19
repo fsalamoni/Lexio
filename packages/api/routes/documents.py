@@ -96,7 +96,7 @@ async def list_documents(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from sqlalchemy import or_, cast, String as SAString
+    from sqlalchemy import cast, String as SAString
     stmt = select(Document).where(Document.organization_id == user.organization_id)
     count_stmt = select(func.count(Document.id)).where(Document.organization_id == user.organization_id)
 
