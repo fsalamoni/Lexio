@@ -359,7 +359,6 @@ async def reindex_documents(
                 organization_id=str(admin.organization_id),
                 document_id=str(doc.id),
                 collection="lexio_documents",
-                collection="memoria_pessoal",
             )
             total_chunks += chunks
             indexed += 1
