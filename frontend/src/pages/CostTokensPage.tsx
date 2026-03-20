@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DollarSign, Coins, Cpu, BrainCircuit, ChevronDown, ChevronUp,
-  FileText, BookOpen, TrendingUp, Loader2, MessageCircleQuestion,
+  FileText, BookOpen, TrendingUp, Loader2, MessageCircleQuestion, Tags,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -340,9 +340,9 @@ export default function CostTokensPage() {
     load()
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split executions into document_generation, thesis_analysis and context_detail
-  const { docBreakdown, thesisBreakdown, contextDetailBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, highlights: [] }
+  // Split executions into document_generation, thesis_analysis, context_detail and acervo_classificador
+  const { docBreakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
@@ -351,11 +351,13 @@ export default function CostTokensPage() {
     const docItems = breakdown.by_agent_function.filter(item => item.key.startsWith('document_generation::'))
     const thesisItems = breakdown.by_agent_function.filter(item => item.key.startsWith('thesis_analysis::'))
     const contextDetailItems = breakdown.by_agent_function.filter(item => item.key.startsWith('context_detail::'))
+    const acervoClassificadorItems = breakdown.by_agent_function.filter(item => item.key.startsWith('acervo_classificador::'))
 
     // Build approximate sub-breakdowns using available summary data
     const docFunc = breakdown.by_function.find(f => f.key === 'document_generation')
     const thesisFunc = breakdown.by_function.find(f => f.key === 'thesis_analysis')
     const contextDetailFunc = breakdown.by_function.find(f => f.key === 'context_detail')
+    const acervoClassificadorFunc = breakdown.by_function.find(f => f.key === 'acervo_classificador')
 
     const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[]): CostBreakdown | null => {
       if (!func && agentItems.length === 0) return null
@@ -388,6 +390,7 @@ export default function CostTokensPage() {
     const docBd = makeSub(docFunc, docItems)
     const thesisBd = makeSub(thesisFunc, thesisItems)
     const contextDetailBd = makeSub(contextDetailFunc, contextDetailItems)
+    const acervoClassificadorBd = makeSub(acervoClassificadorFunc, acervoClassificadorItems)
 
     // Build highlights
     const hl: { label: string; value: string; meta: string }[] = []
@@ -409,7 +412,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, highlights: hl }
+    return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, highlights: hl }
   }, [breakdown])
 
   if (loading) {
@@ -561,6 +564,28 @@ export default function CostTokensPage() {
               />
             ) : (
               <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para detalhamento de contexto.</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 5: Acervo Classificador ──────────────────────── */}
+          <CollapsibleSection
+            id="section_acervo_classificador"
+            title="Classificador de Acervo"
+            icon={Tags}
+            iconColor="text-teal-600"
+            badge={acervoClassificadorBreakdown ? fmtUsd(acervoClassificadorBreakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {acervoClassificadorBreakdown ? (
+              <SectionBreakdown
+                sectionId="acervo_classificador"
+                breakdown={acervoClassificadorBreakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para classificação de acervo.</p>
             )}
           </CollapsibleSection>
         </>

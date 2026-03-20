@@ -408,3 +408,78 @@ export async function resetContextDetailModels(): Promise<void> {
   if (!IS_FIREBASE) return
   await saveSettings({ context_detail_models: {} })
 }
+
+// ── Acervo Classificador Agent Definition ────────────────────────────────────
+
+/**
+ * Single-agent definition for the "Classificar Acervo" feature.
+ *
+ * This agent analyses acervo documents and generates classification tags:
+ * natureza, área do direito, assuntos, and contexto.
+ */
+export const ACERVO_CLASSIFICADOR_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'acervo_classificador',
+    label: 'Classificador de Acervo',
+    description: 'Classifica documentos do acervo com tags de natureza, área do direito, assuntos e contexto',
+    defaultModel: 'anthropic/claude-3.5-haiku',
+    recommendedTier: 'fast',
+    icon: 'tag',
+  },
+]
+
+/** Map from acervo-classificador agent key → model ID */
+export type AcervoClassificadorModelMap = Record<string, string>
+
+/** Default model map for the acervo classificador agent. */
+export function getDefaultAcervoClassificadorModelMap(): AcervoClassificadorModelMap {
+  const map: AcervoClassificadorModelMap = {}
+  for (const def of ACERVO_CLASSIFICADOR_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/**
+ * Load acervo classificador model configuration.
+ * Returns saved overrides merged with defaults.
+ */
+export async function loadAcervoClassificadorModels(): Promise<AcervoClassificadorModelMap> {
+  const defaults = getDefaultAcervoClassificadorModelMap()
+  if (!IS_FIREBASE) return defaults
+  try {
+    const settings = await getSettings()
+    const saved = (settings.acervo_classificador_models ?? {}) as Record<string, string>
+    for (const def of ACERVO_CLASSIFICADOR_AGENT_DEFS) {
+      if (saved[def.key] && typeof saved[def.key] === 'string') {
+        defaults[def.key] = saved[def.key]
+      }
+    }
+  } catch {
+    // Fall back to defaults silently
+  }
+  return defaults
+}
+
+/**
+ * Save acervo classificador model configuration to Firestore.
+ * Only stores non-default values to keep data minimal.
+ */
+export async function saveAcervoClassificadorModels(models: AcervoClassificadorModelMap): Promise<void> {
+  if (!IS_FIREBASE) return
+  const defaults = getDefaultAcervoClassificadorModelMap()
+  const overrides: AcervoClassificadorModelMap = {}
+  for (const def of ACERVO_CLASSIFICADOR_AGENT_DEFS) {
+    const model = models[def.key]
+    if (model && model !== defaults[def.key]) {
+      overrides[def.key] = model
+    }
+  }
+  await saveSettings({ acervo_classificador_models: overrides })
+}
+
+/** Reset acervo classificador models to defaults. */
+export async function resetAcervoClassificadorModels(): Promise<void> {
+  if (!IS_FIREBASE) return
+  await saveSettings({ acervo_classificador_models: {} })
+}

@@ -5,7 +5,7 @@ import {
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
   ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal, RefreshCw,
-  Plus, Pencil, Trash2, X, Scale,
+  Plus, Pencil, Trash2, X, Scale, Tags,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -25,6 +25,7 @@ import { useAuth } from '../contexts/AuthContext'
 import ModelConfigCard from '../components/ModelConfigCard'
 import ThesisAnalystConfigCard from '../components/ThesisAnalystConfigCard'
 import ContextDetailConfigCard from '../components/ContextDetailConfigCard'
+import AcervoClassificadorConfigCard from '../components/AcervoClassificadorConfigCard'
 
 interface ModuleInfo {
   id: string
@@ -836,6 +837,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <ContextDetailConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Acervo Classificador Config (Firebase-only) */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_acervo_classificador_config"
+          title="Configuração do Classificador de Acervo"
+          icon={Tags}
+          iconColor="text-teal-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <AcervoClassificadorConfigCard />
         </AdminCollapsibleSection>
       )}
 
