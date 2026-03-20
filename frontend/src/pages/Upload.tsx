@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3 } from 'lucide-react'
+import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter } from 'lucide-react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
@@ -9,10 +9,12 @@ import {
   createAcervoDocument,
   deleteAcervoDocument,
   updateAcervoEmenta,
+  updateAcervoTags,
+  updateAcervoTextContent,
   getSettings,
   type AcervoDocumentData,
 } from '../lib/firestore-service'
-import { generateAcervoEmenta } from '../lib/generation-service'
+import { generateAcervoEmenta, generateAcervoTags, NATUREZA_OPTIONS, type NaturezaValue } from '../lib/generation-service'
 
 interface UploadedFile {
   id: string
@@ -233,6 +235,213 @@ function EmentaModal({
   )
 }
 
+// ── Tags view/edit modal ────────────────────────────────────────────────────
+
+const NATUREZA_LABELS: Record<string, string> = Object.fromEntries(
+  NATUREZA_OPTIONS.map(o => [o.value, o.label]),
+)
+
+function TagsModal({
+  doc,
+  apiKey,
+  onClose,
+  onSaved,
+}: {
+  doc: AcervoDocumentData
+  apiKey: string
+  onClose: () => void
+  onSaved: (tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; contexto?: string[] }) => void
+}) {
+  const [natureza, setNatureza] = useState<NaturezaValue | ''>(doc.natureza || '')
+  const [areaDireito, setAreaDireito] = useState((doc.area_direito || []).join(', '))
+  const [assuntos, setAssuntos] = useState((doc.assuntos || []).join(', '))
+  const [contexto, setContexto] = useState((doc.contexto || []).join(', '))
+  const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [editing, setEditing] = useState(!doc.tags_generated)
+
+  const handleGenerate = async () => {
+    if (!doc.text_content) return
+    setGenerating(true)
+    try {
+      const result = await generateAcervoTags(apiKey, doc.filename, doc.text_content)
+      setNatureza(result.natureza)
+      setAreaDireito(result.area_direito.join(', '))
+      setAssuntos(result.assuntos.join(', '))
+      setContexto(result.contexto.join(', '))
+      setEditing(true)
+    } catch (err) {
+      console.error('Erro ao gerar tags:', err)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleSave = () => {
+    setSaving(true)
+    try {
+      onSaved({
+        natureza: natureza || undefined,
+        area_direito: areaDireito.split(',').map(s => s.trim()).filter(Boolean),
+        assuntos: assuntos.split(',').map(s => s.trim()).filter(Boolean),
+        contexto: contexto.split(',').map(s => s.trim()).filter(Boolean),
+      })
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const hasTags = doc.tags_generated || natureza || areaDireito || assuntos || contexto
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <div className="flex items-center gap-2 min-w-0">
+            <Tags className="w-5 h-5 text-teal-500 flex-shrink-0" />
+            <span className="font-semibold text-gray-900 text-sm">Tags de Classificação</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-3">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {/* File info */}
+        <div className="flex gap-4 px-5 py-2 border-b bg-gray-50 text-xs text-gray-500">
+          <span className="truncate font-medium">{doc.filename}</span>
+          <span>{new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
+        </div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {hasTags || editing ? (
+            <>
+              {/* Natureza */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Natureza</label>
+                {editing ? (
+                  <select
+                    value={natureza}
+                    onChange={e => setNatureza(e.target.value as NaturezaValue)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
+                  >
+                    <option value="">Selecione...</option>
+                    {NATUREZA_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label} — {o.description}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                    {NATUREZA_LABELS[natureza] || natureza || 'Não classificado'}
+                  </span>
+                )}
+              </div>
+              {/* Área do Direito */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Área do Direito</label>
+                {editing ? (
+                  <input
+                    type="text"
+                    value={areaDireito}
+                    onChange={e => setAreaDireito(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
+                    placeholder="Direito Administrativo, Direito Constitucional"
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {areaDireito.split(',').map((a, i) => a.trim() && (
+                      <span key={i} className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">{a.trim()}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Assuntos */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Assuntos</label>
+                {editing ? (
+                  <input
+                    type="text"
+                    value={assuntos}
+                    onChange={e => setAssuntos(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
+                    placeholder="Licitação, Contratação direta, Improbidade"
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {assuntos.split(',').map((a, i) => a.trim() && (
+                      <span key={i} className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">{a.trim()}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Contexto */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Contexto</label>
+                {editing ? (
+                  <textarea
+                    value={contexto}
+                    onChange={e => setContexto(e.target.value)}
+                    rows={3}
+                    className="w-full border rounded-lg p-3 text-sm text-gray-800 focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none resize-y"
+                    placeholder="Município celebrou contrato sem licitação, Empresa questionou dispensa"
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {contexto.split(',').map((c, i) => c.trim() && (
+                      <span key={i} className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">{c.trim()}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+              <Tags className="w-10 h-10 mb-3" />
+              <p className="text-sm font-medium">Nenhuma classificação gerada</p>
+              <p className="text-xs mt-1">Clique em "Gerar Tags" para classificar automaticamente.</p>
+            </div>
+          )}
+        </div>
+        {/* Actions */}
+        <div className="flex items-center justify-between px-5 py-3 border-t bg-gray-50 gap-2">
+          <button
+            onClick={handleGenerate}
+            disabled={generating || !doc.text_content}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            {hasTags ? 'Reclassificar' : 'Gerar Tags'}
+          </button>
+          <div className="flex gap-2">
+            {hasTags && !editing && (
+              <button
+                onClick={() => setEditing(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Editar
+              </button>
+            )}
+            {editing && (
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Salvar
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Text extraction ──────────────────────────────────────────────────────────
 
 /** Extract text from a File client-side. Handles DOCX, DOC (mammoth), PDF (pdfjs CDN), and plain text. */
@@ -291,9 +500,14 @@ export default function Upload() {
   const [localFiles, setLocalFiles] = useState<{ name: string; size: number; status: 'uploading' | 'error'; progress?: number }[]>([])
   const [viewDoc, setViewDoc] = useState<AcervoDocumentData | null>(null)
   const [ementaDoc, setEmentaDoc] = useState<AcervoDocumentData | null>(null)
+  const [tagsDoc, setTagsDoc] = useState<AcervoDocumentData | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [bulkGenerating, setBulkGenerating] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
+  const [bulkTagsGenerating, setBulkTagsGenerating] = useState(false)
+  const [bulkTagsProgress, setBulkTagsProgress] = useState<{ done: number; total: number } | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterNatureza, setFilterNatureza] = useState<string>('')
   const inputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -534,11 +748,75 @@ export default function Upload() {
     toast.success('Ementa salva com sucesso.')
   }
 
+  // Save tags from modal
+  const handleSaveTags = async (docId: string, tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; contexto?: string[] }) => {
+    if (!userId) return
+    await updateAcervoTags(userId, docId, tags)
+    setFirebaseHistory(prev => prev.map(d =>
+      d.id === docId ? { ...d, ...tags, tags_generated: true } : d,
+    ))
+    setTagsDoc(null)
+    toast.success('Tags salvas com sucesso.')
+  }
+
+  // Bulk tags generation for all docs without tags
+  const handleBulkGenerateTags = async () => {
+    if (!userId || !apiKey || bulkTagsGenerating) return
+    const docsWithoutTags = firebaseHistory.filter(d => !d.tags_generated && d.text_content && d.status === 'indexed')
+    if (docsWithoutTags.length === 0) {
+      toast.info('Todos os documentos já possuem tags de classificação.')
+      return
+    }
+    setBulkTagsGenerating(true)
+    setBulkTagsProgress({ done: 0, total: docsWithoutTags.length })
+
+    let done = 0
+    for (let i = 0; i < docsWithoutTags.length; i += 5) {
+      const batch = docsWithoutTags.slice(i, i + 5)
+      await Promise.all(batch.map(async d => {
+        try {
+          const result = await generateAcervoTags(apiKey, d.filename, d.text_content)
+          await updateAcervoTags(userId, d.id!, result)
+          setFirebaseHistory(prev => prev.map(fd =>
+            fd.id === d.id ? { ...fd, ...result, tags_generated: true } : fd,
+          ))
+        } catch (err) {
+          console.error(`Erro ao gerar tags para ${d.filename}:`, err)
+        } finally {
+          done++
+          setBulkTagsProgress({ done, total: docsWithoutTags.length })
+        }
+      }))
+    }
+
+    setBulkTagsGenerating(false)
+    setBulkTagsProgress(null)
+    toast.success(`Tags geradas para ${done} documento(s).`)
+    fetchHistory()
+  }
+
   const docsWithoutEmenta = firebaseHistory.filter(d => !d.ementa && d.text_content && d.status === 'indexed')
   const docsWithEmenta = firebaseHistory.filter(d => !!d.ementa)
+  const docsWithoutTags = firebaseHistory.filter(d => !d.tags_generated && d.text_content && d.status === 'indexed')
+  const docsWithTags = firebaseHistory.filter(d => !!d.tags_generated)
+
+  // Apply search and filter
+  const filteredHistory = firebaseHistory.filter(d => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      const matchFilename = d.filename.toLowerCase().includes(q)
+      const matchEmenta = (d.ementa || '').toLowerCase().includes(q)
+      const matchAreas = (d.area_direito || []).some(a => a.toLowerCase().includes(q))
+      const matchAssuntos = (d.assuntos || []).some(a => a.toLowerCase().includes(q))
+      const matchContexto = (d.contexto || []).some(c => c.toLowerCase().includes(q))
+      if (!matchFilename && !matchEmenta && !matchAreas && !matchAssuntos && !matchContexto) return false
+    }
+    if (filterNatureza && d.natureza !== filterNatureza) return false
+    return true
+  })
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-3xl">
       {/* View modal */}
       {viewDoc && <AcervoDocModal doc={viewDoc} onClose={() => setViewDoc(null)} />}
       {/* Ementa modal */}
@@ -548,6 +826,15 @@ export default function Upload() {
           apiKey={apiKey}
           onClose={() => setEmentaDoc(null)}
           onSaved={(ementa, kws) => handleSaveEmenta(ementaDoc.id!, ementa, kws)}
+        />
+      )}
+      {/* Tags modal */}
+      {tagsDoc && apiKey && (
+        <TagsModal
+          doc={tagsDoc}
+          apiKey={apiKey}
+          onClose={() => setTagsDoc(null)}
+          onSaved={(tags) => handleSaveTags(tagsDoc.id!, tags)}
         />
       )}
 
@@ -666,30 +953,77 @@ export default function Upload() {
       {/* Indexed history — Firebase mode */}
       {IS_FIREBASE && firebaseHistory.length > 0 && (
         <div className="bg-white rounded-xl border overflow-hidden">
-          <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h2 className="text-sm font-semibold text-gray-700">Acervo de referência</h2>
-              <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-2 py-0.5">{firebaseHistory.length}</span>
-              {docsWithEmenta.length > 0 && (
-                <span className="text-xs text-indigo-500 bg-indigo-50 rounded-full px-2 py-0.5" title="Documentos com ementa">
-                  {docsWithEmenta.length} com ementa
-                </span>
-              )}
+          {/* Header with counts */}
+          <div className="px-4 py-3 border-b bg-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm font-semibold text-gray-700">Acervo de referência</h2>
+                <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-2 py-0.5">{firebaseHistory.length}</span>
+                {docsWithEmenta.length > 0 && (
+                  <span className="text-xs text-indigo-500 bg-indigo-50 rounded-full px-2 py-0.5" title="Documentos com ementa">
+                    {docsWithEmenta.length} com ementa
+                  </span>
+                )}
+                {docsWithTags.length > 0 && (
+                  <span className="text-xs text-teal-500 bg-teal-50 rounded-full px-2 py-0.5" title="Documentos com tags">
+                    {docsWithTags.length} classificados
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                {apiKey && docsWithoutTags.length > 0 && (
+                  <button
+                    onClick={handleBulkGenerateTags}
+                    disabled={bulkTagsGenerating}
+                    className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title={`Gerar tags para ${docsWithoutTags.length} documento(s)`}
+                  >
+                    {bulkTagsGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Tags className="w-3.5 h-3.5" />}
+                    {bulkTagsGenerating && bulkTagsProgress
+                      ? `${bulkTagsProgress.done}/${bulkTagsProgress.total}`
+                      : `Classificar ${docsWithoutTags.length}`}
+                  </button>
+                )}
+                {apiKey && docsWithoutEmenta.length > 0 && (
+                  <button
+                    onClick={handleBulkGenerateEmentas}
+                    disabled={bulkGenerating}
+                    className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title={`Gerar ementas para ${docsWithoutEmenta.length} documento(s)`}
+                  >
+                    {bulkGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    {bulkGenerating && bulkProgress
+                      ? `${bulkProgress.done}/${bulkProgress.total}`
+                      : `Gerar ${docsWithoutEmenta.length} ementas`}
+                  </button>
+                )}
+              </div>
             </div>
-            {apiKey && docsWithoutEmenta.length > 0 && (
-              <button
-                onClick={handleBulkGenerateEmentas}
-                disabled={bulkGenerating}
-                className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title={`Gerar ementas para ${docsWithoutEmenta.length} documento(s)`}
+            {/* Search and filter bar */}
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Buscar por nome, ementa, área, assunto..."
+                  className="w-full pl-9 pr-3 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-brand-300 focus:border-brand-400 outline-none"
+                />
+              </div>
+              <select
+                value={filterNatureza}
+                onChange={e => setFilterNatureza(e.target.value)}
+                className="text-xs border rounded-lg px-2 py-1.5 bg-white focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
               >
-                {bulkGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                {bulkGenerating && bulkProgress
-                  ? `${bulkProgress.done}/${bulkProgress.total}`
-                  : `Gerar ${docsWithoutEmenta.length} ementas`}
-              </button>
-            )}
+                <option value="">Todas as naturezas</option>
+                {NATUREZA_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
+          {/* Bulk progress bars */}
           {bulkGenerating && bulkProgress && (
             <div className="h-1 bg-gray-100">
               <div
@@ -698,53 +1032,119 @@ export default function Upload() {
               />
             </div>
           )}
-          <div className="divide-y max-h-96 overflow-y-auto">
-            {firebaseHistory.map(acervoDoc => {
+          {bulkTagsGenerating && bulkTagsProgress && (
+            <div className="h-1 bg-gray-100">
+              <div
+                className="h-full bg-teal-500 transition-all duration-300"
+                style={{ width: `${(bulkTagsProgress.done / bulkTagsProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
+          <div className="divide-y max-h-[32rem] overflow-y-auto">
+            {filteredHistory.map(acervoDoc => {
               const s = STATUS_LABELS[acervoDoc.status] || STATUS_LABELS.uploaded
-              const Icon = s.icon
+              const StatusIcon = s.icon
               const hasEmenta = !!acervoDoc.ementa
+              const hasTags = !!acervoDoc.tags_generated
               return (
-                <div key={acervoDoc.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
-                  <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{acervoDoc.filename}</p>
-                    <p className="text-xs text-gray-400">
-                      {formatSize(acervoDoc.size_bytes)}
-                      {acervoDoc.chunks_count > 0 && ` · ${acervoDoc.chunks_count} fragmentos`}
-                    </p>
+                <div key={acervoDoc.id} className="px-4 py-3 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{acervoDoc.filename}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="text-xs text-gray-400">{formatSize(acervoDoc.size_bytes)}</span>
+                        {acervoDoc.chunks_count > 0 && <span className="text-xs text-gray-400">· {acervoDoc.chunks_count} fragmentos</span>}
+                        {/* Status indicators */}
+                        <span className={`inline-flex items-center gap-0.5 text-[10px] ${s.color}`}>
+                          <StatusIcon className="w-3 h-3" />
+                          {s.label}
+                        </span>
+                        {hasEmenta ? (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-indigo-500">
+                            <BookOpen className="w-3 h-3" />
+                            Ementa
+                          </span>
+                        ) : acervoDoc.status === 'indexed' && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-400">
+                            <BookOpen className="w-3 h-3" />
+                            Sem ementa
+                          </span>
+                        )}
+                        {hasTags ? (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-teal-500">
+                            <Tags className="w-3 h-3" />
+                            {NATUREZA_LABELS[acervoDoc.natureza || ''] || 'Classificado'}
+                          </span>
+                        ) : acervoDoc.status === 'indexed' && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-400">
+                            <Tags className="w-3 h-3" />
+                            Sem tags
+                          </span>
+                        )}
+                      </div>
+                      {/* Tag pills */}
+                      {hasTags && (acervoDoc.area_direito?.length || acervoDoc.assuntos?.length) ? (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(acervoDoc.area_direito || []).slice(0, 3).map((a, i) => (
+                            <span key={`area-${i}`} className="bg-blue-50 text-blue-600 text-[10px] px-1.5 py-0.5 rounded-full">{a}</span>
+                          ))}
+                          {(acervoDoc.assuntos || []).slice(0, 3).map((a, i) => (
+                            <span key={`assunto-${i}`} className="bg-amber-50 text-amber-600 text-[10px] px-1.5 py-0.5 rounded-full">{a}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => setTagsDoc(acervoDoc)}
+                        className={`transition-colors ${hasTags ? 'text-teal-400 hover:text-teal-600' : 'text-gray-300 hover:text-teal-400'}`}
+                        title={hasTags ? 'Ver/editar tags' : 'Classificar documento'}
+                      >
+                        <Tags className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setEmentaDoc(acervoDoc)}
+                        className={`transition-colors ${hasEmenta ? 'text-indigo-400 hover:text-indigo-600' : 'text-gray-300 hover:text-indigo-400'}`}
+                        title={hasEmenta ? 'Ver/editar ementa' : 'Gerar ementa'}
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                      </button>
+                      {acervoDoc.text_content && (
+                        <button
+                          onClick={() => setViewDoc(acervoDoc)}
+                          className="text-gray-300 hover:text-brand-500 transition-colors"
+                          title="Ver conteúdo"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteUpload(acervoDoc.id!, acervoDoc.filename)}
+                        disabled={deletingId === acervoDoc.id}
+                        className="ml-1 text-gray-300 hover:text-red-400 transition-colors disabled:opacity-40"
+                        title="Remover do acervo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className={`flex items-center gap-1 text-xs ${s.color} flex-shrink-0`}>
-                    <Icon className="w-4 h-4" />
-                    <span className="hidden sm:inline">{s.label}</span>
-                  </div>
-                  {/* Ementa button */}
-                  <button
-                    onClick={() => setEmentaDoc(acervoDoc)}
-                    className={`flex-shrink-0 transition-colors ${hasEmenta ? 'text-indigo-400 hover:text-indigo-600' : 'text-gray-300 hover:text-indigo-400'}`}
-                    title={hasEmenta ? 'Ver/editar ementa' : 'Gerar ementa'}
-                  >
-                    <BookOpen className="w-3.5 h-3.5" />
-                  </button>
-                  {acervoDoc.text_content && (
-                    <button
-                      onClick={() => setViewDoc(acervoDoc)}
-                      className="text-gray-300 hover:text-brand-500 transition-colors flex-shrink-0"
-                      title="Ver conteúdo"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleDeleteUpload(acervoDoc.id!, acervoDoc.filename)}
-                    disabled={deletingId === acervoDoc.id}
-                    className="ml-1 text-gray-300 hover:text-red-400 transition-colors disabled:opacity-40 flex-shrink-0"
-                    title="Remover do acervo"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               )
             })}
+            {filteredHistory.length === 0 && (searchQuery || filterNatureza) && (
+              <div className="px-4 py-8 text-center text-gray-400">
+                <Filter className="w-6 h-6 mx-auto mb-2" />
+                <p className="text-sm">Nenhum documento encontrado com os filtros atuais.</p>
+                <button
+                  onClick={() => { setSearchQuery(''); setFilterNatureza('') }}
+                  className="text-xs text-brand-500 hover:text-brand-600 mt-1"
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
