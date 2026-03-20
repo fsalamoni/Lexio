@@ -277,7 +277,7 @@ function TagsModal({
     }
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true)
     try {
       onSaved({
@@ -353,7 +353,7 @@ function TagsModal({
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {areaDireito.split(',').map((a, i) => a.trim() && (
-                      <span key={i} className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">{a.trim()}</span>
+                      <span key={`area-${a.trim()}-${i}`} className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">{a.trim()}</span>
                     ))}
                   </div>
                 )}
@@ -372,7 +372,7 @@ function TagsModal({
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {assuntos.split(',').map((a, i) => a.trim() && (
-                      <span key={i} className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">{a.trim()}</span>
+                      <span key={`assunto-${a.trim()}-${i}`} className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">{a.trim()}</span>
                     ))}
                   </div>
                 )}
@@ -391,7 +391,7 @@ function TagsModal({
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {contexto.split(',').map((c, i) => c.trim() && (
-                      <span key={i} className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">{c.trim()}</span>
+                      <span key={`ctx-${c.trim()}-${i}`} className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">{c.trim()}</span>
                     ))}
                   </div>
                 )}
@@ -1086,11 +1086,11 @@ export default function Upload() {
                       {/* Tag pills */}
                       {hasTags && (acervoDoc.area_direito?.length || acervoDoc.assuntos?.length) ? (
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {(acervoDoc.area_direito || []).slice(0, 3).map((a, i) => (
-                            <span key={`area-${i}`} className="bg-blue-50 text-blue-600 text-[10px] px-1.5 py-0.5 rounded-full">{a}</span>
+                          {(acervoDoc.area_direito || []).slice(0, 3).map((a) => (
+                            <span key={`area-${a}`} className="bg-blue-50 text-blue-600 text-[10px] px-1.5 py-0.5 rounded-full">{a}</span>
                           ))}
-                          {(acervoDoc.assuntos || []).slice(0, 3).map((a, i) => (
-                            <span key={`assunto-${i}`} className="bg-amber-50 text-amber-600 text-[10px] px-1.5 py-0.5 rounded-full">{a}</span>
+                          {(acervoDoc.assuntos || []).slice(0, 3).map((a) => (
+                            <span key={`assunto-${a}`} className="bg-amber-50 text-amber-600 text-[10px] px-1.5 py-0.5 rounded-full">{a}</span>
                           ))}
                         </div>
                       ) : null}

@@ -812,7 +812,7 @@ export async function generateAcervoTags(
     '- "contexto": Liste 1 a 5 circunstâncias fáticas tratadas no caso.',
   ].join('\n')
 
-  const sourceText = textContent.slice(0, 8000)
+  const sourceText = textContent.slice(0, MAX_EMENTA_SOURCE_CHARS)
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere as tags de classificação para este documento.`
 
   const result = await callLLM(apiKey, systemPrompt, userPrompt, model, 800, 0.1)
