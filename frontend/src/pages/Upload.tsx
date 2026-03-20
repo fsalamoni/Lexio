@@ -1137,7 +1137,8 @@ export default function Upload() {
     setFirebaseHistory(prev => prev.map(d =>
       d.id === docId ? { ...d, text_content: textContent } : d,
     ))
-    setViewDoc(null)
+    // Update the viewDoc state so the modal reflects saved content
+    setViewDoc(prev => prev ? { ...prev, text_content: textContent } : null)
     toast.success('Texto salvo com sucesso.')
   }
 
