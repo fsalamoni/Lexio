@@ -17,6 +17,7 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore'
 import { firestore, IS_FIREBASE } from './firebase'
+import { DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import {
   buildCostBreakdown,
   buildUsageSummary,
@@ -124,6 +125,8 @@ export interface AcervoDocumentData {
   area_direito?: string[]
   /** Classification tag: subject matters of the document */
   assuntos?: string[]
+  /** Classification tag: document type (tipo) within the classification tree */
+  tipo_documento?: string
   /** Classification tag: factual context of the document */
   contexto?: string[]
   /** Whether classification tags have been generated */
@@ -1233,26 +1236,66 @@ export interface AdminLegalArea {
   name: string
   description: string
   is_enabled: boolean
+  /** Subjects associated with this legal area */
+  assuntos?: string[]
+}
+
+/** Merge default assuntos into loaded legal areas that don't have custom ones. */
+function mergeDefaultAssuntos(items: AdminLegalArea[]): AdminLegalArea[] {
+  return items.map(item => {
+    if (!item.assuntos?.length && DEFAULT_AREA_ASSUNTOS[item.id]) {
+      return { ...item, assuntos: DEFAULT_AREA_ASSUNTOS[item.id] }
+    }
+    return item
+  })
 }
 
 export async function loadAdminLegalAreas(): Promise<AdminLegalArea[]> {
-  if (!IS_FIREBASE) return LEGAL_AREAS.map(la => ({ ...la, is_enabled: true }))
+  if (!IS_FIREBASE) return mergeDefaultAssuntos(LEGAL_AREAS.map(la => ({ ...la, is_enabled: true })))
   try {
     const db = ensureFirestore()
     const ref = doc(db, 'settings', 'admin_legal_areas')
     const snap = await getDoc(ref)
     if (snap.exists()) {
       const data = snap.data()
-      if (Array.isArray(data?.items) && data.items.length > 0) return data.items
+      if (Array.isArray(data?.items) && data.items.length > 0) return mergeDefaultAssuntos(data.items)
     }
   } catch { /* fallback to defaults */ }
-  return LEGAL_AREAS.map(la => ({ ...la, is_enabled: true }))
+  return mergeDefaultAssuntos(LEGAL_AREAS.map(la => ({ ...la, is_enabled: true })))
 }
 
 export async function saveAdminLegalAreas(items: AdminLegalArea[]): Promise<void> {
   const db = ensureFirestore()
   const ref = doc(db, 'settings', 'admin_legal_areas')
   await setDoc(ref, { items, updated_at: serverTimestamp() })
+}
+
+// ── Admin CRUD for Classification Tipos (Firestore /settings/admin_classification_tipos) ─
+
+export interface AdminClassificationTipos {
+  /** Mapping: natureza → { "_default": string[], [areaId]: string[] } */
+  tipos: Record<string, Record<string, string[]>>
+}
+
+export async function loadAdminClassificationTipos(): Promise<AdminClassificationTipos> {
+  const { CLASSIFICATION_TIPOS } = await import('./classification-data')
+  if (!IS_FIREBASE) return { tipos: CLASSIFICATION_TIPOS }
+  try {
+    const db = ensureFirestore()
+    const ref = doc(db, 'settings', 'admin_classification_tipos')
+    const snap = await getDoc(ref)
+    if (snap.exists()) {
+      const data = snap.data()
+      if (data?.tipos && typeof data.tipos === 'object') return { tipos: data.tipos }
+    }
+  } catch { /* fallback to defaults */ }
+  return { tipos: CLASSIFICATION_TIPOS }
+}
+
+export async function saveAdminClassificationTipos(tipos: Record<string, Record<string, string[]>>): Promise<void> {
+  const db = ensureFirestore()
+  const ref = doc(db, 'settings', 'admin_classification_tipos')
+  await setDoc(ref, { tipos, updated_at: serverTimestamp() })
 }
 
 // ── Profile-based filtering ─────────────────────────────────────────────────
@@ -1625,7 +1668,7 @@ export async function deleteAcervoDocument(uid: string, docId: string): Promise<
  */
 export async function getAllAcervoDocumentsForSearch(
   uid: string,
-): Promise<Array<{ id: string; filename: string; text_content: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: AcervoDocumentData['natureza']; area_direito?: string[]; assuntos?: string[]; contexto?: string[] }>> {
+): Promise<Array<{ id: string; filename: string; text_content: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: AcervoDocumentData['natureza']; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }>> {
   const db = ensureFirestore()
   const snap = await getDocs(
     query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
@@ -1643,6 +1686,7 @@ export async function getAllAcervoDocumentsForSearch(
         natureza: data.natureza,
         area_direito: data.area_direito,
         assuntos: data.assuntos,
+        tipo_documento: data.tipo_documento,
         contexto: data.contexto,
       }
     })
@@ -1675,6 +1719,7 @@ export async function updateAcervoTags(
     natureza?: AcervoDocumentData['natureza']
     area_direito?: string[]
     assuntos?: string[]
+    tipo_documento?: string
     contexto?: string[]
   },
 ): Promise<void> {

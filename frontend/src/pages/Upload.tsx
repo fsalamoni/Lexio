@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter } from 'lucide-react'
+import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter, ChevronDown } from 'lucide-react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
@@ -12,9 +12,12 @@ import {
   updateAcervoTags,
   updateAcervoTextContent,
   getSettings,
+  loadAdminLegalAreas,
   type AcervoDocumentData,
+  type AdminLegalArea,
 } from '../lib/firestore-service'
 import { generateAcervoEmenta, generateAcervoTags, NATUREZA_OPTIONS, type NaturezaValue } from '../lib/generation-service'
+import { getAssuntosForAreas, getTiposForClassification } from '../lib/classification-data'
 
 interface UploadedFile {
   id: string
@@ -241,6 +244,207 @@ const NATUREZA_LABELS: Record<string, string> = Object.fromEntries(
   NATUREZA_OPTIONS.map(o => [o.value, o.label]),
 )
 
+/** Multi-select dropdown component for standardized tag selection. */
+function MultiSelectDropdown({
+  label,
+  options,
+  selected,
+  onChange,
+  placeholder,
+  colorClass = 'bg-blue-100 text-blue-700',
+  disabled = false,
+}: {
+  label: string
+  options: string[]
+  selected: string[]
+  onChange: (values: string[]) => void
+  placeholder: string
+  colorClass?: string
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const filtered = options.filter(o =>
+    o.toLowerCase().includes(search.toLowerCase()) && !selected.includes(o)
+  )
+
+  const toggle = (value: string) => {
+    if (selected.includes(value)) {
+      onChange(selected.filter(s => s !== value))
+    } else {
+      onChange([...selected, value])
+    }
+    setSearch('')
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="text-xs font-medium text-gray-500 mb-1 block">{label}</label>
+      <div
+        className={`min-h-[38px] border rounded-lg px-2 py-1.5 flex flex-wrap gap-1 items-center cursor-pointer ${disabled ? 'bg-gray-100 cursor-not-allowed' : 'hover:border-teal-400'}`}
+        onClick={() => !disabled && setOpen(!open)}
+      >
+        {selected.length === 0 && (
+          <span className="text-sm text-gray-400 px-1">{placeholder}</span>
+        )}
+        {selected.map(s => (
+          <span
+            key={s}
+            className={`${colorClass} text-xs px-2 py-0.5 rounded-full flex items-center gap-1`}
+          >
+            {s}
+            {!disabled && (
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); toggle(s) }}
+                className="hover:opacity-70"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </span>
+        ))}
+        {!disabled && <ChevronDown className="w-3.5 h-3.5 text-gray-400 ml-auto flex-shrink-0" />}
+      </div>
+      {open && !disabled && (
+        <div className="absolute z-20 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-56 overflow-hidden flex flex-col">
+          <div className="p-1.5 border-b">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full text-xs border rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-teal-300"
+              placeholder="Buscar..."
+              autoFocus
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+          <div className="overflow-y-auto flex-1">
+            {filtered.length === 0 ? (
+              <p className="text-xs text-gray-400 p-3 text-center">Nenhuma opção encontrada</p>
+            ) : (
+              filtered.map(o => (
+                <button
+                  key={o}
+                  type="button"
+                  onClick={e => { e.stopPropagation(); toggle(o) }}
+                  className="w-full text-left text-xs px-3 py-2 hover:bg-teal-50 transition-colors"
+                >
+                  {o}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Single-select dropdown for tipo_documento. */
+function SingleSelectDropdown({
+  label,
+  options,
+  value,
+  onChange,
+  placeholder,
+  colorClass = 'bg-green-100 text-green-700',
+  disabled = false,
+}: {
+  label: string
+  options: string[]
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+  colorClass?: string
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const filtered = options.filter(o =>
+    o.toLowerCase().includes(search.toLowerCase())
+  )
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="text-xs font-medium text-gray-500 mb-1 block">{label}</label>
+      <div
+        className={`min-h-[38px] border rounded-lg px-3 py-2 flex items-center cursor-pointer ${disabled ? 'bg-gray-100 cursor-not-allowed' : 'hover:border-teal-400'}`}
+        onClick={() => !disabled && setOpen(!open)}
+      >
+        {value ? (
+          <span className={`${colorClass} text-xs px-2 py-0.5 rounded-full flex items-center gap-1`}>
+            {value}
+            {!disabled && (
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); onChange('') }}
+                className="hover:opacity-70"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </span>
+        ) : (
+          <span className="text-sm text-gray-400">{placeholder}</span>
+        )}
+        {!disabled && <ChevronDown className="w-3.5 h-3.5 text-gray-400 ml-auto flex-shrink-0" />}
+      </div>
+      {open && !disabled && (
+        <div className="absolute z-20 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-48 overflow-hidden flex flex-col">
+          <div className="p-1.5 border-b">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full text-xs border rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-teal-300"
+              placeholder="Buscar..."
+              autoFocus
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+          <div className="overflow-y-auto flex-1">
+            {filtered.length === 0 ? (
+              <p className="text-xs text-gray-400 p-3 text-center">Nenhuma opção encontrada</p>
+            ) : (
+              filtered.map(o => (
+                <button
+                  key={o}
+                  type="button"
+                  onClick={e => { e.stopPropagation(); onChange(o); setOpen(false); setSearch('') }}
+                  className={`w-full text-left text-xs px-3 py-2 hover:bg-teal-50 transition-colors ${o === value ? 'bg-teal-50 font-medium' : ''}`}
+                >
+                  {o}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TagsModal({
   doc,
   apiKey,
@@ -250,15 +454,65 @@ function TagsModal({
   doc: AcervoDocumentData
   apiKey: string
   onClose: () => void
-  onSaved: (tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; contexto?: string[] }) => void
+  onSaved: (tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }) => void
 }) {
   const [natureza, setNatureza] = useState<NaturezaValue | ''>(doc.natureza || '')
-  const [areaDireito, setAreaDireito] = useState((doc.area_direito || []).join(', '))
-  const [assuntos, setAssuntos] = useState((doc.assuntos || []).join(', '))
+  const [selectedAreas, setSelectedAreas] = useState<string[]>(doc.area_direito || [])
+  const [selectedAssuntos, setSelectedAssuntos] = useState<string[]>(doc.assuntos || [])
+  const [tipDocumento, setTipDocumento] = useState(doc.tipo_documento || '')
   const [contexto, setContexto] = useState((doc.contexto || []).join(', '))
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(!doc.tags_generated)
+  const [legalAreas, setLegalAreas] = useState<AdminLegalArea[]>([])
+
+  // Load legal areas from admin settings
+  useEffect(() => {
+    loadAdminLegalAreas().then(setLegalAreas).catch(() => {})
+  }, [])
+
+  // Compute available options based on current selections
+  const enabledAreas = legalAreas.filter(a => a.is_enabled)
+  const areaOptions = enabledAreas.map(a => a.name)
+
+  // Map area names to IDs for classification lookup
+  const nameToIdMap = Object.fromEntries(enabledAreas.map(a => [a.name, a.id]))
+  const selectedAreaIds = selectedAreas.map(name => nameToIdMap[name]).filter(Boolean)
+
+  // Get available assuntos based on natureza + selected areas
+  const availableAssuntos = natureza && selectedAreaIds.length > 0
+    ? getAssuntosForAreas(natureza, selectedAreaIds)
+    : []
+
+  // Get available tipos based on natureza + areas + assuntos
+  const availableTipos = natureza && selectedAreaIds.length > 0
+    ? getTiposForClassification(natureza, selectedAreaIds, selectedAssuntos)
+    : []
+
+  // When natureza changes, clear assuntos/tipo that are no longer valid
+  const handleNaturezaChange = (val: NaturezaValue | '') => {
+    setNatureza(val)
+    // Reset dependent fields since available options change
+    setSelectedAssuntos(prev => {
+      if (!val || selectedAreaIds.length === 0) return []
+      const valid = new Set(getAssuntosForAreas(val, selectedAreaIds))
+      return prev.filter(a => valid.has(a))
+    })
+    setTipDocumento('')
+  }
+
+  // When areas change, filter assuntos/tipo that are no longer valid
+  const handleAreasChange = (names: string[]) => {
+    setSelectedAreas(names)
+    const newIds = names.map(n => nameToIdMap[n]).filter(Boolean)
+    if (natureza && newIds.length > 0) {
+      const valid = new Set(getAssuntosForAreas(natureza, newIds))
+      setSelectedAssuntos(prev => prev.filter(a => valid.has(a)))
+    } else {
+      setSelectedAssuntos([])
+    }
+    setTipDocumento('')
+  }
 
   const handleGenerate = async () => {
     if (!doc.text_content) return
@@ -266,8 +520,11 @@ function TagsModal({
     try {
       const result = await generateAcervoTags(apiKey, doc.filename, doc.text_content)
       setNatureza(result.natureza)
-      setAreaDireito(result.area_direito.join(', '))
-      setAssuntos(result.assuntos.join(', '))
+      // Match generated area names to available admin areas
+      const generatedAreas = result.area_direito.filter(a => areaOptions.includes(a))
+      setSelectedAreas(generatedAreas.length > 0 ? generatedAreas : result.area_direito)
+      setSelectedAssuntos(result.assuntos)
+      if (result.tipo_documento) setTipDocumento(result.tipo_documento)
       setContexto(result.contexto.join(', '))
       setEditing(true)
     } catch (err) {
@@ -282,8 +539,9 @@ function TagsModal({
     try {
       onSaved({
         natureza: natureza || undefined,
-        area_direito: areaDireito.split(',').map(s => s.trim()).filter(Boolean),
-        assuntos: assuntos.split(',').map(s => s.trim()).filter(Boolean),
+        area_direito: selectedAreas,
+        assuntos: selectedAssuntos,
+        tipo_documento: tipDocumento || undefined,
         contexto: contexto.split(',').map(s => s.trim()).filter(Boolean),
       })
       setEditing(false)
@@ -292,7 +550,7 @@ function TagsModal({
     }
   }
 
-  const hasTags = doc.tags_generated || natureza || areaDireito || assuntos || contexto
+  const hasTags = doc.tags_generated || natureza || selectedAreas.length > 0 || selectedAssuntos.length > 0 || tipDocumento || contexto
 
   return (
     <div
@@ -325,7 +583,7 @@ function TagsModal({
                 {editing ? (
                   <select
                     value={natureza}
-                    onChange={e => setNatureza(e.target.value as NaturezaValue)}
+                    onChange={e => handleNaturezaChange(e.target.value as NaturezaValue)}
                     className="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
                   >
                     <option value="">Selecione...</option>
@@ -339,60 +597,94 @@ function TagsModal({
                   </span>
                 )}
               </div>
-              {/* Área do Direito */}
-              <div>
-                <label className="text-xs font-medium text-gray-500 mb-1 block">Área do Direito</label>
-                {editing ? (
-                  <input
-                    type="text"
-                    value={areaDireito}
-                    onChange={e => setAreaDireito(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
-                    placeholder="Direito Administrativo, Direito Constitucional"
-                  />
-                ) : (
+              {/* Área do Direito (multi-select) */}
+              {editing ? (
+                <MultiSelectDropdown
+                  label="Área do Direito"
+                  options={areaOptions}
+                  selected={selectedAreas}
+                  onChange={handleAreasChange}
+                  placeholder={!natureza ? 'Selecione a natureza primeiro' : 'Selecione as áreas do direito'}
+                  colorClass="bg-blue-100 text-blue-700"
+                  disabled={!natureza}
+                />
+              ) : (
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Área do Direito</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {areaDireito.split(',').map((a, i) => a.trim() && (
-                      <span key={`area-${a.trim()}-${i}`} className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">{a.trim()}</span>
+                    {selectedAreas.map((a, i) => (
+                      <span key={`area-${a}-${i}`} className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">{a}</span>
                     ))}
+                    {selectedAreas.length === 0 && <span className="text-xs text-gray-400">—</span>}
                   </div>
-                )}
-              </div>
-              {/* Assuntos */}
-              <div>
-                <label className="text-xs font-medium text-gray-500 mb-1 block">Assuntos</label>
-                {editing ? (
-                  <input
-                    type="text"
-                    value={assuntos}
-                    onChange={e => setAssuntos(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
-                    placeholder="Licitação, Contratação direta, Improbidade"
-                  />
-                ) : (
+                </div>
+              )}
+              {/* Assuntos (multi-select, filtered by natureza + áreas) */}
+              {editing ? (
+                <MultiSelectDropdown
+                  label="Assuntos"
+                  options={availableAssuntos}
+                  selected={selectedAssuntos}
+                  onChange={setSelectedAssuntos}
+                  placeholder={selectedAreas.length === 0 ? 'Selecione as áreas primeiro' : 'Selecione os assuntos'}
+                  colorClass="bg-amber-100 text-amber-700"
+                  disabled={!natureza || selectedAreas.length === 0}
+                />
+              ) : (
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Assuntos</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {assuntos.split(',').map((a, i) => a.trim() && (
-                      <span key={`assunto-${a.trim()}-${i}`} className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">{a.trim()}</span>
+                    {selectedAssuntos.map((a, i) => (
+                      <span key={`assunto-${a}-${i}`} className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">{a}</span>
                     ))}
+                    {selectedAssuntos.length === 0 && <span className="text-xs text-gray-400">—</span>}
                   </div>
-                )}
-              </div>
-              {/* Contexto */}
+                </div>
+              )}
+              {/* Tipo do Documento (single-select, filtered) */}
+              {editing ? (
+                <SingleSelectDropdown
+                  label="Tipo do Documento"
+                  options={availableTipos}
+                  value={tipDocumento}
+                  onChange={setTipDocumento}
+                  placeholder={selectedAssuntos.length === 0 ? 'Selecione os assuntos primeiro' : 'Selecione o tipo do documento'}
+                  colorClass="bg-green-100 text-green-700"
+                  disabled={!natureza || selectedAreas.length === 0}
+                />
+              ) : (
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Tipo do Documento</label>
+                  {tipDocumento ? (
+                    <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">{tipDocumento}</span>
+                  ) : (
+                    <span className="text-xs text-gray-400">—</span>
+                  )}
+                </div>
+              )}
+              {/* Contexto (free text with guidance) */}
               <div>
                 <label className="text-xs font-medium text-gray-500 mb-1 block">Contexto</label>
+                {editing && (
+                  <p className="text-xs text-gray-400 mb-1.5">
+                    <Info className="w-3 h-3 inline mr-0.5" />
+                    Utilize expressões amplas ou específicas, conforme o caso, para facilitar que este documento seja encontrado pelo buscador de acervo em casos com contexto semelhante.
+                  </p>
+                )}
                 {editing ? (
                   <textarea
                     value={contexto}
                     onChange={e => setContexto(e.target.value)}
                     rows={3}
                     className="w-full border rounded-lg p-3 text-sm text-gray-800 focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none resize-y"
-                    placeholder="Município celebrou contrato sem licitação, Empresa questionou dispensa"
+                    placeholder="Ex: Município celebrou contrato sem licitação, Empresa questionou dispensa de licitação"
                   />
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {contexto.split(',').map((c, i) => c.trim() && (
                       <span key={`ctx-${c.trim()}-${i}`} className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">{c.trim()}</span>
                     ))}
+                    {!contexto.trim() && <span className="text-xs text-gray-400">—</span>}
                   </div>
                 )}
               </div>
@@ -749,7 +1041,7 @@ export default function Upload() {
   }
 
   // Save tags from modal
-  const handleSaveTags = async (docId: string, tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; contexto?: string[] }) => {
+  const handleSaveTags = async (docId: string, tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }) => {
     if (!userId) return
     await updateAcervoTags(userId, docId, tags)
     setFirebaseHistory(prev => prev.map(d =>
