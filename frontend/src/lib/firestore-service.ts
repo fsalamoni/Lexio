@@ -118,6 +118,16 @@ export interface AcervoDocumentData {
   ementa?: string
   /** Keywords extracted from the ementa for fast pre-filtering. */
   ementa_keywords?: string[]
+  /** Classification tag: document nature */
+  natureza?: 'consultivo' | 'executorio' | 'transacional' | 'negocial' | 'doutrinario' | 'decisorio'
+  /** Classification tag: legal area(s) related to the document content */
+  area_direito?: string[]
+  /** Classification tag: subject matters of the document */
+  assuntos?: string[]
+  /** Classification tag: factual context of the document */
+  contexto?: string[]
+  /** Whether classification tags have been generated */
+  tags_generated?: boolean
 }
 
 // ── Thesis Analysis Sessions ──────────────────────────────────────────────────
@@ -1615,7 +1625,7 @@ export async function deleteAcervoDocument(uid: string, docId: string): Promise<
  */
 export async function getAllAcervoDocumentsForSearch(
   uid: string,
-): Promise<Array<{ id: string; filename: string; text_content: string; created_at: string; ementa?: string; ementa_keywords?: string[] }>> {
+): Promise<Array<{ id: string; filename: string; text_content: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: AcervoDocumentData['natureza']; area_direito?: string[]; assuntos?: string[]; contexto?: string[] }>> {
   const db = ensureFirestore()
   const snap = await getDocs(
     query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
@@ -1630,6 +1640,10 @@ export async function getAllAcervoDocumentsForSearch(
         created_at: data.created_at,
         ementa: data.ementa,
         ementa_keywords: data.ementa_keywords,
+        natureza: data.natureza,
+        area_direito: data.area_direito,
+        assuntos: data.assuntos,
+        contexto: data.contexto,
       }
     })
     .filter(d => d.text_content.length > 0)
@@ -1649,6 +1663,59 @@ export async function updateAcervoEmenta(
     ementa,
     ementa_keywords: keywords,
   })
+}
+
+/**
+ * Update classification tags for an acervo document.
+ */
+export async function updateAcervoTags(
+  uid: string,
+  docId: string,
+  tags: {
+    natureza?: AcervoDocumentData['natureza']
+    area_direito?: string[]
+    assuntos?: string[]
+    contexto?: string[]
+  },
+): Promise<void> {
+  const db = ensureFirestore()
+  await updateDoc(doc(db, 'users', uid, 'acervo', docId), {
+    ...tags,
+    tags_generated: true,
+  })
+}
+
+/**
+ * Update text content for an acervo document.
+ */
+export async function updateAcervoTextContent(
+  uid: string,
+  docId: string,
+  textContent: string,
+): Promise<void> {
+  const db = ensureFirestore()
+  await updateDoc(doc(db, 'users', uid, 'acervo', docId), {
+    text_content: textContent,
+  })
+}
+
+/**
+ * Get acervo documents that do NOT have classification tags yet.
+ */
+export async function getAcervoDocsWithoutTags(
+  uid: string,
+): Promise<Array<{ id: string; filename: string; text_content: string }>> {
+  const db = ensureFirestore()
+  const snap = await getDocs(
+    query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
+  )
+  return snap.docs
+    .map(d => {
+      const data = d.data() as AcervoDocumentData
+      return { id: d.id, filename: data.filename, text_content: data.text_content || '', tags_generated: data.tags_generated }
+    })
+    .filter(d => d.text_content.length > 0 && !d.tags_generated)
+    .map(({ tags_generated: _, ...rest }) => rest)
 }
 
 /**
