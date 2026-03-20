@@ -69,7 +69,7 @@ const MAX_THESES_INJECTED = 15
 /** Max total characters of acervo reference excerpts. */
 const MAX_ACERVO_CONTEXT_CHARS = 6000
 /** Max acervo documents the buscador can select. */
-const MAX_ACERVO_SELECTED_DOCS = 5
+const MAX_ACERVO_SELECTED_DOCS = 3
 /** Max total characters sent to the compilador agent. */
 const MAX_ACERVO_COMPILADOR_CHARS = 120000
 /** Max chars of document text used to generate an ementa. */
@@ -489,16 +489,16 @@ function buildRedatorUser(
 function buildAcervoBuscadorSystem(): string {
   return [
     'Você é um ESPECIALISTA EM RECUPERAÇÃO DE DOCUMENTOS JURÍDICOS.',
-    'Sua função é analisar uma lista de documentos do acervo (com ementas ou nomes de arquivo) e selecionar os mais relevantes.',
+    'Sua função é analisar ementas de documentos do acervo e selecionar os mais relevantes.',
     '',
     '<regras>',
     '1. Analise o NOME DO ARQUIVO — contém o tema principal (ex: "NEPOTISMO", "IMPROBIDADE").',
-    '2. Analise a EMENTA (quando disponível) — contém tipo, assunto, síntese, áreas e tópicos.',
-    '3. Priorize documentos do MESMO TIPO e MESMO TEMA ou tema muito semelhante.',
-    '4. Entre documentos sobre o mesmo tema, priorize os MAIS RECENTES.',
-    '5. Selecione entre 0 e 5 documentos. Se nenhum for relevante, retorne lista vazia.',
-    '6. Seja GENEROSO — se houver QUALQUER semelhança temática, inclua com score adequado.',
-    '7. Documentos sobre a mesma área jurídica E mesmo tipo de situação devem receber score >= 0.7.',
+    '2. Analise a EMENTA — contém tipo, assunto, síntese, áreas jurídicas e tópicos.',
+    '3. Selecione APENAS documentos cuja ementa se enquadra no contexto da solicitação.',
+    '4. Priorize: (a) MESMO TEMA, (b) mais ESPECÍFICOS, (c) mais RECENTES.',
+    '5. Máximo de 3 documentos. Se houver mais candidatos relevantes, filtre pelos mais específicos e recentes.',
+    '6. Score >= 0.7 para documentos sobre a mesma área E mesma situação.',
+    '7. Se nenhum for relevante, retorne lista vazia.',
     '</regras>',
     '',
     '<formato_resposta>',
@@ -533,8 +533,8 @@ function buildAcervoBuscadorUser(
     docsListStr,
     `</acervo_disponivel>`,
     '',
-    'Analise a solicitação e a triagem e selecione os documentos do acervo que são RELEVANTES para esta nova solicitação.',
-    'Priorize: (1) mesmo tema, (2) mais recentes, (3) mais específicos.',
+    'Selecione SOMENTE documentos cuja ementa se enquadra no contexto desta solicitação.',
+    'Máximo de 3 documentos. Se houver muitos candidatos, escolha os mais específicos e mais recentes.',
   ].join('\n')
 }
 

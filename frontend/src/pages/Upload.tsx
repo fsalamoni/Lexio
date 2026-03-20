@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye } from 'lucide-react'
+import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3 } from 'lucide-react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
@@ -8,8 +8,11 @@ import {
   listAcervoDocuments,
   createAcervoDocument,
   deleteAcervoDocument,
+  updateAcervoEmenta,
+  getSettings,
   type AcervoDocumentData,
 } from '../lib/firestore-service'
+import { generateAcervoEmenta } from '../lib/generation-service'
 
 interface UploadedFile {
   id: string
@@ -82,6 +85,154 @@ function AcervoDocModal({ doc, onClose }: { doc: AcervoDocumentData; onClose: ()
   )
 }
 
+// ── Ementa view/edit modal ───────────────────────────────────────────────────
+
+function EmentaModal({
+  doc,
+  apiKey,
+  onClose,
+  onSaved,
+}: {
+  doc: AcervoDocumentData
+  apiKey: string
+  onClose: () => void
+  onSaved: (ementa: string, keywords: string[]) => void
+}) {
+  const [ementa, setEmenta] = useState(doc.ementa || '')
+  const [keywords, setKeywords] = useState((doc.ementa_keywords || []).join(', '))
+  const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [editing, setEditing] = useState(false)
+
+  const handleGenerate = async () => {
+    if (!doc.text_content) return
+    setGenerating(true)
+    try {
+      const result = await generateAcervoEmenta(apiKey, doc.filename, doc.text_content)
+      setEmenta(result.ementa)
+      setKeywords(result.keywords.join(', '))
+      setEditing(true)
+    } catch (err) {
+      console.error('Erro ao gerar ementa:', err)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleSave = async () => {
+    if (!doc.id) return
+    setSaving(true)
+    try {
+      const kws = keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
+      // onSaved calls updateAcervoEmenta externally with uid
+      onSaved(ementa, kws)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <div className="flex items-center gap-2 min-w-0">
+            <BookOpen className="w-5 h-5 text-indigo-500 flex-shrink-0" />
+            <span className="font-semibold text-gray-900 text-sm">Ementa</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-3">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {/* File info */}
+        <div className="flex gap-4 px-5 py-2 border-b bg-gray-50 text-xs text-gray-500">
+          <span className="truncate font-medium">{doc.filename}</span>
+          <span>{new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
+        </div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {ementa ? (
+            <>
+              {editing ? (
+                <textarea
+                  value={ementa}
+                  onChange={e => setEmenta(e.target.value)}
+                  rows={8}
+                  className="w-full border rounded-lg p-3 text-sm text-gray-800 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none resize-y"
+                />
+              ) : (
+                <div className="bg-indigo-50 rounded-lg p-4 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                  {ementa}
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Palavras-chave</label>
+                {editing ? (
+                  <input
+                    type="text"
+                    value={keywords}
+                    onChange={e => setKeywords(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none"
+                    placeholder="nepotismo, cargo político, súmula vinculante 13"
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {keywords.split(',').map((kw, i) => kw.trim() && (
+                      <span key={i} className="bg-indigo-100 text-indigo-700 text-xs px-2 py-0.5 rounded-full">{kw.trim()}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+              <BookOpen className="w-10 h-10 mb-3" />
+              <p className="text-sm font-medium">Nenhuma ementa gerada</p>
+              <p className="text-xs mt-1">Clique em "Gerar Ementa" para criar automaticamente.</p>
+            </div>
+          )}
+        </div>
+        {/* Actions */}
+        <div className="flex items-center justify-between px-5 py-3 border-t bg-gray-50 gap-2">
+          <button
+            onClick={handleGenerate}
+            disabled={generating || !doc.text_content}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            {ementa ? 'Regerar' : 'Gerar Ementa'}
+          </button>
+          <div className="flex gap-2">
+            {ementa && !editing && (
+              <button
+                onClick={() => setEditing(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Editar
+              </button>
+            )}
+            {editing && (
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-50 transition-colors"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Salvar
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Text extraction ──────────────────────────────────────────────────────────
 
 /** Extract text from a File client-side. Handles DOCX, DOC (mammoth), PDF (pdfjs CDN), and plain text. */
@@ -139,11 +290,29 @@ export default function Upload() {
   const [firebaseHistory, setFirebaseHistory] = useState<AcervoDocumentData[]>([])
   const [localFiles, setLocalFiles] = useState<{ name: string; size: number; status: 'uploading' | 'error'; progress?: number }[]>([])
   const [viewDoc, setViewDoc] = useState<AcervoDocumentData | null>(null)
+  const [ementaDoc, setEmentaDoc] = useState<AcervoDocumentData | null>(null)
+  const [apiKey, setApiKey] = useState('')
+  const [bulkGenerating, setBulkGenerating] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const toast = useToast()
   const { userId } = useAuth()
+
+  // Load API key once
+  useEffect(() => {
+    (async () => {
+      try {
+        const envKey = import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined
+        if (envKey && envKey.startsWith('sk-')) { setApiKey(envKey); return }
+        const settings = await getSettings()
+        const apiKeys = (settings?.api_keys ?? {}) as Record<string, string>
+        const key = apiKeys.openrouter_api_key ?? (settings?.openrouter_api_key as string) ?? ''
+        setApiKey(key)
+      } catch { /* ignore */ }
+    })()
+  }, [])
 
   const fetchHistory = useCallback(() => {
     if (IS_FIREBASE && userId) {
@@ -316,10 +485,71 @@ export default function Upload() {
     setLocalFiles(prev => prev.filter(f => f.name !== name))
   }
 
+  // Bulk ementa generation for all docs without ementa
+  const handleBulkGenerateEmentas = async () => {
+    if (!userId || !apiKey || bulkGenerating) return
+    const docsWithoutEmenta = firebaseHistory.filter(d => !d.ementa && d.text_content && d.status === 'indexed')
+    if (docsWithoutEmenta.length === 0) {
+      toast.info('Todos os documentos já possuem ementa.')
+      return
+    }
+    setBulkGenerating(true)
+    setBulkProgress({ done: 0, total: docsWithoutEmenta.length })
+
+    let done = 0
+    // Process in batches of 5
+    for (let i = 0; i < docsWithoutEmenta.length; i += 5) {
+      const batch = docsWithoutEmenta.slice(i, i + 5)
+      await Promise.all(batch.map(async d => {
+        try {
+          const result = await generateAcervoEmenta(apiKey, d.filename, d.text_content)
+          await updateAcervoEmenta(userId, d.id!, result.ementa, result.keywords)
+          // Update local state
+          setFirebaseHistory(prev => prev.map(fd =>
+            fd.id === d.id ? { ...fd, ementa: result.ementa, ementa_keywords: result.keywords } : fd,
+          ))
+        } catch (err) {
+          console.error(`Erro ao gerar ementa para ${d.filename}:`, err)
+        } finally {
+          done++
+          setBulkProgress({ done, total: docsWithoutEmenta.length })
+        }
+      }))
+    }
+
+    setBulkGenerating(false)
+    setBulkProgress(null)
+    toast.success(`Ementas geradas para ${done} documento(s).`)
+    fetchHistory()
+  }
+
+  // Save ementa from modal
+  const handleSaveEmenta = async (docId: string, ementa: string, keywords: string[]) => {
+    if (!userId) return
+    await updateAcervoEmenta(userId, docId, ementa, keywords)
+    setFirebaseHistory(prev => prev.map(d =>
+      d.id === docId ? { ...d, ementa, ementa_keywords: keywords } : d,
+    ))
+    setEmentaDoc(null)
+    toast.success('Ementa salva com sucesso.')
+  }
+
+  const docsWithoutEmenta = firebaseHistory.filter(d => !d.ementa && d.text_content && d.status === 'indexed')
+  const docsWithEmenta = firebaseHistory.filter(d => !!d.ementa)
+
   return (
     <div className="max-w-2xl">
       {/* View modal */}
       {viewDoc && <AcervoDocModal doc={viewDoc} onClose={() => setViewDoc(null)} />}
+      {/* Ementa modal */}
+      {ementaDoc && apiKey && (
+        <EmentaModal
+          doc={ementaDoc}
+          apiKey={apiKey}
+          onClose={() => setEmentaDoc(null)}
+          onSaved={(ementa, kws) => handleSaveEmenta(ementaDoc.id!, ementa, kws)}
+        />
+      )}
 
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Upload de Documentos</h1>
@@ -437,13 +667,42 @@ export default function Upload() {
       {IS_FIREBASE && firebaseHistory.length > 0 && (
         <div className="bg-white rounded-xl border overflow-hidden">
           <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700">Acervo de referência</h2>
-            <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-2 py-0.5">{firebaseHistory.length}</span>
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-semibold text-gray-700">Acervo de referência</h2>
+              <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-2 py-0.5">{firebaseHistory.length}</span>
+              {docsWithEmenta.length > 0 && (
+                <span className="text-xs text-indigo-500 bg-indigo-50 rounded-full px-2 py-0.5" title="Documentos com ementa">
+                  {docsWithEmenta.length} com ementa
+                </span>
+              )}
+            </div>
+            {apiKey && docsWithoutEmenta.length > 0 && (
+              <button
+                onClick={handleBulkGenerateEmentas}
+                disabled={bulkGenerating}
+                className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title={`Gerar ementas para ${docsWithoutEmenta.length} documento(s)`}
+              >
+                {bulkGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                {bulkGenerating && bulkProgress
+                  ? `${bulkProgress.done}/${bulkProgress.total}`
+                  : `Gerar ${docsWithoutEmenta.length} ementas`}
+              </button>
+            )}
           </div>
+          {bulkGenerating && bulkProgress && (
+            <div className="h-1 bg-gray-100">
+              <div
+                className="h-full bg-indigo-500 transition-all duration-300"
+                style={{ width: `${(bulkProgress.done / bulkProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
           <div className="divide-y max-h-96 overflow-y-auto">
             {firebaseHistory.map(acervoDoc => {
               const s = STATUS_LABELS[acervoDoc.status] || STATUS_LABELS.uploaded
               const Icon = s.icon
+              const hasEmenta = !!acervoDoc.ementa
               return (
                 <div key={acervoDoc.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
                   <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
@@ -458,6 +717,14 @@ export default function Upload() {
                     <Icon className="w-4 h-4" />
                     <span className="hidden sm:inline">{s.label}</span>
                   </div>
+                  {/* Ementa button */}
+                  <button
+                    onClick={() => setEmentaDoc(acervoDoc)}
+                    className={`flex-shrink-0 transition-colors ${hasEmenta ? 'text-indigo-400 hover:text-indigo-600' : 'text-gray-300 hover:text-indigo-400'}`}
+                    title={hasEmenta ? 'Ver/editar ementa' : 'Gerar ementa'}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                  </button>
                   {acervoDoc.text_content && (
                     <button
                       onClick={() => setViewDoc(acervoDoc)}
