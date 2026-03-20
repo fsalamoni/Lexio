@@ -498,9 +498,10 @@ function buildAcervoBuscadorSystem(): string {
     '   - NATUREZA: consultivo, executório, transacional, negocial, doutrinário, decisório',
     '   - ÁREA DO DIREITO: disciplinas jurídicas do conteúdo',
     '   - ASSUNTOS: matérias da fundamentação',
+    '   - TIPO: classificação do tipo documental (parecer, petição, sentença, etc.)',
     '   - CONTEXTO: circunstâncias fáticas do caso',
     '4. Selecione APENAS documentos cujas tags/ementa se enquadram no contexto da solicitação.',
-    '5. Priorize: (a) MESMA NATUREZA e ÁREA, (b) MESMO ASSUNTO, (c) mais ESPECÍFICOS, (d) mais RECENTES.',
+    '5. Priorize: (a) MESMA NATUREZA e ÁREA, (b) MESMO ASSUNTO e TIPO, (c) mais ESPECÍFICOS, (d) mais RECENTES.',
     '6. Máximo de 3 documentos. Se houver mais candidatos relevantes, filtre pelos mais específicos e recentes.',
     '7. Score >= 0.7 para documentos sobre a mesma área E mesma situação.',
     '8. Se nenhum for relevante, retorne lista vazia.',
@@ -520,7 +521,7 @@ function buildAcervoBuscadorUser(
   triagem: string,
   request: string,
   docType: string,
-  acervoDocs: Array<{ id: string; filename: string; summary: string; created_at: string; natureza?: string; area_direito?: string[]; assuntos?: string[]; contexto?: string[] }>,
+  acervoDocs: Array<{ id: string; filename: string; summary: string; created_at: string; natureza?: string; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }>,
 ): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   const docsListStr = acervoDocs.map((d, i) => {
@@ -533,6 +534,7 @@ function buildAcervoBuscadorUser(
     if (d.natureza) parts.push(`    Natureza: ${d.natureza}`)
     if (d.area_direito?.length) parts.push(`    Áreas: ${d.area_direito.join(', ')}`)
     if (d.assuntos?.length) parts.push(`    Assuntos: ${d.assuntos.join(', ')}`)
+    if (d.tipo_documento) parts.push(`    Tipo: ${d.tipo_documento}`)
     if (d.contexto?.length) parts.push(`    Contexto: ${d.contexto.join('; ')}`)
     return parts.join('\n')
   }).join('\n\n')
@@ -768,7 +770,7 @@ export type NaturezaValue = typeof NATUREZA_OPTIONS[number]['value']
 
 /**
  * Generate classification tags for an acervo document.
- * Returns structured tags for: natureza, área do direito, assuntos, and contexto.
+ * Returns structured tags for: natureza, área do direito, assuntos, tipo_documento, and contexto.
  */
 export async function generateAcervoTags(
   apiKey: string,
@@ -779,6 +781,7 @@ export async function generateAcervoTags(
   natureza: NaturezaValue
   area_direito: string[]
   assuntos: string[]
+  tipo_documento: string
   contexto: string[]
 }> {
   const systemPrompt = [
@@ -801,6 +804,7 @@ export async function generateAcervoTags(
     '  "natureza": "consultivo|executorio|transacional|negocial|doutrinario|decisorio",',
     '  "area_direito": ["Direito Administrativo", "Direito Constitucional"],',
     '  "assuntos": ["Licitação", "Contratação direta", "Dispensa de licitação"],',
+    '  "tipo_documento": "Parecer",',
     '  "contexto": ["Município celebrou contrato sem licitação", "Empresa questionou dispensa"]',
     '}',
     '</formato>',
@@ -809,6 +813,7 @@ export async function generateAcervoTags(
     '- "natureza": Deve ser EXATAMENTE um dos 6 valores acima.',
     '- "area_direito": Liste 1 a 5 áreas do direito relacionadas ao conteúdo.',
     '- "assuntos": Liste 2 a 8 matérias/temas objeto da fundamentação do documento.',
+    '- "tipo_documento": Identifique o tipo específico do documento (ex: Parecer, Petição inicial, Sentença, TAC, Contrato, etc.).',
     '- "contexto": Liste 1 a 5 circunstâncias fáticas tratadas no caso.',
   ].join('\n')
 
@@ -832,6 +837,7 @@ export async function generateAcervoTags(
     natureza,
     area_direito: Array.isArray(parsed.area_direito) ? parsed.area_direito.map((s: string) => String(s).trim()).filter(Boolean) : [],
     assuntos: Array.isArray(parsed.assuntos) ? parsed.assuntos.map((s: string) => String(s).trim()).filter(Boolean) : [],
+    tipo_documento: typeof parsed.tipo_documento === 'string' ? parsed.tipo_documento.trim() : '',
     contexto: Array.isArray(parsed.contexto) ? parsed.contexto.map((s: string) => String(s).trim()).filter(Boolean) : [],
   }
 }
@@ -839,9 +845,10 @@ export async function generateAcervoTags(
 /**
  * Pre-filter acervo documents by keyword matching against filenames and ementas.
  * Returns documents sorted by relevance (most keyword matches first).
+ * Prioritizes: natureza, área, assuntos, tipo_documento, then contexto (last).
  */
 function preFilterAcervoDocs(
-  docs: Array<{ id: string; filename: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: string; area_direito?: string[]; assuntos?: string[]; contexto?: string[] }>,
+  docs: Array<{ id: string; filename: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: string; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }>,
   searchKeywords: string[],
 ): typeof docs {
   if (searchKeywords.length === 0) return docs.slice(0, MAX_PREFILTERED_DOCS)
@@ -854,6 +861,7 @@ function preFilterAcervoDocs(
     const ementaLower = (d.ementa || '').toLowerCase()
     const areasLower = (d.area_direito || []).map(a => a.toLowerCase())
     const assuntosLower = (d.assuntos || []).map(a => a.toLowerCase())
+    const tipoLower = (d.tipo_documento || '').toLowerCase()
     const contextoLower = (d.contexto || []).map(c => c.toLowerCase())
 
     for (const keyword of normalizedSearch) {
@@ -863,9 +871,12 @@ function preFilterAcervoDocs(
       if (d.ementa_keywords?.some(ek => ek.includes(keyword) || keyword.includes(ek))) score += 2
       // Ementa text match (lower weight)
       if (ementaLower.includes(keyword)) score += 1
-      // Tag-based matches (high relevance)
+      // Tag-based matches (high relevance — structured fields first)
       if (areasLower.some(a => a.includes(keyword) || keyword.includes(a))) score += 2
       if (assuntosLower.some(a => a.includes(keyword) || keyword.includes(a))) score += 2
+      // Tipo documento match
+      if (tipoLower && (tipoLower.includes(keyword) || keyword.includes(tipoLower))) score += 2
+      // Contexto match (last priority among tags)
       if (contextoLower.some(c => c.includes(keyword) || keyword.includes(c))) score += 1
     }
 
@@ -1395,6 +1406,7 @@ export async function generateDocument(
             natureza: d.natureza,
             area_direito: d.area_direito,
             assuntos: d.assuntos,
+            tipo_documento: d.tipo_documento,
             contexto: d.contexto,
           }))
 
