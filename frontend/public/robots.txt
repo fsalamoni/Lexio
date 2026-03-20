@@ -1,0 +1,9 @@
+# robots.txt — Lexio
+# Permite que o Google e outros mecanismos de busca rastreiem o site,
+# o que ajuda o Google Safe Browsing a classificá-lo corretamente como legítimo.
+
+User-agent: *
+Allow: /
+
+# Sitemaps
+# Sitemap: https://fsalamoni.github.io/Lexio/sitemap.xml
