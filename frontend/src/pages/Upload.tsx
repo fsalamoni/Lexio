@@ -50,7 +50,22 @@ function formatSize(bytes: number) {
 
 // ── Document view modal ──────────────────────────────────────────────────────
 
-function AcervoDocModal({ doc, onClose }: { doc: AcervoDocumentData; onClose: () => void }) {
+function AcervoDocModal({ doc, onClose, onTextSaved }: { doc: AcervoDocumentData; onClose: () => void; onTextSaved?: (text: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(doc.text_content || '')
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    if (!onTextSaved) return
+    setSaving(true)
+    try {
+      onTextSaved(text)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -75,7 +90,13 @@ function AcervoDocModal({ doc, onClose }: { doc: AcervoDocumentData; onClose: ()
         </div>
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {doc.text_content ? (
+          {editing ? (
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              className="w-full h-full min-h-[300px] border rounded-lg p-3 text-sm text-gray-800 font-sans leading-relaxed focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none resize-y"
+            />
+          ) : doc.text_content ? (
             <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans leading-relaxed">{doc.text_content}</pre>
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-gray-400">
@@ -85,6 +106,37 @@ function AcervoDocModal({ doc, onClose }: { doc: AcervoDocumentData; onClose: ()
             </div>
           )}
         </div>
+        {/* Actions */}
+        {onTextSaved && (
+          <div className="flex items-center justify-end px-5 py-3 border-t bg-gray-50 gap-2">
+            {!editing ? (
+              <button
+                onClick={() => setEditing(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Editar
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => { setEditing(false); setText(doc.text_content || '') }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors"
+                >
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  Salvar
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -160,7 +212,7 @@ function EmentaModal({
         </div>
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {ementa ? (
+          {ementa || editing ? (
             <>
               {editing ? (
                 <textarea
@@ -168,6 +220,7 @@ function EmentaModal({
                   onChange={e => setEmenta(e.target.value)}
                   rows={8}
                   className="w-full border rounded-lg p-3 text-sm text-gray-800 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none resize-y"
+                  placeholder="Digite a ementa do documento..."
                 />
               ) : (
                 <div className="bg-indigo-50 rounded-lg p-4 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
@@ -196,8 +249,15 @@ function EmentaModal({
           ) : (
             <div className="flex flex-col items-center justify-center py-10 text-gray-400">
               <BookOpen className="w-10 h-10 mb-3" />
-              <p className="text-sm font-medium">Nenhuma ementa gerada</p>
-              <p className="text-xs mt-1">Clique em "Gerar Ementa" para criar automaticamente.</p>
+              <p className="text-sm font-medium">Nenhuma ementa</p>
+              <p className="text-xs mt-1">Gere automaticamente ou redija manualmente.</p>
+              <button
+                onClick={() => setEditing(true)}
+                className="mt-3 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Redigir Manualmente
+              </button>
             </div>
           )}
         </div>
@@ -479,23 +539,54 @@ function TagsModal({
   const nameToIdMap = Object.fromEntries(enabledAreas.map(a => [a.name, a.id]))
   const selectedAreaIds = selectedAreas.map(name => nameToIdMap[name]).filter(Boolean)
 
-  // Get available assuntos based on natureza + selected areas
-  const availableAssuntos = natureza && selectedAreaIds.length > 0
-    ? getAssuntosForAreas(natureza, selectedAreaIds)
-    : []
+  // Get available assuntos based on natureza + selected areas,
+  // merging static tree assuntos with admin-added assuntos
+  const availableAssuntos = (() => {
+    if (!natureza || selectedAreaIds.length === 0) return []
+    const treeAssuntos = getAssuntosForAreas(natureza, selectedAreaIds)
+    // Merge admin-added assuntos for selected areas
+    const seen = new Set(treeAssuntos)
+    const merged = [...treeAssuntos]
+    for (const areaName of selectedAreas) {
+      const area = enabledAreas.find(a => a.name === areaName)
+      if (area?.assuntos) {
+        for (const a of area.assuntos) {
+          if (!seen.has(a)) {
+            seen.add(a)
+            merged.push(a)
+          }
+        }
+      }
+    }
+    return merged
+  })()
 
   // Get available tipos based on natureza + areas + assuntos
   const availableTipos = natureza && selectedAreaIds.length > 0
     ? getTiposForClassification(natureza, selectedAreaIds, selectedAssuntos)
     : []
 
+  // Helper: compute valid assuntos for given natureza + area names (tree + admin)
+  const getValidAssuntos = (nat: string, areaNames: string[]): Set<string> => {
+    const areaIds = areaNames.map(n => nameToIdMap[n]).filter(Boolean)
+    const tree = nat && areaIds.length > 0 ? getAssuntosForAreas(nat, areaIds) : []
+    const valid = new Set(tree)
+    for (const areaName of areaNames) {
+      const area = enabledAreas.find(a => a.name === areaName)
+      if (area?.assuntos) {
+        for (const a of area.assuntos) valid.add(a)
+      }
+    }
+    return valid
+  }
+
   // When natureza changes, clear assuntos/tipo that are no longer valid
   const handleNaturezaChange = (val: NaturezaValue | '') => {
     setNatureza(val)
     // Reset dependent fields since available options change
     setSelectedAssuntos(prev => {
-      if (!val || selectedAreaIds.length === 0) return []
-      const valid = new Set(getAssuntosForAreas(val, selectedAreaIds))
+      if (!val || selectedAreas.length === 0) return []
+      const valid = getValidAssuntos(val, selectedAreas)
       return prev.filter(a => valid.has(a))
     })
     setTipDocumento('')
@@ -504,9 +595,8 @@ function TagsModal({
   // When areas change, filter assuntos/tipo that are no longer valid
   const handleAreasChange = (names: string[]) => {
     setSelectedAreas(names)
-    const newIds = names.map(n => nameToIdMap[n]).filter(Boolean)
-    if (natureza && newIds.length > 0) {
-      const valid = new Set(getAssuntosForAreas(natureza, newIds))
+    if (natureza && names.length > 0) {
+      const valid = getValidAssuntos(natureza, names)
       setSelectedAssuntos(prev => prev.filter(a => valid.has(a)))
     } else {
       setSelectedAssuntos([])
@@ -1040,6 +1130,18 @@ export default function Upload() {
     toast.success('Ementa salva com sucesso.')
   }
 
+  // Save text content from document view modal
+  const handleSaveText = async (docId: string, textContent: string) => {
+    if (!userId) return
+    await updateAcervoTextContent(userId, docId, textContent)
+    setFirebaseHistory(prev => prev.map(d =>
+      d.id === docId ? { ...d, text_content: textContent } : d,
+    ))
+    // Update the viewDoc state so the modal reflects saved content
+    setViewDoc(prev => prev ? { ...prev, text_content: textContent } : null)
+    toast.success('Texto salvo com sucesso.')
+  }
+
   // Save tags from modal
   const handleSaveTags = async (docId: string, tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }) => {
     if (!userId) return
@@ -1111,7 +1213,13 @@ export default function Upload() {
   return (
     <div className="max-w-3xl">
       {/* View modal */}
-      {viewDoc && <AcervoDocModal doc={viewDoc} onClose={() => setViewDoc(null)} />}
+      {viewDoc && (
+        <AcervoDocModal
+          doc={viewDoc}
+          onClose={() => setViewDoc(null)}
+          onTextSaved={viewDoc.id ? (text) => handleSaveText(viewDoc.id!, text) : undefined}
+        />
+      )}
       {/* Ementa modal */}
       {ementaDoc && apiKey && (
         <EmentaModal
