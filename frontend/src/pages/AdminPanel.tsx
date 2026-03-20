@@ -18,9 +18,11 @@ import { getStats as firestoreGetStats, getDocumentTypes, getLegalAreas,
   listDocuments, updateDocument,
   loadAdminDocumentTypes, saveAdminDocumentTypes,
   loadAdminLegalAreas, saveAdminLegalAreas,
+  loadAdminClassificationTipos, saveAdminClassificationTipos,
   DEFAULT_DOC_STRUCTURES,
   type AdminDocumentType, type AdminLegalArea,
 } from '../lib/firestore-service'
+import { NATUREZA_OPTIONS } from '../lib/generation-service'
 import { useAuth } from '../contexts/AuthContext'
 import ModelConfigCard from '../components/ModelConfigCard'
 import ThesisAnalystConfigCard from '../components/ThesisAnalystConfigCard'
@@ -944,6 +946,19 @@ export default function AdminPanel() {
         <LegalAreasCrud />
       </AdminCollapsibleSection>
 
+      {/* Classification Tipos — CRUD */}
+      <AdminCollapsibleSection
+        id="section_classification_tipos"
+        title="Tipos de Documento por Classificação"
+        icon={Tags}
+        iconColor="text-green-600"
+        collapseState={collapseState}
+        onToggle={toggleCollapse}
+        defaultOpen={false}
+      >
+        <ClassificationTiposCrud />
+      </AdminCollapsibleSection>
+
       {/* Features */}
       {features.length > 0 && (
         <AdminCollapsibleSection
@@ -1425,6 +1440,8 @@ function LegalAreasCrud() {
   const [saving, setSaving] = useState(false)
   const [editingItem, setEditingItem] = useState<AdminLegalArea | null>(null)
   const [isCreating, setIsCreating] = useState(false)
+  const [expandedArea, setExpandedArea] = useState<string | null>(null)
+  const [newAssunto, setNewAssunto] = useState('')
   const toast = useToast()
 
   useEffect(() => {
@@ -1468,7 +1485,7 @@ function LegalAreasCrud() {
   }
 
   const handleCreate = () => {
-    setEditingItem({ id: '', name: '', description: '', is_enabled: true })
+    setEditingItem({ id: '', name: '', description: '', is_enabled: true, assuntos: [] })
     setIsCreating(true)
   }
 
@@ -1490,6 +1507,27 @@ function LegalAreasCrud() {
     }
     setEditingItem(null)
     setIsCreating(false)
+  }
+
+  const handleAddAssunto = async (areaId: string) => {
+    const trimmed = newAssunto.trim()
+    if (!trimmed) return
+    const updated = items.map(item => {
+      if (item.id !== areaId) return item
+      const current = item.assuntos || []
+      if (current.includes(trimmed)) { toast.error('Assunto já existe nesta área'); return item }
+      return { ...item, assuntos: [...current, trimmed] }
+    })
+    await handleSave(updated)
+    setNewAssunto('')
+  }
+
+  const handleRemoveAssunto = async (areaId: string, assunto: string) => {
+    const updated = items.map(item => {
+      if (item.id !== areaId) return item
+      return { ...item, assuntos: (item.assuntos || []).filter(a => a !== assunto) }
+    })
+    await handleSave(updated)
   }
 
   if (loading) return <p className="text-sm text-gray-400 py-4">Carregando...</p>
@@ -1560,46 +1598,103 @@ function LegalAreasCrud() {
 
       {/* Items list */}
       {items.map(item => (
-        <div
-          key={item.id}
-          className={`flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors ${!item.is_enabled ? 'opacity-50 bg-gray-50' : ''}`}
-        >
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <Scale className={`w-5 h-5 flex-shrink-0 ${item.is_enabled ? 'text-purple-500' : 'text-gray-300'}`} />
-            <div className="min-w-0">
-              <p className="font-medium text-gray-900">{item.name}</p>
-              <p className="text-sm text-gray-500 truncate">{item.description}</p>
-              <p className="text-xs text-gray-400 mt-0.5">ID: {item.id}</p>
+        <div key={item.id} className={`rounded-lg border transition-colors ${!item.is_enabled ? 'opacity-50 bg-gray-50' : ''}`}>
+          <div className="flex items-center justify-between p-4 hover:bg-gray-50">
+            <div
+              className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+              onClick={() => setExpandedArea(expandedArea === item.id ? null : item.id)}
+            >
+              <Scale className={`w-5 h-5 flex-shrink-0 ${item.is_enabled ? 'text-purple-500' : 'text-gray-300'}`} />
+              <div className="min-w-0">
+                <p className="font-medium text-gray-900">{item.name}</p>
+                <p className="text-sm text-gray-500 truncate">{item.description}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  ID: {item.id} · {(item.assuntos || []).length} assunto{(item.assuntos || []).length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+              <button
+                onClick={() => setExpandedArea(expandedArea === item.id ? null : item.id)}
+                className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                title="Ver assuntos"
+              >
+                {expandedArea === item.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={() => handleEdit(item)}
+                className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                title="Editar"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleDelete(item.id)}
+                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title="Excluir"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleToggle(item.id)}
+                disabled={saving}
+                className="transition-colors"
+                title={item.is_enabled ? 'Desativar' : 'Ativar'}
+              >
+                {item.is_enabled ? (
+                  <ToggleRight className="w-6 h-6 text-green-600" />
+                ) : (
+                  <ToggleLeft className="w-6 h-6 text-gray-400" />
+                )}
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-            <button
-              onClick={() => handleEdit(item)}
-              className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
-              title="Editar"
-            >
-              <Pencil className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => handleDelete(item.id)}
-              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              title="Excluir"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => handleToggle(item.id)}
-              disabled={saving}
-              className="transition-colors"
-              title={item.is_enabled ? 'Desativar' : 'Ativar'}
-            >
-              {item.is_enabled ? (
-                <ToggleRight className="w-6 h-6 text-green-600" />
-              ) : (
-                <ToggleLeft className="w-6 h-6 text-gray-400" />
-              )}
-            </button>
-          </div>
+          {/* Assuntos panel */}
+          {expandedArea === item.id && (
+            <div className="px-4 pb-4 border-t bg-purple-50/50">
+              <p className="text-xs font-semibold text-purple-700 mt-3 mb-2">
+                Assuntos ({(item.assuntos || []).length})
+              </p>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {(item.assuntos || []).map(assunto => (
+                  <span
+                    key={assunto}
+                    className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full group"
+                  >
+                    {assunto}
+                    <button
+                      onClick={() => handleRemoveAssunto(item.id, assunto)}
+                      className="opacity-0 group-hover:opacity-100 hover:text-red-600 transition-opacity"
+                      title="Remover assunto"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                {(item.assuntos || []).length === 0 && (
+                  <span className="text-xs text-gray-400 italic">Nenhum assunto cadastrado</span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newAssunto}
+                  onChange={e => setNewAssunto(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddAssunto(item.id) } }}
+                  className="flex-1 text-xs border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-purple-300 outline-none"
+                  placeholder="Novo assunto..."
+                />
+                <button
+                  onClick={() => handleAddAssunto(item.id)}
+                  disabled={saving || !newAssunto.trim()}
+                  className="inline-flex items-center gap-1 bg-purple-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                >
+                  <Plus className="w-3 h-3" />
+                  Adicionar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ))}
 
@@ -1611,6 +1706,165 @@ function LegalAreasCrud() {
         <Plus className="w-4 h-4" />
         Adicionar nova área do direito
       </button>
+    </div>
+  )
+}
+
+function ClassificationTiposCrud() {
+  const [tipos, setTipos] = useState<Record<string, Record<string, string[]>>>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [selectedNatureza, setSelectedNatureza] = useState<string>('')
+  const [selectedArea, setSelectedArea] = useState<string>('_default')
+  const [legalAreas, setLegalAreas] = useState<AdminLegalArea[]>([])
+  const [newTipo, setNewTipo] = useState('')
+  const toast = useToast()
+
+  useEffect(() => {
+    Promise.all([
+      loadAdminClassificationTipos(),
+      loadAdminLegalAreas(),
+    ]).then(([tiposData, areasData]) => {
+      setTipos(tiposData.tipos)
+      setLegalAreas(areasData)
+      // Select first natureza by default
+      const first = NATUREZA_OPTIONS[0]?.value
+      if (first) setSelectedNatureza(first)
+    }).catch(() => toast.error('Erro ao carregar tipos de classificação'))
+      .finally(() => setLoading(false))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSaveTipos = async (updated: Record<string, Record<string, string[]>>) => {
+    setSaving(true)
+    try {
+      if (IS_FIREBASE) {
+        await saveAdminClassificationTipos(updated)
+      }
+      setTipos(updated)
+      toast.success('Tipos de classificação atualizados')
+    } catch {
+      toast.error('Erro ao salvar tipos de classificação')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleAddTipo = async () => {
+    const trimmed = newTipo.trim()
+    if (!trimmed || !selectedNatureza) return
+    const current = tipos[selectedNatureza]?.[selectedArea] || []
+    if (current.includes(trimmed)) { toast.error('Tipo já existe nesta classificação'); return }
+    const updated = {
+      ...tipos,
+      [selectedNatureza]: {
+        ...(tipos[selectedNatureza] || {}),
+        [selectedArea]: [...current, trimmed],
+      },
+    }
+    await handleSaveTipos(updated)
+    setNewTipo('')
+  }
+
+  const handleRemoveTipo = async (tipo: string) => {
+    if (!selectedNatureza) return
+    const current = tipos[selectedNatureza]?.[selectedArea] || []
+    const updated = {
+      ...tipos,
+      [selectedNatureza]: {
+        ...(tipos[selectedNatureza] || {}),
+        [selectedArea]: current.filter(t => t !== tipo),
+      },
+    }
+    await handleSaveTipos(updated)
+  }
+
+  const currentTipos = tipos[selectedNatureza]?.[selectedArea] || []
+
+  if (loading) return <p className="text-sm text-gray-400 py-4">Carregando...</p>
+
+  const naturezaLabel = NATUREZA_OPTIONS.find(o => o.value === selectedNatureza)?.label || selectedNatureza
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-gray-500">
+        Configure os tipos de documento disponíveis para cada combinação de natureza e área do direito.
+        Os tipos definidos em "Geral (padrão)" se aplicam a todas as áreas. Tipos específicos por área complementam os gerais.
+      </p>
+
+      {/* Natureza selector */}
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <label className="text-xs text-gray-600 font-medium mb-1 block">Natureza</label>
+          <select
+            value={selectedNatureza}
+            onChange={e => { setSelectedNatureza(e.target.value); setSelectedArea('_default') }}
+            className="w-full text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-300 outline-none"
+          >
+            {NATUREZA_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label} — {o.description}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="text-xs text-gray-600 font-medium mb-1 block">Área do Direito</label>
+          <select
+            value={selectedArea}
+            onChange={e => setSelectedArea(e.target.value)}
+            className="w-full text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-300 outline-none"
+          >
+            <option value="_default">Geral (padrão)</option>
+            {legalAreas.filter(a => a.is_enabled).map(a => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Current tipos */}
+      <div className="border rounded-lg p-4 bg-green-50/50">
+        <p className="text-xs font-semibold text-green-700 mb-2">
+          Tipos para {naturezaLabel} / {selectedArea === '_default' ? 'Geral' : legalAreas.find(a => a.id === selectedArea)?.name || selectedArea}
+          <span className="ml-1 font-normal text-gray-500">({currentTipos.length})</span>
+        </p>
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {currentTipos.map(tipo => (
+            <span
+              key={tipo}
+              className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full group"
+            >
+              {tipo}
+              <button
+                onClick={() => handleRemoveTipo(tipo)}
+                className="opacity-0 group-hover:opacity-100 hover:text-red-600 transition-opacity"
+                title="Remover tipo"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+          {currentTipos.length === 0 && (
+            <span className="text-xs text-gray-400 italic">Nenhum tipo cadastrado para esta combinação</span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newTipo}
+            onChange={e => setNewTipo(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTipo() } }}
+            className="flex-1 text-xs border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-green-300 outline-none"
+            placeholder="Novo tipo de documento..."
+          />
+          <button
+            onClick={handleAddTipo}
+            disabled={saving || !newTipo.trim()}
+            className="inline-flex items-center gap-1 bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-700 disabled:opacity-50"
+          >
+            <Plus className="w-3 h-3" />
+            Adicionar
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

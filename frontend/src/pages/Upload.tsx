@@ -1100,8 +1100,9 @@ export default function Upload() {
       const matchEmenta = (d.ementa || '').toLowerCase().includes(q)
       const matchAreas = (d.area_direito || []).some(a => a.toLowerCase().includes(q))
       const matchAssuntos = (d.assuntos || []).some(a => a.toLowerCase().includes(q))
+      const matchTipo = (d.tipo_documento || '').toLowerCase().includes(q)
       const matchContexto = (d.contexto || []).some(c => c.toLowerCase().includes(q))
-      if (!matchFilename && !matchEmenta && !matchAreas && !matchAssuntos && !matchContexto) return false
+      if (!matchFilename && !matchEmenta && !matchAreas && !matchAssuntos && !matchTipo && !matchContexto) return false
     }
     if (filterNatureza && d.natureza !== filterNatureza) return false
     return true

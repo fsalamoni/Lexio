@@ -1279,7 +1279,8 @@ export interface AdminClassificationTipos {
 
 export async function loadAdminClassificationTipos(): Promise<AdminClassificationTipos> {
   const { CLASSIFICATION_TIPOS } = await import('./classification-data')
-  if (!IS_FIREBASE) return { tipos: CLASSIFICATION_TIPOS }
+  const defaultTipos = CLASSIFICATION_TIPOS as Record<string, Record<string, string[]>>
+  if (!IS_FIREBASE) return { tipos: defaultTipos }
   try {
     const db = ensureFirestore()
     const ref = doc(db, 'settings', 'admin_classification_tipos')
@@ -1289,7 +1290,7 @@ export async function loadAdminClassificationTipos(): Promise<AdminClassificatio
       if (data?.tipos && typeof data.tipos === 'object') return { tipos: data.tipos }
     }
   } catch { /* fallback to defaults */ }
-  return { tipos: CLASSIFICATION_TIPOS }
+  return { tipos: defaultTipos }
 }
 
 export async function saveAdminClassificationTipos(tipos: Record<string, Record<string, string[]>>): Promise<void> {
