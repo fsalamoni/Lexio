@@ -489,16 +489,21 @@ function buildRedatorUser(
 function buildAcervoBuscadorSystem(): string {
   return [
     'Você é um ESPECIALISTA EM RECUPERAÇÃO DE DOCUMENTOS JURÍDICOS.',
-    'Sua função é analisar ementas de documentos do acervo e selecionar os mais relevantes.',
+    'Sua função é analisar ementas e tags de classificação de documentos do acervo e selecionar os mais relevantes.',
     '',
     '<regras>',
     '1. Analise o NOME DO ARQUIVO — contém o tema principal (ex: "NEPOTISMO", "IMPROBIDADE").',
     '2. Analise a EMENTA — contém tipo, assunto, síntese, áreas jurídicas e tópicos.',
-    '3. Selecione APENAS documentos cuja ementa se enquadra no contexto da solicitação.',
-    '4. Priorize: (a) MESMO TEMA, (b) mais ESPECÍFICOS, (c) mais RECENTES.',
-    '5. Máximo de 3 documentos. Se houver mais candidatos relevantes, filtre pelos mais específicos e recentes.',
-    '6. Score >= 0.7 para documentos sobre a mesma área E mesma situação.',
-    '7. Se nenhum for relevante, retorne lista vazia.',
+    '3. Analise as TAGS DE CLASSIFICAÇÃO quando disponíveis:',
+    '   - NATUREZA: consultivo, executório, transacional, negocial, doutrinário, decisório',
+    '   - ÁREA DO DIREITO: disciplinas jurídicas do conteúdo',
+    '   - ASSUNTOS: matérias da fundamentação',
+    '   - CONTEXTO: circunstâncias fáticas do caso',
+    '4. Selecione APENAS documentos cujas tags/ementa se enquadram no contexto da solicitação.',
+    '5. Priorize: (a) MESMA NATUREZA e ÁREA, (b) MESMO ASSUNTO, (c) mais ESPECÍFICOS, (d) mais RECENTES.',
+    '6. Máximo de 3 documentos. Se houver mais candidatos relevantes, filtre pelos mais específicos e recentes.',
+    '7. Score >= 0.7 para documentos sobre a mesma área E mesma situação.',
+    '8. Se nenhum for relevante, retorne lista vazia.',
     '</regras>',
     '',
     '<formato_resposta>',
@@ -515,12 +520,22 @@ function buildAcervoBuscadorUser(
   triagem: string,
   request: string,
   docType: string,
-  acervoDocs: Array<{ id: string; filename: string; summary: string; created_at: string }>,
+  acervoDocs: Array<{ id: string; filename: string; summary: string; created_at: string; natureza?: string; area_direito?: string[]; assuntos?: string[]; contexto?: string[] }>,
 ): string {
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
-  const docsListStr = acervoDocs.map((d, i) =>
-    `[${i + 1}] ID: ${d.id}\n    Arquivo: ${d.filename}\n    Data: ${d.created_at}\n    Ementa: ${d.summary}`,
-  ).join('\n\n')
+  const docsListStr = acervoDocs.map((d, i) => {
+    const parts = [
+      `[${i + 1}] ID: ${d.id}`,
+      `    Arquivo: ${d.filename}`,
+      `    Data: ${d.created_at}`,
+      `    Ementa: ${d.summary}`,
+    ]
+    if (d.natureza) parts.push(`    Natureza: ${d.natureza}`)
+    if (d.area_direito?.length) parts.push(`    Áreas: ${d.area_direito.join(', ')}`)
+    if (d.assuntos?.length) parts.push(`    Assuntos: ${d.assuntos.join(', ')}`)
+    if (d.contexto?.length) parts.push(`    Contexto: ${d.contexto.join('; ')}`)
+    return parts.join('\n')
+  }).join('\n\n')
 
   return [
     `<tipo_documento>${typeName}</tipo_documento>`,
@@ -738,11 +753,95 @@ export async function generateAcervoEmenta(
 }
 
 /**
+ * NATUREZA options with their descriptions (for type-safe classification).
+ */
+export const NATUREZA_OPTIONS = [
+  { value: 'consultivo' as const, label: 'Consultivo', description: 'Emissão de opinião: parecer, informativo, manifestação, nota técnica' },
+  { value: 'executorio' as const, label: 'Executório', description: 'Movimentação processual ativa: petições iniciais, denúncias, recursos' },
+  { value: 'transacional' as const, label: 'Transacional', description: 'Acordos e transações: ANPC, ANPP, TAC, acordo processual' },
+  { value: 'negocial' as const, label: 'Negocial', description: 'Relação contratual: minutas de contrato, edital, termo de referência' },
+  { value: 'doutrinario' as const, label: 'Doutrinário', description: 'Produção teórica: artigos, livros, teses acadêmicas' },
+  { value: 'decisorio' as const, label: 'Decisório', description: 'Atos decisórios: sentenças, acórdãos, despachos, jurisprudência' },
+] as const
+
+export type NaturezaValue = typeof NATUREZA_OPTIONS[number]['value']
+
+/**
+ * Generate classification tags for an acervo document.
+ * Returns structured tags for: natureza, área do direito, assuntos, and contexto.
+ */
+export async function generateAcervoTags(
+  apiKey: string,
+  filename: string,
+  textContent: string,
+  model = 'anthropic/claude-3.5-haiku',
+): Promise<{
+  natureza: NaturezaValue
+  area_direito: string[]
+  assuntos: string[]
+  contexto: string[]
+}> {
+  const systemPrompt = [
+    'Você é um classificador especializado em documentos jurídicos.',
+    'Sua tarefa é gerar tags de classificação estruturadas para indexação e busca.',
+    '',
+    '<categorias_natureza>',
+    'Classifique o documento em UMA das seguintes naturezas:',
+    '- "consultivo": Documentos de emissão de opinião (parecer, informativo, manifestação, nota técnica, consulta)',
+    '- "executorio": Documentos de movimentação processual ativa (petição inicial, denúncia, recurso, contrarrazões, impugnação, agravo)',
+    '- "transacional": Documentos de acordo ou transação (ANPC, ANPP, TAC, acordo processual, termo de compromisso)',
+    '- "negocial": Documentos de relação contratual (minuta de contrato, edital, termo de referência, aditivo contratual)',
+    '- "doutrinario": Documentos de produção teórica ou acadêmica (artigo, livro, tese, monografia, estudo)',
+    '- "decisorio": Documentos de atos decisórios (sentença, acórdão, jurisprudência, despacho, decisão interlocutória)',
+    '</categorias_natureza>',
+    '',
+    '<formato>',
+    'Responda APENAS com JSON puro (sem markdown), no formato:',
+    '{',
+    '  "natureza": "consultivo|executorio|transacional|negocial|doutrinario|decisorio",',
+    '  "area_direito": ["Direito Administrativo", "Direito Constitucional"],',
+    '  "assuntos": ["Licitação", "Contratação direta", "Dispensa de licitação"],',
+    '  "contexto": ["Município celebrou contrato sem licitação", "Empresa questionou dispensa"]',
+    '}',
+    '</formato>',
+    '',
+    'REGRAS:',
+    '- "natureza": Deve ser EXATAMENTE um dos 6 valores acima.',
+    '- "area_direito": Liste 1 a 5 áreas do direito relacionadas ao conteúdo.',
+    '- "assuntos": Liste 2 a 8 matérias/temas objeto da fundamentação do documento.',
+    '- "contexto": Liste 1 a 5 circunstâncias fáticas tratadas no caso.',
+  ].join('\n')
+
+  const sourceText = textContent.slice(0, 8000)
+  const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere as tags de classificação para este documento.`
+
+  const result = await callLLM(apiKey, systemPrompt, userPrompt, model, 800, 0.1)
+
+  let jsonStr = result.content.trim()
+  const jsonMatch = jsonStr.match(/\`\`\`(?:json)?\s*([\s\S]*?)\`\`\`/)
+  if (jsonMatch) jsonStr = jsonMatch[1].trim()
+  const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
+  if (braceMatch) jsonStr = braceMatch[0]
+
+  const parsed = JSON.parse(jsonStr)
+
+  const validNaturezas: NaturezaValue[] = ['consultivo', 'executorio', 'transacional', 'negocial', 'doutrinario', 'decisorio']
+  const natureza: NaturezaValue = validNaturezas.includes(parsed.natureza) ? parsed.natureza : 'consultivo'
+
+  return {
+    natureza,
+    area_direito: Array.isArray(parsed.area_direito) ? parsed.area_direito.map((s: string) => String(s).trim()).filter(Boolean) : [],
+    assuntos: Array.isArray(parsed.assuntos) ? parsed.assuntos.map((s: string) => String(s).trim()).filter(Boolean) : [],
+    contexto: Array.isArray(parsed.contexto) ? parsed.contexto.map((s: string) => String(s).trim()).filter(Boolean) : [],
+  }
+}
+
+/**
  * Pre-filter acervo documents by keyword matching against filenames and ementas.
  * Returns documents sorted by relevance (most keyword matches first).
  */
 function preFilterAcervoDocs(
-  docs: Array<{ id: string; filename: string; created_at: string; ementa?: string; ementa_keywords?: string[] }>,
+  docs: Array<{ id: string; filename: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: string; area_direito?: string[]; assuntos?: string[]; contexto?: string[] }>,
   searchKeywords: string[],
 ): typeof docs {
   if (searchKeywords.length === 0) return docs.slice(0, MAX_PREFILTERED_DOCS)
@@ -753,6 +852,9 @@ function preFilterAcervoDocs(
     let score = 0
     const filenameLower = d.filename.toLowerCase()
     const ementaLower = (d.ementa || '').toLowerCase()
+    const areasLower = (d.area_direito || []).map(a => a.toLowerCase())
+    const assuntosLower = (d.assuntos || []).map(a => a.toLowerCase())
+    const contextoLower = (d.contexto || []).map(c => c.toLowerCase())
 
     for (const keyword of normalizedSearch) {
       // Filename match (high weight — filenames are curated by user)
@@ -761,6 +863,10 @@ function preFilterAcervoDocs(
       if (d.ementa_keywords?.some(ek => ek.includes(keyword) || keyword.includes(ek))) score += 2
       // Ementa text match (lower weight)
       if (ementaLower.includes(keyword)) score += 1
+      // Tag-based matches (high relevance)
+      if (areasLower.some(a => a.includes(keyword) || keyword.includes(a))) score += 2
+      if (assuntosLower.some(a => a.includes(keyword) || keyword.includes(a))) score += 2
+      if (contextoLower.some(c => c.includes(keyword) || keyword.includes(c))) score += 1
     }
 
     return { ...d, score }
@@ -1286,6 +1392,10 @@ export async function generateDocument(
             filename: d.filename,
             summary: d.ementa || d.filename, // Use ementa if available, otherwise just filename
             created_at: d.created_at,
+            natureza: d.natureza,
+            area_direito: d.area_direito,
+            assuntos: d.assuntos,
+            contexto: d.contexto,
           }))
 
           buscadorResult = await callLLM(
