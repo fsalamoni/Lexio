@@ -9,10 +9,13 @@ build/
 .eggs/
 *.egg
 
-# Environments — NEVER commit .env
+# Environments — NEVER commit .env or .env.* (except *.example)
 .env
 .env.local
 .env.*.local
+frontend/.env.ghpages
+frontend/.env.production
+frontend/.env.staging
 .venv/
 venv/
 env/
