@@ -29,6 +29,7 @@ import ThesisAnalystConfigCard from '../components/ThesisAnalystConfigCard'
 import ContextDetailConfigCard from '../components/ContextDetailConfigCard'
 import AcervoClassificadorConfigCard from '../components/AcervoClassificadorConfigCard'
 import AcervoEmentaConfigCard from '../components/AcervoEmentaConfigCard'
+import ModelCatalogCard from '../components/ModelCatalogCard'
 
 interface ModuleInfo {
   id: string
@@ -801,6 +802,20 @@ export default function AdminPanel() {
       >
         <ApiKeysCard />
       </AdminCollapsibleSection>
+
+      {/* Model Catalog — Firebase mode */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_model_catalog"
+          title="Catálogo de Modelos"
+          icon={Brain}
+          iconColor="text-indigo-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ModelCatalogCard />
+        </AdminCollapsibleSection>
+      )}
 
       {/* Model Configuration — Firebase mode */}
       {IS_FIREBASE && (

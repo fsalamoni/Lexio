@@ -24,7 +24,6 @@ import {
 } from 'lucide-react'
 import {
   CONTEXT_DETAIL_AGENT_DEFS,
-  AVAILABLE_MODELS,
   type ContextDetailModelMap,
   type ModelOption,
   loadContextDetailModels,
@@ -32,6 +31,7 @@ import {
   getDefaultContextDetailModelMap,
   resetContextDetailModels,
 } from '../lib/model-config'
+import { useCatalogModels } from '../lib/model-catalog'
 import ModelSelectorModal from './ModelSelectorModal'
 
 // ── Icon mapping ──────────────────────────────────────────────────────────────
@@ -62,6 +62,7 @@ function formatCost(usd: number): string {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ContextDetailConfigCard() {
+  const catalogModels = useCatalogModels()
   const [models, setModels]     = useState<ContextDetailModelMap>({})
   const [original, setOriginal] = useState<ContextDetailModelMap>({})
   const [expanded, setExpanded] = useState(false)
@@ -133,7 +134,7 @@ export default function ContextDetailConfigCard() {
   }
 
   const getModelOption = (modelId: string): ModelOption | undefined =>
-    AVAILABLE_MODELS.find(m => m.id === modelId)
+    catalogModels.find(m => m.id === modelId)
 
   const activeAgentDef = activeAgentKey
     ? CONTEXT_DETAIL_AGENT_DEFS.find(a => a.key === activeAgentKey)
@@ -337,4 +338,4 @@ export default function ContextDetailConfigCard() {
       )}
     </>
   )
-}
+}

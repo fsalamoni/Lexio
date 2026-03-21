@@ -762,6 +762,7 @@ export const ACERVO_CLASSIFICADOR_AGENT_DEFS: AgentModelDef[] = [
     defaultModel: 'anthropic/claude-3.5-haiku',
     recommendedTier: 'fast',
     icon: 'tag',
+    agentCategory: 'extraction',
   },
 ]
 
@@ -837,6 +838,7 @@ export const ACERVO_EMENTA_AGENT_DEFS: AgentModelDef[] = [
     defaultModel: 'anthropic/claude-3.5-haiku',
     recommendedTier: 'fast',
     icon: 'file-text',
+    agentCategory: 'extraction',
   },
 ]
 

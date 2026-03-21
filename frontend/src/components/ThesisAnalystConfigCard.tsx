@@ -28,7 +28,6 @@ import {
 } from 'lucide-react'
 import {
   THESIS_ANALYST_AGENT_DEFS,
-  AVAILABLE_MODELS,
   type ThesisAnalystModelMap,
   type ModelOption,
   loadThesisAnalystModels,
@@ -36,6 +35,7 @@ import {
   getDefaultThesisAnalystModelMap,
   resetThesisAnalystModels,
 } from '../lib/model-config'
+import { useCatalogModels } from '../lib/model-catalog'
 import ModelSelectorModal from './ModelSelectorModal'
 
 // ── Icon mapping ──────────────────────────────────────────────────────────────
@@ -70,6 +70,7 @@ function formatCost(usd: number): string {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ThesisAnalystConfigCard() {
+  const catalogModels = useCatalogModels()
   const [models, setModels]     = useState<ThesisAnalystModelMap>({})
   const [original, setOriginal] = useState<ThesisAnalystModelMap>({})
   const [expanded, setExpanded] = useState(false)
@@ -141,7 +142,7 @@ export default function ThesisAnalystConfigCard() {
   }
 
   const getModelOption = (modelId: string): ModelOption | undefined =>
-    AVAILABLE_MODELS.find(m => m.id === modelId)
+    catalogModels.find(m => m.id === modelId)
 
   const activeAgentDef = activeAgentKey
     ? THESIS_ANALYST_AGENT_DEFS.find(a => a.key === activeAgentKey)
@@ -353,4 +354,4 @@ export default function ThesisAnalystConfigCard() {
       )}
     </>
   )
-}
+}

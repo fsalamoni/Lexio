@@ -21,7 +21,6 @@ import {
 } from 'lucide-react'
 import {
   ACERVO_EMENTA_AGENT_DEFS,
-  AVAILABLE_MODELS,
   type AcervoEmentaModelMap,
   type ModelOption,
   loadAcervoEmentaModels,
@@ -29,6 +28,7 @@ import {
   getDefaultAcervoEmentaModelMap,
   resetAcervoEmentaModels,
 } from '../lib/model-config'
+import { useCatalogModels } from '../lib/model-catalog'
 
 // ── Icon mapping ──────────────────────────────────────────────────────────────
 
@@ -47,6 +47,7 @@ const TIER_STYLES: Record<string, { bg: string; text: string; label: string }> =
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function AcervoEmentaConfigCard() {
+  const catalogModels = useCatalogModels()
   const [models, setModels]     = useState<AcervoEmentaModelMap>({})
   const [original, setOriginal] = useState<AcervoEmentaModelMap>({})
   const [expanded, setExpanded] = useState(false)
@@ -109,7 +110,7 @@ export default function AcervoEmentaConfigCard() {
   }
 
   const getModelOption = (modelId: string): ModelOption | undefined =>
-    AVAILABLE_MODELS.find(m => m.id === modelId)
+    catalogModels.find(m => m.id === modelId)
 
   if (loading) {
     return (
@@ -199,7 +200,7 @@ export default function AcervoEmentaConfigCard() {
                             onChange={e => handleModelChange(agent.key, e.target.value)}
                             className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           >
-                            {AVAILABLE_MODELS.map(m => (
+                            {catalogModels.map(m => (
                               <option key={m.id} value={m.id}>
                                 {m.label} ({m.provider}) — {TIER_STYLES[m.tier]?.label ?? m.tier}
                               </option>

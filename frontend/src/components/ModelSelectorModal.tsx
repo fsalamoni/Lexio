@@ -28,6 +28,7 @@ import {
   type ModelOption,
   type AgentCategory,
 } from '../lib/model-config'
+import { useCatalogModels } from '../lib/model-catalog'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -101,6 +102,7 @@ function formatCost(usd: number): string {
 export default function ModelSelectorModal({
   open, onClose, onSelect, currentModelId, agentCategory, agentLabel,
 }: Props) {
+  const catalogModels = useCatalogModels()
   const [search,      setSearch]      = useState('')
   const [priceFilter, setPriceFilter] = useState<PriceFilter>('all')
   const [tierFilter,  setTierFilter]  = useState<string>('all')
@@ -125,12 +127,12 @@ export default function ModelSelectorModal({
   }, [open, onClose])
 
   const allProviders = useMemo(
-    () => [...new Set(AVAILABLE_MODELS.map(m => m.provider))].sort(),
-    [],
+    () => [...new Set(catalogModels.map(m => m.provider))].sort(),
+    [catalogModels],
   )
 
   const filtered = useMemo<ModelOption[]>(() => {
-    let list = AVAILABLE_MODELS
+    let list = catalogModels
 
     // Price filter
     if (priceFilter === 'free') list = list.filter(m => m.isFree)
@@ -168,7 +170,7 @@ export default function ModelSelectorModal({
     })
 
     return list
-  }, [search, priceFilter, tierFilter, provFilter, sortBy, sortAsc, agentCategory])
+  }, [search, priceFilter, tierFilter, provFilter, sortBy, sortAsc, agentCategory, catalogModels])
 
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) setSortAsc(a => !a)
