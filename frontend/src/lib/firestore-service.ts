@@ -1705,6 +1705,24 @@ export async function getAllAcervoDocumentsForSearch(
 }
 
 /**
+ * Merge new LLM execution records with any existing ones on an acervo document.
+ */
+async function mergeAcervoExecutions(
+  uid: string,
+  docId: string,
+  executions: UsageExecutionRecord[],
+): Promise<UsageExecutionRecord[]> {
+  const db = ensureFirestore()
+  try {
+    const existing = await getDoc(doc(db, 'users', uid, 'acervo', docId))
+    const existingExecs = (existing.data()?.llm_executions ?? []) as UsageExecutionRecord[]
+    return [...existingExecs, ...executions]
+  } catch {
+    return executions
+  }
+}
+
+/**
  * Update the ementa and keywords for an acervo document.
  * Optionally appends LLM execution records for cost tracking.
  */
@@ -1721,14 +1739,7 @@ export async function updateAcervoEmenta(
     ementa_keywords: keywords,
   }
   if (executions && executions.length > 0) {
-    // Merge new executions with any existing ones
-    try {
-      const existing = await getDoc(doc(db, 'users', uid, 'acervo', docId))
-      const existingExecs = (existing.data()?.llm_executions ?? []) as UsageExecutionRecord[]
-      updateData.llm_executions = [...existingExecs, ...executions]
-    } catch {
-      updateData.llm_executions = executions
-    }
+    updateData.llm_executions = await mergeAcervoExecutions(uid, docId, executions)
   }
   await updateDoc(doc(db, 'users', uid, 'acervo', docId), updateData)
 }
@@ -1755,14 +1766,7 @@ export async function updateAcervoTags(
     tags_generated: true,
   }
   if (executions && executions.length > 0) {
-    // Merge new executions with any existing ones
-    try {
-      const existing = await getDoc(doc(db, 'users', uid, 'acervo', docId))
-      const existingExecs = (existing.data()?.llm_executions ?? []) as UsageExecutionRecord[]
-      updateData.llm_executions = [...existingExecs, ...executions]
-    } catch {
-      updateData.llm_executions = executions
-    }
+    updateData.llm_executions = await mergeAcervoExecutions(uid, docId, executions)
   }
   await updateDoc(doc(db, 'users', uid, 'acervo', docId), updateData)
 }

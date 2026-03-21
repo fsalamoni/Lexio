@@ -74,6 +74,8 @@ const MAX_ACERVO_SELECTED_DOCS = 3
 const MAX_ACERVO_COMPILADOR_CHARS = 120000
 /** Max chars of document text used to generate an ementa. */
 const MAX_EMENTA_SOURCE_CHARS = 8000
+/** Default model for lightweight acervo processing (ementa, classification). */
+const DEFAULT_ACERVO_FAST_MODEL = 'anthropic/claude-3.5-haiku'
 /** Max pre-filtered documents sent to the buscador LLM. */
 const MAX_PREFILTERED_DOCS = 30
 
@@ -701,9 +703,9 @@ export async function generateAcervoEmenta(
   if (!model) {
     try {
       const ementaModels = await loadAcervoEmentaModels()
-      model = ementaModels.acervo_ementa || 'anthropic/claude-3.5-haiku'
+      model = ementaModels.acervo_ementa || DEFAULT_ACERVO_FAST_MODEL
     } catch {
-      model = 'anthropic/claude-3.5-haiku'
+      model = DEFAULT_ACERVO_FAST_MODEL
     }
   }
 
@@ -811,9 +813,9 @@ export async function generateAcervoTags(
   if (!model) {
     try {
       const classificadorModels = await loadAcervoClassificadorModels()
-      model = classificadorModels.acervo_classificador || 'anthropic/claude-3.5-haiku'
+      model = classificadorModels.acervo_classificador || DEFAULT_ACERVO_FAST_MODEL
     } catch {
-      model = 'anthropic/claude-3.5-haiku'
+      model = DEFAULT_ACERVO_FAST_MODEL
     }
   }
 
