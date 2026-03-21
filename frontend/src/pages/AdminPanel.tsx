@@ -28,6 +28,7 @@ import ModelConfigCard from '../components/ModelConfigCard'
 import ThesisAnalystConfigCard from '../components/ThesisAnalystConfigCard'
 import ContextDetailConfigCard from '../components/ContextDetailConfigCard'
 import AcervoClassificadorConfigCard from '../components/AcervoClassificadorConfigCard'
+import AcervoEmentaConfigCard from '../components/AcervoEmentaConfigCard'
 
 interface ModuleInfo {
   id: string
@@ -853,6 +854,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <AcervoClassificadorConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Acervo Ementa Config (Firebase-only) */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_acervo_ementa_config"
+          title="Configuração do Gerador de Ementa"
+          icon={FileText}
+          iconColor="text-blue-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <AcervoEmentaConfigCard />
         </AdminCollapsibleSection>
       )}
 

@@ -23,7 +23,7 @@
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { firestore } from './firebase'
 import { callLLM } from './llm-client'
-import { loadAgentModels, loadContextDetailModels, type AgentModelMap } from './model-config'
+import { loadAgentModels, loadContextDetailModels, loadAcervoEmentaModels, loadAcervoClassificadorModels, type AgentModelMap } from './model-config'
 import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, updateAcervoEmenta, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
@@ -74,6 +74,8 @@ const MAX_ACERVO_SELECTED_DOCS = 3
 const MAX_ACERVO_COMPILADOR_CHARS = 120000
 /** Max chars of document text used to generate an ementa. */
 const MAX_EMENTA_SOURCE_CHARS = 8000
+/** Default model for lightweight acervo processing (ementa, classification). */
+const DEFAULT_ACERVO_FAST_MODEL = 'anthropic/claude-3.5-haiku'
 /** Max pre-filtered documents sent to the buscador LLM. */
 const MAX_PREFILTERED_DOCS = 30
 
@@ -695,8 +697,18 @@ export async function generateAcervoEmenta(
   apiKey: string,
   filename: string,
   textContent: string,
-  model = 'anthropic/claude-3.5-haiku',
-): Promise<{ ementa: string; keywords: string[] }> {
+  model?: string,
+): Promise<{ ementa: string; keywords: string[]; llm_execution: UsageExecutionRecord }> {
+  // Load model from admin config if not explicitly provided
+  if (!model) {
+    try {
+      const ementaModels = await loadAcervoEmentaModels()
+      model = ementaModels.acervo_ementa || DEFAULT_ACERVO_FAST_MODEL
+    } catch {
+      model = DEFAULT_ACERVO_FAST_MODEL
+    }
+  }
+
   const systemPrompt = [
     'Você é um indexador de documentos jurídicos.',
     'Sua tarefa é gerar uma ementa estruturada para indexação e busca.',
@@ -751,7 +763,19 @@ export async function generateAcervoEmenta(
 
   const allKeywords = [...new Set([...keywords, ...filenameKeywords])]
 
-  return { ementa: ementaParts.join(' | '), keywords: allKeywords }
+  const llm_execution = createUsageExecutionRecord({
+    source_type: 'acervo_ementa',
+    source_id: `acervo-ementa-${filename}`,
+    phase: 'acervo_ementa',
+    agent_name: 'Gerador de Ementa',
+    model: result.model,
+    tokens_in: result.tokens_in,
+    tokens_out: result.tokens_out,
+    cost_usd: result.cost_usd,
+    duration_ms: result.duration_ms,
+  })
+
+  return { ementa: ementaParts.join(' | '), keywords: allKeywords, llm_execution }
 }
 
 /**
@@ -776,14 +800,25 @@ export async function generateAcervoTags(
   apiKey: string,
   filename: string,
   textContent: string,
-  model = 'anthropic/claude-3.5-haiku',
+  model?: string,
 ): Promise<{
   natureza: NaturezaValue
   area_direito: string[]
   assuntos: string[]
   tipo_documento: string
   contexto: string[]
+  llm_execution: UsageExecutionRecord
 }> {
+  // Load model from admin config if not explicitly provided
+  if (!model) {
+    try {
+      const classificadorModels = await loadAcervoClassificadorModels()
+      model = classificadorModels.acervo_classificador || DEFAULT_ACERVO_FAST_MODEL
+    } catch {
+      model = DEFAULT_ACERVO_FAST_MODEL
+    }
+  }
+
   const systemPrompt = [
     'Você é um classificador especializado em documentos jurídicos.',
     'Sua tarefa é gerar tags de classificação estruturadas para indexação e busca.',
@@ -833,12 +868,25 @@ export async function generateAcervoTags(
   const validNaturezas: NaturezaValue[] = ['consultivo', 'executorio', 'transacional', 'negocial', 'doutrinario', 'decisorio']
   const natureza: NaturezaValue = validNaturezas.includes(parsed.natureza) ? parsed.natureza : 'consultivo'
 
+  const llm_execution = createUsageExecutionRecord({
+    source_type: 'acervo_classificador',
+    source_id: `acervo-tags-${filename}`,
+    phase: 'acervo_classificador',
+    agent_name: 'Classificador de Acervo',
+    model: result.model,
+    tokens_in: result.tokens_in,
+    tokens_out: result.tokens_out,
+    cost_usd: result.cost_usd,
+    duration_ms: result.duration_ms,
+  })
+
   return {
     natureza,
     area_direito: Array.isArray(parsed.area_direito) ? parsed.area_direito.map((s: string) => String(s).trim()).filter(Boolean) : [],
     assuntos: Array.isArray(parsed.assuntos) ? parsed.assuntos.map((s: string) => String(s).trim()).filter(Boolean) : [],
     tipo_documento: typeof parsed.tipo_documento === 'string' ? parsed.tipo_documento.trim() : '',
     contexto: Array.isArray(parsed.contexto) ? parsed.contexto.map((s: string) => String(s).trim()).filter(Boolean) : [],
+    llm_execution,
   }
 }
 
@@ -1383,8 +1431,8 @@ export async function generateDocument(
             try {
               const fullDoc = allAcervoDocs.find(ad => ad.id === d.id)
               if (!fullDoc) return
-              const { ementa, keywords } = await generateAcervoEmenta(apiKey, d.filename, fullDoc.text_content, modelAcervoBuscador)
-              await updateAcervoEmenta(uid, d.id, ementa, keywords)
+              const { ementa, keywords, llm_execution: ementaExec } = await generateAcervoEmenta(apiKey, d.filename, fullDoc.text_content, modelAcervoBuscador)
+              await updateAcervoEmenta(uid, d.id, ementa, keywords, [ementaExec])
               // Update in-memory reference
               d.ementa = ementa
               d.ementa_keywords = keywords

@@ -23,6 +23,7 @@ import {
   buildUsageSummary,
   extractDocumentUsageExecutions,
   extractThesisSessionExecutions,
+  extractAcervoUsageExecutions,
   type CostBreakdown,
   type UsageExecutionRecord,
   type UsageSummary,
@@ -131,6 +132,8 @@ export interface AcervoDocumentData {
   contexto?: string[]
   /** Whether classification tags have been generated */
   tags_generated?: boolean
+  /** LLM execution records for cost tracking (ementa + classification) */
+  llm_executions?: UsageExecutionRecord[]
 }
 
 // ── Thesis Analysis Sessions ──────────────────────────────────────────────────
@@ -591,14 +594,21 @@ export async function listThesisAnalysisSessions(uid: string): Promise<ThesisAna
 }
 
 export async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
-  const [{ items }, sessions] = await Promise.all([
+  const [{ items }, sessions, acervo] = await Promise.all([
     listDocuments(uid),
     listThesisAnalysisSessions(uid).catch(() => []),
+    listAcervoDocuments(uid).then(r => r.items).catch(() => [] as AcervoDocumentData[]),
   ])
 
   const executions = [
     ...items.flatMap(doc => extractDocumentUsageExecutions(doc)),
     ...sessions.flatMap(session => extractThesisSessionExecutions(session)),
+    ...acervo.flatMap(acervoDoc => extractAcervoUsageExecutions({
+      id: acervoDoc.id,
+      filename: acervoDoc.filename,
+      created_at: acervoDoc.created_at,
+      llm_executions: acervoDoc.llm_executions,
+    })),
   ]
 
   return buildCostBreakdown(executions)
@@ -1695,23 +1705,48 @@ export async function getAllAcervoDocumentsForSearch(
 }
 
 /**
+ * Merge new LLM execution records with any existing ones on an acervo document.
+ */
+async function mergeAcervoExecutions(
+  uid: string,
+  docId: string,
+  executions: UsageExecutionRecord[],
+): Promise<UsageExecutionRecord[]> {
+  const db = ensureFirestore()
+  try {
+    const existing = await getDoc(doc(db, 'users', uid, 'acervo', docId))
+    const existingExecs = (existing.data()?.llm_executions ?? []) as UsageExecutionRecord[]
+    return [...existingExecs, ...executions]
+  } catch {
+    return executions
+  }
+}
+
+/**
  * Update the ementa and keywords for an acervo document.
+ * Optionally appends LLM execution records for cost tracking.
  */
 export async function updateAcervoEmenta(
   uid: string,
   docId: string,
   ementa: string,
   keywords: string[],
+  executions?: UsageExecutionRecord[],
 ): Promise<void> {
   const db = ensureFirestore()
-  await updateDoc(doc(db, 'users', uid, 'acervo', docId), {
+  const updateData: Record<string, unknown> = {
     ementa,
     ementa_keywords: keywords,
-  })
+  }
+  if (executions && executions.length > 0) {
+    updateData.llm_executions = await mergeAcervoExecutions(uid, docId, executions)
+  }
+  await updateDoc(doc(db, 'users', uid, 'acervo', docId), updateData)
 }
 
 /**
  * Update classification tags for an acervo document.
+ * Optionally appends LLM execution records for cost tracking.
  */
 export async function updateAcervoTags(
   uid: string,
@@ -1723,12 +1758,17 @@ export async function updateAcervoTags(
     tipo_documento?: string
     contexto?: string[]
   },
+  executions?: UsageExecutionRecord[],
 ): Promise<void> {
   const db = ensureFirestore()
-  await updateDoc(doc(db, 'users', uid, 'acervo', docId), {
+  const updateData: Record<string, unknown> = {
     ...tags,
     tags_generated: true,
-  })
+  }
+  if (executions && executions.length > 0) {
+    updateData.llm_executions = await mergeAcervoExecutions(uid, docId, executions)
+  }
+  await updateDoc(doc(db, 'users', uid, 'acervo', docId), updateData)
 }
 
 /**

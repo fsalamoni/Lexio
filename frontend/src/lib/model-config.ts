@@ -483,3 +483,78 @@ export async function resetAcervoClassificadorModels(): Promise<void> {
   if (!IS_FIREBASE) return
   await saveSettings({ acervo_classificador_models: {} })
 }
+
+// ── Acervo Ementa Agent Definition ───────────────────────────────────────────
+
+/**
+ * Single-agent definition for the "Gerador de Ementa" feature.
+ *
+ * This agent generates structured ementas and keywords for acervo documents
+ * to support indexing and semantic search.
+ */
+export const ACERVO_EMENTA_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'acervo_ementa',
+    label: 'Gerador de Ementa',
+    description: 'Gera ementas estruturadas e keywords para indexação de documentos do acervo',
+    defaultModel: 'anthropic/claude-3.5-haiku',
+    recommendedTier: 'fast',
+    icon: 'file-text',
+  },
+]
+
+/** Map from acervo-ementa agent key → model ID */
+export type AcervoEmentaModelMap = Record<string, string>
+
+/** Default model map for the acervo ementa agent. */
+export function getDefaultAcervoEmentaModelMap(): AcervoEmentaModelMap {
+  const map: AcervoEmentaModelMap = {}
+  for (const def of ACERVO_EMENTA_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/**
+ * Load acervo ementa model configuration.
+ * Returns saved overrides merged with defaults.
+ */
+export async function loadAcervoEmentaModels(): Promise<AcervoEmentaModelMap> {
+  const defaults = getDefaultAcervoEmentaModelMap()
+  if (!IS_FIREBASE) return defaults
+  try {
+    const settings = await getSettings()
+    const saved = (settings.acervo_ementa_models ?? {}) as Record<string, string>
+    for (const def of ACERVO_EMENTA_AGENT_DEFS) {
+      if (saved[def.key] && typeof saved[def.key] === 'string') {
+        defaults[def.key] = saved[def.key]
+      }
+    }
+  } catch {
+    // Fall back to defaults silently
+  }
+  return defaults
+}
+
+/**
+ * Save acervo ementa model configuration to Firestore.
+ * Only stores non-default values to keep data minimal.
+ */
+export async function saveAcervoEmentaModels(models: AcervoEmentaModelMap): Promise<void> {
+  if (!IS_FIREBASE) return
+  const defaults = getDefaultAcervoEmentaModelMap()
+  const overrides: AcervoEmentaModelMap = {}
+  for (const def of ACERVO_EMENTA_AGENT_DEFS) {
+    const model = models[def.key]
+    if (model && model !== defaults[def.key]) {
+      overrides[def.key] = model
+    }
+  }
+  await saveSettings({ acervo_ementa_models: overrides })
+}
+
+/** Reset acervo ementa models to defaults. */
+export async function resetAcervoEmentaModels(): Promise<void> {
+  if (!IS_FIREBASE) return
+  await saveSettings({ acervo_ementa_models: {} })
+}
