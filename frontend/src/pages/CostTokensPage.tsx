@@ -340,9 +340,9 @@ export default function CostTokensPage() {
     load()
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split executions into document_generation, thesis_analysis, context_detail and acervo_classificador
-  const { docBreakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, highlights: [] }
+  // Split executions into document_generation, thesis_analysis, context_detail, acervo_classificador and acervo_ementa
+  const { docBreakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
@@ -352,12 +352,14 @@ export default function CostTokensPage() {
     const thesisItems = breakdown.by_agent_function.filter(item => item.key.startsWith('thesis_analysis::'))
     const contextDetailItems = breakdown.by_agent_function.filter(item => item.key.startsWith('context_detail::'))
     const acervoClassificadorItems = breakdown.by_agent_function.filter(item => item.key.startsWith('acervo_classificador::'))
+    const acervoEmentaItems = breakdown.by_agent_function.filter(item => item.key.startsWith('acervo_ementa::'))
 
     // Build approximate sub-breakdowns using available summary data
     const docFunc = breakdown.by_function.find(f => f.key === 'document_generation')
     const thesisFunc = breakdown.by_function.find(f => f.key === 'thesis_analysis')
     const contextDetailFunc = breakdown.by_function.find(f => f.key === 'context_detail')
     const acervoClassificadorFunc = breakdown.by_function.find(f => f.key === 'acervo_classificador')
+    const acervoEmentaFunc = breakdown.by_function.find(f => f.key === 'acervo_ementa')
 
     const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[]): CostBreakdown | null => {
       if (!func && agentItems.length === 0) return null
@@ -391,6 +393,7 @@ export default function CostTokensPage() {
     const thesisBd = makeSub(thesisFunc, thesisItems)
     const contextDetailBd = makeSub(contextDetailFunc, contextDetailItems)
     const acervoClassificadorBd = makeSub(acervoClassificadorFunc, acervoClassificadorItems)
+    const acervoEmentaBd = makeSub(acervoEmentaFunc, acervoEmentaItems)
 
     // Build highlights
     const hl: { label: string; value: string; meta: string }[] = []
@@ -412,7 +415,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, highlights: hl }
+    return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, highlights: hl }
   }, [breakdown])
 
   if (loading) {
@@ -586,6 +589,28 @@ export default function CostTokensPage() {
               />
             ) : (
               <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para classificação de acervo.</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 6: Acervo Ementa ───────────────────────────── */}
+          <CollapsibleSection
+            id="section_acervo_ementa"
+            title="Gerador de Ementas"
+            icon={FileText}
+            iconColor="text-blue-600"
+            badge={acervoEmentaBreakdown ? fmtUsd(acervoEmentaBreakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {acervoEmentaBreakdown ? (
+              <SectionBreakdown
+                sectionId="acervo_ementa"
+                breakdown={acervoEmentaBreakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para geração de ementas.</p>
             )}
           </CollapsibleSection>
         </>

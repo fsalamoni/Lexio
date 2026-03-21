@@ -17,6 +17,7 @@ import {
   type AdminLegalArea,
 } from '../lib/firestore-service'
 import { generateAcervoEmenta, generateAcervoTags, NATUREZA_OPTIONS, type NaturezaValue } from '../lib/generation-service'
+import type { UsageExecutionRecord } from '../lib/cost-analytics'
 import { getAssuntosForAreas, getTiposForClassification } from '../lib/classification-data'
 
 interface UploadedFile {
@@ -153,13 +154,14 @@ function EmentaModal({
   doc: AcervoDocumentData
   apiKey: string
   onClose: () => void
-  onSaved: (ementa: string, keywords: string[]) => void
+  onSaved: (ementa: string, keywords: string[], executions?: UsageExecutionRecord[]) => void
 }) {
   const [ementa, setEmenta] = useState(doc.ementa || '')
   const [keywords, setKeywords] = useState((doc.ementa_keywords || []).join(', '))
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [pendingExecution, setPendingExecution] = useState<UsageExecutionRecord | null>(null)
 
   const handleGenerate = async () => {
     if (!doc.text_content) return
@@ -168,6 +170,7 @@ function EmentaModal({
       const result = await generateAcervoEmenta(apiKey, doc.filename, doc.text_content)
       setEmenta(result.ementa)
       setKeywords(result.keywords.join(', '))
+      setPendingExecution(result.llm_execution)
       setEditing(true)
     } catch (err) {
       console.error('Erro ao gerar ementa:', err)
@@ -182,7 +185,7 @@ function EmentaModal({
     try {
       const kws = keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
       // onSaved calls updateAcervoEmenta externally with uid
-      onSaved(ementa, kws)
+      onSaved(ementa, kws, pendingExecution ? [pendingExecution] : undefined)
       setEditing(false)
     } finally {
       setSaving(false)
@@ -514,7 +517,7 @@ function TagsModal({
   doc: AcervoDocumentData
   apiKey: string
   onClose: () => void
-  onSaved: (tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }) => void
+  onSaved: (tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }, executions?: UsageExecutionRecord[]) => void
 }) {
   const [natureza, setNatureza] = useState<NaturezaValue | ''>(doc.natureza || '')
   const [selectedAreas, setSelectedAreas] = useState<string[]>(doc.area_direito || [])
@@ -525,6 +528,7 @@ function TagsModal({
   const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(!doc.tags_generated)
   const [legalAreas, setLegalAreas] = useState<AdminLegalArea[]>([])
+  const [pendingExecution, setPendingExecution] = useState<UsageExecutionRecord | null>(null)
 
   // Load legal areas from admin settings
   useEffect(() => {
@@ -616,6 +620,7 @@ function TagsModal({
       setSelectedAssuntos(result.assuntos)
       if (result.tipo_documento) setTipDocumento(result.tipo_documento)
       setContexto(result.contexto.join(', '))
+      setPendingExecution(result.llm_execution)
       setEditing(true)
     } catch (err) {
       console.error('Erro ao gerar tags:', err)
@@ -633,7 +638,7 @@ function TagsModal({
         assuntos: selectedAssuntos,
         tipo_documento: tipDocumento || undefined,
         contexto: contexto.split(',').map(s => s.trim()).filter(Boolean),
-      })
+      }, pendingExecution ? [pendingExecution] : undefined)
       setEditing(false)
     } finally {
       setSaving(false)
@@ -1099,7 +1104,7 @@ export default function Upload() {
       await Promise.all(batch.map(async d => {
         try {
           const result = await generateAcervoEmenta(apiKey, d.filename, d.text_content)
-          await updateAcervoEmenta(userId, d.id!, result.ementa, result.keywords)
+          await updateAcervoEmenta(userId, d.id!, result.ementa, result.keywords, [result.llm_execution])
           // Update local state
           setFirebaseHistory(prev => prev.map(fd =>
             fd.id === d.id ? { ...fd, ementa: result.ementa, ementa_keywords: result.keywords } : fd,
@@ -1120,9 +1125,9 @@ export default function Upload() {
   }
 
   // Save ementa from modal
-  const handleSaveEmenta = async (docId: string, ementa: string, keywords: string[]) => {
+  const handleSaveEmenta = async (docId: string, ementa: string, keywords: string[], executions?: UsageExecutionRecord[]) => {
     if (!userId) return
-    await updateAcervoEmenta(userId, docId, ementa, keywords)
+    await updateAcervoEmenta(userId, docId, ementa, keywords, executions)
     setFirebaseHistory(prev => prev.map(d =>
       d.id === docId ? { ...d, ementa, ementa_keywords: keywords } : d,
     ))
@@ -1143,9 +1148,9 @@ export default function Upload() {
   }
 
   // Save tags from modal
-  const handleSaveTags = async (docId: string, tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }) => {
+  const handleSaveTags = async (docId: string, tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }, executions?: UsageExecutionRecord[]) => {
     if (!userId) return
-    await updateAcervoTags(userId, docId, tags)
+    await updateAcervoTags(userId, docId, tags, executions)
     setFirebaseHistory(prev => prev.map(d =>
       d.id === docId ? { ...d, ...tags, tags_generated: true } : d,
     ))
@@ -1169,10 +1174,10 @@ export default function Upload() {
       const batch = docsWithoutTags.slice(i, i + 5)
       await Promise.all(batch.map(async d => {
         try {
-          const result = await generateAcervoTags(apiKey, d.filename, d.text_content)
-          await updateAcervoTags(userId, d.id!, result)
+          const { llm_execution, ...tagsResult } = await generateAcervoTags(apiKey, d.filename, d.text_content)
+          await updateAcervoTags(userId, d.id!, tagsResult, [llm_execution])
           setFirebaseHistory(prev => prev.map(fd =>
-            fd.id === d.id ? { ...fd, ...result, tags_generated: true } : fd,
+            fd.id === d.id ? { ...fd, ...tagsResult, tags_generated: true } : fd,
           ))
         } catch (err) {
           console.error(`Erro ao gerar tags para ${d.filename}:`, err)
@@ -1226,7 +1231,7 @@ export default function Upload() {
           doc={ementaDoc}
           apiKey={apiKey}
           onClose={() => setEmentaDoc(null)}
-          onSaved={(ementa, kws) => handleSaveEmenta(ementaDoc.id!, ementa, kws)}
+          onSaved={(ementa, kws, executions) => handleSaveEmenta(ementaDoc.id!, ementa, kws, executions)}
         />
       )}
       {/* Tags modal */}
@@ -1235,7 +1240,7 @@ export default function Upload() {
           doc={tagsDoc}
           apiKey={apiKey}
           onClose={() => setTagsDoc(null)}
-          onSaved={(tags) => handleSaveTags(tagsDoc.id!, tags)}
+          onSaved={(tags, executions) => handleSaveTags(tagsDoc.id!, tags, executions)}
         />
       )}
 

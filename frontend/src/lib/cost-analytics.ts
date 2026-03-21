@@ -1,6 +1,6 @@
 import { DOCTYPE_LABELS } from './constants'
 
-export type UsageFunctionKey = 'document_generation' | 'thesis_analysis' | 'context_detail'
+export type UsageFunctionKey = 'document_generation' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -78,6 +78,8 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   document_generation: 'Geração de documentos',
   thesis_analysis: 'Análise de teses',
   context_detail: 'Detalhamento de contexto',
+  acervo_classificador: 'Classificador de acervo',
+  acervo_ementa: 'Gerador de ementas',
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -95,6 +97,11 @@ const PHASE_LABELS: Record<string, string> = {
   thesis_compilador: 'Compilador',
   thesis_curador: 'Curador de Lacunas',
   thesis_revisor: 'Revisor Final',
+  acervo_buscador: 'Buscador de Acervo',
+  acervo_compilador: 'Compilador de Base',
+  acervo_revisor: 'Revisor de Base',
+  acervo_classificador: 'Classificador de Acervo',
+  acervo_ementa: 'Gerador de Ementa',
   document_total: 'Documento (agregado)',
   thesis_analysis_total: 'Sessão de análise (agregada)',
 }
@@ -347,4 +354,27 @@ export function extractThesisSessionExecutions(session: ThesisUsageSessionSummar
       cost_usd: costUsd,
     }),
   ]
+}
+
+export interface AcervoUsageSummary {
+  id?: string
+  filename: string
+  created_at: string
+  llm_executions?: UsageExecutionRecord[]
+}
+
+export function extractAcervoUsageExecutions(acervoDoc: AcervoUsageSummary): UsageExecutionRecord[] {
+  if (!Array.isArray(acervoDoc.llm_executions) || acervoDoc.llm_executions.length === 0) return []
+  return acervoDoc.llm_executions.map(execution => createUsageExecutionRecord({
+    source_type: execution.function_key ?? 'acervo_ementa',
+    source_id: execution.source_id ?? acervoDoc.id ?? `acervo-${acervoDoc.created_at}`,
+    created_at: execution.created_at ?? acervoDoc.created_at,
+    phase: execution.phase ?? 'acervo_ementa',
+    agent_name: execution.agent_name ?? 'Acervo (consolidado)',
+    model: execution.model,
+    tokens_in: execution.tokens_in,
+    tokens_out: execution.tokens_out,
+    cost_usd: execution.cost_usd,
+    duration_ms: execution.duration_ms,
+  }))
 }
