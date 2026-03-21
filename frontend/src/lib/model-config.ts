@@ -294,13 +294,6 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
   },
   {
-    id: 'meta-llama/llama-4-maverick:free',
-    label: 'Llama 4 Maverick', provider: 'Meta', tier: 'balanced',
-    description: '✦ GRÁTIS — Llama 4 Maverick no free tier, 1M contexto',
-    contextWindow: 1_000_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 4, synthesis: 4, reasoning: 4, writing: 4 },
-  },
-  {
     id: 'meta-llama/llama-4-scout:free',
     label: 'Llama 4 Scout', provider: 'Meta', tier: 'fast',
     description: '✦ GRÁTIS — Llama 4 Scout no free tier, 512K contexto',

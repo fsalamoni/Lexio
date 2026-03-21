@@ -162,6 +162,7 @@ function EmentaModal({
   const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(false)
   const [pendingExecution, setPendingExecution] = useState<UsageExecutionRecord | null>(null)
+  const { toast } = useToast()
 
   const handleGenerate = async () => {
     if (!doc.text_content) return
@@ -174,6 +175,8 @@ function EmentaModal({
       setEditing(true)
     } catch (err) {
       console.error('Erro ao gerar ementa:', err)
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+      toast.error(`Falha ao gerar ementa: ${msg}`)
     } finally {
       setGenerating(false)
     }
@@ -1098,6 +1101,8 @@ export default function Upload() {
     setBulkProgress({ done: 0, total: docsWithoutEmenta.length })
 
     let done = 0
+    let successCount = 0
+    const failedDocs: string[] = []
     // Process in batches of 5
     for (let i = 0; i < docsWithoutEmenta.length; i += 5) {
       const batch = docsWithoutEmenta.slice(i, i + 5)
@@ -1105,12 +1110,14 @@ export default function Upload() {
         try {
           const result = await generateAcervoEmenta(apiKey, d.filename, d.text_content)
           await updateAcervoEmenta(userId, d.id!, result.ementa, result.keywords, [result.llm_execution])
+          successCount++
           // Update local state
           setFirebaseHistory(prev => prev.map(fd =>
             fd.id === d.id ? { ...fd, ementa: result.ementa, ementa_keywords: result.keywords } : fd,
           ))
         } catch (err) {
           console.error(`Erro ao gerar ementa para ${d.filename}:`, err)
+          failedDocs.push(d.filename)
         } finally {
           done++
           setBulkProgress({ done, total: docsWithoutEmenta.length })
@@ -1120,7 +1127,13 @@ export default function Upload() {
 
     setBulkGenerating(false)
     setBulkProgress(null)
-    toast.success(`Ementas geradas para ${done} documento(s).`)
+    if (failedDocs.length === 0) {
+      toast.success(`Ementas geradas com sucesso para ${successCount} documento(s).`)
+    } else if (successCount === 0) {
+      toast.error(`Falha ao gerar ementas. Verifique o modelo selecionado no Painel Admin (${failedDocs.length} erro(s)).`)
+    } else {
+      toast.warning(`${successCount} ementa(s) geradas. ${failedDocs.length} falha(s) — verifique o modelo configurado.`)
+    }
     fetchHistory()
   }
 

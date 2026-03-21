@@ -203,12 +203,6 @@ MODEL_REGISTRY = {
         "output_cost": 0.0,
         "context_window": 128_000,
     },
-    "meta-llama/llama-4-maverick:free": {
-        "name": "Llama 4 Maverick (Free)",
-        "input_cost": 0.0,
-        "output_cost": 0.0,
-        "context_window": 1_000_000,
-    },
     "meta-llama/llama-4-scout:free": {
         "name": "Llama 4 Scout (Free)",
         "input_cost": 0.0,
