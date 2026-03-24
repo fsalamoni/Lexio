@@ -18,11 +18,13 @@ import { getSettings, saveSettings } from './firestore-service'
 export type AgentCategory = 'extraction' | 'synthesis' | 'reasoning' | 'writing'
 
 /**
- * Fit scores (1–5) per agent category.
- *  extraction — Triagem, Buscador, Fact-Checker (fast, accurate extraction)
- *  synthesis  — Compilador, Revisor, Moderador (document assembly & review)
+ * Fit scores (1–10) per agent category — absolute global scale.
+ *  10 = best-in-class globally · 7-9 = excellent · 5-6 = adequate · 3-4 = weak · 1-2 = poor
+ *
+ *  extraction — Triagem, Buscador, Fact-Checker (fast, accurate structured extraction)
+ *  synthesis  — Compilador, Revisor, Moderador (document assembly & coherence review)
  *  reasoning  — Pesquisador, Jurista, Adv.Diabo, Jurista v2 (deep legal reasoning)
- *  writing    — Redator (long-form legal document writing)
+ *  writing    — Redator (long-form Portuguese legal document writing)
  */
 export interface AgentFitScores {
   extraction: number
@@ -56,35 +58,35 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Claude 3.5 Haiku', provider: 'Anthropic', tier: 'fast',
     description: 'Rápido e econômico — ideal para triagem e verificação',
     contextWindow: 200_000, inputCost: 0.80, outputCost: 4.00, isFree: false,
-    agentFit: { extraction: 5, synthesis: 3, reasoning: 2, writing: 3 },
+    agentFit: { extraction: 9, synthesis: 5, reasoning: 4, writing: 5 },
   },
   {
     id: 'anthropic/claude-sonnet-4',
     label: 'Claude Sonnet 4', provider: 'Anthropic', tier: 'balanced',
     description: 'Equilibrado — excelente para raciocínio jurídico avançado',
     contextWindow: 200_000, inputCost: 3.00, outputCost: 15.00, isFree: false,
-    agentFit: { extraction: 3, synthesis: 5, reasoning: 5, writing: 5 },
+    agentFit: { extraction: 7, synthesis: 9, reasoning: 9, writing: 9 },
   },
   {
     id: 'anthropic/claude-3.5-sonnet',
     label: 'Claude 3.5 Sonnet', provider: 'Anthropic', tier: 'balanced',
     description: 'Versão anterior do Sonnet — boa relação custo-benefício',
     contextWindow: 200_000, inputCost: 3.00, outputCost: 15.00, isFree: false,
-    agentFit: { extraction: 3, synthesis: 5, reasoning: 4, writing: 5 },
+    agentFit: { extraction: 7, synthesis: 8, reasoning: 8, writing: 8 },
   },
   {
     id: 'anthropic/claude-3.7-sonnet',
     label: 'Claude 3.7 Sonnet', provider: 'Anthropic', tier: 'balanced',
     description: 'Raciocínio híbrido — combina velocidade e profundidade analítica',
     contextWindow: 200_000, inputCost: 3.00, outputCost: 15.00, isFree: false,
-    agentFit: { extraction: 3, synthesis: 5, reasoning: 5, writing: 5 },
+    agentFit: { extraction: 7, synthesis: 8, reasoning: 9, writing: 8 },
   },
   {
     id: 'anthropic/claude-opus-4',
     label: 'Claude Opus 4', provider: 'Anthropic', tier: 'premium',
     description: 'Topo de linha — máxima capacidade para tarefas complexas',
     contextWindow: 200_000, inputCost: 15.00, outputCost: 75.00, isFree: false,
-    agentFit: { extraction: 2, synthesis: 5, reasoning: 5, writing: 5 },
+    agentFit: { extraction: 5, synthesis: 10, reasoning: 10, writing: 10 },
   },
 
   // ── Google ────────────────────────────────────────────────────────────────────
@@ -93,28 +95,28 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Gemini 2.0 Flash', provider: 'Google', tier: 'fast',
     description: 'Rápido e econômico — boa alternativa para tarefas simples',
     contextWindow: 1_000_000, inputCost: 0.10, outputCost: 0.40, isFree: false,
-    agentFit: { extraction: 5, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 9, synthesis: 5, reasoning: 5, writing: 5 },
   },
   {
     id: 'google/gemini-2.0-flash-lite-001',
     label: 'Gemini 2.0 Flash Lite', provider: 'Google', tier: 'fast',
     description: 'Ultra econômico — para tarefas de extração de baixa complexidade',
     contextWindow: 1_000_000, inputCost: 0.075, outputCost: 0.30, isFree: false,
-    agentFit: { extraction: 5, synthesis: 2, reasoning: 2, writing: 2 },
+    agentFit: { extraction: 8, synthesis: 4, reasoning: 3, writing: 4 },
   },
   {
     id: 'google/gemini-2.5-flash-preview',
     label: 'Gemini 2.5 Flash', provider: 'Google', tier: 'balanced',
     description: 'Equilíbrio ideal — contexto gigante com raciocínio aprimorado',
     contextWindow: 1_000_000, inputCost: 0.15, outputCost: 0.60, isFree: false,
-    agentFit: { extraction: 4, synthesis: 4, reasoning: 4, writing: 4 },
+    agentFit: { extraction: 8, synthesis: 7, reasoning: 7, writing: 7 },
   },
   {
     id: 'google/gemini-2.5-pro-preview',
     label: 'Gemini 2.5 Pro', provider: 'Google', tier: 'premium',
     description: 'Premium — raciocínio avançado com contexto de 1M tokens',
     contextWindow: 1_000_000, inputCost: 1.25, outputCost: 10.00, isFree: false,
-    agentFit: { extraction: 3, synthesis: 5, reasoning: 5, writing: 5 },
+    agentFit: { extraction: 7, synthesis: 9, reasoning: 9, writing: 8 },
   },
 
   // ── OpenAI ────────────────────────────────────────────────────────────────────
@@ -123,56 +125,56 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'GPT-4o Mini', provider: 'OpenAI', tier: 'fast',
     description: 'Versão leve e econômica do GPT-4o',
     contextWindow: 128_000, inputCost: 0.15, outputCost: 0.60, isFree: false,
-    agentFit: { extraction: 5, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 8, synthesis: 5, reasoning: 5, writing: 5 },
   },
   {
     id: 'openai/gpt-4.1-nano',
     label: 'GPT-4.1 Nano', provider: 'OpenAI', tier: 'fast',
     description: 'Nanoscale — ultra rápido para extração e triagem',
     contextWindow: 1_000_000, inputCost: 0.10, outputCost: 0.40, isFree: false,
-    agentFit: { extraction: 5, synthesis: 2, reasoning: 2, writing: 2 },
+    agentFit: { extraction: 7, synthesis: 4, reasoning: 3, writing: 4 },
   },
   {
     id: 'openai/gpt-4.1-mini',
     label: 'GPT-4.1 Mini', provider: 'OpenAI', tier: 'fast',
     description: 'Balanceado e eficiente — contexto 1M tokens',
     contextWindow: 1_000_000, inputCost: 0.40, outputCost: 1.60, isFree: false,
-    agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 7, synthesis: 6, reasoning: 6, writing: 6 },
   },
   {
     id: 'openai/gpt-4o',
     label: 'GPT-4o', provider: 'OpenAI', tier: 'balanced',
     description: 'Modelo multimodal equilibrado da OpenAI',
     contextWindow: 128_000, inputCost: 2.50, outputCost: 10.00, isFree: false,
-    agentFit: { extraction: 4, synthesis: 5, reasoning: 4, writing: 5 },
+    agentFit: { extraction: 8, synthesis: 8, reasoning: 8, writing: 8 },
   },
   {
     id: 'openai/gpt-4.1',
     label: 'GPT-4.1', provider: 'OpenAI', tier: 'premium',
     description: 'Modelo mais recente e avançado da OpenAI — contexto 1M',
     contextWindow: 1_000_000, inputCost: 2.00, outputCost: 8.00, isFree: false,
-    agentFit: { extraction: 3, synthesis: 5, reasoning: 5, writing: 5 },
+    agentFit: { extraction: 7, synthesis: 9, reasoning: 9, writing: 9 },
   },
   {
     id: 'openai/o3-mini',
     label: 'o3-mini', provider: 'OpenAI', tier: 'balanced',
     description: 'Modelo de raciocínio compacto — excelente para argumentação',
     contextWindow: 200_000, inputCost: 1.10, outputCost: 4.40, isFree: false,
-    agentFit: { extraction: 3, synthesis: 3, reasoning: 5, writing: 3 },
+    agentFit: { extraction: 5, synthesis: 6, reasoning: 8, writing: 6 },
   },
   {
     id: 'openai/o4-mini',
     label: 'o4-mini', provider: 'OpenAI', tier: 'balanced',
     description: 'Raciocínio eficiente — ideal para análise jurídica aprofundada',
     contextWindow: 200_000, inputCost: 1.10, outputCost: 4.40, isFree: false,
-    agentFit: { extraction: 3, synthesis: 4, reasoning: 5, writing: 4 },
+    agentFit: { extraction: 5, synthesis: 7, reasoning: 9, writing: 7 },
   },
   {
     id: 'openai/o3',
     label: 'o3', provider: 'OpenAI', tier: 'premium',
     description: 'Máximo raciocínio — para argumentações jurídicas de alta complexidade',
     contextWindow: 200_000, inputCost: 10.00, outputCost: 40.00, isFree: false,
-    agentFit: { extraction: 2, synthesis: 4, reasoning: 5, writing: 4 },
+    agentFit: { extraction: 3, synthesis: 7, reasoning: 10, writing: 7 },
   },
 
   // ── DeepSeek ──────────────────────────────────────────────────────────────────
@@ -181,14 +183,14 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'DeepSeek V3', provider: 'DeepSeek', tier: 'balanced',
     description: 'Alto desempenho com custo reduzido — ótima redação técnica',
     contextWindow: 64_000, inputCost: 0.27, outputCost: 1.10, isFree: false,
-    agentFit: { extraction: 4, synthesis: 5, reasoning: 4, writing: 5 },
+    agentFit: { extraction: 7, synthesis: 8, reasoning: 8, writing: 9 },
   },
   {
     id: 'deepseek/deepseek-r1',
     label: 'DeepSeek R1', provider: 'DeepSeek', tier: 'balanced',
     description: 'Modelo de raciocínio — excelente para análise e argumentação',
     contextWindow: 64_000, inputCost: 0.55, outputCost: 2.19, isFree: false,
-    agentFit: { extraction: 2, synthesis: 3, reasoning: 5, writing: 4 },
+    agentFit: { extraction: 3, synthesis: 6, reasoning: 9, writing: 7 },
   },
 
   // ── Meta ──────────────────────────────────────────────────────────────────────
@@ -197,21 +199,21 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Llama 4 Scout', provider: 'Meta', tier: 'fast',
     description: 'Contexto 512K — eficiente para tarefas de busca e extração',
     contextWindow: 512_000, inputCost: 0.17, outputCost: 0.17, isFree: false,
-    agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 8, synthesis: 6, reasoning: 5, writing: 6 },
   },
   {
     id: 'meta-llama/llama-4-maverick',
     label: 'Llama 4 Maverick', provider: 'Meta', tier: 'balanced',
     description: 'Modelo open-source avançado — contexto 1M tokens',
     contextWindow: 1_000_000, inputCost: 0.19, outputCost: 0.65, isFree: false,
-    agentFit: { extraction: 4, synthesis: 4, reasoning: 4, writing: 4 },
+    agentFit: { extraction: 7, synthesis: 7, reasoning: 7, writing: 7 },
   },
   {
     id: 'meta-llama/llama-3.3-70b-instruct',
     label: 'Llama 3.3 70B', provider: 'Meta', tier: 'balanced',
     description: 'Modelo 70B — excelente capacidade a custo acessível',
     contextWindow: 128_000, inputCost: 0.12, outputCost: 0.30, isFree: false,
-    agentFit: { extraction: 4, synthesis: 4, reasoning: 3, writing: 4 },
+    agentFit: { extraction: 7, synthesis: 7, reasoning: 6, writing: 7 },
   },
 
   // ── Mistral ───────────────────────────────────────────────────────────────────
@@ -220,14 +222,14 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Mistral Small 3.1', provider: 'Mistral', tier: 'fast',
     description: 'Compacto e eficiente — boa opção para extração e triagem',
     contextWindow: 128_000, inputCost: 0.10, outputCost: 0.30, isFree: false,
-    agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 7, synthesis: 5, reasoning: 5, writing: 5 },
   },
   {
     id: 'mistralai/mistral-large-2411',
     label: 'Mistral Large', provider: 'Mistral', tier: 'balanced',
     description: 'Poderoso modelo europeu — forte em código e texto técnico',
     contextWindow: 128_000, inputCost: 2.00, outputCost: 6.00, isFree: false,
-    agentFit: { extraction: 3, synthesis: 4, reasoning: 4, writing: 4 },
+    agentFit: { extraction: 7, synthesis: 7, reasoning: 7, writing: 7 },
   },
 
   // ── Qwen (Alibaba) ────────────────────────────────────────────────────────────
@@ -236,21 +238,21 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Qwen 2.5 72B', provider: 'Qwen', tier: 'balanced',
     description: 'Modelo multilíngue robusto — bom desempenho em texto jurídico',
     contextWindow: 128_000, inputCost: 0.13, outputCost: 0.40, isFree: false,
-    agentFit: { extraction: 4, synthesis: 4, reasoning: 3, writing: 4 },
+    agentFit: { extraction: 7, synthesis: 7, reasoning: 6, writing: 7 },
   },
   {
     id: 'qwen/qwen3-235b-a22b',
     label: 'Qwen3 235B', provider: 'Qwen', tier: 'premium',
     description: 'Maior modelo Qwen — raciocínio avançado com MoE',
     contextWindow: 128_000, inputCost: 0.13, outputCost: 0.60, isFree: false,
-    agentFit: { extraction: 3, synthesis: 4, reasoning: 4, writing: 4 },
+    agentFit: { extraction: 6, synthesis: 7, reasoning: 8, writing: 7 },
   },
   {
     id: 'qwen/qwen3-30b-a3b',
     label: 'Qwen3 30B', provider: 'Qwen', tier: 'balanced',
     description: 'MoE eficiente — bom equilíbrio entre velocidade e qualidade',
     contextWindow: 128_000, inputCost: 0.29, outputCost: 1.15, isFree: false,
-    agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 7, synthesis: 6, reasoning: 7, writing: 6 },
   },
 
   // ── xAI ──────────────────────────────────────────────────────────────────────
@@ -259,14 +261,14 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Grok-3 Mini', provider: 'xAI', tier: 'fast',
     description: 'Raciocínio compacto — boa relação custo-benefício',
     contextWindow: 131_000, inputCost: 0.30, outputCost: 0.50, isFree: false,
-    agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 7, synthesis: 5, reasoning: 6, writing: 5 },
   },
   {
     id: 'x-ai/grok-3',
     label: 'Grok-3', provider: 'xAI', tier: 'premium',
     description: 'Modelo flagship xAI — alta capacidade analítica',
     contextWindow: 131_000, inputCost: 3.00, outputCost: 15.00, isFree: false,
-    agentFit: { extraction: 3, synthesis: 4, reasoning: 4, writing: 4 },
+    agentFit: { extraction: 6, synthesis: 7, reasoning: 8, writing: 7 },
   },
 
   // ── Cohere ────────────────────────────────────────────────────────────────────
@@ -275,7 +277,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Command R+', provider: 'Cohere', tier: 'balanced',
     description: 'RAG especializado — excelente para pesquisa e síntese',
     contextWindow: 128_000, inputCost: 2.50, outputCost: 10.00, isFree: false,
-    agentFit: { extraction: 4, synthesis: 4, reasoning: 3, writing: 4 },
+    agentFit: { extraction: 8, synthesis: 7, reasoning: 6, writing: 7 },
   },
 
   // ── MODELOS GRATUITOS (Free tier OpenRouter) ──────────────────────────────────
@@ -284,70 +286,70 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Gemini 2.0 Flash Exp', provider: 'Google', tier: 'fast',
     description: '✦ GRÁTIS — Gemini experimental, contexto 1M, sem custo',
     contextWindow: 1_000_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 5, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 8, synthesis: 5, reasoning: 5, writing: 5 },
   },
   {
     id: 'google/gemma-3-27b-it:free',
     label: 'Gemma 3 27B', provider: 'Google', tier: 'fast',
     description: '✦ GRÁTIS — Modelo open do Google, 128K contexto',
     contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 6, synthesis: 5, reasoning: 5, writing: 5 },
   },
   {
     id: 'meta-llama/llama-4-scout:free',
     label: 'Llama 4 Scout', provider: 'Meta', tier: 'fast',
     description: '✦ GRÁTIS — Llama 4 Scout no free tier, 512K contexto',
     contextWindow: 512_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 7, synthesis: 5, reasoning: 5, writing: 5 },
   },
   {
     id: 'meta-llama/llama-3.3-70b-instruct:free',
     label: 'Llama 3.3 70B', provider: 'Meta', tier: 'balanced',
     description: '✦ GRÁTIS — Llama 3.3 70B no free tier',
     contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 4, synthesis: 4, reasoning: 3, writing: 4 },
+    agentFit: { extraction: 7, synthesis: 6, reasoning: 6, writing: 6 },
   },
   {
     id: 'deepseek/deepseek-chat-v3-0324:free',
     label: 'DeepSeek V3', provider: 'DeepSeek', tier: 'balanced',
     description: '✦ GRÁTIS — DeepSeek V3 no free tier, alta qualidade sem custo',
     contextWindow: 64_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 4, synthesis: 5, reasoning: 4, writing: 5 },
+    agentFit: { extraction: 7, synthesis: 7, reasoning: 7, writing: 8 },
   },
   {
     id: 'deepseek/deepseek-r1:free',
     label: 'DeepSeek R1', provider: 'DeepSeek', tier: 'balanced',
     description: '✦ GRÁTIS — DeepSeek R1 raciocínio no free tier',
     contextWindow: 64_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 2, synthesis: 3, reasoning: 5, writing: 4 },
+    agentFit: { extraction: 3, synthesis: 5, reasoning: 9, writing: 6 },
   },
   {
     id: 'qwen/qwen3-8b:free',
     label: 'Qwen3 8B', provider: 'Qwen', tier: 'fast',
     description: '✦ GRÁTIS — Modelo compacto Qwen3, 8B parâmetros',
     contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 4, synthesis: 2, reasoning: 2, writing: 2 },
+    agentFit: { extraction: 6, synthesis: 4, reasoning: 4, writing: 4 },
   },
   {
     id: 'qwen/qwen3-30b-a3b:free',
     label: 'Qwen3 30B', provider: 'Qwen', tier: 'balanced',
     description: '✦ GRÁTIS — Qwen3 30B MoE no free tier',
     contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 7, synthesis: 5, reasoning: 6, writing: 5 },
   },
   {
     id: 'mistralai/mistral-small-3.1-24b-instruct:free',
     label: 'Mistral Small 3.1', provider: 'Mistral', tier: 'fast',
     description: '✦ GRÁTIS — Mistral Small 3.1 no free tier',
     contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 6, synthesis: 5, reasoning: 4, writing: 5 },
   },
   {
     id: 'microsoft/phi-4-multimodal-instruct:free',
     label: 'Phi-4 Multimodal', provider: 'Microsoft', tier: 'fast',
     description: '✦ GRÁTIS — Phi-4 da Microsoft, eficiente e compacto',
     contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 4, synthesis: 3, reasoning: 3, writing: 3 },
+    agentFit: { extraction: 6, synthesis: 5, reasoning: 4, writing: 5 },
   },
 ]
 

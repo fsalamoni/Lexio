@@ -165,12 +165,13 @@ export function inferTier(id: string, name = ''): 'fast' | 'balanced' | 'premium
 }
 
 export function inferFitScores(tier: 'fast' | 'balanced' | 'premium', id: string): AgentFitScores {
+  // 1-10 absolute global scale: 10=best-in-class, 7-9=excellent, 5-6=adequate, 3-4=weak
   const isReasoning = /\br1\b|\br2\b|\bo3\b|\bo4\b|think|reason/.test(id.toLowerCase())
-  if (isReasoning) return { extraction: 2, synthesis: 4, reasoning: 5, writing: 4 }
+  if (isReasoning) return { extraction: 3, synthesis: 6, reasoning: 9, writing: 6 }
   switch (tier) {
-    case 'fast':    return { extraction: 5, synthesis: 3, reasoning: 2, writing: 3 }
-    case 'premium': return { extraction: 3, synthesis: 5, reasoning: 5, writing: 5 }
-    default:        return { extraction: 3, synthesis: 4, reasoning: 4, writing: 4 }
+    case 'fast':    return { extraction: 8, synthesis: 5, reasoning: 4, writing: 5 }
+    case 'premium': return { extraction: 6, synthesis: 9, reasoning: 9, writing: 9 }
+    default:        return { extraction: 7, synthesis: 7, reasoning: 7, writing: 7 }
   }
 }
 

@@ -73,14 +73,17 @@ const CATEGORY_LABELS: Record<AgentCategory, string> = {
 }
 
 function FitStars({ score }: { score: number }) {
+  // 1-10 scale → display as 5 stars (each star = 2 points) + numeric score
+  const filledStars = Math.round(score / 2)
   return (
-    <span className="flex items-center gap-0.5" title={`Adequação: ${score}/5`}>
+    <span className="flex items-center gap-0.5" title={`Adequação: ${score}/10`}>
       {[1, 2, 3, 4, 5].map(i => (
         <Star
           key={i}
-          className={`w-3 h-3 ${i <= score ? 'text-amber-400 fill-amber-400' : 'text-gray-200 fill-gray-200'}`}
+          className={`w-3 h-3 ${i <= filledStars ? 'text-amber-400 fill-amber-400' : 'text-gray-200 fill-gray-200'}`}
         />
       ))}
+      <span className="text-[10px] text-gray-500 ml-0.5 font-medium">{score}</span>
     </span>
   )
 }

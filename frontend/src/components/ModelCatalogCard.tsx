@@ -15,7 +15,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import {
   Library, ChevronDown, ChevronUp, Save, RotateCcw, Plus, Trash2,
   Search, AlertCircle, CheckCircle2, RefreshCw, X, Download,
-  Cpu, Coins, Star, Zap, Brain, Scale, FileText, Filter,
+  Cpu, Coins, Zap, Brain, Scale, FileText, Filter,
   ExternalLink, PlusCircle, Info,
 } from 'lucide-react'
 import {
@@ -67,10 +67,10 @@ const CATEGORY_COLORS: Record<AgentCategory, string> = {
 }
 
 const SCORE_COLORS = (n: number) =>
-  n === 5 ? 'bg-emerald-100 text-emerald-700 font-bold'
-  : n === 4 ? 'bg-green-100 text-green-700 font-semibold'
-  : n === 3 ? 'bg-yellow-100 text-yellow-700'
-  : n === 2 ? 'bg-orange-100 text-orange-600'
+  n >= 9 ? 'bg-emerald-100 text-emerald-700 font-bold'
+  : n >= 7 ? 'bg-green-100 text-green-700 font-semibold'
+  : n >= 5 ? 'bg-yellow-100 text-yellow-700'
+  : n >= 3 ? 'bg-orange-100 text-orange-600'
   : 'bg-red-100 text-red-500'
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -92,7 +92,7 @@ function ScoreCell({ score, label, title }: { score: number; label: string; titl
   return (
     <span
       className={`inline-flex flex-col items-center px-1.5 py-0.5 rounded text-[9px] leading-tight ${SCORE_COLORS(score)}`}
-      title={`${title}: ${score}/5`}
+      title={`${title}: ${score}/10`}
     >
       <span className="font-bold text-[10px]">{score}</span>
       <span className="opacity-70">{label}</span>
