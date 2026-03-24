@@ -92,9 +92,10 @@ export async function callLLM(
   const tokensIn  = usage.prompt_tokens ?? 0
   const tokensOut = usage.completion_tokens ?? 0
 
-  // OpenRouter may return the generation cost directly in usage.cost (USD).
-  // If not present, estimate from token counts using known model pricing.
-  const cost_usd: number = typeof usage.cost === 'number' && usage.cost > 0
+  // OpenRouter returns the generation cost in usage.cost (USD).
+  // When cost is explicitly 0 (free/gratis models), honour it instead of estimating.
+  // Only estimate when the field is absent from the response entirely.
+  const cost_usd: number = typeof usage.cost === 'number'
     ? usage.cost
     : estimateCost(model, tokensIn, tokensOut)
 

@@ -63,6 +63,8 @@ export interface UsageDocumentSummary {
   llm_cost_usd?: number
   llm_executions?: UsageExecutionRecord[]
   usage_summary?: Partial<UsageSummary>
+  /** Context-detail data stored on the document (used when llm_executions is absent). */
+  context_detail?: { llm_execution?: UsageExecutionRecord } | null
 }
 
 export interface ThesisUsageSessionSummary {
@@ -282,30 +284,59 @@ export function buildCostBreakdown(
 }
 
 export function extractDocumentUsageExecutions(document: UsageDocumentSummary): UsageExecutionRecord[] {
+  const results: UsageExecutionRecord[] = []
+
   if (Array.isArray(document.llm_executions) && document.llm_executions.length > 0) {
-    return document.llm_executions.map(execution => createUsageExecutionRecord({
-      source_type: execution.function_key ?? 'document_generation',
-      source_id: execution.source_id ?? document.id ?? `document-${document.created_at}`,
-      created_at: execution.created_at ?? document.created_at,
-      phase: execution.phase ?? 'document_total',
-      agent_name: execution.agent_name ?? 'Documento (consolidado)',
-      model: execution.model,
-      tokens_in: execution.tokens_in,
-      tokens_out: execution.tokens_out,
-      cost_usd: execution.cost_usd,
-      duration_ms: execution.duration_ms,
-      document_type_id: execution.document_type_id ?? document.document_type_id,
-    }))
+    for (const execution of document.llm_executions) {
+      results.push(createUsageExecutionRecord({
+        source_type: execution.function_key ?? 'document_generation',
+        source_id: execution.source_id ?? document.id ?? `document-${document.created_at}`,
+        created_at: execution.created_at ?? document.created_at,
+        phase: execution.phase ?? 'document_total',
+        agent_name: execution.agent_name ?? 'Documento (consolidado)',
+        model: execution.model,
+        tokens_in: execution.tokens_in,
+        tokens_out: execution.tokens_out,
+        cost_usd: execution.cost_usd,
+        duration_ms: execution.duration_ms,
+        document_type_id: execution.document_type_id ?? document.document_type_id,
+      }))
+    }
+
+    // If context_detail was used but its execution is not yet in llm_executions
+    // (e.g. document generation failed before the full save), include it now.
+    const hasContextDetail = document.llm_executions.some(
+      e => (e.function_key ?? e.source_type) === 'context_detail',
+    )
+    if (!hasContextDetail && document.context_detail?.llm_execution) {
+      const exec = document.context_detail.llm_execution
+      results.push(createUsageExecutionRecord({
+        source_type: 'context_detail',
+        source_id: document.id ?? `document-${document.created_at}`,
+        created_at: exec.created_at ?? document.created_at,
+        phase: exec.phase ?? 'context_detail',
+        agent_name: exec.agent_name ?? 'Detalhamento de Contexto',
+        model: exec.model,
+        tokens_in: exec.tokens_in,
+        tokens_out: exec.tokens_out,
+        cost_usd: exec.cost_usd,
+        duration_ms: exec.duration_ms,
+        document_type_id: exec.document_type_id ?? document.document_type_id,
+      }))
+    }
+
+    return results
   }
 
+  // Fallback path: document predates per-execution tracking.
+  // Only skip if there are truly no tokens recorded (avoids polluting data with
+  // draft documents that never had generation run).
   const tokensIn = document.usage_summary?.total_tokens_in ?? document.llm_tokens_in ?? 0
   const tokensOut = document.usage_summary?.total_tokens_out ?? document.llm_tokens_out ?? 0
   const costUsd = document.usage_summary?.total_cost_usd ?? document.llm_cost_usd ?? 0
 
-  if (tokensIn <= 0 && tokensOut <= 0 && costUsd <= 0) return []
-
-  return [
-    createUsageExecutionRecord({
+  if (tokensIn > 0 || tokensOut > 0 || costUsd > 0) {
+    results.push(createUsageExecutionRecord({
       source_type: 'document_generation',
       source_id: document.id ?? `document-${document.created_at}`,
       created_at: document.created_at,
@@ -315,8 +346,29 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
       tokens_out: tokensOut,
       cost_usd: costUsd,
       document_type_id: document.document_type_id,
-    }),
-  ]
+    }))
+  }
+
+  // Always extract context_detail execution when present — even if the document
+  // never completed generation (status: 'rascunho' / 'erro').
+  if (document.context_detail?.llm_execution) {
+    const exec = document.context_detail.llm_execution
+    results.push(createUsageExecutionRecord({
+      source_type: 'context_detail',
+      source_id: document.id ?? `document-${document.created_at}`,
+      created_at: exec.created_at ?? document.created_at,
+      phase: exec.phase ?? 'context_detail',
+      agent_name: exec.agent_name ?? 'Detalhamento de Contexto',
+      model: exec.model,
+      tokens_in: exec.tokens_in,
+      tokens_out: exec.tokens_out,
+      cost_usd: exec.cost_usd,
+      duration_ms: exec.duration_ms,
+      document_type_id: exec.document_type_id ?? document.document_type_id,
+    }))
+  }
+
+  return results
 }
 
 export function extractThesisSessionExecutions(session: ThesisUsageSessionSummary): UsageExecutionRecord[] {
@@ -340,6 +392,8 @@ export function extractThesisSessionExecutions(session: ThesisUsageSessionSummar
   const tokensOut = session.usage_summary?.total_tokens_out ?? 0
   const costUsd = session.usage_summary?.total_cost_usd ?? 0
 
+  // Only skip if there are truly no tokens AND no cost (free-model sessions with
+  // tokens but $0 cost must still be shown).
   if (tokensIn <= 0 && tokensOut <= 0 && costUsd <= 0) return []
 
   return [
