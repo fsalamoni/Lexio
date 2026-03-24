@@ -47,7 +47,7 @@ export interface ModelOption {
   outputCost: number
   /** Whether this model is available on the free tier */
   isFree: boolean
-  /** How well this model fits each agent category (1–5) */
+  /** How well this model fits each agent category (1–10) */
   agentFit: AgentFitScores
 }
 
@@ -229,10 +229,8 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Mistral Large', provider: 'Mistral', tier: 'balanced',
     description: 'Poderoso modelo europeu — forte em código e texto técnico',
     contextWindow: 128_000, inputCost: 2.00, outputCost: 6.00, isFree: false,
-    agentFit: { extraction: 7, synthesis: 7, reasoning: 7, writing: 7 },
+    agentFit: { extraction: 7, synthesis: 7, reasoning: 6, writing: 8 },
   },
-
-  // ── Qwen (Alibaba) ────────────────────────────────────────────────────────────
   {
     id: 'qwen/qwen-2.5-72b-instruct',
     label: 'Qwen 2.5 72B', provider: 'Qwen', tier: 'balanced',
@@ -245,7 +243,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Qwen3 235B', provider: 'Qwen', tier: 'premium',
     description: 'Maior modelo Qwen — raciocínio avançado com MoE',
     contextWindow: 128_000, inputCost: 0.13, outputCost: 0.60, isFree: false,
-    agentFit: { extraction: 6, synthesis: 7, reasoning: 8, writing: 7 },
+    agentFit: { extraction: 6, synthesis: 8, reasoning: 8, writing: 8 },
   },
   {
     id: 'qwen/qwen3-30b-a3b',
@@ -268,16 +266,14 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     label: 'Grok-3', provider: 'xAI', tier: 'premium',
     description: 'Modelo flagship xAI — alta capacidade analítica',
     contextWindow: 131_000, inputCost: 3.00, outputCost: 15.00, isFree: false,
-    agentFit: { extraction: 6, synthesis: 7, reasoning: 8, writing: 7 },
+    agentFit: { extraction: 6, synthesis: 8, reasoning: 8, writing: 8 },
   },
-
-  // ── Cohere ────────────────────────────────────────────────────────────────────
   {
     id: 'cohere/command-r-plus-08-2024',
     label: 'Command R+', provider: 'Cohere', tier: 'balanced',
     description: 'RAG especializado — excelente para pesquisa e síntese',
     contextWindow: 128_000, inputCost: 2.50, outputCost: 10.00, isFree: false,
-    agentFit: { extraction: 8, synthesis: 7, reasoning: 6, writing: 7 },
+    agentFit: { extraction: 8, synthesis: 8, reasoning: 6, writing: 7 },
   },
 
   // ── MODELOS GRATUITOS (Free tier OpenRouter) ──────────────────────────────────
