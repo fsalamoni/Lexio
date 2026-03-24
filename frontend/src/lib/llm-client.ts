@@ -109,6 +109,47 @@ export async function callLLM(
 }
 
 /**
+ * Call OpenRouter with automatic fallback when a model has no available endpoints.
+ *
+ * Free / experimental models on OpenRouter can return "No endpoints found" (404)
+ * when they are temporarily unavailable or rate-limited. This wrapper transparently
+ * retries with the specified fallback model so the pipeline keeps working.
+ *
+ * @param fallbackModel - Reliable model to use when `model` is unavailable
+ */
+export async function callLLMWithFallback(
+  apiKey: string,
+  system: string,
+  user: string,
+  model: string,
+  fallbackModel: string,
+  maxTokens = 4000,
+  temperature = 0.3,
+): Promise<LLMResult> {
+  try {
+    return await callLLM(apiKey, system, user, model, maxTokens, temperature)
+  } catch (err) {
+    const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+    const isModelUnavailable = msg.includes('no endpoints found') || msg.includes('no endpoints')
+    if (isModelUnavailable) {
+      if (model === fallbackModel) {
+        console.warn(
+          `[LLM] Modelo "${model}" sem endpoints disponíveis.` +
+          ` Fallback ignorado (mesmo modelo).`,
+        )
+      } else {
+        console.warn(
+          `[LLM] Modelo "${model}" sem endpoints disponíveis.` +
+          ` Usando fallback: "${fallbackModel}".`,
+        )
+        return callLLM(apiKey, system, user, fallbackModel, maxTokens, temperature)
+      }
+    }
+    throw err
+  }
+}
+
+/**
  * Estimate LLM cost from token counts using a model pricing table (USD per 1M tokens).
  * Values sourced from OpenRouter pricing page (approximate).
  */
