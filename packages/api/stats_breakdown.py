@@ -32,6 +32,9 @@ FUNCTION_LABELS = {
     "document_generation": "Geração de documentos",
     "thesis_analysis": "Análise de teses",
     "thesis_extraction": "Extração automática de teses",
+    "context_detail": "Detalhamento de contexto",
+    "acervo_classificador": "Classificador de acervo",
+    "acervo_ementa": "Gerador de ementas",
 }
 
 DOCUMENT_TYPE_LABELS = {
@@ -109,10 +112,16 @@ def get_function_key(phase: str | None, agent_name: str | None = None) -> str:
     phase_value = (phase or "").lower()
     agent_value = (agent_name or "").lower()
 
-    if phase_value.startswith("thesis_") or "thesis" in agent_value:
+    if phase_value.startswith("thesis_") or ("thesis" in agent_value):
         return "thesis_analysis"
-    if "extrator" in agent_value or phase_value.startswith("auto_populate"):
+    if ("extrator" in agent_value) or phase_value.startswith("auto_populate"):
         return "thesis_extraction"
+    if phase_value == "context_detail" or ("detalhamento de contexto" in agent_value):
+        return "context_detail"
+    if phase_value == "acervo_classificador" or ("classificador de acervo" in agent_value):
+        return "acervo_classificador"
+    if phase_value == "acervo_ementa" or ("gerador de ementa" in agent_value):
+        return "acervo_ementa"
     return "document_generation"
 
 
@@ -226,4 +235,33 @@ def build_cost_breakdown(rows: Iterable[dict], brl_rate: float = DEFAULT_BRL_PER
         "by_agent": _aggregate(normalized_rows, key_field="agent_key", label_field="agent_label", brl_rate=brl_rate),
         "by_agent_function": _aggregate(normalized_rows, key_field="agent_function_key", label_field="agent_function_label", brl_rate=brl_rate),
         "by_document_type": _aggregate(normalized_rows, key_field="document_type_key", label_field="document_type_label", brl_rate=brl_rate),
+        # Per-function breakdowns so each section in the dashboard only shows
+        # its own model/phase/provider data (free models included).
+        "by_model_per_function": {
+            func_key: _aggregate(
+                [r for r in normalized_rows if r["function_key"] == func_key],
+                key_field="model_key",
+                label_field="model_label",
+                brl_rate=brl_rate,
+            )
+            for func_key in {r["function_key"] for r in normalized_rows}
+        },
+        "by_phase_per_function": {
+            func_key: _aggregate(
+                [r for r in normalized_rows if r["function_key"] == func_key],
+                key_field="phase_key",
+                label_field="phase_label",
+                brl_rate=brl_rate,
+            )
+            for func_key in {r["function_key"] for r in normalized_rows}
+        },
+        "by_provider_per_function": {
+            func_key: _aggregate(
+                [r for r in normalized_rows if r["function_key"] == func_key],
+                key_field="provider_key",
+                label_field="provider_label",
+                brl_rate=brl_rate,
+            )
+            for func_key in {r["function_key"] for r in normalized_rows}
+        },
     }

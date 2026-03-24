@@ -217,6 +217,9 @@ function SectionBreakdown({
   collapseState: Record<string, boolean>
   onToggle: (id: string) => void
 }) {
+  const hasCost = breakdown.total_cost_usd > 0
+  const hasTokens = breakdown.total_tokens > 0
+
   const modelCostChart = useMemo(() => breakdown.by_model.slice(0, 8).map(row => ({
     name: row.label,
     usd: row.cost_usd,
@@ -233,49 +236,53 @@ function SectionBreakdown({
     <>
       <SummaryCards breakdown={breakdown} />
 
-      {modelCostChart.length > 0 && (
+      {(hasCost || hasTokens) && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          <CollapsibleCard id={`${sectionId}_chart_model_cost`} title="Custo por modelo (USD / R$)" collapseState={collapseState} onToggle={onToggle}>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs text-gray-500 mb-2">USD</p>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={modelCostChart} layout="vertical" margin={{ left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis type="number" tickFormatter={v => fmtUsd(Number(v))} />
-                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
-                    <Tooltip formatter={(v: number) => [fmtUsd(v), 'USD']} />
-                    <Bar dataKey="usd" fill="#d97706" radius={[0, 6, 6, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+          {hasCost && modelCostChart.length > 0 && (
+            <CollapsibleCard id={`${sectionId}_chart_model_cost`} title="Custo por modelo (USD / R$)" collapseState={collapseState} onToggle={onToggle}>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">USD</p>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={modelCostChart} layout="vertical" margin={{ left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis type="number" tickFormatter={v => fmtUsd(Number(v))} />
+                      <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
+                      <Tooltip formatter={(v: number) => [fmtUsd(v), 'USD']} />
+                      <Bar dataKey="usd" fill="#d97706" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">BRL (cotação ref. {breakdown.exchange_rate_brl.toFixed(2)})</p>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={modelCostChart} layout="vertical" margin={{ left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis type="number" tickFormatter={v => fmtBrl(Number(v))} />
+                      <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
+                      <Tooltip formatter={(v: number) => [fmtBrl(v), 'BRL']} />
+                      <Bar dataKey="brl" fill="#059669" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-gray-500 mb-2">BRL (cotação ref. {breakdown.exchange_rate_brl.toFixed(2)})</p>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={modelCostChart} layout="vertical" margin={{ left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis type="number" tickFormatter={v => fmtBrl(Number(v))} />
-                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
-                    <Tooltip formatter={(v: number) => [fmtBrl(v), 'BRL']} />
-                    <Bar dataKey="brl" fill="#059669" radius={[0, 6, 6, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </CollapsibleCard>
+            </CollapsibleCard>
+          )}
 
-          <CollapsibleCard id={`${sectionId}_chart_model_tokens`} title="Tokens por modelo" collapseState={collapseState} onToggle={onToggle}>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={modelTokensChart} layout="vertical" margin={{ left: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis type="number" tickFormatter={v => fmtInt(Number(v))} />
-                <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v: number) => [fmtInt(v), 'Tokens']} />
-                <Bar dataKey="entrada" stackId="tokens" fill="#0284c7" />
-                <Bar dataKey="saida" stackId="tokens" fill="#c026d3" radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CollapsibleCard>
+          {hasTokens && modelTokensChart.length > 0 && (
+            <CollapsibleCard id={`${sectionId}_chart_model_tokens`} title="Tokens por modelo" collapseState={collapseState} onToggle={onToggle}>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={modelTokensChart} layout="vertical" margin={{ left: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis type="number" tickFormatter={v => fmtInt(Number(v))} />
+                  <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v: number) => [fmtInt(v), 'Tokens']} />
+                  <Bar dataKey="entrada" stackId="tokens" fill="#0284c7" />
+                  <Bar dataKey="saida" stackId="tokens" fill="#c026d3" radius={[0, 6, 6, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CollapsibleCard>
+          )}
         </div>
       )}
 
@@ -361,10 +368,18 @@ export default function CostTokensPage() {
     const acervoClassificadorFunc = breakdown.by_function.find(f => f.key === 'acervo_classificador')
     const acervoEmentaFunc = breakdown.by_function.find(f => f.key === 'acervo_ementa')
 
-    const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[]): CostBreakdown | null => {
+    const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[], funcKey?: string): CostBreakdown | null => {
       if (!func && agentItems.length === 0) return null
       const costUsd = func?.cost_usd ?? agentItems.reduce((s, i) => s + i.cost_usd, 0)
       const costBrl = func?.cost_brl ?? agentItems.reduce((s, i) => s + i.cost_brl, 0)
+      // Use per-function breakdowns when available so each section only shows
+      // data from its own function (e.g. thesis analysis shows only thesis models,
+      // acervo classificador shows only its own model/phase data). This ensures
+      // free models (cost=0) are visible in the correct section without being
+      // hidden behind paid-model data from other functions.
+      const funcModels = (funcKey && breakdown.by_model_per_function?.[funcKey]) ?? breakdown.by_model
+      const funcPhases = (funcKey && breakdown.by_phase_per_function?.[funcKey]) ?? breakdown.by_phase
+      const funcProviders = (funcKey && breakdown.by_provider_per_function?.[funcKey]) ?? breakdown.by_provider
       return {
         total_cost_usd: costUsd,
         total_cost_brl: costBrl,
@@ -373,12 +388,10 @@ export default function CostTokensPage() {
         total_tokens_out: func?.tokens_out ?? agentItems.reduce((s, i) => s + i.tokens_out, 0),
         total_tokens: func?.total_tokens ?? agentItems.reduce((s, i) => s + i.total_tokens, 0),
         total_calls: func?.calls ?? agentItems.reduce((s, i) => s + i.calls, 0),
-        // For sub-breakdowns, the main breakdown tables still contain all data
-        // but we filter what we can
-        by_provider: breakdown.by_provider,
-        by_model: breakdown.by_model,
+        by_provider: funcProviders,
+        by_model: funcModels,
         by_function: func ? [func] : [],
-        by_phase: breakdown.by_phase,
+        by_phase: funcPhases,
         by_agent: agentItems.map(item => ({
           ...item,
           key: item.key.replace(/^[^:]+::/, ''),
@@ -389,11 +402,11 @@ export default function CostTokensPage() {
       }
     }
 
-    const docBd = makeSub(docFunc, docItems)
-    const thesisBd = makeSub(thesisFunc, thesisItems)
-    const contextDetailBd = makeSub(contextDetailFunc, contextDetailItems)
-    const acervoClassificadorBd = makeSub(acervoClassificadorFunc, acervoClassificadorItems)
-    const acervoEmentaBd = makeSub(acervoEmentaFunc, acervoEmentaItems)
+    const docBd = makeSub(docFunc, docItems, 'document_generation')
+    const thesisBd = makeSub(thesisFunc, thesisItems, 'thesis_analysis')
+    const contextDetailBd = makeSub(contextDetailFunc, contextDetailItems, 'context_detail')
+    const acervoClassificadorBd = makeSub(acervoClassificadorFunc, acervoClassificadorItems, 'acervo_classificador')
+    const acervoEmentaBd = makeSub(acervoEmentaFunc, acervoEmentaItems, 'acervo_ementa')
 
     // Build highlights
     const hl: { label: string; value: string; meta: string }[] = []

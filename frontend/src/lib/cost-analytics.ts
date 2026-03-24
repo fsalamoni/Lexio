@@ -52,6 +52,12 @@ export interface CostBreakdown extends UsageSummary {
   by_agent: CostBreakdownItem[]
   by_agent_function: CostBreakdownItem[]
   by_document_type: CostBreakdownItem[]
+  /** Per-function model breakdown — keys are UsageFunctionKey values. */
+  by_model_per_function?: Record<string, CostBreakdownItem[]>
+  /** Per-function phase breakdown — keys are UsageFunctionKey values. */
+  by_phase_per_function?: Record<string, CostBreakdownItem[]>
+  /** Per-function provider breakdown — keys are UsageFunctionKey values. */
+  by_provider_per_function?: Record<string, CostBreakdownItem[]>
 }
 
 export interface UsageDocumentSummary {
@@ -259,6 +265,25 @@ export function buildCostBreakdown(
 ): CostBreakdown {
   const summary = buildUsageSummary(executions)
 
+  // Group executions by function key for per-function sub-breakdowns
+  const execsByFunction = new Map<string, UsageExecutionRecord[]>()
+  for (const execution of executions) {
+    const key = execution.function_key
+    const group = execsByFunction.get(key) ?? []
+    group.push(execution)
+    execsByFunction.set(key, group)
+  }
+
+  const by_model_per_function: Record<string, CostBreakdownItem[]> = {}
+  const by_phase_per_function: Record<string, CostBreakdownItem[]> = {}
+  const by_provider_per_function: Record<string, CostBreakdownItem[]> = {}
+
+  for (const [funcKey, funcExecs] of execsByFunction.entries()) {
+    by_model_per_function[funcKey] = aggregateBreakdown(funcExecs, e => e.model || 'unknown_model', e => e.model_label, exchangeRateBrl)
+    by_phase_per_function[funcKey] = aggregateBreakdown(funcExecs, e => e.phase, e => e.phase_label, exchangeRateBrl)
+    by_provider_per_function[funcKey] = aggregateBreakdown(funcExecs, e => getProviderKey(e.model), e => getProviderLabel(e.model), exchangeRateBrl)
+  }
+
   return {
     ...summary,
     total_cost_brl: round2(summary.total_cost_usd * exchangeRateBrl),
@@ -280,6 +305,9 @@ export function buildCostBreakdown(
       execution => execution.document_type_label || getDocumentTypeLabel(execution.document_type_id),
       exchangeRateBrl,
     ),
+    by_model_per_function,
+    by_phase_per_function,
+    by_provider_per_function,
   }
 }
 
