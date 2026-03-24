@@ -17,7 +17,6 @@ import {
   Filter,
   ChevronUp,
   ChevronDown,
-  Star,
   CheckCircle2,
   Cpu,
   Coins,
@@ -72,18 +71,26 @@ const CATEGORY_LABELS: Record<AgentCategory, string> = {
   writing:    'Redação',
 }
 
-function FitStars({ score }: { score: number }) {
-  // 1-10 scale → display as 5 stars (each star = 2 points) + numeric score
-  const filledStars = Math.round(score / 2)
+const SCORE_COLORS = (n: number) =>
+  n >= 9 ? 'bg-emerald-100 text-emerald-700 font-bold'
+  : n >= 7 ? 'bg-green-100 text-green-700 font-semibold'
+  : n >= 5 ? 'bg-yellow-100 text-yellow-700'
+  : n >= 3 ? 'bg-orange-100 text-orange-600'
+  : 'bg-red-100 text-red-500'
+
+/** Compact score badge: shows numeric value with colour coding */
+function ScoreBadge({
+  score, label, highlighted,
+}: { score: number; label: string; highlighted: boolean }) {
   return (
-    <span className="flex items-center gap-0.5" title={`Adequação: ${score}/10`}>
-      {[1, 2, 3, 4, 5].map(i => (
-        <Star
-          key={i}
-          className={`w-3 h-3 ${i <= filledStars ? 'text-amber-400 fill-amber-400' : 'text-gray-200 fill-gray-200'}`}
-        />
-      ))}
-      <span className="text-[10px] text-gray-500 ml-0.5 font-medium">{score}</span>
+    <span
+      className={`inline-flex flex-col items-center px-1 py-0.5 rounded text-[9px] leading-tight ${
+        highlighted ? `ring-2 ring-offset-0 ring-purple-400 ${SCORE_COLORS(score)}` : SCORE_COLORS(score)
+      }`}
+      title={`${label}: ${score}/10`}
+    >
+      <span className="font-bold text-[10px]">{score}</span>
+      <span className="opacity-70">{label}</span>
     </span>
   )
 }
@@ -269,9 +276,9 @@ export default function ModelSelectorModal({
         </div>
 
         {/* ── Column headers (sort) ── */}
-        <div className="px-6 py-2 border-b bg-white grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <div className="px-6 py-2 border-b bg-white grid grid-cols-[1fr_148px_auto_auto_auto] items-center gap-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
           <span>Modelo</span>
-          <SortButton label="Adequação" icon={<Star className="w-3 h-3" />} sortKey="fit" current={sortBy} asc={sortAsc} onClick={toggleSort} />
+          <SortButton label="Adequação /10" icon={<Cpu className="w-3 h-3" />} sortKey="fit" current={sortBy} asc={sortAsc} onClick={toggleSort} />
           <SortButton label="Contexto"  icon={<AlignLeft className="w-3 h-3" />} sortKey="context" current={sortBy} asc={sortAsc} onClick={toggleSort} />
           <SortButton label="Entrada"   icon={<Coins className="w-3 h-3" />} sortKey="cost" current={sortBy} asc={sortAsc} onClick={toggleSort} />
           <span className="min-w-[70px] text-center">Saída</span>
@@ -287,7 +294,6 @@ export default function ModelSelectorModal({
           ) : (
             filtered.map(model => {
               const isCurrent = model.id === currentModelId
-              const fitScore  = model.agentFit[agentCategory]
               const tierStyle = TIER_STYLES[model.tier]
               const provColor = PROVIDER_COLORS[model.provider] ?? 'bg-gray-100 text-gray-700'
 
@@ -296,7 +302,7 @@ export default function ModelSelectorModal({
                   key={model.id}
                   type="button"
                   onClick={() => { onSelect(model.id); onClose() }}
-                  className={`w-full px-6 py-3 grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-3 text-left transition-colors hover:bg-purple-50/50 ${
+                  className={`w-full px-6 py-3 grid grid-cols-[1fr_148px_auto_auto_auto] items-center gap-3 text-left transition-colors hover:bg-purple-50/50 ${
                     isCurrent ? 'bg-purple-50 border-l-4 border-purple-500' : ''
                   }`}
                 >
@@ -326,12 +332,12 @@ export default function ModelSelectorModal({
                     </div>
                   </div>
 
-                  {/* Fit score */}
-                  <div className="flex flex-col items-center gap-1 min-w-[70px]">
-                    <FitStars score={fitScore} />
-                    <span className={`text-[10px] font-bold ${
-                      fitScore >= 8 ? 'text-emerald-600' : fitScore >= 6 ? 'text-amber-500' : fitScore >= 4 ? 'text-gray-400' : 'text-red-300'
-                    }`}>{fitScore}/10</span>
+                  {/* All 4 fit scores — agent category highlighted */}
+                  <div className="flex items-center justify-center gap-1">
+                    <ScoreBadge score={model.agentFit.extraction} label="Ex" highlighted={agentCategory === 'extraction'} />
+                    <ScoreBadge score={model.agentFit.synthesis}  label="Sí" highlighted={agentCategory === 'synthesis'}  />
+                    <ScoreBadge score={model.agentFit.reasoning}  label="Ra" highlighted={agentCategory === 'reasoning'}  />
+                    <ScoreBadge score={model.agentFit.writing}    label="Re" highlighted={agentCategory === 'writing'}    />
                   </div>
 
                   {/* Context window */}
@@ -367,8 +373,9 @@ export default function ModelSelectorModal({
         {/* ── Footer ── */}
         <div className="px-6 py-3 border-t bg-gray-50 flex items-center justify-between">
           <p className="text-xs text-gray-500">
-            <strong>★ Adequação /10</strong> — escala absoluta: 9-10 excelente, 7-8 bom, 5-6 adequado, ≤4 fraco para esta função ({CATEGORY_LABELS[agentCategory]}).
-            Preços em USD por 1 milhão de tokens (OpenRouter).
+            <strong>Adequação /10</strong> — escala global absoluta: ≥9 excelente · 7-8 bom · 5-6 adequado · ≤4 fraco.
+            Coluna destacada = categoria desta função ({CATEGORY_LABELS[agentCategory]}).
+            Preços em USD/1M tokens (OpenRouter).
           </p>
           <button
             type="button"

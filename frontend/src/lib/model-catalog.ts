@@ -44,8 +44,22 @@ export async function loadModelCatalog(): Promise<ModelOption[]> {
           ...m,
           agentFit: m.agentFit ?? inferFitScores(m.tier ?? 'balanced', m.id),
         }))
-        catalogCache = validated
-        return validated
+
+        // Detect old 1–5 scale data: if no model has any score > 5, the catalog
+        // was saved before the 1–10 scale was introduced — reset to fresh defaults.
+        const maxScore = validated.reduce(
+          (max, m) => Math.max(
+            max,
+            m.agentFit.extraction, m.agentFit.synthesis,
+            m.agentFit.reasoning,  m.agentFit.writing,
+          ),
+          0,
+        )
+        if (maxScore > 5) {
+          catalogCache = validated
+          return validated
+        }
+        // Old scale detected — fall through to AVAILABLE_MODELS defaults below
       }
     } catch {
       // Fall through to defaults
