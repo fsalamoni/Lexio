@@ -22,7 +22,7 @@
 
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { firestore } from './firebase'
-import { callLLM } from './llm-client'
+import { callLLM, callLLMWithFallback } from './llm-client'
 import { loadAgentModels, loadContextDetailModels, loadAcervoEmentaModels, loadAcervoClassificadorModels, type AgentModelMap } from './model-config'
 import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, updateAcervoEmenta, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
@@ -733,7 +733,7 @@ export async function generateAcervoEmenta(
   const sourceText = textContent.slice(0, MAX_EMENTA_SOURCE_CHARS)
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere a ementa e keywords para este documento.`
 
-  const result = await callLLM(apiKey, systemPrompt, userPrompt, model, 1000, 0.1)
+  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, DEFAULT_ACERVO_FAST_MODEL, 1000, 0.1)
 
   let jsonStr = result.content.trim()
   const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -855,7 +855,7 @@ export async function generateAcervoTags(
   const sourceText = textContent.slice(0, MAX_EMENTA_SOURCE_CHARS)
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere as tags de classificação para este documento.`
 
-  const result = await callLLM(apiKey, systemPrompt, userPrompt, model, 800, 0.1)
+  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, DEFAULT_ACERVO_FAST_MODEL, 800, 0.1)
 
   let jsonStr = result.content.trim()
   const jsonMatch = jsonStr.match(/\`\`\`(?:json)?\s*([\s\S]*?)\`\`\`/)
@@ -1380,11 +1380,11 @@ export async function generateDocument(
 
     // 2. Triage — extract structured info from the request
     onProgress?.({ phase: 'triagem', message: 'Analisando solicitação...', percent: 5 })
-    const triageResult = await callLLM(
+    const triageResult = await callLLMWithFallback(
       apiKey,
       buildTriageSystem(docType),
       buildTriageUser(request, areas, context, contextDetail),
-      modelTriagem, 800, 0.1,
+      modelTriagem, 'anthropic/claude-3.5-haiku', 800, 0.1,
     )
 
     // Extract tema from triage JSON
@@ -1458,11 +1458,11 @@ export async function generateDocument(
             contexto: d.contexto,
           }))
 
-          buscadorResult = await callLLM(
+          buscadorResult = await callLLMWithFallback(
             apiKey,
             buildAcervoBuscadorSystem(),
             buildAcervoBuscadorUser(triageResult.content, request, docType, docSummaries),
-            modelAcervoBuscador, 2000, 0.1,
+            modelAcervoBuscador, 'anthropic/claude-3.5-haiku', 2000, 0.1,
           )
 
           // Parse buscador response
@@ -1504,20 +1504,20 @@ export async function generateDocument(
             if (selectedDocs.length > 0) {
               // ── Agent 2: Compilador ──
               onProgress?.({ phase: 'acervo_compilador', message: `Compilando base a partir de ${selectedDocs.length} documento(s)...`, percent: 12 })
-              compiladorResult = await callLLM(
+              compiladorResult = await callLLMWithFallback(
                 apiKey,
                 buildAcervoCompiladorSystem(docType, tema, profile),
                 buildAcervoCompiladorUser(request, triageResult.content, docType, selectedDocs),
-                modelAcervoCompilador, 12000, 0.2,
+                modelAcervoCompilador, 'anthropic/claude-sonnet-4', 12000, 0.2,
               )
 
               // ── Agent 3: Revisor ──
               onProgress?.({ phase: 'acervo_revisor', message: 'Revisando documento base compilado...', percent: 16 })
-              revisorBaseResult = await callLLM(
+              revisorBaseResult = await callLLMWithFallback(
                 apiKey,
                 buildAcervoRevisorSystem(docType, tema, profile),
                 buildAcervoRevisorUser(request, triageResult.content, docType, compiladorResult.content),
-                modelAcervoRevisor, 12000, 0.2,
+                modelAcervoRevisor, 'anthropic/claude-sonnet-4', 12000, 0.2,
               )
 
               acervoBase = revisorBaseResult.content
@@ -1608,61 +1608,61 @@ export async function generateDocument(
         ? 'Realize pesquisa jurídica COMPLEMENTAR ao documento base do acervo. Foque nas lacunas marcadas com [COMPLEMENTAR]. TRANSCREVA artigos de lei entre aspas. Inclua legislação, jurisprudência e doutrina que COMPLEMENTEM a fundamentação já existente.'
         : 'Realize pesquisa jurídica EXAUSTIVA sobre o tema. TRANSCREVA artigos de lei entre aspas. Inclua legislação com texto dos dispositivos, jurisprudência com enunciados de súmulas, doutrina com autor e obra, e princípios constitucionais.',
     )
-    const pesquisaResult = await callLLM(
+    const pesquisaResult = await callLLMWithFallback(
       apiKey,
       buildPesquisadorSystem(docType, tema, profile),
       pesquisadorUserParts.join('\n'),
-      modelPesquisador, 6000, 0.3,
+      modelPesquisador, 'anthropic/claude-sonnet-4', 6000, 0.3,
     )
 
     // 4. Jurista — initial thesis development
     onProgress?.({ phase: 'jurista', message: 'Desenvolvendo teses jurídicas...', percent: 28 })
-    const juristaResult = await callLLM(
+    const juristaResult = await callLLMWithFallback(
       apiKey,
       buildJuristaSystem(docType, tema, profile),
       `<triagem>${triageResult.content}</triagem>\n<pesquisa>${pesquisaResult.content}</pesquisa>\nDesenvolva teses jurídicas ROBUSTAS e BEM FUNDAMENTADAS. Para cada tese: TRANSCREVA os artigos de lei citados entre aspas, cite súmulas com enunciado completo, mencione doutrina com autor e obra, e faça subsunção detalhada dos fatos à norma.`,
-      modelJurista, 6000, 0.3,
+      modelJurista, 'anthropic/claude-sonnet-4', 6000, 0.3,
     )
 
     // 5. Advogado do Diabo — critique
     onProgress?.({ phase: 'advogado_diabo', message: 'Analisando contra-argumentos...', percent: 40 })
-    const criticaResult = await callLLM(
+    const criticaResult = await callLLMWithFallback(
       apiKey,
       buildAdvogadoDiaboSystem(tema, profile),
       `<teses>${juristaResult.content}</teses>\nCritique estas teses rigorosamente. Verifique se os artigos foram transcritos corretamente, se as súmulas existem, se a doutrina é pertinente. Identifique fraquezas e sugira melhorias específicas com referências legais concretas.`,
-      modelAdvDiabo, 3000, 0.4,
+      modelAdvDiabo, 'anthropic/claude-sonnet-4', 3000, 0.4,
     )
 
     // 6. Jurista v2 — refined theses
     onProgress?.({ phase: 'jurista_v2', message: 'Refinando teses após crítica...', percent: 52 })
-    const juristaV2Result = await callLLM(
+    const juristaV2Result = await callLLMWithFallback(
       apiKey,
       buildJuristaV2System(docType, tema, profile),
       `<teses_originais>${juristaResult.content}</teses_originais>\n<criticas>${criticaResult.content}</criticas>\nRefine as teses incorporando as críticas válidas. Fortaleça a fundamentação: TRANSCREVA artigos de lei, cite enunciados completos de súmulas, inclua referências doutrinárias com autor e obra.`,
-      modelJuristaV2, 6000, 0.3,
+      modelJuristaV2, 'anthropic/claude-sonnet-4', 6000, 0.3,
     )
 
     // 7. Fact-checker — verify legal citations
     onProgress?.({ phase: 'fact_checker', message: 'Verificando citações legais...', percent: 62 })
-    const factCheckResult = await callLLM(
+    const factCheckResult = await callLLMWithFallback(
       apiKey,
       buildFactCheckerSystem(),
       `<teses>${juristaV2Result.content}</teses>\nVerifique TODAS as citações legais. Corrija imprecisões. ADICIONE transcrições de artigos que foram citados sem texto. ADICIONE enunciados de súmulas que foram citadas sem texto completo. Enriqueça a fundamentação.`,
-      modelFactChecker, 6000, 0.1,
+      modelFactChecker, 'anthropic/claude-3.5-haiku', 6000, 0.1,
     )
 
     // 8. Moderador — document plan
     onProgress?.({ phase: 'moderador', message: 'Planejando estrutura do documento...', percent: 72 })
-    const planoResult = await callLLM(
+    const planoResult = await callLLMWithFallback(
       apiKey,
       buildModeradorSystem(docType, tema, profile, customStructure),
       `<pesquisa>${pesquisaResult.content}</pesquisa>\n<teses_verificadas>${factCheckResult.content}</teses_verificadas>\nElabore plano DETALHADO. Para cada seção, especifique: artigos de lei a TRANSCREVER, súmulas com ENUNCIADO COMPLETO, doutrina com AUTOR e OBRA, princípios com ARTIGO DA CF.`,
-      modelModerador, 3000, 0.2,
+      modelModerador, 'anthropic/claude-sonnet-4', 3000, 0.2,
     )
 
     // 9. Redator — write the full document
     onProgress?.({ phase: 'redacao', message: 'Redigindo documento completo...', percent: 82 })
-    const docResult = await callLLM(
+    const docResult = await callLLMWithFallback(
       apiKey,
       buildRedatorSystem(docType, tema, profile, customStructure),
       buildRedatorUser(
@@ -1670,7 +1670,7 @@ export async function generateDocument(
         pesquisaResult.content, factCheckResult.content, planoResult.content,
         contextDetail, acervoBase || undefined,
       ),
-      modelRedator, 12000, 0.3,
+      modelRedator, 'anthropic/claude-sonnet-4', 12000, 0.3,
     )
 
     // Accumulate LLM usage across all pipeline agents for Dashboard metrics
@@ -1921,7 +1921,7 @@ export async function generateContextQuestions(
     'Responda APENAS em JSON válido.',
   ].filter(Boolean).join('\n')
 
-  const result = await callLLM(apiKey, systemPrompt, userPrompt, model, 3000, 0.3)
+  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, 'anthropic/claude-sonnet-4', 3000, 0.3)
 
   // Parse the JSON response
   let analysis_summary = ''

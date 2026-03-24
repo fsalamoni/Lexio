@@ -282,9 +282,9 @@ export const AVAILABLE_MODELS: ModelOption[] = [
 
   // ── MODELOS GRATUITOS (Free tier OpenRouter) ──────────────────────────────────
   {
-    id: 'google/gemini-2.0-flash-exp:free',
-    label: 'Gemini 2.0 Flash Exp', provider: 'Google', tier: 'fast',
-    description: '✦ GRÁTIS — Gemini experimental, contexto 1M, sem custo',
+    id: 'google/gemini-2.0-flash:free',
+    label: 'Gemini 2.0 Flash', provider: 'Google', tier: 'fast',
+    description: '✦ GRÁTIS — Gemini 2.0 Flash free tier, contexto 1M, sem custo',
     contextWindow: 1_000_000, inputCost: 0, outputCost: 0, isFree: true,
     agentFit: { extraction: 8, synthesis: 5, reasoning: 5, writing: 5 },
   },

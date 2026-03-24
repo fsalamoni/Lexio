@@ -12,7 +12,7 @@
  * AnalysisSuggestion objects that the user can accept, modify or reject.
  */
 
-import { callLLM } from './llm-client'
+import { callLLMWithFallback } from './llm-client'
 import { type ThesisData, type AcervoDocumentData } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord, type UsageSummary } from './cost-analytics'
 import { type ThesisAnalystModelMap } from './model-config'
@@ -324,11 +324,12 @@ export async function analyzeThesisBank(
   } = {}
 
   try {
-    const res = await callLLM(
+    const res = await callLLMWithFallback(
       apiKey,
       CATALOGADOR_SYSTEM,
       `Inventário de ${catalogue.length} teses jurídicas:\n${JSON.stringify(catalogue, null, 2)}`,
       modelMap['thesis_catalogador'],
+      'anthropic/claude-3.5-haiku',
       3000,
       0.1,
     )
@@ -381,11 +382,12 @@ export async function analyzeThesisBank(
 
   try {
     if (groupsWithContent.length > 0) {
-      const res = await callLLM(
+      const res = await callLLMWithFallback(
         apiKey,
         ANALISTA_SYSTEM,
         `Grupos de teses para análise profunda:\n${JSON.stringify(groupsWithContent, null, 2)}`,
         modelMap['thesis_analista'],
+        'anthropic/claude-sonnet-4',
         4000,
         0.1,
       )
@@ -438,11 +440,12 @@ export async function analyzeThesisBank(
         `VERSÃO ${i + 1} — "${t.title}":\n${t.content.slice(0, 1200)}`
       ).join('\n\n---\n\n')
 
-      const res = await callLLM(
+      const res = await callLLMWithFallback(
         apiKey,
         COMPILADOR_SYSTEM,
         `Compile as seguintes ${groupTheses.length} teses jurídicas em uma única tese superior:\n\n${versionsText}`,
         modelMap['thesis_compilador'],
+        'anthropic/claude-sonnet-4',
         2500,
         0.15,
       )
@@ -491,11 +494,12 @@ export async function analyzeThesisBank(
         ? `\n\nLACUNAS TEMÁTICAS IDENTIFICADAS (priorize teses que preencham estas lacunas):\n${thematicGaps.map((g, i) => `${i + 1}. ${g}`).join('\n')}`
         : ''
 
-      const res = await callLLM(
+      const res = await callLLMWithFallback(
         apiKey,
         CURADOR_SYSTEM,
         `Documentos do acervo não analisados:\n\n${docsText}${gapsText}`,
         modelMap['thesis_curador'],
+        'anthropic/claude-sonnet-4',
         3500,
         0.2,
       )
@@ -577,11 +581,12 @@ export async function analyzeThesisBank(
 
   if (rawSuggestions.length > 0) {
     try {
-      const res = await callLLM(
+      const res = await callLLMWithFallback(
         apiKey,
         REVISOR_SYSTEM,
         `Banco atual: ${theses.length} teses.\n\nSugestões para revisão:\n${JSON.stringify(revisorPayload, null, 2)}`,
         modelMap['thesis_revisor'],
+        'anthropic/claude-sonnet-4',
         4000,
         0.1,
       )
