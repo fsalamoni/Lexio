@@ -575,7 +575,7 @@ export default function ModelCatalogCard() {
               <div className="grid grid-cols-[minmax(180px,1.5fr)_70px_140px_minmax(130px,1fr)_70px_70px_70px_40px] items-center gap-2 px-3 py-2 bg-gray-50 border-b text-[10px] font-semibold text-gray-500 uppercase tracking-wide overflow-x-auto min-w-[880px]">
                 <span>Modelo</span>
                 <span>Perfil</span>
-                <span className="text-center">Adequação (Ex/Sí/Ra/Re)</span>
+                <span className="text-center">Adequação /10 (Ex/Sí/Ra/Re)</span>
                 <span>Melhor para</span>
                 <span className="text-center">Contexto</span>
                 <span className="text-center">Entrada</span>

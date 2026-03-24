@@ -330,8 +330,8 @@ export default function ModelSelectorModal({
                   <div className="flex flex-col items-center gap-1 min-w-[70px]">
                     <FitStars score={fitScore} />
                     <span className={`text-[10px] font-bold ${
-                      fitScore >= 4 ? 'text-amber-500' : fitScore === 3 ? 'text-gray-400' : 'text-red-300'
-                    }`}>{fitScore}/5</span>
+                      fitScore >= 8 ? 'text-emerald-600' : fitScore >= 6 ? 'text-amber-500' : fitScore >= 4 ? 'text-gray-400' : 'text-red-300'
+                    }`}>{fitScore}/10</span>
                   </div>
 
                   {/* Context window */}
@@ -367,7 +367,7 @@ export default function ModelSelectorModal({
         {/* ── Footer ── */}
         <div className="px-6 py-3 border-t bg-gray-50 flex items-center justify-between">
           <p className="text-xs text-gray-500">
-            <strong>★ Adequação</strong> indica o quão bem o modelo se encaixa na função deste agente ({CATEGORY_LABELS[agentCategory]}).
+            <strong>★ Adequação /10</strong> — escala absoluta: 9-10 excelente, 7-8 bom, 5-6 adequado, ≤4 fraco para esta função ({CATEGORY_LABELS[agentCategory]}).
             Preços em USD por 1 milhão de tokens (OpenRouter).
           </p>
           <button
