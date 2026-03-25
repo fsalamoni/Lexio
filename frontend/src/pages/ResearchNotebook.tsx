@@ -7,13 +7,14 @@
  * Stored permanently per-user in Firestore under /users/{uid}/research_notebooks.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
   ArrowLeft, Send, Database, Clock, ChevronDown, Upload,
   ChevronUp, MoreVertical, Loader2,
   PenTool, Map, CreditCard, BarChart3, Table, FileQuestion,
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
+  Copy, Check as CheckIcon,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -89,6 +90,72 @@ const SOURCE_TYPE_LABELS: Record<string, { label: string; icon: React.ElementTyp
   link:    { label: 'Link', icon: Link2 },
 }
 
+// ── Lightweight Markdown renderer ─────────────────────────────────────────────
+
+/**
+ * Converts basic Markdown to sanitised HTML for assistant messages.
+ * Supports: headers, bold, italic, inline code, code blocks, lists, links, hr.
+ * Does NOT use dangerouslySetInnerHTML with user-generated content —
+ * only assistant LLM output passes through this function.
+ */
+function renderMarkdownToHtml(md: string): string {
+  let html = md
+    // Code blocks (triple backtick) — must come before inline transformations
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-gray-800 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-xs"><code>$2</code></pre>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code class="bg-gray-200 text-gray-800 px-1 py-0.5 rounded text-xs">$1</code>')
+    // Headers
+    .replace(/^#### (.+)$/gm, '<h4 class="font-semibold text-gray-900 mt-3 mb-1 text-sm">$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3 class="font-semibold text-gray-900 mt-3 mb-1">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 class="font-bold text-gray-900 mt-4 mb-1 text-base">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 class="font-bold text-gray-900 mt-4 mb-2 text-lg">$1</h1>')
+    // Bold + italic
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    // Bold
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Italic
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Horizontal rule
+    .replace(/^---+$/gm, '<hr class="my-3 border-gray-200" />')
+    // Links [text](url)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-600 hover:underline">$1</a>')
+    // Unordered list items
+    .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
+    // Ordered list items
+    .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
+    // Line breaks (double newline -> paragraph break)
+    .replace(/\n\n/g, '</p><p class="mt-2">')
+    // Single line breaks within paragraphs
+    .replace(/\n/g, '<br />')
+
+  return `<p>${html}</p>`
+}
+
+// ── Copy Button ───────────────────────────────────────────────────────────────
+
+function CopyButton({ text, className = '' }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  const handle = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* clipboard not available */ }
+  }
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); handle() }}
+      title="Copiar conteúdo"
+      className={`inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-600 transition-colors ${className}`}
+    >
+      {copied
+        ? <><CheckIcon className="w-3.5 h-3.5 text-green-500" /> Copiado</>
+        : <><Copy className="w-3.5 h-3.5" /> Copiar</>
+      }
+    </button>
+  )
+}
+
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 function NotebookListItem({
@@ -101,6 +168,18 @@ function NotebookListItem({
   onDelete: () => void
 }) {
   const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!showMenu) return
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showMenu])
+
   return (
     <div
       className="group bg-white rounded-xl border border-gray-200 p-4 hover:border-brand-300 hover:shadow-md transition-all cursor-pointer"
@@ -120,7 +199,7 @@ function NotebookListItem({
             <span>{notebook.artifacts.length} artefato{notebook.artifacts.length !== 1 ? 's' : ''}</span>
           </div>
         </div>
-        <div className="relative flex-shrink-0">
+        <div ref={menuRef} className="relative flex-shrink-0">
           <button
             onClick={e => { e.stopPropagation(); setShowMenu(!showMenu) }}
             className="p-1 rounded hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100"
@@ -171,6 +250,8 @@ export default function ResearchNotebook() {
   // Chat state
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLTextAreaElement>(null)
 
   // Source addition
   const [showAddSource, setShowAddSource] = useState(false)
@@ -202,6 +283,19 @@ export default function ResearchNotebook() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
+
+  // ── Auto-scroll chat to bottom on new messages ──────────────────────
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [activeNotebook?.messages.length, chatLoading])
+
+  // ── Auto-grow chat textarea ─────────────────────────────────────────
+  useEffect(() => {
+    const el = chatInputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+  }, [chatInput])
 
   // ── Load acervo docs for source picker ──────────────────────────────
   const loadAcervoDocs = useCallback(async () => {
@@ -818,12 +912,24 @@ Instruções:
                         : 'bg-gray-100 text-gray-800 rounded-bl-md'
                     }`}
                   >
-                    <div className="whitespace-pre-wrap break-words">{msg.content}</div>
-                    <div className={`text-[10px] mt-1.5 ${
+                    {msg.role === 'assistant' ? (
+                      <div
+                        className="break-words prose-sm [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(msg.content) }}
+                      />
+                    ) : (
+                      <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                    )}
+                    <div className={`flex items-center gap-2 text-[10px] mt-1.5 ${
                       msg.role === 'user' ? 'text-white/60' : 'text-gray-400'
                     }`}>
-                      {formatDate(msg.created_at)}
-                      {msg.agent && <span className="ml-2">· {msg.agent}</span>}
+                      <span>
+                        {formatDate(msg.created_at)}
+                        {msg.agent && <span className="ml-2">· {msg.agent}</span>}
+                      </span>
+                      {msg.role === 'assistant' && (
+                        <CopyButton text={msg.content} />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -839,12 +945,15 @@ Instruções:
                   </div>
                 </div>
               )}
+              {/* Auto-scroll anchor */}
+              <div ref={chatEndRef} />
             </div>
 
             {/* Input */}
             <div className="border-t bg-white p-4 shrink-0">
               <div className="flex items-end gap-2">
                 <textarea
+                  ref={chatInputRef}
                   value={chatInput}
                   onChange={e => setChatInput(e.target.value)}
                   onKeyDown={e => {
@@ -1066,6 +1175,13 @@ function ArtifactCard({
 }) {
   const [expanded, setExpanded] = useState(false)
 
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (window.confirm(`Excluir "${artifact.title}"? Esta ação é irreversível.`)) {
+      onDelete()
+    }
+  }
+
   return (
     <div className="bg-white rounded-xl border overflow-hidden">
       <button
@@ -1081,8 +1197,9 @@ function ArtifactCard({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <CopyButton text={artifact.content} />
           <button
-            onClick={e => { e.stopPropagation(); onDelete() }}
+            onClick={handleDelete}
             className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
           >
             <Trash2 className="w-4 h-4" />
@@ -1092,9 +1209,10 @@ function ArtifactCard({
       </button>
       {expanded && (
         <div className="px-4 pb-4 border-t">
-          <div className="prose prose-sm max-w-none mt-3 text-gray-700 whitespace-pre-wrap">
-            {artifact.content}
-          </div>
+          <div
+            className="prose prose-sm max-w-none mt-3 text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs"
+            dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(artifact.content) }}
+          />
         </div>
       )}
     </div>
