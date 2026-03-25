@@ -475,6 +475,20 @@ export const PIPELINE_AGENT_DEFS: AgentModelDef[] = [
 /** Map from agent key → model ID */
 export type AgentModelMap = Record<string, string>
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Set of known model IDs for fast lookup. */
+const AVAILABLE_MODEL_IDS = new Set(AVAILABLE_MODELS.map(m => m.id))
+
+/**
+ * Check if a model ID exists in the curated AVAILABLE_MODELS catalog.
+ * Used when loading saved overrides to discard models that were removed
+ * from the catalog (e.g. deprecated or unavailable on OpenRouter).
+ */
+function isModelInCatalog(modelId: string): boolean {
+  return AVAILABLE_MODEL_IDS.has(modelId)
+}
+
 // ── Load / Save ───────────────────────────────────────────────────────────────
 
 /** Build the default model map from PIPELINE_AGENT_DEFS. */
@@ -498,9 +512,9 @@ export async function loadAgentModels(): Promise<AgentModelMap> {
   try {
     const settings = await getSettings()
     const saved = (settings.agent_models ?? {}) as Record<string, string>
-    // Merge saved over defaults, but only for known agents
+    // Merge saved over defaults, but only for known agents with valid model IDs
     for (const def of PIPELINE_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string') {
+      if (saved[def.key] && typeof saved[def.key] === 'string' && isModelInCatalog(saved[def.key])) {
         defaults[def.key] = saved[def.key]
       }
     }
@@ -622,7 +636,7 @@ export async function loadThesisAnalystModels(): Promise<ThesisAnalystModelMap> 
     const settings = await getSettings()
     const saved = (settings.thesis_analyst_models ?? {}) as Record<string, string>
     for (const def of THESIS_ANALYST_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string') {
+      if (saved[def.key] && typeof saved[def.key] === 'string' && isModelInCatalog(saved[def.key])) {
         defaults[def.key] = saved[def.key]
       }
     }
@@ -698,7 +712,7 @@ export async function loadContextDetailModels(): Promise<ContextDetailModelMap> 
     const settings = await getSettings()
     const saved = (settings.context_detail_models ?? {}) as Record<string, string>
     for (const def of CONTEXT_DETAIL_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string') {
+      if (saved[def.key] && typeof saved[def.key] === 'string' && isModelInCatalog(saved[def.key])) {
         defaults[def.key] = saved[def.key]
       }
     }
@@ -774,7 +788,7 @@ export async function loadAcervoClassificadorModels(): Promise<AcervoClassificad
     const settings = await getSettings()
     const saved = (settings.acervo_classificador_models ?? {}) as Record<string, string>
     for (const def of ACERVO_CLASSIFICADOR_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string') {
+      if (saved[def.key] && typeof saved[def.key] === 'string' && isModelInCatalog(saved[def.key])) {
         defaults[def.key] = saved[def.key]
       }
     }
@@ -850,7 +864,7 @@ export async function loadAcervoEmentaModels(): Promise<AcervoEmentaModelMap> {
     const settings = await getSettings()
     const saved = (settings.acervo_ementa_models ?? {}) as Record<string, string>
     for (const def of ACERVO_EMENTA_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string') {
+      if (saved[def.key] && typeof saved[def.key] === 'string' && isModelInCatalog(saved[def.key])) {
         defaults[def.key] = saved[def.key]
       }
     }
@@ -959,7 +973,7 @@ export async function loadResearchNotebookModels(): Promise<ResearchNotebookMode
     const settings = await getSettings()
     const saved = (settings.research_notebook_models ?? {}) as Record<string, string>
     for (const def of RESEARCH_NOTEBOOK_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string') {
+      if (saved[def.key] && typeof saved[def.key] === 'string' && isModelInCatalog(saved[def.key])) {
         defaults[def.key] = saved[def.key]
       }
     }
@@ -1065,7 +1079,7 @@ export async function loadNotebookAcervoModels(): Promise<NotebookAcervoModelMap
     const settings = await getSettings()
     const saved = (settings.notebook_acervo_models ?? {}) as Record<string, string>
     for (const def of NOTEBOOK_ACERVO_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string') {
+      if (saved[def.key] && typeof saved[def.key] === 'string' && isModelInCatalog(saved[def.key])) {
         defaults[def.key] = saved[def.key]
       }
     }
