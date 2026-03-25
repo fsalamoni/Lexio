@@ -69,6 +69,12 @@ service cloud.firestore {
       match /acervo/{docId} {
         allow read, write: if isSelf(userId);
       }
+
+      // ── /users/{userId}/research_notebooks/{notebookId} ──────────────
+      // Research notebooks (Caderno de Pesquisa) — owner-only access.
+      match /research_notebooks/{notebookId} {
+        allow read, write: if isSelf(userId);
+      }
     }
 
     // ── /settings/{document} ─────────────────────────────────────────────────

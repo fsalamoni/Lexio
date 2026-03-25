@@ -110,6 +110,81 @@ export async function callLLM(
 }
 
 /**
+ * Call OpenRouter chat completion with a full messages array.
+ * Use this for multi-turn conversations where you need to pass prior messages.
+ *
+ * @param apiKey  - OpenRouter API key
+ * @param messages - Array of {role, content} messages (system, user, assistant)
+ * @param model   - Model identifier
+ * @param maxTokens - Max output tokens
+ * @param temperature - Sampling temperature
+ */
+export async function callLLMWithMessages(
+  apiKey: string,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  model = 'anthropic/claude-3.5-haiku',
+  maxTokens = 4000,
+  temperature = 0.3,
+): Promise<LLMResult> {
+  const t0 = performance.now()
+
+  const resp = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://lexio.app',
+      'X-Title': 'Lexio',
+    },
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+  })
+
+  if (!resp.ok) {
+    const errorBody = await resp.text().catch(() => '')
+    throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
+  }
+
+  const rawText = await resp.text()
+  if (!rawText || rawText.trim().length === 0) {
+    throw new Error('OpenRouter returned empty response body')
+  }
+
+  let data: Record<string, unknown>
+  try {
+    data = JSON.parse(rawText)
+  } catch (parseErr) {
+    throw new Error(
+      `OpenRouter returned invalid JSON (${(parseErr as Error).message}). ` +
+      `Response starts with: ${rawText.slice(0, 200)}`,
+    )
+  }
+
+  const choice = (data as Record<string, unknown[]>).choices?.[0] as
+    | { message?: { content?: string } }
+    | undefined
+  if (!choice?.message?.content) {
+    throw new Error('OpenRouter returned empty response')
+  }
+
+  const usage = (data.usage ?? {}) as Record<string, number>
+  const durationMs = Math.round(performance.now() - t0)
+  const tokensIn  = usage.prompt_tokens ?? 0
+  const tokensOut = usage.completion_tokens ?? 0
+  const cost_usd: number = typeof usage.cost === 'number'
+    ? usage.cost
+    : estimateCost(model, tokensIn, tokensOut)
+
+  return {
+    content: choice.message.content,
+    model,
+    tokens_in: tokensIn,
+    tokens_out: tokensOut,
+    cost_usd,
+    duration_ms: durationMs,
+  }
+}
+
+/**
  * Call OpenRouter with automatic fallback when a model has no available endpoints.
  *
  * Free / experimental models on OpenRouter can return "No endpoints found" (404)

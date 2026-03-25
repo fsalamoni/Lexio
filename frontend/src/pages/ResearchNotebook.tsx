@@ -33,7 +33,7 @@ import {
   type StudioArtifactType,
   type AcervoDocumentData,
 } from '../lib/firestore-service'
-import { callLLM, type LLMResult } from '../lib/llm-client'
+import { callLLM, callLLMWithMessages, type LLMResult } from '../lib/llm-client'
 import { getOpenRouterKey } from '../lib/generation-service'
 import { loadResearchNotebookModels } from '../lib/model-config'
 import {
@@ -317,12 +317,11 @@ export default function ResearchNotebook() {
   // ── Load notebooks ──────────────────────────────────────────────────
   const loadNotebooks = useCallback(async () => {
     if (!userId) return
+    if (!IS_FIREBASE) { setLoading(false); return }
     setLoading(true)
     try {
-      if (IS_FIREBASE) {
-        const result = await listResearchNotebooks(userId)
-        setNotebooks(result.items)
-      }
+      const result = await listResearchNotebooks(userId)
+      setNotebooks(result.items)
     } catch {
       toast.error('Erro ao carregar cadernos de pesquisa')
     } finally {
@@ -459,12 +458,18 @@ export default function ResearchNotebook() {
   const handleAddLinkSource = async () => {
     if (!userId || !activeNotebook?.id || !sourceUrl.trim()) return
 
+    const trimmedUrl = sourceUrl.trim()
+    if (!/^https?:\/\/.+/i.test(trimmedUrl)) {
+      toast.error('URL inválida — use um endereço que comece com http:// ou https://')
+      return
+    }
+
     try {
       const newSource: NotebookSource = {
         id: generateId(),
         type: 'link',
-        name: sourceUrl.trim(),
-        reference: sourceUrl.trim(),
+        name: trimmedUrl,
+        reference: trimmedUrl,
         content_type: '',
         size_bytes: 0,
         text_content: '',
@@ -530,7 +535,7 @@ export default function ResearchNotebook() {
       const model = models.notebook_assistente || 'anthropic/claude-sonnet-4'
       const sourceContext = buildSourceContext()
 
-      const systemPrompt = `Você é um assistente de pesquisa inteligente especializado no tema: "${activeNotebook.topic}".
+      const systemPrompt = `Você é um assistente de pesquisa jurídica especializado no tema: "${activeNotebook.topic}".
 ${activeNotebook.description ? `Objetivo: ${activeNotebook.description}` : ''}
 
 Você tem acesso às seguintes fontes de pesquisa do usuário:
@@ -539,20 +544,22 @@ ${sourceContext || '(Nenhuma fonte adicionada ainda — responda com base no seu
 Instruções:
 - Responda sempre em português brasileiro
 - Cite as fontes quando possível, indicando o nome do documento entre colchetes [FONTE: nome]
-- Seja preciso, detalhado e fundamentado
+- Seja preciso, detalhado e fundamentado em legislação, doutrina e jurisprudência
 - Se não souber algo, diga honestamente e sugira onde procurar
-- Mantenha o tom profissional mas acessível
-- Considere que o usuário pode ser um narrador de RPG que utiliza conhecimentos jurídicos, adapte-se ao contexto`
+- Mantenha o tom profissional e técnico-jurídico`
 
-      // Build conversation context: include last 20 messages as context for the user prompt
+      // Build proper multi-turn messages array from conversation history
       const previousMsgs = updatedMessages.slice(0, -1).slice(-(MAX_CONVERSATION_CONTEXT_MESSAGES - 1))
-      const conversationContext = previousMsgs.length > 0
-        ? '\n\nConversa anterior:\n' + previousMsgs.map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`).join('\n')
-        : ''
+      const llmMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        { role: 'system', content: systemPrompt },
+        ...previousMsgs.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+        { role: 'user', content: userMsg.content },
+      ]
 
-      const userPrompt = userMsg.content + conversationContext
-
-      const result: LLMResult = await callLLM(apiKey, systemPrompt, userPrompt, model, 4000, 0.3)
+      const result: LLMResult = await callLLMWithMessages(apiKey, llmMessages, model, 4000, 0.3)
 
       const assistantMsg: NotebookMessage = {
         id: generateId(),
@@ -769,6 +776,20 @@ Instruções:
   // ── Render: List View ───────────────────────────────────────────────
 
   if (viewMode === 'list') {
+    // Non-Firebase mode: feature requires Firestore
+    if (!IS_FIREBASE) {
+      return (
+        <div className="max-w-6xl mx-auto px-4 py-12 text-center">
+          <BookOpen className="w-14 h-14 text-gray-300 mx-auto mb-4" />
+          <h1 className="text-xl font-bold text-gray-700">Caderno de Pesquisa</h1>
+          <p className="text-sm text-gray-500 mt-2 max-w-lg mx-auto">
+            Esta funcionalidade requer a integração com Firebase/Firestore para armazenar os cadernos, fontes e conversas.
+            Configure o Firebase no painel de administração para habilitar o Caderno de Pesquisa.
+          </p>
+        </div>
+      )
+    }
+
     return (
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         {/* Header */}
