@@ -991,3 +991,109 @@ export async function resetResearchNotebookModels(): Promise<void> {
   if (!IS_FIREBASE) return
   await saveSettings({ research_notebook_models: {} })
 }
+
+// ── Notebook Acervo Analyzer Agent Definitions ───────────────────────────────
+
+/**
+ * Four-agent pipeline for the "Analisar Acervo" feature in Research Notebooks.
+ *
+ * Agent execution order:
+ *  1. Triagem   — Extract keywords, areas and context from notebook topic
+ *  2. Buscador  — Pre-filter + LLM ranking of acervo documents
+ *  3. Analista  — Deep relevance analysis of selected docs
+ *  4. Curador   — Final curation with summaries and recommendations
+ */
+export const NOTEBOOK_ACERVO_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'nb_acervo_triagem',
+    label: 'Triagem de Acervo',
+    description: 'Extrai palavras-chave, áreas e contexto do tema do caderno para busca no acervo',
+    defaultModel: 'anthropic/claude-3.5-haiku',
+    recommendedTier: 'fast',
+    icon: 'search',
+    agentCategory: 'extraction',
+  },
+  {
+    key: 'nb_acervo_buscador',
+    label: 'Buscador de Acervo',
+    description: 'Busca e classifica documentos do acervo por relevância ao tema do caderno',
+    defaultModel: 'anthropic/claude-3.5-haiku',
+    recommendedTier: 'fast',
+    icon: 'library',
+    agentCategory: 'extraction',
+  },
+  {
+    key: 'nb_acervo_analista',
+    label: 'Analista de Acervo',
+    description: 'Analisa em profundidade os documentos selecionados, avaliando relevância e conteúdo',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'scale',
+    agentCategory: 'reasoning',
+  },
+  {
+    key: 'nb_acervo_curador',
+    label: 'Curador de Fontes',
+    description: 'Faz curadoria final dos documentos e recomenda fontes para o caderno',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'clipboard-check',
+    agentCategory: 'synthesis',
+  },
+]
+
+/** Map from notebook-acervo agent key → model ID */
+export type NotebookAcervoModelMap = Record<string, string>
+
+/** Default model map for the notebook acervo analyzer pipeline. */
+export function getDefaultNotebookAcervoModelMap(): NotebookAcervoModelMap {
+  const map: NotebookAcervoModelMap = {}
+  for (const def of NOTEBOOK_ACERVO_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/**
+ * Load notebook acervo analyzer model configuration.
+ * Returns saved overrides merged with defaults.
+ */
+export async function loadNotebookAcervoModels(): Promise<NotebookAcervoModelMap> {
+  const defaults = getDefaultNotebookAcervoModelMap()
+  if (!IS_FIREBASE) return defaults
+  try {
+    const settings = await getSettings()
+    const saved = (settings.notebook_acervo_models ?? {}) as Record<string, string>
+    for (const def of NOTEBOOK_ACERVO_AGENT_DEFS) {
+      if (saved[def.key] && typeof saved[def.key] === 'string') {
+        defaults[def.key] = saved[def.key]
+      }
+    }
+  } catch {
+    // Fall back to defaults silently
+  }
+  return defaults
+}
+
+/**
+ * Save notebook acervo analyzer model configuration to Firestore.
+ * Only stores non-default values to keep data minimal.
+ */
+export async function saveNotebookAcervoModels(models: NotebookAcervoModelMap): Promise<void> {
+  if (!IS_FIREBASE) return
+  const defaults = getDefaultNotebookAcervoModelMap()
+  const overrides: NotebookAcervoModelMap = {}
+  for (const def of NOTEBOOK_ACERVO_AGENT_DEFS) {
+    const model = models[def.key]
+    if (model && model !== defaults[def.key]) {
+      overrides[def.key] = model
+    }
+  }
+  await saveSettings({ notebook_acervo_models: overrides })
+}
+
+/** Reset notebook acervo analyzer models to defaults. */
+export async function resetNotebookAcervoModels(): Promise<void> {
+  if (!IS_FIREBASE) return
+  await saveSettings({ notebook_acervo_models: {} })
+}

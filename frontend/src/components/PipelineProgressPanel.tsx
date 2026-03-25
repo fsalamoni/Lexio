@@ -49,6 +49,10 @@ const AGENT_ICONS: Record<string, React.ElementType> = {
   moderador:        Scale,
   redacao:          FileText,
   salvando:         Save,
+  nb_acervo_triagem:  Search,
+  nb_acervo_buscador: Library,
+  nb_acervo_analista: Scale,
+  nb_acervo_curador:  ClipboardCheck,
 }
 
 /** Phase key emitted by generation-service when the pipeline finishes. */

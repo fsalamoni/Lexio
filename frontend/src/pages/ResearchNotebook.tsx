@@ -16,6 +16,7 @@ import {
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
   Copy, Check as CheckIcon, Download, RotateCcw, Edit3, Info,
   Globe, BookMarked, AlertCircle, ChevronUp, ChevronDown,
+  Library, ScanSearch,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -40,6 +41,7 @@ import { loadResearchNotebookModels } from '../lib/model-config'
 import {
   createUsageExecutionRecord,
 } from '../lib/cost-analytics'
+import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -66,6 +68,10 @@ const AGENT_LABELS: Record<string, string> = {
   notebook_analista: 'Analista de Conhecimento',
   notebook_assistente: 'Assistente Conversacional',
   notebook_criador: 'Criador de Conteúdo (Estúdio)',
+  nb_acervo_triagem: 'Triagem de Acervo',
+  nb_acervo_buscador: 'Buscador de Acervo',
+  nb_acervo_analista: 'Analista de Acervo',
+  nb_acervo_curador: 'Curador de Fontes',
 }
 
 // ── URL Fetching via CORS proxy ───────────────────────────────────────────────
@@ -390,6 +396,14 @@ export default function ResearchNotebook() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sourceSearch, setSourceSearch] = useState('')
 
+  // Acervo analysis (multi-agent pipeline)
+  const [acervoAnalysisLoading, setAcervoAnalysisLoading] = useState(false)
+  const [acervoAnalysisPhase, setAcervoAnalysisPhase] = useState('')
+  const [acervoAnalysisMessage, setAcervoAnalysisMessage] = useState('')
+  const [acervoAnalysisPercent, setAcervoAnalysisPercent] = useState(0)
+  const [acervoAnalysisResults, setAcervoAnalysisResults] = useState<AnalyzedDocument[]>([])
+  const [selectedAnalysisIds, setSelectedAnalysisIds] = useState<Set<string>>(new Set())
+
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
   const [editTitle, setEditTitle] = useState('')
@@ -678,6 +692,100 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     } catch (err) {
       console.error('Error adding acervo source:', err)
       toast.error('Erro ao adicionar fonte do acervo')
+    }
+  }
+
+  // ── Analyze acervo with multi-agent pipeline ────────────────────────
+  const handleAnalyzeAcervo = async () => {
+    if (!userId || !activeNotebook?.id) return
+    const nb = activeNotebook
+
+    setAcervoAnalysisLoading(true)
+    setAcervoAnalysisResults([])
+    setSelectedAnalysisIds(new Set())
+    setAcervoAnalysisPhase('')
+    setAcervoAnalysisMessage('Iniciando análise...')
+    setAcervoAnalysisPercent(0)
+
+    try {
+      const existingSourceNames = nb.sources.map(s => s.name)
+      const existingSourceIds = new Set(
+        nb.sources.filter(s => s.type === 'acervo' && s.reference).map(s => s.reference!),
+      )
+
+      const result = await analyzeNotebookAcervo(
+        userId,
+        nb.id!,
+        nb.topic || nb.title,
+        nb.description || '',
+        existingSourceNames,
+        existingSourceIds,
+        (progress: AcervoAnalysisProgress) => {
+          setAcervoAnalysisPhase(progress.phase)
+          setAcervoAnalysisMessage(progress.message)
+          setAcervoAnalysisPercent(progress.percent)
+        },
+      )
+
+      // Save execution records to notebook
+      if (result.executions.length > 0) {
+        const existingExecs = nb.llm_executions || []
+        await updateResearchNotebook(userId, nb.id!, {
+          llm_executions: [...existingExecs, ...result.executions],
+        })
+      }
+
+      if (result.documents.length > 0) {
+        setAcervoAnalysisResults(result.documents)
+        // Pre-select all recommended documents
+        setSelectedAnalysisIds(new Set(result.documents.map(d => d.id)))
+        toast.success(`${result.documents.length} documento(s) relevante(s) encontrado(s) no acervo!`)
+      } else {
+        toast.info('Nenhum documento relevante encontrado no acervo para este tema.')
+      }
+    } catch (err) {
+      console.error('Acervo analysis error:', err)
+      if (err instanceof ModelUnavailableError) {
+        toast.warning(
+          'Modelo indisponível',
+          `O modelo "${err.modelId}" está indisponível. Altere nas configurações de modelos.`,
+        )
+      } else {
+        toast.error('Erro ao analisar acervo', (err as Error).message)
+      }
+    } finally {
+      setAcervoAnalysisLoading(false)
+    }
+  }
+
+  // ── Add selected analysis results as sources ────────────────────────
+  const handleAddAnalysisResults = async () => {
+    if (!userId || !activeNotebook?.id || selectedAnalysisIds.size === 0) return
+    const nb = activeNotebook
+
+    try {
+      const docsToAdd = acervoAnalysisResults.filter(d => selectedAnalysisIds.has(d.id))
+      const newSources: NotebookSource[] = docsToAdd.map(doc => ({
+        id: generateId(),
+        type: 'acervo' as const,
+        name: doc.filename,
+        reference: doc.id,
+        content_type: doc.content_type || '',
+        size_bytes: doc.size_bytes ?? 0,
+        text_content: doc.text_content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+        status: 'indexed' as const,
+        added_at: new Date().toISOString(),
+      }))
+
+      const updatedSources = [...nb.sources, ...newSources]
+      await updateResearchNotebook(userId, nb.id!, { sources: updatedSources })
+      setActiveNotebook({ ...nb, sources: updatedSources })
+      setAcervoAnalysisResults([])
+      setSelectedAnalysisIds(new Set())
+      toast.success(`${docsToAdd.length} fonte(s) adicionada(s) ao caderno!`)
+    } catch (err) {
+      console.error('Error adding analysis results:', err)
+      toast.error('Erro ao adicionar fontes')
     }
   }
 
@@ -1616,6 +1724,185 @@ Instruções:
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Analisar Acervo — Multi-agent intelligent search */}
+            <div className="bg-gradient-to-r from-brand-50 to-indigo-50 rounded-xl border border-brand-200 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                    <ScanSearch className="w-4 h-4 text-brand-600" />
+                    Análise Inteligente do Acervo
+                  </h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    Agentes de IA buscam automaticamente documentos relevantes no seu acervo
+                  </p>
+                </div>
+                <button
+                  onClick={handleAnalyzeAcervo}
+                  disabled={acervoAnalysisLoading || !activeNotebook.topic}
+                  className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap"
+                >
+                  {acervoAnalysisLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Analisando...
+                    </>
+                  ) : (
+                    <>
+                      <Library className="w-4 h-4" />
+                      Analisar Acervo
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Progress indicator */}
+              {acervoAnalysisLoading && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-brand-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-brand-600 h-full rounded-full transition-all duration-500"
+                        style={{ width: `${acervoAnalysisPercent}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] text-brand-600 font-medium whitespace-nowrap">{acervoAnalysisPercent}%</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-500" />
+                    <span className="text-xs text-brand-700">{acervoAnalysisMessage}</span>
+                  </div>
+                  {/* Agent progress steps */}
+                  <div className="flex items-center gap-1 mt-1">
+                    {(['nb_acervo_triagem', 'nb_acervo_buscador', 'nb_acervo_analista', 'nb_acervo_curador'] as const).map((step) => {
+                      const labels: Record<string, string> = {
+                        nb_acervo_triagem: 'Triagem',
+                        nb_acervo_buscador: 'Buscador',
+                        nb_acervo_analista: 'Analista',
+                        nb_acervo_curador: 'Curador',
+                      }
+                      const isActive = acervoAnalysisPhase === step
+                      const stepOrder = ['nb_acervo_triagem', 'nb_acervo_buscador', 'nb_acervo_analista', 'nb_acervo_curador']
+                      const isCompleted = stepOrder.indexOf(acervoAnalysisPhase) > stepOrder.indexOf(step) || acervoAnalysisPhase === 'concluido'
+                      return (
+                        <div key={step} className="flex items-center gap-1">
+                          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
+                            isActive ? 'bg-brand-600 text-white' :
+                            isCompleted ? 'bg-green-100 text-green-700' :
+                            'bg-gray-100 text-gray-400'
+                          }`}>
+                            {isActive && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+                            {isCompleted && <CheckCircle2 className="w-2.5 h-2.5" />}
+                            {labels[step]}
+                          </div>
+                          {step !== 'nb_acervo_curador' && (
+                            <ChevronDown className="w-3 h-3 text-gray-300 rotate-[-90deg]" />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Analysis results */}
+              {!acervoAnalysisLoading && acervoAnalysisResults.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-gray-700">
+                      {acervoAnalysisResults.length} documento(s) recomendado(s):
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          if (selectedAnalysisIds.size === acervoAnalysisResults.length) {
+                            setSelectedAnalysisIds(new Set())
+                          } else {
+                            setSelectedAnalysisIds(new Set(acervoAnalysisResults.map(d => d.id)))
+                          }
+                        }}
+                        className="text-[10px] text-brand-600 hover:text-brand-700 font-medium"
+                      >
+                        {selectedAnalysisIds.size === acervoAnalysisResults.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto space-y-2">
+                    {acervoAnalysisResults.map(doc => {
+                      const isSelected = selectedAnalysisIds.has(doc.id)
+                      const alreadySource = activeNotebook.sources.some(s => s.type === 'acervo' && s.reference === doc.id)
+                      return (
+                        <div
+                          key={doc.id}
+                          className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                            alreadySource ? 'bg-green-50 border-green-200 opacity-60' :
+                            isSelected ? 'bg-brand-50 border-brand-300' :
+                            'bg-white border-gray-200 hover:border-brand-200'
+                          }`}
+                          onClick={() => {
+                            if (alreadySource) return
+                            setSelectedAnalysisIds(prev => {
+                              const next = new Set(prev)
+                              if (next.has(doc.id)) next.delete(doc.id)
+                              else next.add(doc.id)
+                              return next
+                            })
+                          }}
+                        >
+                          <div className="pt-0.5">
+                            {alreadySource ? (
+                              <CheckCircle2 className="w-4 h-4 text-green-500" />
+                            ) : (
+                              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
+                                isSelected ? 'bg-brand-600 border-brand-600' : 'border-gray-300'
+                              }`}>
+                                {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <Database className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                              <span className="text-xs font-medium text-gray-800 truncate">{doc.filename}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                doc.score >= 0.7 ? 'bg-green-100 text-green-700' :
+                                doc.score >= 0.4 ? 'bg-amber-100 text-amber-700' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>
+                                {Math.round(doc.score * 100)}%
+                              </span>
+                              {alreadySource && <span className="text-[10px] text-green-600 font-medium">Já adicionado</span>}
+                            </div>
+                            <p className="text-[11px] text-gray-500 mt-1 line-clamp-2">{doc.summary}</p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-brand-100">
+                    <span className="text-[11px] text-gray-500">
+                      {selectedAnalysisIds.size} de {acervoAnalysisResults.length} selecionado(s)
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => { setAcervoAnalysisResults([]); setSelectedAnalysisIds(new Set()) }}
+                        className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800 transition-colors"
+                      >
+                        Descartar
+                      </button>
+                      <button
+                        onClick={handleAddAnalysisResults}
+                        disabled={selectedAnalysisIds.size === 0}
+                        className="px-4 py-1.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 text-xs font-medium transition-colors flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Adicionar {selectedAnalysisIds.size} fonte(s)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Current sources */}
