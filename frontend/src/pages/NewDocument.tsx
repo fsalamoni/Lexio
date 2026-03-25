@@ -14,6 +14,7 @@ import {
   type ContextDetailData, type ContextDetailQuestion,
 } from '../lib/firestore-service'
 import { generateDocument, generateContextQuestions, type GenerationProgress } from '../lib/generation-service'
+import { ModelUnavailableError } from '../lib/llm-client'
 import type { UserProfileForGeneration } from '../lib/generation-service'
 import PipelineProgressPanel, {
   PIPELINE_AGENTS,
@@ -171,7 +172,11 @@ export default function NewDocument() {
       })
       setShowContextDetail(true)
     } catch (err: any) {
-      toast.error('Erro ao detalhar contexto', err?.message || 'Tente novamente')
+      if (err instanceof ModelUnavailableError) {
+        toast.warning(`Modelo indisponível: ${err.modelId}`, 'Vá em Administração e substitua-o por outro.')
+      } else {
+        toast.error('Erro ao detalhar contexto', err?.message || 'Tente novamente')
+      }
     } finally {
       setLoadingContextDetail(false)
     }
@@ -226,7 +231,6 @@ export default function NewDocument() {
         } catch (err: any) {
           console.error('Generation failed:', err)
           setPipelineError(true)
-          setPipelineMessage(err?.message || 'Erro na geração')
           // Mark active agent as error
           setPipelineAgents(prev =>
             prev.map(a =>
@@ -235,7 +239,16 @@ export default function NewDocument() {
                 : a,
             ),
           )
-          toast.error('Erro na geração', err?.message)
+          if (err instanceof ModelUnavailableError) {
+            setPipelineMessage(`Modelo "${err.modelId}" indisponível. Altere-o em Administração.`)
+            toast.warning(
+              `Modelo indisponível: ${err.modelId}`,
+              'Este modelo foi removido do OpenRouter. Vá em Administração e substitua-o por outro.',
+            )
+          } else {
+            setPipelineMessage(err?.message || 'Erro na geração')
+            toast.error('Erro na geração', err?.message)
+          }
         }
       } else {
         const res = await api.post('/documents', {

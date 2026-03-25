@@ -11,6 +11,20 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const DEFAULT_FALLBACK_MODEL = 'anthropic/claude-3.5-haiku'
 
+/**
+ * Custom error thrown when a model is unavailable on OpenRouter
+ * (404 / "no endpoints found"). Callers should catch this to display
+ * a specific warning to the user with the affected model name.
+ */
+export class ModelUnavailableError extends Error {
+  public readonly modelId: string
+  constructor(modelId: string) {
+    super(`Modelo "${modelId}" indisponível no OpenRouter (sem endpoints). Altere este modelo nas configurações.`)
+    this.name = 'ModelUnavailableError'
+    this.modelId = modelId
+  }
+}
+
 export interface LLMResult {
   content: string
   model: string
@@ -62,10 +76,10 @@ export async function callLLM(
 
   if (!resp.ok) {
     const errorBody = await resp.text().catch(() => '')
-    // Auto-fallback for models removed from OpenRouter (404 / "no endpoints")
-    if (resp.status === 404 && model !== DEFAULT_FALLBACK_MODEL && errorBody.toLowerCase().includes('no endpoints')) {
-      console.warn(`[LLM] Modelo "${model}" sem endpoints — fallback para "${DEFAULT_FALLBACK_MODEL}"`)
-      return callLLM(apiKey, system, user, DEFAULT_FALLBACK_MODEL, maxTokens, temperature)
+    // Throw specific error when model is no longer available on OpenRouter
+    if (resp.status === 404 && errorBody.toLowerCase().includes('no endpoints')) {
+      console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter (sem endpoints)`)
+      throw new ModelUnavailableError(model)
     }
     throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
   }
@@ -147,10 +161,10 @@ export async function callLLMWithMessages(
 
   if (!resp.ok) {
     const errorBody = await resp.text().catch(() => '')
-    // Auto-fallback for models removed from OpenRouter (404 / "no endpoints")
-    if (resp.status === 404 && model !== DEFAULT_FALLBACK_MODEL && errorBody.toLowerCase().includes('no endpoints')) {
-      console.warn(`[LLM] Modelo "${model}" sem endpoints — fallback para "${DEFAULT_FALLBACK_MODEL}"`)
-      return callLLMWithMessages(apiKey, messages, DEFAULT_FALLBACK_MODEL, maxTokens, temperature)
+    // Throw specific error when model is no longer available on OpenRouter
+    if (resp.status === 404 && errorBody.toLowerCase().includes('no endpoints')) {
+      console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter (sem endpoints)`)
+      throw new ModelUnavailableError(model)
     }
     throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
   }
@@ -216,21 +230,16 @@ export async function callLLMWithFallback(
   try {
     return await callLLM(apiKey, system, user, model, maxTokens, temperature)
   } catch (err) {
-    const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
-    const isModelUnavailable = msg.includes('no endpoints found') || msg.includes('no endpoints')
-    if (isModelUnavailable) {
+    if (err instanceof ModelUnavailableError) {
       if (model === fallbackModel) {
-        console.warn(
-          `[LLM] Modelo "${model}" sem endpoints disponíveis.` +
-          ` Fallback ignorado (mesmo modelo).`,
-        )
-      } else {
-        console.warn(
-          `[LLM] Modelo "${model}" sem endpoints disponíveis.` +
-          ` Usando fallback: "${fallbackModel}".`,
-        )
-        return callLLM(apiKey, system, user, fallbackModel, maxTokens, temperature)
+        // Both primary and fallback are unavailable — propagate error
+        throw err
       }
+      console.warn(
+        `[LLM] Modelo "${model}" sem endpoints disponíveis.` +
+        ` Usando fallback: "${fallbackModel}".`,
+      )
+      return callLLM(apiKey, system, user, fallbackModel, maxTokens, temperature)
     }
     throw err
   }

@@ -15,7 +15,7 @@ import {
   PenTool, Map, CreditCard, BarChart3, Table, FileQuestion,
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
   Copy, Check as CheckIcon, Download, RotateCcw, Edit3, Info,
-  Globe, Zap, BookMarked, HelpCircle, AlertCircle,
+  Globe, BookMarked, AlertCircle, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -34,7 +34,7 @@ import {
   type StudioArtifactType,
   type AcervoDocumentData,
 } from '../lib/firestore-service'
-import { callLLM, callLLMWithMessages, type LLMResult } from '../lib/llm-client'
+import { callLLM, callLLMWithMessages, ModelUnavailableError, type LLMResult } from '../lib/llm-client'
 import { getOpenRouterKey } from '../lib/generation-service'
 import { loadResearchNotebookModels } from '../lib/model-config'
 import {
@@ -60,6 +60,14 @@ const MAX_WEB_SEARCH_CHARS = 3_000
 /** Min chars in source text_content to be considered indexed */
 const MIN_SOURCE_CHARS = 20
 
+/** Human-readable agent labels for error messages */
+const AGENT_LABELS: Record<string, string> = {
+  notebook_pesquisador: 'Pesquisador de Fontes',
+  notebook_analista: 'Analista de Conhecimento',
+  notebook_assistente: 'Assistente Conversacional',
+  notebook_criador: 'Criador de Conteúdo (Estúdio)',
+}
+
 // ── URL Fetching via CORS proxy ───────────────────────────────────────────────
 
 /**
@@ -69,7 +77,7 @@ const MIN_SOURCE_CHARS = 20
 async function fetchUrlContent(url: string): Promise<string> {
   // Try Jina Reader — returns clean readable text for any webpage
   try {
-    const jinaUrl = `https://r.jina.ai/${encodeURIComponent(url)}`
+    const jinaUrl = `https://r.jina.ai/${url}`
     const resp = await fetch(jinaUrl, {
       headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
       signal: AbortSignal.timeout(20_000),
@@ -499,7 +507,14 @@ Responda em português brasileiro com tom técnico-jurídico.`
       toast.success('Visão Geral gerada!')
     } catch (err) {
       console.error('Guide error:', err)
-      toast.error('Erro ao gerar Visão Geral')
+      if (err instanceof ModelUnavailableError) {
+        toast.warning(
+          `Modelo indisponível: ${err.modelId}`,
+          `O modelo do agente "${AGENT_LABELS.notebook_analista}" foi removido do OpenRouter. Vá em Administração > Caderno de Pesquisa e substitua-o.`,
+        )
+      } else {
+        toast.error('Erro ao gerar Visão Geral. Verifique sua chave de API.')
+      }
     } finally {
       setGuideLoading(false)
     }
@@ -818,8 +833,15 @@ Instruções:
         llm_executions: updatedExecutions,
       })
     } catch (err) {
-      toast.error('Erro ao gerar resposta. Verifique sua chave de API.')
       console.error('Chat error:', err)
+      if (err instanceof ModelUnavailableError) {
+        toast.warning(
+          `Modelo indisponível: ${err.modelId}`,
+          `O modelo do agente "${AGENT_LABELS.notebook_assistente}" foi removido do OpenRouter. Vá em Administração > Caderno de Pesquisa e substitua-o.`,
+        )
+      } else {
+        toast.error('Erro ao gerar resposta. Verifique sua chave de API.')
+      }
     } finally {
       setChatLoading(false)
     }
@@ -906,8 +928,15 @@ Instruções:
       setStudioCustomPrompt('')
       toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso!`)
     } catch (err) {
-      toast.error('Erro ao gerar artefato. Verifique sua chave de API.')
       console.error('Studio error:', err)
+      if (err instanceof ModelUnavailableError) {
+        toast.warning(
+          `Modelo indisponível: ${err.modelId}`,
+          `O modelo do agente "${AGENT_LABELS.notebook_criador}" foi removido do OpenRouter. Vá em Administração > Caderno de Pesquisa e substitua-o.`,
+        )
+      } else {
+        toast.error('Erro ao gerar artefato. Verifique sua chave de API.')
+      }
     } finally {
       setStudioLoading(false)
       setSelectedArtifactType(null)

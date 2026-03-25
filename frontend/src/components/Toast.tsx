@@ -64,7 +64,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const add = useCallback((type: ToastType, title: string, description?: string) => {
     const id = `toast-${++counter}`
     setToasts(prev => [...prev.slice(-4), { id, type, title, description }])
-    const t = setTimeout(() => dismiss(id), type === 'error' ? 7000 : 4000)
+    const t = setTimeout(() => dismiss(id), type === 'error' || type === 'warning' ? 7000 : 4000)
     timers.current.set(id, t)
   }, [dismiss])
 
