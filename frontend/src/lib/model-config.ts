@@ -888,3 +888,112 @@ export async function resetAcervoEmentaModels(): Promise<void> {
   if (!IS_FIREBASE) return
   await saveSettings({ acervo_ementa_models: {} })
 }
+
+// ── Research Notebook (Caderno de Pesquisa) Agent Definitions ─────────────────
+
+/**
+ * Multi-agent pipeline for the "Caderno de Pesquisa" feature — an intelligent
+ * research assistant similar to NotebookLM. It uses the user's acervo and
+ * additional uploaded sources to learn about a topic and answer questions,
+ * generate summaries, presentations, mind maps, flashcards, and more.
+ *
+ * Agent execution order:
+ *  1. Pesquisador   — deep-searches sources and builds a knowledge base
+ *  2. Analista      — analyses, cross-references and synthesizes findings
+ *  3. Assistente    — answers user questions conversationally using context
+ *  4. Criador       — generates studio outputs (summaries, mind maps, flashcards, etc.)
+ */
+export const RESEARCH_NOTEBOOK_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'notebook_pesquisador',
+    label: 'Pesquisador de Fontes',
+    description: 'Busca e indexa conteúdo relevante nas fontes do caderno e no acervo',
+    defaultModel: 'anthropic/claude-3.5-haiku',
+    recommendedTier: 'fast',
+    icon: 'search',
+    agentCategory: 'extraction',
+  },
+  {
+    key: 'notebook_analista',
+    label: 'Analista de Conhecimento',
+    description: 'Analisa, cruza referências e sintetiza descobertas sobre o tema',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'brain',
+    agentCategory: 'reasoning',
+  },
+  {
+    key: 'notebook_assistente',
+    label: 'Assistente Conversacional',
+    description: 'Responde perguntas do usuário com base no conhecimento indexado',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'message-circle',
+    agentCategory: 'reasoning',
+  },
+  {
+    key: 'notebook_criador',
+    label: 'Criador de Conteúdo (Estúdio)',
+    description: 'Gera resumos, mapas mentais, cartões didáticos, apresentações e outros artefatos',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'file-text',
+    agentCategory: 'writing',
+  },
+]
+
+/** Map from research-notebook agent key → model ID */
+export type ResearchNotebookModelMap = Record<string, string>
+
+/** Default model map for the research notebook agents. */
+export function getDefaultResearchNotebookModelMap(): ResearchNotebookModelMap {
+  const map: ResearchNotebookModelMap = {}
+  for (const def of RESEARCH_NOTEBOOK_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/**
+ * Load research notebook model configuration.
+ * Returns saved overrides merged with defaults.
+ */
+export async function loadResearchNotebookModels(): Promise<ResearchNotebookModelMap> {
+  const defaults = getDefaultResearchNotebookModelMap()
+  if (!IS_FIREBASE) return defaults
+  try {
+    const settings = await getSettings()
+    const saved = (settings.research_notebook_models ?? {}) as Record<string, string>
+    for (const def of RESEARCH_NOTEBOOK_AGENT_DEFS) {
+      if (saved[def.key] && typeof saved[def.key] === 'string') {
+        defaults[def.key] = saved[def.key]
+      }
+    }
+  } catch {
+    // Fall back to defaults silently
+  }
+  return defaults
+}
+
+/**
+ * Save research notebook model configuration to Firestore.
+ * Only stores non-default values to keep data minimal.
+ */
+export async function saveResearchNotebookModels(models: ResearchNotebookModelMap): Promise<void> {
+  if (!IS_FIREBASE) return
+  const defaults = getDefaultResearchNotebookModelMap()
+  const overrides: ResearchNotebookModelMap = {}
+  for (const def of RESEARCH_NOTEBOOK_AGENT_DEFS) {
+    const model = models[def.key]
+    if (model && model !== defaults[def.key]) {
+      overrides[def.key] = model
+    }
+  }
+  await saveSettings({ research_notebook_models: overrides })
+}
+
+/** Reset research notebook models to defaults. */
+export async function resetResearchNotebookModels(): Promise<void> {
+  if (!IS_FIREBASE) return
+  await saveSettings({ research_notebook_models: {} })
+}

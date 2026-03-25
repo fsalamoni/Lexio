@@ -29,6 +29,7 @@ import ThesisAnalystConfigCard from '../components/ThesisAnalystConfigCard'
 import ContextDetailConfigCard from '../components/ContextDetailConfigCard'
 import AcervoClassificadorConfigCard from '../components/AcervoClassificadorConfigCard'
 import AcervoEmentaConfigCard from '../components/AcervoEmentaConfigCard'
+import ResearchNotebookConfigCard from '../components/ResearchNotebookConfigCard'
 import ModelCatalogCard from '../components/ModelCatalogCard'
 
 interface ModuleInfo {
@@ -883,6 +884,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <AcervoEmentaConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Research Notebook Config (Firebase-only) */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_research_notebook_config"
+          title="Configuração do Caderno de Pesquisa"
+          icon={BookOpen}
+          iconColor="text-indigo-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ResearchNotebookConfigCard />
         </AdminCollapsibleSection>
       )}
 

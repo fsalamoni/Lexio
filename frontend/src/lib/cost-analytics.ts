@@ -1,6 +1,6 @@
 import { DOCTYPE_LABELS } from './constants'
 
-export type UsageFunctionKey = 'document_generation' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa'
+export type UsageFunctionKey = 'document_generation' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -88,6 +88,7 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   context_detail: 'Detalhamento de contexto',
   acervo_classificador: 'Classificador de acervo',
   acervo_ementa: 'Gerador de ementas',
+  caderno_pesquisa: 'Caderno de Pesquisa',
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -110,6 +111,11 @@ const PHASE_LABELS: Record<string, string> = {
   acervo_revisor: 'Revisor de Base',
   acervo_classificador: 'Classificador de Acervo',
   acervo_ementa: 'Gerador de Ementa',
+  notebook_pesquisador: 'Pesquisador de Fontes',
+  notebook_analista: 'Analista de Conhecimento',
+  notebook_assistente: 'Assistente Conversacional',
+  notebook_criador: 'Criador de Conteúdo',
+  caderno_pesquisa_total: 'Caderno de Pesquisa (agregado)',
   document_total: 'Documento (agregado)',
   thesis_analysis_total: 'Sessão de análise (agregada)',
 }
@@ -459,4 +465,50 @@ export function extractAcervoUsageExecutions(acervoDoc: AcervoUsageSummary): Usa
     cost_usd: execution.cost_usd,
     duration_ms: execution.duration_ms,
   }))
+}
+
+// ── Research Notebook (Caderno de Pesquisa) usage extraction ──────────────────
+
+export interface NotebookUsageSummary {
+  id?: string
+  title: string
+  created_at: string
+  llm_executions?: UsageExecutionRecord[]
+  usage_summary?: Partial<UsageSummary>
+}
+
+export function extractNotebookUsageExecutions(notebook: NotebookUsageSummary): UsageExecutionRecord[] {
+  if (Array.isArray(notebook.llm_executions) && notebook.llm_executions.length > 0) {
+    return notebook.llm_executions.map(execution => createUsageExecutionRecord({
+      source_type: execution.function_key ?? 'caderno_pesquisa',
+      source_id: execution.source_id ?? notebook.id ?? `notebook-${notebook.created_at}`,
+      created_at: execution.created_at ?? notebook.created_at,
+      phase: execution.phase ?? 'caderno_pesquisa_total',
+      agent_name: execution.agent_name ?? 'Caderno de Pesquisa (consolidado)',
+      model: execution.model,
+      tokens_in: execution.tokens_in,
+      tokens_out: execution.tokens_out,
+      cost_usd: execution.cost_usd,
+      duration_ms: execution.duration_ms,
+    }))
+  }
+
+  const tokensIn = notebook.usage_summary?.total_tokens_in ?? 0
+  const tokensOut = notebook.usage_summary?.total_tokens_out ?? 0
+  const costUsd = notebook.usage_summary?.total_cost_usd ?? 0
+
+  if (tokensIn <= 0 && tokensOut <= 0 && costUsd <= 0) return []
+
+  return [
+    createUsageExecutionRecord({
+      source_type: 'caderno_pesquisa',
+      source_id: notebook.id ?? `notebook-${notebook.created_at}`,
+      created_at: notebook.created_at,
+      phase: 'caderno_pesquisa_total',
+      agent_name: 'Caderno de Pesquisa (consolidado)',
+      tokens_in: tokensIn,
+      tokens_out: tokensOut,
+      cost_usd: costUsd,
+    }),
+  ]
 }
