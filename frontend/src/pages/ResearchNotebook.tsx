@@ -10,11 +10,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
-  ArrowLeft, Send, Database, Clock, ChevronDown, Upload,
-  ChevronUp, MoreVertical, Loader2,
+  ArrowLeft, Send, Database, Clock, Upload,
+  MoreVertical, Loader2,
   PenTool, Map, CreditCard, BarChart3, Table, FileQuestion,
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
   Copy, Check as CheckIcon, Download, RotateCcw, Edit3, Info,
+  Globe, Zap, BookMarked, HelpCircle, AlertCircle,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -38,10 +39,7 @@ import { getOpenRouterKey } from '../lib/generation-service'
 import { loadResearchNotebookModels } from '../lib/model-config'
 import {
   createUsageExecutionRecord,
-  type UsageExecutionRecord,
 } from '../lib/cost-analytics'
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -57,6 +55,72 @@ const MAX_STUDIO_CONTEXT_MESSAGES = 10
 const MAX_STUDIO_CONTEXT_CHARS = 5_000
 /** Max visible length for suggestion button labels */
 const MAX_SUGGESTION_LABEL_LENGTH = 60
+/** Max chars from web search snippets injected into chat context */
+const MAX_WEB_SEARCH_CHARS = 3_000
+/** Min chars in source text_content to be considered indexed */
+const MIN_SOURCE_CHARS = 20
+
+// ── URL Fetching via CORS proxy ───────────────────────────────────────────────
+
+/**
+ * Fetches readable text from a URL using Jina Reader, falling back to
+ * allorigins CORS proxy. Both are free, no-auth CORS-friendly services.
+ */
+async function fetchUrlContent(url: string): Promise<string> {
+  // Try Jina Reader — returns clean readable text for any webpage
+  try {
+    const jinaUrl = `https://r.jina.ai/${encodeURIComponent(url)}`
+    const resp = await fetch(jinaUrl, {
+      headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (resp.ok) {
+      const text = await resp.text()
+      if (text && text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
+    }
+  } catch { /* try next */ }
+
+  // Fallback: allorigins proxy
+  try {
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15_000) })
+    if (resp.ok) {
+      const data = await resp.json() as { contents?: string }
+      const raw = data.contents || ''
+      const text = raw.replace(/<[^>]+>/g, ' ').replace(/\s{3,}/g, ' ').trim()
+      if (text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
+    }
+  } catch { /* not available */ }
+
+  return ''
+}
+
+// ── Web Search via DuckDuckGo Instant Answer ──────────────────────────────────
+
+/**
+ * Lightweight web search using DuckDuckGo's instant answer API.
+ * No API key required; CORS-friendly.
+ */
+async function searchWeb(query: string): Promise<string> {
+  try {
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8_000) })
+    if (!resp.ok) return ''
+    const data = await resp.json() as {
+      AbstractText?: string
+      RelatedTopics?: { Text?: string; FirstURL?: string }[]
+    }
+    const parts: string[] = []
+    if (data.AbstractText) parts.push(data.AbstractText)
+    for (const t of (data.RelatedTopics || []).slice(0, 5)) {
+      if (t.Text) parts.push(`• ${t.Text}${t.FirstURL ? ` (${t.FirstURL})` : ''}`)
+    }
+    const result = parts.join('\n')
+    return result.length > 50 ? result.slice(0, MAX_WEB_SEARCH_CHARS) : ''
+  } catch {
+    return ''
+  }
+}
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -286,18 +350,28 @@ export default function ResearchNotebook() {
   const [createTopic, setCreateTopic] = useState('')
   const [createDescription, setCreateDescription] = useState('')
   const [creating, setCreating] = useState(false)
+  const [suggestedAcervoDocs, setSuggestedAcervoDocs] = useState<AcervoDocumentData[]>([])
+  const [selectedAcervoIds, setSelectedAcervoIds] = useState<Set<string>>(new Set())
 
   // Chat state
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [useWebSearch, setUseWebSearch] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
 
   // Source addition
-  const [showAddSource, setShowAddSource] = useState(false)
   const [sourceUrl, setSourceUrl] = useState('')
+  const [sourceUrlLoading, setSourceUrlLoading] = useState(false)
   const [acervoDocs, setAcervoDocs] = useState<AcervoDocumentData[]>([])
   const [acervoLoading, setAcervoLoading] = useState(false)
+
+  // Notebook Guide
+  const [guideLoading, setGuideLoading] = useState(false)
+
+  // Dynamic suggested questions
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
 
   // Studio
   const [studioLoading, setStudioLoading] = useState(false)
@@ -360,32 +434,169 @@ export default function ResearchNotebook() {
     }
   }, [userId])
 
+  // ── buildSourceContext (needed by guide and suggestions) ───────────────
+  const buildSourceContext = useCallback((): string => {
+    if (!activeNotebook) return ''
+    const parts: string[] = []
+    for (const source of activeNotebook.sources) {
+      if (source.text_content && source.text_content.length >= MIN_SOURCE_CHARS) {
+        parts.push(`[FONTE: ${source.name}]\n${source.text_content.slice(0, MAX_CONTEXT_TEXT_LENGTH)}`)
+      }
+    }
+    return parts.join('\n\n---\n\n')
+  }, [activeNotebook])
+
+  // ── Generate Notebook Guide ───────────────────────────────────────
+  const handleGenerateGuide = useCallback(async () => {
+    if (!userId || !activeNotebook?.id || guideLoading) return
+    if (activeNotebook.sources.length === 0) {
+      toast.error('Adicione fontes antes de gerar a Visão Geral'); return
+    }
+    setGuideLoading(true)
+    try {
+      const apiKey = await getOpenRouterKey()
+      const models = await loadResearchNotebookModels()
+      const model = models.notebook_analista || 'anthropic/claude-sonnet-4'
+      const sourceCtx = buildSourceContext()
+
+      const system = `Você é um especialista em síntese de conhecimento jurídico. Analise as fontes e gere uma Visão Geral completa do caderno.`
+      const user = `Tema: "${activeNotebook.topic}"
+${activeNotebook.description ? `Objetivo: ${activeNotebook.description}\n` : ''}
+FONTES:
+${sourceCtx || '(Nenhuma fonte com conteúdo extraído)'}
+
+Gere uma VISÃO GERAL em Markdown com:
+1. **Resumo do Tema** — contexto geral (2-3 parágrafos)
+2. **Principais Achados** — o mais relevante de cada fonte
+3. **Conexões e Padrões** — como as fontes se relacionam
+4. **Lacunas Identificadas** — o que falta para pesquisa completa
+5. **Questões-Chave** — as 5 perguntas mais importantes
+6. **Próximos Passos** — como aprofundar a pesquisa
+
+Responda em português brasileiro com tom técnico-jurídico.`
+
+      const result: LLMResult = await callLLM(apiKey, system, user, model, 4000, 0.3)
+
+      const guideArtifact: StudioArtifact = {
+        id: generateId(), type: 'resumo',
+        title: `📋 Visão Geral — ${activeNotebook.topic}`,
+        content: result.content, format: 'markdown',
+        created_at: new Date().toISOString(),
+      }
+      const updatedArtifacts = [guideArtifact, ...activeNotebook.artifacts]
+      const execution = createUsageExecutionRecord({
+        source_type: 'caderno_pesquisa', source_id: activeNotebook.id,
+        phase: 'notebook_analista', agent_name: 'Analista de Conhecimento',
+        model: result.model, tokens_in: result.tokens_in, tokens_out: result.tokens_out,
+        cost_usd: result.cost_usd, duration_ms: result.duration_ms,
+      })
+      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
+      await updateResearchNotebook(userId, activeNotebook.id, {
+        artifacts: updatedArtifacts, llm_executions: updatedExecutions,
+      })
+      setActiveNotebook({ ...activeNotebook, artifacts: updatedArtifacts, llm_executions: updatedExecutions })
+      setActiveTab('artifacts')
+      toast.success('Visão Geral gerada!')
+    } catch (err) {
+      console.error('Guide error:', err)
+      toast.error('Erro ao gerar Visão Geral')
+    } finally {
+      setGuideLoading(false)
+    }
+  }, [userId, activeNotebook, guideLoading, buildSourceContext]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Generate dynamic suggested questions ────────────────────────────
+  const generateSuggestions = useCallback(async () => {
+    if (!activeNotebook || suggestionsLoading) return
+    const sourceCtx = buildSourceContext()
+    if (!sourceCtx) {
+      setSuggestions([
+        `Quais os principais conceitos sobre "${activeNotebook.topic}"?`,
+        `Faça um resumo geral sobre "${activeNotebook.topic}"`,
+        'Quais são os pontos controversos?',
+        'Liste as fontes normativas aplicáveis',
+      ])
+      return
+    }
+    setSuggestionsLoading(true)
+    try {
+      const apiKey = await getOpenRouterKey()
+      const models = await loadResearchNotebookModels()
+      const model = models.notebook_pesquisador || 'anthropic/claude-3.5-haiku'
+      const preview = sourceCtx.slice(0, 4_000)
+      const result = await callLLM(apiKey,
+        'Você gera perguntas de pesquisa relevantes com base em fontes jurídicas.',
+        `Tema: "${activeNotebook.topic}"
+Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas que o usuário poderia fazer ao assistente.\nFormato: uma pergunta por linha, sem numeração, sem prefixos.`,
+        model, 300, 0.5)
+      const lines = result.content
+        .split('\n')
+        .map(l => l.replace(/^[-•*\d.]+\s*/, '').trim())
+        .filter(l => l.length > 10 && l.length < 120)
+        .slice(0, 5)
+      if (lines.length >= 3) setSuggestions(lines)
+    } catch { /* keep static */ }
+    finally { setSuggestionsLoading(false) }
+  }, [activeNotebook, suggestionsLoading, buildSourceContext]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-generate suggestions when chat tab opens
+  useEffect(() => {
+    if (activeTab === 'chat' && activeNotebook && activeNotebook.sources.length > 0 && suggestions.length === 0) {
+      generateSuggestions()
+    }
+  }, [activeTab, activeNotebook?.sources.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Suggest acervo docs while typing topic ───────────────────────────
+  const handleTopicChange = useCallback((topic: string) => {
+    setCreateTopic(topic)
+    if (topic.trim().length < 4 || acervoDocs.length === 0) {
+      setSuggestedAcervoDocs([]); return
+    }
+    const q = topic.toLowerCase()
+    const matches = acervoDocs.filter(d =>
+      d.filename.toLowerCase().includes(q) ||
+      (d.ementa && d.ementa.toLowerCase().includes(q)) ||
+      (d.assuntos && d.assuntos.some(a => a.toLowerCase().includes(q))) ||
+      (d.area_direito && d.area_direito.some(a => a.toLowerCase().includes(q)))
+    ).slice(0, 6)
+    setSuggestedAcervoDocs(matches)
+  }, [acervoDocs])
+
   // ── Create notebook ─────────────────────────────────────────────────
   const handleCreate = async () => {
     if (!userId || !createTitle.trim() || !createTopic.trim()) return
     setCreating(true)
     try {
+      // Build initial sources from selected acervo docs
+      const initialSources: NotebookSource[] = acervoDocs
+        .filter(d => d.id && selectedAcervoIds.has(d.id))
+        .map(d => ({
+          id: generateId(), type: 'acervo' as const, name: d.filename,
+          reference: d.id || '', content_type: d.content_type || '',
+          size_bytes: d.size_bytes ?? 0,
+          text_content: (d.text_content || '').slice(0, MAX_SOURCE_TEXT_LENGTH),
+          status: 'indexed' as const, added_at: new Date().toISOString(),
+        }))
+
       const id = await createResearchNotebook(userId, {
         title: createTitle.trim(),
         topic: createTopic.trim(),
         description: createDescription.trim() || '',
-        sources: [],
+        sources: initialSources,
         messages: [],
         artifacts: [],
         status: 'active',
       })
-      toast.success('Caderno de pesquisa criado!')
+      toast.success(`Caderno criado${initialSources.length > 0 ? ` com ${initialSources.length} fonte(s) do acervo` : ''}!`)
       setShowCreate(false)
       setCreateTitle('')
       setCreateTopic('')
       setCreateDescription('')
+      setSelectedAcervoIds(new Set())
+      setSuggestedAcervoDocs([])
       await loadNotebooks()
-      // Open newly created notebook
       const nb = await getResearchNotebook(userId, id)
-      if (nb) {
-        setActiveNotebook(nb)
-        setViewMode('detail')
-      }
+      if (nb) { setActiveNotebook(nb); setViewMode('detail') }
     } catch {
       toast.error('Erro ao criar caderno de pesquisa')
     } finally {
@@ -402,6 +613,7 @@ export default function ResearchNotebook() {
         setActiveNotebook(full)
         setViewMode('detail')
         setActiveTab('chat')
+        setSuggestions([])
       }
     } catch {
       toast.error('Erro ao abrir caderno')
@@ -464,16 +676,19 @@ export default function ResearchNotebook() {
       return
     }
 
+    setSourceUrlLoading(true)
+    toast.info('Buscando conteúdo do link...')
     try {
+      const textContent = await fetchUrlContent(trimmedUrl)
       const newSource: NotebookSource = {
         id: generateId(),
         type: 'link',
-        name: trimmedUrl,
+        name: trimmedUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0],
         reference: trimmedUrl,
-        content_type: '',
-        size_bytes: 0,
-        text_content: '',
-        status: 'pending',
+        content_type: 'text/html',
+        size_bytes: textContent.length,
+        text_content: textContent,
+        status: textContent.length > 100 ? 'indexed' : 'pending',
         added_at: new Date().toISOString(),
       }
 
@@ -481,10 +696,15 @@ export default function ResearchNotebook() {
       await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
       setActiveNotebook({ ...activeNotebook, sources: updatedSources })
       setSourceUrl('')
-      toast.success('Link adicionado como fonte')
+      setSuggestions([])
+      toast.success(textContent.length > 100
+        ? `Link adicionado com ${(textContent.length / 1000).toFixed(0)}K chars de conteúdo`
+        : 'Link adicionado (conteúdo não pôde ser extraído automaticamente)')
     } catch (err) {
       console.error('Error adding link source:', err)
       toast.error('Erro ao adicionar link como fonte')
+    } finally {
+      setSourceUrlLoading(false)
     }
   }
 
@@ -495,23 +715,14 @@ export default function ResearchNotebook() {
       const updatedSources = activeNotebook.sources.filter(s => s.id !== sourceId)
       await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
       setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      setSuggestions([])
     } catch (err) {
       console.error('Error removing source:', err)
       toast.error('Erro ao remover fonte')
     }
   }
 
-  // ── Build context from sources ──────────────────────────────────────
-  const buildSourceContext = useCallback((): string => {
-    if (!activeNotebook) return ''
-    const parts: string[] = []
-    for (const source of activeNotebook.sources) {
-      if (source.text_content) {
-        parts.push(`[FONTE: ${source.name}]\n${source.text_content.slice(0, MAX_CONTEXT_TEXT_LENGTH)}`)
-      }
-    }
-    return parts.join('\n\n---\n\n')
-  }, [activeNotebook])
+  // (buildSourceContext defined earlier above handleGenerateGuide)
 
   // ── Chat: send message ──────────────────────────────────────────────
   const handleSendMessage = async () => {
@@ -535,15 +746,24 @@ export default function ResearchNotebook() {
       const model = models.notebook_assistente || 'anthropic/claude-sonnet-4'
       const sourceContext = buildSourceContext()
 
-      const systemPrompt = `Você é um assistente de pesquisa jurídica especializado no tema: "${activeNotebook.topic}".
-${activeNotebook.description ? `Objetivo: ${activeNotebook.description}` : ''}
+      // Optional web search enrichment
+      let webSnippet = ''
+      if (useWebSearch) {
+        try { webSnippet = await searchWeb(`${activeNotebook.topic} ${userMsg.content}`) } catch { /* non-critical */ }
+      }
 
-Você tem acesso às seguintes fontes de pesquisa do usuário:
-${sourceContext || '(Nenhuma fonte adicionada ainda — responda com base no seu conhecimento geral, mas sugira ao usuário adicionar fontes para respostas mais precisas.)'}
+      const systemPrompt = `Você é um assistente de pesquisa jurídica especializado no tema: "${activeNotebook.topic}".
+${activeNotebook.description ? `Objetivo: ${activeNotebook.description}\n` : ''}
+${sourceContext
+  ? `FONTES DO USUÁRIO (use prioritariamente):\n${sourceContext}`
+  : '(Nenhuma fonte adicionada — responda com base no seu conhecimento geral)'
+}
+${webSnippet ? `\nBUSCA WEB:\n${webSnippet}` : ''}
 
 Instruções:
 - Responda sempre em português brasileiro
-- Cite as fontes quando possível, indicando o nome do documento entre colchetes [FONTE: nome]
+- Cite fontes com [FONTE: nome] quando embasar-se nas fontes do usuário
+- Use [WEB] quando usar resultado da busca web
 - Seja preciso, detalhado e fundamentado em legislação, doutrina e jurisprudência
 - Se não souber algo, diga honestamente e sugira onde procurar
 - Mantenha o tom profissional e técnico-jurídico`
@@ -804,7 +1024,7 @@ Instruções:
             </p>
           </div>
           <button
-            onClick={() => setShowCreate(true)}
+            onClick={() => { setShowCreate(true); loadAcervoDocs() }}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium shadow-sm"
           >
             <Plus className="w-4 h-4" />
@@ -875,7 +1095,7 @@ Instruções:
         {showCreate && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowCreate(false)}>
             <div
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6"
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto"
               onClick={e => e.stopPropagation()}
             >
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -899,11 +1119,14 @@ Instruções:
                   <label className="block text-sm font-medium text-gray-700 mb-1">Tema da Pesquisa *</label>
                   <input
                     type="text"
-                    placeholder="Ex: Análise de cláusulas abusivas em contratos de adesão eletrônicos"
+                    placeholder="Ex: Nepotismo no serviço público federal"
                     value={createTopic}
-                    onChange={e => setCreateTopic(e.target.value)}
+                    onChange={e => handleTopicChange(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
                   />
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    O tema guia o assistente e é usado para sugerir documentos do acervo
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Descrição / Objetivo (opcional)</label>
@@ -911,15 +1134,52 @@ Instruções:
                     placeholder="Descreva o objetivo da pesquisa, perguntas-chave, escopo..."
                     value={createDescription}
                     onChange={e => setCreateDescription(e.target.value)}
-                    rows={3}
+                    rows={2}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
                   />
                 </div>
+
+                {/* Acervo suggestions */}
+                {suggestedAcervoDocs.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-brand-600" />
+                      Documentos do acervo relacionados ao tema:
+                    </p>
+                    <div className="space-y-1 max-h-40 overflow-y-auto border rounded-lg p-1">
+                      {suggestedAcervoDocs.map(doc => (
+                        <label key={doc.id} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer text-xs text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={selectedAcervoIds.has(doc.id || '')}
+                            onChange={e => {
+                              const next = new Set(selectedAcervoIds)
+                              if (e.target.checked) next.add(doc.id || '')
+                              else next.delete(doc.id || '')
+                              setSelectedAcervoIds(next)
+                            }}
+                            className="rounded text-brand-600"
+                          />
+                          <Database className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                          <span className="truncate">{doc.filename}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {selectedAcervoIds.size} selecionado(s) — adicionados automaticamente como fontes do caderno
+                    </p>
+                  </div>
+                )}
+                {acervoLoading && (
+                  <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando acervo...
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-3 mt-6">
                 <button
-                  onClick={() => setShowCreate(false)}
+                  onClick={() => { setShowCreate(false); setSuggestedAcervoDocs([]); setSelectedAcervoIds(new Set()) }}
                   className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   Cancelar
@@ -952,7 +1212,7 @@ Instruções:
       {/* Top bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b bg-white shrink-0">
         <button
-          onClick={() => { setViewMode('list'); setActiveNotebook(null) }}
+          onClick={() => { setViewMode('list'); setActiveNotebook(null); setSuggestions([]) }}
           className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
         >
           <ArrowLeft className="w-5 h-5 text-gray-600" />
@@ -975,7 +1235,17 @@ Instruções:
             </p>
           )}
         </div>
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={handleGenerateGuide}
+            disabled={guideLoading || activeNotebook.sources.length === 0}
+            title="Gerar Visão Geral das fontes"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {guideLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookMarked className="w-3.5 h-3.5" />}
+            Visão Geral
+          </button>
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
           {([
             { key: 'chat' as DetailTab, icon: MessageCircle, label: 'Chat' },
             { key: 'sources' as DetailTab, icon: Database, label: 'Fontes' },
@@ -1013,6 +1283,7 @@ Instruções:
               )}
             </button>
           ))}
+          </div>
         </div>
       </div>
 
@@ -1092,12 +1363,17 @@ Instruções:
                     </p>
                   )}
                   <div className="mt-6 flex flex-wrap justify-center gap-2">
-                    {[
+                    {suggestionsLoading ? (
+                      <span className="flex items-center gap-1.5 text-xs text-gray-400">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Gerando sugestões…
+                      </span>
+                    ) : (suggestions.length > 0 ? suggestions : [
                       `Quais os principais conceitos sobre "${activeNotebook.topic}"?`,
                       `Faça um resumo geral sobre "${activeNotebook.topic}"`,
                       'Quais são os pontos controversos?',
                       'Liste as fontes normativas aplicáveis',
-                    ].map(suggestion => (
+                    ]).map(suggestion => (
                       <button
                         key={suggestion}
                         onClick={() => setChatInput(suggestion)}
@@ -1159,6 +1435,21 @@ Instruções:
               <div ref={chatEndRef} />
             </div>
 
+            {/* Inline suggestion chips when conversation is active */}
+            {activeNotebook.messages.length > 0 && suggestions.length > 0 && (
+              <div className="px-4 pb-2 flex flex-wrap gap-2 border-t pt-2">
+                {suggestions.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setChatInput(s)}
+                    className="px-3 py-1 text-xs bg-gray-50 border border-gray-200 text-gray-600 rounded-full hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 transition-colors"
+                  >
+                    {s.length > MAX_SUGGESTION_LABEL_LENGTH ? s.slice(0, MAX_SUGGESTION_LABEL_LENGTH - 3) + '...' : s}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Input */}
             <div className="border-t bg-white p-4 shrink-0">
               <div className="flex items-end gap-2">
@@ -1185,8 +1476,17 @@ Instruções:
                 </button>
               </div>
               <div className="flex items-center justify-between mt-1.5 px-1">
-                <span className="text-[10px] text-gray-400">Enter para enviar · Shift+Enter para nova linha</span>
-                {activeNotebook.messages.length > 0 && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={useWebSearch}
+                    onChange={e => setUseWebSearch(e.target.checked)}
+                    className="w-3 h-3 rounded accent-brand-600"
+                  />
+                  <Globe className="w-3 h-3 text-gray-400" />
+                  <span className="text-[10px] text-gray-400">Busca web</span>
+                </label>
+                {activeNotebook.messages.length > 0 ? (
                   <button
                     onClick={handleClearChat}
                     className="inline-flex items-center gap-1 text-[10px] text-gray-400 hover:text-red-500 transition-colors"
@@ -1195,6 +1495,8 @@ Instruções:
                     <RotateCcw className="w-3 h-3" />
                     Limpar conversa
                   </button>
+                ) : (
+                  <span className="text-[10px] text-gray-400">Enter para enviar · Shift+Enter para nova linha</span>
                 )}
               </div>
             </div>
@@ -1225,10 +1527,11 @@ Instruções:
                 </div>
                 <button
                   onClick={handleAddLinkSource}
-                  disabled={!sourceUrl.trim()}
-                  className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 text-sm font-medium transition-colors"
+                  disabled={!sourceUrl.trim() || sourceUrlLoading}
+                  className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 text-sm font-medium transition-colors flex items-center gap-1.5"
                 >
-                  Adicionar
+                  {sourceUrlLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {sourceUrlLoading ? 'Carregando...' : 'Adicionar'}
                 </button>
               </div>
 
@@ -1304,7 +1607,11 @@ Instruções:
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-gray-800 truncate">{source.name}</p>
                         <p className="text-[11px] text-gray-400">
-                          {typeInfo.label} · {source.status === 'indexed' ? 'Indexado' : source.status === 'error' ? 'Erro' : 'Pendente'}
+                          {typeInfo.label} · {source.type === 'link' ? (
+                            (source.text_content?.length ?? 0) >= MIN_SOURCE_CHARS
+                              ? <span className="text-green-600">✓ {Math.round((source.text_content?.length ?? 0) / 1000)}K chars indexados</span>
+                              : <span className="text-amber-600 flex items-center gap-0.5 inline-flex"><AlertCircle className="w-3 h-3" />Sem conteúdo extraído</span>
+                          ) : source.status === 'indexed' ? 'Indexado' : source.status === 'error' ? 'Erro' : 'Pendente'}
                           {source.added_at && ` · ${formatDate(source.added_at)}`}
                         </p>
                       </div>
@@ -1333,6 +1640,23 @@ Instruções:
               <p className="text-xs text-gray-500 mt-1">
                 Gere diferentes tipos de conteúdo a partir das fontes e conversas deste caderno
               </p>
+            </div>
+
+            {/* Visão Geral shortcut */}
+            <div className="mb-4">
+              <button
+                onClick={handleGenerateGuide}
+                disabled={guideLoading || activeNotebook.sources.length === 0}
+                className="w-full flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left"
+              >
+                <div className="p-2 bg-amber-100 rounded-lg flex-shrink-0">
+                  {guideLoading ? <Loader2 className="w-5 h-5 text-amber-600 animate-spin" /> : <BookMarked className="w-5 h-5 text-amber-600" />}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Visão Geral do Caderno</p>
+                  <p className="text-xs text-amber-600 mt-0.5">Gera um guia estruturado com os principais conceitos e pontos das fontes adicionadas</p>
+                </div>
+              </button>
             </div>
 
             {/* Custom instructions */}
