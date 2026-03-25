@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
-  ArrowLeft, Send, Database, Clock, ChevronDown,
+  ArrowLeft, Send, Database, Clock, ChevronDown, Upload,
   ChevronUp, MoreVertical, Loader2,
   PenTool, Map, CreditCard, BarChart3, Table, FileQuestion,
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
@@ -41,6 +41,19 @@ import {
 } from '../lib/cost-analytics'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+/** Max characters stored per source text content */
+const MAX_SOURCE_TEXT_LENGTH = 50_000
+/** Max characters per source included in LLM context */
+const MAX_CONTEXT_TEXT_LENGTH = 15_000
+/** Max messages from conversation to include as context */
+const MAX_CONVERSATION_CONTEXT_MESSAGES = 20
+/** Max messages from conversation included in studio prompts */
+const MAX_STUDIO_CONTEXT_MESSAGES = 10
+/** Max characters of conversation context included in studio prompts */
+const MAX_STUDIO_CONTEXT_CHARS = 5_000
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -284,7 +297,7 @@ export default function ResearchNotebook() {
       reference: acervoDoc.id || '',
       content_type: acervoDoc.content_type,
       size_bytes: acervoDoc.size_bytes,
-      text_content: acervoDoc.text_content?.slice(0, 50000), // limit stored text
+      text_content: acervoDoc.text_content?.slice(0, MAX_SOURCE_TEXT_LENGTH),
       status: 'indexed',
       added_at: new Date().toISOString(),
     }
@@ -329,7 +342,7 @@ export default function ResearchNotebook() {
     const parts: string[] = []
     for (const source of activeNotebook.sources) {
       if (source.text_content) {
-        parts.push(`[FONTE: ${source.name}]\n${source.text_content.slice(0, 15000)}`)
+        parts.push(`[FONTE: ${source.name}]\n${source.text_content.slice(0, MAX_CONTEXT_TEXT_LENGTH)}`)
       }
     }
     return parts.join('\n\n---\n\n')
@@ -372,7 +385,7 @@ Instruções:
 - Considere que o usuário pode ser um narrador de RPG que utiliza conhecimentos jurídicos, adapte-se ao contexto`
 
       // Build conversation context: include last 20 messages as context for the user prompt
-      const previousMsgs = updatedMessages.slice(0, -1).slice(-19)
+      const previousMsgs = updatedMessages.slice(0, -1).slice(-(MAX_CONVERSATION_CONTEXT_MESSAGES - 1))
       const conversationContext = previousMsgs.length > 0
         ? '\n\nConversa anterior:\n' + previousMsgs.map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`).join('\n')
         : ''
@@ -446,7 +459,7 @@ Fontes disponíveis:
 ${sourceContext || '(Sem fontes específicas — use conhecimento geral)'}
 
 Conversas anteriores (contexto):
-${activeNotebook.messages.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n').slice(0, 5000)}
+${activeNotebook.messages.slice(-MAX_STUDIO_CONTEXT_MESSAGES).map(m => `${m.role}: ${m.content}`).join('\n').slice(0, MAX_STUDIO_CONTEXT_CHARS)}
 
 Instruções:
 - Gere o conteúdo em formato Markdown
@@ -1034,7 +1047,7 @@ function ArtifactCard({
     <div className="bg-white rounded-xl border overflow-hidden">
       <button
         type="button"
-        onClick={() => setExpanded(e => !e)}
+        onClick={() => setExpanded(prev => !prev)}
         className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
       >
         <div className="flex items-center gap-3">
