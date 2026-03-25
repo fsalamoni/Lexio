@@ -55,6 +55,8 @@ const MAX_CONVERSATION_CONTEXT_MESSAGES = 20
 const MAX_STUDIO_CONTEXT_MESSAGES = 10
 /** Max characters of conversation context included in studio prompts */
 const MAX_STUDIO_CONTEXT_CHARS = 5_000
+/** Max visible length for suggestion button labels */
+const MAX_SUGGESTION_LABEL_LENGTH = 60
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -118,7 +120,7 @@ function sanitizeUrl(url: string): string {
 function renderMarkdownToHtml(md: string): string {
   // First, extract code blocks and inline code to protect them from HTML escaping
   const codeBlocks: string[] = []
-  let safe = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
+  let safe = md.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, _lang, code) => {
     const idx = codeBlocks.length
     codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-xs"><code>${escapeHtml(code)}</code></pre>`)
     return `\x00CODEBLOCK${idx}\x00`
@@ -746,7 +748,7 @@ Instruções:
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${artifact.title.replace(/[^a-zA-Z0-9À-ÿ ]/g, '_')}.md`
+    a.download = `${artifact.title.replace(/[^a-zA-Z0-9À-ÿ ]/g, '_').replace(/_{2,}/g, '_').trim()}.md`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -1080,7 +1082,7 @@ Instruções:
                         onClick={() => setChatInput(suggestion)}
                         className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-brand-50 hover:text-brand-700 transition-colors"
                       >
-                        {suggestion.length > 60 ? suggestion.slice(0, 57) + '...' : suggestion}
+                        {suggestion.length > MAX_SUGGESTION_LABEL_LENGTH ? suggestion.slice(0, MAX_SUGGESTION_LABEL_LENGTH - 3) + '...' : suggestion}
                       </button>
                     ))}
                   </div>
