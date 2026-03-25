@@ -81,7 +81,7 @@ const MAX_PREFILTERED_DOCS = 30
 
 // ── API key retrieval ─────────────────────────────────────────────────────────
 
-async function getOpenRouterKey(): Promise<string> {
+export async function getOpenRouterKey(): Promise<string> {
   // Try environment variable first (works without Firestore admin setup)
   const envKey = import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined
   if (envKey && envKey.startsWith('sk-')) return envKey

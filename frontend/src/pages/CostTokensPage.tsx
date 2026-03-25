@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DollarSign, Coins, Cpu, BrainCircuit, ChevronDown, ChevronUp,
-  FileText, BookOpen, TrendingUp, Loader2, MessageCircleQuestion, Tags,
+  FileText, BookOpen, TrendingUp, Loader2, MessageCircleQuestion, Tags, Brain,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -347,9 +347,9 @@ export default function CostTokensPage() {
     load()
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split executions into document_generation, thesis_analysis, context_detail, acervo_classificador and acervo_ementa
-  const { docBreakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, highlights: [] }
+  // Split executions into document_generation, thesis_analysis, context_detail, acervo_classificador, acervo_ementa and caderno_pesquisa
+  const { docBreakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
@@ -360,6 +360,7 @@ export default function CostTokensPage() {
     const contextDetailItems = breakdown.by_agent_function.filter(item => item.key.startsWith('context_detail::'))
     const acervoClassificadorItems = breakdown.by_agent_function.filter(item => item.key.startsWith('acervo_classificador::'))
     const acervoEmentaItems = breakdown.by_agent_function.filter(item => item.key.startsWith('acervo_ementa::'))
+    const notebookItems = breakdown.by_agent_function.filter(item => item.key.startsWith('caderno_pesquisa::'))
 
     // Build approximate sub-breakdowns using available summary data
     const docFunc = breakdown.by_function.find(f => f.key === 'document_generation')
@@ -367,6 +368,7 @@ export default function CostTokensPage() {
     const contextDetailFunc = breakdown.by_function.find(f => f.key === 'context_detail')
     const acervoClassificadorFunc = breakdown.by_function.find(f => f.key === 'acervo_classificador')
     const acervoEmentaFunc = breakdown.by_function.find(f => f.key === 'acervo_ementa')
+    const notebookFunc = breakdown.by_function.find(f => f.key === 'caderno_pesquisa')
 
     const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[], funcKey?: string): CostBreakdown | null => {
       if (!func && agentItems.length === 0) return null
@@ -407,6 +409,7 @@ export default function CostTokensPage() {
     const contextDetailBd = makeSub(contextDetailFunc, contextDetailItems, 'context_detail')
     const acervoClassificadorBd = makeSub(acervoClassificadorFunc, acervoClassificadorItems, 'acervo_classificador')
     const acervoEmentaBd = makeSub(acervoEmentaFunc, acervoEmentaItems, 'acervo_ementa')
+    const notebookBd = makeSub(notebookFunc, notebookItems, 'caderno_pesquisa')
 
     // Build highlights
     const hl: { label: string; value: string; meta: string }[] = []
@@ -428,7 +431,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, highlights: hl }
+    return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, highlights: hl }
   }, [breakdown])
 
   if (loading) {
@@ -624,6 +627,28 @@ export default function CostTokensPage() {
               />
             ) : (
               <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para geração de ementas.</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 7: Caderno de Pesquisa ─────────────────────── */}
+          <CollapsibleSection
+            id="section_caderno_pesquisa"
+            title="Caderno de Pesquisa"
+            icon={Brain}
+            iconColor="text-indigo-600"
+            badge={notebookBreakdown ? fmtUsd(notebookBreakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {notebookBreakdown ? (
+              <SectionBreakdown
+                sectionId="caderno_pesquisa"
+                breakdown={notebookBreakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o caderno de pesquisa.</p>
             )}
           </CollapsibleSection>
         </>

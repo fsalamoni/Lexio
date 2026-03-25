@@ -1,7 +1,7 @@
 import { NavLink, matchPath, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, PlusCircle, Upload,
-  Scale, LogOut, Shield, BookOpen, ChevronRight, UserCircle, DollarSign,
+  Scale, LogOut, Shield, BookOpen, ChevronRight, UserCircle, DollarSign, Brain,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useEffect, useMemo, useState } from 'react'
@@ -26,6 +26,7 @@ const links = [
     activePatterns: ['/documents/new'],
   },
   { to: '/theses', label: 'Banco de Teses', icon: BookOpen },
+  { to: '/notebook', label: 'Caderno de Pesquisa', icon: Brain },
   { to: '/upload', label: 'Acervo', icon: Upload },
 ]
 

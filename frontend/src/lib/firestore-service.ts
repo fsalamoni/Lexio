@@ -24,6 +24,7 @@ import {
   extractDocumentUsageExecutions,
   extractThesisSessionExecutions,
   extractAcervoUsageExecutions,
+  extractNotebookUsageExecutions,
   type CostBreakdown,
   type UsageExecutionRecord,
   type UsageSummary,
@@ -134,6 +135,93 @@ export interface AcervoDocumentData {
   tags_generated?: boolean
   /** LLM execution records for cost tracking (ementa + classification) */
   llm_executions?: UsageExecutionRecord[]
+}
+
+// ── Research Notebook (Caderno de Pesquisa) ───────────────────────────────────
+
+/** Source types that can be attached to a research notebook */
+export type NotebookSourceType = 'acervo' | 'upload' | 'link'
+
+/** A source attached to a research notebook */
+export interface NotebookSource {
+  id: string
+  type: NotebookSourceType
+  /** Display name (filename, URL, or acervo doc title) */
+  name: string
+  /** For 'acervo' sources: acervo doc id; for 'link': the URL; for 'upload': storage ref */
+  reference: string
+  /** MIME type (e.g., application/pdf, video/mp4, audio/mpeg) */
+  content_type?: string
+  /** File size in bytes (for uploads) */
+  size_bytes?: number
+  /** Extracted or fetched text content */
+  text_content?: string
+  /** Processing status */
+  status: 'pending' | 'processing' | 'indexed' | 'error'
+  added_at: string
+}
+
+/** A single message in the notebook conversation (Q&A) */
+export interface NotebookMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  /** Which agent produced this (for assistant messages) */
+  agent?: string
+  /** Model used for this message */
+  model?: string
+  created_at: string
+}
+
+/** Studio artifact types that the notebook can produce */
+export type StudioArtifactType =
+  | 'resumo'
+  | 'apresentacao'
+  | 'mapa_mental'
+  | 'cartoes_didaticos'
+  | 'infografico'
+  | 'teste'
+  | 'relatorio'
+  | 'tabela_dados'
+  | 'documento'
+  | 'audio_script'
+  | 'video_script'
+  | 'outro'
+
+/** A studio artifact produced by the notebook */
+export interface StudioArtifact {
+  id: string
+  type: StudioArtifactType
+  title: string
+  content: string
+  /** Markdown or structured data format */
+  format: 'markdown' | 'json' | 'html'
+  created_at: string
+}
+
+/** Full research notebook data stored in Firestore */
+export interface ResearchNotebookData {
+  id?: string
+  /** User-chosen title for this research topic */
+  title: string
+  /** Optional description or objective */
+  description?: string
+  /** Topic/theme being researched */
+  topic: string
+  /** Sources attached to this notebook */
+  sources: NotebookSource[]
+  /** Conversation history (questions & answers) */
+  messages: NotebookMessage[]
+  /** Studio artifacts created from this research */
+  artifacts: StudioArtifact[]
+  /** Status */
+  status: 'active' | 'archived'
+  created_at: string
+  updated_at?: string
+  /** LLM execution records for cost tracking */
+  llm_executions?: UsageExecutionRecord[]
+  /** Aggregated usage summary */
+  usage_summary?: UsageSummary
 }
 
 // ── Thesis Analysis Sessions ──────────────────────────────────────────────────
@@ -594,10 +682,11 @@ export async function listThesisAnalysisSessions(uid: string): Promise<ThesisAna
 }
 
 export async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
-  const [{ items }, sessions, acervo] = await Promise.all([
+  const [{ items }, sessions, acervo, notebooks] = await Promise.all([
     listDocuments(uid),
     listThesisAnalysisSessions(uid).catch(() => []),
     listAcervoDocuments(uid).then(r => r.items).catch(() => [] as AcervoDocumentData[]),
+    listResearchNotebooks(uid).then(r => r.items).catch(() => [] as ResearchNotebookData[]),
   ])
 
   const executions = [
@@ -608,6 +697,13 @@ export async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
       filename: acervoDoc.filename,
       created_at: acervoDoc.created_at,
       llm_executions: acervoDoc.llm_executions,
+    })),
+    ...notebooks.flatMap(nb => extractNotebookUsageExecutions({
+      id: nb.id,
+      title: nb.title,
+      created_at: nb.created_at,
+      llm_executions: nb.llm_executions,
+      usage_summary: nb.usage_summary,
     })),
   ]
 
@@ -1940,6 +2036,62 @@ export async function getLastThesisAnalysisSession(
   if (snap.empty) return null
   const d = snap.docs[0]
   return { id: d.id, ...d.data() } as ThesisAnalysisSessionData
+}
+
+// ── Research Notebook (Caderno de Pesquisa) CRUD ──────────────────────────────
+
+/**
+ * List all research notebooks for a user, ordered by creation date (newest first).
+ */
+export async function listResearchNotebooks(uid: string): Promise<{ items: ResearchNotebookData[] }> {
+  const db = ensureFirestore()
+  const snap = await getDocs(
+    query(collection(db, 'users', uid, 'research_notebooks'), orderBy('created_at', 'desc')),
+  )
+  return { items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ResearchNotebookData)) }
+}
+
+/**
+ * Get a single research notebook by ID.
+ */
+export async function getResearchNotebook(uid: string, notebookId: string): Promise<ResearchNotebookData | null> {
+  const db = ensureFirestore()
+  const ref = doc(db, 'users', uid, 'research_notebooks', notebookId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return null
+  return { id: snap.id, ...snap.data() } as ResearchNotebookData
+}
+
+/**
+ * Create a new research notebook.
+ */
+export async function createResearchNotebook(uid: string, data: Omit<ResearchNotebookData, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
+  const db = ensureFirestore()
+  const docRef = await addDoc(collection(db, 'users', uid, 'research_notebooks'), {
+    ...data,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  })
+  return docRef.id
+}
+
+/**
+ * Update an existing research notebook (partial update).
+ */
+export async function updateResearchNotebook(uid: string, notebookId: string, data: Partial<ResearchNotebookData>): Promise<void> {
+  const db = ensureFirestore()
+  const ref = doc(db, 'users', uid, 'research_notebooks', notebookId)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { id, ...rest } = data
+  await updateDoc(ref, { ...rest, updated_at: new Date().toISOString() })
+}
+
+/**
+ * Delete a research notebook.
+ */
+export async function deleteResearchNotebook(uid: string, notebookId: string): Promise<void> {
+  const db = ensureFirestore()
+  await deleteDoc(doc(db, 'users', uid, 'research_notebooks', notebookId))
 }
 
 // ── Password change via Firebase Auth ────────────────────────────────────────

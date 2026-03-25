@@ -16,6 +16,7 @@ import AdminPanel from './pages/AdminPanel'
 import CostTokensPage from './pages/CostTokensPage'
 import Onboarding from './pages/Onboarding'
 import ThesisBank from './pages/ThesisBank'
+import ResearchNotebook from './pages/ResearchNotebook'
 import Profile from './pages/Profile'
 import NotFound from './pages/NotFound'
 
@@ -52,6 +53,7 @@ function AppRoutes() {
                 <Route path="/documents/:id/edit" element={<DocumentEditor />} />
                 <Route path="/upload" element={<Upload />} />
                 <Route path="/theses" element={<ThesisBank />} />
+                <Route path="/notebook" element={<ResearchNotebook />} />
                 <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
                 <Route path="/admin/costs" element={<AdminRoute><CostTokensPage /></AdminRoute>} />
                 <Route path="/onboarding" element={<Onboarding />} />
