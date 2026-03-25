@@ -307,7 +307,8 @@ export default function ResearchNotebook() {
       await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
       setActiveNotebook({ ...activeNotebook, sources: updatedSources })
       toast.success(`Fonte "${acervoDoc.filename}" adicionada`)
-    } catch {
+    } catch (err) {
+      console.error('Error adding acervo source:', err)
       toast.error('Erro ao adicionar fonte do acervo')
     }
   }
@@ -334,7 +335,8 @@ export default function ResearchNotebook() {
       setActiveNotebook({ ...activeNotebook, sources: updatedSources })
       setSourceUrl('')
       toast.success('Link adicionado como fonte')
-    } catch {
+    } catch (err) {
+      console.error('Error adding link source:', err)
       toast.error('Erro ao adicionar link como fonte')
     }
   }
@@ -346,7 +348,8 @@ export default function ResearchNotebook() {
       const updatedSources = activeNotebook.sources.filter(s => s.id !== sourceId)
       await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
       setActiveNotebook({ ...activeNotebook, sources: updatedSources })
-    } catch {
+    } catch (err) {
+      console.error('Error removing source:', err)
       toast.error('Erro ao remover fonte')
     }
   }
@@ -547,7 +550,8 @@ Instruções:
       await updateResearchNotebook(userId, activeNotebook.id, { artifacts: updated })
       setActiveNotebook({ ...activeNotebook, artifacts: updated })
       toast.success('Artefato removido')
-    } catch {
+    } catch (err) {
+      console.error('Error deleting artifact:', err)
       toast.error('Erro ao remover artefato')
     }
   }
