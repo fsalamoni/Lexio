@@ -92,18 +92,49 @@ const SOURCE_TYPE_LABELS: Record<string, { label: string; icon: React.ElementTyp
 
 // ── Lightweight Markdown renderer ─────────────────────────────────────────────
 
+/** Escape HTML entities to prevent XSS when rendering markdown. */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/** Only allow http/https links — block javascript:, data:, etc. */
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim()
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return '#'
+}
+
 /**
  * Converts basic Markdown to sanitised HTML for assistant messages.
  * Supports: headers, bold, italic, inline code, code blocks, lists, links, hr.
- * Does NOT use dangerouslySetInnerHTML with user-generated content —
- * only assistant LLM output passes through this function.
+ * All text content is HTML-escaped before transformation to prevent XSS.
+ * Only assistant LLM output passes through this function.
  */
 function renderMarkdownToHtml(md: string): string {
-  let html = md
-    // Code blocks (triple backtick) — must come before inline transformations
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-gray-800 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-xs"><code>$2</code></pre>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code class="bg-gray-200 text-gray-800 px-1 py-0.5 rounded text-xs">$1</code>')
+  // First, extract code blocks and inline code to protect them from HTML escaping
+  const codeBlocks: string[] = []
+  let safe = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
+    const idx = codeBlocks.length
+    codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-xs"><code>${escapeHtml(code)}</code></pre>`)
+    return `\x00CODEBLOCK${idx}\x00`
+  })
+
+  const inlineCodes: string[] = []
+  safe = safe.replace(/`([^`]+)`/g, (_match, code) => {
+    const idx = inlineCodes.length
+    inlineCodes.push(`<code class="bg-gray-200 text-gray-800 px-1 py-0.5 rounded text-xs">${escapeHtml(code)}</code>`)
+    return `\x00INLINECODE${idx}\x00`
+  })
+
+  // Escape remaining HTML entities
+  safe = escapeHtml(safe)
+
+  let html = safe
     // Headers
     .replace(/^#### (.+)$/gm, '<h4 class="font-semibold text-gray-900 mt-3 mb-1 text-sm">$1</h4>')
     .replace(/^### (.+)$/gm, '<h3 class="font-semibold text-gray-900 mt-3 mb-1">$1</h3>')
@@ -117,8 +148,10 @@ function renderMarkdownToHtml(md: string): string {
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     // Horizontal rule
     .replace(/^---+$/gm, '<hr class="my-3 border-gray-200" />')
-    // Links [text](url)
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-600 hover:underline">$1</a>')
+    // Links [text](url) — only allow http/https
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) =>
+      `<a href="${sanitizeUrl(url)}" target="_blank" rel="noopener noreferrer" class="text-brand-600 hover:underline">${text}</a>`,
+    )
     // Unordered list items
     .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
     // Ordered list items
@@ -127,6 +160,10 @@ function renderMarkdownToHtml(md: string): string {
     .replace(/\n\n/g, '</p><p class="mt-2">')
     // Single line breaks within paragraphs
     .replace(/\n/g, '<br />')
+
+  // Restore code blocks and inline codes
+  html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (_m, idx) => codeBlocks[Number(idx)])
+  html = html.replace(/\x00INLINECODE(\d+)\x00/g, (_m, idx) => inlineCodes[Number(idx)])
 
   return `<p>${html}</p>`
 }
@@ -146,6 +183,7 @@ function CopyButton({ text, className = '' }: { text: string; className?: string
     <button
       onClick={e => { e.stopPropagation(); handle() }}
       title="Copiar conteúdo"
+      aria-label="Copiar conteúdo"
       className={`inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-600 transition-colors ${className}`}
     >
       {copied
