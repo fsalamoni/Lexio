@@ -79,3 +79,11 @@ body {
 .docx-preview td,
 .docx-preview th { border:1px solid #e5e7eb; padding:.5rem .75rem; font-size:.875rem; }
 .docx-preview th { background:#f9fafb; font-weight:600; }
+
+/* ─── Notebook chat & artifact markdown ──────────────────────── */
+.prose-sm p { margin-bottom:0.25rem; line-height:1.6; }
+.prose-sm h1,.prose-sm h2,.prose-sm h3,.prose-sm h4 { line-height:1.4; }
+.prose-sm ul,.prose-sm ol { padding-left:1.25rem; margin:0.25rem 0; }
+.prose-sm li { margin-bottom:0.125rem; }
+.prose-sm pre { white-space:pre-wrap; word-break:break-word; }
+.prose-sm hr { border:none; border-top:1px solid #e5e7eb; margin:0.5rem 0; }

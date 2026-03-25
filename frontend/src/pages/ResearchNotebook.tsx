@@ -7,13 +7,14 @@
  * Stored permanently per-user in Firestore under /users/{uid}/research_notebooks.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
   ArrowLeft, Send, Database, Clock, ChevronDown, Upload,
   ChevronUp, MoreVertical, Loader2,
   PenTool, Map, CreditCard, BarChart3, Table, FileQuestion,
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
+  Copy, Check as CheckIcon, Download, RotateCcw, Edit3, Info,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -54,6 +55,8 @@ const MAX_CONVERSATION_CONTEXT_MESSAGES = 20
 const MAX_STUDIO_CONTEXT_MESSAGES = 10
 /** Max characters of conversation context included in studio prompts */
 const MAX_STUDIO_CONTEXT_CHARS = 5_000
+/** Max visible length for suggestion button labels */
+const MAX_SUGGESTION_LABEL_LENGTH = 60
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -89,6 +92,110 @@ const SOURCE_TYPE_LABELS: Record<string, { label: string; icon: React.ElementTyp
   link:    { label: 'Link', icon: Link2 },
 }
 
+// ── Lightweight Markdown renderer ─────────────────────────────────────────────
+
+/** Escape HTML entities to prevent XSS when rendering markdown. */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/** Only allow http/https links — block javascript:, data:, etc. */
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim()
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return '#'
+}
+
+/**
+ * Converts basic Markdown to sanitised HTML for assistant messages.
+ * Supports: headers, bold, italic, inline code, code blocks, lists, links, hr.
+ * All text content is HTML-escaped before transformation to prevent XSS.
+ * Only assistant LLM output passes through this function.
+ */
+function renderMarkdownToHtml(md: string): string {
+  // First, extract code blocks and inline code to protect them from HTML escaping
+  const codeBlocks: string[] = []
+  let safe = md.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, _lang, code) => {
+    const idx = codeBlocks.length
+    codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-xs"><code>${escapeHtml(code)}</code></pre>`)
+    return `\x00CODEBLOCK${idx}\x00`
+  })
+
+  const inlineCodes: string[] = []
+  safe = safe.replace(/`([^`]+)`/g, (_match, code) => {
+    const idx = inlineCodes.length
+    inlineCodes.push(`<code class="bg-gray-200 text-gray-800 px-1 py-0.5 rounded text-xs">${escapeHtml(code)}</code>`)
+    return `\x00INLINECODE${idx}\x00`
+  })
+
+  // Escape remaining HTML entities
+  safe = escapeHtml(safe)
+
+  let html = safe
+    // Headers
+    .replace(/^#### (.+)$/gm, '<h4 class="font-semibold text-gray-900 mt-3 mb-1 text-sm">$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3 class="font-semibold text-gray-900 mt-3 mb-1">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 class="font-bold text-gray-900 mt-4 mb-1 text-base">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 class="font-bold text-gray-900 mt-4 mb-2 text-lg">$1</h1>')
+    // Bold + italic
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    // Bold
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Italic
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Horizontal rule
+    .replace(/^---+$/gm, '<hr class="my-3 border-gray-200" />')
+    // Links [text](url) — only allow http/https
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) =>
+      `<a href="${sanitizeUrl(url)}" target="_blank" rel="noopener noreferrer" class="text-brand-600 hover:underline">${text}</a>`,
+    )
+    // Unordered list items
+    .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
+    // Ordered list items
+    .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
+    // Line breaks (double newline -> paragraph break)
+    .replace(/\n\n/g, '</p><p class="mt-2">')
+    // Single line breaks within paragraphs
+    .replace(/\n/g, '<br />')
+
+  // Restore code blocks and inline codes
+  html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (_m, idx) => codeBlocks[Number(idx)])
+  html = html.replace(/\x00INLINECODE(\d+)\x00/g, (_m, idx) => inlineCodes[Number(idx)])
+
+  return `<p>${html}</p>`
+}
+
+// ── Copy Button ───────────────────────────────────────────────────────────────
+
+function CopyButton({ text, className = '' }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  const handle = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* clipboard not available */ }
+  }
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); handle() }}
+      title="Copiar conteúdo"
+      aria-label="Copiar conteúdo"
+      className={`inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-600 transition-colors ${className}`}
+    >
+      {copied
+        ? <><CheckIcon className="w-3.5 h-3.5 text-green-500" /> Copiado</>
+        : <><Copy className="w-3.5 h-3.5" /> Copiar</>
+      }
+    </button>
+  )
+}
+
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 function NotebookListItem({
@@ -101,6 +208,18 @@ function NotebookListItem({
   onDelete: () => void
 }) {
   const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!showMenu) return
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showMenu])
+
   return (
     <div
       className="group bg-white rounded-xl border border-gray-200 p-4 hover:border-brand-300 hover:shadow-md transition-all cursor-pointer"
@@ -120,7 +239,7 @@ function NotebookListItem({
             <span>{notebook.artifacts.length} artefato{notebook.artifacts.length !== 1 ? 's' : ''}</span>
           </div>
         </div>
-        <div className="relative flex-shrink-0">
+        <div ref={menuRef} className="relative flex-shrink-0">
           <button
             onClick={e => { e.stopPropagation(); setShowMenu(!showMenu) }}
             className="p-1 rounded hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100"
@@ -171,6 +290,8 @@ export default function ResearchNotebook() {
   // Chat state
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLTextAreaElement>(null)
 
   // Source addition
   const [showAddSource, setShowAddSource] = useState(false)
@@ -181,9 +302,17 @@ export default function ResearchNotebook() {
   // Studio
   const [studioLoading, setStudioLoading] = useState(false)
   const [selectedArtifactType, setSelectedArtifactType] = useState<StudioArtifactType | null>(null)
+  const [studioCustomPrompt, setStudioCustomPrompt] = useState('')
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
+  const [sourceSearch, setSourceSearch] = useState('')
+
+  // Edit notebook info
+  const [showEditInfo, setShowEditInfo] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editTopic, setEditTopic] = useState('')
+  const [editDescription, setEditDescription] = useState('')
 
   // ── Load notebooks ──────────────────────────────────────────────────
   const loadNotebooks = useCallback(async () => {
@@ -202,6 +331,19 @@ export default function ResearchNotebook() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
+
+  // ── Auto-scroll chat to bottom on new messages ──────────────────────
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [activeNotebook?.messages.length, chatLoading])
+
+  // ── Auto-grow chat textarea ─────────────────────────────────────────
+  useEffect(() => {
+    const el = chatInputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+  }, [chatInput])
 
   // ── Load acervo docs for source picker ──────────────────────────────
   const loadAcervoDocs = useCallback(async () => {
@@ -227,7 +369,7 @@ export default function ResearchNotebook() {
       const id = await createResearchNotebook(userId, {
         title: createTitle.trim(),
         topic: createTopic.trim(),
-        description: createDescription.trim() || undefined,
+        description: createDescription.trim() || '',
         sources: [],
         messages: [],
         artifacts: [],
@@ -290,50 +432,68 @@ export default function ResearchNotebook() {
     const exists = activeNotebook.sources.some(s => s.type === 'acervo' && s.reference === acervoDoc.id)
     if (exists) { toast.info('Documento já adicionado como fonte'); return }
 
-    const newSource: NotebookSource = {
-      id: generateId(),
-      type: 'acervo',
-      name: acervoDoc.filename,
-      reference: acervoDoc.id || '',
-      content_type: acervoDoc.content_type,
-      size_bytes: acervoDoc.size_bytes,
-      text_content: acervoDoc.text_content?.slice(0, MAX_SOURCE_TEXT_LENGTH),
-      status: 'indexed',
-      added_at: new Date().toISOString(),
-    }
+    try {
+      const newSource: NotebookSource = {
+        id: generateId(),
+        type: 'acervo',
+        name: acervoDoc.filename,
+        reference: acervoDoc.id || '',
+        content_type: acervoDoc.content_type || '',
+        size_bytes: acervoDoc.size_bytes ?? 0,
+        text_content: acervoDoc.text_content?.slice(0, MAX_SOURCE_TEXT_LENGTH) || '',
+        status: 'indexed',
+        added_at: new Date().toISOString(),
+      }
 
-    const updatedSources = [...activeNotebook.sources, newSource]
-    await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-    setActiveNotebook({ ...activeNotebook, sources: updatedSources })
-    toast.success(`Fonte "${acervoDoc.filename}" adicionada`)
+      const updatedSources = [...activeNotebook.sources, newSource]
+      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      toast.success(`Fonte "${acervoDoc.filename}" adicionada`)
+    } catch (err) {
+      console.error('Error adding acervo source:', err)
+      toast.error('Erro ao adicionar fonte do acervo')
+    }
   }
 
   // ── Add link source ─────────────────────────────────────────────────
   const handleAddLinkSource = async () => {
     if (!userId || !activeNotebook?.id || !sourceUrl.trim()) return
 
-    const newSource: NotebookSource = {
-      id: generateId(),
-      type: 'link',
-      name: sourceUrl.trim(),
-      reference: sourceUrl.trim(),
-      status: 'pending',
-      added_at: new Date().toISOString(),
-    }
+    try {
+      const newSource: NotebookSource = {
+        id: generateId(),
+        type: 'link',
+        name: sourceUrl.trim(),
+        reference: sourceUrl.trim(),
+        content_type: '',
+        size_bytes: 0,
+        text_content: '',
+        status: 'pending',
+        added_at: new Date().toISOString(),
+      }
 
-    const updatedSources = [...activeNotebook.sources, newSource]
-    await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-    setActiveNotebook({ ...activeNotebook, sources: updatedSources })
-    setSourceUrl('')
-    toast.success('Link adicionado como fonte')
+      const updatedSources = [...activeNotebook.sources, newSource]
+      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      setSourceUrl('')
+      toast.success('Link adicionado como fonte')
+    } catch (err) {
+      console.error('Error adding link source:', err)
+      toast.error('Erro ao adicionar link como fonte')
+    }
   }
 
   // ── Remove source ───────────────────────────────────────────────────
   const handleRemoveSource = async (sourceId: string) => {
     if (!userId || !activeNotebook?.id) return
-    const updatedSources = activeNotebook.sources.filter(s => s.id !== sourceId)
-    await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-    setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+    try {
+      const updatedSources = activeNotebook.sources.filter(s => s.id !== sourceId)
+      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+    } catch (err) {
+      console.error('Error removing source:', err)
+      toast.error('Erro ao remover fonte')
+    }
   }
 
   // ── Build context from sources ──────────────────────────────────────
@@ -473,7 +633,9 @@ Instruções:
 - Para apresentações, organize em slides com títulos
 - Para roteiros de áudio/vídeo, inclua marcações de tempo e narração`
 
-      const userPrompt = `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".`
+      const userPrompt = studioCustomPrompt.trim()
+        ? `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".\n\nInstruções adicionais do usuário: ${studioCustomPrompt.trim()}`
+        : `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".`
 
       const result: LLMResult = await callLLM(apiKey, systemPrompt, userPrompt, model, 4000, 0.3)
 
@@ -514,6 +676,7 @@ Instruções:
       })
 
       setActiveTab('artifacts')
+      setStudioCustomPrompt('')
       toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso!`)
     } catch (err) {
       toast.error('Erro ao gerar artefato. Verifique sua chave de API.')
@@ -527,10 +690,69 @@ Instruções:
   // ── Delete artifact ─────────────────────────────────────────────────
   const handleDeleteArtifact = async (artifactId: string) => {
     if (!userId || !activeNotebook?.id) return
-    const updated = activeNotebook.artifacts.filter(a => a.id !== artifactId)
-    await updateResearchNotebook(userId, activeNotebook.id, { artifacts: updated })
-    setActiveNotebook({ ...activeNotebook, artifacts: updated })
-    toast.success('Artefato removido')
+    try {
+      const updated = activeNotebook.artifacts.filter(a => a.id !== artifactId)
+      await updateResearchNotebook(userId, activeNotebook.id, { artifacts: updated })
+      setActiveNotebook({ ...activeNotebook, artifacts: updated })
+      toast.success('Artefato removido')
+    } catch (err) {
+      console.error('Error deleting artifact:', err)
+      toast.error('Erro ao remover artefato')
+    }
+  }
+
+  // ── Clear chat history ──────────────────────────────────────────────
+  const handleClearChat = async () => {
+    if (!userId || !activeNotebook?.id) return
+    if (!window.confirm('Limpar todo o histórico de conversa? As fontes e artefatos serão mantidos.')) return
+    try {
+      await updateResearchNotebook(userId, activeNotebook.id, { messages: [] })
+      setActiveNotebook({ ...activeNotebook, messages: [] })
+      toast.success('Histórico de conversa limpo')
+    } catch (err) {
+      console.error('Error clearing chat:', err)
+      toast.error('Erro ao limpar histórico')
+    }
+  }
+
+  // ── Edit notebook info ──────────────────────────────────────────────
+  const openEditInfo = () => {
+    if (!activeNotebook) return
+    setEditTitle(activeNotebook.title)
+    setEditTopic(activeNotebook.topic)
+    setEditDescription(activeNotebook.description || '')
+    setShowEditInfo(true)
+  }
+
+  const handleSaveInfo = async () => {
+    if (!userId || !activeNotebook?.id || !editTitle.trim() || !editTopic.trim()) return
+    try {
+      const updates = {
+        title: editTitle.trim(),
+        topic: editTopic.trim(),
+        description: editDescription.trim() || '',
+      }
+      await updateResearchNotebook(userId, activeNotebook.id, updates)
+      setActiveNotebook({ ...activeNotebook, ...updates })
+      setShowEditInfo(false)
+      toast.success('Caderno atualizado')
+    } catch (err) {
+      console.error('Error updating notebook info:', err)
+      toast.error('Erro ao atualizar caderno')
+    }
+  }
+
+  // ── Download artifact ───────────────────────────────────────────────
+  const handleDownloadArtifact = (artifact: StudioArtifact) => {
+    const blob = new Blob([artifact.content], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${artifact.title.replace(/[^a-zA-Z0-9À-ÿ ]/g, '_').replace(/_{2,}/g, '_').trim()}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   // ── Filtered notebooks ──────────────────────────────────────────────
@@ -715,8 +937,22 @@ Instruções:
           <ArrowLeft className="w-5 h-5 text-gray-600" />
         </button>
         <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-semibold text-gray-900 truncate">{activeNotebook.title}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-gray-900 truncate">{activeNotebook.title}</h2>
+            <button
+              onClick={openEditInfo}
+              className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+              title="Editar informações do caderno"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <p className="text-xs text-gray-500 truncate">{activeNotebook.topic}</p>
+          {activeNotebook.description && (
+            <p className="text-[10px] text-gray-400 truncate mt-0.5" title={activeNotebook.description}>
+              <Info className="w-3 h-3 inline mr-0.5" />{activeNotebook.description}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
           {([
@@ -739,6 +975,11 @@ Instruções:
             >
               <tab.icon className="w-3.5 h-3.5" />
               {tab.label}
+              {tab.key === 'chat' && activeNotebook.messages.length > 0 && (
+                <span className="text-[10px] bg-brand-100 text-brand-700 rounded-full px-1.5">
+                  {activeNotebook.messages.length}
+                </span>
+              )}
               {tab.key === 'sources' && activeNotebook.sources.length > 0 && (
                 <span className="text-[10px] bg-brand-100 text-brand-700 rounded-full px-1.5">
                   {activeNotebook.sources.length}
@@ -753,6 +994,60 @@ Instruções:
           ))}
         </div>
       </div>
+
+      {/* Edit Notebook Info Modal */}
+      {showEditInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowEditInfo(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-brand-600" />
+              Editar Caderno
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Título *</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={e => setEditTitle(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tema da Pesquisa *</label>
+                <input
+                  type="text"
+                  value={editTopic}
+                  onChange={e => setEditTopic(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descrição / Objetivo</label>
+                <textarea
+                  value={editDescription}
+                  onChange={e => setEditDescription(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 mt-6">
+              <button onClick={() => setShowEditInfo(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveInfo}
+                disabled={!editTitle.trim() || !editTopic.trim()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+              >
+                Salvar Alterações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab content */}
       <div className="flex-1 overflow-hidden">
@@ -769,14 +1064,25 @@ Instruções:
                     Faça perguntas sobre &quot;{activeNotebook.topic}&quot; e o assistente responderá
                     com base nas fontes adicionadas. Adicione fontes na aba &quot;Fontes&quot; para respostas mais precisas.
                   </p>
+                  {activeNotebook.sources.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-3 flex items-center justify-center gap-1">
+                      <Info className="w-3.5 h-3.5" />
+                      Nenhuma fonte adicionada — vá na aba &quot;Fontes&quot; para começar
+                    </p>
+                  )}
                   <div className="mt-6 flex flex-wrap justify-center gap-2">
-                    {['O que são os principais conceitos?', 'Faça um resumo geral', 'Quais são os pontos controversos?'].map(suggestion => (
+                    {[
+                      `Quais os principais conceitos sobre "${activeNotebook.topic}"?`,
+                      `Faça um resumo geral sobre "${activeNotebook.topic}"`,
+                      'Quais são os pontos controversos?',
+                      'Liste as fontes normativas aplicáveis',
+                    ].map(suggestion => (
                       <button
                         key={suggestion}
                         onClick={() => setChatInput(suggestion)}
                         className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-brand-50 hover:text-brand-700 transition-colors"
                       >
-                        {suggestion}
+                        {suggestion.length > MAX_SUGGESTION_LABEL_LENGTH ? suggestion.slice(0, MAX_SUGGESTION_LABEL_LENGTH - 3) + '...' : suggestion}
                       </button>
                     ))}
                   </div>
@@ -795,12 +1101,24 @@ Instruções:
                         : 'bg-gray-100 text-gray-800 rounded-bl-md'
                     }`}
                   >
-                    <div className="whitespace-pre-wrap break-words">{msg.content}</div>
-                    <div className={`text-[10px] mt-1.5 ${
+                    {msg.role === 'assistant' ? (
+                      <div
+                        className="break-words prose-sm [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(msg.content) }}
+                      />
+                    ) : (
+                      <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                    )}
+                    <div className={`flex items-center gap-2 text-[10px] mt-1.5 ${
                       msg.role === 'user' ? 'text-white/60' : 'text-gray-400'
                     }`}>
-                      {formatDate(msg.created_at)}
-                      {msg.agent && <span className="ml-2">· {msg.agent}</span>}
+                      <span>
+                        {formatDate(msg.created_at)}
+                        {msg.agent && <span className="ml-2">· {msg.agent}</span>}
+                      </span>
+                      {msg.role === 'assistant' && (
+                        <CopyButton text={msg.content} />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -816,12 +1134,15 @@ Instruções:
                   </div>
                 </div>
               )}
+              {/* Auto-scroll anchor */}
+              <div ref={chatEndRef} />
             </div>
 
             {/* Input */}
             <div className="border-t bg-white p-4 shrink-0">
               <div className="flex items-end gap-2">
                 <textarea
+                  ref={chatInputRef}
                   value={chatInput}
                   onChange={e => setChatInput(e.target.value)}
                   onKeyDown={e => {
@@ -841,6 +1162,19 @@ Instruções:
                 >
                   <Send className="w-4 h-4" />
                 </button>
+              </div>
+              <div className="flex items-center justify-between mt-1.5 px-1">
+                <span className="text-[10px] text-gray-400">Enter para enviar · Shift+Enter para nova linha</span>
+                {activeNotebook.messages.length > 0 && (
+                  <button
+                    onClick={handleClearChat}
+                    className="inline-flex items-center gap-1 text-[10px] text-gray-400 hover:text-red-500 transition-colors"
+                    title="Limpar histórico de conversa"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Limpar conversa
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -879,7 +1213,21 @@ Instruções:
 
               {/* Acervo documents */}
               <div>
-                <p className="text-xs text-gray-500 mb-2">Documentos do Acervo:</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-gray-500">Documentos do Acervo:</p>
+                  {!acervoLoading && acervoDocs.length > 5 && (
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Filtrar..."
+                        value={sourceSearch}
+                        onChange={e => setSourceSearch(e.target.value)}
+                        className="pl-7 pr-2 py-1 border border-gray-200 rounded text-[11px] w-36 focus:ring-1 focus:ring-brand-500 outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
                 {acervoLoading && (
                   <div className="flex items-center gap-2 py-4">
                     <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
@@ -891,7 +1239,9 @@ Instruções:
                 )}
                 {!acervoLoading && acervoDocs.length > 0 && (
                   <div className="max-h-48 overflow-y-auto space-y-1">
-                    {acervoDocs.map(doc => {
+                    {acervoDocs
+                      .filter(doc => !sourceSearch.trim() || doc.filename.toLowerCase().includes(sourceSearch.toLowerCase()))
+                      .map(doc => {
                       const alreadyAdded = activeNotebook.sources.some(s => s.type === 'acervo' && s.reference === doc.id)
                       return (
                         <button
@@ -964,6 +1314,20 @@ Instruções:
               </p>
             </div>
 
+            {/* Custom instructions */}
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Instruções adicionais (opcional)
+              </label>
+              <textarea
+                value={studioCustomPrompt}
+                onChange={e => setStudioCustomPrompt(e.target.value)}
+                placeholder="Ex: Foque nos aspectos práticos, use linguagem acessível, inclua exemplos de RPG..."
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+              />
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {ARTIFACT_TYPES.map(art => {
                 const ArtIcon = art.icon
@@ -1018,6 +1382,7 @@ Instruções:
                   icon={ArtIcon}
                   label={artDef?.label || artifact.type}
                   onDelete={() => handleDeleteArtifact(artifact.id)}
+                  onDownload={() => handleDownloadArtifact(artifact)}
                 />
               )
             })}
@@ -1035,13 +1400,22 @@ function ArtifactCard({
   icon: Icon,
   label,
   onDelete,
+  onDownload,
 }: {
   artifact: StudioArtifact
   icon: React.ElementType
   label: string
   onDelete: () => void
+  onDownload: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (window.confirm(`Excluir "${artifact.title}"? Esta ação é irreversível.`)) {
+      onDelete()
+    }
+  }
 
   return (
     <div className="bg-white rounded-xl border overflow-hidden">
@@ -1058,8 +1432,16 @@ function ArtifactCard({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <CopyButton text={artifact.content} />
           <button
-            onClick={e => { e.stopPropagation(); onDelete() }}
+            onClick={e => { e.stopPropagation(); onDownload() }}
+            className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-500 transition-colors"
+            title="Baixar como Markdown"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleDelete}
             className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
           >
             <Trash2 className="w-4 h-4" />
@@ -1069,9 +1451,10 @@ function ArtifactCard({
       </button>
       {expanded && (
         <div className="px-4 pb-4 border-t">
-          <div className="prose prose-sm max-w-none mt-3 text-gray-700 whitespace-pre-wrap">
-            {artifact.content}
-          </div>
+          <div
+            className="prose prose-sm max-w-none mt-3 text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs"
+            dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(artifact.content) }}
+          />
         </div>
       )}
     </div>
