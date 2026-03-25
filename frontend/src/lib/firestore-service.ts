@@ -274,6 +274,33 @@ function ensureFirestore() {
   return firestore
 }
 
+/**
+ * Recursively strip keys whose value is `undefined` so that Firestore writes
+ * never receive unsupported `undefined` values (Firestore does not set
+ * `ignoreUndefinedProperties` by default).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function stripUndefined<T extends Record<string, any>>(obj: T): T {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result: any = {}
+  for (const key of Object.keys(obj)) {
+    const value = obj[key]
+    if (value === undefined) continue
+    if (Array.isArray(value)) {
+      result[key] = value.map(item =>
+        item !== null && typeof item === 'object' && !Array.isArray(item)
+          ? stripUndefined(item)
+          : item,
+      )
+    } else if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
+      result[key] = stripUndefined(value)
+    } else {
+      result[key] = value
+    }
+  }
+  return result as T
+}
+
 function round6(value: number) {
   return Number(value.toFixed(6))
 }
@@ -2067,11 +2094,20 @@ export async function getResearchNotebook(uid: string, notebookId: string): Prom
  */
 export async function createResearchNotebook(uid: string, data: Omit<ResearchNotebookData, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
   const db = ensureFirestore()
-  const docRef = await addDoc(collection(db, 'users', uid, 'research_notebooks'), {
-    ...data,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+  const now = new Date().toISOString()
+  const sanitized = stripUndefined({
+    title: data.title,
+    topic: data.topic,
+    description: data.description ?? '',
+    sources: data.sources ?? [],
+    messages: data.messages ?? [],
+    artifacts: data.artifacts ?? [],
+    status: data.status ?? 'active',
+    llm_executions: data.llm_executions ?? [],
+    created_at: now,
+    updated_at: now,
   })
+  const docRef = await addDoc(collection(db, 'users', uid, 'research_notebooks'), sanitized)
   return docRef.id
 }
 
@@ -2083,7 +2119,8 @@ export async function updateResearchNotebook(uid: string, notebookId: string, da
   const ref = doc(db, 'users', uid, 'research_notebooks', notebookId)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id, ...rest } = data
-  await updateDoc(ref, { ...rest, updated_at: new Date().toISOString() })
+  const sanitized = stripUndefined({ ...rest, updated_at: new Date().toISOString() })
+  await updateDoc(ref, sanitized)
 }
 
 /**

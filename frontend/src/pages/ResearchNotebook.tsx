@@ -227,7 +227,7 @@ export default function ResearchNotebook() {
       const id = await createResearchNotebook(userId, {
         title: createTitle.trim(),
         topic: createTopic.trim(),
-        description: createDescription.trim() || undefined,
+        description: createDescription.trim() || '',
         sources: [],
         messages: [],
         artifacts: [],
@@ -290,50 +290,65 @@ export default function ResearchNotebook() {
     const exists = activeNotebook.sources.some(s => s.type === 'acervo' && s.reference === acervoDoc.id)
     if (exists) { toast.info('Documento já adicionado como fonte'); return }
 
-    const newSource: NotebookSource = {
-      id: generateId(),
-      type: 'acervo',
-      name: acervoDoc.filename,
-      reference: acervoDoc.id || '',
-      content_type: acervoDoc.content_type,
-      size_bytes: acervoDoc.size_bytes,
-      text_content: acervoDoc.text_content?.slice(0, MAX_SOURCE_TEXT_LENGTH),
-      status: 'indexed',
-      added_at: new Date().toISOString(),
-    }
+    try {
+      const newSource: NotebookSource = {
+        id: generateId(),
+        type: 'acervo',
+        name: acervoDoc.filename,
+        reference: acervoDoc.id || '',
+        content_type: acervoDoc.content_type || '',
+        size_bytes: acervoDoc.size_bytes ?? 0,
+        text_content: acervoDoc.text_content?.slice(0, MAX_SOURCE_TEXT_LENGTH) || '',
+        status: 'indexed',
+        added_at: new Date().toISOString(),
+      }
 
-    const updatedSources = [...activeNotebook.sources, newSource]
-    await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-    setActiveNotebook({ ...activeNotebook, sources: updatedSources })
-    toast.success(`Fonte "${acervoDoc.filename}" adicionada`)
+      const updatedSources = [...activeNotebook.sources, newSource]
+      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      toast.success(`Fonte "${acervoDoc.filename}" adicionada`)
+    } catch {
+      toast.error('Erro ao adicionar fonte do acervo')
+    }
   }
 
   // ── Add link source ─────────────────────────────────────────────────
   const handleAddLinkSource = async () => {
     if (!userId || !activeNotebook?.id || !sourceUrl.trim()) return
 
-    const newSource: NotebookSource = {
-      id: generateId(),
-      type: 'link',
-      name: sourceUrl.trim(),
-      reference: sourceUrl.trim(),
-      status: 'pending',
-      added_at: new Date().toISOString(),
-    }
+    try {
+      const newSource: NotebookSource = {
+        id: generateId(),
+        type: 'link',
+        name: sourceUrl.trim(),
+        reference: sourceUrl.trim(),
+        content_type: '',
+        size_bytes: 0,
+        text_content: '',
+        status: 'pending',
+        added_at: new Date().toISOString(),
+      }
 
-    const updatedSources = [...activeNotebook.sources, newSource]
-    await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-    setActiveNotebook({ ...activeNotebook, sources: updatedSources })
-    setSourceUrl('')
-    toast.success('Link adicionado como fonte')
+      const updatedSources = [...activeNotebook.sources, newSource]
+      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      setSourceUrl('')
+      toast.success('Link adicionado como fonte')
+    } catch {
+      toast.error('Erro ao adicionar link como fonte')
+    }
   }
 
   // ── Remove source ───────────────────────────────────────────────────
   const handleRemoveSource = async (sourceId: string) => {
     if (!userId || !activeNotebook?.id) return
-    const updatedSources = activeNotebook.sources.filter(s => s.id !== sourceId)
-    await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-    setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+    try {
+      const updatedSources = activeNotebook.sources.filter(s => s.id !== sourceId)
+      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+    } catch {
+      toast.error('Erro ao remover fonte')
+    }
   }
 
   // ── Build context from sources ──────────────────────────────────────
@@ -527,10 +542,14 @@ Instruções:
   // ── Delete artifact ─────────────────────────────────────────────────
   const handleDeleteArtifact = async (artifactId: string) => {
     if (!userId || !activeNotebook?.id) return
-    const updated = activeNotebook.artifacts.filter(a => a.id !== artifactId)
-    await updateResearchNotebook(userId, activeNotebook.id, { artifacts: updated })
-    setActiveNotebook({ ...activeNotebook, artifacts: updated })
-    toast.success('Artefato removido')
+    try {
+      const updated = activeNotebook.artifacts.filter(a => a.id !== artifactId)
+      await updateResearchNotebook(userId, activeNotebook.id, { artifacts: updated })
+      setActiveNotebook({ ...activeNotebook, artifacts: updated })
+      toast.success('Artefato removido')
+    } catch {
+      toast.error('Erro ao remover artefato')
+    }
   }
 
   // ── Filtered notebooks ──────────────────────────────────────────────
