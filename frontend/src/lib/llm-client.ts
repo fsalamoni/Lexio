@@ -9,6 +9,7 @@
  */
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+const DEFAULT_FALLBACK_MODEL = 'anthropic/claude-3.5-haiku'
 
 export interface LLMResult {
   content: string
@@ -61,6 +62,11 @@ export async function callLLM(
 
   if (!resp.ok) {
     const errorBody = await resp.text().catch(() => '')
+    // Auto-fallback for models removed from OpenRouter (404 / "no endpoints")
+    if (resp.status === 404 && model !== DEFAULT_FALLBACK_MODEL && errorBody.toLowerCase().includes('no endpoints')) {
+      console.warn(`[LLM] Modelo "${model}" sem endpoints — fallback para "${DEFAULT_FALLBACK_MODEL}"`)
+      return callLLM(apiKey, system, user, DEFAULT_FALLBACK_MODEL, maxTokens, temperature)
+    }
     throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
   }
 
@@ -141,6 +147,11 @@ export async function callLLMWithMessages(
 
   if (!resp.ok) {
     const errorBody = await resp.text().catch(() => '')
+    // Auto-fallback for models removed from OpenRouter (404 / "no endpoints")
+    if (resp.status === 404 && model !== DEFAULT_FALLBACK_MODEL && errorBody.toLowerCase().includes('no endpoints')) {
+      console.warn(`[LLM] Modelo "${model}" sem endpoints — fallback para "${DEFAULT_FALLBACK_MODEL}"`)
+      return callLLMWithMessages(apiKey, messages, DEFAULT_FALLBACK_MODEL, maxTokens, temperature)
+    }
     throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
   }
 

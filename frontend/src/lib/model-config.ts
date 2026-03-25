@@ -305,13 +305,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: true,
     agentFit: { extraction: 7, synthesis: 6, reasoning: 6, writing: 6 },
   },
-  {
-    id: 'deepseek/deepseek-chat-v3-0324:free',
-    label: 'DeepSeek V3', provider: 'DeepSeek', tier: 'balanced',
-    description: '✦ GRÁTIS — DeepSeek V3 no free tier, alta qualidade sem custo',
-    contextWindow: 64_000, inputCost: 0, outputCost: 0, isFree: true,
-    agentFit: { extraction: 7, synthesis: 7, reasoning: 7, writing: 8 },
-  },
+  // deepseek/deepseek-chat-v3-0324:free — removido do OpenRouter (404 "no endpoints")
   {
     id: 'deepseek/deepseek-r1:free',
     label: 'DeepSeek R1', provider: 'DeepSeek', tier: 'balanced',
