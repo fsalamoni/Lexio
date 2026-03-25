@@ -14,7 +14,7 @@ import {
   ChevronUp, MoreVertical, Loader2,
   PenTool, Map, CreditCard, BarChart3, Table, FileQuestion,
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
-  Copy, Check as CheckIcon,
+  Copy, Check as CheckIcon, Download, RotateCcw, Edit3, Info,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -300,9 +300,17 @@ export default function ResearchNotebook() {
   // Studio
   const [studioLoading, setStudioLoading] = useState(false)
   const [selectedArtifactType, setSelectedArtifactType] = useState<StudioArtifactType | null>(null)
+  const [studioCustomPrompt, setStudioCustomPrompt] = useState('')
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
+  const [sourceSearch, setSourceSearch] = useState('')
+
+  // Edit notebook info
+  const [showEditInfo, setShowEditInfo] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editTopic, setEditTopic] = useState('')
+  const [editDescription, setEditDescription] = useState('')
 
   // ── Load notebooks ──────────────────────────────────────────────────
   const loadNotebooks = useCallback(async () => {
@@ -623,7 +631,9 @@ Instruções:
 - Para apresentações, organize em slides com títulos
 - Para roteiros de áudio/vídeo, inclua marcações de tempo e narração`
 
-      const userPrompt = `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".`
+      const userPrompt = studioCustomPrompt.trim()
+        ? `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".\n\nInstruções adicionais do usuário: ${studioCustomPrompt.trim()}`
+        : `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".`
 
       const result: LLMResult = await callLLM(apiKey, systemPrompt, userPrompt, model, 4000, 0.3)
 
@@ -664,6 +674,7 @@ Instruções:
       })
 
       setActiveTab('artifacts')
+      setStudioCustomPrompt('')
       toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso!`)
     } catch (err) {
       toast.error('Erro ao gerar artefato. Verifique sua chave de API.')
@@ -686,6 +697,60 @@ Instruções:
       console.error('Error deleting artifact:', err)
       toast.error('Erro ao remover artefato')
     }
+  }
+
+  // ── Clear chat history ──────────────────────────────────────────────
+  const handleClearChat = async () => {
+    if (!userId || !activeNotebook?.id) return
+    if (!window.confirm('Limpar todo o histórico de conversa? As fontes e artefatos serão mantidos.')) return
+    try {
+      await updateResearchNotebook(userId, activeNotebook.id, { messages: [] })
+      setActiveNotebook({ ...activeNotebook, messages: [] })
+      toast.success('Histórico de conversa limpo')
+    } catch (err) {
+      console.error('Error clearing chat:', err)
+      toast.error('Erro ao limpar histórico')
+    }
+  }
+
+  // ── Edit notebook info ──────────────────────────────────────────────
+  const openEditInfo = () => {
+    if (!activeNotebook) return
+    setEditTitle(activeNotebook.title)
+    setEditTopic(activeNotebook.topic)
+    setEditDescription(activeNotebook.description || '')
+    setShowEditInfo(true)
+  }
+
+  const handleSaveInfo = async () => {
+    if (!userId || !activeNotebook?.id || !editTitle.trim() || !editTopic.trim()) return
+    try {
+      const updates = {
+        title: editTitle.trim(),
+        topic: editTopic.trim(),
+        description: editDescription.trim() || '',
+      }
+      await updateResearchNotebook(userId, activeNotebook.id, updates)
+      setActiveNotebook({ ...activeNotebook, ...updates })
+      setShowEditInfo(false)
+      toast.success('Caderno atualizado')
+    } catch (err) {
+      console.error('Error updating notebook info:', err)
+      toast.error('Erro ao atualizar caderno')
+    }
+  }
+
+  // ── Download artifact ───────────────────────────────────────────────
+  const handleDownloadArtifact = (artifact: StudioArtifact) => {
+    const blob = new Blob([artifact.content], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${artifact.title.replace(/[^a-zA-Z0-9À-ÿ ]/g, '_')}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   // ── Filtered notebooks ──────────────────────────────────────────────
@@ -870,8 +935,22 @@ Instruções:
           <ArrowLeft className="w-5 h-5 text-gray-600" />
         </button>
         <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-semibold text-gray-900 truncate">{activeNotebook.title}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-gray-900 truncate">{activeNotebook.title}</h2>
+            <button
+              onClick={openEditInfo}
+              className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+              title="Editar informações do caderno"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <p className="text-xs text-gray-500 truncate">{activeNotebook.topic}</p>
+          {activeNotebook.description && (
+            <p className="text-[10px] text-gray-400 truncate mt-0.5" title={activeNotebook.description}>
+              <Info className="w-3 h-3 inline mr-0.5" />{activeNotebook.description}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
           {([
@@ -894,6 +973,11 @@ Instruções:
             >
               <tab.icon className="w-3.5 h-3.5" />
               {tab.label}
+              {tab.key === 'chat' && activeNotebook.messages.length > 0 && (
+                <span className="text-[10px] bg-brand-100 text-brand-700 rounded-full px-1.5">
+                  {activeNotebook.messages.length}
+                </span>
+              )}
               {tab.key === 'sources' && activeNotebook.sources.length > 0 && (
                 <span className="text-[10px] bg-brand-100 text-brand-700 rounded-full px-1.5">
                   {activeNotebook.sources.length}
@@ -908,6 +992,60 @@ Instruções:
           ))}
         </div>
       </div>
+
+      {/* Edit Notebook Info Modal */}
+      {showEditInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowEditInfo(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-brand-600" />
+              Editar Caderno
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Título *</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={e => setEditTitle(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tema da Pesquisa *</label>
+                <input
+                  type="text"
+                  value={editTopic}
+                  onChange={e => setEditTopic(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descrição / Objetivo</label>
+                <textarea
+                  value={editDescription}
+                  onChange={e => setEditDescription(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 mt-6">
+              <button onClick={() => setShowEditInfo(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveInfo}
+                disabled={!editTitle.trim() || !editTopic.trim()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+              >
+                Salvar Alterações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab content */}
       <div className="flex-1 overflow-hidden">
@@ -924,14 +1062,25 @@ Instruções:
                     Faça perguntas sobre &quot;{activeNotebook.topic}&quot; e o assistente responderá
                     com base nas fontes adicionadas. Adicione fontes na aba &quot;Fontes&quot; para respostas mais precisas.
                   </p>
+                  {activeNotebook.sources.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-3 flex items-center justify-center gap-1">
+                      <Info className="w-3.5 h-3.5" />
+                      Nenhuma fonte adicionada — vá na aba &quot;Fontes&quot; para começar
+                    </p>
+                  )}
                   <div className="mt-6 flex flex-wrap justify-center gap-2">
-                    {['O que são os principais conceitos?', 'Faça um resumo geral', 'Quais são os pontos controversos?'].map(suggestion => (
+                    {[
+                      `Quais os principais conceitos sobre "${activeNotebook.topic}"?`,
+                      `Faça um resumo geral sobre "${activeNotebook.topic}"`,
+                      'Quais são os pontos controversos?',
+                      'Liste as fontes normativas aplicáveis',
+                    ].map(suggestion => (
                       <button
                         key={suggestion}
                         onClick={() => setChatInput(suggestion)}
                         className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-brand-50 hover:text-brand-700 transition-colors"
                       >
-                        {suggestion}
+                        {suggestion.length > 60 ? suggestion.slice(0, 57) + '...' : suggestion}
                       </button>
                     ))}
                   </div>
@@ -1012,6 +1161,19 @@ Instruções:
                   <Send className="w-4 h-4" />
                 </button>
               </div>
+              <div className="flex items-center justify-between mt-1.5 px-1">
+                <span className="text-[10px] text-gray-400">Enter para enviar · Shift+Enter para nova linha</span>
+                {activeNotebook.messages.length > 0 && (
+                  <button
+                    onClick={handleClearChat}
+                    className="inline-flex items-center gap-1 text-[10px] text-gray-400 hover:text-red-500 transition-colors"
+                    title="Limpar histórico de conversa"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Limpar conversa
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1049,7 +1211,21 @@ Instruções:
 
               {/* Acervo documents */}
               <div>
-                <p className="text-xs text-gray-500 mb-2">Documentos do Acervo:</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-gray-500">Documentos do Acervo:</p>
+                  {!acervoLoading && acervoDocs.length > 5 && (
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Filtrar..."
+                        value={sourceSearch}
+                        onChange={e => setSourceSearch(e.target.value)}
+                        className="pl-7 pr-2 py-1 border border-gray-200 rounded text-[11px] w-36 focus:ring-1 focus:ring-brand-500 outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
                 {acervoLoading && (
                   <div className="flex items-center gap-2 py-4">
                     <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
@@ -1061,7 +1237,9 @@ Instruções:
                 )}
                 {!acervoLoading && acervoDocs.length > 0 && (
                   <div className="max-h-48 overflow-y-auto space-y-1">
-                    {acervoDocs.map(doc => {
+                    {acervoDocs
+                      .filter(doc => !sourceSearch.trim() || doc.filename.toLowerCase().includes(sourceSearch.toLowerCase()))
+                      .map(doc => {
                       const alreadyAdded = activeNotebook.sources.some(s => s.type === 'acervo' && s.reference === doc.id)
                       return (
                         <button
@@ -1134,6 +1312,20 @@ Instruções:
               </p>
             </div>
 
+            {/* Custom instructions */}
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Instruções adicionais (opcional)
+              </label>
+              <textarea
+                value={studioCustomPrompt}
+                onChange={e => setStudioCustomPrompt(e.target.value)}
+                placeholder="Ex: Foque nos aspectos práticos, use linguagem acessível, inclua exemplos de RPG..."
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+              />
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {ARTIFACT_TYPES.map(art => {
                 const ArtIcon = art.icon
@@ -1188,6 +1380,7 @@ Instruções:
                   icon={ArtIcon}
                   label={artDef?.label || artifact.type}
                   onDelete={() => handleDeleteArtifact(artifact.id)}
+                  onDownload={() => handleDownloadArtifact(artifact)}
                 />
               )
             })}
@@ -1205,11 +1398,13 @@ function ArtifactCard({
   icon: Icon,
   label,
   onDelete,
+  onDownload,
 }: {
   artifact: StudioArtifact
   icon: React.ElementType
   label: string
   onDelete: () => void
+  onDownload: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -1236,6 +1431,13 @@ function ArtifactCard({
         </div>
         <div className="flex items-center gap-2">
           <CopyButton text={artifact.content} />
+          <button
+            onClick={e => { e.stopPropagation(); onDownload() }}
+            className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-500 transition-colors"
+            title="Baixar como Markdown"
+          >
+            <Download className="w-4 h-4" />
+          </button>
           <button
             onClick={handleDelete}
             className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
