@@ -399,6 +399,9 @@ export async function runStudioPipeline(
     duration_ms: researchResult.duration_ms,
   })
 
+  // Brief pause to avoid hitting rate limits on consecutive calls
+  await new Promise(resolve => setTimeout(resolve, 1000))
+
   // ── Step 2: Specialist creation ─────────────────────────────────────
   onProgress?.(2, 3, `${SPECIALIST_LABELS[specialistRole]} criando conteúdo…`)
 
@@ -420,7 +423,8 @@ export async function runStudioPipeline(
     cost_usd: specialistResult.cost_usd,
     duration_ms: specialistResult.duration_ms,
   })
-
+  // Brief pause to avoid hitting rate limits on consecutive calls
+  await new Promise(resolve => setTimeout(resolve, 1000))
   // ── Step 3: Quality review ──────────────────────────────────────────
   onProgress?.(3, 3, 'Revisando e aprimorando…')
 

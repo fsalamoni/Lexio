@@ -1072,8 +1072,15 @@ Instruções:
         )
       } else if (err instanceof Error && err.message.includes('Agente(s) sem modelo')) {
         toast.warning('Modelos não configurados', err.message)
+      } else if (err instanceof Error && err.message.includes('429')) {
+        toast.warning(
+          'Limite de requisições atingido',
+          'O modelo está sobrecarregado ou sua conta atingiu o limite. Aguarde 30 segundos e tente novamente. Considere usar modelos ✦ Grátis no painel administrativo.',
+        )
+      } else if (err instanceof Error && err.message.includes('API key')) {
+        toast.error('Chave da API não configurada. Acesse Administração > Chaves de API.')
       } else {
-        toast.error('Erro ao gerar artefato. Verifique sua chave de API.')
+        toast.error('Erro ao gerar artefato. Tente novamente ou troque o modelo do agente.')
       }
     } finally {
       setStudioLoading(false)
