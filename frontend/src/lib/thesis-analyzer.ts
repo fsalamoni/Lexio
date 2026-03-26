@@ -266,7 +266,16 @@ Estrutura obrigatória:
 }
 \`\`\``
 
-// ── Pipeline orchestrator ─────────────────────────────────────────────────────
+function agentErrorMessage(err: unknown): string {
+  if (err instanceof TypeError) return 'Erro de rede (tente novamente)'
+  if (err instanceof Error) {
+    if (err.name === 'ModelUnavailableError') return 'Modelo indisponível'
+    if (err.message.includes('tempo limite')) return 'Tempo limite excedido'
+    if (err.message.includes('empty response')) return 'Resposta vazia do LLM'
+  }
+  return 'Falha inesperada'
+}
+
 
 /**
  * Run the 5-agent thesis analysis pipeline.
@@ -348,7 +357,7 @@ export async function analyzeThesisBank(
     catalogueResult = parseJsonObject(res.content) as typeof catalogueResult
     notify('thesis_catalogador', 'done', `${catalogueResult.similar_groups?.length ?? 0} grupos identificados`)
   } catch (err) {
-    notify('thesis_catalogador', 'error', 'Falha no Catalogador')
+    notify('thesis_catalogador', 'error', `Catalogador: ${agentErrorMessage(err)}`)
     console.warn('Catalogador failed:', err)
     catalogueResult = { similar_groups: [], low_quality_ids: [], thematic_gaps: [], catalogue_summary: '' }
   }
@@ -408,7 +417,7 @@ export async function analyzeThesisBank(
     }
     notify('thesis_analista', 'done', `${analysisMergeGroups.length} grupos a compilar`)
   } catch (err) {
-    notify('thesis_analista', 'error', 'Falha no Analista')
+    notify('thesis_analista', 'error', `Analista: ${agentErrorMessage(err)}`)
     console.warn('Analista failed:', err)
     analysisMergeGroups = []
   }
@@ -469,6 +478,7 @@ export async function analyzeThesisBank(
       })
     } catch (err) {
       console.warn(`Compilador failed for group ${group.group_ids}:`, err)
+      notify('thesis_compilador', 'running', `Erro em 1 grupo: ${agentErrorMessage(err)}`)
     }
   }
 
@@ -518,6 +528,7 @@ export async function analyzeThesisBank(
       const proposals = parseJsonArray(res.content) as typeof newThesisProposals
       newThesisProposals.push(...proposals.filter(p => p.title && p.content))
     } catch (err) {
+      notify('thesis_curador', 'error', `Curador: ${agentErrorMessage(err)}`)
       console.warn('Curador failed:', err)
     }
   }
@@ -670,7 +681,7 @@ export async function analyzeThesisBank(
 
       notify('thesis_revisor', 'done', `${finalSuggestions.length} sugestões finalizadas`)
     } catch (err) {
-      notify('thesis_revisor', 'error', 'Falha no Revisor')
+      notify('thesis_revisor', 'error', `Revisor: ${agentErrorMessage(err)}`)
       console.warn('Revisor failed, using raw suggestions:', err)
 
       // Fallback: build suggestions directly from raw data without Revisor
