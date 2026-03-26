@@ -921,13 +921,21 @@ export async function resetAcervoEmentaModels(): Promise<void> {
  * additional uploaded sources to learn about a topic and answer questions,
  * generate summaries, presentations, mind maps, flashcards, and more.
  *
- * Agent execution order:
+ * Agent groups:
+ *  ── Pesquisa & Análise ──
  *  1. Pesquisador   — deep-searches sources and builds a knowledge base
- *  2. Analista      — analyses, cross-references and synthesizes findings
+ *  2. Analista      — analyses, cross-references and synthesises findings
  *  3. Assistente    — answers user questions conversationally using context
- *  4. Criador       — generates studio outputs (summaries, mind maps, flashcards, etc.)
+ *
+ *  ── Estúdio de Criação (multi-agent pipeline) ──
+ *  4. Pesquisador do Estúdio — extracts source data relevant to the specific artifact
+ *  5. Escritor               — produces written content (summaries, reports, docs, flashcards, quizzes)
+ *  6. Roteirista             — creates scripts with narration, timing and production notes (audio/video)
+ *  7. Designer Visual        — builds visual structures (presentations, mind maps, infographics, tables)
+ *  8. Revisor                — quality-checks, refines and enhances any artifact before delivery
  */
 export const RESEARCH_NOTEBOOK_AGENT_DEFS: AgentModelDef[] = [
+  // ── Pesquisa & Análise ──
   {
     key: 'notebook_pesquisador',
     label: 'Pesquisador de Fontes',
@@ -955,14 +963,51 @@ export const RESEARCH_NOTEBOOK_AGENT_DEFS: AgentModelDef[] = [
     icon: 'message-circle',
     agentCategory: 'reasoning',
   },
+  // ── Estúdio de Criação ──
   {
-    key: 'notebook_criador',
-    label: 'Criador de Conteúdo (Estúdio)',
-    description: 'Gera resumos, mapas mentais, cartões didáticos, apresentações e outros artefatos',
+    key: 'studio_pesquisador',
+    label: 'Pesquisador do Estúdio',
+    description: 'Extrai e organiza dados relevantes das fontes para o artefato solicitado',
+    defaultModel: 'anthropic/claude-3.5-haiku',
+    recommendedTier: 'fast',
+    icon: 'search',
+    agentCategory: 'extraction',
+  },
+  {
+    key: 'studio_escritor',
+    label: 'Escritor',
+    description: 'Redige conteúdo textual: resumos, relatórios, documentos, cartões e testes',
     defaultModel: 'anthropic/claude-sonnet-4',
     recommendedTier: 'balanced',
     icon: 'file-text',
     agentCategory: 'writing',
+  },
+  {
+    key: 'studio_roteirista',
+    label: 'Roteirista',
+    description: 'Cria roteiros profissionais com narração, timing e notas de produção para áudio e vídeo',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'mic',
+    agentCategory: 'writing',
+  },
+  {
+    key: 'studio_visual',
+    label: 'Designer Visual',
+    description: 'Estrutura apresentações, mapas mentais, infográficos e tabelas com layout profissional',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'pen-tool',
+    agentCategory: 'synthesis',
+  },
+  {
+    key: 'studio_revisor',
+    label: 'Revisor de Qualidade',
+    description: 'Revisa, aprimora e garante excelência em qualquer artefato antes da entrega final',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'clipboard-check',
+    agentCategory: 'synthesis',
   },
 ]
 

@@ -42,6 +42,7 @@ import {
   createUsageExecutionRecord,
 } from '../lib/cost-analytics'
 import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
+import { runStudioPipeline, type StudioProgressCallback } from '../lib/notebook-studio-pipeline'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,11 @@ const AGENT_LABELS: Record<string, string> = {
   notebook_pesquisador: 'Pesquisador de Fontes',
   notebook_analista: 'Analista de Conhecimento',
   notebook_assistente: 'Assistente Conversacional',
-  notebook_criador: 'Criador de Conteúdo (Estúdio)',
+  studio_pesquisador: 'Pesquisador do Estúdio',
+  studio_escritor: 'Escritor',
+  studio_roteirista: 'Roteirista',
+  studio_visual: 'Designer Visual',
+  studio_revisor: 'Revisor de Qualidade',
   nb_acervo_triagem: 'Triagem de Acervo',
   nb_acervo_buscador: 'Buscador de Acervo',
   nb_acervo_analista: 'Analista de Acervo',
@@ -391,6 +396,7 @@ export default function ResearchNotebook() {
   const [studioLoading, setStudioLoading] = useState(false)
   const [selectedArtifactType, setSelectedArtifactType] = useState<StudioArtifactType | null>(null)
   const [studioCustomPrompt, setStudioCustomPrompt] = useState('')
+  const [studioProgress, setStudioProgress] = useState<{ step: number; total: number; phase: string } | null>(null)
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
@@ -981,52 +987,39 @@ Instruções:
     }
   }
 
-  // ── Studio: generate artifact ───────────────────────────────────────
+  // ── Studio: generate artifact (multi-agent pipeline) ────────────────
   const handleGenerateArtifact = async (artifactType: StudioArtifactType) => {
     if (!userId || !activeNotebook?.id || studioLoading) return
 
     setStudioLoading(true)
     setSelectedArtifactType(artifactType)
+    setStudioProgress(null)
 
     try {
       const apiKey = await getOpenRouterKey()
-      const models = await loadResearchNotebookModels()
-      const model = models.notebook_criador
-      if (!model) {
-        toast.warning('Modelo não configurado', `O agente "${AGENT_LABELS.notebook_criador}" não possui modelo. Vá em Administração > Caderno de Pesquisa e selecione um.`)
-        setStudioLoading(false)
-        setSelectedArtifactType(null)
-        return
-      }
       const sourceContext = buildSourceContext()
       const artifactDef = ARTIFACT_TYPES.find(a => a.type === artifactType)
 
-      const systemPrompt = `Você é um criador de conteúdo especializado. Gere um(a) ${artifactDef?.label || artifactType} sobre o tema: "${activeNotebook.topic}".
-${activeNotebook.description ? `Objetivo: ${activeNotebook.description}` : ''}
+      const conversationContext = activeNotebook.messages
+        .slice(-MAX_STUDIO_CONTEXT_MESSAGES)
+        .map(m => `${m.role}: ${m.content}`)
+        .join('\n')
+        .slice(0, MAX_STUDIO_CONTEXT_CHARS)
 
-Fontes disponíveis:
-${sourceContext || '(Sem fontes específicas — use conhecimento geral)'}
+      const onProgress: StudioProgressCallback = (step, total, phase) => {
+        setStudioProgress({ step, total, phase })
+      }
 
-Conversas anteriores (contexto):
-${activeNotebook.messages.slice(-MAX_STUDIO_CONTEXT_MESSAGES).map(m => `${m.role}: ${m.content}`).join('\n').slice(0, MAX_STUDIO_CONTEXT_CHARS)}
-
-Instruções:
-- Gere o conteúdo em formato Markdown
-- Seja completo e detalhado
-- Use a estrutura adequada para ${artifactDef?.label || artifactType}
-- Responda em português brasileiro
-- Para mapas mentais, use listas aninhadas com indentação
-- Para cartões didáticos, use formato de pergunta/resposta
-- Para testes, inclua gabarito
-- Para tabelas, use formato Markdown
-- Para apresentações, organize em slides com títulos
-- Para roteiros de áudio/vídeo, inclua marcações de tempo e narração`
-
-      const userPrompt = studioCustomPrompt.trim()
-        ? `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".\n\nInstruções adicionais do usuário: ${studioCustomPrompt.trim()}`
-        : `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".`
-
-      const result: LLMResult = await callLLM(apiKey, systemPrompt, userPrompt, model, 4000, 0.3)
+      const result = await runStudioPipeline({
+        apiKey,
+        topic: activeNotebook.topic,
+        description: activeNotebook.description || undefined,
+        sourceContext: sourceContext || '',
+        conversationContext,
+        customInstructions: studioCustomPrompt.trim() || undefined,
+        artifactType,
+        artifactLabel: artifactDef?.label || artifactType,
+      }, onProgress)
 
       const artifact: StudioArtifact = {
         id: generateId(),
@@ -1039,19 +1032,22 @@ Instruções:
 
       const updatedArtifacts = [...activeNotebook.artifacts, artifact]
 
-      const execution = createUsageExecutionRecord({
-        source_type: 'caderno_pesquisa',
-        source_id: activeNotebook.id,
-        phase: `notebook_criador_${artifactType}`,
-        agent_name: `Criador: ${artifactDef?.label || artifactType}`,
-        model: result.model,
-        tokens_in: result.tokens_in,
-        tokens_out: result.tokens_out,
-        cost_usd: result.cost_usd,
-        duration_ms: result.duration_ms,
-      })
+      // Create execution records for each pipeline step
+      const newExecutions = result.executions.map(ex =>
+        createUsageExecutionRecord({
+          source_type: 'caderno_pesquisa',
+          source_id: activeNotebook.id,
+          phase: ex.phase,
+          agent_name: ex.agent_name,
+          model: ex.model,
+          tokens_in: ex.tokens_in,
+          tokens_out: ex.tokens_out,
+          cost_usd: ex.cost_usd,
+          duration_ms: ex.duration_ms,
+        })
+      )
 
-      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
+      const updatedExecutions = [...(activeNotebook.llm_executions || []), ...newExecutions]
 
       await updateResearchNotebook(userId, activeNotebook.id, {
         artifacts: updatedArtifacts,
@@ -1066,20 +1062,23 @@ Instruções:
 
       setActiveTab('artifacts')
       setStudioCustomPrompt('')
-      toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso!`)
+      toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso! (pipeline de 3 agentes)`)
     } catch (err) {
-      console.error('Studio error:', err)
+      console.error('Studio pipeline error:', err)
       if (err instanceof ModelUnavailableError) {
         toast.warning(
           `Modelo indisponível: ${err.modelId}`,
-          `O modelo do agente "${AGENT_LABELS.notebook_criador}" foi removido do OpenRouter. Vá em Administração > Caderno de Pesquisa e substitua-o.`,
+          'Um modelo do pipeline do estúdio foi removido do OpenRouter. Vá em Administração > Caderno de Pesquisa e substitua-o.',
         )
+      } else if (err instanceof Error && err.message.includes('Agente(s) sem modelo')) {
+        toast.warning('Modelos não configurados', err.message)
       } else {
         toast.error('Erro ao gerar artefato. Verifique sua chave de API.')
       }
     } finally {
       setStudioLoading(false)
       setSelectedArtifactType(null)
+      setStudioProgress(null)
     }
   }
 
@@ -2021,6 +2020,33 @@ Instruções:
               />
             </div>
 
+            {/* Pipeline progress indicator */}
+            {studioLoading && studioProgress && (
+              <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
+                  <span className="text-sm font-semibold text-purple-800">
+                    Pipeline Multi-Agente — Etapa {studioProgress.step}/{studioProgress.total}
+                  </span>
+                </div>
+                <p className="text-xs text-purple-700 mb-2">{studioProgress.phase}</p>
+                <div className="flex gap-1">
+                  {Array.from({ length: studioProgress.total }, (_, i) => (
+                    <div
+                      key={i}
+                      className={`h-1.5 flex-1 rounded-full transition-colors ${
+                        i < studioProgress.step
+                          ? 'bg-purple-500'
+                          : i === studioProgress.step - 1
+                            ? 'bg-purple-400 animate-pulse'
+                            : 'bg-purple-200'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {ARTIFACT_TYPES.map(art => {
                 const ArtIcon = art.icon
@@ -2043,6 +2069,9 @@ Instruções:
                       <span className="text-sm font-semibold text-gray-900">{art.label}</span>
                     </div>
                     <p className="text-xs text-gray-500">{art.description}</p>
+                    {isGenerating && studioProgress && (
+                      <p className="text-[10px] text-purple-600 font-medium">{studioProgress.phase}</p>
+                    )}
                   </button>
                 )
               })}
