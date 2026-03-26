@@ -14,12 +14,16 @@ export const DEFAULT_FALLBACK_MODEL = 'anthropic/claude-3.5-haiku'
 /** Timeout in milliseconds for each OpenRouter request. */
 const REQUEST_TIMEOUT_MS = 120_000
 
-/** Maximum number of automatic retries on transient network failures. */
+/** Maximum number of automatic retries on transient failures. */
 const MAX_RETRIES = 2
 
+/** Maximum number of retries specifically for empty LLM responses. */
+const MAX_EMPTY_RESPONSE_RETRIES = 1
+
 /**
- * Perform a fetch with automatic retry on transient network errors.
+ * Perform a fetch with automatic retry on transient errors.
  * Retries up to MAX_RETRIES times with exponential back-off (1 s, 2 s).
+ * Retries on both network errors (TypeError) and timeouts (AbortError).
  * A per-request AbortController enforces REQUEST_TIMEOUT_MS.
  */
 async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
@@ -45,13 +49,13 @@ async function fetchWithRetry(url: string, options: RequestInit): Promise<Respon
       const isTimeout = err instanceof DOMException && err.name === 'AbortError'
 
       if (isTimeout) {
-        lastError = new Error(`Requisição ao OpenRouter excedeu o tempo limite (${REQUEST_TIMEOUT_MS / 1000}s)`)
+        lastError = new TransientLLMError(`Requisição ao OpenRouter excedeu o tempo limite (${REQUEST_TIMEOUT_MS / 1000}s)`)
       } else {
         lastError = err as Error
       }
 
-      // Retry only on network errors (Failed to fetch, connection reset, etc.)
-      if (isNetworkError && attempt < MAX_RETRIES) {
+      // Retry on network errors and timeouts
+      if ((isNetworkError || isTimeout) && attempt < MAX_RETRIES) {
         continue
       }
       throw lastError
@@ -71,6 +75,18 @@ export class ModelUnavailableError extends Error {
     super(`Modelo "${modelId}" indisponível no OpenRouter (sem endpoints). Altere este modelo nas configurações.`)
     this.name = 'ModelUnavailableError'
     this.modelId = modelId
+  }
+}
+
+/**
+ * Custom error thrown on transient LLM failures (empty response, timeout).
+ * Callers like callLLMWithFallback can catch this to transparently retry
+ * with a fallback model.
+ */
+export class TransientLLMError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TransientLLMError'
   }
 }
 
@@ -104,84 +120,91 @@ export async function callLLM(
 ): Promise<LLMResult> {
   const t0 = performance.now()
 
-  const resp = await fetchWithRetry(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://lexio.app',
-      'X-Title': 'Lexio',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      max_tokens: maxTokens,
-      temperature,
-    }),
-  })
-
-  if (!resp.ok) {
-    const errorBody = await resp.text().catch(() => '')
-    const lower = errorBody.toLowerCase()
-    // Throw specific error when model is unavailable on OpenRouter:
-    // - 404 "no endpoints found" (model removed or temporarily down)
-    // - 400 "not a valid model" (model ID no longer recognized)
-    if (
-      (resp.status === 404 && lower.includes('no endpoints')) ||
-      (resp.status === 400 && lower.includes('not a valid model'))
-    ) {
-      console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
-      throw new ModelUnavailableError(model)
-    }
-    throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
-  }
-
-  const rawText = await resp.text()
-  if (!rawText || rawText.trim().length === 0) {
-    throw new Error('OpenRouter returned empty response body')
-  }
-
-  let data: Record<string, unknown>
-  try {
-    data = JSON.parse(rawText)
-  } catch (parseErr) {
-    throw new Error(
-      `OpenRouter returned invalid JSON (${(parseErr as Error).message}). ` +
-      `Response starts with: ${rawText.slice(0, 200)}`,
-    )
-  }
-
-  const choice = (data as Record<string, unknown[]>).choices?.[0] as
-    | { message?: { content?: string } }
-    | undefined
-  if (!choice?.message?.content) {
-    throw new Error('OpenRouter returned empty response')
-  }
-
-  const usage = (data.usage ?? {}) as Record<string, number>
-  const durationMs = Math.round(performance.now() - t0)
-
-  const tokensIn  = usage.prompt_tokens ?? 0
-  const tokensOut = usage.completion_tokens ?? 0
-
-  // OpenRouter returns the generation cost in usage.cost (USD).
-  // When cost is explicitly 0 (free/gratis models), honour it instead of estimating.
-  // Only estimate when the field is absent from the response entirely.
-  const cost_usd: number = typeof usage.cost === 'number'
-    ? usage.cost
-    : estimateCost(model, tokensIn, tokensOut)
-
-  return {
-    content: choice.message.content,
+  const body = JSON.stringify({
     model,
-    tokens_in: tokensIn,
-    tokens_out: tokensOut,
-    cost_usd,
-    duration_ms: durationMs,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    max_tokens: maxTokens,
+    temperature,
+  })
+  const headers = {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+    'HTTP-Referer': 'https://lexio.app',
+    'X-Title': 'Lexio',
   }
+
+  // Retry loop for empty responses (separate from fetchWithRetry network retries)
+  for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_RESPONSE_RETRIES; emptyAttempt++) {
+    if (emptyAttempt > 0) {
+      const delayMs = 1500 * emptyAttempt
+      console.warn(`[LLM] Resposta vazia, tentativa ${emptyAttempt + 1}/${MAX_EMPTY_RESPONSE_RETRIES + 1} após ${delayMs}ms...`)
+      await new Promise(r => setTimeout(r, delayMs))
+    }
+
+    const resp = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body })
+
+    if (!resp.ok) {
+      const errorBody = await resp.text().catch(() => '')
+      const lower = errorBody.toLowerCase()
+      if (
+        (resp.status === 404 && lower.includes('no endpoints')) ||
+        (resp.status === 400 && lower.includes('not a valid model'))
+      ) {
+        console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
+        throw new ModelUnavailableError(model)
+      }
+      throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
+    }
+
+    const rawText = await resp.text()
+    if (!rawText || rawText.trim().length === 0) {
+      if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
+      throw new TransientLLMError('OpenRouter returned empty response body')
+    }
+
+    let data: Record<string, unknown>
+    try {
+      data = JSON.parse(rawText)
+    } catch (parseErr) {
+      throw new Error(
+        `OpenRouter returned invalid JSON (${(parseErr as Error).message}). ` +
+        `Response starts with: ${rawText.slice(0, 200)}`,
+      )
+    }
+
+    const choice = (data as Record<string, unknown[]>).choices?.[0] as
+      | { message?: { content?: string } }
+      | undefined
+    if (!choice?.message?.content) {
+      if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
+      throw new TransientLLMError('OpenRouter returned empty response')
+    }
+
+    const usage = (data.usage ?? {}) as Record<string, number>
+    const durationMs = Math.round(performance.now() - t0)
+
+    const tokensIn  = usage.prompt_tokens ?? 0
+    const tokensOut = usage.completion_tokens ?? 0
+
+    const cost_usd: number = typeof usage.cost === 'number'
+      ? usage.cost
+      : estimateCost(model, tokensIn, tokensOut)
+
+    return {
+      content: choice.message.content,
+      model,
+      tokens_in: tokensIn,
+      tokens_out: tokensOut,
+      cost_usd,
+      duration_ms: durationMs,
+    }
+  }
+
+  // Should not reach here, but satisfies TypeScript
+  throw new TransientLLMError('OpenRouter returned empty response')
 }
 
 /**
@@ -203,78 +226,93 @@ export async function callLLMWithMessages(
 ): Promise<LLMResult> {
   const t0 = performance.now()
 
-  const resp = await fetchWithRetry(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://lexio.app',
-      'X-Title': 'Lexio',
-    },
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
-  })
+  const body = JSON.stringify({ model, messages, max_tokens: maxTokens, temperature })
+  const headers = {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+    'HTTP-Referer': 'https://lexio.app',
+    'X-Title': 'Lexio',
+  }
 
-  if (!resp.ok) {
-    const errorBody = await resp.text().catch(() => '')
-    const lower = errorBody.toLowerCase()
-    if (
-      (resp.status === 404 && lower.includes('no endpoints')) ||
-      (resp.status === 400 && lower.includes('not a valid model'))
-    ) {
-      console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
-      throw new ModelUnavailableError(model)
+  // Retry loop for empty responses (separate from fetchWithRetry network retries)
+  for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_RESPONSE_RETRIES; emptyAttempt++) {
+    if (emptyAttempt > 0) {
+      const delayMs = 1500 * emptyAttempt
+      console.warn(`[LLM] Resposta vazia, tentativa ${emptyAttempt + 1}/${MAX_EMPTY_RESPONSE_RETRIES + 1} após ${delayMs}ms...`)
+      await new Promise(r => setTimeout(r, delayMs))
     }
-    throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
+
+    const resp = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body })
+
+    if (!resp.ok) {
+      const errorBody = await resp.text().catch(() => '')
+      const lower = errorBody.toLowerCase()
+      if (
+        (resp.status === 404 && lower.includes('no endpoints')) ||
+        (resp.status === 400 && lower.includes('not a valid model'))
+      ) {
+        console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
+        throw new ModelUnavailableError(model)
+      }
+      throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
+    }
+
+    const rawText = await resp.text()
+    if (!rawText || rawText.trim().length === 0) {
+      if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
+      throw new TransientLLMError('OpenRouter returned empty response body')
+    }
+
+    let data: Record<string, unknown>
+    try {
+      data = JSON.parse(rawText)
+    } catch (parseErr) {
+      throw new Error(
+        `OpenRouter returned invalid JSON (${(parseErr as Error).message}). ` +
+        `Response starts with: ${rawText.slice(0, 200)}`,
+      )
+    }
+
+    const choice = (data as Record<string, unknown[]>).choices?.[0] as
+      | { message?: { content?: string } }
+      | undefined
+    if (!choice?.message?.content) {
+      if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
+      throw new TransientLLMError('OpenRouter returned empty response')
+    }
+
+    const usage = (data.usage ?? {}) as Record<string, number>
+    const durationMs = Math.round(performance.now() - t0)
+    const tokensIn  = usage.prompt_tokens ?? 0
+    const tokensOut = usage.completion_tokens ?? 0
+    const cost_usd: number = typeof usage.cost === 'number'
+      ? usage.cost
+      : estimateCost(model, tokensIn, tokensOut)
+
+    return {
+      content: choice.message.content,
+      model,
+      tokens_in: tokensIn,
+      tokens_out: tokensOut,
+      cost_usd,
+      duration_ms: durationMs,
+    }
   }
 
-  const rawText = await resp.text()
-  if (!rawText || rawText.trim().length === 0) {
-    throw new Error('OpenRouter returned empty response body')
-  }
-
-  let data: Record<string, unknown>
-  try {
-    data = JSON.parse(rawText)
-  } catch (parseErr) {
-    throw new Error(
-      `OpenRouter returned invalid JSON (${(parseErr as Error).message}). ` +
-      `Response starts with: ${rawText.slice(0, 200)}`,
-    )
-  }
-
-  const choice = (data as Record<string, unknown[]>).choices?.[0] as
-    | { message?: { content?: string } }
-    | undefined
-  if (!choice?.message?.content) {
-    throw new Error('OpenRouter returned empty response')
-  }
-
-  const usage = (data.usage ?? {}) as Record<string, number>
-  const durationMs = Math.round(performance.now() - t0)
-  const tokensIn  = usage.prompt_tokens ?? 0
-  const tokensOut = usage.completion_tokens ?? 0
-  const cost_usd: number = typeof usage.cost === 'number'
-    ? usage.cost
-    : estimateCost(model, tokensIn, tokensOut)
-
-  return {
-    content: choice.message.content,
-    model,
-    tokens_in: tokensIn,
-    tokens_out: tokensOut,
-    cost_usd,
-    duration_ms: durationMs,
-  }
+  // Should not reach here, but satisfies TypeScript
+  throw new TransientLLMError('OpenRouter returned empty response')
 }
 
 /**
- * Call OpenRouter with automatic fallback when a model has no available endpoints.
+ * Call OpenRouter with automatic fallback when a model is unavailable or
+ * encounters transient errors (empty response, timeout).
  *
  * Free / experimental models on OpenRouter can return "No endpoints found" (404)
- * when they are temporarily unavailable or rate-limited. This wrapper transparently
- * retries with the specified fallback model so the pipeline keeps working.
+ * or empty responses when they are temporarily unavailable or overloaded.
+ * This wrapper transparently retries with the specified fallback model so the
+ * pipeline keeps working.
  *
- * @param fallbackModel - Reliable model to use when `model` is unavailable
+ * @param fallbackModel - Reliable model to use when `model` fails
  */
 export async function callLLMWithFallback(
   apiKey: string,
@@ -288,13 +326,14 @@ export async function callLLMWithFallback(
   try {
     return await callLLM(apiKey, system, user, model, maxTokens, temperature)
   } catch (err) {
-    if (err instanceof ModelUnavailableError) {
+    const isRecoverable = err instanceof ModelUnavailableError || err instanceof TransientLLMError
+    if (isRecoverable) {
       if (model === fallbackModel) {
-        // Both primary and fallback are unavailable — propagate error
+        // Both primary and fallback are the same model — propagate error
         throw err
       }
       console.warn(
-        `[LLM] Modelo "${model}" sem endpoints disponíveis.` +
+        `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
         ` Usando fallback: "${fallbackModel}".`,
       )
       return callLLM(apiKey, system, user, fallbackModel, maxTokens, temperature)
@@ -317,10 +356,11 @@ export async function callLLMWithMessagesFallback(
   try {
     return await callLLMWithMessages(apiKey, messages, model, maxTokens, temperature)
   } catch (err) {
-    if (err instanceof ModelUnavailableError) {
+    const isRecoverable = err instanceof ModelUnavailableError || err instanceof TransientLLMError
+    if (isRecoverable) {
       if (model === fallbackModel) throw err
       console.warn(
-        `[LLM] Modelo "${model}" sem endpoints disponíveis.` +
+        `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
         ` Usando fallback: "${fallbackModel}".`,
       )
       return callLLMWithMessages(apiKey, messages, fallbackModel, maxTokens, temperature)
