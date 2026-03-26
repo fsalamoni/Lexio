@@ -11,7 +11,7 @@
  *  4. Curador     — Final curation with summaries and recommendations
  */
 
-import { callLLMWithFallback, type LLMResult } from './llm-client'
+import { callLLM } from './llm-client'
 import { getAllAcervoDocumentsForSearch, updateAcervoEmenta, type AcervoDocumentData } from './firestore-service'
 import { getOpenRouterKey, generateAcervoEmenta } from './generation-service'
 import { loadNotebookAcervoModels, type NotebookAcervoModelMap } from './model-config'
@@ -345,10 +345,19 @@ export async function analyzeNotebookAcervo(
   const apiKey = await getOpenRouterKey()
   const agentModels: NotebookAcervoModelMap = await loadNotebookAcervoModels()
 
-  const modelTriagem   = agentModels.nb_acervo_triagem   ?? 'anthropic/claude-3.5-haiku'
-  const modelBuscador  = agentModels.nb_acervo_buscador   ?? 'anthropic/claude-3.5-haiku'
-  const modelAnalista  = agentModels.nb_acervo_analista   ?? 'anthropic/claude-sonnet-4'
-  const modelCurador   = agentModels.nb_acervo_curador    ?? 'anthropic/claude-sonnet-4'
+  const modelTriagem   = agentModels.nb_acervo_triagem
+  const modelBuscador  = agentModels.nb_acervo_buscador
+  const modelAnalista  = agentModels.nb_acervo_analista
+  const modelCurador   = agentModels.nb_acervo_curador
+
+  // Guard: ensure all agents have models configured
+  const missingAgents = [
+    !modelTriagem && 'Triagem', !modelBuscador && 'Buscador',
+    !modelAnalista && 'Analista', !modelCurador && 'Curador',
+  ].filter(Boolean)
+  if (missingAgents.length > 0) {
+    throw new Error(`Agente(s) sem modelo configurado: ${missingAgents.join(', ')}. Vá em Administração e selecione modelos para os agentes do Acervo.`)
+  }
 
   // ── 1. Load acervo ──
   onProgress?.({ phase: 'nb_acervo_triagem', message: 'Carregando documentos do acervo...', percent: 5 })
@@ -370,11 +379,11 @@ export async function analyzeNotebookAcervo(
   // ── 2. Triagem — extract keywords from notebook topic ──
   onProgress?.({ phase: 'nb_acervo_triagem', message: 'Analisando tema do caderno...', percent: 10 })
 
-  const triageResult = await callLLMWithFallback(
+  const triageResult = await callLLM(
     apiKey,
     buildTriagemSystem(),
     buildTriagemUser(topic, description, existingSourceNames),
-    modelTriagem, 'anthropic/claude-3.5-haiku', 800, 0.1,
+    modelTriagem, 800, 0.1,
   )
 
   executions.push(createUsageExecutionRecord({
@@ -439,11 +448,11 @@ export async function analyzeNotebookAcervo(
     contexto: d.contexto,
   }))
 
-  const buscadorResult = await callLLMWithFallback(
+  const buscadorResult = await callLLM(
     apiKey,
     buildBuscadorSystem(),
     buildBuscadorUser(triageResult.content, topic, description, docSummaries),
-    modelBuscador, 'anthropic/claude-3.5-haiku', 2000, 0.1,
+    modelBuscador, 2000, 0.1,
   )
 
   executions.push(createUsageExecutionRecord({
@@ -508,11 +517,11 @@ export async function analyzeNotebookAcervo(
     })
     .filter((d): d is NonNullable<typeof d> => d !== null)
 
-  const analistaResult = await callLLMWithFallback(
+  const analistaResult = await callLLM(
     apiKey,
     buildAnalistaSystem(),
     buildAnalistaUser(topic, triageResult.content, selectedDocs),
-    modelAnalista, 'anthropic/claude-sonnet-4', 4000, 0.2,
+    modelAnalista, 4000, 0.2,
   )
 
   executions.push(createUsageExecutionRecord({
@@ -530,11 +539,11 @@ export async function analyzeNotebookAcervo(
   // ── 5. Curador — final curation ──
   onProgress?.({ phase: 'nb_acervo_curador', message: 'Fazendo curadoria final dos documentos...', percent: 75 })
 
-  const curadorResult = await callLLMWithFallback(
+  const curadorResult = await callLLM(
     apiKey,
     buildCuradorSystem(),
     buildCuradorUser(topic, triageResult.content, analistaResult.content, buscadorResult.content),
-    modelCurador, 'anthropic/claude-sonnet-4', 3000, 0.2,
+    modelCurador, 3000, 0.2,
   )
 
   executions.push(createUsageExecutionRecord({

@@ -76,9 +76,15 @@ export async function callLLM(
 
   if (!resp.ok) {
     const errorBody = await resp.text().catch(() => '')
-    // Throw specific error when model is no longer available on OpenRouter
-    if (resp.status === 404 && errorBody.toLowerCase().includes('no endpoints')) {
-      console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter (sem endpoints)`)
+    const lower = errorBody.toLowerCase()
+    // Throw specific error when model is unavailable on OpenRouter:
+    // - 404 "no endpoints found" (model removed or temporarily down)
+    // - 400 "not a valid model" (model ID no longer recognized)
+    if (
+      (resp.status === 404 && lower.includes('no endpoints')) ||
+      (resp.status === 400 && lower.includes('not a valid model'))
+    ) {
+      console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
       throw new ModelUnavailableError(model)
     }
     throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
@@ -161,9 +167,12 @@ export async function callLLMWithMessages(
 
   if (!resp.ok) {
     const errorBody = await resp.text().catch(() => '')
-    // Throw specific error when model is no longer available on OpenRouter
-    if (resp.status === 404 && errorBody.toLowerCase().includes('no endpoints')) {
-      console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter (sem endpoints)`)
+    const lower = errorBody.toLowerCase()
+    if (
+      (resp.status === 404 && lower.includes('no endpoints')) ||
+      (resp.status === 400 && lower.includes('not a valid model'))
+    ) {
+      console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
       throw new ModelUnavailableError(model)
     }
     throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)

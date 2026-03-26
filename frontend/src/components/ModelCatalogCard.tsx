@@ -30,6 +30,8 @@ import {
   type OpenRouterModel,
 } from '../lib/model-catalog'
 import { AVAILABLE_MODELS, type ModelOption, type AgentCategory } from '../lib/model-config'
+import { runModelHealthCheck, formatHealthCheckMessage } from '../lib/model-health-check'
+import { useToast } from './Toast'
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -363,6 +365,7 @@ function AddFromORModal({
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function ModelCatalogCard() {
+  const toast = useToast()
   const [catalog, setCatalog]       = useState<ModelOption[]>([])
   const [original, setOriginal]     = useState<ModelOption[]>([])
   const [loading, setLoading]       = useState(true)
@@ -375,6 +378,7 @@ export default function ModelCatalogCard() {
   const [tierFilter, setTierFilter] = useState('all')
   const [provFilter, setProvFilter] = useState('all')
   const [addModalOpen, setAddModalOpen] = useState(false)
+  const [checking, setChecking]     = useState(false)
 
   useEffect(() => {
     loadModelCatalog()
@@ -387,6 +391,31 @@ export default function ModelCatalogCard() {
   }, [])
 
   const hasChanges = JSON.stringify(catalog) !== JSON.stringify(original)
+
+  const handleHealthCheck = useCallback(async () => {
+    setChecking(true)
+    try {
+      const result = await runModelHealthCheck(true)
+      if (!result.didRun) {
+        toast.info('Verificação', 'Nenhuma verificação necessária.')
+        return
+      }
+      const msg = formatHealthCheckMessage(result)
+      if (result.removedModels.length > 0) {
+        toast.warning(msg.title, msg.message)
+        // Reload catalog after cleanup
+        const fresh = await loadModelCatalog()
+        setCatalog(fresh)
+        setOriginal(fresh)
+      } else {
+        toast.success(msg.title, msg.message)
+      }
+    } catch (e) {
+      toast.error('Erro na verificação', e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setChecking(false)
+    }
+  }, [toast])
 
   const allProviders = useMemo(
     () => [...new Set(catalog.map(m => m.provider))].sort(),
@@ -738,6 +767,21 @@ export default function ModelCatalogCard() {
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <RotateCcw className="w-4 h-4" /> Restaurar padrão
+              </button>
+
+              <button
+                type="button"
+                onClick={handleHealthCheck}
+                disabled={checking || saving}
+                title="Verificar quais modelos do catálogo ainda existem no OpenRouter"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {checking ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <AlertCircle className="w-4 h-4" />
+                )}
+                {checking ? 'Verificando...' : 'Verificar Disponibilidade'}
               </button>
 
               <button

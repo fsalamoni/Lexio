@@ -7,6 +7,7 @@ import NotificationBell from './NotificationBell'
 import { useToast } from './Toast'
 import api from '../api/client'
 import { IS_FIREBASE } from '../lib/firebase'
+import { runModelHealthCheck, formatHealthCheckMessage } from '../lib/model-health-check'
 
 const POLL_INTERVAL = 30_000 // 30 seconds
 
@@ -57,6 +58,17 @@ export default function Layout({ children }: { children: ReactNode }) {
     fetchAndCheck()
     const timer = setInterval(fetchAndCheck, POLL_INTERVAL)
     return () => clearInterval(timer)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Model health check — runs once per session, max once per 24h ──
+  useEffect(() => {
+    if (!IS_FIREBASE) return
+    runModelHealthCheck().then(result => {
+      const msg = formatHealthCheckMessage(result)
+      if (msg) {
+        toast.warning(msg.title, msg.message)
+      }
+    }).catch(() => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

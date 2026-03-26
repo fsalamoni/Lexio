@@ -35,7 +35,7 @@ import {
   type StudioArtifactType,
   type AcervoDocumentData,
 } from '../lib/firestore-service'
-import { callLLMWithFallback, callLLMWithMessagesFallback, DEFAULT_FALLBACK_MODEL, ModelUnavailableError, type LLMResult } from '../lib/llm-client'
+import { callLLM, callLLMWithMessages, ModelUnavailableError, type LLMResult } from '../lib/llm-client'
 import { getOpenRouterKey } from '../lib/generation-service'
 import { loadResearchNotebookModels } from '../lib/model-config'
 import {
@@ -478,7 +478,11 @@ export default function ResearchNotebook() {
     try {
       const apiKey = await getOpenRouterKey()
       const models = await loadResearchNotebookModels()
-      const model = models.notebook_analista || 'anthropic/claude-sonnet-4'
+      const model = models.notebook_analista
+      if (!model) {
+        toast.warning('Modelo não configurado', `O agente "${AGENT_LABELS.notebook_analista}" não possui modelo. Vá em Administração > Caderno de Pesquisa e selecione um.`)
+        return
+      }
       const sourceCtx = buildSourceContext()
 
       const system = `Você é um especialista em síntese de conhecimento jurídico. Analise as fontes e gere uma Visão Geral completa do caderno.`
@@ -497,7 +501,7 @@ Gere uma VISÃO GERAL em Markdown com:
 
 Responda em português brasileiro com tom técnico-jurídico.`
 
-      const result: LLMResult = await callLLMWithFallback(apiKey, system, user, model, DEFAULT_FALLBACK_MODEL, 4000, 0.3)
+      const result: LLMResult = await callLLM(apiKey, system, user, model, 4000, 0.3)
 
       const guideArtifact: StudioArtifact = {
         id: generateId(), type: 'resumo',
@@ -551,13 +555,14 @@ Responda em português brasileiro com tom técnico-jurídico.`
     try {
       const apiKey = await getOpenRouterKey()
       const models = await loadResearchNotebookModels()
-      const model = models.notebook_pesquisador || 'anthropic/claude-3.5-haiku'
+      const model = models.notebook_pesquisador
+      if (!model) return // silently skip suggestions when no model configured
       const preview = sourceCtx.slice(0, 4_000)
-      const result = await callLLMWithFallback(apiKey,
+      const result = await callLLM(apiKey,
         'Você gera perguntas de pesquisa relevantes com base em fontes jurídicas.',
         `Tema: "${activeNotebook.topic}"
 Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas que o usuário poderia fazer ao assistente.\nFormato: uma pergunta por linha, sem numeração, sem prefixos.`,
-        model, DEFAULT_FALLBACK_MODEL, 300, 0.5)
+        model, 300, 0.5)
 
       // Track usage for suggestions
       const execution = createUsageExecutionRecord({
@@ -882,7 +887,12 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     try {
       const apiKey = await getOpenRouterKey()
       const models = await loadResearchNotebookModels()
-      const model = models.notebook_assistente || 'anthropic/claude-sonnet-4'
+      const model = models.notebook_assistente
+      if (!model) {
+        toast.warning('Modelo não configurado', `O agente "${AGENT_LABELS.notebook_assistente}" não possui modelo. Vá em Administração > Caderno de Pesquisa e selecione um.`)
+        setChatLoading(false)
+        return
+      }
       const sourceContext = buildSourceContext()
 
       // Optional web search enrichment
@@ -918,7 +928,7 @@ Instruções:
         { role: 'user', content: userMsg.content },
       ]
 
-      const result: LLMResult = await callLLMWithMessagesFallback(apiKey, llmMessages, model, DEFAULT_FALLBACK_MODEL, 4000, 0.3)
+      const result: LLMResult = await callLLMWithMessages(apiKey, llmMessages, model, 4000, 0.3)
 
       const assistantMsg: NotebookMessage = {
         id: generateId(),
@@ -981,7 +991,13 @@ Instruções:
     try {
       const apiKey = await getOpenRouterKey()
       const models = await loadResearchNotebookModels()
-      const model = models.notebook_criador || 'anthropic/claude-sonnet-4'
+      const model = models.notebook_criador
+      if (!model) {
+        toast.warning('Modelo não configurado', `O agente "${AGENT_LABELS.notebook_criador}" não possui modelo. Vá em Administração > Caderno de Pesquisa e selecione um.`)
+        setStudioLoading(false)
+        setSelectedArtifactType(null)
+        return
+      }
       const sourceContext = buildSourceContext()
       const artifactDef = ARTIFACT_TYPES.find(a => a.type === artifactType)
 
@@ -1010,7 +1026,7 @@ Instruções:
         ? `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".\n\nInstruções adicionais do usuário: ${studioCustomPrompt.trim()}`
         : `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".`
 
-      const result: LLMResult = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, DEFAULT_FALLBACK_MODEL, 4000, 0.3)
+      const result: LLMResult = await callLLM(apiKey, systemPrompt, userPrompt, model, 4000, 0.3)
 
       const artifact: StudioArtifact = {
         id: generateId(),
