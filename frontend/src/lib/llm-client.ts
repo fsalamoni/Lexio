@@ -18,7 +18,7 @@ const REQUEST_TIMEOUT_MS = 120_000
 const MAX_RETRIES = 2
 
 /** Maximum number of retries specifically for empty LLM responses. */
-const MAX_EMPTY_RESPONSE_RETRIES = 1
+const MAX_EMPTY_RESPONSE_RETRIES = 2
 
 /**
  * Perform a fetch with automatic retry on transient errors.

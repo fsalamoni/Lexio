@@ -14,6 +14,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc, type ContextDetailData } from '../lib/firestore-service'
 import { generateDocument, type GenerationProgress } from '../lib/generation-service'
+import { TransientLLMError } from '../lib/llm-client'
 import { generateAndDownloadDocx } from '../lib/docx-generator'
 import { DOCTYPE_LABELS, AREA_LABELS } from '../lib/constants'
 
@@ -260,15 +261,6 @@ export default function DocumentDetail() {
     setRetrying(true)
     try {
       if (IS_FIREBASE && userId && doc) {
-        // Re-trigger generation in Firebase mode
-        generateDocument(
-          userId,
-          id,
-          doc.document_type_id,
-          doc.original_request,
-          doc.legal_area_ids ?? [],
-        ).catch(err => console.error('Retry generation failed:', err))
-        toast.success('Reprocessamento iniciado')
         // Show pipeline progress and re-trigger generation in Firebase mode
         initPipeline()
         setRetryPipeline(true)
@@ -286,11 +278,13 @@ export default function DocumentDetail() {
         } catch (err: any) {
           console.error('Retry generation failed:', err)
           setPipelineError(true)
-          const errorMsg = err?.message?.includes('API key')
-            ? 'Chave de API não configurada ou inválida'
-            : err?.message?.includes('fetch') || err?.message?.includes('network')
-              ? 'Erro de conexão durante a geração'
-              : err?.message || 'Erro inesperado durante a geração'
+          const errorMsg = err instanceof TransientLLMError
+            ? 'O modelo LLM não respondeu. Tente novamente ou altere o modelo em Administração.'
+            : err?.message?.includes('API key')
+              ? 'Chave de API não configurada ou inválida'
+              : err?.message?.includes('fetch') || err?.message?.includes('network')
+                ? 'Erro de conexão durante a geração'
+                : err?.message || 'Erro inesperado durante a geração'
           setPipelineMessage(errorMsg)
           setPipelineAgents(prev =>
             prev.map(a => a.status === 'active' ? { ...a, status: 'error' as const, completedAt: Date.now() } : a),
