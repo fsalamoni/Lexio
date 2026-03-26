@@ -12,7 +12,7 @@
  * AnalysisSuggestion objects that the user can accept, modify or reject.
  */
 
-import { callLLMWithFallback } from './llm-client'
+import { callLLMWithFallback, TransientLLMError } from './llm-client'
 import { type ThesisData, type AcervoDocumentData } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord, type UsageSummary } from './cost-analytics'
 import { type ThesisAnalystModelMap } from './model-config'
@@ -268,6 +268,7 @@ Estrutura obrigatória:
 
 function agentErrorMessage(err: unknown): string {
   if (err instanceof TypeError) return 'Erro de rede (tente novamente)'
+  if (err instanceof TransientLLMError) return 'Erro transitório do LLM (tente novamente)'
   if (err instanceof Error) {
     if (err.name === 'ModelUnavailableError') return 'Modelo indisponível'
     if (err.message.includes('tempo limite')) return 'Tempo limite excedido'
