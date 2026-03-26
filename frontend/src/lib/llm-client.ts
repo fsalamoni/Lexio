@@ -203,7 +203,7 @@ export async function callLLM(
     }
   }
 
-  // Should not reach here, but satisfies TypeScript
+  // Unreachable — the loop always returns or throws. Required for TypeScript control-flow.
   throw new TransientLLMError('OpenRouter returned empty response')
 }
 
@@ -299,7 +299,7 @@ export async function callLLMWithMessages(
     }
   }
 
-  // Should not reach here, but satisfies TypeScript
+  // Unreachable — the loop always returns or throws. Required for TypeScript control-flow.
   throw new TransientLLMError('OpenRouter returned empty response')
 }
 
