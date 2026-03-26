@@ -14,7 +14,7 @@ import {
   type ContextDetailData, type ContextDetailQuestion,
 } from '../lib/firestore-service'
 import { generateDocument, generateContextQuestions, type GenerationProgress } from '../lib/generation-service'
-import { ModelUnavailableError } from '../lib/llm-client'
+import { ModelUnavailableError, TransientLLMError } from '../lib/llm-client'
 import type { UserProfileForGeneration } from '../lib/generation-service'
 import PipelineProgressPanel, {
   PIPELINE_AGENTS,
@@ -245,6 +245,10 @@ export default function NewDocument() {
               `Modelo indisponível: ${err.modelId}`,
               'Este modelo foi removido do OpenRouter. Vá em Administração e substitua-o por outro.',
             )
+          } else if (err instanceof TransientLLMError) {
+            const msg = 'O modelo LLM não respondeu. Tente novamente ou altere o modelo em Administração.'
+            setPipelineMessage(msg)
+            toast.error('Modelo sem resposta', msg)
           } else {
             setPipelineMessage(err?.message || 'Erro na geração')
             toast.error('Erro na geração', err?.message)

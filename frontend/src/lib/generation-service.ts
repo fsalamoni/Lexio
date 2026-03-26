@@ -1431,7 +1431,7 @@ export async function generateDocument(
             try {
               const fullDoc = allAcervoDocs.find(ad => ad.id === d.id)
               if (!fullDoc) return
-              const { ementa, keywords, llm_execution: ementaExec } = await generateAcervoEmenta(apiKey, d.filename, fullDoc.text_content, modelAcervoBuscador)
+              const { ementa, keywords, llm_execution: ementaExec } = await generateAcervoEmenta(apiKey, d.filename, fullDoc.text_content)
               await updateAcervoEmenta(uid, d.id, ementa, keywords, [ementaExec])
               // Update in-memory reference
               d.ementa = ementa
