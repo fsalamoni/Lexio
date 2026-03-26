@@ -396,10 +396,6 @@ export default function ModelCatalogCard() {
     setChecking(true)
     try {
       const result = await runModelHealthCheck(true)
-      if (!result.didRun) {
-        toast.info('Verificação', 'Nenhuma verificação necessária.')
-        return
-      }
       const msg = formatHealthCheckMessage(result)
       if (result.removedModels.length > 0) {
         toast.warning(msg.title, msg.message)

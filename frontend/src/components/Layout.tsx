@@ -64,8 +64,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!IS_FIREBASE) return
     runModelHealthCheck().then(result => {
-      const msg = formatHealthCheckMessage(result)
-      if (msg) {
+      if (result.didRun && result.removedModels.length > 0) {
+        const msg = formatHealthCheckMessage(result)
         toast.warning(msg.title, msg.message)
       }
     }).catch(() => {})

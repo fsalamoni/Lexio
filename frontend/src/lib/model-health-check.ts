@@ -18,7 +18,6 @@ import {
   fetchOpenRouterModels,
   emitCatalogUpdated,
 } from './model-catalog'
-import type { ModelOption } from './model-config'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -93,10 +92,16 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
   try {
     // 1. Fetch live models from OpenRouter
     const liveModels = await fetchOpenRouterModels()
+    if (!Array.isArray(liveModels) || liveModels.length === 0) {
+      throw new Error('Não foi possível obter a lista de modelos do OpenRouter.')
+    }
     const liveModelIds = new Set(liveModels.map(m => m.id))
 
     // 2. Load current catalog
     const catalog = await loadModelCatalog()
+    if (!Array.isArray(catalog) || catalog.length === 0) {
+      return { removedModels: [], clearedAgents: [], catalogSize: 0, didRun: true }
+    }
 
     // 3. Find models in catalog that don't exist on OpenRouter
     const invalidModels = catalog.filter(m => !liveModelIds.has(m.id))
@@ -154,18 +159,31 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
     }
   } catch (err) {
     console.error('[HealthCheck] Erro na verificação de modelos:', err)
-    return noopResult
+    throw err
   }
 }
 
 /**
  * Format health check results for display as a user-facing notification.
+ * Always returns a valid object (never null).
  */
 export function formatHealthCheckMessage(result: HealthCheckResult): {
   title: string
   message: string
-} | null {
-  if (!result.didRun || result.removedModels.length === 0) return null
+} {
+  if (!result.didRun) {
+    return {
+      title: 'Verificação não executada',
+      message: 'A verificação de modelos não foi realizada.',
+    }
+  }
+
+  if (result.removedModels.length === 0) {
+    return {
+      title: 'Todos os modelos estão válidos',
+      message: `Nenhum modelo indisponível encontrado. ${result.catalogSize} modelo(s) no catálogo.`,
+    }
+  }
 
   const modelNames = result.removedModels.map(m => m.label).join(', ')
   const agentCount = result.clearedAgents.length
