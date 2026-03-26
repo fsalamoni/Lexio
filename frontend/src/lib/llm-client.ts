@@ -11,6 +11,55 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 export const DEFAULT_FALLBACK_MODEL = 'anthropic/claude-3.5-haiku'
 
+/** Timeout in milliseconds for each OpenRouter request. */
+const REQUEST_TIMEOUT_MS = 120_000
+
+/** Maximum number of automatic retries on transient network failures. */
+const MAX_RETRIES = 2
+
+/**
+ * Perform a fetch with automatic retry on transient network errors.
+ * Retries up to MAX_RETRIES times with exponential back-off (1 s, 2 s).
+ * A per-request AbortController enforces REQUEST_TIMEOUT_MS.
+ */
+async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
+  let lastError: Error | undefined
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const delayMs = 1000 * Math.pow(2, attempt - 1)
+      console.warn(`[LLM] Tentativa ${attempt + 1}/${MAX_RETRIES + 1} após ${delayMs}ms...`)
+      await new Promise(r => setTimeout(r, delayMs))
+    }
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+    try {
+      const resp = await fetch(url, { ...options, signal: controller.signal })
+      clearTimeout(timer)
+      return resp
+    } catch (err) {
+      clearTimeout(timer)
+      const isNetworkError = err instanceof TypeError
+      const isTimeout = err instanceof DOMException && err.name === 'AbortError'
+
+      if (isTimeout) {
+        lastError = new Error(`Requisição ao OpenRouter excedeu o tempo limite (${REQUEST_TIMEOUT_MS / 1000}s)`)
+      } else {
+        lastError = err as Error
+      }
+
+      // Retry only on network errors (Failed to fetch, connection reset, etc.)
+      if (isNetworkError && attempt < MAX_RETRIES) {
+        continue
+      }
+      throw lastError
+    }
+  }
+  throw lastError ?? new Error('Falha de rede desconhecida')
+}
+
 /**
  * Custom error thrown when a model is unavailable on OpenRouter
  * (404 / "no endpoints found"). Callers should catch this to display
@@ -55,7 +104,7 @@ export async function callLLM(
 ): Promise<LLMResult> {
   const t0 = performance.now()
 
-  const resp = await fetch(OPENROUTER_URL, {
+  const resp = await fetchWithRetry(OPENROUTER_URL, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
@@ -154,7 +203,7 @@ export async function callLLMWithMessages(
 ): Promise<LLMResult> {
   const t0 = performance.now()
 
-  const resp = await fetch(OPENROUTER_URL, {
+  const resp = await fetchWithRetry(OPENROUTER_URL, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,

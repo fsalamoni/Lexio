@@ -2039,10 +2039,10 @@ export async function saveThesisAnalysisSession(
   data: Omit<ThesisAnalysisSessionData, 'id'>,
 ): Promise<string> {
   const db = ensureFirestore()
-  const ref = await addDoc(collection(db, 'users', uid, 'thesis_analysis_sessions'), {
+  const ref = await addDoc(collection(db, 'users', uid, 'thesis_analysis_sessions'), stripUndefined({
     ...data,
     created_at: data.created_at ?? new Date().toISOString(),
-  })
+  }))
   return ref.id
 }
 
