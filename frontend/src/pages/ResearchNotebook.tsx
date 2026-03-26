@@ -35,7 +35,7 @@ import {
   type StudioArtifactType,
   type AcervoDocumentData,
 } from '../lib/firestore-service'
-import { callLLM, callLLMWithMessages, ModelUnavailableError, type LLMResult } from '../lib/llm-client'
+import { callLLMWithFallback, callLLMWithMessagesFallback, DEFAULT_FALLBACK_MODEL, ModelUnavailableError, type LLMResult } from '../lib/llm-client'
 import { getOpenRouterKey } from '../lib/generation-service'
 import { loadResearchNotebookModels } from '../lib/model-config'
 import {
@@ -497,7 +497,7 @@ Gere uma VISÃO GERAL em Markdown com:
 
 Responda em português brasileiro com tom técnico-jurídico.`
 
-      const result: LLMResult = await callLLM(apiKey, system, user, model, 4000, 0.3)
+      const result: LLMResult = await callLLMWithFallback(apiKey, system, user, model, DEFAULT_FALLBACK_MODEL, 4000, 0.3)
 
       const guideArtifact: StudioArtifact = {
         id: generateId(), type: 'resumo',
@@ -553,11 +553,27 @@ Responda em português brasileiro com tom técnico-jurídico.`
       const models = await loadResearchNotebookModels()
       const model = models.notebook_pesquisador || 'anthropic/claude-3.5-haiku'
       const preview = sourceCtx.slice(0, 4_000)
-      const result = await callLLM(apiKey,
+      const result = await callLLMWithFallback(apiKey,
         'Você gera perguntas de pesquisa relevantes com base em fontes jurídicas.',
         `Tema: "${activeNotebook.topic}"
 Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas que o usuário poderia fazer ao assistente.\nFormato: uma pergunta por linha, sem numeração, sem prefixos.`,
-        model, 300, 0.5)
+        model, DEFAULT_FALLBACK_MODEL, 300, 0.5)
+
+      // Track usage for suggestions
+      const execution = createUsageExecutionRecord({
+        source_type: 'caderno_pesquisa', source_id: activeNotebook.id!,
+        phase: 'notebook_pesquisador', agent_name: 'Pesquisador de Fontes',
+        model: result.model, tokens_in: result.tokens_in, tokens_out: result.tokens_out,
+        cost_usd: result.cost_usd, duration_ms: result.duration_ms,
+      })
+      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
+      if (userId && activeNotebook.id) {
+        await updateResearchNotebook(userId, activeNotebook.id, {
+          llm_executions: updatedExecutions,
+        })
+        setActiveNotebook(prev => prev ? { ...prev, llm_executions: updatedExecutions } : prev)
+      }
+
       const lines = result.content
         .split('\n')
         .map(l => l.replace(/^[-•*\d.]+\s*/, '').trim())
@@ -902,7 +918,7 @@ Instruções:
         { role: 'user', content: userMsg.content },
       ]
 
-      const result: LLMResult = await callLLMWithMessages(apiKey, llmMessages, model, 4000, 0.3)
+      const result: LLMResult = await callLLMWithMessagesFallback(apiKey, llmMessages, model, DEFAULT_FALLBACK_MODEL, 4000, 0.3)
 
       const assistantMsg: NotebookMessage = {
         id: generateId(),
@@ -994,7 +1010,7 @@ Instruções:
         ? `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".\n\nInstruções adicionais do usuário: ${studioCustomPrompt.trim()}`
         : `Gere um(a) ${artifactDef?.label || artifactType} completo(a) sobre "${activeNotebook.topic}".`
 
-      const result: LLMResult = await callLLM(apiKey, systemPrompt, userPrompt, model, 4000, 0.3)
+      const result: LLMResult = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, DEFAULT_FALLBACK_MODEL, 4000, 0.3)
 
       const artifact: StudioArtifact = {
         id: generateId(),
@@ -1010,8 +1026,8 @@ Instruções:
       const execution = createUsageExecutionRecord({
         source_type: 'caderno_pesquisa',
         source_id: activeNotebook.id,
-        phase: 'notebook_criador',
-        agent_name: 'Criador de Conteúdo',
+        phase: `notebook_criador_${artifactType}`,
+        agent_name: `Criador: ${artifactDef?.label || artifactType}`,
         model: result.model,
         tokens_in: result.tokens_in,
         tokens_out: result.tokens_out,

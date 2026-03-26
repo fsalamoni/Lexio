@@ -9,7 +9,7 @@
  */
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
-const DEFAULT_FALLBACK_MODEL = 'anthropic/claude-3.5-haiku'
+export const DEFAULT_FALLBACK_MODEL = 'anthropic/claude-3.5-haiku'
 
 /**
  * Custom error thrown when a model is unavailable on OpenRouter
@@ -240,6 +240,32 @@ export async function callLLMWithFallback(
         ` Usando fallback: "${fallbackModel}".`,
       )
       return callLLM(apiKey, system, user, fallbackModel, maxTokens, temperature)
+    }
+    throw err
+  }
+}
+
+/**
+ * Like callLLMWithFallback but for multi-turn conversations (wraps callLLMWithMessages).
+ */
+export async function callLLMWithMessagesFallback(
+  apiKey: string,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  model: string,
+  fallbackModel: string,
+  maxTokens = 4000,
+  temperature = 0.3,
+): Promise<LLMResult> {
+  try {
+    return await callLLMWithMessages(apiKey, messages, model, maxTokens, temperature)
+  } catch (err) {
+    if (err instanceof ModelUnavailableError) {
+      if (model === fallbackModel) throw err
+      console.warn(
+        `[LLM] Modelo "${model}" sem endpoints disponíveis.` +
+        ` Usando fallback: "${fallbackModel}".`,
+      )
+      return callLLMWithMessages(apiKey, messages, fallbackModel, maxTokens, temperature)
     }
     throw err
   }
