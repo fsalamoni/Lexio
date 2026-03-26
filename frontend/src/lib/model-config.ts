@@ -49,7 +49,23 @@ export interface ModelOption {
   isFree: boolean
   /** How well this model fits each agent category (1–10) */
   agentFit: AgentFitScores
+  /** Known rate limits (present when applicable) */
+  rateLimits?: {
+    /** Max requests per minute */
+    rpm: number
+    /** Max requests per day */
+    rpd: number
+    /** Optional additional note */
+    note?: string
+  }
 }
+
+/**
+ * Standard OpenRouter free-tier rate limits.
+ * Applied to all models with isFree = true.
+ * Source: https://openrouter.ai/docs/limits
+ */
+export const FREE_TIER_RATE_LIMITS = { rpm: 20, rpd: 200 } as const
 
 export const AVAILABLE_MODELS: ModelOption[] = [
   // ── Anthropic ────────────────────────────────────────────────────────────────

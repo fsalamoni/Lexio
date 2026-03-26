@@ -16,7 +16,7 @@ import {
   Library, ChevronDown, ChevronUp, Save, RotateCcw, Plus, Trash2,
   Search, AlertCircle, CheckCircle2, RefreshCw, X, Download,
   Cpu, Coins, Zap, Brain, Scale, FileText, Filter,
-  ExternalLink, PlusCircle, Info,
+  ExternalLink, PlusCircle, Info, AlertTriangle,
 } from 'lucide-react'
 import {
   loadModelCatalog,
@@ -29,7 +29,7 @@ import {
   getBestAgentInfo,
   type OpenRouterModel,
 } from '../lib/model-catalog'
-import { AVAILABLE_MODELS, type ModelOption, type AgentCategory } from '../lib/model-config'
+import { AVAILABLE_MODELS, FREE_TIER_RATE_LIMITS, type ModelOption, type AgentCategory } from '../lib/model-config'
 import { runModelHealthCheck, formatHealthCheckMessage } from '../lib/model-health-check'
 import { useToast } from './Toast'
 
@@ -639,6 +639,15 @@ export default function ModelCatalogCard() {
                             <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${provColor}`}>{model.provider}</span>
                             <span className="text-[9px] text-gray-400 font-mono truncate max-w-[140px]" title={model.id}>{model.id}</span>
                           </div>
+                          {/* Rate limits for free models */}
+                          {model.isFree && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-500 flex-shrink-0" />
+                              <span className="text-[9px] text-amber-700 font-medium">
+                                {FREE_TIER_RATE_LIMITS.rpm} req/min · {FREE_TIER_RATE_LIMITS.rpd} req/dia
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Tier/profile */}
@@ -710,8 +719,7 @@ export default function ModelCatalogCard() {
               </div>
             </div>
 
-            {/* Legend */}
-            <div className="mt-3 p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
+            <div className="mt-3 p-3 bg-indigo-50 border border-indigo-100 rounded-lg space-y-2">
               <p className="text-xs text-indigo-800 leading-relaxed">
                 <strong>📊 Legenda de Adequação:</strong>
                 {' '}
@@ -727,6 +735,17 @@ export default function ModelCatalogCard() {
                 {' '}<span className="bg-red-100 text-red-500 px-1 rounded text-[10px]">1</span> Não recomendado.
                 {' '}Pontuações são estimativas — ajuste conforme sua experiência.
               </p>
+              <div className="flex items-start gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-800">
+                  <strong>Limite tier gratuito (✦ GRÁTIS):</strong>{' '}
+                  Os modelos gratuitos do OpenRouter estão sujeitos a{' '}
+                  <strong>{FREE_TIER_RATE_LIMITS.rpm} requisições/minuto</strong>{' '}e{' '}
+                  <strong>{FREE_TIER_RATE_LIMITS.rpd} requisições/dia</strong>{' '}
+                  por conta. Erros 429 são esperados em uso intensivo ou pipelines multi-agente.
+                  Para produção, use modelos pagos.
+                </p>
+              </div>
             </div>
 
             {/* Error */}

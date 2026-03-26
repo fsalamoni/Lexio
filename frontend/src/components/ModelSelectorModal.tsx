@@ -21,9 +21,11 @@ import {
   Cpu,
   Coins,
   AlignLeft,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   AVAILABLE_MODELS,
+  FREE_TIER_RATE_LIMITS,
   type ModelOption,
   type AgentCategory,
 } from '../lib/model-config'
@@ -284,8 +286,20 @@ export default function ModelSelectorModal({
           <span className="min-w-[70px] text-center">Saída</span>
         </div>
 
-        {/* ── Model list ── */}
+        {/* ── Free-tier rate limit warning (shown when any free model is visible) ── */}
         <div className="overflow-y-auto flex-1 divide-y divide-gray-100">
+          {filtered.some(m => m.isFree) && (
+            <div className="px-6 py-2.5 bg-amber-50 border-b border-amber-200 flex items-start gap-2 sticky top-0 z-10">
+              <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-amber-800">
+                <strong>Limite tier gratuito (OpenRouter):</strong>{' '}
+                Máximo de{' '}
+                <span className="font-semibold">{FREE_TIER_RATE_LIMITS.rpm} req/min</span>{' '}e{' '}
+                <span className="font-semibold">{FREE_TIER_RATE_LIMITS.rpd} req/dia</span>{' '}
+                por conta. Em uso intensivo (ex: pipeline multi-agente), erros 429 são esperados — aguarde ou use modelos pagos.
+              </p>
+            </div>
+          )}
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <Filter className="w-8 h-8 mb-2" />
@@ -330,6 +344,18 @@ export default function ModelSelectorModal({
                       </span>
                       <span className="text-[10px] text-gray-400 truncate hidden sm:block">{model.description}</span>
                     </div>
+                    {/* Rate limits for free models */}
+                    {model.isFree && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                        <span className="text-[10px] text-amber-700 font-medium">
+                          {(model.rateLimits ?? FREE_TIER_RATE_LIMITS).rpm} req/min · {(model.rateLimits ?? FREE_TIER_RATE_LIMITS).rpd} req/dia
+                        </span>
+                        {model.rateLimits?.note && (
+                          <span className="text-[10px] text-amber-600">— {model.rateLimits.note}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* All 4 fit scores — agent category highlighted */}
@@ -376,6 +402,7 @@ export default function ModelSelectorModal({
             <strong>Adequação /10</strong> — escala global absoluta: ≥9 excelente · 7-8 bom · 5-6 adequado · ≤4 fraco.
             Coluna destacada = categoria desta função ({CATEGORY_LABELS[agentCategory]}).
             Preços em USD/1M tokens (OpenRouter).
+            {' '}<span className="text-amber-700">&#9888; Modelos ✦ Grátis: limite de {FREE_TIER_RATE_LIMITS.rpm} req/min e {FREE_TIER_RATE_LIMITS.rpd} req/dia.</span>
           </p>
           <button
             type="button"
