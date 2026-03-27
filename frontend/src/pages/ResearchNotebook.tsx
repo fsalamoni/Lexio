@@ -1563,6 +1563,34 @@ Instruções:
                 </div>
               </div>
 
+              {/* Audio Overview */}
+              {activeNotebook.sources.length > 0 && (
+                <div className="bg-gradient-to-r from-brand-600 to-purple-600 rounded-xl p-5 text-white">
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 bg-white/20 rounded-xl">
+                      <Mic className="w-6 h-6" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-bold">Audio Overview</h4>
+                      <p className="text-xs opacity-80 mt-1">
+                        Gere um podcast com dois hosts discutindo suas fontes — como o NotebookLM.
+                      </p>
+                      <button
+                        onClick={() => handleGenerateArtifact('audio_script' as StudioArtifactType)}
+                        disabled={studioLoading}
+                        className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-white text-brand-700 rounded-lg text-xs font-bold hover:bg-white/90 transition-colors disabled:opacity-60"
+                      >
+                        {studioLoading && selectedArtifactType === 'audio_script' ? (
+                          <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Gerando...</>
+                        ) : (
+                          <><Mic className="w-3.5 h-3.5" /> Gerar Audio Overview</>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Quick Actions */}
               <div className="bg-white rounded-xl border p-5 space-y-4">
                 <h4 className="text-sm font-semibold text-gray-900">Ações Rápidas</h4>
