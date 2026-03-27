@@ -43,6 +43,7 @@ import {
 } from '../lib/cost-analytics'
 import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
 import { runStudioPipeline, type StudioProgressCallback } from '../lib/notebook-studio-pipeline'
+import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -363,6 +364,9 @@ export default function ResearchNotebook() {
   // Detail state
   const [activeNotebook, setActiveNotebook] = useState<ResearchNotebookData | null>(null)
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
+
+  // Artifact viewer modal
+  const [viewingArtifact, setViewingArtifact] = useState<StudioArtifact | null>(null)
 
   // Create dialog
   const [showCreate, setShowCreate] = useState(false)
@@ -2131,24 +2135,46 @@ Instruções:
               const artDef = ARTIFACT_TYPES.find(a => a.type === artifact.type)
               const ArtIcon = artDef?.icon || FileText
               return (
-                <ArtifactCard
+                <button
                   key={artifact.id}
-                  artifact={artifact}
-                  icon={ArtIcon}
-                  label={artDef?.label || artifact.type}
-                  onDelete={() => handleDeleteArtifact(artifact.id)}
-                  onDownload={() => handleDownloadArtifact(artifact)}
-                />
+                  type="button"
+                  onClick={() => setViewingArtifact(artifact)}
+                  className="w-full flex items-center justify-between p-4 bg-white rounded-xl border hover:border-brand-300 hover:shadow-sm transition-all text-left group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="p-2 bg-brand-50 rounded-lg group-hover:bg-brand-100 transition-colors">
+                      <ArtIcon className="w-5 h-5 text-brand-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{artifact.title}</p>
+                      <p className="text-[11px] text-gray-400">{artDef?.label || artifact.type} · {formatDate(artifact.created_at)}</p>
+                    </div>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-gray-300 group-hover:text-brand-500 -rotate-90 transition-colors" />
+                </button>
               )
             })}
           </div>
         )}
       </div>
+
+      {/* ── Artifact Viewer Modal ─────────────────────────────── */}
+      {viewingArtifact && (
+        <ArtifactViewerModal
+          artifact={viewingArtifact}
+          onClose={() => setViewingArtifact(null)}
+          onDelete={() => {
+            handleDeleteArtifact(viewingArtifact.id)
+            setViewingArtifact(null)
+          }}
+          onDownload={() => handleDownloadArtifact(viewingArtifact)}
+        />
+      )}
     </div>
   )
 }
 
-// ── Artifact Card (collapsible) ──────────────────────────────────────────────
+// ── Artifact Card (collapsible — legacy, kept for reference) ─────────────────
 
 function ArtifactCard({
   artifact,
