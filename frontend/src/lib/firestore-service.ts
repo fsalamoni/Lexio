@@ -186,6 +186,7 @@ export type StudioArtifactType =
   | 'documento'
   | 'audio_script'
   | 'video_script'
+  | 'guia_estruturado'
   | 'outro'
 
 /** A studio artifact produced by the notebook */

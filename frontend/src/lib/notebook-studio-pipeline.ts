@@ -60,6 +60,7 @@ const ARTIFACT_AGENT_MAP: Record<StudioArtifactType, SpecialistRole> = {
   documento:         'studio_escritor',
   cartoes_didaticos: 'studio_escritor',
   teste:             'studio_escritor',
+  guia_estruturado:  'studio_escritor',
   apresentacao:      'studio_visual',
   mapa_mental:       'studio_visual',
   infografico:       'studio_visual',
@@ -341,6 +342,18 @@ Requisitos:
   - Justificativa/explicação
   - Referência à fonte quando aplicável
 - **Tabela de pontuação** sugerida`
+    case 'guia_estruturado':
+      return `Você é um especialista em síntese de conhecimento. Crie um guia estruturado completo e profissional.
+
+Estrutura obrigatória:
+- **Resumo do Tema** — contexto geral (2-3 parágrafos)
+- **Principais Achados** — o mais relevante de cada fonte analisada
+- **Conexões e Padrões** — como as fontes se relacionam entre si
+- **Lacunas Identificadas** — o que falta para uma pesquisa completa
+- **Questões-Chave** — as 5 perguntas mais importantes sobre o tema
+- **Próximos Passos** — como aprofundar a pesquisa
+
+Use linguagem clara, técnica quando necessário, e inclua referências às fontes. Responda em português brasileiro com tom técnico.`
     default:
       return `Você é um escritor profissional especializado em ${artifactLabel}. Crie um conteúdo completo, detalhado e de alta qualidade.`
   }
