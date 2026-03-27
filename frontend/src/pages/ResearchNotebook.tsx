@@ -156,20 +156,46 @@ function formatDate(iso: string): string {
   }
 }
 
-const ARTIFACT_TYPES: { type: StudioArtifactType; label: string; icon: React.ElementType; description: string }[] = [
-  { type: 'guia_estruturado', label: 'Guia Estruturado', icon: BookMarked, description: 'Guia completo com principais conceitos e pontos das fontes' },
-  { type: 'resumo', label: 'Resumo', icon: FileText, description: 'Síntese completa do tema pesquisado' },
-  { type: 'mapa_mental', label: 'Mapa Mental', icon: Map, description: 'Estrutura visual de conceitos e relações' },
-  { type: 'cartoes_didaticos', label: 'Cartões Didáticos', icon: CreditCard, description: 'Flashcards para revisão e memorização' },
-  { type: 'apresentacao', label: 'Apresentação', icon: Presentation, description: 'Slides estruturados para apresentação' },
-  { type: 'relatorio', label: 'Relatório', icon: BarChart3, description: 'Relatório analítico detalhado' },
-  { type: 'tabela_dados', label: 'Tabela de Dados', icon: Table, description: 'Dados organizados em formato tabular' },
-  { type: 'teste', label: 'Teste / Quiz', icon: FileQuestion, description: 'Questões para avaliação de conhecimento' },
-  { type: 'infografico', label: 'Infográfico', icon: PenTool, description: 'Informações visuais em formato texto' },
-  { type: 'documento', label: 'Documento', icon: FileText, description: 'Documento formal estruturado' },
-  { type: 'audio_script', label: 'Roteiro de Áudio', icon: Mic, description: 'Script para produção de áudio/podcast' },
-  { type: 'video_script', label: 'Roteiro de Vídeo', icon: Video, description: 'Script para produção de vídeo' },
+type ArtifactDef = { type: StudioArtifactType; label: string; icon: React.ElementType; description: string }
+type ArtifactCategory = { label: string; emoji: string; color: string; items: ArtifactDef[] }
+
+const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
+  {
+    label: 'Estudo', emoji: '📚', color: 'blue',
+    items: [
+      { type: 'guia_estruturado', label: 'Guia Estruturado', icon: BookMarked, description: 'Guia completo com principais conceitos e pontos das fontes' },
+      { type: 'cartoes_didaticos', label: 'Cartões Didáticos', icon: CreditCard, description: 'Flashcards interativos para revisão e memorização' },
+      { type: 'teste', label: 'Teste / Quiz', icon: FileQuestion, description: 'Quiz interativo com múltiplos tipos de questão e scoring' },
+    ],
+  },
+  {
+    label: 'Documentos', emoji: '📝', color: 'emerald',
+    items: [
+      { type: 'resumo', label: 'Resumo Executivo', icon: FileText, description: 'Síntese analítica completa do tema pesquisado' },
+      { type: 'relatorio', label: 'Relatório Analítico', icon: BarChart3, description: 'Relatório detalhado com metodologia e recomendações' },
+      { type: 'documento', label: 'Documento Formal', icon: FileText, description: 'Documento técnico/jurídico estruturado' },
+    ],
+  },
+  {
+    label: 'Visual', emoji: '🎨', color: 'purple',
+    items: [
+      { type: 'apresentacao', label: 'Apresentação', icon: Presentation, description: 'Slides profissionais com notas do apresentador' },
+      { type: 'mapa_mental', label: 'Mapa Mental', icon: Map, description: 'Visualização interativa de conceitos e relações' },
+      { type: 'infografico', label: 'Infográfico', icon: PenTool, description: 'Dados e estatísticas em layout visual impactante' },
+      { type: 'tabela_dados', label: 'Tabela de Dados', icon: Table, description: 'Tabela interativa com ordenação e filtros' },
+    ],
+  },
+  {
+    label: 'Mídia', emoji: '🎬', color: 'amber',
+    items: [
+      { type: 'audio_script', label: 'Roteiro de Áudio', icon: Mic, description: 'Script de podcast com timeline e notas de produção' },
+      { type: 'video_script', label: 'Roteiro de Vídeo', icon: Video, description: 'Storyboard com cenas, visuais e pós-produção' },
+    ],
+  },
 ]
+
+/** Flat list for lookups */
+const ARTIFACT_TYPES: ArtifactDef[] = ARTIFACT_CATEGORIES.flatMap(c => c.items)
 
 const SOURCE_TYPE_LABELS: Record<string, { label: string; icon: React.ElementType }> = {
   acervo:  { label: 'Acervo', icon: Database },
@@ -2084,32 +2110,53 @@ Instruções:
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {ARTIFACT_TYPES.map(art => {
-                const ArtIcon = art.icon
-                const isGenerating = studioLoading && selectedArtifactType === art.type
+            <div className="space-y-5">
+              {ARTIFACT_CATEGORIES.map(category => {
+                const colorMap: Record<string, { border: string; bg: string; text: string; hoverBorder: string }> = {
+                  blue:    { border: 'border-blue-200', bg: 'bg-blue-50', text: 'text-blue-700', hoverBorder: 'hover:border-blue-400' },
+                  emerald: { border: 'border-emerald-200', bg: 'bg-emerald-50', text: 'text-emerald-700', hoverBorder: 'hover:border-emerald-400' },
+                  purple:  { border: 'border-purple-200', bg: 'bg-purple-50', text: 'text-purple-700', hoverBorder: 'hover:border-purple-400' },
+                  amber:   { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-700', hoverBorder: 'hover:border-amber-400' },
+                }
+                const colors = colorMap[category.color] || colorMap.blue
                 return (
-                  <button
-                    key={art.type}
-                    onClick={() => handleGenerateArtifact(art.type)}
-                    disabled={studioLoading}
-                    className={`flex flex-col items-start gap-2 p-4 bg-white rounded-xl border hover:border-brand-300 hover:shadow-sm transition-all text-left ${
-                      studioLoading ? 'opacity-60 cursor-not-allowed' : ''
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      {isGenerating ? (
-                        <Loader2 className="w-5 h-5 animate-spin text-brand-600" />
-                      ) : (
-                        <ArtIcon className="w-5 h-5 text-brand-600" />
-                      )}
-                      <span className="text-sm font-semibold text-gray-900">{art.label}</span>
+                  <div key={category.label}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-base">{category.emoji}</span>
+                      <h4 className={`text-xs font-bold uppercase tracking-wider ${colors.text}`}>{category.label}</h4>
                     </div>
-                    <p className="text-xs text-gray-500">{art.description}</p>
-                    {isGenerating && studioProgress && (
-                      <p className="text-[10px] text-purple-600 font-medium">{studioProgress.phase}</p>
-                    )}
-                  </button>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {category.items.map(art => {
+                        const ArtIcon = art.icon
+                        const isGenerating = studioLoading && selectedArtifactType === art.type
+                        return (
+                          <button
+                            key={art.type}
+                            onClick={() => handleGenerateArtifact(art.type)}
+                            disabled={studioLoading}
+                            className={`flex items-start gap-3 p-3 rounded-xl border ${colors.border} ${colors.hoverBorder} hover:shadow-sm transition-all text-left group ${
+                              studioLoading ? 'opacity-60 cursor-not-allowed' : ''
+                            }`}
+                          >
+                            <div className={`p-2 rounded-lg ${colors.bg} group-hover:scale-105 transition-transform`}>
+                              {isGenerating ? (
+                                <Loader2 className={`w-4 h-4 animate-spin ${colors.text}`} />
+                              ) : (
+                                <ArtIcon className={`w-4 h-4 ${colors.text}`} />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="text-sm font-semibold text-gray-900 block">{art.label}</span>
+                              <span className="text-[11px] text-gray-500 block mt-0.5 leading-snug">{art.description}</span>
+                              {isGenerating && studioProgress && (
+                                <span className="text-[10px] text-purple-600 font-medium block mt-1">{studioProgress.phase}</span>
+                              )}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
                 )
               })}
             </div>
