@@ -1,0 +1,399 @@
+/**
+ * PresentationViewer — slide presentation viewer with navigation, speaker notes,
+ * fullscreen mode, thumbnail strip, and keyboard shortcuts.
+ */
+
+import { useState, useCallback, useEffect, useRef } from 'react'
+import {
+  ChevronLeft, ChevronRight, Maximize2, Minimize2,
+  StickyNote, Image,
+} from 'lucide-react'
+import type { ParsedPresentation, ParsedSlide } from './artifact-parsers'
+
+// ── Props ──────────────────────────────────────────────────────────────────
+
+interface PresentationViewerProps {
+  data: ParsedPresentation
+}
+
+// ── Slide Content (reused in main view and fullscreen) ─────────────────────
+
+function SlideContent({ slide, large }: { slide: ParsedSlide; large?: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-6 sm:px-12 py-8 text-center">
+      <h2
+        className={`font-bold leading-tight mb-6 ${
+          large ? 'text-3xl sm:text-5xl' : 'text-xl sm:text-3xl'
+        }`}
+      >
+        {slide.title}
+      </h2>
+
+      {slide.bullets.length > 0 && (
+        <ul className={`text-left space-y-3 max-w-2xl w-full ${large ? 'text-lg sm:text-2xl' : 'text-sm sm:text-base'}`}>
+          {slide.bullets.map((bullet, i) => (
+            <li key={i} className="flex items-start gap-3">
+              <span className="mt-1.5 h-2 w-2 rounded-full bg-blue-500 shrink-0" />
+              <span className="text-gray-700 dark:text-gray-200">{bullet}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {slide.visualSuggestion && (
+        <div className="mt-6 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 text-purple-600 text-xs font-medium">
+          <Image className="h-3.5 w-3.5" />
+          {slide.visualSuggestion}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Thumbnail ──────────────────────────────────────────────────────────────
+
+function Thumbnail({
+  slide,
+  isActive,
+  onClick,
+}: {
+  slide: ParsedSlide
+  isActive: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`shrink-0 w-28 sm:w-36 rounded-lg border-2 overflow-hidden transition-all hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+        isActive
+          ? 'border-blue-500 opacity-100 shadow-md'
+          : 'border-gray-200 opacity-60 hover:border-gray-300'
+      }`}
+      aria-label={`Ir para slide ${slide.number}`}
+    >
+      <div className="aspect-video bg-white flex flex-col items-center justify-center p-2 text-center">
+        <p className="text-[10px] font-semibold text-gray-800 leading-tight line-clamp-2">
+          {slide.title}
+        </p>
+        {slide.bullets.length > 0 && (
+          <p className="text-[8px] text-gray-400 mt-1 line-clamp-1">
+            {slide.bullets[0]}
+          </p>
+        )}
+      </div>
+      <div className="bg-gray-100 text-[9px] text-gray-500 text-center py-0.5">
+        {slide.number}
+      </div>
+    </button>
+  )
+}
+
+// ── Main Component ─────────────────────────────────────────────────────────
+
+export default function PresentationViewer({ data }: PresentationViewerProps) {
+  const { slides } = data
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [showNotes, setShowNotes] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [fadeKey, setFadeKey] = useState(0)
+  const thumbnailRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const slide = slides[currentIndex]
+  const total = slides.length
+
+  const goTo = useCallback(
+    (index: number) => {
+      const clamped = Math.max(0, Math.min(index, total - 1))
+      if (clamped !== currentIndex) {
+        setCurrentIndex(clamped)
+        setFadeKey((k) => k + 1)
+      }
+    },
+    [currentIndex, total],
+  )
+
+  const goPrev = useCallback(() => goTo(currentIndex - 1), [goTo, currentIndex])
+  const goNext = useCallback(() => goTo(currentIndex + 1), [goTo, currentIndex])
+  const toggleNotes = useCallback(() => setShowNotes((v) => !v), [])
+  const toggleFullscreen = useCallback(() => setIsFullscreen((v) => !v), [])
+
+  // Scroll active thumbnail into view
+  useEffect(() => {
+    if (!thumbnailRef.current) return
+    const active = thumbnailRef.current.children[currentIndex] as HTMLElement | undefined
+    active?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }, [currentIndex])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      // Skip if user is typing in an input
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
+        return
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault()
+          goPrev()
+          break
+        case 'ArrowRight':
+          e.preventDefault()
+          goNext()
+          break
+        case 'f':
+        case 'F':
+          e.preventDefault()
+          toggleFullscreen()
+          break
+        case 'n':
+        case 'N':
+          e.preventDefault()
+          toggleNotes()
+          break
+        case 'Escape':
+          if (isFullscreen) {
+            e.preventDefault()
+            setIsFullscreen(false)
+          }
+          break
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [goPrev, goNext, toggleFullscreen, toggleNotes, isFullscreen])
+
+  // Prevent body scroll when fullscreen
+  useEffect(() => {
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [isFullscreen])
+
+  if (total === 0) {
+    return (
+      <div className="text-center text-gray-400 py-12">
+        Nenhum slide encontrado na apresentacao.
+      </div>
+    )
+  }
+
+  // ── Fullscreen overlay ───────────────────────────────────────────────────
+
+  if (isFullscreen) {
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-gray-900 flex flex-col"
+        role="dialog"
+        aria-label="Apresentacao em tela cheia"
+      >
+        {/* Top bar */}
+        <div className="flex items-center justify-between px-4 py-2 text-white/80 text-sm">
+          <span className="font-medium truncate max-w-[60%]">
+            {data.title || slide.title}
+          </span>
+          <div className="flex items-center gap-3">
+            <span>
+              {currentIndex + 1} / {total}
+            </span>
+            <button
+              onClick={toggleFullscreen}
+              className="p-1.5 rounded hover:bg-white/10 transition-colors"
+              aria-label="Sair da tela cheia"
+            >
+              <Minimize2 className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Slide area */}
+        <div className="flex-1 flex items-center justify-center relative px-4">
+          {/* Prev button */}
+          <button
+            onClick={goPrev}
+            disabled={currentIndex === 0}
+            className="absolute left-2 sm:left-6 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-20 disabled:cursor-not-allowed transition-colors z-10"
+            aria-label="Slide anterior"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+
+          <div
+            key={fadeKey}
+            className="w-full max-w-5xl aspect-video bg-white rounded-xl shadow-2xl overflow-hidden animate-fade-in"
+            style={{ animation: 'fadeIn 300ms ease-out' }}
+          >
+            <SlideContent slide={slide} large />
+          </div>
+
+          {/* Next button */}
+          <button
+            onClick={goNext}
+            disabled={currentIndex === total - 1}
+            className="absolute right-2 sm:right-6 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-20 disabled:cursor-not-allowed transition-colors z-10"
+            aria-label="Proximo slide"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
+        </div>
+
+        {/* Speaker notes in fullscreen */}
+        {showNotes && slide.speakerNotes && (
+          <div className="px-6 py-3 bg-gray-800 border-t border-gray-700 max-h-32 overflow-y-auto">
+            <p className="text-sm text-gray-300 leading-relaxed">{slide.speakerNotes}</p>
+          </div>
+        )}
+
+        {/* Bottom controls */}
+        <div className="flex items-center justify-center gap-2 px-4 py-2">
+          <button
+            onClick={toggleNotes}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              showNotes
+                ? 'bg-blue-600 text-white'
+                : 'bg-white/10 text-white/70 hover:bg-white/20'
+            }`}
+          >
+            <StickyNote className="h-3.5 w-3.5" />
+            Notas
+          </button>
+        </div>
+
+        {/* Inline keyframes */}
+        <style>{`
+          @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.98); }
+            to   { opacity: 1; transform: scale(1); }
+          }
+        `}</style>
+      </div>
+    )
+  }
+
+  // ── Normal view ──────────────────────────────────────────────────────────
+
+  return (
+    <div ref={containerRef} className="flex flex-col gap-3">
+      {/* Title */}
+      {data.title && (
+        <h3 className="text-lg font-semibold text-gray-800 px-1">{data.title}</h3>
+      )}
+
+      {/* Slide area */}
+      <div className="relative bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Controls bar */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/80">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={goPrev}
+              disabled={currentIndex === 0}
+              className="p-1.5 rounded-md hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              aria-label="Slide anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-xs text-gray-500 font-medium tabular-nums min-w-[4rem] text-center">
+              {currentIndex + 1} / {total}
+            </span>
+            <button
+              onClick={goNext}
+              disabled={currentIndex === total - 1}
+              className="p-1.5 rounded-md hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              aria-label="Proximo slide"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggleNotes}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                showNotes
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-500 hover:bg-gray-200'
+              }`}
+              aria-label={showNotes ? 'Ocultar notas' : 'Mostrar notas'}
+            >
+              <StickyNote className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Notas</span>
+            </button>
+            <button
+              onClick={toggleFullscreen}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-gray-500 hover:bg-gray-200 transition-colors"
+              aria-label="Tela cheia"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Tela cheia</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Current slide */}
+        <div
+          key={fadeKey}
+          className="aspect-video bg-gradient-to-br from-gray-50 to-white"
+          style={{ animation: 'fadeIn 250ms ease-out' }}
+        >
+          <SlideContent slide={slide} />
+        </div>
+      </div>
+
+      {/* Speaker notes panel */}
+      {showNotes && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3">
+          <p className="text-xs font-medium text-blue-600 mb-1">Notas do apresentador</p>
+          {slide.speakerNotes ? (
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+              {slide.speakerNotes}
+            </p>
+          ) : (
+            <p className="text-sm text-gray-400 italic">Nenhuma nota para este slide.</p>
+          )}
+        </div>
+      )}
+
+      {/* Thumbnail strip */}
+      {total > 1 && (
+        <div
+          ref={thumbnailRef}
+          className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-thin scrollbar-thumb-gray-300"
+        >
+          {slides.map((s, i) => (
+            <Thumbnail
+              key={i}
+              slide={s}
+              isActive={i === currentIndex}
+              onClick={() => goTo(i)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Keyboard hints */}
+      <p className="text-[10px] text-gray-400 text-center">
+        Atalhos: <kbd className="px-1 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px]">&#8592;</kbd>{' '}
+        <kbd className="px-1 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px]">&#8594;</kbd> navegar{' '}
+        <kbd className="px-1 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px]">F</kbd> tela cheia{' '}
+        <kbd className="px-1 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px]">N</kbd> notas{' '}
+        <kbd className="px-1 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px]">Esc</kbd> sair
+      </p>
+
+      {/* Inline keyframes for fade animation */}
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.98); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
+    </div>
+  )
+}

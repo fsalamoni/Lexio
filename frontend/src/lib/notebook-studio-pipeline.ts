@@ -18,6 +18,7 @@
 import { callLLM, type LLMResult } from './llm-client'
 import { loadResearchNotebookModels, type ResearchNotebookModelMap } from './model-config'
 import type { StudioArtifactType } from './firestore-service'
+import { isStructuredArtifactType } from '../components/artifacts/artifact-parsers'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -107,6 +108,21 @@ function buildSpecialistPrompt(
 ): { system: string; user: string } {
   const roleInstructions = getSpecialistInstructions(role, input.artifactType, input.artifactLabel)
 
+  const isStructured = isStructuredArtifactType(input.artifactType)
+  const formatRules = isStructured
+    ? `Regras gerais:
+- RESPONDA EXCLUSIVAMENTE com um objeto JSON válido — sem texto antes ou depois
+- NÃO inclua blocos \`\`\`json — retorne o JSON puro diretamente
+- Siga EXATAMENTE o schema JSON especificado nas instruções acima
+- Todo o conteúdo textual dentro do JSON deve ser em português brasileiro
+- Seja completo, detalhado e profissional
+- Use as informações do briefing de pesquisa como base fundamental`
+    : `Regras gerais:
+- Gere conteúdo em formato Markdown de alta qualidade
+- Seja completo, detalhado e profissional
+- Responda em português brasileiro com tom adequado ao tipo de artefato
+- Use as informações do briefing de pesquisa como base fundamental`
+
   return {
     system: `${roleInstructions}
 
@@ -116,11 +132,7 @@ ${input.description ? `Objetivo: ${input.description}` : ''}
 Conversas anteriores (para manter consistência):
 ${input.conversationContext || '(Sem conversas anteriores)'}
 
-Regras gerais:
-- Gere conteúdo em formato Markdown de alta qualidade
-- Seja completo, detalhado e profissional
-- Responda em português brasileiro com tom adequado ao tipo de artefato
-- Use as informações do briefing de pesquisa como base fundamental`,
+${formatRules}`,
     user: input.customInstructions
       ? `BRIEFING DE PESQUISA:\n${researchBriefing}\n\nINSTRUÇÕES ADICIONAIS DO USUÁRIO:\n${input.customInstructions}\n\nCrie um(a) ${input.artifactLabel} completo(a) e profissional.`
       : `BRIEFING DE PESQUISA:\n${researchBriefing}\n\nCrie um(a) ${input.artifactLabel} completo(a) e profissional sobre "${input.topic}".`,
@@ -131,6 +143,15 @@ function buildReviewPrompt(
   input: StudioPipelineInput,
   draft: string,
 ): { system: string; user: string } {
+  const isStructured = isStructuredArtifactType(input.artifactType)
+  const formatRule = isStructured
+    ? `- RETORNE o artefato COMPLETO revisado como JSON válido puro (sem \`\`\`json, sem texto antes ou depois)
+- MANTENHA EXATAMENTE a mesma estrutura/schema JSON do rascunho
+- Corrija campos vazios, adicione conteúdo onde faltar profundidade
+- Garanta que todos os arrays tenham o mínimo de itens solicitados`
+    : `- RETORNE o artefato COMPLETO revisado e aprimorado (não apenas sugestões)
+- Mantenha o formato original (Markdown)`
+
   return {
     system: `Você é um revisor de qualidade de nível mundial. Sua missão é aprimorar o artefato abaixo, garantindo que atinja o mais alto padrão de excelência.
 
@@ -139,13 +160,12 @@ Critérios de revisão:
 2. **Precisão** — Os dados, referências e citações estão corretos?
 3. **Estrutura** — A organização é lógica e facilita a compreensão?
 4. **Clareza** — A linguagem é precisa e acessível para o público-alvo?
-5. **Formatação** — O Markdown está correto e bem formatado?
+5. **Formatação** — O formato está correto e bem estruturado?
 6. **Profundidade** — O nível de detalhe é adequado ao tipo de artefato?
 7. **Originalidade** — O conteúdo traz insights relevantes e diferenciados?
 
 Regras:
-- RETORNE o artefato COMPLETO revisado e aprimorado (não apenas sugestões)
-- Mantenha o formato original (Markdown)
+${formatRule}
 - Adicione detalhes, exemplos e aprofundamentos onde necessário
 - Corrija erros factuais, gramaticais ou de formatação
 - Responda em português brasileiro`,
@@ -156,7 +176,7 @@ ${input.description ? `Objetivo: ${input.description}` : ''}
 RASCUNHO PARA REVISÃO:
 ${draft}
 
-Revise e apriore este ${input.artifactLabel}, retornando a versão FINAL completa.`,
+Revise e aprimore este ${input.artifactLabel}, retornando a versão FINAL completa.`,
   }
 }
 
@@ -171,29 +191,60 @@ function getSpecialistInstructions(
     return artifactType === 'audio_script'
       ? `Você é um roteirista profissional de áudio e podcasts. Crie um roteiro completo para produção de áudio/podcast.
 
-O roteiro DEVE incluir:
-- **Abertura** com vinheta e apresentação do tema
-- **Marcações de tempo** estimadas para cada segmento [00:00]
-- **Narração principal** com tom conversacional e envolvente
-- **Transições** entre segmentos com indicações sonoras
-- **Citações e referências** integradas naturalmente na narrativa
-- **Perguntas retóricas** para engajar o ouvinte
-- **Fechamento** com recapitulação e chamada para ação
-- **Notas de produção** (efeitos sonoros, música de fundo, pausas)
-- Duração estimada: 15-20 minutos`
+RESPONDA com um JSON puro no seguinte schema (sem \`\`\`json):
+{
+  "title": "Título do episódio",
+  "duration": "15-20 minutos",
+  "segments": [
+    {
+      "time": "00:00",
+      "type": "vinheta | narracao | transicao | efeito | musica | pausa",
+      "speaker": "Narrador (opcional — use para diferenciar vozes)",
+      "text": "Texto completo da narração ou descrição do efeito",
+      "notes": "Notas de produção opcionais (música de fundo, efeito sonoro, tom)"
+    }
+  ],
+  "productionNotes": ["Nota geral de produção 1", "..."]
+}
+
+Requisitos:
+- Mínimo 20 segmentos cobrindo 15-20 minutos
+- Abertura com vinheta e apresentação envolvente do tema
+- Tom conversacional, natural e engajante (estilo podcast profissional)
+- Transições suaves entre segmentos com indicações sonoras
+- Citações e referências das fontes integradas naturalmente
+- Perguntas retóricas para engajar o ouvinte
+- Fechamento com recapitulação e chamada para ação
+- Notas de produção detalhadas (efeitos, música, pausas dramáticas)`
       : `Você é um roteirista profissional de vídeo e conteúdo audiovisual. Crie um roteiro completo para produção de vídeo.
 
-O roteiro DEVE incluir:
-- **Cena por cena** com descrição de enquadramentos e ângulos
-- **Marcações de tempo** estimadas [00:00]
-- **Narração/locução** com tom profissional
-- **Indicações visuais** (gráficos, textos na tela, animações)
-- **Transições** entre cenas (corte, fade, wipe)
-- **B-roll** sugestões de imagens complementares
-- **Lower thirds** textos identificativos na tela
-- **Abertura** e **encerramento** com identidade visual
-- **Notas de pós-produção** (efeitos visuais, correção de cor)
-- Duração estimada: 10-15 minutos`
+RESPONDA com um JSON puro no seguinte schema (sem \`\`\`json):
+{
+  "title": "Título do vídeo",
+  "duration": "10-15 minutos",
+  "scenes": [
+    {
+      "number": 1,
+      "time": "00:00",
+      "narration": "Texto completo da narração/locução",
+      "visual": "Descrição detalhada do enquadramento, elementos visuais, gráficos na tela",
+      "transition": "corte | fade | wipe | dissolve (opcional)",
+      "broll": "Sugestão de imagem/vídeo complementar (opcional)",
+      "lowerThird": "Texto identificativo na tela (opcional)",
+      "notes": "Notas de pós-produção (VFX, cor, animação) (opcional)"
+    }
+  ],
+  "postProductionNotes": ["Nota 1", "..."]
+}
+
+Requisitos:
+- Mínimo 15 cenas cobrindo 10-15 minutos
+- Cena por cena com descrição de enquadramentos e ângulos
+- Narração/locução com tom profissional
+- Indicações visuais detalhadas (gráficos, textos na tela, animações)
+- B-roll: sugestões de imagens complementares
+- Abertura e encerramento com identidade visual
+- Notas de pós-produção (efeitos visuais, correção de cor)`
   }
 
   if (role === 'studio_visual') {
@@ -201,67 +252,116 @@ O roteiro DEVE incluir:
       case 'apresentacao':
         return `Você é um designer de apresentações profissionais. Crie uma apresentação completa em formato de slides.
 
-Cada slide DEVE ter:
-- **Número e título** do slide
-- **Tópicos principais** em bullets concisos (máx. 5 por slide)
-- **Notas do apresentador** com roteiro de fala expandido
-- **Sugestão visual** (tipo de gráfico, imagem ou diagrama para cada slide)
+RESPONDA com um JSON puro no seguinte schema (sem \`\`\`json):
+{
+  "title": "Título da apresentação",
+  "slides": [
+    {
+      "number": 1,
+      "title": "Título do Slide",
+      "bullets": ["Tópico 1", "Tópico 2", "..."],
+      "speakerNotes": "Roteiro de fala expandido para o apresentador...",
+      "visualSuggestion": "Tipo de gráfico, imagem ou diagrama sugerido"
+    }
+  ]
+}
 
 Estrutura obrigatória:
 1. Capa (título, subtítulo, autor/data)
 2. Agenda/Sumário
-3-N. Slides de conteúdo (mínimo 12 slides)
+3-N. Slides de conteúdo (mínimo 15 slides)
 N+1. Conclusões e próximos passos
 N+2. Referências
 N+3. Slide de encerramento/Q&A
 
-Use linguagem concisa nos slides e detalhada nas notas.`
+Requisitos:
+- Máximo 5 bullets por slide, concisos e impactantes
+- Speaker notes detalhadas com roteiro de fala completo (mín. 3 frases por slide)
+- Sugestão visual específica para cada slide`
       case 'mapa_mental':
         return `Você é um especialista em mapas mentais e organização visual de conhecimento. Crie um mapa mental completo e profissional.
 
-Estrutura obrigatória:
-- **Nó central** com o tema principal
-- **Ramos primários** (3-7) representando categorias principais
-- **Sub-ramos** (2-5 por ramo) com detalhes e exemplos
-- **Conexões cruzadas** entre ramos relacionados (indicar com →)
-- **Ícones sugestivos** para cada categoria (usar emojis)
-- **Cores sugeridas** para cada ramo principal
+RESPONDA com um JSON puro no seguinte schema (sem \`\`\`json):
+{
+  "centralNode": "Tema principal",
+  "branches": [
+    {
+      "label": "Categoria principal",
+      "icon": "emoji representativo (ex: 📚)",
+      "color": "cor CSS (ex: #3B82F6)",
+      "children": [
+        {
+          "label": "Subtópico",
+          "icon": "emoji (opcional)",
+          "children": [
+            { "label": "Detalhe ou exemplo" }
+          ]
+        }
+      ]
+    }
+  ]
+}
 
-Use listas aninhadas com indentação para representar a hierarquia:
-- Nível 1: Tópico principal
-  - Nível 2: Subtópico
-    - Nível 3: Detalhe
-      - Nível 4: Exemplo específico
-
-Inclua no mínimo 40 nós no total.`
+Requisitos:
+- 5-7 ramos primários representando categorias principais
+- 3-5 sub-ramos por ramo com detalhes e exemplos
+- Mínimo 50 nós no total (some todos os nós em todos os níveis)
+- Use emojis relevantes como ícones
+- Use cores hexadecimais distintas para cada ramo primário
+- Profundidade mínima de 3 níveis na hierarquia`
       case 'infografico':
-        return `Você é um designer de infográficos que transforma dados complexos em informação visual acessível. Crie um infográfico completo em formato texto/Markdown.
+        return `Você é um designer de infográficos que transforma dados complexos em informação visual acessível.
 
-Seções obrigatórias:
-- **Título impactante** com subtítulo explicativo
-- **Dados-chave** em destaque (use blocos de citação/números grandes)
-- **Seções visuais** organizadas com ícones (emojis) e separadores
-- **Comparações** lado a lado quando relevante
-- **Linha do tempo** se aplicável
-- **Estatísticas** formatadas em destaque
-- **Fontes e referências** no rodapé
-- **Conclusão visual** com take-away principal
+RESPONDA com um JSON puro no seguinte schema (sem \`\`\`json):
+{
+  "title": "Título impactante",
+  "subtitle": "Subtítulo explicativo",
+  "sections": [
+    {
+      "icon": "emoji representativo",
+      "title": "Título da seção",
+      "content": "Texto explicativo da seção em Markdown",
+      "highlight": "Frase ou dado em destaque (opcional)",
+      "stats": [
+        { "label": "Descrição", "value": 85, "unit": "%" }
+      ]
+    }
+  ],
+  "conclusion": "Takeaway principal",
+  "sources": ["Fonte 1", "Fonte 2"]
+}
 
-Use formatação Markdown criativa: tabelas, blocos de citação, separadores, emojis.`
+Requisitos:
+- Mínimo 6 seções temáticas
+- Cada seção com pelo menos 1 stat numérico quando possível
+- Dados-chave em destaque (números, porcentagens, valores)
+- Comparações lado a lado quando relevante
+- Conclusão visual clara com main takeaway`
       case 'tabela_dados':
         return `Você é um analista de dados especializado em organização tabular. Crie tabelas de dados completas e informativas.
 
-Requisitos:
-- **Tabela principal** com dados organizados logicamente
-- **Cabeçalhos claros** e descritivos
-- **Categorização** por tipo/grupo quando aplicável
-- **Tabela de resumo/totais** quando houver dados numéricos
-- **Legenda** explicando abreviações ou códigos
-- **Notas de rodapé** com fontes e observações
-- **Tabela comparativa** se houver dados para comparação
-- Mínimo 10 linhas de dados na tabela principal
+RESPONDA com um JSON puro no seguinte schema (sem \`\`\`json):
+{
+  "title": "Título da tabela",
+  "columns": [
+    { "key": "nome_campo", "label": "Nome Exibição", "align": "left | right | center" }
+  ],
+  "rows": [
+    { "nome_campo": "valor", "outro_campo": 123 }
+  ],
+  "summary": { "nome_campo": "Total", "outro_campo": 999 },
+  "legend": "Explicação de abreviações ou códigos",
+  "footnotes": ["Nota 1", "Nota 2"]
+}
 
-Use formato Markdown para tabelas. Alinhe colunas numéricas à direita.`
+Requisitos:
+- Mínimo 4 colunas e 12 linhas de dados
+- Cabeçalhos claros e descritivos
+- Alinhe colunas numéricas como "right"
+- Inclua tabela de resumo/totais (campo summary) para dados numéricos
+- Legenda quando houver abreviações
+- Notas de rodapé com fontes e observações
+- Os valores em "rows" DEVEM usar as mesmas keys definidas em "columns"`
       default:
         return `Você é um designer visual especializado em ${artifactLabel}. Crie um artefato visual profissional e completo.`
     }
@@ -311,37 +411,70 @@ Use linguagem formal, precisa e tecnicamente correta.`
     case 'cartoes_didaticos':
       return `Você é um especialista em educação e técnicas de memorização. Crie cartões didáticos (flashcards) profissionais.
 
-Requisitos:
-- Mínimo **20 cartões**
-- Cada cartão com **FRENTE** (pergunta) e **VERSO** (resposta)
-- Organize em **categorias temáticas** com títulos
-- Inclua cartões de **diferentes níveis de dificuldade**: básico, intermediário, avançado
-- Use perguntas variadas: conceitual, aplicação prática, comparação, verdadeiro/falso
-- Adicione **dicas de memorização** quando relevante
-- Inclua um **cartão-resumo** final com os conceitos mais importantes
+RESPONDA com um JSON puro no seguinte schema (sem \`\`\`json):
+{
+  "title": "Título do conjunto de flashcards",
+  "categories": [
+    {
+      "name": "Nome da categoria temática",
+      "cards": [
+        {
+          "front": "Pergunta ou conceito (frente do cartão)",
+          "back": "Resposta completa (verso do cartão)",
+          "difficulty": "basico | intermediario | avancado",
+          "tip": "Dica de memorização (opcional)"
+        }
+      ]
+    }
+  ]
+}
 
-Formato: 
-### [Categoria]
-**Cartão N** ⭐/⭐⭐/⭐⭐⭐
-- **Frente:** [pergunta]
-- **Verso:** [resposta]`
+Requisitos:
+- Mínimo 25 cartões distribuídos em 3-5 categorias
+- Mix de dificuldades: ~30% básico, ~40% intermediário, ~30% avançado
+- Perguntas variadas: conceitual, aplicação prática, comparação, verdadeiro/falso
+- Respostas completas e didáticas (não apenas uma palavra)
+- Dicas de memorização para cartões complexos
+- Último cartão de cada categoria deve ser um resumo integrador`
     case 'teste':
       return `Você é um especialista em avaliação educacional. Crie um teste/quiz completo e profissional.
 
+RESPONDA com um JSON puro no seguinte schema (sem \`\`\`json):
+{
+  "title": "Título do teste",
+  "difficulty": "Fácil a Difícil (progressivo)",
+  "estimatedTime": "30-45 minutos",
+  "questions": [
+    {
+      "number": 1,
+      "type": "multipla_escolha | verdadeiro_falso | dissertativa | caso_pratico | associacao",
+      "text": "Enunciado completo da questão",
+      "options": [
+        { "label": "A", "text": "Texto da alternativa" },
+        { "label": "B", "text": "Texto da alternativa" }
+      ],
+      "pairs": [
+        { "left": "Item esquerda", "right": "Item direita" }
+      ],
+      "answer": "Resposta correta (letra para múltipla escolha, V/F, texto para dissertiva)",
+      "explanation": "Justificativa detalhada da resposta correta"
+    }
+  ],
+  "scoring": { "total": 100, "perQuestion": 5 }
+}
+
 Requisitos:
-- **Cabeçalho** com título, tema, nível de dificuldade e tempo estimado
-- Mínimo **15 questões** de tipos variados:
-  - Múltipla escolha (5+ questões, 4 alternativas cada)
-  - Verdadeiro ou Falso com justificativa (3+ questões)
-  - Dissertativas curtas (3+ questões)
-  - Questão de análise/caso prático (2+ questões)
-  - Questão de associação/correspondência (2+ questões)
-- **Nível progressivo** de dificuldade (fácil → difícil)
-- **Gabarito completo** no final com:
-  - Resposta correta de cada questão
-  - Justificativa/explicação
-  - Referência à fonte quando aplicável
-- **Tabela de pontuação** sugerida`
+- Mínimo 15 questões de tipos variados:
+  - multipla_escolha: 5+ questões (4 alternativas A-D em "options")
+  - verdadeiro_falso: 3+ questões (options com "V" e "F")
+  - dissertativa: 3+ questões (sem options)
+  - caso_pratico: 2+ questões (sem options)
+  - associacao: 2+ questões (usar "pairs" em vez de "options")
+- Nível progressivo de dificuldade
+- Explicação detalhada para CADA questão
+- Para multipla_escolha e verdadeiro_falso: use "options"
+- Para associacao: use "pairs"
+- Para dissertativa/caso_pratico: omita "options" e "pairs"`
     case 'guia_estruturado':
       return `Você é um especialista em síntese de conhecimento. Crie um guia estruturado completo e profissional.
 
@@ -399,7 +532,7 @@ export async function runStudioPipeline(
     researchPrompt.system,
     researchPrompt.user,
     models.studio_pesquisador,
-    3000,
+    4000,
     0.2,
   )
   executions.push({
@@ -424,7 +557,7 @@ export async function runStudioPipeline(
     specialistPrompt.system,
     specialistPrompt.user,
     models[specialistRole],
-    5000,
+    8000,
     0.4,
   )
   executions.push({
@@ -447,7 +580,7 @@ export async function runStudioPipeline(
     reviewPrompt.system,
     reviewPrompt.user,
     models.studio_revisor,
-    6000,
+    10000,
     0.2,
   )
   executions.push({
