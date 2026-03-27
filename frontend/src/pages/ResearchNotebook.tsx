@@ -156,6 +156,7 @@ function formatDate(iso: string): string {
 }
 
 const ARTIFACT_TYPES: { type: StudioArtifactType; label: string; icon: React.ElementType; description: string }[] = [
+  { type: 'guia_estruturado', label: 'Guia Estruturado', icon: BookMarked, description: 'Guia completo com principais conceitos e pontos das fontes' },
   { type: 'resumo', label: 'Resumo', icon: FileText, description: 'Síntese completa do tema pesquisado' },
   { type: 'mapa_mental', label: 'Mapa Mental', icon: Map, description: 'Estrutura visual de conceitos e relações' },
   { type: 'cartoes_didaticos', label: 'Cartões Didáticos', icon: CreditCard, description: 'Flashcards para revisão e memorização' },
@@ -348,7 +349,7 @@ function NotebookListItem({
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 type ViewMode = 'list' | 'detail'
-type DetailTab = 'chat' | 'sources' | 'studio' | 'artifacts'
+type DetailTab = 'overview' | 'chat' | 'sources' | 'studio' | 'artifacts'
 
 export default function ResearchNotebook() {
   const { userId } = useAuth()
@@ -361,7 +362,7 @@ export default function ResearchNotebook() {
 
   // Detail state
   const [activeNotebook, setActiveNotebook] = useState<ResearchNotebookData | null>(null)
-  const [activeTab, setActiveTab] = useState<DetailTab>('chat')
+  const [activeTab, setActiveTab] = useState<DetailTab>('overview')
 
   // Create dialog
   const [showCreate, setShowCreate] = useState(false)
@@ -384,9 +385,6 @@ export default function ResearchNotebook() {
   const [sourceUrlLoading, setSourceUrlLoading] = useState(false)
   const [acervoDocs, setAcervoDocs] = useState<AcervoDocumentData[]>([])
   const [acervoLoading, setAcervoLoading] = useState(false)
-
-  // Notebook Guide
-  const [guideLoading, setGuideLoading] = useState(false)
 
   // Dynamic suggested questions
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -473,76 +471,6 @@ export default function ResearchNotebook() {
     }
     return parts.join('\n\n---\n\n')
   }, [activeNotebook])
-
-  // ── Generate Notebook Guide ───────────────────────────────────────
-  const handleGenerateGuide = useCallback(async () => {
-    if (!userId || !activeNotebook?.id || guideLoading) return
-    if (activeNotebook.sources.length === 0) {
-      toast.error('Adicione fontes antes de gerar a Visão Geral'); return
-    }
-    setGuideLoading(true)
-    try {
-      const apiKey = await getOpenRouterKey()
-      const models = await loadResearchNotebookModels()
-      const model = models.notebook_analista
-      if (!model) {
-        toast.warning('Modelo não configurado', `O agente "${AGENT_LABELS.notebook_analista}" não possui modelo. Vá em Administração > Caderno de Pesquisa e selecione um.`)
-        return
-      }
-      const sourceCtx = buildSourceContext()
-
-      const system = `Você é um especialista em síntese de conhecimento jurídico. Analise as fontes e gere uma Visão Geral completa do caderno.`
-      const user = `Tema: "${activeNotebook.topic}"
-${activeNotebook.description ? `Objetivo: ${activeNotebook.description}\n` : ''}
-FONTES:
-${sourceCtx || '(Nenhuma fonte com conteúdo extraído)'}
-
-Gere uma VISÃO GERAL em Markdown com:
-1. **Resumo do Tema** — contexto geral (2-3 parágrafos)
-2. **Principais Achados** — o mais relevante de cada fonte
-3. **Conexões e Padrões** — como as fontes se relacionam
-4. **Lacunas Identificadas** — o que falta para pesquisa completa
-5. **Questões-Chave** — as 5 perguntas mais importantes
-6. **Próximos Passos** — como aprofundar a pesquisa
-
-Responda em português brasileiro com tom técnico-jurídico.`
-
-      const result: LLMResult = await callLLM(apiKey, system, user, model, 4000, 0.3)
-
-      const guideArtifact: StudioArtifact = {
-        id: generateId(), type: 'resumo',
-        title: `📋 Visão Geral — ${activeNotebook.topic}`,
-        content: result.content, format: 'markdown',
-        created_at: new Date().toISOString(),
-      }
-      const updatedArtifacts = [guideArtifact, ...activeNotebook.artifacts]
-      const execution = createUsageExecutionRecord({
-        source_type: 'caderno_pesquisa', source_id: activeNotebook.id,
-        phase: 'notebook_analista', agent_name: 'Analista de Conhecimento',
-        model: result.model, tokens_in: result.tokens_in, tokens_out: result.tokens_out,
-        cost_usd: result.cost_usd, duration_ms: result.duration_ms,
-      })
-      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
-      await updateResearchNotebook(userId, activeNotebook.id, {
-        artifacts: updatedArtifacts, llm_executions: updatedExecutions,
-      })
-      setActiveNotebook({ ...activeNotebook, artifacts: updatedArtifacts, llm_executions: updatedExecutions })
-      setActiveTab('artifacts')
-      toast.success('Visão Geral gerada!')
-    } catch (err) {
-      console.error('Guide error:', err)
-      if (err instanceof ModelUnavailableError) {
-        toast.warning(
-          `Modelo indisponível: ${err.modelId}`,
-          `O modelo do agente "${AGENT_LABELS.notebook_analista}" foi removido do OpenRouter. Vá em Administração > Caderno de Pesquisa e substitua-o.`,
-        )
-      } else {
-        toast.error('Erro ao gerar Visão Geral. Verifique sua chave de API.')
-      }
-    } finally {
-      setGuideLoading(false)
-    }
-  }, [userId, activeNotebook, guideLoading, buildSourceContext]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Generate dynamic suggested questions ────────────────────────────
   const generateSuggestions = useCallback(async () => {
@@ -872,7 +800,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     }
   }
 
-  // (buildSourceContext defined earlier above handleGenerateGuide)
+  // (buildSourceContext defined earlier)
 
   // ── Chat: send message ──────────────────────────────────────────────
   const handleSendMessage = async () => {
@@ -1411,17 +1339,9 @@ Instruções:
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={handleGenerateGuide}
-            disabled={guideLoading || activeNotebook.sources.length === 0}
-            title="Gerar Visão Geral das fontes"
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {guideLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookMarked className="w-3.5 h-3.5" />}
-            Visão Geral
-          </button>
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
           {([
+            { key: 'overview' as DetailTab, icon: BookMarked, label: 'Visão Geral' },
             { key: 'chat' as DetailTab, icon: MessageCircle, label: 'Chat' },
             { key: 'sources' as DetailTab, icon: Database, label: 'Fontes' },
             { key: 'studio' as DetailTab, icon: Sparkles, label: 'Estúdio' },
@@ -1518,6 +1438,129 @@ Instruções:
 
       {/* Tab content */}
       <div className="flex-1 overflow-hidden">
+        {/* ── Overview Tab ─────────────────────────────────────── */}
+        {activeTab === 'overview' && (
+          <div className="h-full overflow-y-auto p-4">
+            <div className="max-w-3xl mx-auto space-y-6">
+              {/* Header */}
+              <div className="text-center py-4">
+                <BookMarked className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+                <h3 className="text-xl font-bold text-gray-900">{activeNotebook.topic}</h3>
+                {activeNotebook.description && (
+                  <p className="text-sm text-gray-500 mt-2 max-w-lg mx-auto">{activeNotebook.description}</p>
+                )}
+              </div>
+
+              {/* Notebook Info */}
+              <div className="bg-white rounded-xl border p-5 space-y-4">
+                <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <Info className="w-4 h-4 text-brand-600" />
+                  Informações do Caderno
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Título</p>
+                    <p className="text-sm text-gray-800 mt-0.5">{activeNotebook.title}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Criado em</p>
+                    <p className="text-sm text-gray-800 mt-0.5">{formatDate(activeNotebook.created_at)}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Status</p>
+                    <p className="text-sm text-gray-800 mt-0.5">{activeNotebook.status === 'active' ? '🟢 Ativo' : '📦 Arquivado'}</p>
+                  </div>
+                  {activeNotebook.updated_at && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Última atualização</p>
+                      <p className="text-sm text-gray-800 mt-0.5">{formatDate(activeNotebook.updated_at)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sources Summary */}
+              <div className="bg-white rounded-xl border p-5 space-y-4">
+                <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-brand-600" />
+                  Fontes ({activeNotebook.sources.length})
+                </h4>
+                {activeNotebook.sources.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-2">
+                    Nenhuma fonte adicionada ainda. Vá na aba &quot;Fontes&quot; para adicionar.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {activeNotebook.sources.map(source => {
+                      const typeInfo = SOURCE_TYPE_LABELS[source.type] || SOURCE_TYPE_LABELS.upload
+                      const TypeIcon = typeInfo.icon
+                      return (
+                        <div key={source.id} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+                          <TypeIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-800 truncate">{source.name}</p>
+                            <p className="text-[11px] text-gray-400">
+                              {typeInfo.label}
+                              {source.added_at && ` · ${formatDate(source.added_at)}`}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Activity Summary */}
+              <div className="bg-white rounded-xl border p-5 space-y-4">
+                <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-brand-600" />
+                  Atividade
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-brand-600">{activeNotebook.messages.length}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Mensagens no Chat</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-brand-600">{activeNotebook.sources.length}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Fontes Adicionadas</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-brand-600">{activeNotebook.artifacts.length}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Artefatos Gerados</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="bg-white rounded-xl border p-5 space-y-4">
+                <h4 className="text-sm font-semibold text-gray-900">Ações Rápidas</h4>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setActiveTab('chat')}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" /> Ir para Chat
+                  </button>
+                  <button
+                    onClick={() => { setActiveTab('sources'); if (acervoDocs.length === 0) loadAcervoDocs() }}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    <Database className="w-3.5 h-3.5" /> Adicionar Fontes
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('studio')}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" /> Ir para Estúdio
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Chat Tab ──────────────────────────────────────────── */}
         {activeTab === 'chat' && (
           <div className="flex flex-col h-full">
@@ -1994,23 +2037,6 @@ Instruções:
               <p className="text-xs text-gray-500 mt-1">
                 Gere diferentes tipos de conteúdo a partir das fontes e conversas deste caderno
               </p>
-            </div>
-
-            {/* Visão Geral shortcut */}
-            <div className="mb-4">
-              <button
-                onClick={handleGenerateGuide}
-                disabled={guideLoading || activeNotebook.sources.length === 0}
-                className="w-full flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left"
-              >
-                <div className="p-2 bg-amber-100 rounded-lg flex-shrink-0">
-                  {guideLoading ? <Loader2 className="w-5 h-5 text-amber-600 animate-spin" /> : <BookMarked className="w-5 h-5 text-amber-600" />}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-amber-800">Visão Geral do Caderno</p>
-                  <p className="text-xs text-amber-600 mt-0.5">Gera um guia estruturado com os principais conceitos e pontos das fontes adicionadas</p>
-                </div>
-              </button>
             </div>
 
             {/* Custom instructions */}
