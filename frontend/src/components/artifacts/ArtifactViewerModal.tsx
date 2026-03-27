@@ -3,14 +3,25 @@
  * based on artifact type. Replaces the inline-expand ArtifactCard pattern.
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   X, Download, Copy, Check as CheckIcon, Trash2, RotateCcw,
   FileText, Map, CreditCard, BarChart3, Table, FileQuestion,
   Presentation, Mic, Video, PenTool, BookMarked, Sparkles,
+  ChevronDown,
 } from 'lucide-react'
 import type { StudioArtifact, StudioArtifactType } from '../../lib/firestore-service'
 import { parseArtifactContent, type ParsedArtifact } from './artifact-parsers'
+import {
+  exportAsMarkdown,
+  exportAsJSON,
+  exportDataTableAsCSV,
+  exportFlashcardsAsCSV,
+  exportQuizAsText,
+  exportPresentationAsText,
+  exportAudioScriptAsText,
+  exportVideoScriptAsText,
+} from './artifact-exporters'
 
 // Lazy-loaded viewers — will be created in subsequent steps
 import FlashcardViewer from './FlashcardViewer'
@@ -193,10 +204,65 @@ export default function ArtifactViewerModal({
     return () => { document.body.style.overflow = '' }
   }, [])
 
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const exportRef = useRef<HTMLDivElement>(null)
+
+  // Close export menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false)
+      }
+    }
+    if (showExportMenu) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showExportMenu])
+
   const handleDelete = () => {
     if (window.confirm(`Excluir "${artifact.title}"? Esta ação é irreversível.`)) {
       onDelete()
     }
+  }
+
+  const safeName = artifact.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)
+
+  const getExportOptions = (): { label: string; action: () => void }[] => {
+    const options: { label: string; action: () => void }[] = [
+      { label: 'Markdown (.md)', action: () => exportAsMarkdown(artifact.content, safeName) },
+    ]
+
+    switch (parsed.kind) {
+      case 'flashcards':
+        options.push({ label: 'CSV Anki (.csv)', action: () => exportFlashcardsAsCSV(parsed.data, safeName) })
+        options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
+        break
+      case 'quiz':
+        options.push({ label: 'Prova (.txt)', action: () => exportQuizAsText(parsed.data, safeName, false) })
+        options.push({ label: 'Gabarito (.txt)', action: () => exportQuizAsText(parsed.data, safeName, true) })
+        options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
+        break
+      case 'presentation':
+        options.push({ label: 'Texto Slides (.txt)', action: () => exportPresentationAsText(parsed.data, safeName) })
+        options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
+        break
+      case 'datatable':
+        options.push({ label: 'CSV (.csv)', action: () => exportDataTableAsCSV(parsed.data, safeName) })
+        options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
+        break
+      case 'audio_script':
+        options.push({ label: 'Roteiro (.txt)', action: () => exportAudioScriptAsText(parsed.data, safeName) })
+        options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
+        break
+      case 'video_script':
+        options.push({ label: 'Storyboard (.txt)', action: () => exportVideoScriptAsText(parsed.data, safeName) })
+        options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
+        break
+      case 'mindmap':
+      case 'infographic':
+        options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
+        break
+    }
+    return options
   }
 
   const formatDate = (iso: string) => {
@@ -230,13 +296,30 @@ export default function ArtifactViewerModal({
 
           <div className="flex items-center gap-1">
             <CopyButton text={artifact.content} />
-            <button
-              onClick={onDownload}
-              className="p-2 rounded-lg hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors"
-              title="Baixar"
-            >
-              <Download className="w-4 h-4" />
-            </button>
+            {/* Export dropdown */}
+            <div className="relative" ref={exportRef}>
+              <button
+                onClick={() => setShowExportMenu(s => !s)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors text-xs font-medium"
+                title="Exportar"
+              >
+                <Download className="w-4 h-4" />
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-lg border py-1 z-10">
+                  {getExportOptions().map((opt, i) => (
+                    <button
+                      key={i}
+                      onClick={() => { opt.action(); setShowExportMenu(false) }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             {onRegenerate && (
               <button
                 onClick={onRegenerate}
