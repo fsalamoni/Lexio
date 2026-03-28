@@ -487,6 +487,7 @@ function CostEstimatePanel({ estimate }: { estimate: CostEstimate }) {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" aria-label="Detalhamento de custo por agente">
+            <caption className="sr-only">Estimativa de custos detalhada por agente do pipeline</caption>
             <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
               <tr>
                 <th scope="col" className="px-4 py-2 text-left">Agente</th>
