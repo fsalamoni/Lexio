@@ -240,6 +240,10 @@ type StudioArtifactType = 'resumo'|'mapa_mental'|'cartoes_didaticos'|'apresentac
 | `AcervoClassificadorConfigCard` | `acervo_classificador_models` |
 | `AcervoEmentaConfigCard` | `acervo_ementa_models` |
 | `ResearchNotebookConfigCard` | `research_notebook_models` |
+| `NotebookAcervoConfigCard` | `notebook_acervo_models` |
+| `VideoPipelineConfigCard` | `video_pipeline_models` |
+| `AudioPipelineConfigCard` | `audio_pipeline_models` |
+| `PresentationPipelineConfigCard` | `presentation_pipeline_models` |
 | `ModelCatalogCard` | `model_catalog` |
 
 ---

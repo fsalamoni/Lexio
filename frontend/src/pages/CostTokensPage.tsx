@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DollarSign, Coins, Cpu, BrainCircuit, ChevronDown, ChevronUp,
   FileText, BookOpen, TrendingUp, Loader2, MessageCircleQuestion, Tags, Brain,
+  Video, Headphones, Presentation, Database,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -347,9 +348,9 @@ export default function CostTokensPage() {
     load()
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split executions into document_generation, thesis_analysis, context_detail, acervo_classificador, acervo_ementa and caderno_pesquisa
-  const { docBreakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, highlights: [] }
+  // Split executions into all 10 function keys
+  const { docBreakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
@@ -361,6 +362,10 @@ export default function CostTokensPage() {
     const acervoClassificadorItems = breakdown.by_agent_function.filter(item => item.key.startsWith('acervo_classificador::'))
     const acervoEmentaItems = breakdown.by_agent_function.filter(item => item.key.startsWith('acervo_ementa::'))
     const notebookItems = breakdown.by_agent_function.filter(item => item.key.startsWith('caderno_pesquisa::'))
+    const notebookAcervoItems = breakdown.by_agent_function.filter(item => item.key.startsWith('notebook_acervo::'))
+    const videoItems = breakdown.by_agent_function.filter(item => item.key.startsWith('video_pipeline::'))
+    const audioItems = breakdown.by_agent_function.filter(item => item.key.startsWith('audio_pipeline::'))
+    const presentationItems = breakdown.by_agent_function.filter(item => item.key.startsWith('presentation_pipeline::'))
 
     // Build approximate sub-breakdowns using available summary data
     const docFunc = breakdown.by_function.find(f => f.key === 'document_generation')
@@ -369,6 +374,10 @@ export default function CostTokensPage() {
     const acervoClassificadorFunc = breakdown.by_function.find(f => f.key === 'acervo_classificador')
     const acervoEmentaFunc = breakdown.by_function.find(f => f.key === 'acervo_ementa')
     const notebookFunc = breakdown.by_function.find(f => f.key === 'caderno_pesquisa')
+    const notebookAcervoFunc = breakdown.by_function.find(f => f.key === 'notebook_acervo')
+    const videoFunc = breakdown.by_function.find(f => f.key === 'video_pipeline')
+    const audioFunc = breakdown.by_function.find(f => f.key === 'audio_pipeline')
+    const presentationFunc = breakdown.by_function.find(f => f.key === 'presentation_pipeline')
 
     const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[], funcKey?: string): CostBreakdown | null => {
       if (!func && agentItems.length === 0) return null
@@ -410,6 +419,10 @@ export default function CostTokensPage() {
     const acervoClassificadorBd = makeSub(acervoClassificadorFunc, acervoClassificadorItems, 'acervo_classificador')
     const acervoEmentaBd = makeSub(acervoEmentaFunc, acervoEmentaItems, 'acervo_ementa')
     const notebookBd = makeSub(notebookFunc, notebookItems, 'caderno_pesquisa')
+    const notebookAcervoBd = makeSub(notebookAcervoFunc, notebookAcervoItems, 'notebook_acervo')
+    const videoBd = makeSub(videoFunc, videoItems, 'video_pipeline')
+    const audioBd = makeSub(audioFunc, audioItems, 'audio_pipeline')
+    const presentationBd = makeSub(presentationFunc, presentationItems, 'presentation_pipeline')
 
     // Build highlights
     const hl: { label: string; value: string; meta: string }[] = []
@@ -431,7 +444,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, highlights: hl }
+    return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, highlights: hl }
   }, [breakdown])
 
   if (loading) {
@@ -649,6 +662,94 @@ export default function CostTokensPage() {
               />
             ) : (
               <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o caderno de pesquisa.</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 8: Notebook Acervo ──────────────────────────── */}
+          <CollapsibleSection
+            id="section_notebook_acervo"
+            title="Análise de Acervo (Caderno)"
+            icon={Database}
+            iconColor="text-emerald-600"
+            badge={notebookAcervoBreakdown ? fmtUsd(notebookAcervoBreakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {notebookAcervoBreakdown ? (
+              <SectionBreakdown
+                sectionId="notebook_acervo"
+                breakdown={notebookAcervoBreakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para análise de acervo do caderno.</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 9: Video Pipeline ───────────────────────────── */}
+          <CollapsibleSection
+            id="section_video_pipeline"
+            title="Pipeline de Vídeo"
+            icon={Video}
+            iconColor="text-rose-600"
+            badge={videoBreakdown ? fmtUsd(videoBreakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {videoBreakdown ? (
+              <SectionBreakdown
+                sectionId="video_pipeline"
+                breakdown={videoBreakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o pipeline de vídeo.</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 10: Audio Pipeline ──────────────────────────── */}
+          <CollapsibleSection
+            id="section_audio_pipeline"
+            title="Pipeline de Áudio"
+            icon={Headphones}
+            iconColor="text-violet-600"
+            badge={audioBreakdown ? fmtUsd(audioBreakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {audioBreakdown ? (
+              <SectionBreakdown
+                sectionId="audio_pipeline"
+                breakdown={audioBreakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o pipeline de áudio.</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 11: Presentation Pipeline ──────────────────── */}
+          <CollapsibleSection
+            id="section_presentation_pipeline"
+            title="Pipeline de Apresentação"
+            icon={Presentation}
+            iconColor="text-sky-600"
+            badge={presentationBreakdown ? fmtUsd(presentationBreakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {presentationBreakdown ? (
+              <SectionBreakdown
+                sectionId="presentation_pipeline"
+                breakdown={presentationBreakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o pipeline de apresentação.</p>
             )}
           </CollapsibleSection>
         </>
