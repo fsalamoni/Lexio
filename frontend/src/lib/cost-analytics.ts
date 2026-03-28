@@ -1,6 +1,6 @@
 import { DOCTYPE_LABELS } from './constants'
 
-export type UsageFunctionKey = 'document_generation' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa'
+export type UsageFunctionKey = 'document_generation' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -89,6 +89,10 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   acervo_classificador: 'Classificador de acervo',
   acervo_ementa: 'Gerador de ementas',
   caderno_pesquisa: 'Caderno de Pesquisa',
+  notebook_acervo: 'Análise de Acervo (Caderno)',
+  video_pipeline: 'Pipeline de Vídeo',
+  audio_pipeline: 'Pipeline de Áudio',
+  presentation_pipeline: 'Pipeline de Apresentação',
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -129,6 +133,33 @@ const PHASE_LABELS: Record<string, string> = {
   caderno_pesquisa_total: 'Caderno de Pesquisa (agregado)',
   document_total: 'Documento (agregado)',
   thesis_analysis_total: 'Sessão de análise (agregada)',
+  // ── Notebook Acervo phases ──
+  nb_acervo_triagem: 'Triagem de Acervo (Caderno)',
+  nb_acervo_buscador: 'Buscador de Acervo (Caderno)',
+  nb_acervo_analista: 'Analista de Acervo (Caderno)',
+  nb_acervo_curador: 'Curador de Fontes (Caderno)',
+  // ── Video pipeline phases ──
+  video_planejador: 'Vídeo: Planejador de Produção',
+  video_roteirista: 'Vídeo: Roteirista',
+  video_diretor_cena: 'Vídeo: Diretor de Cenas',
+  video_storyboarder: 'Vídeo: Storyboarder',
+  video_designer: 'Vídeo: Designer Visual',
+  video_compositor: 'Vídeo: Compositor',
+  video_narrador: 'Vídeo: Narrador',
+  video_revisor: 'Vídeo: Revisor Final',
+  // ── Audio pipeline phases ──
+  audio_planejador: 'Áudio: Planejador',
+  audio_roteirista: 'Áudio: Roteirista',
+  audio_diretor: 'Áudio: Diretor',
+  audio_produtor_sonoro: 'Áudio: Produtor Sonoro',
+  audio_narrador: 'Áudio: Narrador / TTS',
+  audio_revisor: 'Áudio: Revisor Final',
+  // ── Presentation pipeline phases ──
+  pres_planejador: 'Apresentação: Planejador',
+  pres_pesquisador: 'Apresentação: Pesquisador',
+  pres_redator: 'Apresentação: Redator de Slides',
+  pres_designer: 'Apresentação: Designer Visual',
+  pres_revisor: 'Apresentação: Revisor Final',
 }
 
 function round6(value: number) {
