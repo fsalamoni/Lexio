@@ -44,6 +44,7 @@ import {
 import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
 import { runStudioPipeline, type StudioProgressCallback } from '../lib/notebook-studio-pipeline'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
+import MediaCreationModal, { type MediaCreationOptions } from '../components/MediaCreationModal'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -425,6 +426,10 @@ export default function ResearchNotebook() {
   const [selectedArtifactType, setSelectedArtifactType] = useState<StudioArtifactType | null>(null)
   const [studioCustomPrompt, setStudioCustomPrompt] = useState('')
   const [studioProgress, setStudioProgress] = useState<{ step: number; total: number; phase: string } | null>(null)
+
+  // Media creation modal (video/audio/presentation multi-agent pipeline)
+  const [mediaModalOpen, setMediaModalOpen] = useState(false)
+  const [mediaModalType, setMediaModalType] = useState<'video' | 'audio' | 'presentation'>('video')
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
@@ -946,7 +951,47 @@ Instruções:
   }
 
   // ── Studio: generate artifact (multi-agent pipeline) ────────────────
+
+  /** Map artifact types to their media pipeline type for the creation modal */
+  const MEDIA_ARTIFACT_TYPES: Record<string, 'video' | 'audio' | 'presentation'> = {
+    video_script: 'video',
+    audio_script: 'audio',
+    apresentacao: 'presentation',
+  }
+
   const handleGenerateArtifact = async (artifactType: StudioArtifactType) => {
+    if (!userId || !activeNotebook?.id || studioLoading) return
+
+    // For media types, open the creation modal with options instead of generating directly
+    const mediaType = MEDIA_ARTIFACT_TYPES[artifactType]
+    if (mediaType) {
+      setMediaModalType(mediaType)
+      setMediaModalOpen(true)
+      return
+    }
+
+    // For all other artifact types, run the standard studio pipeline
+    await runStandardStudioPipeline(artifactType)
+  }
+
+  /** Handle media creation modal approval */
+  const handleMediaApproval = async (options: MediaCreationOptions) => {
+    setMediaModalOpen(false)
+
+    // Map back to artifact type for the studio pipeline
+    const artifactTypeMap: Record<string, StudioArtifactType> = {
+      video: 'video_script',
+      audio: 'audio_script',
+      presentation: 'apresentacao',
+    }
+    const artifactType = artifactTypeMap[options.mediaType]
+    if (!artifactType) return
+
+    // Run the standard pipeline with the options stored (can be used by future pipeline)
+    await runStandardStudioPipeline(artifactType, options)
+  }
+
+  const runStandardStudioPipeline = async (artifactType: StudioArtifactType, mediaOptions?: MediaCreationOptions) => {
     if (!userId || !activeNotebook?.id || studioLoading) return
 
     setStudioLoading(true)
@@ -968,13 +1013,44 @@ Instruções:
         setStudioProgress({ step, total, phase })
       }
 
+      // Build custom instructions including media options if present
+      let customInstructions = studioCustomPrompt.trim() || undefined
+      if (mediaOptions) {
+        const optParts: string[] = []
+        if (mediaOptions.mediaType === 'video') {
+          optParts.push(`[CONFIGURAÇÕES DE VÍDEO]`)
+          if (mediaOptions.format) optParts.push(`Formato: ${mediaOptions.format}`)
+          if (mediaOptions.quality) optParts.push(`Qualidade: ${mediaOptions.quality}`)
+          if (mediaOptions.resolution) optParts.push(`Resolução: ${mediaOptions.resolution}`)
+          if (mediaOptions.fps) optParts.push(`FPS: ${mediaOptions.fps}`)
+          if (mediaOptions.duration) optParts.push(`Duração alvo: ${mediaOptions.duration} minutos`)
+        } else if (mediaOptions.mediaType === 'audio') {
+          optParts.push(`[CONFIGURAÇÕES DE ÁUDIO]`)
+          if (mediaOptions.audioFormat) optParts.push(`Formato: ${mediaOptions.audioFormat}`)
+          if (mediaOptions.voices) optParts.push(`Número de vozes: ${mediaOptions.voices}`)
+          if (mediaOptions.audioDuration) optParts.push(`Duração alvo: ${mediaOptions.audioDuration} minutos`)
+          if (mediaOptions.musicBackground) optParts.push(`Música de fundo: Sim`)
+        } else if (mediaOptions.mediaType === 'presentation') {
+          optParts.push(`[CONFIGURAÇÕES DE APRESENTAÇÃO]`)
+          if (mediaOptions.slideCount) optParts.push(`Número de slides: ${mediaOptions.slideCount}`)
+          if (mediaOptions.presentationStyle) optParts.push(`Estilo: ${mediaOptions.presentationStyle}`)
+          if (mediaOptions.targetAudience) optParts.push(`Público-alvo: ${mediaOptions.targetAudience}`)
+        }
+        if (mediaOptions.description) optParts.push(`Descrição do usuário: ${mediaOptions.description}`)
+        if (mediaOptions.script) optParts.push(`Roteiro fornecido pelo usuário:\n${mediaOptions.script}`)
+        const mediaInstructions = optParts.join('\n')
+        customInstructions = customInstructions
+          ? `${customInstructions}\n\n${mediaInstructions}`
+          : mediaInstructions
+      }
+
       const result = await runStudioPipeline({
         apiKey,
         topic: activeNotebook.topic,
         description: activeNotebook.description || undefined,
         sourceContext: sourceContext || '',
         conversationContext,
-        customInstructions: studioCustomPrompt.trim() || undefined,
+        customInstructions,
         artifactType,
         artifactLabel: artifactDef?.label || artifactType,
       }, onProgress)
@@ -990,10 +1066,18 @@ Instruções:
 
       const updatedArtifacts = [...activeNotebook.artifacts, artifact]
 
+      // Use the appropriate source_type for media pipelines for correct cost tracking
+      const sourceTypeMap: Record<string, 'caderno_pesquisa' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline'> = {
+        video_script: 'video_pipeline',
+        audio_script: 'audio_pipeline',
+        apresentacao: mediaOptions ? 'presentation_pipeline' : 'caderno_pesquisa',
+      }
+      const sourceType = sourceTypeMap[artifactType] || 'caderno_pesquisa'
+
       // Create execution records for each pipeline step
       const newExecutions = result.executions.map(ex =>
         createUsageExecutionRecord({
-          source_type: 'caderno_pesquisa',
+          source_type: sourceType,
           source_id: activeNotebook.id,
           phase: ex.phase,
           agent_name: ex.agent_name,
@@ -1020,7 +1104,8 @@ Instruções:
 
       setActiveTab('artifacts')
       setStudioCustomPrompt('')
-      toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso! (pipeline de 3 agentes)`)
+      const pipelineNote = mediaOptions ? ' (pipeline multi-agente com opções personalizadas)' : ' (pipeline de 3 agentes)'
+      toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso!${pipelineNote}`)
     } catch (err) {
       console.error('Studio pipeline error:', err)
       if (err instanceof ModelUnavailableError) {
@@ -2243,6 +2328,17 @@ Instruções:
             setViewingArtifact(null)
           }}
           onDownload={() => handleDownloadArtifact(viewingArtifact)}
+        />
+      )}
+
+      {/* Media Creation Modal (video/audio/presentation options + cost estimate) */}
+      {activeNotebook && (
+        <MediaCreationModal
+          open={mediaModalOpen}
+          onClose={() => setMediaModalOpen(false)}
+          mediaType={mediaModalType}
+          topic={activeNotebook.topic}
+          onApprove={handleMediaApproval}
         />
       )}
     </div>
