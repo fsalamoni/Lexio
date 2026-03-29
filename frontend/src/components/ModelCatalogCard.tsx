@@ -29,7 +29,7 @@ import {
   getBestAgentInfo,
   type OpenRouterModel,
 } from '../lib/model-catalog'
-import { AVAILABLE_MODELS, FREE_TIER_RATE_LIMITS, type ModelOption, type AgentCategory } from '../lib/model-config'
+import { AVAILABLE_MODELS, FREE_TIER_RATE_LIMITS, type ModelOption, type ModelCapability, type AgentCategory } from '../lib/model-config'
 import { runModelHealthCheck, formatHealthCheckMessage } from '../lib/model-health-check'
 import { useToast } from './Toast'
 
@@ -88,6 +88,31 @@ const PROVIDER_COLORS: Record<string, string> = {
   Microsoft: 'bg-cyan-100   text-cyan-700',
 }
 
+// ── Capability badges ─────────────────────────────────────────────────────────
+
+const CAPABILITY_LABELS: Record<ModelCapability, { emoji: string; label: string; style: string }> = {
+  text:  { emoji: '📝', label: 'Texto',  style: 'bg-gray-100 text-gray-700'    },
+  image: { emoji: '🖼️', label: 'Imagem', style: 'bg-pink-100 text-pink-700'    },
+  audio: { emoji: '🎵', label: 'Áudio',  style: 'bg-cyan-100 text-cyan-700'    },
+  video: { emoji: '🎬', label: 'Vídeo',  style: 'bg-violet-100 text-violet-700' },
+}
+
+function CapabilityBadges({ capabilities }: { capabilities?: ModelCapability[] }) {
+  const caps = capabilities ?? ['text']
+  return (
+    <>
+      {caps.map(cap => {
+        const cl = CAPABILITY_LABELS[cap]
+        return (
+          <span key={cap} className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cl.style}`}>
+            {cl.emoji} {cl.label}
+          </span>
+        )
+      })}
+    </>
+  )
+}
+
 // ── Score cells ───────────────────────────────────────────────────────────────
 
 function ScoreCell({ score, label, title }: { score: number; label: string; title: string }) {
@@ -108,10 +133,12 @@ function ORModelRow({
   model,
   onAdd,
   alreadyInCatalog,
+  justAdded,
 }: {
   model: OpenRouterModel
   onAdd: (m: ModelOption) => void
   alreadyInCatalog: boolean
+  justAdded?: boolean
 }) {
   const opt = openRouterToModelOption(model)
   const inputCost = parseFloat(model.pricing?.prompt ?? '0') * 1_000_000
@@ -126,6 +153,7 @@ function ORModelRow({
           {isFree && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-bold">✦ GRÁTIS</span>}
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PROVIDER_COLORS[opt.provider] ?? 'bg-gray-100 text-gray-700'}`}>{opt.provider}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${tierStyle.bg} ${tierStyle.text}`}>{tierStyle.label}</span>
+          <CapabilityBadges capabilities={opt.capabilities} />
         </div>
         <div className="flex items-center gap-3 mt-0.5 text-[11px] text-gray-500">
           <span className="flex items-center gap-0.5"><Cpu className="w-3 h-3" /> {fmt(opt.contextWindow)}</span>
@@ -142,9 +170,17 @@ function ORModelRow({
         type="button"
         onClick={() => onAdd(opt)}
         disabled={alreadyInCatalog}
-        className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+          justAdded
+            ? 'bg-green-600 text-white'
+            : 'text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed'
+        }`}
       >
-        {alreadyInCatalog ? 'Já no catálogo' : <><Plus className="w-3 h-3" /> Adicionar</>}
+        {(() => {
+          if (justAdded)        return <><CheckCircle2 className="w-3 h-3" /> Adicionado</>
+          if (alreadyInCatalog) return 'Já no catálogo'
+          return <><Plus className="w-3 h-3" /> Adicionar</>
+        })()}
       </button>
     </div>
   )
@@ -170,6 +206,7 @@ function AddFromORModal({
   const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all')
   const [manualId, setManualId]     = useState('')
   const [manualError, setManualError] = useState<string | null>(null)
+  const [justAddedIds, setJustAddedIds] = useState<Set<string>>(new Set())
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -177,6 +214,7 @@ function AddFromORModal({
     setSearch('')
     setManualId('')
     setManualError(null)
+    setJustAddedIds(new Set())
     setTimeout(() => searchRef.current?.focus(), 80)
 
     if (orModels.length === 0) {
@@ -346,16 +384,31 @@ function AddFromORModal({
               <ORModelRow
                 key={m.id}
                 model={m}
-                onAdd={model => { onAdd(model); onClose() }}
+                onAdd={model => {
+                  onAdd(model)
+                  setJustAddedIds(prev => new Set(prev).add(model.id))
+                }}
                 alreadyInCatalog={existingIds.has(m.id)}
+                justAdded={justAddedIds.has(m.id)}
               />
             ))
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t bg-gray-50 text-xs text-gray-500">
-          Após adicionar, salve o catálogo. Os modelos adicionados ficam disponíveis em todos os seletores de agentes.
+        <div className="px-6 py-3 border-t bg-gray-50 flex items-center justify-between">
+          <span className="text-xs text-gray-500">
+            {justAddedIds.size > 0
+              ? (() => { const pl = justAddedIds.size !== 1 ? 's' : ''; return `${justAddedIds.size} modelo${pl} adicionado${pl} — salve o catálogo para confirmar.` })()
+              : 'Após adicionar, salve o catálogo. Os modelos adicionados ficam disponíveis em todos os seletores de agentes.'}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            Fechar
+          </button>
         </div>
       </div>
     </div>
@@ -637,6 +690,7 @@ export default function ModelCatalogCard() {
                           </div>
                           <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                             <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${provColor}`}>{model.provider}</span>
+                            <CapabilityBadges capabilities={model.capabilities} />
                             <span className="text-[9px] text-gray-400 font-mono truncate max-w-[140px]" title={model.id}>{model.id}</span>
                           </div>
                           {/* Rate limits for free models */}

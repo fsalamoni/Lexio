@@ -367,6 +367,7 @@ export default function AudioPipelineConfigCard() {
           currentModelId={models[activeAgentDef.key] ?? activeAgentDef.defaultModel}
           agentCategory={activeAgentDef.agentCategory}
           agentLabel={activeAgentDef.label}
+          requiredCapability={activeAgentDef.requiredCapability}
         />
       )}
     </>

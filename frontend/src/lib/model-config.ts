@@ -49,6 +49,8 @@ export interface ModelOption {
   isFree: boolean
   /** How well this model fits each agent category (1–10) */
   agentFit: AgentFitScores
+  /** Model capabilities — e.g. ['text'], ['text','image'], ['audio'] */
+  capabilities?: ModelCapability[]
   /** Known rate limits (present when applicable) */
   rateLimits?: {
     /** Max requests per minute */

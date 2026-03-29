@@ -27,6 +27,7 @@ import {
   AVAILABLE_MODELS,
   FREE_TIER_RATE_LIMITS,
   type ModelOption,
+  type ModelCapability,
   type AgentCategory,
 } from '../lib/model-config'
 import { useCatalogModels } from '../lib/model-catalog'
@@ -43,6 +44,8 @@ interface Props {
   currentModelId: string
   agentCategory: AgentCategory
   agentLabel: string
+  /** When set, only models with this capability are shown (e.g. 'audio', 'image', 'video') */
+  requiredCapability?: ModelCapability
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -71,6 +74,13 @@ const CATEGORY_LABELS: Record<AgentCategory, string> = {
   synthesis:  'Síntese',
   reasoning:  'Raciocínio',
   writing:    'Redação',
+}
+
+const CAPABILITY_LABELS: Record<ModelCapability, { emoji: string; label: string; style: string }> = {
+  text:  { emoji: '📝', label: 'Texto',  style: 'bg-gray-100 text-gray-700'    },
+  image: { emoji: '🖼️', label: 'Imagem', style: 'bg-pink-100 text-pink-700'    },
+  audio: { emoji: '🎵', label: 'Áudio',  style: 'bg-cyan-100 text-cyan-700'    },
+  video: { emoji: '🎬', label: 'Vídeo',  style: 'bg-violet-100 text-violet-700' },
 }
 
 const SCORE_COLORS = (n: number) =>
@@ -112,7 +122,7 @@ function formatCost(usd: number): string {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function ModelSelectorModal({
-  open, onClose, onSelect, currentModelId, agentCategory, agentLabel,
+  open, onClose, onSelect, currentModelId, agentCategory, agentLabel, requiredCapability,
 }: Props) {
   const catalogModels = useCatalogModels()
   const [search,      setSearch]      = useState('')
@@ -145,6 +155,14 @@ export default function ModelSelectorModal({
 
   const filtered = useMemo<ModelOption[]>(() => {
     let list = catalogModels
+
+    // Capability filter — only show models with the required capability
+    if (requiredCapability && requiredCapability !== 'text') {
+      list = list.filter(m => {
+        const caps = m.capabilities ?? ['text']
+        return caps.includes(requiredCapability)
+      })
+    }
 
     // Price filter
     if (priceFilter === 'free') list = list.filter(m => m.isFree)
@@ -182,7 +200,7 @@ export default function ModelSelectorModal({
     })
 
     return list
-  }, [search, priceFilter, tierFilter, provFilter, sortBy, sortAsc, agentCategory, catalogModels])
+  }, [search, priceFilter, tierFilter, provFilter, sortBy, sortAsc, agentCategory, catalogModels, requiredCapability])
 
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) setSortAsc(a => !a)
@@ -208,6 +226,14 @@ export default function ModelSelectorModal({
               Agente: <strong>{agentLabel}</strong>
               {' · '}
               <span className="text-purple-600">Categoria: {CATEGORY_LABELS[agentCategory]}</span>
+              {requiredCapability && requiredCapability !== 'text' && (
+                <>
+                  {' · '}
+                  <span className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full font-medium ${CAPABILITY_LABELS[requiredCapability].style}`}>
+                    {CAPABILITY_LABELS[requiredCapability].emoji} Requer: {CAPABILITY_LABELS[requiredCapability].label}
+                  </span>
+                </>
+              )}
               {' · '}
               <span className="text-gray-400">{filtered.length} modelo{filtered.length !== 1 ? 's' : ''}</span>
             </p>
@@ -304,6 +330,12 @@ export default function ModelSelectorModal({
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <Filter className="w-8 h-8 mb-2" />
               <p className="text-sm">Nenhum modelo encontrado com esses filtros.</p>
+              {requiredCapability && requiredCapability !== 'text' && (
+                <p className="text-xs text-amber-600 mt-2 max-w-sm text-center">
+                  Este agente requer modelos com capacidade de <strong>{CAPABILITY_LABELS[requiredCapability].label}</strong>.
+                  Adicione modelos com essa capacidade no Catálogo de Modelos.
+                </p>
+              )}
             </div>
           ) : (
             filtered.map(model => {
@@ -342,6 +374,14 @@ export default function ModelSelectorModal({
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${tierStyle.bg} ${tierStyle.text} ${tierStyle.border}`}>
                         {tierStyle.label}
                       </span>
+                      {(model.capabilities ?? ['text']).filter(c => c !== 'text').map(cap => {
+                        const cl = CAPABILITY_LABELS[cap]
+                        return (
+                          <span key={cap} className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cl.style}`}>
+                            {cl.emoji} {cl.label}
+                          </span>
+                        )
+                      })}
                       <span className="text-[10px] text-gray-400 truncate hidden sm:block">{model.description}</span>
                     </div>
                     {/* Rate limits for free models */}
