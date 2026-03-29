@@ -920,7 +920,7 @@ export default function AdminPanel() {
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_video_pipeline_config"
-          title="Pipeline de Vídeo (Trilha Multiagente)"
+          title="Gerador de Vídeo (Trilha Multiagente)"
           icon={Video}
           iconColor="text-rose-600"
           collapseState={collapseState}

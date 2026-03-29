@@ -690,7 +690,7 @@ export default function CostTokensPage() {
           {/* ── Section 9: Video Pipeline ───────────────────────────── */}
           <CollapsibleSection
             id="section_video_pipeline"
-            title="Pipeline de Vídeo"
+            title="Gerador de Vídeo"
             icon={Video}
             iconColor="text-rose-600"
             badge={videoBreakdown ? fmtUsd(videoBreakdown.total_cost_usd) : undefined}
@@ -705,7 +705,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o pipeline de vídeo.</p>
+              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o gerador de vídeo.</p>
             )}
           </CollapsibleSection>
 

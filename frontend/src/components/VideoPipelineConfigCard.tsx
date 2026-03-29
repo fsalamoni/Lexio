@@ -162,7 +162,7 @@ export default function VideoPipelineConfigCard() {
   if (loading) {
     return (
       <div className="bg-white rounded-xl border p-6 mb-6">
-        <p className="text-gray-400 text-sm">Carregando configuração do Pipeline de Vídeo...</p>
+        <p className="text-gray-400 text-sm">Carregando configuração do Gerador de Vídeo...</p>
       </div>
     )
   }
@@ -181,7 +181,7 @@ export default function VideoPipelineConfigCard() {
               <Video className="w-5 h-5 text-rose-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Configurações do Pipeline de Vídeo</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Configurações do Gerador de Vídeo</h2>
               <p className="text-sm text-gray-500">Configure o modelo LLM de cada agente da trilha multiagente de geração de vídeo</p>
             </div>
           </div>
