@@ -40,6 +40,7 @@ import { getOpenRouterKey } from '../lib/generation-service'
 import { loadResearchNotebookModels } from '../lib/model-config'
 import {
   createUsageExecutionRecord,
+  type UsageFunctionKey,
 } from '../lib/cost-analytics'
 import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
 import { runStudioPipeline, type StudioProgressCallback } from '../lib/notebook-studio-pipeline'
@@ -199,6 +200,13 @@ const ARTIFACT_TYPES: ArtifactDef[] = ARTIFACT_CATEGORIES.flatMap(c => c.items)
 
 /** Artifact types that get a review/edit step before saving */
 const REVIEWABLE_ARTIFACT_TYPES: StudioArtifactType[] = ['video_script', 'audio_script', 'apresentacao']
+
+/** Map media artifact types to the correct cost function key */
+const ARTIFACT_COST_KEY: Partial<Record<StudioArtifactType, UsageFunctionKey>> = {
+  video_script: 'video_pipeline',
+  audio_script: 'audio_pipeline',
+  apresentacao: 'presentation_pipeline',
+}
 
 const SOURCE_TYPE_LABELS: Record<string, { label: string; icon: React.ElementType }> = {
   acervo:  { label: 'Acervo', icon: Database },
@@ -1046,9 +1054,13 @@ Instruções:
 
     const updatedArtifacts = [...activeNotebook.artifacts, artifact]
 
+    // Use the correct cost function key so video/audio/presentation costs
+    // appear in their dedicated sections on the CostTokensPage
+    const costKey: UsageFunctionKey = ARTIFACT_COST_KEY[artifact.type] ?? 'caderno_pesquisa'
+
     const newExecutions = executions.map(ex =>
       createUsageExecutionRecord({
-        source_type: 'caderno_pesquisa',
+        source_type: costKey,
         source_id: activeNotebook.id,
         phase: ex.phase,
         agent_name: ex.agent_name,

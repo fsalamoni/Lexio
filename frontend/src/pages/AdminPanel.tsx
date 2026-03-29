@@ -794,9 +794,6 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* Reindex */}
-      <ReindexCard />
-
       {/* API Keys */}
       <AdminCollapsibleSection
         id="section_api_keys"
