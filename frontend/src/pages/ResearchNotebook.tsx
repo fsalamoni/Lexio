@@ -1143,7 +1143,7 @@ Instruções:
   }
 
   // ── Generate full video from saved script ──────────────────────────
-  const handleGenerateVideo = async () => {
+  const handleGenerateVideo = async (editedContent?: string) => {
     if (!videoGenSavedArtifact || !userId || !activeNotebook?.id) return
     try {
       setVideoGenLoading(true)
@@ -1153,13 +1153,30 @@ Instruções:
         return
       }
 
+      // Use edited content if provided, otherwise use original
+      const scriptContent = editedContent || videoGenSavedArtifact.content
+
+      // If content was edited, update the saved artifact too
+      if (editedContent && editedContent !== videoGenSavedArtifact.content) {
+        const updatedArtifacts = activeNotebook.artifacts.map(a =>
+          a.id === videoGenSavedArtifact.id ? { ...a, content: editedContent } : a
+        )
+        await updateResearchNotebook(userId, activeNotebook.id, {
+          artifacts: updatedArtifacts,
+        })
+        setActiveNotebook({
+          ...activeNotebook,
+          artifacts: updatedArtifacts,
+        })
+      }
+
       const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent) => {
         setVideoGenProgress({ step, total, phase, agent })
       }
 
       const result = await runVideoGenerationPipeline({
         apiKey,
-        scriptContent: videoGenSavedArtifact.content,
+        scriptContent,
         topic: activeNotebook.topic,
         sourceId: activeNotebook.id,
       }, onProgress)
@@ -2454,9 +2471,9 @@ Instruções:
 // ── Script Review Modal (review/edit before saving media artifacts) ───────────
 
 const REVIEW_TYPE_LABELS: Record<string, { label: string; icon: React.ElementType; color: string; hint: string }> = {
-  video_script:  { label: 'Gerador de Vídeo', icon: Video, color: 'text-rose-600', hint: 'Revise o roteiro. Após salvar, você poderá gerar o vídeo completo.' },
-  audio_script:  { label: 'Roteiro de Áudio', icon: Mic, color: 'text-violet-600', hint: 'Revise os segmentos, falas e notas de produção antes de salvar.' },
-  apresentacao:  { label: 'Apresentação', icon: Presentation, color: 'text-sky-600', hint: 'Revise os slides, tópicos e notas do apresentador antes de salvar.' },
+  video_script:  { label: 'Gerador de Vídeo', icon: Video, color: 'text-rose-600', hint: 'Revise e edite o roteiro, cenas, narrações e descrições visuais. Após salvar, você poderá revisar novamente e gerar o vídeo completo.' },
+  audio_script:  { label: 'Roteiro de Áudio', icon: Mic, color: 'text-violet-600', hint: 'Revise e edite os segmentos, falas e notas de produção antes de salvar.' },
+  apresentacao:  { label: 'Apresentação', icon: Presentation, color: 'text-sky-600', hint: 'Revise e edite os slides, tópicos e notas do apresentador antes de salvar.' },
 }
 
 function ScriptReviewModal({

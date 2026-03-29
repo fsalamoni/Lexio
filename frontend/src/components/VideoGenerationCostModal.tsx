@@ -1,19 +1,34 @@
 /**
- * VideoGenerationCostModal — shows estimated token cost for full video generation
- * and allows the user to approve or skip video production.
+ * VideoGenerationCostModal — shows estimated token cost for full video generation,
+ * allows the user to review/edit the script before generating, and displays
+ * recommended model types per pipeline agent.
  */
 
 import { useState, useEffect, useMemo } from 'react'
 import {
   X, Video, Zap, DollarSign, Loader2,
   AlertCircle, Clock, Layers, CheckCircle2,
+  Eye, Edit3, ChevronDown, ChevronUp,
+  Image, Mic, Film, FileText,
 } from 'lucide-react'
 import { estimateVideoGenerationCost } from '../lib/video-generation-pipeline'
+
+/** Model type recommendation per agent (for UI display) */
+const AGENT_MODEL_RECOMMENDATIONS: Record<string, { icon: React.ElementType; capability: string; note: string }> = {
+  video_planejador:   { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o ou equivalente' },
+  video_roteirista:   { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (escrita criativa)' },
+  video_diretor_cena: { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (estruturação)' },
+  video_storyboarder: { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (descrição visual)' },
+  video_designer:     { icon: Image,    capability: 'Imagem', note: '⚠️ DALL-E, Midjourney, Stable Diffusion' },
+  video_compositor:   { icon: Film,     capability: 'Vídeo', note: '⚠️ Sora, Runway, Pika Labs' },
+  video_narrador:     { icon: Mic,      capability: 'Áudio', note: '⚠️ ElevenLabs, OpenAI TTS' },
+  video_revisor:      { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (revisão)' },
+}
 
 interface VideoGenerationCostModalProps {
   scriptContent: string
   topic: string
-  onGenerate: () => void
+  onGenerate: (editedContent: string) => void
   onSkip: () => void
   isGenerating: boolean
   generationProgress?: { step: number; total: number; phase: string; agent: string }
@@ -27,7 +42,13 @@ export default function VideoGenerationCostModal({
   isGenerating,
   generationProgress,
 }: VideoGenerationCostModalProps) {
-  const estimate = useMemo(() => estimateVideoGenerationCost(scriptContent), [scriptContent])
+  const [editedContent, setEditedContent] = useState(scriptContent)
+  const [activeTab, setActiveTab] = useState<'cost' | 'script'>('cost')
+  const [scriptMode, setScriptMode] = useState<'preview' | 'edit'>('preview')
+  const [showAgentDetails, setShowAgentDetails] = useState(false)
+
+  const estimate = useMemo(() => estimateVideoGenerationCost(editedContent), [editedContent])
+  const hasEdits = editedContent !== scriptContent
 
   useEffect(() => {
     document.body.style.overflow = 'hidden'
@@ -51,29 +72,55 @@ export default function VideoGenerationCostModal({
       />
 
       {/* Modal */}
-      <div className="relative w-[95vw] max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative w-[95vw] max-w-4xl h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-rose-50 to-orange-50">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-rose-100 rounded-lg">
+        <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-rose-50 to-orange-50 flex-shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 bg-rose-100 rounded-lg flex-shrink-0">
               <Video className="w-5 h-5 text-rose-600" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-lg font-bold text-gray-900">
-                {isGenerating ? 'Gerando Vídeo...' : 'Gerar Vídeo Completo'}
+                {isGenerating ? 'Gerando Vídeo...' : 'Proposta de Geração de Vídeo'}
               </h2>
-              <p className="text-xs text-rose-700 truncate max-w-md">{topic}</p>
+              <p className="text-xs text-rose-700 truncate">{topic}</p>
             </div>
           </div>
-          {!isGenerating && (
-            <button onClick={onSkip} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {!isGenerating && (
+              <>
+                {/* Tab switcher */}
+                <div className="flex bg-gray-100 rounded-lg p-0.5 mr-2">
+                  <button
+                    onClick={() => setActiveTab('cost')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      activeTab === 'cost' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <DollarSign className="w-3.5 h-3.5" />
+                    Custos
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('script')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      activeTab === 'script' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    Roteiro
+                    {hasEdits && <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />}
+                  </button>
+                </div>
+                <button onClick={onSkip} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {isGenerating ? (
             /* Generation progress view */
             <div className="space-y-4">
@@ -142,14 +189,14 @@ export default function VideoGenerationCostModal({
                 })}
               </div>
             </div>
-          ) : (
-            /* Cost estimation view */
+          ) : activeTab === 'cost' ? (
+            /* ── Cost estimation tab ── */
             <>
               <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-xl border border-amber-200">
                 <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
                 <div className="text-sm text-amber-800">
-                  <p className="font-semibold mb-1">O roteiro foi salvo com sucesso!</p>
-                  <p>Agora você pode gerar o vídeo completo. O pipeline de 8 agentes especializados irá criar todos os elementos de produção: cenas detalhadas, storyboard, prompts visuais, timeline, narração e revisão final.</p>
+                  <p className="font-semibold mb-1">Proposta de geração de vídeo</p>
+                  <p>Revise o roteiro na aba <strong>Roteiro</strong> antes de gerar. Você pode editar cenas, narrações e descrições livremente. O pipeline de 8 agentes criará todos os elementos de produção.</p>
                 </div>
               </div>
 
@@ -175,28 +222,58 @@ export default function VideoGenerationCostModal({
                   </div>
                 </div>
 
-                {/* Per-agent breakdown */}
+                {/* Per-agent breakdown with model recommendations */}
                 <div className="space-y-1.5">
-                  <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                    Detalhamento por Agente
-                  </p>
-                  {estimate.breakdown.map((item) => (
-                    <div
-                      key={item.agent}
-                      className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border text-xs"
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Detalhamento por Agente
+                    </p>
+                    <button
+                      onClick={() => setShowAgentDetails(d => !d)}
+                      className="text-[10px] text-rose-600 hover:underline flex items-center gap-1"
                     >
-                      <span className="font-medium text-gray-700">{item.label}</span>
-                      <div className="flex items-center gap-4">
-                        <span className="text-gray-500">
-                          <Zap className="w-3 h-3 inline mr-1" />
-                          {item.estimatedTokens.toLocaleString('pt-BR')} tokens
-                        </span>
-                        <span className="font-mono text-gray-600">
-                          ${item.estimatedCostUsd.toFixed(4)}
-                        </span>
+                      {showAgentDetails ? 'Menos detalhes' : 'Modelos recomendados'}
+                      {showAgentDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+                  </div>
+                  {estimate.breakdown.map((item) => {
+                    const rec = AGENT_MODEL_RECOMMENDATIONS[item.agent]
+                    const RecIcon = rec?.icon || FileText
+                    return (
+                      <div key={item.agent} className="bg-white rounded-lg border overflow-hidden">
+                        <div className="flex items-center justify-between px-3 py-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <RecIcon className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="font-medium text-gray-700">{item.label}</span>
+                            {rec && rec.capability !== 'Texto' && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                rec.capability === 'Imagem' ? 'bg-pink-100 text-pink-700' :
+                                rec.capability === 'Áudio' ? 'bg-violet-100 text-violet-700' :
+                                rec.capability === 'Vídeo' ? 'bg-red-100 text-red-700' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>
+                                {rec.capability}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="text-gray-500">
+                              <Zap className="w-3 h-3 inline mr-1" />
+                              {item.estimatedTokens.toLocaleString('pt-BR')}
+                            </span>
+                            <span className="font-mono text-gray-600">
+                              ${item.estimatedCostUsd.toFixed(4)}
+                            </span>
+                          </div>
+                        </div>
+                        {showAgentDetails && rec && (
+                          <div className="px-3 py-1.5 bg-gray-50 border-t text-[10px] text-gray-500">
+                            💡 {rec.note}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
 
@@ -210,14 +287,76 @@ export default function VideoGenerationCostModal({
                 </div>
               </div>
             </>
+          ) : (
+            /* ── Script editing tab ── */
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-gray-900">Roteiro do Vídeo</h3>
+                  {hasEdits && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                      Editado
+                    </span>
+                  )}
+                </div>
+                <div className="flex bg-gray-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setScriptMode('preview')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      scriptMode === 'preview' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Visualizar
+                  </button>
+                  <button
+                    onClick={() => setScriptMode('edit')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      scriptMode === 'edit' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    Editar
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-500">
+                Edite livremente o roteiro, cenas, narrações e descrições visuais antes de gerar o vídeo. As alterações serão usadas pelo pipeline de geração.
+              </p>
+
+              {scriptMode === 'preview' ? (
+                <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap font-mono text-xs leading-relaxed bg-gray-50 rounded-xl p-6 border min-h-[40vh]">
+                  {editedContent}
+                </div>
+              ) : (
+                <textarea
+                  value={editedContent}
+                  onChange={e => setEditedContent(e.target.value)}
+                  className="w-full min-h-[50vh] p-6 bg-gray-50 rounded-xl border font-mono text-xs leading-relaxed text-gray-800 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none resize-none"
+                  placeholder="Edite o roteiro do vídeo aqui..."
+                />
+              )}
+
+              {hasEdits && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setEditedContent(scriptContent)}
+                    className="text-xs text-gray-500 hover:text-gray-700 underline"
+                  >
+                    Restaurar original
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
 
         {/* Footer */}
         {!isGenerating && (
-          <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50/80">
+          <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50/80 flex-shrink-0">
             <p className="text-xs text-gray-500">
-              Os custos reais podem variar conforme o modelo configurado.
+              {hasEdits ? '⚠️ O roteiro foi editado. As alterações serão usadas na geração.' : 'Os custos reais podem variar conforme o modelo configurado.'}
             </p>
             <div className="flex items-center gap-3">
               <button
@@ -227,7 +366,7 @@ export default function VideoGenerationCostModal({
                 Apenas salvar roteiro
               </button>
               <button
-                onClick={onGenerate}
+                onClick={() => onGenerate(editedContent)}
                 className="flex items-center gap-2 px-5 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 transition-colors shadow-sm"
               >
                 <Video className="w-4 h-4" />
