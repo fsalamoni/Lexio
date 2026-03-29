@@ -397,9 +397,9 @@ function parseGeneratedVideo(raw: string): ParsedGeneratedVideo | null {
   if (!isGenerated) return null
 
   const scenes: GeneratedVideoScene[] = obj.scenes.map((s: Record<string, unknown>, i: number) => ({
-    number: (s.number as number) ?? i + 1,
+    number: Number(s.number ?? i + 1),
     timeCode: String(s.timeCode ?? s.time ?? '00:00'),
-    durationSeconds: (s.durationSeconds as number) ?? 30,
+    durationSeconds: Number(s.durationSeconds ?? 30),
     narrationFinal: String(s.narrationFinal ?? s.narration ?? ''),
     videoGenerationPrompt: String(s.videoGenerationPrompt ?? ''),
     imageGenerationPrompt: s.imageGenerationPrompt ? String(s.imageGenerationPrompt) : undefined,
@@ -412,8 +412,8 @@ function parseGeneratedVideo(raw: string): ParsedGeneratedVideo | null {
 
   return {
     title: String(obj.title ?? 'Vídeo Gerado'),
-    totalDurationSeconds: (obj.totalDurationSeconds as number) ?? scenes.reduce((s, sc) => s + sc.durationSeconds, 0),
-    totalScenes: (obj.totalScenes as number) ?? scenes.length,
+    totalDurationSeconds: Number(obj.totalDurationSeconds ?? scenes.reduce((s, sc) => s + sc.durationSeconds, 0)),
+    totalScenes: Number(obj.totalScenes ?? scenes.length),
     scenes,
     postProductionNotes: Array.isArray(obj.postProductionNotes)
       ? (obj.postProductionNotes as string[]).map(String)

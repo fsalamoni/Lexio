@@ -1197,7 +1197,7 @@ Instruções:
       // Create execution records
       const newExecutions = result.executions.map(ex =>
         createUsageExecutionRecord({
-          source_type: 'caderno_pesquisa',
+          source_type: 'video_pipeline',
           source_id: activeNotebook.id,
           phase: ex.phase,
           agent_name: ex.agent_name,
@@ -2427,7 +2427,13 @@ Instruções:
       </div>
 
       {/* ── Artifact Viewer Modal ─────────────────────────────── */}
-      {viewingArtifact && (
+      {viewingArtifact && (() => {
+        const isVideoScript = viewingArtifact.type === 'video_script' && (() => {
+          try {
+            return parseArtifactContent(viewingArtifact.type, viewingArtifact.content)?.kind === 'video_script'
+          } catch { return false }
+        })()
+        return (
         <ArtifactViewerModal
           artifact={viewingArtifact}
           onClose={() => { if (!videoGenerating) setViewingArtifact(null) }}
@@ -2436,10 +2442,11 @@ Instruções:
             setViewingArtifact(null)
           }}
           onDownload={() => handleDownloadArtifact(viewingArtifact)}
-          onGenerateVideo={viewingArtifact.type === 'video_script' && !viewingArtifact.title.startsWith('Vídeo Gerado') ? handleGenerateVideo : undefined}
-          videoGenerationState={viewingArtifact.type === 'video_script' && !viewingArtifact.title.startsWith('Vídeo Gerado') ? { isGenerating: videoGenerating, progress: videoProgress } : undefined}
+          onGenerateVideo={isVideoScript ? handleGenerateVideo : undefined}
+          videoGenerationState={isVideoScript ? { isGenerating: videoGenerating, progress: videoProgress } : undefined}
         />
-      )}
+        )
+      })()}
 
       {/* Media Creation Modal (video/audio/presentation options + cost estimate) */}
       {activeNotebook && (
