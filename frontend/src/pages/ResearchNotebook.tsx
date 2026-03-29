@@ -2436,8 +2436,8 @@ Instruções:
             setViewingArtifact(null)
           }}
           onDownload={() => handleDownloadArtifact(viewingArtifact)}
-          onGenerateVideo={viewingArtifact.type === 'video_script' ? handleGenerateVideo : undefined}
-          videoGenerationState={viewingArtifact.type === 'video_script' ? { isGenerating: videoGenerating, progress: videoProgress } : undefined}
+          onGenerateVideo={viewingArtifact.type === 'video_script' && !viewingArtifact.title.startsWith('Vídeo Gerado') ? handleGenerateVideo : undefined}
+          videoGenerationState={viewingArtifact.type === 'video_script' && !viewingArtifact.title.startsWith('Vídeo Gerado') ? { isGenerating: videoGenerating, progress: videoProgress } : undefined}
         />
       )}
 

@@ -156,6 +156,44 @@ export function exportVideoScriptAsText(data: ParsedVideoScript, filename: strin
   downloadText(text, `${filename}_storyboard.txt`)
 }
 
+export function exportGeneratedVideoAsText(data: import('./artifact-parsers').ParsedGeneratedVideo, filename: string) {
+  const fmtDur = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  let text = `${data.title}\nDuração Total: ${fmtDur(data.totalDurationSeconds)} · ${data.totalScenes} cenas`
+  if (data.qualityScore) text += ` · Qualidade: ${data.qualityScore}/10`
+  text += `\n${'═'.repeat(70)}\n\n`
+
+  if (data.reviewNotes) text += `NOTAS DO REVISOR:\n${data.reviewNotes}\n\n${'─'.repeat(70)}\n\n`
+
+  data.scenes.forEach(scene => {
+    text += `══ Cena ${scene.number} [${scene.timeCode}] (${scene.durationSeconds}s) ══\n\n`
+    text += `NARRAÇÃO:\n${scene.narrationFinal}\n\n`
+    if (scene.videoGenerationPrompt) text += `VIDEO PROMPT:\n${scene.videoGenerationPrompt}\n\n`
+    if (scene.imageGenerationPrompt) text += `IMAGE PROMPT:\n${scene.imageGenerationPrompt}\n\n`
+    if (scene.cameraSpec) {
+      const cam = [scene.cameraSpec.movement, scene.cameraSpec.angle, scene.cameraSpec.speed].filter(Boolean).join(' · ')
+      if (cam) text += `CÂMERA: ${cam}\n`
+    }
+    if (scene.audioSpec) {
+      if (scene.audioSpec.music) text += `MÚSICA: ${scene.audioSpec.music}\n`
+      if (scene.audioSpec.ambience) text += `AMBIENTE: ${scene.audioSpec.ambience}\n`
+      if (scene.audioSpec.sfx?.length) text += `SFX: ${scene.audioSpec.sfx.join(', ')}\n`
+    }
+    if (scene.overlays?.length) {
+      text += `OVERLAYS: ${scene.overlays.map(o => `[${o.type}] ${o.content}`).join(' | ')}\n`
+    }
+    if (scene.transition) text += `TRANSIÇÃO: ${scene.transition.type}${scene.transition.durationMs ? ` (${scene.transition.durationMs}ms)` : ''}\n`
+    if (scene.postProduction) text += `PÓS-PRODUÇÃO: ${scene.postProduction}\n`
+    text += '\n'
+  })
+
+  if (data.postProductionNotes?.length) {
+    text += '\nNOTAS GERAIS DE PÓS-PRODUÇÃO:\n'
+    data.postProductionNotes.forEach(n => { text += `  • ${n}\n` })
+  }
+
+  downloadText(text, `${filename}_video_producao.txt`)
+}
+
 // ── JSON export (for structured artifacts) ──────────────────────────────────
 
 export function exportAsJSON(data: unknown, filename: string) {

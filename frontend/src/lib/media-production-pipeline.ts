@@ -755,6 +755,20 @@ export function scriptToProductionPlan(script: ExistingVideoScript): ProductionP
   }
 }
 
+/** Max characters of source context to include per pipeline call (avoid token blow-up) */
+const MAX_SOURCE_CONTEXT_CHARS = 12_000
+
+/** Safely truncate source context to avoid exceeding token limits */
+function truncateContext(text: string, max = MAX_SOURCE_CONTEXT_CHARS): string {
+  if (!text || text.length <= max) return text
+  return text.slice(0, max) + '\n\n[... contexto truncado por limite de tokens]'
+}
+
+/** Safely escape user content for inclusion in JSON prompt templates */
+function safeTitle(title: string): string {
+  return title.replace(/["\\\n\r\t]/g, ' ').slice(0, 200)
+}
+
 /**
  * Execute the video generation pipeline using an existing script as base.
  * This is the "step 2" — after the user reviewed the script and approved costs.
@@ -771,29 +785,34 @@ export async function executeVideoFromScript(
   sourceContext: string,
   onProgress?: MediaProgressCallback,
 ): Promise<MediaPipelineResult> {
+  if (!script.scenes || script.scenes.length === 0) {
+    throw new Error('O roteiro não contém cenas. Gere um roteiro primeiro.')
+  }
+
   const plan = scriptToProductionPlan(script)
   const models = await loadMediaPipelineModels()
   const executions: MediaStepExecution[] = []
 
-  // Required models
+  // Required models — validate all before starting
   const roteirista = models['video_roteirista']
   const detalhista = models['video_detalhista_cena'] || models['video_storyboarder']
   const gerador = models['video_gerador_cena']
   const revisor = models['video_revisor']
 
   const missing: string[] = []
-  if (!roteirista) missing.push('video_roteirista')
-  if (!detalhista) missing.push('video_detalhista_cena')
-  if (!gerador) missing.push('video_gerador_cena')
-  if (!revisor) missing.push('video_revisor')
+  if (!roteirista) missing.push('video_roteirista (Roteirista de Vídeo)')
+  if (!detalhista) missing.push('video_detalhista_cena (Detalhista de Cena)')
+  if (!gerador) missing.push('video_gerador_cena (Gerador de Cena)')
+  if (!revisor) missing.push('video_revisor (Revisor de Vídeo)')
 
   if (missing.length > 0) {
     throw new Error(
-      `Agente(s) sem modelo configurado: ${missing.join(', ')}. ` +
+      `Agente(s) sem modelo configurado:\n• ${missing.join('\n• ')}\n\n` +
       'Configure em Administração > Produção de Mídia.'
     )
   }
 
+  const safeSourceCtx = truncateContext(sourceContext)
   const totalSteps = plan.parts.length * 3 + 1 // (expand + detail + generate) per part + review
   let currentStep = 0
 
@@ -808,16 +827,17 @@ export async function executeVideoFromScript(
     currentStep++
     onProgress?.(currentStep, totalSteps, `Expandindo roteiro — Parte ${part.partNumber}/${plan.parts.length}`, 'Roteirista detalhando narrações e diálogos')
 
-    const expandPrompt = {
-      system: `Você é um roteirista profissional de vídeo. Expanda o roteiro resumido abaixo em um roteiro COMPLETO com:
+    const expandResult: LLMResult = await callLLM(
+      apiKey,
+      `Você é um roteirista profissional de vídeo. Expanda o roteiro resumido abaixo em um roteiro COMPLETO com:
 - Narração/locução integral (texto completo, não resumo)
 - Direções de cena detalhadas
 - Indicações de tom, emoção e ritmo
 - Marcações de pausa e ênfase
 
-RESPONDA com JSON puro:
+RESPONDA com JSON puro (sem \`\`\`json):
 {
-  "partNumber": ${part.partNumber},
+  "partNumber": número,
   "scenes": [
     {
       "number": número,
@@ -829,10 +849,19 @@ RESPONDA com JSON puro:
     }
   ]
 }`,
-      user: `ROTEIRO BASE:\n${sceneSummary}\n\nFONTES:\n${sourceContext || '(Conhecimento geral)'}\n\nExpanda cada cena com narração completa e direções detalhadas.`,
-    }
+      `PARTE ${part.partNumber} de ${plan.parts.length}
 
-    const expandResult: LLMResult = await callLLM(apiKey, expandPrompt.system, expandPrompt.user, roteirista!, 10000, 0.4)
+ROTEIRO BASE:
+${sceneSummary}
+
+FONTES:
+${safeSourceCtx || '(Conhecimento geral)'}
+
+Expanda cada cena com narração completa e direções detalhadas.`,
+      roteirista!,
+      10000,
+      0.4,
+    )
     executions.push({
       phase: `video_roteirista_part${part.partNumber}`,
       agent_name: `Roteirista (Parte ${part.partNumber})`,
@@ -849,12 +878,13 @@ RESPONDA com JSON puro:
     currentStep++
     onProgress?.(currentStep, totalSteps, `Detalhando cenas — Parte ${part.partNumber}/${plan.parts.length}`, 'Detalhista especificando câmera, som e efeitos')
 
-    const detailPrompt = {
-      system: `Você é um diretor técnico de vídeo. Com base no roteiro expandido, adicione especificações técnicas COMPLETAS para cada cena:
+    const detailResult: LLMResult = await callLLM(
+      apiKey,
+      `Você é um diretor técnico de vídeo. Com base no roteiro expandido, adicione especificações técnicas COMPLETAS para cada cena.
 
-RESPONDA com JSON puro:
+RESPONDA com JSON puro (sem \`\`\`json):
 {
-  "partNumber": ${part.partNumber},
+  "partNumber": número,
   "scenes": [
     {
       "number": número,
@@ -871,10 +901,17 @@ RESPONDA com JSON puro:
     }
   ]
 }`,
-      user: `ROTEIRO EXPANDIDO:\n${expandResult.content}\n\nROTEIRO ORIGINAL:\n${sceneSummary}\n\nAdicione todas as especificações técnicas para cada cena.`,
-    }
+      `ROTEIRO EXPANDIDO:
+${expandResult.content}
 
-    const detailResult: LLMResult = await callLLM(apiKey, detailPrompt.system, detailPrompt.user, detalhista!, 10000, 0.3)
+ROTEIRO ORIGINAL:
+${sceneSummary}
+
+Adicione todas as especificações técnicas para cada cena.`,
+      detalhista!,
+      10000,
+      0.3,
+    )
     executions.push({
       phase: `video_detalhista_part${part.partNumber}`,
       agent_name: `Detalhista (Parte ${part.partNumber})`,
@@ -891,13 +928,14 @@ RESPONDA com JSON puro:
     currentStep++
     onProgress?.(currentStep, totalSteps, `Gerando vídeo — Parte ${part.partNumber}/${plan.parts.length}`, 'Gerador criando conteúdo visual cena por cena')
 
-    const generatePrompt = {
-      system: `Você é um gerador de vídeo por IA. Com base no roteiro detalhado, gere o conteúdo FINAL de produção para cada cena, incluindo todos os prompts de geração visual prontos para uso.
+    const genResult: LLMResult = await callLLM(
+      apiKey,
+      `Você é um gerador de vídeo por IA. Com base no roteiro detalhado, gere o conteúdo FINAL de produção para cada cena, incluindo todos os prompts de geração visual prontos para uso.
 
-RESPONDA com JSON puro:
+RESPONDA com JSON puro (sem \`\`\`json):
 {
-  "partNumber": ${part.partNumber},
-  "title": "${part.title}",
+  "partNumber": número,
+  "title": "título da parte",
   "scenes": [
     {
       "number": número,
@@ -910,11 +948,11 @@ RESPONDA com JSON puro:
       "audioSpec": {
         "narration": true,
         "music": "descrição da música de fundo",
-        "sfx": ["efeito sonoro 1", "..."],
+        "sfx": ["efeito sonoro 1"],
         "ambience": "descrição do áudio ambiente"
       },
       "overlays": [
-        { "type": "text | graphic | lower_third | subtitle", "content": "conteúdo", "position": "top | center | bottom | lower_left | lower_right", "startMs": 0, "durationMs": 3000 }
+        { "type": "text | graphic | lower_third | subtitle", "content": "conteúdo", "position": "top | center | bottom", "startMs": 0, "durationMs": 3000 }
       ],
       "transition": { "type": "cut | fade | dissolve | wipe", "durationMs": 500 },
       "postProduction": "Notas finais de pós-produção (VFX, cor, grading)"
@@ -923,10 +961,19 @@ RESPONDA com JSON puro:
   "partSummary": "Resumo do que esta parte cobre",
   "totalDurationSeconds": número
 }`,
-      user: `ROTEIRO EXPANDIDO:\n${expandResult.content}\n\nESPECIFICAÇÕES TÉCNICAS:\n${detailResult.content}\n\nGere o conteúdo FINAL de produção para todas as cenas desta parte. Cada cena deve ter prompts de geração de vídeo e imagem PRONTOS PARA USO em ferramentas de IA como Runway, Sora ou Kling.`,
-    }
+      `PARTE ${part.partNumber} de ${plan.parts.length}: "${safeTitle(part.title)}"
 
-    const genResult: LLMResult = await callLLM(apiKey, generatePrompt.system, generatePrompt.user, gerador!, 12000, 0.35)
+ROTEIRO EXPANDIDO:
+${expandResult.content}
+
+ESPECIFICAÇÕES TÉCNICAS:
+${detailResult.content}
+
+Gere o conteúdo FINAL de produção para todas as cenas desta parte. Cada cena deve ter prompts de geração de vídeo e imagem PRONTOS PARA USO em ferramentas de IA como Runway, Sora ou Kling.`,
+      gerador!,
+      12000,
+      0.35,
+    )
     executions.push({
       phase: `video_gerador_part${part.partNumber}`,
       agent_name: `Gerador de Vídeo (Parte ${part.partNumber})`,
@@ -950,8 +997,21 @@ RESPONDA com JSON puro:
 
   await new Promise(r => setTimeout(r, 1000))
 
-  const reviewPrompt = {
-    system: `Você é um diretor de qualidade de produção de vídeo. Revise TODO o conteúdo abaixo e retorne uma versão FINAL consolidada.
+  // Truncate review input if it's too large (multiple parts can produce huge content)
+  let reviewContent = allPartResults.join('\n\n--- PRÓXIMA PARTE ---\n\n')
+  if (reviewContent.length > 80_000) {
+    // Keep first and last part in full, summarize middle
+    const firstPart = allPartResults[0] || ''
+    const lastPart = allPartResults[allPartResults.length - 1] || ''
+    const middleSummary = allPartResults.length > 2
+      ? `\n\n[... ${allPartResults.length - 2} parte(s) intermediária(s) omitida(s) por limite de contexto ...]\n\n`
+      : ''
+    reviewContent = firstPart + middleSummary + lastPart
+  }
+
+  const reviewResult: LLMResult = await callLLM(
+    apiKey,
+    `Você é um diretor de qualidade de produção de vídeo. Revise TODO o conteúdo abaixo e retorne uma versão FINAL consolidada.
 
 Critérios de revisão:
 1. Coerência narrativa entre todas as partes e cenas
@@ -961,22 +1021,40 @@ Critérios de revisão:
 5. Consistência visual (estilo, cor, iluminação)
 6. Completude dos overlays e áudio
 
-RETORNE o conteúdo COMPLETO revisado no seguinte JSON:
+RETORNE o conteúdo COMPLETO revisado no seguinte JSON (sem \`\`\`json):
 {
   "title": "Título do vídeo",
   "totalDurationSeconds": número,
   "totalScenes": número,
   "scenes": [
-    // TODAS as cenas consolidadas com os mesmos campos do gerador
+    {
+      "number": número,
+      "timeCode": "MM:SS",
+      "durationSeconds": número,
+      "narrationFinal": "Narração completa",
+      "videoGenerationPrompt": "Prompt em inglês para gerar vídeo IA",
+      "imageGenerationPrompt": "Prompt em inglês para thumbnail",
+      "cameraSpec": { "movement": "tipo", "angle": "tipo", "speed": "tipo" },
+      "audioSpec": { "narration": true, "music": "desc", "sfx": [], "ambience": "desc" },
+      "overlays": [],
+      "transition": { "type": "tipo", "durationMs": 500 },
+      "postProduction": "Notas"
+    }
   ],
-  "postProductionNotes": ["nota 1", "..."],
-  "qualityScore": número de 1 a 10,
+  "postProductionNotes": ["nota 1"],
+  "qualityScore": número_de_1_a_10,
   "reviewNotes": "Notas do revisor sobre a qualidade geral"
 }`,
-    user: `PLANO ORIGINAL: "${plan.title}" — ${plan.parts.length} parte(s), ${script.scenes.length} cenas\n\nCONTEÚDO PARA REVISÃO:\n${allPartResults.join('\n\n--- PRÓXIMA PARTE ---\n\n')}\n\nConsolide todas as partes em uma versão FINAL. Mantenha TODOS os prompts de geração.`,
-  }
+    `PLANO ORIGINAL: "${safeTitle(plan.title)}" — ${plan.parts.length} parte(s), ${script.scenes.length} cenas
 
-  const reviewResult: LLMResult = await callLLM(apiKey, reviewPrompt.system, reviewPrompt.user, revisor!, 15000, 0.2)
+CONTEÚDO PARA REVISÃO:
+${reviewContent}
+
+Consolide todas as partes em uma versão FINAL. Mantenha TODOS os prompts de geração de vídeo e imagem.`,
+    revisor!,
+    15000,
+    0.2,
+  )
   executions.push({
     phase: 'video_revisor',
     agent_name: 'Revisor de Vídeo',

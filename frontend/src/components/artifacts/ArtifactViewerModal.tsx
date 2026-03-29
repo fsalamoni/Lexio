@@ -21,6 +21,7 @@ import {
   exportPresentationAsText,
   exportAudioScriptAsText,
   exportVideoScriptAsText,
+  exportGeneratedVideoAsText,
 } from './artifact-exporters'
 
 // Lazy-loaded viewers — will be created in subsequent steps
@@ -32,6 +33,7 @@ import DataTableViewer from './DataTableViewer'
 import InfographicRenderer from './InfographicRenderer'
 import AudioScriptViewer from './AudioScriptViewer'
 import VideoScriptViewer from './VideoScriptViewer'
+import GeneratedVideoViewer from './GeneratedVideoViewer'
 import ReportViewer from './ReportViewer'
 
 // ── Icon map ────────────────────────────────────────────────────────────────
@@ -161,6 +163,8 @@ function ArtifactContent({
           generationProgress={videoGenerationState?.progress}
         />
       )
+    case 'video_production':
+      return <GeneratedVideoViewer data={parsed.data} />
     case 'markdown': {
       // Use ReportViewer for text-heavy markdown artifacts
       const textTypes: StudioArtifactType[] = ['resumo', 'relatorio', 'documento', 'guia_estruturado']
@@ -281,6 +285,10 @@ export default function ArtifactViewerModal({
         break
       case 'video_script':
         options.push({ label: 'Storyboard (.txt)', action: () => exportVideoScriptAsText(parsed.data, safeName) })
+        options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
+        break
+      case 'video_production':
+        options.push({ label: 'Produção (.txt)', action: () => exportGeneratedVideoAsText(parsed.data, safeName) })
         options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
         break
       case 'mindmap':

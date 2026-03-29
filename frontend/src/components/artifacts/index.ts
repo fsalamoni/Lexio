@@ -27,6 +27,8 @@ export type {
   AudioSegment,
   ParsedVideoScript,
   VideoScene,
+  ParsedGeneratedVideo,
+  GeneratedVideoScene,
 } from './artifact-parsers'
 
 // Viewers
@@ -39,4 +41,5 @@ export { default as DataTableViewer } from './DataTableViewer'
 export { default as InfographicRenderer } from './InfographicRenderer'
 export { default as AudioScriptViewer } from './AudioScriptViewer'
 export { default as VideoScriptViewer } from './VideoScriptViewer'
+export { default as GeneratedVideoViewer } from './GeneratedVideoViewer'
 export { default as ReportViewer } from './ReportViewer'

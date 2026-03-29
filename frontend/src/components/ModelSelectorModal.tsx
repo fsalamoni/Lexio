@@ -142,13 +142,15 @@ export default function ModelSelectorModal({
   const [provFilter,  setProvFilter]  = useState<string>('all')
   const [sortBy,      setSortBy]      = useState<SortKey>('fit')
   const [sortAsc,     setSortAsc]     = useState(false)
+  const [showAllModels, setShowAllModels] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // Focus search on open
+  // Focus search on open, reset filters
   useEffect(() => {
     if (open) {
       setTimeout(() => searchRef.current?.focus(), 50)
       setSearch('')
+      setShowAllModels(false)
     }
   }, [open])
 
@@ -168,7 +170,7 @@ export default function ModelSelectorModal({
     let list = catalogModels
 
     // Modality filter — when agent requires specific modality, only show matching models
-    if (requiredModality) {
+    if (requiredModality && !showAllModels) {
       list = list.filter(m => m.modality?.includes(requiredModality))
     }
 
@@ -209,7 +211,13 @@ export default function ModelSelectorModal({
     })
 
     return list
-  }, [search, priceFilter, tierFilter, provFilter, sortBy, sortAsc, agentCategory, catalogModels, requiredModality])
+  }, [search, priceFilter, tierFilter, provFilter, sortBy, sortAsc, agentCategory, catalogModels, requiredModality, showAllModels])
+
+  // Count modality-matching models (for showing the "show all" toggle)
+  const modalityMatchCount = useMemo(() => {
+    if (!requiredModality) return catalogModels.length
+    return catalogModels.filter(m => m.modality?.includes(requiredModality)).length
+  }, [catalogModels, requiredModality])
 
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) setSortAsc(a => !a)
@@ -252,7 +260,7 @@ export default function ModelSelectorModal({
         {(modelNote || requiredModality) && (
           <div className="px-6 py-2 border-b bg-amber-50 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-            <div className="text-xs text-amber-800">
+            <div className="text-xs text-amber-800 flex-1">
               {modelNote && <p className="font-medium">{modelNote}</p>}
               {requiredModality && !modelNote && (
                 <p className="font-medium">
@@ -260,10 +268,28 @@ export default function ModelSelectorModal({
                   Modelos de texto puro não são compatíveis.
                 </p>
               )}
-              {requiredModality && filtered.length === 0 && (
+              {requiredModality && modalityMatchCount === 0 && !showAllModels && (
                 <p className="mt-1 text-amber-700">
                   Nenhum modelo com modalidade "{MODALITY_LABELS[requiredModality]}" encontrado no catálogo.
-                  Adicione modelos compatíveis em Administração {'>'} Catálogo de Modelos.
+                  Adicione modelos compatíveis em Administração {'>'} Catálogo de Modelos, ou{' '}
+                  <button
+                    onClick={() => setShowAllModels(true)}
+                    className="underline font-semibold hover:text-amber-900"
+                  >
+                    veja todos os modelos
+                  </button>.
+                </p>
+              )}
+              {requiredModality && showAllModels && (
+                <p className="mt-1 text-amber-700 flex items-center gap-2">
+                  Mostrando todos os modelos.
+                  <button
+                    onClick={() => setShowAllModels(false)}
+                    className="underline font-semibold hover:text-amber-900"
+                  >
+                    Filtrar por {MODALITY_LABELS[requiredModality]}
+                  </button>
+                  ({modalityMatchCount} modelo{modalityMatchCount !== 1 ? 's' : ''} compatível{modalityMatchCount !== 1 ? 'is' : ''})
                 </p>
               )}
             </div>

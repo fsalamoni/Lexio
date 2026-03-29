@@ -181,6 +181,30 @@ export interface ParsedVideoScript {
   postProductionNotes?: string[]
 }
 
+// -- Generated Video (full production output)
+export interface GeneratedVideoScene {
+  number: number
+  timeCode: string
+  durationSeconds: number
+  narrationFinal: string
+  videoGenerationPrompt: string
+  imageGenerationPrompt?: string
+  cameraSpec?: { movement?: string; angle?: string; speed?: string }
+  audioSpec?: { narration?: boolean; music?: string; sfx?: string[]; ambience?: string }
+  overlays?: { type: string; content: string; position?: string; startMs?: number; durationMs?: number }[]
+  transition?: { type: string; durationMs?: number }
+  postProduction?: string
+}
+export interface ParsedGeneratedVideo {
+  title: string
+  totalDurationSeconds: number
+  totalScenes: number
+  scenes: GeneratedVideoScene[]
+  postProductionNotes?: string[]
+  qualityScore?: number
+  reviewNotes?: string
+}
+
 // ── Union type ──────────────────────────────────────────────────────────────
 
 export type ParsedArtifact =
@@ -192,6 +216,7 @@ export type ParsedArtifact =
   | { kind: 'infographic'; data: ParsedInfographic }
   | { kind: 'audio_script'; data: ParsedAudioScript }
   | { kind: 'video_script'; data: ParsedVideoScript }
+  | { kind: 'video_production'; data: ParsedGeneratedVideo }
   | { kind: 'markdown'; data: string }
 
 // ── Individual parsers ──────────────────────────────────────────────────────
@@ -362,6 +387,42 @@ function parseVideoScript(raw: string): ParsedVideoScript | null {
   }
 }
 
+function parseGeneratedVideo(raw: string): ParsedGeneratedVideo | null {
+  const obj = safeParse(raw) as Record<string, unknown> | null
+  if (!obj || !Array.isArray(obj.scenes)) return null
+  // Detect generated format: scenes must have videoGenerationPrompt or narrationFinal
+  const firstScene = obj.scenes[0] as Record<string, unknown> | undefined
+  if (!firstScene) return null
+  const isGenerated = 'videoGenerationPrompt' in firstScene || 'narrationFinal' in firstScene
+  if (!isGenerated) return null
+
+  const scenes: GeneratedVideoScene[] = obj.scenes.map((s: Record<string, unknown>, i: number) => ({
+    number: (s.number as number) ?? i + 1,
+    timeCode: String(s.timeCode ?? s.time ?? '00:00'),
+    durationSeconds: (s.durationSeconds as number) ?? 30,
+    narrationFinal: String(s.narrationFinal ?? s.narration ?? ''),
+    videoGenerationPrompt: String(s.videoGenerationPrompt ?? ''),
+    imageGenerationPrompt: s.imageGenerationPrompt ? String(s.imageGenerationPrompt) : undefined,
+    cameraSpec: s.cameraSpec as GeneratedVideoScene['cameraSpec'],
+    audioSpec: s.audioSpec as GeneratedVideoScene['audioSpec'],
+    overlays: Array.isArray(s.overlays) ? s.overlays as GeneratedVideoScene['overlays'] : undefined,
+    transition: s.transition as GeneratedVideoScene['transition'],
+    postProduction: s.postProduction ? String(s.postProduction) : undefined,
+  }))
+
+  return {
+    title: String(obj.title ?? 'Vídeo Gerado'),
+    totalDurationSeconds: (obj.totalDurationSeconds as number) ?? scenes.reduce((s, sc) => s + sc.durationSeconds, 0),
+    totalScenes: (obj.totalScenes as number) ?? scenes.length,
+    scenes,
+    postProductionNotes: Array.isArray(obj.postProductionNotes)
+      ? (obj.postProductionNotes as string[]).map(String)
+      : undefined,
+    qualityScore: typeof obj.qualityScore === 'number' ? obj.qualityScore : undefined,
+    reviewNotes: obj.reviewNotes ? String(obj.reviewNotes) : undefined,
+  }
+}
+
 // ── Main parser ─────────────────────────────────────────────────────────────
 
 import type { StudioArtifactType } from '../../lib/firestore-service'
@@ -411,6 +472,10 @@ export function parseArtifactContent(type: StudioArtifactType, raw: string): Par
       return data ? { kind: 'audio_script', data } : { kind: 'markdown', data: raw }
     }
     case 'video_script': {
+      // Try generated video format first (has videoGenerationPrompt fields)
+      const generated = parseGeneratedVideo(raw)
+      if (generated) return { kind: 'video_production', data: generated }
+      // Fall back to roteiro (script) format
       const data = parseVideoScript(raw)
       return data ? { kind: 'video_script', data } : { kind: 'markdown', data: raw }
     }

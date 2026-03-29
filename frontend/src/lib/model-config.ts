@@ -377,6 +377,126 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: true,
     agentFit: { extraction: 6, synthesis: 5, reasoning: 4, writing: 5 },
   },
+
+  // ── Modelos de Geração de Mídia ─────────────────────────────────────────────
+
+  // Vídeo
+  {
+    id: 'openai/sora',
+    label: 'Sora (OpenAI)', provider: 'OpenAI', tier: 'premium',
+    description: 'Modelo de geração de vídeo da OpenAI — cria vídeos de alta qualidade a partir de texto',
+    contextWindow: 4_000, inputCost: 15.00, outputCost: 15.00, isFree: false,
+    modality: ['video'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_video: 10 },
+  },
+  {
+    id: 'google/veo-2',
+    label: 'Veo 2 (Google)', provider: 'Google', tier: 'premium',
+    description: 'Modelo de geração de vídeo do Google DeepMind — vídeos realistas e criativos',
+    contextWindow: 4_000, inputCost: 12.00, outputCost: 12.00, isFree: false,
+    modality: ['video'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_video: 9 },
+  },
+  {
+    id: 'runway/gen-3-alpha',
+    label: 'Gen-3 Alpha (Runway)', provider: 'Runway', tier: 'premium',
+    description: 'Modelo de vídeo Runway Gen-3 — excelente controle de movimento e estilo',
+    contextWindow: 2_000, inputCost: 10.00, outputCost: 10.00, isFree: false,
+    modality: ['video'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_video: 9 },
+  },
+  {
+    id: 'kling-ai/kling-video',
+    label: 'Kling Video', provider: 'Kling AI', tier: 'balanced',
+    description: 'Modelo de vídeo Kling AI — boa qualidade com custo acessível',
+    contextWindow: 2_000, inputCost: 5.00, outputCost: 5.00, isFree: false,
+    modality: ['video'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_video: 8 },
+  },
+  {
+    id: 'luma/ray-2',
+    label: 'Ray 2 (Luma)', provider: 'Luma AI', tier: 'balanced',
+    description: 'Modelo de vídeo Luma Dream Machine — geração rápida e estilizada',
+    contextWindow: 2_000, inputCost: 6.00, outputCost: 6.00, isFree: false,
+    modality: ['video'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_video: 8 },
+  },
+  {
+    id: 'minimax/video-01',
+    label: 'Video-01 (MiniMax)', provider: 'MiniMax', tier: 'balanced',
+    description: 'Modelo de vídeo MiniMax — vídeos de até 6 segundos com boa qualidade',
+    contextWindow: 2_000, inputCost: 4.00, outputCost: 4.00, isFree: false,
+    modality: ['video'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_video: 7 },
+  },
+
+  // Imagem
+  {
+    id: 'openai/dall-e-3',
+    label: 'DALL-E 3 (OpenAI)', provider: 'OpenAI', tier: 'premium',
+    description: 'Geração de imagens de alta qualidade com excelente aderência ao prompt',
+    contextWindow: 4_000, inputCost: 4.00, outputCost: 8.00, isFree: false,
+    modality: ['image'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_image: 10 },
+  },
+  {
+    id: 'google/imagen-3',
+    label: 'Imagen 3 (Google)', provider: 'Google', tier: 'premium',
+    description: 'Geração de imagens Google — fotorealismo e fidelidade ao texto',
+    contextWindow: 4_000, inputCost: 3.00, outputCost: 6.00, isFree: false,
+    modality: ['image'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_image: 9 },
+  },
+  {
+    id: 'stability/stable-diffusion-xl',
+    label: 'Stable Diffusion XL', provider: 'Stability AI', tier: 'balanced',
+    description: 'Geração de imagens open source — versátil e personalizável',
+    contextWindow: 2_000, inputCost: 0.60, outputCost: 1.20, isFree: false,
+    modality: ['image'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_image: 8 },
+  },
+  {
+    id: 'black-forest-labs/flux-1.1-pro',
+    label: 'FLUX 1.1 Pro', provider: 'Black Forest Labs', tier: 'balanced',
+    description: 'FLUX Pro — imagens de altíssima qualidade e velocidade',
+    contextWindow: 2_000, inputCost: 2.00, outputCost: 4.00, isFree: false,
+    modality: ['image'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_image: 9 },
+  },
+
+  // TTS / Áudio
+  {
+    id: 'openai/tts-1-hd',
+    label: 'TTS-1 HD (OpenAI)', provider: 'OpenAI', tier: 'premium',
+    description: 'Text-to-Speech HD da OpenAI — vozes naturais em múltiplos idiomas',
+    contextWindow: 4_096, inputCost: 15.00, outputCost: 30.00, isFree: false,
+    modality: ['tts', 'audio'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_audio: 10 },
+  },
+  {
+    id: 'openai/tts-1',
+    label: 'TTS-1 (OpenAI)', provider: 'OpenAI', tier: 'balanced',
+    description: 'Text-to-Speech padrão da OpenAI — rápido e econômico',
+    contextWindow: 4_096, inputCost: 7.50, outputCost: 15.00, isFree: false,
+    modality: ['tts', 'audio'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_audio: 8 },
+  },
+  {
+    id: 'google/gemini-2.5-flash-preview-tts',
+    label: 'Gemini 2.5 Flash TTS', provider: 'Google', tier: 'fast',
+    description: 'TTS do Gemini — vozes em português com boa naturalidade',
+    contextWindow: 8_000, inputCost: 1.00, outputCost: 4.00, isFree: false,
+    modality: ['tts', 'audio'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_audio: 7 },
+  },
+  {
+    id: 'elevenlabs/eleven-multilingual-v2',
+    label: 'ElevenLabs Multilingual v2', provider: 'ElevenLabs', tier: 'premium',
+    description: 'TTS premium ElevenLabs — vozes ultra-realistas com emoção e tom',
+    contextWindow: 5_000, inputCost: 24.00, outputCost: 24.00, isFree: false,
+    modality: ['tts', 'audio'],
+    agentFit: { extraction: 1, synthesis: 1, reasoning: 1, writing: 1, media_audio: 10 },
+  },
 ]
 
 // ── Pipeline agent definitions ────────────────────────────────────────────────
