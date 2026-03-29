@@ -5,7 +5,7 @@ import {
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
   ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal, RefreshCw,
-  Plus, Pencil, Trash2, X, Scale, Tags,
+  Plus, Pencil, Trash2, X, Scale, Tags, Video, Headphones, Presentation,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -30,6 +30,10 @@ import ContextDetailConfigCard from '../components/ContextDetailConfigCard'
 import AcervoClassificadorConfigCard from '../components/AcervoClassificadorConfigCard'
 import AcervoEmentaConfigCard from '../components/AcervoEmentaConfigCard'
 import ResearchNotebookConfigCard from '../components/ResearchNotebookConfigCard'
+import NotebookAcervoConfigCard from '../components/NotebookAcervoConfigCard'
+import VideoPipelineConfigCard from '../components/VideoPipelineConfigCard'
+import AudioPipelineConfigCard from '../components/AudioPipelineConfigCard'
+import PresentationPipelineConfigCard from '../components/PresentationPipelineConfigCard'
 import ModelCatalogCard from '../components/ModelCatalogCard'
 
 interface ModuleInfo {
@@ -790,9 +794,6 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* Reindex */}
-      <ReindexCard />
-
       {/* API Keys */}
       <AdminCollapsibleSection
         id="section_api_keys"
@@ -898,6 +899,62 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <ResearchNotebookConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Notebook Acervo Config (Firebase-only) */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_notebook_acervo_config"
+          title="Configuração do Analisador de Acervo (Caderno)"
+          icon={Database}
+          iconColor="text-emerald-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <NotebookAcervoConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Video Pipeline Config (Firebase-only) */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_video_pipeline_config"
+          title="Pipeline de Vídeo (Trilha Multiagente)"
+          icon={Video}
+          iconColor="text-rose-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <VideoPipelineConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Audio Pipeline Config (Firebase-only) */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_audio_pipeline_config"
+          title="Pipeline de Áudio (Trilha Multiagente)"
+          icon={Headphones}
+          iconColor="text-violet-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <AudioPipelineConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Presentation Pipeline Config (Firebase-only) */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_presentation_pipeline_config"
+          title="Pipeline de Apresentação (Trilha Multiagente)"
+          icon={Presentation}
+          iconColor="text-sky-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <PresentationPipelineConfigCard />
         </AdminCollapsibleSection>
       )}
 
