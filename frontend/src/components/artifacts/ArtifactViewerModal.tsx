@@ -64,7 +64,7 @@ const ARTIFACT_LABELS: Record<StudioArtifactType, string> = {
   infografico: 'Infográfico',
   tabela_dados: 'Tabela de Dados',
   audio_script: 'Roteiro de Áudio',
-  video_script: 'Roteiro de Vídeo',
+  video_script: 'Geração de Vídeo',
   outro: 'Outro',
 }
 
@@ -126,7 +126,17 @@ function CopyButton({ text }: { text: string }) {
 
 // ── Viewer router ───────────────────────────────────────────────────────────
 
-function ArtifactContent({ artifact, parsed }: { artifact: StudioArtifact; parsed: ParsedArtifact }) {
+function ArtifactContent({
+  artifact,
+  parsed,
+  onGenerateVideo,
+  videoGenerationState,
+}: {
+  artifact: StudioArtifact
+  parsed: ParsedArtifact
+  onGenerateVideo?: () => void
+  videoGenerationState?: VideoGenerationState
+}) {
   switch (parsed.kind) {
     case 'flashcards':
       return <FlashcardViewer data={parsed.data} />
@@ -143,7 +153,14 @@ function ArtifactContent({ artifact, parsed }: { artifact: StudioArtifact; parse
     case 'audio_script':
       return <AudioScriptViewer data={parsed.data} />
     case 'video_script':
-      return <VideoScriptViewer data={parsed.data} />
+      return (
+        <VideoScriptViewer
+          data={parsed.data}
+          onGenerateVideo={onGenerateVideo}
+          isGenerating={videoGenerationState?.isGenerating}
+          generationProgress={videoGenerationState?.progress}
+        />
+      )
     case 'markdown': {
       // Use ReportViewer for text-heavy markdown artifacts
       const textTypes: StudioArtifactType[] = ['resumo', 'relatorio', 'documento', 'guia_estruturado']
@@ -170,12 +187,19 @@ function ArtifactContent({ artifact, parsed }: { artifact: StudioArtifact; parse
 
 // ── Main Modal ──────────────────────────────────────────────────────────────
 
+export interface VideoGenerationState {
+  isGenerating: boolean
+  progress?: { step: number; total: number; phase: string; detail?: string }
+}
+
 interface ArtifactViewerModalProps {
   artifact: StudioArtifact
   onClose: () => void
   onDelete: () => void
   onDownload: () => void
   onRegenerate?: () => void
+  onGenerateVideo?: (artifact: StudioArtifact) => void
+  videoGenerationState?: VideoGenerationState
 }
 
 export default function ArtifactViewerModal({
@@ -184,6 +208,8 @@ export default function ArtifactViewerModal({
   onDelete,
   onDownload,
   onRegenerate,
+  onGenerateVideo,
+  videoGenerationState,
 }: ArtifactViewerModalProps) {
   const Icon = ARTIFACT_ICONS[artifact.type] || Sparkles
   const label = ARTIFACT_LABELS[artifact.type] || artifact.type
@@ -349,7 +375,12 @@ export default function ArtifactViewerModal({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          <ArtifactContent artifact={artifact} parsed={parsed} />
+          <ArtifactContent
+            artifact={artifact}
+            parsed={parsed}
+            onGenerateVideo={onGenerateVideo ? () => onGenerateVideo(artifact) : undefined}
+            videoGenerationState={videoGenerationState}
+          />
         </div>
       </div>
     </div>

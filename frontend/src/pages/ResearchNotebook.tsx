@@ -43,6 +43,8 @@ import {
 } from '../lib/cost-analytics'
 import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
 import { runStudioPipeline, type StudioProgressCallback } from '../lib/notebook-studio-pipeline'
+import { executeVideoFromScript, type MediaProgressCallback } from '../lib/media-production-pipeline'
+import { parseArtifactContent } from '../components/artifacts/artifact-parsers'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import MediaCreationModal, { type MediaCreationOptions } from '../components/MediaCreationModal'
 
@@ -190,7 +192,7 @@ const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
     label: 'Mídia', emoji: '🎬', color: 'amber',
     items: [
       { type: 'audio_script', label: 'Roteiro de Áudio', icon: Mic, description: 'Script de podcast com timeline e notas de produção' },
-      { type: 'video_script', label: 'Roteiro de Vídeo', icon: Video, description: 'Storyboard com cenas, visuais e pós-produção' },
+      { type: 'video_script', label: 'Geração de Vídeo', icon: Video, description: 'Pipeline completo: roteiro → estimativa de custos → geração do vídeo' },
     ],
   },
 ]
@@ -394,6 +396,10 @@ export default function ResearchNotebook() {
 
   // Artifact viewer modal
   const [viewingArtifact, setViewingArtifact] = useState<StudioArtifact | null>(null)
+
+  // Video generation state
+  const [videoGenerating, setVideoGenerating] = useState(false)
+  const [videoProgress, setVideoProgress] = useState<{ step: number; total: number; phase: string; detail?: string } | undefined>()
 
   // Create dialog
   const [showCreate, setShowCreate] = useState(false)
@@ -1143,6 +1149,108 @@ Instruções:
     } catch (err) {
       console.error('Error deleting artifact:', err)
       toast.error('Erro ao remover artefato')
+    }
+  }
+
+  // ── Generate full video from existing script ───────────────────────
+  const handleGenerateVideo = async (artifact: StudioArtifact) => {
+    if (!userId || !activeNotebook?.id || videoGenerating) return
+    if (artifact.type !== 'video_script') return
+
+    // Parse the script from the artifact content
+    const parsed = parseArtifactContent('video_script', artifact.content)
+    if (parsed.kind !== 'video_script') {
+      toast.error('Não foi possível interpretar o roteiro. Tente regenerar o artefato.')
+      return
+    }
+
+    setVideoGenerating(true)
+    setVideoProgress(undefined)
+
+    try {
+      const apiKey = await getOpenRouterKey()
+      const sourceContext = buildSourceContext()
+
+      const onProgress: MediaProgressCallback = (step, total, phase, detail) => {
+        setVideoProgress({ step, total, phase, detail })
+      }
+
+      const result = await executeVideoFromScript(
+        apiKey,
+        parsed.data,
+        sourceContext,
+        onProgress,
+      )
+
+      // Save the generated video as a new artifact
+      const videoArtifact: StudioArtifact = {
+        id: generateId(),
+        type: 'video_script',
+        title: `Vídeo Gerado — ${parsed.data.title}`,
+        content: result.content,
+        format: 'markdown',
+        created_at: new Date().toISOString(),
+      }
+
+      const updatedArtifacts = [...activeNotebook.artifacts, videoArtifact]
+
+      // Create execution records
+      const newExecutions = result.executions.map(ex =>
+        createUsageExecutionRecord({
+          source_type: 'caderno_pesquisa',
+          source_id: activeNotebook.id,
+          phase: ex.phase,
+          agent_name: ex.agent_name,
+          model: ex.model,
+          tokens_in: ex.tokens_in,
+          tokens_out: ex.tokens_out,
+          cost_usd: ex.cost_usd,
+          duration_ms: ex.duration_ms,
+        })
+      )
+
+      const updatedExecutions = [...(activeNotebook.llm_executions || []), ...newExecutions]
+
+      await updateResearchNotebook(userId, activeNotebook.id, {
+        artifacts: updatedArtifacts,
+        llm_executions: updatedExecutions,
+      })
+
+      setActiveNotebook({
+        ...activeNotebook,
+        artifacts: updatedArtifacts,
+        llm_executions: updatedExecutions,
+      })
+
+      // Show the new video artifact
+      setViewingArtifact(videoArtifact)
+
+      const totalTokens = result.executions.reduce((s, e) => s + e.tokens_in + e.tokens_out, 0)
+      const totalCost = result.executions.reduce((s, e) => s + e.cost_usd, 0)
+      toast.success(
+        `Vídeo gerado com sucesso!`,
+        `${result.executions.length} agentes · ${totalTokens.toLocaleString()} tokens · $${totalCost.toFixed(4)} USD`,
+      )
+    } catch (err) {
+      console.error('Video generation pipeline error:', err)
+      if (err instanceof ModelUnavailableError) {
+        toast.warning(
+          `Modelo indisponível: ${err.modelId}`,
+          'Um modelo do pipeline de vídeo foi removido. Vá em Administração > Produção de Mídia e substitua-o.',
+        )
+      } else if (err instanceof Error && err.message.includes('sem modelo')) {
+        toast.warning('Modelos não configurados', err.message)
+      } else if (err instanceof Error && err.message.includes('429')) {
+        toast.warning(
+          'Limite de requisições atingido',
+          'Aguarde 30 segundos e tente novamente.',
+        )
+      } else {
+        toast.error('Erro ao gerar vídeo. Verifique os modelos configurados em Administração > Produção de Mídia.')
+      }
+    } finally {
+      setVideoGenerating(false)
+      setVideoProgress(undefined)
     }
   }
 
@@ -2322,12 +2430,14 @@ Instruções:
       {viewingArtifact && (
         <ArtifactViewerModal
           artifact={viewingArtifact}
-          onClose={() => setViewingArtifact(null)}
+          onClose={() => { if (!videoGenerating) setViewingArtifact(null) }}
           onDelete={() => {
             handleDeleteArtifact(viewingArtifact.id)
             setViewingArtifact(null)
           }}
           onDownload={() => handleDownloadArtifact(viewingArtifact)}
+          onGenerateVideo={viewingArtifact.type === 'video_script' ? handleGenerateVideo : undefined}
+          videoGenerationState={viewingArtifact.type === 'video_script' ? { isGenerating: videoGenerating, progress: videoProgress } : undefined}
         />
       )}
 

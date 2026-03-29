@@ -129,7 +129,42 @@ const PHASE_LABELS: Record<string, string> = {
   notebook_criador_infografico: 'Estúdio: Infográfico',
   notebook_criador_documento: 'Estúdio: Documento',
   notebook_criador_audio_script: 'Estúdio: Roteiro de Áudio',
-  notebook_criador_video_script: 'Estúdio: Roteiro de Vídeo',
+  notebook_criador_video_script: 'Estúdio: Geração de Vídeo',
+  // Notebook Acervo Analyzer
+  nb_acervo_triagem: 'Triagem de Acervo (Caderno)',
+  nb_acervo_buscador: 'Buscador de Acervo (Caderno)',
+  nb_acervo_analista: 'Analista de Acervo (Caderno)',
+  nb_acervo_curador: 'Curador de Fontes (Caderno)',
+  // Studio pipeline steps
+  studio_pesquisador: 'Pesquisador do Estúdio',
+  studio_escritor: 'Escritor do Estúdio',
+  studio_roteirista: 'Roteirista do Estúdio',
+  studio_visual: 'Designer Visual do Estúdio',
+  studio_revisor: 'Revisor do Estúdio',
+  // Audio Overview
+  audio_overview_script: 'Audio Overview: Roteiro',
+  audio_overview_tts: 'Audio Overview: TTS',
+  // Video Pipeline
+  video_planejador: 'Vídeo: Planejador',
+  video_roteirista: 'Vídeo: Roteirista',
+  video_storyboarder: 'Vídeo: Storyboarder',
+  video_detalhista_cena: 'Vídeo: Detalhista de Cena',
+  video_gerador_cena: 'Vídeo: Gerador de Cena (IA)',
+  video_compositor: 'Vídeo: Compositor',
+  video_revisor: 'Vídeo: Revisor',
+  // Audio Pipeline
+  audio_planejador: 'Áudio: Planejador',
+  audio_roteirista: 'Áudio: Roteirista',
+  audio_detalhista: 'Áudio: Detalhista',
+  audio_gerador_voz: 'Áudio: Gerador de Voz (TTS)',
+  audio_revisor: 'Áudio: Revisor',
+  // Presentation Pipeline
+  apresentacao_planejador: 'Apresentação: Planejador',
+  apresentacao_designer: 'Apresentação: Designer',
+  apresentacao_conteudista: 'Apresentação: Conteudista',
+  apresentacao_gerador_visual: 'Apresentação: Gerador Visual (IA)',
+  apresentacao_revisor: 'Apresentação: Revisor',
+  // Aggregations
   caderno_pesquisa_total: 'Caderno de Pesquisa (agregado)',
   document_total: 'Documento (agregado)',
   thesis_analysis_total: 'Sessão de análise (agregada)',

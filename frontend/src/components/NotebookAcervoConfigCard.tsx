@@ -1,28 +1,29 @@
 /**
  * Notebook Acervo Config Card — Admin Panel section for configuring
- * which LLM models the "Analisador de Acervo do Caderno" pipeline agents use.
+ * which LLM model each agent of the "Analisador de Acervo do Caderno" pipeline uses.
  *
- * Follows the same design pattern as AcervoEmentaConfigCard
- * but targets the NOTEBOOK_ACERVO_AGENT_DEFS and notebook_acervo_models Firestore key.
+ * Follows the same design pattern as ResearchNotebookConfigCard but simplified
+ * for the 4-agent acervo analyzer pipeline (Triagem → Buscador → Analista → Curador).
  */
 
 import { useEffect, useState } from 'react'
 import {
-  Search,
+  Library,
   Save,
   RotateCcw,
   ChevronDown,
   ChevronUp,
+  ArrowDown,
   AlertCircle,
   CheckCircle2,
   Brain,
+  Search,
+  Scale,
+  ClipboardCheck,
   RefreshCw,
   Cpu,
   Coins,
   ChevronRight,
-  Library,
-  Scale,
-  ClipboardCheck,
 } from 'lucide-react'
 import {
   NOTEBOOK_ACERVO_AGENT_DEFS,
@@ -40,10 +41,10 @@ import ModelSelectorModal from './ModelSelectorModal'
 
 const AGENT_ICONS: Record<string, React.ElementType> = {
   'search':          Search,
-  'brain':           Brain,
   'library':         Library,
   'scale':           Scale,
   'clipboard-check': ClipboardCheck,
+  'brain':           Brain,
 }
 
 const TIER_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -148,7 +149,7 @@ export default function NotebookAcervoConfigCard() {
   if (loading) {
     return (
       <div className="bg-white rounded-xl border p-6 mb-6">
-        <p className="text-gray-400 text-sm">Carregando configuração do Analisador de Acervo do Caderno...</p>
+        <p className="text-gray-400 text-sm">Carregando configuração do Analisador de Acervo...</p>
       </div>
     )
   }
@@ -164,11 +165,11 @@ export default function NotebookAcervoConfigCard() {
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center">
-              <Search className="w-5 h-5 text-teal-600" />
+              <Library className="w-5 h-5 text-teal-600" />
             </div>
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Analisador de Acervo do Caderno</h2>
-              <p className="text-sm text-gray-500">Configure os modelos LLM do pipeline de análise de acervo no caderno de pesquisa</p>
+              <p className="text-sm text-gray-500">Configure os modelos dos agentes que buscam documentos relevantes do acervo para os cadernos de pesquisa</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -187,16 +188,15 @@ export default function NotebookAcervoConfigCard() {
         {/* Expanded content */}
         {expanded && (
           <div className="px-6 pb-6">
-            {/* Pipeline header */}
+            {/* ── Group header ── */}
             <div className="flex items-center gap-2 mb-4 pb-3 border-b">
-              <Search className="w-4 h-4 text-teal-500" />
-              <span className="text-sm font-semibold text-gray-700">Pipeline de Análise de Acervo</span>
-              <span className="text-xs text-gray-400 ml-auto">4 agentes · pipeline de análise de acervo</span>
+              <Library className="w-4 h-4 text-teal-500" />
+              <span className="text-sm font-semibold text-gray-700">Análise de Acervo do Caderno</span>
+              <span className="text-xs text-gray-400 ml-auto">{NOTEBOOK_ACERVO_AGENT_DEFS.length} agentes · pipeline sequencial</span>
             </div>
 
-            {/* Agent cards */}
-            <div className="space-y-0">
-              {NOTEBOOK_ACERVO_AGENT_DEFS.map((agent) => {
+            <div className="space-y-0 mb-4">
+              {NOTEBOOK_ACERVO_AGENT_DEFS.map((agent, idx) => {
                 const Icon         = AGENT_ICONS[agent.icon] ?? Brain
                 const currentModelId = models[agent.key] ?? agent.defaultModel
                 const currentModel = getModelOption(currentModelId)
@@ -204,6 +204,7 @@ export default function NotebookAcervoConfigCard() {
                 const tierStyle    = currentModel
                   ? TIER_STYLES[currentModel.tier]
                   : TIER_STYLES[agent.recommendedTier]
+                const isLast = idx === NOTEBOOK_ACERVO_AGENT_DEFS.length - 1
 
                 return (
                   <div key={agent.key}>
@@ -279,15 +280,27 @@ export default function NotebookAcervoConfigCard() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Pipeline arrow */}
+                    {!isLast && (
+                      <div className="flex justify-center py-1">
+                        <ArrowDown className="w-4 h-4 text-teal-300" />
+                      </div>
+                    )}
                   </div>
                 )
               })}
             </div>
 
             {/* Info box */}
-            <div className="mt-4 p-3 bg-teal-50 border border-teal-200 rounded-lg">
+            <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg">
               <p className="text-xs text-teal-800">
-                📚 <strong>Sobre este pipeline:</strong> O Analisador de Acervo do Caderno usa 4 agentes para buscar, analisar e curar documentos do acervo relevantes ao tema do caderno de pesquisa. Modelos <strong>rápidos</strong> são recomendados para triagem e busca, enquanto modelos <strong>equilibrados</strong> melhoram a análise e curadoria.
+                <strong>📚 Pipeline de 4 agentes:</strong> Quando o caderno de pesquisa busca documentos relevantes no acervo,
+                a <strong>Triagem</strong> extrai palavras-chave e contexto do tema →
+                o <strong>Buscador</strong> localiza e classifica documentos por relevância →
+                o <strong>Analista</strong> faz análise profunda dos documentos selecionados →
+                o <strong>Curador</strong> faz a curadoria final com resumos e recomendações de fontes.
+                Modelos <strong>✦ Grátis</strong> são uma ótima opção para testes e redução de custos.
               </p>
             </div>
 

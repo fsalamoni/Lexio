@@ -28,6 +28,7 @@ import {
   FREE_TIER_RATE_LIMITS,
   type ModelOption,
   type AgentCategory,
+  type ModelModality,
 } from '../lib/model-config'
 import { useCatalogModels } from '../lib/model-catalog'
 
@@ -43,6 +44,10 @@ interface Props {
   currentModelId: string
   agentCategory: AgentCategory
   agentLabel: string
+  /** When set, only models supporting this modality are shown */
+  requiredModality?: ModelModality
+  /** Optional note shown as a warning banner about model requirements */
+  modelNote?: string
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -67,10 +72,25 @@ const PROVIDER_COLORS: Record<string, string> = {
 }
 
 const CATEGORY_LABELS: Record<AgentCategory, string> = {
-  extraction: 'Extração',
-  synthesis:  'Síntese',
-  reasoning:  'Raciocínio',
-  writing:    'Redação',
+  extraction:     'Extração',
+  synthesis:      'Síntese',
+  reasoning:      'Raciocínio',
+  writing:        'Redação',
+  media_planning: 'Planejamento de Mídia',
+  media_video:    'Geração de Vídeo',
+  media_audio:    'Geração de Áudio',
+  media_image:    'Geração de Imagem',
+}
+
+const MODALITY_LABELS: Record<ModelModality, string> = {
+  text:         'Texto',
+  'text+image': 'Texto + Imagem',
+  'text+audio': 'Texto + Áudio',
+  'text+video': 'Texto + Vídeo',
+  image:        'Imagem',
+  audio:        'Áudio',
+  video:        'Vídeo',
+  tts:          'TTS (Voz)',
 }
 
 const SCORE_COLORS = (n: number) =>
@@ -113,6 +133,7 @@ function formatCost(usd: number): string {
 
 export default function ModelSelectorModal({
   open, onClose, onSelect, currentModelId, agentCategory, agentLabel,
+  requiredModality, modelNote,
 }: Props) {
   const catalogModels = useCatalogModels()
   const [search,      setSearch]      = useState('')
@@ -146,6 +167,11 @@ export default function ModelSelectorModal({
   const filtered = useMemo<ModelOption[]>(() => {
     let list = catalogModels
 
+    // Modality filter — when agent requires specific modality, only show matching models
+    if (requiredModality) {
+      list = list.filter(m => m.modality?.includes(requiredModality))
+    }
+
     // Price filter
     if (priceFilter === 'free') list = list.filter(m => m.isFree)
     if (priceFilter === 'paid') list = list.filter(m => !m.isFree)
@@ -168,9 +194,10 @@ export default function ModelSelectorModal({
 
     // Sort
     const multiplier = sortAsc ? 1 : -1
+    const getFit = (m: ModelOption) => m.agentFit[agentCategory] ?? m.agentFit.reasoning ?? 5
     list = [...list].sort((a, b) => {
       if (sortBy === 'fit') {
-        return multiplier * (a.agentFit[agentCategory] - b.agentFit[agentCategory])
+        return multiplier * (getFit(a) - getFit(b))
       }
       if (sortBy === 'cost') {
         const costA = a.inputCost + a.outputCost
@@ -182,7 +209,7 @@ export default function ModelSelectorModal({
     })
 
     return list
-  }, [search, priceFilter, tierFilter, provFilter, sortBy, sortAsc, agentCategory, catalogModels])
+  }, [search, priceFilter, tierFilter, provFilter, sortBy, sortAsc, agentCategory, catalogModels, requiredModality])
 
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) setSortAsc(a => !a)
@@ -220,6 +247,28 @@ export default function ModelSelectorModal({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* ── Model Note / Modality Warning ── */}
+        {(modelNote || requiredModality) && (
+          <div className="px-6 py-2 border-b bg-amber-50 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-amber-800">
+              {modelNote && <p className="font-medium">{modelNote}</p>}
+              {requiredModality && !modelNote && (
+                <p className="font-medium">
+                  Este agente requer modelos com modalidade <strong>{MODALITY_LABELS[requiredModality]}</strong>.
+                  Modelos de texto puro não são compatíveis.
+                </p>
+              )}
+              {requiredModality && filtered.length === 0 && (
+                <p className="mt-1 text-amber-700">
+                  Nenhum modelo com modalidade "{MODALITY_LABELS[requiredModality]}" encontrado no catálogo.
+                  Adicione modelos compatíveis em Administração {'>'} Catálogo de Modelos.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Filters & Search ── */}
         <div className="px-6 py-3 border-b bg-gray-50 flex flex-wrap items-center gap-3">

@@ -1,14 +1,183 @@
 /**
  * VideoScriptViewer — professional storyboard-style viewer for video scripts
- * with scene cards, visual description frames, and collapsible post-production notes.
+ * with scene cards, cost estimation panel, and "Generate Full Video" button.
+ *
+ * This is the FIRST stage of video generation. After reviewing the script,
+ * users can see the token cost estimate and trigger the full video pipeline.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import {
   Clock, Film, ChevronDown, ChevronUp, Camera,
   ArrowRightLeft, Layers, Type, StickyNote,
+  Zap, DollarSign, LayoutGrid, Play, Loader2,
+  AlertTriangle, CheckCircle2, Coins,
 } from 'lucide-react'
 import type { ParsedVideoScript, VideoScene } from './artifact-parsers'
+import { estimateVideoFromScript } from '../../lib/media-production-pipeline'
+
+// ── Cost Estimation Panel ─────────────────────────────────────────────────
+
+interface CostEstimatePanelProps {
+  script: ParsedVideoScript
+  onGenerateVideo?: () => void
+  isGenerating?: boolean
+  generationProgress?: { step: number; total: number; phase: string; detail?: string }
+}
+
+function CostEstimatePanel({ script, onGenerateVideo, isGenerating, generationProgress }: CostEstimatePanelProps) {
+  const estimate = useMemo(() => estimateVideoFromScript(script), [script])
+
+  const formatTokens = (n: number) => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+    return String(n)
+  }
+
+  const progressPercent = generationProgress
+    ? Math.round((generationProgress.step / generationProgress.total) * 100)
+    : 0
+
+  return (
+    <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-200 rounded-2xl p-6 space-y-5">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="p-2.5 bg-violet-100 rounded-xl">
+          <Zap className="w-5 h-5 text-violet-600" />
+        </div>
+        <div>
+          <h3 className="text-base font-bold text-gray-900">Estimativa de Geração de Vídeo</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Custo estimado para gerar o vídeo completo a partir deste roteiro
+          </p>
+        </div>
+      </div>
+
+      {/* Token Breakdown */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white rounded-xl p-3 border border-violet-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Film className="w-3.5 h-3.5 text-violet-500" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-500">Expansão</span>
+          </div>
+          <p className="text-lg font-bold text-gray-900">{formatTokens(estimate.breakdown.scriptExpansion)}</p>
+          <p className="text-[10px] text-gray-400">tokens</p>
+        </div>
+        <div className="bg-white rounded-xl p-3 border border-violet-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Camera className="w-3.5 h-3.5 text-blue-500" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-500">Detalhamento</span>
+          </div>
+          <p className="text-lg font-bold text-gray-900">{formatTokens(estimate.breakdown.sceneDetailing)}</p>
+          <p className="text-[10px] text-gray-400">tokens</p>
+        </div>
+        <div className="bg-white rounded-xl p-3 border border-violet-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Play className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-500">Geração</span>
+          </div>
+          <p className="text-lg font-bold text-gray-900">{formatTokens(estimate.breakdown.videoGeneration)}</p>
+          <p className="text-[10px] text-gray-400">tokens</p>
+        </div>
+        <div className="bg-white rounded-xl p-3 border border-violet-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <CheckCircle2 className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-500">Revisão</span>
+          </div>
+          <p className="text-lg font-bold text-gray-900">{formatTokens(estimate.breakdown.review)}</p>
+          <p className="text-[10px] text-gray-400">tokens</p>
+        </div>
+      </div>
+
+      {/* Totals */}
+      <div className="flex flex-wrap items-center gap-4 py-3 px-4 bg-white rounded-xl border border-violet-100">
+        <div className="flex items-center gap-2">
+          <Coins className="w-4 h-4 text-violet-600" />
+          <div>
+            <p className="text-xs text-gray-500">Tokens Totais</p>
+            <p className="text-sm font-bold text-gray-900">{estimate.totalTokens.toLocaleString('pt-BR')}</p>
+          </div>
+        </div>
+        <div className="w-px h-8 bg-gray-200" />
+        <div className="flex items-center gap-2">
+          <DollarSign className="w-4 h-4 text-emerald-600" />
+          <div>
+            <p className="text-xs text-gray-500">Custo Estimado</p>
+            <p className="text-sm font-bold text-gray-900">${estimate.totalCostUSD.toFixed(2)} USD</p>
+          </div>
+        </div>
+        <div className="w-px h-8 bg-gray-200" />
+        <div className="flex items-center gap-2">
+          <LayoutGrid className="w-4 h-4 text-blue-600" />
+          <div>
+            <p className="text-xs text-gray-500">Cenas / Partes</p>
+            <p className="text-sm font-bold text-gray-900">{script.scenes.length} cenas · {estimate.parts} parte{estimate.parts > 1 ? 's' : ''}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Warnings */}
+      {estimate.parts > 1 && (
+        <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
+          <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-700">
+            O vídeo tem {script.scenes.length} cenas e será gerado em <strong>{estimate.parts} partes</strong> para
+            melhor qualidade. Cada parte será processada sequencialmente.
+          </p>
+        </div>
+      )}
+
+      <p className="text-[10px] text-gray-400 italic">
+        * Estimativa conservadora com margem de segurança de 30%. Custos reais podem ser menores.
+        O custo depende dos modelos configurados em Administração &gt; Produção de Mídia.
+      </p>
+
+      {/* Generation Progress */}
+      {isGenerating && generationProgress && (
+        <div className="space-y-2 pt-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-medium text-violet-700">{generationProgress.phase}</span>
+            <span className="text-gray-500">{generationProgress.step}/{generationProgress.total}</span>
+          </div>
+          <div className="w-full bg-violet-100 rounded-full h-2.5 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          {generationProgress.detail && (
+            <p className="text-[11px] text-gray-500 italic">{generationProgress.detail}</p>
+          )}
+        </div>
+      )}
+
+      {/* Generate Button */}
+      {onGenerateVideo && (
+        <button
+          onClick={onGenerateVideo}
+          disabled={isGenerating}
+          className={`w-full flex items-center justify-center gap-2.5 py-3.5 px-6 rounded-xl font-semibold text-sm transition-all
+            ${isGenerating
+              ? 'bg-violet-200 text-violet-500 cursor-not-allowed'
+              : 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-700 hover:to-indigo-700 shadow-lg shadow-violet-200 hover:shadow-xl hover:shadow-violet-300 active:scale-[0.98]'
+            }`}
+        >
+          {isGenerating ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Gerando vídeo... {progressPercent}%
+            </>
+          ) : (
+            <>
+              <Play className="w-4 h-4" />
+              Gerar Vídeo Completo ({formatTokens(estimate.totalTokens)} tokens · ${estimate.totalCostUSD.toFixed(2)})
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  )
+}
 
 // ── Scene card ─────────────────────────────────────────────────────────────
 
@@ -53,7 +222,7 @@ function SceneCard({ scene }: SceneCardProps) {
           <div className="flex items-center gap-2 mb-2">
             <Film className="w-3.5 h-3.5 text-brand-500" />
             <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-500">
-              Narracao
+              Narração
             </span>
           </div>
           <p className="text-sm text-gray-900 leading-relaxed whitespace-pre-line">
@@ -102,11 +271,19 @@ function SceneCard({ scene }: SceneCardProps) {
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-interface VideoScriptViewerProps {
+export interface VideoScriptViewerProps {
   data: ParsedVideoScript
+  onGenerateVideo?: () => void
+  isGenerating?: boolean
+  generationProgress?: { step: number; total: number; phase: string; detail?: string }
 }
 
-export default function VideoScriptViewer({ data }: VideoScriptViewerProps) {
+export default function VideoScriptViewer({
+  data,
+  onGenerateVideo,
+  isGenerating,
+  generationProgress,
+}: VideoScriptViewerProps) {
   const [notesOpen, setNotesOpen] = useState(false)
 
   if (data.scenes.length === 0) {
@@ -120,7 +297,7 @@ export default function VideoScriptViewer({ data }: VideoScriptViewerProps) {
         <div className="space-y-1">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{data.title}</h1>
           <p className="text-sm text-gray-500">
-            {data.scenes.length} cena{data.scenes.length !== 1 ? 's' : ''}
+            Etapa 1: Roteiro · {data.scenes.length} cena{data.scenes.length !== 1 ? 's' : ''}
           </p>
         </div>
         {data.duration && (
@@ -130,6 +307,14 @@ export default function VideoScriptViewer({ data }: VideoScriptViewerProps) {
           </div>
         )}
       </div>
+
+      {/* Cost Estimation + Generate Button (BEFORE storyboard) */}
+      <CostEstimatePanel
+        script={data}
+        onGenerateVideo={onGenerateVideo}
+        isGenerating={isGenerating}
+        generationProgress={generationProgress}
+      />
 
       {/* Storyboard */}
       <div className="space-y-5">
@@ -146,7 +331,7 @@ export default function VideoScriptViewer({ data }: VideoScriptViewerProps) {
             className="w-full flex items-center justify-between px-5 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors"
           >
             <span className="text-sm font-semibold text-gray-700">
-              Notas de Pos-Producao ({data.postProductionNotes.length})
+              Notas de Pós-Produção ({data.postProductionNotes.length})
             </span>
             {notesOpen ? (
               <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -166,6 +351,21 @@ export default function VideoScriptViewer({ data }: VideoScriptViewerProps) {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Bottom Generate Button (convenience duplicate) */}
+      {onGenerateVideo && !isGenerating && (
+        <div className="pt-2">
+          <button
+            onClick={onGenerateVideo}
+            className="w-full flex items-center justify-center gap-2.5 py-3 px-6 rounded-xl font-semibold text-sm
+              bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-700 hover:to-indigo-700
+              shadow-lg shadow-violet-200 hover:shadow-xl active:scale-[0.98] transition-all"
+          >
+            <Play className="w-4 h-4" />
+            Gerar Vídeo Completo
+          </button>
         </div>
       )}
     </div>

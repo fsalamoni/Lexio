@@ -15,17 +15,10 @@ import { getSettings, saveSettings } from './firestore-service'
 // ── Available OpenRouter models (curated) ─────────────────────────────────────
 
 /** Agent function categories — used to compute model fit score per agent */
-export type AgentCategory = 'extraction' | 'synthesis' | 'reasoning' | 'writing'
+export type AgentCategory = 'extraction' | 'synthesis' | 'reasoning' | 'writing' | 'media_video' | 'media_audio' | 'media_image' | 'media_planning'
 
-/**
- * Model capability — indicates what type of content a model can produce.
- * Used to filter model selection for agents that require specific output types.
- *  - text: standard text LLMs (default for most agents)
- *  - image: image generation models (e.g. DALL-E, Midjourney)
- *  - audio: audio/TTS generation models (e.g. openai/tts-1-hd)
- *  - video: video generation models (e.g. runway, pika)
- */
-export type ModelCapability = 'text' | 'image' | 'audio' | 'video'
+/** Model output modality — what kind of content the model can generate */
+export type ModelModality = 'text' | 'text+image' | 'text+audio' | 'text+video' | 'image' | 'audio' | 'video' | 'tts'
 
 /**
  * Fit scores (1–10) per agent category — absolute global scale.
@@ -41,6 +34,14 @@ export interface AgentFitScores {
   synthesis:  number
   reasoning:  number
   writing:    number
+  /** Score for media planning agents (optional — defaults to reasoning score if missing) */
+  media_planning?: number
+  /** Score for video generation agents (optional — 0 for text-only models) */
+  media_video?: number
+  /** Score for audio/TTS generation agents (optional — 0 for text-only models) */
+  media_audio?: number
+  /** Score for image generation agents (optional — 0 for text-only models) */
+  media_image?: number
 }
 
 export interface ModelOption {
@@ -59,6 +60,15 @@ export interface ModelOption {
   isFree: boolean
   /** How well this model fits each agent category (1–10) */
   agentFit: AgentFitScores
+  /**
+   * Output modalities this model supports.
+   * - 'text' = text-only (default if omitted)
+   * - 'image' = generates images (e.g. DALL-E, Stable Diffusion)
+   * - 'audio' / 'tts' = generates audio (e.g. TTS models)
+   * - 'video' = generates video (e.g. Sora, Kling)
+   * Text LLMs that also accept images as INPUT still have modality=['text'].
+   */
+  modality?: ModelModality[]
   /** Known rate limits (present when applicable) */
   rateLimits?: {
     /** Max requests per minute */
@@ -68,8 +78,6 @@ export interface ModelOption {
     /** Optional additional note */
     note?: string
   }
-  /** What type of content this model produces. Defaults to 'text' if omitted. */
-  capability?: ModelCapability
 }
 
 /**
@@ -389,14 +397,13 @@ export interface AgentModelDef {
   /** Functional category — used to pick the right fit score from ModelOption.agentFit */
   agentCategory: AgentCategory
   /**
-   * Required model capability — restricts which models can be assigned to this agent.
-   * 'text' (default) — any text LLM is valid.
-   * 'image' / 'audio' / 'video' — only models of that capability can be used.
-   * When 'bestModelNote' is present, the admin UI shows a recommendation badge.
+   * Required output modality for this agent. When set, the ModelSelectorModal
+   * will only show models that support this modality. Text-only agents omit this.
+   * Examples: 'video' for video generation agents, 'audio'/'tts' for TTS agents.
    */
-  requiredCapability?: ModelCapability
-  /** Short note displayed in the admin UI explaining the best model for this agent. */
-  bestModelNote?: string
+  requiredModality?: ModelModality
+  /** Recommended model note shown in admin panel (e.g. "Use modelos de vídeo como Sora, Kling") */
+  modelNote?: string
 }
 
 /**
@@ -1212,382 +1219,257 @@ export async function resetNotebookAcervoModels(): Promise<void> {
   await saveSettings({ notebook_acervo_models: {} })
 }
 
-// ── Video Pipeline Multi-Agent Definitions ───────────────────────────────────
+// ── Media Production Pipeline Agent Definitions ─────────────────────────────
 
 /**
- * Multi-agent pipeline for professional video production from the Research Notebook.
+ * Multi-agent pipelines for rich media production in Research Notebooks.
+ * These pipelines are invoked when the user creates Video, Audio, or
+ * Presentation artifacts with the advanced creation wizard.
  *
- * The pipeline supports videos of any length (including 15+ minutes) by breaking
- * work into scenes with dedicated agents per scene when needed.
+ * Each pipeline follows the pattern:
+ *   1. Planejador — reads user options, generates a detailed production plan + cost estimate
+ *   2. Roteirista — writes the full script/structure based on the approved plan
+ *   3. Detalhista — expands each scene/slide/segment with full detail
+ *   4. Gerador — calls the actual media generation model (video/audio/image)
+ *   5. Revisor — quality-checks the final output
  *
- * Agent execution order:
- *  1. Planejador       — reads user options, builds video proposal with estimated costs
- *  2. Roteirista       — writes the full script with dialogue, narration and timing
- *  3. Diretor de Cenas — breaks script into detailed scene descriptions
- *  4. Storyboarder     — creates visual storyboard with shot composition details
- *  5. Diretor de Arte  — defines visual style, color palette, lighting for each scene
- *  6. Gerador Visual   — generates the actual video frames/clips (requires video-capable model)
- *  7. Editor           — assembles scenes, transitions, pacing and audio sync
- *  8. Revisor Final    — quality review, continuity check, final adjustments
+ * Text-based agents (planejador, roteirista, detalhista, revisor) use LLMs.
+ * Generator agents REQUIRE specific modality models (video, audio, image).
  *
- * Notes:
- *  - Agents 1-5 and 7-8 are TEXT agents (reasoning/writing) — any LLM works
- *  - Agent 6 (Gerador Visual) REQUIRES a video-capable model
- *  - For long videos (>5 min), the Planejador may suggest splitting into parts
- *  - Token cost estimation errs on the high side for user transparency
+ * ── Pipeline de Vídeo (7 agentes) ──
+ *   video_planejador → video_roteirista → video_storyboarder →
+ *   video_detalhista_cena → video_gerador_cena → video_compositor → video_revisor
+ *
+ * ── Pipeline de Áudio (5 agentes) ──
+ *   audio_planejador → audio_roteirista → audio_detalhista →
+ *   audio_gerador_voz → audio_revisor
+ *
+ * ── Pipeline de Apresentação Avançada (5 agentes) ──
+ *   apresentacao_planejador → apresentacao_designer → apresentacao_conteudista →
+ *   apresentacao_gerador_visual → apresentacao_revisor
  */
+
+// ── Video Pipeline ──────────────────────────────────────────────────────────
+
 export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
   {
     key: 'video_planejador',
     label: 'Planejador de Vídeo',
-    description: 'Analisa as opções do usuário (formato, qualidade, FPS, duração) e cria uma proposta completa com orçamento estimado em tokens',
+    description: 'Analisa as opções do usuário e cria proposta detalhada com roteiro, cenas, custos estimados e subdivisões',
     defaultModel: 'anthropic/claude-sonnet-4',
-    recommendedTier: 'balanced',
+    recommendedTier: 'premium',
     icon: 'clipboard-list',
-    agentCategory: 'reasoning',
-    bestModelNote: 'Recomendado: modelo com forte raciocínio para planejamento preciso e estimativa de custos',
+    agentCategory: 'media_planning',
+    modelNote: 'Requer modelo de texto com forte capacidade de planejamento e estimativa. Claude Sonnet 4 ou GPT-4o recomendados.',
   },
   {
     key: 'video_roteirista',
-    label: 'Roteirista',
-    description: 'Escreve o roteiro completo com diálogos, narração, indicações de cena e cronometragem',
+    label: 'Roteirista de Vídeo',
+    description: 'Escreve o roteiro completo com narração, diálogos, indicações visuais e direção de cada cena',
     defaultModel: 'anthropic/claude-sonnet-4',
     recommendedTier: 'balanced',
     icon: 'file-text',
     agentCategory: 'writing',
-    bestModelNote: 'Recomendado: modelo premium para roteiros criativos e detalhados',
-  },
-  {
-    key: 'video_diretor_cenas',
-    label: 'Diretor de Cenas',
-    description: 'Decompõe o roteiro em cenas individuais com descrições detalhadas de ação, enquadramento e duração',
-    defaultModel: 'anthropic/claude-sonnet-4',
-    recommendedTier: 'balanced',
-    icon: 'layout',
-    agentCategory: 'synthesis',
-    bestModelNote: 'Recomendado: modelo equilibrado para estruturação lógica de cenas',
+    modelNote: 'Modelo de texto com excelente escrita criativa e capacidade de seguir estrutura JSON.',
   },
   {
     key: 'video_storyboarder',
     label: 'Storyboarder',
-    description: 'Cria storyboard visual detalhado com composição de quadros, ângulos de câmera e transições entre cenas',
+    description: 'Cria storyboard visual detalhado: composição, enquadramento, paleta de cores e elementos visuais por cena',
     defaultModel: 'anthropic/claude-sonnet-4',
     recommendedTier: 'balanced',
-    icon: 'film',
+    icon: 'layout',
     agentCategory: 'synthesis',
-    bestModelNote: 'Recomendado: modelo com boa capacidade de descrição visual',
+    modelNote: 'Modelo de texto com capacidade visual/descritiva. Descreve cenas para o gerador de vídeo.',
   },
   {
-    key: 'video_diretor_arte',
-    label: 'Diretor de Arte',
-    description: 'Define estilo visual, paleta de cores, iluminação e referências estéticas para cada cena',
+    key: 'video_detalhista_cena',
+    label: 'Detalhista de Cena',
+    description: 'Expande cada cena com prompts otimizados para o modelo de geração de vídeo, incluindo movimentos de câmera e transições',
     defaultModel: 'anthropic/claude-sonnet-4',
     recommendedTier: 'balanced',
-    icon: 'palette',
-    agentCategory: 'writing',
-    bestModelNote: 'Recomendado: modelo criativo para direção artística',
+    icon: 'zoom-in',
+    agentCategory: 'synthesis',
+    modelNote: 'Modelo de texto especializado em criar prompts detalhados para modelos de geração de vídeo.',
   },
   {
-    key: 'video_gerador_visual',
-    label: 'Gerador de Cenas',
-    description: 'Gera os frames e clipes visuais de cada cena (REQUER modelo de geração de vídeo)',
-    defaultModel: 'google/gemini-2.0-flash-001',
+    key: 'video_gerador_cena',
+    label: 'Gerador de Cena (IA de Vídeo)',
+    description: 'Gera cada cena do vídeo usando modelo de IA de vídeo. REQUER modelo de geração de vídeo (não aceita modelos de texto)',
+    defaultModel: 'openai/sora',
     recommendedTier: 'premium',
     icon: 'video',
-    agentCategory: 'synthesis',
-    requiredCapability: 'video',
-    bestModelNote: '⚠️ REQUER modelo de geração de vídeo — modelos somente-texto NÃO funcionam para esta etapa',
+    agentCategory: 'media_video',
+    requiredModality: 'video',
+    modelNote: 'OBRIGATÓRIO: Modelo de geração de vídeo (Sora, Kling, Runway, Pika). Modelos de texto NÃO funcionam aqui.',
   },
   {
-    key: 'video_editor',
-    label: 'Editor de Vídeo',
-    description: 'Monta a sequência final com transições, ritmo, sincronização de áudio e ajustes de timing',
+    key: 'video_compositor',
+    label: 'Compositor de Vídeo',
+    description: 'Planeja a composição final: ordena cenas, define transições, sincroniza áudio com vídeo',
     defaultModel: 'anthropic/claude-sonnet-4',
     recommendedTier: 'balanced',
-    icon: 'scissors',
+    icon: 'layers',
     agentCategory: 'synthesis',
-    bestModelNote: 'Recomendado: modelo com boa capacidade de organização sequencial',
+    modelNote: 'Modelo de texto para organizar a sequência final e metadados de edição.',
   },
   {
     key: 'video_revisor',
-    label: 'Revisor Final de Vídeo',
-    description: 'Revisão de qualidade, verificação de continuidade, coerência narrativa e ajustes finais',
+    label: 'Revisor de Vídeo',
+    description: 'Revisa a produção completa: verifica coerência narrativa, qualidade das cenas e aderência ao briefing',
     defaultModel: 'anthropic/claude-3.5-haiku',
     recommendedTier: 'fast',
-    icon: 'check-circle',
+    icon: 'clipboard-check',
     agentCategory: 'synthesis',
-    bestModelNote: 'Recomendado: modelo rápido para revisão e verificação de qualidade',
+    modelNote: 'Modelo de texto rápido para revisão de qualidade do conteúdo textual e metadados.',
   },
 ]
 
-/** Map from video-pipeline agent key → model ID */
-export type VideoPipelineModelMap = Record<string, string>
+// ── Audio Pipeline ──────────────────────────────────────────────────────────
 
-/** Default model map for the video pipeline agents. */
-export function getDefaultVideoPipelineModelMap(): VideoPipelineModelMap {
-  const map: VideoPipelineModelMap = {}
-  for (const def of VIDEO_PIPELINE_AGENT_DEFS) {
-    map[def.key] = def.defaultModel
-  }
-  return map
-}
-
-/** Load video pipeline model configuration. */
-export async function loadVideoPipelineModels(): Promise<VideoPipelineModelMap> {
-  const defaults = getDefaultVideoPipelineModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.video_pipeline_models ?? {}) as Record<string, string>
-    for (const def of VIDEO_PIPELINE_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
-}
-
-/** Save video pipeline model configuration. */
-export async function saveVideoPipelineModels(models: VideoPipelineModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultVideoPipelineModelMap()
-  const overrides: VideoPipelineModelMap = {}
-  for (const def of VIDEO_PIPELINE_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ video_pipeline_models: overrides })
-}
-
-/** Reset video pipeline models to defaults. */
-export async function resetVideoPipelineModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ video_pipeline_models: {} })
-}
-
-// ── Audio Pipeline Multi-Agent Definitions ───────────────────────────────────
-
-/**
- * Multi-agent pipeline for professional audio production (podcasts, narrações,
- * audiobooks, etc.) from the Research Notebook.
- *
- * Agent execution order:
- *  1. Planejador de Áudio — reads user options, builds audio proposal with cost estimate
- *  2. Roteirista de Áudio — writes the full audio script with speakers, timing, notes
- *  3. Diretor de Produção — defines vozes, ritmo, música, efeitos sonoros, pausas
- *  4. Narrador / Locutor  — converts script to speech segments (requires audio/TTS model)
- *  5. Engenheiro de Som   — assembles audio, adds effects, normalizes levels
- *  6. Revisor de Áudio    — quality review, checks timing, coherence, audio quality
- */
 export const AUDIO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
   {
     key: 'audio_planejador',
     label: 'Planejador de Áudio',
-    description: 'Analisa opções do usuário (formato, duração, estilo, número de vozes) e cria proposta com orçamento estimado',
+    description: 'Analisa opções do usuário e cria proposta com roteiro, vozes, segmentos, custos estimados e subdivisões',
     defaultModel: 'anthropic/claude-sonnet-4',
-    recommendedTier: 'balanced',
+    recommendedTier: 'premium',
     icon: 'clipboard-list',
-    agentCategory: 'reasoning',
-    bestModelNote: 'Recomendado: modelo com forte raciocínio para estimativa precisa de custos',
+    agentCategory: 'media_planning',
+    modelNote: 'Requer modelo de texto com forte capacidade de planejamento. Claude Sonnet 4 ou GPT-4o recomendados.',
   },
   {
     key: 'audio_roteirista',
     label: 'Roteirista de Áudio',
-    description: 'Escreve o roteiro completo com falas, indicações de tom, pausas e rubricas de produção',
+    description: 'Escreve o roteiro completo com narração, diálogos entre hosts, pausas, efeitos sonoros e música',
     defaultModel: 'anthropic/claude-sonnet-4',
     recommendedTier: 'balanced',
     icon: 'file-text',
     agentCategory: 'writing',
-    bestModelNote: 'Recomendado: modelo premium para roteiros de áudio detalhados',
+    modelNote: 'Modelo de texto com excelente escrita criativa para roteiros de podcast/narração.',
   },
   {
-    key: 'audio_diretor_producao',
-    label: 'Diretor de Produção',
-    description: 'Define vozes, ritmo, trilha sonora, efeitos sonoros e paisagem sonora para cada segmento',
+    key: 'audio_detalhista',
+    label: 'Detalhista de Áudio',
+    description: 'Expande cada segmento com texto final otimizado para TTS, marcações de entonação e timing',
     defaultModel: 'anthropic/claude-sonnet-4',
     recommendedTier: 'balanced',
-    icon: 'headphones',
-    agentCategory: 'synthesis',
-    bestModelNote: 'Recomendado: modelo criativo para direção de produção sonora',
+    icon: 'zoom-in',
+    agentCategory: 'writing',
+    modelNote: 'Modelo de texto que prepara cada segmento com marcações SSML e controle de prosódia.',
   },
   {
-    key: 'audio_narrador',
-    label: 'Narrador / Locutor',
-    description: 'Converte segmentos do roteiro em áudio narrado (REQUER modelo de geração de áudio/TTS)',
+    key: 'audio_gerador_voz',
+    label: 'Gerador de Voz (TTS)',
+    description: 'Converte cada segmento de texto em áudio usando modelo TTS. REQUER modelo de geração de áudio/voz',
     defaultModel: 'openai/tts-1-hd',
-    recommendedTier: 'premium',
-    icon: 'mic',
-    agentCategory: 'synthesis',
-    requiredCapability: 'audio',
-    bestModelNote: '⚠️ REQUER modelo de TTS/áudio — modelos somente-texto NÃO funcionam para esta etapa',
-  },
-  {
-    key: 'audio_engenheiro_som',
-    label: 'Engenheiro de Som',
-    description: 'Monta o áudio final, aplica efeitos, normaliza níveis e garante qualidade técnica',
-    defaultModel: 'anthropic/claude-sonnet-4',
     recommendedTier: 'balanced',
-    icon: 'settings',
-    agentCategory: 'synthesis',
-    bestModelNote: 'Recomendado: modelo equilibrado para instruções técnicas de mixagem',
+    icon: 'mic',
+    agentCategory: 'media_audio',
+    requiredModality: 'tts',
+    modelNote: 'OBRIGATÓRIO: Modelo TTS (OpenAI TTS-1, TTS-1-HD, ElevenLabs). Modelos de texto NÃO funcionam aqui.',
   },
   {
     key: 'audio_revisor',
     label: 'Revisor de Áudio',
-    description: 'Revisão final de qualidade: timing, coerência, fluidez e padrões de áudio',
+    description: 'Revisa o roteiro final e os metadados de produção, garantindo qualidade e coerência',
     defaultModel: 'anthropic/claude-3.5-haiku',
     recommendedTier: 'fast',
-    icon: 'check-circle',
+    icon: 'clipboard-check',
     agentCategory: 'synthesis',
-    bestModelNote: 'Recomendado: modelo rápido para revisão de qualidade',
+    modelNote: 'Modelo de texto rápido para revisão de qualidade.',
   },
 ]
 
-/** Map from audio-pipeline agent key → model ID */
-export type AudioPipelineModelMap = Record<string, string>
+// ── Presentation Advanced Pipeline ──────────────────────────────────────────
 
-/** Default model map for the audio pipeline agents. */
-export function getDefaultAudioPipelineModelMap(): AudioPipelineModelMap {
-  const map: AudioPipelineModelMap = {}
-  for (const def of AUDIO_PIPELINE_AGENT_DEFS) {
-    map[def.key] = def.defaultModel
-  }
-  return map
-}
-
-/** Load audio pipeline model configuration. */
-export async function loadAudioPipelineModels(): Promise<AudioPipelineModelMap> {
-  const defaults = getDefaultAudioPipelineModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.audio_pipeline_models ?? {}) as Record<string, string>
-    for (const def of AUDIO_PIPELINE_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
-}
-
-/** Save audio pipeline model configuration. */
-export async function saveAudioPipelineModels(models: AudioPipelineModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultAudioPipelineModelMap()
-  const overrides: AudioPipelineModelMap = {}
-  for (const def of AUDIO_PIPELINE_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ audio_pipeline_models: overrides })
-}
-
-/** Reset audio pipeline models to defaults. */
-export async function resetAudioPipelineModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ audio_pipeline_models: {} })
-}
-
-// ── Presentation Pipeline Multi-Agent Definitions ────────────────────────────
-
-/**
- * Multi-agent pipeline for professional presentation production from the
- * Research Notebook. Goes beyond the simple studio_visual single-agent approach.
- *
- * Agent execution order:
- *  1. Planejador         — reads user options, builds presentation proposal with cost estimate
- *  2. Conteudista        — researches and writes slide content with speaker notes
- *  3. Designer de Slides — defines visual layout, style, typography, color scheme
- *  4. Ilustrador         — generates images, charts and diagrams for slides (may require image model)
- *  5. Revisor Final      — quality review, checks consistency, flow and design coherence
- */
 export const PRESENTATION_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
   {
-    key: 'presentation_planejador',
+    key: 'apresentacao_planejador',
     label: 'Planejador de Apresentação',
-    description: 'Analisa opções do usuário (número de slides, estilo, público-alvo) e cria proposta com orçamento estimado',
+    description: 'Analisa opções e cria proposta com estrutura de slides, custos estimados e subdivisões por seção',
     defaultModel: 'anthropic/claude-sonnet-4',
-    recommendedTier: 'balanced',
+    recommendedTier: 'premium',
     icon: 'clipboard-list',
-    agentCategory: 'reasoning',
-    bestModelNote: 'Recomendado: modelo com forte raciocínio para planejamento estruturado',
+    agentCategory: 'media_planning',
+    modelNote: 'Modelo de texto com forte capacidade de planejamento estrutural.',
   },
   {
-    key: 'presentation_conteudista',
-    label: 'Conteudista',
-    description: 'Pesquisa e escreve o conteúdo de cada slide com notas do apresentador e referências',
+    key: 'apresentacao_designer',
+    label: 'Designer de Slides',
+    description: 'Define o design visual: tema, paleta de cores, tipografia, layout de cada slide e elementos gráficos',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'palette',
+    agentCategory: 'synthesis',
+    modelNote: 'Modelo de texto com forte capacidade de design visual e estruturação.',
+  },
+  {
+    key: 'apresentacao_conteudista',
+    label: 'Conteudista de Slides',
+    description: 'Escreve o conteúdo de cada slide: títulos, bullets, notas do apresentador, dados e citações',
     defaultModel: 'anthropic/claude-sonnet-4',
     recommendedTier: 'balanced',
     icon: 'file-text',
     agentCategory: 'writing',
-    bestModelNote: 'Recomendado: modelo premium para conteúdo informativo e persuasivo',
+    modelNote: 'Modelo de texto com excelente capacidade de síntese e redação concisa.',
   },
   {
-    key: 'presentation_designer',
-    label: 'Designer de Slides',
-    description: 'Define layout visual, esquema de cores, tipografia, animações e transições entre slides',
-    defaultModel: 'anthropic/claude-sonnet-4',
-    recommendedTier: 'balanced',
-    icon: 'pen-tool',
-    agentCategory: 'synthesis',
-    bestModelNote: 'Recomendado: modelo com capacidade criativa para design visual',
-  },
-  {
-    key: 'presentation_ilustrador',
-    label: 'Ilustrador',
-    description: 'Gera imagens, gráficos, diagramas e elementos visuais para os slides (aceita modelo de imagem)',
-    defaultModel: 'anthropic/claude-sonnet-4',
-    recommendedTier: 'balanced',
+    key: 'apresentacao_gerador_visual',
+    label: 'Gerador de Visuais (IA de Imagem)',
+    description: 'Gera imagens, gráficos e ilustrações para os slides. REQUER modelo de geração de imagem',
+    defaultModel: 'openai/dall-e-3',
+    recommendedTier: 'premium',
     icon: 'image',
-    agentCategory: 'synthesis',
-    requiredCapability: 'image',
-    bestModelNote: '💡 Para melhores resultados visuais, use um modelo de geração de imagem. Modelos de texto geram descrições detalhadas.',
+    agentCategory: 'media_image',
+    requiredModality: 'image',
+    modelNote: 'OBRIGATÓRIO: Modelo de geração de imagem (DALL-E 3, Stable Diffusion, Midjourney). Modelos de texto NÃO funcionam aqui.',
   },
   {
-    key: 'presentation_revisor',
+    key: 'apresentacao_revisor',
     label: 'Revisor de Apresentação',
-    description: 'Revisão final: coerência do fluxo, qualidade do design, clareza das mensagens e impacto visual',
+    description: 'Revisa conteúdo, estrutura e coerência visual da apresentação completa',
     defaultModel: 'anthropic/claude-3.5-haiku',
     recommendedTier: 'fast',
-    icon: 'check-circle',
+    icon: 'clipboard-check',
     agentCategory: 'synthesis',
-    bestModelNote: 'Recomendado: modelo rápido para revisão eficiente',
+    modelNote: 'Modelo de texto rápido para revisão de qualidade.',
   },
 ]
 
-/** Map from presentation-pipeline agent key → model ID */
-export type PresentationPipelineModelMap = Record<string, string>
+// ── Media Pipeline Model Configuration (Firestore persistence) ──────────────
 
-/** Default model map for the presentation pipeline agents. */
-export function getDefaultPresentationPipelineModelMap(): PresentationPipelineModelMap {
-  const map: PresentationPipelineModelMap = {}
-  for (const def of PRESENTATION_PIPELINE_AGENT_DEFS) {
+/** All media pipeline agent definitions combined */
+export const ALL_MEDIA_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
+  ...VIDEO_PIPELINE_AGENT_DEFS,
+  ...AUDIO_PIPELINE_AGENT_DEFS,
+  ...PRESENTATION_PIPELINE_AGENT_DEFS,
+]
+
+/** Map from media pipeline agent key → model ID */
+export type MediaPipelineModelMap = Record<string, string>
+
+/** Default model map for all media pipeline agents. */
+export function getDefaultMediaPipelineModelMap(): MediaPipelineModelMap {
+  const map: MediaPipelineModelMap = {}
+  for (const def of ALL_MEDIA_PIPELINE_AGENT_DEFS) {
     map[def.key] = def.defaultModel
   }
   return map
 }
 
-/** Load presentation pipeline model configuration. */
-export async function loadPresentationPipelineModels(): Promise<PresentationPipelineModelMap> {
-  const defaults = getDefaultPresentationPipelineModelMap()
+/**
+ * Load media pipeline model configuration.
+ * Returns saved overrides merged with defaults.
+ */
+export async function loadMediaPipelineModels(): Promise<MediaPipelineModelMap> {
+  const defaults = getDefaultMediaPipelineModelMap()
   if (!IS_FIREBASE) return defaults
   try {
     const settings = await getSettings()
     const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.presentation_pipeline_models ?? {}) as Record<string, string>
-    for (const def of PRESENTATION_PIPELINE_AGENT_DEFS) {
+    const saved = (settings.media_pipeline_models ?? {}) as Record<string, string>
+    for (const def of ALL_MEDIA_PIPELINE_AGENT_DEFS) {
       if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
         defaults[def.key] = saved[def.key]
       }
@@ -1598,22 +1480,25 @@ export async function loadPresentationPipelineModels(): Promise<PresentationPipe
   return defaults
 }
 
-/** Save presentation pipeline model configuration. */
-export async function savePresentationPipelineModels(models: PresentationPipelineModelMap): Promise<void> {
+/**
+ * Save media pipeline model configuration to Firestore.
+ * Only stores non-default values to keep data minimal.
+ */
+export async function saveMediaPipelineModels(models: MediaPipelineModelMap): Promise<void> {
   if (!IS_FIREBASE) return
-  const defaults = getDefaultPresentationPipelineModelMap()
-  const overrides: PresentationPipelineModelMap = {}
-  for (const def of PRESENTATION_PIPELINE_AGENT_DEFS) {
+  const defaults = getDefaultMediaPipelineModelMap()
+  const overrides: MediaPipelineModelMap = {}
+  for (const def of ALL_MEDIA_PIPELINE_AGENT_DEFS) {
     const model = models[def.key]
     if (model && model !== defaults[def.key]) {
       overrides[def.key] = model
     }
   }
-  await saveSettings({ presentation_pipeline_models: overrides })
+  await saveSettings({ media_pipeline_models: overrides })
 }
 
-/** Reset presentation pipeline models to defaults. */
-export async function resetPresentationPipelineModels(): Promise<void> {
+/** Reset media pipeline models to defaults. */
+export async function resetMediaPipelineModels(): Promise<void> {
   if (!IS_FIREBASE) return
-  await saveSettings({ presentation_pipeline_models: {} })
+  await saveSettings({ media_pipeline_models: {} })
 }
