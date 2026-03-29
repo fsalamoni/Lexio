@@ -2427,7 +2427,13 @@ Instruções:
       </div>
 
       {/* ── Artifact Viewer Modal ─────────────────────────────── */}
-      {viewingArtifact && (
+      {viewingArtifact && (() => {
+        const isVideoScript = viewingArtifact.type === 'video_script' && (() => {
+          try {
+            return parseArtifactContent(viewingArtifact.type, viewingArtifact.content)?.kind === 'video_script'
+          } catch { return false }
+        })()
+        return (
         <ArtifactViewerModal
           artifact={viewingArtifact}
           onClose={() => { if (!videoGenerating) setViewingArtifact(null) }}
@@ -2436,28 +2442,11 @@ Instruções:
             setViewingArtifact(null)
           }}
           onDownload={() => handleDownloadArtifact(viewingArtifact)}
-          onGenerateVideo={(() => {
-            if (viewingArtifact.type !== 'video_script') return undefined
-            try {
-              const parsed = parseArtifactContent(viewingArtifact.type, viewingArtifact.content)
-              return parsed?.kind === 'video_script' ? handleGenerateVideo : undefined
-            } catch {
-              return undefined
-            }
-          })()}
-          videoGenerationState={(() => {
-            if (viewingArtifact.type !== 'video_script') return undefined
-            try {
-              const parsed = parseArtifactContent(viewingArtifact.type, viewingArtifact.content)
-              return parsed?.kind === 'video_script'
-                ? { isGenerating: videoGenerating, progress: videoProgress }
-                : undefined
-            } catch {
-              return undefined
-            }
-          })()}
+          onGenerateVideo={isVideoScript ? handleGenerateVideo : undefined}
+          videoGenerationState={isVideoScript ? { isGenerating: videoGenerating, progress: videoProgress } : undefined}
         />
-      )}
+        )
+      })()}
 
       {/* Media Creation Modal (video/audio/presentation options + cost estimate) */}
       {activeNotebook && (
