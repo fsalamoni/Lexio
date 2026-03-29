@@ -11,7 +11,7 @@
 import { useState, useEffect } from 'react'
 import { IS_FIREBASE } from './firebase'
 import { getSettings, saveSettings } from './firestore-service'
-import { AVAILABLE_MODELS, type ModelOption, type AgentFitScores, type AgentCategory } from './model-config'
+import { AVAILABLE_MODELS, type ModelOption, type ModelCapability, type AgentFitScores, type AgentCategory } from './model-config'
 
 // ── Event bus ─────────────────────────────────────────────────────────────────
 
@@ -138,10 +138,7 @@ export async function fetchOpenRouterModels(): Promise<OpenRouterModel[]> {
   })
   if (!res.ok) throw new Error(`Erro na API do OpenRouter (${res.status})`)
   const json = await res.json() as { data?: OpenRouterModel[] }
-  return (json.data ?? []).filter(m =>
-    // Only text-generation models (filter out pure image/audio models)
-    !m.architecture?.modality || m.architecture.modality.includes('text'),
-  )
+  return json.data ?? []
 }
 
 // ── Inference helpers ─────────────────────────────────────────────────────────
@@ -189,6 +186,25 @@ export function inferFitScores(tier: 'fast' | 'balanced' | 'premium', id: string
   }
 }
 
+/**
+ * Infer model capabilities from OpenRouter architecture.modality string.
+ * Common modality values: "text->text", "text+image->text", "text->image", "text->audio", etc.
+ */
+export function inferCapabilities(modality?: string): ModelCapability[] {
+  if (!modality) return ['text']
+  const m = modality.toLowerCase()
+  const caps: ModelCapability[] = []
+  // Input/output modalities separated by '->'
+  // e.g. "text+image->text" means input: text+image, output: text
+  // e.g. "text->image" means generates images
+  // e.g. "text->audio" means generates audio
+  if (m.includes('text'))  caps.push('text')
+  if (m.includes('image')) caps.push('image')
+  if (m.includes('audio')) caps.push('audio')
+  if (m.includes('video')) caps.push('video')
+  return caps.length > 0 ? caps : ['text']
+}
+
 /** Convert an OpenRouter API model response to our ModelOption format. */
 export function openRouterToModelOption(or: OpenRouterModel): ModelOption {
   const id = or.id
@@ -214,6 +230,7 @@ export function openRouterToModelOption(or: OpenRouterModel): ModelOption {
     outputCost,
     isFree,
     agentFit,
+    capabilities: inferCapabilities(or.architecture?.modality),
   }
 }
 
