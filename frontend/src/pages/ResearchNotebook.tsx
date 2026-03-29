@@ -1197,7 +1197,7 @@ Instruções:
       // Create execution records
       const newExecutions = result.executions.map(ex =>
         createUsageExecutionRecord({
-          source_type: 'caderno_pesquisa',
+          source_type: 'video_pipeline',
           source_id: activeNotebook.id,
           phase: ex.phase,
           agent_name: ex.agent_name,
@@ -2436,8 +2436,26 @@ Instruções:
             setViewingArtifact(null)
           }}
           onDownload={() => handleDownloadArtifact(viewingArtifact)}
-          onGenerateVideo={viewingArtifact.type === 'video_script' && !viewingArtifact.title.startsWith('Vídeo Gerado') ? handleGenerateVideo : undefined}
-          videoGenerationState={viewingArtifact.type === 'video_script' && !viewingArtifact.title.startsWith('Vídeo Gerado') ? { isGenerating: videoGenerating, progress: videoProgress } : undefined}
+          onGenerateVideo={(() => {
+            if (viewingArtifact.type !== 'video_script') return undefined
+            try {
+              const parsed = parseArtifactContent(viewingArtifact.type, viewingArtifact.content)
+              return parsed?.kind === 'video_script' ? handleGenerateVideo : undefined
+            } catch {
+              return undefined
+            }
+          })()}
+          videoGenerationState={(() => {
+            if (viewingArtifact.type !== 'video_script') return undefined
+            try {
+              const parsed = parseArtifactContent(viewingArtifact.type, viewingArtifact.content)
+              return parsed?.kind === 'video_script'
+                ? { isGenerating: videoGenerating, progress: videoProgress }
+                : undefined
+            } catch {
+              return undefined
+            }
+          })()}
         />
       )}
 

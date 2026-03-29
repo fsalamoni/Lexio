@@ -178,33 +178,6 @@ const PHASE_LABELS: Record<string, string> = {
   caderno_pesquisa_total: 'Caderno de Pesquisa (agregado)',
   document_total: 'Documento (agregado)',
   thesis_analysis_total: 'Sessão de análise (agregada)',
-  // Notebook Acervo pipeline phases
-  nb_acervo_triagem: 'Triagem de Acervo (Caderno)',
-  nb_acervo_buscador: 'Buscador de Acervo (Caderno)',
-  nb_acervo_analista: 'Analista de Acervo (Caderno)',
-  nb_acervo_curador: 'Curador de Fontes (Caderno)',
-  // Video pipeline phases
-  video_planejador: 'Planejador de Vídeo',
-  video_roteirista: 'Roteirista de Vídeo',
-  video_diretor_cenas: 'Diretor de Cenas',
-  video_storyboarder: 'Storyboarder',
-  video_diretor_arte: 'Diretor de Arte',
-  video_gerador_visual: 'Gerador de Cenas',
-  video_editor: 'Editor de Vídeo',
-  video_revisor: 'Revisor Final de Vídeo',
-  // Audio pipeline phases
-  audio_planejador: 'Planejador de Áudio',
-  audio_roteirista: 'Roteirista de Áudio',
-  audio_diretor_producao: 'Diretor de Produção',
-  audio_narrador: 'Narrador / Locutor',
-  audio_engenheiro_som: 'Engenheiro de Som',
-  audio_revisor: 'Revisor de Áudio',
-  // Presentation pipeline phases
-  presentation_planejador: 'Planejador de Apresentação',
-  presentation_conteudista: 'Conteudista',
-  presentation_designer: 'Designer de Slides',
-  presentation_ilustrador: 'Ilustrador',
-  presentation_revisor: 'Revisor de Apresentação',
 }
 
 function round6(value: number) {
