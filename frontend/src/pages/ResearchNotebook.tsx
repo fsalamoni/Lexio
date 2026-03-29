@@ -16,7 +16,7 @@ import {
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
   Copy, Check as CheckIcon, Download, RotateCcw, Edit3, Info,
   Globe, BookMarked, AlertCircle, ChevronUp, ChevronDown,
-  Library, ScanSearch,
+  Library, ScanSearch, Save, Eye,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -196,6 +196,9 @@ const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
 
 /** Flat list for lookups */
 const ARTIFACT_TYPES: ArtifactDef[] = ARTIFACT_CATEGORIES.flatMap(c => c.items)
+
+/** Artifact types that get a review/edit step before saving */
+const REVIEWABLE_ARTIFACT_TYPES: StudioArtifactType[] = ['video_script', 'audio_script', 'apresentacao']
 
 const SOURCE_TYPE_LABELS: Record<string, { label: string; icon: React.ElementType }> = {
   acervo:  { label: 'Acervo', icon: Database },
@@ -437,6 +440,13 @@ export default function ResearchNotebook() {
   const [acervoAnalysisPercent, setAcervoAnalysisPercent] = useState(0)
   const [acervoAnalysisResults, setAcervoAnalysisResults] = useState<AnalyzedDocument[]>([])
   const [selectedAnalysisIds, setSelectedAnalysisIds] = useState<Set<string>>(new Set())
+
+  // Script review/edit before saving (for media artifacts: video, audio, presentation)
+  const [pendingArtifact, setPendingArtifact] = useState<{
+    artifact: StudioArtifact
+    executions: { phase: string; agent_name: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number; duration_ms: number }[]
+  } | null>(null)
+  const [pendingContent, setPendingContent] = useState('')
 
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
@@ -988,39 +998,19 @@ Instruções:
         created_at: new Date().toISOString(),
       }
 
-      const updatedArtifacts = [...activeNotebook.artifacts, artifact]
-
-      // Create execution records for each pipeline step
-      const newExecutions = result.executions.map(ex =>
-        createUsageExecutionRecord({
-          source_type: 'caderno_pesquisa',
-          source_id: activeNotebook.id,
-          phase: ex.phase,
-          agent_name: ex.agent_name,
-          model: ex.model,
-          tokens_in: ex.tokens_in,
-          tokens_out: ex.tokens_out,
-          cost_usd: ex.cost_usd,
-          duration_ms: ex.duration_ms,
-        })
-      )
-
-      const updatedExecutions = [...(activeNotebook.llm_executions || []), ...newExecutions]
-
-      await updateResearchNotebook(userId, activeNotebook.id, {
-        artifacts: updatedArtifacts,
-        llm_executions: updatedExecutions,
-      })
-
-      setActiveNotebook({
-        ...activeNotebook,
-        artifacts: updatedArtifacts,
-        llm_executions: updatedExecutions,
-      })
-
-      setActiveTab('artifacts')
-      setStudioCustomPrompt('')
-      toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso! (pipeline de 3 agentes)`)
+      // For reviewable media types, show review modal before saving
+      if (REVIEWABLE_ARTIFACT_TYPES.includes(artifactType)) {
+        setPendingArtifact({ artifact, executions: result.executions })
+        setPendingContent(result.content)
+        setStudioCustomPrompt('')
+        toast.success(`Proposta de ${artifactDef?.label || 'Artefato'} gerada! Revise e edite antes de salvar.`)
+      } else {
+        // Non-reviewable types: save immediately
+        await saveArtifactToNotebook(artifact, result.executions)
+        setActiveTab('artifacts')
+        setStudioCustomPrompt('')
+        toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso! (pipeline de 3 agentes)`)
+      }
     } catch (err) {
       console.error('Studio pipeline error:', err)
       if (err instanceof ModelUnavailableError) {
@@ -1045,6 +1035,71 @@ Instruções:
       setSelectedArtifactType(null)
       setStudioProgress(null)
     }
+  }
+
+  // ── Save artifact to notebook (shared by direct save and review confirm) ──
+  const saveArtifactToNotebook = async (
+    artifact: StudioArtifact,
+    executions: { phase: string; agent_name: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number; duration_ms: number }[],
+  ) => {
+    if (!userId || !activeNotebook?.id) return
+
+    const updatedArtifacts = [...activeNotebook.artifacts, artifact]
+
+    const newExecutions = executions.map(ex =>
+      createUsageExecutionRecord({
+        source_type: 'caderno_pesquisa',
+        source_id: activeNotebook.id,
+        phase: ex.phase,
+        agent_name: ex.agent_name,
+        model: ex.model,
+        tokens_in: ex.tokens_in,
+        tokens_out: ex.tokens_out,
+        cost_usd: ex.cost_usd,
+        duration_ms: ex.duration_ms,
+      })
+    )
+
+    const updatedExecutions = [...(activeNotebook.llm_executions || []), ...newExecutions]
+
+    await updateResearchNotebook(userId, activeNotebook.id, {
+      artifacts: updatedArtifacts,
+      llm_executions: updatedExecutions,
+    })
+
+    setActiveNotebook({
+      ...activeNotebook,
+      artifacts: updatedArtifacts,
+      llm_executions: updatedExecutions,
+    })
+  }
+
+  // ── Confirm pending artifact (after review/edit) ────────────────────
+  const handleConfirmPendingArtifact = async () => {
+    if (!pendingArtifact) return
+    try {
+      const finalArtifact: StudioArtifact = {
+        ...pendingArtifact.artifact,
+        content: pendingContent,
+      }
+      await saveArtifactToNotebook(finalArtifact, pendingArtifact.executions)
+      const artifactDef = ARTIFACT_TYPES.find(a => a.type === finalArtifact.type)
+      toast.success(`${artifactDef?.label || 'Artefato'} salvo com sucesso!`)
+      setActiveTab('artifacts')
+    } catch (err) {
+      console.error('Error saving reviewed artifact:', err)
+      toast.error('Erro ao salvar artefato revisado.')
+    } finally {
+      setPendingArtifact(null)
+      setPendingContent('')
+    }
+  }
+
+  // ── Discard pending artifact ────────────────────────────────────────
+  const handleDiscardPendingArtifact = () => {
+    setPendingArtifact(null)
+    setPendingContent('')
+    toast.success('Proposta descartada.')
   }
 
   // ── Delete artifact ─────────────────────────────────────────────────
@@ -2245,6 +2300,149 @@ Instruções:
           onDownload={() => handleDownloadArtifact(viewingArtifact)}
         />
       )}
+
+      {/* ── Script Review/Edit Modal (for media artifacts) ──── */}
+      {pendingArtifact && (
+        <ScriptReviewModal
+          artifact={pendingArtifact.artifact}
+          content={pendingContent}
+          onContentChange={setPendingContent}
+          onConfirm={handleConfirmPendingArtifact}
+          onDiscard={handleDiscardPendingArtifact}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Script Review Modal (review/edit before saving media artifacts) ───────────
+
+const REVIEW_TYPE_LABELS: Record<string, { label: string; icon: React.ElementType; color: string; hint: string }> = {
+  video_script:  { label: 'Roteiro de Vídeo', icon: Video, color: 'text-rose-600', hint: 'Revise as cenas, narrações e descrições visuais antes de salvar.' },
+  audio_script:  { label: 'Roteiro de Áudio', icon: Mic, color: 'text-violet-600', hint: 'Revise os segmentos, falas e notas de produção antes de salvar.' },
+  apresentacao:  { label: 'Apresentação', icon: Presentation, color: 'text-sky-600', hint: 'Revise os slides, tópicos e notas do apresentador antes de salvar.' },
+}
+
+function ScriptReviewModal({
+  artifact,
+  content,
+  onContentChange,
+  onConfirm,
+  onDiscard,
+}: {
+  artifact: StudioArtifact
+  content: string
+  onContentChange: (c: string) => void
+  onConfirm: () => void
+  onDiscard: () => void
+}) {
+  const [mode, setMode] = useState<'preview' | 'edit'>('preview')
+  const typeInfo = REVIEW_TYPE_LABELS[artifact.type] || { label: artifact.type, icon: FileText, color: 'text-gray-600', hint: 'Revise o conteúdo antes de salvar.' }
+  const TypeIcon = typeInfo.icon
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onDiscard()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onDiscard])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onDiscard} />
+
+      {/* Modal */}
+      <div className="relative w-[95vw] max-w-5xl h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-amber-50 to-orange-50">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 bg-amber-100 rounded-lg">
+              <TypeIcon className={`w-5 h-5 ${typeInfo.color}`} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-gray-900 truncate">
+                Revisão: {typeInfo.label}
+              </h2>
+              <p className="text-xs text-amber-700 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {typeInfo.hint}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Toggle preview/edit */}
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setMode('preview')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  mode === 'preview' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Visualizar
+              </button>
+              <button
+                onClick={() => setMode('edit')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  mode === 'edit' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Editar
+              </button>
+            </div>
+            <button onClick={onDiscard} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {mode === 'preview' ? (
+            <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap font-mono text-xs leading-relaxed bg-gray-50 rounded-xl p-6 border">
+              {content}
+            </div>
+          ) : (
+            <textarea
+              value={content}
+              onChange={e => onContentChange(e.target.value)}
+              className="w-full h-full min-h-[60vh] p-6 bg-gray-50 rounded-xl border font-mono text-xs leading-relaxed text-gray-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none resize-none"
+              placeholder="Edite o conteúdo do roteiro/proposta aqui..."
+            />
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50/80">
+          <p className="text-xs text-gray-500">
+            Você pode editar livremente o conteúdo antes de salvar. O artefato será salvo com suas alterações.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onDiscard}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Descartar
+            </button>
+            <button
+              onClick={onConfirm}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors shadow-sm"
+            >
+              <Save className="w-4 h-4" />
+              Salvar Artefato
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
