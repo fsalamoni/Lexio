@@ -64,7 +64,7 @@ const ARTIFACT_LABELS: Record<StudioArtifactType, string> = {
   infografico: 'Infográfico',
   tabela_dados: 'Tabela de Dados',
   audio_script: 'Roteiro de Áudio',
-  video_script: 'Roteiro de Vídeo',
+  video_script: 'Gerador de Vídeo',
   outro: 'Outro',
 }
 
@@ -176,6 +176,7 @@ interface ArtifactViewerModalProps {
   onDelete: () => void
   onDownload: () => void
   onRegenerate?: () => void
+  onGenerateVideo?: () => void
 }
 
 export default function ArtifactViewerModal({
@@ -184,6 +185,7 @@ export default function ArtifactViewerModal({
   onDelete,
   onDownload,
   onRegenerate,
+  onGenerateVideo,
 }: ArtifactViewerModalProps) {
   const Icon = ARTIFACT_ICONS[artifact.type] || Sparkles
   const label = ARTIFACT_LABELS[artifact.type] || artifact.type
@@ -327,6 +329,16 @@ export default function ArtifactViewerModal({
                 title="Regenerar"
               >
                 <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
+            {onGenerateVideo && artifact.type === 'video_script' && (
+              <button
+                onClick={onGenerateVideo}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 transition-colors shadow-sm"
+                title="Gerar Vídeo Completo"
+              >
+                <Video className="w-3.5 h-3.5" />
+                Gerar Vídeo
               </button>
             )}
             <button

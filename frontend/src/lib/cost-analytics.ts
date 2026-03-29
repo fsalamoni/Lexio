@@ -90,7 +90,7 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   acervo_ementa: 'Gerador de ementas',
   caderno_pesquisa: 'Caderno de Pesquisa',
   notebook_acervo: 'Análise de Acervo (Caderno)',
-  video_pipeline: 'Pipeline de Vídeo',
+  video_pipeline: 'Gerador de Vídeo',
   audio_pipeline: 'Pipeline de Áudio',
   presentation_pipeline: 'Pipeline de Apresentação',
 }
@@ -129,7 +129,7 @@ const PHASE_LABELS: Record<string, string> = {
   notebook_criador_infografico: 'Estúdio: Infográfico',
   notebook_criador_documento: 'Estúdio: Documento',
   notebook_criador_audio_script: 'Estúdio: Roteiro de Áudio',
-  notebook_criador_video_script: 'Estúdio: Roteiro de Vídeo',
+  notebook_criador_video_script: 'Estúdio: Gerador de Vídeo',
   caderno_pesquisa_total: 'Caderno de Pesquisa (agregado)',
   document_total: 'Documento (agregado)',
   thesis_analysis_total: 'Sessão de análise (agregada)',

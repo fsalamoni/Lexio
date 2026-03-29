@@ -110,7 +110,7 @@ export default function VideoScriptViewer({ data }: VideoScriptViewerProps) {
   const [notesOpen, setNotesOpen] = useState(false)
 
   if (data.scenes.length === 0) {
-    return <div className="text-center py-12 text-gray-500">Roteiro sem cenas.</div>
+    return <div className="text-center py-12 text-gray-500">Vídeo sem cenas.</div>
   }
 
   return (

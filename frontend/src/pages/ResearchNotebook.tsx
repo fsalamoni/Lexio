@@ -44,7 +44,14 @@ import {
 } from '../lib/cost-analytics'
 import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
 import { runStudioPipeline, type StudioProgressCallback } from '../lib/notebook-studio-pipeline'
+import {
+  runVideoGenerationPipeline,
+  type VideoProductionPackage,
+  type VideoGenerationProgressCallback,
+} from '../lib/video-generation-pipeline'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
+import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
+import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -190,7 +197,7 @@ const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
     label: 'Mídia', emoji: '🎬', color: 'amber',
     items: [
       { type: 'audio_script', label: 'Roteiro de Áudio', icon: Mic, description: 'Script de podcast com timeline e notas de produção' },
-      { type: 'video_script', label: 'Roteiro de Vídeo', icon: Video, description: 'Storyboard com cenas, visuais e pós-produção' },
+      { type: 'video_script', label: 'Gerador de Vídeo', icon: Video, description: 'Geração completa de vídeo com roteiro, cenas, visuais e pós-produção' },
     ],
   },
 ]
@@ -455,6 +462,13 @@ export default function ResearchNotebook() {
     executions: { phase: string; agent_name: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number; duration_ms: number }[]
   } | null>(null)
   const [pendingContent, setPendingContent] = useState('')
+
+  // Video generation flow
+  const [showVideoGenCost, setShowVideoGenCost] = useState(false)
+  const [videoGenSavedArtifact, setVideoGenSavedArtifact] = useState<StudioArtifact | null>(null)
+  const [videoGenLoading, setVideoGenLoading] = useState(false)
+  const [videoGenProgress, setVideoGenProgress] = useState<{ step: number; total: number; phase: string; agent: string } | null>(null)
+  const [videoProduction, setVideoProduction] = useState<VideoProductionPackage | null>(null)
 
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
@@ -1097,7 +1111,14 @@ Instruções:
       await saveArtifactToNotebook(finalArtifact, pendingArtifact.executions)
       const artifactDef = ARTIFACT_TYPES.find(a => a.type === finalArtifact.type)
       toast.success(`${artifactDef?.label || 'Artefato'} salvo com sucesso!`)
-      setActiveTab('artifacts')
+
+      // For video_script: show video generation cost modal after saving
+      if (finalArtifact.type === 'video_script') {
+        setVideoGenSavedArtifact(finalArtifact)
+        setShowVideoGenCost(true)
+      } else {
+        setActiveTab('artifacts')
+      }
     } catch (err) {
       console.error('Error saving reviewed artifact:', err)
       toast.error('Erro ao salvar artefato revisado.')
@@ -1112,6 +1133,97 @@ Instruções:
     setPendingArtifact(null)
     setPendingContent('')
     toast.success('Proposta descartada.')
+  }
+
+  // ── Skip video generation (just keep the script) ───────────────────
+  const handleSkipVideoGeneration = () => {
+    setShowVideoGenCost(false)
+    setVideoGenSavedArtifact(null)
+    setActiveTab('artifacts')
+  }
+
+  // ── Generate full video from saved script ──────────────────────────
+  const handleGenerateVideo = async (editedContent?: string) => {
+    if (!videoGenSavedArtifact || !userId || !activeNotebook?.id) return
+    try {
+      setVideoGenLoading(true)
+      const apiKey = await getOpenRouterKey()
+      if (!apiKey) {
+        toast.error('Chave da API não configurada. Acesse Administração > Chaves de API.')
+        return
+      }
+
+      // Use edited content if provided, otherwise use original
+      const scriptContent = editedContent || videoGenSavedArtifact.content
+
+      // If content was edited, update the saved artifact too
+      if (editedContent && editedContent !== videoGenSavedArtifact.content) {
+        const updatedArtifacts = activeNotebook.artifacts.map(a =>
+          a.id === videoGenSavedArtifact.id ? { ...a, content: editedContent } : a
+        )
+        await updateResearchNotebook(userId, activeNotebook.id, {
+          artifacts: updatedArtifacts,
+        })
+        setActiveNotebook({
+          ...activeNotebook,
+          artifacts: updatedArtifacts,
+        })
+      }
+
+      const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent) => {
+        setVideoGenProgress({ step, total, phase, agent })
+      }
+
+      const result = await runVideoGenerationPipeline({
+        apiKey,
+        scriptContent,
+        topic: activeNotebook.topic,
+        sourceId: activeNotebook.id,
+      }, onProgress)
+
+      // Save video generation executions as cost records
+      const costKey: UsageFunctionKey = 'video_pipeline'
+      const newExecutions = result.executions.map(ex =>
+        createUsageExecutionRecord({
+          source_type: costKey,
+          source_id: activeNotebook.id,
+          phase: ex.phase,
+          agent_name: ex.agent_name,
+          model: ex.model,
+          tokens_in: ex.tokens_in,
+          tokens_out: ex.tokens_out,
+          cost_usd: ex.cost_usd,
+          duration_ms: ex.duration_ms,
+        })
+      )
+      const updatedExecutions = [...(activeNotebook.llm_executions || []), ...newExecutions]
+      await updateResearchNotebook(userId, activeNotebook.id, {
+        llm_executions: updatedExecutions,
+      })
+      setActiveNotebook({
+        ...activeNotebook,
+        llm_executions: updatedExecutions,
+      })
+
+      // Show the video studio editor
+      setVideoProduction(result.package)
+      setShowVideoGenCost(false)
+      setVideoGenSavedArtifact(null)
+      toast.success('Vídeo gerado com sucesso! Editor de estúdio aberto.')
+    } catch (err) {
+      console.error('Video generation error:', err)
+      if (err instanceof Error && err.message.includes('429')) {
+        toast.warning(
+          'Limite de requisições atingido',
+          'O modelo está sobrecarregado. Aguarde e tente novamente.',
+        )
+      } else {
+        toast.error('Erro ao gerar vídeo. Tente novamente ou verifique a configuração dos modelos.')
+      }
+    } finally {
+      setVideoGenLoading(false)
+      setVideoGenProgress(null)
+    }
   }
 
   // ── Delete artifact ─────────────────────────────────────────────────
@@ -2310,6 +2422,11 @@ Instruções:
             setViewingArtifact(null)
           }}
           onDownload={() => handleDownloadArtifact(viewingArtifact)}
+          onGenerateVideo={viewingArtifact.type === 'video_script' ? () => {
+            setVideoGenSavedArtifact(viewingArtifact)
+            setShowVideoGenCost(true)
+            setViewingArtifact(null)
+          } : undefined}
         />
       )}
 
@@ -2323,6 +2440,30 @@ Instruções:
           onDiscard={handleDiscardPendingArtifact}
         />
       )}
+
+      {/* ── Video Generation Cost Modal ────────────────────── */}
+      {showVideoGenCost && videoGenSavedArtifact && (
+        <VideoGenerationCostModal
+          scriptContent={videoGenSavedArtifact.content}
+          topic={activeNotebook?.topic || ''}
+          onGenerate={handleGenerateVideo}
+          onSkip={handleSkipVideoGeneration}
+          isGenerating={videoGenLoading}
+          generationProgress={videoGenProgress || undefined}
+        />
+      )}
+
+      {/* ── Video Studio Editor ────────────────────────────── */}
+      {videoProduction && (
+        <VideoStudioEditor
+          production={videoProduction}
+          onClose={() => setVideoProduction(null)}
+          onSave={(updated) => {
+            setVideoProduction(updated)
+            toast.success('Produção de vídeo salva!')
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -2330,9 +2471,9 @@ Instruções:
 // ── Script Review Modal (review/edit before saving media artifacts) ───────────
 
 const REVIEW_TYPE_LABELS: Record<string, { label: string; icon: React.ElementType; color: string; hint: string }> = {
-  video_script:  { label: 'Roteiro de Vídeo', icon: Video, color: 'text-rose-600', hint: 'Revise as cenas, narrações e descrições visuais antes de salvar.' },
-  audio_script:  { label: 'Roteiro de Áudio', icon: Mic, color: 'text-violet-600', hint: 'Revise os segmentos, falas e notas de produção antes de salvar.' },
-  apresentacao:  { label: 'Apresentação', icon: Presentation, color: 'text-sky-600', hint: 'Revise os slides, tópicos e notas do apresentador antes de salvar.' },
+  video_script:  { label: 'Gerador de Vídeo', icon: Video, color: 'text-rose-600', hint: 'Revise e edite o roteiro, cenas, narrações e descrições visuais. Após salvar, você poderá revisar novamente e gerar o vídeo completo.' },
+  audio_script:  { label: 'Roteiro de Áudio', icon: Mic, color: 'text-violet-600', hint: 'Revise e edite os segmentos, falas e notas de produção antes de salvar.' },
+  apresentacao:  { label: 'Apresentação', icon: Presentation, color: 'text-sky-600', hint: 'Revise e edite os slides, tópicos e notas do apresentador antes de salvar.' },
 }
 
 function ScriptReviewModal({
