@@ -250,7 +250,7 @@ Requisitos:
 - Total deve somar a duração indicada no roteiro`)
 
   executions.push(makeExecution('video_planejador', models.video_planejador, planResult))
-  const planData = safeParseJSON(planResult.text) || {}
+  const planData = safeParseJSON(planResult.content) || {}
 
   // ── Step 2: Roteirista (refinar roteiro) ──────────────────────────────────
   onProgress?.(2, totalSteps, 'video_roteirista', 'Roteirista')
@@ -291,7 +291,7 @@ Requisitos:
 - Cronologia e encadeamento lógico de ideias`)
 
   executions.push(makeExecution('video_roteirista', models.video_roteirista, scriptResult))
-  const scriptData = safeParseJSON(scriptResult.text) || { scenes: [] }
+  const scriptData = safeParseJSON(scriptResult.content) || { scenes: [] }
 
   // ── Step 3: Diretor de Cenas ──────────────────────────────────────────────
   onProgress?.(3, totalSteps, 'video_diretor_cena', 'Diretor de Cenas')
@@ -332,7 +332,7 @@ Requisitos:
 - Mantenha personagens consistentes conforme o guia de design`)
 
   executions.push(makeExecution('video_diretor_cena', models.video_diretor_cena, directorResult))
-  const directedScenes = safeParseJSON(directorResult.text) || scriptData
+  const directedScenes = safeParseJSON(directorResult.content) || scriptData
 
   // ── Step 4: Storyboarder ──────────────────────────────────────────────────
   onProgress?.(4, totalSteps, 'video_storyboarder', 'Storyboarder')
@@ -372,7 +372,7 @@ Requisitos:
 - Indique posição e tamanho dos elementos na composição`)
 
   executions.push(makeExecution('video_storyboarder', models.video_storyboarder, storyboardResult))
-  const storyboardData = safeParseJSON(storyboardResult.text) || {}
+  const storyboardData = safeParseJSON(storyboardResult.content) || {}
 
   // ── Step 5: Designer Visual ───────────────────────────────────────────────
   onProgress?.(5, totalSteps, 'video_designer', 'Designer Visual')
@@ -416,7 +416,7 @@ Requisitos:
 - Prompts em inglês para melhor compatibilidade com modelos de geração`)
 
   executions.push(makeExecution('video_designer', models.video_designer, designerResult))
-  const designData = safeParseJSON(designerResult.text) || {}
+  const designData = safeParseJSON(designerResult.content) || {}
 
   // ── Step 6: Compositor de Vídeo ───────────────────────────────────────────
   onProgress?.(6, totalSteps, 'video_compositor', 'Compositor de Vídeo')
@@ -512,7 +512,7 @@ Requisitos:
 - Overlays devem aparecer nos momentos corretos`)
 
   executions.push(makeExecution('video_compositor', models.video_compositor, compositorResult))
-  const compositorData = safeParseJSON(compositorResult.text) || {}
+  const compositorData = safeParseJSON(compositorResult.content) || {}
 
   // ── Step 7: Narrador ──────────────────────────────────────────────────────
   onProgress?.(7, totalSteps, 'video_narrador', 'Narrador')
@@ -554,7 +554,7 @@ Requisitos:
 - Pausas entre segmentos para respiração e transição`)
 
   executions.push(makeExecution('video_narrador', models.video_narrador, narratorResult))
-  const narratorData = safeParseJSON(narratorResult.text) || {}
+  const narratorData = safeParseJSON(narratorResult.content) || {}
 
   // ── Step 8: Revisor Final ─────────────────────────────────────────────────
   onProgress?.(8, totalSteps, 'video_revisor', 'Revisor Final de Vídeo')
@@ -604,7 +604,7 @@ Requisitos:
 - Identifique possíveis problemas e sugira melhorias`)
 
   executions.push(makeExecution('video_revisor', models.video_revisor, reviewerResult))
-  const reviewData = safeParseJSON(reviewerResult.text) || {}
+  const reviewData = safeParseJSON(reviewerResult.content) || {}
 
   // ── Assemble final package ────────────────────────────────────────────────
 
@@ -678,12 +678,12 @@ Requisitos:
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function callAgent(apiKey: string, model: string, prompt: string): Promise<LLMResult> {
-  return callLLM({
+  return callLLM(
     apiKey,
+    'Você é um agente especialista em produção de vídeo profissional. Responda SEMPRE com JSON puro e válido, sem markdown, sem explicações adicionais.',
+    prompt,
     model,
-    systemPrompt: 'Você é um agente especialista em produção de vídeo profissional. Responda SEMPRE com JSON puro e válido, sem markdown, sem explicações adicionais.',
-    userPrompt: prompt,
-  })
+  )
 }
 
 function makeExecution(phase: string, model: string, result: LLMResult): VideoGenerationStepExecution {
@@ -691,10 +691,10 @@ function makeExecution(phase: string, model: string, result: LLMResult): VideoGe
     phase,
     agent_name: phase,
     model,
-    tokens_in: result.tokensIn ?? 0,
-    tokens_out: result.tokensOut ?? 0,
-    cost_usd: result.cost ?? 0,
-    duration_ms: result.durationMs ?? 0,
+    tokens_in: result.tokens_in ?? 0,
+    tokens_out: result.tokens_out ?? 0,
+    cost_usd: result.cost_usd ?? 0,
+    duration_ms: result.duration_ms ?? 0,
   }
 }
 

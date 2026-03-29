@@ -13,15 +13,15 @@ import {
 } from 'lucide-react'
 import { estimateVideoGenerationCost } from '../lib/video-generation-pipeline'
 
-/** Model type recommendation per agent — agents with ⚠️ require specialized (non-text) models */
+/** Model type recommendation per agent — all agents use text LLMs to produce JSON */
 const AGENT_MODEL_RECOMMENDATIONS: Record<string, { icon: React.ElementType; capability: string; note: string }> = {
   video_planejador:   { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o ou equivalente' },
   video_roteirista:   { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (escrita criativa)' },
   video_diretor_cena: { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (estruturação)' },
   video_storyboarder: { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (descrição visual)' },
-  video_designer:     { icon: Image,    capability: 'Imagem', note: '⚠️ Requer modelo de imagem: DALL-E, Midjourney, Stable Diffusion' },
-  video_compositor:   { icon: Film,     capability: 'Vídeo', note: '⚠️ Requer modelo de vídeo: Sora, Runway, Pika Labs' },
-  video_narrador:     { icon: Mic,      capability: 'Áudio', note: '⚠️ Requer modelo de áudio: ElevenLabs, OpenAI TTS' },
+  video_designer:     { icon: Image,    capability: 'Texto', note: 'Claude Sonnet, GPT-4o (gera prompts de imagem)' },
+  video_compositor:   { icon: Film,     capability: 'Texto', note: 'Claude Sonnet, GPT-4o (monta timeline)' },
+  video_narrador:     { icon: Mic,      capability: 'Texto', note: 'Claude Sonnet, GPT-4o (roteiro de narração)' },
   video_revisor:      { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (revisão)' },
 }
 
