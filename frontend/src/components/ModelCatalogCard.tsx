@@ -176,10 +176,11 @@ function ORModelRow({
             : 'text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed'
         }`}
       >
-        {alreadyInCatalog
-          ? (justAdded ? <><CheckCircle2 className="w-3 h-3" /> Adicionado</> : 'Já no catálogo')
-          : <><Plus className="w-3 h-3" /> Adicionar</>
-        }
+        {(() => {
+          if (justAdded)        return <><CheckCircle2 className="w-3 h-3" /> Adicionado</>
+          if (alreadyInCatalog) return 'Já no catálogo'
+          return <><Plus className="w-3 h-3" /> Adicionar</>
+        })()}
       </button>
     </div>
   )
@@ -398,7 +399,7 @@ function AddFromORModal({
         <div className="px-6 py-3 border-t bg-gray-50 flex items-center justify-between">
           <span className="text-xs text-gray-500">
             {justAddedIds.size > 0
-              ? `${justAddedIds.size} modelo${justAddedIds.size !== 1 ? 's' : ''} adicionado${justAddedIds.size !== 1 ? 's' : ''} — salve o catálogo para confirmar.`
+              ? (() => { const pl = justAddedIds.size !== 1 ? 's' : ''; return `${justAddedIds.size} modelo${pl} adicionado${pl} — salve o catálogo para confirmar.` })()
               : 'Após adicionar, salve o catálogo. Os modelos adicionados ficam disponíveis em todos os seletores de agentes.'}
           </span>
           <button

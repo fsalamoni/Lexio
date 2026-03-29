@@ -189,6 +189,10 @@ export function inferFitScores(tier: 'fast' | 'balanced' | 'premium', id: string
 /**
  * Infer model capabilities from OpenRouter architecture.modality string.
  * Common modality values: "text->text", "text+image->text", "text->image", "text->audio", etc.
+ *
+ * Note: This checks for modality keywords anywhere in the string (both input and output sides).
+ * A model with "image->text" (accepts images, outputs text) will be tagged with both 'image' and 'text'.
+ * This is intentional: models that understand a modality as input are useful for agents working with that modality.
  */
 export function inferCapabilities(modality?: string): ModelCapability[] {
   if (!modality) return ['text']
