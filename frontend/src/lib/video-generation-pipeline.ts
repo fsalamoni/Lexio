@@ -154,18 +154,37 @@ export function estimateVideoGenerationCost(scriptContent: string): {
 // ── Pipeline helpers ──────────────────────────────────────────────────────────
 
 function safeParseJSON(text: string): Record<string, unknown> | null {
-  try {
-    // Try to extract JSON from the text (may be wrapped in markdown)
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (jsonMatch) return JSON.parse(jsonMatch[0])
-  } catch {
-    // Fallback: try parsing the whole thing
-  }
+  // First try direct parse
   try {
     return JSON.parse(text)
   } catch {
-    return null
+    // continue to extraction
   }
+  // Try to extract the first complete JSON object using bracket counting
+  const start = text.indexOf('{')
+  if (start === -1) return null
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (escape) { escape = false; continue }
+    if (ch === '\\' && inString) { escape = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, i + 1))
+        } catch {
+          return null
+        }
+      }
+    }
+  }
+  return null
 }
 
 function generateSegmentId(): string {
@@ -727,12 +746,15 @@ function buildDefaultTracks(scenes: VideoScene[], narration: NarrationSegment[])
 
 function parseTimeToSeconds(timeStr: string): number {
   if (!timeStr) return 0
-  const parts = timeStr.split(':')
+  const parts = timeStr.split(':').map(p => {
+    const n = parseInt(p, 10)
+    return Number.isNaN(n) ? 0 : n
+  })
   if (parts.length === 2) {
-    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10)
+    return parts[0] * 60 + parts[1]
   }
   if (parts.length === 3) {
-    return parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseInt(parts[2], 10)
+    return parts[0] * 3600 + parts[1] * 60 + parts[2]
   }
   return 0
 }

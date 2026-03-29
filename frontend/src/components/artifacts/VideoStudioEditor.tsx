@@ -465,7 +465,7 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
       const track = { ...next[trackIdx], segments: [...next[trackIdx].segments] }
       const lastEnd = track.segments.length > 0 ? Math.max(...track.segments.map(s => s.endTime)) : 0
       const newSeg: TrackSegment = {
-        id: `seg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `seg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         startTime: lastEnd,
         endTime: Math.min(lastEnd + 30, totalDuration),
         label: 'Novo Segmento',

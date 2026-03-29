@@ -353,7 +353,7 @@ function parseVideoScript(raw: string): ParsedVideoScript | null {
     notes: s.notes ? String(s.notes) : s.notas ? String(s.notas) : undefined,
   }))
   return {
-    title: String(obj.title ?? obj.titulo ?? 'Roteiro de Video'),
+    title: String(obj.title ?? obj.titulo ?? 'Gerador de Vídeo'),
     duration: obj.duration ? String(obj.duration) : obj.duracao ? String(obj.duracao) : undefined,
     scenes,
     postProductionNotes: Array.isArray(obj.postProductionNotes ?? obj.notas_pos_producao)
