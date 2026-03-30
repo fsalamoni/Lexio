@@ -1,0 +1,9 @@
+{
+  "name": "thesis_bank",
+  "display_name": "Banco de Teses",
+  "type": "feature",
+  "version": "1.0.0",
+  "description": "Banco de teses jurídicas auto-populado a partir de documentos gerados",
+  "enabled": true,
+  "provides": ["thesis_storage", "thesis_search", "auto_extraction"]
+}

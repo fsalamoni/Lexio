@@ -1,9 +1,10 @@
-import { useEffect, useMemo } from 'react'
-import { X, DollarSign, Coins, Cpu, BrainCircuit } from 'lucide-react'
+import { useMemo } from 'react'
+import { DollarSign, Coins, Cpu, BrainCircuit } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import type { CostBreakdown, CostBreakdownItem } from '../lib/cost-analytics'
+import DraggablePanel from './DraggablePanel'
 
 interface CostBreakdownModalProps {
   open: boolean
@@ -108,23 +109,6 @@ export default function CostBreakdownModal({
   const byProvider = breakdown?.by_provider ?? []
   const byAgentFunction = breakdown?.by_agent_function ?? []
 
-  useEffect(() => {
-    if (!open) return undefined
-
-    const previousOverflow = document.body.style.overflow
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-
-    document.body.style.overflow = 'hidden'
-    window.addEventListener('keydown', handleKeyDown)
-
-    return () => {
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [open, onClose])
-
   const modelCostChart = useMemo(() => breakdown?.by_model.slice(0, 8).map(row => ({
     name: row.label,
     usd: row.cost_usd,
@@ -165,39 +149,31 @@ export default function CostBreakdownModal({
   if (!open) return null
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-      onClick={event => { if (event.target === event.currentTarget) onClose() }}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Detalhamento de custos e tokens"
+    <DraggablePanel
+      open={open}
+      onClose={onClose}
+      title="Detalhamento de custos e tokens"
+      icon={<DollarSign size={16} />}
+      initialWidth={1100}
+      initialHeight={700}
+      minWidth={500}
+      minHeight={300}
+      className="bg-gray-50"
     >
-      <div className="bg-gray-50 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[92vh] flex flex-col overflow-hidden">
-        <div className="flex items-start justify-between px-6 py-5 border-b bg-white">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Detalhamento de custos e tokens</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Visão consolidada por API, modelo, função, fase, tipo de documento e agentes.
-            </p>
-            {breakdown && (
-              <p className="text-xs text-gray-400 mt-2">
-                Tabelas ordenadas por maior custo, com apoio visual para identificar rapidamente os principais pontos de consumo.
-              </p>
-            )}
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+      <div className="p-4 border-b bg-white">
+        <p className="text-sm text-gray-500">
+          Visão consolidada por API, modelo, função, fase, tipo de documento e agentes.
+        </p>
+      </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {loading && !breakdown ? (
-            <div className="bg-white rounded-xl border p-10 text-center text-sm text-gray-400">
-              Carregando detalhamento...
-            </div>
-          ) : !breakdown ? (
-            <div className="bg-white rounded-xl border p-10 text-center text-sm text-gray-400">
-              Nenhum dado de custo/tokens disponível ainda.
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {loading && !breakdown ? (
+          <div className="bg-white rounded-xl border p-10 text-center text-sm text-gray-400">
+            Carregando detalhamento...
+          </div>
+        ) : !breakdown ? (
+          <div className="bg-white rounded-xl border p-10 text-center text-sm text-gray-400">
+            Nenhum dado de custo/tokens disponível ainda.
             </div>
           ) : (
             <>
@@ -355,7 +331,6 @@ export default function CostBreakdownModal({
             </>
           )}
         </div>
-      </div>
-    </div>
+    </DraggablePanel>
   )
 }

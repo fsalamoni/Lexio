@@ -1,0 +1,27 @@
+{
+    "id": "tax",
+    "name": "Direito Tributário",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Área do Direito Tributário: ICMS, IR, execução fiscal, processo administrativo tributário, contribuições, imunidades e isenções.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "icms",
+        "ir",
+        "execucao_fiscal",
+        "processo_administrativo_tributario",
+        "contribuicoes"
+    ],
+    "guides": [
+        "icms.md",
+        "ir.md",
+        "execucao_fiscal.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

@@ -12,7 +12,6 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react'
 import {
-  X,
   Search,
   Filter,
   ChevronUp,
@@ -31,6 +30,7 @@ import {
   type AgentCategory,
 } from '../lib/model-config'
 import { useCatalogModels } from '../lib/model-catalog'
+import DraggablePanel from './DraggablePanel'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -210,22 +210,20 @@ export default function ModelSelectorModal({
   if (!open) return null
 
   return (
-    /* Overlay */
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    <DraggablePanel
+      open={open}
+      onClose={onClose}
+      title={`Selecionar Modelo — ${agentLabel}`}
+      icon={<Cpu size={16} />}
+      initialWidth={900}
+      initialHeight={700}
+      minWidth={500}
+      minHeight={400}
     >
-      {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-purple-50 to-indigo-50">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">Selecionar Modelo</h2>
+        {/* ── Header info ── */}
+        <div className="px-6 py-3 border-b bg-gradient-to-r from-purple-50 to-indigo-50">
             <p className="text-sm text-gray-500">
-              Agente: <strong>{agentLabel}</strong>
-              {' · '}
-              <span className="text-purple-600">Categoria: {CATEGORY_LABELS[agentCategory]}</span>
+              Categoria: <strong className="text-purple-600">{CATEGORY_LABELS[agentCategory]}</strong>
               {requiredCapability && (
                 <>
                   {' · '}
@@ -237,14 +235,6 @@ export default function ModelSelectorModal({
               {' · '}
               <span className="text-gray-400">{filtered.length} modelo{filtered.length !== 1 ? 's' : ''}</span>
             </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* ── Filters & Search ── */}
@@ -452,8 +442,7 @@ export default function ModelSelectorModal({
             Cancelar
           </button>
         </div>
-      </div>
-    </div>
+    </DraggablePanel>
   )
 }
 

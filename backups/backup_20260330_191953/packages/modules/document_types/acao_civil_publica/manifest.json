@@ -1,0 +1,16 @@
+{
+    "id": "acao_civil_publica",
+    "name": "Ação Civil Pública",
+    "type": "document_type",
+    "version": "1.0.0",
+    "description": "Geração de petições iniciais de Ação Civil Pública com pipeline multi-agente. Lei 7.347/85 + CDC + CF art. 129. Suporta variantes meio ambiente, consumidor, patrimônio público e genérica.",
+    "category": "mp",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "templates": ["meio_ambiente", "consumidor", "patrimonio_publico", "generic"],
+    "pipeline_agents": [
+        "triagem", "pesquisador", "jurista", "advogado_diabo",
+        "jurista_v2", "fact_checker", "redator", "revisor"
+    ]
+}

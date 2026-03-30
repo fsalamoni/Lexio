@@ -5,7 +5,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import {
-  X, Download, Copy, Check as CheckIcon, Trash2, RotateCcw,
+  Download, Copy, Check as CheckIcon, Trash2, RotateCcw,
   FileText, Map, CreditCard, BarChart3, Table, FileQuestion,
   Presentation, Mic, Video, PenTool, BookMarked, Sparkles,
   ChevronDown,
@@ -22,6 +22,7 @@ import {
   exportAudioScriptAsText,
   exportVideoScriptAsText,
 } from './artifact-exporters'
+import DraggablePanel from '../DraggablePanel'
 
 // Lazy-loaded viewers — will be created in subsequent steps
 import FlashcardViewer from './FlashcardViewer'
@@ -193,21 +194,6 @@ export default function ArtifactViewerModal({
   const label = ARTIFACT_LABELS[artifact.type] || artifact.type
   const parsed = parseArtifactContent(artifact.type, artifact.content)
 
-  // Close on Escape
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [onClose])
-
-  // Prevent body scroll when modal is open
-  useEffect(() => {
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = '' }
-  }, [])
-
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
@@ -282,29 +268,24 @@ export default function ArtifactViewerModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-
-      {/* Modal */}
-      <div className="relative w-[95vw] max-w-7xl h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50/80">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2 bg-brand-50 rounded-lg">
-              <Icon className="w-5 h-5 text-brand-600" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-lg font-bold text-gray-900 truncate">{artifact.title}</h2>
-              <p className="text-xs text-gray-500">
-                {label} · {formatDate(artifact.created_at)}
-              </p>
-            </div>
-          </div>
+    <DraggablePanel
+      open={true}
+      onClose={onClose}
+      title={`${label} — ${artifact.title}`}
+      icon={<Icon size={16} />}
+      initialWidth={1100}
+      initialHeight={700}
+      minWidth={500}
+      minHeight={300}
+    >
+        {/* Toolbar */}
+        <div className="flex items-center justify-between px-6 py-3 border-b bg-gray-50/80">
+          <p className="text-xs text-gray-500">
+            {formatDate(artifact.created_at)}
+          </p>
 
           <div className="flex items-center gap-1">
             <CopyButton text={artifact.content} />
-            {/* Export dropdown */}
             <div className="relative" ref={exportRef}>
               <button
                 onClick={() => setShowExportMenu(s => !s)}
@@ -364,14 +345,6 @@ export default function ArtifactViewerModal({
             >
               <Trash2 className="w-4 h-4" />
             </button>
-            <div className="w-px h-6 bg-gray-200 mx-1" />
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
-              title="Fechar (Esc)"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
         </div>
 
@@ -379,41 +352,40 @@ export default function ArtifactViewerModal({
         <div className="flex-1 overflow-y-auto p-6">
           <ArtifactContent artifact={artifact} parsed={parsed} />
         </div>
-      </div>
 
-      {/* Delete confirmation modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-red-100 rounded-full">
-                <Trash2 className="w-5 h-5 text-red-600" />
+        {/* Delete confirmation */}
+        {showDeleteConfirm && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 rounded-lg">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-red-100 rounded-full">
+                  <Trash2 className="w-5 h-5 text-red-600" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900">Excluir artefato</h3>
               </div>
-              <h3 className="text-lg font-bold text-gray-900">Excluir artefato</h3>
-            </div>
-            <p className="text-sm text-gray-600 mb-2">
-              Tem certeza que deseja excluir <strong>&ldquo;{artifact.title}&rdquo;</strong>?
-            </p>
-            <p className="text-xs text-red-500 mb-6">
-              Esta ação é irreversível.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
-              >
-                Excluir
-              </button>
+              <p className="text-sm text-gray-600 mb-2">
+                Tem certeza que deseja excluir <strong>&ldquo;{artifact.title}&rdquo;</strong>?
+              </p>
+              <p className="text-xs text-red-500 mb-6">
+                Esta ação é irreversível.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+                >
+                  Excluir
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+    </DraggablePanel>
   )
 }

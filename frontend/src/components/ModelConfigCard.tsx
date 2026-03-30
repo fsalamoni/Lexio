@@ -16,8 +16,7 @@ import {
   Brain,
   Save,
   RotateCcw,
-  ChevronDown,
-  ChevronUp,
+
   Search,
   BookOpen,
   Scale,
@@ -81,7 +80,6 @@ export default function ModelConfigCard() {
   const catalogModels = useCatalogModels()
   const [models,   setModels]   = useState<AgentModelMap>({})
   const [original, setOriginal] = useState<AgentModelMap>({})
-  const [expanded, setExpanded] = useState(false)
   const [saving,   setSaving]   = useState(false)
   const [saved,    setSaved]    = useState(false)
   const [error,    setError]    = useState<string | null>(null)
@@ -157,48 +155,12 @@ export default function ModelConfigCard() {
     : null
 
   if (loading) {
-    return (
-      <div className="bg-white rounded-xl border p-6 mb-6">
-        <p className="text-gray-400 text-sm">Carregando configuração de modelos...</p>
-      </div>
-    )
+    return <p className="text-gray-400 text-sm">Carregando configuração de modelos...</p>
   }
 
   return (
     <>
-      <div className="bg-white rounded-xl border mb-6 overflow-hidden">
-        {/* Header — collapsible */}
-        <button
-          type="button"
-          onClick={() => setExpanded(e => !e)}
-          className="w-full flex items-center justify-between p-6 text-left hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center">
-              <Brain className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Configuração de Modelos IA</h2>
-              <p className="text-sm text-gray-500">Configure qual modelo LLM cada agente do pipeline utiliza</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {hasNonDefaults && (
-              <span className="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-700 font-medium">
-                Personalizado
-              </span>
-            )}
-            {expanded
-              ? <ChevronUp className="w-5 h-5 text-gray-400" />
-              : <ChevronDown className="w-5 h-5 text-gray-400" />
-            }
-          </div>
-        </button>
-
-        {/* Expanded content */}
-        {expanded && (
-          <div className="px-6 pb-6">
-            {/* Pipeline flow title */}
+      {/* Pipeline flow title */}
             <div className="flex items-center gap-2 mb-4 pb-3 border-b">
               <Sparkles className="w-4 h-4 text-brand-500" />
               <span className="text-sm font-semibold text-gray-700">Fluxo do Pipeline de Geração</span>
@@ -368,9 +330,6 @@ export default function ModelConfigCard() {
                 <span className="text-xs text-amber-600 ml-auto">Alterações não salvas</span>
               )}
             </div>
-          </div>
-        )}
-      </div>
 
       {/* Model selector modal */}
       {activeAgentDef && (

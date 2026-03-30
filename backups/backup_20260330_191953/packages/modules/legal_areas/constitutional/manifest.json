@@ -1,0 +1,26 @@
+{
+    "id": "constitutional",
+    "name": "Direito Constitucional",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Controle de constitucionalidade, direitos fundamentais, organização do Estado, processo legislativo.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "controle_constitucionalidade",
+        "direitos_fundamentais",
+        "organizacao_estado",
+        "processo_legislativo"
+    ],
+    "guides": [
+        "controle_constitucionalidade.md",
+        "direitos_fundamentais.md",
+        "organizacao_estado.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

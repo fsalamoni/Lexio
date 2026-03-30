@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { TaskManagerProvider } from './contexts/TaskManagerContext'
 import { ToastProvider } from './components/Toast'
+import TaskBar from './components/TaskBar'
 import Layout from './components/Layout'
 import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
@@ -77,7 +79,10 @@ export default function App() {
     <BrowserRouter basename={BASENAME}>
       <AuthProvider>
         <ToastProvider>
-          <AppRoutes />
+          <TaskManagerProvider>
+            <AppRoutes />
+            <TaskBar />
+          </TaskManagerProvider>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>

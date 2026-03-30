@@ -1,0 +1,16 @@
+{
+    "id": "recurso",
+    "name": "Recurso Judicial",
+    "type": "document_type",
+    "version": "1.0.0",
+    "description": "Geração de recursos judiciais (apelação, agravo, embargos) com pipeline multi-agente.",
+    "category": "advocacy",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "templates": ["apelacao", "agravo_instrumento", "embargos_declaracao", "generic"],
+    "pipeline_agents": [
+        "triagem", "pesquisador", "jurista", "advogado_diabo",
+        "jurista_v2", "fact_checker", "redator", "revisor"
+    ]
+}

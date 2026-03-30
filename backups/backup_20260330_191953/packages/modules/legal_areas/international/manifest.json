@@ -1,0 +1,26 @@
+{
+    "id": "international",
+    "name": "Direito Internacional",
+    "type": "legal_area",
+    "version": "1.0.0",
+    "description": "Tratados internacionais, direito internacional público e privado, cooperação jurídica internacional.",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "specializations": [
+        "tratados_internacionais",
+        "direito_internacional_privado",
+        "cooperacao_juridica",
+        "direitos_humanos_internacional"
+    ],
+    "guides": [
+        "tratados.md",
+        "cooperacao_juridica.md",
+        "direitos_humanos.md"
+    ],
+    "agents": [
+        "jurista",
+        "advogado_diabo",
+        "fact_checker"
+    ]
+}

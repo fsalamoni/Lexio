@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronUp, FileText, ArrowRight, Sparkles, Loader2, MessageCircleQuestion } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
+import { useTaskManager } from '../contexts/TaskManagerContext'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { IS_FIREBASE } from '../lib/firebase'
@@ -62,6 +63,7 @@ export default function NewDocument() {
   const { userId } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
+  const { startTask } = useTaskManager()
 
   const MAX_REQUEST = 2000
 
@@ -216,44 +218,53 @@ export default function NewDocument() {
         setGeneratedDocId(newDoc.id!)
         setLoading(false)
 
-        try {
-          await generateDocument(
-            userId,
-            newDoc.id!,
-            selectedType,
-            request,
-            selectedAreas,
-            null,
-            handleProgress,
-            userProfile,
-            contextDetail,
-          )
-        } catch (err: any) {
-          console.error('Generation failed:', err)
-          setPipelineError(true)
-          // Mark active agent as error
-          setPipelineAgents(prev =>
-            prev.map(a =>
-              a.status === 'active'
-                ? { ...a, status: 'error' as const, completedAt: Date.now() }
-                : a,
-            ),
-          )
-          if (err instanceof ModelUnavailableError) {
-            setPipelineMessage(`Modelo "${err.modelId}" indisponível. Altere-o em Administração.`)
-            toast.warning(
-              `Modelo indisponível: ${err.modelId}`,
-              'Este modelo foi removido do OpenRouter. Vá em Administração e substitua-o por outro.',
+        // Register with global task manager so it persists across navigation
+        const docTypeName = docTypes.find(d => d.id === selectedType)?.name || selectedType
+        startTask(`Gerando: ${docTypeName}`, async (onTaskProgress) => {
+          try {
+            await generateDocument(
+              userId,
+              newDoc.id!,
+              selectedType,
+              request,
+              selectedAreas,
+              null,
+              (p) => {
+                handleProgress(p)
+                const pct = p.phase === PHASE_COMPLETED ? 100 : Math.min(95, (PIPELINE_AGENTS.findIndex(a => a.key === p.phase) + 1) / PIPELINE_AGENTS.length * 100)
+                onTaskProgress({ progress: pct, phase: p.message || p.phase })
+              },
+              userProfile,
+              contextDetail,
             )
-          } else if (err instanceof TransientLLMError) {
-            const msg = 'O modelo LLM não respondeu. Tente novamente ou altere o modelo em Administração.'
-            setPipelineMessage(msg)
-            toast.error('Modelo sem resposta', msg)
-          } else {
-            setPipelineMessage(err?.message || 'Erro na geração')
-            toast.error('Erro na geração', err?.message)
+            return newDoc.id
+          } catch (err: any) {
+            console.error('Generation failed:', err)
+            setPipelineError(true)
+            setPipelineAgents(prev =>
+              prev.map(a =>
+                a.status === 'active'
+                  ? { ...a, status: 'error' as const, completedAt: Date.now() }
+                  : a,
+              ),
+            )
+            if (err instanceof ModelUnavailableError) {
+              setPipelineMessage(`Modelo "${err.modelId}" indisponível. Altere-o em Administração.`)
+              toast.warning(
+                `Modelo indisponível: ${err.modelId}`,
+                'Este modelo foi removido do OpenRouter. Vá em Administração e substitua-o por outro.',
+              )
+            } else if (err instanceof TransientLLMError) {
+              const msg = 'O modelo LLM não respondeu. Tente novamente ou altere o modelo em Administração.'
+              setPipelineMessage(msg)
+              toast.error('Modelo sem resposta', msg)
+            } else {
+              setPipelineMessage(err?.message || 'Erro na geração')
+              toast.error('Erro na geração', err?.message)
+            }
+            throw err
           }
-        }
+        })
       } else {
         const res = await api.post('/documents', {
           document_type_id: selectedType,

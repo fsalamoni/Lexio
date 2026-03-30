@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, X, Trash2 } from 'lucide-react'
+import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, Trash2 } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -12,6 +12,7 @@ import {
   type ThesisData,
 } from '../lib/firestore-service'
 import ThesisAnalysisCard from '../components/ThesisAnalysisCard'
+import DraggablePanel from '../components/DraggablePanel'
 
 interface ThesisItem {
   id: string
@@ -149,17 +150,16 @@ function ThesisModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold text-gray-900">
-            {thesis ? 'Editar Tese' : 'Nova Tese'}
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <DraggablePanel
+      open={true}
+      onClose={onClose}
+      title={thesis ? 'Editar Tese' : 'Nova Tese'}
+      icon={<BookOpen size={16} />}
+      initialWidth={650}
+      initialHeight={600}
+      minWidth={400}
+      minHeight={300}
+    >
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Título *</label>
@@ -252,8 +252,7 @@ function ThesisModal({
             {saving ? 'Salvando...' : thesis ? 'Salvar alterações' : 'Criar tese'}
           </button>
         </div>
-      </div>
-    </div>
+    </DraggablePanel>
   )
 }
 

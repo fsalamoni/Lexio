@@ -11,8 +11,7 @@ import {
   BookOpen,
   Save,
   RotateCcw,
-  ChevronDown,
-  ChevronUp,
+
   ArrowDown,
   AlertCircle,
   CheckCircle2,
@@ -85,7 +84,6 @@ export default function ResearchNotebookConfigCard() {
   const catalogModels = useCatalogModels()
   const [models, setModels]     = useState<ResearchNotebookModelMap>({})
   const [original, setOriginal] = useState<ResearchNotebookModelMap>({})
-  const [expanded, setExpanded] = useState(false)
   const [saving, setSaving]     = useState(false)
   const [saved, setSaved]       = useState(false)
   const [error, setError]       = useState<string | null>(null)
@@ -161,48 +159,12 @@ export default function ResearchNotebookConfigCard() {
     : null
 
   if (loading) {
-    return (
-      <div className="bg-white rounded-xl border p-6 mb-6">
-        <p className="text-gray-400 text-sm">Carregando configuração do Caderno de Pesquisa...</p>
-      </div>
-    )
+    return <p className="text-gray-400 text-sm">Carregando configuração do Caderno de Pesquisa...</p>
   }
 
   return (
     <>
-      <div className="bg-white rounded-xl border mb-6 overflow-hidden">
-        {/* Header — collapsible */}
-        <button
-          type="button"
-          onClick={() => setExpanded(e => !e)}
-          className="w-full flex items-center justify-between p-6 text-left hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-indigo-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Caderno de Pesquisa</h2>
-              <p className="text-sm text-gray-500">Configure os modelos LLM dos agentes do assistente de pesquisa inteligente</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {hasNonDefaults && (
-              <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 font-medium">
-                Personalizado
-              </span>
-            )}
-            {expanded
-              ? <ChevronUp className="w-5 h-5 text-gray-400" />
-              : <ChevronDown className="w-5 h-5 text-gray-400" />
-            }
-          </div>
-        </button>
-
-        {/* Expanded content */}
-        {expanded && (
-          <div className="px-6 pb-6">
-            {/* ── Research & Analysis Agents ── */}
+      {/* ── Research & Analysis Agents ── */}
             <div className="flex items-center gap-2 mb-4 pb-3 border-b">
               <BookOpen className="w-4 h-4 text-indigo-500" />
               <span className="text-sm font-semibold text-gray-700">Pesquisa & Análise</span>
@@ -460,9 +422,6 @@ export default function ResearchNotebookConfigCard() {
                 Restaurar padrões
               </button>
             </div>
-          </div>
-        )}
-      </div>
 
       {/* Model selector modal */}
       {activeAgentDef && (

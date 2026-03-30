@@ -19,6 +19,7 @@ import {
   Library, ScanSearch, Save, Eye,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useTaskManager } from '../contexts/TaskManagerContext'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
@@ -52,6 +53,7 @@ import {
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
+import DraggablePanel from '../components/DraggablePanel'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -399,6 +401,7 @@ type DetailTab = 'overview' | 'chat' | 'sources' | 'studio' | 'artifacts'
 export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
+  const { startTask } = useTaskManager()
 
   // List state
   const [notebooks, setNotebooks] = useState<ResearchNotebookData[]>([])
@@ -1146,6 +1149,19 @@ Instruções:
   // ── Generate full video from saved script ──────────────────────────
   const handleGenerateVideo = async (editedContent?: string) => {
     if (!videoGenSavedArtifact || !userId || !activeNotebook?.id) return
+
+    // Create a deferred promise so startTask can track completion
+    let resolveTask: (v: unknown) => void = () => {}
+    let rejectTask: (e: unknown) => void = () => {}
+    const taskPromise = new Promise((res, rej) => { resolveTask = res; rejectTask = rej })
+
+    // Register as a persistent background task visible in the TaskBar
+    const taskName = `Vídeo: ${activeNotebook.topic.slice(0, 40)}`
+    startTask(taskName, (onTaskProgress) => {
+      onTaskProgress({ progress: 0, phase: 'Preparando pipeline...' })
+      return taskPromise
+    })
+
     try {
       setVideoGenLoading(true)
       const apiKey = await getOpenRouterKey()
@@ -1211,14 +1227,17 @@ Instruções:
       // Show the video studio editor
       if (!result.package || !result.package.scenes || result.package.scenes.length === 0) {
         toast.warning('Produção incompleta', 'O pipeline não gerou cenas válidas. Tente novamente com outro modelo.')
+        resolveTask(null)
       } else {
         setVideoProduction(result.package)
         setShowVideoGenCost(false)
         setVideoGenSavedArtifact(null)
         toast.success('Vídeo gerado com sucesso! Editor de estúdio aberto.')
+        resolveTask(result.package)
       }
     } catch (err) {
       console.error('Video generation error:', err)
+      rejectTask(err)
       const errMsg = err instanceof Error ? err.message : String(err)
       if (errMsg.includes('429')) {
         toast.warning(
@@ -1465,17 +1484,17 @@ Instruções:
 
         {/* Create dialog */}
         {showCreate && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowCreate(false)}>
-            <div
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto"
-              onClick={e => e.stopPropagation()}
-            >
-              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-brand-600" />
-                Novo Caderno de Pesquisa
-              </h2>
-
-              <div className="space-y-4">
+          <DraggablePanel
+            open={showCreate}
+            onClose={() => { setShowCreate(false); setSuggestedAcervoDocs([]); setSelectedAcervoIds(new Set()) }}
+            title="Novo Caderno de Pesquisa"
+            icon={<BookOpen size={16} />}
+            initialWidth={500}
+            initialHeight={550}
+            minWidth={380}
+            minHeight={300}
+          >
+              <div className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Título *</label>
                   <input
@@ -1549,7 +1568,7 @@ Instruções:
                 )}
               </div>
 
-              <div className="flex items-center justify-end gap-3 mt-6">
+              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t">
                 <button
                   onClick={() => { setShowCreate(false); setSuggestedAcervoDocs([]); setSelectedAcervoIds(new Set()) }}
                   className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
@@ -1568,8 +1587,7 @@ Instruções:
                   )}
                 </button>
               </div>
-            </div>
-          </div>
+          </DraggablePanel>
         )}
       </div>
     )
@@ -1653,13 +1671,17 @@ Instruções:
 
       {/* Edit Notebook Info Modal */}
       {showEditInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowEditInfo(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <Edit3 className="w-5 h-5 text-brand-600" />
-              Editar Caderno
-            </h2>
-            <div className="space-y-4">
+        <DraggablePanel
+          open={showEditInfo}
+          onClose={() => setShowEditInfo(false)}
+          title="Editar Caderno"
+          icon={<Edit3 size={16} />}
+          initialWidth={500}
+          initialHeight={420}
+          minWidth={380}
+          minHeight={280}
+        >
+            <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Título *</label>
                 <input
@@ -1689,7 +1711,7 @@ Instruções:
                 />
               </div>
             </div>
-            <div className="flex items-center justify-end gap-3 mt-6">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t">
               <button onClick={() => setShowEditInfo(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                 Cancelar
               </button>
@@ -1701,8 +1723,7 @@ Instruções:
                 Salvar Alterações
               </button>
             </div>
-          </div>
-        </div>
+        </DraggablePanel>
       )}
 
       {/* Tab content */}

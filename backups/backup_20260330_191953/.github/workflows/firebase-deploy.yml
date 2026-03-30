@@ -1,0 +1,80 @@
+name: Deploy — Firebase Hosting (lexio.web.app) + Firestore Rules
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SECRETS NECESSÁRIOS (GitHub → Settings → Secrets → Actions):
+#
+#   FIREBASE_TOKEN          ← RECOMENDADO — gere localmente com:
+#                               npm install -g firebase-tools
+#                               firebase login:ci
+#                             Cole o token como secret FIREBASE_TOKEN.
+#
+#   FIREBASE_SERVICE_ACCOUNT ← ALTERNATIVA — JSON da conta de serviço GCP com
+#                               roles: Firebase Hosting Admin + Firebase Rules Admin
+#                               no projeto hocapp-44760.
+#
+# Pelo menos um dos dois deve estar configurado para o deploy funcionar.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main, 'claude/*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # necessário para google-github-actions/auth
+
+jobs:
+  deploy:
+    name: Build & deploy to lexio.web.app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Build frontend ────────────────────────────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+        env:
+          VITE_DEMO_MODE: 'false'
+          VITE_BASE_PATH: /          # Firebase Hosting serve na raiz — sem prefixo /Lexio
+          VITE_FIREBASE_API_KEY:             ${{ secrets.FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN:         hocapp-44760.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID:          hocapp-44760
+          VITE_FIREBASE_STORAGE_BUCKET:      hocapp-44760.firebasestorage.app
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '143237037612'
+          VITE_FIREBASE_APP_ID:              '1:143237037612:web:85bd9ddaf81973d5031b89'
+          VITE_ADMIN_EMAIL:                  ${{ secrets.VITE_ADMIN_EMAIL }}
+
+      - name: SPA fallback
+        run: cp frontend/dist/index.html frontend/dist/404.html
+
+      # ── Auth opção A: Service Account (se FIREBASE_SERVICE_ACCOUNT estiver setado)
+      - name: Authenticate via Service Account
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        continue-on-error: true   # não quebra se o secret não estiver configurado
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@latest
+
+      # ── Deploy Hosting + Firestore Rules ──────────────────────────────────
+      # Auth opção B: FIREBASE_TOKEN (gerado por `firebase login:ci`)
+      # Firebase CLI usa FIREBASE_TOKEN se setado, caso contrário usa GOOGLE_APPLICATION_CREDENTIALS
+      - name: Deploy to Firebase
+        run: |
+          firebase deploy \
+            --only hosting:lexio,firestore:rules,firestore:indexes \
+            --project hocapp-44760 \
+            --non-interactive
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

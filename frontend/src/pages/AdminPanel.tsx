@@ -769,6 +769,10 @@ export default function AdminPanel() {
         </div>
       </div>
 
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* ── BLOCO: Operação ─────────────────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+
       {/* Review Queue */}
       <AdminCollapsibleSection
         id="section_review_queue"
@@ -792,6 +796,18 @@ export default function AdminPanel() {
         >
           <ReindexCard />
         </AdminCollapsibleSection>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* ── BLOCO: Configuração Geral ──────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+
+      {IS_FIREBASE && (
+        <div className="mt-8 mb-3">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+            <Key className="w-3.5 h-3.5" /> Configuração Geral
+          </h2>
+        </div>
       )}
 
       {/* API Keys */}
@@ -823,7 +839,7 @@ export default function AdminPanel() {
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_model_config"
-          title="Configuração de Modelos"
+          title="Configuração de Modelos (Documentos)"
           icon={Brain}
           collapseState={collapseState}
           onToggle={toggleCollapse}
@@ -832,11 +848,23 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* ── BLOCO: Agentes de Documentos ───────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+
+      {IS_FIREBASE && (
+        <div className="mt-8 mb-3">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+            <FileText className="w-3.5 h-3.5" /> Agentes de Documentos & Acervo
+          </h2>
+        </div>
+      )}
+
       {/* Thesis Analyst Model Configuration — Firebase mode */}
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_thesis_config"
-          title="Configuração do Analista de Teses"
+          title="Analista de Teses"
           icon={BookOpen}
           iconColor="text-purple-600"
           collapseState={collapseState}
@@ -850,7 +878,7 @@ export default function AdminPanel() {
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_context_detail_config"
-          title="Configuração do Detalhamento de Contexto"
+          title="Detalhamento de Contexto"
           icon={Brain}
           iconColor="text-purple-600"
           collapseState={collapseState}
@@ -864,7 +892,7 @@ export default function AdminPanel() {
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_acervo_classificador_config"
-          title="Configuração do Classificador de Acervo"
+          title="Classificador de Acervo"
           icon={Tags}
           iconColor="text-teal-600"
           collapseState={collapseState}
@@ -878,7 +906,7 @@ export default function AdminPanel() {
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_acervo_ementa_config"
-          title="Configuração do Gerador de Ementa"
+          title="Gerador de Ementa"
           icon={FileText}
           iconColor="text-blue-600"
           collapseState={collapseState}
@@ -888,11 +916,23 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* ── BLOCO: Caderno de Pesquisa ─────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+
+      {IS_FIREBASE && (
+        <div className="mt-8 mb-3">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+            <BookOpen className="w-3.5 h-3.5" /> Caderno de Pesquisa
+          </h2>
+        </div>
+      )}
+
       {/* Research Notebook Config (Firebase-only) */}
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_research_notebook_config"
-          title="Configuração do Caderno de Pesquisa"
+          title="Agentes do Caderno de Pesquisa"
           icon={BookOpen}
           iconColor="text-indigo-600"
           collapseState={collapseState}
@@ -906,7 +946,7 @@ export default function AdminPanel() {
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_notebook_acervo_config"
-          title="Configuração do Analisador de Acervo (Caderno)"
+          title="Analisador de Acervo (Caderno)"
           icon={Database}
           iconColor="text-emerald-600"
           collapseState={collapseState}
@@ -916,11 +956,23 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* ── BLOCO: Pipelines Multiagente ───────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+
+      {IS_FIREBASE && (
+        <div className="mt-8 mb-3">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+            <Video className="w-3.5 h-3.5" /> Pipelines Multiagente (Vídeo · Áudio · Apresentação)
+          </h2>
+        </div>
+      )}
+
       {/* Video Pipeline Config (Firebase-only) */}
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_video_pipeline_config"
-          title="Gerador de Vídeo (Trilha Multiagente)"
+          title="Pipeline de Vídeo"
           icon={Video}
           iconColor="text-rose-600"
           collapseState={collapseState}
@@ -934,7 +986,7 @@ export default function AdminPanel() {
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_audio_pipeline_config"
-          title="Pipeline de Áudio (Trilha Multiagente)"
+          title="Pipeline de Áudio"
           icon={Headphones}
           iconColor="text-violet-600"
           collapseState={collapseState}
@@ -948,7 +1000,7 @@ export default function AdminPanel() {
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_presentation_pipeline_config"
-          title="Pipeline de Apresentação (Trilha Multiagente)"
+          title="Pipeline de Apresentação"
           icon={Presentation}
           iconColor="text-sky-600"
           collapseState={collapseState}
@@ -957,6 +1009,16 @@ export default function AdminPanel() {
           <PresentationPipelineConfigCard />
         </AdminCollapsibleSection>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* ── BLOCO: Dados & Sistema ─────────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+
+      <div className="mt-8 mb-3">
+        <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+          <Activity className="w-3.5 h-3.5" /> Dados, Módulos & Sistema
+        </h2>
+      </div>
 
       {/* System Health + Module Pie */}
       <AdminCollapsibleSection

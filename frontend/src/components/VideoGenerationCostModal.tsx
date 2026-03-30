@@ -4,14 +4,15 @@
  * recommended model types per pipeline agent.
  */
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import {
-  X, Video, Zap, DollarSign, Loader2,
+  Video, Zap, DollarSign, Loader2,
   AlertCircle, Clock, Layers, CheckCircle2,
   Eye, Edit3, ChevronDown, ChevronUp,
   Image, Mic, Film, FileText,
 } from 'lucide-react'
 import { estimateVideoGenerationCost } from '../lib/video-generation-pipeline'
+import DraggablePanel from './DraggablePanel'
 
 /** Model type recommendation per agent — all agents use text LLMs to produce JSON */
 const AGENT_MODEL_RECOMMENDATIONS: Record<string, { icon: React.ElementType; capability: string; note: string }> = {
@@ -50,59 +51,36 @@ export default function VideoGenerationCostModal({
   const estimate = useMemo(() => estimateVideoGenerationCost(editedContent), [editedContent])
   const hasEdits = editedContent !== scriptContent
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = '' }
-  }, [])
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isGenerating) onSkip()
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [onSkip, isGenerating])
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={isGenerating ? undefined : onSkip}
-      />
-
-      {/* Modal */}
-      <div className="relative w-[95vw] max-w-4xl h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-rose-50 to-orange-50 flex-shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2 bg-rose-100 rounded-lg flex-shrink-0">
-              <Video className="w-5 h-5 text-rose-600" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-lg font-bold text-gray-900">
-                {isGenerating ? 'Gerando Vídeo...' : 'Proposta de Geração de Vídeo'}
-              </h2>
-              <p className="text-xs text-rose-700 truncate">{topic}</p>
-            </div>
-          </div>
+    <DraggablePanel
+      open={true}
+      onClose={isGenerating ? () => {} : onSkip}
+      title={isGenerating ? 'Gerando Vídeo...' : `Proposta de Geração — ${topic}`}
+      icon={<Video size={16} />}
+      initialWidth={900}
+      initialHeight={700}
+      minWidth={500}
+      minHeight={400}
+      closeOnEscape={!isGenerating}
+    >
+        {/* Header controls */}
+        <div className="flex items-center justify-between px-6 py-3 border-b bg-gradient-to-r from-rose-50 to-orange-50 flex-shrink-0">
+          <p className="text-xs text-rose-700 truncate">{topic}</p>
           <div className="flex items-center gap-2 flex-shrink-0">
             {!isGenerating && (
-              <>
-                {/* Tab switcher */}
-                <div className="flex bg-gray-100 rounded-lg p-0.5 mr-2">
-                  <button
-                    onClick={() => setActiveTab('cost')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                      activeTab === 'cost' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    <DollarSign className="w-3.5 h-3.5" />
-                    Custos
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('script')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              <div className="flex bg-gray-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setActiveTab('cost')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    activeTab === 'cost' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <DollarSign className="w-3.5 h-3.5" />
+                  Custos
+                </button>
+                <button
+                  onClick={() => setActiveTab('script')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                       activeTab === 'script' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
@@ -111,10 +89,6 @@ export default function VideoGenerationCostModal({
                     {hasEdits && <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />}
                   </button>
                 </div>
-                <button onClick={onSkip} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-                  <X className="w-5 h-5" />
-                </button>
-              </>
             )}
           </div>
         </div>
@@ -375,7 +349,6 @@ export default function VideoGenerationCostModal({
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </DraggablePanel>
   )
 }

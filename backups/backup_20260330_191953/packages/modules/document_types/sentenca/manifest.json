@@ -1,0 +1,15 @@
+{
+    "id": "sentenca",
+    "name": "Sentença",
+    "type": "document_type",
+    "version": "1.0.0",
+    "description": "Geração de sentenças judiciais com pipeline multi-agente. Estrutura CPC arts. 489-495. Suporta variantes mérito, extinção sem mérito e genérica.",
+    "category": "judiciary",
+    "entry_point": "__init__.py",
+    "enabled": true,
+    "dependencies": [],
+    "templates": ["merito", "extincao_sem_merito", "generic"],
+    "pipeline_agents": [
+        "triagem", "pesquisador", "jurista", "fact_checker", "redator", "revisor"
+    ]
+}

@@ -11,8 +11,7 @@ import {
   FileText,
   Save,
   RotateCcw,
-  ChevronDown,
-  ChevronUp,
+
   AlertCircle,
   CheckCircle2,
   Brain,
@@ -66,7 +65,6 @@ export default function AcervoEmentaConfigCard() {
   const catalogModels = useCatalogModels()
   const [models, setModels]     = useState<AcervoEmentaModelMap>({})
   const [original, setOriginal] = useState<AcervoEmentaModelMap>({})
-  const [expanded, setExpanded] = useState(false)
   const [saving, setSaving]     = useState(false)
   const [saved, setSaved]       = useState(false)
   const [error, setError]       = useState<string | null>(null)
@@ -142,48 +140,12 @@ export default function AcervoEmentaConfigCard() {
     : null
 
   if (loading) {
-    return (
-      <div className="bg-white rounded-xl border p-6 mb-6">
-        <p className="text-gray-400 text-sm">Carregando configuração do Gerador de Ementa...</p>
-      </div>
-    )
+    return <p className="text-gray-400 text-sm">Carregando configuração do Gerador de Ementa...</p>
   }
 
   return (
     <>
-      <div className="bg-white rounded-xl border mb-6 overflow-hidden">
-        {/* Header — collapsible */}
-        <button
-          type="button"
-          onClick={() => setExpanded(e => !e)}
-          className="w-full flex items-center justify-between p-6 text-left hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Gerador de Ementa</h2>
-              <p className="text-sm text-gray-500">Configure o modelo LLM que gera ementas e keywords para indexação do acervo</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {hasNonDefaults && (
-              <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-medium">
-                Personalizado
-              </span>
-            )}
-            {expanded
-              ? <ChevronUp className="w-5 h-5 text-gray-400" />
-              : <ChevronDown className="w-5 h-5 text-gray-400" />
-            }
-          </div>
-        </button>
-
-        {/* Expanded content */}
-        {expanded && (
-          <div className="px-6 pb-6">
-            {/* Pipeline header */}
+      {/* Pipeline header */}
             <div className="flex items-center gap-2 mb-4 pb-3 border-b">
               <FileText className="w-4 h-4 text-blue-500" />
               <span className="text-sm font-semibold text-gray-700">Agente Gerador de Ementa</span>
@@ -322,9 +284,6 @@ export default function AcervoEmentaConfigCard() {
                 Restaurar padrões
               </button>
             </div>
-          </div>
-        )}
-      </div>
 
       {/* Model selector modal */}
       {activeAgentDef && (

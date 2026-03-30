@@ -1,0 +1,9 @@
+# security.txt — Lexio
+# Seguindo o padrão RFC 9116 (https://www.rfc-editor.org/rfc/rfc9116)
+# Permite que pesquisadores de segurança do Google e outros identifiquem
+# o responsável pelo site e reportem vulnerabilidades de forma responsável.
+
+Contact: https://github.com/fsalamoni/Lexio/issues
+Expires: 2027-12-31T23:59:59.000Z
+Preferred-Languages: pt, en
+Canonical: https://fsalamoni.github.io/Lexio/.well-known/security.txt

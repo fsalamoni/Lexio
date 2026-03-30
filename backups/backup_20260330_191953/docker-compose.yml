@@ -1,0 +1,184 @@
+version: "3.8"
+
+services:
+  # === Backend API ===
+  backend:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    container_name: lexio-backend
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./output:/app/output
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks:
+      - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # === Frontend (nginx, production build) ===
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_DEMO_MODE: "false"
+        VITE_BASE_PATH: "/"
+    container_name: lexio-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+
+  # === PostgreSQL ===
+  postgres:
+    image: postgres:16-alpine
+    container_name: lexio-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lexio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — copy .env.example to .env}
+      POSTGRES_DB: ${POSTGRES_DB:-lexio}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexio"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+
+  # === Qdrant (Vector DB) ===
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: lexio-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./Teses:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required — copy .env.example to .env}
+    networks:
+      - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+
+  # === Ollama (Embeddings) ===
+  ollama:
+    image: ollama/ollama:latest
+    container_name: lexio-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.1'
+          memory: 512M
+
+  # === SearXNG (Web Search) ===
+  searxng:
+    image: searxng/searxng:latest
+    container_name: lexio-searxng
+    ports:
+      - "8888:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888
+    volumes:
+      - searxng_data:/etc/searxng
+    networks:
+      - lexio
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.05'
+          memory: 128M
+
+  # === Backup (on-demand via `make backup` or daily cron) ===
+  backup:
+    image: postgres:16-alpine
+    container_name: lexio-backup
+    profiles:
+      - backup
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - ./backups:/backups
+      - ./scripts:/scripts
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - lexio
+
+volumes:
+  pgdata:
+  ollama_data:
+  searxng_data:
+
+networks:
+  lexio:
+    driver: bridge

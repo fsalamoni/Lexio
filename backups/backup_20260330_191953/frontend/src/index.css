@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Typography ─────────────────────────────────────────────── */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* ─── Toast animations ───────────────────────────────────────── */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(120%) scale(0.9); }
+  to   { opacity: 1; transform: translateX(0)   scale(1);   }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0)   scale(1);   }
+  to   { opacity: 0; transform: translateX(120%) scale(0.9); }
+}
+.toast-enter { animation: toast-in  0.28s cubic-bezier(0.34,1.56,0.64,1) both; }
+.toast-exit  { animation: toast-out 0.22s ease-in both; }
+
+/* ─── Skeleton shimmer ───────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #f3f4f6 25%, #e9eaec 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.375rem;
+}
+
+/* ─── Tiptap rich-text editor prose styles ───────────────────── */
+/* Replaces @tailwindcss/typography (not installed) */
+.ProseMirror { outline: none; min-height: 400px; padding: 1.5rem; line-height: 1.75; font-size: 0.9375rem; color: #111827; }
+.ProseMirror > * + * { margin-top: 0.75rem; }
+.ProseMirror p { margin-bottom: 0; }
+.ProseMirror h1 { font-size: 1.5rem;  font-weight: 700; line-height: 1.3; margin-top: 1.5rem; margin-bottom: 0.5rem; color: #111827; }
+.ProseMirror h2 { font-size: 1.25rem; font-weight: 600; line-height: 1.35; margin-top: 1.25rem; margin-bottom: 0.4rem; color: #1f2937; }
+.ProseMirror h3 { font-size: 1.0625rem; font-weight: 600; line-height: 1.4;  margin-top: 1rem; margin-bottom: 0.3rem; color: #374151; }
+.ProseMirror strong { font-weight: 700; }
+.ProseMirror em { font-style: italic; }
+.ProseMirror s  { text-decoration: line-through; }
+.ProseMirror ul, .ProseMirror ol { padding-left: 1.5rem; }
+.ProseMirror ul { list-style-type: disc; }
+.ProseMirror ol { list-style-type: decimal; }
+.ProseMirror li { margin-top: 0.25rem; }
+.ProseMirror hr { border: none; border-top: 2px solid #e5e7eb; margin: 1.5rem 0; }
+.ProseMirror mark { background-color: #fef08a; border-radius: 2px; padding: 0 2px; }
+.ProseMirror blockquote { border-left: 4px solid #e5e7eb; padding-left: 1rem; color: #6b7280; margin: 1rem 0; }
+.ProseMirror code { background: #f3f4f6; border-radius: 4px; padding: 1px 5px; font-size: 0.875em; font-family: monospace; }
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+}
+
+/* ─── DOCX Preview prose ─────────────────────────────────────── */
+.docx-preview h1 { font-size:1.5rem;  font-weight:700; margin:1.25rem 0 .5rem; }
+.docx-preview h2 { font-size:1.25rem; font-weight:600; margin:1rem 0 .5rem;   }
+.docx-preview h3 { font-size:1rem;    font-weight:600; margin:.75rem 0 .25rem;}
+.docx-preview p  { margin-bottom:.75rem; line-height:1.7; }
+.docx-preview ul,.docx-preview ol { padding-left:1.5rem; margin-bottom:.75rem; }
+.docx-preview li { margin-bottom:.25rem; }
+.docx-preview strong { font-weight:600; }
+.docx-preview em     { font-style:italic; }
+.docx-preview table  { width:100%; border-collapse:collapse; margin-bottom:1rem; }
+.docx-preview td,
+.docx-preview th { border:1px solid #e5e7eb; padding:.5rem .75rem; font-size:.875rem; }
+.docx-preview th { background:#f9fafb; font-weight:600; }
+
+/* ─── Notebook chat & artifact markdown ──────────────────────── */
+.prose-sm p { margin-bottom:0.25rem; line-height:1.6; }
+.prose-sm h1,.prose-sm h2,.prose-sm h3,.prose-sm h4 { line-height:1.4; }
+.prose-sm ul,.prose-sm ol { padding-left:1.25rem; margin:0.25rem 0; }
+.prose-sm li { margin-bottom:0.125rem; }
+.prose-sm pre { white-space:pre-wrap; word-break:break-word; }
+.prose-sm hr { border:none; border-top:1px solid #e5e7eb; margin:0.5rem 0; }
