@@ -318,15 +318,13 @@ export default function VideoPipelineConfigCard() {
               })}
             </div>
 
-            {/* Info box */}
             <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-lg">
               <p className="text-xs text-rose-800">
-                <strong>💡 Informações:</strong> Cada agente agora exibe explicitamente a capacidade exigida
-                (<strong>Texto</strong>, <strong>Imagem</strong>, <strong>Áudio</strong> ou <strong>Vídeo</strong>)
-                e o seletor só lista modelos compatíveis. Na trilha atual do Gerador de Vídeo, os 8 agentes
-                configuráveis produzem roteiro, prompts e JSON, então exigem <strong>modelos de texto</strong>;
-                a geração final de mídia acontece depois, no estúdio. O <strong>Planejador</strong> continua
-                estimando custos antes de iniciar a produção.
+                <strong>💡 Informações:</strong> O pipeline suporta vídeos de <strong>15+ minutos</strong>,
+                dividindo inteligentemente em segmentos. Agentes marcados com <strong>⚠️ requerem modelos
+                especializados</strong> (geração de imagem, áudio ou vídeo) — modelos somente de texto
+                <strong> NÃO</strong> são adequados para essas etapas. O <strong>Planejador</strong> estima
+                custos em tokens antes de iniciar a produção.
               </p>
             </div>
 
