@@ -1230,7 +1230,7 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'clipboard-check',
     agentCategory: 'reasoning',
     requiredCapability: 'text',
-    bestModelNote: 'Use modelos premium de texto com grande contexto. Modelos de imagem/vídeo NÃO servem para esta etapa.',
+    bestModelNote: 'Premium: Claude Sonnet ($3), GPT-4o ($2.50), GPT-4.1 ($2), Gemini 2.5 Pro ($1.25). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13). Grátis: Gemini 2.0 Flash:free, DeepSeek R1:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
     key: 'video_roteirista',
@@ -1241,7 +1241,7 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'file-text',
     agentCategory: 'writing',
     requiredCapability: 'text',
-    bestModelNote: 'Exige modelo premium de texto com excelente capacidade de escrita criativa. Modelos de vídeo NÃO servem.',
+    bestModelNote: 'Requer boa escrita criativa. Premium: Claude Sonnet ($3), GPT-4.1 ($2), GPT-4o ($2.50). Baratos: DeepSeek V3 ($0.27), Llama 4 Maverick ($0.19), Gemini 2.5 Flash ($0.15), Qwen 2.5 72B ($0.13), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
     key: 'video_diretor_cena',
@@ -1252,7 +1252,7 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'layers',
     agentCategory: 'synthesis',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto equilibrado com boa capacidade de estruturação. Modelos de vídeo NÃO servem.',
+    bestModelNote: 'Precisa estruturar JSON. Premium: Claude Sonnet ($3), GPT-4.1 ($2). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), GPT-4.1 Mini ($0.40), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
     key: 'video_storyboarder',
@@ -1263,7 +1263,7 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'pen-tool',
     agentCategory: 'writing',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto com boa capacidade descritiva visual. Modelos de imagem/vídeo NÃO servem.',
+    bestModelNote: 'Requer boa descrição visual. Premium: Claude Sonnet ($3), GPT-4.1 ($2), GPT-4o ($2.50). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
     key: 'video_designer',
@@ -1274,7 +1274,7 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'image',
     agentCategory: 'synthesis',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto premium com excelente descrição visual. Ex: Claude Sonnet, GPT-4o. Gera prompts de imagem, não imagens diretamente.',
+    bestModelNote: 'Gera prompts de imagem em JSON (não gera imagens). Premium: Claude Sonnet ($3), GPT-4.1 ($2), GPT-4o ($2.50). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free.',
   },
   {
     key: 'video_compositor',
@@ -1285,7 +1285,7 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'video',
     agentCategory: 'synthesis',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto premium com boa capacidade de estruturação. Ex: Claude Sonnet, GPT-4o. Monta a timeline em JSON.',
+    bestModelNote: 'Monta timeline JSON. Premium: Claude Sonnet ($3), GPT-4.1 ($2), GPT-4o ($2.50). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), GPT-4.1 Mini ($0.40), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
     key: 'video_narrador',
@@ -1296,7 +1296,7 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'mic',
     agentCategory: 'writing',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto com boa escrita. Ex: Claude Sonnet, GPT-4o. Cria o roteiro de narração em JSON, não gera áudio.',
+    bestModelNote: 'Cria roteiro de narração em JSON (não gera áudio). Premium: Claude Sonnet ($3), GPT-4.1 ($2). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
     key: 'video_revisor',
@@ -1307,7 +1307,7 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'clipboard-check',
     agentCategory: 'synthesis',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto equilibrado para revisão. Modelos de vídeo NÃO servem para esta etapa.',
+    bestModelNote: 'Revisão de qualidade. Premium: Claude Sonnet ($3), GPT-4.1 ($2). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), GPT-4.1 Mini ($0.40), Qwen 2.5 72B ($0.13), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free, Mistral Small:free.',
   },
 ]
 
@@ -1394,7 +1394,7 @@ export const AUDIO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'clipboard-check',
     agentCategory: 'reasoning',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto com raciocínio. Modelos de áudio NÃO servem para planejamento.',
+    bestModelNote: 'Premium: Claude Sonnet ($3), GPT-4o ($2.50), GPT-4.1 ($2), Gemini 2.5 Pro ($1.25). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13). Grátis: Gemini 2.0 Flash:free, DeepSeek R1:free, Llama 3.3 70B:free.',
   },
   {
     key: 'audio_roteirista',
@@ -1405,7 +1405,7 @@ export const AUDIO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'file-text',
     agentCategory: 'writing',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo premium de texto com excelente escrita. Modelos de áudio NÃO servem.',
+    bestModelNote: 'Requer boa escrita. Premium: Claude Sonnet ($3), GPT-4.1 ($2), GPT-4o ($2.50). Baratos: DeepSeek V3 ($0.27), Llama 4 Maverick ($0.19), Gemini 2.5 Flash ($0.15), Qwen 2.5 72B ($0.13), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
     key: 'audio_diretor',
@@ -1416,7 +1416,7 @@ export const AUDIO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'layers',
     agentCategory: 'synthesis',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto equilibrado para estruturação. Modelos de áudio NÃO servem.',
+    bestModelNote: 'Estruturação em JSON. Premium: Claude Sonnet ($3), GPT-4.1 ($2). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), GPT-4.1 Mini ($0.40), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
     key: 'audio_produtor_sonoro',
@@ -1427,7 +1427,7 @@ export const AUDIO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'music',
     agentCategory: 'writing',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto com boa capacidade criativa. Modelos de áudio NÃO servem.',
+    bestModelNote: 'Escrita criativa de descrições sonoras. Premium: Claude Sonnet ($3), GPT-4.1 ($2), GPT-4o ($2.50). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free.',
   },
   {
     key: 'audio_narrador',
@@ -1438,7 +1438,7 @@ export const AUDIO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'mic',
     agentCategory: 'synthesis',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto premium com boa escrita. Ex: Claude Sonnet, GPT-4o. Cria o roteiro de narração em JSON, não gera áudio.',
+    bestModelNote: 'Cria roteiro de narração em JSON (não gera áudio). Premium: Claude Sonnet ($3), GPT-4.1 ($2). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
     key: 'audio_revisor',
@@ -1449,7 +1449,7 @@ export const AUDIO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'clipboard-check',
     agentCategory: 'synthesis',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto equilibrado para revisão. Modelos de áudio NÃO servem.',
+    bestModelNote: 'Revisão de qualidade. Premium: Claude Sonnet ($3), GPT-4.1 ($2). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), GPT-4.1 Mini ($0.40), Qwen 2.5 72B ($0.13), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Mistral Small:free.',
   },
 ]
 
@@ -1535,7 +1535,7 @@ export const PRESENTATION_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'clipboard-check',
     agentCategory: 'reasoning',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto com raciocínio. Modelos de imagem NÃO servem para planejamento.',
+    bestModelNote: 'Premium: Claude Sonnet ($3), GPT-4o ($2.50), GPT-4.1 ($2), Gemini 2.5 Pro ($1.25). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13). Grátis: Gemini 2.0 Flash:free, DeepSeek R1:free, Llama 3.3 70B:free.',
   },
   {
     key: 'pres_pesquisador',
@@ -1546,7 +1546,7 @@ export const PRESENTATION_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'search',
     agentCategory: 'extraction',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo rápido de texto para extração. Modelos de imagem NÃO servem.',
+    bestModelNote: 'Modelo rápido. Premium: Claude Haiku ($0.80), GPT-4o Mini ($0.15). Baratos: Gemini 2.0 Flash ($0.10), GPT-4.1 Nano ($0.10), Mistral Small ($0.10), Llama 4 Scout ($0.17), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 4 Scout:free, Mistral Small:free, Qwen3 8B:free.',
   },
   {
     key: 'pres_redator',
@@ -1557,7 +1557,7 @@ export const PRESENTATION_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'file-text',
     agentCategory: 'writing',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto com boa escrita. Modelos de imagem NÃO servem.',
+    bestModelNote: 'Requer boa escrita. Premium: Claude Sonnet ($3), GPT-4.1 ($2), GPT-4o ($2.50). Baratos: DeepSeek V3 ($0.27), Llama 4 Maverick ($0.19), Gemini 2.5 Flash ($0.15), Qwen 2.5 72B ($0.13), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
     key: 'pres_designer',
@@ -1568,7 +1568,7 @@ export const PRESENTATION_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'pen-tool',
     agentCategory: 'synthesis',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto premium com boa capacidade criativa. Ex: Claude Sonnet, GPT-4o. Gera especificações visuais em JSON.',
+    bestModelNote: 'Gera especificações visuais em JSON. Premium: Claude Sonnet ($3), GPT-4.1 ($2), GPT-4o ($2.50). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), Llama 4 Maverick ($0.19), Qwen 2.5 72B ($0.13). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free.',
   },
   {
     key: 'pres_revisor',
@@ -1579,7 +1579,7 @@ export const PRESENTATION_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     icon: 'clipboard-check',
     agentCategory: 'synthesis',
     requiredCapability: 'text',
-    bestModelNote: 'Modelo de texto rápido para revisão. Modelos de imagem NÃO servem.',
+    bestModelNote: 'Modelo rápido para revisão. Premium: Claude Haiku ($0.80), GPT-4o Mini ($0.15). Baratos: Gemini 2.0 Flash ($0.10), GPT-4.1 Nano ($0.10), Mistral Small ($0.10), Llama 4 Scout ($0.17), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 4 Scout:free, Mistral Small:free, Qwen3 30B:free.',
   },
 ]
 
