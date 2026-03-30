@@ -177,6 +177,7 @@ interface ArtifactViewerModalProps {
   onDownload: () => void
   onRegenerate?: () => void
   onGenerateVideo?: () => void
+  onOpenStudio?: () => void
 }
 
 export default function ArtifactViewerModal({
@@ -186,6 +187,7 @@ export default function ArtifactViewerModal({
   onDownload,
   onRegenerate,
   onGenerateVideo,
+  onOpenStudio,
 }: ArtifactViewerModalProps) {
   const Icon = ARTIFACT_ICONS[artifact.type] || Sparkles
   const label = ARTIFACT_LABELS[artifact.type] || artifact.type
@@ -207,6 +209,7 @@ export default function ArtifactViewerModal({
   }, [])
 
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
 
   // Close export menu on outside click
@@ -221,9 +224,12 @@ export default function ArtifactViewerModal({
   }, [showExportMenu])
 
   const handleDelete = () => {
-    if (window.confirm(`Excluir "${artifact.title}"? Esta ação é irreversível.`)) {
-      onDelete()
-    }
+    setShowDeleteConfirm(true)
+  }
+
+  const confirmDelete = () => {
+    setShowDeleteConfirm(false)
+    onDelete()
   }
 
   const safeName = artifact.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)
@@ -341,6 +347,16 @@ export default function ArtifactViewerModal({
                 Gerar Vídeo
               </button>
             )}
+            {onOpenStudio && artifact.type === 'video_script' && (
+              <button
+                onClick={onOpenStudio}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm"
+                title="Abrir Estúdio de Vídeo"
+              >
+                <Video className="w-3.5 h-3.5" />
+                Abrir Estúdio
+              </button>
+            )}
             <button
               onClick={handleDelete}
               className="p-2 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors"
@@ -364,6 +380,40 @@ export default function ArtifactViewerModal({
           <ArtifactContent artifact={artifact} parsed={parsed} />
         </div>
       </div>
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-red-100 rounded-full">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Excluir artefato</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">
+              Tem certeza que deseja excluir <strong>&ldquo;{artifact.title}&rdquo;</strong>?
+            </p>
+            <p className="text-xs text-red-500 mb-6">
+              Esta ação é irreversível.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

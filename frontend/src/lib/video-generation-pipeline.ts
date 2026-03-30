@@ -187,6 +187,38 @@ function safeParseJSON(text: string): Record<string, unknown> | null {
   return null
 }
 
+/** Safely call an agent with error handling — returns fallback on failure */
+async function safeCallAgent(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  phase: string,
+  executions: VideoGenerationStepExecution[],
+): Promise<{ data: Record<string, unknown>; failed: boolean }> {
+  try {
+    const result = await callAgent(apiKey, model, prompt)
+    executions.push(makeExecution(phase, model, result))
+    const data = safeParseJSON(result.content)
+    if (!data) {
+      console.warn(`[Video Pipeline] Agent ${phase} returned invalid JSON, using fallback`)
+      return { data: {}, failed: true }
+    }
+    return { data, failed: false }
+  } catch (err) {
+    console.error(`[Video Pipeline] Agent ${phase} failed:`, err)
+    executions.push({
+      phase,
+      agent_name: phase,
+      model,
+      tokens_in: 0,
+      tokens_out: 0,
+      cost_usd: 0,
+      duration_ms: 0,
+    })
+    return { data: {}, failed: true }
+  }
+}
+
 function generateSegmentId(): string {
   return `seg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
@@ -207,7 +239,7 @@ export async function runVideoGenerationPipeline(
   // ── Step 1: Planejador de Produção ────────────────────────────────────────
   onProgress?.(1, totalSteps, 'video_planejador', 'Planejador de Produção')
 
-  const planResult = await callAgent(input.apiKey, models.video_planejador, `
+  const { data: planData } = await safeCallAgent(input.apiKey, models.video_planejador, `
 Você é um Planejador de Produção de vídeo profissional.
 
 Analise o roteiro abaixo e crie um plano de produção detalhado.
@@ -243,19 +275,18 @@ Responda com JSON puro (sem \`\`\`json):
 }
 
 Requisitos:
-- Defina uma paleta de cores consistente para todo o vídeo
-- Descreva personagens/apresentadores com detalhes visuais para consistência
-- Liste elementos visuais recorrentes (logo, lower thirds, transições padrão)
+- Defina uma paleta de cores EXATA com 5 códigos hex específicos para todo o vídeo
+- Descreva personagens/apresentadores com EXTREMO DETALHE VISUAL (aparência física, roupas, cores, acessórios) — esta descrição será copiada literalmente em todas as cenas para manter consistência absoluta
+- O campo "style" deve ser ESPECÍFICO e DETALHADO (ex: "ilustração digital flat design com traços limpos e cores vibrantes" — NÃO apenas "moderno")
+- Liste elementos visuais recorrentes (logo, lower thirds, bordas, transições padrão) com posição e estilo exatos
 - Planeje a duração de cada segmento em segundos
-- Total deve somar a duração indicada no roteiro`)
-
-  executions.push(makeExecution('video_planejador', models.video_planejador, planResult))
-  const planData = safeParseJSON(planResult.content) || {}
+- Total deve somar a duração indicada no roteiro
+- O Guia de Design será usado como REFERÊNCIA OBRIGATÓRIA por todos os demais agentes — seja o mais específico possível`, 'video_planejador', executions)
 
   // ── Step 2: Roteirista (refinar roteiro) ──────────────────────────────────
   onProgress?.(2, totalSteps, 'video_roteirista', 'Roteirista')
 
-  const scriptResult = await callAgent(input.apiKey, models.video_roteirista, `
+  const { data: scriptData } = await safeCallAgent(input.apiKey, models.video_roteirista, `
 Você é um Roteirista profissional de vídeo. Refine e expanda o roteiro abaixo para produção.
 
 ROTEIRO ORIGINAL:
@@ -263,6 +294,9 @@ ${input.scriptContent}
 
 PLANO DE PRODUÇÃO:
 ${JSON.stringify(planData, null, 2)}
+
+GUIA DE DESIGN (OBRIGATÓRIO — siga estritamente):
+${JSON.stringify(planData.designGuide || {}, null, 2)}
 
 Responda com JSON puro (sem \`\`\`json):
 {
@@ -282,27 +316,31 @@ Responda com JSON puro (sem \`\`\`json):
   ]
 }
 
-Requisitos:
-- Mantenha consistência com o plano de produção (cores, estilo, personagens)
+REGRA DE HARMONIA VISUAL (OBRIGATÓRIA):
+O vídeo DEVE ser um produto visual HARMONIOSO e UNIFORME do início ao fim.
+- TODAS as cenas devem usar EXATAMENTE a mesma paleta de cores do Guia de Design
+- O estilo visual deve ser IDÊNTICO em todas as cenas (${(planData.designGuide as Record<string, unknown>)?.style || 'manter consistência'})
+- Personagens/apresentadores devem ter descrição visual IDÊNTICA em TODAS as aparições
+- Transições devem seguir um padrão uniforme — NÃO misture estilos diferentes
+- A trilha sonora deve ter continuidade — não mude de gênero musical entre cenas
+- O tom da narração deve ser consistente ao longo de TODO o vídeo
+
+Requisitos adicionais:
 - Narração detalhada com marcações de tom e ênfase
 - Cada cena deve ter indicação precisa de início e fim
-- Transições coerentes entre cenas
-- Se houver personagem, mantenha a mesma descrição visual em todas as aparições
-- Cronologia e encadeamento lógico de ideias`)
-
-  executions.push(makeExecution('video_roteirista', models.video_roteirista, scriptResult))
-  const scriptData = safeParseJSON(scriptResult.content) || { scenes: [] }
+- Cronologia e encadeamento lógico de ideias`, 'video_roteirista', executions)
+  if (!scriptData.scenes) scriptData.scenes = []
 
   // ── Step 3: Diretor de Cenas ──────────────────────────────────────────────
   onProgress?.(3, totalSteps, 'video_diretor_cena', 'Diretor de Cenas')
 
-  const directorResult = await callAgent(input.apiKey, models.video_diretor_cena, `
+  const { data: directedScenes } = await safeCallAgent(input.apiKey, models.video_diretor_cena, `
 Você é um Diretor de Cenas profissional. Refine as cenas com instruções técnicas detalhadas.
 
 CENAS DO ROTEIRO:
 ${JSON.stringify(scriptData, null, 2)}
 
-GUIA DE DESIGN:
+GUIA DE DESIGN (OBRIGATÓRIO — siga estritamente):
 ${JSON.stringify(planData.designGuide || {}, null, 2)}
 
 Responda com JSON puro (sem \`\`\`json):
@@ -314,7 +352,7 @@ Responda com JSON puro (sem \`\`\`json):
       "timeEnd": "00:40",
       "duration": 40,
       "narration": "Narração refinada",
-      "visual": "Descrição visual detalhada com enquadramento, iluminação, composição",
+      "visual": "Descrição visual detalhada com enquadramento, iluminação, composição — USANDO as cores e estilo do Guia de Design",
       "transition": "tipo de transição com detalhes (ex: fade_in 0.5s)",
       "soundtrack": "Música/efeitos sonoros detalhados",
       "cameraMovement": "Movimento de câmera (pan, tilt, zoom, estático)",
@@ -325,25 +363,30 @@ Responda com JSON puro (sem \`\`\`json):
   ]
 }
 
-Requisitos:
+REGRA DE HARMONIA VISUAL (OBRIGATÓRIA):
+O vídeo DEVE manter UNIFORMIDADE VISUAL ABSOLUTA entre todas as cenas:
+- Use EXCLUSIVAMENTE as cores da paleta: referência do Guia de Design acima
+- Iluminação deve seguir um padrão consistente (não mude de quente para frio sem razão narrativa)
+- Movimentos de câmera devem seguir um padrão coerente ao longo do vídeo
+- Transições devem ser UNIFORMES — escolha UM padrão principal e mantenha
+- Personagens devem ter aparência IDÊNTICA em todas as cenas
+
+Requisitos adicionais:
 - Adicione instruções de câmera para cada cena
 - Refine os timings para encadeamento suave
-- Garanta continuidade visual entre cenas consecutivas
-- Mantenha personagens consistentes conforme o guia de design`)
-
-  executions.push(makeExecution('video_diretor_cena', models.video_diretor_cena, directorResult))
-  const directedScenes = safeParseJSON(directorResult.content) || scriptData
+- Garanta continuidade visual entre cenas consecutivas`, 'video_diretor_cena', executions)
+  if (!directedScenes.scenes) directedScenes.scenes = scriptData.scenes || []
 
   // ── Step 4: Storyboarder ──────────────────────────────────────────────────
   onProgress?.(4, totalSteps, 'video_storyboarder', 'Storyboarder')
 
-  const storyboardResult = await callAgent(input.apiKey, models.video_storyboarder, `
+  const { data: storyboardData } = await safeCallAgent(input.apiKey, models.video_storyboarder, `
 Você é um Storyboarder profissional. Crie descrições visuais frame-a-frame para cada cena.
 
 CENAS DIRIGIDAS:
 ${JSON.stringify(directedScenes, null, 2)}
 
-GUIA DE DESIGN:
+GUIA DE DESIGN (OBRIGATÓRIO — siga estritamente):
 ${JSON.stringify(planData.designGuide || {}, null, 2)}
 
 Responda com JSON puro (sem \`\`\`json):
@@ -364,26 +407,28 @@ Responda com JSON puro (sem \`\`\`json):
   ]
 }
 
-Requisitos:
+REGRA DE HARMONIA VISUAL (OBRIGATÓRIA):
+- Use EXCLUSIVAMENTE as cores da paleta definida no Guia de Design
+- TODOS os frames de TODAS as cenas devem ter o MESMO estilo visual
+- Personagens devem ter aparência ABSOLUTAMENTE IDÊNTICA em todos os frames e cenas
+- Elementos recorrentes (logo, lower thirds, bordas) devem ter posição e estilo FIXOS
+- Fundo/cenário deve manter coerência de iluminação e atmosfera
+
+Requisitos adicionais:
 - 2-4 frames chave por cena (keyframes)
 - Descrições visuais detalhadas e precisas
-- Mantenha paleta de cores e estilo do guia de design
-- Personagens devem ter aparência idêntica em todos os frames
-- Indique posição e tamanho dos elementos na composição`)
-
-  executions.push(makeExecution('video_storyboarder', models.video_storyboarder, storyboardResult))
-  const storyboardData = safeParseJSON(storyboardResult.content) || {}
+- Indique posição e tamanho dos elementos na composição`, 'video_storyboarder', executions)
 
   // ── Step 5: Designer Visual ───────────────────────────────────────────────
   onProgress?.(5, totalSteps, 'video_designer', 'Designer Visual')
 
-  const designerResult = await callAgent(input.apiKey, models.video_designer, `
+  const { data: designData } = await safeCallAgent(input.apiKey, models.video_designer, `
 Você é um Designer Visual de produção de vídeo. Gere prompts detalhados de geração de imagem para cada cena.
 
 STORYBOARD:
 ${JSON.stringify(storyboardData, null, 2)}
 
-GUIA DE DESIGN:
+GUIA DE DESIGN (OBRIGATÓRIO — siga estritamente):
 ${JSON.stringify(planData.designGuide || {}, null, 2)}
 
 Responda com JSON puro (sem \`\`\`json):
@@ -408,20 +453,30 @@ Responda com JSON puro (sem \`\`\`json):
   ]
 }
 
-Requisitos:
+REGRAS CRÍTICAS DE CONSISTÊNCIA VISUAL NOS PROMPTS (OBRIGATÓRIO):
+Cada prompt de imagem DEVE conter OBRIGATORIAMENTE estas informações, na MESMA ORDEM, em TODOS os prompts:
+
+1. ESTILO GLOBAL: Comece TODOS os prompts com o mesmo prefixo de estilo: "${(planData.designGuide as Record<string, unknown>)?.style || 'consistent professional style'}"
+2. PALETA DE CORES: Inclua LITERALMENTE os códigos hex das cores em cada prompt: ${JSON.stringify((planData.designGuide as Record<string, unknown>)?.colorPalette || [])}
+3. PERSONAGENS: Se um personagem aparece, use a MESMA descrição física EXATA em todos os prompts. Copie palavra por palavra a descrição do Guia de Design.
+4. ELEMENTOS RECORRENTES: Inclua os mesmos elementos visuais recorrentes em todos os prompts: ${JSON.stringify((planData.designGuide as Record<string, unknown>)?.recurringElements || [])}
+5. NEGATIVE PROMPT PADRÃO: Use o MESMO negative prompt base em todas as cenas para garantir uniformidade.
+
+PROIBIDO:
+- Mudar o estilo visual entre cenas (ex: uma cena cartoon, outra realista)
+- Mudar paleta de cores entre cenas
+- Descrever um personagem de forma diferente em cenas distintas
+- Usar iluminação inconsistente entre cenas do mesmo cenário
+
+Requisitos adicionais:
 - Um prompt de imagem principal por cena (thumbnail/keyframe)
 - Um prompt de vídeo curto por cena (para composição)
-- Mantenha consistência visual estrita com o guia de design
-- Personagens devem ter prompts idênticos em todas as cenas
-- Prompts em inglês para melhor compatibilidade com modelos de geração`)
-
-  executions.push(makeExecution('video_designer', models.video_designer, designerResult))
-  const designData = safeParseJSON(designerResult.content) || {}
+- Prompts em inglês para melhor compatibilidade com modelos de geração`, 'video_designer', executions)
 
   // ── Step 6: Compositor de Vídeo ───────────────────────────────────────────
   onProgress?.(6, totalSteps, 'video_compositor', 'Compositor de Vídeo')
 
-  const compositorResult = await callAgent(input.apiKey, models.video_compositor, `
+  const { data: compositorData } = await safeCallAgent(input.apiKey, models.video_compositor, `
 Você é um Compositor de Vídeo profissional. Monte a timeline final do vídeo com todas as faixas.
 
 CENAS DIRIGIDAS:
@@ -509,15 +564,18 @@ Requisitos:
 - Transições entre cenas devem sobrepor levemente (crossfade)
 - Narração deve começar após qualquer transição de entrada
 - Trilha sonora deve ser contínua com variações de intensidade
-- Overlays devem aparecer nos momentos corretos`)
+- Overlays devem aparecer nos momentos corretos
 
-  executions.push(makeExecution('video_compositor', models.video_compositor, compositorResult))
-  const compositorData = safeParseJSON(compositorResult.content) || {}
+REGRA DE HARMONIA (OBRIGATÓRIA):
+- Color grading DEVE ser o MESMO em todas as cenas (use o mesmo efeito/filtro)
+- Transições entre cenas devem seguir um PADRÃO UNIFORME — não misture tipos
+- Trilha sonora deve ter continuidade — NÃO mude de gênero entre segmentos
+- Lower thirds e overlays devem seguir o MESMO estilo de design em todo o vídeo`, 'video_compositor', executions)
 
   // ── Step 7: Narrador ──────────────────────────────────────────────────────
   onProgress?.(7, totalSteps, 'video_narrador', 'Narrador')
 
-  const narratorResult = await callAgent(input.apiKey, models.video_narrador, `
+  const { data: narratorData } = await safeCallAgent(input.apiKey, models.video_narrador, `
 Você é um Narrador profissional e diretor de locução. Prepare o script final de narração com marcações de timing.
 
 CENAS:
@@ -525,6 +583,9 @@ ${JSON.stringify(directedScenes, null, 2)}
 
 TIMELINE:
 ${JSON.stringify(compositorData.tracks || [], null, 2)}
+
+GUIA DE DESIGN (OBRIGATÓRIO — alinhe o tom de voz ao estilo visual):
+${JSON.stringify(planData.designGuide || {}, null, 2)}
 
 Responda com JSON puro (sem \`\`\`json):
 {
@@ -545,22 +606,27 @@ Responda com JSON puro (sem \`\`\`json):
   }
 }
 
-Requisitos:
+REGRA DE HARMONIA NA NARRAÇÃO (OBRIGATÓRIA):
+- O tom de voz deve ser CONSISTENTE ao longo de TODO o vídeo — NÃO mude o estilo entre cenas
+- O voiceStyle DEVE ser o MESMO em todos os segmentos (escolha UM e mantenha)
+- O ritmo (pacing) deve ser UNIFORME — não acelere nem desacelere sem razão narrativa
+- O tom deve COMBINAR com o estilo visual do Guia de Design:
+  * Estilo corporativo → voz formal, ritmo moderado
+  * Estilo dinâmico/energético → voz animada, ritmo mais rápido
+  * Estilo minimalista → voz calma, ritmo pausado
+- As pausas entre segmentos devem seguir um padrão CONSISTENTE
+
+Requisitos adicionais:
 - Texto exato e completo para cada segmento de narração
 - Marcações de ênfase com *asteriscos*
 - Indicações de [pausa] onde necessário
-- Timing sincronizado com a timeline do compositor
-- Estilo de voz consistente ao longo do vídeo
-- Pausas entre segmentos para respiração e transição`)
-
-  executions.push(makeExecution('video_narrador', models.video_narrador, narratorResult))
-  const narratorData = safeParseJSON(narratorResult.content) || {}
+- Timing sincronizado com a timeline do compositor`, 'video_narrador', executions)
 
   // ── Step 8: Revisor Final ─────────────────────────────────────────────────
   onProgress?.(8, totalSteps, 'video_revisor', 'Revisor Final de Vídeo')
 
-  const reviewerResult = await callAgent(input.apiKey, models.video_revisor, `
-Você é o Revisor Final de Vídeo. Verifique a qualidade e coerência do pacote completo de produção.
+  const { data: reviewData } = await safeCallAgent(input.apiKey, models.video_revisor, `
+Você é o Revisor Final de Vídeo. Sua missão PRINCIPAL é garantir a HARMONIA e CONSISTÊNCIA VISUAL ABSOLUTA de todo o pacote de produção.
 
 PLANO:
 ${JSON.stringify(planData, null, 2)}
@@ -574,7 +640,10 @@ ${JSON.stringify(narratorData, null, 2)}
 TIMELINE:
 ${JSON.stringify(compositorData, null, 2)}
 
-GUIA DE DESIGN:
+PROMPTS DE IMAGEM:
+${JSON.stringify(designData, null, 2)}
+
+GUIA DE DESIGN (REFERÊNCIA OBRIGATÓRIA PARA VALIDAÇÃO):
 ${JSON.stringify(planData.designGuide || {}, null, 2)}
 
 Responda com JSON puro (sem \`\`\`json):
@@ -589,22 +658,38 @@ Responda com JSON puro (sem \`\`\`json):
     "transicoes_suaves": true,
     "paleta_cores_consistente": true,
     "timing_correto": true,
-    "encadeamento_logico": true
+    "encadeamento_logico": true,
+    "harmonia_estilo_visual": true,
+    "uniformidade_narrador": true,
+    "color_grading_uniforme": true
+  },
+  "consistencyReport": {
+    "styleUniformity": "Análise: todos os prompts de imagem começam com o mesmo prefixo de estilo? SIM/NÃO e detalhes",
+    "paletteCompliance": "Análise: todos os prompts incluem as cores hex do Guia de Design? SIM/NÃO e detalhes",
+    "characterConsistency": "Análise: personagens são descritos identicamente em todas as cenas? SIM/NÃO e detalhes",
+    "voiceToneConsistency": "Análise: o tom de narração é uniforme em todos os segmentos? SIM/NÃO e detalhes",
+    "transitionPattern": "Análise: transições seguem padrão uniforme? SIM/NÃO e detalhes"
   },
   "suggestions": ["Sugestão de melhoria 1", "..."],
   "productionNotes": ["Nota final de produção 1", "..."]
 }
 
-Requisitos:
-- Verifique continuidade visual entre cenas
-- Confirme consistência de personagens ao longo do vídeo
+VERIFICAÇÃO OBRIGATÓRIA DE HARMONIA VISUAL:
+Para cada item abaixo, VERIFIQUE EXPLICITAMENTE e reporte no consistencyReport:
+
+1. UNIFORMIDADE DE ESTILO: Compare todos os imagePrompts — eles DEVEM começar com o mesmo prefixo de estilo visual
+2. CONFORMIDADE COM PALETA: Cada imagePrompt DEVE conter os códigos hex da paleta do Guia de Design
+3. CONSISTÊNCIA DE PERSONAGENS: Se personagens aparecem em múltiplas cenas, a descrição visual DEVE ser idêntica palavra por palavra
+4. TOM DE NARRAÇÃO: O voiceStyle DEVE ser o MESMO em todos os narrationSegments
+5. PADRÃO DE TRANSIÇÕES: As transições DEVEM seguir um padrão uniforme
+6. COLOR GRADING: O metadata de efeito visual DEVE ser igual em todos os segmentos de vídeo
+
+Se QUALQUER item falhar, defina approved=false e qualityScore < 6.
+
+Requisitos adicionais:
 - Valide sincronização entre narração e visual
 - Avalie encadeamento lógico de ideias
-- Verifique se a paleta de cores é consistente
-- Identifique possíveis problemas e sugira melhorias`)
-
-  executions.push(makeExecution('video_revisor', models.video_revisor, reviewerResult))
-  const reviewData = safeParseJSON(reviewerResult.content) || {}
+- Identifique possíveis problemas e sugira melhorias`, 'video_revisor', executions)
 
   // ── Assemble final package ────────────────────────────────────────────────
 

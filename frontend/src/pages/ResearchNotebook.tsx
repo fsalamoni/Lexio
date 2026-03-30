@@ -469,6 +469,7 @@ export default function ResearchNotebook() {
   const [videoGenLoading, setVideoGenLoading] = useState(false)
   const [videoGenProgress, setVideoGenProgress] = useState<{ step: number; total: number; phase: string; agent: string } | null>(null)
   const [videoProduction, setVideoProduction] = useState<VideoProductionPackage | null>(null)
+  const [videoStudioApiKey, setVideoStudioApiKey] = useState<string | undefined>(undefined)
 
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
@@ -1152,6 +1153,8 @@ Instruções:
         toast.error('Chave da API não configurada. Acesse Administração > Chaves de API.')
         return
       }
+      // Store api key for use in VideoStudioEditor (image/TTS generation)
+      setVideoStudioApiKey(apiKey)
 
       // Use edited content if provided, otherwise use original
       const scriptContent = editedContent || videoGenSavedArtifact.content
@@ -1212,17 +1215,70 @@ Instruções:
       toast.success('Vídeo gerado com sucesso! Editor de estúdio aberto.')
     } catch (err) {
       console.error('Video generation error:', err)
-      if (err instanceof Error && err.message.includes('429')) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      if (errMsg.includes('429')) {
         toast.warning(
           'Limite de requisições atingido',
-          'O modelo está sobrecarregado. Aguarde e tente novamente.',
+          'O modelo está sobrecarregado. Aguarde alguns minutos e tente novamente.',
         )
+      } else if (errMsg.includes('401') || errMsg.toLowerCase().includes('auth')) {
+        toast.error('Chave de API inválida', 'Verifique sua chave de API nas configurações.')
+      } else if (errMsg.includes('timeout') || errMsg.includes('TIMEOUT')) {
+        toast.error('Tempo esgotado', 'O modelo demorou muito para responder. Tente um modelo mais rápido.')
+      } else if (errMsg.includes('model') || errMsg.includes('Model')) {
+        toast.error('Modelo indisponível', 'O modelo configurado não está disponível. Altere nas configurações do pipeline.')
       } else {
-        toast.error('Erro ao gerar vídeo. Tente novamente ou verifique a configuração dos modelos.')
+        toast.error('Erro ao gerar vídeo', 'Verifique sua conexão, chave de API e configuração dos modelos.')
       }
     } finally {
       setVideoGenLoading(false)
       setVideoGenProgress(null)
+    }
+  }
+
+  // ── Save video studio production as notebook artifact ──────────────
+  const handleSaveVideoStudioToNotebook = async (production: VideoProductionPackage) => {
+    if (!userId || !activeNotebook?.id) return
+    try {
+      const artifactTitle = `Estúdio de Vídeo: ${production.title}`
+      const content = JSON.stringify(production)
+      
+      // Check if a video studio artifact with same title already exists — update instead of duplicate
+      const existingIdx = activeNotebook.artifacts.findIndex(
+        a => a.type === 'video_script' && a.format === 'json' && a.title === artifactTitle
+      )
+      
+      let updatedArtifacts: StudioArtifact[]
+      if (existingIdx >= 0) {
+        // Update existing artifact
+        updatedArtifacts = [...activeNotebook.artifacts]
+        updatedArtifacts[existingIdx] = {
+          ...updatedArtifacts[existingIdx],
+          content,
+          created_at: new Date().toISOString(),
+        }
+      } else {
+        // Create new artifact
+        const artifact: StudioArtifact = {
+          id: `artifact_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          type: 'video_script',
+          title: artifactTitle,
+          content,
+          format: 'json',
+          created_at: new Date().toISOString(),
+        }
+        updatedArtifacts = [...activeNotebook.artifacts, artifact]
+      }
+
+      await updateResearchNotebook(userId, activeNotebook.id, {
+        artifacts: updatedArtifacts,
+      })
+      setActiveNotebook({ ...activeNotebook, artifacts: updatedArtifacts })
+      toast.success(existingIdx >= 0 ? 'Estúdio de vídeo atualizado!' : 'Estúdio de vídeo salvo nos artefatos do caderno!')
+      setActiveTab('artifacts')
+    } catch (err) {
+      console.error('Error saving video studio artifact:', err)
+      toast.error('Erro ao salvar estúdio nos artefatos.')
     }
   }
 
@@ -2413,22 +2469,40 @@ Instruções:
       </div>
 
       {/* ── Artifact Viewer Modal ─────────────────────────────── */}
-      {viewingArtifact && (
-        <ArtifactViewerModal
-          artifact={viewingArtifact}
-          onClose={() => setViewingArtifact(null)}
-          onDelete={() => {
-            handleDeleteArtifact(viewingArtifact.id)
-            setViewingArtifact(null)
-          }}
-          onDownload={() => handleDownloadArtifact(viewingArtifact)}
-          onGenerateVideo={viewingArtifact.type === 'video_script' ? () => {
-            setVideoGenSavedArtifact(viewingArtifact)
-            setShowVideoGenCost(true)
-            setViewingArtifact(null)
-          } : undefined}
-        />
-      )}
+      {viewingArtifact && (() => {
+        // Detect if this video_script artifact contains a full VideoProductionPackage (JSON with scenes/tracks)
+        const isVideoStudio = viewingArtifact.type === 'video_script' && viewingArtifact.format === 'json' && (() => {
+          try {
+            const parsed = JSON.parse(viewingArtifact.content)
+            return Array.isArray(parsed?.scenes) && Array.isArray(parsed?.tracks)
+          } catch { return false }
+        })()
+        return (
+          <ArtifactViewerModal
+            artifact={viewingArtifact}
+            onClose={() => setViewingArtifact(null)}
+            onDelete={() => {
+              handleDeleteArtifact(viewingArtifact.id)
+              setViewingArtifact(null)
+            }}
+            onDownload={() => handleDownloadArtifact(viewingArtifact)}
+            onGenerateVideo={viewingArtifact.type === 'video_script' && !isVideoStudio ? () => {
+              setVideoGenSavedArtifact(viewingArtifact)
+              setShowVideoGenCost(true)
+              setViewingArtifact(null)
+            } : undefined}
+            onOpenStudio={isVideoStudio ? () => {
+              try {
+                const pkg = JSON.parse(viewingArtifact.content)
+                setVideoProduction(pkg)
+                setViewingArtifact(null)
+              } catch {
+                toast.error('Erro ao abrir estúdio', 'O artefato de vídeo contém dados corrompidos.')
+              }
+            } : undefined}
+          />
+        )
+      })()}
 
       {/* ── Script Review/Edit Modal (for media artifacts) ──── */}
       {pendingArtifact && (
@@ -2457,11 +2531,13 @@ Instruções:
       {videoProduction && (
         <VideoStudioEditor
           production={videoProduction}
+          apiKey={videoStudioApiKey}
           onClose={() => setVideoProduction(null)}
           onSave={(updated) => {
             setVideoProduction(updated)
             toast.success('Produção de vídeo salva!')
           }}
+          onSaveToNotebook={handleSaveVideoStudioToNotebook}
         />
       )}
     </div>
