@@ -4,7 +4,7 @@
  * the user to edit, cut, extend, and create new segments.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import {
   Video, Mic, Music, Sparkles, Type, Clock, Plus,
   Scissors, ChevronDown, ChevronUp, Palette, Eye, EyeOff,
@@ -418,9 +418,6 @@ function DesignGuidePanel({ designGuide }: { designGuide: VideoProductionPackage
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-
-// Import React explicitly for createElement usage in SegmentDetailPanel
-import React from 'react'
 
 export default function VideoStudioEditor({ production, apiKey, onClose, onSave, onSaveToNotebook }: VideoStudioEditorProps) {
   const toast = useToast()
