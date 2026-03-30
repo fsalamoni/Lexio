@@ -1076,7 +1076,7 @@ Instruções:
     const newExecutions = executions.map(ex =>
       createUsageExecutionRecord({
         source_type: costKey,
-        source_id: activeNotebook.id,
+        source_id: activeNotebook.id ?? '',
         phase: ex.phase,
         agent_name: ex.agent_name,
         model: ex.model,
@@ -1089,7 +1089,7 @@ Instruções:
 
     const updatedExecutions = [...(activeNotebook.llm_executions || []), ...newExecutions]
 
-    await updateResearchNotebook(userId, activeNotebook.id, {
+    await updateResearchNotebook(userId, activeNotebook.id!, {
       artifacts: updatedArtifacts,
       llm_executions: updatedExecutions,
     })
@@ -1189,7 +1189,7 @@ Instruções:
       const newExecutions = result.executions.map(ex =>
         createUsageExecutionRecord({
           source_type: costKey,
-          source_id: activeNotebook.id,
+          source_id: activeNotebook.id ?? '',
           phase: ex.phase,
           agent_name: ex.agent_name,
           model: ex.model,
@@ -1200,7 +1200,7 @@ Instruções:
         })
       )
       const updatedExecutions = [...(activeNotebook.llm_executions || []), ...newExecutions]
-      await updateResearchNotebook(userId, activeNotebook.id, {
+      await updateResearchNotebook(userId, activeNotebook.id!, {
         llm_executions: updatedExecutions,
       })
       setActiveNotebook({
@@ -1209,10 +1209,14 @@ Instruções:
       })
 
       // Show the video studio editor
-      setVideoProduction(result.package)
-      setShowVideoGenCost(false)
-      setVideoGenSavedArtifact(null)
-      toast.success('Vídeo gerado com sucesso! Editor de estúdio aberto.')
+      if (!result.package || !result.package.scenes || result.package.scenes.length === 0) {
+        toast.warning('Produção incompleta', 'O pipeline não gerou cenas válidas. Tente novamente com outro modelo.')
+      } else {
+        setVideoProduction(result.package)
+        setShowVideoGenCost(false)
+        setVideoGenSavedArtifact(null)
+        toast.success('Vídeo gerado com sucesso! Editor de estúdio aberto.')
+      }
     } catch (err) {
       console.error('Video generation error:', err)
       const errMsg = err instanceof Error ? err.message : String(err)

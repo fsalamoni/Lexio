@@ -388,9 +388,9 @@ export default function CostTokensPage() {
       // acervo classificador shows only its own model/phase data). This ensures
       // free models (cost=0) are visible in the correct section without being
       // hidden behind paid-model data from other functions.
-      const funcModels = (funcKey && breakdown.by_model_per_function?.[funcKey]) ?? breakdown.by_model
-      const funcPhases = (funcKey && breakdown.by_phase_per_function?.[funcKey]) ?? breakdown.by_phase
-      const funcProviders = (funcKey && breakdown.by_provider_per_function?.[funcKey]) ?? breakdown.by_provider
+      const funcModels = (funcKey && breakdown.by_model_per_function?.[funcKey]) || breakdown.by_model
+      const funcPhases = (funcKey && breakdown.by_phase_per_function?.[funcKey]) || breakdown.by_phase
+      const funcProviders = (funcKey && breakdown.by_provider_per_function?.[funcKey]) || breakdown.by_provider
       return {
         total_cost_usd: costUsd,
         total_cost_brl: costBrl,

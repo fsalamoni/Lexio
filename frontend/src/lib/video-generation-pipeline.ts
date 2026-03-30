@@ -17,8 +17,7 @@
  */
 
 import { callLLM, type LLMResult } from './llm-client'
-import { loadVideoPipelineModels, VIDEO_PIPELINE_AGENT_DEFS } from './model-config'
-import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
+import { loadVideoPipelineModels } from './model-config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -187,36 +186,50 @@ function safeParseJSON(text: string): Record<string, unknown> | null {
   return null
 }
 
-/** Safely call an agent with error handling — returns fallback on failure */
+/** Safely call an agent with retry logic and error handling — returns fallback on failure */
 async function safeCallAgent(
   apiKey: string,
   model: string,
   prompt: string,
   phase: string,
   executions: VideoGenerationStepExecution[],
+  maxRetries = 2,
 ): Promise<{ data: Record<string, unknown>; failed: boolean }> {
-  try {
-    const result = await callAgent(apiKey, model, prompt)
-    executions.push(makeExecution(phase, model, result))
-    const data = safeParseJSON(result.content)
-    if (!data) {
-      console.warn(`[Video Pipeline] Agent ${phase} returned invalid JSON, using fallback`)
-      return { data: {}, failed: true }
+  let lastError: unknown
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 8000)
+        await new Promise(r => setTimeout(r, delay))
+      }
+      const result = await callAgent(apiKey, model, prompt)
+      executions.push(makeExecution(phase, model, result))
+      const data = safeParseJSON(result.content)
+      if (!data) {
+        console.warn(`[Video Pipeline] Agent ${phase} returned invalid JSON (attempt ${attempt + 1})`)
+        if (attempt < maxRetries) continue
+        return { data: {}, failed: true }
+      }
+      return { data, failed: false }
+    } catch (err) {
+      lastError = err
+      const errMsg = err instanceof Error ? err.message : String(err)
+      const isRetryable = errMsg.includes('429') || errMsg.includes('timeout') || errMsg.includes('503') || errMsg.includes('ECONNRESET')
+      if (!isRetryable || attempt >= maxRetries) break
+      console.warn(`[Video Pipeline] Agent ${phase} retryable error (attempt ${attempt + 1}):`, errMsg)
     }
-    return { data, failed: false }
-  } catch (err) {
-    console.error(`[Video Pipeline] Agent ${phase} failed:`, err)
-    executions.push({
-      phase,
-      agent_name: phase,
-      model,
-      tokens_in: 0,
-      tokens_out: 0,
-      cost_usd: 0,
-      duration_ms: 0,
-    })
-    return { data: {}, failed: true }
   }
+  console.error(`[Video Pipeline] Agent ${phase} failed after retries:`, lastError)
+  executions.push({
+    phase,
+    agent_name: phase,
+    model,
+    tokens_in: 0,
+    tokens_out: 0,
+    cost_usd: 0,
+    duration_ms: 0,
+  })
+  return { data: {}, failed: true }
 }
 
 function generateSegmentId(): string {

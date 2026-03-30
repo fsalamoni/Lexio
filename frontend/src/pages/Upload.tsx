@@ -162,7 +162,7 @@ function EmentaModal({
   const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(false)
   const [pendingExecution, setPendingExecution] = useState<UsageExecutionRecord | null>(null)
-  const { toast } = useToast()
+  const toast = useToast()
 
   const handleGenerate = async () => {
     if (!doc.text_content) return
