@@ -4,7 +4,7 @@
  * the user to edit, cut, extend, and create new segments.
  */
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   Video, Mic, Music, Sparkles, Type, Clock, Plus,
   Scissors, ChevronDown, ChevronUp, Palette, Eye, EyeOff,
@@ -519,7 +519,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         size: '1792x1024',
       })
       if (result.url) {
-        setGeneratedImages(prev => ({ ...prev, [scene.number]: result.url! }))
+        setGeneratedImages(prev => ({ ...prev, [scene.number]: result.url as string }))
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao gerar imagem'
@@ -542,7 +542,11 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         model: 'openai/tts-1-hd',
       })
       const url = URL.createObjectURL(result.audioBlob)
-      setGeneratedAudio(prev => ({ ...prev, [sceneNumber]: url }))
+      // Revoke the previous object URL for this scene to prevent memory leaks
+      setGeneratedAudio(prev => {
+        if (prev[sceneNumber]) URL.revokeObjectURL(prev[sceneNumber])
+        return { ...prev, [sceneNumber]: url }
+      })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao gerar narração'
       setAudioError(prev => ({ ...prev, [sceneNumber]: msg }))
@@ -550,6 +554,14 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       setGeneratingAudioFor(null)
     }
   }, [apiKey])
+
+  // Revoke all audio object URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      Object.values(generatedAudio).forEach(url => URL.revokeObjectURL(url))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Get selected segment data
   const selectedSeg = selectedSegment

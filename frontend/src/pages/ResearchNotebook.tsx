@@ -154,6 +154,20 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+/**
+ * Returns true if the given artifact is a saved VideoProductionPackage
+ * (has both `scenes` and `tracks` arrays in its JSON content).
+ */
+function isVideoStudioArtifact(artifact: { type: string; format?: string; content: string }): boolean {
+  if (artifact.type !== 'video_script' || artifact.format !== 'json') return false
+  try {
+    const parsed = JSON.parse(artifact.content)
+    return Array.isArray(parsed?.scenes) && Array.isArray(parsed?.tracks)
+  } catch {
+    return false
+  }
+}
+
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString('pt-BR', {
@@ -1234,7 +1248,7 @@ Instruções:
     if (!userId || !activeNotebook?.id) return
     try {
       const artifact: StudioArtifact = {
-        id: `artifact_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: generateId(),
         type: 'video_script',
         title: `Estúdio de Vídeo: ${production.title}`,
         content: JSON.stringify(production, null, 2),
@@ -2437,38 +2451,32 @@ Instruções:
       </div>
 
       {/* ── Artifact Viewer Modal ─────────────────────────────── */}
-      {viewingArtifact && (() => {
-        // Detect if this video_script artifact contains a full VideoProductionPackage (JSON with scenes/tracks)
-        const isVideoStudio = viewingArtifact.type === 'video_script' && viewingArtifact.format === 'json' && (() => {
-          try {
-            const parsed = JSON.parse(viewingArtifact.content)
-            return Array.isArray(parsed?.scenes) && Array.isArray(parsed?.tracks)
-          } catch { return false }
-        })()
-        return (
-          <ArtifactViewerModal
-            artifact={viewingArtifact}
-            onClose={() => setViewingArtifact(null)}
-            onDelete={() => {
-              handleDeleteArtifact(viewingArtifact.id)
-              setViewingArtifact(null)
-            }}
-            onDownload={() => handleDownloadArtifact(viewingArtifact)}
-            onGenerateVideo={viewingArtifact.type === 'video_script' && !isVideoStudio ? () => {
-              setVideoGenSavedArtifact(viewingArtifact)
-              setShowVideoGenCost(true)
-              setViewingArtifact(null)
-            } : undefined}
-            onOpenStudio={isVideoStudio ? () => {
-              try {
-                const pkg = JSON.parse(viewingArtifact.content)
-                setVideoProduction(pkg)
-              } catch { /* ignore */ }
-              setViewingArtifact(null)
-            } : undefined}
-          />
-        )
-      })()}
+      {viewingArtifact && (
+        <ArtifactViewerModal
+          artifact={viewingArtifact}
+          onClose={() => setViewingArtifact(null)}
+          onDelete={() => {
+            handleDeleteArtifact(viewingArtifact.id)
+            setViewingArtifact(null)
+          }}
+          onDownload={() => handleDownloadArtifact(viewingArtifact)}
+          onGenerateVideo={viewingArtifact.type === 'video_script' && !isVideoStudioArtifact(viewingArtifact) ? () => {
+            setVideoGenSavedArtifact(viewingArtifact)
+            setShowVideoGenCost(true)
+            setViewingArtifact(null)
+          } : undefined}
+          onOpenStudio={isVideoStudioArtifact(viewingArtifact) ? () => {
+            try {
+              const pkg = JSON.parse(viewingArtifact.content)
+              setVideoProduction(pkg)
+            } catch (err) {
+              console.error('Error parsing video studio artifact:', err)
+              toast.error('Erro ao abrir estúdio de vídeo. O artefato pode estar corrompido.')
+            }
+            setViewingArtifact(null)
+          } : undefined}
+        />
+      )}
 
       {/* ── Script Review/Edit Modal (for media artifacts) ──── */}
       {pendingArtifact && (
