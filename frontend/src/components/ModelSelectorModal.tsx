@@ -157,7 +157,7 @@ export default function ModelSelectorModal({
     let list = catalogModels
 
     // Capability filter — only show models with the required capability
-    if (requiredCapability && requiredCapability !== 'text') {
+    if (requiredCapability) {
       list = list.filter(m => {
         const caps = m.capabilities ?? ['text']
         return caps.includes(requiredCapability)
@@ -226,7 +226,7 @@ export default function ModelSelectorModal({
               Agente: <strong>{agentLabel}</strong>
               {' · '}
               <span className="text-purple-600">Categoria: {CATEGORY_LABELS[agentCategory]}</span>
-              {requiredCapability && requiredCapability !== 'text' && (
+              {requiredCapability && (
                 <>
                   {' · '}
                   <span className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full font-medium ${CAPABILITY_LABELS[requiredCapability].style}`}>
@@ -330,7 +330,7 @@ export default function ModelSelectorModal({
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <Filter className="w-8 h-8 mb-2" />
               <p className="text-sm">Nenhum modelo encontrado com esses filtros.</p>
-              {requiredCapability && requiredCapability !== 'text' && (
+              {requiredCapability && (
                 <p className="text-xs text-amber-600 mt-2 max-w-sm text-center">
                   Este agente requer modelos com capacidade de <strong>{CAPABILITY_LABELS[requiredCapability].label}</strong>.
                   Adicione modelos com essa capacidade no Catálogo de Modelos.
@@ -371,14 +371,14 @@ export default function ModelSelectorModal({
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${provColor}`}>
                         {model.provider}
                       </span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${tierStyle.bg} ${tierStyle.text} ${tierStyle.border}`}>
-                        {tierStyle.label}
-                      </span>
-                      {(model.capabilities ?? ['text']).filter(c => c !== 'text').map(cap => {
-                        const cl = CAPABILITY_LABELS[cap]
-                        return (
-                          <span key={cap} className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cl.style}`}>
-                            {cl.emoji} {cl.label}
+                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${tierStyle.bg} ${tierStyle.text} ${tierStyle.border}`}>
+                         {tierStyle.label}
+                       </span>
+                       {(model.capabilities ?? ['text']).map(cap => {
+                         const cl = CAPABILITY_LABELS[cap]
+                         return (
+                           <span key={cap} className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cl.style}`}>
+                             {cl.emoji} {cl.label}
                           </span>
                         )
                       })}

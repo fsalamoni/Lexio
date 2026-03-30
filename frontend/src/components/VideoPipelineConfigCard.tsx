@@ -61,6 +61,7 @@ const TIER_STYLES: Record<string, { bg: string; text: string; label: string }> =
 }
 
 const CAPABILITY_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  text:  { bg: 'bg-slate-100',  text: 'text-slate-700',  label: '📝 Requer Texto'  },
   image: { bg: 'bg-pink-100',   text: 'text-pink-700',   label: '🖼️ Requer Imagem' },
   audio: { bg: 'bg-violet-100', text: 'text-violet-700', label: '🔊 Requer Áudio'  },
   video: { bg: 'bg-red-100',    text: 'text-red-700',    label: '🎬 Requer Vídeo'  },
@@ -219,7 +220,7 @@ export default function VideoPipelineConfigCard() {
                 const tierStyle    = currentModel
                   ? TIER_STYLES[currentModel.tier]
                   : TIER_STYLES[agent.recommendedTier]
-                const capBadge     = agent.requiredCapability && agent.requiredCapability !== 'text'
+                const capBadge = agent.requiredCapability
                   ? CAPABILITY_BADGE[agent.requiredCapability]
                   : null
 
@@ -320,11 +321,12 @@ export default function VideoPipelineConfigCard() {
             {/* Info box */}
             <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-lg">
               <p className="text-xs text-rose-800">
-                <strong>💡 Informações:</strong> O pipeline suporta vídeos de <strong>15+ minutos</strong>,
-                dividindo inteligentemente em segmentos. Agentes marcados com <strong>⚠️ requerem modelos
-                especializados</strong> (geração de imagem, áudio ou vídeo) — modelos somente de texto
-                <strong> NÃO</strong> são adequados para essas etapas. O <strong>Planejador</strong> estima
-                custos em tokens antes de iniciar a produção.
+                <strong>💡 Informações:</strong> Cada agente agora exibe explicitamente a capacidade exigida
+                (<strong>Texto</strong>, <strong>Imagem</strong>, <strong>Áudio</strong> ou <strong>Vídeo</strong>)
+                e o seletor só lista modelos compatíveis. Na trilha atual do Gerador de Vídeo, os 8 agentes
+                configuráveis produzem roteiro, prompts e JSON, então exigem <strong>modelos de texto</strong>;
+                a geração final de mídia acontece depois, no estúdio. O <strong>Planejador</strong> continua
+                estimando custos antes de iniciar a produção.
               </p>
             </div>
 

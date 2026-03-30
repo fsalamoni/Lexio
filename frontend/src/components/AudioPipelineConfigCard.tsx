@@ -56,6 +56,7 @@ const TIER_STYLES: Record<string, { bg: string; text: string; label: string }> =
 }
 
 const CAPABILITY_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  text:  { bg: 'bg-slate-100',  text: 'text-slate-700',  label: '📝 Requer Texto'  },
   image: { bg: 'bg-pink-100',   text: 'text-pink-700',   label: '🖼️ Requer Imagem' },
   audio: { bg: 'bg-violet-100', text: 'text-violet-700', label: '🔊 Requer Áudio'  },
   video: { bg: 'bg-red-100',    text: 'text-red-700',    label: '🎬 Requer Vídeo'  },
@@ -214,7 +215,7 @@ export default function AudioPipelineConfigCard() {
                 const tierStyle    = currentModel
                   ? TIER_STYLES[currentModel.tier]
                   : TIER_STYLES[agent.recommendedTier]
-                const capBadge     = agent.requiredCapability && agent.requiredCapability !== 'text'
+                const capBadge = agent.requiredCapability
                   ? CAPABILITY_BADGE[agent.requiredCapability]
                   : null
 

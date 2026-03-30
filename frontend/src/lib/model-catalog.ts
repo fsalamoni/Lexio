@@ -39,11 +39,7 @@ export async function loadModelCatalog(): Promise<ModelOption[]> {
       const settings = await getSettings()
       const saved = settings.model_catalog as ModelOption[] | undefined
       if (Array.isArray(saved) && saved.length > 0) {
-        // Ensure every model has agentFit (guard against old data)
-        const validated = saved.map(m => ({
-          ...m,
-          agentFit: m.agentFit ?? inferFitScores(m.tier ?? 'balanced', m.id),
-        }))
+        const validated = normalizeModelCatalog(saved)
 
         // Detect old 1–5 scale data: if no model has any score > 5, the catalog
         // was saved before the 1–10 scale was introduced — reset to fresh defaults.
@@ -66,7 +62,7 @@ export async function loadModelCatalog(): Promise<ModelOption[]> {
     }
   }
 
-  catalogCache = [...AVAILABLE_MODELS]
+  catalogCache = normalizeModelCatalog(AVAILABLE_MODELS)
   return catalogCache
 }
 
@@ -74,11 +70,12 @@ export async function loadModelCatalog(): Promise<ModelOption[]> {
  * Persist catalog to Firestore and notify all listeners.
  */
 export async function saveModelCatalog(models: ModelOption[]): Promise<void> {
-  catalogCache = models
+  const normalized = normalizeModelCatalog(models)
+  catalogCache = normalized
   if (IS_FIREBASE) {
-    await saveSettings({ model_catalog: models })
+    await saveSettings({ model_catalog: normalized })
   }
-  emitCatalogUpdated(models)
+  emitCatalogUpdated(normalized)
 }
 
 /** Invalidate the in-memory cache (forces next loadModelCatalog to hit Firestore). */
@@ -93,7 +90,7 @@ export function invalidateCatalogCache(): void {
  * Subscribes to CATALOG_UPDATED_EVENT so the component re-renders on changes.
  */
 export function useCatalogModels(): ModelOption[] {
-  const [models, setModels] = useState<ModelOption[]>(() => catalogCache ?? AVAILABLE_MODELS)
+  const [models, setModels] = useState<ModelOption[]>(() => catalogCache ?? normalizeModelCatalog(AVAILABLE_MODELS))
 
   useEffect(() => {
     // Load from Firestore on mount
@@ -207,6 +204,37 @@ export function inferCapabilities(modality?: string): ModelCapability[] {
   if (m.includes('audio')) caps.push('audio')
   if (m.includes('video')) caps.push('video')
   return caps.length > 0 ? caps : ['text']
+}
+
+function inferCapabilitiesFromMetadata(model: Pick<ModelOption, 'id' | 'label' | 'description'>): ModelCapability[] {
+  const haystack = `${model.id} ${model.label} ${model.description}`.toLowerCase()
+  const caps: ModelCapability[] = []
+  const add = (cap: ModelCapability) => {
+    if (!caps.includes(cap)) caps.push(cap)
+  }
+
+  if (/\b(dall[- ]?e|flux|sdxl|stable diffusion|midjourney|imagen|ideogram|recraft|seedream|gpt-image|image generation|gera(?:dor|cao) de imagem)\b/.test(haystack)) {
+    add('image')
+  }
+  if (/\b(tts|text-to-speech|speech|voice|elevenlabs|audio generation|gera(?:dor|cao) de audio)\b/.test(haystack)) {
+    add('audio')
+  }
+  if (/\b(sora|veo|runway|pika|kling|hailuo|ltx-video|video generation|gera(?:dor|cao) de video)\b/.test(haystack)) {
+    add('video')
+  }
+
+  if (caps.length === 0) add('text')
+  return caps
+}
+
+function normalizeModelCatalog(models: ModelOption[]): ModelOption[] {
+  return models.map(model => ({
+    ...model,
+    agentFit: model.agentFit ?? inferFitScores(model.tier ?? 'balanced', model.id),
+    capabilities: model.capabilities && model.capabilities.length > 0
+      ? [...new Set(model.capabilities)]
+      : inferCapabilitiesFromMetadata(model),
+  }))
 }
 
 /** Convert an OpenRouter API model response to our ModelOption format. */
