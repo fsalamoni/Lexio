@@ -13,16 +13,16 @@ import {
 } from 'lucide-react'
 import { estimateVideoGenerationCost } from '../lib/video-generation-pipeline'
 
-/** Model type recommendation per agent — agents with ⚠️ require specialized (non-text) models */
+/** Model type recommendation per agent — all agents use text LLMs to produce JSON */
 const AGENT_MODEL_RECOMMENDATIONS: Record<string, { icon: React.ElementType; capability: string; note: string }> = {
-  video_planejador:   { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o ou equivalente' },
-  video_roteirista:   { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (escrita criativa)' },
-  video_diretor_cena: { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (estruturação)' },
-  video_storyboarder: { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (descrição visual)' },
-  video_designer:     { icon: Image,    capability: 'Imagem', note: '⚠️ Requer modelo de imagem: DALL-E, Midjourney, Stable Diffusion' },
-  video_compositor:   { icon: Film,     capability: 'Vídeo', note: '⚠️ Requer modelo de vídeo: Sora, Runway, Pika Labs' },
-  video_narrador:     { icon: Mic,      capability: 'Áudio', note: '⚠️ Requer modelo de áudio: ElevenLabs, OpenAI TTS' },
-  video_revisor:      { icon: FileText, capability: 'Texto', note: 'Claude Sonnet, GPT-4o (revisão)' },
+  video_planejador:   { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4o, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Llama 4 Maverick, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, DeepSeek R1:free' },
+  video_roteirista:   { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1, GPT-4o. Baratos: DeepSeek V3, Llama 4 Maverick, Gemini 2.5 Flash, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free' },
+  video_diretor_cena: { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, GPT-4.1 Mini, Llama 4 Maverick, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, Qwen3 30B:free' },
+  video_storyboarder: { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1, GPT-4o. Baratos: DeepSeek V3, Gemini 2.5 Flash, Llama 4 Maverick, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free' },
+  video_designer:     { icon: Image,    capability: 'Texto', note: 'Gera prompts de imagem (JSON). Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Llama 4 Maverick. Grátis: Gemini 2.0 Flash:free' },
+  video_compositor:   { icon: Film,     capability: 'Texto', note: 'Monta timeline (JSON). Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, GPT-4.1 Mini, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, Qwen3 30B:free' },
+  video_narrador:     { icon: Mic,      capability: 'Texto', note: 'Roteiro de narração (JSON). Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Llama 4 Maverick, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free' },
+  video_revisor:      { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Mistral Small:free' },
 }
 
 interface VideoGenerationCostModalProps {
