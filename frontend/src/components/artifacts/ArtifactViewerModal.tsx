@@ -177,6 +177,7 @@ interface ArtifactViewerModalProps {
   onDownload: () => void
   onRegenerate?: () => void
   onGenerateVideo?: () => void
+  onOpenStudio?: () => void
 }
 
 export default function ArtifactViewerModal({
@@ -186,6 +187,7 @@ export default function ArtifactViewerModal({
   onDownload,
   onRegenerate,
   onGenerateVideo,
+  onOpenStudio,
 }: ArtifactViewerModalProps) {
   const Icon = ARTIFACT_ICONS[artifact.type] || Sparkles
   const label = ARTIFACT_LABELS[artifact.type] || artifact.type
@@ -339,6 +341,16 @@ export default function ArtifactViewerModal({
               >
                 <Video className="w-3.5 h-3.5" />
                 Gerar Vídeo
+              </button>
+            )}
+            {onOpenStudio && artifact.type === 'video_script' && (
+              <button
+                onClick={onOpenStudio}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm"
+                title="Abrir Estúdio de Vídeo"
+              >
+                <Video className="w-3.5 h-3.5" />
+                Abrir Estúdio
               </button>
             )}
             <button

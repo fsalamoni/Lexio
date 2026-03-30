@@ -4,13 +4,12 @@
  * the user to edit, cut, extend, and create new segments.
  */
 
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import {
   Video, Mic, Music, Sparkles, Type, Clock, Plus,
-  Scissors, Maximize2, Minimize2, Play, Pause, SkipBack,
-  ChevronDown, ChevronUp, Palette, Eye, EyeOff,
-  Camera, Layers, X, Save, Download, ZoomIn, ZoomOut,
-  Film, AlertCircle, CheckCircle2,
+  Scissors, ChevronDown, ChevronUp, Palette, Eye, EyeOff,
+  Camera, Layers, X, Save, ZoomIn, ZoomOut,
+  Film, CheckCircle2, Image, Loader2, Volume2, BookOpen,
 } from 'lucide-react'
 import type {
   VideoProductionPackage,
@@ -18,6 +17,8 @@ import type {
   TrackSegment,
   VideoScene,
 } from '../../lib/video-generation-pipeline'
+import { generateImageViaOpenRouter } from '../../lib/image-generation-client'
+import { generateTTSViaOpenRouter } from '../../lib/tts-client'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -43,8 +44,10 @@ const PIXELS_PER_SECOND_BASE = 8
 
 interface VideoStudioEditorProps {
   production: VideoProductionPackage
+  apiKey?: string
   onClose: () => void
   onSave?: (production: VideoProductionPackage) => void
+  onSaveToNotebook?: (production: VideoProductionPackage) => void
 }
 
 interface SelectedSegment {
@@ -418,7 +421,7 @@ function DesignGuidePanel({ designGuide }: { designGuide: VideoProductionPackage
 // Import React explicitly for createElement usage in SegmentDetailPanel
 import React from 'react'
 
-export default function VideoStudioEditor({ production, onClose, onSave }: VideoStudioEditorProps) {
+export default function VideoStudioEditor({ production, apiKey, onClose, onSave, onSaveToNotebook }: VideoStudioEditorProps) {
   const [selectedSegment, setSelectedSegment] = useState<SelectedSegment | null>(null)
   const [selectedScene, setSelectedScene] = useState<number | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -430,6 +433,17 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
   const [localTracks, setLocalTracks] = useState<VideoTrack[]>(production.tracks)
   const [qualityOpen, setQualityOpen] = useState(false)
   const timelineRef = useRef<HTMLDivElement>(null)
+
+  // Media generation state
+  const [generatedImages, setGeneratedImages] = useState<Record<number, string>>({})
+  const [generatingImageFor, setGeneratingImageFor] = useState<number | null>(null)
+  const [imageError, setImageError] = useState<Record<number, string>>({})
+
+  const [generatedAudio, setGeneratedAudio] = useState<Record<number, string>>({})
+  const [generatingAudioFor, setGeneratingAudioFor] = useState<number | null>(null)
+  const [audioError, setAudioError] = useState<Record<number, string>>({})
+
+  const [savingToNotebook, setSavingToNotebook] = useState(false)
 
   const pixelsPerSecond = PIXELS_PER_SECOND_BASE * zoom
   const totalDuration = production.totalDuration || 600
@@ -483,6 +497,60 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
     }
   }, [onSave, production, localTracks])
 
+  const handleSaveToNotebook = useCallback(async () => {
+    if (!onSaveToNotebook) return
+    setSavingToNotebook(true)
+    try {
+      onSaveToNotebook({ ...production, tracks: localTracks })
+    } finally {
+      setSavingToNotebook(false)
+    }
+  }, [onSaveToNotebook, production, localTracks])
+
+  // ── Image generation per scene ────────────────────────────────────────────
+  const handleGenerateImage = useCallback(async (scene: VideoScene) => {
+    if (!apiKey || !scene.imagePrompt) return
+    setGeneratingImageFor(scene.number)
+    setImageError(prev => ({ ...prev, [scene.number]: '' }))
+    try {
+      const result = await generateImageViaOpenRouter({
+        apiKey,
+        prompt: scene.imagePrompt,
+        size: '1792x1024',
+      })
+      if (result.url) {
+        setGeneratedImages(prev => ({ ...prev, [scene.number]: result.url! }))
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao gerar imagem'
+      setImageError(prev => ({ ...prev, [scene.number]: msg }))
+    } finally {
+      setGeneratingImageFor(null)
+    }
+  }, [apiKey])
+
+  // ── TTS generation per narration segment ─────────────────────────────────
+  const handleGenerateNarration = useCallback(async (sceneNumber: number, text: string) => {
+    if (!apiKey || !text) return
+    setGeneratingAudioFor(sceneNumber)
+    setAudioError(prev => ({ ...prev, [sceneNumber]: '' }))
+    try {
+      const result = await generateTTSViaOpenRouter({
+        apiKey,
+        text,
+        voice: 'nova',
+        model: 'openai/tts-1-hd',
+      })
+      const url = URL.createObjectURL(result.audioBlob)
+      setGeneratedAudio(prev => ({ ...prev, [sceneNumber]: url }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao gerar narração'
+      setAudioError(prev => ({ ...prev, [sceneNumber]: msg }))
+    } finally {
+      setGeneratingAudioFor(null)
+    }
+  }, [apiKey])
+
   // Get selected segment data
   const selectedSeg = selectedSegment
     ? localTracks[selectedSegment.trackIndex]?.segments[selectedSegment.segmentIndex]
@@ -530,6 +598,19 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
             >
               <Save className="w-3.5 h-3.5" />
               Salvar
+            </button>
+          )}
+
+          {onSaveToNotebook && (
+            <button
+              onClick={handleSaveToNotebook}
+              disabled={savingToNotebook}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-60"
+            >
+              {savingToNotebook
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <BookOpen className="w-3.5 h-3.5" />}
+              Salvar no Caderno
             </button>
           )}
 
@@ -673,6 +754,10 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
               {(() => {
                 const scene = production.scenes.find(s => s.number === selectedScene)
                 if (!scene) return <p className="text-xs text-gray-400">Cena não encontrada</p>
+                const sceneImage = generatedImages[scene.number]
+                const sceneAudio = generatedAudio[scene.number]
+                const isGeneratingImage = generatingImageFor === scene.number
+                const isGeneratingAudio = generatingAudioFor === scene.number
                 return (
                   <div className="space-y-3">
                     <div className="bg-gray-50 rounded-lg p-3 border">
@@ -683,19 +768,72 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
                       <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Visual</p>
                       <p className="text-xs text-gray-700 leading-relaxed">{scene.visual}</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-3 border">
-                      <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Narração</p>
+
+                    {/* Narration + TTS generation */}
+                    <div className="bg-violet-50 rounded-lg p-3 border border-violet-200 space-y-2">
+                      <p className="text-[10px] font-semibold text-violet-600 uppercase">Narração</p>
                       <p className="text-xs text-gray-700 leading-relaxed">{scene.narration}</p>
+                      {apiKey && scene.narration && (
+                        <button
+                          onClick={() => handleGenerateNarration(scene.number, scene.narration)}
+                          disabled={isGeneratingAudio}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-700 disabled:opacity-60 mt-1"
+                        >
+                          {isGeneratingAudio
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Mic className="w-3 h-3" />}
+                          {isGeneratingAudio ? 'Gerando...' : 'Gerar Narração (TTS)'}
+                        </button>
+                      )}
+                      {audioError[scene.number] && (
+                        <p className="text-[10px] text-red-600">{audioError[scene.number]}</p>
+                      )}
+                      {sceneAudio && (
+                        <div className="mt-1">
+                          <p className="text-[10px] font-semibold text-violet-600 mb-1 flex items-center gap-1">
+                            <Volume2 className="w-3 h-3" /> Narração Gerada
+                          </p>
+                          <audio controls src={sceneAudio} className="w-full h-8" />
+                        </div>
+                      )}
                     </div>
+
+                    {/* Image prompt + generation */}
                     {scene.imagePrompt && (
-                      <div className="bg-rose-50 rounded-lg p-3 border border-rose-200">
-                        <p className="text-[10px] font-semibold text-rose-600 uppercase mb-1">Prompt de Imagem</p>
-                        <p className="text-xs text-gray-700 leading-relaxed font-mono">{scene.imagePrompt}</p>
+                      <div className="bg-rose-50 rounded-lg p-3 border border-rose-200 space-y-2">
+                        <p className="text-[10px] font-semibold text-rose-600 uppercase">Prompt de Imagem</p>
+                        <p className="text-xs text-gray-600 leading-relaxed font-mono">{scene.imagePrompt}</p>
+                        {apiKey && (
+                          <button
+                            onClick={() => handleGenerateImage(scene)}
+                            disabled={isGeneratingImage}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 text-white text-xs font-medium rounded-lg hover:bg-rose-700 disabled:opacity-60 mt-1"
+                          >
+                            {isGeneratingImage
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Image className="w-3 h-3" />}
+                            {isGeneratingImage ? 'Gerando...' : 'Gerar Imagem (DALL-E)'}
+                          </button>
+                        )}
+                        {imageError[scene.number] && (
+                          <p className="text-[10px] text-red-600">{imageError[scene.number]}</p>
+                        )}
+                        {sceneImage && (
+                          <div className="mt-1">
+                            <p className="text-[10px] font-semibold text-rose-600 mb-1">Imagem Gerada</p>
+                            <img
+                              src={sceneImage}
+                              alt={`Cena ${scene.number}`}
+                              className="w-full rounded-lg border shadow-sm"
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
+
                     {scene.videoPrompt && (
-                      <div className="bg-violet-50 rounded-lg p-3 border border-violet-200">
-                        <p className="text-[10px] font-semibold text-violet-600 uppercase mb-1">Prompt de Vídeo</p>
+                      <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                        <p className="text-[10px] font-semibold text-amber-600 uppercase mb-1">Prompt de Vídeo</p>
                         <p className="text-xs text-gray-700 leading-relaxed font-mono">{scene.videoPrompt}</p>
                       </div>
                     )}
@@ -704,6 +842,14 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
                         <span className="text-[10px] px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full border border-purple-200">
                           Transição: {scene.transition}
                         </span>
+                      </div>
+                    )}
+                    {scene.soundtrack && (
+                      <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+                        <p className="text-[10px] font-semibold text-emerald-600 uppercase mb-1 flex items-center gap-1">
+                          <Music className="w-3 h-3" /> Trilha Sonora
+                        </p>
+                        <p className="text-xs text-gray-700 leading-relaxed">{scene.soundtrack}</p>
                       </div>
                     )}
                   </div>

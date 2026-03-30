@@ -469,6 +469,7 @@ export default function ResearchNotebook() {
   const [videoGenLoading, setVideoGenLoading] = useState(false)
   const [videoGenProgress, setVideoGenProgress] = useState<{ step: number; total: number; phase: string; agent: string } | null>(null)
   const [videoProduction, setVideoProduction] = useState<VideoProductionPackage | null>(null)
+  const [videoStudioApiKey, setVideoStudioApiKey] = useState<string | undefined>(undefined)
 
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
@@ -1152,6 +1153,8 @@ Instruções:
         toast.error('Chave da API não configurada. Acesse Administração > Chaves de API.')
         return
       }
+      // Store api key for use in VideoStudioEditor (image/TTS generation)
+      setVideoStudioApiKey(apiKey)
 
       // Use edited content if provided, otherwise use original
       const scriptContent = editedContent || videoGenSavedArtifact.content
@@ -1223,6 +1226,27 @@ Instruções:
     } finally {
       setVideoGenLoading(false)
       setVideoGenProgress(null)
+    }
+  }
+
+  // ── Save video studio production as notebook artifact ──────────────
+  const handleSaveVideoStudioToNotebook = async (production: VideoProductionPackage) => {
+    if (!userId || !activeNotebook?.id) return
+    try {
+      const artifact: StudioArtifact = {
+        id: `artifact_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        type: 'video_script',
+        title: `Estúdio de Vídeo: ${production.title}`,
+        content: JSON.stringify(production, null, 2),
+        format: 'json',
+        created_at: new Date().toISOString(),
+      }
+      await saveArtifactToNotebook(artifact, [])
+      toast.success('Estúdio de vídeo salvo nos artefatos do caderno!')
+      setActiveTab('artifacts')
+    } catch (err) {
+      console.error('Error saving video studio artifact:', err)
+      toast.error('Erro ao salvar estúdio nos artefatos.')
     }
   }
 
@@ -2413,22 +2437,38 @@ Instruções:
       </div>
 
       {/* ── Artifact Viewer Modal ─────────────────────────────── */}
-      {viewingArtifact && (
-        <ArtifactViewerModal
-          artifact={viewingArtifact}
-          onClose={() => setViewingArtifact(null)}
-          onDelete={() => {
-            handleDeleteArtifact(viewingArtifact.id)
-            setViewingArtifact(null)
-          }}
-          onDownload={() => handleDownloadArtifact(viewingArtifact)}
-          onGenerateVideo={viewingArtifact.type === 'video_script' ? () => {
-            setVideoGenSavedArtifact(viewingArtifact)
-            setShowVideoGenCost(true)
-            setViewingArtifact(null)
-          } : undefined}
-        />
-      )}
+      {viewingArtifact && (() => {
+        // Detect if this video_script artifact contains a full VideoProductionPackage (JSON with scenes/tracks)
+        const isVideoStudio = viewingArtifact.type === 'video_script' && viewingArtifact.format === 'json' && (() => {
+          try {
+            const parsed = JSON.parse(viewingArtifact.content)
+            return Array.isArray(parsed?.scenes) && Array.isArray(parsed?.tracks)
+          } catch { return false }
+        })()
+        return (
+          <ArtifactViewerModal
+            artifact={viewingArtifact}
+            onClose={() => setViewingArtifact(null)}
+            onDelete={() => {
+              handleDeleteArtifact(viewingArtifact.id)
+              setViewingArtifact(null)
+            }}
+            onDownload={() => handleDownloadArtifact(viewingArtifact)}
+            onGenerateVideo={viewingArtifact.type === 'video_script' && !isVideoStudio ? () => {
+              setVideoGenSavedArtifact(viewingArtifact)
+              setShowVideoGenCost(true)
+              setViewingArtifact(null)
+            } : undefined}
+            onOpenStudio={isVideoStudio ? () => {
+              try {
+                const pkg = JSON.parse(viewingArtifact.content)
+                setVideoProduction(pkg)
+              } catch { /* ignore */ }
+              setViewingArtifact(null)
+            } : undefined}
+          />
+        )
+      })()}
 
       {/* ── Script Review/Edit Modal (for media artifacts) ──── */}
       {pendingArtifact && (
@@ -2457,11 +2497,13 @@ Instruções:
       {videoProduction && (
         <VideoStudioEditor
           production={videoProduction}
+          apiKey={videoStudioApiKey}
           onClose={() => setVideoProduction(null)}
           onSave={(updated) => {
             setVideoProduction(updated)
             toast.success('Produção de vídeo salva!')
           }}
+          onSaveToNotebook={handleSaveVideoStudioToNotebook}
         />
       )}
     </div>
