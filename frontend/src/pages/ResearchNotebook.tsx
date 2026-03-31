@@ -1222,7 +1222,9 @@ Instruções:
           `${result.mediaErrors.length} erro(s) na geração de mídia. Verifique as notas de produção.`,
         )
       } else {
-        toast.success('Vídeo gerado com sucesso! Imagens e narração prontas.')
+        const totalClips = result.package.scenes.reduce((sum, s) => sum + (s.clips?.length || 0), 0)
+        const clipsWithImages = result.package.scenes.reduce((sum, s) => sum + (s.clips?.filter(c => c.generatedImageUrl).length || 0), 0)
+        toast.success(`Vídeo gerado! ${clipsWithImages}/${totalClips} clips com imagem, narração pronta.`)
       }
     } catch (err) {
       console.error('Video generation error:', err)
@@ -2411,6 +2413,10 @@ Instruções:
                     if (artifact.type === 'video_production') {
                       try {
                         const pkg = JSON.parse(artifact.content) as VideoProductionPackage
+                        // Ensure backwards compatibility: add empty clips array to scenes that lack it
+                        if (pkg.scenes) {
+                          pkg.scenes = pkg.scenes.map(s => ({ ...s, clips: s.clips || [] }))
+                        }
                         setVideoProduction(pkg)
                       } catch {
                         toast.error('Erro ao carregar produção de vídeo')

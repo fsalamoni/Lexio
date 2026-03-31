@@ -23,6 +23,7 @@ const AGENT_MODEL_RECOMMENDATIONS: Record<string, { icon: React.ElementType; cap
   video_compositor:   { icon: Film,     capability: 'Texto', note: 'Monta timeline (JSON). Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, GPT-4.1 Mini, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, Qwen3 30B:free' },
   video_narrador:     { icon: Mic,      capability: 'Texto', note: 'Roteiro de narração (JSON). Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Llama 4 Maverick, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free' },
   video_revisor:      { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Mistral Small:free' },
+  video_clip_planner: { icon: Film,     capability: 'Texto', note: 'Chamado 1x por cena. Baratos e rápidos: Gemini 2.5 Flash, GPT-4o Mini, DeepSeek V3. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free' },
 }
 
 interface VideoGenerationCostModalProps {
@@ -149,7 +150,7 @@ export default function VideoGenerationCostModal({
                 </p>
               </div>
 
-              {/* Pipeline steps — 8 LLM agents + 2 media generation steps */}
+              {/* Pipeline steps — 8 LLM agents + 3 media generation steps */}
               <div className="space-y-1.5">
                 {[
                   { label: 'Planejador de Produção', icon: FileText },
@@ -160,7 +161,8 @@ export default function VideoGenerationCostModal({
                   { label: 'Compositor de Vídeo', icon: Film },
                   { label: 'Narrador', icon: Mic },
                   { label: 'Revisor Final', icon: FileText },
-                  { label: 'Gerando Imagens das Cenas', icon: ImagePlus },
+                  { label: 'Planejando Clips por Cena', icon: Film },
+                  { label: 'Gerando Imagens dos Clips', icon: ImagePlus },
                   { label: 'Gerando Narração TTS', icon: Volume2 },
                 ].map((agent, i) => {
                   const step = i + 1
@@ -205,11 +207,12 @@ export default function VideoGenerationCostModal({
                 <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
                 <div className="text-sm text-amber-800">
                   <p className="font-semibold mb-1">Geração completa de vídeo com mídia real</p>
-                  <p>Revise o roteiro na aba <strong>Roteiro</strong> antes de gerar. O pipeline de <strong>10 etapas</strong> irá:</p>
+                  <p>Revise o roteiro na aba <strong>Roteiro</strong> antes de gerar. O pipeline de <strong>11 etapas</strong> irá:</p>
                   <ul className="mt-1.5 space-y-0.5 text-xs">
                     <li>1–8. Planejar, roteirizar, dirigir cenas, criar storyboard, prompts visuais, timeline e narração</li>
-                    <li><strong>9. Gerar imagens reais</strong> para cada cena usando IA generativa</li>
-                    <li><strong>10. Gerar narração com voz</strong> sintetizada (TTS) para cada segmento</li>
+                    <li><strong>9. Subdividir cada cena em clips</strong> sequenciais (~8s cada) com continuidade visual</li>
+                    <li><strong>10. Gerar imagens reais</strong> para cada clip usando IA generativa</li>
+                    <li><strong>11. Gerar narração com voz</strong> sintetizada (TTS) para cada segmento</li>
                   </ul>
                 </div>
               </div>
@@ -320,9 +323,9 @@ export default function VideoGenerationCostModal({
               <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-xl border border-blue-200">
                 <Layers className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div className="text-xs text-blue-800">
-                  <p className="font-semibold mb-1">Pipeline de 10 Etapas</p>
-                  <p>Planejador → Roteirista → Diretor de Cenas → Storyboarder → Designer Visual → Compositor → Narrador → Revisor Final → <strong>Imagens IA</strong> → <strong>Narração TTS</strong></p>
-                  <p className="mt-1 text-blue-600">O editor de estúdio abrirá com imagens geradas e narração com voz em cada cena.</p>
+                  <p className="font-semibold mb-1">Pipeline de 11 Etapas</p>
+                  <p>Planejador → Roteirista → Diretor → Storyboarder → Designer → Compositor → Narrador → Revisor → <strong>Clips por Cena</strong> → <strong>Imagens IA</strong> → <strong>Narração TTS</strong></p>
+                  <p className="mt-1 text-blue-600">Cada cena é subdividida em clips sequenciais (~8s cada). Imagens e narração são geradas automaticamente para cada clip.</p>
                 </div>
               </div>
             </>

@@ -2,7 +2,7 @@
  * Video Generation Pipeline — multi-agent pipeline that transforms a video script
  * into a complete video production package with scenes, visuals, narration, and timeline.
  *
- * This pipeline uses the 8-agent VIDEO_PIPELINE architecture:
+ * This pipeline uses an 11-step VIDEO_PIPELINE architecture:
  *   1. Planejador de Produção  — plans production, estimates token costs
  *   2. Roteirista              — refines/expands the script with full directions
  *   3. Diretor de Cenas        — breaks script into detailed timed scenes
@@ -11,9 +11,16 @@
  *   6. Compositor de Vídeo     — assembles final timeline with transitions/effects
  *   7. Narrador                — generates narration script with timing markers
  *   8. Revisor Final           — quality-checks the complete production package
+ *   9. Planejador de Clips     — subdivides each scene into sequential clips (~8s each)
+ *  10. Gerador de Imagens      — generates AI images for each clip (loop)
+ *  11. Narrador TTS            — generates speech audio for each narration segment
  *
- * Each agent produces structured JSON that feeds the next. The final output is a
- * VideoProductionPackage used by the VideoStudioEditor component.
+ * Steps 1-8 are LLM planning agents. Step 9 loops per scene, calling an LLM
+ * to generate clip breakdowns with continuity context. Steps 10-11 generate
+ * actual media (images + TTS audio) in loops.
+ *
+ * The final output is a VideoProductionPackage with clips, images, and audio
+ * used by the VideoStudioEditor component.
  */
 
 import { callLLM, type LLMResult } from './llm-client'
@@ -40,6 +47,8 @@ export interface VideoGenerationInput {
   ttsVoice?: string
   /** TTS model override (e.g., 'openai/tts-1-hd') */
   ttsModel?: string
+  /** Target duration per clip in seconds (default 8) */
+  clipDurationSeconds?: number
 }
 
 export interface VideoScene {
@@ -55,8 +64,10 @@ export interface VideoScene {
   soundtrack: string
   lowerThird?: string
   notes?: string
-  /** Base64 data URL of generated scene image */
+  /** Base64 data URL of generated scene image (thumbnail = first clip) */
   generatedImageUrl?: string
+  /** Clips that make up this scene's visual sequence */
+  clips: VideoClip[]
 }
 
 export interface NarrationSegment {
@@ -83,9 +94,35 @@ export interface TrackSegment {
   label: string
   content: string
   sceneNumber?: number
+  clipNumber?: number
   metadata?: Record<string, string>
   /** Base64 data URL of generated media (image or audio) */
   generatedMediaUrl?: string
+}
+
+/**
+ * A VideoClip represents a short segment (~5-10 seconds) within a scene.
+ * Scenes are subdivided into clips to create smooth visual sequences.
+ * Each clip gets its own AI-generated image, and together they form
+ * the visual narrative of the scene.
+ */
+export interface VideoClip {
+  clipNumber: number
+  sceneNumber: number
+  /** Absolute timestamp from video start, in seconds */
+  timestamp: number
+  /** Duration of this clip in seconds */
+  duration: number
+  /** Visual description of this moment (Portuguese) */
+  description: string
+  /** Detailed image generation prompt (English) for AI image generation */
+  imagePrompt: string
+  /** Camera movement / action description */
+  motionDescription: string
+  /** Transition to next clip */
+  transition: string
+  /** Base64 data URL of generated image */
+  generatedImageUrl?: string
 }
 
 export interface DesignGuide {
@@ -137,17 +174,23 @@ export type VideoGenerationProgressCallback = (
  * Estimates the token cost for generating a full video from a script.
  * Based on average token usage per agent in the pipeline.
  */
-export function estimateVideoGenerationCost(scriptContent: string, includeMedia = true): {
+export function estimateVideoGenerationCost(scriptContent: string, includeMedia = true, clipDurationSeconds = 8): {
   estimatedTokens: number
   estimatedCostUsd: number
   breakdown: { agent: string; label: string; estimatedTokens: number; estimatedCostUsd: number }[]
   mediaCostUsd: number
   mediaBreakdown: { type: string; label: string; count: number; estimatedCostUsd: number }[]
+  estimatedClips: number
+  estimatedScenes: number
 } {
   const scriptLength = scriptContent.length
 
   // Base estimates per agent (tokens = input + output), scaled by script size
   const scaleFactor = Math.max(1, scriptLength / 5000)
+  const estimatedScenes = Math.max(5, Math.round(scriptLength / 500))
+  const clipsPerScene = Math.max(1, Math.ceil(30 / clipDurationSeconds)) // avg 30s per scene
+  const estimatedClips = estimatedScenes * clipsPerScene
+
   const AGENT_ESTIMATES: { key: string; label: string; baseTokens: number; costPer1kTokens: number }[] = [
     { key: 'video_planejador', label: 'Planejador de Produção', baseTokens: 3000, costPer1kTokens: 0.003 },
     { key: 'video_roteirista', label: 'Roteirista', baseTokens: 8000, costPer1kTokens: 0.003 },
@@ -159,6 +202,16 @@ export function estimateVideoGenerationCost(scriptContent: string, includeMedia 
     { key: 'video_revisor', label: 'Revisor Final', baseTokens: 3000, costPer1kTokens: 0.003 },
   ]
 
+  // Add clip planning agent (one call per scene)
+  if (includeMedia) {
+    AGENT_ESTIMATES.push({
+      key: 'video_clip_planner',
+      label: `Planejador de Clips (${estimatedScenes} cenas)`,
+      baseTokens: 2000 * estimatedScenes,
+      costPer1kTokens: 0.0005,
+    })
+  }
+
   const breakdown = AGENT_ESTIMATES.map(a => {
     const estimatedTokens = Math.round(a.baseTokens * scaleFactor)
     const estimatedCostUsd = (estimatedTokens / 1000) * a.costPer1kTokens
@@ -169,22 +222,29 @@ export function estimateVideoGenerationCost(scriptContent: string, includeMedia 
   const estimatedCostUsd = breakdown.reduce((sum, b) => sum + b.estimatedCostUsd, 0)
 
   // Estimate media generation costs
-  const estimatedScenes = Math.max(5, Math.round(scriptLength / 500))
   const mediaBreakdown: { type: string; label: string; count: number; estimatedCostUsd: number }[] = []
   let mediaCostUsd = 0
 
   if (includeMedia) {
-    const imageCost = estimatedScenes * 0.002 // ~$0.002 per image (Gemini Flash)
-    const ttsCost = estimatedScenes * 0.005   // ~$0.005 per narration segment (TTS-HD)
+    const imageCost = estimatedClips * 0.002   // ~$0.002 per clip image (Gemini Flash)
+    const ttsCost = estimatedScenes * 0.005    // ~$0.005 per narration segment (TTS-HD)
     mediaCostUsd = imageCost + ttsCost
 
     mediaBreakdown.push(
-      { type: 'image', label: 'Imagens das Cenas', count: estimatedScenes, estimatedCostUsd: imageCost },
+      { type: 'clips', label: `Imagens de Clips (~${clipsPerScene}/cena)`, count: estimatedClips, estimatedCostUsd: imageCost },
       { type: 'tts', label: 'Narração TTS', count: estimatedScenes, estimatedCostUsd: ttsCost },
     )
   }
 
-  return { estimatedTokens, estimatedCostUsd: estimatedCostUsd + mediaCostUsd, breakdown, mediaCostUsd, mediaBreakdown }
+  return {
+    estimatedTokens,
+    estimatedCostUsd: estimatedCostUsd + mediaCostUsd,
+    breakdown,
+    mediaCostUsd,
+    mediaBreakdown,
+    estimatedClips,
+    estimatedScenes,
+  }
 }
 
 // ── Pipeline helpers ──────────────────────────────────────────────────────────
@@ -239,7 +299,7 @@ export async function runVideoGenerationPipeline(
   const models = await loadVideoPipelineModels()
   const executions: VideoGenerationStepExecution[] = []
   const wantMedia = input.generateMedia !== false // default true
-  const totalSteps = wantMedia ? 10 : 8
+  const totalSteps = wantMedia ? 11 : 8
 
   // ── Step 1: Planejador de Produção ────────────────────────────────────────
   onProgress?.(1, totalSteps, 'video_planejador', 'Planejador de Produção')
@@ -661,6 +721,7 @@ Requisitos:
       soundtrack: (s.soundtrack as string) || '',
       lowerThird: s.lowerThird as string | undefined,
       notes: s.notes as string | undefined,
+      clips: [],
     }
   })
 
@@ -713,37 +774,182 @@ Requisitos:
   const mediaErrors: string[] = []
   let imagesGenerated = 0
   let ttsGenerated = 0
+  let totalClipsPlanned = 0
 
-  // ── Step 9: Generate Scene Images ──────────────────────────────────────────
+  // ── Step 9: Clip Subdivision (scene-by-scene loop) ────────────────────────
+  //
+  // For each scene, call an LLM agent to break it into sequential clips
+  // of ~clipDuration seconds each. Each clip gets its own image prompt
+  // with continuity context from the previous clip.
+  //
+  if (wantMedia && scenes.length > 0) {
+    const clipDuration = input.clipDurationSeconds || 8
+    const clipPlannerModel = models.video_clip_planner || models.video_designer
+    let previousClipContext = ''
+
+    console.log(`[Video] Step 9: Subdividing ${scenes.length} scenes into clips (~${clipDuration}s each)`)
+
+    for (let sceneIdx = 0; sceneIdx < scenes.length; sceneIdx++) {
+      const scene = scenes[sceneIdx]
+      const numClips = Math.max(1, Math.ceil(scene.duration / clipDuration))
+
+      onProgress?.(9, totalSteps, 'clip_subdivision',
+        `Planejando clips da cena ${sceneIdx + 1}/${scenes.length} (${numClips} clips)...`)
+
+      try {
+        const sceneStartSeconds = parseTimeToSeconds(scene.timeStart)
+        const clipResult = await callAgent(input.apiKey, clipPlannerModel, `
+Você é um Diretor de Clips de vídeo profissional. Sua tarefa é subdividir uma cena em ${numClips} clips sequenciais de ~${clipDuration} segundos cada.
+
+CENA ${scene.number}:
+- Início: ${scene.timeStart} (${sceneStartSeconds}s)
+- Fim: ${scene.timeEnd}
+- Duração total: ${scene.duration}s
+- Visual: ${scene.visual}
+- Narração: ${scene.narration}
+- Prompt base de imagem: ${scene.imagePrompt}
+- Prompt de vídeo: ${scene.videoPrompt}
+- Trilha sonora: ${scene.soundtrack}
+- Transição: ${scene.transition}
+
+GUIA DE DESIGN:
+- Paleta de cores: ${designGuide.colorPalette.join(', ')}
+- Estilo: ${designGuide.style}
+- Fonte: ${designGuide.fontFamily}
+${designGuide.characterDescriptions.length > 0 ? '- Personagens: ' + designGuide.characterDescriptions.map(c => `${c.name}: ${c.description}`).join('; ') : ''}
+${designGuide.recurringElements.length > 0 ? '- Elementos recorrentes: ' + designGuide.recurringElements.join(', ') : ''}
+
+${previousClipContext ? `ÚLTIMO CLIP DA CENA ANTERIOR (para continuidade visual):\n${previousClipContext}\n\nMantenha continuidade visual com este clip anterior.` : 'PRIMEIRA CENA — Estabeleça o visual inicial do vídeo.'}
+
+Responda com JSON puro (sem \`\`\`json):
+{
+  "clips": [
+    {
+      "clipNumber": 1,
+      "timestamp": ${sceneStartSeconds},
+      "duration": ${clipDuration},
+      "description": "Descrição visual detalhada deste momento em português — o que se vê na tela",
+      "imagePrompt": "Highly detailed English prompt for AI image generation. Include: exact composition, lighting direction, colors from the palette [${designGuide.colorPalette.join(', ')}], style (${designGuide.style}), specific visual elements, 16:9 cinematic aspect ratio. Maintain visual consistency with previous clips.",
+      "motionDescription": "Camera movement for this clip: static / slow pan right / zoom in / tracking shot / aerial pull back",
+      "transition": "crossfade"
+    }
+  ]
+}
+
+REQUISITOS OBRIGATÓRIOS:
+1. Gere exatamente ${numClips} clips cobrindo toda a duração da cena
+2. Cada clip avança visualmente a narrativa da cena — não repita o mesmo enquadramento
+3. Consistência visual absoluta: mesmas cores, estilo, personagens entre clips
+4. Prompts de imagem em INGLÊS, extremamente detalhados (mínimo 50 palavras cada)
+5. Timestamps absolutos: o primeiro clip começa em ${sceneStartSeconds}s
+6. Cada clip subsequente começa onde o anterior termina
+7. Descreva movimentos de câmera para guiar a progressão visual
+8. Transições suaves entre clips (crossfade, dissolve, cut)`)
+
+        executions.push(makeExecution('clip_subdivision', clipPlannerModel, clipResult))
+
+        const clipData = safeParseJSON(clipResult.content) || { clips: [] }
+        const rawClips = (clipData.clips as Array<Record<string, unknown>>) || []
+
+        const clips = rawClips.map((c, idx) => ({
+          clipNumber: idx + 1,
+          sceneNumber: scene.number,
+          timestamp: (c.timestamp as number) || (sceneStartSeconds + idx * clipDuration),
+          duration: (c.duration as number) || clipDuration,
+          description: (c.description as string) || scene.visual,
+          imagePrompt: (c.imagePrompt as string) || scene.imagePrompt,
+          motionDescription: (c.motionDescription as string) || '',
+          transition: (c.transition as string) || 'crossfade',
+        }))
+
+        // Fallback: if no clips generated, create a single clip from the scene
+        if (clips.length === 0) {
+          clips.push({
+            clipNumber: 1,
+            sceneNumber: scene.number,
+            timestamp: sceneStartSeconds,
+            duration: scene.duration,
+            description: scene.visual,
+            imagePrompt: scene.imagePrompt,
+            motionDescription: '',
+            transition: scene.transition,
+          })
+        }
+
+        scene.clips = clips
+        totalClipsPlanned += clips.length
+
+        // Save last clip context for inter-scene continuity
+        const lastClip = clips[clips.length - 1]
+        previousClipContext = `Cena ${scene.number}, Clip ${lastClip.clipNumber}: ${lastClip.description}\nPrompt: ${lastClip.imagePrompt.slice(0, 300)}`
+
+      } catch (err) {
+        const errMsg = `Falha ao planejar clips da cena ${scene.number}: ${(err as Error).message}`
+        console.error(`[Video] ${errMsg}`)
+        mediaErrors.push(errMsg)
+
+        // Fallback: create a single clip from the scene data
+        scene.clips = [{
+          clipNumber: 1,
+          sceneNumber: scene.number,
+          timestamp: parseTimeToSeconds(scene.timeStart),
+          duration: scene.duration,
+          description: scene.visual,
+          imagePrompt: scene.imagePrompt,
+          motionDescription: '',
+          transition: scene.transition,
+        }]
+        totalClipsPlanned += 1
+      }
+
+      // Small delay between scene planning calls to respect rate limits
+      if (sceneIdx < scenes.length - 1) {
+        await new Promise(r => setTimeout(r, 500))
+      }
+    }
+
+    console.log(`[Video] Step 9 complete: ${totalClipsPlanned} clips planned across ${scenes.length} scenes`)
+  }
+
+  // ── Step 10: Image Generation Loop (per scene → per clip) ─────────────────
+  //
+  // Loop through all clips across all scenes and generate images.
+  // Each clip's image prompt was crafted with continuity context.
+  // Scenes without clips (if Step 9 was skipped) fall back to single images.
+  //
   if (wantMedia && scenes.length > 0) {
     const imageModel = input.imageModel || models.video_image_generator || DEFAULT_IMAGE_MODEL
     const CONCURRENCY = 3
-    const scenesWithPrompts = scenes.filter(s => s.imagePrompt)
 
-    console.log(`[Video] Step 9: Generating images for ${scenesWithPrompts.length} scenes with model ${imageModel}`)
+    // Collect all clips that need images
+    const allClips = scenes.flatMap(s => (s.clips || []).filter(c => c.imagePrompt))
 
-    // Generate images in batches of CONCURRENCY
-    for (let i = 0; i < scenesWithPrompts.length; i += CONCURRENCY) {
-      const batchStart = i
-      const batch = scenesWithPrompts.slice(i, i + CONCURRENCY)
+    console.log(`[Video] Step 10: Generating images for ${allClips.length} clips with model ${imageModel}`)
 
-      // Report granular progress per batch
-      onProgress?.(9, totalSteps, 'media_image_generation',
-        `Gerando imagem ${batchStart + 1}–${Math.min(batchStart + CONCURRENCY, scenesWithPrompts.length)} de ${scenesWithPrompts.length} cenas...`)
+    for (let i = 0; i < allClips.length; i += CONCURRENCY) {
+      const batch = allClips.slice(i, i + CONCURRENCY)
+
+      onProgress?.(10, totalSteps, 'media_image_generation',
+        `Gerando imagem ${i + 1}–${Math.min(i + CONCURRENCY, allClips.length)} de ${allClips.length} clips...`)
 
       const results = await Promise.allSettled(
-        batch.map(async (scene) => {
+        batch.map(async (clip) => {
           const startMs = Date.now()
           try {
             const result = await generateImageViaOpenRouter({
               apiKey: input.apiKey,
-              prompt: scene.imagePrompt,
+              prompt: clip.imagePrompt,
               model: imageModel,
               aspectRatio: '16:9',
             })
-            return { sceneNumber: scene.number, durationMs: Date.now() - startMs, ...result }
+            return {
+              sceneNumber: clip.sceneNumber,
+              clipNumber: clip.clipNumber,
+              durationMs: Date.now() - startMs,
+              ...result,
+            }
           } catch (err) {
-            const errMsg = `Falha ao gerar imagem da cena ${scene.number}: ${(err as Error).message}`
+            const errMsg = `Falha ao gerar imagem — Cena ${clip.sceneNumber}, Clip ${clip.clipNumber}: ${(err as Error).message}`
             console.error(`[Video] ${errMsg}`)
             mediaErrors.push(errMsg)
             return null
@@ -755,19 +961,20 @@ Requisitos:
         if (r.status === 'fulfilled' && r.value) {
           const scene = scenes.find(s => s.number === r.value!.sceneNumber)
           if (scene) {
-            scene.generatedImageUrl = r.value.imageDataUrl
-            imagesGenerated++
-          }
-          // Also update the corresponding video track segment
-          const videoTrack = videoPackage.tracks.find(t => t.type === 'video')
-          if (videoTrack) {
-            const seg = videoTrack.segments.find(s => s.sceneNumber === r.value!.sceneNumber)
-            if (seg) seg.generatedMediaUrl = r.value.imageDataUrl
+            const clip = scene.clips?.find(c => c.clipNumber === r.value!.clipNumber)
+            if (clip) {
+              clip.generatedImageUrl = r.value.imageDataUrl
+              imagesGenerated++
+            }
+            // Set scene thumbnail to first clip's image
+            if (r.value.clipNumber === 1) {
+              scene.generatedImageUrl = r.value.imageDataUrl
+            }
           }
 
           executions.push({
             phase: 'media_image_generation',
-            agent_name: `image_scene_${r.value.sceneNumber}`,
+            agent_name: `image_s${r.value.sceneNumber}_c${r.value.clipNumber}`,
             model: r.value.model,
             tokens_in: 0,
             tokens_out: 0,
@@ -782,22 +989,51 @@ Requisitos:
       }
     }
 
-    console.log(`[Video] Step 9 complete: ${imagesGenerated}/${scenesWithPrompts.length} images generated`)
+    // Rebuild video track segments from clips (one segment per clip)
+    const videoTrack = videoPackage.tracks.find(t => t.type === 'video')
+    if (videoTrack) {
+      const clipSegments: TrackSegment[] = []
+      for (const scene of scenes) {
+        if (scene.clips && scene.clips.length > 0) {
+          for (const clip of scene.clips) {
+            clipSegments.push({
+              id: generateSegmentId(),
+              startTime: clip.timestamp,
+              endTime: clip.timestamp + clip.duration,
+              label: `Cena ${scene.number} · Clip ${clip.clipNumber}`,
+              content: clip.description,
+              sceneNumber: scene.number,
+              clipNumber: clip.clipNumber,
+              metadata: {
+                clipNumber: String(clip.clipNumber),
+                motion: clip.motionDescription,
+                transition: clip.transition,
+              },
+              generatedMediaUrl: clip.generatedImageUrl,
+            })
+          }
+        }
+      }
+      if (clipSegments.length > 0) {
+        videoTrack.segments = clipSegments
+      }
+    }
+
+    console.log(`[Video] Step 10 complete: ${imagesGenerated}/${allClips.length} clip images generated`)
   }
 
-  // ── Step 10: Generate Narration TTS ──────────────────────────────────────
+  // ── Step 11: Generate Narration TTS ───────────────────────────────────────
   if (wantMedia && narration.length > 0) {
     const ttsVoice = input.ttsVoice || 'nova'
     const ttsModel = input.ttsModel || 'openai/tts-1-hd'
     const validSegments = narration.filter(s => s.text && s.text.trim().length >= 5)
 
-    console.log(`[Video] Step 10: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice}`)
+    console.log(`[Video] Step 11: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice}`)
 
     for (let idx = 0; idx < validSegments.length; idx++) {
       const segment = validSegments[idx]
 
-      // Report granular progress per segment
-      onProgress?.(10, totalSteps, 'media_tts_generation',
+      onProgress?.(11, totalSteps, 'media_tts_generation',
         `Gerando narração ${idx + 1} de ${validSegments.length} (cena ${segment.sceneNumber})...`)
 
       try {
@@ -843,32 +1079,32 @@ Requisitos:
       }
     }
 
-    console.log(`[Video] Step 10 complete: ${ttsGenerated}/${validSegments.length} TTS segments generated`)
+    console.log(`[Video] Step 11 complete: ${ttsGenerated}/${validSegments.length} TTS segments generated`)
   }
 
   // ── Add media status to production notes ─────────────────────────────────
   if (wantMedia) {
-    const totalScenes = scenes.filter(s => s.imagePrompt).length
+    const totalClips = scenes.reduce((sum, s) => sum + (s.clips?.length || 0), 0)
     const totalNarrations = narration.filter(s => s.text && s.text.trim().length >= 5).length
 
     if (imagesGenerated > 0 || ttsGenerated > 0) {
       videoPackage.productionNotes.push(
-        `Mídias geradas: ${imagesGenerated}/${totalScenes} imagens, ${ttsGenerated}/${totalNarrations} narrações TTS`
+        `Mídias geradas: ${imagesGenerated}/${totalClips} imagens de clips, ${ttsGenerated}/${totalNarrations} narrações TTS`
       )
     }
     if (mediaErrors.length > 0) {
       videoPackage.productionNotes.push(
-        `⚠️ ${mediaErrors.length} erro(s) na geração de mídia. Verifique os detalhes no console.`
+        `⚠️ ${mediaErrors.length} erro(s) na geração de mídia. Use o editor para regenerar individualmente.`
       )
     }
-    if (imagesGenerated === 0 && totalScenes > 0) {
+    if (imagesGenerated === 0 && totalClips > 0) {
       videoPackage.productionNotes.push(
-        '⚠️ Nenhuma imagem foi gerada. Verifique o modelo de imagem configurado e a chave da API.'
+        '⚠️ Nenhuma imagem de clip foi gerada. Verifique o modelo de imagem e a chave da API.'
       )
     }
     if (ttsGenerated === 0 && totalNarrations > 0) {
       videoPackage.productionNotes.push(
-        '⚠️ Nenhuma narração TTS foi gerada. Verifique o modelo TTS configurado e a chave da API.'
+        '⚠️ Nenhuma narração TTS foi gerada. Verifique o modelo TTS e a chave da API.'
       )
     }
   }

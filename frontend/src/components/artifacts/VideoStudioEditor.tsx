@@ -18,6 +18,7 @@ import type {
   VideoTrack,
   TrackSegment,
   VideoScene,
+  VideoClip,
   NarrationSegment,
 } from '../../lib/video-generation-pipeline'
 
@@ -406,9 +407,16 @@ function SceneNavigator({
               </p>
               <p className="text-gray-500 truncate">{scene.narration.slice(0, 50)}...</p>
             </div>
-            <span className="text-[10px] text-gray-400 flex-shrink-0">
-              {scene.duration}s
-            </span>
+            <div className="flex flex-col items-end flex-shrink-0">
+              <span className="text-[10px] text-gray-400">
+                {scene.duration}s
+              </span>
+              {scene.clips && scene.clips.length > 0 && (
+                <span className="text-[9px] text-rose-400">
+                  {scene.clips.filter(c => c.generatedImageUrl).length}/{scene.clips.length} clips
+                </span>
+              )}
+            </div>
           </button>
         ))}
       </div>
@@ -803,7 +811,7 @@ export default function VideoStudioEditor({ production, onClose, onSave, onRegen
               isRegenerating={regeneratingId === `${selectedTrack.type}_${selectedSeg.sceneNumber}`}
             />
           ) : selectedScene ? (
-            /* Scene detail view */
+            /* Scene detail view with clips */
             <div className="space-y-3">
               <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
                 <Camera className="w-4 h-4 text-rose-600" />
@@ -813,10 +821,70 @@ export default function VideoStudioEditor({ production, onClose, onSave, onRegen
                 const scene = localScenes.find(s => s.number === selectedScene)
                 if (!scene) return <p className="text-xs text-gray-400">Cena não encontrada</p>
                 const narSeg = localNarration.find(n => n.sceneNumber === selectedScene)
+                const clips = scene.clips || []
+                const clipsWithImages = clips.filter(c => c.generatedImageUrl)
+
                 return (
                   <div className="space-y-3">
-                    {/* Generated image */}
-                    {scene.generatedImageUrl && (
+                    {/* Clips grid — the core visual sequence */}
+                    {clips.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1.5 flex items-center gap-1">
+                          <Film className="w-3 h-3" />
+                          Clips ({clipsWithImages.length}/{clips.length} gerados)
+                        </p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {clips.map(clip => (
+                            <div
+                              key={`clip_${clip.sceneNumber}_${clip.clipNumber}`}
+                              className="border rounded-lg overflow-hidden bg-white hover:shadow-sm transition-shadow"
+                            >
+                              {clip.generatedImageUrl ? (
+                                <img
+                                  src={clip.generatedImageUrl}
+                                  alt={`Cena ${clip.sceneNumber} Clip ${clip.clipNumber}`}
+                                  className="w-full h-20 object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-20 bg-gray-100 flex items-center justify-center">
+                                  <ImagePlus className="w-4 h-4 text-gray-300" />
+                                </div>
+                              )}
+                              <div className="px-1.5 py-1">
+                                <p className="text-[9px] font-semibold text-gray-700">
+                                  Clip {clip.clipNumber} · {clip.duration}s
+                                </p>
+                                <p className="text-[8px] text-gray-400 truncate" title={clip.description}>
+                                  {clip.description.slice(0, 60)}
+                                </p>
+                                {clip.motionDescription && (
+                                  <p className="text-[8px] text-rose-400 truncate mt-0.5">
+                                    🎬 {clip.motionDescription}
+                                  </p>
+                                )}
+                              </div>
+                              {/* Regenerate individual clip */}
+                              {onRegenerateImage && (
+                                <button
+                                  onClick={() => handleRegenerateMedia('video', scene.number)}
+                                  disabled={!!regeneratingId}
+                                  className="w-full flex items-center justify-center gap-1 py-1 text-[9px] text-rose-600 hover:bg-rose-50 border-t disabled:opacity-40"
+                                >
+                                  {clip.generatedImageUrl ? (
+                                    <><RefreshCw className="w-2.5 h-2.5" /> Regenerar</>
+                                  ) : (
+                                    <><ImagePlus className="w-2.5 h-2.5" /> Gerar</>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Scene thumbnail (first clip) when no clips */}
+                    {clips.length === 0 && scene.generatedImageUrl && (
                       <div className="rounded-lg overflow-hidden border border-rose-200">
                         <img
                           src={scene.generatedImageUrl}
@@ -824,24 +892,6 @@ export default function VideoStudioEditor({ production, onClose, onSave, onRegen
                           className="w-full h-44 object-cover"
                         />
                       </div>
-                    )}
-
-                    {/* Regenerate image button */}
-                    {onRegenerateImage && (
-                      <button
-                        onClick={() => handleRegenerateMedia('video', scene.number)}
-                        disabled={regeneratingId === `video_${scene.number}`}
-                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-50 text-rose-700 text-xs font-medium rounded-lg hover:bg-rose-100 border border-rose-200 disabled:opacity-50"
-                      >
-                        {regeneratingId === `video_${scene.number}` ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : scene.generatedImageUrl ? (
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        ) : (
-                          <ImagePlus className="w-3.5 h-3.5" />
-                        )}
-                        {scene.generatedImageUrl ? 'Regenerar Imagem' : 'Gerar Imagem'}
-                      </button>
                     )}
 
                     {/* Generated narration audio */}
@@ -877,7 +927,12 @@ export default function VideoStudioEditor({ production, onClose, onSave, onRegen
 
                     <div className="bg-gray-50 rounded-lg p-3 border">
                       <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Timing</p>
-                      <p className="text-xs text-gray-700">{scene.timeStart} → {scene.timeEnd} ({scene.duration}s)</p>
+                      <p className="text-xs text-gray-700">
+                        {scene.timeStart} → {scene.timeEnd} ({scene.duration}s)
+                        {clips.length > 0 && (
+                          <span className="text-gray-400 ml-1">· {clips.length} clips</span>
+                        )}
+                      </p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 border">
                       <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Visual</p>

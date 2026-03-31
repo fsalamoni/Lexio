@@ -1310,6 +1310,17 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     bestModelNote: 'Revisão de qualidade. Premium: Claude Sonnet ($3), GPT-4.1 ($2). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), GPT-4.1 Mini ($0.40), Qwen 2.5 72B ($0.13), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free, Mistral Small:free.',
   },
   {
+    key: 'video_clip_planner',
+    label: 'Planejador de Clips',
+    description: 'Subdivide cada cena em clips de vídeo sequenciais (~8s cada) com prompts de imagem detalhados para cada momento, mantendo continuidade visual',
+    defaultModel: 'google/gemini-2.5-flash-preview',
+    recommendedTier: 'balanced',
+    icon: 'film',
+    agentCategory: 'synthesis',
+    requiredCapability: 'text',
+    bestModelNote: 'Chamado uma vez por cena. Precisa gerar prompts visuais detalhados. Baratos e rápidos: Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), DeepSeek V3 ($0.27). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
+  },
+  {
     key: 'video_image_generator',
     label: 'Gerador de Imagens',
     description: 'Gera imagens reais para cada cena do vídeo usando IA generativa (modalities: image)',
