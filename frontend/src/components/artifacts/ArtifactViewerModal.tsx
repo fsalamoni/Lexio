@@ -49,6 +49,7 @@ const ARTIFACT_ICONS: Record<StudioArtifactType, React.ElementType> = {
   tabela_dados: Table,
   audio_script: Mic,
   video_script: Video,
+  video_production: Video,
   outro: Sparkles,
 }
 
@@ -65,6 +66,7 @@ const ARTIFACT_LABELS: Record<StudioArtifactType, string> = {
   tabela_dados: 'Tabela de Dados',
   audio_script: 'Roteiro de Áudio',
   video_script: 'Gerador de Vídeo',
+  video_production: 'Produção de Vídeo',
   outro: 'Outro',
 }
 

@@ -16,7 +16,7 @@ import {
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
   Copy, Check as CheckIcon, Download, RotateCcw, Edit3, Info,
   Globe, BookMarked, AlertCircle, ChevronUp, ChevronDown,
-  Library, ScanSearch, Save, Eye,
+  Library, ScanSearch, Save, Eye, Film,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -206,7 +206,11 @@ const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
 ]
 
 /** Flat list for lookups */
-const ARTIFACT_TYPES: ArtifactDef[] = ARTIFACT_CATEGORIES.flatMap(c => c.items)
+const ARTIFACT_TYPES: ArtifactDef[] = [
+  ...ARTIFACT_CATEGORIES.flatMap(c => c.items),
+  // Generated-only types (not user-creatable, but need icon/label for display)
+  { type: 'video_production', label: 'Produção de Vídeo', icon: Film, description: 'Pacote de produção com cenas, clips, imagens e narração gerados' },
+]
 
 /** Artifact types that get a review/edit step before saving */
 const REVIEWABLE_ARTIFACT_TYPES: StudioArtifactType[] = ['video_script', 'audio_script', 'apresentacao']
@@ -2500,6 +2504,7 @@ Instruções:
                   type: 'video_production',
                   title: updated.title || 'Produção de Vídeo',
                   content: JSON.stringify(updated),
+                  format: 'json',
                   created_at: new Date().toISOString(),
                 }
                 // Check if a video_production artifact already exists for this title — update it
