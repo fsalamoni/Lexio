@@ -19,6 +19,8 @@
 import { callLLM, type LLMResult } from './llm-client'
 import { loadVideoPipelineModels, VIDEO_PIPELINE_AGENT_DEFS } from './model-config'
 import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
+import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
+import { generateTTSViaOpenRouter } from './tts-client'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,6 +32,14 @@ export interface VideoGenerationInput {
   topic: string
   /** Notebook or source ID for tracking */
   sourceId: string
+  /** When true, generates actual images and TTS audio after the LLM agents */
+  generateMedia?: boolean
+  /** Image generation model override */
+  imageModel?: string
+  /** TTS voice for narration (e.g., 'nova', 'alloy', 'echo') */
+  ttsVoice?: string
+  /** TTS model override (e.g., 'openai/tts-1-hd') */
+  ttsModel?: string
 }
 
 export interface VideoScene {
@@ -45,6 +55,8 @@ export interface VideoScene {
   soundtrack: string
   lowerThird?: string
   notes?: string
+  /** Base64 data URL of generated scene image */
+  generatedImageUrl?: string
 }
 
 export interface NarrationSegment {
@@ -54,6 +66,8 @@ export interface NarrationSegment {
   timeStart: string
   timeEnd: string
   pauseAfter?: number
+  /** Base64 data URL of generated TTS audio */
+  generatedAudioUrl?: string
 }
 
 export interface VideoTrack {
@@ -70,6 +84,8 @@ export interface TrackSegment {
   content: string
   sceneNumber?: number
   metadata?: Record<string, string>
+  /** Base64 data URL of generated media (image or audio) */
+  generatedMediaUrl?: string
 }
 
 export interface DesignGuide {
@@ -104,6 +120,8 @@ export interface VideoGenerationStepExecution {
 export interface VideoGenerationResult {
   package: VideoProductionPackage
   executions: VideoGenerationStepExecution[]
+  /** Errors encountered during media generation (images/TTS). Empty if all succeeded. */
+  mediaErrors: string[]
 }
 
 export type VideoGenerationProgressCallback = (
@@ -119,10 +137,12 @@ export type VideoGenerationProgressCallback = (
  * Estimates the token cost for generating a full video from a script.
  * Based on average token usage per agent in the pipeline.
  */
-export function estimateVideoGenerationCost(scriptContent: string): {
+export function estimateVideoGenerationCost(scriptContent: string, includeMedia = true): {
   estimatedTokens: number
   estimatedCostUsd: number
   breakdown: { agent: string; label: string; estimatedTokens: number; estimatedCostUsd: number }[]
+  mediaCostUsd: number
+  mediaBreakdown: { type: string; label: string; count: number; estimatedCostUsd: number }[]
 } {
   const scriptLength = scriptContent.length
 
@@ -148,7 +168,23 @@ export function estimateVideoGenerationCost(scriptContent: string): {
   const estimatedTokens = breakdown.reduce((sum, b) => sum + b.estimatedTokens, 0)
   const estimatedCostUsd = breakdown.reduce((sum, b) => sum + b.estimatedCostUsd, 0)
 
-  return { estimatedTokens, estimatedCostUsd, breakdown }
+  // Estimate media generation costs
+  const estimatedScenes = Math.max(5, Math.round(scriptLength / 500))
+  const mediaBreakdown: { type: string; label: string; count: number; estimatedCostUsd: number }[] = []
+  let mediaCostUsd = 0
+
+  if (includeMedia) {
+    const imageCost = estimatedScenes * 0.002 // ~$0.002 per image (Gemini Flash)
+    const ttsCost = estimatedScenes * 0.005   // ~$0.005 per narration segment (TTS-HD)
+    mediaCostUsd = imageCost + ttsCost
+
+    mediaBreakdown.push(
+      { type: 'image', label: 'Imagens das Cenas', count: estimatedScenes, estimatedCostUsd: imageCost },
+      { type: 'tts', label: 'Narração TTS', count: estimatedScenes, estimatedCostUsd: ttsCost },
+    )
+  }
+
+  return { estimatedTokens, estimatedCostUsd: estimatedCostUsd + mediaCostUsd, breakdown, mediaCostUsd, mediaBreakdown }
 }
 
 // ── Pipeline helpers ──────────────────────────────────────────────────────────
@@ -202,7 +238,8 @@ export async function runVideoGenerationPipeline(
 ): Promise<VideoGenerationResult> {
   const models = await loadVideoPipelineModels()
   const executions: VideoGenerationStepExecution[] = []
-  const totalSteps = 8
+  const wantMedia = input.generateMedia !== false // default true
+  const totalSteps = wantMedia ? 10 : 8
 
   // ── Step 1: Planejador de Produção ────────────────────────────────────────
   onProgress?.(1, totalSteps, 'video_planejador', 'Planejador de Produção')
@@ -672,7 +709,171 @@ Requisitos:
     ],
   }
 
-  return { package: videoPackage, executions }
+  // ── Media generation tracking ──────────────────────────────────────────────
+  const mediaErrors: string[] = []
+  let imagesGenerated = 0
+  let ttsGenerated = 0
+
+  // ── Step 9: Generate Scene Images ──────────────────────────────────────────
+  if (wantMedia && scenes.length > 0) {
+    const imageModel = input.imageModel || models.video_image_generator || DEFAULT_IMAGE_MODEL
+    const CONCURRENCY = 3
+    const scenesWithPrompts = scenes.filter(s => s.imagePrompt)
+
+    console.log(`[Video] Step 9: Generating images for ${scenesWithPrompts.length} scenes with model ${imageModel}`)
+
+    // Generate images in batches of CONCURRENCY
+    for (let i = 0; i < scenesWithPrompts.length; i += CONCURRENCY) {
+      const batchStart = i
+      const batch = scenesWithPrompts.slice(i, i + CONCURRENCY)
+
+      // Report granular progress per batch
+      onProgress?.(9, totalSteps, 'media_image_generation',
+        `Gerando imagem ${batchStart + 1}–${Math.min(batchStart + CONCURRENCY, scenesWithPrompts.length)} de ${scenesWithPrompts.length} cenas...`)
+
+      const results = await Promise.allSettled(
+        batch.map(async (scene) => {
+          const startMs = Date.now()
+          try {
+            const result = await generateImageViaOpenRouter({
+              apiKey: input.apiKey,
+              prompt: scene.imagePrompt,
+              model: imageModel,
+              aspectRatio: '16:9',
+            })
+            return { sceneNumber: scene.number, durationMs: Date.now() - startMs, ...result }
+          } catch (err) {
+            const errMsg = `Falha ao gerar imagem da cena ${scene.number}: ${(err as Error).message}`
+            console.error(`[Video] ${errMsg}`)
+            mediaErrors.push(errMsg)
+            return null
+          }
+        })
+      )
+
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value) {
+          const scene = scenes.find(s => s.number === r.value!.sceneNumber)
+          if (scene) {
+            scene.generatedImageUrl = r.value.imageDataUrl
+            imagesGenerated++
+          }
+          // Also update the corresponding video track segment
+          const videoTrack = videoPackage.tracks.find(t => t.type === 'video')
+          if (videoTrack) {
+            const seg = videoTrack.segments.find(s => s.sceneNumber === r.value!.sceneNumber)
+            if (seg) seg.generatedMediaUrl = r.value.imageDataUrl
+          }
+
+          executions.push({
+            phase: 'media_image_generation',
+            agent_name: `image_scene_${r.value.sceneNumber}`,
+            model: r.value.model,
+            tokens_in: 0,
+            tokens_out: 0,
+            cost_usd: r.value.cost_usd,
+            duration_ms: r.value.durationMs,
+          })
+        } else if (r.status === 'rejected') {
+          const errMsg = `Imagem rejeitada: ${(r.reason as Error)?.message || 'erro desconhecido'}`
+          console.error(`[Video] ${errMsg}`)
+          mediaErrors.push(errMsg)
+        }
+      }
+    }
+
+    console.log(`[Video] Step 9 complete: ${imagesGenerated}/${scenesWithPrompts.length} images generated`)
+  }
+
+  // ── Step 10: Generate Narration TTS ──────────────────────────────────────
+  if (wantMedia && narration.length > 0) {
+    const ttsVoice = input.ttsVoice || 'nova'
+    const ttsModel = input.ttsModel || 'openai/tts-1-hd'
+    const validSegments = narration.filter(s => s.text && s.text.trim().length >= 5)
+
+    console.log(`[Video] Step 10: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice}`)
+
+    for (let idx = 0; idx < validSegments.length; idx++) {
+      const segment = validSegments[idx]
+
+      // Report granular progress per segment
+      onProgress?.(10, totalSteps, 'media_tts_generation',
+        `Gerando narração ${idx + 1} de ${validSegments.length} (cena ${segment.sceneNumber})...`)
+
+      try {
+        // Clean narration text: remove *emphasis* markers and [pause] markers
+        const cleanText = segment.text
+          .replace(/\*([^*]+)\*/g, '$1')
+          .replace(/\[pausa?\]/gi, '...')
+          .trim()
+
+        const startMs = Date.now()
+        const result = await generateTTSViaOpenRouter({
+          apiKey: input.apiKey,
+          text: cleanText,
+          voice: ttsVoice,
+          model: ttsModel,
+        })
+
+        // Convert blob to data URL for persistence
+        const audioDataUrl = await blobToDataUrl(result.audioBlob)
+        segment.generatedAudioUrl = audioDataUrl
+        ttsGenerated++
+
+        // Also update the corresponding narration track segment
+        const narrationTrack = videoPackage.tracks.find(t => t.type === 'narration')
+        if (narrationTrack) {
+          const seg = narrationTrack.segments.find(s => s.sceneNumber === segment.sceneNumber)
+          if (seg) seg.generatedMediaUrl = audioDataUrl
+        }
+
+        executions.push({
+          phase: 'media_tts_generation',
+          agent_name: `tts_scene_${segment.sceneNumber}`,
+          model: ttsModel,
+          tokens_in: 0,
+          tokens_out: 0,
+          cost_usd: 0.015 * (cleanText.length / 1000),
+          duration_ms: Date.now() - startMs,
+        })
+      } catch (err) {
+        const errMsg = `Falha ao gerar narração TTS da cena ${segment.sceneNumber}: ${(err as Error).message}`
+        console.error(`[Video] ${errMsg}`)
+        mediaErrors.push(errMsg)
+      }
+    }
+
+    console.log(`[Video] Step 10 complete: ${ttsGenerated}/${validSegments.length} TTS segments generated`)
+  }
+
+  // ── Add media status to production notes ─────────────────────────────────
+  if (wantMedia) {
+    const totalScenes = scenes.filter(s => s.imagePrompt).length
+    const totalNarrations = narration.filter(s => s.text && s.text.trim().length >= 5).length
+
+    if (imagesGenerated > 0 || ttsGenerated > 0) {
+      videoPackage.productionNotes.push(
+        `Mídias geradas: ${imagesGenerated}/${totalScenes} imagens, ${ttsGenerated}/${totalNarrations} narrações TTS`
+      )
+    }
+    if (mediaErrors.length > 0) {
+      videoPackage.productionNotes.push(
+        `⚠️ ${mediaErrors.length} erro(s) na geração de mídia. Verifique os detalhes no console.`
+      )
+    }
+    if (imagesGenerated === 0 && totalScenes > 0) {
+      videoPackage.productionNotes.push(
+        '⚠️ Nenhuma imagem foi gerada. Verifique o modelo de imagem configurado e a chave da API.'
+      )
+    }
+    if (ttsGenerated === 0 && totalNarrations > 0) {
+      videoPackage.productionNotes.push(
+        '⚠️ Nenhuma narração TTS foi gerada. Verifique o modelo TTS configurado e a chave da API.'
+      )
+    }
+  }
+
+  return { package: videoPackage, executions, mediaErrors }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

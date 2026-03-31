@@ -186,6 +186,7 @@ export type StudioArtifactType =
   | 'documento'
   | 'audio_script'
   | 'video_script'
+  | 'video_production'
   | 'guia_estruturado'
   | 'outro'
 

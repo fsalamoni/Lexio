@@ -10,13 +10,15 @@ import {
   Scissors, Maximize2, Minimize2, Play, Pause, SkipBack,
   ChevronDown, ChevronUp, Palette, Eye, EyeOff,
   Camera, Layers, X, Save, Download, ZoomIn, ZoomOut,
-  Film, AlertCircle, CheckCircle2,
+  Film, AlertCircle, CheckCircle2, RefreshCw, ImagePlus,
+  Volume2, Loader2,
 } from 'lucide-react'
 import type {
   VideoProductionPackage,
   VideoTrack,
   TrackSegment,
   VideoScene,
+  NarrationSegment,
 } from '../../lib/video-generation-pipeline'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -45,6 +47,10 @@ interface VideoStudioEditorProps {
   production: VideoProductionPackage
   onClose: () => void
   onSave?: (production: VideoProductionPackage) => void
+  /** Callback to regenerate image for a specific scene */
+  onRegenerateImage?: (sceneNumber: number) => Promise<string | null>
+  /** Callback to regenerate TTS for a specific narration segment */
+  onRegenerateTTS?: (sceneNumber: number) => Promise<string | null>
 }
 
 interface SelectedSegment {
@@ -127,11 +133,13 @@ function TrackRow({
           const left = seg.startTime * pixelsPerSecond
           const width = Math.max((seg.endTime - seg.startTime) * pixelsPerSecond, 20)
           const isSelected = selectedSegment?.trackIndex === trackIndex && selectedSegment?.segmentIndex === segIdx
+          const hasImage = track.type === 'video' && seg.generatedMediaUrl
+          const hasAudio = track.type === 'narration' && seg.generatedMediaUrl
 
           return (
             <div
               key={seg.id}
-              className={`absolute top-1.5 h-11 rounded-md border cursor-pointer transition-all
+              className={`absolute top-1.5 h-11 rounded-md border cursor-pointer transition-all overflow-hidden
                 ${colors.segment}
                 ${isSelected ? 'ring-2 ring-offset-1 ring-gray-900 shadow-md' : 'shadow-sm'}
               `}
@@ -139,10 +147,32 @@ function TrackRow({
               onClick={() => onSelectSegment(isSelected ? null : { trackIndex, segmentIndex: segIdx })}
               title={seg.label}
             >
-              <div className="px-1.5 py-1 overflow-hidden h-full">
-                <p className="text-[10px] font-semibold truncate leading-tight">{seg.label}</p>
-                <p className="text-[9px] text-gray-500 truncate leading-tight mt-0.5">{seg.content.slice(0, 60)}</p>
-              </div>
+              {/* Show thumbnail for video segments with generated images */}
+              {hasImage ? (
+                <div className="flex h-full">
+                  <img
+                    src={seg.generatedMediaUrl}
+                    alt={seg.label}
+                    className="h-full w-16 object-cover flex-shrink-0 rounded-l-md"
+                  />
+                  <div className="px-1.5 py-1 overflow-hidden flex-1 min-w-0">
+                    <p className="text-[10px] font-semibold truncate leading-tight">{seg.label}</p>
+                  </div>
+                </div>
+              ) : hasAudio ? (
+                <div className="px-1.5 py-1 overflow-hidden h-full flex items-center gap-1.5">
+                  <Volume2 className="w-3 h-3 text-violet-500 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold truncate leading-tight">{seg.label}</p>
+                    <p className="text-[9px] text-gray-500 truncate leading-tight mt-0.5">{seg.content.slice(0, 40)}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="px-1.5 py-1 overflow-hidden h-full">
+                  <p className="text-[10px] font-semibold truncate leading-tight">{seg.label}</p>
+                  <p className="text-[9px] text-gray-500 truncate leading-tight mt-0.5">{seg.content.slice(0, 60)}</p>
+                </div>
+              )}
             </div>
           )
         })}
@@ -159,12 +189,16 @@ function SegmentDetailPanel({
   onUpdate,
   onDelete,
   onClose,
+  onRegenerateMedia,
+  isRegenerating,
 }: {
   segment: TrackSegment
   track: VideoTrack
   onUpdate: (updated: TrackSegment) => void
   onDelete: () => void
   onClose: () => void
+  onRegenerateMedia?: () => void
+  isRegenerating?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState(segment.content)
@@ -181,6 +215,9 @@ function SegmentDetailPanel({
   const startSec = segment.startTime % 60
   const endMin = Math.floor(segment.endTime / 60)
   const endSec = segment.endTime % 60
+
+  const hasImage = track.type === 'video' && segment.generatedMediaUrl
+  const hasAudio = track.type === 'narration' && segment.generatedMediaUrl
 
   return (
     <div className={`border rounded-xl ${colors.border} ${colors.bg} p-4 space-y-3`}>
@@ -212,6 +249,29 @@ function SegmentDetailPanel({
           </button>
         </div>
       </div>
+
+      {/* Generated image preview */}
+      {hasImage && (
+        <div className="rounded-lg overflow-hidden border border-rose-200">
+          <img
+            src={segment.generatedMediaUrl}
+            alt={segment.label}
+            className="w-full h-40 object-cover"
+          />
+        </div>
+      )}
+
+      {/* Generated audio player */}
+      {hasAudio && (
+        <div className="bg-white rounded-lg p-2.5 border border-violet-200">
+          <audio
+            controls
+            src={segment.generatedMediaUrl}
+            className="w-full h-8"
+            style={{ height: '32px' }}
+          />
+        </div>
+      )}
 
       {editing ? (
         <textarea
@@ -261,6 +321,27 @@ function SegmentDetailPanel({
               <Scissors className="w-3 h-3" />
               Editar
             </button>
+            {/* Regenerate media button for video/narration tracks */}
+            {onRegenerateMedia && (track.type === 'video' || track.type === 'narration') && (
+              <button
+                onClick={onRegenerateMedia}
+                disabled={isRegenerating}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 border border-blue-200 disabled:opacity-50"
+              >
+                {isRegenerating ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : segment.generatedMediaUrl ? (
+                  <RefreshCw className="w-3 h-3" />
+                ) : track.type === 'video' ? (
+                  <ImagePlus className="w-3 h-3" />
+                ) : (
+                  <Volume2 className="w-3 h-3" />
+                )}
+                {segment.generatedMediaUrl
+                  ? 'Regenerar'
+                  : track.type === 'video' ? 'Gerar Imagem' : 'Gerar Narração'}
+              </button>
+            )}
             <button
               onClick={onDelete}
               className="flex items-center gap-1.5 px-3 py-1.5 text-red-600 text-xs font-medium hover:bg-red-50 rounded-lg border border-red-200"
@@ -418,7 +499,7 @@ function DesignGuidePanel({ designGuide }: { designGuide: VideoProductionPackage
 // Import React explicitly for createElement usage in SegmentDetailPanel
 import React from 'react'
 
-export default function VideoStudioEditor({ production, onClose, onSave }: VideoStudioEditorProps) {
+export default function VideoStudioEditor({ production, onClose, onSave, onRegenerateImage, onRegenerateTTS }: VideoStudioEditorProps) {
   const [selectedSegment, setSelectedSegment] = useState<SelectedSegment | null>(null)
   const [selectedScene, setSelectedScene] = useState<number | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -428,7 +509,10 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
     return vis
   })
   const [localTracks, setLocalTracks] = useState<VideoTrack[]>(production.tracks)
+  const [localScenes, setLocalScenes] = useState(production.scenes)
+  const [localNarration, setLocalNarration] = useState(production.narration)
   const [qualityOpen, setQualityOpen] = useState(false)
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
 
   const pixelsPerSecond = PIXELS_PER_SECOND_BASE * zoom
@@ -479,9 +563,58 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
 
   const handleSave = useCallback(() => {
     if (onSave) {
-      onSave({ ...production, tracks: localTracks })
+      onSave({ ...production, tracks: localTracks, scenes: localScenes, narration: localNarration })
     }
-  }, [onSave, production, localTracks])
+  }, [onSave, production, localTracks, localScenes, localNarration])
+
+  // Handle media regeneration for a specific segment
+  const handleRegenerateMedia = useCallback(async (trackType: string, sceneNumber: number | undefined) => {
+    if (!sceneNumber) return
+    const regenId = `${trackType}_${sceneNumber}`
+    setRegeneratingId(regenId)
+
+    try {
+      if (trackType === 'video' && onRegenerateImage) {
+        const newImageUrl = await onRegenerateImage(sceneNumber)
+        if (newImageUrl) {
+          // Update local scenes
+          setLocalScenes(prev => prev.map(s =>
+            s.number === sceneNumber ? { ...s, generatedImageUrl: newImageUrl } : s
+          ))
+          // Update video track segment
+          setLocalTracks(prev => prev.map(t => {
+            if (t.type !== 'video') return t
+            return {
+              ...t,
+              segments: t.segments.map(seg =>
+                seg.sceneNumber === sceneNumber ? { ...seg, generatedMediaUrl: newImageUrl } : seg
+              ),
+            }
+          }))
+        }
+      } else if (trackType === 'narration' && onRegenerateTTS) {
+        const newAudioUrl = await onRegenerateTTS(sceneNumber)
+        if (newAudioUrl) {
+          // Update local narration
+          setLocalNarration(prev => prev.map(n =>
+            n.sceneNumber === sceneNumber ? { ...n, generatedAudioUrl: newAudioUrl } : n
+          ))
+          // Update narration track segment
+          setLocalTracks(prev => prev.map(t => {
+            if (t.type !== 'narration') return t
+            return {
+              ...t,
+              segments: t.segments.map(seg =>
+                seg.sceneNumber === sceneNumber ? { ...seg, generatedMediaUrl: newAudioUrl } : seg
+              ),
+            }
+          }))
+        }
+      }
+    } finally {
+      setRegeneratingId(null)
+    }
+  }, [onRegenerateImage, onRegenerateTTS])
 
   // Get selected segment data
   const selectedSeg = selectedSegment
@@ -504,7 +637,7 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
               {production.title}
             </h1>
             <p className="text-[10px] text-gray-400">
-              {production.scenes.length} cenas · {Math.floor(totalDuration / 60)}:{String(totalDuration % 60).padStart(2, '0')} min
+              {localScenes.length} cenas · {Math.floor(totalDuration / 60)}:{String(totalDuration % 60).padStart(2, '0')} min
             </p>
           </div>
         </div>
@@ -548,7 +681,7 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
         {/* Left sidebar - Scenes + Design Guide */}
         <div className="w-72 bg-white border-r border-gray-200 overflow-y-auto p-4 space-y-4 flex-shrink-0">
           <SceneNavigator
-            scenes={production.scenes}
+            scenes={localScenes}
             selectedScene={selectedScene}
             onSelectScene={setSelectedScene}
           />
@@ -662,6 +795,12 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
               onUpdate={(updated) => handleUpdateSegment(selectedSegment!.trackIndex, selectedSegment!.segmentIndex, updated)}
               onDelete={() => handleDeleteSegment(selectedSegment!.trackIndex, selectedSegment!.segmentIndex)}
               onClose={() => setSelectedSegment(null)}
+              onRegenerateMedia={
+                (selectedTrack.type === 'video' || selectedTrack.type === 'narration') && selectedSeg.sceneNumber
+                  ? () => handleRegenerateMedia(selectedTrack.type, selectedSeg.sceneNumber)
+                  : undefined
+              }
+              isRegenerating={regeneratingId === `${selectedTrack.type}_${selectedSeg.sceneNumber}`}
             />
           ) : selectedScene ? (
             /* Scene detail view */
@@ -671,10 +810,71 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
                 Cena {selectedScene}
               </h3>
               {(() => {
-                const scene = production.scenes.find(s => s.number === selectedScene)
+                const scene = localScenes.find(s => s.number === selectedScene)
                 if (!scene) return <p className="text-xs text-gray-400">Cena não encontrada</p>
+                const narSeg = localNarration.find(n => n.sceneNumber === selectedScene)
                 return (
                   <div className="space-y-3">
+                    {/* Generated image */}
+                    {scene.generatedImageUrl && (
+                      <div className="rounded-lg overflow-hidden border border-rose-200">
+                        <img
+                          src={scene.generatedImageUrl}
+                          alt={`Cena ${scene.number}`}
+                          className="w-full h-44 object-cover"
+                        />
+                      </div>
+                    )}
+
+                    {/* Regenerate image button */}
+                    {onRegenerateImage && (
+                      <button
+                        onClick={() => handleRegenerateMedia('video', scene.number)}
+                        disabled={regeneratingId === `video_${scene.number}`}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-50 text-rose-700 text-xs font-medium rounded-lg hover:bg-rose-100 border border-rose-200 disabled:opacity-50"
+                      >
+                        {regeneratingId === `video_${scene.number}` ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : scene.generatedImageUrl ? (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        ) : (
+                          <ImagePlus className="w-3.5 h-3.5" />
+                        )}
+                        {scene.generatedImageUrl ? 'Regenerar Imagem' : 'Gerar Imagem'}
+                      </button>
+                    )}
+
+                    {/* Generated narration audio */}
+                    {narSeg?.generatedAudioUrl && (
+                      <div className="bg-violet-50 rounded-lg p-2.5 border border-violet-200">
+                        <p className="text-[10px] font-semibold text-violet-600 uppercase mb-1.5">Narração Gerada</p>
+                        <audio
+                          controls
+                          src={narSeg.generatedAudioUrl}
+                          className="w-full"
+                          style={{ height: '32px' }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Regenerate TTS button */}
+                    {onRegenerateTTS && (
+                      <button
+                        onClick={() => handleRegenerateMedia('narration', scene.number)}
+                        disabled={regeneratingId === `narration_${scene.number}`}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-50 text-violet-700 text-xs font-medium rounded-lg hover:bg-violet-100 border border-violet-200 disabled:opacity-50"
+                      >
+                        {regeneratingId === `narration_${scene.number}` ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : narSeg?.generatedAudioUrl ? (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        ) : (
+                          <Volume2 className="w-3.5 h-3.5" />
+                        )}
+                        {narSeg?.generatedAudioUrl ? 'Regenerar Narração' : 'Gerar Narração'}
+                      </button>
+                    )}
+
                     <div className="bg-gray-50 rounded-lg p-3 border">
                       <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Timing</p>
                       <p className="text-xs text-gray-700">{scene.timeStart} → {scene.timeEnd} ({scene.duration}s)</p>
@@ -687,18 +887,6 @@ export default function VideoStudioEditor({ production, onClose, onSave }: Video
                       <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Narração</p>
                       <p className="text-xs text-gray-700 leading-relaxed">{scene.narration}</p>
                     </div>
-                    {scene.imagePrompt && (
-                      <div className="bg-rose-50 rounded-lg p-3 border border-rose-200">
-                        <p className="text-[10px] font-semibold text-rose-600 uppercase mb-1">Prompt de Imagem</p>
-                        <p className="text-xs text-gray-700 leading-relaxed font-mono">{scene.imagePrompt}</p>
-                      </div>
-                    )}
-                    {scene.videoPrompt && (
-                      <div className="bg-violet-50 rounded-lg p-3 border border-violet-200">
-                        <p className="text-[10px] font-semibold text-violet-600 uppercase mb-1">Prompt de Vídeo</p>
-                        <p className="text-xs text-gray-700 leading-relaxed font-mono">{scene.videoPrompt}</p>
-                      </div>
-                    )}
                     {scene.transition && (
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full border border-purple-200">

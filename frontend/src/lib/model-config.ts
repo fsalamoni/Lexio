@@ -1309,7 +1309,32 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     requiredCapability: 'text',
     bestModelNote: 'Revisão de qualidade. Premium: Claude Sonnet ($3), GPT-4.1 ($2). Baratos: DeepSeek V3 ($0.27), Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), GPT-4.1 Mini ($0.40), Qwen 2.5 72B ($0.13), Llama 3.3 70B ($0.12). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free, Mistral Small:free.',
   },
+  {
+    key: 'video_image_generator',
+    label: 'Gerador de Imagens',
+    description: 'Gera imagens reais para cada cena do vídeo usando IA generativa (modalities: image)',
+    defaultModel: 'google/gemini-2.5-flash-preview:image-output',
+    recommendedTier: 'balanced',
+    icon: 'image-plus',
+    agentCategory: 'synthesis',
+    requiredCapability: 'image',
+    bestModelNote: 'Gera imagens reais. Gemini Flash Image (barato, rápido), Flux 1.1 Pro (qualidade premium, $0.03/imagem), Flux Schnell (rápido).',
+  },
+  {
+    key: 'video_tts',
+    label: 'Narrador TTS',
+    description: 'Converte texto de narração em áudio real usando Text-to-Speech via OpenRouter',
+    defaultModel: 'openai/tts-1-hd',
+    recommendedTier: 'premium',
+    icon: 'volume-2',
+    agentCategory: 'synthesis',
+    requiredCapability: 'audio',
+    bestModelNote: 'TTS HD: qualidade premium ($0.015/1K chars). TTS Standard: rápido ($0.015/1K chars). Vozes: nova, alloy, echo, fable, onyx, shimmer.',
+  },
 ]
+
+/** Default TTS voice for video narration */
+export const DEFAULT_VIDEO_TTS_VOICE = 'nova'
 
 /** Map from video-pipeline agent key → model ID */
 export type VideoPipelineModelMap = Record<string, string>
