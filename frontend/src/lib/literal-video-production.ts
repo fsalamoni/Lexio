@@ -81,7 +81,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 async function remoteImageToDataUrl(url: string): Promise<string> {
   const response = await fetch(url)
   if (!response.ok) {
-    throw new Error(`Falha ao baixar imagem gerada (${response.status})`)
+    throw new Error(`Falha ao baixar imagem gerada (${response.status}) em ${url}`)
   }
   return blobToDataUrl(await response.blob())
 }
@@ -320,6 +320,8 @@ export async function renderLiteralVideo(
   const scheduleAudio = async (url: string, startAt: number, gainValue: number) => {
     const response = await fetch(url)
     const arrayBuffer = await response.arrayBuffer()
+    // Some browsers hand out a detached/consumed buffer after fetch pipelines;
+    // cloning keeps decodeAudioData stable across object URLs and data URLs.
     const buffer = await audioContext.decodeAudioData(arrayBuffer.slice(0))
     const source = audioContext.createBufferSource()
     const gain = audioContext.createGain()
