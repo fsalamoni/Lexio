@@ -13,6 +13,7 @@ import type {
   VideoProductionPackage,
   VideoScene,
   VideoSceneAsset,
+  createVideoRenderScopeLabel,
 } from './video-generation-pipeline'
 
 export type LiteralVideoProgressCallback = (
@@ -163,12 +164,6 @@ function createScopeKey(scope: VideoRenderScope, sceneNumber?: number, partNumbe
   if (scope === 'scene') return `scene:${sceneNumber ?? 'unknown'}`
   if (scope === 'part') return `part:${sceneNumber ?? 'unknown'}:${partNumber ?? 'unknown'}`
   return 'full'
-}
-
-function createScopeLabel(scope: VideoRenderScope, sceneNumber?: number, partNumber?: number): string {
-  if (scope === 'scene') return `Cena ${sceneNumber ?? '?'}`
-  if (scope === 'part') return `Cena ${sceneNumber ?? '?'} · Parte ${partNumber ?? '?'}`
-  return 'Projeto completo'
 }
 
 export function getDefaultVideoRenderPresets(): VideoRenderPreset[] {
@@ -688,7 +683,7 @@ export async function renderLiteralVideoByScope(
         ...rendered.asset,
         scope: 'full',
         scopeKey: createScopeKey('full'),
-        label: createScopeLabel('full'),
+        label: createVideoRenderScopeLabel('full'),
         presetId: chosenPreset.id,
       },
     }
@@ -717,7 +712,7 @@ export async function renderLiteralVideoByScope(
         ...rendered.asset,
         scope: 'scene',
         scopeKey: createScopeKey('scene', scene.number),
-        label: createScopeLabel('scene', scene.number),
+        label: createVideoRenderScopeLabel('scene', scene.number),
         presetId: chosenPreset.id,
         sceneNumber: scene.number,
       },
@@ -757,7 +752,7 @@ export async function renderLiteralVideoByScope(
       ...rendered.asset,
       scope: 'part',
       scopeKey: createScopeKey('part', scene.number, partNumber),
-      label: createScopeLabel('part', scene.number, partNumber),
+      label: createVideoRenderScopeLabel('part', scene.number, partNumber),
       presetId: chosenPreset.id,
       sceneNumber: scene.number,
       partNumber,

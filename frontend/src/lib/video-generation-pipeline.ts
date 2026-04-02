@@ -153,6 +153,16 @@ export interface VideoRenderQueueItem {
   error?: string
 }
 
+export function createVideoRenderScopeLabel(
+  scope: VideoRenderScope,
+  sceneNumber?: number,
+  partNumber?: number,
+): string {
+  if (scope === 'scene') return `Cena ${sceneNumber ?? '?'}`
+  if (scope === 'part') return `Cena ${sceneNumber ?? '?'} · Parte ${partNumber ?? '?'}`
+  return 'Projeto completo'
+}
+
 export interface VideoProductionPackage {
   title: string
   totalDuration: number

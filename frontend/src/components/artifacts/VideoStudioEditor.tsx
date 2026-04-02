@@ -25,6 +25,7 @@ import type {
   VideoScene,
   VideoSceneAsset,
 } from '../../lib/video-generation-pipeline'
+import { createVideoRenderScopeLabel } from '../../lib/video-generation-pipeline'
 import { generateImageViaOpenRouter } from '../../lib/image-generation-client'
 import { generateTTSViaOpenRouter } from '../../lib/tts-client'
 import {
@@ -114,12 +115,6 @@ function sanitizeName(value: string): string {
     .replace(/^-|-$/g, '')
     .slice(0, 80)
     .trim() || 'video'
-}
-
-function createScopeLabel(scope: VideoRenderScope, sceneNumber?: number, partNumber?: number): string {
-  if (scope === 'scene') return `Cena ${sceneNumber ?? '?'}`
-  if (scope === 'part') return `Cena ${sceneNumber ?? '?'} · Parte ${partNumber ?? '?'}`
-  return 'Projeto completo'
 }
 
 function normalizeRenderPresets(production: VideoProductionPackage): VideoRenderPreset[] {
@@ -925,11 +920,11 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       createdAt: now,
       sceneNumber,
       partNumber,
-      message: `Na fila: ${createScopeLabel(scope, sceneNumber, partNumber)}`,
+      message: `Na fila: ${createVideoRenderScopeLabel(scope, sceneNumber, partNumber)}`,
     }
     setRenderQueue(prev => [...prev, item])
     setHasUnsavedChanges(true)
-    toast.success(`Adicionado à fila: ${createScopeLabel(scope, sceneNumber, partNumber)}`)
+    toast.success(`Adicionado à fila: ${createVideoRenderScopeLabel(scope, sceneNumber, partNumber)}`)
   }, [buildCurrentProduction, selectedRenderPresetId, toast])
 
   const handleEnqueueSelectedRender = useCallback(() => {
@@ -984,7 +979,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         status: 'processing',
         startedAt: new Date().toISOString(),
         progress: 5,
-        message: `Renderizando ${createScopeLabel(pending.scope, pending.sceneNumber, pending.partNumber)}...`,
+        message: `Renderizando ${createVideoRenderScopeLabel(pending.scope, pending.sceneNumber, pending.partNumber)}...`,
       })
 
       try {
@@ -1463,7 +1458,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                     {renderQueue.map(item => (
                       <div key={item.id} className="border rounded p-1.5 bg-gray-50">
                         <p className="text-[10px] font-medium text-gray-700">
-                          {createScopeLabel(item.scope, item.sceneNumber, item.partNumber)}
+                          {createVideoRenderScopeLabel(item.scope, item.sceneNumber, item.partNumber)}
                         </p>
                         <p className="text-[10px] text-gray-500">{item.message || item.status}</p>
                         <div className="w-full h-1.5 bg-gray-200 rounded mt-1">
