@@ -518,9 +518,9 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const [generatingAudioFor, setGeneratingAudioFor] = useState<number | null>(null)
   const [audioError, setAudioError] = useState<Record<number, string>>({})
   const [generatedClips, setGeneratedClips] = useState<Record<number, VideoClipAsset[]>>({})
-  const [generatedSoundtrack, setGeneratedSoundtrack] = useState<string | null>(production.soundtrackAsset?.url || null)
-  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(production.renderedVideo?.url || null)
-  const [generatedVideoMimeType, setGeneratedVideoMimeType] = useState<string>(production.renderedVideo?.mimeType || 'video/webm')
+  const [generatedSoundtrack, setGeneratedSoundtrack] = useState<string | null>(null)
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null)
+  const [generatedVideoMimeType, setGeneratedVideoMimeType] = useState<string>('video/webm')
   const [generatingFullVideo, setGeneratingFullVideo] = useState(false)
   const [fullVideoStatus, setFullVideoStatus] = useState<string>('')
   const [fullVideoError, setFullVideoError] = useState<string>('')
@@ -942,20 +942,20 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     setRenderQueue(prev => prev.map(requeueItemById))
   }, [])
 
+  const updateRenderQueueItem = useCallback((itemId: string, update: Partial<VideoRenderQueueItem>) => {
+    setRenderQueue(prev => prev.map(item => item.id === itemId ? { ...item, ...update } : item))
+  }, [])
+
   useEffect(() => {
     if (generatingFullVideo) return
     const pending = renderQueue.find(item => item.status === 'pending')
     if (!pending) return
     let cancelled = false
 
-    const updateQueueItem = (id: string, update: Partial<VideoRenderQueueItem>) => {
-      setRenderQueue(prev => prev.map(item => item.id === id ? { ...item, ...update } : item))
-    }
-
     const run = async () => {
       setGeneratingFullVideo(true)
       setFullVideoError('')
-      updateQueueItem(pending.id, {
+      updateRenderQueueItem(pending.id, {
         status: 'processing',
         startedAt: new Date().toISOString(),
         progress: 5,
@@ -974,7 +974,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
             if (cancelled) return
             const percentMatch = label.match(/(\d{1,3})%/)
             const percent = percentMatch ? Number.parseInt(percentMatch[1], 10) : 0
-            updateQueueItem(pending.id, {
+            updateRenderQueueItem(pending.id, {
               progress: Math.min(99, Math.max(10, percent || 50)),
               message: label,
             })
@@ -992,16 +992,22 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         const outputProduction: VideoProductionPackage = {
           ...currentProduction,
           renderedScopes: mergedScopes,
-          renderQueue: renderQueue.map(item => item.id === pending.id
-            ? { ...item, status: 'completed', progress: 100, completedAt: new Date().toISOString(), resultScopeKey: result.asset.scopeKey, message: `Concluído: ${result.asset.label}` }
-            : item,
-          ),
+          renderQueue: (currentProduction.renderQueue || []).map(item => item.id === pending.id
+            ? {
+                ...item,
+                status: 'completed',
+                progress: 100,
+                completedAt: new Date().toISOString(),
+                resultScopeKey: result.asset.scopeKey,
+                message: `Concluído: ${result.asset.label}`,
+              }
+            : item),
           renderedVideo: result.asset.scope === 'full' ? result.asset : currentProduction.renderedVideo,
         }
         if (onSave) onSave(outputProduction)
         if (onSaveToNotebook) await onSaveToNotebook(outputProduction)
 
-        updateQueueItem(pending.id, {
+        updateRenderQueueItem(pending.id, {
           status: 'completed',
           progress: 100,
           completedAt: new Date().toISOString(),
@@ -1014,7 +1020,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         if (cancelled) return
         const message = err instanceof Error ? err.message : 'Falha ao processar item da fila de render'
         setFullVideoError(message)
-        updateQueueItem(pending.id, {
+        updateRenderQueueItem(pending.id, {
           status: 'failed',
           progress: 100,
           completedAt: new Date().toISOString(),
@@ -1034,7 +1040,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     return () => {
       cancelled = true
     }
-  }, [renderQueue, generatingFullVideo, buildCurrentProduction, onSave, onSaveToNotebook, upsertRenderedScope, toast])
+  }, [renderQueue, generatingFullVideo, buildCurrentProduction, onSave, onSaveToNotebook, upsertRenderedScope, toast, updateRenderQueueItem])
 
   const handleRenderFinalVideo = useCallback(async () => {
     enqueueRenderJob('full')
@@ -1457,7 +1463,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                               onClick={() => handleRequeueItem(item.id)}
                               className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-600 text-white hover:bg-indigo-700"
                             >
-                              Reenfileirar
+                              Recolocar na Fila
                             </button>
                           )}
                           {item.status === 'pending' && (
