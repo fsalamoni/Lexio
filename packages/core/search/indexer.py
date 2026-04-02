@@ -19,9 +19,36 @@ COLLECTION = settings.qdrant_collection
 def _extract_text(content: bytes, content_type: str, filename: str) -> str:
     """Extract plain text from uploaded file bytes."""
     fname = filename.lower()
+    text_like_mime_types = {
+        "text/plain",
+        "text/markdown",
+        "application/json",
+        "text/json",
+        "text/csv",
+        "application/xml",
+        "text/xml",
+        "application/x-yaml",
+        "text/yaml",
+        "text/html",
+        "application/rtf",
+        "text/rtf",
+    }
+    text_like_extensions = (
+        ".txt",
+        ".md",
+        ".json",
+        ".csv",
+        ".xml",
+        ".yaml",
+        ".yml",
+        ".html",
+        ".htm",
+        ".rtf",
+        ".log",
+    )
 
     # Plain text
-    if "text" in content_type or fname.endswith(".txt") or fname.endswith(".md"):
+    if content_type in text_like_mime_types or "text" in content_type or fname.endswith(text_like_extensions):
         try:
             return content.decode("utf-8", errors="replace")
         except Exception:
