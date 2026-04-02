@@ -2,6 +2,7 @@ import { generateImageViaOpenRouter } from './image-generation-client'
 import { loadVideoPipelineModels } from './model-config'
 import { generateTTSViaOpenRouter } from './tts-client'
 import type {
+  VideoClipAsset,
   RenderedVideoAsset,
   VideoAudioAsset,
   VideoGenerationStepExecution,
@@ -30,11 +31,20 @@ export interface LiteralMediaGenerationResult {
 }
 
 const MIN_SOUNDTRACK_DURATION_SECONDS = 1
+const DEFAULT_SCENE_CLIP_DURATION_SECONDS = 8
 
 interface PreparedSceneTiming {
   scene: VideoScene
   start: number
   end: number
+}
+
+interface ScenePartTiming {
+  sceneNumber: number
+  partNumber: number
+  startTime: number
+  endTime: number
+  duration: number
 }
 
 function makeExecution(
@@ -73,6 +83,130 @@ function prepareTimings(production: VideoProductionPackage): PreparedSceneTiming
     cursor = end
     return { scene, start, end }
   })
+}
+
+function buildScenePartTimings(
+  sceneTiming: PreparedSceneTiming,
+  clipDurationSeconds: number,
+): ScenePartTiming[] {
+  const duration = Math.max(1, sceneTiming.end - sceneTiming.start)
+  const chunk = Math.max(1, Math.floor(clipDurationSeconds))
+  const parts = Math.max(1, Math.ceil(duration / chunk))
+  const list: ScenePartTiming[] = []
+  for (let i = 0; i < parts; i++) {
+    const startTime = sceneTiming.start + i * chunk
+    const endTime = Math.min(sceneTiming.end, startTime + chunk)
+    list.push({
+      sceneNumber: sceneTiming.scene.number,
+      partNumber: i + 1,
+      startTime,
+      endTime,
+      duration: Math.max(1, endTime - startTime),
+    })
+  }
+  return list
+}
+
+async function renderSceneClip(
+  scene: VideoScene,
+  part: ScenePartTiming,
+  imageUrl: string | undefined,
+  audioUrl: string | undefined,
+): Promise<VideoClipAsset | null> {
+  if (typeof window === 'undefined' || typeof document === 'undefined' || typeof MediaRecorder === 'undefined') {
+    return null
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 1280
+  canvas.height = 720
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  const image = imageUrl ? await loadImage(imageUrl).catch(() => null) : null
+
+  const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioContextCtor) return null
+  const audioContext = new AudioContextCtor()
+  const destination = audioContext.createMediaStreamDestination()
+  const masterGain = audioContext.createGain()
+  masterGain.gain.value = 0.92
+  masterGain.connect(destination)
+
+  if (audioUrl) {
+    try {
+      const response = await fetch(audioUrl)
+      const arrayBuffer = await response.arrayBuffer()
+      const buffer = await audioContext.decodeAudioData(arrayBuffer.slice(0))
+      const source = audioContext.createBufferSource()
+      source.buffer = buffer
+      source.connect(masterGain)
+      source.start(audioContext.currentTime + 0.1)
+    } catch {
+      // keep clip render even if audio fails
+    }
+  }
+
+  const canvasStream = canvas.captureStream(30)
+  const combinedStream = new MediaStream([
+    ...canvasStream.getVideoTracks(),
+    ...destination.stream.getAudioTracks(),
+  ])
+  const mimeType = getSupportedVideoMimeType()
+  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 6_000_000 })
+  const chunks: BlobPart[] = []
+  recorder.ondataavailable = event => {
+    if (event.data.size > 0) chunks.push(event.data)
+  }
+
+  const done = new Promise<Blob>((resolve, reject) => {
+    recorder.onerror = () => reject(recorder.error ?? new Error('Falha ao gravar clipe'))
+    recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
+  })
+
+  const clipScene: VideoScene = {
+    ...scene,
+    duration: part.duration,
+  }
+  const clipTiming: PreparedSceneTiming = {
+    scene: clipScene,
+    start: 0,
+    end: part.duration,
+  }
+
+  drawSceneFrame(ctx, canvas, clipTiming, image, 0)
+  recorder.start(500)
+  await audioContext.resume()
+
+  let raf = 0
+  const startedAt = performance.now()
+  const renderLoop = () => {
+    const elapsed = (performance.now() - startedAt) / 1000
+    drawSceneFrame(ctx, canvas, clipTiming, image, Math.min(elapsed, part.duration))
+    if (elapsed < part.duration + 0.1) {
+      raf = window.requestAnimationFrame(renderLoop)
+    } else {
+      recorder.stop()
+    }
+  }
+  raf = window.requestAnimationFrame(renderLoop)
+  const blob = await done.finally(async () => {
+    window.cancelAnimationFrame(raf)
+    canvasStream.getTracks().forEach(track => track.stop())
+    destination.stream.getTracks().forEach(track => track.stop())
+    await audioContext.close().catch(() => {})
+  })
+
+  return {
+    sceneNumber: part.sceneNumber,
+    partNumber: part.partNumber,
+    startTime: part.startTime,
+    endTime: part.endTime,
+    duration: part.duration,
+    url: URL.createObjectURL(blob),
+    mimeType,
+    generatedAt: new Date().toISOString(),
+    source: 'generated',
+  }
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -470,6 +604,8 @@ export async function generateLiteralMediaAssets(
   const executions: VideoGenerationStepExecution[] = []
   const errors: string[] = []
   const models = await loadVideoPipelineModels()
+  const clipDurationSeconds = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
+  const timings = prepareTimings(production)
   const existingAssets = new Map(
     (production.sceneAssets || []).map(asset => [asset.sceneNumber, asset]),
   )
@@ -536,7 +672,53 @@ export async function generateLiteralMediaAssets(
     }
   }
 
-  onProgress?.(3, 4, 'media_soundtrack_generation', 'Gerando trilha sonora da produção')
+  onProgress?.(3, 4, 'media_video_clip_generation', 'Gerando clipes por partes das cenas')
+  for (let index = 0; index < production.scenes.length; index++) {
+    const scene = production.scenes[index]
+    const timing = timings.find(item => item.scene.number === scene.number)
+    const sceneAsset = generatedAssets.find(item => item.sceneNumber === scene.number)
+    if (!sceneAsset || !timing) continue
+    const existingClips = sceneAsset.videoClips || []
+    const parts = buildScenePartTimings(timing, clipDurationSeconds)
+
+    for (const part of parts) {
+      const hasClip = existingClips.some(clip => clip.partNumber === part.partNumber && Boolean(clip.url))
+      if (hasClip) continue
+
+      onProgress?.(
+        3,
+        4,
+        'media_video_clip_generation',
+        `Gerando clipe da cena ${scene.number} (${part.partNumber}/${parts.length})`,
+      )
+      const startedAt = performance.now()
+      try {
+        const clip = await renderSceneClip(
+          scene,
+          part,
+          sceneAsset.imageUrl,
+          sceneAsset.narrationUrl,
+        )
+        if (clip) {
+          existingClips.push(clip)
+          sceneAsset.videoClips = [...existingClips].sort((a, b) => a.partNumber - b.partNumber)
+          executions.push(makeExecution('media_video_clip_generation', `browser/${clip.mimeType}`, performance.now() - startedAt))
+        }
+      } catch (error) {
+        errors.push(`Cena ${scene.number} parte ${part.partNumber}: falha ao gerar clipe (${error instanceof Error ? error.message : String(error)})`)
+      }
+    }
+
+    if (onPartialProduction) {
+      await onPartialProduction({
+        ...production,
+        sceneClipDurationSeconds: clipDurationSeconds,
+        sceneAssets: generatedAssets.filter(item => item.imageUrl || item.narrationUrl || (item.videoClips && item.videoClips.length > 0)),
+      })
+    }
+  }
+
+  onProgress?.(4, 4, 'media_soundtrack_generation', 'Gerando trilha sonora da produção')
   let soundtrackAsset = production.soundtrackAsset
   if (!soundtrackAsset?.url) {
     try {
@@ -559,7 +741,8 @@ export async function generateLiteralMediaAssets(
 
   const mediaProduction: VideoProductionPackage = {
     ...production,
-    sceneAssets: generatedAssets.filter(item => item.imageUrl || item.narrationUrl),
+    sceneClipDurationSeconds: clipDurationSeconds,
+    sceneAssets: generatedAssets.filter(item => item.imageUrl || item.narrationUrl || (item.videoClips && item.videoClips.length > 0)),
     soundtrackAsset,
   }
 

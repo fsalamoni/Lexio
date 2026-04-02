@@ -50,7 +50,10 @@ import {
   type VideoProductionPackage,
   type VideoGenerationProgressCallback,
 } from '../lib/video-generation-pipeline'
-import { uploadNotebookVideoArtifact } from '../lib/notebook-media-storage'
+import {
+  uploadNotebookMediaArtifact,
+  uploadNotebookVideoArtifact,
+} from '../lib/notebook-media-storage'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
@@ -1285,6 +1288,95 @@ Instruções:
             storagePath: storedVideo.path,
           },
         }
+      }
+
+      const uploadedSceneAssets = await Promise.all((productionToSave.sceneAssets || []).map(async sceneAsset => {
+        let imageUrl = sceneAsset.imageUrl
+        let imageStoragePath = sceneAsset.imageStoragePath
+        let narrationUrl = sceneAsset.narrationUrl
+        let narrationStoragePath = sceneAsset.narrationStoragePath
+        let videoClips = sceneAsset.videoClips
+
+        if (imageUrl && (imageUrl.startsWith('blob:') || imageUrl.startsWith('data:'))) {
+          const imageBlob = await fetch(imageUrl).then(resp => resp.blob())
+          const stored = await uploadNotebookMediaArtifact(
+            userId,
+            activeNotebook.id,
+            `${production.title}-scene-${sceneAsset.sceneNumber}-image`,
+            imageBlob,
+            'images',
+            '.png',
+          )
+          imageUrl = stored.url
+          imageStoragePath = stored.path
+        }
+
+        if (narrationUrl && (narrationUrl.startsWith('blob:') || narrationUrl.startsWith('data:'))) {
+          const narrationBlob = await fetch(narrationUrl).then(resp => resp.blob())
+          const stored = await uploadNotebookMediaArtifact(
+            userId,
+            activeNotebook.id,
+            `${production.title}-scene-${sceneAsset.sceneNumber}-narration`,
+            narrationBlob,
+            'audios',
+            '.wav',
+          )
+          narrationUrl = stored.url
+          narrationStoragePath = stored.path
+        }
+
+        if (videoClips?.length) {
+          videoClips = await Promise.all(videoClips.map(async clip => {
+            if (!clip.url || (!clip.url.startsWith('blob:') && !clip.url.startsWith('data:'))) return clip
+            const clipBlob = await fetch(clip.url).then(resp => resp.blob())
+            const stored = await uploadNotebookMediaArtifact(
+              userId,
+              activeNotebook.id,
+              `${production.title}-scene-${clip.sceneNumber}-part-${clip.partNumber}`,
+              clipBlob,
+              'videos',
+              '.webm',
+            )
+            return {
+              ...clip,
+              url: stored.url,
+              storagePath: stored.path,
+            }
+          }))
+        }
+
+        return {
+          ...sceneAsset,
+          imageUrl,
+          imageStoragePath,
+          narrationUrl,
+          narrationStoragePath,
+          videoClips,
+        }
+      }))
+
+      let soundtrackAsset = productionToSave.soundtrackAsset
+      if (soundtrackAsset?.url && (soundtrackAsset.url.startsWith('blob:') || soundtrackAsset.url.startsWith('data:'))) {
+        const soundtrackBlob = await fetch(soundtrackAsset.url).then(resp => resp.blob())
+        const stored = await uploadNotebookMediaArtifact(
+          userId,
+          activeNotebook.id,
+          `${production.title}-soundtrack`,
+          soundtrackBlob,
+          'audios',
+          '.wav',
+        )
+        soundtrackAsset = {
+          ...soundtrackAsset,
+          url: stored.url,
+          storagePath: stored.path,
+        }
+      }
+
+      productionToSave = {
+        ...productionToSave,
+        sceneAssets: uploadedSceneAssets,
+        soundtrackAsset,
       }
 
       const artifactTitle = `Estúdio de Vídeo: ${production.title}`

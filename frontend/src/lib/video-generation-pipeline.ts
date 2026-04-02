@@ -83,6 +83,22 @@ export interface VideoSceneAsset {
   sceneNumber: number
   imageUrl?: string
   narrationUrl?: string
+  imageStoragePath?: string
+  narrationStoragePath?: string
+  videoClips?: VideoClipAsset[]
+}
+
+export interface VideoClipAsset {
+  sceneNumber: number
+  partNumber: number
+  startTime: number
+  endTime: number
+  duration: number
+  url: string
+  mimeType: string
+  generatedAt: string
+  source?: 'generated' | 'uploaded'
+  storagePath?: string
 }
 
 export interface VideoAudioAsset {
@@ -90,6 +106,7 @@ export interface VideoAudioAsset {
   mimeType: string
   generatedAt: string
   description?: string
+  storagePath?: string
 }
 
 export interface RenderedVideoAsset {
@@ -111,6 +128,7 @@ export interface VideoProductionPackage {
   sceneAssets?: VideoSceneAsset[]
   soundtrackAsset?: VideoAudioAsset
   renderedVideo?: RenderedVideoAsset
+  sceneClipDurationSeconds?: number
 }
 
 export interface VideoGenerationStepExecution {

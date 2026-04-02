@@ -9,10 +9,12 @@ import {
   Video, Mic, Music, Sparkles, Type, Clock, Plus,
   Scissors, ChevronDown, ChevronUp, Palette, Eye, EyeOff,
   Camera, Layers, X, Save, ZoomIn, ZoomOut,
-  Film, CheckCircle2, Image, Loader2, Volume2, BookOpen,
+  Film, CheckCircle2, Image, Loader2, Volume2, BookOpen, Upload, Download,
 } from 'lucide-react'
+import JSZip from 'jszip'
 import type {
   VideoAudioAsset,
+  VideoClipAsset,
   VideoProductionPackage,
   VideoTrack,
   TrackSegment,
@@ -63,6 +65,8 @@ interface SelectedSegment {
   segmentIndex: number
 }
 
+const DEFAULT_SCENE_CLIP_DURATION_SECONDS = 8
+
 function hasCompleteMediaAssets(
   scenes: VideoScene[],
   imageMap: Record<number, string>,
@@ -82,6 +86,29 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error('Falha ao ler blob'))
     reader.readAsDataURL(blob)
   })
+}
+
+function parseTimeToSeconds(value?: string): number {
+  if (!value) return 0
+  const parts = value.split(':').map(part => Number.parseInt(part, 10))
+  if (parts.some(Number.isNaN)) return 0
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  return 0
+}
+
+function sanitizeName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9-_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 80) || 'video'
+}
+
+async function dataUrlFromFile(file: File): Promise<string> {
+  return blobToDataUrl(file)
 }
 
 // ── Timeline Ruler ────────────────────────────────────────────────────────────
@@ -469,6 +496,8 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const [generatedAudio, setGeneratedAudio] = useState<Record<number, string>>({})
   const [generatingAudioFor, setGeneratingAudioFor] = useState<number | null>(null)
   const [audioError, setAudioError] = useState<Record<number, string>>({})
+  const [generatedClips, setGeneratedClips] = useState<Record<number, VideoClipAsset[]>>({})
+  const [generatingClipFor, setGeneratingClipFor] = useState<string | null>(null)
   const [generatedSoundtrack, setGeneratedSoundtrack] = useState<string | null>(production.soundtrackAsset?.url || null)
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(production.renderedVideo?.url || null)
   const [generatedVideoMimeType, setGeneratedVideoMimeType] = useState<string>(production.renderedVideo?.mimeType || 'video/webm')
@@ -486,12 +515,15 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   useEffect(() => {
     const imageMap: Record<number, string> = {}
     const audioMap: Record<number, string> = {}
+    const clipsMap: Record<number, VideoClipAsset[]> = {}
     ;(production.sceneAssets || []).forEach(asset => {
       if (asset.imageUrl) imageMap[asset.sceneNumber] = asset.imageUrl
       if (asset.narrationUrl) audioMap[asset.sceneNumber] = asset.narrationUrl
+      if (asset.videoClips?.length) clipsMap[asset.sceneNumber] = asset.videoClips
     })
     setGeneratedImages(imageMap)
     setGeneratedAudio(audioMap)
+    setGeneratedClips(clipsMap)
     setGeneratedSoundtrack(production.soundtrackAsset?.url || null)
     setGeneratedVideoUrl(production.renderedVideo?.url || null)
     setGeneratedVideoMimeType(production.renderedVideo?.mimeType || 'video/webm')
@@ -569,7 +601,8 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         sceneNumber: scene.number,
         imageUrl: generatedImages[scene.number],
         narrationUrl: generatedAudio[scene.number],
-      })).filter(asset => asset.imageUrl || asset.narrationUrl)
+        videoClips: generatedClips[scene.number],
+      })).filter(asset => asset.imageUrl || asset.narrationUrl || (asset.videoClips && asset.videoClips.length > 0))
       const soundtrackAsset: VideoAudioAsset | undefined = generatedSoundtrack
         ? {
             url: generatedSoundtrack,
@@ -581,6 +614,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       await onSaveToNotebook({
         ...production,
         tracks: localTracks,
+        sceneClipDurationSeconds: production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS,
         sceneAssets,
         soundtrackAsset,
         renderedVideo: generatedVideoUrl
@@ -596,7 +630,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     } finally {
       setSavingToNotebook(false)
     }
-  }, [onSaveToNotebook, production, localTracks, generatedImages, generatedAudio, generatedSoundtrack, generatedVideoUrl, generatedVideoMimeType])
+  }, [onSaveToNotebook, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, generatedVideoUrl, generatedVideoMimeType])
 
   const handleCloseRequest = useCallback(() => {
     if (hasUnsavedChanges) {
@@ -615,10 +649,12 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
           sceneNumber: scene.number,
           imageUrl: generatedImages[scene.number],
           narrationUrl: generatedAudio[scene.number],
-        })).filter(asset => asset.imageUrl || asset.narrationUrl)
+          videoClips: generatedClips[scene.number],
+        })).filter(asset => asset.imageUrl || asset.narrationUrl || (asset.videoClips && asset.videoClips.length > 0))
         await onSaveToNotebook({
           ...production,
           tracks: localTracks,
+          sceneClipDurationSeconds: production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS,
           sceneAssets,
           soundtrackAsset: generatedSoundtrack
             ? {
@@ -642,7 +678,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     }
     setShowCloseConfirm(false)
     onClose()
-  }, [onSaveToNotebook, onClose, production, localTracks])
+  }, [onSaveToNotebook, onClose, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, generatedVideoUrl, generatedVideoMimeType])
 
   const handleDiscardClose = useCallback(() => {
     setShowCloseConfirm(false)
@@ -716,7 +752,8 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
           sceneNumber: scene.number,
           imageUrl: generatedImages[scene.number],
           narrationUrl: generatedAudio[scene.number],
-        })).filter(asset => asset.imageUrl || asset.narrationUrl),
+          videoClips: generatedClips[scene.number],
+        })).filter(asset => asset.imageUrl || asset.narrationUrl || (asset.videoClips && asset.videoClips.length > 0)),
         soundtrackAsset: generatedSoundtrack
           ? {
               url: generatedSoundtrack,
@@ -737,12 +774,15 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         async partial => {
           const nextImagesPartial: Record<number, string> = {}
           const nextAudioPartial: Record<number, string> = {}
+          const nextClipsPartial: Record<number, VideoClipAsset[]> = {}
           ;(partial.sceneAssets || []).forEach(asset => {
             if (asset.imageUrl) nextImagesPartial[asset.sceneNumber] = asset.imageUrl
             if (asset.narrationUrl) nextAudioPartial[asset.sceneNumber] = asset.narrationUrl
+            if (asset.videoClips?.length) nextClipsPartial[asset.sceneNumber] = asset.videoClips
           })
           setGeneratedImages(nextImagesPartial)
           setGeneratedAudio(nextAudioPartial)
+          setGeneratedClips(nextClipsPartial)
           setGeneratedSoundtrack(partial.soundtrackAsset?.url || null)
           if (onSave) onSave(partial)
           if (onSaveToNotebook) await onSaveToNotebook(partial)
@@ -751,12 +791,15 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
 
       const nextImages: Record<number, string> = {}
       const nextAudio: Record<number, string> = {}
+      const nextClips: Record<number, VideoClipAsset[]> = {}
       ;(result.production.sceneAssets || []).forEach(asset => {
         if (asset.imageUrl) nextImages[asset.sceneNumber] = asset.imageUrl
         if (asset.narrationUrl) nextAudio[asset.sceneNumber] = asset.narrationUrl
+        if (asset.videoClips?.length) nextClips[asset.sceneNumber] = asset.videoClips
       })
       setGeneratedImages(nextImages)
       setGeneratedAudio(nextAudio)
+      setGeneratedClips(nextClips)
       setGeneratedSoundtrack(result.production.soundtrackAsset?.url || null)
       setMediaGenerationComplete(true)
       setHasUnsavedChanges(false)
@@ -777,7 +820,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     } finally {
       setGeneratingFullVideo(false)
     }
-  }, [apiKey, generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedSoundtrack, onSave, onSaveToNotebook, toast])
+  }, [apiKey, generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, onSave, onSaveToNotebook, toast])
 
   const handleRenderFinalVideo = useCallback(async () => {
     if (generatingFullVideo) return
@@ -791,7 +834,8 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
           sceneNumber: scene.number,
           imageUrl: generatedImages[scene.number],
           narrationUrl: generatedAudio[scene.number],
-        })).filter(asset => asset.imageUrl || asset.narrationUrl),
+          videoClips: generatedClips[scene.number],
+        })).filter(asset => asset.imageUrl || asset.narrationUrl || (asset.videoClips && asset.videoClips.length > 0)),
         soundtrackAsset: generatedSoundtrack
           ? {
               url: generatedSoundtrack,
@@ -825,7 +869,183 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       setGeneratingFullVideo(false)
       setFullVideoStatus('')
     }
-  }, [generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedSoundtrack, onSave, onSaveToNotebook, toast])
+  }, [generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, onSave, onSaveToNotebook, toast])
+
+  const handleRegenerateSceneClips = useCallback(async (scene: VideoScene) => {
+    if (generatingClipFor) return
+    const key = `scene-${scene.number}-all`
+    setGeneratingClipFor(key)
+    setFullVideoError('')
+    try {
+      const currentSceneDuration = Math.max(1, scene.duration || parseTimeToSeconds(scene.timeEnd) - parseTimeToSeconds(scene.timeStart) || 1)
+      const clipDuration = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
+      const clipCount = Math.max(1, Math.ceil(currentSceneDuration / clipDuration))
+      const sceneStart = parseTimeToSeconds(scene.timeStart)
+      const nextClips: VideoClipAsset[] = []
+      for (let i = 0; i < clipCount; i++) {
+        const partStart = sceneStart + i * clipDuration
+        const partEnd = Math.min(sceneStart + currentSceneDuration, partStart + clipDuration)
+        const renderResult = await renderLiteralVideo({
+          ...production,
+          scenes: [{ ...scene, duration: Math.max(1, partEnd - partStart), timeStart: '00:00', timeEnd: '00:08' }],
+          sceneAssets: [{
+            sceneNumber: scene.number,
+            imageUrl: generatedImages[scene.number],
+            narrationUrl: generatedAudio[scene.number],
+          }],
+          totalDuration: Math.max(1, partEnd - partStart),
+        })
+        nextClips.push({
+          sceneNumber: scene.number,
+          partNumber: i + 1,
+          startTime: partStart,
+          endTime: partEnd,
+          duration: Math.max(1, partEnd - partStart),
+          url: renderResult.asset.url,
+          mimeType: renderResult.asset.mimeType,
+          generatedAt: renderResult.asset.generatedAt,
+          source: 'generated',
+        })
+      }
+      setGeneratedClips(prev => ({ ...prev, [scene.number]: nextClips }))
+      setHasUnsavedChanges(true)
+      toast.success(`Cena ${scene.number}: ${nextClips.length} clipe(s) regenerado(s).`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao regenerar clipes da cena'
+      setFullVideoError(message)
+      toast.error('Falha ao regenerar cena', message)
+    } finally {
+      setGeneratingClipFor(null)
+    }
+  }, [generatingClipFor, production, generatedImages, generatedAudio, toast])
+
+  const handleRegenerateClipPart = useCallback(async (scene: VideoScene, partNumber: number) => {
+    if (generatingClipFor) return
+    const key = `scene-${scene.number}-part-${partNumber}`
+    setGeneratingClipFor(key)
+    setFullVideoError('')
+    try {
+      const clipDuration = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
+      const sceneStart = parseTimeToSeconds(scene.timeStart)
+      const sceneDuration = Math.max(1, scene.duration || parseTimeToSeconds(scene.timeEnd) - parseTimeToSeconds(scene.timeStart) || 1)
+      const partStart = sceneStart + (partNumber - 1) * clipDuration
+      const partEnd = Math.min(sceneStart + sceneDuration, partStart + clipDuration)
+      const renderResult = await renderLiteralVideo({
+        ...production,
+        scenes: [{ ...scene, duration: Math.max(1, partEnd - partStart), timeStart: '00:00', timeEnd: '00:08' }],
+        sceneAssets: [{
+          sceneNumber: scene.number,
+          imageUrl: generatedImages[scene.number],
+          narrationUrl: generatedAudio[scene.number],
+        }],
+        totalDuration: Math.max(1, partEnd - partStart),
+      })
+      const clip: VideoClipAsset = {
+        sceneNumber: scene.number,
+        partNumber,
+        startTime: partStart,
+        endTime: partEnd,
+        duration: Math.max(1, partEnd - partStart),
+        url: renderResult.asset.url,
+        mimeType: renderResult.asset.mimeType,
+        generatedAt: renderResult.asset.generatedAt,
+        source: 'generated',
+      }
+      setGeneratedClips(prev => {
+        const current = prev[scene.number] || []
+        const rest = current.filter(item => item.partNumber !== partNumber)
+        return {
+          ...prev,
+          [scene.number]: [...rest, clip].sort((a, b) => a.partNumber - b.partNumber),
+        }
+      })
+      setHasUnsavedChanges(true)
+      toast.success(`Cena ${scene.number} parte ${partNumber} regenerada.`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao regenerar parte'
+      setFullVideoError(message)
+      toast.error('Falha ao regenerar parte', message)
+    } finally {
+      setGeneratingClipFor(null)
+    }
+  }, [generatingClipFor, production, generatedImages, generatedAudio, toast])
+
+  const handleUploadClipPart = useCallback(async (scene: VideoScene, partNumber: number, file: File | null) => {
+    if (!file) return
+    const dataUrl = await dataUrlFromFile(file)
+    const sceneStart = parseTimeToSeconds(scene.timeStart)
+    const clipDuration = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
+    const partStart = sceneStart + (partNumber - 1) * clipDuration
+    const partEnd = Math.min(sceneStart + Math.max(1, scene.duration), partStart + clipDuration)
+    const clip: VideoClipAsset = {
+      sceneNumber: scene.number,
+      partNumber,
+      startTime: partStart,
+      endTime: partEnd,
+      duration: Math.max(1, partEnd - partStart),
+      url: dataUrl,
+      mimeType: file.type || 'video/webm',
+      generatedAt: new Date().toISOString(),
+      source: 'uploaded',
+    }
+    setGeneratedClips(prev => {
+      const current = prev[scene.number] || []
+      const rest = current.filter(item => item.partNumber !== partNumber)
+      return { ...prev, [scene.number]: [...rest, clip].sort((a, b) => a.partNumber - b.partNumber) }
+    })
+    setHasUnsavedChanges(true)
+    toast.success(`Arquivo enviado para cena ${scene.number} parte ${partNumber}.`)
+  }, [production.sceneClipDurationSeconds, toast])
+
+  const handleUploadFullVideo = useCallback(async (file: File | null) => {
+    if (!file) return
+    const dataUrl = await dataUrlFromFile(file)
+    setGeneratedVideoUrl(dataUrl)
+    setGeneratedVideoMimeType(file.type || 'video/webm')
+    setHasUnsavedChanges(true)
+    toast.success('Vídeo completo enviado com sucesso.')
+  }, [toast])
+
+  const handleDownloadMediaZip = useCallback(async () => {
+    const zip = new JSZip()
+    const root = zip.folder(sanitizeName(production.title)) || zip
+
+    if (generatedVideoUrl) {
+      const blob = await fetch(generatedVideoUrl).then(resp => resp.blob())
+      root.file('video-completo.webm', blob)
+    }
+    if (generatedSoundtrack) {
+      const blob = await fetch(generatedSoundtrack).then(resp => resp.blob())
+      root.file('audio/trilha.wav', blob)
+    }
+
+    for (const scene of production.scenes) {
+      const sceneFolder = root.folder(`cena-${String(scene.number).padStart(2, '0')}`)
+      if (!sceneFolder) continue
+      const image = generatedImages[scene.number]
+      if (image) sceneFolder.file('imagem.png', await fetch(image).then(resp => resp.blob()))
+      const narration = generatedAudio[scene.number]
+      if (narration) sceneFolder.file('narracao.wav', await fetch(narration).then(resp => resp.blob()))
+
+      const clips = generatedClips[scene.number] || []
+      if (clips.length > 0) {
+        const clipsFolder = sceneFolder.folder('partes')
+        for (const clip of clips) {
+          clipsFolder?.file(
+            `parte-${String(clip.partNumber).padStart(2, '0')}.webm`,
+            await fetch(clip.url).then(resp => resp.blob()),
+          )
+        }
+      }
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${sanitizeName(production.title)}-midias.zip`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }, [production, generatedVideoUrl, generatedSoundtrack, generatedImages, generatedAudio, generatedClips])
 
   useEffect(() => {
     if (!autoGenerateMedia || autoGenerationStarted.current || !apiKey) return
@@ -923,6 +1143,14 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
           </button>
 
           <button
+            onClick={handleDownloadMediaZip}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-lg hover:bg-amber-700"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Baixar ZIP
+          </button>
+
+          <button
             onClick={handleCloseRequest}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-gray-300 text-xs font-medium rounded-lg hover:bg-gray-600"
           >
@@ -1011,6 +1239,20 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
               {fullVideoError && (
                 <p className="text-xs text-red-600">{fullVideoError}</p>
               )}
+              <label className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white text-xs font-medium rounded-lg border cursor-pointer hover:bg-gray-50">
+                <Upload className="w-3.5 h-3.5" />
+                Upload vídeo completo
+                <input
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0] || null
+                    void handleUploadFullVideo(file)
+                    e.currentTarget.value = ''
+                  }}
+                />
+              </label>
             </div>
           </div>
 
@@ -1134,6 +1376,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                 if (!scene) return <p className="text-xs text-gray-400">Cena não encontrada</p>
                 const sceneImage = generatedImages[scene.number]
                 const sceneAudio = generatedAudio[scene.number]
+                const sceneClips = (generatedClips[scene.number] || []).sort((a, b) => a.partNumber - b.partNumber)
                 const isGeneratingImage = generatingImageFor === scene.number
                 const isGeneratingAudio = generatingAudioFor === scene.number
                 return (
@@ -1213,8 +1456,74 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                       <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
                         <p className="text-[10px] font-semibold text-amber-600 uppercase mb-1">Prompt de Vídeo</p>
                         <p className="text-xs text-gray-700 leading-relaxed font-mono">{scene.videoPrompt}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <button
+                            onClick={() => handleRegenerateSceneClips(scene)}
+                            disabled={Boolean(generatingClipFor)}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-600 text-white text-[10px] font-medium rounded hover:bg-amber-700 disabled:opacity-60"
+                          >
+                            {generatingClipFor?.startsWith(`scene-${scene.number}-`)
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Film className="w-3 h-3" />}
+                            Regenerar Cena (partes)
+                          </button>
+                        </div>
                       </div>
                     )}
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                      <p className="text-[10px] font-semibold text-slate-600 uppercase mb-2">
+                        Partes da Cena
+                      </p>
+                      <div className="space-y-2">
+                        {(sceneClips.length > 0
+                          ? sceneClips
+                          : Array.from({ length: Math.max(1, Math.ceil(Math.max(1, scene.duration) / Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS))) }, (_, i) => ({
+                              sceneNumber: scene.number,
+                              partNumber: i + 1,
+                              startTime: 0,
+                              endTime: 0,
+                              duration: 0,
+                              url: '',
+                              mimeType: 'video/webm',
+                              generatedAt: '',
+                              source: 'generated' as const,
+                            }))
+                        ).map((clip) => (
+                          <div key={`clip-${scene.number}-${clip.partNumber}`} className="rounded border bg-white p-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] font-semibold text-gray-700">Parte {clip.partNumber}</span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleRegenerateClipPart(scene, clip.partNumber)}
+                                  disabled={Boolean(generatingClipFor)}
+                                  className="px-2 py-1 text-[10px] rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
+                                >
+                                  {generatingClipFor === `scene-${scene.number}-part-${clip.partNumber}` ? 'Gerando...' : 'Regenerar'}
+                                </button>
+                                <label className="px-2 py-1 text-[10px] rounded border cursor-pointer hover:bg-gray-50">
+                                  Upload
+                                  <input
+                                    type="file"
+                                    accept="video/*"
+                                    className="hidden"
+                                    onChange={e => {
+                                      const file = e.target.files?.[0] || null
+                                      void handleUploadClipPart(scene, clip.partNumber, file)
+                                      e.currentTarget.value = ''
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                            {clip.url ? (
+                              <video controls src={clip.url} className="w-full rounded border bg-black" />
+                            ) : (
+                              <p className="text-[10px] text-gray-500">Ainda sem vídeo para esta parte.</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                     {scene.transition && (
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full border border-purple-200">
