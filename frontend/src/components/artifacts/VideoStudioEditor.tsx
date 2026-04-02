@@ -73,6 +73,7 @@ interface SelectedSegment {
 }
 
 const DEFAULT_SCENE_CLIP_DURATION_SECONDS = 8
+const FALLBACK_RENDER_PRESET_ID = 'render-standard-720p'
 
 function hasCompleteMediaAssets(
   scenes: VideoScene[],
@@ -127,6 +128,17 @@ function normalizeRenderPresets(production: VideoProductionPackage): VideoRender
   const unique = new Map<string, VideoRenderPreset>()
   merged.forEach(preset => unique.set(preset.id, preset))
   return Array.from(unique.values())
+}
+
+function getInitialRenderPresetSelection(production: VideoProductionPackage): {
+  presets: VideoRenderPreset[]
+  selectedPresetId: string
+} {
+  const presets = normalizeRenderPresets(production)
+  return {
+    presets,
+    selectedPresetId: production.selectedRenderPresetId || presets[0]?.id || FALLBACK_RENDER_PRESET_ID,
+  }
 }
 
 async function dataUrlFromFile(file: File): Promise<string> {
@@ -531,12 +543,9 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const [selectedRenderScope, setSelectedRenderScope] = useState<VideoRenderScope>('full')
   const [selectedRenderScene, setSelectedRenderScene] = useState<number>(production.scenes[0]?.number || 1)
   const [selectedRenderPart, setSelectedRenderPart] = useState<number>(1)
-  const [renderPresets, setRenderPresets] = useState<VideoRenderPreset[]>(() => normalizeRenderPresets(production))
-  const [selectedRenderPresetId, setSelectedRenderPresetId] = useState<string>(
-    production.selectedRenderPresetId
-    || normalizeRenderPresets(production)[0]?.id
-    || 'render-standard-720p',
-  )
+  const [{ presets: initialRenderPresets, selectedPresetId: initialSelectedRenderPresetId }] = useState(() => getInitialRenderPresetSelection(production))
+  const [renderPresets, setRenderPresets] = useState<VideoRenderPreset[]>(initialRenderPresets)
+  const [selectedRenderPresetId, setSelectedRenderPresetId] = useState<string>(initialSelectedRenderPresetId)
 
   const [savingToNotebook, setSavingToNotebook] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -563,7 +572,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     setRenderQueue(production.renderQueue || [])
     const nextPresets = normalizeRenderPresets(production)
     setRenderPresets(nextPresets)
-    setSelectedRenderPresetId(production.selectedRenderPresetId || nextPresets[0]?.id || 'render-standard-720p')
+    setSelectedRenderPresetId(production.selectedRenderPresetId || nextPresets[0]?.id || FALLBACK_RENDER_PRESET_ID)
     setSelectedRenderScene(production.scenes[0]?.number || 1)
     setSelectedRenderPart(1)
     setMediaGenerationComplete(hasCompleteMediaAssets(
@@ -938,7 +947,16 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const handleRequeueItem = useCallback((itemId: string) => {
     const requeueItemById = (item: VideoRenderQueueItem): VideoRenderQueueItem => {
       if (item.id !== itemId) return item
-      return { ...item, status: 'pending', progress: 0, error: undefined, message: 'Reenfileirado' }
+      return {
+        ...item,
+        status: 'pending',
+        progress: 0,
+        error: undefined,
+        startedAt: undefined,
+        completedAt: undefined,
+        resultScopeKey: undefined,
+        message: 'Reenfileirado',
+      }
     }
     setRenderQueue(prev => prev.map(requeueItemById))
   }, [])
@@ -946,6 +964,12 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const updateRenderQueueItem = useCallback((itemId: string, update: Partial<VideoRenderQueueItem>) => {
     setRenderQueue(prev => prev.map(item => item.id === itemId ? { ...item, ...update } : item))
   }, [])
+
+  const mapRenderQueueItemUpdate = useCallback((
+    queue: VideoRenderQueueItem[],
+    itemId: string,
+    update: Partial<VideoRenderQueueItem>,
+  ): VideoRenderQueueItem[] => queue.map(item => item.id === itemId ? { ...item, ...update } : item), [])
 
   useEffect(() => {
     if (generatingFullVideo) return
@@ -990,44 +1014,40 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         ].sort((a, b) => a.scopeKey.localeCompare(b.scopeKey))
         upsertRenderedScope(result.asset)
 
-        const outputProduction: VideoProductionPackage = {
-          ...currentProduction,
-          renderedScopes: mergedScopes,
-          renderQueue: (currentProduction.renderQueue || []).map(item => item.id === pending.id
-            ? {
-                ...item,
-                status: 'completed',
-                progress: 100,
-                completedAt: new Date().toISOString(),
-                resultScopeKey: result.asset.scopeKey,
-                message: `Concluído: ${result.asset.label}`,
-              }
-            : item),
-          renderedVideo: result.asset.scope === 'full' ? result.asset : currentProduction.renderedVideo,
-        }
-        if (onSave) onSave(outputProduction)
-        if (onSaveToNotebook) await onSaveToNotebook(outputProduction)
-
-        updateRenderQueueItem(pending.id, {
+        const completedUpdate: Partial<VideoRenderQueueItem> = {
           status: 'completed',
           progress: 100,
           completedAt: new Date().toISOString(),
           resultScopeKey: result.asset.scopeKey,
           message: `Concluído: ${result.asset.label}`,
+        }
+        let finalizedQueue: VideoRenderQueueItem[] = []
+        setRenderQueue(prev => {
+          finalizedQueue = mapRenderQueueItemUpdate(prev, pending.id, completedUpdate)
+          return finalizedQueue
         })
-        setHasUnsavedChanges(!(onSaveToNotebook || onSave))
+
+        const outputProduction: VideoProductionPackage = {
+          ...currentProduction,
+          renderedScopes: mergedScopes,
+          renderQueue: finalizedQueue,
+          renderedVideo: result.asset.scope === 'full' ? result.asset : currentProduction.renderedVideo,
+        }
+        if (onSave) onSave(outputProduction)
+        if (onSaveToNotebook) await onSaveToNotebook(outputProduction)
+        setHasUnsavedChanges(!onSaveToNotebook && !onSave)
         toast.success(`Render concluído: ${result.asset.label}`)
       } catch (err) {
         if (cancelled) return
         const message = err instanceof Error ? err.message : 'Falha ao processar item da fila de render'
         setFullVideoError(message)
-        updateRenderQueueItem(pending.id, {
+        setRenderQueue(prev => mapRenderQueueItemUpdate(prev, pending.id, {
           status: 'failed',
           progress: 100,
           completedAt: new Date().toISOString(),
           error: message,
           message: `Falha: ${message}`,
-        })
+        }))
         toast.error('Falha no render por escopo', message)
       } finally {
         if (!cancelled) {
@@ -1041,7 +1061,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     return () => {
       cancelled = true
     }
-  }, [renderQueue, generatingFullVideo, buildCurrentProduction, onSave, onSaveToNotebook, upsertRenderedScope, toast, updateRenderQueueItem])
+  }, [renderQueue, generatingFullVideo, buildCurrentProduction, onSave, onSaveToNotebook, upsertRenderedScope, toast, updateRenderQueueItem, mapRenderQueueItemUpdate])
 
   const handleRenderFinalVideo = useCallback(async () => {
     enqueueRenderJob('full')
@@ -1469,7 +1489,10 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                           )}
                           {item.status === 'pending' && (
                             <button
-                              onClick={() => setRenderQueue(prev => prev.filter(curr => curr.id !== item.id))}
+                              onClick={() => {
+                                setRenderQueue(prev => prev.filter(curr => curr.id !== item.id))
+                                setHasUnsavedChanges(true)
+                              }}
                               className="px-1.5 py-0.5 text-[10px] rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
                             >
                               Cancelar
@@ -1700,7 +1723,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                             {activeRenderJob?.scope === 'scene' && activeRenderJob.sceneNumber === scene.number
                               ? <Loader2 className="w-3 h-3 animate-spin" />
                               : <Film className="w-3 h-3" />}
-                            Renderizar Cena
+                            Renderizar Cena Completa
                           </button>
                         </div>
                       </div>

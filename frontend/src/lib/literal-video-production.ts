@@ -188,7 +188,7 @@ export function resolveVideoRenderPreset(
       width: 1280,
       height: 720,
       frameRate: 30,
-    videoBitsPerSecond: DEFAULT_RENDER_VIDEO_BITRATE,
+      videoBitsPerSecond: DEFAULT_RENDER_VIDEO_BITRATE,
     }
   }
   if (!presetId) return { ...fallback }
