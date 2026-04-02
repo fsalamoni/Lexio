@@ -3,8 +3,8 @@
  * Supports common legal research formats and extracts plain text client-side.
  */
 
-const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs'
-const PDFJS_WORKER_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 export const SUPPORTED_TEXT_FILE_EXTENSIONS = [
   '.pdf',
@@ -51,10 +51,9 @@ export function isSupportedTextFile(file: File): boolean {
 }
 
 async function extractPdfText(file: File): Promise<string> {
-  const pdfjsLib = await import(/* @vite-ignore */ PDFJS_CDN) as any
-  pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN
+  ;(pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfWorker
   const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
+  const pdf = await (pdfjsLib as any).getDocument({ data: new Uint8Array(arrayBuffer) }).promise
   const pages: string[] = []
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)

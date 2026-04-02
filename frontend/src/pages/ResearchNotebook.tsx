@@ -133,28 +133,23 @@ async function fetchUrlContent(url: string): Promise<string> {
   return ''
 }
 
-// ── Web Search via DuckDuckGo Instant Answer ──────────────────────────────────
+// ── Web Search via Reader Proxy ────────────────────────────────────────────────
 
 /**
- * Lightweight web search using DuckDuckGo's instant answer API.
- * No API key required; CORS-friendly.
+ * Lightweight web search using readable proxy pages to avoid browser CORS issues.
  */
 async function searchWeb(query: string): Promise<string> {
   try {
-    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
-    const resp = await fetch(url, { signal: AbortSignal.timeout(8_000) })
+    const ddgHtmlUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
+    const readerUrl = `https://r.jina.ai/http://${ddgHtmlUrl.replace(/^https?:\/\//, '')}`
+    const resp = await fetch(readerUrl, {
+      headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
+      signal: AbortSignal.timeout(12_000),
+    })
     if (!resp.ok) return ''
-    const data = await resp.json() as {
-      AbstractText?: string
-      RelatedTopics?: { Text?: string; FirstURL?: string }[]
-    }
-    const parts: string[] = []
-    if (data.AbstractText) parts.push(data.AbstractText)
-    for (const t of (data.RelatedTopics || []).slice(0, 5)) {
-      if (t.Text) parts.push(`• ${t.Text}${t.FirstURL ? ` (${t.FirstURL})` : ''}`)
-    }
-    const result = parts.join('\n')
-    return result.length > 50 ? result.slice(0, MAX_WEB_SEARCH_CHARS) : ''
+    const text = (await resp.text()).trim()
+    if (text.length < 80) return ''
+    return text.slice(0, MAX_WEB_SEARCH_CHARS)
   } catch {
     return ''
   }
@@ -168,35 +163,47 @@ type ExternalSearchResult = {
 
 async function searchWebResults(query: string): Promise<ExternalSearchResult[]> {
   try {
-    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
-    const resp = await fetch(url, { signal: AbortSignal.timeout(8_000) })
+    const ddgHtmlUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
+    const readerUrl = `https://r.jina.ai/http://${ddgHtmlUrl.replace(/^https?:\/\//, '')}`
+    const resp = await fetch(readerUrl, {
+      headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
+      signal: AbortSignal.timeout(12_000),
+    })
     if (!resp.ok) return []
-    const data = await resp.json() as {
-      RelatedTopics?: Array<{ Text?: string; FirstURL?: string; Name?: string; Topics?: Array<{ Text?: string; FirstURL?: string }> }>
-      Results?: Array<{ Text?: string; FirstURL?: string }>
-    }
-    const flat: ExternalSearchResult[] = []
-    const pushIfValid = (text?: string, firstURL?: string) => {
-      if (!text || !firstURL || !/^https?:\/\//i.test(firstURL)) return
-      const [titleRaw, ...rest] = text.split(' - ')
-      flat.push({
-        title: titleRaw?.trim() || firstURL,
-        url: firstURL,
-        snippet: rest.join(' - ').trim() || text,
-      })
-    }
-    for (const item of data.Results || []) pushIfValid(item.Text, item.FirstURL)
-    for (const item of data.RelatedTopics || []) {
-      if (Array.isArray(item.Topics)) {
-        for (const nested of item.Topics) pushIfValid(nested.Text, nested.FirstURL)
-      } else {
-        pushIfValid(item.Text, item.FirstURL)
+    const text = await resp.text()
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+    const results: ExternalSearchResult[] = []
+    for (const line of lines) {
+      if (results.length >= 10) break
+      const urls = line.match(/https:\/\/[^\s)]+/g) || []
+      for (const url of urls) {
+        if (results.length >= 10) break
+        if (!/^https:\/\//i.test(url)) continue
+        const clean = url.replace(/[),.;]+$/, '')
+        const title = line.replace(clean, '').replace(/^[-•\d.\s]+/, '').trim() || clean
+        const exists = results.some(r => r.url === clean)
+        if (exists) continue
+        results.push({
+          title: title.slice(0, 180),
+          url: clean,
+          snippet: line.slice(0, 300),
+        })
       }
     }
-    return flat.slice(0, 10)
+    return results
   } catch {
     return []
   }
+}
+
+function sanitizeDataJudQuery(raw: string): string {
+  return raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}\s\-./]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120)
 }
 
 function generateId(): string {
@@ -872,8 +879,8 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     if (!userId || !activeNotebook?.id || !sourceUrl.trim()) return
 
     const trimmedUrl = sourceUrl.trim()
-    if (!/^https?:\/\/.+/i.test(trimmedUrl)) {
-      toast.error('URL inválida — use um endereço que comece com http:// ou https://')
+    if (!/^https:\/\/.+/i.test(trimmedUrl)) {
+      toast.error('URL inválida — use um endereço que comece com https://')
       return
     }
 
@@ -1038,7 +1045,11 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
     setJurisprudenceLoading(true)
     try {
-      const query = externalSearchQuery.trim()
+      const query = sanitizeDataJudQuery(externalSearchQuery.trim())
+      if (!query) {
+        toast.error('Consulta inválida para jurisprudência.')
+        return
+      }
       const settings = await getSettings()
       const apiKeys = (settings.api_keys ?? {}) as Record<string, string>
       const apiKey = apiKeys.datajud_api_key

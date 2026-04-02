@@ -48,7 +48,11 @@ def _extract_text(content: bytes, content_type: str, filename: str) -> str:
     )
 
     # Plain text
-    if content_type in text_like_mime_types or "text" in content_type or fname.endswith(text_like_extensions):
+    if (
+        content_type in text_like_mime_types
+        or content_type.startswith("text/")
+        or fname.endswith(text_like_extensions)
+    ):
         try:
             return content.decode("utf-8", errors="replace")
         except Exception:
