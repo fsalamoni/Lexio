@@ -147,6 +147,11 @@ const PHASE_LABELS: Record<string, string> = {
   video_compositor: 'Vídeo: Compositor',
   video_narrador: 'Vídeo: Narrador',
   video_revisor: 'Vídeo: Revisor Final',
+  media_image_generation: 'Vídeo: Geração Real de Imagens',
+  media_tts_generation: 'Vídeo: Geração Real de Narrações',
+  media_video_clip_generation: 'Vídeo: Geração Real de Clipes por Partes',
+  media_soundtrack_generation: 'Vídeo: Geração Real de Trilha Sonora',
+  media_video_render: 'Vídeo: Renderização Final',
   // ── Audio pipeline phases ──
   audio_planejador: 'Áudio: Planejador',
   audio_roteirista: 'Áudio: Roteirista',

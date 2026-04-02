@@ -79,6 +79,43 @@ export interface DesignGuide {
   recurringElements: string[]
 }
 
+export interface VideoSceneAsset {
+  sceneNumber: number
+  imageUrl?: string
+  narrationUrl?: string
+  imageStoragePath?: string
+  narrationStoragePath?: string
+  videoClips?: VideoClipAsset[]
+}
+
+export interface VideoClipAsset {
+  sceneNumber: number
+  partNumber: number
+  startTime: number
+  endTime: number
+  duration: number
+  url: string
+  mimeType: string
+  generatedAt: string
+  source?: 'generated' | 'uploaded'
+  storagePath?: string
+}
+
+export interface VideoAudioAsset {
+  url: string
+  mimeType: string
+  generatedAt: string
+  description?: string
+  storagePath?: string
+}
+
+export interface RenderedVideoAsset {
+  url: string
+  mimeType: string
+  generatedAt: string
+  storagePath?: string
+}
+
 export interface VideoProductionPackage {
   title: string
   totalDuration: number
@@ -88,6 +125,10 @@ export interface VideoProductionPackage {
   designGuide: DesignGuide
   qualityReport: string
   productionNotes: string[]
+  sceneAssets?: VideoSceneAsset[]
+  soundtrackAsset?: VideoAudioAsset
+  renderedVideo?: RenderedVideoAsset
+  sceneClipDurationSeconds?: number
 }
 
 export interface VideoGenerationStepExecution {

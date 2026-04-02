@@ -50,6 +50,10 @@ import {
   type VideoProductionPackage,
   type VideoGenerationProgressCallback,
 } from '../lib/video-generation-pipeline'
+import {
+  uploadNotebookMediaArtifact,
+  uploadNotebookVideoArtifact,
+} from '../lib/notebook-media-storage'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
@@ -473,6 +477,7 @@ export default function ResearchNotebook() {
   const [videoGenProgress, setVideoGenProgress] = useState<{ step: number; total: number; phase: string; agent: string } | null>(null)
   const [videoProduction, setVideoProduction] = useState<VideoProductionPackage | null>(null)
   const [videoStudioApiKey, setVideoStudioApiKey] = useState<string | undefined>(undefined)
+  const [videoStudioAutoGenerate, setVideoStudioAutoGenerate] = useState(false)
 
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
@@ -1230,9 +1235,10 @@ Instruções:
         resolveTask(null)
       } else {
         setVideoProduction(result.package)
+        setVideoStudioAutoGenerate(true)
         setShowVideoGenCost(false)
         setVideoGenSavedArtifact(null)
-        toast.success('Vídeo gerado com sucesso! Editor de estúdio aberto.')
+        toast.success('Pipeline concluído! O estúdio abrirá e iniciará a geração literal do vídeo.')
         resolveTask(result.package)
       }
     } catch (err) {
@@ -1263,8 +1269,118 @@ Instruções:
   const handleSaveVideoStudioToNotebook = async (production: VideoProductionPackage) => {
     if (!userId || !activeNotebook?.id) return
     try {
+      let productionToSave = production
+      const renderedVideoUrl = production.renderedVideo?.url || ''
+
+      if (renderedVideoUrl && (renderedVideoUrl.startsWith('blob:') || renderedVideoUrl.startsWith('data:'))) {
+        const videoBlob = await fetch(renderedVideoUrl).then(resp => resp.blob())
+        const storedVideo = await uploadNotebookVideoArtifact(
+          userId,
+          activeNotebook.id,
+          production.title,
+          videoBlob,
+        )
+        productionToSave = {
+          ...production,
+          renderedVideo: {
+            ...production.renderedVideo!,
+            url: storedVideo.url,
+            storagePath: storedVideo.path,
+          },
+        }
+      }
+
+      const uploadedSceneAssets = await Promise.all((productionToSave.sceneAssets || []).map(async sceneAsset => {
+        let imageUrl = sceneAsset.imageUrl
+        let imageStoragePath = sceneAsset.imageStoragePath
+        let narrationUrl = sceneAsset.narrationUrl
+        let narrationStoragePath = sceneAsset.narrationStoragePath
+        let videoClips = sceneAsset.videoClips
+
+        if (imageUrl && (imageUrl.startsWith('blob:') || imageUrl.startsWith('data:'))) {
+          const imageBlob = await fetch(imageUrl).then(resp => resp.blob())
+          const stored = await uploadNotebookMediaArtifact(
+            userId,
+            activeNotebook.id,
+            `${production.title}-scene-${sceneAsset.sceneNumber}-image`,
+            imageBlob,
+            'images',
+            '.png',
+          )
+          imageUrl = stored.url
+          imageStoragePath = stored.path
+        }
+
+        if (narrationUrl && (narrationUrl.startsWith('blob:') || narrationUrl.startsWith('data:'))) {
+          const narrationBlob = await fetch(narrationUrl).then(resp => resp.blob())
+          const stored = await uploadNotebookMediaArtifact(
+            userId,
+            activeNotebook.id,
+            `${production.title}-scene-${sceneAsset.sceneNumber}-narration`,
+            narrationBlob,
+            'audios',
+            '.wav',
+          )
+          narrationUrl = stored.url
+          narrationStoragePath = stored.path
+        }
+
+        if (videoClips?.length) {
+          videoClips = await Promise.all(videoClips.map(async clip => {
+            if (!clip.url || (!clip.url.startsWith('blob:') && !clip.url.startsWith('data:'))) return clip
+            const clipBlob = await fetch(clip.url).then(resp => resp.blob())
+            const stored = await uploadNotebookMediaArtifact(
+              userId,
+              activeNotebook.id,
+              `${production.title}-scene-${clip.sceneNumber}-part-${clip.partNumber}`,
+              clipBlob,
+              'videos',
+              '.webm',
+            )
+            return {
+              ...clip,
+              url: stored.url,
+              storagePath: stored.path,
+            }
+          }))
+        }
+
+        return {
+          ...sceneAsset,
+          imageUrl,
+          imageStoragePath,
+          narrationUrl,
+          narrationStoragePath,
+          videoClips,
+        }
+      }))
+
+      let soundtrackAsset = productionToSave.soundtrackAsset
+      if (soundtrackAsset?.url && (soundtrackAsset.url.startsWith('blob:') || soundtrackAsset.url.startsWith('data:'))) {
+        const soundtrackBlob = await fetch(soundtrackAsset.url).then(resp => resp.blob())
+        const stored = await uploadNotebookMediaArtifact(
+          userId,
+          activeNotebook.id,
+          `${production.title}-soundtrack`,
+          soundtrackBlob,
+          'audios',
+          '.wav',
+        )
+        soundtrackAsset = {
+          ...soundtrackAsset,
+          url: stored.url,
+          storagePath: stored.path,
+        }
+      }
+
+      productionToSave = {
+        ...productionToSave,
+        sceneAssets: uploadedSceneAssets,
+        soundtrackAsset,
+      }
+
       const artifactTitle = `Estúdio de Vídeo: ${production.title}`
-      const content = JSON.stringify(production)
+      const content = JSON.stringify(productionToSave)
       
       // Check if a video studio artifact with same title already exists — update instead of duplicate
       const existingIdx = activeNotebook.artifacts.findIndex(
@@ -1298,6 +1414,7 @@ Instruções:
       })
       setActiveNotebook({ ...activeNotebook, artifacts: updatedArtifacts })
       toast.success(existingIdx >= 0 ? 'Estúdio de vídeo atualizado!' : 'Estúdio de vídeo salvo nos artefatos do caderno!')
+      setVideoProduction(productionToSave)
       setActiveTab('artifacts')
     } catch (err) {
       console.error('Error saving video studio artifact:', err)
@@ -2557,9 +2674,14 @@ Instruções:
         <VideoStudioEditor
           production={videoProduction}
           apiKey={videoStudioApiKey}
-          onClose={() => setVideoProduction(null)}
+          autoGenerateMedia={videoStudioAutoGenerate}
+          onClose={() => {
+            setVideoProduction(null)
+            setVideoStudioAutoGenerate(false)
+          }}
           onSave={(updated) => {
             setVideoProduction(updated)
+            setVideoStudioAutoGenerate(false)
             toast.success('Produção de vídeo salva!')
           }}
           onSaveToNotebook={handleSaveVideoStudioToNotebook}
