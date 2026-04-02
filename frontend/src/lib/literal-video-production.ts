@@ -31,6 +31,8 @@ export interface LiteralMediaGenerationResult {
 }
 
 const MIN_SOUNDTRACK_DURATION_SECONDS = 1
+const INT16_PCM_MIN = -0x8000
+const INT16_PCM_MAX = 0x7fff
 const DEFAULT_SCENE_CLIP_DURATION_SECONDS = 8
 
 interface PreparedSceneTiming {
@@ -269,7 +271,7 @@ function encodeWavFromFloat32(samples: Float32Array, sampleRate: number): Blob {
   let offset = 44
   for (let i = 0; i < samples.length; i++) {
     const sample = clamp(samples[i], -1, 1)
-    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true)
+    view.setInt16(offset, sample < 0 ? sample * INT16_PCM_MIN : sample * INT16_PCM_MAX, true)
     offset += 2
   }
 

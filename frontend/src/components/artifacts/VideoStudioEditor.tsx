@@ -104,7 +104,15 @@ function sanitizeName(value: string): string {
     .replace(/[^a-zA-Z0-9-_]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 80) || 'video'
+    .slice(0, 80)
+    .trim() || 'video'
+}
+
+function formatSecondsToMMSS(seconds: number): string {
+  const safe = Math.max(0, Math.floor(seconds))
+  const mins = Math.floor(safe / 60)
+  const secs = safe % 60
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
 }
 
 async function dataUrlFromFile(file: File): Promise<string> {
@@ -885,22 +893,23 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       for (let i = 0; i < clipCount; i++) {
         const partStart = sceneStart + i * clipDuration
         const partEnd = Math.min(sceneStart + currentSceneDuration, partStart + clipDuration)
+        const clipLength = Math.max(1, partEnd - partStart)
         const renderResult = await renderLiteralVideo({
           ...production,
-          scenes: [{ ...scene, duration: Math.max(1, partEnd - partStart), timeStart: '00:00', timeEnd: '00:08' }],
+          scenes: [{ ...scene, duration: clipLength, timeStart: '00:00', timeEnd: formatSecondsToMMSS(clipLength) }],
           sceneAssets: [{
             sceneNumber: scene.number,
             imageUrl: generatedImages[scene.number],
             narrationUrl: generatedAudio[scene.number],
           }],
-          totalDuration: Math.max(1, partEnd - partStart),
+          totalDuration: clipLength,
         })
         nextClips.push({
           sceneNumber: scene.number,
           partNumber: i + 1,
           startTime: partStart,
           endTime: partEnd,
-          duration: Math.max(1, partEnd - partStart),
+          duration: clipLength,
           url: renderResult.asset.url,
           mimeType: renderResult.asset.mimeType,
           generatedAt: renderResult.asset.generatedAt,
@@ -930,22 +939,23 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       const sceneDuration = Math.max(1, scene.duration || parseTimeToSeconds(scene.timeEnd) - parseTimeToSeconds(scene.timeStart) || 1)
       const partStart = sceneStart + (partNumber - 1) * clipDuration
       const partEnd = Math.min(sceneStart + sceneDuration, partStart + clipDuration)
+      const clipLength = Math.max(1, partEnd - partStart)
       const renderResult = await renderLiteralVideo({
         ...production,
-        scenes: [{ ...scene, duration: Math.max(1, partEnd - partStart), timeStart: '00:00', timeEnd: '00:08' }],
+        scenes: [{ ...scene, duration: clipLength, timeStart: '00:00', timeEnd: formatSecondsToMMSS(clipLength) }],
         sceneAssets: [{
           sceneNumber: scene.number,
           imageUrl: generatedImages[scene.number],
           narrationUrl: generatedAudio[scene.number],
         }],
-        totalDuration: Math.max(1, partEnd - partStart),
+        totalDuration: clipLength,
       })
       const clip: VideoClipAsset = {
         sceneNumber: scene.number,
         partNumber,
         startTime: partStart,
         endTime: partEnd,
-        duration: Math.max(1, partEnd - partStart),
+        duration: clipLength,
         url: renderResult.asset.url,
         mimeType: renderResult.asset.mimeType,
         generatedAt: renderResult.asset.generatedAt,
@@ -1012,7 +1022,12 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
 
     if (generatedVideoUrl) {
       const blob = await fetch(generatedVideoUrl).then(resp => resp.blob())
-      root.file('video-completo.webm', blob)
+      const ext = generatedVideoMimeType.includes('mp4')
+        ? 'mp4'
+        : generatedVideoMimeType.includes('ogg')
+        ? 'ogv'
+        : 'webm'
+      root.file(`video-completo.${ext}`, blob)
     }
     if (generatedSoundtrack) {
       const blob = await fetch(generatedSoundtrack).then(resp => resp.blob())
@@ -1045,7 +1060,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     a.download = `${sanitizeName(production.title)}-midias.zip`
     a.click()
     URL.revokeObjectURL(a.href)
-  }, [production, generatedVideoUrl, generatedSoundtrack, generatedImages, generatedAudio, generatedClips])
+  }, [production, generatedVideoUrl, generatedVideoMimeType, generatedSoundtrack, generatedImages, generatedAudio, generatedClips])
 
   useEffect(() => {
     if (!autoGenerateMedia || autoGenerationStarted.current || !apiKey) return
@@ -1374,6 +1389,13 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
               {(() => {
                 const scene = production.scenes.find(s => s.number === selectedScene)
                 if (!scene) return <p className="text-xs text-gray-400">Cena não encontrada</p>
+                const fallbackPartsCount = Math.max(
+                  1,
+                  Math.ceil(
+                    Math.max(1, scene.duration)
+                    / Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS),
+                  ),
+                )
                 const sceneImage = generatedImages[scene.number]
                 const sceneAudio = generatedAudio[scene.number]
                 const sceneClips = (generatedClips[scene.number] || []).sort((a, b) => a.partNumber - b.partNumber)
@@ -1477,7 +1499,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                       <div className="space-y-2">
                         {(sceneClips.length > 0
                           ? sceneClips
-                          : Array.from({ length: Math.max(1, Math.ceil(Math.max(1, scene.duration) / Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS))) }, (_, i) => ({
+                          : Array.from({ length: fallbackPartsCount }, (_, i) => ({
                               sceneNumber: scene.number,
                               partNumber: i + 1,
                               startTime: 0,

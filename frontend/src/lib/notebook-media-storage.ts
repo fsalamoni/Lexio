@@ -11,7 +11,7 @@ type NotebookMediaKind = 'videos' | 'audios' | 'images'
 const MAX_SANITIZED_FILENAME_LENGTH = 80
 
 function sanitizeFileName(value: string): string {
-  if (!value.trim()) return 'video'
+  if (!value.trim()) return 'media'
   return value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -19,7 +19,8 @@ function sanitizeFileName(value: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     // Keep paths compact to avoid very long object keys in storage paths.
-    .slice(0, MAX_SANITIZED_FILENAME_LENGTH) || 'video'
+    .slice(0, MAX_SANITIZED_FILENAME_LENGTH)
+    .trim() || 'media'
 }
 
 export async function uploadNotebookVideoArtifact(
