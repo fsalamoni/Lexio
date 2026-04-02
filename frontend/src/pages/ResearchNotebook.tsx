@@ -1290,6 +1290,32 @@ Instruções:
         }
       }
 
+      if (productionToSave.renderedScopes?.length) {
+        const uploadedScopes = await Promise.all(productionToSave.renderedScopes.map(async renderedScope => {
+          if (!renderedScope.url || (!renderedScope.url.startsWith('blob:') && !renderedScope.url.startsWith('data:'))) {
+            return renderedScope
+          }
+          const scopedBlob = await fetch(renderedScope.url).then(resp => resp.blob())
+          const stored = await uploadNotebookMediaArtifact(
+            userId,
+            activeNotebook.id,
+            `${production.title}-${renderedScope.scopeKey}`,
+            scopedBlob,
+            'videos',
+            '.webm',
+          )
+          return {
+            ...renderedScope,
+            url: stored.url,
+            storagePath: stored.path,
+          }
+        }))
+        productionToSave = {
+          ...productionToSave,
+          renderedScopes: uploadedScopes,
+        }
+      }
+
       const uploadedSceneAssets = await Promise.all((productionToSave.sceneAssets || []).map(async sceneAsset => {
         let imageUrl = sceneAsset.imageUrl
         let imageStoragePath = sceneAsset.imageStoragePath

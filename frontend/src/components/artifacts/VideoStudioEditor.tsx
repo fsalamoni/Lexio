@@ -16,17 +16,25 @@ import type {
   VideoAudioAsset,
   VideoClipAsset,
   VideoProductionPackage,
+  VideoRenderPreset,
+  VideoRenderQueueItem,
+  VideoRenderScope,
+  ScopedRenderedVideoAsset,
   VideoTrack,
   TrackSegment,
   VideoScene,
   VideoSceneAsset,
 } from '../../lib/video-generation-pipeline'
+import { createVideoRenderScopeLabel } from '../../lib/video-generation-pipeline'
 import { generateImageViaOpenRouter } from '../../lib/image-generation-client'
 import { generateTTSViaOpenRouter } from '../../lib/tts-client'
 import {
+  getDefaultVideoRenderPresets,
   generateLiteralMediaAssets,
-  renderLiteralVideo,
+  renderLiteralVideoByScope,
+  resolveVideoRenderPreset,
 } from '../../lib/literal-video-production'
+import { formatSecondsToMMSS } from '../../lib/time-format'
 import { useToast } from '../Toast'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -66,6 +74,7 @@ interface SelectedSegment {
 }
 
 const DEFAULT_SCENE_CLIP_DURATION_SECONDS = 8
+const FALLBACK_RENDER_PRESET_ID = 'render-standard-720p'
 
 function hasCompleteMediaAssets(
   scenes: VideoScene[],
@@ -108,11 +117,23 @@ function sanitizeName(value: string): string {
     .trim() || 'video'
 }
 
-function formatSecondsToMMSS(seconds: number): string {
-  const safe = Math.max(0, Math.floor(seconds))
-  const mins = Math.floor(safe / 60)
-  const secs = safe % 60
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+function normalizeRenderPresets(production: VideoProductionPackage): VideoRenderPreset[] {
+  const base = getDefaultVideoRenderPresets()
+  const merged = [...base, ...(production.renderPresets || [])]
+  const unique = new Map<string, VideoRenderPreset>()
+  merged.forEach(preset => unique.set(preset.id, preset))
+  return Array.from(unique.values())
+}
+
+function getInitialRenderPresetSelection(production: VideoProductionPackage): {
+  presets: VideoRenderPreset[]
+  selectedPresetId: string
+} {
+  const presets = normalizeRenderPresets(production)
+  return {
+    presets,
+    selectedPresetId: production.selectedRenderPresetId || presets[0]?.id || FALLBACK_RENDER_PRESET_ID,
+  }
 }
 
 async function dataUrlFromFile(file: File): Promise<string> {
@@ -505,7 +526,6 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const [generatingAudioFor, setGeneratingAudioFor] = useState<number | null>(null)
   const [audioError, setAudioError] = useState<Record<number, string>>({})
   const [generatedClips, setGeneratedClips] = useState<Record<number, VideoClipAsset[]>>({})
-  const [generatingClipFor, setGeneratingClipFor] = useState<string | null>(null)
   const [generatedSoundtrack, setGeneratedSoundtrack] = useState<string | null>(production.soundtrackAsset?.url || null)
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(production.renderedVideo?.url || null)
   const [generatedVideoMimeType, setGeneratedVideoMimeType] = useState<string>(production.renderedVideo?.mimeType || 'video/webm')
@@ -513,6 +533,14 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const [fullVideoStatus, setFullVideoStatus] = useState<string>('')
   const [fullVideoError, setFullVideoError] = useState<string>('')
   const [mediaGenerationComplete, setMediaGenerationComplete] = useState(false)
+  const [renderedScopes, setRenderedScopes] = useState<ScopedRenderedVideoAsset[]>(production.renderedScopes || [])
+  const [renderQueue, setRenderQueue] = useState<VideoRenderQueueItem[]>(production.renderQueue || [])
+  const [selectedRenderScope, setSelectedRenderScope] = useState<VideoRenderScope>('full')
+  const [selectedRenderScene, setSelectedRenderScene] = useState<number>(production.scenes[0]?.number || 1)
+  const [selectedRenderPart, setSelectedRenderPart] = useState<number>(1)
+  const [{ presets: initialRenderPresets, selectedPresetId: initialSelectedRenderPresetId }] = useState(() => getInitialRenderPresetSelection(production))
+  const [renderPresets, setRenderPresets] = useState<VideoRenderPreset[]>(initialRenderPresets)
+  const [selectedRenderPresetId, setSelectedRenderPresetId] = useState<string>(initialSelectedRenderPresetId)
 
   const [savingToNotebook, setSavingToNotebook] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -535,6 +563,13 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     setGeneratedSoundtrack(production.soundtrackAsset?.url || null)
     setGeneratedVideoUrl(production.renderedVideo?.url || null)
     setGeneratedVideoMimeType(production.renderedVideo?.mimeType || 'video/webm')
+    setRenderedScopes(production.renderedScopes || [])
+    setRenderQueue(production.renderQueue || [])
+    const nextPresets = normalizeRenderPresets(production)
+    setRenderPresets(nextPresets)
+    setSelectedRenderPresetId(production.selectedRenderPresetId || nextPresets[0]?.id || FALLBACK_RENDER_PRESET_ID)
+    setSelectedRenderScene(production.scenes[0]?.number || 1)
+    setSelectedRenderPart(1)
     setMediaGenerationComplete(hasCompleteMediaAssets(
       production.scenes,
       imageMap,
@@ -545,6 +580,68 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
 
   const pixelsPerSecond = PIXELS_PER_SECOND_BASE * zoom
   const totalDuration = production.totalDuration || 600
+  const activeRenderJob = renderQueue.find(item => item.status === 'processing')
+
+  const buildCurrentProduction = useCallback((): VideoProductionPackage => {
+    const sceneAssets: VideoSceneAsset[] = production.scenes.map(scene => ({
+      sceneNumber: scene.number,
+      imageUrl: generatedImages[scene.number],
+      narrationUrl: generatedAudio[scene.number],
+      videoClips: generatedClips[scene.number],
+    })).filter(asset => asset.imageUrl || asset.narrationUrl || (asset.videoClips && asset.videoClips.length > 0))
+    const soundtrackAsset: VideoAudioAsset | undefined = generatedSoundtrack
+      ? {
+          url: generatedSoundtrack,
+          mimeType: 'audio/wav',
+          generatedAt: production.soundtrackAsset?.generatedAt || new Date().toISOString(),
+          description: production.soundtrackAsset?.description || 'Trilha sonora procedural gerada automaticamente',
+        }
+      : production.soundtrackAsset
+    return {
+      ...production,
+      tracks: localTracks,
+      sceneClipDurationSeconds: production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS,
+      sceneAssets,
+      soundtrackAsset,
+      renderedVideo: generatedVideoUrl
+        ? {
+            url: generatedVideoUrl,
+            mimeType: generatedVideoMimeType,
+            generatedAt: production.renderedVideo?.generatedAt || new Date().toISOString(),
+            storagePath: production.renderedVideo?.storagePath,
+          }
+        : production.renderedVideo,
+      renderedScopes,
+      renderQueue,
+      renderPresets,
+      selectedRenderPresetId,
+    }
+  }, [
+    production,
+    localTracks,
+    generatedImages,
+    generatedAudio,
+    generatedClips,
+    generatedSoundtrack,
+    generatedVideoUrl,
+    generatedVideoMimeType,
+    renderedScopes,
+    renderQueue,
+    renderPresets,
+    selectedRenderPresetId,
+  ])
+
+  const upsertRenderedScope = useCallback((asset: ScopedRenderedVideoAsset) => {
+    setRenderedScopes(prev => {
+      const next = [...prev.filter(item => item.scopeKey !== asset.scopeKey), asset]
+      next.sort((a, b) => a.scopeKey.localeCompare(b.scopeKey))
+      return next
+    })
+    if (asset.scope === 'full') {
+      setGeneratedVideoUrl(asset.url)
+      setGeneratedVideoMimeType(asset.mimeType || 'video/webm')
+    }
+  }, [])
 
   const toggleTrackVisibility = useCallback((type: string) => {
     setTrackVisibility(prev => ({ ...prev, [type]: !prev[type] }))
@@ -595,50 +692,22 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const handleSave = useCallback(() => {
     if (onSave) {
       setSaving(true)
-      onSave({ ...production, tracks: localTracks })
+      onSave(buildCurrentProduction())
       setHasUnsavedChanges(false)
       setSaving(false)
     }
-  }, [onSave, production, localTracks])
+  }, [onSave, buildCurrentProduction])
 
   const handleSaveToNotebook = useCallback(async () => {
     if (!onSaveToNotebook) return
     setSavingToNotebook(true)
     try {
-      const sceneAssets: VideoSceneAsset[] = production.scenes.map(scene => ({
-        sceneNumber: scene.number,
-        imageUrl: generatedImages[scene.number],
-        narrationUrl: generatedAudio[scene.number],
-        videoClips: generatedClips[scene.number],
-      })).filter(asset => asset.imageUrl || asset.narrationUrl || (asset.videoClips && asset.videoClips.length > 0))
-      const soundtrackAsset: VideoAudioAsset | undefined = generatedSoundtrack
-        ? {
-            url: generatedSoundtrack,
-            mimeType: 'audio/wav',
-            generatedAt: production.soundtrackAsset?.generatedAt || new Date().toISOString(),
-            description: production.soundtrackAsset?.description || 'Trilha sonora procedural gerada automaticamente',
-          }
-        : production.soundtrackAsset
-      await onSaveToNotebook({
-        ...production,
-        tracks: localTracks,
-        sceneClipDurationSeconds: production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS,
-        sceneAssets,
-        soundtrackAsset,
-        renderedVideo: generatedVideoUrl
-          ? {
-              url: generatedVideoUrl,
-              mimeType: generatedVideoMimeType,
-              generatedAt: production.renderedVideo?.generatedAt || new Date().toISOString(),
-              storagePath: production.renderedVideo?.storagePath,
-            }
-          : production.renderedVideo,
-      })
+      await onSaveToNotebook(buildCurrentProduction())
       setHasUnsavedChanges(false)
     } finally {
       setSavingToNotebook(false)
     }
-  }, [onSaveToNotebook, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, generatedVideoUrl, generatedVideoMimeType])
+  }, [onSaveToNotebook, buildCurrentProduction])
 
   const handleCloseRequest = useCallback(() => {
     if (hasUnsavedChanges) {
@@ -653,40 +722,13 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     if (onSaveToNotebook) {
       setSavingToNotebook(true)
       try {
-        const sceneAssets: VideoSceneAsset[] = production.scenes.map(scene => ({
-          sceneNumber: scene.number,
-          imageUrl: generatedImages[scene.number],
-          narrationUrl: generatedAudio[scene.number],
-          videoClips: generatedClips[scene.number],
-        })).filter(asset => asset.imageUrl || asset.narrationUrl || (asset.videoClips && asset.videoClips.length > 0))
-        await onSaveToNotebook({
-          ...production,
-          tracks: localTracks,
-          sceneClipDurationSeconds: production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS,
-          sceneAssets,
-          soundtrackAsset: generatedSoundtrack
-            ? {
-                url: generatedSoundtrack,
-                mimeType: 'audio/wav',
-                generatedAt: production.soundtrackAsset?.generatedAt || new Date().toISOString(),
-                description: production.soundtrackAsset?.description || 'Trilha sonora procedural gerada automaticamente',
-              }
-            : production.soundtrackAsset,
-          renderedVideo: generatedVideoUrl
-            ? {
-                url: generatedVideoUrl,
-                mimeType: generatedVideoMimeType,
-                generatedAt: production.renderedVideo?.generatedAt || new Date().toISOString(),
-                storagePath: production.renderedVideo?.storagePath,
-              }
-            : production.renderedVideo,
-        })
+        await onSaveToNotebook(buildCurrentProduction())
       } catch { /* ignore save error on close */ }
       setSavingToNotebook(false)
     }
     setShowCloseConfirm(false)
     onClose()
-  }, [onSaveToNotebook, onClose, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, generatedVideoUrl, generatedVideoMimeType])
+  }, [onSaveToNotebook, onClose, buildCurrentProduction])
 
   const handleDiscardClose = useCallback(() => {
     setShowCloseConfirm(false)
@@ -792,8 +834,24 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
           setGeneratedAudio(nextAudioPartial)
           setGeneratedClips(nextClipsPartial)
           setGeneratedSoundtrack(partial.soundtrackAsset?.url || null)
-          if (onSave) onSave(partial)
-          if (onSaveToNotebook) await onSaveToNotebook(partial)
+          const enrichedPartial: VideoProductionPackage = {
+            ...partial,
+            tracks: localTracks,
+            renderedVideo: generatedVideoUrl
+              ? {
+                  url: generatedVideoUrl,
+                  mimeType: generatedVideoMimeType,
+                  generatedAt: production.renderedVideo?.generatedAt || new Date().toISOString(),
+                  storagePath: production.renderedVideo?.storagePath,
+                }
+              : production.renderedVideo,
+            renderedScopes,
+            renderQueue,
+            renderPresets,
+            selectedRenderPresetId,
+          }
+          if (onSave) onSave(enrichedPartial)
+          if (onSaveToNotebook) await onSaveToNotebook(enrichedPartial)
         },
       )
 
@@ -812,6 +870,25 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       setMediaGenerationComplete(true)
       setHasUnsavedChanges(false)
 
+      const finalMediaProduction: VideoProductionPackage = {
+        ...result.production,
+        tracks: localTracks,
+        renderedVideo: generatedVideoUrl
+          ? {
+              url: generatedVideoUrl,
+              mimeType: generatedVideoMimeType,
+              generatedAt: production.renderedVideo?.generatedAt || new Date().toISOString(),
+              storagePath: production.renderedVideo?.storagePath,
+            }
+          : production.renderedVideo,
+        renderedScopes,
+        renderQueue,
+        renderPresets,
+        selectedRenderPresetId,
+      }
+      if (onSave) onSave(finalMediaProduction)
+      if (onSaveToNotebook) await onSaveToNotebook(finalMediaProduction)
+
       if (result.errors.length > 0) {
         const first = result.errors[0]
         setFullVideoError(first)
@@ -828,157 +905,170 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     } finally {
       setGeneratingFullVideo(false)
     }
-  }, [apiKey, generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, onSave, onSaveToNotebook, toast])
+  }, [apiKey, generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, generatedVideoUrl, generatedVideoMimeType, renderedScopes, renderQueue, renderPresets, selectedRenderPresetId, onSave, onSaveToNotebook, toast])
+
+  const enqueueRenderJob = useCallback((scope: VideoRenderScope, sceneNumber?: number, partNumber?: number) => {
+    const id = `render_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const now = new Date().toISOString()
+    const preset = resolveVideoRenderPreset(buildCurrentProduction(), selectedRenderPresetId)
+    const item: VideoRenderQueueItem = {
+      id,
+      scope,
+      presetId: preset.id,
+      status: 'pending',
+      progress: 0,
+      createdAt: now,
+      sceneNumber,
+      partNumber,
+      message: `Na fila: ${createVideoRenderScopeLabel(scope, sceneNumber, partNumber)}`,
+    }
+    setRenderQueue(prev => [...prev, item])
+    setHasUnsavedChanges(true)
+    toast.success(`Adicionado à fila: ${createVideoRenderScopeLabel(scope, sceneNumber, partNumber)}`)
+  }, [buildCurrentProduction, selectedRenderPresetId, toast])
+
+  const handleEnqueueSelectedRender = useCallback(() => {
+    if (selectedRenderScope === 'full') {
+      enqueueRenderJob('full')
+      return
+    }
+    if (selectedRenderScope === 'scene') {
+      enqueueRenderJob('scene', selectedRenderScene)
+      return
+    }
+    enqueueRenderJob('part', selectedRenderScene, Math.max(1, selectedRenderPart))
+  }, [selectedRenderScope, selectedRenderScene, selectedRenderPart, enqueueRenderJob])
+
+  const handleRequeueItem = useCallback((itemId: string) => {
+    const requeueItemById = (item: VideoRenderQueueItem): VideoRenderQueueItem => {
+      if (item.id !== itemId) return item
+      return {
+        ...item,
+        status: 'pending',
+        progress: 0,
+        error: undefined,
+        startedAt: undefined,
+        completedAt: undefined,
+        resultScopeKey: undefined,
+        message: 'Reenfileirado',
+      }
+    }
+    setRenderQueue(prev => prev.map(requeueItemById))
+  }, [])
+
+  const updateRenderQueueItem = useCallback((itemId: string, update: Partial<VideoRenderQueueItem>) => {
+    setRenderQueue(prev => prev.map(item => item.id === itemId ? { ...item, ...update } : item))
+  }, [])
+
+  const mapRenderQueueItemUpdate = useCallback((
+    queue: VideoRenderQueueItem[],
+    itemId: string,
+    update: Partial<VideoRenderQueueItem>,
+  ): VideoRenderQueueItem[] => queue.map(item => item.id === itemId ? { ...item, ...update } : item), [])
+
+  useEffect(() => {
+    if (generatingFullVideo) return
+    const pending = renderQueue.find(item => item.status === 'pending')
+    if (!pending) return
+    let cancelled = false
+
+    const run = async () => {
+      setGeneratingFullVideo(true)
+      setFullVideoError('')
+      updateRenderQueueItem(pending.id, {
+        status: 'processing',
+        startedAt: new Date().toISOString(),
+        progress: 5,
+        message: `Renderizando ${createVideoRenderScopeLabel(pending.scope, pending.sceneNumber, pending.partNumber)}...`,
+      })
+
+      try {
+        const currentProduction = buildCurrentProduction()
+        const preset = resolveVideoRenderPreset(currentProduction, pending.presetId)
+        const result = await renderLiteralVideoByScope(currentProduction, {
+          scope: pending.scope,
+          sceneNumber: pending.sceneNumber,
+          partNumber: pending.partNumber,
+          preset,
+          onProgress: (_step, _total, _phase, label) => {
+            if (cancelled) return
+            const percentMatch = label.match(/(\d{1,3})%/)
+            const percent = percentMatch ? Number.parseInt(percentMatch[1], 10) : 0
+            updateRenderQueueItem(pending.id, {
+              progress: Math.min(99, Math.max(10, percent || 50)),
+              message: label,
+            })
+            setFullVideoStatus(label)
+          },
+        })
+        if (cancelled) return
+
+        const mergedScopes = [
+          ...(currentProduction.renderedScopes || []).filter(asset => asset.scopeKey !== result.asset.scopeKey),
+          result.asset,
+        ].sort((a, b) => a.scopeKey.localeCompare(b.scopeKey))
+        upsertRenderedScope(result.asset)
+
+        const completedUpdate: Partial<VideoRenderQueueItem> = {
+          status: 'completed',
+          progress: 100,
+          completedAt: new Date().toISOString(),
+          resultScopeKey: result.asset.scopeKey,
+          message: `Concluído: ${result.asset.label}`,
+        }
+        let finalizedQueue: VideoRenderQueueItem[] = []
+        setRenderQueue(prev => {
+          finalizedQueue = mapRenderQueueItemUpdate(prev, pending.id, completedUpdate)
+          return finalizedQueue
+        })
+
+        const outputProduction: VideoProductionPackage = {
+          ...currentProduction,
+          renderedScopes: mergedScopes,
+          renderQueue: finalizedQueue,
+          renderedVideo: result.asset.scope === 'full' ? result.asset : currentProduction.renderedVideo,
+        }
+        if (onSave) onSave(outputProduction)
+        if (onSaveToNotebook) await onSaveToNotebook(outputProduction)
+        setHasUnsavedChanges(!onSaveToNotebook && !onSave)
+        toast.success(`Render concluído: ${result.asset.label}`)
+      } catch (err) {
+        if (cancelled) return
+        const message = err instanceof Error ? err.message : 'Falha ao processar item da fila de render'
+        setFullVideoError(message)
+        setRenderQueue(prev => mapRenderQueueItemUpdate(prev, pending.id, {
+          status: 'failed',
+          progress: 100,
+          completedAt: new Date().toISOString(),
+          error: message,
+          message: `Falha: ${message}`,
+        }))
+        toast.error('Falha no render por escopo', message)
+      } finally {
+        if (!cancelled) {
+          setGeneratingFullVideo(false)
+          setFullVideoStatus('')
+        }
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [renderQueue, generatingFullVideo, buildCurrentProduction, onSave, onSaveToNotebook, upsertRenderedScope, toast, updateRenderQueueItem, mapRenderQueueItemUpdate])
 
   const handleRenderFinalVideo = useCallback(async () => {
-    if (generatingFullVideo) return
-    setGeneratingFullVideo(true)
-    setFullVideoError('')
-    try {
-      const currentProduction: VideoProductionPackage = {
-        ...production,
-        tracks: localTracks,
-        sceneAssets: production.scenes.map(scene => ({
-          sceneNumber: scene.number,
-          imageUrl: generatedImages[scene.number],
-          narrationUrl: generatedAudio[scene.number],
-          videoClips: generatedClips[scene.number],
-        })).filter(asset => asset.imageUrl || asset.narrationUrl || (asset.videoClips && asset.videoClips.length > 0)),
-        soundtrackAsset: generatedSoundtrack
-          ? {
-              url: generatedSoundtrack,
-              mimeType: 'audio/wav',
-              generatedAt: production.soundtrackAsset?.generatedAt || new Date().toISOString(),
-              description: production.soundtrackAsset?.description || 'Trilha sonora procedural gerada automaticamente',
-            }
-          : production.soundtrackAsset,
-      }
-
-      const rendered = await renderLiteralVideo(currentProduction, (_step, _total, _phase, label) => {
-        setFullVideoStatus(label)
-      })
-      setGeneratedVideoUrl(rendered.asset.url)
-      setGeneratedVideoMimeType(rendered.asset.mimeType || 'video/webm')
-
-      const finalProduction: VideoProductionPackage = {
-        ...currentProduction,
-        renderedVideo: rendered.asset,
-      }
-      if (onSave) onSave(finalProduction)
-      if (onSaveToNotebook) await onSaveToNotebook(finalProduction)
-
-      toast.success('Vídeo final renderizado com sucesso!')
-      setHasUnsavedChanges(false)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao gerar vídeo real'
-      setFullVideoError(message)
-      toast.error('Falha ao gerar vídeo real', message)
-    } finally {
-      setGeneratingFullVideo(false)
-      setFullVideoStatus('')
-    }
-  }, [generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, onSave, onSaveToNotebook, toast])
+    enqueueRenderJob('full')
+  }, [enqueueRenderJob])
 
   const handleRegenerateSceneClips = useCallback(async (scene: VideoScene) => {
-    if (generatingClipFor) return
-    const key = `scene-${scene.number}-all`
-    setGeneratingClipFor(key)
-    setFullVideoError('')
-    try {
-      const currentSceneDuration = Math.max(1, scene.duration || parseTimeToSeconds(scene.timeEnd) - parseTimeToSeconds(scene.timeStart) || 1)
-      const clipDuration = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
-      const clipCount = Math.max(1, Math.ceil(currentSceneDuration / clipDuration))
-      const sceneStart = parseTimeToSeconds(scene.timeStart)
-      const nextClips: VideoClipAsset[] = []
-      for (let i = 0; i < clipCount; i++) {
-        const partStart = sceneStart + i * clipDuration
-        const partEnd = Math.min(sceneStart + currentSceneDuration, partStart + clipDuration)
-        const clipLength = Math.max(1, partEnd - partStart)
-        const renderResult = await renderLiteralVideo({
-          ...production,
-          scenes: [{ ...scene, duration: clipLength, timeStart: '00:00', timeEnd: formatSecondsToMMSS(clipLength) }],
-          sceneAssets: [{
-            sceneNumber: scene.number,
-            imageUrl: generatedImages[scene.number],
-            narrationUrl: generatedAudio[scene.number],
-          }],
-          totalDuration: clipLength,
-        })
-        nextClips.push({
-          sceneNumber: scene.number,
-          partNumber: i + 1,
-          startTime: partStart,
-          endTime: partEnd,
-          duration: clipLength,
-          url: renderResult.asset.url,
-          mimeType: renderResult.asset.mimeType,
-          generatedAt: renderResult.asset.generatedAt,
-          source: 'generated',
-        })
-      }
-      setGeneratedClips(prev => ({ ...prev, [scene.number]: nextClips }))
-      setHasUnsavedChanges(true)
-      toast.success(`Cena ${scene.number}: ${nextClips.length} clipe(s) regenerado(s).`)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao regenerar clipes da cena'
-      setFullVideoError(message)
-      toast.error('Falha ao regenerar cena', message)
-    } finally {
-      setGeneratingClipFor(null)
-    }
-  }, [generatingClipFor, production, generatedImages, generatedAudio, toast])
+    enqueueRenderJob('scene', scene.number)
+  }, [enqueueRenderJob])
 
   const handleRegenerateClipPart = useCallback(async (scene: VideoScene, partNumber: number) => {
-    if (generatingClipFor) return
-    const key = `scene-${scene.number}-part-${partNumber}`
-    setGeneratingClipFor(key)
-    setFullVideoError('')
-    try {
-      const clipDuration = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
-      const sceneStart = parseTimeToSeconds(scene.timeStart)
-      const sceneDuration = Math.max(1, scene.duration || parseTimeToSeconds(scene.timeEnd) - parseTimeToSeconds(scene.timeStart) || 1)
-      const partStart = sceneStart + (partNumber - 1) * clipDuration
-      const partEnd = Math.min(sceneStart + sceneDuration, partStart + clipDuration)
-      const clipLength = Math.max(1, partEnd - partStart)
-      const renderResult = await renderLiteralVideo({
-        ...production,
-        scenes: [{ ...scene, duration: clipLength, timeStart: '00:00', timeEnd: formatSecondsToMMSS(clipLength) }],
-        sceneAssets: [{
-          sceneNumber: scene.number,
-          imageUrl: generatedImages[scene.number],
-          narrationUrl: generatedAudio[scene.number],
-        }],
-        totalDuration: clipLength,
-      })
-      const clip: VideoClipAsset = {
-        sceneNumber: scene.number,
-        partNumber,
-        startTime: partStart,
-        endTime: partEnd,
-        duration: clipLength,
-        url: renderResult.asset.url,
-        mimeType: renderResult.asset.mimeType,
-        generatedAt: renderResult.asset.generatedAt,
-        source: 'generated',
-      }
-      setGeneratedClips(prev => {
-        const current = prev[scene.number] || []
-        const rest = current.filter(item => item.partNumber !== partNumber)
-        return {
-          ...prev,
-          [scene.number]: [...rest, clip].sort((a, b) => a.partNumber - b.partNumber),
-        }
-      })
-      setHasUnsavedChanges(true)
-      toast.success(`Cena ${scene.number} parte ${partNumber} regenerada.`)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao regenerar parte'
-      setFullVideoError(message)
-      toast.error('Falha ao regenerar parte', message)
-    } finally {
-      setGeneratingClipFor(null)
-    }
-  }, [generatingClipFor, production, generatedImages, generatedAudio, toast])
+    enqueueRenderJob('part', scene.number, partNumber)
+  }, [enqueueRenderJob])
 
   const handleUploadClipPart = useCallback(async (scene: VideoScene, partNumber: number, file: File | null) => {
     if (!file) return
@@ -1029,6 +1119,19 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         : 'webm'
       root.file(`video-completo.${ext}`, blob)
     }
+    if (renderedScopes.length > 0) {
+      const scopedFolder = root.folder('renders-escopo')
+      for (const scoped of renderedScopes) {
+        if (!scoped.url) continue
+        const blob = await fetch(scoped.url).then(resp => resp.blob())
+        const ext = scoped.mimeType.includes('mp4')
+          ? 'mp4'
+          : scoped.mimeType.includes('ogg')
+          ? 'ogv'
+          : 'webm'
+        scopedFolder?.file(`${sanitizeName(scoped.label)}.${ext}`, blob)
+      }
+    }
     if (generatedSoundtrack) {
       const blob = await fetch(generatedSoundtrack).then(resp => resp.blob())
       root.file('audio/trilha.wav', blob)
@@ -1060,7 +1163,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     a.download = `${sanitizeName(production.title)}-midias.zip`
     a.click()
     URL.revokeObjectURL(a.href)
-  }, [production, generatedVideoUrl, generatedVideoMimeType, generatedSoundtrack, generatedImages, generatedAudio, generatedClips])
+  }, [production, renderedScopes, generatedVideoUrl, generatedVideoMimeType, generatedSoundtrack, generatedImages, generatedAudio, generatedClips])
 
   useEffect(() => {
     if (!autoGenerateMedia || autoGenerationStarted.current || !apiKey) return
@@ -1268,6 +1371,134 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                   }}
                 />
               </label>
+              <div className="rounded-lg border bg-gray-50 p-2 space-y-2">
+                <p className="text-[10px] font-semibold text-gray-600 uppercase">Render por Escopo (CapCut-like)</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['full', 'scene', 'part'] as VideoRenderScope[]).map(scope => (
+                    <button
+                      key={scope}
+                      onClick={() => setSelectedRenderScope(scope)}
+                      className={`px-2 py-1 text-[10px] rounded border ${
+                        selectedRenderScope === scope
+                          ? 'bg-violet-600 text-white border-violet-600'
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {scope === 'full' ? 'Projeto' : scope === 'scene' ? 'Cena' : 'Parte'}
+                    </button>
+                  ))}
+                </div>
+                {selectedRenderScope !== 'full' && (
+                  <div className="grid grid-cols-2 gap-1">
+                    <select
+                      value={selectedRenderScene}
+                      onChange={e => {
+                        const scene = Number.parseInt(e.target.value, 10) || production.scenes[0]?.number || 1
+                        setSelectedRenderScene(scene)
+                        setSelectedRenderPart(1)
+                      }}
+                      className="px-2 py-1 text-[10px] border rounded bg-white"
+                    >
+                      {production.scenes.map(scene => (
+                        <option key={scene.number} value={scene.number}>Cena {scene.number}</option>
+                      ))}
+                    </select>
+                    {selectedRenderScope === 'part' ? (
+                      <input
+                        type="number"
+                        min={1}
+                        value={selectedRenderPart}
+                        onChange={e => setSelectedRenderPart(Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
+                        className="px-2 py-1 text-[10px] border rounded bg-white"
+                        placeholder="Parte"
+                      />
+                    ) : (
+                      <div className="px-2 py-1 text-[10px] border rounded bg-gray-100 text-gray-500 flex items-center">
+                        Cena inteira
+                      </div>
+                    )}
+                  </div>
+                )}
+                <select
+                  value={selectedRenderPresetId}
+                  onChange={e => setSelectedRenderPresetId(e.target.value)}
+                  className="w-full px-2 py-1 text-[10px] border rounded bg-white"
+                >
+                  {renderPresets.map(preset => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name} · {preset.width}x{preset.height} · {preset.frameRate}fps
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleEnqueueSelectedRender}
+                  disabled={generatingFullVideo}
+                  className="w-full px-2 py-1.5 text-[10px] font-semibold rounded bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-60"
+                >
+                  {generatingFullVideo ? 'Processando fila...' : 'Adicionar à fila de render'}
+                </button>
+              </div>
+              {renderedScopes.length > 0 && (
+                <div className="rounded-lg border bg-white p-2 space-y-1">
+                  <p className="text-[10px] font-semibold text-gray-600 uppercase">Renders por Escopo</p>
+                  <div className="space-y-1 max-h-32 overflow-auto">
+                    {renderedScopes.map(asset => (
+                      <div key={asset.scopeKey} className="border rounded p-1.5 bg-gray-50">
+                        <p className="text-[10px] font-medium text-gray-700">{asset.label}</p>
+                        <video controls src={asset.url} className="w-full rounded border bg-black mt-1" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {renderQueue.length > 0 && (
+                <div className="rounded-lg border bg-white p-2 space-y-1">
+                  <p className="text-[10px] font-semibold text-gray-600 uppercase">Fila de Render</p>
+                  <div className="space-y-1 max-h-36 overflow-auto">
+                    {renderQueue.map(item => (
+                      <div key={item.id} className="border rounded p-1.5 bg-gray-50">
+                        <p className="text-[10px] font-medium text-gray-700">
+                          {createVideoRenderScopeLabel(item.scope, item.sceneNumber, item.partNumber)}
+                        </p>
+                        <p className="text-[10px] text-gray-500">{item.message || item.status}</p>
+                        <div className="w-full h-1.5 bg-gray-200 rounded mt-1">
+                          <div
+                            className={`h-1.5 rounded ${
+                              item.status === 'failed'
+                                ? 'bg-red-500'
+                                : item.status === 'completed'
+                                ? 'bg-emerald-500'
+                                : 'bg-violet-500'
+                            }`}
+                            style={{ width: `${Math.max(0, Math.min(100, item.progress || 0))}%` }}
+                          />
+                        </div>
+                        <div className="mt-1 flex items-center gap-1">
+                          {(item.status === 'pending' || item.status === 'failed') && (
+                            <button
+                              onClick={() => handleRequeueItem(item.id)}
+                              className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-600 text-white hover:bg-indigo-700"
+                            >
+                              Recolocar na Fila
+                            </button>
+                          )}
+                          {item.status === 'pending' && (
+                            <button
+                              onClick={() => {
+                                setRenderQueue(prev => prev.filter(curr => curr.id !== item.id))
+                                setHasUnsavedChanges(true)
+                              }}
+                              className="px-1.5 py-0.5 text-[10px] rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            >
+                              Cancelar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1481,13 +1712,13 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                         <div className="flex items-center gap-2 mt-2">
                           <button
                             onClick={() => handleRegenerateSceneClips(scene)}
-                            disabled={Boolean(generatingClipFor)}
+                            disabled={Boolean(activeRenderJob)}
                             className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-600 text-white text-[10px] font-medium rounded hover:bg-amber-700 disabled:opacity-60"
                           >
-                            {generatingClipFor?.startsWith(`scene-${scene.number}-`)
+                            {activeRenderJob?.scope === 'scene' && activeRenderJob.sceneNumber === scene.number
                               ? <Loader2 className="w-3 h-3 animate-spin" />
                               : <Film className="w-3 h-3" />}
-                            Regenerar Cena (partes)
+                            Renderizar Cena Completa
                           </button>
                         </div>
                       </div>
@@ -1517,10 +1748,14 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => handleRegenerateClipPart(scene, clip.partNumber)}
-                                  disabled={Boolean(generatingClipFor)}
+                                  disabled={Boolean(activeRenderJob)}
                                   className="px-2 py-1 text-[10px] rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
                                 >
-                                  {generatingClipFor === `scene-${scene.number}-part-${clip.partNumber}` ? 'Gerando...' : 'Regenerar'}
+                                  {activeRenderJob?.scope === 'part'
+                                    && activeRenderJob.sceneNumber === scene.number
+                                    && activeRenderJob.partNumber === clip.partNumber
+                                    ? 'Renderizando...'
+                                    : 'Renderizar'}
                                 </button>
                                 <label className="px-2 py-1 text-[10px] rounded border cursor-pointer hover:bg-gray-50">
                                   Upload

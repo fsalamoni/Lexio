@@ -1,14 +1,19 @@
 import { generateImageViaOpenRouter } from './image-generation-client'
 import { loadVideoPipelineModels } from './model-config'
+import { formatSecondsToMMSS } from './time-format'
 import { generateTTSViaOpenRouter } from './tts-client'
 import type {
   VideoClipAsset,
   RenderedVideoAsset,
+  ScopedRenderedVideoAsset,
+  VideoRenderPreset,
+  VideoRenderScope,
   VideoAudioAsset,
   VideoGenerationStepExecution,
   VideoProductionPackage,
   VideoScene,
   VideoSceneAsset,
+  createVideoRenderScopeLabel,
 } from './video-generation-pipeline'
 
 export type LiteralVideoProgressCallback = (
@@ -34,6 +39,52 @@ const MIN_SOUNDTRACK_DURATION_SECONDS = 1
 const INT16_PCM_MIN = -0x8000
 const INT16_PCM_MAX = 0x7fff
 const DEFAULT_SCENE_CLIP_DURATION_SECONDS = 8
+const MIN_RENDER_WIDTH = 160
+const MIN_RENDER_HEIGHT = 90
+const DEFAULT_RENDER_FRAME_RATE = 30
+const MIN_RENDER_VIDEO_BITRATE = 250_000
+const DEFAULT_RENDER_VIDEO_BITRATE = 6_000_000
+const DEFAULT_RENDER_PRESETS: VideoRenderPreset[] = [
+  {
+    id: 'render-fast-540p',
+    name: 'Rascunho (540p)',
+    description: 'Prévia rápida para revisão',
+    width: 960,
+    height: 540,
+    frameRate: 24,
+    videoBitsPerSecond: 3_000_000,
+  },
+  {
+    id: 'render-standard-720p',
+    name: 'Padrão (720p)',
+    description: 'Equilíbrio entre qualidade e velocidade',
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    videoBitsPerSecond: DEFAULT_RENDER_VIDEO_BITRATE,
+  },
+  {
+    id: 'render-high-1080p',
+    name: 'Alta (1080p)',
+    description: 'Qualidade máxima para exportação final',
+    width: 1920,
+    height: 1080,
+    frameRate: 30,
+    videoBitsPerSecond: 10_000_000,
+  },
+]
+
+interface RenderLiteralVideoOptions {
+  preset?: VideoRenderPreset
+}
+
+interface RenderByScopeOptions {
+  scope: VideoRenderScope
+  sceneNumber?: number
+  partNumber?: number
+  preset?: VideoRenderPreset
+  onProgress?: LiteralVideoProgressCallback
+}
 
 interface PreparedSceneTiming {
   scene: VideoScene
@@ -109,6 +160,37 @@ function buildScenePartTimings(
   return list
 }
 
+function createScopeKey(scope: VideoRenderScope, sceneNumber?: number, partNumber?: number): string {
+  if (scope === 'scene') return `scene:${sceneNumber ?? 'unknown'}`
+  if (scope === 'part') return `part:${sceneNumber ?? 'unknown'}:${partNumber ?? 'unknown'}`
+  return 'full'
+}
+
+export function getDefaultVideoRenderPresets(): VideoRenderPreset[] {
+  return DEFAULT_RENDER_PRESETS.map(preset => ({ ...preset }))
+}
+
+export function resolveVideoRenderPreset(
+  production?: VideoProductionPackage,
+  presetId?: string,
+): VideoRenderPreset {
+  const available = [...(production?.renderPresets || []), ...DEFAULT_RENDER_PRESETS]
+  const fallback = available.find(item => item.id === 'render-standard-720p') || available[0]
+  if (!fallback) {
+    return {
+      id: 'render-fallback',
+      name: 'Fallback',
+      width: 1280,
+      height: 720,
+      frameRate: 30,
+      videoBitsPerSecond: DEFAULT_RENDER_VIDEO_BITRATE,
+    }
+  }
+  if (!presetId) return { ...fallback }
+  const chosen = available.find(item => item.id === presetId)
+  return chosen ? { ...chosen } : { ...fallback }
+}
+
 async function renderSceneClip(
   scene: VideoScene,
   part: ScenePartTiming,
@@ -154,7 +236,7 @@ async function renderSceneClip(
     ...destination.stream.getAudioTracks(),
   ])
   const mimeType = getSupportedVideoMimeType()
-  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 6_000_000 })
+  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: DEFAULT_RENDER_VIDEO_BITRATE })
   const chunks: BlobPart[] = []
   recorder.ondataavailable = event => {
     if (event.data.size > 0) chunks.push(event.data)
@@ -430,6 +512,7 @@ function wrapText(
 export async function renderLiteralVideo(
   production: VideoProductionPackage,
   onProgress?: LiteralVideoProgressCallback,
+  options?: RenderLiteralVideoOptions,
 ): Promise<{ blob: Blob; asset: RenderedVideoAsset }> {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     throw new Error('A renderização real de vídeo requer navegador.')
@@ -493,20 +576,25 @@ export async function renderLiteralVideo(
     await scheduleAudio(production.soundtrackAsset.url, startAt, 0.18)
   }
 
+  const preset = options?.preset || resolveVideoRenderPreset(production, production.selectedRenderPresetId)
   const canvas = document.createElement('canvas')
-  canvas.width = 1280
-  canvas.height = 720
+  canvas.width = Math.max(MIN_RENDER_WIDTH, Math.floor(preset.width))
+  canvas.height = Math.max(MIN_RENDER_HEIGHT, Math.floor(preset.height))
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Falha ao criar canvas para renderização do vídeo.')
 
-  const canvasStream = canvas.captureStream(30)
+  const frameRate = Math.max(1, Math.floor(preset.frameRate || DEFAULT_RENDER_FRAME_RATE))
+  const canvasStream = canvas.captureStream(frameRate)
   const combinedStream = new MediaStream([
     ...canvasStream.getVideoTracks(),
     ...destination.stream.getAudioTracks(),
   ])
 
   const mimeType = getSupportedVideoMimeType()
-  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 6_000_000 })
+  const recorder = new MediaRecorder(combinedStream, {
+    mimeType,
+    videoBitsPerSecond: Math.max(MIN_RENDER_VIDEO_BITRATE, Math.floor(preset.videoBitsPerSecond || DEFAULT_RENDER_VIDEO_BITRATE)),
+  })
   const chunks: BlobPart[] = []
 
   recorder.ondataavailable = event => {
@@ -570,6 +658,104 @@ export async function renderLiteralVideo(
       url: URL.createObjectURL(blob),
       mimeType,
       generatedAt: new Date().toISOString(),
+    },
+  }
+}
+
+export async function renderLiteralVideoByScope(
+  production: VideoProductionPackage,
+  {
+    scope,
+    sceneNumber,
+    partNumber,
+    preset,
+    onProgress,
+  }: RenderByScopeOptions,
+): Promise<{ blob: Blob; asset: ScopedRenderedVideoAsset }> {
+  const chosenPreset = preset || resolveVideoRenderPreset(production, production.selectedRenderPresetId)
+  const clipDuration = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
+
+  if (scope === 'full') {
+    const rendered = await renderLiteralVideo(production, onProgress, { preset: chosenPreset })
+    return {
+      blob: rendered.blob,
+      asset: {
+        ...rendered.asset,
+        scope: 'full',
+        scopeKey: createScopeKey('full'),
+        label: createVideoRenderScopeLabel('full'),
+        presetId: chosenPreset.id,
+      },
+    }
+  }
+
+  if (scope === 'scene') {
+    const scene = production.scenes.find(item => item.number === sceneNumber)
+    if (!scene) {
+      throw new Error(`Cena ${sceneNumber ?? '?'} não encontrada para render por escopo.`)
+    }
+    const sceneAsset = (production.sceneAssets || []).find(item => item.sceneNumber === scene.number)
+    const sceneDuration = Math.max(
+      1,
+      scene.duration || parseTimeToSeconds(scene.timeEnd) - parseTimeToSeconds(scene.timeStart) || 1,
+    )
+    const sceneOnly: VideoProductionPackage = {
+      ...production,
+      totalDuration: sceneDuration,
+      scenes: [{ ...scene, timeStart: '00:00', timeEnd: formatSecondsToMMSS(sceneDuration), duration: sceneDuration }],
+      sceneAssets: sceneAsset ? [{ ...sceneAsset }] : [],
+    }
+    const rendered = await renderLiteralVideo(sceneOnly, onProgress, { preset: chosenPreset })
+    return {
+      blob: rendered.blob,
+      asset: {
+        ...rendered.asset,
+        scope: 'scene',
+        scopeKey: createScopeKey('scene', scene.number),
+        label: createVideoRenderScopeLabel('scene', scene.number),
+        presetId: chosenPreset.id,
+        sceneNumber: scene.number,
+      },
+    }
+  }
+
+  const scene = production.scenes.find(item => item.number === sceneNumber)
+  if (!scene) {
+    throw new Error(`Cena ${sceneNumber ?? '?'} não encontrada para render de parte.`)
+  }
+  if (!partNumber || partNumber < 1) {
+    throw new Error('Parte inválida para render por escopo.')
+  }
+
+  const sceneStart = parseTimeToSeconds(scene.timeStart)
+  const sceneDuration = Math.max(
+    1,
+    scene.duration || parseTimeToSeconds(scene.timeEnd) - parseTimeToSeconds(scene.timeStart) || 1,
+  )
+  const partStart = sceneStart + (partNumber - 1) * clipDuration
+  const partEnd = Math.min(sceneStart + sceneDuration, partStart + clipDuration)
+  if (partStart >= sceneStart + sceneDuration) {
+    throw new Error(`Parte ${partNumber} fora da duração da cena ${scene.number}.`)
+  }
+  const clipLength = Math.max(1, partEnd - partStart)
+  const sceneAsset = (production.sceneAssets || []).find(item => item.sceneNumber === scene.number)
+  const partProduction: VideoProductionPackage = {
+    ...production,
+    totalDuration: clipLength,
+    scenes: [{ ...scene, duration: clipLength, timeStart: '00:00', timeEnd: formatSecondsToMMSS(clipLength) }],
+    sceneAssets: sceneAsset ? [{ ...sceneAsset }] : [],
+  }
+  const rendered = await renderLiteralVideo(partProduction, onProgress, { preset: chosenPreset })
+  return {
+    blob: rendered.blob,
+    asset: {
+      ...rendered.asset,
+      scope: 'part',
+      scopeKey: createScopeKey('part', scene.number, partNumber),
+      label: createVideoRenderScopeLabel('part', scene.number, partNumber),
+      presetId: chosenPreset.id,
+      sceneNumber: scene.number,
+      partNumber,
     },
   }
 }
