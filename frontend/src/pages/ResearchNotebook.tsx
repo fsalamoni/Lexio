@@ -50,6 +50,7 @@ import {
   type VideoProductionPackage,
   type VideoGenerationProgressCallback,
 } from '../lib/video-generation-pipeline'
+import { uploadNotebookVideoArtifact } from '../lib/notebook-media-storage'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
@@ -473,6 +474,7 @@ export default function ResearchNotebook() {
   const [videoGenProgress, setVideoGenProgress] = useState<{ step: number; total: number; phase: string; agent: string } | null>(null)
   const [videoProduction, setVideoProduction] = useState<VideoProductionPackage | null>(null)
   const [videoStudioApiKey, setVideoStudioApiKey] = useState<string | undefined>(undefined)
+  const [videoStudioAutoGenerate, setVideoStudioAutoGenerate] = useState(false)
 
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
@@ -1230,9 +1232,10 @@ Instruções:
         resolveTask(null)
       } else {
         setVideoProduction(result.package)
+        setVideoStudioAutoGenerate(true)
         setShowVideoGenCost(false)
         setVideoGenSavedArtifact(null)
-        toast.success('Vídeo gerado com sucesso! Editor de estúdio aberto.')
+        toast.success('Pipeline concluído! O estúdio abrirá e iniciará a geração literal do vídeo.')
         resolveTask(result.package)
       }
     } catch (err) {
@@ -1263,8 +1266,29 @@ Instruções:
   const handleSaveVideoStudioToNotebook = async (production: VideoProductionPackage) => {
     if (!userId || !activeNotebook?.id) return
     try {
+      let productionToSave = production
+      const renderedVideoUrl = production.renderedVideo?.url || ''
+
+      if (renderedVideoUrl && (renderedVideoUrl.startsWith('blob:') || renderedVideoUrl.startsWith('data:'))) {
+        const videoBlob = await fetch(renderedVideoUrl).then(resp => resp.blob())
+        const storedVideo = await uploadNotebookVideoArtifact(
+          userId,
+          activeNotebook.id,
+          production.title,
+          videoBlob,
+        )
+        productionToSave = {
+          ...production,
+          renderedVideo: {
+            ...production.renderedVideo!,
+            url: storedVideo.url,
+            storagePath: storedVideo.path,
+          },
+        }
+      }
+
       const artifactTitle = `Estúdio de Vídeo: ${production.title}`
-      const content = JSON.stringify(production)
+      const content = JSON.stringify(productionToSave)
       
       // Check if a video studio artifact with same title already exists — update instead of duplicate
       const existingIdx = activeNotebook.artifacts.findIndex(
@@ -1298,6 +1322,7 @@ Instruções:
       })
       setActiveNotebook({ ...activeNotebook, artifacts: updatedArtifacts })
       toast.success(existingIdx >= 0 ? 'Estúdio de vídeo atualizado!' : 'Estúdio de vídeo salvo nos artefatos do caderno!')
+      setVideoProduction(productionToSave)
       setActiveTab('artifacts')
     } catch (err) {
       console.error('Error saving video studio artifact:', err)
@@ -2557,9 +2582,14 @@ Instruções:
         <VideoStudioEditor
           production={videoProduction}
           apiKey={videoStudioApiKey}
-          onClose={() => setVideoProduction(null)}
+          autoGenerateMedia={videoStudioAutoGenerate}
+          onClose={() => {
+            setVideoProduction(null)
+            setVideoStudioAutoGenerate(false)
+          }}
           onSave={(updated) => {
             setVideoProduction(updated)
+            setVideoStudioAutoGenerate(false)
             toast.success('Produção de vídeo salva!')
           }}
           onSaveToNotebook={handleSaveVideoStudioToNotebook}

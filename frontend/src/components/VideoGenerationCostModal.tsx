@@ -14,15 +14,15 @@ import {
 import { estimateVideoGenerationCost } from '../lib/video-generation-pipeline'
 import DraggablePanel from './DraggablePanel'
 
-/** Model type recommendation per agent — all agents use text LLMs to produce JSON */
+/** Model type recommendation per agent — pipeline textual + geração real de mídia */
 const AGENT_MODEL_RECOMMENDATIONS: Record<string, { icon: React.ElementType; capability: string; note: string }> = {
   video_planejador:   { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4o, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Llama 4 Maverick, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, DeepSeek R1:free' },
   video_roteirista:   { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1, GPT-4o. Baratos: DeepSeek V3, Llama 4 Maverick, Gemini 2.5 Flash, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free' },
   video_diretor_cena: { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, GPT-4.1 Mini, Llama 4 Maverick, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, Qwen3 30B:free' },
   video_storyboarder: { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1, GPT-4o. Baratos: DeepSeek V3, Gemini 2.5 Flash, Llama 4 Maverick, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free' },
-  video_designer:     { icon: Image,    capability: 'Texto', note: 'Gera prompts de imagem (JSON). Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Llama 4 Maverick. Grátis: Gemini 2.0 Flash:free' },
-  video_compositor:   { icon: Film,     capability: 'Texto', note: 'Monta timeline (JSON). Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, GPT-4.1 Mini, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, Qwen3 30B:free' },
-  video_narrador:     { icon: Mic,      capability: 'Texto', note: 'Roteiro de narração (JSON). Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Llama 4 Maverick, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free' },
+  video_designer:     { icon: Image,    capability: 'Imagem', note: 'Gera prompts e imagens reais por cena. Prefira modelos com capacidade de imagem.' },
+  video_compositor:   { icon: Film,     capability: 'Vídeo', note: 'Monta a timeline e apoia a renderização final do arquivo de vídeo.' },
+  video_narrador:     { icon: Mic,      capability: 'Áudio', note: 'Gera o roteiro e a narração real. Prefira modelos TTS/áudio.' },
   video_revisor:      { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Mistral Small:free' },
 }
 
@@ -170,7 +170,7 @@ export default function VideoGenerationCostModal({
                 <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
                 <div className="text-sm text-amber-800">
                   <p className="font-semibold mb-1">Proposta de geração de vídeo</p>
-                  <p>Revise o roteiro na aba <strong>Roteiro</strong> antes de gerar. Você pode editar cenas, narrações e descrições livremente. O pipeline de 8 agentes criará todos os elementos de produção.</p>
+                  <p>Revise o roteiro na aba <strong>Roteiro</strong> antes de gerar. Depois do pipeline textual, a plataforma seguirá com geração real de imagens, narrações, trilha sonora e renderização do vídeo final.</p>
                 </div>
               </div>
 

@@ -79,6 +79,26 @@ export interface DesignGuide {
   recurringElements: string[]
 }
 
+export interface VideoSceneAsset {
+  sceneNumber: number
+  imageUrl?: string
+  narrationUrl?: string
+}
+
+export interface VideoAudioAsset {
+  url: string
+  mimeType: string
+  generatedAt: string
+  description?: string
+}
+
+export interface RenderedVideoAsset {
+  url: string
+  mimeType: string
+  generatedAt: string
+  storagePath?: string
+}
+
 export interface VideoProductionPackage {
   title: string
   totalDuration: number
@@ -88,6 +108,9 @@ export interface VideoProductionPackage {
   designGuide: DesignGuide
   qualityReport: string
   productionNotes: string[]
+  sceneAssets?: VideoSceneAsset[]
+  soundtrackAsset?: VideoAudioAsset
+  renderedVideo?: RenderedVideoAsset
 }
 
 export interface VideoGenerationStepExecution {

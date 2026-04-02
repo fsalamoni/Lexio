@@ -12,13 +12,16 @@ import {
   Film, CheckCircle2, Image, Loader2, Volume2, BookOpen,
 } from 'lucide-react'
 import type {
+  VideoAudioAsset,
   VideoProductionPackage,
   VideoTrack,
   TrackSegment,
   VideoScene,
+  VideoSceneAsset,
 } from '../../lib/video-generation-pipeline'
 import { generateImageViaOpenRouter } from '../../lib/image-generation-client'
 import { generateTTSViaOpenRouter } from '../../lib/tts-client'
+import { produceLiteralVideoProduction } from '../../lib/literal-video-production'
 import { useToast } from '../Toast'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -49,11 +52,23 @@ interface VideoStudioEditorProps {
   onClose: () => void
   onSave?: (production: VideoProductionPackage) => void
   onSaveToNotebook?: (production: VideoProductionPackage) => void | Promise<void>
+  autoGenerateMedia?: boolean
 }
 
 interface SelectedSegment {
   trackIndex: number
   segmentIndex: number
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => typeof reader.result === 'string'
+      ? resolve(reader.result)
+      : reject(new Error('Falha ao converter blob em data URL'))
+    reader.onerror = () => reject(reader.error ?? new Error('Falha ao ler blob'))
+    reader.readAsDataURL(blob)
+  })
 }
 
 // ── Timeline Ruler ────────────────────────────────────────────────────────────
@@ -419,7 +434,7 @@ function DesignGuidePanel({ designGuide }: { designGuide: VideoProductionPackage
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function VideoStudioEditor({ production, apiKey, onClose, onSave, onSaveToNotebook }: VideoStudioEditorProps) {
+export default function VideoStudioEditor({ production, apiKey, onClose, onSave, onSaveToNotebook, autoGenerateMedia }: VideoStudioEditorProps) {
   const toast = useToast()
   const [selectedSegment, setSelectedSegment] = useState<SelectedSegment | null>(null)
   const [selectedScene, setSelectedScene] = useState<number | null>(null)
@@ -441,20 +456,32 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const [generatedAudio, setGeneratedAudio] = useState<Record<number, string>>({})
   const [generatingAudioFor, setGeneratingAudioFor] = useState<number | null>(null)
   const [audioError, setAudioError] = useState<Record<number, string>>({})
+  const [generatedSoundtrack, setGeneratedSoundtrack] = useState<string | null>(production.soundtrackAsset?.url || null)
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(production.renderedVideo?.url || null)
+  const [generatedVideoMimeType, setGeneratedVideoMimeType] = useState<string>(production.renderedVideo?.mimeType || 'video/webm')
+  const [generatingFullVideo, setGeneratingFullVideo] = useState(false)
+  const [fullVideoStatus, setFullVideoStatus] = useState<string>('')
+  const [fullVideoError, setFullVideoError] = useState<string>('')
 
   const [savingToNotebook, setSavingToNotebook] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const autoGenerationStarted = useRef(false)
 
-  // Cleanup blob URLs on unmount to prevent memory leaks
   useEffect(() => {
-    return () => {
-      Object.values(generatedAudio).forEach(url => {
-        try { URL.revokeObjectURL(url) } catch { /* ignore */ }
-      })
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    const imageMap: Record<number, string> = {}
+    const audioMap: Record<number, string> = {}
+    ;(production.sceneAssets || []).forEach(asset => {
+      if (asset.imageUrl) imageMap[asset.sceneNumber] = asset.imageUrl
+      if (asset.narrationUrl) audioMap[asset.sceneNumber] = asset.narrationUrl
+    })
+    setGeneratedImages(imageMap)
+    setGeneratedAudio(audioMap)
+    setGeneratedSoundtrack(production.soundtrackAsset?.url || null)
+    setGeneratedVideoUrl(production.renderedVideo?.url || null)
+    setGeneratedVideoMimeType(production.renderedVideo?.mimeType || 'video/webm')
+  }, [production])
 
   const pixelsPerSecond = PIXELS_PER_SECOND_BASE * zoom
   const totalDuration = production.totalDuration || 600
@@ -518,12 +545,38 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     if (!onSaveToNotebook) return
     setSavingToNotebook(true)
     try {
-      await onSaveToNotebook({ ...production, tracks: localTracks })
+      const sceneAssets: VideoSceneAsset[] = production.scenes.map(scene => ({
+        sceneNumber: scene.number,
+        imageUrl: generatedImages[scene.number],
+        narrationUrl: generatedAudio[scene.number],
+      })).filter(asset => asset.imageUrl || asset.narrationUrl)
+      const soundtrackAsset: VideoAudioAsset | undefined = generatedSoundtrack
+        ? {
+            url: generatedSoundtrack,
+            mimeType: 'audio/wav',
+            generatedAt: production.soundtrackAsset?.generatedAt || new Date().toISOString(),
+            description: production.soundtrackAsset?.description || 'Trilha sonora procedural gerada automaticamente',
+          }
+        : production.soundtrackAsset
+      await onSaveToNotebook({
+        ...production,
+        tracks: localTracks,
+        sceneAssets,
+        soundtrackAsset,
+        renderedVideo: generatedVideoUrl
+          ? {
+              url: generatedVideoUrl,
+              mimeType: generatedVideoMimeType,
+              generatedAt: production.renderedVideo?.generatedAt || new Date().toISOString(),
+              storagePath: production.renderedVideo?.storagePath,
+            }
+          : production.renderedVideo,
+      })
       setHasUnsavedChanges(false)
     } finally {
       setSavingToNotebook(false)
     }
-  }, [onSaveToNotebook, production, localTracks])
+  }, [onSaveToNotebook, production, localTracks, generatedImages, generatedAudio, generatedSoundtrack, generatedVideoUrl, generatedVideoMimeType])
 
   const handleCloseRequest = useCallback(() => {
     if (hasUnsavedChanges) {
@@ -538,7 +591,32 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     if (onSaveToNotebook) {
       setSavingToNotebook(true)
       try {
-        await onSaveToNotebook({ ...production, tracks: localTracks })
+        const sceneAssets: VideoSceneAsset[] = production.scenes.map(scene => ({
+          sceneNumber: scene.number,
+          imageUrl: generatedImages[scene.number],
+          narrationUrl: generatedAudio[scene.number],
+        })).filter(asset => asset.imageUrl || asset.narrationUrl)
+        await onSaveToNotebook({
+          ...production,
+          tracks: localTracks,
+          sceneAssets,
+          soundtrackAsset: generatedSoundtrack
+            ? {
+                url: generatedSoundtrack,
+                mimeType: 'audio/wav',
+                generatedAt: production.soundtrackAsset?.generatedAt || new Date().toISOString(),
+                description: production.soundtrackAsset?.description || 'Trilha sonora procedural gerada automaticamente',
+              }
+            : production.soundtrackAsset,
+          renderedVideo: generatedVideoUrl
+            ? {
+                url: generatedVideoUrl,
+                mimeType: generatedVideoMimeType,
+                generatedAt: production.renderedVideo?.generatedAt || new Date().toISOString(),
+                storagePath: production.renderedVideo?.storagePath,
+              }
+            : production.renderedVideo,
+        })
       } catch { /* ignore save error on close */ }
       setSavingToNotebook(false)
     }
@@ -562,8 +640,11 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         prompt: scene.imagePrompt,
         size: '1792x1024',
       })
-      if (result.url) {
-        setGeneratedImages(prev => ({ ...prev, [scene.number]: result.url! }))
+      if (result.b64_json) {
+        setGeneratedImages(prev => ({ ...prev, [scene.number]: `data:image/png;base64,${result.b64_json}` }))
+      } else if (result.url) {
+        const dataUrl = await fetch(result.url).then(resp => resp.blob()).then(blobToDataUrl)
+        setGeneratedImages(prev => ({ ...prev, [scene.number]: dataUrl }))
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao gerar imagem'
@@ -577,10 +658,6 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   // ── TTS generation per narration segment ─────────────────────────────────
   const handleGenerateNarration = useCallback(async (sceneNumber: number, text: string) => {
     if (!apiKey || !text || generatingAudioFor !== null) return
-    // Revoke previous blob URL to prevent memory leak
-    if (generatedAudio[sceneNumber]) {
-      try { URL.revokeObjectURL(generatedAudio[sceneNumber]) } catch { /* ignore */ }
-    }
     setGeneratingAudioFor(sceneNumber)
     setAudioError(prev => ({ ...prev, [sceneNumber]: '' }))
     try {
@@ -590,8 +667,8 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         voice: 'nova',
         model: 'openai/tts-1-hd',
       })
-      const url = URL.createObjectURL(result.audioBlob)
-      setGeneratedAudio(prev => ({ ...prev, [sceneNumber]: url }))
+      const dataUrl = await blobToDataUrl(result.audioBlob)
+      setGeneratedAudio(prev => ({ ...prev, [sceneNumber]: dataUrl }))
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao gerar narração'
       setAudioError(prev => ({ ...prev, [sceneNumber]: msg }))
@@ -600,6 +677,67 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       setGeneratingAudioFor(null)
     }
   }, [apiKey, generatingAudioFor, generatedAudio])
+
+  const handleGenerateLiteralVideo = useCallback(async () => {
+    if (!apiKey || generatingFullVideo) return
+    setGeneratingFullVideo(true)
+    setFullVideoError('')
+    try {
+      const currentProduction: VideoProductionPackage = {
+        ...production,
+        tracks: localTracks,
+        sceneAssets: production.scenes.map(scene => ({
+          sceneNumber: scene.number,
+          imageUrl: generatedImages[scene.number],
+          narrationUrl: generatedAudio[scene.number],
+        })).filter(asset => asset.imageUrl || asset.narrationUrl),
+        soundtrackAsset: generatedSoundtrack
+          ? {
+              url: generatedSoundtrack,
+              mimeType: 'audio/wav',
+              generatedAt: production.soundtrackAsset?.generatedAt || new Date().toISOString(),
+              description: production.soundtrackAsset?.description || 'Trilha sonora procedural gerada automaticamente',
+            }
+          : production.soundtrackAsset,
+        renderedVideo: production.renderedVideo,
+      }
+
+      const result = await produceLiteralVideoProduction(apiKey, currentProduction, (_step, _total, _phase, label) => {
+        setFullVideoStatus(label)
+      })
+
+      const nextImages: Record<number, string> = {}
+      const nextAudio: Record<number, string> = {}
+      ;(result.production.sceneAssets || []).forEach(asset => {
+        if (asset.imageUrl) nextImages[asset.sceneNumber] = asset.imageUrl
+        if (asset.narrationUrl) nextAudio[asset.sceneNumber] = asset.narrationUrl
+      })
+      setGeneratedImages(nextImages)
+      setGeneratedAudio(nextAudio)
+      setGeneratedSoundtrack(result.production.soundtrackAsset?.url || null)
+      setGeneratedVideoUrl(result.production.renderedVideo?.url || null)
+      setGeneratedVideoMimeType(result.production.renderedVideo?.mimeType || 'video/webm')
+
+      if (onSave) onSave(result.production)
+      if (onSaveToNotebook) await onSaveToNotebook(result.production)
+
+      toast.success('Vídeo real gerado com sucesso!')
+      setHasUnsavedChanges(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao gerar vídeo real'
+      setFullVideoError(message)
+      toast.error('Falha ao gerar vídeo real', message)
+    } finally {
+      setGeneratingFullVideo(false)
+      setFullVideoStatus('')
+    }
+  }, [apiKey, generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedSoundtrack, onSave, onSaveToNotebook, toast])
+
+  useEffect(() => {
+    if (!autoGenerateMedia || autoGenerationStarted.current || !apiKey) return
+    autoGenerationStarted.current = true
+    void handleGenerateLiteralVideo()
+  }, [autoGenerateMedia, apiKey, handleGenerateLiteralVideo])
 
   // Get selected segment data
   const selectedSeg = selectedSegment
@@ -669,6 +807,17 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
           )}
 
           <button
+            onClick={handleGenerateLiteralVideo}
+            disabled={generatingFullVideo || !apiKey}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 text-white text-xs font-medium rounded-lg hover:bg-rose-700 disabled:opacity-60"
+          >
+            {generatingFullVideo
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Film className="w-3.5 h-3.5" />}
+            {generatingFullVideo ? 'Gerando vídeo...' : 'Gerar vídeo real'}
+          </button>
+
+          <button
             onClick={handleCloseRequest}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-gray-300 text-xs font-medium rounded-lg hover:bg-gray-600"
           >
@@ -722,6 +871,38 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
           />
 
           <DesignGuidePanel designGuide={production.designGuide} />
+
+          <div className="border rounded-xl overflow-hidden">
+            <div className="px-4 py-3 bg-gray-50 border-b">
+              <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                <Film className="w-3.5 h-3.5 text-rose-600" />
+                Vídeo Final
+              </span>
+            </div>
+            <div className="p-4 bg-white space-y-3">
+              {generatedVideoUrl ? (
+                <video controls src={generatedVideoUrl} className="w-full rounded-lg border bg-black" />
+              ) : (
+                <p className="text-xs text-gray-500">
+                  Gere o vídeo real para criar um arquivo reproduzível com cenas, narração e trilha sonora.
+                </p>
+              )}
+              {generatedSoundtrack && (
+                <div>
+                  <p className="text-[10px] font-semibold text-emerald-600 mb-1 flex items-center gap-1">
+                    <Music className="w-3 h-3" /> Trilha Gerada
+                  </p>
+                  <audio controls src={generatedSoundtrack} className="w-full h-8" />
+                </div>
+              )}
+              {generatingFullVideo && (
+                <p className="text-xs text-rose-600">{fullVideoStatus || 'Gerando vídeo real...'}</p>
+              )}
+              {fullVideoError && (
+                <p className="text-xs text-red-600">{fullVideoError}</p>
+              )}
+            </div>
+          </div>
 
           {/* Quality Report */}
           <div className="border rounded-xl overflow-hidden">
