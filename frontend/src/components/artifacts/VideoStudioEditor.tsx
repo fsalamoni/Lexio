@@ -63,6 +63,16 @@ interface SelectedSegment {
   segmentIndex: number
 }
 
+function hasCompleteMediaAssets(
+  scenes: VideoScene[],
+  imageMap: Record<number, string>,
+  audioMap: Record<number, string>,
+  soundtrackUrl?: string | null,
+): boolean {
+  return Boolean(soundtrackUrl)
+    && scenes.every(scene => Boolean(imageMap[scene.number]) || Boolean(audioMap[scene.number]))
+}
+
 async function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -465,7 +475,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const [generatingFullVideo, setGeneratingFullVideo] = useState(false)
   const [fullVideoStatus, setFullVideoStatus] = useState<string>('')
   const [fullVideoError, setFullVideoError] = useState<string>('')
-  const [mediaLoopDone, setMediaLoopDone] = useState(false)
+  const [mediaGenerationComplete, setMediaGenerationComplete] = useState(false)
 
   const [savingToNotebook, setSavingToNotebook] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -485,7 +495,12 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     setGeneratedSoundtrack(production.soundtrackAsset?.url || null)
     setGeneratedVideoUrl(production.renderedVideo?.url || null)
     setGeneratedVideoMimeType(production.renderedVideo?.mimeType || 'video/webm')
-    setMediaLoopDone(Boolean(production.soundtrackAsset?.url) && production.scenes.every(scene => Boolean(imageMap[scene.number]) || Boolean(audioMap[scene.number])))
+    setMediaGenerationComplete(hasCompleteMediaAssets(
+      production.scenes,
+      imageMap,
+      audioMap,
+      production.soundtrackAsset?.url,
+    ))
   }, [production])
 
   const pixelsPerSecond = PIXELS_PER_SECOND_BASE * zoom
@@ -648,7 +663,11 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       if (result.b64_json) {
         setGeneratedImages(prev => ({ ...prev, [scene.number]: `data:image/png;base64,${result.b64_json}` }))
       } else if (result.url) {
-        const dataUrl = await fetch(result.url).then(resp => resp.blob()).then(blobToDataUrl)
+        const response = await fetch(result.url)
+        if (!response.ok) {
+          throw new Error(`Falha ao baixar imagem gerada (${response.status})`)
+        }
+        const dataUrl = await response.blob().then(blobToDataUrl)
         setGeneratedImages(prev => ({ ...prev, [scene.number]: dataUrl }))
       }
     } catch (err) {
@@ -688,7 +707,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     setGeneratingFullVideo(true)
     setFullVideoError('')
     setFullVideoStatus('')
-    setMediaLoopDone(false)
+    setMediaGenerationComplete(false)
     try {
       const currentProduction: VideoProductionPackage = {
         ...production,
@@ -739,7 +758,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       setGeneratedImages(nextImages)
       setGeneratedAudio(nextAudio)
       setGeneratedSoundtrack(result.production.soundtrackAsset?.url || null)
-      setMediaLoopDone(true)
+      setMediaGenerationComplete(true)
       setHasUnsavedChanges(false)
 
       if (result.errors.length > 0) {
@@ -811,7 +830,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   useEffect(() => {
     if (!autoGenerateMedia || autoGenerationStarted.current || !apiKey) return
     autoGenerationStarted.current = true
-    void handleGenerateLiteralVideo()
+    void handleGenerateLiteralVideo().catch(() => {})
   }, [autoGenerateMedia, apiKey, handleGenerateLiteralVideo])
 
   // Get selected segment data
@@ -894,7 +913,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
 
           <button
             onClick={handleRenderFinalVideo}
-            disabled={generatingFullVideo || !mediaLoopDone}
+            disabled={generatingFullVideo || !mediaGenerationComplete}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-700 disabled:opacity-60"
           >
             {generatingFullVideo
@@ -984,7 +1003,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
               {generatingFullVideo && (
                 <p className="text-xs text-rose-600">{fullVideoStatus || 'Gerando partes do vídeo...'}</p>
               )}
-              {mediaLoopDone && !generatingFullVideo && (
+              {mediaGenerationComplete && !generatingFullVideo && (
                 <p className="text-xs text-emerald-600">
                   Partes geradas por cena. Você já pode salvar e/ou renderizar o vídeo final.
                 </p>

@@ -29,6 +29,8 @@ export interface LiteralMediaGenerationResult {
   errors: string[]
 }
 
+const MIN_SOUNDTRACK_DURATION_SECONDS = 1
+
 interface PreparedSceneTiming {
   scene: VideoScene
   start: number
@@ -145,7 +147,12 @@ function createProceduralSoundtrack(
   descriptor: string,
 ): Blob {
   const sampleRate = 22050
-  const totalSamples = Math.max(sampleRate, Math.floor(durationSeconds * sampleRate))
+  // Keep at least one second of soundtrack to avoid zero/near-zero audio buffers
+  // that can fail decode/scheduling in some browser media pipelines.
+  const totalSamples = Math.max(
+    sampleRate * MIN_SOUNDTRACK_DURATION_SECONDS,
+    Math.floor(durationSeconds * sampleRate),
+  )
   const samples = new Float32Array(totalSamples)
   const energetic = /(energi|din[aâ]m|impact|rápid|epic|drama|forte)/i.test(descriptor)
   const progression = energetic
@@ -326,8 +333,8 @@ export async function renderLiteralVideo(
   const scheduleAudio = async (url: string, startAt: number, gainValue: number) => {
     const response = await fetch(url)
     const arrayBuffer = await response.arrayBuffer()
-    // Some browsers hand out a detached/consumed buffer after fetch pipelines;
-    // cloning keeps decodeAudioData stable across object URLs and data URLs.
+    // Safari/WebKit can expose consumed/unstable buffers across fetch/decode paths;
+    // cloning keeps decodeAudioData stable for object URLs and data URLs.
     const buffer = await audioContext.decodeAudioData(arrayBuffer.slice(0))
     const source = audioContext.createBufferSource()
     const gain = audioContext.createGain()
@@ -339,11 +346,11 @@ export async function renderLiteralVideo(
   }
 
   const startAt = audioContext.currentTime + 0.25
-  for (const narration of sceneAssets) {
-    if (!narration.narrationUrl) continue
-    const timing = timings.find(item => item.scene.number === narration.sceneNumber)
+  for (const sceneAsset of sceneAssets) {
+    if (!sceneAsset.narrationUrl) continue
+    const timing = timings.find(item => item.scene.number === sceneAsset.sceneNumber)
     const sceneStart = timing?.start ?? 0
-    await scheduleAudio(narration.narrationUrl, startAt + sceneStart, 1)
+    await scheduleAudio(sceneAsset.narrationUrl, startAt + sceneStart, 1)
   }
 
   if (production.soundtrackAsset?.url) {

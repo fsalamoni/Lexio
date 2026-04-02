@@ -6,14 +6,18 @@ export interface StoredNotebookMedia {
   path?: string
 }
 
+const MAX_SANITIZED_FILENAME_LENGTH = 80
+
 function sanitizeFileName(value: string): string {
+  if (!value.trim()) return 'video'
   return value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9-_]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 80) || 'video'
+    // Keep paths compact to avoid very long object keys in storage paths.
+    .slice(0, MAX_SANITIZED_FILENAME_LENGTH) || 'video'
 }
 
 export async function uploadNotebookVideoArtifact(
