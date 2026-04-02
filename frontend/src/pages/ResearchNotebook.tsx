@@ -1041,8 +1041,12 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       const query = externalSearchQuery.trim()
       const settings = await getSettings()
       const apiKeys = (settings.api_keys ?? {}) as Record<string, string>
-      const apiKey = apiKeys.datajud_api_key || 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=='
+      const apiKey = apiKeys.datajud_api_key
       const url = (settings.datajud_url as string) || 'https://api-publica.datajud.cnj.jus.br/api_publica_tjrs/_search'
+      if (!apiKey) {
+        toast.warning('DataJud não configurado', 'Configure a DataJud API Key no painel administrativo para pesquisar jurisprudência.')
+        return
+      }
 
       const resp = await fetch(url, {
         method: 'POST',

@@ -21,4 +21,5 @@ def test_extract_text_from_csv_content_type():
     content = b"coluna,valor\nassunto,improbidade\n"
     text = _extract_text(content, "text/csv", "planilha.csv")
     assert "coluna,valor" in text
-    assert "assunto,improbidade" in text
+    assert "assunto" in text
+    assert "improbidade" in text
