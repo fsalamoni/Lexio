@@ -21,7 +21,10 @@ import type {
 } from '../../lib/video-generation-pipeline'
 import { generateImageViaOpenRouter } from '../../lib/image-generation-client'
 import { generateTTSViaOpenRouter } from '../../lib/tts-client'
-import { produceLiteralVideoProduction } from '../../lib/literal-video-production'
+import {
+  generateLiteralMediaAssets,
+  renderLiteralVideo,
+} from '../../lib/literal-video-production'
 import { useToast } from '../Toast'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -462,6 +465,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const [generatingFullVideo, setGeneratingFullVideo] = useState(false)
   const [fullVideoStatus, setFullVideoStatus] = useState<string>('')
   const [fullVideoError, setFullVideoError] = useState<string>('')
+  const [mediaLoopDone, setMediaLoopDone] = useState(false)
 
   const [savingToNotebook, setSavingToNotebook] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -481,6 +485,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     setGeneratedSoundtrack(production.soundtrackAsset?.url || null)
     setGeneratedVideoUrl(production.renderedVideo?.url || null)
     setGeneratedVideoMimeType(production.renderedVideo?.mimeType || 'video/webm')
+    setMediaLoopDone(Boolean(production.soundtrackAsset?.url) && production.scenes.every(scene => Boolean(imageMap[scene.number]) || Boolean(audioMap[scene.number])))
   }, [production])
 
   const pixelsPerSecond = PIXELS_PER_SECOND_BASE * zoom
@@ -682,6 +687,8 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     if (!apiKey || generatingFullVideo) return
     setGeneratingFullVideo(true)
     setFullVideoError('')
+    setFullVideoStatus('')
+    setMediaLoopDone(false)
     try {
       const currentProduction: VideoProductionPackage = {
         ...production,
@@ -702,9 +709,26 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         renderedVideo: production.renderedVideo,
       }
 
-      const result = await produceLiteralVideoProduction(apiKey, currentProduction, (_step, _total, _phase, label) => {
-        setFullVideoStatus(label)
-      })
+      const result = await generateLiteralMediaAssets(
+        apiKey,
+        currentProduction,
+        (_step, _total, _phase, label) => {
+          setFullVideoStatus(label)
+        },
+        async partial => {
+          const nextImagesPartial: Record<number, string> = {}
+          const nextAudioPartial: Record<number, string> = {}
+          ;(partial.sceneAssets || []).forEach(asset => {
+            if (asset.imageUrl) nextImagesPartial[asset.sceneNumber] = asset.imageUrl
+            if (asset.narrationUrl) nextAudioPartial[asset.sceneNumber] = asset.narrationUrl
+          })
+          setGeneratedImages(nextImagesPartial)
+          setGeneratedAudio(nextAudioPartial)
+          setGeneratedSoundtrack(partial.soundtrackAsset?.url || null)
+          if (onSave) onSave(partial)
+          if (onSaveToNotebook) await onSaveToNotebook(partial)
+        },
+      )
 
       const nextImages: Record<number, string> = {}
       const nextAudio: Record<number, string> = {}
@@ -715,13 +739,64 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       setGeneratedImages(nextImages)
       setGeneratedAudio(nextAudio)
       setGeneratedSoundtrack(result.production.soundtrackAsset?.url || null)
-      setGeneratedVideoUrl(result.production.renderedVideo?.url || null)
-      setGeneratedVideoMimeType(result.production.renderedVideo?.mimeType || 'video/webm')
+      setMediaLoopDone(true)
+      setHasUnsavedChanges(false)
 
-      if (onSave) onSave(result.production)
-      if (onSaveToNotebook) await onSaveToNotebook(result.production)
+      if (result.errors.length > 0) {
+        const first = result.errors[0]
+        setFullVideoError(first)
+        toast.warning('Geração parcial concluída', `${result.errors.length} item(ns) falharam. Verifique as cenas com erro.`)
+      } else {
+        toast.success('Partes do vídeo geradas cena a cena com sucesso!')
+      }
 
-      toast.success('Vídeo real gerado com sucesso!')
+      setFullVideoStatus('Partes concluídas. Render final opcional.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao gerar partes do vídeo'
+      setFullVideoError(message)
+      toast.error('Falha ao gerar partes do vídeo', message)
+    } finally {
+      setGeneratingFullVideo(false)
+    }
+  }, [apiKey, generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedSoundtrack, onSave, onSaveToNotebook, toast])
+
+  const handleRenderFinalVideo = useCallback(async () => {
+    if (generatingFullVideo) return
+    setGeneratingFullVideo(true)
+    setFullVideoError('')
+    try {
+      const currentProduction: VideoProductionPackage = {
+        ...production,
+        tracks: localTracks,
+        sceneAssets: production.scenes.map(scene => ({
+          sceneNumber: scene.number,
+          imageUrl: generatedImages[scene.number],
+          narrationUrl: generatedAudio[scene.number],
+        })).filter(asset => asset.imageUrl || asset.narrationUrl),
+        soundtrackAsset: generatedSoundtrack
+          ? {
+              url: generatedSoundtrack,
+              mimeType: 'audio/wav',
+              generatedAt: production.soundtrackAsset?.generatedAt || new Date().toISOString(),
+              description: production.soundtrackAsset?.description || 'Trilha sonora procedural gerada automaticamente',
+            }
+          : production.soundtrackAsset,
+      }
+
+      const rendered = await renderLiteralVideo(currentProduction, (_step, _total, _phase, label) => {
+        setFullVideoStatus(label)
+      })
+      setGeneratedVideoUrl(rendered.asset.url)
+      setGeneratedVideoMimeType(rendered.asset.mimeType || 'video/webm')
+
+      const finalProduction: VideoProductionPackage = {
+        ...currentProduction,
+        renderedVideo: rendered.asset,
+      }
+      if (onSave) onSave(finalProduction)
+      if (onSaveToNotebook) await onSaveToNotebook(finalProduction)
+
+      toast.success('Vídeo final renderizado com sucesso!')
       setHasUnsavedChanges(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao gerar vídeo real'
@@ -731,7 +806,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       setGeneratingFullVideo(false)
       setFullVideoStatus('')
     }
-  }, [apiKey, generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedSoundtrack, onSave, onSaveToNotebook, toast])
+  }, [generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedSoundtrack, onSave, onSaveToNotebook, toast])
 
   useEffect(() => {
     if (!autoGenerateMedia || autoGenerationStarted.current || !apiKey) return
@@ -814,7 +889,18 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
             {generatingFullVideo
               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
               : <Film className="w-3.5 h-3.5" />}
-            {generatingFullVideo ? 'Gerando vídeo...' : 'Gerar vídeo real'}
+            {generatingFullVideo ? 'Gerando partes...' : 'Gerar partes por cena'}
+          </button>
+
+          <button
+            onClick={handleRenderFinalVideo}
+            disabled={generatingFullVideo || !mediaLoopDone}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-700 disabled:opacity-60"
+          >
+            {generatingFullVideo
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Video className="w-3.5 h-3.5" />}
+            {generatingFullVideo ? 'Renderizando...' : 'Render final (opcional)'}
           </button>
 
           <button
@@ -884,7 +970,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                 <video controls src={generatedVideoUrl} className="w-full rounded-lg border bg-black" />
               ) : (
                 <p className="text-xs text-gray-500">
-                  Gere o vídeo real para criar um arquivo reproduzível com cenas, narração e trilha sonora.
+                  Gere as partes por cena e, se desejar, faça o render final no estúdio.
                 </p>
               )}
               {generatedSoundtrack && (
@@ -896,7 +982,12 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                 </div>
               )}
               {generatingFullVideo && (
-                <p className="text-xs text-rose-600">{fullVideoStatus || 'Gerando vídeo real...'}</p>
+                <p className="text-xs text-rose-600">{fullVideoStatus || 'Gerando partes do vídeo...'}</p>
+              )}
+              {mediaLoopDone && !generatingFullVideo && (
+                <p className="text-xs text-emerald-600">
+                  Partes geradas por cena. Você já pode salvar e/ou renderizar o vídeo final.
+                </p>
               )}
               {fullVideoError && (
                 <p className="text-xs text-red-600">{fullVideoError}</p>

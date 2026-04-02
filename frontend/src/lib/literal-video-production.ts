@@ -23,6 +23,12 @@ export interface LiteralVideoProductionResult {
   executions: VideoGenerationStepExecution[]
 }
 
+export interface LiteralMediaGenerationResult {
+  production: VideoProductionPackage
+  executions: VideoGenerationStepExecution[]
+  errors: string[]
+}
+
 interface PreparedSceneTiming {
   scene: VideoScene
   start: number
@@ -430,7 +436,32 @@ export async function produceLiteralVideoProduction(
   production: VideoProductionPackage,
   onProgress?: LiteralVideoProgressCallback,
 ): Promise<LiteralVideoProductionResult> {
+  const media = await generateLiteralMediaAssets(apiKey, production, onProgress)
+  const renderStartedAt = performance.now()
+  const rendered = await renderLiteralVideo(media.production, onProgress)
+  const executions = [
+    ...media.executions,
+    makeExecution('media_video_render', `browser/${rendered.asset.mimeType}`, performance.now() - renderStartedAt),
+  ]
+
+  return {
+    production: {
+      ...media.production,
+      renderedVideo: rendered.asset,
+    },
+    videoBlob: rendered.blob,
+    executions,
+  }
+}
+
+export async function generateLiteralMediaAssets(
+  apiKey: string,
+  production: VideoProductionPackage,
+  onProgress?: LiteralVideoProgressCallback,
+  onPartialProduction?: (partialProduction: VideoProductionPackage) => void | Promise<void>,
+): Promise<LiteralMediaGenerationResult> {
   const executions: VideoGenerationStepExecution[] = []
+  const errors: string[] = []
   const models = await loadVideoPipelineModels()
   const existingAssets = new Map(
     (production.sceneAssets || []).map(asset => [asset.sceneNumber, asset]),
@@ -445,19 +476,23 @@ export async function produceLiteralVideoProduction(
 
     onProgress?.(1, 4, 'media_image_generation', `Gerando imagens das cenas (${index + 1}/${production.scenes.length})`)
     if (!nextAsset.imageUrl && scene.imagePrompt) {
-      const startedAt = performance.now()
-      const result = await generateImageViaOpenRouter({
-        apiKey,
-        model: chooseImageModel(models.video_designer),
-        prompt: scene.imagePrompt,
-        size: '1792x1024',
-      })
-      nextAsset.imageUrl = result.b64_json
-        ? `data:image/png;base64,${result.b64_json}`
-        : result.url
-        ? await remoteImageToDataUrl(result.url)
-        : undefined
-      executions.push(makeExecution('media_image_generation', chooseImageModel(models.video_designer) || 'openai/dall-e-3', performance.now() - startedAt))
+      try {
+        const startedAt = performance.now()
+        const result = await generateImageViaOpenRouter({
+          apiKey,
+          model: chooseImageModel(models.video_designer),
+          prompt: scene.imagePrompt,
+          size: '1792x1024',
+        })
+        nextAsset.imageUrl = result.b64_json
+          ? `data:image/png;base64,${result.b64_json}`
+          : result.url
+          ? await remoteImageToDataUrl(result.url)
+          : undefined
+        executions.push(makeExecution('media_image_generation', chooseImageModel(models.video_designer) || 'openai/dall-e-3', performance.now() - startedAt))
+      } catch (error) {
+        errors.push(`Cena ${scene.number}: falha ao gerar imagem (${error instanceof Error ? error.message : String(error)})`)
+      }
     }
 
     generatedAssets.push(nextAsset)
@@ -471,48 +506,63 @@ export async function produceLiteralVideoProduction(
 
     onProgress?.(2, 4, 'media_tts_generation', `Gerando narrações das cenas (${index + 1}/${production.scenes.length})`)
     if (!asset.narrationUrl && scene.narration) {
-      const startedAt = performance.now()
-      const result = await generateTTSViaOpenRouter({
-        apiKey,
-        model: chooseAudioModel(models.video_narrador),
-        text: scene.narration,
-        voice: 'nova',
+      try {
+        const startedAt = performance.now()
+        const result = await generateTTSViaOpenRouter({
+          apiKey,
+          model: chooseAudioModel(models.video_narrador),
+          text: scene.narration,
+          voice: 'nova',
+        })
+        asset.narrationUrl = await blobToDataUrl(result.audioBlob)
+        executions.push(makeExecution('media_tts_generation', chooseAudioModel(models.video_narrador) || 'openai/tts-1-hd', performance.now() - startedAt))
+      } catch (error) {
+        errors.push(`Cena ${scene.number}: falha ao gerar narração (${error instanceof Error ? error.message : String(error)})`)
+      }
+    }
+
+    if (onPartialProduction) {
+      await onPartialProduction({
+        ...production,
+        sceneAssets: generatedAssets.filter(item => item.imageUrl || item.narrationUrl),
       })
-      asset.narrationUrl = await blobToDataUrl(result.audioBlob)
-      executions.push(makeExecution('media_tts_generation', chooseAudioModel(models.video_narrador) || 'openai/tts-1-hd', performance.now() - startedAt))
     }
   }
 
   onProgress?.(3, 4, 'media_soundtrack_generation', 'Gerando trilha sonora da produção')
-  const soundtrackStartedAt = performance.now()
-  const soundtrackBlob = createProceduralSoundtrack(
-    Math.max(1, production.totalDuration || prepareTimings(production).at(-1)?.end || 1),
-    production.scenes.map(scene => scene.soundtrack).join(' '),
-  )
-  const soundtrackAsset: VideoAudioAsset = {
-    url: await blobToDataUrl(soundtrackBlob),
-    mimeType: soundtrackBlob.type || 'audio/wav',
-    generatedAt: new Date().toISOString(),
-    description: 'Trilha sonora procedural gerada automaticamente',
+  let soundtrackAsset = production.soundtrackAsset
+  if (!soundtrackAsset?.url) {
+    try {
+      const soundtrackStartedAt = performance.now()
+      const soundtrackBlob = createProceduralSoundtrack(
+        Math.max(1, production.totalDuration || prepareTimings(production).at(-1)?.end || 1),
+        production.scenes.map(scene => scene.soundtrack).join(' '),
+      )
+      soundtrackAsset = {
+        url: await blobToDataUrl(soundtrackBlob),
+        mimeType: soundtrackBlob.type || 'audio/wav',
+        generatedAt: new Date().toISOString(),
+        description: 'Trilha sonora procedural gerada automaticamente',
+      }
+      executions.push(makeExecution('media_soundtrack_generation', 'browser/procedural-audio', performance.now() - soundtrackStartedAt))
+    } catch (error) {
+      errors.push(`Trilha sonora: falha na geração (${error instanceof Error ? error.message : String(error)})`)
+    }
   }
-  executions.push(makeExecution('media_soundtrack_generation', 'browser/procedural-audio', performance.now() - soundtrackStartedAt))
 
-  const enrichedProduction: VideoProductionPackage = {
+  const mediaProduction: VideoProductionPackage = {
     ...production,
-    sceneAssets: generatedAssets,
+    sceneAssets: generatedAssets.filter(item => item.imageUrl || item.narrationUrl),
     soundtrackAsset,
   }
 
-  const renderStartedAt = performance.now()
-  const rendered = await renderLiteralVideo(enrichedProduction, onProgress)
-  executions.push(makeExecution('media_video_render', `browser/${rendered.asset.mimeType}`, performance.now() - renderStartedAt))
+  if (onPartialProduction) {
+    await onPartialProduction(mediaProduction)
+  }
 
   return {
-    production: {
-      ...enrichedProduction,
-      renderedVideo: rendered.asset,
-    },
-    videoBlob: rendered.blob,
+    production: mediaProduction,
     executions,
+    errors,
   }
 }
