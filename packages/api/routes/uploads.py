@@ -29,8 +29,17 @@ ALLOWED_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/msword",
     "text/plain",
+    "text/markdown",
+    "application/json",
+    "text/json",
+    "text/csv",
+    "application/xml",
+    "text/xml",
+    "application/x-yaml",
+    "text/yaml",
     "text/html",
     "application/rtf",
+    "text/rtf",
 }
 
 
@@ -94,7 +103,7 @@ async def upload_file(
         raise HTTPException(
             status_code=415,
             detail=f"Tipo de arquivo não suportado: {file.content_type}. "
-                   f"Use PDF, DOCX, DOC, TXT, HTML ou RTF.",
+                   f"Use PDF, DOCX, DOC, TXT, MD, JSON, CSV, XML, YAML, HTML ou RTF.",
         )
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

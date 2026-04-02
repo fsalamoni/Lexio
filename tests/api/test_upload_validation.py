@@ -14,8 +14,17 @@ ALLOWED_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/msword",
     "text/plain",
+    "text/markdown",
+    "application/json",
+    "text/json",
+    "text/csv",
+    "application/xml",
+    "text/xml",
+    "application/x-yaml",
+    "text/yaml",
     "text/html",
     "application/rtf",
+    "text/rtf",
 }
 
 
@@ -70,6 +79,15 @@ class TestMimeTypeValidation:
 
     def test_txt_explicitly_allowed(self):
         assert validate_upload(b"plain text", "text/plain")["ok"] is True
+
+    def test_markdown_explicitly_allowed(self):
+        assert validate_upload(b"# titulo", "text/markdown")["ok"] is True
+
+    def test_json_explicitly_allowed(self):
+        assert validate_upload(b'{"tema":"teste"}', "application/json")["ok"] is True
+
+    def test_csv_explicitly_allowed(self):
+        assert validate_upload(b"coluna\nvalor", "text/csv")["ok"] is True
 
 
 # ── File size validation ───────────────────────────────────────────────────────

@@ -19,6 +19,11 @@ import {
 import { generateAcervoEmenta, generateAcervoTags, NATUREZA_OPTIONS, type NaturezaValue } from '../lib/generation-service'
 import type { UsageExecutionRecord } from '../lib/cost-analytics'
 import { getAssuntosForAreas, getTiposForClassification } from '../lib/classification-data'
+import {
+  extractFileText,
+  SUPPORTED_TEXT_FILE_EXTENSIONS,
+  SUPPORTED_TEXT_FILE_MIME_TYPES,
+} from '../lib/file-text-extractor'
 
 interface UploadedFile {
   id: string
@@ -38,9 +43,8 @@ const STATUS_LABELS: Record<string, { label: string; icon: typeof CheckCircle; c
   uploaded:    { label: 'Enviado',     icon: CheckCircle,    color: 'text-blue-500'   },
 }
 
-const ACCEPTED_TYPES = ['.pdf', '.docx', '.txt', '.doc', '.md']
-const ACCEPTED_MIME = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/msword', 'text/plain', 'text/markdown']
+const ACCEPTED_TYPES = SUPPORTED_TEXT_FILE_EXTENSIONS
+const ACCEPTED_MIME = SUPPORTED_TEXT_FILE_MIME_TYPES
 const MAX_SIZE_MB = 50
 
 function formatSize(bytes: number) {
@@ -830,54 +834,6 @@ function TagsModal({
       </div>
     </div>
   )
-}
-
-// ── Text extraction ──────────────────────────────────────────────────────────
-
-/** Extract text from a File client-side. Handles DOCX, DOC (mammoth), PDF (pdfjs CDN), and plain text. */
-async function extractFileText(file: File): Promise<string> {
-  const ext = '.' + (file.name.split('.').pop()?.toLowerCase() ?? '')
-
-  // DOCX / DOC — use mammoth (bundled dependency)
-  if (ext === '.docx' || ext === '.doc') {
-    const arrayBuffer = await file.arrayBuffer()
-    const mammoth = await import('mammoth')
-    const result = await mammoth.extractRawText({ arrayBuffer })
-    return result.value.trim()
-  }
-
-  // PDF — load pdfjs from CDN at runtime (no build dependency)
-  if (ext === '.pdf') {
-    return extractPdfText(file)
-  }
-
-  // TXT / MD / others — plain UTF-8 text
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result.trim() : '')
-    reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
-    reader.readAsText(file, 'UTF-8')
-  })
-}
-
-const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs'
-const PDFJS_WORKER_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs'
-
-async function extractPdfText(file: File): Promise<string> {
-  const pdfjsLib = await import(/* @vite-ignore */ PDFJS_CDN) as any
-  pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN
-  const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
-  const pages: string[] = []
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i)
-    const content = await page.getTextContent()
-    const pageText = content.items
-      .map((item: any) => ('str' in item ? item.str : ''))
-      .join(' ')
-    pages.push(pageText)
-  }
-  return pages.join('\n').trim()
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
