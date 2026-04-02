@@ -116,6 +116,43 @@ export interface RenderedVideoAsset {
   storagePath?: string
 }
 
+export type VideoRenderScope = 'full' | 'scene' | 'part'
+
+export interface VideoRenderPreset {
+  id: string
+  name: string
+  description?: string
+  width: number
+  height: number
+  frameRate: number
+  videoBitsPerSecond: number
+}
+
+export interface ScopedRenderedVideoAsset extends RenderedVideoAsset {
+  scope: VideoRenderScope
+  scopeKey: string
+  label: string
+  presetId?: string
+  sceneNumber?: number
+  partNumber?: number
+}
+
+export interface VideoRenderQueueItem {
+  id: string
+  scope: VideoRenderScope
+  presetId: string
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  progress: number
+  createdAt: string
+  startedAt?: string
+  completedAt?: string
+  message?: string
+  sceneNumber?: number
+  partNumber?: number
+  resultScopeKey?: string
+  error?: string
+}
+
 export interface VideoProductionPackage {
   title: string
   totalDuration: number
@@ -128,6 +165,10 @@ export interface VideoProductionPackage {
   sceneAssets?: VideoSceneAsset[]
   soundtrackAsset?: VideoAudioAsset
   renderedVideo?: RenderedVideoAsset
+  renderedScopes?: ScopedRenderedVideoAsset[]
+  renderQueue?: VideoRenderQueueItem[]
+  renderPresets?: VideoRenderPreset[]
+  selectedRenderPresetId?: string
   sceneClipDurationSeconds?: number
 }
 
