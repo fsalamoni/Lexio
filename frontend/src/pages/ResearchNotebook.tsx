@@ -1291,21 +1291,21 @@ Instruções:
       }
 
       if (productionToSave.renderedScopes?.length) {
-        const uploadedScopes = await Promise.all(productionToSave.renderedScopes.map(async scoped => {
-          if (!scoped.url || (!scoped.url.startsWith('blob:') && !scoped.url.startsWith('data:'))) {
-            return scoped
+        const uploadedScopes = await Promise.all(productionToSave.renderedScopes.map(async renderedScope => {
+          if (!renderedScope.url || (!renderedScope.url.startsWith('blob:') && !renderedScope.url.startsWith('data:'))) {
+            return renderedScope
           }
-          const scopedBlob = await fetch(scoped.url).then(resp => resp.blob())
+          const scopedBlob = await fetch(renderedScope.url).then(resp => resp.blob())
           const stored = await uploadNotebookMediaArtifact(
             userId,
             activeNotebook.id,
-            `${production.title}-${scoped.scopeKey}`,
+            `${production.title}-${renderedScope.scopeKey}`,
             scopedBlob,
             'videos',
             '.webm',
           )
           return {
-            ...scoped,
+            ...renderedScope,
             url: stored.url,
             storagePath: stored.path,
           }

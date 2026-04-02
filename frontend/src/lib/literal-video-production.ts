@@ -37,6 +37,11 @@ const MIN_SOUNDTRACK_DURATION_SECONDS = 1
 const INT16_PCM_MIN = -0x8000
 const INT16_PCM_MAX = 0x7fff
 const DEFAULT_SCENE_CLIP_DURATION_SECONDS = 8
+const MIN_RENDER_WIDTH = 160
+const MIN_RENDER_HEIGHT = 90
+const DEFAULT_RENDER_FRAME_RATE = 30
+const MIN_RENDER_VIDEO_BITRATE = 250_000
+const DEFAULT_RENDER_VIDEO_BITRATE = 6_000_000
 const DEFAULT_RENDER_PRESETS: VideoRenderPreset[] = [
   {
     id: 'render-fast-540p',
@@ -54,7 +59,7 @@ const DEFAULT_RENDER_PRESETS: VideoRenderPreset[] = [
     width: 1280,
     height: 720,
     frameRate: 30,
-    videoBitsPerSecond: 6_000_000,
+    videoBitsPerSecond: DEFAULT_RENDER_VIDEO_BITRATE,
   },
   {
     id: 'render-high-1080p',
@@ -189,7 +194,7 @@ export function resolveVideoRenderPreset(
       width: 1280,
       height: 720,
       frameRate: 30,
-      videoBitsPerSecond: 6_000_000,
+    videoBitsPerSecond: DEFAULT_RENDER_VIDEO_BITRATE,
     }
   }
   if (!presetId) return { ...fallback }
@@ -242,7 +247,7 @@ async function renderSceneClip(
     ...destination.stream.getAudioTracks(),
   ])
   const mimeType = getSupportedVideoMimeType()
-  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 6_000_000 })
+  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: DEFAULT_RENDER_VIDEO_BITRATE })
   const chunks: BlobPart[] = []
   recorder.ondataavailable = event => {
     if (event.data.size > 0) chunks.push(event.data)
@@ -584,12 +589,12 @@ export async function renderLiteralVideo(
 
   const preset = options?.preset || resolveVideoRenderPreset(production, production.selectedRenderPresetId)
   const canvas = document.createElement('canvas')
-  canvas.width = Math.max(160, Math.floor(preset.width))
-  canvas.height = Math.max(90, Math.floor(preset.height))
+  canvas.width = Math.max(MIN_RENDER_WIDTH, Math.floor(preset.width))
+  canvas.height = Math.max(MIN_RENDER_HEIGHT, Math.floor(preset.height))
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Falha ao criar canvas para renderização do vídeo.')
 
-  const frameRate = Math.max(1, Math.floor(preset.frameRate || 30))
+  const frameRate = Math.max(1, Math.floor(preset.frameRate || DEFAULT_RENDER_FRAME_RATE))
   const canvasStream = canvas.captureStream(frameRate)
   const combinedStream = new MediaStream([
     ...canvasStream.getVideoTracks(),
@@ -599,7 +604,7 @@ export async function renderLiteralVideo(
   const mimeType = getSupportedVideoMimeType()
   const recorder = new MediaRecorder(combinedStream, {
     mimeType,
-    videoBitsPerSecond: Math.max(250_000, Math.floor(preset.videoBitsPerSecond || 6_000_000)),
+    videoBitsPerSecond: Math.max(MIN_RENDER_VIDEO_BITRATE, Math.floor(preset.videoBitsPerSecond || DEFAULT_RENDER_VIDEO_BITRATE)),
   })
   const chunks: BlobPart[] = []
 

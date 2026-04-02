@@ -575,7 +575,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
 
   const pixelsPerSecond = PIXELS_PER_SECOND_BASE * zoom
   const totalDuration = production.totalDuration || 600
-  const processingQueueItem = renderQueue.find(item => item.status === 'processing')
+  const activeRenderJob = renderQueue.find(item => item.status === 'processing')
 
   const buildCurrentProduction = useCallback((): VideoProductionPackage => {
     const sceneAssets: VideoSceneAsset[] = production.scenes.map(scene => ({
@@ -933,6 +933,14 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     }
     enqueueRenderJob('part', selectedRenderScene, Math.max(1, selectedRenderPart))
   }, [selectedRenderScope, selectedRenderScene, selectedRenderPart, enqueueRenderJob])
+
+  const handleRequeueItem = useCallback((itemId: string) => {
+    const requeueItemById = (item: VideoRenderQueueItem): VideoRenderQueueItem => {
+      if (item.id !== itemId) return item
+      return { ...item, status: 'pending', progress: 0, error: undefined, message: 'Reenfileirado' }
+    }
+    setRenderQueue(prev => prev.map(requeueItemById))
+  }, [])
 
   useEffect(() => {
     if (generatingFullVideo) return
@@ -1446,7 +1454,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                         <div className="mt-1 flex items-center gap-1">
                           {(item.status === 'pending' || item.status === 'failed') && (
                             <button
-                              onClick={() => setRenderQueue(prev => prev.map(curr => curr.id === item.id ? { ...curr, status: 'pending', progress: 0, error: undefined, message: 'Reenfileirado' } : curr))}
+                              onClick={() => handleRequeueItem(item.id)}
                               className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-600 text-white hover:bg-indigo-700"
                             >
                               Reenfileirar
@@ -1679,10 +1687,10 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                         <div className="flex items-center gap-2 mt-2">
                           <button
                             onClick={() => handleRegenerateSceneClips(scene)}
-                            disabled={Boolean(processingQueueItem)}
+                            disabled={Boolean(activeRenderJob)}
                             className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-600 text-white text-[10px] font-medium rounded hover:bg-amber-700 disabled:opacity-60"
                           >
-                            {processingQueueItem?.scope === 'scene' && processingQueueItem.sceneNumber === scene.number
+                            {activeRenderJob?.scope === 'scene' && activeRenderJob.sceneNumber === scene.number
                               ? <Loader2 className="w-3 h-3 animate-spin" />
                               : <Film className="w-3 h-3" />}
                             Renderizar Cena
@@ -1715,12 +1723,12 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => handleRegenerateClipPart(scene, clip.partNumber)}
-                                  disabled={Boolean(processingQueueItem)}
+                                  disabled={Boolean(activeRenderJob)}
                                   className="px-2 py-1 text-[10px] rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
                                 >
-                                  {processingQueueItem?.scope === 'part'
-                                    && processingQueueItem.sceneNumber === scene.number
-                                    && processingQueueItem.partNumber === clip.partNumber
+                                  {activeRenderJob?.scope === 'part'
+                                    && activeRenderJob.sceneNumber === scene.number
+                                    && activeRenderJob.partNumber === clip.partNumber
                                     ? 'Renderizando...'
                                     : 'Renderizar'}
                                 </button>
