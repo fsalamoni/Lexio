@@ -29,6 +29,7 @@ import {
   deleteResearchNotebook,
   getResearchNotebook,
   listAcervoDocuments,
+  getSettings,
   type ResearchNotebookData,
   type NotebookSource,
   type NotebookMessage,
@@ -54,6 +55,7 @@ import {
   uploadNotebookMediaArtifact,
   uploadNotebookVideoArtifact,
 } from '../lib/notebook-media-storage'
+import { extractFileText, isSupportedTextFile, SUPPORTED_TEXT_FILE_EXTENSIONS } from '../lib/file-text-extractor'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
@@ -75,6 +77,8 @@ const MAX_STUDIO_CONTEXT_CHARS = 5_000
 const MAX_SUGGESTION_LABEL_LENGTH = 60
 /** Max chars from web search snippets injected into chat context */
 const MAX_WEB_SEARCH_CHARS = 3_000
+/** Max chars for deep external research source */
+const MAX_DEEP_EXTERNAL_TEXT_CHARS = 12_000
 /** Min chars in source text_content to be considered indexed */
 const MIN_SOURCE_CHARS = 20
 
@@ -156,6 +160,45 @@ async function searchWeb(query: string): Promise<string> {
   }
 }
 
+type ExternalSearchResult = {
+  title: string
+  url: string
+  snippet: string
+}
+
+async function searchWebResults(query: string): Promise<ExternalSearchResult[]> {
+  try {
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8_000) })
+    if (!resp.ok) return []
+    const data = await resp.json() as {
+      RelatedTopics?: Array<{ Text?: string; FirstURL?: string; Name?: string; Topics?: Array<{ Text?: string; FirstURL?: string }> }>
+      Results?: Array<{ Text?: string; FirstURL?: string }>
+    }
+    const flat: ExternalSearchResult[] = []
+    const pushIfValid = (text?: string, firstURL?: string) => {
+      if (!text || !firstURL || !/^https?:\/\//i.test(firstURL)) return
+      const [titleRaw, ...rest] = text.split(' - ')
+      flat.push({
+        title: titleRaw?.trim() || firstURL,
+        url: firstURL,
+        snippet: rest.join(' - ').trim() || text,
+      })
+    }
+    for (const item of data.Results || []) pushIfValid(item.Text, item.FirstURL)
+    for (const item of data.RelatedTopics || []) {
+      if (Array.isArray(item.Topics)) {
+        for (const nested of item.Topics) pushIfValid(nested.Text, nested.FirstURL)
+      } else {
+        pushIfValid(item.Text, item.FirstURL)
+      }
+    }
+    return flat.slice(0, 10)
+  } catch {
+    return []
+  }
+}
+
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
@@ -225,6 +268,9 @@ const SOURCE_TYPE_LABELS: Record<string, { label: string; icon: React.ElementTyp
   acervo:  { label: 'Acervo', icon: Database },
   upload:  { label: 'Upload', icon: Upload },
   link:    { label: 'Link', icon: Link2 },
+  external: { label: 'Pesquisa Externa', icon: Globe },
+  external_deep: { label: 'Pesquisa Externa Profunda', icon: Brain },
+  jurisprudencia: { label: 'Jurisprudência (DataJud)', icon: Library },
 }
 
 // ── Lightweight Markdown renderer ─────────────────────────────────────────────
@@ -438,8 +484,14 @@ export default function ResearchNotebook() {
   // Source addition
   const [sourceUrl, setSourceUrl] = useState('')
   const [sourceUrlLoading, setSourceUrlLoading] = useState(false)
+  const [externalSearchQuery, setExternalSearchQuery] = useState('')
+  const [externalResearchLoading, setExternalResearchLoading] = useState(false)
+  const [externalDeepLoading, setExternalDeepLoading] = useState(false)
+  const [jurisprudenceLoading, setJurisprudenceLoading] = useState(false)
+  const [sourceUploadLoading, setSourceUploadLoading] = useState(false)
   const [acervoDocs, setAcervoDocs] = useState<AcervoDocumentData[]>([])
   const [acervoLoading, setAcervoLoading] = useState(false)
+  const sourceUploadInputRef = useRef<HTMLInputElement>(null)
 
   // Dynamic suggested questions
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -854,6 +906,241 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       toast.error('Erro ao adicionar link como fonte')
     } finally {
       setSourceUrlLoading(false)
+    }
+  }
+
+  const handleAddExternalSearchSource = async () => {
+    if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
+    setExternalResearchLoading(true)
+    try {
+      const query = externalSearchQuery.trim()
+      const results = await searchWebResults(query)
+      if (results.length === 0) {
+        toast.info('Nenhum resultado útil encontrado na pesquisa externa.')
+        return
+      }
+
+      const textContent = results.map((r, i) =>
+        `[${i + 1}] ${r.title}\nURL: ${r.url}\nResumo: ${r.snippet}`,
+      ).join('\n\n')
+
+      const source: NotebookSource = {
+        id: generateId(),
+        type: 'external',
+        name: `Pesquisa externa: ${query}`,
+        reference: query,
+        content_type: 'text/plain',
+        size_bytes: textContent.length,
+        text_content: textContent.slice(0, MAX_SOURCE_TEXT_LENGTH),
+        status: 'indexed',
+        added_at: new Date().toISOString(),
+      }
+
+      const updatedSources = [...activeNotebook.sources, source]
+      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      setExternalSearchQuery('')
+      setSuggestions([])
+      toast.success(`Pesquisa externa adicionada com ${results.length} resultado(s).`)
+    } catch (err) {
+      console.error('External search source error:', err)
+      toast.error('Erro ao adicionar pesquisa externa')
+    } finally {
+      setExternalResearchLoading(false)
+    }
+  }
+
+  const handleAddDeepExternalSearchSource = async () => {
+    if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
+    setExternalDeepLoading(true)
+    try {
+      const query = externalSearchQuery.trim()
+      const results = await searchWebResults(query)
+      if (results.length === 0) {
+        toast.info('Nenhum resultado útil para pesquisa externa profunda.')
+        return
+      }
+
+      const topResults = results.slice(0, 3)
+      const fetched = await Promise.all(
+        topResults.map(async r => ({ ...r, content: await fetchUrlContent(r.url) })),
+      )
+      const fetchedWithContent = fetched.filter(r => (r.content || '').length >= 120)
+      if (fetchedWithContent.length === 0) {
+        toast.info('Não foi possível extrair conteúdo das páginas da pesquisa profunda.')
+        return
+      }
+
+      const models = await loadResearchNotebookModels()
+      const model = models.notebook_pesquisador_externo_profundo || models.notebook_analista
+      if (!model) {
+        toast.warning('Modelo não configurado', 'Configure um modelo para o pesquisador externo profundo no Admin.')
+        return
+      }
+      const apiKey = await getOpenRouterKey()
+
+      const compiled = fetchedWithContent.map((r, i) =>
+        `<fonte_${i + 1}>\nTÍTULO: ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 6000)}\n</fonte_${i + 1}>`,
+      ).join('\n\n')
+
+      const deepResult = await callLLM(
+        apiKey,
+        'Você é um pesquisador jurídico externo profundo. Sintetize fontes web em texto objetivo e acionável para caderno de pesquisa. Responda em português, com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
+        `Consulta do usuário: "${query}"\n\nFontes coletadas:\n${compiled}\n\nProduza uma síntese profunda com foco jurídico.`,
+        model,
+        2200,
+        0.2,
+      )
+
+      const source: NotebookSource = {
+        id: generateId(),
+        type: 'external_deep',
+        name: `Pesquisa externa profunda: ${query}`,
+        reference: query,
+        content_type: 'text/plain',
+        size_bytes: deepResult.content.length,
+        text_content: deepResult.content.slice(0, MAX_DEEP_EXTERNAL_TEXT_CHARS),
+        status: 'indexed',
+        added_at: new Date().toISOString(),
+      }
+
+      const execution = createUsageExecutionRecord({
+        source_type: 'caderno_pesquisa',
+        source_id: activeNotebook.id,
+        phase: 'notebook_pesquisador_externo_profundo',
+        agent_name: 'Pesquisador Externo Profundo',
+        model: deepResult.model,
+        tokens_in: deepResult.tokens_in,
+        tokens_out: deepResult.tokens_out,
+        cost_usd: deepResult.cost_usd,
+        duration_ms: deepResult.duration_ms,
+      })
+
+      const updatedSources = [...activeNotebook.sources, source]
+      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
+      await updateResearchNotebook(userId, activeNotebook.id, {
+        sources: updatedSources,
+        llm_executions: updatedExecutions,
+      })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources, llm_executions: updatedExecutions })
+      setExternalSearchQuery('')
+      setSuggestions([])
+      toast.success('Pesquisa externa profunda adicionada como fonte.')
+    } catch (err) {
+      console.error('Deep external search source error:', err)
+      toast.error('Erro na pesquisa externa profunda')
+    } finally {
+      setExternalDeepLoading(false)
+    }
+  }
+
+  const handleAddJurisprudenceSource = async () => {
+    if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
+    setJurisprudenceLoading(true)
+    try {
+      const query = externalSearchQuery.trim()
+      const settings = await getSettings()
+      const apiKeys = (settings.api_keys ?? {}) as Record<string, string>
+      const apiKey = apiKeys.datajud_api_key || 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=='
+      const url = (settings.datajud_url as string) || 'https://api-publica.datajud.cnj.jus.br/api_publica_tjrs/_search'
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `APIKey ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: { match: { 'assunto.nome': query } },
+          size: 8,
+          sort: [{ dataAjuizamento: { order: 'desc' } }],
+        }),
+      })
+
+      if (!resp.ok) {
+        throw new Error(`DataJud respondeu ${resp.status}`)
+      }
+
+      const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, any> }> } }
+      const hits = data.hits?.hits || []
+      if (hits.length === 0) {
+        toast.info('Nenhum resultado de jurisprudência encontrado no DataJud.')
+        return
+      }
+
+      const textContent = hits.map((h, i) => {
+        const src = h._source || {}
+        const numero = src.numeroProcesso || '?'
+        const classe = src.classe?.nome || '?'
+        const orgao = src.orgaoJulgador?.nome || '?'
+        const dataAj = String(src.dataAjuizamento || '').slice(0, 10)
+        const assuntos = Array.isArray(src.assunto) ? src.assunto.map((a: any) => a?.nome).filter(Boolean).slice(0, 4).join(', ') : ''
+        return `[${i + 1}] Processo ${numero}\nClasse: ${classe}\nÓrgão: ${orgao}\nData: ${dataAj || '-'}\nAssuntos: ${assuntos || '-'}`
+      }).join('\n\n')
+
+      const source: NotebookSource = {
+        id: generateId(),
+        type: 'jurisprudencia',
+        name: `Jurisprudência DataJud: ${query}`,
+        reference: query,
+        content_type: 'application/json',
+        size_bytes: textContent.length,
+        text_content: textContent.slice(0, MAX_SOURCE_TEXT_LENGTH),
+        status: 'indexed',
+        added_at: new Date().toISOString(),
+      }
+
+      const updatedSources = [...activeNotebook.sources, source]
+      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      setExternalSearchQuery('')
+      setSuggestions([])
+      toast.success(`Jurisprudência adicionada com ${hits.length} resultado(s) do DataJud.`)
+    } catch (err) {
+      console.error('Jurisprudence source error:', err)
+      toast.error('Erro ao consultar jurisprudência no DataJud')
+    } finally {
+      setJurisprudenceLoading(false)
+    }
+  }
+
+  const handleUploadSourceFiles = async (files: FileList | null) => {
+    if (!files || !userId || !activeNotebook?.id) return
+    const list = Array.from(files)
+    if (list.length === 0) return
+    setSourceUploadLoading(true)
+    try {
+      const newSources: NotebookSource[] = []
+      for (const file of list) {
+        if (!isSupportedTextFile(file)) {
+          toast.error(`Formato não suportado para fonte: ${file.name}`)
+          continue
+        }
+        const textContent = await extractFileText(file)
+        newSources.push({
+          id: generateId(),
+          type: 'upload',
+          name: file.name,
+          reference: file.name,
+          content_type: file.type || 'text/plain',
+          size_bytes: file.size,
+          text_content: textContent.slice(0, MAX_SOURCE_TEXT_LENGTH),
+          status: textContent.length > 0 ? 'indexed' : 'pending',
+          added_at: new Date().toISOString(),
+        })
+      }
+      if (newSources.length === 0) return
+      const updatedSources = [...activeNotebook.sources, ...newSources]
+      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      setSuggestions([])
+      toast.success(`${newSources.length} arquivo(s) adicionado(s) como fonte.`)
+    } catch (err) {
+      console.error('Upload notebook sources error:', err)
+      toast.error('Erro ao adicionar arquivos como fontes')
+    } finally {
+      setSourceUploadLoading(false)
+      if (sourceUploadInputRef.current) sourceUploadInputRef.current.value = ''
     }
   }
 
@@ -2212,6 +2499,67 @@ Instruções:
                   {sourceUrlLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                   {sourceUrlLoading ? 'Carregando...' : 'Adicionar'}
                 </button>
+              </div>
+
+              {/* Source file upload */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-gray-500">Upload de fontes ({SUPPORTED_TEXT_FILE_EXTENSIONS.join(', ')})</p>
+                </div>
+                <input
+                  ref={sourceUploadInputRef}
+                  type="file"
+                  multiple
+                  accept={SUPPORTED_TEXT_FILE_EXTENSIONS.join(',')}
+                  onChange={e => handleUploadSourceFiles(e.target.files)}
+                  className="w-full text-xs text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                />
+                {sourceUploadLoading && (
+                  <p className="text-[11px] text-brand-600 flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Processando arquivos e indexando como fontes...
+                  </p>
+                )}
+              </div>
+
+              {/* External research */}
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500">Pesquisadores de fonte</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Tema para pesquisa externa / profunda / jurisprudência..."
+                    value={externalSearchQuery}
+                    onChange={e => setExternalSearchQuery(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={handleAddExternalSearchSource}
+                    disabled={!externalSearchQuery.trim() || externalResearchLoading}
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
+                  >
+                    {externalResearchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+                    Pesquisa Externa
+                  </button>
+                  <button
+                    onClick={handleAddDeepExternalSearchSource}
+                    disabled={!externalSearchQuery.trim() || externalDeepLoading}
+                    className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
+                  >
+                    {externalDeepLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+                    Pesquisa Externa Profunda
+                  </button>
+                  <button
+                    onClick={handleAddJurisprudenceSource}
+                    disabled={!externalSearchQuery.trim() || jurisprudenceLoading}
+                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-40 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
+                  >
+                    {jurisprudenceLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Library className="w-3.5 h-3.5" />}
+                    Jurisprudência (DataJud)
+                  </button>
+                </div>
               </div>
 
               {/* Acervo documents */}

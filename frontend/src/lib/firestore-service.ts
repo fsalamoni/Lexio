@@ -140,7 +140,7 @@ export interface AcervoDocumentData {
 // ── Research Notebook (Caderno de Pesquisa) ───────────────────────────────────
 
 /** Source types that can be attached to a research notebook */
-export type NotebookSourceType = 'acervo' | 'upload' | 'link'
+export type NotebookSourceType = 'acervo' | 'upload' | 'link' | 'external' | 'external_deep' | 'jurisprudencia'
 
 /** A source attached to a research notebook */
 export interface NotebookSource {
