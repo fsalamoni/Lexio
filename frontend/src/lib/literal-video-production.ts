@@ -1,5 +1,6 @@
 import { generateImageViaOpenRouter } from './image-generation-client'
 import { loadVideoPipelineModels } from './model-config'
+import { formatSecondsToMMSS } from './time-format'
 import { generateTTSViaOpenRouter } from './tts-client'
 import type {
   VideoClipAsset,
@@ -121,13 +122,6 @@ function parseTimeToSeconds(value?: string): number {
   if (parts.length === 2) return parts[0] * 60 + parts[1]
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
   return 0
-}
-
-function formatSeconds(value: number): string {
-  const safe = Math.max(0, Math.floor(value))
-  const mins = Math.floor(safe / 60)
-  const secs = safe % 60
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
 }
 
 function prepareTimings(production: VideoProductionPackage): PreparedSceneTiming[] {
@@ -713,7 +707,7 @@ export async function renderLiteralVideoByScope(
     const sceneOnly: VideoProductionPackage = {
       ...production,
       totalDuration: sceneDuration,
-      scenes: [{ ...scene, timeStart: '00:00', timeEnd: formatSeconds(sceneDuration), duration: sceneDuration }],
+      scenes: [{ ...scene, timeStart: '00:00', timeEnd: formatSecondsToMMSS(sceneDuration), duration: sceneDuration }],
       sceneAssets: sceneAsset ? [{ ...sceneAsset }] : [],
     }
     const rendered = await renderLiteralVideo(sceneOnly, onProgress, { preset: chosenPreset })
@@ -753,7 +747,7 @@ export async function renderLiteralVideoByScope(
   const partProduction: VideoProductionPackage = {
     ...production,
     totalDuration: clipLength,
-    scenes: [{ ...scene, duration: clipLength, timeStart: '00:00', timeEnd: formatSeconds(clipLength) }],
+    scenes: [{ ...scene, duration: clipLength, timeStart: '00:00', timeEnd: formatSecondsToMMSS(clipLength) }],
     sceneAssets: sceneAsset ? [{ ...sceneAsset }] : [],
   }
   const rendered = await renderLiteralVideo(partProduction, onProgress, { preset: chosenPreset })

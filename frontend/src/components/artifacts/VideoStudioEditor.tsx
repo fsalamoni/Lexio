@@ -33,6 +33,7 @@ import {
   renderLiteralVideoByScope,
   resolveVideoRenderPreset,
 } from '../../lib/literal-video-production'
+import { formatSecondsToMMSS } from '../../lib/time-format'
 import { useToast } from '../Toast'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -518,9 +519,9 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const [generatingAudioFor, setGeneratingAudioFor] = useState<number | null>(null)
   const [audioError, setAudioError] = useState<Record<number, string>>({})
   const [generatedClips, setGeneratedClips] = useState<Record<number, VideoClipAsset[]>>({})
-  const [generatedSoundtrack, setGeneratedSoundtrack] = useState<string | null>(null)
-  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null)
-  const [generatedVideoMimeType, setGeneratedVideoMimeType] = useState<string>('video/webm')
+  const [generatedSoundtrack, setGeneratedSoundtrack] = useState<string | null>(production.soundtrackAsset?.url || null)
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(production.renderedVideo?.url || null)
+  const [generatedVideoMimeType, setGeneratedVideoMimeType] = useState<string>(production.renderedVideo?.mimeType || 'video/webm')
   const [generatingFullVideo, setGeneratingFullVideo] = useState(false)
   const [fullVideoStatus, setFullVideoStatus] = useState<string>('')
   const [fullVideoError, setFullVideoError] = useState<string>('')
