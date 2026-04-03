@@ -171,6 +171,14 @@ export default function ResearchNotebookConfigCard() {
               <span className="text-xs text-gray-400 ml-auto">{RESEARCH_AGENTS.length} agentes</span>
             </div>
 
+            <div className="p-3 mb-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+              <p className="text-xs text-indigo-800">
+                <strong>🔎 Pesquisadores de Fontes:</strong> além do assistente padrão, o caderno pode usar
+                <strong> Pesquisa Externa</strong>, <strong>Pesquisa Externa Profunda</strong> e
+                <strong> Pesquisa de Jurisprudência (DataJud)</strong> para criar novas fontes automaticamente.
+              </p>
+            </div>
+
             <div className="space-y-0 mb-6">
               {RESEARCH_AGENTS.map((agent, idx) => {
                 const Icon         = AGENT_ICONS[agent.icon] ?? Brain

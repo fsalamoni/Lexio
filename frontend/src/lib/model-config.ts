@@ -987,6 +987,33 @@ export const RESEARCH_NOTEBOOK_AGENT_DEFS: AgentModelDef[] = [
     icon: 'message-circle',
     agentCategory: 'reasoning',
   },
+  {
+    key: 'notebook_pesquisador_externo',
+    label: 'Pesquisador Externo',
+    description: 'Realiza pesquisa externa web para enriquecer as fontes do caderno',
+    defaultModel: 'anthropic/claude-3.5-haiku',
+    recommendedTier: 'fast',
+    icon: 'search',
+    agentCategory: 'extraction',
+  },
+  {
+    key: 'notebook_pesquisador_externo_profundo',
+    label: 'Pesquisador Externo Profundo',
+    description: 'Conduz pesquisa externa profunda e curadoria avançada de múltiplas fontes',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    recommendedTier: 'balanced',
+    icon: 'brain',
+    agentCategory: 'reasoning',
+  },
+  {
+    key: 'notebook_pesquisador_jurisprudencia',
+    label: 'Pesquisador de Jurisprudência (DataJud)',
+    description: 'Pesquisa jurisprudência na API do CNJ (DataJud) e prepara fontes para o caderno',
+    defaultModel: 'anthropic/claude-3.5-haiku',
+    recommendedTier: 'fast',
+    icon: 'search',
+    agentCategory: 'extraction',
+  },
   // ── Estúdio de Criação ──
   {
     key: 'studio_pesquisador',
