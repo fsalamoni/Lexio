@@ -942,7 +942,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       const models = await loadResearchNotebookModels()
       const model = models.notebook_pesquisador_externo || models.notebook_analista
       if (!model) {
-        toast.warning('Modelo não configurado', 'Configure um modelo para o pesquisador externo no Admin.')
+        toast.warning(
+          'Modelo não configurado',
+          'Configure um modelo para o agente notebook_pesquisador_externo no Admin (Caderno de Pesquisa).',
+        )
         return
       }
       const apiKey = await getOpenRouterKey()
@@ -1141,7 +1144,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       const models = await loadResearchNotebookModels()
       const model = models.notebook_pesquisador_jurisprudencia || models.notebook_analista
       if (!model) {
-        toast.warning('Modelo não configurado', 'Configure um modelo para o pesquisador de jurisprudência no Admin.')
+        toast.warning(
+          'Modelo não configurado',
+          'Configure um modelo para o agente notebook_pesquisador_jurisprudencia no Admin (Caderno de Pesquisa).',
+        )
         return
       }
       const openRouterApiKey = await getOpenRouterKey()
