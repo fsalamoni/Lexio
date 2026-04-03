@@ -3,6 +3,7 @@
  * Supports common legal research formats and extracts plain text client-side.
  */
 
+// Vite-specific `?url` import for worker asset resolution in production builds.
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 

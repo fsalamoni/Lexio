@@ -43,7 +43,6 @@ def _extract_text(content: bytes, content_type: str, filename: str) -> str:
         ".yml",
         ".html",
         ".htm",
-        ".rtf",
         ".log",
     )
 

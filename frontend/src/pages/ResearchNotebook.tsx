@@ -141,7 +141,7 @@ async function fetchUrlContent(url: string): Promise<string> {
 async function searchWeb(query: string): Promise<string> {
   try {
     const ddgHtmlUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
-    const readerUrl = `https://r.jina.ai/http://${ddgHtmlUrl.replace(/^https?:\/\//, '')}`
+    const readerUrl = `https://r.jina.ai/${ddgHtmlUrl}`
     const resp = await fetch(readerUrl, {
       headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
       signal: AbortSignal.timeout(12_000),
@@ -164,7 +164,7 @@ type ExternalSearchResult = {
 async function searchWebResults(query: string): Promise<ExternalSearchResult[]> {
   try {
     const ddgHtmlUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
-    const readerUrl = `https://r.jina.ai/http://${ddgHtmlUrl.replace(/^https?:\/\//, '')}`
+    const readerUrl = `https://r.jina.ai/${ddgHtmlUrl}`
     const resp = await fetch(readerUrl, {
       headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
       signal: AbortSignal.timeout(12_000),
@@ -178,7 +178,6 @@ async function searchWebResults(query: string): Promise<ExternalSearchResult[]> 
       const urls = line.match(/https:\/\/[^\s)]+/g) || []
       for (const url of urls) {
         if (results.length >= 10) break
-        if (!/^https:\/\//i.test(url)) continue
         const clean = url.replace(/[),.;]+$/, '')
         const title = line.replace(clean, '').replace(/^[-•\d.\s]+/, '').trim() || clean
         const exists = results.some(r => r.url === clean)
@@ -1053,9 +1052,13 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       const settings = await getSettings()
       const apiKeys = (settings.api_keys ?? {}) as Record<string, string>
       const apiKey = apiKeys.datajud_api_key
-      const url = (settings.datajud_url as string) || 'https://api-publica.datajud.cnj.jus.br/api_publica_tjrs/_search'
+      const url = (settings.datajud_url as string | undefined)?.trim()
       if (!apiKey) {
         toast.warning('DataJud não configurado', 'Configure a DataJud API Key no painel administrativo para pesquisar jurisprudência.')
+        return
+      }
+      if (!url) {
+        toast.warning('DataJud não configurado', 'Configure a URL do DataJud no painel administrativo para pesquisar jurisprudência.')
         return
       }
 
