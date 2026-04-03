@@ -939,21 +939,54 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         `[${i + 1}] ${r.title}\nURL: ${r.url}\nResumo: ${r.snippet}`,
       ).join('\n\n')
 
+      const models = await loadResearchNotebookModels()
+      const model = models.notebook_pesquisador_externo || models.notebook_analista
+      if (!model) {
+        toast.warning('Modelo não configurado', 'Configure um modelo para o pesquisador externo no Admin.')
+        return
+      }
+      const apiKey = await getOpenRouterKey()
+
+      const externalResult = await callLLM(
+        apiKey,
+        'Você é um pesquisador jurídico externo. Sintetize resultados de busca web em texto objetivo para uso no caderno de pesquisa. Responda em português com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
+        `Consulta do usuário: "${query}"\n\nResultados coletados:\n${textContent}\n\nProduza uma síntese clara e acionável com foco jurídico.`,
+        model,
+        1800,
+        0.2,
+      )
+
       const source: NotebookSource = {
         id: generateId(),
         type: 'external',
         name: `Pesquisa externa: ${query}`,
         reference: query,
         content_type: 'text/plain',
-        size_bytes: textContent.length,
-        text_content: textContent.slice(0, MAX_SOURCE_TEXT_LENGTH),
+        size_bytes: externalResult.content.length,
+        text_content: externalResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
         status: 'indexed',
         added_at: new Date().toISOString(),
       }
 
+      const execution = createUsageExecutionRecord({
+        source_type: 'caderno_pesquisa',
+        source_id: activeNotebook.id,
+        phase: 'notebook_pesquisador_externo',
+        agent_name: 'Pesquisador Externo',
+        model: externalResult.model,
+        tokens_in: externalResult.tokens_in,
+        tokens_out: externalResult.tokens_out,
+        cost_usd: externalResult.cost_usd,
+        duration_ms: externalResult.duration_ms,
+      })
+
       const updatedSources = [...activeNotebook.sources, source]
-      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
+      await updateResearchNotebook(userId, activeNotebook.id, {
+        sources: updatedSources,
+        llm_executions: updatedExecutions,
+      })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources, llm_executions: updatedExecutions })
       setExternalSearchQuery('')
       setSuggestions([])
       toast.success(`Pesquisa externa adicionada com ${results.length} resultado(s).`)
@@ -1105,21 +1138,54 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         return `[${i + 1}] Processo ${numero}\nClasse: ${classe}\nÓrgão: ${orgao}\nData: ${dataAj || '-'}\nAssuntos: ${assuntos || '-'}`
       }).join('\n\n')
 
+      const models = await loadResearchNotebookModels()
+      const model = models.notebook_pesquisador_jurisprudencia || models.notebook_analista
+      if (!model) {
+        toast.warning('Modelo não configurado', 'Configure um modelo para o pesquisador de jurisprudência no Admin.')
+        return
+      }
+      const openRouterApiKey = await getOpenRouterKey()
+
+      const jurisprudenceResult = await callLLM(
+        openRouterApiKey,
+        'Você é um pesquisador jurídico especializado em jurisprudência brasileira. Organize e sintetize resultados do DataJud em português com seções: panorama jurisprudencial, precedentes-chave, fundamentos jurídicos e lista de processos.',
+        `Consulta do usuário: "${query}"\n\nResultados DataJud:\n${textContent}\n\nProduza uma síntese objetiva e acionável para o caderno de pesquisa.`,
+        model,
+        2200,
+        0.2,
+      )
+
       const source: NotebookSource = {
         id: generateId(),
         type: 'jurisprudencia',
         name: `Jurisprudência DataJud: ${query}`,
         reference: query,
-        content_type: 'application/json',
-        size_bytes: textContent.length,
-        text_content: textContent.slice(0, MAX_SOURCE_TEXT_LENGTH),
+        content_type: 'text/plain',
+        size_bytes: jurisprudenceResult.content.length,
+        text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
         status: 'indexed',
         added_at: new Date().toISOString(),
       }
 
+      const execution = createUsageExecutionRecord({
+        source_type: 'caderno_pesquisa',
+        source_id: activeNotebook.id,
+        phase: 'notebook_pesquisador_jurisprudencia',
+        agent_name: 'Pesquisador de Jurisprudência (DataJud)',
+        model: jurisprudenceResult.model,
+        tokens_in: jurisprudenceResult.tokens_in,
+        tokens_out: jurisprudenceResult.tokens_out,
+        cost_usd: jurisprudenceResult.cost_usd,
+        duration_ms: jurisprudenceResult.duration_ms,
+      })
+
       const updatedSources = [...activeNotebook.sources, source]
-      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
+      await updateResearchNotebook(userId, activeNotebook.id, {
+        sources: updatedSources,
+        llm_executions: updatedExecutions,
+      })
+      setActiveNotebook({ ...activeNotebook, sources: updatedSources, llm_executions: updatedExecutions })
       setExternalSearchQuery('')
       setSuggestions([])
       toast.success(`Jurisprudência adicionada com ${hits.length} resultado(s) do DataJud.`)
