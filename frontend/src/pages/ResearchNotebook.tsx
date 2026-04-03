@@ -943,8 +943,8 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       const model = models.notebook_pesquisador_externo || models.notebook_analista
       if (!model) {
         toast.warning(
-          'Modelo não configurado',
-          'Configure um modelo para o agente notebook_pesquisador_externo no Admin (Caderno de Pesquisa).',
+          'Modelo obrigatório não configurado',
+          'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador Externo" (chave: notebook_pesquisador_externo).',
         )
         return
       }
@@ -1145,8 +1145,8 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       const model = models.notebook_pesquisador_jurisprudencia || models.notebook_analista
       if (!model) {
         toast.warning(
-          'Modelo não configurado',
-          'Configure um modelo para o agente notebook_pesquisador_jurisprudencia no Admin (Caderno de Pesquisa).',
+          'Modelo obrigatório não configurado',
+          'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador de Jurisprudência (DataJud)" (chave: notebook_pesquisador_jurisprudencia).',
         )
         return
       }

@@ -285,7 +285,7 @@ export default function VideoPipelineConfigCard() {
                 <strong>💡 Informações:</strong> O pipeline suporta vídeos de <strong>15+ minutos</strong>,
                 dividindo inteligentemente em segmentos. Os 8 agentes desta trilha usam modelos de
                 <strong> texto</strong> para planejamento e composição estrutural em JSON. A geração real de
-                mídia (imagens, narrações, clipes e render final) ocorre depois no estúdio literal. O <strong>Planejador</strong> estima
+                mídia (imagens, narrações, clipes e render final) ocorre depois na etapa de renderização dedicada.{' '}O <strong>Planejador</strong> estima
                 custos em tokens antes de iniciar a produção.
               </p>
             </div>
