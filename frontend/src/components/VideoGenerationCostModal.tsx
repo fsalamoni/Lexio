@@ -20,9 +20,9 @@ const AGENT_MODEL_RECOMMENDATIONS: Record<string, { icon: React.ElementType; cap
   video_roteirista:   { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1, GPT-4o. Baratos: DeepSeek V3, Llama 4 Maverick, Gemini 2.5 Flash, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free' },
   video_diretor_cena: { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, GPT-4.1 Mini, Llama 4 Maverick, Qwen 2.5 72B. Grátis: Gemini 2.0 Flash:free, Qwen3 30B:free' },
   video_storyboarder: { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1, GPT-4o. Baratos: DeepSeek V3, Gemini 2.5 Flash, Llama 4 Maverick, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free' },
-  video_designer:     { icon: Image,    capability: 'Imagem', note: 'Gera prompts e imagens reais por cena. Prefira modelos com capacidade de imagem.' },
-  video_compositor:   { icon: Film,     capability: 'Vídeo', note: 'Monta a timeline e apoia a renderização final do arquivo de vídeo.' },
-  video_narrador:     { icon: Mic,      capability: 'Áudio', note: 'Gera o roteiro e a narração real. Prefira modelos TTS/áudio.' },
+  video_designer:     { icon: Image,    capability: 'Texto', note: 'Define direção visual e prompts em JSON para a etapa de mídia literal.' },
+  video_compositor:   { icon: Film,     capability: 'Texto', note: 'Monta a timeline e a estrutura de composição antes da renderização literal.' },
+  video_narrador:     { icon: Mic,      capability: 'Texto', note: 'Gera roteiro de narração e marcações de timing para a etapa de TTS.' },
   video_revisor:      { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Mistral Small:free' },
 }
 
