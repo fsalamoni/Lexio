@@ -278,10 +278,9 @@ export default function AudioPipelineConfigCard() {
             {/* Info box */}
             <div className="mt-4 p-3 bg-violet-50 border border-violet-200 rounded-lg">
               <p className="text-xs text-violet-800">
-                <strong>💡 Informações:</strong> Para etapas de narração de áudio, são necessários
-                <strong> modelos especializados de TTS/áudio</strong>. Modelos somente de texto geram
-                apenas roteiros escritos, <strong>não</strong> áudio real. O agente <strong>Narrador / TTS</strong>{' '}
-                marcado com ⚠️ requer modelo de geração de áudio como ElevenLabs ou OpenAI TTS.
+                <strong>💡 Informações:</strong> Esta trilha configura os agentes textuais que estruturam o
+                conteúdo em JSON, inclusive a etapa <strong>Narrador / TTS</strong> dentro do pipeline lógico.
+                A síntese de áudio real ocorre em etapa dedicada de geração de mídia.
               </p>
             </div>
 

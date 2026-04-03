@@ -276,10 +276,9 @@ export default function PresentationPipelineConfigCard() {
             {/* Info box */}
             <div className="mt-4 p-3 bg-sky-50 border border-sky-200 rounded-lg">
               <p className="text-xs text-sky-800">
-                <strong>💡 Informações:</strong> Para etapas de design visual, <strong>modelos de geração de
-                imagem</strong> produzem resultados muito melhores, criando assets visuais reais para os slides.
-                Modelos somente de texto geram apenas <strong>descrições de layout</strong>, sem imagens ou
-                gráficos reais. O agente <strong>Designer</strong> marcado com ⚠️ requer modelo de imagem.
+                <strong>💡 Informações:</strong> Esta trilha usa agentes de <strong>texto</strong> para montar
+                planejamento, conteúdo e diretrizes visuais em formato estruturado. A criação de assets visuais
+                reais pode ocorrer em etapas posteriores de mídia, fora desta configuração de trilha.
               </p>
             </div>
 
