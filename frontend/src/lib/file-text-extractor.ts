@@ -6,6 +6,7 @@
 // Vite-specific `?url` import for worker asset resolution in production builds.
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+;(pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfWorker
 
 export const SUPPORTED_TEXT_FILE_EXTENSIONS = [
   '.pdf',
@@ -52,7 +53,6 @@ export function isSupportedTextFile(file: File): boolean {
 }
 
 async function extractPdfText(file: File): Promise<string> {
-  ;(pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfWorker
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await (pdfjsLib as any).getDocument({ data: new Uint8Array(arrayBuffer) }).promise
   const pages: string[] = []

@@ -79,6 +79,8 @@ const MAX_SUGGESTION_LABEL_LENGTH = 60
 const MAX_WEB_SEARCH_CHARS = 3_000
 /** Max chars for deep external research source */
 const MAX_DEEP_EXTERNAL_TEXT_CHARS = 12_000
+/** Max chars per fetched external page used in deep synthesis prompt */
+const MAX_DEEP_EXTERNAL_SOURCE_SNIPPET_CHARS = 6_000
 /** Min chars in source text_content to be considered indexed */
 const MIN_SOURCE_CHARS = 20
 
@@ -195,7 +197,7 @@ async function searchWebResults(query: string): Promise<ExternalSearchResult[]> 
   }
 }
 
-function sanitizeDataJudQuery(raw: string): string {
+function normalizeDataJudSearchQuery(raw: string): string {
   return raw
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -878,8 +880,15 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     if (!userId || !activeNotebook?.id || !sourceUrl.trim()) return
 
     const trimmedUrl = sourceUrl.trim()
-    if (!/^https:\/\/.+/i.test(trimmedUrl)) {
-      toast.error('URL inválida — use um endereço que comece com https://')
+    let parsedUrl: URL
+    try {
+      parsedUrl = new URL(trimmedUrl)
+    } catch {
+      toast.error('URL inválida — informe uma URL HTTPS válida (ex.: https://exemplo.com/pagina).')
+      return
+    }
+    if (parsedUrl.protocol !== 'https:' || !parsedUrl.hostname || /\s/.test(trimmedUrl)) {
+      toast.error('URL inválida — informe uma URL HTTPS válida com domínio (ex.: https://exemplo.com/pagina).')
       return
     }
 
@@ -986,7 +995,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       const apiKey = await getOpenRouterKey()
 
       const compiled = fetchedWithContent.map((r, i) =>
-        `<fonte_${i + 1}>\nTÍTULO: ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 6000)}\n</fonte_${i + 1}>`,
+        `<fonte_${i + 1}>\nTÍTULO: ${r.title}\nURL: ${r.url}\n${r.content.slice(0, MAX_DEEP_EXTERNAL_SOURCE_SNIPPET_CHARS)}\n</fonte_${i + 1}>`,
       ).join('\n\n')
 
       const deepResult = await callLLM(
@@ -1044,9 +1053,9 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
     setJurisprudenceLoading(true)
     try {
-      const query = sanitizeDataJudQuery(externalSearchQuery.trim())
+      const query = normalizeDataJudSearchQuery(externalSearchQuery.trim())
       if (!query) {
-        toast.error('Consulta inválida para jurisprudência.')
+        toast.error('Consulta inválida para jurisprudência: use ao menos um termo alfanumérico (ex.: "improbidade administrativa").')
         return
       }
       const settings = await getSettings()
