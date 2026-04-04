@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import StatusBadge from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
 import { SkeletonRow } from '../components/Skeleton'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { IS_FIREBASE } from '../lib/firebase'
 import { listDocuments, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
 import { DOCTYPE_LABELS } from '../lib/constants'
@@ -39,6 +40,7 @@ export default function DocumentList() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkExporting, setBulkExporting] = useState(false)
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { userId } = useAuth()
@@ -175,8 +177,13 @@ export default function DocumentList() {
 
   const handleBulkDelete = async () => {
     if (!selected.size) return
-    if (!window.confirm(`Excluir ${selected.size} documento(s) permanentemente? Esta ação não pode ser desfeita.`)) return
+    setShowBulkDeleteConfirm(true)
+  }
+
+  const confirmBulkDelete = async () => {
+    if (!selected.size) return
     setBulkDeleting(true)
+    setShowBulkDeleteConfirm(false)
     const ids = Array.from(selected)
     let errors = 0
     for (const docId of ids) {
@@ -484,6 +491,18 @@ export default function DocumentList() {
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={showBulkDeleteConfirm}
+        title="Excluir documentos selecionados"
+        description={`Você está prestes a remover ${selected.size} documento(s) permanentemente. Esta ação não pode ser desfeita.`}
+        confirmText="Excluir permanentemente"
+        cancelText="Cancelar"
+        danger
+        loading={bulkDeleting}
+        onCancel={() => setShowBulkDeleteConfirm(false)}
+        onConfirm={confirmBulkDelete}
+      />
     </div>
   )
 }

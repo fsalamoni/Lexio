@@ -9,6 +9,7 @@ import PipelineProgressPanel, {
   PHASE_COMPLETED,
   type AgentStep,
 } from '../components/PipelineProgressPanel'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
@@ -95,6 +96,7 @@ export default function DocumentDetail() {
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Pipeline progress state for retry flow (Firebase mode)
@@ -238,7 +240,12 @@ export default function DocumentDetail() {
 
   const handleDelete = async () => {
     if (!id || !doc) return
-    if (!window.confirm(`Excluir este documento permanentemente? Esta ação não pode ser desfeita.`)) return
+    setShowDeleteConfirm(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!id || !doc) return
+    setShowDeleteConfirm(false)
     setDeleting(true)
     try {
       if (IS_FIREBASE && userId) {
@@ -805,6 +812,18 @@ export default function DocumentDetail() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Excluir documento"
+        description="Este documento será removido permanentemente. Esta ação não pode ser desfeita."
+        confirmText="Excluir permanentemente"
+        cancelText="Cancelar"
+        danger
+        loading={deleting}
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

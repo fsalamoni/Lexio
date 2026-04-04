@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter, ChevronDown } from 'lucide-react'
 import api from '../api/client'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
 import { useAuth } from '../contexts/AuthContext'
@@ -536,10 +537,13 @@ function TagsModal({
   const [editing, setEditing] = useState(!doc.tags_generated)
   const [legalAreas, setLegalAreas] = useState<AdminLegalArea[]>([])
   const [pendingExecution, setPendingExecution] = useState<UsageExecutionRecord | null>(null)
+  const toast = useToast()
 
   // Load legal areas from admin settings
   useEffect(() => {
-    loadAdminLegalAreas().then(setLegalAreas).catch(() => {})
+    loadAdminLegalAreas()
+      .then(setLegalAreas)
+      .catch(() => toast.warning('Não foi possível carregar áreas do direito para classificação'))
   }, [])
 
   // Compute available options based on current selections
@@ -857,6 +861,7 @@ export default function Upload() {
   const inputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; filename: string } | null>(null)
   const toast = useToast()
   const { userId } = useAuth()
 
@@ -986,7 +991,13 @@ export default function Upload() {
 
 
   const handleDeleteUpload = async (id: string, filename: string) => {
-    if (!window.confirm(`Remover "${filename}" do acervo permanentemente?`)) return
+    setPendingDelete({ id, filename })
+  }
+
+  const confirmDeleteUpload = async () => {
+    if (!pendingDelete) return
+    const { id, filename } = pendingDelete
+    setPendingDelete(null)
     setDeletingId(id)
     try {
       if (IS_FIREBASE) {
@@ -1212,6 +1223,17 @@ export default function Upload() {
           onSaved={(tags, executions) => handleSaveTags(tagsDoc.id!, tags, executions)}
         />
       )}
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Remover arquivo do acervo"
+        description={pendingDelete ? `O arquivo "${pendingDelete.filename}" será removido permanentemente.` : ''}
+        confirmText="Remover permanentemente"
+        cancelText="Cancelar"
+        danger
+        loading={Boolean(deletingId)}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={confirmDeleteUpload}
+      />
 
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Upload de Documentos</h1>

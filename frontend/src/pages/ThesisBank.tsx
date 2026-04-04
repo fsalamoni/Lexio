@@ -13,6 +13,7 @@ import {
 } from '../lib/firestore-service'
 import ThesisAnalysisCard from '../components/ThesisAnalysisCard'
 import DraggablePanel from '../components/DraggablePanel'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 interface ThesisItem {
   id: string
@@ -268,6 +269,7 @@ export default function ThesisBank() {
   const [search, setSearch] = useState('')
   const [areaFilter, setAreaFilter] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingThesis, setEditingThesis] = useState<ThesisItem | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -344,7 +346,7 @@ export default function ThesisBank() {
     if (IS_FIREBASE && userId) {
       getThesisStats(userId)
         .then(s => setStats(s))
-        .catch(() => {})
+        .catch(() => toast.warning('Não foi possível atualizar estatísticas do banco de teses no momento'))
     } else {
       api.get('/theses/stats')
         .then(res => setStats(res.data))
@@ -368,7 +370,7 @@ export default function ThesisBank() {
       if (IS_FIREBASE && userId) {
         getThesisStats(userId)
           .then(s => setStats(s))
-          .catch(() => {})
+          .catch(() => toast.warning('Não foi possível atualizar estatísticas do banco de teses no momento'))
       } else {
         api.get('/theses/stats')
           .then(res => setStats(res.data))
@@ -444,7 +446,13 @@ export default function ThesisBank() {
   }
 
   const handleThesisDelete = async (thesisId: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta tese?')) return
+    setPendingDeleteId(thesisId)
+  }
+
+  const confirmDeleteThesis = async () => {
+    if (!pendingDeleteId) return
+    const thesisId = pendingDeleteId
+    setPendingDeleteId(null)
     try {
       if (IS_FIREBASE && userId) {
         await deleteThesis(userId, thesisId)
@@ -476,11 +484,24 @@ export default function ThesisBank() {
           onThesesChanged={() => {
             fetchTheses(search, areaFilter)
             if (userId) {
-              getThesisStats(userId).then(s => setStats(s)).catch(() => {})
+              getThesisStats(userId)
+                .then(s => setStats(s))
+                .catch(() => toast.warning('Não foi possível atualizar estatísticas do banco de teses no momento'))
             }
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={Boolean(pendingDeleteId)}
+        title="Excluir tese"
+        description="A tese selecionada será removida permanentemente."
+        confirmText="Excluir tese"
+        cancelText="Cancelar"
+        danger
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={confirmDeleteThesis}
+      />
 
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">

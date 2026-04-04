@@ -388,7 +388,9 @@ async function renderSceneClip(
     window.cancelAnimationFrame(raf)
     canvasStream.getTracks().forEach(track => track.stop())
     destination.stream.getTracks().forEach(track => track.stop())
-    await audioContext.close().catch(() => {})
+    await audioContext.close().catch((err) => {
+      console.warn('Failed to close audio context after clip render:', err)
+    })
   })
 
   return {
@@ -768,7 +770,9 @@ export async function renderLiteralVideo(
     window.cancelAnimationFrame(raf)
     canvasStream.getTracks().forEach(track => track.stop())
     destination.stream.getTracks().forEach(track => track.stop())
-    await audioContext.close().catch(() => {})
+    await audioContext.close().catch((err) => {
+      console.warn('Failed to close audio context after final render:', err)
+    })
   })
 
   return {

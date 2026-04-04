@@ -35,6 +35,7 @@ import VideoPipelineConfigCard from '../components/VideoPipelineConfigCard'
 import AudioPipelineConfigCard from '../components/AudioPipelineConfigCard'
 import PresentationPipelineConfigCard from '../components/PresentationPipelineConfigCard'
 import ModelCatalogCard from '../components/ModelCatalogCard'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 interface ModuleInfo {
   id: string
@@ -553,10 +554,15 @@ interface ReindexResult {
 function ReindexCard() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ReindexResult | null>(null)
+  const [showConfirm, setShowConfirm] = useState(false)
   const toast = useToast()
 
   const handleReindex = async () => {
-    if (!window.confirm('Reindexar todos os documentos concluídos/aprovados no Qdrant? Isso pode demorar alguns minutos.')) return
+    setShowConfirm(true)
+  }
+
+  const confirmReindex = async () => {
+    setShowConfirm(false)
     setLoading(true)
     setResult(null)
     try {
@@ -589,6 +595,16 @@ function ReindexCard() {
           {loading ? 'Reindexando...' : 'Reindexar Documentos'}
         </button>
       </div>
+      <ConfirmDialog
+        open={showConfirm}
+        title="Reindexar documentos"
+        description="Todos os documentos concluídos/aprovados serão reindexados no Qdrant. Esse processo pode levar alguns minutos."
+        confirmText="Iniciar reindexação"
+        cancelText="Cancelar"
+        loading={loading}
+        onCancel={() => setShowConfirm(false)}
+        onConfirm={confirmReindex}
+      />
       {result && (
         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-gray-50 rounded-lg p-3 text-center">
@@ -658,7 +674,7 @@ export default function AdminPanel() {
         pending_review_documents: s.pending_review_documents,
         average_quality_score: s.average_quality_score,
         total_cost_usd: s.total_cost_usd,
-      })).catch(() => {}).finally(() => setLoading(false))
+      })).catch(() => toast.error('Erro ao carregar estatísticas do Firebase')).finally(() => setLoading(false))
     } else {
       Promise.all([
         api.get('/admin/modules').then(res => setModules(Array.isArray(res.data) ? res.data : [])).catch(() => toast.error('Erro ao carregar módulos')),
@@ -1389,6 +1405,7 @@ function DocumentTypesCrud() {
   const [saving, setSaving] = useState(false)
   const [editingItem, setEditingItem] = useState<AdminDocumentType | null>(null)
   const [isCreating, setIsCreating] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const toast = useToast()
 
   useEffect(() => {
@@ -1421,7 +1438,13 @@ function DocumentTypesCrud() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este tipo de documento?')) return
+    setPendingDeleteId(id)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return
+    const id = pendingDeleteId
+    setPendingDeleteId(null)
     const updated = items.filter(item => item.id !== id)
     await handleSave(updated)
   }
@@ -1592,6 +1615,18 @@ function DocumentTypesCrud() {
         <Plus className="w-4 h-4" />
         Adicionar novo tipo de documento
       </button>
+
+      <ConfirmDialog
+        open={Boolean(pendingDeleteId)}
+        title="Excluir tipo de documento"
+        description="Este tipo de documento será removido da configuração administrativa."
+        confirmText="Excluir"
+        cancelText="Cancelar"
+        danger
+        loading={saving}
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }
@@ -1606,6 +1641,7 @@ function LegalAreasCrud() {
   const [isCreating, setIsCreating] = useState(false)
   const [expandedArea, setExpandedArea] = useState<string | null>(null)
   const [newAssunto, setNewAssunto] = useState('')
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const toast = useToast()
 
   useEffect(() => {
@@ -1638,7 +1674,13 @@ function LegalAreasCrud() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir esta área do direito?')) return
+    setPendingDeleteId(id)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return
+    const id = pendingDeleteId
+    setPendingDeleteId(null)
     const updated = items.filter(item => item.id !== id)
     await handleSave(updated)
   }
@@ -1870,6 +1912,18 @@ function LegalAreasCrud() {
         <Plus className="w-4 h-4" />
         Adicionar nova área do direito
       </button>
+
+      <ConfirmDialog
+        open={Boolean(pendingDeleteId)}
+        title="Excluir área do direito"
+        description="A área selecionada será removida da configuração administrativa."
+        confirmText="Excluir"
+        cancelText="Cancelar"
+        danger
+        loading={saving}
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

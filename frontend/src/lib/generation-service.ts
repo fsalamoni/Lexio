@@ -1854,7 +1854,9 @@ export async function generateDocument(
     await updateDoc(docRef, {
       status: 'erro',
       updated_at: new Date().toISOString(),
-    }).catch(() => {}) // Ignore update errors
+    }).catch((updateErr) => {
+      console.warn('Failed to persist document error status:', updateErr)
+    })
     throw err
   }
 }

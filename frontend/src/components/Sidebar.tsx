@@ -7,6 +7,7 @@ import clsx from 'clsx'
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../api/client'
+import ConfirmDialog from './ConfirmDialog'
 import { IS_FIREBASE } from '../lib/firebase'
 import { listDocuments } from '../lib/firestore-service'
 
@@ -92,6 +93,7 @@ function NavItem({
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const { logout, role, fullName, userId } = useAuth()
   const [pendingReview, setPendingReview] = useState(0)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
   // Poll pending review count for admins every 60s
   useEffect(() => {
@@ -113,9 +115,12 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   }, [role, userId])
 
   const handleLogout = () => {
-    if (window.confirm('Deseja realmente sair da sua conta?')) {
-      logout()
-    }
+    setShowLogoutConfirm(true)
+  }
+
+  const confirmLogout = () => {
+    setShowLogoutConfirm(false)
+    logout()
   }
 
   const sidebar = (
@@ -195,6 +200,16 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           Sair
         </button>
       </div>
+
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title="Sair da conta"
+        description="Sua sessão atual será encerrada neste dispositivo."
+        confirmText="Sair"
+        cancelText="Cancelar"
+        onCancel={() => setShowLogoutConfirm(false)}
+        onConfirm={confirmLogout}
+      />
     </aside>
   )
 

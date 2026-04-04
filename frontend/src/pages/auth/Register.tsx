@@ -3,6 +3,31 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Scale, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function getPasswordStrength(password: string): { score: number; label: string; color: string } {
+  let score = 0
+  if (password.length >= 8) score += 1
+  if (/[A-Z]/.test(password) && /[a-z]/.test(password)) score += 1
+  if (/\d/.test(password)) score += 1
+  if (/[^A-Za-z0-9]/.test(password)) score += 1
+
+  if (score <= 1) return { score, label: 'Fraca', color: 'bg-red-500' }
+  if (score === 2) return { score, label: 'Média', color: 'bg-amber-500' }
+  if (score === 3) return { score, label: 'Boa', color: 'bg-lime-500' }
+  return { score, label: 'Forte', color: 'bg-emerald-600' }
+}
+
+function getAuthErrorMessage(err: any): string {
+  const raw = String(err?.message || err?.response?.data?.detail || '')
+  const msg = raw.toLowerCase()
+  if (msg.includes('email-already-in-use')) return 'Este email já está em uso.'
+  if (msg.includes('invalid-email')) return 'Email inválido.'
+  if (msg.includes('weak-password')) return 'Use uma senha mais forte para continuar.'
+  if (msg.includes('network')) return 'Falha de conexão. Verifique sua internet e tente novamente.'
+  return raw || 'Erro ao cadastrar'
+}
+
 export default function Register() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -13,16 +38,36 @@ export default function Register() {
   const [loading, setLoading] = useState(false)
   const { register } = useAuth()
   const navigate = useNavigate()
+  const trimmedEmail = email.trim()
+  const trimmedName = fullName.trim()
+  const isEmailValid = !trimmedEmail || EMAIL_REGEX.test(trimmedEmail)
+  const passwordStrength = getPasswordStrength(password)
+  const hasMinLength = password.length >= 8
+  const hasMixedCase = /[A-Z]/.test(password) && /[a-z]/.test(password)
+  const hasNumber = /\d/.test(password)
+  const canSubmit = !loading && Boolean(trimmedName) && Boolean(trimmedEmail) && isEmailValid && hasMinLength
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (!trimmedName) {
+      setError('Informe seu nome completo.')
+      return
+    }
+    if (!trimmedEmail || !EMAIL_REGEX.test(trimmedEmail)) {
+      setError('Informe um email válido para continuar.')
+      return
+    }
+    if (!hasMinLength) {
+      setError('A senha deve conter ao menos 8 caracteres.')
+      return
+    }
     setLoading(true)
     try {
-      await register(email, password, fullName, title || undefined)
+      await register(trimmedEmail, password, trimmedName, title.trim() || undefined)
       navigate('/')
     } catch (err: any) {
-      setError(err.message || err.response?.data?.detail || 'Erro ao cadastrar')
+      setError(getAuthErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -45,6 +90,7 @@ export default function Register() {
               type="text"
               name="name"
               autoComplete="name"
+              inputMode="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
@@ -57,11 +103,13 @@ export default function Register() {
               type="email"
               name="email"
               autoComplete="email"
+              inputMode="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
               required
             />
+            {!isEmailValid && <p className="text-xs text-red-600 mt-1">Digite um email válido.</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
@@ -85,7 +133,20 @@ export default function Register() {
                 {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-1">Mínimo de 8 caracteres</p>
+            <p className="text-xs text-gray-500 mt-2">Força da senha: <span className="font-semibold">{passwordStrength.label}</span></p>
+            <div className="mt-1 grid grid-cols-4 gap-1" aria-hidden="true">
+              {[0, 1, 2, 3].map(i => (
+                <span
+                  key={i}
+                  className={`h-1 rounded ${i < passwordStrength.score ? passwordStrength.color : 'bg-gray-200'}`}
+                />
+              ))}
+            </div>
+            <ul className="text-xs text-gray-500 mt-2 space-y-1">
+              <li className={hasMinLength ? 'text-emerald-700' : ''}>Mínimo de 8 caracteres</li>
+              <li className={hasMixedCase ? 'text-emerald-700' : ''}>Letras maiúsculas e minúsculas</li>
+              <li className={hasNumber ? 'text-emerald-700' : ''}>Pelo menos um número</li>
+            </ul>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Cargo (opcional)</label>
@@ -101,8 +162,8 @@ export default function Register() {
           </div>
           <button
             type="submit"
-            disabled={loading}
-            className="w-full bg-brand-600 text-white py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50 font-medium"
+            disabled={!canSubmit}
+            className="w-full bg-brand-600 text-white py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           >
             {loading ? 'Cadastrando...' : 'Cadastrar'}
           </button>

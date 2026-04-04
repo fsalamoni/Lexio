@@ -3,6 +3,23 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Scale, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function getAuthErrorMessage(err: any): string {
+  const raw = String(err?.message || err?.response?.data?.detail || '')
+  const msg = raw.toLowerCase()
+  if (msg.includes('invalid-credential') || msg.includes('wrong-password') || msg.includes('user-not-found')) {
+    return 'Email ou senha inválidos.'
+  }
+  if (msg.includes('too-many-requests')) {
+    return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
+  }
+  if (msg.includes('network')) {
+    return 'Falha de conexão. Verifique sua internet e tente novamente.'
+  }
+  return raw || 'Erro ao fazer login'
+}
+
 function GoogleIcon() {
   return (
     <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -23,16 +40,27 @@ export default function Login() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const { login, loginWithGoogle } = useAuth()
   const navigate = useNavigate()
+  const trimmedEmail = email.trim()
+  const isEmailValid = !trimmedEmail || EMAIL_REGEX.test(trimmedEmail)
+  const canSubmit = !loading && !googleLoading && Boolean(trimmedEmail) && Boolean(password) && isEmailValid
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (!trimmedEmail || !EMAIL_REGEX.test(trimmedEmail)) {
+      setError('Informe um email válido para continuar.')
+      return
+    }
+    if (!password) {
+      setError('Informe sua senha para continuar.')
+      return
+    }
     setLoading(true)
     try {
-      await login(email, password)
+      await login(trimmedEmail, password)
       navigate('/')
     } catch (err: any) {
-      setError(err.message || err.response?.data?.detail || 'Erro ao fazer login')
+      setError(getAuthErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -45,7 +73,7 @@ export default function Login() {
       await loginWithGoogle()
       navigate('/')
     } catch (err: any) {
-      setError(err.message || 'Erro ao entrar com Google')
+      setError(getAuthErrorMessage(err) || 'Erro ao entrar com Google')
     } finally {
       setGoogleLoading(false)
     }
@@ -67,7 +95,7 @@ export default function Login() {
             type="button"
             onClick={handleGoogle}
             disabled={googleLoading}
-            className="w-full flex items-center justify-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 hover:bg-gray-50 disabled:opacity-50 font-medium text-gray-700 transition-colors"
+            className="w-full flex items-center justify-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-gray-700 transition-colors"
           >
             <GoogleIcon />
             {googleLoading ? 'Entrando...' : 'Entrar com Google'}
@@ -86,11 +114,13 @@ export default function Login() {
                 type="email"
                 name="email"
                 autoComplete="username"
+                inputMode="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                 required
               />
+              {!isEmailValid && <p className="text-xs text-red-600 mt-1">Digite um email válido.</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
@@ -116,8 +146,8 @@ export default function Login() {
             </div>
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-brand-600 text-white py-2.5 rounded-lg hover:bg-brand-700 disabled:opacity-50 font-semibold text-sm transition-colors"
+              disabled={!canSubmit}
+              className="w-full bg-brand-600 text-white py-2.5 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm transition-colors"
             >
               {loading ? (
                 <span className="inline-flex items-center gap-2 justify-center">

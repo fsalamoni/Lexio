@@ -104,7 +104,9 @@ export default function Layout({ children }: { children: ReactNode }) {
         const msg = formatHealthCheckMessage(result)
         toast.warning(msg.title, msg.message)
       }
-    }).catch(() => {})
+    }).catch((err) => {
+      console.warn('Model health check failed:', err)
+    })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

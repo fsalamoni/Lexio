@@ -60,6 +60,7 @@ import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
 import DraggablePanel from '../components/DraggablePanel'
+import ConfirmDialog from '../components/ConfirmDialog'
 import {
   DeepResearchModal,
   type ResearchStep,
@@ -415,6 +416,7 @@ export default function ResearchNotebook() {
   const [createTopic, setCreateTopic] = useState('')
   const [createDescription, setCreateDescription] = useState('')
   const [creating, setCreating] = useState(false)
+  const [pendingNotebookDelete, setPendingNotebookDelete] = useState<ResearchNotebookData | null>(null)
   const [suggestedAcervoDocs, setSuggestedAcervoDocs] = useState<AcervoDocumentData[]>([])
   const [selectedAcervoIds, setSelectedAcervoIds] = useState<Set<string>>(new Set())
 
@@ -475,6 +477,8 @@ export default function ResearchNotebook() {
     executions: { phase: string; agent_name: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number; duration_ms: number }[]
   } | null>(null)
   const [pendingContent, setPendingContent] = useState('')
+  const [pendingArtifactDelete, setPendingArtifactDelete] = useState<{ id: string; title: string } | null>(null)
+  const [clearingChat, setClearingChat] = useState(false)
 
   // Video generation flow
   const [showVideoGenCost, setShowVideoGenCost] = useState(false)
@@ -486,6 +490,7 @@ export default function ResearchNotebook() {
   const [videoStudioAutoGenerate, setVideoStudioAutoGenerate] = useState(false)
   const [audioGenLoading, setAudioGenLoading] = useState(false)
   const [audioGeneratingArtifactId, setAudioGeneratingArtifactId] = useState<string | null>(null)
+  const [showClearChatConfirm, setShowClearChatConfirm] = useState(false)
 
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
@@ -686,17 +691,23 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
   // ── Delete notebook ─────────────────────────────────────────────────
   const handleDelete = async (nb: ResearchNotebookData) => {
     if (!userId || !nb.id) return
-    if (!window.confirm(`Excluir o caderno "${nb.title}"? Esta ação é irreversível.`)) return
+    setPendingNotebookDelete(nb)
+  }
+
+  const confirmDeleteNotebook = async () => {
+    if (!userId || !pendingNotebookDelete?.id) return
     try {
-      await deleteResearchNotebook(userId, nb.id)
+      await deleteResearchNotebook(userId, pendingNotebookDelete.id)
       toast.success('Caderno excluído')
-      if (activeNotebook?.id === nb.id) {
+      if (activeNotebook?.id === pendingNotebookDelete.id) {
         setActiveNotebook(null)
         setViewMode('list')
       }
       await loadNotebooks()
     } catch {
       toast.error('Erro ao excluir caderno')
+    } finally {
+      setPendingNotebookDelete(null)
     }
   }
 
@@ -2084,22 +2095,37 @@ Instruções:
 
   // ── Delete artifact ─────────────────────────────────────────────────
   const handleDeleteArtifact = async (artifactId: string) => {
-    if (!userId || !activeNotebook?.id) return
+    if (!activeNotebook) return
+    const artifact = activeNotebook.artifacts.find(a => a.id === artifactId)
+    if (!artifact) return
+    setPendingArtifactDelete({ id: artifactId, title: artifact.title })
+  }
+
+  const confirmDeleteArtifact = async () => {
+    if (!userId || !activeNotebook?.id || !pendingArtifactDelete?.id) return
     try {
-      const updated = activeNotebook.artifacts.filter(a => a.id !== artifactId)
+      const updated = activeNotebook.artifacts.filter(a => a.id !== pendingArtifactDelete.id)
       await updateResearchNotebook(userId, activeNotebook.id, { artifacts: updated })
       setActiveNotebook({ ...activeNotebook, artifacts: updated })
       toast.success('Artefato removido')
     } catch (err) {
       console.error('Error deleting artifact:', err)
       toast.error('Erro ao remover artefato')
+    } finally {
+      setPendingArtifactDelete(null)
     }
   }
 
   // ── Clear chat history ──────────────────────────────────────────────
   const handleClearChat = async () => {
     if (!userId || !activeNotebook?.id) return
-    if (!window.confirm('Limpar todo o histórico de conversa? As fontes e artefatos serão mantidos.')) return
+    setShowClearChatConfirm(true)
+  }
+
+  const confirmClearChat = async () => {
+    if (!userId || !activeNotebook?.id) return
+    setClearingChat(true)
+    setShowClearChatConfirm(false)
     try {
       await updateResearchNotebook(userId, activeNotebook.id, { messages: [] })
       setActiveNotebook({ ...activeNotebook, messages: [] })
@@ -2107,6 +2133,8 @@ Instruções:
     } catch (err) {
       console.error('Error clearing chat:', err)
       toast.error('Erro ao limpar histórico')
+    } finally {
+      setClearingChat(false)
     }
   }
 
@@ -2366,6 +2394,17 @@ Instruções:
               </div>
           </DraggablePanel>
         )}
+
+        <ConfirmDialog
+          open={Boolean(pendingNotebookDelete)}
+          title="Excluir caderno"
+          description={pendingNotebookDelete ? `O caderno "${pendingNotebookDelete.title}" será removido permanentemente.` : ''}
+          confirmText="Excluir permanentemente"
+          cancelText="Cancelar"
+          danger
+          onCancel={() => setPendingNotebookDelete(null)}
+          onConfirm={confirmDeleteNotebook}
+        />
       </div>
     )
   }
@@ -3447,6 +3486,29 @@ Instruções:
         stats={researchModalStats}
         canClose={researchModalCanClose}
       />
+
+      <ConfirmDialog
+        open={showClearChatConfirm}
+        title="Limpar histórico de conversa"
+        description="Todas as mensagens do chat serão removidas. As fontes e artefatos serão mantidos."
+        confirmText="Limpar histórico"
+        cancelText="Cancelar"
+        danger
+        loading={clearingChat}
+        onCancel={() => setShowClearChatConfirm(false)}
+        onConfirm={confirmClearChat}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingArtifactDelete)}
+        title="Excluir artefato"
+        description={pendingArtifactDelete ? `O artefato "${pendingArtifactDelete.title}" será removido permanentemente.` : ''}
+        confirmText="Excluir artefato"
+        cancelText="Cancelar"
+        danger
+        onCancel={() => setPendingArtifactDelete(null)}
+        onConfirm={confirmDeleteArtifact}
+      />
     </div>
   )
 }
@@ -3602,9 +3664,7 @@ function ArtifactCard({
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (window.confirm(`Excluir "${artifact.title}"? Esta ação é irreversível.`)) {
-      onDelete()
-    }
+    onDelete()
   }
 
   return (

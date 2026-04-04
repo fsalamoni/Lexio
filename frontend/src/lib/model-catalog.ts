@@ -94,12 +94,16 @@ export function useCatalogModels(): ModelOption[] {
 
   useEffect(() => {
     // Load from Firestore on mount
-    loadModelCatalog().then(setModels).catch(() => {})
+    loadModelCatalog().then(setModels).catch((err) => {
+      console.warn('Failed to load model catalog on mount:', err)
+    })
 
     // Refresh when catalog changes (e.g., ModelCatalogCard saved)
     const handler = () => {
       if (catalogCache) setModels(catalogCache)
-      else loadModelCatalog().then(setModels).catch(() => {})
+      else loadModelCatalog().then(setModels).catch((err) => {
+        console.warn('Failed to refresh model catalog:', err)
+      })
     }
     window.addEventListener(CATALOG_UPDATED_EVENT, handler)
     return () => window.removeEventListener(CATALOG_UPDATED_EVENT, handler)
