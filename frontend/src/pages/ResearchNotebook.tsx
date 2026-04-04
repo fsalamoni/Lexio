@@ -29,7 +29,6 @@ import {
   deleteResearchNotebook,
   getResearchNotebook,
   listAcervoDocuments,
-  getSettings,
   type ResearchNotebookData,
   type NotebookSource,
   type NotebookMessage,
@@ -55,11 +54,32 @@ import {
   uploadNotebookMediaArtifact,
   uploadNotebookVideoArtifact,
 } from '../lib/notebook-media-storage'
+import { synthesizeAudioFromScript } from '../lib/notebook-audio-pipeline'
 import { extractFileText, isSupportedTextFile, SUPPORTED_TEXT_FILE_EXTENSIONS } from '../lib/file-text-extractor'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
 import DraggablePanel from '../components/DraggablePanel'
+import {
+  DeepResearchModal,
+  type ResearchStep,
+  type ResearchStats,
+  createExternalSearchSteps,
+  createDeepSearchSteps,
+  createJurisprudenceSteps,
+} from '../components/DeepResearchModal'
+import {
+  searchDataJud,
+  formatDataJudResults,
+  DEFAULT_TRIBUNALS,
+  type DataJudSearchProgress,
+} from '../lib/datajud-service'
+import {
+  searchWebResults as searchWebResultsService,
+  deepWebSearch,
+  searchWeb as searchWebService,
+  fetchUrlContent as fetchUrlContentService,
+} from '../lib/web-search-service'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -83,6 +103,8 @@ const MAX_DEEP_EXTERNAL_TEXT_CHARS = 12_000
 const MAX_DEEP_EXTERNAL_SOURCE_SNIPPET_CHARS = 6_000
 /** Min chars in source text_content to be considered indexed */
 const MIN_SOURCE_CHARS = 20
+const ENABLE_LITERAL_MEDIA_AUTOGENERATION =
+  (import.meta.env.VITE_ENABLE_LITERAL_MEDIA_AUTOGENERATION as string | undefined) !== 'false'
 
 /** Human-readable agent labels for error messages */
 const AGENT_LABELS: Record<string, string> = {
@@ -100,112 +122,8 @@ const AGENT_LABELS: Record<string, string> = {
   nb_acervo_curador: 'Curador de Fontes',
 }
 
-// ── URL Fetching via CORS proxy ───────────────────────────────────────────────
-
-/**
- * Fetches readable text from a URL using Jina Reader, falling back to
- * allorigins CORS proxy. Both are free, no-auth CORS-friendly services.
- */
-async function fetchUrlContent(url: string): Promise<string> {
-  // Try Jina Reader — returns clean readable text for any webpage
-  try {
-    const jinaUrl = `https://r.jina.ai/${url}`
-    const resp = await fetch(jinaUrl, {
-      headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
-      signal: AbortSignal.timeout(20_000),
-    })
-    if (resp.ok) {
-      const text = await resp.text()
-      if (text && text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
-    }
-  } catch { /* try next */ }
-
-  // Fallback: allorigins proxy
-  try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15_000) })
-    if (resp.ok) {
-      const data = await resp.json() as { contents?: string }
-      const raw = data.contents || ''
-      const text = raw.replace(/<[^>]+>/g, ' ').replace(/\s{3,}/g, ' ').trim()
-      if (text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
-    }
-  } catch { /* not available */ }
-
-  return ''
-}
-
-// ── Web Search via Reader Proxy ────────────────────────────────────────────────
-
-/**
- * Lightweight web search using readable proxy pages to avoid browser CORS issues.
- */
-async function searchWeb(query: string): Promise<string> {
-  try {
-    const ddgHtmlUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
-    const readerUrl = `https://r.jina.ai/${ddgHtmlUrl}`
-    const resp = await fetch(readerUrl, {
-      headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
-      signal: AbortSignal.timeout(12_000),
-    })
-    if (!resp.ok) return ''
-    const text = (await resp.text()).trim()
-    if (text.length < 80) return ''
-    return text.slice(0, MAX_WEB_SEARCH_CHARS)
-  } catch {
-    return ''
-  }
-}
-
-type ExternalSearchResult = {
-  title: string
-  url: string
-  snippet: string
-}
-
-async function searchWebResults(query: string): Promise<ExternalSearchResult[]> {
-  try {
-    const ddgHtmlUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
-    const readerUrl = `https://r.jina.ai/${ddgHtmlUrl}`
-    const resp = await fetch(readerUrl, {
-      headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
-      signal: AbortSignal.timeout(12_000),
-    })
-    if (!resp.ok) return []
-    const text = await resp.text()
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-    const results: ExternalSearchResult[] = []
-    for (const line of lines) {
-      if (results.length >= 10) break
-      const urls = line.match(/https:\/\/[^\s)]+/g) || []
-      for (const url of urls) {
-        if (results.length >= 10) break
-        const clean = url.replace(/[),.;]+$/, '')
-        const title = line.replace(clean, '').replace(/^[-•\d.\s]+/, '').trim() || clean
-        const exists = results.some(r => r.url === clean)
-        if (exists) continue
-        results.push({
-          title: title.slice(0, 180),
-          url: clean,
-          snippet: line.slice(0, 300),
-        })
-      }
-    }
-    return results
-  } catch {
-    return []
-  }
-}
-
-function normalizeDataJudSearchQuery(raw: string): string {
-  return raw
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\p{L}\p{N}\s\-./]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 120)
-}
+// Old inline fetchUrlContent / searchWeb / searchWebResults / normalizeDataJudSearchQuery
+// replaced by imports from ../lib/web-search-service and ../lib/datajud-service
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -219,6 +137,24 @@ function formatDate(iso: string): string {
   } catch {
     return iso
   }
+}
+
+function getExtensionFromMimeType(mimeType?: string, fallback = '.bin'): string {
+  if (!mimeType) return fallback
+  const value = mimeType.toLowerCase()
+  if (value.includes('video/mp4')) return '.mp4'
+  if (value.includes('video/webm')) return '.webm'
+  if (value.includes('video/ogg')) return '.ogv'
+  if (value.includes('video/quicktime')) return '.mov'
+  if (value.includes('audio/wav') || value.includes('audio/x-wav')) return '.wav'
+  if (value.includes('audio/mpeg') || value.includes('audio/mp3')) return '.mp3'
+  if (value.includes('audio/ogg')) return '.ogg'
+  if (value.includes('audio/webm')) return '.weba'
+  if (value.includes('audio/aac')) return '.aac'
+  if (value.includes('image/png')) return '.png'
+  if (value.includes('image/jpeg') || value.includes('image/jpg')) return '.jpg'
+  if (value.includes('image/webp')) return '.webp'
+  return fallback
 }
 
 type ArtifactDef = { type: StudioArtifactType; label: string; icon: React.ElementType; description: string }
@@ -254,7 +190,7 @@ const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
     label: 'Mídia', emoji: '🎬', color: 'amber',
     items: [
       { type: 'audio_script', label: 'Roteiro de Áudio', icon: Mic, description: 'Script de podcast com timeline e notas de produção' },
-      { type: 'video_script', label: 'Gerador de Vídeo', icon: Video, description: 'Geração completa de vídeo com roteiro, cenas, visuais e pós-produção' },
+      { type: 'video_script', label: 'Planejamento de Vídeo + Estúdio', icon: Video, description: 'Fase 1: planejamento textual completo. Fase 2: geração literal de imagem/áudio/vídeo no estúdio.' },
     ],
   },
 ]
@@ -496,6 +432,16 @@ export default function ResearchNotebook() {
   const [externalResearchLoading, setExternalResearchLoading] = useState(false)
   const [externalDeepLoading, setExternalDeepLoading] = useState(false)
   const [jurisprudenceLoading, setJurisprudenceLoading] = useState(false)
+
+  // Deep Research Modal state
+  const [researchModalOpen, setResearchModalOpen] = useState(false)
+  const [researchModalTitle, setResearchModalTitle] = useState('')
+  const [researchModalSubtitle, setResearchModalSubtitle] = useState('')
+  const [researchModalVariant, setResearchModalVariant] = useState<'external' | 'deep' | 'jurisprudencia'>('external')
+  const [researchModalSteps, setResearchModalSteps] = useState<ResearchStep[]>([])
+  const [researchModalStats, setResearchModalStats] = useState<ResearchStats>({ sourcesFound: 0, urlsExamined: 0, tribunalsQueried: 0, tokensUsed: 0, elapsedMs: 0 })
+  const [researchModalCanClose, setResearchModalCanClose] = useState(false)
+  const researchAbortRef = useRef<AbortController | null>(null)
   const [sourceUploadLoading, setSourceUploadLoading] = useState(false)
   const [acervoDocs, setAcervoDocs] = useState<AcervoDocumentData[]>([])
   const [acervoLoading, setAcervoLoading] = useState(false)
@@ -538,6 +484,8 @@ export default function ResearchNotebook() {
   const [videoProduction, setVideoProduction] = useState<VideoProductionPackage | null>(null)
   const [videoStudioApiKey, setVideoStudioApiKey] = useState<string | undefined>(undefined)
   const [videoStudioAutoGenerate, setVideoStudioAutoGenerate] = useState(false)
+  const [audioGenLoading, setAudioGenLoading] = useState(false)
+  const [audioGeneratingArtifactId, setAudioGeneratingArtifactId] = useState<string | null>(null)
 
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
@@ -895,7 +843,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     setSourceUrlLoading(true)
     toast.info('Buscando conteúdo do link...')
     try {
-      const textContent = await fetchUrlContent(trimmedUrl)
+      const textContent = await fetchUrlContentService(trimmedUrl)
       const newSource: NotebookSource = {
         id: generateId(),
         type: 'link',
@@ -924,16 +872,75 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     }
   }
 
+  // ── Modal step updater helper ─────────────────────────────────────────────
+  const isAnyResearchLoading = externalResearchLoading || externalDeepLoading || jurisprudenceLoading
+
+  const updateModalStep = (stepId: string, update: Partial<ResearchStep>) => {
+    setResearchModalSteps(prev => prev.map(s =>
+      s.id === stepId ? { ...s, ...update } : s,
+    ))
+  }
+
+  const addModalSubstep = (stepId: string, substep: string) => {
+    setResearchModalSteps(prev => prev.map(s =>
+      s.id === stepId ? { ...s, substeps: [...s.substeps, substep] } : s,
+    ))
+  }
+
+  /** Mark all active/pending steps as error — used in catch blocks */
+  const failAllActiveSteps = (errorDetail: string) => {
+    setResearchModalSteps(prev => prev.map(s =>
+      s.status === 'active' || s.status === 'pending'
+        ? { ...s, status: 'error' as const, detail: s.status === 'active' ? errorDetail : undefined }
+        : s,
+    ))
+  }
+
+  /** Auto-close modal after a brief delay so user can see success state */
+  const autoCloseModal = (delayMs = 1800) => {
+    setTimeout(() => {
+      setResearchModalOpen(false)
+    }, delayMs)
+  }
+
   const handleAddExternalSearchSource = async () => {
     if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
+    const query = externalSearchQuery.trim()
+
+    // Open modal
+    const steps = createExternalSearchSteps()
+    setResearchModalTitle('Pesquisa Externa')
+    setResearchModalSubtitle(query)
+    setResearchModalVariant('external')
+    setResearchModalSteps(steps)
+    setResearchModalStats({ sourcesFound: 0, urlsExamined: 0, tribunalsQueried: 0, tokensUsed: 0, elapsedMs: 0 })
+    setResearchModalCanClose(false)
+    setResearchModalOpen(true)
+    const abortController = new AbortController()
+    researchAbortRef.current = abortController
+
     setExternalResearchLoading(true)
+    const t0 = performance.now()
     try {
-      const query = externalSearchQuery.trim()
-      const results = await searchWebResults(query)
+      // Step 1: Search
+      updateModalStep('search', { status: 'active' })
+      addModalSubstep('search', 'Pesquisando DuckDuckGo via Jina Reader...')
+      const results = await searchWebResultsService(query, abortController.signal)
+      setResearchModalStats(prev => ({ ...prev, sourcesFound: results.length, elapsedMs: Math.round(performance.now() - t0) }))
+      addModalSubstep('search', `${results.length} resultado(s) encontrado(s)`)
+      updateModalStep('search', { status: results.length > 0 ? 'done' : 'error', detail: results.length > 0 ? `${results.length} resultados` : 'Nenhum resultado' })
+
       if (results.length === 0) {
+        setResearchModalCanClose(true)
         toast.info('Nenhum resultado útil encontrado na pesquisa externa.')
         return
       }
+
+      if (abortController.signal.aborted) return
+
+      // Step 2: Analyze results
+      updateModalStep('analyze', { status: 'active' })
+      addModalSubstep('analyze', 'Preparando conteúdo para síntese...')
 
       const textContent = results.map((r, i) =>
         `[${i + 1}] ${r.title}\nURL: ${r.url}\nResumo: ${r.snippet}`,
@@ -942,12 +949,17 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       const models = await loadResearchNotebookModels()
       const model = models.notebook_pesquisador_externo || models.notebook_analista
       if (!model) {
-        toast.warning(
-          'Modelo obrigatório não configurado',
-          'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador Externo" (chave: notebook_pesquisador_externo).',
-        )
+        updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
+        setResearchModalCanClose(true)
+        toast.warning('Modelo obrigatório não configurado', 'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador Externo".')
         return
       }
+      addModalSubstep('analyze', `Usando modelo: ${model}`)
+      updateModalStep('analyze', { status: 'done' })
+
+      // Step 3: Synthesize
+      updateModalStep('synthesize', { status: 'active' })
+      addModalSubstep('synthesize', 'Solicitando síntese ao LLM...')
       const apiKey = await getOpenRouterKey()
 
       const externalResult = await callLLM(
@@ -958,6 +970,14 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         1800,
         0.2,
       )
+
+      setResearchModalStats(prev => ({
+        ...prev,
+        tokensUsed: externalResult.tokens_in + externalResult.tokens_out,
+        elapsedMs: Math.round(performance.now() - t0),
+      }))
+      addModalSubstep('synthesize', `Síntese gerada (${externalResult.tokens_out} tokens)`)
+      updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
 
       const source: NotebookSource = {
         id: generateId(),
@@ -993,48 +1013,113 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       setExternalSearchQuery('')
       setSuggestions([])
       toast.success(`Pesquisa externa adicionada com ${results.length} resultado(s).`)
+      autoCloseModal()
     } catch (err) {
+      if (abortController.signal.aborted) return
       console.error('External search source error:', err)
+      failAllActiveSteps(err instanceof Error ? err.message : 'Erro inesperado')
       toast.error('Erro ao adicionar pesquisa externa')
     } finally {
       setExternalResearchLoading(false)
+      setResearchModalCanClose(true)
+      researchAbortRef.current = null
     }
   }
 
   const handleAddDeepExternalSearchSource = async () => {
     if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
+    const query = externalSearchQuery.trim()
+
+    // Open modal
+    const steps = createDeepSearchSteps()
+    setResearchModalTitle('Pesquisa Profunda')
+    setResearchModalSubtitle(query)
+    setResearchModalVariant('deep')
+    setResearchModalSteps(steps)
+    setResearchModalStats({ sourcesFound: 0, urlsExamined: 0, tribunalsQueried: 0, tokensUsed: 0, elapsedMs: 0 })
+    setResearchModalCanClose(false)
+    setResearchModalOpen(true)
+    const abortController = new AbortController()
+    researchAbortRef.current = abortController
+
     setExternalDeepLoading(true)
+    const t0 = performance.now()
     try {
-      const query = externalSearchQuery.trim()
-      const results = await searchWebResults(query)
-      if (results.length === 0) {
+      // Step 1: Search
+      updateModalStep('search', { status: 'active' })
+      addModalSubstep('search', 'Pesquisando na web com múltiplas estratégias...')
+
+      const deepResult = await deepWebSearch(query, (progress) => {
+        if (progress.phase === 'searching') {
+          addModalSubstep('search', 'Consultando DuckDuckGo...')
+        } else if (progress.phase === 'fetching') {
+          setResearchModalStats(prev => ({
+            ...prev,
+            sourcesFound: progress.resultsFound,
+            urlsExamined: progress.urlsFetched,
+            elapsedMs: Math.round(performance.now() - t0),
+          }))
+          if (progress.currentUrl) {
+            try {
+              addModalSubstep('fetch', `Extraindo: ${new URL(progress.currentUrl).hostname}...`)
+            } catch {
+              addModalSubstep('fetch', `Extraindo conteúdo...`)
+            }
+          }
+        }
+      }, abortController.signal)
+
+      updateModalStep('search', {
+        status: deepResult.results.length > 0 ? 'done' : 'error',
+        detail: `${deepResult.results.length} resultado(s)`,
+      })
+
+      // Step 2: Fetch content
+      updateModalStep('fetch', { status: deepResult.contents.length > 0 ? 'done' : 'error' })
+      addModalSubstep('fetch', `${deepResult.contents.length} página(s) com conteúdo extraído`)
+
+      if (deepResult.contents.length === 0 && deepResult.results.length === 0) {
+        setResearchModalCanClose(true)
         toast.info('Nenhum resultado útil para pesquisa externa profunda.')
         return
       }
 
-      const topResults = results.slice(0, 3)
-      const fetched = await Promise.all(
-        topResults.map(async r => ({ ...r, content: await fetchUrlContent(r.url) })),
-      )
-      const fetchedWithContent = fetched.filter(r => (r.content || '').length >= 120)
-      if (fetchedWithContent.length === 0) {
-        toast.info('Não foi possível extrair conteúdo das páginas da pesquisa profunda.')
-        return
-      }
+      if (abortController.signal.aborted) return
+
+      // Step 3: Analyze
+      updateModalStep('analyze', { status: 'active' })
+      addModalSubstep('analyze', 'Preparando conteúdo para análise profunda...')
 
       const models = await loadResearchNotebookModels()
       const model = models.notebook_pesquisador_externo_profundo || models.notebook_analista
       if (!model) {
+        updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
+        setResearchModalCanClose(true)
         toast.warning('Modelo não configurado', 'Configure um modelo para o pesquisador externo profundo no Admin.')
         return
       }
+      addModalSubstep('analyze', `Modelo: ${model}`)
+      updateModalStep('analyze', { status: 'done' })
+
+      // Step 4: Synthesize
+      updateModalStep('synthesize', { status: 'active' })
+      addModalSubstep('synthesize', 'Sintetizando conhecimento profundo...')
       const apiKey = await getOpenRouterKey()
 
-      const compiled = fetchedWithContent.map((r, i) =>
-        `<fonte_${i + 1}>\nTÍTULO: ${r.title}\nURL: ${r.url}\n${r.content.slice(0, MAX_DEEP_EXTERNAL_SOURCE_SNIPPET_CHARS)}\n</fonte_${i + 1}>`,
-      ).join('\n\n')
+      // Build prompt from deep search contents
+      let compiled: string
+      if (deepResult.contents.length > 0) {
+        compiled = deepResult.contents.map((r, i) =>
+          `<fonte_${i + 1}>\nTÍTULO: ${r.title}\nURL: ${r.url}\n${r.content.slice(0, MAX_DEEP_EXTERNAL_SOURCE_SNIPPET_CHARS)}\n</fonte_${i + 1}>`,
+        ).join('\n\n')
+      } else {
+        // Fallback to search snippets if no full content was extracted
+        compiled = deepResult.results.map((r, i) =>
+          `[${i + 1}] ${r.title}\nURL: ${r.url}\nResumo: ${r.snippet}`,
+        ).join('\n\n')
+      }
 
-      const deepResult = await callLLM(
+      const llmResult = await callLLM(
         apiKey,
         'Você é um pesquisador jurídico externo profundo. Sintetize fontes web em texto objetivo e acionável para caderno de pesquisa. Responda em português, com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
         `Consulta do usuário: "${query}"\n\nFontes coletadas:\n${compiled}\n\nProduza uma síntese profunda com foco jurídico.`,
@@ -1043,14 +1128,22 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         0.2,
       )
 
+      setResearchModalStats(prev => ({
+        ...prev,
+        tokensUsed: llmResult.tokens_in + llmResult.tokens_out,
+        elapsedMs: Math.round(performance.now() - t0),
+      }))
+      addModalSubstep('synthesize', `Síntese gerada (${llmResult.tokens_out} tokens)`)
+      updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
+
       const source: NotebookSource = {
         id: generateId(),
         type: 'external_deep',
         name: `Pesquisa externa profunda: ${query}`,
         reference: query,
         content_type: 'text/plain',
-        size_bytes: deepResult.content.length,
-        text_content: deepResult.content.slice(0, MAX_DEEP_EXTERNAL_TEXT_CHARS),
+        size_bytes: llmResult.content.length,
+        text_content: llmResult.content.slice(0, MAX_DEEP_EXTERNAL_TEXT_CHARS),
         status: 'indexed',
         added_at: new Date().toISOString(),
       }
@@ -1060,11 +1153,11 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         source_id: activeNotebook.id,
         phase: 'notebook_pesquisador_externo_profundo',
         agent_name: 'Pesquisador Externo Profundo',
-        model: deepResult.model,
-        tokens_in: deepResult.tokens_in,
-        tokens_out: deepResult.tokens_out,
-        cost_usd: deepResult.cost_usd,
-        duration_ms: deepResult.duration_ms,
+        model: llmResult.model,
+        tokens_in: llmResult.tokens_in,
+        tokens_out: llmResult.tokens_out,
+        cost_usd: llmResult.cost_usd,
+        duration_ms: llmResult.duration_ms,
       })
 
       const updatedSources = [...activeNotebook.sources, source]
@@ -1077,89 +1170,116 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       setExternalSearchQuery('')
       setSuggestions([])
       toast.success('Pesquisa externa profunda adicionada como fonte.')
+      autoCloseModal()
     } catch (err) {
+      if (abortController.signal.aborted) return
       console.error('Deep external search source error:', err)
+      failAllActiveSteps(err instanceof Error ? err.message : 'Erro inesperado')
       toast.error('Erro na pesquisa externa profunda')
     } finally {
       setExternalDeepLoading(false)
+      setResearchModalCanClose(true)
+      researchAbortRef.current = null
     }
   }
 
   const handleAddJurisprudenceSource = async () => {
     if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
-    setJurisprudenceLoading(true)
-    try {
-      const query = normalizeDataJudSearchQuery(externalSearchQuery.trim())
-      if (!query) {
-        toast.error('Consulta inválida para jurisprudência: use ao menos um termo alfanumérico (ex.: "improbidade administrativa").')
-        return
-      }
-      const settings = await getSettings()
-      const apiKeys = (settings.api_keys ?? {}) as Record<string, string>
-      const apiKey = apiKeys.datajud_api_key
-      const url = (settings.datajud_url as string | undefined)?.trim()
-      if (!apiKey) {
-        toast.warning('DataJud não configurado', 'Configure a DataJud API Key no painel administrativo para pesquisar jurisprudência.')
-        return
-      }
-      if (!url) {
-        toast.warning('DataJud não configurado', 'Configure a URL do DataJud no painel administrativo para pesquisar jurisprudência.')
-        return
-      }
+    const query = externalSearchQuery.trim()
 
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `APIKey ${apiKey}`,
-          'Content-Type': 'application/json',
+    // Open modal
+    const steps = createJurisprudenceSteps()
+    setResearchModalTitle('Pesquisa de Jurisprudência')
+    setResearchModalSubtitle(query)
+    setResearchModalVariant('jurisprudencia')
+    setResearchModalSteps(steps)
+    setResearchModalStats({ sourcesFound: 0, urlsExamined: 0, tribunalsQueried: 0, tokensUsed: 0, elapsedMs: 0 })
+    setResearchModalCanClose(false)
+    setResearchModalOpen(true)
+    const abortController = new AbortController()
+    researchAbortRef.current = abortController
+
+    setJurisprudenceLoading(true)
+    const t0 = performance.now()
+    try {
+      // Step 1: Query tribunals
+      updateModalStep('query', { status: 'active' })
+      addModalSubstep('query', `Consultando ${DEFAULT_TRIBUNALS.length} tribunais em paralelo...`)
+
+      const djResult = await searchDataJud(query, {
+        onProgress: (progress) => {
+          setResearchModalStats(prev => ({
+            ...prev,
+            tribunalsQueried: progress.tribunalsQueried,
+            sourcesFound: progress.resultsFound,
+            elapsedMs: Math.round(performance.now() - t0),
+          }))
+          if (progress.currentTribunal) {
+            addModalSubstep('query', `${progress.currentTribunal} (${progress.tribunalsQueried}/${progress.tribunalsTotal})`)
+          }
         },
-        body: JSON.stringify({
-          query: { match: { 'assunto.nome': query } },
-          size: 8,
-          sort: [{ dataAjuizamento: { order: 'desc' } }],
-        }),
+        signal: abortController.signal,
       })
 
-      if (!resp.ok) {
-        throw new Error(`DataJud respondeu ${resp.status}`)
+      updateModalStep('query', {
+        status: djResult.results.length > 0 ? 'done' : 'error',
+        detail: `${djResult.results.length} resultado(s) de ${djResult.tribunalsWithResults} tribunal(is)`,
+      })
+
+      if (djResult.errors.length > 0) {
+        addModalSubstep('query', `${djResult.errors.length} tribunal(is) com erro (ignorados)`)
       }
 
-      const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, any> }> } }
-      const hits = data.hits?.hits || []
-      if (hits.length === 0) {
+      // Step 2: Filter results
+      updateModalStep('filter', { status: 'active' })
+      if (djResult.results.length === 0) {
+        updateModalStep('filter', { status: 'error', detail: 'Nenhum resultado encontrado' })
+        setResearchModalCanClose(true)
         toast.info('Nenhum resultado de jurisprudência encontrado no DataJud.')
         return
       }
 
-      const textContent = hits.map((h, i) => {
-        const src = h._source || {}
-        const numero = src.numeroProcesso || '?'
-        const classe = src.classe?.nome || '?'
-        const orgao = src.orgaoJulgador?.nome || '?'
-        const dataAj = String(src.dataAjuizamento || '').slice(0, 10)
-        const assuntos = Array.isArray(src.assunto) ? src.assunto.map((a: any) => a?.nome).filter(Boolean).slice(0, 4).join(', ') : ''
-        return `[${i + 1}] Processo ${numero}\nClasse: ${classe}\nÓrgão: ${orgao}\nData: ${dataAj || '-'}\nAssuntos: ${assuntos || '-'}`
-      }).join('\n\n')
+      addModalSubstep('filter', `Formatando ${djResult.results.length} resultado(s)...`)
+      const textContent = formatDataJudResults(djResult.results)
+      addModalSubstep('filter', `Conteúdo preparado (${(textContent.length / 1000).toFixed(0)}K chars)`)
+      updateModalStep('filter', { status: 'done', detail: `${djResult.results.length} resultados formatados` })
 
+      if (abortController.signal.aborted) return
+
+      // Step 3: Analyze
+      updateModalStep('analyze', { status: 'active' })
       const models = await loadResearchNotebookModels()
       const model = models.notebook_pesquisador_jurisprudencia || models.notebook_analista
       if (!model) {
-        toast.warning(
-          'Modelo obrigatório não configurado',
-          'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador de Jurisprudência (DataJud)" (chave: notebook_pesquisador_jurisprudencia).',
-        )
+        updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
+        setResearchModalCanClose(true)
+        toast.warning('Modelo obrigatório não configurado', 'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador de Jurisprudência (DataJud)".')
         return
       }
+      addModalSubstep('analyze', `Modelo: ${model}`)
+      updateModalStep('analyze', { status: 'done' })
+
+      // Step 4: Synthesize
+      updateModalStep('synthesize', { status: 'active' })
+      addModalSubstep('synthesize', 'Gerando síntese jurisprudencial...')
       const openRouterApiKey = await getOpenRouterKey()
 
       const jurisprudenceResult = await callLLM(
         openRouterApiKey,
         'Você é um pesquisador jurídico especializado em jurisprudência brasileira. Organize e sintetize resultados do DataJud em português com seções: panorama jurisprudencial, precedentes-chave, fundamentos jurídicos e lista de processos.',
-        `Consulta do usuário: "${query}"\n\nResultados DataJud:\n${textContent}\n\nProduza uma síntese objetiva e acionável para o caderno de pesquisa.`,
+        `Consulta do usuário: "${query}"\n\nResultados DataJud (${djResult.results.length} processos de ${djResult.tribunalsWithResults} tribunais):\n${textContent}\n\nProduza uma síntese objetiva e acionável para o caderno de pesquisa.`,
         model,
         2200,
         0.2,
       )
+
+      setResearchModalStats(prev => ({
+        ...prev,
+        tokensUsed: jurisprudenceResult.tokens_in + jurisprudenceResult.tokens_out,
+        elapsedMs: Math.round(performance.now() - t0),
+      }))
+      addModalSubstep('synthesize', `Síntese gerada (${jurisprudenceResult.tokens_out} tokens)`)
+      updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
 
       const source: NotebookSource = {
         id: generateId(),
@@ -1194,12 +1314,17 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       setActiveNotebook({ ...activeNotebook, sources: updatedSources, llm_executions: updatedExecutions })
       setExternalSearchQuery('')
       setSuggestions([])
-      toast.success(`Jurisprudência adicionada com ${hits.length} resultado(s) do DataJud.`)
+      toast.success(`Jurisprudência adicionada com ${djResult.results.length} resultado(s) de ${djResult.tribunalsWithResults} tribunal(is).`)
+      autoCloseModal()
     } catch (err) {
+      if (abortController.signal.aborted) return
       console.error('Jurisprudence source error:', err)
+      failAllActiveSteps(err instanceof Error ? err.message : 'Erro inesperado')
       toast.error('Erro ao consultar jurisprudência no DataJud')
     } finally {
       setJurisprudenceLoading(false)
+      setResearchModalCanClose(true)
+      researchAbortRef.current = null
     }
   }
 
@@ -1289,7 +1414,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       // Optional web search enrichment
       let webSnippet = ''
       if (useWebSearch) {
-        try { webSnippet = await searchWeb(`${activeNotebook.topic} ${userMsg.content}`) } catch { /* non-critical */ }
+        try { webSnippet = await searchWebService(`${activeNotebook.topic} ${userMsg.content}`) } catch { /* non-critical */ }
       }
 
       const systemPrompt = `Você é um assistente de pesquisa jurídica especializado no tema: "${activeNotebook.topic}".
@@ -1621,10 +1746,14 @@ Instruções:
         resolveTask(null)
       } else {
         setVideoProduction(result.package)
-        setVideoStudioAutoGenerate(true)
+        setVideoStudioAutoGenerate(ENABLE_LITERAL_MEDIA_AUTOGENERATION)
         setShowVideoGenCost(false)
         setVideoGenSavedArtifact(null)
-        toast.success('Pipeline concluído! O estúdio abrirá e iniciará a geração literal do vídeo.')
+        toast.success(
+          ENABLE_LITERAL_MEDIA_AUTOGENERATION
+            ? 'Fase 1 concluída. O estúdio abrirá e iniciará automaticamente a Fase 2 (geração literal de mídia).'
+            : 'Fase 1 concluída. O estúdio abrirá para você iniciar manualmente a Fase 2 (geração literal de mídia).',
+        )
         resolveTask(result.package)
       }
     } catch (err) {
@@ -1651,20 +1780,125 @@ Instruções:
     }
   }
 
+  // ── Generate literal audio from saved audio script ─────────────────
+  const handleGenerateAudioFromArtifact = async (artifact: StudioArtifact) => {
+    if (!userId || !activeNotebook?.id || audioGenLoading) return
+
+    const uid = userId
+    const notebookId = activeNotebook.id
+    setAudioGenLoading(true)
+    setAudioGeneratingArtifactId(artifact.id)
+
+    try {
+      const apiKey = await getOpenRouterKey()
+      if (!apiKey) {
+        toast.error('Chave da API não configurada. Acesse Administração > Chaves de API.')
+        return
+      }
+
+      const synthesis = await synthesizeAudioFromScript({
+        apiKey,
+        rawScriptContent: artifact.content,
+      })
+
+      const storedAudio = await uploadNotebookMediaArtifact(
+        uid,
+        notebookId,
+        `${artifact.title}-audio-literal`,
+        synthesis.audioBlob,
+        'audios',
+        getExtensionFromMimeType(synthesis.mimeType, '.mp3'),
+      )
+
+      const updatedArtifacts: StudioArtifact[] = activeNotebook.artifacts.map((current): StudioArtifact => {
+        if (current.id !== artifact.id) return current
+
+        try {
+          const parsed = JSON.parse(current.content) as Record<string, unknown>
+          return {
+            ...current,
+            format: 'json' as const,
+            content: JSON.stringify({
+              ...parsed,
+              audioUrl: storedAudio.url,
+              audioStoragePath: storedAudio.path,
+              audioMimeType: synthesis.mimeType,
+            }, null, 2),
+          }
+        } catch {
+          const separator = current.content.trim().endsWith('\n') ? '' : '\n'
+          return {
+            ...current,
+            content: `${current.content}${separator}\n\n## Audio Literal\n\nArquivo: ${storedAudio.url}`,
+          }
+        }
+      })
+
+      await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
+
+      setActiveNotebook({
+        ...activeNotebook,
+        artifacts: updatedArtifacts,
+      })
+
+      if (viewingArtifact?.id === artifact.id) {
+        const refreshed = updatedArtifacts.find(a => a.id === artifact.id)
+        if (refreshed) setViewingArtifact(refreshed)
+      }
+
+      toast.success('Áudio literal gerado com sucesso!', `${synthesis.chunkCount} parte(s) sintetizada(s)`)    
+    } catch (err) {
+      console.error('Audio literal generation error:', err)
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('429')) {
+        toast.warning('Limite de TTS atingido', 'Aguarde alguns segundos e tente novamente.')
+      } else {
+        toast.error('Falha na geração literal de áudio', msg)
+      }
+    } finally {
+      setAudioGenLoading(false)
+      setAudioGeneratingArtifactId(null)
+    }
+  }
+
   // ── Save video studio production as notebook artifact ──────────────
   const handleSaveVideoStudioToNotebook = async (production: VideoProductionPackage) => {
     if (!userId || !activeNotebook?.id) return
+    const uid = userId
+    const notebookId = activeNotebook.id
     try {
+      const uploadWithRetry = async <T,>(
+        label: string,
+        task: () => Promise<T>,
+      ): Promise<T> => {
+        let lastError: unknown
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            return await task()
+          } catch (error) {
+            lastError = error
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 800 * attempt))
+              continue
+            }
+          }
+        }
+        throw new Error(`${label} falhou após múltiplas tentativas: ${lastError instanceof Error ? lastError.message : String(lastError)}`)
+      }
+
       let productionToSave = production
       const renderedVideoUrl = production.renderedVideo?.url || ''
 
       if (renderedVideoUrl && (renderedVideoUrl.startsWith('blob:') || renderedVideoUrl.startsWith('data:'))) {
         const videoBlob = await fetch(renderedVideoUrl).then(resp => resp.blob())
-        const storedVideo = await uploadNotebookVideoArtifact(
-          userId,
-          activeNotebook.id,
-          production.title,
-          videoBlob,
+        const storedVideo = await uploadWithRetry(
+          'Upload do vídeo final',
+          () => uploadNotebookVideoArtifact(
+            uid,
+            notebookId,
+            production.title,
+            videoBlob,
+          ),
         )
         productionToSave = {
           ...production,
@@ -1682,13 +1916,16 @@ Instruções:
             return renderedScope
           }
           const scopedBlob = await fetch(renderedScope.url).then(resp => resp.blob())
-          const stored = await uploadNotebookMediaArtifact(
-            userId,
-            activeNotebook.id,
-            `${production.title}-${renderedScope.scopeKey}`,
-            scopedBlob,
-            'videos',
-            '.webm',
+          const stored = await uploadWithRetry(
+            `Upload render de escopo ${renderedScope.scopeKey}`,
+            () => uploadNotebookMediaArtifact(
+              uid,
+              notebookId,
+              `${production.title}-${renderedScope.scopeKey}`,
+              scopedBlob,
+              'videos',
+              getExtensionFromMimeType(renderedScope.mimeType || scopedBlob.type, '.webm'),
+            ),
           )
           return {
             ...renderedScope,
@@ -1711,13 +1948,16 @@ Instruções:
 
         if (imageUrl && (imageUrl.startsWith('blob:') || imageUrl.startsWith('data:'))) {
           const imageBlob = await fetch(imageUrl).then(resp => resp.blob())
-          const stored = await uploadNotebookMediaArtifact(
-            userId,
-            activeNotebook.id,
-            `${production.title}-scene-${sceneAsset.sceneNumber}-image`,
-            imageBlob,
-            'images',
-            '.png',
+          const stored = await uploadWithRetry(
+            `Upload imagem cena ${sceneAsset.sceneNumber}`,
+            () => uploadNotebookMediaArtifact(
+              uid,
+              notebookId,
+              `${production.title}-scene-${sceneAsset.sceneNumber}-image`,
+              imageBlob,
+              'images',
+              getExtensionFromMimeType(imageBlob.type, '.png'),
+            ),
           )
           imageUrl = stored.url
           imageStoragePath = stored.path
@@ -1725,13 +1965,16 @@ Instruções:
 
         if (narrationUrl && (narrationUrl.startsWith('blob:') || narrationUrl.startsWith('data:'))) {
           const narrationBlob = await fetch(narrationUrl).then(resp => resp.blob())
-          const stored = await uploadNotebookMediaArtifact(
-            userId,
-            activeNotebook.id,
-            `${production.title}-scene-${sceneAsset.sceneNumber}-narration`,
-            narrationBlob,
-            'audios',
-            '.wav',
+          const stored = await uploadWithRetry(
+            `Upload narração cena ${sceneAsset.sceneNumber}`,
+            () => uploadNotebookMediaArtifact(
+              uid,
+              notebookId,
+              `${production.title}-scene-${sceneAsset.sceneNumber}-narration`,
+              narrationBlob,
+              'audios',
+              getExtensionFromMimeType(narrationBlob.type, '.wav'),
+            ),
           )
           narrationUrl = stored.url
           narrationStoragePath = stored.path
@@ -1741,13 +1984,16 @@ Instruções:
           videoClips = await Promise.all(videoClips.map(async clip => {
             if (!clip.url || (!clip.url.startsWith('blob:') && !clip.url.startsWith('data:'))) return clip
             const clipBlob = await fetch(clip.url).then(resp => resp.blob())
-            const stored = await uploadNotebookMediaArtifact(
-              userId,
-              activeNotebook.id,
-              `${production.title}-scene-${clip.sceneNumber}-part-${clip.partNumber}`,
-              clipBlob,
-              'videos',
-              '.webm',
+            const stored = await uploadWithRetry(
+              `Upload clip cena ${clip.sceneNumber} parte ${clip.partNumber}`,
+              () => uploadNotebookMediaArtifact(
+                uid,
+                notebookId,
+                `${production.title}-scene-${clip.sceneNumber}-part-${clip.partNumber}`,
+                clipBlob,
+                'videos',
+                getExtensionFromMimeType(clip.mimeType || clipBlob.type, '.webm'),
+              ),
             )
             return {
               ...clip,
@@ -1770,13 +2016,16 @@ Instruções:
       let soundtrackAsset = productionToSave.soundtrackAsset
       if (soundtrackAsset?.url && (soundtrackAsset.url.startsWith('blob:') || soundtrackAsset.url.startsWith('data:'))) {
         const soundtrackBlob = await fetch(soundtrackAsset.url).then(resp => resp.blob())
-        const stored = await uploadNotebookMediaArtifact(
-          userId,
-          activeNotebook.id,
-          `${production.title}-soundtrack`,
-          soundtrackBlob,
-          'audios',
-          '.wav',
+        const stored = await uploadWithRetry(
+          'Upload trilha sonora',
+          () => uploadNotebookMediaArtifact(
+            userId,
+            notebookId,
+            `${production.title}-soundtrack`,
+            soundtrackBlob,
+            'audios',
+            getExtensionFromMimeType(soundtrackAsset?.mimeType || soundtrackBlob.type, '.wav'),
+          ),
         )
         soundtrackAsset = {
           ...soundtrackAsset,
@@ -1827,7 +2076,6 @@ Instruções:
       setActiveNotebook({ ...activeNotebook, artifacts: updatedArtifacts })
       toast.success(existingIdx >= 0 ? 'Estúdio de vídeo atualizado!' : 'Estúdio de vídeo salvo nos artefatos do caderno!')
       setVideoProduction(productionToSave)
-      setActiveTab('artifacts')
     } catch (err) {
       console.error('Error saving video studio artifact:', err)
       toast.error('Erro ao salvar estúdio nos artefatos.')
@@ -2630,30 +2878,39 @@ Instruções:
                     placeholder="Tema para pesquisa externa / profunda / jurisprudência..."
                     value={externalSearchQuery}
                     onChange={e => setExternalSearchQuery(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && externalSearchQuery.trim() && !isAnyResearchLoading) {
+                        handleAddExternalSearchSource()
+                      }
+                    }}
+                    disabled={isAnyResearchLoading}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none disabled:opacity-50 disabled:bg-gray-50"
                   />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={handleAddExternalSearchSource}
-                    disabled={!externalSearchQuery.trim() || externalResearchLoading}
-                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
+                    disabled={!externalSearchQuery.trim() || isAnyResearchLoading}
+                    title="Busca rápida na web com síntese via IA"
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium transition-colors inline-flex items-center gap-1.5"
                   >
                     {externalResearchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
                     Pesquisa Externa
                   </button>
                   <button
                     onClick={handleAddDeepExternalSearchSource}
-                    disabled={!externalSearchQuery.trim() || externalDeepLoading}
-                    className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
+                    disabled={!externalSearchQuery.trim() || isAnyResearchLoading}
+                    title="Busca profunda: extrai conteúdo completo das páginas encontradas"
+                    className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium transition-colors inline-flex items-center gap-1.5"
                   >
                     {externalDeepLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
-                    Pesquisa Externa Profunda
+                    Pesquisa Profunda
                   </button>
                   <button
                     onClick={handleAddJurisprudenceSource}
-                    disabled={!externalSearchQuery.trim() || jurisprudenceLoading}
-                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-40 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
+                    disabled={!externalSearchQuery.trim() || isAnyResearchLoading}
+                    title="Pesquisa jurisprudência em 21 tribunais brasileiros via DataJud (CNJ)"
+                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium transition-colors inline-flex items-center gap-1.5"
                   >
                     {jurisprudenceLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Library className="w-3.5 h-3.5" />}
                     Jurisprudência (DataJud)
@@ -3106,10 +3363,18 @@ Instruções:
               setShowVideoGenCost(true)
               setViewingArtifact(null)
             } : undefined}
+            onGenerateAudio={viewingArtifact.type === 'audio_script' ? () => {
+              handleGenerateAudioFromArtifact(viewingArtifact)
+            } : undefined}
             onOpenStudio={isVideoStudio ? () => {
               try {
                 const pkg = JSON.parse(viewingArtifact.content)
                 setVideoProduction(pkg)
+                const shouldAutoResume = ENABLE_LITERAL_MEDIA_AUTOGENERATION && (
+                  pkg?.literalGenerationState?.status === 'running' ||
+                  pkg?.literalGenerationState?.status === 'failed'
+                )
+                setVideoStudioAutoGenerate(Boolean(shouldAutoResume))
                 setViewingArtifact(null)
               } catch {
                 toast.error('Erro ao abrir estúdio', 'O artefato de vídeo contém dados corrompidos.')
@@ -3142,6 +3407,13 @@ Instruções:
         />
       )}
 
+      {audioGenLoading && audioGeneratingArtifactId && (
+        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-emerald-600 text-white px-4 py-3 shadow-lg text-sm font-medium flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Gerando áudio literal do roteiro...
+        </div>
+      )}
+
       {/* ── Video Studio Editor ────────────────────────────── */}
       {videoProduction && (
         <VideoStudioEditor
@@ -3160,6 +3432,21 @@ Instruções:
           onSaveToNotebook={handleSaveVideoStudioToNotebook}
         />
       )}
+
+      {/* ── Deep Research Modal ────────────────────────── */}
+      <DeepResearchModal
+        isOpen={researchModalOpen}
+        onClose={() => {
+          researchAbortRef.current?.abort()
+          setResearchModalOpen(false)
+        }}
+        title={researchModalTitle}
+        subtitle={researchModalSubtitle}
+        variant={researchModalVariant}
+        steps={researchModalSteps}
+        stats={researchModalStats}
+        canClose={researchModalCanClose}
+      />
     </div>
   )
 }
@@ -3167,7 +3454,7 @@ Instruções:
 // ── Script Review Modal (review/edit before saving media artifacts) ───────────
 
 const REVIEW_TYPE_LABELS: Record<string, { label: string; icon: React.ElementType; color: string; hint: string }> = {
-  video_script:  { label: 'Gerador de Vídeo', icon: Video, color: 'text-rose-600', hint: 'Revise e edite o roteiro, cenas, narrações e descrições visuais. Após salvar, você poderá revisar novamente e gerar o vídeo completo.' },
+  video_script:  { label: 'Planejamento de Vídeo (Fase 1)', icon: Video, color: 'text-rose-600', hint: 'Revise o planejamento textual (roteiro, cenas, narrações e visuais). A geração literal de arquivos reais acontece no Estúdio (Fase 2).' },
   audio_script:  { label: 'Roteiro de Áudio', icon: Mic, color: 'text-violet-600', hint: 'Revise e edite os segmentos, falas e notas de produção antes de salvar.' },
   apresentacao:  { label: 'Apresentação', icon: Presentation, color: 'text-sky-600', hint: 'Revise e edite os slides, tópicos e notas do apresentador antes de salvar.' },
 }

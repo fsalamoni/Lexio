@@ -8,6 +8,8 @@
  * Returns audio as a Blob (audio/mpeg or audio/wav).
  */
 
+import { withRateLimit, withRetryAfterDelay } from './media-rate-limiter'
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface TTSOptions {
@@ -34,22 +36,31 @@ export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSRes
   const voice = opts.voice || 'nova'
   const speed = opts.speed || 1.0
 
-  const response = await fetch('https://openrouter.ai/api/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${opts.apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': window.location.origin,
-      'X-Title': 'Lexio Research Notebook',
-    },
-    body: JSON.stringify({
-      model,
-      input: opts.text,
-      voice,
-      speed,
-      response_format: 'mp3',
-    }),
-  })
+  const response = await withRateLimit('openrouter:tts', 18, async () =>
+    withRetryAfterDelay(async () =>
+      fetch('https://openrouter.ai/api/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${opts.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'Lexio Research Notebook',
+        },
+        body: JSON.stringify({
+          model,
+          input: opts.text,
+          voice,
+          speed,
+          response_format: 'mp3',
+        }),
+      }).then(async resp => {
+        if (resp.status === 429) {
+          throw new Error('RATE_LIMIT_429')
+        }
+        return resp
+      }),
+    ),
+  )
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error')
@@ -84,20 +95,11 @@ export async function generateTTSViaBrowser(text: string, lang = 'pt-BR'): Promi
     const ptVoice = voices.find(v => v.lang.startsWith('pt')) || voices[0]
     if (ptVoice) utterance.voice = ptVoice
 
-    // We can't easily capture Web Speech API audio as a Blob.
-    // Instead, we'll just play it directly and return a placeholder.
-    // For actual blob capture, we'd need MediaRecorder + AudioContext routing,
-    // which is complex and browser-dependent.
+    // We can't reliably capture Web Speech API output as a file/Blob.
+    // Play the speech for accessibility/fallback UX and return null to avoid
+    // falsely signaling that a real audio asset was generated.
 
-    const startTime = Date.now()
-    utterance.onend = () => {
-      const duration = (Date.now() - startTime) / 1000
-      // Create a placeholder blob — the actual audio was played by the browser
-      resolve({
-        audioBlob: new Blob([], { type: 'audio/wav' }),
-        durationEstimate: Math.round(duration),
-      })
-    }
+    utterance.onend = () => resolve(null)
     utterance.onerror = () => resolve(null)
 
     speechSynthesis.speak(utterance)

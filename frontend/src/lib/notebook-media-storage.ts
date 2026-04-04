@@ -23,13 +23,24 @@ function sanitizeFileName(value: string): string {
     .trim() || 'media'
 }
 
+function inferExtensionFromMimeType(mimeType?: string, fallback = ''): string {
+  if (!mimeType) return fallback
+  const value = mimeType.toLowerCase()
+  if (value.includes('video/mp4')) return '.mp4'
+  if (value.includes('video/webm')) return '.webm'
+  if (value.includes('video/ogg')) return '.ogv'
+  if (value.includes('video/quicktime')) return '.mov'
+  return fallback
+}
+
 export async function uploadNotebookVideoArtifact(
   userId: string,
   notebookId: string,
   title: string,
   blob: Blob,
 ): Promise<StoredNotebookMedia> {
-  return uploadNotebookMediaArtifact(userId, notebookId, title, blob, 'videos', '.webm')
+  const extension = inferExtensionFromMimeType(blob.type, '.webm')
+  return uploadNotebookMediaArtifact(userId, notebookId, title, blob, 'videos', extension)
 }
 
 export async function uploadNotebookMediaArtifact(

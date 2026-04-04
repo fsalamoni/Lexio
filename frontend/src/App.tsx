@@ -1,26 +1,36 @@
+import { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { TaskManagerProvider } from './contexts/TaskManagerContext'
 import { ToastProvider } from './components/Toast'
 import TaskBar from './components/TaskBar'
 import Layout from './components/Layout'
-import Login from './pages/auth/Login'
-import Register from './pages/auth/Register'
-import ForgotPassword from './pages/auth/ForgotPassword'
-import ResetPassword from './pages/auth/ResetPassword'
-import Dashboard from './pages/Dashboard'
-import DocumentList from './pages/DocumentList'
-import NewDocument from './pages/NewDocument'
-import DocumentDetail from './pages/DocumentDetail'
-import DocumentEditor from './pages/DocumentEditor'
-import Upload from './pages/Upload'
-import AdminPanel from './pages/AdminPanel'
-import CostTokensPage from './pages/CostTokensPage'
-import Onboarding from './pages/Onboarding'
-import ThesisBank from './pages/ThesisBank'
-import ResearchNotebook from './pages/ResearchNotebook'
-import Profile from './pages/Profile'
-import NotFound from './pages/NotFound'
+
+const Login = lazy(() => import('./pages/auth/Login'))
+const Register = lazy(() => import('./pages/auth/Register'))
+const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'))
+const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const DocumentList = lazy(() => import('./pages/DocumentList'))
+const NewDocument = lazy(() => import('./pages/NewDocument'))
+const DocumentDetail = lazy(() => import('./pages/DocumentDetail'))
+const DocumentEditor = lazy(() => import('./pages/DocumentEditor'))
+const Upload = lazy(() => import('./pages/Upload'))
+const AdminPanel = lazy(() => import('./pages/AdminPanel'))
+const CostTokensPage = lazy(() => import('./pages/CostTokensPage'))
+const Onboarding = lazy(() => import('./pages/Onboarding'))
+const ThesisBank = lazy(() => import('./pages/ThesisBank'))
+const ResearchNotebook = lazy(() => import('./pages/ResearchNotebook'))
+const Profile = lazy(() => import('./pages/Profile'))
+const NotFound = lazy(() => import('./pages/NotFound'))
+
+function RouteFallback() {
+  return (
+    <div className="min-h-[40vh] flex items-center justify-center">
+      <div className="text-sm text-gray-500">Carregando...</div>
+    </div>
+  )
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth()
@@ -37,36 +47,38 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route
-        path="/*"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/documents" element={<DocumentList />} />
-                <Route path="/documents/new" element={<NewDocument />} />
-                <Route path="/documents/:id" element={<DocumentDetail />} />
-                <Route path="/documents/:id/edit" element={<DocumentEditor />} />
-                <Route path="/upload" element={<Upload />} />
-                <Route path="/theses" element={<ThesisBank />} />
-                <Route path="/notebook" element={<ResearchNotebook />} />
-                <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
-                <Route path="/admin/costs" element={<AdminRoute><CostTokensPage /></AdminRoute>} />
-                <Route path="/onboarding" element={<Onboarding />} />
-                <Route path="/profile" element={<Profile />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-    </Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/documents" element={<DocumentList />} />
+                  <Route path="/documents/new" element={<NewDocument />} />
+                  <Route path="/documents/:id" element={<DocumentDetail />} />
+                  <Route path="/documents/:id/edit" element={<DocumentEditor />} />
+                  <Route path="/upload" element={<Upload />} />
+                  <Route path="/theses" element={<ThesisBank />} />
+                  <Route path="/notebook" element={<ResearchNotebook />} />
+                  <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
+                  <Route path="/admin/costs" element={<AdminRoute><CostTokensPage /></AdminRoute>} />
+                  <Route path="/onboarding" element={<Onboarding />} />
+                  <Route path="/profile" element={<Profile />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </Suspense>
   )
 }
 

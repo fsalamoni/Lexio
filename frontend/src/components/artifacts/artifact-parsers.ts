@@ -161,6 +161,9 @@ export interface ParsedAudioScript {
   duration?: string
   segments: AudioSegment[]
   productionNotes?: string[]
+  audioUrl?: string
+  audioStoragePath?: string
+  audioMimeType?: string
 }
 
 // -- Video Script
@@ -335,6 +338,9 @@ function parseAudioScript(raw: string): ParsedAudioScript | null {
     productionNotes: Array.isArray(obj.productionNotes ?? obj.notas_producao)
       ? (obj.productionNotes as string[] ?? obj.notas_producao as string[]).map(String)
       : undefined,
+    audioUrl: obj.audioUrl ? String(obj.audioUrl) : obj.audio_url ? String(obj.audio_url) : undefined,
+    audioStoragePath: obj.audioStoragePath ? String(obj.audioStoragePath) : obj.audio_storage_path ? String(obj.audio_storage_path) : undefined,
+    audioMimeType: obj.audioMimeType ? String(obj.audioMimeType) : obj.audio_mime_type ? String(obj.audio_mime_type) : undefined,
   }
 }
 

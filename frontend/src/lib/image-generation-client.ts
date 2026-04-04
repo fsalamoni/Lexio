@@ -4,6 +4,8 @@
  * Uses the OpenAI-compatible /images/generations endpoint exposed by OpenRouter.
  */
 
+import { withRateLimit, withRetryAfterDelay } from './media-rate-limiter'
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface ImageGenerationOptions {
@@ -34,23 +36,33 @@ export async function generateImageViaOpenRouter(
   const size = opts.size || '1792x1024'
   const quality = opts.quality || 'standard'
 
-  const response = await fetch('https://openrouter.ai/api/v1/images/generations', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${opts.apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': window.location.origin,
-      'X-Title': 'Lexio Research Notebook',
-    },
-    body: JSON.stringify({
-      model,
-      prompt: opts.prompt,
-      n: 1,
-      size,
-      quality,
-      style: opts.style || 'vivid',
-    }),
-  })
+  const response = await withRateLimit('openrouter:image', 18, async () =>
+    withRetryAfterDelay(async () =>
+      fetch('https://openrouter.ai/api/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${opts.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'Lexio Research Notebook',
+        },
+        body: JSON.stringify({
+          model,
+          prompt: opts.prompt,
+          n: 1,
+          size,
+          quality,
+          response_format: 'b64_json',
+          style: opts.style || 'vivid',
+        }),
+      }).then(async resp => {
+        if (resp.status === 429) {
+          throw new Error('RATE_LIMIT_429')
+        }
+        return resp
+      }),
+    ),
+  )
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error')

@@ -51,6 +51,7 @@ uploads/
 alembic/versions/*.pyc
 
 # Backups (may contain sensitive database data)
+backups/
 backups/*.sql.gz
 backups/*.dump
 

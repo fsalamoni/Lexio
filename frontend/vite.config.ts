@@ -20,8 +20,38 @@ export default defineConfig({
           if (id.includes('@tiptap') || id.includes('prosemirror')) {
             return 'tiptap'
           }
-          if (id.includes('recharts') || id.includes('d3-')) {
-            return 'recharts'
+          if (id.includes('node_modules/recharts')) {
+            return 'recharts-core'
+          }
+          if (id.includes('node_modules/d3-')) {
+            return 'recharts-d3'
+          }
+          if (id.includes('node_modules/firebase/auth')) {
+            return 'firebase-auth'
+          }
+          if (id.includes('node_modules/firebase/firestore')) {
+            return 'firebase-firestore'
+          }
+          if (id.includes('node_modules/firebase/app')) {
+            return 'firebase-core'
+          }
+          if (id.includes('node_modules/firebase')) {
+            return 'firebase-other'
+          }
+          if (id.includes('node_modules/docx')) {
+            return 'docx-lib'
+          }
+          if (id.includes('node_modules/jszip')) {
+            return 'zip-lib'
+          }
+          if (id.includes('node_modules/mammoth')) {
+            return 'mammoth-lib'
+          }
+          if (id.includes('node_modules/file-saver')) {
+            return 'file-save-lib'
+          }
+          if (id.includes('node_modules/lucide-react')) {
+            return 'icons'
           }
         },
       },

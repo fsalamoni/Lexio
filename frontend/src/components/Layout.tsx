@@ -17,11 +17,47 @@ export default function Layout({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const processingRef = useRef<Set<string>>(new Set())
   const initializedRef = useRef(false)
+  const lastRuntimeToastRef = useRef(0)
 
   useEffect(() => {
     const handler = () => toast.error('Muitas requisições', 'Aguarde um momento e tente novamente.')
     window.addEventListener('lexio:rate-limit', handler)
     return () => window.removeEventListener('lexio:rate-limit', handler)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Global runtime error handlers to avoid silent failures and improve recovery UX.
+  useEffect(() => {
+    const shouldNotify = () => {
+      const now = Date.now()
+      if (now - lastRuntimeToastRef.current < 4000) return false
+      lastRuntimeToastRef.current = now
+      return true
+    }
+
+    const onError = (event: ErrorEvent) => {
+      if (!shouldNotify()) return
+      const message = event.message || 'Erro inesperado no aplicativo.'
+      toast.error('Erro inesperado', message)
+    }
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (!shouldNotify()) return
+      const reason = event.reason
+      const message = reason instanceof Error
+        ? reason.message
+        : typeof reason === 'string'
+          ? reason
+          : 'Falha inesperada durante a operação.'
+      toast.error('Falha na operação', message)
+    }
+
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onUnhandledRejection)
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll for document completion every 30s (API mode only)

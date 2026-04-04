@@ -188,6 +188,18 @@ export default function AudioScriptViewer({ data }: AudioScriptViewerProps) {
         )}
       </div>
 
+      {data.audioUrl && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-2">
+            Audio literal gerado
+          </p>
+          <audio controls preload="metadata" className="w-full">
+            <source src={data.audioUrl} type={data.audioMimeType || 'audio/mpeg'} />
+            Seu navegador nao suporta reproducao de audio.
+          </audio>
+        </div>
+      )}
+
       {/* Legend */}
       <div className="flex flex-wrap gap-2">
         {Object.entries(SEGMENT_STYLES).map(([key, style]) => (

@@ -178,6 +178,7 @@ interface ArtifactViewerModalProps {
   onDownload: () => void
   onRegenerate?: () => void
   onGenerateVideo?: () => void
+  onGenerateAudio?: () => void
   onOpenStudio?: () => void
 }
 
@@ -188,6 +189,7 @@ export default function ArtifactViewerModal({
   onDownload,
   onRegenerate,
   onGenerateVideo,
+  onGenerateAudio,
   onOpenStudio,
 }: ArtifactViewerModalProps) {
   const Icon = ARTIFACT_ICONS[artifact.type] || Sparkles
@@ -326,6 +328,16 @@ export default function ArtifactViewerModal({
               >
                 <Video className="w-3.5 h-3.5" />
                 Gerar Vídeo
+              </button>
+            )}
+            {onGenerateAudio && artifact.type === 'audio_script' && (
+              <button
+                onClick={onGenerateAudio}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm"
+                title="Gerar Áudio Literal"
+              >
+                <Mic className="w-3.5 h-3.5" />
+                Gerar Áudio
               </button>
             )}
             {onOpenStudio && artifact.type === 'video_script' && (

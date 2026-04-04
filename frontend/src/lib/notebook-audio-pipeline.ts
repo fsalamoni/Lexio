@@ -43,6 +43,20 @@ export interface AudioOverviewResult {
 
 export type AudioOverviewProgress = (phase: string, detail?: string) => void
 
+export interface SynthesizeAudioFromScriptInput {
+  apiKey: string
+  rawScriptContent: string
+  voice?: string
+  model?: string
+}
+
+export interface SynthesizeAudioFromScriptResult {
+  audioBlob: Blob
+  mimeType: string
+  chunkCount: number
+  segmentCount: number
+}
+
 // ── Script generation ───────────────────────────────────────────────────────
 
 const SCRIPT_SYSTEM_PROMPT = `Você é um roteirista de podcast profissional. Sua tarefa é criar um roteiro de podcast envolvente com DOIS apresentadores (Host A e Host B) discutindo um tema baseado nas fontes fornecidas.
@@ -128,6 +142,99 @@ function parseScriptResponse(content: string): AudioOverviewScript | null {
     }
   } catch {
     return null
+  }
+}
+
+function buildNarrationTextFromRawScript(rawScriptContent: string): { text: string; segmentCount: number } {
+  const parsed = parseScriptResponse(rawScriptContent)
+
+  if (parsed?.segments?.length) {
+    const fromSegments = parsed.segments
+      .filter(s => s.type === 'narracao' && s.text.trim())
+      .map(s => {
+        const prefix = s.speaker ? `${s.speaker}: ` : ''
+        return `${prefix}${s.text}`
+      })
+      .join('\n\n')
+
+    if (fromSegments.trim().length > 50) {
+      return { text: fromSegments, segmentCount: parsed.segments.length }
+    }
+
+    const fallbackAllSegments = parsed.segments
+      .filter(s => s.text.trim())
+      .map(s => {
+        const prefix = s.speaker ? `${s.speaker}: ` : ''
+        return `${prefix}${s.text}`
+      })
+      .join('\n\n')
+
+    return { text: fallbackAllSegments, segmentCount: parsed.segments.length }
+  }
+
+  return {
+    text: rawScriptContent.trim(),
+    segmentCount: 0,
+  }
+}
+
+function splitForTTS(text: string, maxChunkSize = 4000): string[] {
+  const normalized = text.trim()
+  if (!normalized) return []
+  if (normalized.length <= maxChunkSize) return [normalized]
+
+  const chunks: string[] = []
+  let current = ''
+
+  for (const sentence of normalized.split(/(?<=[.!?])\s+/)) {
+    if (current.length + sentence.length > maxChunkSize && current.length > 0) {
+      chunks.push(current)
+      current = sentence
+    } else {
+      current += (current ? ' ' : '') + sentence
+    }
+  }
+
+  if (current) chunks.push(current)
+  return chunks
+}
+
+export async function synthesizeAudioFromScript(
+  input: SynthesizeAudioFromScriptInput,
+  onProgress?: AudioOverviewProgress,
+): Promise<SynthesizeAudioFromScriptResult> {
+  const { text, segmentCount } = buildNarrationTextFromRawScript(input.rawScriptContent)
+  if (text.length < 20) {
+    throw new Error('Roteiro sem conteúdo suficiente para sintetizar áudio.')
+  }
+
+  const chunks = splitForTTS(text)
+  if (chunks.length === 0) {
+    throw new Error('Não foi possível gerar blocos de áudio para TTS.')
+  }
+
+  const audioBlobs: Blob[] = []
+  for (let i = 0; i < chunks.length; i++) {
+    onProgress?.('Gerando áudio literal...', `Parte ${i + 1} de ${chunks.length}`)
+    const ttsResult: TTSResult = await generateTTSViaOpenRouter({
+      apiKey: input.apiKey,
+      text: chunks[i],
+      voice: input.voice || 'nova',
+      model: input.model || 'openai/tts-1-hd',
+    })
+    audioBlobs.push(ttsResult.audioBlob)
+
+    if (i < chunks.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
+
+  const mimeType = audioBlobs[0]?.type || 'audio/mpeg'
+  return {
+    audioBlob: new Blob(audioBlobs, { type: mimeType }),
+    mimeType,
+    chunkCount: chunks.length,
+    segmentCount,
   }
 }
 

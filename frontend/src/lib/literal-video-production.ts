@@ -1,8 +1,13 @@
 import { generateImageViaOpenRouter } from './image-generation-client'
+import { requestExternalVideoClip } from './external-video-provider'
 import { loadVideoPipelineModels } from './model-config'
 import { formatSecondsToMMSS } from './time-format'
 import { generateTTSViaOpenRouter } from './tts-client'
+import { createVideoRenderScopeLabel } from './video-generation-pipeline'
 import type {
+  LiteralGenerationEvent,
+  LiteralGenerationState,
+  LiteralSceneCheckpoint,
   VideoClipAsset,
   RenderedVideoAsset,
   ScopedRenderedVideoAsset,
@@ -13,7 +18,6 @@ import type {
   VideoProductionPackage,
   VideoScene,
   VideoSceneAsset,
-  createVideoRenderScopeLabel,
 } from './video-generation-pipeline'
 
 export type LiteralVideoProgressCallback = (
@@ -39,6 +43,8 @@ const MIN_SOUNDTRACK_DURATION_SECONDS = 1
 const INT16_PCM_MIN = -0x8000
 const INT16_PCM_MAX = 0x7fff
 const DEFAULT_SCENE_CLIP_DURATION_SECONDS = 8
+const MAX_LITERAL_STEP_ATTEMPTS = 3
+const MAX_LITERAL_EVENT_LOG = 120
 const MIN_RENDER_WIDTH = 160
 const MIN_RENDER_HEIGHT = 90
 const DEFAULT_RENDER_FRAME_RATE = 30
@@ -84,6 +90,10 @@ interface RenderByScopeOptions {
   partNumber?: number
   preset?: VideoRenderPreset
   onProgress?: LiteralVideoProgressCallback
+}
+
+interface LiteralMediaGenerationOptions {
+  signal?: AbortSignal
 }
 
 interface PreparedSceneTiming {
@@ -166,6 +176,107 @@ function createScopeKey(scope: VideoRenderScope, sceneNumber?: number, partNumbe
   return 'full'
 }
 
+function nowIso(): string {
+  return new Date().toISOString()
+}
+
+function createInitialLiteralState(production: VideoProductionPackage): LiteralGenerationState {
+  const startedAt = nowIso()
+  const scenes: LiteralSceneCheckpoint[] = production.scenes.map(scene => ({
+    sceneNumber: scene.number,
+    imageStatus: 'pending',
+    narrationStatus: 'pending',
+    clipsStatus: 'pending',
+    imageAttempts: 0,
+    narrationAttempts: 0,
+    clipsAttempts: 0,
+    clipPartsCompleted: 0,
+    clipPartsTotal: 0,
+    updatedAt: startedAt,
+  }))
+
+  return {
+    status: 'running',
+    phase: 'image_generation',
+    startedAt,
+    updatedAt: startedAt,
+    checkpointVersion: 1,
+    runCount: 1,
+    resumeCount: 0,
+    errors: [],
+    events: [{ at: startedAt, type: 'start', phase: 'image_generation', message: 'Execucao literal iniciada' }],
+    scenes,
+  }
+}
+
+function cloneLiteralState(state: LiteralGenerationState): LiteralGenerationState {
+  return {
+    ...state,
+    scenes: state.scenes.map(scene => ({ ...scene })),
+    errors: [...state.errors],
+  }
+}
+
+function updateSceneCheckpoint(
+  state: LiteralGenerationState,
+  sceneNumber: number,
+  update: Partial<LiteralSceneCheckpoint>,
+): void {
+  const index = state.scenes.findIndex(scene => scene.sceneNumber === sceneNumber)
+  const patch = { ...update, updatedAt: nowIso() }
+  if (index === -1) {
+    state.scenes.push({
+      sceneNumber,
+      imageStatus: 'pending',
+      narrationStatus: 'pending',
+      clipsStatus: 'pending',
+      clipPartsCompleted: 0,
+      clipPartsTotal: 0,
+      ...patch,
+    })
+    return
+  }
+
+  state.scenes[index] = {
+    ...state.scenes[index],
+    ...patch,
+  }
+}
+
+function touchLiteralState(state: LiteralGenerationState): void {
+  state.checkpointVersion += 1
+  state.updatedAt = nowIso()
+}
+
+function pushLiteralEvent(state: LiteralGenerationState, event: Omit<LiteralGenerationEvent, 'at'>): void {
+  const nextEvent: LiteralGenerationEvent = { ...event, at: nowIso() }
+  const current = state.events || []
+  const next = [...current, nextEvent]
+  state.events = next.slice(-MAX_LITERAL_EVENT_LOG)
+}
+
+function shouldRetryLiteralError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  const lower = message.toLowerCase()
+  return lower.includes('429')
+    || lower.includes('rate_limit')
+    || lower.includes('timeout')
+    || lower.includes('network')
+    || lower.includes('failed to fetch')
+    || lower.includes('abort')
+}
+
+async function waitBeforeRetry(attempt: number): Promise<void> {
+  const delayMs = 900 * attempt
+  await new Promise(resolve => setTimeout(resolve, delayMs))
+}
+
+function assertNotCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new Error('Literal media generation cancelled by user')
+  }
+}
+
 export function getDefaultVideoRenderPresets(): VideoRenderPreset[] {
   return DEFAULT_RENDER_PRESETS.map(preset => ({ ...preset }))
 }
@@ -243,7 +354,7 @@ async function renderSceneClip(
   }
 
   const done = new Promise<Blob>((resolve, reject) => {
-    recorder.onerror = () => reject(recorder.error ?? new Error('Falha ao gravar clipe'))
+    recorder.onerror = (event) => reject((event as unknown as { error?: Error })?.error ?? new Error('Falha ao gravar clipe'))
     recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
   })
 
@@ -308,6 +419,14 @@ async function remoteImageToDataUrl(url: string): Promise<string> {
   const response = await fetch(url)
   if (!response.ok) {
     throw new Error(`Falha ao baixar imagem gerada (${response.status}) em ${url}`)
+  }
+  return blobToDataUrl(await response.blob())
+}
+
+async function remoteVideoToDataUrl(url: string): Promise<string> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar vídeo gerado (${response.status}) em ${url}`)
   }
   return blobToDataUrl(await response.blob())
 }
@@ -602,7 +721,7 @@ export async function renderLiteralVideo(
   }
 
   const done = new Promise<Blob>((resolve, reject) => {
-    recorder.onerror = () => reject(recorder.error ?? new Error('Falha ao gravar o vídeo final'))
+    recorder.onerror = (event) => reject((event as unknown as { error?: Error })?.error ?? new Error('Falha ao gravar o vídeo final'))
     recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
   })
 
@@ -788,88 +907,221 @@ export async function generateLiteralMediaAssets(
   production: VideoProductionPackage,
   onProgress?: LiteralVideoProgressCallback,
   onPartialProduction?: (partialProduction: VideoProductionPackage) => void | Promise<void>,
+  options?: LiteralMediaGenerationOptions,
 ): Promise<LiteralMediaGenerationResult> {
   const executions: VideoGenerationStepExecution[] = []
   const errors: string[] = []
+  const signal = options?.signal
   const models = await loadVideoPipelineModels()
   const clipDurationSeconds = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
   const timings = prepareTimings(production)
   const existingAssets = new Map(
     (production.sceneAssets || []).map(asset => [asset.sceneNumber, asset]),
   )
+  const literalState = production.literalGenerationState
+    ? cloneLiteralState(production.literalGenerationState)
+    : createInitialLiteralState(production)
+  if (production.literalGenerationState) {
+    literalState.runCount = (literalState.runCount || 1) + 1
+    literalState.resumeCount = (literalState.resumeCount || 0) + 1
+    pushLiteralEvent(literalState, {
+      type: 'resume',
+      phase: literalState.phase,
+      message: 'Retomada a partir de checkpoint persistido',
+    })
+  }
+  literalState.status = 'running'
+  literalState.phase = 'image_generation'
+  literalState.completedAt = undefined
+  literalState.errors = []
+  touchLiteralState(literalState)
 
   onProgress?.(1, 4, 'media_image_generation', 'Preparando geração real das imagens')
   const generatedAssets: VideoSceneAsset[] = []
   for (let index = 0; index < production.scenes.length; index++) {
+    assertNotCancelled(signal)
     const scene = production.scenes[index]
     const existing = existingAssets.get(scene.number)
     const nextAsset: VideoSceneAsset = { sceneNumber: scene.number, ...existing }
 
     onProgress?.(1, 4, 'media_image_generation', `Gerando imagens das cenas (${index + 1}/${production.scenes.length})`)
+    updateSceneCheckpoint(literalState, scene.number, { imageStatus: 'running' })
     if (!nextAsset.imageUrl && scene.imagePrompt) {
-      try {
-        const startedAt = performance.now()
-        const result = await generateImageViaOpenRouter({
-          apiKey,
-          model: chooseImageModel(models.video_designer),
-          prompt: scene.imagePrompt,
-          size: '1792x1024',
-        })
-        nextAsset.imageUrl = result.b64_json
-          ? `data:image/png;base64,${result.b64_json}`
-          : result.url
-          ? await remoteImageToDataUrl(result.url)
-          : undefined
-        executions.push(makeExecution('media_image_generation', chooseImageModel(models.video_designer) || 'openai/dall-e-3', performance.now() - startedAt))
-      } catch (error) {
-        errors.push(`Cena ${scene.number}: falha ao gerar imagem (${error instanceof Error ? error.message : String(error)})`)
+      let success = false
+      for (let attempt = 1; attempt <= MAX_LITERAL_STEP_ATTEMPTS; attempt++) {
+        assertNotCancelled(signal)
+        updateSceneCheckpoint(literalState, scene.number, { imageAttempts: attempt })
+        try {
+          const startedAt = performance.now()
+          const result = await generateImageViaOpenRouter({
+            apiKey,
+            model: chooseImageModel(models.video_designer),
+            prompt: scene.imagePrompt,
+            size: '1792x1024',
+          })
+          nextAsset.imageUrl = result.b64_json
+            ? `data:image/png;base64,${result.b64_json}`
+            : result.url
+            ? await remoteImageToDataUrl(result.url)
+            : undefined
+          executions.push(makeExecution('media_image_generation', chooseImageModel(models.video_designer) || 'openai/dall-e-3', performance.now() - startedAt))
+          updateSceneCheckpoint(literalState, scene.number, { imageStatus: 'completed', lastError: undefined })
+          pushLiteralEvent(literalState, {
+            type: 'step_success',
+            phase: 'image_generation',
+            sceneNumber: scene.number,
+            attempt,
+            message: `Imagem gerada para cena ${scene.number}`,
+          })
+          success = true
+          break
+        } catch (error) {
+          const message = `Cena ${scene.number}: falha ao gerar imagem (${error instanceof Error ? error.message : String(error)})`
+          const retryable = shouldRetryLiteralError(error)
+          if (attempt < MAX_LITERAL_STEP_ATTEMPTS && retryable) {
+            pushLiteralEvent(literalState, {
+              type: 'retry',
+              phase: 'image_generation',
+              sceneNumber: scene.number,
+              attempt,
+              message,
+            })
+            await waitBeforeRetry(attempt)
+            assertNotCancelled(signal)
+            continue
+          }
+          errors.push(message)
+          updateSceneCheckpoint(literalState, scene.number, { imageStatus: 'failed', lastError: message })
+          pushLiteralEvent(literalState, {
+            type: 'step_failed',
+            phase: 'image_generation',
+            sceneNumber: scene.number,
+            attempt,
+            message,
+          })
+          break
+        }
       }
+      if (!success && !nextAsset.imageUrl) {
+        updateSceneCheckpoint(literalState, scene.number, { imageStatus: 'failed' })
+      }
+    } else {
+      updateSceneCheckpoint(literalState, scene.number, { imageStatus: 'completed', lastError: undefined })
     }
 
     generatedAssets.push(nextAsset)
+
+    if (onPartialProduction) {
+      touchLiteralState(literalState)
+      await onPartialProduction({
+        ...production,
+        sceneAssets: generatedAssets.filter(item => item.imageUrl || item.narrationUrl || (item.videoClips && item.videoClips.length > 0)),
+        literalGenerationState: cloneLiteralState(literalState),
+      })
+    }
   }
 
   onProgress?.(2, 4, 'media_tts_generation', 'Preparando geração real das narrações')
+  literalState.phase = 'tts_generation'
+  touchLiteralState(literalState)
   for (let index = 0; index < production.scenes.length; index++) {
+    assertNotCancelled(signal)
     const scene = production.scenes[index]
     const asset = generatedAssets.find(item => item.sceneNumber === scene.number)
     if (!asset) continue
 
     onProgress?.(2, 4, 'media_tts_generation', `Gerando narrações das cenas (${index + 1}/${production.scenes.length})`)
+    updateSceneCheckpoint(literalState, scene.number, { narrationStatus: 'running' })
     if (!asset.narrationUrl && scene.narration) {
-      try {
-        const startedAt = performance.now()
-        const result = await generateTTSViaOpenRouter({
-          apiKey,
-          model: chooseAudioModel(models.video_narrador),
-          text: scene.narration,
-          voice: 'nova',
-        })
-        asset.narrationUrl = await blobToDataUrl(result.audioBlob)
-        executions.push(makeExecution('media_tts_generation', chooseAudioModel(models.video_narrador) || 'openai/tts-1-hd', performance.now() - startedAt))
-      } catch (error) {
-        errors.push(`Cena ${scene.number}: falha ao gerar narração (${error instanceof Error ? error.message : String(error)})`)
+      let success = false
+      for (let attempt = 1; attempt <= MAX_LITERAL_STEP_ATTEMPTS; attempt++) {
+        assertNotCancelled(signal)
+        updateSceneCheckpoint(literalState, scene.number, { narrationAttempts: attempt })
+        try {
+          const startedAt = performance.now()
+          const result = await generateTTSViaOpenRouter({
+            apiKey,
+            model: chooseAudioModel(models.video_narrador),
+            text: scene.narration,
+            voice: 'nova',
+          })
+          asset.narrationUrl = await blobToDataUrl(result.audioBlob)
+          executions.push(makeExecution('media_tts_generation', chooseAudioModel(models.video_narrador) || 'openai/tts-1-hd', performance.now() - startedAt))
+          updateSceneCheckpoint(literalState, scene.number, { narrationStatus: 'completed', lastError: undefined })
+          pushLiteralEvent(literalState, {
+            type: 'step_success',
+            phase: 'tts_generation',
+            sceneNumber: scene.number,
+            attempt,
+            message: `Narracao gerada para cena ${scene.number}`,
+          })
+          success = true
+          break
+        } catch (error) {
+          const message = `Cena ${scene.number}: falha ao gerar narração (${error instanceof Error ? error.message : String(error)})`
+          const retryable = shouldRetryLiteralError(error)
+          if (attempt < MAX_LITERAL_STEP_ATTEMPTS && retryable) {
+            pushLiteralEvent(literalState, {
+              type: 'retry',
+              phase: 'tts_generation',
+              sceneNumber: scene.number,
+              attempt,
+              message,
+            })
+            await waitBeforeRetry(attempt)
+            assertNotCancelled(signal)
+            continue
+          }
+          errors.push(message)
+          updateSceneCheckpoint(literalState, scene.number, { narrationStatus: 'failed', lastError: message })
+          pushLiteralEvent(literalState, {
+            type: 'step_failed',
+            phase: 'tts_generation',
+            sceneNumber: scene.number,
+            attempt,
+            message,
+          })
+          break
+        }
       }
+      if (!success && !asset.narrationUrl) {
+        updateSceneCheckpoint(literalState, scene.number, { narrationStatus: 'failed' })
+      }
+    } else {
+      updateSceneCheckpoint(literalState, scene.number, { narrationStatus: 'completed', lastError: undefined })
     }
 
     if (onPartialProduction) {
+      touchLiteralState(literalState)
       await onPartialProduction({
         ...production,
         sceneAssets: generatedAssets.filter(item => item.imageUrl || item.narrationUrl),
+        literalGenerationState: cloneLiteralState(literalState),
       })
     }
   }
 
   onProgress?.(3, 4, 'media_video_clip_generation', 'Gerando clipes por partes das cenas')
+  literalState.phase = 'clip_generation'
+  touchLiteralState(literalState)
   for (let index = 0; index < production.scenes.length; index++) {
+    assertNotCancelled(signal)
     const scene = production.scenes[index]
     const timing = timings.find(item => item.scene.number === scene.number)
     const sceneAsset = generatedAssets.find(item => item.sceneNumber === scene.number)
     if (!sceneAsset || !timing) continue
     const existingClips = sceneAsset.videoClips || []
     const parts = buildScenePartTimings(timing, clipDurationSeconds)
+    updateSceneCheckpoint(literalState, scene.number, {
+      clipsStatus: 'running',
+      clipPartsTotal: parts.length,
+      clipPartsCompleted: existingClips.length,
+      clipsAttempts: 0,
+      lastError: undefined,
+    })
 
     for (const part of parts) {
+      assertNotCancelled(signal)
       const hasClip = existingClips.some(clip => clip.partNumber === part.partNumber && Boolean(clip.url))
       if (hasClip) continue
 
@@ -879,40 +1131,147 @@ export async function generateLiteralMediaAssets(
         'media_video_clip_generation',
         `Gerando clipe da cena ${scene.number} (${part.partNumber}/${parts.length})`,
       )
-      const startedAt = performance.now()
-      try {
-        const clip = await renderSceneClip(
-          scene,
-          part,
-          sceneAsset.imageUrl,
-          sceneAsset.narrationUrl,
-        )
-        if (clip) {
-          existingClips.push(clip)
-          sceneAsset.videoClips = [...existingClips].sort((a, b) => a.partNumber - b.partNumber)
-          executions.push(makeExecution('media_video_clip_generation', `browser/${clip.mimeType}`, performance.now() - startedAt))
+      let rendered = false
+      for (let attempt = 1; attempt <= MAX_LITERAL_STEP_ATTEMPTS; attempt++) {
+        assertNotCancelled(signal)
+        const startedAt = performance.now()
+        updateSceneCheckpoint(literalState, scene.number, { clipsAttempts: attempt })
+        try {
+          let clip = null as VideoClipAsset | null
+
+          if (scene.videoPrompt) {
+            try {
+              const providerResult = await requestExternalVideoClip({
+                prompt: scene.videoPrompt,
+                durationSeconds: part.duration,
+                sceneNumber: scene.number,
+                partNumber: part.partNumber,
+                aspectRatio: '16:9',
+                signal,
+              })
+              if (providerResult?.url) {
+                clip = {
+                  sceneNumber: part.sceneNumber,
+                  partNumber: part.partNumber,
+                  startTime: part.startTime,
+                  endTime: part.endTime,
+                  duration: part.duration,
+                  url: await remoteVideoToDataUrl(providerResult.url),
+                  mimeType: providerResult.mimeType || 'video/mp4',
+                  generatedAt: new Date().toISOString(),
+                  source: 'generated',
+                  generationEngine: 'external-provider',
+                  providerName: providerResult.provider,
+                  providerJobId: providerResult.jobId,
+                }
+              }
+            } catch {
+              // Fallback para render local quando provedor externo falha.
+            }
+          }
+
+          if (!clip) {
+            clip = await renderSceneClip(
+              scene,
+              part,
+              sceneAsset.imageUrl,
+              sceneAsset.narrationUrl,
+            )
+            if (clip) {
+              clip = {
+                ...clip,
+                generationEngine: 'browser-local',
+                providerName: 'browser-renderer',
+              }
+            }
+          }
+
+          if (clip) {
+            existingClips.push(clip)
+            sceneAsset.videoClips = [...existingClips].sort((a, b) => a.partNumber - b.partNumber)
+            executions.push(makeExecution('media_video_clip_generation', `browser/${clip.mimeType}`, performance.now() - startedAt))
+            updateSceneCheckpoint(literalState, scene.number, {
+              clipPartsCompleted: existingClips.length,
+              clipsStatus: existingClips.length >= parts.length ? 'completed' : 'running',
+              lastError: undefined,
+            })
+            pushLiteralEvent(literalState, {
+              type: 'step_success',
+              phase: 'clip_generation',
+              sceneNumber: scene.number,
+              partNumber: part.partNumber,
+              attempt,
+              message: `Clipe gerado para cena ${scene.number} parte ${part.partNumber}`,
+            })
+            rendered = true
+          }
+          break
+        } catch (error) {
+          const message = `Cena ${scene.number} parte ${part.partNumber}: falha ao gerar clipe (${error instanceof Error ? error.message : String(error)})`
+          const retryable = shouldRetryLiteralError(error)
+          if (attempt < MAX_LITERAL_STEP_ATTEMPTS && retryable) {
+            pushLiteralEvent(literalState, {
+              type: 'retry',
+              phase: 'clip_generation',
+              sceneNumber: scene.number,
+              partNumber: part.partNumber,
+              attempt,
+              message,
+            })
+            await waitBeforeRetry(attempt)
+            assertNotCancelled(signal)
+            continue
+          }
+          errors.push(message)
+          updateSceneCheckpoint(literalState, scene.number, {
+            clipsStatus: 'failed',
+            lastError: message,
+          })
+          pushLiteralEvent(literalState, {
+            type: 'step_failed',
+            phase: 'clip_generation',
+            sceneNumber: scene.number,
+            partNumber: part.partNumber,
+            attempt,
+            message,
+          })
+          break
         }
-      } catch (error) {
-        errors.push(`Cena ${scene.number} parte ${part.partNumber}: falha ao gerar clipe (${error instanceof Error ? error.message : String(error)})`)
+      }
+      if (!rendered && !existingClips.some(clip => clip.partNumber === part.partNumber)) {
+        updateSceneCheckpoint(literalState, scene.number, {
+          clipsStatus: 'failed',
+        })
       }
     }
 
+    if (existingClips.length >= parts.length) {
+      updateSceneCheckpoint(literalState, scene.number, { clipsStatus: 'completed', lastError: undefined })
+    }
+
     if (onPartialProduction) {
+      touchLiteralState(literalState)
       await onPartialProduction({
         ...production,
         sceneClipDurationSeconds: clipDurationSeconds,
         sceneAssets: generatedAssets.filter(item => item.imageUrl || item.narrationUrl || (item.videoClips && item.videoClips.length > 0)),
+        literalGenerationState: cloneLiteralState(literalState),
       })
     }
   }
 
   onProgress?.(4, 4, 'media_soundtrack_generation', 'Gerando trilha sonora da produção')
+  literalState.phase = 'soundtrack_generation'
+  touchLiteralState(literalState)
   let soundtrackAsset = production.soundtrackAsset
   if (!soundtrackAsset?.url) {
     try {
       const soundtrackStartedAt = performance.now()
       const soundtrackBlob = createProceduralSoundtrack(
-        Math.max(1, production.totalDuration || prepareTimings(production).at(-1)?.end || 1),
+        Math.max(1, production.totalDuration || (() => {
+          const timings = prepareTimings(production)
+          return timings.length > 0 ? timings[timings.length - 1].end : 1
+        })() || 1),
         production.scenes.map(scene => scene.soundtrack).join(' '),
       )
       soundtrackAsset = {
@@ -923,15 +1282,28 @@ export async function generateLiteralMediaAssets(
       }
       executions.push(makeExecution('media_soundtrack_generation', 'browser/procedural-audio', performance.now() - soundtrackStartedAt))
     } catch (error) {
-      errors.push(`Trilha sonora: falha na geração (${error instanceof Error ? error.message : String(error)})`)
+      const message = `Trilha sonora: falha na geração (${error instanceof Error ? error.message : String(error)})`
+      errors.push(message)
     }
   }
+
+  literalState.errors = [...errors]
+  literalState.status = errors.length > 0 ? 'failed' : 'completed'
+  literalState.phase = errors.length > 0 ? 'failed' : 'completed'
+  literalState.completedAt = nowIso()
+  pushLiteralEvent(literalState, {
+    type: 'completed',
+    phase: errors.length > 0 ? 'failed' : 'completed',
+    message: errors.length > 0 ? `Concluido com ${errors.length} erro(s)` : 'Concluido sem erros',
+  })
+  touchLiteralState(literalState)
 
   const mediaProduction: VideoProductionPackage = {
     ...production,
     sceneClipDurationSeconds: clipDurationSeconds,
     sceneAssets: generatedAssets.filter(item => item.imageUrl || item.narrationUrl || (item.videoClips && item.videoClips.length > 0)),
     soundtrackAsset,
+    literalGenerationState: cloneLiteralState(literalState),
   }
 
   if (onPartialProduction) {

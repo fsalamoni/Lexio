@@ -17,7 +17,7 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore'
 import { firestore, IS_FIREBASE } from './firebase'
-import { DEFAULT_AREA_ASSUNTOS } from './classification-data'
+import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import {
   buildCostBreakdown,
   buildUsageSummary,
@@ -1412,7 +1412,6 @@ export interface AdminClassificationTipos {
 }
 
 export async function loadAdminClassificationTipos(): Promise<AdminClassificationTipos> {
-  const { CLASSIFICATION_TIPOS } = await import('./classification-data')
   const defaultTipos = CLASSIFICATION_TIPOS as Record<string, Record<string, string[]>>
   if (!IS_FIREBASE) return { tipos: defaultTipos }
   try {

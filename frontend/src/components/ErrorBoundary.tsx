@@ -2,12 +2,15 @@ import { Component, ReactNode } from 'react'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 
 interface Props { children: ReactNode }
-interface State { error: Error | null }
+interface State {
+  error: Error | null
+  retryCount: number
+}
 
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { error: null }
+  state: State = { error: null, retryCount: 0 }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Pick<State, 'error'> {
     return { error }
   }
 
@@ -33,18 +36,26 @@ export class ErrorBoundary extends Component<Props, State> {
             </details>
             <button
               onClick={() => {
-                this.setState({ error: null })
-                window.location.reload()
+                this.setState(prev => ({
+                  error: null,
+                  retryCount: prev.retryCount + 1,
+                }))
               }}
               className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg hover:bg-brand-700 transition-colors"
             >
               <RefreshCw className="w-4 h-4" />
+              Tentar novamente
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="ml-2 inline-flex items-center gap-2 bg-gray-200 text-gray-700 px-5 py-2.5 rounded-lg hover:bg-gray-300 transition-colors"
+            >
               Recarregar página
             </button>
           </div>
         </div>
       )
     }
-    return this.props.children
+    return <div key={this.state.retryCount}>{this.props.children}</div>
   }
 }

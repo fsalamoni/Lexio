@@ -55,7 +55,7 @@ export default function VideoGenerationCostModal({
     <DraggablePanel
       open={true}
       onClose={isGenerating ? () => {} : onSkip}
-      title={isGenerating ? 'Gerando Vídeo...' : `Proposta de Geração — ${topic}`}
+      title={isGenerating ? 'Fase 1 em execução: Planejamento do Vídeo...' : `Plano de Produção (Fase 1) — ${topic}`}
       icon={<Video size={16} />}
       initialWidth={900}
       initialHeight={700}
@@ -169,8 +169,21 @@ export default function VideoGenerationCostModal({
               <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-xl border border-amber-200">
                 <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
                 <div className="text-sm text-amber-800">
-                  <p className="font-semibold mb-1">Proposta de geração de vídeo</p>
-                  <p>Revise o roteiro na aba <strong>Roteiro</strong> antes de gerar. Depois do pipeline textual, a plataforma seguirá com geração real de imagens, narrações, trilha sonora e renderização do vídeo final.</p>
+                  <p className="font-semibold mb-1">Fluxo em 2 fases para vídeo literal</p>
+                  <p>Esta tela executa a <strong>Fase 1 (planejamento textual com 8 agentes)</strong>. A <strong>Fase 2 (mídia real)</strong> acontece no Estúdio, com geração literal de imagens, narrações, clipes e render final.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700">Fase 1</p>
+                  <p className="text-sm font-semibold text-gray-900 mt-1">Planejamento de Produção</p>
+                  <p className="text-xs text-rose-700 mt-1">Roteiro, cenas, prompts visuais, narração e estrutura de timeline.</p>
+                </div>
+                <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-violet-700">Fase 2</p>
+                  <p className="text-sm font-semibold text-gray-900 mt-1">Geração Literal de Mídia</p>
+                  <p className="text-xs text-violet-700 mt-1">No Estúdio: criação de arquivos reais de imagem/áudio/vídeo + render final.</p>
                 </div>
               </div>
 
@@ -255,9 +268,9 @@ export default function VideoGenerationCostModal({
               <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-xl border border-blue-200">
                 <Layers className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div className="text-xs text-blue-800">
-                  <p className="font-semibold mb-1">Pipeline de 8 Agentes</p>
+                  <p className="font-semibold mb-1">Pipeline textual da Fase 1 (8 Agentes)</p>
                   <p>Planejador → Roteirista → Diretor de Cenas → Storyboarder → Designer Visual → Compositor → Narrador → Revisor Final</p>
-                  <p className="mt-1 text-blue-600">Após a geração, você terá acesso ao editor de estúdio com todas as faixas.</p>
+                  <p className="mt-1 text-blue-600">Após concluir, o Estúdio abre para iniciar/retomar a geração literal da Fase 2.</p>
                 </div>
               </div>
             </>
@@ -330,7 +343,7 @@ export default function VideoGenerationCostModal({
         {!isGenerating && (
           <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50/80 flex-shrink-0">
             <p className="text-xs text-gray-500">
-              {hasEdits ? '⚠️ O roteiro foi editado. As alterações serão usadas na geração.' : 'Os custos reais podem variar conforme o modelo configurado.'}
+              {hasEdits ? '⚠️ O roteiro foi editado. As alterações serão usadas na Fase 1.' : 'Os custos de mídia literal da Fase 2 podem variar conforme modelo e número de cenas.'}
             </p>
             <div className="flex items-center gap-3">
               <button
@@ -344,7 +357,7 @@ export default function VideoGenerationCostModal({
                 className="flex items-center gap-2 px-5 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 transition-colors shadow-sm"
               >
                 <Video className="w-4 h-4" />
-                Gerar Vídeo
+                Executar Fase 1
               </button>
             </div>
           </div>

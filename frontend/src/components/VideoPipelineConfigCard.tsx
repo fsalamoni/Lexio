@@ -39,6 +39,11 @@ import {
 } from '../lib/model-config'
 import { useCatalogModels } from '../lib/model-catalog'
 import ModelSelectorModal from './ModelSelectorModal'
+import {
+  checkExternalVideoProviderHealth,
+  getExternalVideoProviderDiagnostics,
+  type ExternalVideoProviderHealthCheckResult,
+} from '../lib/external-video-provider'
 
 // ── Icon mapping ──────────────────────────────────────────────────────────────
 
@@ -88,6 +93,10 @@ export default function VideoPipelineConfigCard() {
   const [saved, setSaved]       = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [loading, setLoading]   = useState(true)
+  const [providerCheckLoading, setProviderCheckLoading] = useState(false)
+  const [providerHealth, setProviderHealth] = useState<ExternalVideoProviderHealthCheckResult | null>(null)
+
+  const providerDiagnostics = getExternalVideoProviderDiagnostics()
 
   // Modal state
   const [modalOpen,      setModalOpen]      = useState(false)
@@ -153,6 +162,16 @@ export default function VideoPipelineConfigCard() {
 
   const getModelOption = (modelId: string): ModelOption | undefined =>
     catalogModels.find(m => m.id === modelId)
+
+  const handleCheckProviderHealth = async () => {
+    setProviderCheckLoading(true)
+    try {
+      const result = await checkExternalVideoProviderHealth()
+      setProviderHealth(result)
+    } finally {
+      setProviderCheckLoading(false)
+    }
+  }
 
   const activeAgentDef = activeAgentKey
     ? VIDEO_PIPELINE_AGENT_DEFS.find(a => a.key === activeAgentKey)
@@ -288,6 +307,54 @@ export default function VideoPipelineConfigCard() {
                 mídia (imagens, narrações, clipes e render final) ocorre depois na etapa de renderização dedicada.{' '}O <strong>Planejador</strong> estima
                 custos em tokens antes de iniciar a produção.
               </p>
+            </div>
+
+            <div className="mt-3 p-3 bg-white border border-gray-200 rounded-lg space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold text-gray-700">Saúde do Provedor Externo de Vídeo</p>
+                <button
+                  type="button"
+                  onClick={handleCheckProviderHealth}
+                  disabled={providerCheckLoading}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {providerCheckLoading ? (
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Testando...</>
+                  ) : (
+                    <><RefreshCw className="w-3.5 h-3.5" /> Testar conexão</>
+                  )}
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-600">
+                Provedor: <strong>{providerDiagnostics.provider}</strong> · Configurado: <strong>{providerDiagnostics.configured ? 'sim' : 'não'}</strong>
+              </p>
+              <p className="text-[11px] text-gray-500 break-all">
+                Endpoint: {providerDiagnostics.endpoint || 'não definido'}
+              </p>
+              <p className="text-[11px] text-gray-500">
+                Poll: {providerDiagnostics.pollIntervalMs}ms · Timeout: {Math.round(providerDiagnostics.pollTimeoutMs / 1000)}s
+              </p>
+              {providerHealth && (
+                <p className={`text-[11px] ${providerHealth.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {providerHealth.ok ? 'OK' : 'Atenção'} · {providerHealth.message}
+                  {providerHealth.statusCode ? ` (HTTP ${providerHealth.statusCode})` : ''}
+                  {providerHealth.latencyMs ? ` · ${providerHealth.latencyMs}ms` : ''}
+                </p>
+              )}
+              {providerDiagnostics.blockingErrors.length > 0 && (
+                <div className="rounded border border-red-200 bg-red-50 p-2">
+                  {providerDiagnostics.blockingErrors.map(item => (
+                    <p key={item} className="text-[11px] text-red-700">• {item}</p>
+                  ))}
+                </div>
+              )}
+              {providerDiagnostics.warnings.length > 0 && (
+                <div className="rounded border border-amber-200 bg-amber-50 p-2">
+                  {providerDiagnostics.warnings.map(item => (
+                    <p key={item} className="text-[11px] text-amber-700">• {item}</p>
+                  ))}
+                </div>
+              )}
             </div>
 
             {error && (

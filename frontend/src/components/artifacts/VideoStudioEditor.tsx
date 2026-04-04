@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import JSZip from 'jszip'
 import type {
+  LiteralGenerationState,
   VideoAudioAsset,
   VideoClipAsset,
   VideoProductionPackage,
@@ -34,6 +35,11 @@ import {
   renderLiteralVideoByScope,
   resolveVideoRenderPreset,
 } from '../../lib/literal-video-production'
+import {
+  getExternalVideoProviderConfig,
+  getExternalVideoProviderDiagnostics,
+  isExternalVideoProviderConfigured,
+} from '../../lib/external-video-provider'
 import { formatSecondsToMMSS } from '../../lib/time-format'
 import { useToast } from '../Toast'
 
@@ -84,6 +90,108 @@ function hasCompleteMediaAssets(
 ): boolean {
   return Boolean(soundtrackUrl)
     && scenes.every(scene => Boolean(imageMap[scene.number]) || Boolean(audioMap[scene.number]))
+}
+
+function hasLiteralFailures(state?: LiteralGenerationState): boolean {
+  if (!state) return false
+  if (state.status === 'failed') return true
+  return state.scenes.some(scene =>
+    scene.imageStatus === 'failed' ||
+    scene.narrationStatus === 'failed' ||
+    scene.clipsStatus === 'failed',
+  )
+}
+
+function shouldAutoResumeLiteralGeneration(
+  state: LiteralGenerationState | undefined,
+  hasCompleteAssets: boolean,
+): boolean {
+  if (!state) return false
+  if (hasCompleteAssets) return false
+  return state.status === 'running' || state.status === 'failed'
+}
+
+function formatLiteralStepStatus(status: 'pending' | 'running' | 'completed' | 'failed'): string {
+  if (status === 'completed') return 'Concluido'
+  if (status === 'running') return 'Em execucao'
+  if (status === 'failed') return 'Falhou'
+  return 'Pendente'
+}
+
+function literalStatusBadgeClass(status: 'pending' | 'running' | 'completed' | 'failed'): string {
+  if (status === 'completed') return 'bg-emerald-100 text-emerald-700 border-emerald-200'
+  if (status === 'running') return 'bg-amber-100 text-amber-700 border-amber-200'
+  if (status === 'failed') return 'bg-red-100 text-red-700 border-red-200'
+  return 'bg-gray-100 text-gray-600 border-gray-200'
+}
+
+interface LiteralPreflightResult {
+  blockingErrors: string[]
+  warnings: string[]
+}
+
+function runLiteralMediaPreflight(
+  production: VideoProductionPackage,
+  apiKey?: string,
+): LiteralPreflightResult {
+  const blockingErrors: string[] = []
+  const warnings: string[] = []
+
+  if (!apiKey) {
+    blockingErrors.push('Chave OpenRouter ausente. Configure a chave para gerar mídia literal.')
+  }
+
+  if (!production.scenes || production.scenes.length === 0) {
+    blockingErrors.push('Nenhuma cena disponível. Reexecute o planejamento da Fase 1.')
+  }
+
+  const hasSourceContent = production.scenes.some(scene => Boolean(scene.imagePrompt) || Boolean(scene.narration))
+  if (!hasSourceContent && !(production.sceneAssets && production.sceneAssets.length > 0)) {
+    blockingErrors.push('Sem prompts visuais/narrações para mídia literal. Revise o planejamento da Fase 1.')
+  }
+
+  if (typeof window !== 'undefined') {
+    if (typeof MediaRecorder === 'undefined') {
+      warnings.push('Render local limitado neste navegador. Chrome/Edge oferecem melhor estabilidade.')
+    } else {
+      const hasWebm = MediaRecorder.isTypeSupported('video/webm')
+      const hasVp8 = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+      const hasVp9 = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+      if (!hasWebm && !hasVp8 && !hasVp9) {
+        warnings.push('Codec de vídeo local não suportado. Pode haver falhas no render final.')
+      }
+    }
+
+    const ua = window.navigator.userAgent.toLowerCase()
+    const isIos = /iphone|ipad|ipod/.test(ua)
+    const isSafari = /safari/.test(ua) && !/chrome|crios|edg|fxios/.test(ua)
+    if (isIos || isSafari) {
+      warnings.push('Safari/iOS pode limitar renderização longa. Prefira render por cena/parte com retentativas.')
+    }
+  }
+
+  const provider = getExternalVideoProviderConfig()
+  const providerDiagnostics = getExternalVideoProviderDiagnostics()
+  blockingErrors.push(...providerDiagnostics.blockingErrors)
+  warnings.push(...providerDiagnostics.warnings)
+  if (!providerDiagnostics.configured && provider.provider !== 'none') {
+    warnings.push('Provedor externo declarado, mas incompleto; fallback local será usado para clipes.')
+  }
+
+  const estimatedClipCount = production.scenes.reduce((sum, scene) => {
+    const perSceneParts = Math.max(1, Math.ceil(
+      Math.max(1, scene.duration)
+      / Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS),
+    ))
+    return sum + perSceneParts
+  }, 0)
+  const estimatedExternalCostUsd = estimatedClipCount * 0.03
+  const configuredBudgetUsd = Number.parseFloat(String(import.meta.env.VITE_LITERAL_MEDIA_BUDGET_USD || '0'))
+  if (configuredBudgetUsd > 0 && estimatedExternalCostUsd > configuredBudgetUsd) {
+    warnings.push(`Estimativa de custo de clipes (~US$ ${estimatedExternalCostUsd.toFixed(2)}) acima do budget configurado (US$ ${configuredBudgetUsd.toFixed(2)}).`)
+  }
+
+  return { blockingErrors, warnings }
 }
 
 async function blobToDataUrl(blob: Blob): Promise<string> {
@@ -547,6 +655,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [saving, setSaving] = useState(false)
   const autoGenerationStarted = useRef(false)
+  const literalGenerationAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const imageMap: Record<number, string> = {}
@@ -581,6 +690,25 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   const pixelsPerSecond = PIXELS_PER_SECOND_BASE * zoom
   const totalDuration = production.totalDuration || 600
   const activeRenderJob = renderQueue.find(item => item.status === 'processing')
+  const literalState = production.literalGenerationState
+  const literalHasFailures = hasLiteralFailures(literalState)
+  const literalStatusLabel = literalState
+    ? literalState.status === 'running'
+      ? `Geração literal: ${literalState.phase.replace(/_/g, ' ')}`
+      : literalState.status === 'completed'
+        ? 'Geração literal concluída'
+        : literalState.status === 'failed'
+          ? 'Geração literal com falhas'
+          : 'Geração literal em espera'
+    : null
+  const literalSceneCheckpoints = literalState?.scenes || []
+  const literalCompletedScenes = literalSceneCheckpoints.filter(scene =>
+    scene.imageStatus === 'completed'
+    && scene.narrationStatus === 'completed'
+    && scene.clipsStatus === 'completed',
+  ).length
+  const literalPreflight = runLiteralMediaPreflight(production, apiKey)
+  const providerDiagnostics = getExternalVideoProviderDiagnostics()
 
   const buildCurrentProduction = useCallback((): VideoProductionPackage => {
     const sceneAssets: VideoSceneAsset[] = production.scenes.map(scene => ({
@@ -789,7 +917,23 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   }, [apiKey, generatingAudioFor, generatedAudio])
 
   const handleGenerateLiteralVideo = useCallback(async () => {
-    if (!apiKey || generatingFullVideo) return
+    if (generatingFullVideo) return
+    const preflight = runLiteralMediaPreflight(production, apiKey)
+    if (preflight.blockingErrors.length > 0) {
+      const first = preflight.blockingErrors[0]
+      setFullVideoError(first)
+      toast.error('Preflight bloqueou a geração literal', first)
+      return
+    }
+    if (preflight.warnings.length > 0) {
+      toast.warning('Preflight com alertas', preflight.warnings[0])
+    }
+    const effectiveApiKey = apiKey
+    if (!effectiveApiKey) return
+
+    const controller = new AbortController()
+    literalGenerationAbortRef.current = controller
+
     setGeneratingFullVideo(true)
     setFullVideoError('')
     setFullVideoStatus('')
@@ -816,7 +960,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       }
 
       const result = await generateLiteralMediaAssets(
-        apiKey,
+        effectiveApiKey,
         currentProduction,
         (_step, _total, _phase, label) => {
           setFullVideoStatus(label)
@@ -830,10 +974,10 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
             if (asset.narrationUrl) nextAudioPartial[asset.sceneNumber] = asset.narrationUrl
             if (asset.videoClips?.length) nextClipsPartial[asset.sceneNumber] = asset.videoClips
           })
-          setGeneratedImages(nextImagesPartial)
-          setGeneratedAudio(nextAudioPartial)
-          setGeneratedClips(nextClipsPartial)
-          setGeneratedSoundtrack(partial.soundtrackAsset?.url || null)
+          setGeneratedImages(prev => ({ ...prev, ...nextImagesPartial }))
+          setGeneratedAudio(prev => ({ ...prev, ...nextAudioPartial }))
+          setGeneratedClips(prev => ({ ...prev, ...nextClipsPartial }))
+          setGeneratedSoundtrack(prev => partial.soundtrackAsset?.url || prev || null)
           const enrichedPartial: VideoProductionPackage = {
             ...partial,
             tracks: localTracks,
@@ -853,6 +997,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
           if (onSave) onSave(enrichedPartial)
           if (onSaveToNotebook) await onSaveToNotebook(enrichedPartial)
         },
+        { signal: controller.signal },
       )
 
       const nextImages: Record<number, string> = {}
@@ -863,11 +1008,19 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         if (asset.narrationUrl) nextAudio[asset.sceneNumber] = asset.narrationUrl
         if (asset.videoClips?.length) nextClips[asset.sceneNumber] = asset.videoClips
       })
-      setGeneratedImages(nextImages)
-      setGeneratedAudio(nextAudio)
-      setGeneratedClips(nextClips)
+      const mergedImages = { ...generatedImages, ...nextImages }
+      const mergedAudio = { ...generatedAudio, ...nextAudio }
+      const mergedClips = { ...generatedClips, ...nextClips }
+      setGeneratedImages(mergedImages)
+      setGeneratedAudio(mergedAudio)
+      setGeneratedClips(mergedClips)
       setGeneratedSoundtrack(result.production.soundtrackAsset?.url || null)
-      setMediaGenerationComplete(true)
+      setMediaGenerationComplete(hasCompleteMediaAssets(
+        result.production.scenes,
+        mergedImages,
+        mergedAudio,
+        result.production.soundtrackAsset?.url,
+      ))
       setHasUnsavedChanges(false)
 
       const finalMediaProduction: VideoProductionPackage = {
@@ -901,11 +1054,28 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao gerar partes do vídeo'
       setFullVideoError(message)
-      toast.error('Falha ao gerar partes do vídeo', message)
+      if (message.toLowerCase().includes('cancelled')) {
+        toast.warning('Geração literal cancelada', 'Você pode retomar depois sem perder o progresso salvo.')
+      } else {
+        toast.error('Falha ao gerar partes do vídeo', message)
+      }
     } finally {
+      literalGenerationAbortRef.current = null
       setGeneratingFullVideo(false)
     }
   }, [apiKey, generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, generatedVideoUrl, generatedVideoMimeType, renderedScopes, renderQueue, renderPresets, selectedRenderPresetId, onSave, onSaveToNotebook, toast])
+
+  const handleCancelLiteralGeneration = useCallback(() => {
+    if (!generatingFullVideo) return
+    literalGenerationAbortRef.current?.abort()
+    setFullVideoStatus('Cancelando geração literal...')
+  }, [generatingFullVideo])
+
+  const handleRetryFailedLiteralGeneration = useCallback(async () => {
+    setFullVideoError('')
+    setFullVideoStatus('Retomando apenas etapas pendentes/falhadas...')
+    await handleGenerateLiteralVideo()
+  }, [handleGenerateLiteralVideo])
 
   const enqueueRenderJob = useCallback((scope: VideoRenderScope, sceneNumber?: number, partNumber?: number) => {
     const id = `render_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -1087,6 +1257,8 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       mimeType: file.type || 'video/webm',
       generatedAt: new Date().toISOString(),
       source: 'uploaded',
+      generationEngine: 'manual-upload',
+      providerName: 'manual-upload',
     }
     setGeneratedClips(prev => {
       const current = prev[scene.number] || []
@@ -1141,17 +1313,24 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       const sceneFolder = root.folder(`cena-${String(scene.number).padStart(2, '0')}`)
       if (!sceneFolder) continue
       const image = generatedImages[scene.number]
-      if (image) sceneFolder.file('imagem.png', await fetch(image).then(resp => resp.blob()))
+      if (image) {
+        const imageBlob = await fetch(image).then(resp => resp.blob()) as Blob
+        sceneFolder.file('imagem.png', imageBlob)
+      }
       const narration = generatedAudio[scene.number]
-      if (narration) sceneFolder.file('narracao.wav', await fetch(narration).then(resp => resp.blob()))
+      if (narration) {
+        const narrationBlob = await fetch(narration).then(resp => resp.blob()) as Blob
+        sceneFolder.file('narracao.wav', narrationBlob)
+      }
 
       const clips = generatedClips[scene.number] || []
       if (clips.length > 0) {
         const clipsFolder = sceneFolder.folder('partes')
         for (const clip of clips) {
+          const clipBlob = await fetch(clip.url).then(resp => resp.blob()) as Blob
           clipsFolder?.file(
             `parte-${String(clip.partNumber).padStart(2, '0')}.webm`,
-            await fetch(clip.url).then(resp => resp.blob()),
+            clipBlob,
           )
         }
       }
@@ -1166,10 +1345,36 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
   }, [production, renderedScopes, generatedVideoUrl, generatedVideoMimeType, generatedSoundtrack, generatedImages, generatedAudio, generatedClips])
 
   useEffect(() => {
-    if (!autoGenerateMedia || autoGenerationStarted.current || !apiKey) return
+    if (autoGenerationStarted.current || !apiKey || generatingFullVideo) return
+    const hasCompleteAssets = hasCompleteMediaAssets(
+      production.scenes,
+      generatedImages,
+      generatedAudio,
+      generatedSoundtrack,
+    )
+    const shouldResume = shouldAutoResumeLiteralGeneration(production.literalGenerationState, hasCompleteAssets)
+    if (!autoGenerateMedia && !shouldResume) return
+
     autoGenerationStarted.current = true
-    void handleGenerateLiteralVideo().catch(() => {})
-  }, [autoGenerateMedia, apiKey, handleGenerateLiteralVideo])
+    void handleGenerateLiteralVideo().catch(() => {
+      autoGenerationStarted.current = false
+    })
+  }, [
+    autoGenerateMedia,
+    apiKey,
+    generatingFullVideo,
+    production,
+    generatedImages,
+    generatedAudio,
+    generatedSoundtrack,
+    handleGenerateLiteralVideo,
+  ])
+
+  useEffect(() => {
+    return () => {
+      literalGenerationAbortRef.current?.abort()
+    }
+  }, [])
 
   // Get selected segment data
   const selectedSeg = selectedSegment
@@ -1194,6 +1399,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
             </h1>
             <p className="text-[10px] text-gray-400">
               {production.scenes.length} cenas · {Math.floor(totalDuration / 60)}:{String(totalDuration % 60).padStart(2, '0')} min
+              {literalStatusLabel ? ` · ${literalStatusLabel}` : ''}
             </p>
           </div>
         </div>
@@ -1240,7 +1446,7 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
 
           <button
             onClick={handleGenerateLiteralVideo}
-            disabled={generatingFullVideo || !apiKey}
+            disabled={generatingFullVideo || literalPreflight.blockingErrors.length > 0}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 text-white text-xs font-medium rounded-lg hover:bg-rose-700 disabled:opacity-60"
           >
             {generatingFullVideo
@@ -1248,6 +1454,29 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
               : <Film className="w-3.5 h-3.5" />}
             {generatingFullVideo ? 'Gerando partes...' : 'Gerar partes por cena'}
           </button>
+
+          {generatingFullVideo && (
+            <button
+              onClick={handleCancelLiteralGeneration}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-white text-xs font-medium rounded-lg hover:bg-gray-600"
+            >
+              <X className="w-3.5 h-3.5" />
+              Cancelar geração
+            </button>
+          )}
+
+          {literalHasFailures && (
+            <button
+              onClick={() => void handleRetryFailedLiteralGeneration()}
+              disabled={generatingFullVideo || !apiKey}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-lg hover:bg-amber-700 disabled:opacity-60"
+            >
+              {generatingFullVideo
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Sparkles className="w-3.5 h-3.5" />}
+              {generatingFullVideo ? 'Retomando...' : 'Retentar falhas'}
+            </button>
+          )}
 
           <button
             onClick={handleRenderFinalVideo}
@@ -1356,6 +1585,49 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
               )}
               {fullVideoError && (
                 <p className="text-xs text-red-600">{fullVideoError}</p>
+              )}
+              {literalPreflight.blockingErrors.length > 0 && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-2 space-y-1">
+                  <p className="text-[10px] font-semibold text-red-700 uppercase">Preflight Bloqueado</p>
+                  {literalPreflight.blockingErrors.map(item => (
+                    <p key={item} className="text-[10px] text-red-700">• {item}</p>
+                  ))}
+                </div>
+              )}
+              {literalPreflight.warnings.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 space-y-1">
+                  <p className="text-[10px] font-semibold text-amber-700 uppercase">Alertas de Preflight</p>
+                  {literalPreflight.warnings.map(item => (
+                    <p key={item} className="text-[10px] text-amber-700">• {item}</p>
+                  ))}
+                </div>
+              )}
+              {literalState && (
+                <div className="rounded-lg border bg-white p-2 space-y-1">
+                  <p className="text-[10px] font-semibold text-gray-600 uppercase">Checkpoint Literal</p>
+                  <p className="text-[10px] text-gray-600">
+                    Status: <span className="font-semibold">{literalState.status}</span> · Fase: {literalState.phase.replace(/_/g, ' ')}
+                  </p>
+                  <p className="text-[10px] text-gray-500">
+                    Cenas completas: {literalCompletedScenes}/{production.scenes.length} · Versao: {literalState.checkpointVersion}
+                  </p>
+                  <p className="text-[10px] text-gray-500">
+                    Execucoes: {literalState.runCount || 1} · Retomadas: {literalState.resumeCount || 0}
+                  </p>
+                  {literalState.events && literalState.events.length > 0 && (
+                    <p className="text-[10px] text-gray-500 truncate">
+                      Ultimo evento: {literalState.events[literalState.events.length - 1]?.message || literalState.events[literalState.events.length - 1]?.type}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-gray-500">
+                    Provedor externo: {isExternalVideoProviderConfigured()
+                      ? `ativo (${providerDiagnostics.provider})`
+                      : `inativo (fallback local${providerDiagnostics.provider !== 'none' ? ' por configuracao incompleta' : ''})`}
+                  </p>
+                  <p className="text-[10px] text-gray-500 truncate">
+                    Poll: {providerDiagnostics.pollIntervalMs}ms · Timeout: {Math.round(providerDiagnostics.pollTimeoutMs / 1000)}s
+                  </p>
+                </div>
               )}
               <label className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white text-xs font-medium rounded-lg border cursor-pointer hover:bg-gray-50">
                 <Upload className="w-3.5 h-3.5" />
@@ -1632,8 +1904,34 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                 const sceneClips = (generatedClips[scene.number] || []).sort((a, b) => a.partNumber - b.partNumber)
                 const isGeneratingImage = generatingImageFor === scene.number
                 const isGeneratingAudio = generatingAudioFor === scene.number
+                const sceneCheckpoint = literalState?.scenes?.find(item => item.sceneNumber === scene.number)
                 return (
                   <div className="space-y-3">
+                    {sceneCheckpoint && (
+                      <div className="bg-gray-50 rounded-lg p-3 border space-y-2">
+                        <p className="text-[10px] font-semibold text-gray-600 uppercase">Checkpoint da Cena</p>
+                        <div className="grid grid-cols-3 gap-1">
+                          <span className={`px-2 py-1 rounded border text-[10px] font-medium ${literalStatusBadgeClass(sceneCheckpoint.imageStatus)}`}>
+                            Img: {formatLiteralStepStatus(sceneCheckpoint.imageStatus)}
+                          </span>
+                          <span className={`px-2 py-1 rounded border text-[10px] font-medium ${literalStatusBadgeClass(sceneCheckpoint.narrationStatus)}`}>
+                            TTS: {formatLiteralStepStatus(sceneCheckpoint.narrationStatus)}
+                          </span>
+                          <span className={`px-2 py-1 rounded border text-[10px] font-medium ${literalStatusBadgeClass(sceneCheckpoint.clipsStatus)}`}>
+                            Clips: {formatLiteralStepStatus(sceneCheckpoint.clipsStatus)}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-500">
+                          Tentativas: Img {sceneCheckpoint.imageAttempts || 0} · TTS {sceneCheckpoint.narrationAttempts || 0} · Clips {sceneCheckpoint.clipsAttempts || 0}
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          Partes concluídas: {sceneCheckpoint.clipPartsCompleted}/{sceneCheckpoint.clipPartsTotal}
+                        </p>
+                        {sceneCheckpoint.lastError && (
+                          <p className="text-[10px] text-red-600">{sceneCheckpoint.lastError}</p>
+                        )}
+                      </div>
+                    )}
                     <div className="bg-gray-50 rounded-lg p-3 border">
                       <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Timing</p>
                       <p className="text-xs text-gray-700">{scene.timeStart} → {scene.timeEnd} ({scene.duration}s)</p>
@@ -1740,11 +2038,24 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                               mimeType: 'video/webm',
                               generatedAt: '',
                               source: 'generated' as const,
+                              generationEngine: 'browser-local' as const,
+                              providerName: 'browser-renderer',
                             }))
                         ).map((clip) => (
                           <div key={`clip-${scene.number}-${clip.partNumber}`} className="rounded border bg-white p-2">
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-[10px] font-semibold text-gray-700">Parte {clip.partNumber}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-semibold text-gray-700">Parte {clip.partNumber}</span>
+                                {clip.generationEngine && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
+                                    {clip.generationEngine === 'external-provider'
+                                      ? `externo${clip.providerName ? `:${clip.providerName}` : ''}`
+                                      : clip.generationEngine === 'browser-local'
+                                      ? 'local'
+                                      : 'upload'}
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => handleRegenerateClipPart(scene, clip.partNumber)}
@@ -1773,7 +2084,12 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
                               </div>
                             </div>
                             {clip.url ? (
-                              <video controls src={clip.url} className="w-full rounded border bg-black" />
+                              <>
+                                <video controls src={clip.url} className="w-full rounded border bg-black" />
+                                <p className="text-[10px] text-gray-500 mt-1">
+                                  {clip.duration > 0 ? `Duração: ${Math.round(clip.duration)}s` : 'Duração não informada'}
+                                </p>
+                              </>
                             ) : (
                               <p className="text-[10px] text-gray-500">Ainda sem vídeo para esta parte.</p>
                             )}

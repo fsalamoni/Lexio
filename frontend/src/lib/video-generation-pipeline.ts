@@ -98,6 +98,9 @@ export interface VideoClipAsset {
   mimeType: string
   generatedAt: string
   source?: 'generated' | 'uploaded'
+  generationEngine?: 'external-provider' | 'browser-local' | 'manual-upload'
+  providerName?: string
+  providerJobId?: string
   storagePath?: string
 }
 
@@ -153,6 +156,46 @@ export interface VideoRenderQueueItem {
   error?: string
 }
 
+export type LiteralSceneStepStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+export interface LiteralSceneCheckpoint {
+  sceneNumber: number
+  imageStatus: LiteralSceneStepStatus
+  narrationStatus: LiteralSceneStepStatus
+  clipsStatus: LiteralSceneStepStatus
+  imageAttempts?: number
+  narrationAttempts?: number
+  clipsAttempts?: number
+  clipPartsCompleted: number
+  clipPartsTotal: number
+  lastError?: string
+  updatedAt: string
+}
+
+export interface LiteralGenerationEvent {
+  at: string
+  type: 'start' | 'resume' | 'retry' | 'step_success' | 'step_failed' | 'completed'
+  phase: LiteralGenerationState['phase']
+  sceneNumber?: number
+  partNumber?: number
+  attempt?: number
+  message?: string
+}
+
+export interface LiteralGenerationState {
+  status: 'idle' | 'running' | 'completed' | 'failed'
+  phase: 'image_generation' | 'tts_generation' | 'clip_generation' | 'soundtrack_generation' | 'completed' | 'failed'
+  startedAt: string
+  updatedAt: string
+  completedAt?: string
+  checkpointVersion: number
+  runCount?: number
+  resumeCount?: number
+  errors: string[]
+  events?: LiteralGenerationEvent[]
+  scenes: LiteralSceneCheckpoint[]
+}
+
 export function createVideoRenderScopeLabel(
   scope: VideoRenderScope,
   sceneNumber?: number,
@@ -180,6 +223,7 @@ export interface VideoProductionPackage {
   renderPresets?: VideoRenderPreset[]
   selectedRenderPresetId?: string
   sceneClipDurationSeconds?: number
+  literalGenerationState?: LiteralGenerationState
 }
 
 export interface VideoGenerationStepExecution {
