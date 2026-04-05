@@ -17,14 +17,35 @@ const DATAJUD_API_KEY = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGR
 const DATAJUD_BASE_URL = 'https://api-publica.datajud.cnj.jus.br'
 
 /** Concurrency limit for parallel tribunal queries */
-const BATCH_SIZE = 6
+const BATCH_SIZE = 4
 
 /** Timeout per tribunal request (ms) */
-const REQUEST_TIMEOUT = 12_000
+const REQUEST_TIMEOUT = 15_000
 const MAX_RETRIES = 2
 
 /** Max results per tribunal */
 const RESULTS_PER_TRIBUNAL = 5
+
+/**
+ * CORS proxy providers for browser-side requests.
+ * DataJud API doesn't set Access-Control-Allow-Origin headers,
+ * so all requests from the browser must be routed through a CORS proxy.
+ */
+const CORS_PROXIES: Array<(url: string) => string> = [
+  (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url) => `https://thingproxy.freeboard.io/fetch/${url}`,
+]
+
+/** Small delay between batches to avoid overwhelming the proxy */
+const INTER_BATCH_DELAY = 250
+
+function buildProxiedUrl(targetUrl: string, proxyIndex: number): string {
+  if (proxyIndex < CORS_PROXIES.length) {
+    return CORS_PROXIES[proxyIndex](targetUrl)
+  }
+  // Last resort: try direct (will fail due to CORS in most browsers)
+  return targetUrl
+}
 
 // ── Tribunal Registry ──────────────────────────────────────────────────────────
 
@@ -251,6 +272,9 @@ export async function searchDataJud(
     sort: [{ dataAjuizamento: { order: 'desc' } }],
   }
 
+  // Track which proxy is working — start with primary, rotate on network failure
+  let activeProxyIndex = 0
+
   const fetchTribunalWithRetry = async (tribunal: TribunalInfo) => {
     let lastError: unknown = null
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -258,8 +282,11 @@ export async function searchDataJud(
         throw new DataJudRequestError('Operação cancelada pelo usuário.', 'aborted')
       }
 
+      // Try current proxy, then rotate to next on network failure
+      const proxyIdx = attempt === 0 ? activeProxyIndex : Math.min(attempt, CORS_PROXIES.length - 1)
       try {
-        const url = `${DATAJUD_BASE_URL}/api_publica_${tribunal.alias}/_search`
+        const targetUrl = `${DATAJUD_BASE_URL}/api_publica_${tribunal.alias}/_search`
+        const url = buildProxiedUrl(targetUrl, proxyIdx)
         const resp = await fetch(url, {
           method: 'POST',
           headers: {
@@ -315,6 +342,8 @@ export async function searchDataJud(
       )
     }
     if (lastError instanceof TypeError) {
+      // Network/CORS failure — rotate to next proxy for future requests
+      if (activeProxyIndex < CORS_PROXIES.length - 1) activeProxyIndex++
       throw new DataJudRequestError(`${tribunal.alias}: falha de rede`, 'network', undefined, true)
     }
     throw new DataJudRequestError(`${tribunal.alias}: falha transitória`, 'unknown', undefined, true)
@@ -359,6 +388,11 @@ export async function searchDataJud(
       currentTribunal: batch[batch.length - 1]?.name ?? '',
       errors: errors.length,
     })
+
+    // Small delay between batches to avoid overwhelming CORS proxy
+    if (i + BATCH_SIZE < tribunals.length && !signal?.aborted) {
+      await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY))
+    }
   }
 
   // Sort all results by date descending
@@ -395,7 +429,8 @@ export async function searchDataJudByNumber(
   for (const tribunal of ALL_TRIBUNALS) {
     if (signal?.aborted) break
     try {
-      const url = `${DATAJUD_BASE_URL}/api_publica_${tribunal.alias}/_search`
+      const targetUrl = `${DATAJUD_BASE_URL}/api_publica_${tribunal.alias}/_search`
+      const url = buildProxiedUrl(targetUrl, 0)
       const resp = await fetch(url, {
         method: 'POST',
         headers: {
