@@ -45,6 +45,12 @@ export interface AcervoAnalysisResult {
 
 type ProgressCallback = (p: AcervoAnalysisProgress) => void
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+  }
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const MAX_PREFILTERED_DOCS = 30
@@ -348,7 +354,9 @@ export async function analyzeNotebookAcervo(
   existingSourceNames: string[],
   existingSourceIds: Set<string>,
   onProgress?: ProgressCallback,
+  signal?: AbortSignal,
 ): Promise<AcervoAnalysisResult> {
+  throwIfAborted(signal)
   const startTime = Date.now()
   const executions: UsageExecutionRecord[] = []
 
@@ -373,6 +381,7 @@ export async function analyzeNotebookAcervo(
   // ── 1. Load acervo ──
   onProgress?.({ phase: 'nb_acervo_triagem', message: 'Carregando documentos do acervo...', percent: 5 })
   const allAcervoDocs = await getAllAcervoDocumentsForSearch(uid)
+  throwIfAborted(signal)
   console.log(`[Notebook Acervo] Found ${allAcervoDocs.length} indexed documents in acervo`)
 
   if (allAcervoDocs.length === 0) {
@@ -389,12 +398,14 @@ export async function analyzeNotebookAcervo(
 
   // ── 2. Triagem — extract keywords from notebook topic ──
   onProgress?.({ phase: 'nb_acervo_triagem', message: 'Analisando tema do caderno...', percent: 10 })
+  throwIfAborted(signal)
 
   const triageResult = await callLLM(
     apiKey,
     buildTriagemSystem(),
     buildTriagemUser(topic, description, existingSourceNames),
     modelTriagem, 800, 0.1,
+    { signal },
   )
 
   executions.push(createUsageExecutionRecord({
@@ -413,6 +424,7 @@ export async function analyzeNotebookAcervo(
 
   // ── 3. Pre-filter (zero-cost) + Buscador (LLM ranking) ──
   onProgress?.({ phase: 'nb_acervo_buscador', message: 'Buscando documentos relevantes no acervo...', percent: 25 })
+  throwIfAborted(signal)
 
   const searchKeywords = extractKeywordsFromTriage(triageResult.content, topic, description)
   console.log(`[Notebook Acervo Pre-filter] Keywords:`, searchKeywords)
@@ -431,6 +443,7 @@ export async function analyzeNotebookAcervo(
     console.log(`[Notebook Acervo Ementa] ${docsNeedingEmenta.length} docs need ementa generation`)
     const ementaPromises = docsNeedingEmenta.slice(0, 10).map(async d => {
       try {
+        throwIfAborted(signal)
         const fullDoc = availableDocs.find(ad => ad.id === d.id)
         if (!fullDoc) return
         const { ementa, keywords, llm_execution: ementaExec } = await generateAcervoEmenta(
@@ -464,6 +477,7 @@ export async function analyzeNotebookAcervo(
     buildBuscadorSystem(),
     buildBuscadorUser(triageResult.content, topic, description, docSummaries),
     modelBuscador, 2000, 0.1,
+    { signal },
   )
 
   executions.push(createUsageExecutionRecord({
@@ -506,6 +520,7 @@ export async function analyzeNotebookAcervo(
 
   // ── 4. Analista — deep analysis of selected docs ──
   onProgress?.({ phase: 'nb_acervo_analista', message: `Analisando ${selectedIds.length} documento(s) selecionado(s)...`, percent: 50 })
+  throwIfAborted(signal)
 
   const selectedDocs = selectedIds
     .map(sel => {
@@ -529,6 +544,7 @@ export async function analyzeNotebookAcervo(
     buildAnalistaSystem(),
     buildAnalistaUser(topic, triageResult.content, selectedDocs),
     modelAnalista, 4000, 0.2,
+    { signal },
   )
 
   executions.push(createUsageExecutionRecord({
@@ -545,12 +561,14 @@ export async function analyzeNotebookAcervo(
 
   // ── 5. Curador — final curation ──
   onProgress?.({ phase: 'nb_acervo_curador', message: 'Fazendo curadoria final dos documentos...', percent: 75 })
+  throwIfAborted(signal)
 
   const curadorResult = await callLLM(
     apiKey,
     buildCuradorSystem(),
     buildCuradorUser(topic, triageResult.content, analistaResult.content, buscadorResult.content),
     modelCurador, 3000, 0.2,
+    { signal },
   )
 
   executions.push(createUsageExecutionRecord({

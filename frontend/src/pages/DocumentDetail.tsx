@@ -266,6 +266,7 @@ export default function DocumentDetail() {
 
   const handleRetry = async () => {
     if (!id) return
+    if (workflowLoading || deleting || retrying) return
     setRetrying(true)
     try {
       if (IS_FIREBASE && userId && doc) {
@@ -317,6 +318,7 @@ export default function DocumentDetail() {
 
   const handleWorkflowAction = async (action: 'submit-review' | 'approve' | 'reject') => {
     if (!id) return
+    if (retrying || deleting || workflowLoading) return
     setWorkflowLoading(true)
     try {
       if (IS_FIREBASE && userId) {
@@ -515,7 +517,7 @@ export default function DocumentDetail() {
               </div>
               <button
                 onClick={handleRetry}
-                disabled={retrying}
+                disabled={retrying || workflowLoading || deleting}
                 className="inline-flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors text-sm font-medium"
               >
                 <RotateCcw className={`w-4 h-4 ${retrying ? 'animate-spin' : ''}`} />
@@ -578,7 +580,7 @@ export default function DocumentDetail() {
             {doc.status !== 'processando' && (
               <button
                 onClick={handleDelete}
-                disabled={deleting}
+                disabled={deleting || retrying || workflowLoading}
                 className="inline-flex items-center gap-2 border border-red-200 text-red-500 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors text-sm disabled:opacity-50"
               >
                 <Trash2 className="w-4 h-4" />
@@ -592,7 +594,7 @@ export default function DocumentDetail() {
               {(doc.status === 'concluido' || doc.status === 'rejeitado') && (
                 <button
                   onClick={() => handleWorkflowAction('submit-review')}
-                  disabled={workflowLoading}
+                  disabled={workflowLoading || retrying || deleting}
                   className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
@@ -605,7 +607,7 @@ export default function DocumentDetail() {
                 <>
                   <button
                     onClick={() => handleWorkflowAction('approve')}
-                    disabled={workflowLoading}
+                    disabled={workflowLoading || retrying || deleting}
                     className="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50"
                   >
                     <ThumbsUp className="w-4 h-4" />
@@ -613,7 +615,7 @@ export default function DocumentDetail() {
                   </button>
                   <button
                     onClick={() => setShowRejectForm(true)}
-                    disabled={workflowLoading}
+                    disabled={workflowLoading || retrying || deleting}
                     className="inline-flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors text-sm disabled:opacity-50"
                   >
                     <ThumbsDown className="w-4 h-4" />
@@ -626,7 +628,7 @@ export default function DocumentDetail() {
               {doc.status === 'aprovado' && role === 'admin' && (
                 <button
                   onClick={() => handleWorkflowAction('submit-review')}
-                  disabled={workflowLoading}
+                  disabled={workflowLoading || retrying || deleting}
                   className="inline-flex items-center gap-2 border border-gray-300 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -649,7 +651,7 @@ export default function DocumentDetail() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleWorkflowAction('reject')}
-                    disabled={workflowLoading}
+                    disabled={workflowLoading || retrying || deleting}
                     className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 text-sm disabled:opacity-50"
                   >
                     Confirmar Rejeição

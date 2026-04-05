@@ -61,11 +61,12 @@ type SuggestionState = 'pending' | 'accepted' | 'rejected' | 'applying'
 interface SuggestionCardProps {
   suggestion: AnalysisSuggestion
   state: SuggestionState
+  disabled?: boolean
   onAccept: () => void
   onReject: () => void
 }
 
-function SuggestionCard({ suggestion, state, onAccept, onReject }: SuggestionCardProps) {
+function SuggestionCard({ suggestion, state, disabled = false, onAccept, onReject }: SuggestionCardProps) {
   const [expanded, setExpanded] = useState(false)
   const cfg = SUGGESTION_TYPE_CONFIG[suggestion.type]
   const Icon = cfg.icon
@@ -166,7 +167,7 @@ function SuggestionCard({ suggestion, state, onAccept, onReject }: SuggestionCar
         <div className="border-t border-inherit px-4 py-3 flex items-center justify-end gap-2 bg-white/50">
           <button
             onClick={onReject}
-            disabled={state === 'applying'}
+            disabled={state === 'applying' || disabled}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
             <XCircle className="w-3.5 h-3.5" />
@@ -174,7 +175,7 @@ function SuggestionCard({ suggestion, state, onAccept, onReject }: SuggestionCar
           </button>
           <button
             onClick={onAccept}
-            disabled={state === 'applying'}
+            disabled={state === 'applying' || disabled}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 font-medium transition-colors"
           >
             {state === 'applying'
@@ -222,6 +223,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
   const [running, setRunning]   = useState(false)
   const [agentProgress, setAgentProgress] = useState<AgentProgress[]>([])
   const [result, setResult]     = useState<ThesisAnalysisResult | null>(null)
+  const [applyingAll, setApplyingAll] = useState(false)
 
   // Per-suggestion state
   const [suggestionStates, setSuggestionStates] = useState<Record<string, SuggestionState>>({})
@@ -264,6 +266,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
 
   const handleAnalyze = async () => {
     if (!userId) return
+    if (running || applyingAll) return
 
     const apiKey = await resolveApiKey()
     if (!apiKey || !apiKey.startsWith('sk-')) {
@@ -274,6 +277,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
     setRunning(true)
     setResult(null)
     setSuggestionStates({})
+    setApplyingAll(false)
     setTypeFilter('all')
 
     try {
@@ -359,6 +363,9 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
 
   const handleAccept = async (suggestion: AnalysisSuggestion) => {
     if (!userId) return
+    if (applyingAll) return
+    const currentState = suggestionStates[suggestion.id]
+    if (currentState === 'applying' || currentState === 'accepted' || currentState === 'rejected') return
     setSuggestionStates(prev => ({ ...prev, [suggestion.id]: 'applying' }))
     try {
       if (suggestion.type === 'merge' && suggestion.proposed_thesis) {
@@ -402,9 +409,19 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
 
   const handleAcceptAll = async () => {
     if (!result) return
+    if (running || applyingAll) return
     const pending = result.suggestions.filter(s => suggestionStates[s.id] === 'pending')
-    for (const s of pending) {
-      await handleAccept(s)
+    if (pending.length === 0) return
+
+    setApplyingAll(true)
+    try {
+      for (const s of pending) {
+        const stateNow = suggestionStates[s.id]
+        if (stateNow !== 'pending') continue
+        await handleAccept(s)
+      }
+    } finally {
+      setApplyingAll(false)
     }
   }
 
@@ -505,7 +522,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
             <div className="flex-1" />
             <button
               onClick={handleAnalyze}
-              disabled={running}
+              disabled={running || applyingAll}
               className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
             >
               {running
@@ -550,9 +567,10 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
                     {pendingCount > 1 && (
                       <button
                         onClick={handleAcceptAll}
+                        disabled={applyingAll}
                         className="text-xs text-teal-600 hover:text-teal-700 font-medium"
                       >
-                        Aceitar todas pendentes ({pendingCount})
+                        {applyingAll ? 'Aplicando sugestões pendentes...' : `Aceitar todas pendentes (${pendingCount})`}
                       </button>
                     )}
                   </div>
@@ -586,6 +604,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
                         key={suggestion.id}
                         suggestion={suggestion}
                         state={suggestionStates[suggestion.id] ?? 'pending'}
+                        disabled={applyingAll}
                         onAccept={() => handleAccept(suggestion)}
                         onReject={() => handleReject(suggestion)}
                       />

@@ -503,6 +503,7 @@ export default function ResearchNotebook() {
   const [showAcervoProgressModal, setShowAcervoProgressModal] = useState(false)
   const [acervoAnalysisResults, setAcervoAnalysisResults] = useState<AnalyzedDocument[]>([])
   const [selectedAnalysisIds, setSelectedAnalysisIds] = useState<Set<string>>(new Set())
+  const acervoAbortRef = useRef<AbortController | null>(null)
 
   // Script review/edit before saving (for media artifacts: video, audio, presentation)
   const [pendingArtifact, setPendingArtifact] = useState<{
@@ -553,6 +554,8 @@ export default function ResearchNotebook() {
     return () => {
       researchAbortRef.current?.abort()
       researchAbortRef.current = null
+      acervoAbortRef.current?.abort()
+      acervoAbortRef.current = null
       studioAbortRef.current?.abort()
       studioAbortRef.current = null
     }
@@ -588,7 +591,7 @@ export default function ResearchNotebook() {
         setAcervoDocs(result.items)
       }
     } catch {
-      // non-critical
+      toast.warning('Não foi possível carregar o acervo neste momento.')
     } finally {
       setAcervoLoading(false)
     }
@@ -803,7 +806,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
   // ── Analyze acervo with multi-agent pipeline ────────────────────────
   const handleAnalyzeAcervo = async () => {
     if (!userId || !activeNotebook?.id) return
+    if (acervoAnalysisLoading) return
     const nb = activeNotebook
+    const abortController = new AbortController()
+    acervoAbortRef.current = abortController
 
     setAcervoAnalysisLoading(true)
     setAcervoAnalysisResults([])
@@ -832,6 +838,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           setAcervoAnalysisMessage(progress.message)
           setAcervoAnalysisPercent(progress.percent)
         },
+        abortController.signal,
       )
 
       // Save execution records to notebook
@@ -856,6 +863,12 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       }
     } catch (err) {
       console.error('Acervo analysis error:', err)
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setAcervoAnalysisError('')
+        setAcervoAnalysisMessage('Análise de acervo cancelada pelo usuário.')
+        toast.info('Análise de acervo cancelada')
+        return
+      }
       setAcervoAnalysisError(err instanceof Error ? err.message : 'Erro inesperado')
       if (err instanceof ModelUnavailableError) {
         toast.warning(
@@ -867,6 +880,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       }
     } finally {
       setAcervoAnalysisLoading(false)
+      acervoAbortRef.current = null
     }
   }
 
@@ -3648,9 +3662,12 @@ Instruções:
         steps={acervoTrailSteps}
         isComplete={acervoAnalysisPhase === 'concluido' && !acervoAnalysisError}
         hasError={Boolean(acervoAnalysisError)}
-        canClose={!acervoAnalysisLoading}
+        canClose
         onClose={() => {
-          if (!acervoAnalysisLoading) setShowAcervoProgressModal(false)
+          if (acervoAnalysisLoading) {
+            acervoAbortRef.current?.abort()
+          }
+          setShowAcervoProgressModal(false)
         }}
       />
 
@@ -3667,9 +3684,12 @@ Instruções:
         steps={studioTrailSteps}
         isComplete={!studioLoading && !studioErrorMessage && (studioLastProgress?.step ?? 0) >= 3}
         hasError={Boolean(studioErrorMessage)}
-        canClose={!studioLoading}
+        canClose
         onClose={() => {
-          if (!studioLoading) setShowStudioProgressModal(false)
+          if (studioLoading) {
+            studioAbortRef.current?.abort()
+          }
+          setShowStudioProgressModal(false)
         }}
       />
 
