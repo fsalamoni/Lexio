@@ -51,6 +51,29 @@ export interface StudioStepExecution {
 
 export type StudioProgressCallback = (step: number, totalSteps: number, phase: string) => void
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+  }
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise(resolve => setTimeout(resolve, ms))
+  if (signal.aborted) return Promise.reject(new DOMException('Operação cancelada pelo usuário.', 'AbortError'))
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      reject(new DOMException('Operação cancelada pelo usuário.', 'AbortError'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 // ── Agent routing ─────────────────────────────────────────────────────────────
 
 type SpecialistRole = 'studio_escritor' | 'studio_roteirista' | 'studio_visual'
@@ -504,7 +527,9 @@ Use linguagem clara, técnica quando necessário, e inclua referências às font
 export async function runStudioPipeline(
   input: StudioPipelineInput,
   onProgress?: StudioProgressCallback,
+  signal?: AbortSignal,
 ): Promise<StudioPipelineResult> {
+  throwIfAborted(signal)
   const models: ResearchNotebookModelMap = await loadResearchNotebookModels()
   const specialistRole = ARTIFACT_AGENT_MAP[input.artifactType] ?? 'studio_escritor'
   const executions: StudioStepExecution[] = []
@@ -524,6 +549,7 @@ export async function runStudioPipeline(
   }
 
   // ── Step 1: Research ────────────────────────────────────────────────
+  throwIfAborted(signal)
   onProgress?.(1, 3, 'Pesquisando e organizando fontes…')
 
   const researchPrompt = buildResearchPrompt(input)
@@ -534,6 +560,7 @@ export async function runStudioPipeline(
     models.studio_pesquisador,
     4000,
     0.2,
+    { signal },
   )
   executions.push({
     phase: `studio_pesquisador_${input.artifactType}`,
@@ -546,9 +573,10 @@ export async function runStudioPipeline(
   })
 
   // Brief pause to avoid hitting rate limits on consecutive calls
-  await new Promise(resolve => setTimeout(resolve, 1000))
+  await sleep(1000, signal)
 
   // ── Step 2: Specialist creation ─────────────────────────────────────
+  throwIfAborted(signal)
   onProgress?.(2, 3, `${SPECIALIST_LABELS[specialistRole]} criando conteúdo…`)
 
   const specialistPrompt = buildSpecialistPrompt(input, researchResult.content, specialistRole)
@@ -559,6 +587,7 @@ export async function runStudioPipeline(
     models[specialistRole],
     8000,
     0.4,
+    { signal },
   )
   executions.push({
     phase: `${specialistRole}_${input.artifactType}`,
@@ -570,8 +599,9 @@ export async function runStudioPipeline(
     duration_ms: specialistResult.duration_ms,
   })
   // Brief pause to avoid hitting rate limits on consecutive calls
-  await new Promise(resolve => setTimeout(resolve, 1000))
+  await sleep(1000, signal)
   // ── Step 3: Quality review ──────────────────────────────────────────
+  throwIfAborted(signal)
   onProgress?.(3, 3, 'Revisando e aprimorando…')
 
   const reviewPrompt = buildReviewPrompt(input, specialistResult.content)
@@ -582,6 +612,7 @@ export async function runStudioPipeline(
     models.studio_revisor,
     10000,
     0.2,
+    { signal },
   )
   executions.push({
     phase: `studio_revisor_${input.artifactType}`,

@@ -21,6 +21,7 @@ const BATCH_SIZE = 6
 
 /** Timeout per tribunal request (ms) */
 const REQUEST_TIMEOUT = 12_000
+const MAX_RETRIES = 2
 
 /** Max results per tribunal */
 const RESULTS_PER_TRIBUNAL = 5
@@ -216,15 +217,14 @@ export async function searchDataJud(
     sort: [{ dataAjuizamento: { order: 'desc' } }],
   }
 
-  // Process tribunals in batches
-  for (let i = 0; i < tribunals.length; i += BATCH_SIZE) {
-    if (signal?.aborted) break
-    if (allResults.length >= maxTotal) break
+  const fetchTribunalWithRetry = async (tribunal: TribunalInfo) => {
+    let lastError: unknown = null
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (signal?.aborted) {
+        throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+      }
 
-    const batch = tribunals.slice(i, i + BATCH_SIZE)
-
-    const batchResults = await Promise.allSettled(
-      batch.map(async (tribunal) => {
+      try {
         const url = `${DATAJUD_BASE_URL}/api_publica_${tribunal.alias}/_search`
         const resp = await fetch(url, {
           method: 'POST',
@@ -236,15 +236,38 @@ export async function searchDataJud(
           signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT),
         })
 
-        if (!resp.ok) {
-          throw new Error(`${tribunal.alias}: HTTP ${resp.status}`)
+        if (resp.ok) {
+          const data = await resp.json() as {
+            hits?: { hits?: Array<{ _source?: Record<string, unknown> }> }
+          }
+          return { tribunal, hits: data.hits?.hits ?? [] }
         }
 
-        const data = await resp.json() as {
-          hits?: { hits?: Array<{ _source?: Record<string, unknown> }> }
+        const isRetriable = resp.status === 429 || resp.status >= 500
+        if (!isRetriable || attempt >= MAX_RETRIES) {
+          throw new Error(`${tribunal.alias}: HTTP ${resp.status}`)
         }
-        return { tribunal, hits: data.hits?.hits ?? [] }
-      }),
+      } catch (err) {
+        lastError = err
+        if (attempt >= MAX_RETRIES) break
+      }
+
+      const base = 500 * Math.pow(2, attempt)
+      const jitter = Math.round(base * Math.random() * 0.35)
+      await new Promise(resolve => setTimeout(resolve, base + jitter))
+    }
+    throw lastError instanceof Error ? lastError : new Error(`${tribunal.alias}: falha transitória`)
+  }
+
+  // Process tribunals in batches
+  for (let i = 0; i < tribunals.length; i += BATCH_SIZE) {
+    if (signal?.aborted) break
+    if (allResults.length >= maxTotal) break
+
+    const batch = tribunals.slice(i, i + BATCH_SIZE)
+
+    const batchResults = await Promise.allSettled(
+      batch.map((tribunal) => fetchTribunalWithRetry(tribunal)),
     )
 
     for (const result of batchResults) {

@@ -51,6 +51,15 @@ const MAX_PREFILTERED_DOCS = 30
 const MAX_SELECTED_DOCS = 8
 const MAX_ANALISTA_CHARS_PER_DOC = 15000
 
+function extractJsonPayload(raw: string): string {
+  let jsonStr = raw.trim()
+  const fencedMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fencedMatch) jsonStr = fencedMatch[1].trim()
+  const objectMatch = jsonStr.match(/\{[\s\S]*\}/)
+  if (objectMatch) jsonStr = objectMatch[0]
+  return jsonStr
+}
+
 // ── Prompt builders ───────────────────────────────────────────────────────────
 
 function buildTriagemSystem(): string {
@@ -259,20 +268,22 @@ function extractKeywordsFromTriage(triageContent: string, topic: string, descrip
   const keywords: string[] = []
 
   try {
-    const triage = JSON.parse(triageContent)
-    if (triage.tema) keywords.push(...triage.tema.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3))
-    if (triage.subtemas) {
-      for (const sub of triage.subtemas) {
+    const triage = JSON.parse(extractJsonPayload(triageContent)) as Record<string, unknown>
+    if (typeof triage.tema === 'string') {
+      keywords.push(...triage.tema.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3))
+    }
+    if (Array.isArray(triage.subtemas)) {
+      for (const sub of triage.subtemas.filter((v): v is string => typeof v === 'string')) {
         keywords.push(...sub.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3))
       }
     }
-    if (triage.palavras_chave) {
-      for (const kw of triage.palavras_chave) {
+    if (Array.isArray(triage.palavras_chave)) {
+      for (const kw of triage.palavras_chave.filter((v): v is string => typeof v === 'string')) {
         keywords.push(kw.toLowerCase().trim())
       }
     }
-    if (triage.areas_direito) {
-      for (const area of triage.areas_direito) {
+    if (Array.isArray(triage.areas_direito)) {
+      for (const area of triage.areas_direito.filter((v): v is string => typeof v === 'string')) {
         keywords.push(area.toLowerCase().trim())
       }
     }
@@ -470,23 +481,19 @@ export async function analyzeNotebookAcervo(
   // Parse buscador result
   let selectedIds: Array<{ id: string; score: number; reason: string }> = []
   try {
-    let jsonStr = buscadorResult.content.trim()
-    const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
-    if (jsonMatch) jsonStr = jsonMatch[1].trim()
-    const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
-    if (braceMatch) jsonStr = braceMatch[0]
-
-    const parsed = JSON.parse(jsonStr)
-    const allSelected = parsed.selected || []
+    const parsed = JSON.parse(extractJsonPayload(buscadorResult.content)) as Record<string, unknown>
+    const allSelected = Array.isArray(parsed.selected) ? parsed.selected : []
     console.log(`[Notebook Acervo Buscador] LLM selected ${allSelected.length} from ${preFiltered.length}`)
 
     selectedIds = allSelected
-      .filter((s: { score?: number }) => (s.score ?? 0) >= 0.15)
+      .filter((s): s is { id?: string; score?: number; reason?: string } => !!s && typeof s === 'object')
+      .filter((s) => typeof s.id === 'string' && s.id.length > 0)
+      .filter((s) => (s.score ?? 0) >= 0.15)
       .slice(0, MAX_SELECTED_DOCS)
-      .map((s: { id: string; score: number; reason: string }) => ({
-        id: s.id,
+      .map((s) => ({
+        id: String(s.id),
         score: s.score ?? 0,
-        reason: s.reason ?? '',
+        reason: typeof s.reason === 'string' ? s.reason : '',
       }))
   } catch (parseErr) {
     console.warn('[Notebook Acervo Buscador] Parse error:', parseErr)
@@ -564,18 +571,15 @@ export async function analyzeNotebookAcervo(
   // Parse curador result for final recommendations
   let recommended: Array<{ id: string; score: number; summary: string }> = []
   try {
-    let jsonStr = curadorResult.content.trim()
-    const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
-    if (jsonMatch) jsonStr = jsonMatch[1].trim()
-    const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
-    if (braceMatch) jsonStr = braceMatch[0]
-
-    const parsed = JSON.parse(jsonStr)
-    recommended = (parsed.recommended || []).map((r: { id: string; score: number; summary: string }) => ({
-      id: r.id,
-      score: r.score ?? 0,
-      summary: r.summary ?? '',
-    }))
+    const parsed = JSON.parse(extractJsonPayload(curadorResult.content)) as Record<string, unknown>
+    recommended = (Array.isArray(parsed.recommended) ? parsed.recommended : [])
+      .filter((r): r is { id?: string; score?: number; summary?: string } => !!r && typeof r === 'object')
+      .filter((r) => typeof r.id === 'string' && r.id.length > 0)
+      .map((r) => ({
+        id: String(r.id),
+        score: r.score ?? 0,
+        summary: typeof r.summary === 'string' ? r.summary : '',
+      }))
   } catch {
     // If curador parse fails, use buscador results as fallback
     recommended = selectedIds.map(s => ({

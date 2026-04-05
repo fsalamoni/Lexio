@@ -20,33 +20,70 @@ const MAX_RETRIES = 2
 /** Maximum number of retries specifically for empty LLM responses. */
 const MAX_EMPTY_RESPONSE_RETRIES = 2
 
+export interface LLMCallOptions {
+  signal?: AbortSignal
+}
+
+function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise(resolve => setTimeout(resolve, ms))
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('Operação cancelada pelo usuário.', 'AbortError'))
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      reject(new DOMException('Operação cancelada pelo usuário.', 'AbortError'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 /**
  * Perform a fetch with automatic retry on transient errors.
  * Retries up to MAX_RETRIES times with exponential back-off (1 s, 2 s).
  * Retries on both network errors (TypeError) and timeouts (AbortError).
  * A per-request AbortController enforces REQUEST_TIMEOUT_MS.
  */
-async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
+async function fetchWithRetry(url: string, options: RequestInit, externalSignal?: AbortSignal): Promise<Response> {
   let lastError: Error | undefined
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (externalSignal?.aborted) {
+      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    }
+
     if (attempt > 0) {
-      const delayMs = 1000 * Math.pow(2, attempt - 1)
+      const baseDelayMs = 1000 * Math.pow(2, attempt - 1)
+      const jitterMs = Math.round(baseDelayMs * Math.random() * 0.25)
+      const delayMs = baseDelayMs + jitterMs
       console.warn(`[LLM] Tentativa ${attempt + 1}/${MAX_RETRIES + 1} após ${delayMs}ms...`)
-      await new Promise(r => setTimeout(r, delayMs))
+      await sleepWithSignal(delayMs, externalSignal)
     }
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    const onAbort = () => controller.abort()
+    externalSignal?.addEventListener('abort', onAbort, { once: true })
 
     try {
       const resp = await fetch(url, { ...options, signal: controller.signal })
       clearTimeout(timer)
+      externalSignal?.removeEventListener('abort', onAbort)
       return resp
     } catch (err) {
       clearTimeout(timer)
+      externalSignal?.removeEventListener('abort', onAbort)
       const isNetworkError = err instanceof TypeError
       const isTimeout = err instanceof DOMException && err.name === 'AbortError'
+
+      if (externalSignal?.aborted) {
+        throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+      }
 
       if (isTimeout) {
         lastError = new TransientLLMError(`Requisição ao OpenRouter excedeu o tempo limite (${REQUEST_TIMEOUT_MS / 1000}s)`)
@@ -117,6 +154,7 @@ export async function callLLM(
   model = 'anthropic/claude-3.5-haiku',
   maxTokens = 4000,
   temperature = 0.3,
+  options?: LLMCallOptions,
 ): Promise<LLMResult> {
   const t0 = performance.now()
 
@@ -141,10 +179,10 @@ export async function callLLM(
     if (emptyAttempt > 0) {
       const delayMs = 1500 * emptyAttempt
       console.warn(`[LLM] Resposta vazia, tentativa ${emptyAttempt + 1}/${MAX_EMPTY_RESPONSE_RETRIES + 1} após ${delayMs}ms...`)
-      await new Promise(r => setTimeout(r, delayMs))
+      await sleepWithSignal(delayMs, options?.signal)
     }
 
-    const resp = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body })
+    const resp = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body }, options?.signal)
 
     if (!resp.ok) {
       const errorBody = await resp.text().catch(() => '')
@@ -223,6 +261,7 @@ export async function callLLMWithMessages(
   model = 'anthropic/claude-3.5-haiku',
   maxTokens = 4000,
   temperature = 0.3,
+  options?: LLMCallOptions,
 ): Promise<LLMResult> {
   const t0 = performance.now()
 
@@ -239,10 +278,10 @@ export async function callLLMWithMessages(
     if (emptyAttempt > 0) {
       const delayMs = 1500 * emptyAttempt
       console.warn(`[LLM] Resposta vazia, tentativa ${emptyAttempt + 1}/${MAX_EMPTY_RESPONSE_RETRIES + 1} após ${delayMs}ms...`)
-      await new Promise(r => setTimeout(r, delayMs))
+      await sleepWithSignal(delayMs, options?.signal)
     }
 
-    const resp = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body })
+    const resp = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body }, options?.signal)
 
     if (!resp.ok) {
       const errorBody = await resp.text().catch(() => '')

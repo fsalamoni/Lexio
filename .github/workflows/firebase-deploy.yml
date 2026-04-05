@@ -79,9 +79,18 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve Firebase auth mode
+        id: auth_mode
+        run: |
+          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "use_service_account=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_service_account=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # ── Auth opção A: Service Account (se FIREBASE_SERVICE_ACCOUNT estiver setado)
       - name: Authenticate via Service Account
-        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+        if: steps.auth_mode.outputs.use_service_account == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

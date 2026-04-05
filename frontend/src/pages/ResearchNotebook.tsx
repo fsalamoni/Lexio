@@ -444,6 +444,7 @@ export default function ResearchNotebook() {
   const [researchModalStats, setResearchModalStats] = useState<ResearchStats>({ sourcesFound: 0, urlsExamined: 0, tribunalsQueried: 0, tokensUsed: 0, elapsedMs: 0 })
   const [researchModalCanClose, setResearchModalCanClose] = useState(false)
   const researchAbortRef = useRef<AbortController | null>(null)
+  const suggestionModelWarnedRef = useRef(false)
   const [sourceUploadLoading, setSourceUploadLoading] = useState(false)
   const [acervoDocs, setAcervoDocs] = useState<AcervoDocumentData[]>([])
   const [acervoLoading, setAcervoLoading] = useState(false)
@@ -458,6 +459,7 @@ export default function ResearchNotebook() {
   const [selectedArtifactType, setSelectedArtifactType] = useState<StudioArtifactType | null>(null)
   const [studioCustomPrompt, setStudioCustomPrompt] = useState('')
   const [studioProgress, setStudioProgress] = useState<{ step: number; total: number; phase: string } | null>(null)
+  const studioAbortRef = useRef<AbortController | null>(null)
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
@@ -514,6 +516,23 @@ export default function ResearchNotebook() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
+
+  // Ensure in-flight research tasks are canceled when leaving the page.
+  useEffect(() => {
+    return () => {
+      researchAbortRef.current?.abort()
+      researchAbortRef.current = null
+      studioAbortRef.current?.abort()
+      studioAbortRef.current = null
+    }
+  }, [])
+
+  const getFreshNotebookOrThrow = useCallback(async (notebookId: string) => {
+    if (!userId) throw new Error('Usuário não autenticado')
+    const fresh = await getResearchNotebook(userId, notebookId)
+    if (!fresh) throw new Error('Caderno não encontrado para atualização')
+    return fresh
+  }, [userId])
 
   // ── Auto-scroll chat to bottom on new messages ──────────────────────
   useEffect(() => {
@@ -574,7 +593,13 @@ export default function ResearchNotebook() {
       const apiKey = await getOpenRouterKey()
       const models = await loadResearchNotebookModels()
       const model = models.notebook_pesquisador
-      if (!model) return // silently skip suggestions when no model configured
+      if (!model) {
+        if (!suggestionModelWarnedRef.current) {
+          suggestionModelWarnedRef.current = true
+          toast.warning('Sugestões automáticas indisponíveis', 'Configure o agente Pesquisador de Fontes no painel administrativo para habilitar sugestões dinâmicas.')
+        }
+        return
+      }
       const preview = sourceCtx.slice(0, 4_000)
       const result = await callLLM(apiKey,
         'Você gera perguntas de pesquisa relevantes com base em fontes jurídicas.',
@@ -598,14 +623,16 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       }
 
       const lines = result.content
-        .split('\n')
-        .map(l => l.replace(/^[-•*\d.]+\s*/, '').trim())
-        .filter(l => l.length > 10 && l.length < 120)
+        .split(/[\r\n]+/)
+        .map(l => l.replace(/^[\s\-•*\d\.)]+/, '').trim())
+        .filter(l => l.length > 10 && l.length < 140)
         .slice(0, 5)
       if (lines.length >= 3) setSuggestions(lines)
-    } catch { /* keep static */ }
+    } catch (err) {
+      console.warn('Failed to generate notebook suggestions:', err)
+    }
     finally { setSuggestionsLoading(false) }
-  }, [activeNotebook, suggestionsLoading, buildSourceContext]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeNotebook, suggestionsLoading, buildSourceContext, toast]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-generate suggestions when chat tab opens
   useEffect(() => {
@@ -714,6 +741,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
   // ── Add acervo source ───────────────────────────────────────────────
   const handleAddAcervoSource = async (acervoDoc: AcervoDocumentData) => {
     if (!userId || !activeNotebook?.id) return
+    const notebookId = activeNotebook.id
     const exists = activeNotebook.sources.some(s => s.type === 'acervo' && s.reference === acervoDoc.id)
     if (exists) { toast.info('Documento já adicionado como fonte'); return }
 
@@ -730,9 +758,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         added_at: new Date().toISOString(),
       }
 
-      const updatedSources = [...activeNotebook.sources, newSource]
-      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const updatedSources = [...freshNotebook.sources, newSource]
+      await updateResearchNotebook(userId, notebookId, { sources: updatedSources })
+      setActiveNotebook(prev => prev && prev.id === notebookId ? { ...prev, sources: updatedSources } : prev)
       toast.success(`Fonte "${acervoDoc.filename}" adicionada`)
     } catch (err) {
       console.error('Error adding acervo source:', err)
@@ -774,10 +803,14 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
       // Save execution records to notebook
       if (result.executions.length > 0) {
-        const existingExecs = nb.llm_executions || []
+        const freshNotebook = await getFreshNotebookOrThrow(nb.id!)
+        const existingExecs = freshNotebook.llm_executions || []
         await updateResearchNotebook(userId, nb.id!, {
           llm_executions: [...existingExecs, ...result.executions],
         })
+        setActiveNotebook(prev => prev && prev.id === nb.id
+          ? { ...prev, llm_executions: [...existingExecs, ...result.executions] }
+          : prev)
       }
 
       if (result.documents.length > 0) {
@@ -806,7 +839,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
   // ── Add selected analysis results as sources ────────────────────────
   const handleAddAnalysisResults = async () => {
     if (!userId || !activeNotebook?.id || selectedAnalysisIds.size === 0) return
-    const nb = activeNotebook
+    const notebookId = activeNotebook.id
 
     try {
       const docsToAdd = acervoAnalysisResults.filter(d => selectedAnalysisIds.has(d.id))
@@ -822,9 +855,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         added_at: new Date().toISOString(),
       }))
 
-      const updatedSources = [...nb.sources, ...newSources]
-      await updateResearchNotebook(userId, nb.id!, { sources: updatedSources })
-      setActiveNotebook({ ...nb, sources: updatedSources })
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const updatedSources = [...freshNotebook.sources, ...newSources]
+      await updateResearchNotebook(userId, notebookId, { sources: updatedSources })
+      setActiveNotebook(prev => prev && prev.id === notebookId ? { ...prev, sources: updatedSources } : prev)
       setAcervoAnalysisResults([])
       setSelectedAnalysisIds(new Set())
       toast.success(`${docsToAdd.length} fonte(s) adicionada(s) ao caderno!`)
@@ -837,6 +871,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
   // ── Add link source ─────────────────────────────────────────────────
   const handleAddLinkSource = async () => {
     if (!userId || !activeNotebook?.id || !sourceUrl.trim()) return
+    const notebookId = activeNotebook.id
 
     const trimmedUrl = sourceUrl.trim()
     let parsedUrl: URL
@@ -867,9 +902,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         added_at: new Date().toISOString(),
       }
 
-      const updatedSources = [...activeNotebook.sources, newSource]
-      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const updatedSources = [...freshNotebook.sources, newSource]
+      await updateResearchNotebook(userId, notebookId, { sources: updatedSources })
+      setActiveNotebook(prev => prev && prev.id === notebookId ? { ...prev, sources: updatedSources } : prev)
       setSourceUrl('')
       setSuggestions([])
       toast.success(textContent.length > 100
@@ -914,9 +950,30 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     }, delayMs)
   }
 
+  const appendNotebookSourceWithExecution = async (
+    notebookId: string,
+    source: NotebookSource,
+    execution: ReturnType<typeof createUsageExecutionRecord>,
+  ) => {
+    if (!userId) throw new Error('Usuário não autenticado')
+    const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+    const updatedSources = [...freshNotebook.sources, source]
+    const updatedExecutions = [...(freshNotebook.llm_executions || []), execution]
+
+    await updateResearchNotebook(userId, notebookId, {
+      sources: updatedSources,
+      llm_executions: updatedExecutions,
+    })
+
+    setActiveNotebook(prev => prev && prev.id === notebookId
+      ? { ...prev, sources: updatedSources, llm_executions: updatedExecutions }
+      : prev)
+  }
+
   const handleAddExternalSearchSource = async () => {
     if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
     const query = externalSearchQuery.trim()
+    const notebookId = activeNotebook.id
 
     // Open modal
     const steps = createExternalSearchSteps()
@@ -1004,7 +1061,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
       const execution = createUsageExecutionRecord({
         source_type: 'caderno_pesquisa',
-        source_id: activeNotebook.id,
+        source_id: notebookId,
         phase: 'notebook_pesquisador_externo',
         agent_name: 'Pesquisador Externo',
         model: externalResult.model,
@@ -1014,13 +1071,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         duration_ms: externalResult.duration_ms,
       })
 
-      const updatedSources = [...activeNotebook.sources, source]
-      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
-      await updateResearchNotebook(userId, activeNotebook.id, {
-        sources: updatedSources,
-        llm_executions: updatedExecutions,
-      })
-      setActiveNotebook({ ...activeNotebook, sources: updatedSources, llm_executions: updatedExecutions })
+      await appendNotebookSourceWithExecution(notebookId, source, execution)
       setExternalSearchQuery('')
       setSuggestions([])
       toast.success(`Pesquisa externa adicionada com ${results.length} resultado(s).`)
@@ -1040,6 +1091,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
   const handleAddDeepExternalSearchSource = async () => {
     if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
     const query = externalSearchQuery.trim()
+    const notebookId = activeNotebook.id
 
     // Open modal
     const steps = createDeepSearchSteps()
@@ -1161,7 +1213,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
       const execution = createUsageExecutionRecord({
         source_type: 'caderno_pesquisa',
-        source_id: activeNotebook.id,
+        source_id: notebookId,
         phase: 'notebook_pesquisador_externo_profundo',
         agent_name: 'Pesquisador Externo Profundo',
         model: llmResult.model,
@@ -1171,13 +1223,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         duration_ms: llmResult.duration_ms,
       })
 
-      const updatedSources = [...activeNotebook.sources, source]
-      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
-      await updateResearchNotebook(userId, activeNotebook.id, {
-        sources: updatedSources,
-        llm_executions: updatedExecutions,
-      })
-      setActiveNotebook({ ...activeNotebook, sources: updatedSources, llm_executions: updatedExecutions })
+      await appendNotebookSourceWithExecution(notebookId, source, execution)
       setExternalSearchQuery('')
       setSuggestions([])
       toast.success('Pesquisa externa profunda adicionada como fonte.')
@@ -1197,6 +1243,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
   const handleAddJurisprudenceSource = async () => {
     if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
     const query = externalSearchQuery.trim()
+    const notebookId = activeNotebook.id
 
     // Open modal
     const steps = createJurisprudenceSteps()
@@ -1306,7 +1353,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
       const execution = createUsageExecutionRecord({
         source_type: 'caderno_pesquisa',
-        source_id: activeNotebook.id,
+        source_id: notebookId,
         phase: 'notebook_pesquisador_jurisprudencia',
         agent_name: 'Pesquisador de Jurisprudência (DataJud)',
         model: jurisprudenceResult.model,
@@ -1316,13 +1363,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         duration_ms: jurisprudenceResult.duration_ms,
       })
 
-      const updatedSources = [...activeNotebook.sources, source]
-      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
-      await updateResearchNotebook(userId, activeNotebook.id, {
-        sources: updatedSources,
-        llm_executions: updatedExecutions,
-      })
-      setActiveNotebook({ ...activeNotebook, sources: updatedSources, llm_executions: updatedExecutions })
+      await appendNotebookSourceWithExecution(notebookId, source, execution)
       setExternalSearchQuery('')
       setSuggestions([])
       toast.success(`Jurisprudência adicionada com ${djResult.results.length} resultado(s) de ${djResult.tribunalsWithResults} tribunal(is).`)
@@ -1341,6 +1382,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
   const handleUploadSourceFiles = async (files: FileList | null) => {
     if (!files || !userId || !activeNotebook?.id) return
+    const notebookId = activeNotebook.id
     const list = Array.from(files)
     if (list.length === 0) return
     setSourceUploadLoading(true)
@@ -1365,9 +1407,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         })
       }
       if (newSources.length === 0) return
-      const updatedSources = [...activeNotebook.sources, ...newSources]
-      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const updatedSources = [...freshNotebook.sources, ...newSources]
+      await updateResearchNotebook(userId, notebookId, { sources: updatedSources })
+      setActiveNotebook(prev => prev && prev.id === notebookId ? { ...prev, sources: updatedSources } : prev)
       setSuggestions([])
       toast.success(`${newSources.length} arquivo(s) adicionado(s) como fonte.`)
     } catch (err) {
@@ -1382,10 +1425,12 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
   // ── Remove source ───────────────────────────────────────────────────
   const handleRemoveSource = async (sourceId: string) => {
     if (!userId || !activeNotebook?.id) return
+    const notebookId = activeNotebook.id
     try {
-      const updatedSources = activeNotebook.sources.filter(s => s.id !== sourceId)
-      await updateResearchNotebook(userId, activeNotebook.id, { sources: updatedSources })
-      setActiveNotebook({ ...activeNotebook, sources: updatedSources })
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const updatedSources = freshNotebook.sources.filter(s => s.id !== sourceId)
+      await updateResearchNotebook(userId, notebookId, { sources: updatedSources })
+      setActiveNotebook(prev => prev && prev.id === notebookId ? { ...prev, sources: updatedSources } : prev)
       setSuggestions([])
     } catch (err) {
       console.error('Error removing source:', err)
@@ -1398,6 +1443,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
   // ── Chat: send message ──────────────────────────────────────────────
   const handleSendMessage = async () => {
     if (!userId || !activeNotebook?.id || !chatInput.trim() || chatLoading) return
+    const notebookId = activeNotebook.id
 
     const userMsg: NotebookMessage = {
       id: generateId(),
@@ -1407,7 +1453,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     }
 
     const updatedMessages = [...activeNotebook.messages, userMsg]
-    setActiveNotebook({ ...activeNotebook, messages: updatedMessages })
+    setActiveNotebook(prev => prev && prev.id === notebookId ? { ...prev, messages: updatedMessages } : prev)
     setChatInput('')
     setChatLoading(true)
 
@@ -1466,12 +1512,10 @@ Instruções:
         created_at: new Date().toISOString(),
       }
 
-      const finalMessages = [...updatedMessages, assistantMsg]
-
       // Track usage
       const execution = createUsageExecutionRecord({
         source_type: 'caderno_pesquisa',
-        source_id: activeNotebook.id,
+        source_id: notebookId,
         phase: 'notebook_assistente',
         agent_name: 'Assistente Conversacional',
         model: result.model,
@@ -1481,18 +1525,20 @@ Instruções:
         duration_ms: result.duration_ms,
       })
 
-      const updatedExecutions = [...(activeNotebook.llm_executions || []), execution]
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const baseMessages = freshNotebook.messages.some(m => m.id === userMsg.id)
+        ? freshNotebook.messages
+        : [...freshNotebook.messages, userMsg]
+      const finalMessages = [...baseMessages, assistantMsg]
+      const updatedExecutions = [...(freshNotebook.llm_executions || []), execution]
 
-      await updateResearchNotebook(userId, activeNotebook.id, {
+      await updateResearchNotebook(userId, notebookId, {
         messages: finalMessages,
         llm_executions: updatedExecutions,
       })
-
-      setActiveNotebook({
-        ...activeNotebook,
-        messages: finalMessages,
-        llm_executions: updatedExecutions,
-      })
+      setActiveNotebook(prev => prev && prev.id === notebookId
+        ? { ...prev, messages: finalMessages, llm_executions: updatedExecutions }
+        : prev)
     } catch (err) {
       console.error('Chat error:', err)
       if (err instanceof ModelUnavailableError) {
@@ -1512,6 +1558,8 @@ Instruções:
   const handleGenerateArtifact = async (artifactType: StudioArtifactType) => {
     if (!userId || !activeNotebook?.id || studioLoading) return
 
+    const abortController = new AbortController()
+    studioAbortRef.current = abortController
     setStudioLoading(true)
     setSelectedArtifactType(artifactType)
     setStudioProgress(null)
@@ -1540,7 +1588,7 @@ Instruções:
         customInstructions: studioCustomPrompt.trim() || undefined,
         artifactType,
         artifactLabel: artifactDef?.label || artifactType,
-      }, onProgress)
+      }, onProgress, abortController.signal)
 
       const artifact: StudioArtifact = {
         id: generateId(),
@@ -1566,6 +1614,10 @@ Instruções:
       }
     } catch (err) {
       console.error('Studio pipeline error:', err)
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        toast.info('Geração cancelada')
+        return
+      }
       if (err instanceof ModelUnavailableError) {
         toast.warning(
           `Modelo indisponível: ${err.modelId}`,
@@ -1584,6 +1636,7 @@ Instruções:
         toast.error('Erro ao gerar artefato. Tente novamente ou troque o modelo do agente.')
       }
     } finally {
+      studioAbortRef.current = null
       setStudioLoading(false)
       setSelectedArtifactType(null)
       setStudioProgress(null)
@@ -1596,8 +1649,10 @@ Instruções:
     executions: { phase: string; agent_name: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number; duration_ms: number }[],
   ) => {
     if (!userId || !activeNotebook?.id) return
+    const notebookId = activeNotebook.id
 
-    const updatedArtifacts = [...activeNotebook.artifacts, artifact]
+    const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+    const updatedArtifacts = [...freshNotebook.artifacts, artifact]
 
     // Use the correct cost function key so video/audio/presentation costs
     // appear in their dedicated sections on the CostTokensPage
@@ -1606,7 +1661,7 @@ Instruções:
     const newExecutions = executions.map(ex =>
       createUsageExecutionRecord({
         source_type: costKey,
-        source_id: activeNotebook.id ?? '',
+        source_id: notebookId,
         phase: ex.phase,
         agent_name: ex.agent_name,
         model: ex.model,
@@ -1617,18 +1672,16 @@ Instruções:
       })
     )
 
-    const updatedExecutions = [...(activeNotebook.llm_executions || []), ...newExecutions]
+    const updatedExecutions = [...(freshNotebook.llm_executions || []), ...newExecutions]
 
-    await updateResearchNotebook(userId, activeNotebook.id!, {
+    await updateResearchNotebook(userId, notebookId, {
       artifacts: updatedArtifacts,
       llm_executions: updatedExecutions,
     })
 
-    setActiveNotebook({
-      ...activeNotebook,
-      artifacts: updatedArtifacts,
-      llm_executions: updatedExecutions,
-    })
+    setActiveNotebook(prev => prev && prev.id === notebookId
+      ? { ...prev, artifacts: updatedArtifacts, llm_executions: updatedExecutions }
+      : prev)
   }
 
   // ── Confirm pending artifact (after review/edit) ────────────────────
@@ -1704,16 +1757,16 @@ Instruções:
 
       // If content was edited, update the saved artifact too
       if (editedContent && editedContent !== videoGenSavedArtifact.content) {
-        const updatedArtifacts = activeNotebook.artifacts.map(a =>
+        const freshNotebook = await getFreshNotebookOrThrow(activeNotebook.id)
+        const updatedArtifacts = freshNotebook.artifacts.map(a =>
           a.id === videoGenSavedArtifact.id ? { ...a, content: editedContent } : a
         )
         await updateResearchNotebook(userId, activeNotebook.id, {
           artifacts: updatedArtifacts,
         })
-        setActiveNotebook({
-          ...activeNotebook,
-          artifacts: updatedArtifacts,
-        })
+        setActiveNotebook(prev => prev && prev.id === activeNotebook.id
+          ? { ...prev, artifacts: updatedArtifacts }
+          : prev)
       }
 
       const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent) => {
@@ -1742,14 +1795,14 @@ Instruções:
           duration_ms: ex.duration_ms,
         })
       )
-      const updatedExecutions = [...(activeNotebook.llm_executions || []), ...newExecutions]
+      const freshNotebookForExec = await getFreshNotebookOrThrow(activeNotebook.id)
+      const updatedExecutions = [...(freshNotebookForExec.llm_executions || []), ...newExecutions]
       await updateResearchNotebook(userId, activeNotebook.id!, {
         llm_executions: updatedExecutions,
       })
-      setActiveNotebook({
-        ...activeNotebook,
-        llm_executions: updatedExecutions,
-      })
+      setActiveNotebook(prev => prev && prev.id === activeNotebook.id
+        ? { ...prev, llm_executions: updatedExecutions }
+        : prev)
 
       // Show the video studio editor
       if (!result.package || !result.package.scenes || result.package.scenes.length === 0) {
@@ -2084,7 +2137,7 @@ Instruções:
       await updateResearchNotebook(userId, activeNotebook.id, {
         artifacts: updatedArtifacts,
       })
-      setActiveNotebook({ ...activeNotebook, artifacts: updatedArtifacts })
+      setActiveNotebook(prev => prev && prev.id === activeNotebook.id ? { ...prev, artifacts: updatedArtifacts } : prev)
       toast.success(existingIdx >= 0 ? 'Estúdio de vídeo atualizado!' : 'Estúdio de vídeo salvo nos artefatos do caderno!')
       setVideoProduction(productionToSave)
     } catch (err) {
@@ -2103,10 +2156,12 @@ Instruções:
 
   const confirmDeleteArtifact = async () => {
     if (!userId || !activeNotebook?.id || !pendingArtifactDelete?.id) return
+    const notebookId = activeNotebook.id
     try {
-      const updated = activeNotebook.artifacts.filter(a => a.id !== pendingArtifactDelete.id)
-      await updateResearchNotebook(userId, activeNotebook.id, { artifacts: updated })
-      setActiveNotebook({ ...activeNotebook, artifacts: updated })
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const updated = freshNotebook.artifacts.filter(a => a.id !== pendingArtifactDelete.id)
+      await updateResearchNotebook(userId, notebookId, { artifacts: updated })
+      setActiveNotebook(prev => prev && prev.id === notebookId ? { ...prev, artifacts: updated } : prev)
       toast.success('Artefato removido')
     } catch (err) {
       console.error('Error deleting artifact:', err)
@@ -2124,11 +2179,12 @@ Instruções:
 
   const confirmClearChat = async () => {
     if (!userId || !activeNotebook?.id) return
+    const notebookId = activeNotebook.id
     setClearingChat(true)
     setShowClearChatConfirm(false)
     try {
-      await updateResearchNotebook(userId, activeNotebook.id, { messages: [] })
-      setActiveNotebook({ ...activeNotebook, messages: [] })
+      await updateResearchNotebook(userId, notebookId, { messages: [] })
+      setActiveNotebook(prev => prev && prev.id === notebookId ? { ...prev, messages: [] } : prev)
       toast.success('Histórico de conversa limpo')
     } catch (err) {
       console.error('Error clearing chat:', err)
