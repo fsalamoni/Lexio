@@ -25,11 +25,11 @@
       CSP: 'unsafe-inline' no script-src é necessário para o Vite (módulos ES inline no HTML).
       Firebase e Google APIs requerem acesso às origens googleapis.com / firebaseapp.com.
       OpenRouter (openrouter.ai) é necessário para chamadas LLM (geração de ementas, classificação, etc).
-      CORS proxies (corsproxy.io, thingproxy.freeboard.io) e DataJud (api-publica.datajud.cnj.jus.br)
+      CORS proxies (corsproxy.io, allorigins.win) e DataJud (api-publica.datajud.cnj.jus.br)
       são necessários para pesquisa externa e de jurisprudência no browser.
       'unsafe-eval' foi intencionalmente removido para máxima proteção XSS.
     -->
-    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests; default-src 'self'; script-src 'self' 'unsafe-inline' https://*.googleapis.com https://*.gstatic.com https://*.firebaseapp.com https://*.firebase.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://*.firebaseio.com https://*.firebase.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com wss://*.firebaseio.com https://openrouter.ai https://r.jina.ai https://api.allorigins.win https://api.duckduckgo.com https://corsproxy.io https://thingproxy.freeboard.io https://api-publica.datajud.cnj.jus.br; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';" />
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests; default-src 'self'; script-src 'self' 'unsafe-inline' https://*.googleapis.com https://*.gstatic.com https://*.firebaseapp.com https://*.firebase.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://*.firebaseio.com https://*.firebase.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com wss://*.firebaseio.com https://openrouter.ai https://r.jina.ai https://api.allorigins.win https://api.duckduckgo.com https://html.duckduckgo.com https://corsproxy.io https://api-publica.datajud.cnj.jus.br; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
 
     <title>Lexio — Produção Jurídica com IA</title>

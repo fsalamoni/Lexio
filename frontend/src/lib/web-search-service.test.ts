@@ -25,23 +25,23 @@ describe('web-search-service', () => {
     expect(diagnostics.strategies[0].errorType).toBe('none')
   })
 
-  it('falls back through proxy and instant API when Jina is down', async () => {
+  it('falls back through AllOrigins proxy and instant API when Jina is down', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
       // Jina Reader — network error (CORS/down)
       if (url.includes('r.jina.ai/')) {
         throw new TypeError('network down')
       }
-      // CORS proxy for DuckDuckGo HTML search — also fails
-      if (url.includes('corsproxy.io') && url.includes('html.duckduckgo.com')) {
+      // AllOrigins proxy for DuckDuckGo HTML search — also fails
+      if (url.includes('allorigins.win') && url.includes('html.duckduckgo.com')) {
         throw new TypeError('proxy down')
       }
       // DDG Instant direct — CORS error
-      if (url.includes('api.duckduckgo.com') && !url.includes('corsproxy')) {
+      if (url.includes('api.duckduckgo.com') && !url.includes('allorigins')) {
         throw new TypeError('CORS blocked')
       }
-      // DDG Instant via proxy — works
-      if (url.includes('corsproxy.io') && url.includes('api.duckduckgo.com')) {
+      // DDG Instant via AllOrigins proxy — works
+      if (url.includes('allorigins.win') && url.includes('api.duckduckgo.com')) {
         return new Response(JSON.stringify({
           RelatedTopics: [
             { Text: 'Tema de socioafetividade no STJ', FirstURL: 'https://www.stj.jus.br/tema/socioafetividade' },

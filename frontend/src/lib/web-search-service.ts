@@ -97,12 +97,13 @@ export async function fetchUrlContent(url: string): Promise<string> {
     }
   }
 
-  // Fallback 2: CORS proxy (corsproxy.io) — returns raw HTML, strip tags.
+  // Fallback 2: allorigins proxy (most reliable CORS proxy).
   try {
-    const proxyUrl = `${CORS_PROXY_PREFIX}${encodeURIComponent(url)}`
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12_000) })
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(ALLORIGINS_TIMEOUT) })
     if (resp.ok) {
-      const raw = await resp.text()
+      const data = await resp.json() as { contents?: string }
+      const raw = data.contents ?? ''
       const text = raw.replace(/<[^>]+>/g, ' ').replace(/\s{3,}/g, ' ').trim()
       if (text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
     }
@@ -110,13 +111,12 @@ export async function fetchUrlContent(url: string): Promise<string> {
     // Try next fallback.
   }
 
-  // Fallback 3: allorigins proxy (single attempt to avoid long latency chain).
+  // Fallback 3: corsproxy.io (less reliable, may return 403).
   try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(ALLORIGINS_TIMEOUT) })
+    const proxyUrl = `${CORS_PROXY_PREFIX}${encodeURIComponent(url)}`
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12_000) })
     if (resp.ok) {
-      const data = await resp.json() as { contents?: string }
-      const raw = data.contents ?? ''
+      const raw = await resp.text()
       const text = raw.replace(/<[^>]+>/g, ' ').replace(/\s{3,}/g, ' ').trim()
       if (text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
     }
@@ -247,8 +247,9 @@ async function searchViaDDGJina(query: string, signal?: AbortSignal): Promise<Se
 }
 
 /**
- * Fetch DuckDuckGo HTML results through a CORS proxy (corsproxy.io).
- * This is the primary fallback when Jina Reader is down or rate-limited.
+ * Fetch DuckDuckGo HTML results through AllOrigins proxy.
+ * Primary fallback when Jina Reader is down or rate-limited.
+ * AllOrigins wraps any URL and returns {contents: "html..."}.
  */
 async function searchViaDDGProxy(query: string, signal?: AbortSignal): Promise<SearchStrategyOutcome> {
   if (signal?.aborted) {
@@ -256,7 +257,7 @@ async function searchViaDDGProxy(query: string, signal?: AbortSignal): Promise<S
   }
 
   const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
-  const proxyUrl = `${CORS_PROXY_PREFIX}${encodeURIComponent(ddgUrl)}`
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(ddgUrl)}`
 
   try {
     const resp = await fetch(proxyUrl, {
@@ -267,10 +268,19 @@ async function searchViaDDGProxy(query: string, signal?: AbortSignal): Promise<S
         strategy: 'ddg_proxy',
         results: [],
         errorType: classifyStatus(resp.status),
-        message: `Proxy retornou HTTP ${resp.status}`,
+        message: `AllOrigins retornou HTTP ${resp.status}`,
       }
     }
-    const html = await resp.text()
+    const wrapper = await resp.json() as { contents?: string }
+    const html = wrapper.contents ?? ''
+    if (!html || html.length < 100) {
+      return {
+        strategy: 'ddg_proxy',
+        results: [],
+        errorType: 'empty',
+        message: 'AllOrigins retornou conteúdo vazio',
+      }
+    }
     const results = extractResultsFromDDGHTML(html)
     return {
       strategy: 'ddg_proxy',
@@ -284,7 +294,7 @@ async function searchViaDDGProxy(query: string, signal?: AbortSignal): Promise<S
       strategy: 'ddg_proxy',
       results: [],
       errorType,
-      message: error instanceof Error ? error.message : 'Falha ao consultar DuckDuckGo via proxy',
+      message: error instanceof Error ? error.message : 'Falha ao consultar DuckDuckGo via AllOrigins',
     }
   }
 }
@@ -341,10 +351,10 @@ function extractResultsFromDDGHTML(html: string): WebSearchResult[] {
 async function searchViaDDGInstant(query: string, signal?: AbortSignal): Promise<SearchStrategyOutcome> {
   const baseUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
 
-  // Try direct first, then CORS proxy fallback
+  // Try direct first, then AllOrigins proxy fallback
   const urls = [
     baseUrl,
-    `${CORS_PROXY_PREFIX}${encodeURIComponent(baseUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl)}`,
   ]
 
   for (const url of urls) {
@@ -477,7 +487,7 @@ function extractResultsFromJinaText(text: string): WebSearchResult[] {
   while ((match = mdLinkRegex.exec(text)) !== null) {
     if (results.length >= 10) break
     const title = match[1].trim()
-    const url = cleanUrl(match[2])
+    const url = cleanUrl(resolveDDGRedirect(match[2]))
     if (isDDGInternal(url) || seen.has(url)) continue
     seen.add(url)
     const snippet = extractSnippetAround(text, match.index, 300)
@@ -489,7 +499,7 @@ function extractResultsFromJinaText(text: string): WebSearchResult[] {
     const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\]]+/g
     while ((match = urlRegex.exec(text)) !== null) {
       if (results.length >= 10) break
-      const url = cleanUrl(match[0])
+      const url = cleanUrl(resolveDDGRedirect(match[0]))
       if (isDDGInternal(url) || seen.has(url)) continue
       seen.add(url)
       const title = extractTitleBefore(text, match.index)
@@ -503,7 +513,7 @@ function extractResultsFromJinaText(text: string): WebSearchResult[] {
     const htmlLinkRegex = /<a\s+(?:[^>]*?\s+)?href=["']([^"']+)["'][^>]*>([^<]{3,})<\/a>/gi
     while ((match = htmlLinkRegex.exec(text)) !== null) {
       if (results.length >= 10) break
-      const url = cleanUrl(match[1])
+      const url = cleanUrl(resolveDDGRedirect(match[1]))
       if (!/^https?:\/\//i.test(url) || isDDGInternal(url) || seen.has(url)) continue
       seen.add(url)
       const title = match[2].trim().replace(/\s+/g, ' ').slice(0, 180)
@@ -523,7 +533,22 @@ function cleanUrl(url: string): string {
 }
 
 function isDDGInternal(url: string): boolean {
-  return /duckduckgo\.com|r\.search\.yahoo/i.test(url)
+  return /^https?:\/\/(www\.)?duckduckgo\.com\/?($|\?|js\/)|r\.search\.yahoo/i.test(url)
+}
+
+/**
+ * Resolve DuckDuckGo redirect URLs to their actual destination.
+ * DDG wraps results as /l/?uddg=ENCODED_URL — extract the real URL.
+ */
+function resolveDDGRedirect(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (/duckduckgo\.com/i.test(parsed.hostname) && parsed.pathname === '/l/') {
+      const uddg = parsed.searchParams.get('uddg')
+      if (uddg && /^https?:\/\//i.test(uddg)) return uddg
+    }
+  } catch { /* not a URL */ }
+  return url
 }
 
 function normalizeUrlForDedup(url: string): string {
