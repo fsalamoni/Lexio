@@ -69,6 +69,7 @@ import {
   createDeepSearchSteps,
   createJurisprudenceSteps,
 } from '../components/DeepResearchModal'
+import AgentTrailProgressModal from '../components/AgentTrailProgressModal'
 import {
   searchDataJud,
   formatDataJudResults,
@@ -216,6 +217,29 @@ const SOURCE_TYPE_LABELS: Record<string, { label: string; icon: React.ElementTyp
   external: { label: 'Pesquisa Externa', icon: Globe },
   external_deep: { label: 'Pesquisa Externa Profunda', icon: Brain },
   jurisprudencia: { label: 'Jurisprudência (DataJud)', icon: Library },
+}
+
+const ACERVO_TRAIL_STEPS = [
+  { key: 'nb_acervo_triagem', label: 'Triagem' },
+  { key: 'nb_acervo_buscador', label: 'Buscador' },
+  { key: 'nb_acervo_analista', label: 'Analista' },
+  { key: 'nb_acervo_curador', label: 'Curador' },
+] as const
+
+const STUDIO_SPECIALIST_LABEL: Record<StudioArtifactType, string> = {
+  resumo: 'Escritor',
+  relatorio: 'Escritor',
+  documento: 'Escritor',
+  cartoes_didaticos: 'Escritor',
+  teste: 'Escritor',
+  guia_estruturado: 'Escritor',
+  apresentacao: 'Designer Visual',
+  mapa_mental: 'Designer Visual',
+  infografico: 'Designer Visual',
+  tabela_dados: 'Designer Visual',
+  audio_script: 'Roteirista',
+  video_script: 'Roteirista',
+  outro: 'Escritor',
 }
 
 // ── Lightweight Markdown renderer ─────────────────────────────────────────────
@@ -459,6 +483,9 @@ export default function ResearchNotebook() {
   const [selectedArtifactType, setSelectedArtifactType] = useState<StudioArtifactType | null>(null)
   const [studioCustomPrompt, setStudioCustomPrompt] = useState('')
   const [studioProgress, setStudioProgress] = useState<{ step: number; total: number; phase: string } | null>(null)
+  const [studioLastProgress, setStudioLastProgress] = useState<{ step: number; total: number; phase: string } | null>(null)
+  const [studioErrorMessage, setStudioErrorMessage] = useState('')
+  const [showStudioProgressModal, setShowStudioProgressModal] = useState(false)
   const studioAbortRef = useRef<AbortController | null>(null)
 
   // Search
@@ -470,6 +497,8 @@ export default function ResearchNotebook() {
   const [acervoAnalysisPhase, setAcervoAnalysisPhase] = useState('')
   const [acervoAnalysisMessage, setAcervoAnalysisMessage] = useState('')
   const [acervoAnalysisPercent, setAcervoAnalysisPercent] = useState(0)
+  const [acervoAnalysisError, setAcervoAnalysisError] = useState('')
+  const [showAcervoProgressModal, setShowAcervoProgressModal] = useState(false)
   const [acervoAnalysisResults, setAcervoAnalysisResults] = useState<AnalyzedDocument[]>([])
   const [selectedAnalysisIds, setSelectedAnalysisIds] = useState<Set<string>>(new Set())
 
@@ -780,6 +809,8 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     setAcervoAnalysisPhase('')
     setAcervoAnalysisMessage('Iniciando análise...')
     setAcervoAnalysisPercent(0)
+    setAcervoAnalysisError('')
+    setShowAcervoProgressModal(true)
 
     try {
       const existingSourceNames = nb.sources.map(s => s.name)
@@ -823,6 +854,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       }
     } catch (err) {
       console.error('Acervo analysis error:', err)
+      setAcervoAnalysisError(err instanceof Error ? err.message : 'Erro inesperado')
       if (err instanceof ModelUnavailableError) {
         toast.warning(
           'Modelo indisponível',
@@ -1563,6 +1595,9 @@ Instruções:
     setStudioLoading(true)
     setSelectedArtifactType(artifactType)
     setStudioProgress(null)
+    setStudioLastProgress(null)
+    setStudioErrorMessage('')
+    setShowStudioProgressModal(true)
 
     try {
       const apiKey = await getOpenRouterKey()
@@ -1577,6 +1612,7 @@ Instruções:
 
       const onProgress: StudioProgressCallback = (step, total, phase) => {
         setStudioProgress({ step, total, phase })
+        setStudioLastProgress({ step, total, phase })
       }
 
       const result = await runStudioPipeline({
@@ -1589,6 +1625,7 @@ Instruções:
         artifactType,
         artifactLabel: artifactDef?.label || artifactType,
       }, onProgress, abortController.signal)
+  setStudioLastProgress({ step: 3, total: 3, phase: 'Trilha concluída com sucesso.' })
 
       const artifact: StudioArtifact = {
         id: generateId(),
@@ -1614,6 +1651,7 @@ Instruções:
       }
     } catch (err) {
       console.error('Studio pipeline error:', err)
+      setStudioErrorMessage(err instanceof Error ? err.message : 'Erro inesperado no pipeline do estúdio')
       if (err instanceof DOMException && err.name === 'AbortError') {
         toast.info('Geração cancelada')
         return
@@ -2244,6 +2282,71 @@ Instruções:
       (nb.description?.toLowerCase().includes(q) ?? false),
     )
   }, [notebooks, searchQuery])
+
+  const acervoTrailSteps = useMemo(() => {
+    const currentIndex = ACERVO_TRAIL_STEPS.findIndex(step => step.key === acervoAnalysisPhase)
+    const isConcluded = acervoAnalysisPhase === 'concluido'
+    const errorIndex = currentIndex >= 0 ? currentIndex : 0
+
+    return ACERVO_TRAIL_STEPS.map((step, index) => {
+      let status: 'pending' | 'active' | 'completed' | 'error' = 'pending'
+
+      if (isConcluded) {
+        status = 'completed'
+      } else if (index < currentIndex) {
+        status = 'completed'
+      } else if (acervoAnalysisLoading && index === currentIndex) {
+        status = 'active'
+      }
+
+      if (acervoAnalysisError && index === errorIndex) {
+        status = 'error'
+      }
+
+      return {
+        key: step.key,
+        label: step.label,
+        status,
+        detail: status === 'active' ? acervoAnalysisMessage : undefined,
+      }
+    })
+  }, [acervoAnalysisError, acervoAnalysisLoading, acervoAnalysisMessage, acervoAnalysisPhase])
+
+  const studioTrailSteps = useMemo(() => {
+    const specialistLabel = selectedArtifactType ? STUDIO_SPECIALIST_LABEL[selectedArtifactType] : 'Especialista'
+    const steps = [
+      { key: 'studio_pesquisador', label: 'Pesquisador do Estúdio' },
+      { key: 'studio_specialist', label: specialistLabel },
+      { key: 'studio_revisor', label: 'Revisor de Qualidade' },
+    ]
+    const progress = studioProgress ?? studioLastProgress
+    const progressStep = progress?.step ?? 0
+    const errorIndex = progressStep > 0 ? Math.min(progressStep, steps.length) - 1 : 0
+
+    return steps.map((step, index) => {
+      let status: 'pending' | 'active' | 'completed' | 'error' = 'pending'
+      const oneBased = index + 1
+
+      if (progressStep >= steps.length && !studioLoading && !studioErrorMessage) {
+        status = 'completed'
+      } else if (oneBased < progressStep) {
+        status = 'completed'
+      } else if (studioLoading && oneBased === progressStep) {
+        status = 'active'
+      }
+
+      if (studioErrorMessage && index === errorIndex) {
+        status = 'error'
+      }
+
+      return {
+        key: step.key,
+        label: step.label,
+        status,
+        detail: status === 'active' ? (progress?.phase || undefined) : undefined,
+      }
+    })
+  }, [selectedArtifactType, studioErrorMessage, studioLastProgress, studioLoading, studioProgress])
 
   // ── Render: List View ───────────────────────────────────────────────
 
@@ -3314,32 +3417,6 @@ Instruções:
             </div>
 
             {/* Pipeline progress indicator */}
-            {studioLoading && studioProgress && (
-              <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
-                  <span className="text-sm font-semibold text-purple-800">
-                    Pipeline Multi-Agente — Etapa {studioProgress.step}/{studioProgress.total}
-                  </span>
-                </div>
-                <p className="text-xs text-purple-700 mb-2">{studioProgress.phase}</p>
-                <div className="flex gap-1">
-                  {Array.from({ length: studioProgress.total }, (_, i) => (
-                    <div
-                      key={i}
-                      className={`h-1.5 flex-1 rounded-full transition-colors ${
-                        i < studioProgress.step
-                          ? 'bg-purple-500'
-                          : i === studioProgress.step - 1
-                            ? 'bg-purple-400 animate-pulse'
-                            : 'bg-purple-200'
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
             <div className="space-y-5">
               {ARTIFACT_CATEGORIES.map(category => {
                 const colorMap: Record<string, { border: string; bg: string; text: string; hoverBorder: string }> = {
@@ -3480,55 +3557,41 @@ Instruções:
       })()}
 
       {/* ── Script Review/Edit Modal (for media artifacts) ──── */}
-      {pendingArtifact && (
-        <ScriptReviewModal
-          artifact={pendingArtifact.artifact}
-          content={pendingContent}
-          onContentChange={setPendingContent}
-          onConfirm={handleConfirmPendingArtifact}
-          onDiscard={handleDiscardPendingArtifact}
-        />
-      )}
-
-      {/* ── Video Generation Cost Modal ────────────────────── */}
-      {showVideoGenCost && videoGenSavedArtifact && (
-        <VideoGenerationCostModal
-          scriptContent={videoGenSavedArtifact.content}
-          topic={activeNotebook?.topic || ''}
-          onGenerate={handleGenerateVideo}
-          onSkip={handleSkipVideoGeneration}
-          isGenerating={videoGenLoading}
-          generationProgress={videoGenProgress || undefined}
-        />
-      )}
-
-      {audioGenLoading && audioGeneratingArtifactId && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-emerald-600 text-white px-4 py-3 shadow-lg text-sm font-medium flex items-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Gerando áudio literal do roteiro...
-        </div>
-      )}
-
-      {/* ── Video Studio Editor ────────────────────────────── */}
-      {videoProduction && (
-        <VideoStudioEditor
-          production={videoProduction}
-          apiKey={videoStudioApiKey}
-          autoGenerateMedia={videoStudioAutoGenerate}
-          onClose={() => {
-            setVideoProduction(null)
-            setVideoStudioAutoGenerate(false)
-          }}
-          onSave={(updated) => {
-            setVideoProduction(updated)
-            setVideoStudioAutoGenerate(false)
-            toast.success('Produção de vídeo salva!')
-          }}
-          onSaveToNotebook={handleSaveVideoStudioToNotebook}
-        />
-      )}
-
       {/* ── Deep Research Modal ────────────────────────── */}
+      <AgentTrailProgressModal
+        isOpen={showAcervoProgressModal}
+        title="Trilha de Análise Inteligente do Acervo"
+        subtitle={activeNotebook?.topic}
+        currentMessage={acervoAnalysisError || acervoAnalysisMessage || 'Preparando análise do acervo...'}
+        percent={acervoAnalysisPercent}
+        steps={acervoTrailSteps}
+        isComplete={acervoAnalysisPhase === 'concluido' && !acervoAnalysisError}
+        hasError={Boolean(acervoAnalysisError)}
+        canClose={!acervoAnalysisLoading}
+        onClose={() => {
+          if (!acervoAnalysisLoading) setShowAcervoProgressModal(false)
+        }}
+      />
+
+      <AgentTrailProgressModal
+        isOpen={showStudioProgressModal}
+        title="Trilha Multiagente do Estúdio"
+        subtitle={selectedArtifactType ? (ARTIFACT_TYPES.find(a => a.type === selectedArtifactType)?.label || selectedArtifactType) : undefined}
+        currentMessage={studioErrorMessage || studioProgress?.phase || studioLastProgress?.phase || 'Inicializando pipeline do estúdio...'}
+        percent={studioProgress
+          ? Math.round((studioProgress.step / Math.max(studioProgress.total, 1)) * 100)
+          : studioLastProgress
+            ? Math.round((studioLastProgress.step / Math.max(studioLastProgress.total, 1)) * 100)
+            : 0}
+        steps={studioTrailSteps}
+        isComplete={!studioLoading && !studioErrorMessage && (studioLastProgress?.step ?? 0) >= 3}
+        hasError={Boolean(studioErrorMessage)}
+        canClose={!studioLoading}
+        onClose={() => {
+          if (!studioLoading) setShowStudioProgressModal(false)
+        }}
+      />
+
       <DeepResearchModal
         isOpen={researchModalOpen}
         onClose={() => {

@@ -15,6 +15,7 @@ import {
   ChevronDown, ChevronUp, Merge, Trash2, Plus, Sparkles, FileText,
   ArrowRight, Clock, BookOpen,
 } from 'lucide-react'
+import AgentTrailProgressModal from './AgentTrailProgressModal'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from './Toast'
 import {
@@ -39,29 +40,6 @@ import {
 import { loadThesisAnalystModels } from '../lib/model-config'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-
-function AgentStatusRow({ agent }: { agent: AgentProgress }) {
-  const statusConfig = {
-    pending: { icon: <div className="w-4 h-4 rounded-full border-2 border-gray-200" />,         text: 'text-gray-400' },
-    running: { icon: <Loader2 className="w-4 h-4 text-teal-500 animate-spin" />,                text: 'text-gray-700' },
-    done:    { icon: <CheckCircle2 className="w-4 h-4 text-green-500" />,                        text: 'text-gray-700' },
-    error:   { icon: <AlertCircle className="w-4 h-4 text-red-400" />,                          text: 'text-red-500'  },
-  }
-  const cfg = statusConfig[agent.status]
-  return (
-    <div className="flex items-center gap-3 py-2">
-      <div className="flex-shrink-0">{cfg.icon}</div>
-      <div className="flex-1 min-w-0">
-        <span className={`text-sm font-medium ${cfg.text}`}>{agent.label}</span>
-        {agent.message && (
-          <span className={`text-xs ml-2 ${agent.status === 'error' ? 'text-red-400' : 'text-gray-400'}`}>
-            — {agent.message}
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
 
 const SUGGESTION_TYPE_CONFIG: Record<AnalysisSuggestion['type'], {
   icon: React.ElementType; label: string; colors: string; badgeColors: string
@@ -445,6 +423,22 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
     typeCounts[s.type] = (typeCounts[s.type] ?? 0) + 1
   }
 
+  const analysisHasError = agentProgress.some(a => a.status === 'error')
+  const analysisComplete = !running && agentProgress.length > 0 && agentProgress.every(
+    a => a.status === 'done' || a.status === 'error',
+  )
+  const completedSteps = agentProgress.filter(a => a.status === 'done').length
+  const analysisPercent = agentProgress.length > 0
+    ? Math.round((completedSteps / agentProgress.length) * 100)
+    : 0
+  const currentAgentMessage = running
+    ? agentProgress.find(a => a.status === 'running')?.message || 'Executando agentes...'
+    : analysisHasError
+      ? 'Análise concluída com falhas em alguns agentes.'
+      : analysisComplete
+        ? 'Análise concluída com sucesso.'
+        : 'Preparando análise...'
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -520,20 +514,6 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
               }
             </button>
           </div>
-
-          {/* Agent progress panel */}
-          {(running || agentProgress.length > 0) && (
-            <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                {running ? 'Analisando…' : 'Análise concluída'}
-              </p>
-              <div className="divide-y divide-gray-100">
-                {agentProgress.map(agent => (
-                  <AgentStatusRow key={agent.key} agent={agent} />
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Results panel */}
           {result && (
@@ -617,6 +597,30 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
           )}
         </div>
       )}
+
+      <AgentTrailProgressModal
+        isOpen={running || agentProgress.length > 0}
+        title="Trilha de Análise do Banco de Teses"
+        subtitle="Pipeline de 5 agentes"
+        currentMessage={currentAgentMessage}
+        percent={analysisPercent}
+        steps={agentProgress.map(agent => ({
+          key: agent.key,
+          label: agent.label,
+          status: agent.status === 'running'
+            ? 'active'
+            : agent.status === 'done'
+              ? 'completed'
+              : agent.status,
+          detail: agent.message,
+        }))}
+        isComplete={analysisComplete}
+        hasError={analysisHasError}
+        canClose={!running}
+        onClose={() => {
+          if (!running) setAgentProgress([])
+        }}
+      />
     </div>
   )
 }

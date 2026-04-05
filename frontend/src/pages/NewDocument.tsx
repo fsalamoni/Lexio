@@ -22,6 +22,7 @@ import PipelineProgressPanel, {
   PHASE_COMPLETED,
   type AgentStep,
 } from '../components/PipelineProgressPanel'
+import AgentTrailProgressModal from '../components/AgentTrailProgressModal'
 
 interface DocType {
   id: string
@@ -475,30 +476,44 @@ export default function NewDocument() {
         </div>
       </form>
 
-      {/* Pipeline progress panel — shown during/after generation */}
-      {generating && (
-        <div className="mt-6 space-y-4">
-          <PipelineProgressPanel
-            agents={pipelineAgents}
-            percent={pipelinePercent}
-            currentMessage={pipelineMessage}
-            isComplete={pipelineComplete}
-            hasError={pipelineError}
-          />
+      <AgentTrailProgressModal
+        isOpen={generating}
+        title="Trilha de Geração de Documento"
+        subtitle={currentType?.name || selectedType || undefined}
+        currentMessage={pipelineMessage || 'Inicializando agentes...'}
+        percent={pipelinePercent}
+        steps={pipelineAgents.map(agent => ({
+          key: agent.key,
+          label: agent.label,
+          status: agent.status,
+          detail: agent.description,
+        }))}
+        isComplete={pipelineComplete}
+        hasError={pipelineError}
+        canClose={pipelineComplete || pipelineError}
+        onClose={() => {
+          if (pipelineComplete || pipelineError) setGenerating(false)
+        }}
+      >
+        <PipelineProgressPanel
+          agents={pipelineAgents}
+          percent={pipelinePercent}
+          currentMessage={pipelineMessage}
+          isComplete={pipelineComplete}
+          hasError={pipelineError}
+        />
 
-          {/* Navigation button when complete or on error */}
-          {(pipelineComplete || pipelineError) && generatedDocId && (
-            <button
-              type="button"
-              onClick={() => navigate(`/documents/${generatedDocId}`)}
-              className="w-full flex items-center justify-center gap-2 bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 font-semibold text-sm transition-colors shadow-sm"
-            >
-              {pipelineComplete ? 'Ver Documento Gerado' : 'Ver Documento'}
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      )}
+        {(pipelineComplete || pipelineError) && generatedDocId && (
+          <button
+            type="button"
+            onClick={() => navigate(`/documents/${generatedDocId}`)}
+            className="w-full flex items-center justify-center gap-2 bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 font-semibold text-sm transition-colors shadow-sm"
+          >
+            {pipelineComplete ? 'Ver Documento Gerado' : 'Ver Documento'}
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        )}
+      </AgentTrailProgressModal>
     </div>
   )
 }

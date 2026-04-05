@@ -9,6 +9,7 @@ import PipelineProgressPanel, {
   PHASE_COMPLETED,
   type AgentStep,
 } from '../components/PipelineProgressPanel'
+import AgentTrailProgressModal from '../components/AgentTrailProgressModal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
@@ -399,8 +400,25 @@ export default function DocumentDetail() {
         <ProgressTracker documentId={id} />
       )}
 
-      {/* Pipeline progress panel for Firebase retry flow */}
-      {retryPipeline && (
+      <AgentTrailProgressModal
+        isOpen={retryPipeline}
+        title="Trilha de Reprocessamento"
+        subtitle={docLabel}
+        currentMessage={pipelineMessage || 'Reiniciando agentes...'}
+        percent={pipelinePercent}
+        steps={pipelineAgents.map(agent => ({
+          key: agent.key,
+          label: agent.label,
+          status: agent.status,
+          detail: agent.description,
+        }))}
+        isComplete={pipelineComplete}
+        hasError={pipelineError}
+        canClose={pipelineComplete || pipelineError}
+        onClose={() => {
+          if (pipelineComplete || pipelineError) setRetryPipeline(false)
+        }}
+      >
         <PipelineProgressPanel
           agents={pipelineAgents}
           percent={pipelinePercent}
@@ -408,7 +426,7 @@ export default function DocumentDetail() {
           isComplete={pipelineComplete}
           hasError={pipelineError}
         />
-      )}
+      </AgentTrailProgressModal>
 
       {/* Main info + actions */}
       <div className="bg-white rounded-xl border p-6 space-y-4">
