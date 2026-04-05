@@ -176,7 +176,40 @@ export interface DataJudSearchResult {
   tribunalsQueried: number
   tribunalsWithResults: number
   errors: string[]
+  errorDetails: DataJudErrorDetail[]
   durationMs: number
+}
+
+export type DataJudErrorType =
+  | 'aborted'
+  | 'timeout'
+  | 'rate_limit'
+  | 'auth'
+  | 'http'
+  | 'network'
+  | 'unknown'
+
+export interface DataJudErrorDetail {
+  tribunalAlias: string
+  tribunalName: string
+  type: DataJudErrorType
+  status?: number
+  retryable: boolean
+  message: string
+}
+
+class DataJudRequestError extends Error {
+  readonly type: DataJudErrorType
+  readonly status?: number
+  readonly retryable: boolean
+
+  constructor(message: string, type: DataJudErrorType, status?: number, retryable = false) {
+    super(message)
+    this.name = 'DataJudRequestError'
+    this.type = type
+    this.status = status
+    this.retryable = retryable
+  }
 }
 
 // ── Core Search Function ───────────────────────────────────────────────────────
@@ -198,6 +231,7 @@ export async function searchDataJud(
 
   const allResults: DataJudResult[] = []
   const errors: string[] = []
+  const errorDetails: DataJudErrorDetail[] = []
   let tribunalsQueried = 0
   let tribunalsWithResults = 0
 
@@ -221,7 +255,7 @@ export async function searchDataJud(
     let lastError: unknown = null
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (signal?.aborted) {
-        throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+        throw new DataJudRequestError('Operação cancelada pelo usuário.', 'aborted')
       }
 
       try {
@@ -245,7 +279,20 @@ export async function searchDataJud(
 
         const isRetriable = resp.status === 429 || resp.status >= 500
         if (!isRetriable || attempt >= MAX_RETRIES) {
-          throw new Error(`${tribunal.alias}: HTTP ${resp.status}`)
+          throw new DataJudRequestError(
+            `${tribunal.alias}: HTTP ${resp.status}`,
+            classifyStatus(resp.status),
+            resp.status,
+            isRetriable,
+          )
+        }
+
+        if (resp.status === 429) {
+          const retryAfter = Number(resp.headers.get('Retry-After') ?? '')
+          if (Number.isFinite(retryAfter) && retryAfter > 0) {
+            await new Promise(resolve => setTimeout(resolve, retryAfter * 1000))
+            continue
+          }
         }
       } catch (err) {
         lastError = err
@@ -256,7 +303,21 @@ export async function searchDataJud(
       const jitter = Math.round(base * Math.random() * 0.35)
       await new Promise(resolve => setTimeout(resolve, base + jitter))
     }
-    throw lastError instanceof Error ? lastError : new Error(`${tribunal.alias}: falha transitória`)
+    if (lastError instanceof DataJudRequestError) throw lastError
+    if (lastError instanceof DOMException && lastError.name === 'AbortError') {
+      const message = lastError.message?.toLowerCase?.() ?? ''
+      const timeoutAbort = message.includes('time') || message.includes('timeout')
+      throw new DataJudRequestError(
+        timeoutAbort ? `${tribunal.alias}: timeout na consulta` : 'Operação cancelada pelo usuário.',
+        timeoutAbort ? 'timeout' : 'aborted',
+        undefined,
+        timeoutAbort,
+      )
+    }
+    if (lastError instanceof TypeError) {
+      throw new DataJudRequestError(`${tribunal.alias}: falha de rede`, 'network', undefined, true)
+    }
+    throw new DataJudRequestError(`${tribunal.alias}: falha transitória`, 'unknown', undefined, true)
   }
 
   // Process tribunals in batches
@@ -270,11 +331,13 @@ export async function searchDataJud(
       batch.map((tribunal) => fetchTribunalWithRetry(tribunal)),
     )
 
-    for (const result of batchResults) {
+    for (const [idx, result] of batchResults.entries()) {
       tribunalsQueried++
 
       if (result.status === 'rejected') {
-        errors.push(String(result.reason))
+        const detail = toErrorDetail(result.reason, batch[idx] ?? batch[0])
+        errors.push(`${detail.tribunalAlias}: ${detail.message}`)
+        errorDetails.push(detail)
         continue
       }
 
@@ -306,6 +369,7 @@ export async function searchDataJud(
     tribunalsQueried,
     tribunalsWithResults,
     errors,
+    errorDetails,
     durationMs: Math.round(performance.now() - start),
   }
 }
@@ -412,4 +476,52 @@ export function formatDataJudResults(results: DataJudResult[]): string {
  */
 export function getTribunalsByCategory(category: TribunalCategory): TribunalInfo[] {
   return ALL_TRIBUNALS.filter(t => t.category === category)
+}
+
+function classifyStatus(status: number): DataJudErrorType {
+  if (status === 429) return 'rate_limit'
+  if (status === 401 || status === 403) return 'auth'
+  if (status >= 400) return 'http'
+  return 'unknown'
+}
+
+function toErrorDetail(reason: unknown, tribunal: TribunalInfo): DataJudErrorDetail {
+  if (reason instanceof DataJudRequestError) {
+    return {
+      tribunalAlias: tribunal.alias,
+      tribunalName: tribunal.name,
+      type: reason.type,
+      status: reason.status,
+      retryable: reason.retryable,
+      message: reason.message,
+    }
+  }
+
+  if (reason instanceof DOMException && reason.name === 'AbortError') {
+    return {
+      tribunalAlias: tribunal.alias,
+      tribunalName: tribunal.name,
+      type: 'aborted',
+      retryable: false,
+      message: 'Operação cancelada pelo usuário.',
+    }
+  }
+
+  if (reason instanceof TypeError) {
+    return {
+      tribunalAlias: tribunal.alias,
+      tribunalName: tribunal.name,
+      type: 'network',
+      retryable: true,
+      message: reason.message || 'Falha de rede',
+    }
+  }
+
+  return {
+    tribunalAlias: tribunal.alias,
+    tribunalName: tribunal.name,
+    type: 'unknown',
+    retryable: false,
+    message: reason instanceof Error ? reason.message : String(reason),
+  }
 }

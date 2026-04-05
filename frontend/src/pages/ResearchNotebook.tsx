@@ -75,12 +75,14 @@ import {
   formatDataJudResults,
   DEFAULT_TRIBUNALS,
   type DataJudSearchProgress,
+  type DataJudErrorType,
 } from '../lib/datajud-service'
 import {
-  searchWebResults as searchWebResultsService,
+  searchWebResultsWithDiagnostics,
   deepWebSearch,
   searchWeb as searchWebService,
   fetchUrlContent as fetchUrlContentService,
+  type WebSearchErrorType,
 } from '../lib/web-search-service'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -962,7 +964,14 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
   const addModalSubstep = (stepId: string, substep: string) => {
     setResearchModalSteps(prev => prev.map(s =>
-      s.id === stepId ? { ...s, substeps: [...s.substeps, substep] } : s,
+      s.id === stepId
+        ? {
+            ...s,
+            substeps: s.substeps[s.substeps.length - 1] === substep
+              ? s.substeps
+              : [...s.substeps, substep],
+          }
+        : s,
     ))
   }
 
@@ -980,6 +989,24 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     setTimeout(() => {
       setResearchModalOpen(false)
     }, delayMs)
+  }
+
+  const webErrorHint = (errorType: WebSearchErrorType): string => {
+    if (errorType === 'rate_limit') return 'Provedor em limite de requisições. Tente novamente em alguns segundos.'
+    if (errorType === 'timeout') return 'Tempo limite excedido na busca externa. Tente novamente com termos mais curtos.'
+    if (errorType === 'network') return 'Falha de rede ao consultar provedores externos. Verifique a conexão e tente novamente.'
+    if (errorType === 'http') return 'Provedor externo indisponível no momento. Tente novamente em instantes.'
+    return 'Falha técnica durante a busca externa.'
+  }
+
+  const dataJudErrorLabel = (errorType: DataJudErrorType): string => {
+    if (errorType === 'rate_limit') return 'limite de taxa'
+    if (errorType === 'timeout') return 'timeout'
+    if (errorType === 'network') return 'rede'
+    if (errorType === 'auth') return 'autenticação'
+    if (errorType === 'aborted') return 'cancelado'
+    if (errorType === 'http') return 'erro HTTP'
+    return 'erro desconhecido'
   }
 
   const appendNotebookSourceWithExecution = async (
@@ -1025,14 +1052,30 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       // Step 1: Search
       updateModalStep('search', { status: 'active' })
       addModalSubstep('search', 'Pesquisando DuckDuckGo via Jina Reader...')
-      const results = await searchWebResultsService(query, abortController.signal)
+      const { results, diagnostics } = await searchWebResultsWithDiagnostics(query, abortController.signal)
       setResearchModalStats(prev => ({ ...prev, sourcesFound: results.length, elapsedMs: Math.round(performance.now() - t0) }))
+
+      diagnostics.strategies
+        .filter(s => s.errorType !== 'none' && s.errorType !== 'empty' && s.errorType !== 'aborted')
+        .forEach(s => {
+          addModalSubstep('search', `${s.strategy}: ${s.message || s.errorType}`)
+        })
+
       addModalSubstep('search', `${results.length} resultado(s) encontrado(s)`)
       updateModalStep('search', { status: results.length > 0 ? 'done' : 'error', detail: results.length > 0 ? `${results.length} resultados` : 'Nenhum resultado' })
 
       if (results.length === 0) {
         setResearchModalCanClose(true)
-        toast.info('Nenhum resultado útil encontrado na pesquisa externa.')
+        if (diagnostics.hadTechnicalError) {
+          const mainFailure = diagnostics.strategies.find(s => s.errorType !== 'none' && s.errorType !== 'empty' && s.errorType !== 'aborted')
+          const hint = webErrorHint(mainFailure?.errorType || 'http')
+          updateModalStep('search', { status: 'error', detail: hint })
+          toast.warning('Falha técnica na pesquisa externa', hint)
+        } else {
+          const hint = 'Nenhum resultado útil encontrado. Tente termos mais gerais ou sinônimos jurídicos.'
+          updateModalStep('search', { status: 'error', detail: hint })
+          toast.info(hint)
+        }
         return
       }
 
@@ -1169,13 +1212,35 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         detail: `${deepResult.results.length} resultado(s)`,
       })
 
+      deepResult.diagnostics?.strategies
+        .filter(s => s.errorType !== 'none' && s.errorType !== 'empty' && s.errorType !== 'aborted')
+        .forEach(s => {
+          addModalSubstep('search', `${s.strategy}: ${s.message || s.errorType}`)
+        })
+
       // Step 2: Fetch content
-      updateModalStep('fetch', { status: deepResult.contents.length > 0 ? 'done' : 'error' })
+      const hasSnippetFallback = deepResult.results.length > 0 && deepResult.contents.length === 0
+      updateModalStep('fetch', {
+        status: deepResult.contents.length > 0 || hasSnippetFallback ? 'done' : 'error',
+        detail: hasSnippetFallback
+          ? 'Sem conteúdo completo; usando snippets da busca'
+          : undefined,
+      })
       addModalSubstep('fetch', `${deepResult.contents.length} página(s) com conteúdo extraído`)
+      if (deepResult.fetchFailures > 0) {
+        addModalSubstep('fetch', `${deepResult.fetchFailures} URL(s) falharam na extração`) 
+      }
 
       if (deepResult.contents.length === 0 && deepResult.results.length === 0) {
         setResearchModalCanClose(true)
-        toast.info('Nenhum resultado útil para pesquisa externa profunda.')
+        if (deepResult.diagnostics?.hadTechnicalError) {
+          const mainFailure = deepResult.diagnostics.strategies.find(s => s.errorType !== 'none' && s.errorType !== 'empty' && s.errorType !== 'aborted')
+          const hint = webErrorHint(mainFailure?.errorType || 'http')
+          updateModalStep('search', { status: 'error', detail: hint })
+          toast.warning('Falha técnica na pesquisa profunda', hint)
+        } else {
+          toast.info('Nenhum resultado útil para pesquisa externa profunda. Tente ampliar os termos da consulta.')
+        }
         return
       }
 
@@ -1318,14 +1383,30 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
       if (djResult.errors.length > 0) {
         addModalSubstep('query', `${djResult.errors.length} tribunal(is) com erro (ignorados)`)
+        const groupedErrors = djResult.errorDetails.reduce<Record<string, number>>((acc, item) => {
+          const key = dataJudErrorLabel(item.type)
+          acc[key] = (acc[key] || 0) + 1
+          return acc
+        }, {})
+        Object.entries(groupedErrors).forEach(([kind, count]) => {
+          addModalSubstep('query', `${count} tribunal(is) com ${kind}`)
+        })
       }
 
       // Step 2: Filter results
       updateModalStep('filter', { status: 'active' })
       if (djResult.results.length === 0) {
-        updateModalStep('filter', { status: 'error', detail: 'Nenhum resultado encontrado' })
+        const hasTechnicalFailure = djResult.errorDetails.some(e => e.type !== 'aborted')
+        const detail = hasTechnicalFailure
+          ? 'Nenhum resultado devido a falhas técnicas nos tribunais consultados'
+          : 'Nenhum resultado encontrado'
+        updateModalStep('filter', { status: 'error', detail })
         setResearchModalCanClose(true)
-        toast.info('Nenhum resultado de jurisprudência encontrado no DataJud.')
+        if (hasTechnicalFailure) {
+          toast.warning('Falha técnica na consulta DataJud', 'Alguns tribunais falharam. Tente novamente em alguns segundos.')
+        } else {
+          toast.info('Nenhum resultado de jurisprudência encontrado no DataJud.')
+        }
         return
       }
 

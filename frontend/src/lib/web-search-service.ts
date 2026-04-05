@@ -12,6 +12,7 @@ const MAX_SOURCE_TEXT_LENGTH = 50_000
 const MAX_WEB_SEARCH_CHARS = 3_000
 const JINA_TIMEOUT = 15_000
 const ALLORIGINS_TIMEOUT = 12_000
+const SEARCH_RETRY_ATTEMPTS = 2
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,38 @@ export interface DeepSearchResult {
   results: WebSearchResult[]
   contents: Array<{ url: string; title: string; content: string }>
   durationMs: number
+  fetchFailures: number
+  diagnostics?: WebSearchDiagnostics
+}
+
+export type WebSearchErrorType =
+  | 'none'
+  | 'aborted'
+  | 'timeout'
+  | 'rate_limit'
+  | 'http'
+  | 'network'
+  | 'parse'
+  | 'empty'
+
+export interface WebSearchStrategyDiagnostic {
+  strategy: 'ddg_jina' | 'ddg_lite' | 'ddg_instant'
+  resultsCount: number
+  errorType: WebSearchErrorType
+  message?: string
+}
+
+export interface WebSearchDiagnostics {
+  query: string
+  strategies: WebSearchStrategyDiagnostic[]
+  hadTechnicalError: boolean
+}
+
+interface SearchStrategyOutcome {
+  strategy: WebSearchStrategyDiagnostic['strategy']
+  results: WebSearchResult[]
+  errorType: WebSearchErrorType
+  message?: string
 }
 
 // ── URL Content Fetching ───────────────────────────────────────────────────────
@@ -43,20 +76,27 @@ export interface DeepSearchResult {
  * allorigins CORS proxy. Both are free, no-auth CORS-friendly services.
  */
 export async function fetchUrlContent(url: string): Promise<string> {
-  // Try Jina Reader — returns clean readable text
-  try {
-    const jinaUrl = `https://r.jina.ai/${url}`
-    const resp = await fetch(jinaUrl, {
-      headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
-      signal: AbortSignal.timeout(JINA_TIMEOUT + 5_000),
-    })
-    if (resp.ok) {
-      const text = await resp.text()
-      if (text && text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
+  // Try Jina Reader first with short retries.
+  for (let attempt = 0; attempt < SEARCH_RETRY_ATTEMPTS; attempt++) {
+    try {
+      const jinaUrl = `https://r.jina.ai/${url}`
+      const resp = await fetch(jinaUrl, {
+        headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
+        signal: AbortSignal.timeout(JINA_TIMEOUT + 5_000),
+      })
+      if (resp.ok) {
+        const text = await resp.text()
+        if (text && text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
+      }
+    } catch {
+      // Try fallback provider below.
     }
-  } catch { /* try next */ }
+    if (attempt < SEARCH_RETRY_ATTEMPTS - 1) {
+      await wait(260 + attempt * 220)
+    }
+  }
 
-  // Fallback: allorigins proxy
+  // Fallback: allorigins proxy (single attempt to avoid long latency chain).
   try {
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
     const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(ALLORIGINS_TIMEOUT) })
@@ -66,7 +106,9 @@ export async function fetchUrlContent(url: string): Promise<string> {
       const text = raw.replace(/<[^>]+>/g, ' ').replace(/\s{3,}/g, ' ').trim()
       if (text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
     }
-  } catch { /* not available */ }
+  } catch {
+    // Not available, return empty for graceful degradation.
+  }
 
   return ''
 }
@@ -100,99 +142,228 @@ export async function searchWeb(query: string): Promise<string> {
  * Uses multiple extraction strategies for robustness.
  */
 export async function searchWebResults(query: string, signal?: AbortSignal): Promise<WebSearchResult[]> {
-  // Strategy 1: DuckDuckGo HTML through Jina Reader (markdown output)
-  const jinaResults = await searchViaDDGJina(query, signal)
-  if (jinaResults.length >= 3) return jinaResults
+  const { results } = await searchWebResultsWithDiagnostics(query, signal)
+  return results
+}
 
-  if (signal?.aborted) return jinaResults
+/**
+ * Search with diagnostics for differentiating "no results" from technical failures.
+ */
+export async function searchWebResultsWithDiagnostics(
+  query: string,
+  signal?: AbortSignal,
+): Promise<{ results: WebSearchResult[]; diagnostics: WebSearchDiagnostics }> {
+  // Strategy 1: DuckDuckGo HTML through Jina Reader (markdown output)
+  const strategyDiagnostics: WebSearchStrategyDiagnostic[] = []
+
+  const jinaOutcome = await searchViaDDGJina(query, signal)
+  strategyDiagnostics.push({
+    strategy: jinaOutcome.strategy,
+    resultsCount: jinaOutcome.results.length,
+    errorType: jinaOutcome.errorType,
+    message: jinaOutcome.message,
+  })
+  if (jinaOutcome.results.length >= 3) {
+    return {
+      results: jinaOutcome.results,
+      diagnostics: buildDiagnostics(query, strategyDiagnostics),
+    }
+  }
+
+  if (signal?.aborted) {
+    return {
+      results: jinaOutcome.results,
+      diagnostics: buildDiagnostics(query, strategyDiagnostics),
+    }
+  }
 
   // Strategy 2: DuckDuckGo Lite (lighter HTML, sometimes more reliable)
-  const liteResults = await searchViaDDGLite(query, signal)
-  const merged1 = deduplicateResults([...jinaResults, ...liteResults])
-  if (merged1.length >= 2) return merged1.slice(0, 10)
+  const liteOutcome = await searchViaDDGLite(query, signal)
+  strategyDiagnostics.push({
+    strategy: liteOutcome.strategy,
+    resultsCount: liteOutcome.results.length,
+    errorType: liteOutcome.errorType,
+    message: liteOutcome.message,
+  })
+  const merged1 = deduplicateResults([...jinaOutcome.results, ...liteOutcome.results])
+  if (merged1.length >= 2) {
+    return {
+      results: merged1.slice(0, 10),
+      diagnostics: buildDiagnostics(query, strategyDiagnostics),
+    }
+  }
 
-  if (signal?.aborted) return merged1
+  if (signal?.aborted) {
+    return {
+      results: merged1,
+      diagnostics: buildDiagnostics(query, strategyDiagnostics),
+    }
+  }
 
   // Strategy 3: DuckDuckGo Instant API (limited but always CORS-friendly)
-  const instantResults = await searchViaDDGInstant(query, signal)
-  return deduplicateResults([...merged1, ...instantResults]).slice(0, 10)
+  const instantOutcome = await searchViaDDGInstant(query, signal)
+  strategyDiagnostics.push({
+    strategy: instantOutcome.strategy,
+    resultsCount: instantOutcome.results.length,
+    errorType: instantOutcome.errorType,
+    message: instantOutcome.message,
+  })
+
+  return {
+    results: deduplicateResults([...merged1, ...instantOutcome.results]).slice(0, 10),
+    diagnostics: buildDiagnostics(query, strategyDiagnostics),
+  }
 }
 
 /** Remove duplicate URLs, keeping the first occurrence */
 function deduplicateResults(results: WebSearchResult[]): WebSearchResult[] {
   const seen = new Set<string>()
   return results.filter(r => {
-    const key = r.url.replace(/\/$/, '').toLowerCase()
+    const key = normalizeUrlForDedup(r.url)
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
 }
 
-async function searchViaDDGJina(query: string, signal?: AbortSignal): Promise<WebSearchResult[]> {
-  try {
-    const ddgHtmlUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
-    const readerUrl = `https://r.jina.ai/${ddgHtmlUrl}`
-    const resp = await fetch(readerUrl, {
-      headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
-      signal: signal ?? AbortSignal.timeout(JINA_TIMEOUT),
-    })
-    if (!resp.ok) return []
-    const text = await resp.text()
-    return extractResultsFromJinaText(text)
-  } catch {
-    return []
-  }
+async function searchViaDDGJina(query: string, signal?: AbortSignal): Promise<SearchStrategyOutcome> {
+  const ddgHtmlUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
+  const readerUrl = `https://r.jina.ai/${ddgHtmlUrl}`
+  return searchViaJinaReader('ddg_jina', readerUrl, signal)
 }
 
-async function searchViaDDGLite(query: string, signal?: AbortSignal): Promise<WebSearchResult[]> {
-  try {
-    const ddgLiteUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`
-    const readerUrl = `https://r.jina.ai/${ddgLiteUrl}`
-    const resp = await fetch(readerUrl, {
-      headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
-      signal: signal ?? AbortSignal.timeout(JINA_TIMEOUT),
-    })
-    if (!resp.ok) return []
-    const text = await resp.text()
-    return extractResultsFromJinaText(text)
-  } catch {
-    return []
-  }
+async function searchViaDDGLite(query: string, signal?: AbortSignal): Promise<SearchStrategyOutcome> {
+  const ddgLiteUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`
+  const readerUrl = `https://r.jina.ai/${ddgLiteUrl}`
+  return searchViaJinaReader('ddg_lite', readerUrl, signal)
 }
 
-async function searchViaDDGInstant(query: string, signal?: AbortSignal): Promise<WebSearchResult[]> {
-  try {
-    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
-    const resp = await fetch(url, { signal: signal ?? AbortSignal.timeout(8_000) })
-    if (!resp.ok) return []
-    const data = await resp.json() as {
-      AbstractText?: string
-      AbstractURL?: string
-      Heading?: string
-      RelatedTopics?: Array<{ Text?: string; FirstURL?: string }>
+async function searchViaDDGInstant(query: string, signal?: AbortSignal): Promise<SearchStrategyOutcome> {
+  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
+
+  for (let attempt = 0; attempt < SEARCH_RETRY_ATTEMPTS; attempt++) {
+    if (signal?.aborted) {
+      return { strategy: 'ddg_instant', results: [], errorType: 'aborted', message: 'Busca cancelada' }
     }
-    const results: WebSearchResult[] = []
-    if (data.AbstractText && data.AbstractURL) {
-      results.push({
-        title: data.Heading || 'Result',
-        url: data.AbstractURL,
-        snippet: data.AbstractText.slice(0, 300),
-      })
-    }
-    for (const t of (data.RelatedTopics ?? []).slice(0, 8)) {
-      if (t.FirstURL && t.Text) {
+    try {
+      const resp = await fetch(url, { signal: signal ?? AbortSignal.timeout(8_000 + attempt * 2_000) })
+      if (!resp.ok) {
+        const errorType = classifyStatus(resp.status)
+        if (!isRetriableStatus(resp.status) || attempt === SEARCH_RETRY_ATTEMPTS - 1) {
+          return {
+            strategy: 'ddg_instant',
+            results: [],
+            errorType,
+            message: `DuckDuckGo Instant retornou HTTP ${resp.status}`,
+          }
+        }
+        await wait(260 + attempt * 320)
+        continue
+      }
+
+      const data = await resp.json() as {
+        AbstractText?: string
+        AbstractURL?: string
+        Heading?: string
+        RelatedTopics?: Array<{ Text?: string; FirstURL?: string }>
+      }
+      const results: WebSearchResult[] = []
+      if (data.AbstractText && data.AbstractURL) {
         results.push({
-          title: t.Text.slice(0, 120),
-          url: t.FirstURL,
-          snippet: t.Text.slice(0, 300),
+          title: data.Heading || 'Result',
+          url: data.AbstractURL,
+          snippet: data.AbstractText.slice(0, 300),
         })
       }
+      for (const t of (data.RelatedTopics ?? []).slice(0, 8)) {
+        if (t.FirstURL && t.Text) {
+          results.push({
+            title: t.Text.slice(0, 120),
+            url: t.FirstURL,
+            snippet: t.Text.slice(0, 300),
+          })
+        }
+      }
+
+      return {
+        strategy: 'ddg_instant',
+        results,
+        errorType: results.length > 0 ? 'none' : 'empty',
+        message: results.length > 0 ? undefined : 'DuckDuckGo Instant sem resultados',
+      }
+    } catch (error) {
+      const errorType = classifyFetchError(error)
+      if (errorType === 'aborted') {
+        return { strategy: 'ddg_instant', results: [], errorType, message: 'Busca cancelada' }
+      }
+      if (attempt === SEARCH_RETRY_ATTEMPTS - 1) {
+        return {
+          strategy: 'ddg_instant',
+          results: [],
+          errorType,
+          message: error instanceof Error ? error.message : 'Falha ao consultar DuckDuckGo Instant',
+        }
+      }
+      await wait(280 + attempt * 320)
     }
-    return results
-  } catch {
-    return []
   }
+
+  return { strategy: 'ddg_instant', results: [], errorType: 'empty', message: 'Sem resultados' }
+}
+
+async function searchViaJinaReader(
+  strategy: 'ddg_jina' | 'ddg_lite',
+  readerUrl: string,
+  signal?: AbortSignal,
+): Promise<SearchStrategyOutcome> {
+  for (let attempt = 0; attempt < SEARCH_RETRY_ATTEMPTS; attempt++) {
+    if (signal?.aborted) {
+      return { strategy, results: [], errorType: 'aborted', message: 'Busca cancelada' }
+    }
+    try {
+      const resp = await fetch(readerUrl, {
+        headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
+        signal: signal ?? AbortSignal.timeout(JINA_TIMEOUT + attempt * 2_000),
+      })
+      if (!resp.ok) {
+        const errorType = classifyStatus(resp.status)
+        if (!isRetriableStatus(resp.status) || attempt === SEARCH_RETRY_ATTEMPTS - 1) {
+          return {
+            strategy,
+            results: [],
+            errorType,
+            message: `Jina Reader retornou HTTP ${resp.status}`,
+          }
+        }
+        await wait(220 + attempt * 260)
+        continue
+      }
+      const text = await resp.text()
+      const results = extractResultsFromJinaText(text)
+      return {
+        strategy,
+        results,
+        errorType: results.length > 0 ? 'none' : 'empty',
+        message: results.length > 0 ? undefined : 'Sem links extraídos do resultado',
+      }
+    } catch (error) {
+      const errorType = classifyFetchError(error)
+      if (errorType === 'aborted') {
+        return { strategy, results: [], errorType, message: 'Busca cancelada' }
+      }
+      if (attempt === SEARCH_RETRY_ATTEMPTS - 1) {
+        return {
+          strategy,
+          results: [],
+          errorType,
+          message: error instanceof Error ? error.message : 'Falha de rede ao consultar Jina Reader',
+        }
+      }
+      await wait(250 + attempt * 300)
+    }
+  }
+
+  return { strategy, results: [], errorType: 'empty', message: 'Sem resultados' }
 }
 
 /**
@@ -216,9 +387,9 @@ function extractResultsFromJinaText(text: string): WebSearchResult[] {
     results.push({ title, url, snippet })
   }
 
-  // Strategy B: Look for bare URLs with surrounding context
+  // Strategy B: Look for bare URLs with surrounding context.
   if (results.length < 3) {
-    const urlRegex = /https?:\/\/(?!duckduckgo\.com)[^\s<>"{}|\\^`)\]]{10,}/g
+    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\]]+/g
     while ((match = urlRegex.exec(text)) !== null) {
       if (results.length >= 10) break
       const url = cleanUrl(match[0])
@@ -230,15 +401,76 @@ function extractResultsFromJinaText(text: string): WebSearchResult[] {
     }
   }
 
+  // Strategy C: HTML anchor links when source was not converted to markdown.
+  if (results.length < 3) {
+    const htmlLinkRegex = /<a\s+(?:[^>]*?\s+)?href=["']([^"']+)["'][^>]*>([^<]{3,})<\/a>/gi
+    while ((match = htmlLinkRegex.exec(text)) !== null) {
+      if (results.length >= 10) break
+      const url = cleanUrl(match[1])
+      if (!/^https?:\/\//i.test(url) || isDDGInternal(url) || seen.has(url)) continue
+      seen.add(url)
+      const title = match[2].trim().replace(/\s+/g, ' ').slice(0, 180)
+      const snippet = extractSnippetAround(text, match.index, 300)
+      results.push({ title: title || url.split('/')[2] || url, url, snippet })
+    }
+  }
+
   return results
 }
 
 function cleanUrl(url: string): string {
-  return url.replace(/[),.;:!?'"]+$/, '').replace(/\/$/, '')
+  return url
+    .replace(/[),.;:!?'"]+$/, '')
+    .replace(/\/$/, '')
+    .split('#')[0]
 }
 
 function isDDGInternal(url: string): boolean {
   return /duckduckgo\.com|r\.search\.yahoo/i.test(url)
+}
+
+function normalizeUrlForDedup(url: string): string {
+  try {
+    const parsed = new URL(url)
+    const protocol = 'https:'
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase()
+    const pathname = parsed.pathname.replace(/\/$/, '').toLowerCase()
+    return `${protocol}//${host}${pathname}${parsed.search}`
+  } catch {
+    return cleanUrl(url).toLowerCase().replace(/^https?:\/\/www\./, 'https://')
+  }
+}
+
+function isRetriableStatus(status: number): boolean {
+  return status === 429 || status >= 500
+}
+
+function classifyStatus(status: number): WebSearchErrorType {
+  if (status === 429) return 'rate_limit'
+  if (status >= 500) return 'http'
+  if (status >= 400) return 'http'
+  return 'none'
+}
+
+function classifyFetchError(error: unknown): WebSearchErrorType {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    const msg = error.message.toLowerCase()
+    return msg.includes('time') || msg.includes('timeout') ? 'timeout' : 'aborted'
+  }
+  if (error instanceof TypeError) return 'network'
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+  if (message.includes('timeout')) return 'timeout'
+  if (message.includes('network')) return 'network'
+  return 'network'
+}
+
+function buildDiagnostics(query: string, strategies: WebSearchStrategyDiagnostic[]): WebSearchDiagnostics {
+  const hadTechnicalError = strategies.some(s => s.errorType !== 'none' && s.errorType !== 'empty' && s.errorType !== 'aborted')
+  return { query, strategies, hadTechnicalError }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function extractSnippetAround(text: string, index: number, length: number): string {
@@ -278,7 +510,7 @@ export async function deepWebSearch(
     currentUrl: '',
   })
 
-  const results = await searchWebResults(query, signal)
+  const { results, diagnostics } = await searchWebResultsWithDiagnostics(query, signal)
 
   onProgress?.({
     phase: 'fetching',
@@ -290,12 +522,19 @@ export async function deepWebSearch(
   })
 
   if (results.length === 0) {
-    return { results: [], contents: [], durationMs: Math.round(performance.now() - start) }
+    return {
+      results: [],
+      contents: [],
+      durationMs: Math.round(performance.now() - start),
+      fetchFailures: 0,
+      diagnostics,
+    }
   }
 
   // Step 2: Fetch full content from top 5 URLs in parallel
   const topResults = results.slice(0, 5)
   const contents: Array<{ url: string; title: string; content: string }> = []
+  let fetchFailures = 0
   let fetchedCount = 0
 
   const fetchPromises = topResults.map(async (r) => {
@@ -316,6 +555,7 @@ export async function deepWebSearch(
       }
     } catch {
       fetchedCount++
+      fetchFailures++
     }
     return null
   })
@@ -340,5 +580,7 @@ export async function deepWebSearch(
     results,
     contents,
     durationMs: Math.round(performance.now() - start),
+    fetchFailures,
+    diagnostics,
   }
 }

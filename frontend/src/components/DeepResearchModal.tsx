@@ -192,7 +192,10 @@ export function DeepResearchModal({
   const activeStep = steps.find(s => s.status === 'active')
   const completedSteps = steps.filter(s => s.status === 'done').length
   const totalSteps = steps.length
-  const progressPercent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0
+  const activeWeight = activeStep ? 0.5 : 0
+  const progressPercent = totalSteps > 0
+    ? Math.round(((completedSteps + activeWeight) / totalSteps) * 100)
+    : 0
   const hasErrors = steps.some(s => s.status === 'error')
   const isDone = steps.length > 0 && steps.every(s => s.status === 'done' || s.status === 'error')
   const displayElapsed = stats.elapsedMs > 0 ? stats.elapsedMs : elapsed
