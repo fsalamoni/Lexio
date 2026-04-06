@@ -42,7 +42,6 @@ def _extract_text(content: bytes, content_type: str, filename: str) -> str:
         "text/rtf",
         "text/log",
         "text/x-log",
-        "application/octet-stream",
     }
     text_like_extensions = (
         ".txt",

@@ -5,6 +5,7 @@ or database, so they run fast and without Docker.
 """
 
 import pytest
+from pathlib import Path
 
 # Constants from the uploads route
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -58,7 +59,7 @@ ALLOWED_EXTENSIONS = {
 
 def validate_upload(content: bytes, content_type: str | None, filename: str = "arquivo.bin") -> dict:
     """Returns {"ok": True} or {"ok": False, "status": int, "detail": str}."""
-    extension = ("." + filename.split(".")[-1].lower()) if "." in filename else ""
+    extension = Path(filename).suffix.lower()
     has_allowed_extension = extension in ALLOWED_EXTENSIONS
     has_allowed_content_type = content_type in ALLOWED_CONTENT_TYPES if content_type else False
     supported = has_allowed_extension or has_allowed_content_type

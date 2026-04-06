@@ -340,7 +340,7 @@ function preFilterDocs(
     const assuntosLower = (d.assuntos || []).map(a => a.toLowerCase())
     const tipoLower = (d.tipo_documento || '').toLowerCase()
     const contextoLower = (d.contexto || []).map(c => c.toLowerCase())
-    const textSampleLower = d.prefilter_text_sample ?? ''
+    const textSample = d.prefilter_text_sample ?? ''
 
     for (const keyword of normalizedSearch) {
       if (filenameLower.includes(keyword)) score += 3
@@ -350,7 +350,7 @@ function preFilterDocs(
       if (assuntosLower.some(a => a.includes(keyword) || keyword.includes(a))) score += 2
       if (tipoLower && (tipoLower.includes(keyword) || keyword.includes(tipoLower))) score += 2
       if (contextoLower.some(c => c.includes(keyword) || keyword.includes(c))) score += 1
-      if (textSampleLower.includes(keyword)) score += 1
+      if (textSample.includes(keyword)) score += 1
     }
 
     return { ...d, score }

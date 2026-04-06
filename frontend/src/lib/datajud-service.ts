@@ -56,15 +56,21 @@ function getDataJudProxyUrl(): string {
 }
 
 function getDataJudProxyCandidates(): string[] {
+  const primary = getDataJudProxyUrl()
   const basePath = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BASE_PATH) || '/'
   const normalizedBase = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath
   const candidates = new Set<string>()
-  candidates.add(getDataJudProxyUrl())
-  candidates.add('/api/datajud')
-  if (normalizedBase && normalizedBase !== '') {
-    candidates.add(`${normalizedBase}/api/datajud`)
+  candidates.add(primary)
+  if (primary !== '/api/datajud') {
+    candidates.add('/api/datajud')
   }
-  candidates.add(CLOUD_FUNCTION_URL)
+  const baseCandidate = `${normalizedBase}/api/datajud`
+  if (normalizedBase && normalizedBase !== '' && baseCandidate !== primary) {
+    candidates.add(baseCandidate)
+  }
+  if (primary !== CLOUD_FUNCTION_URL) {
+    candidates.add(CLOUD_FUNCTION_URL)
+  }
   return Array.from(candidates)
 }
 
@@ -98,7 +104,7 @@ async function fetchDataJudHits(
       if (signal) signal.addEventListener('abort', onExternalAbort, { once: true })
       const onTimeoutAbort = () => signalController.abort()
       timeoutController.signal.addEventListener('abort', onTimeoutAbort, { once: true })
-      const retryDelay = RETRY_BASE_DELAY_MS * (attempt + 1)
+      const retryDelay = RETRY_BASE_DELAY_MS * (2 ** attempt)
 
       try {
         const resp = await fetch(proxyUrl, {
