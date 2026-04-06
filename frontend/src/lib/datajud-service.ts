@@ -10,7 +10,11 @@
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-/** Public API key provided by CNJ for DataJud API access */
+/**
+ * Public API key provided by CNJ for DataJud API access.
+ * This is NOT a secret — it is a shared public key published by CNJ
+ * at https://datajud-wiki.cnj.jus.br/api-publica/ for all consumers.
+ */
 const DATAJUD_API_KEY = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=='
 
 /** Base URL for all DataJud endpoints */
@@ -58,7 +62,7 @@ export function _resetEndpointCache(): void {
  */
 function getEndpointCandidates(): string[] {
   const host = typeof window !== 'undefined' ? window.location.hostname : ''
-  const isFirebase = host.includes('lexio.web.app') || host.includes('firebaseapp.com')
+  const isFirebase = host === 'lexio.web.app' || host.endsWith('.firebaseapp.com')
   const isLocal = host === 'localhost' || host === '127.0.0.1'
   const isStaticHosting = host.endsWith('.github.io') || host.endsWith('.netlify.app') || host.endsWith('.vercel.app')
 
@@ -222,7 +226,8 @@ async function fetchDataJudHits(
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error('Nenhum endpoint DataJud disponível. Verifique sua conexão ou tente novamente.')
+  const detail = lastError instanceof Error ? lastError.message : 'erro desconhecido'
+  throw new Error(`Nenhum endpoint DataJud disponível (${detail}). Verifique sua conexão ou tente novamente.`)
 }
 
 // ── Tribunal Registry ──────────────────────────────────────────────────────────
