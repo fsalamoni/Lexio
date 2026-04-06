@@ -1,0 +1,155 @@
+name: Firebase Hosting Preview (PR)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Deploys a temporary Firebase Hosting preview channel for each PR and posts
+# the URL as a PR comment. The channel is automatically deleted when the PR
+# is merged or closed.
+#
+# SECRETS REQUIRED (GitHub → Settings → Secrets → Actions):
+#   FIREBASE_TOKEN    — generate with: firebase login:ci
+#   FIREBASE_API_KEY  — Firebase Web API key (same as production)
+#   VITE_ADMIN_EMAIL  — admin e-mail address (optional, same as production)
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+  pull-requests: write   # to post preview URL comment
+
+concurrency:
+  group: firebase-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Deploy preview channel
+    runs-on: ubuntu-latest
+    # Only deploy on non-closed PRs; teardown runs separately below.
+    if: github.event.action != 'closed'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Check required secrets
+        run: |
+          if [ -z "${{ secrets.FIREBASE_TOKEN }}" ] && [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "::warning::FIREBASE_TOKEN or FIREBASE_SERVICE_ACCOUNT secret is not set — preview deploy skipped."
+            echo "skipped=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install frontend deps
+        if: env.skipped != 'true'
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build frontend (preview mode)
+        if: env.skipped != 'true'
+        run: npm run build
+        working-directory: frontend
+        env:
+          VITE_DEMO_MODE: 'false'
+          VITE_BASE_PATH: /
+          VITE_FIREBASE_API_KEY:             ${{ secrets.FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN:         hocapp-44760.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID:          hocapp-44760
+          VITE_FIREBASE_STORAGE_BUCKET:      hocapp-44760.firebasestorage.app
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '143237037612'
+          VITE_FIREBASE_APP_ID:              '1:143237037612:web:85bd9ddaf81973d5031b89'
+          VITE_ADMIN_EMAIL:                  ${{ secrets.VITE_ADMIN_EMAIL }}
+
+      - name: SPA fallback (404 → index.html)
+        if: env.skipped != 'true'
+        run: cp frontend/dist/index.html frontend/dist/404.html
+
+      - name: Install Firebase CLI
+        if: env.skipped != 'true'
+        run: npm install -g firebase-tools@latest
+
+      - name: Deploy to preview channel
+        if: env.skipped != 'true'
+        id: preview_deploy
+        run: |
+          CHANNEL="pr-${{ github.event.pull_request.number }}"
+          OUTPUT=$(firebase hosting:channel:deploy "$CHANNEL" \
+            --site lexio \
+            --project hocapp-44760 \
+            --expires 7d \
+            --non-interactive 2>&1)
+          echo "$OUTPUT"
+          # Extract preview URL from output
+          PREVIEW_URL=$(echo "$OUTPUT" | grep -oP 'https://[^\s]+\.web\.app' | head -1)
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+
+      - name: Post preview URL to PR
+        if: env.skipped != 'true' && steps.preview_deploy.outputs.preview_url != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const previewUrl = '${{ steps.preview_deploy.outputs.preview_url }}';
+            const prNumber = context.payload.pull_request.number;
+            const sha = context.payload.pull_request.head.sha.slice(0, 7);
+
+            // Remove old preview comments from this bot
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            for (const comment of comments.data) {
+              if (comment.user.login === 'github-actions[bot]' &&
+                  comment.body.includes('🔥 Firebase Preview')) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id,
+                });
+              }
+            }
+
+            // Post fresh preview comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: [
+                '## 🔥 Firebase Preview',
+                '',
+                `**URL:** ${previewUrl}`,
+                `**Commit:** \`${sha}\``,
+                `**Expires:** 7 days after last update`,
+                '',
+                '_This preview is automatically updated on each push and deleted when the PR is closed._',
+              ].join('\n'),
+            });
+
+  teardown:
+    name: Delete preview channel
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@latest
+
+      - name: Delete preview channel
+        run: |
+          CHANNEL="pr-${{ github.event.pull_request.number }}"
+          firebase hosting:channel:delete "$CHANNEL" \
+            --site lexio \
+            --project hocapp-44760 \
+            --non-interactive \
+            --force || true
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

@@ -72,4 +72,10 @@ export default defineConfig({
       '/webhook': backendUrl,
     },
   },
+  test: {
+    // Polyfill Promise.withResolvers and other modern APIs before tests run.
+    // pdfjs-dist requires Promise.withResolvers (Node ≥ 22); the polyfill
+    // keeps tests green on older Node versions too.
+    setupFiles: ['./src/test-setup.ts'],
+  },
 })

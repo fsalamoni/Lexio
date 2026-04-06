@@ -1,0 +1,149 @@
+# Lexio — Setup Guide
+
+This guide explains how to configure all required secrets and settings so that GitHub Actions can build, test, and deploy the application without any manual Firebase Console steps.
+
+---
+
+## Required GitHub Secrets
+
+Go to **GitHub → Repository → Settings → Secrets and variables → Actions → New repository secret** and add the following:
+
+### Firebase Authentication (pick one)
+
+| Secret | Description |
+|--------|-------------|
+| `FIREBASE_TOKEN` | ⭐ **Recommended.** Legacy CI token from `firebase login:ci`. Generate locally: `npx firebase-tools login:ci` |
+| `FIREBASE_SERVICE_ACCOUNT` | Alternative: JSON key of a GCP service account with **Firebase Hosting Admin** + **Firebase Rules Admin** + **Cloud Functions Developer** roles on project `hocapp-44760` |
+
+At least **one** of the above must be set. `FIREBASE_TOKEN` is simpler to generate.
+
+### Firebase App Config
+
+These are **not** sensitive (they are embedded in the built JS), but they must be present for the build to connect to the correct Firebase project.
+
+| Secret | Value |
+|--------|-------|
+| `FIREBASE_API_KEY` | Firebase Web API Key — found in Firebase Console → Project settings → General → Web apps |
+
+### Application Secrets
+
+| Secret | Description |
+|--------|-------------|
+| `VITE_ADMIN_EMAIL` | E-mail address of the first admin user (Google account). This user gets the `admin` role automatically on first login. |
+
+---
+
+## How to generate `FIREBASE_TOKEN`
+
+```bash
+# Install Firebase CLI globally (if not already installed)
+npm install -g firebase-tools
+
+# Log in and get a CI token
+firebase login:ci
+```
+
+Copy the printed token and add it as the `FIREBASE_TOKEN` secret in GitHub.
+
+---
+
+## Workflows Overview
+
+| Workflow | Trigger | What it does |
+|----------|---------|-------------|
+| `test.yml` | Push to `main`/`claude/*`, PR to `main` | TypeScript typecheck, Vitest unit tests, Python pytest, Ruff lint |
+| `deploy-pages.yml` | Push to `main`, manual | Build and deploy to GitHub Pages (`/Lexio/` base path) |
+| `firebase-deploy.yml` | Push to `main`/`claude/*`, manual | Build and deploy to Firebase Hosting (`lexio.web.app`) + Firestore Rules + Cloud Functions |
+| `firebase-preview.yml` | PR to `main` | Deploy a temporary Firebase Hosting preview channel; post URL as PR comment; delete channel on PR close |
+
+---
+
+## Firebase Project Details
+
+| Property | Value |
+|----------|-------|
+| Project ID | `hocapp-44760` |
+| Hosting site | `lexio` → `lexio.web.app` |
+| Auth domain | `hocapp-44760.firebaseapp.com` |
+| Storage bucket | `hocapp-44760.firebasestorage.app` |
+| Messaging sender ID | `143237037612` |
+| App ID | `1:143237037612:web:85bd9ddaf81973d5031b89` |
+| Region (Functions) | `southamerica-east1` |
+
+---
+
+## Local Development with Firebase Emulators
+
+The `firebase.json` includes emulator configuration so you can develop and test locally without hitting production Firebase.
+
+```bash
+# Install Firebase CLI
+npm install -g firebase-tools
+
+# Start all emulators (auth, firestore, functions, hosting)
+firebase emulators:start
+
+# Or only start specific emulators
+firebase emulators:start --only auth,firestore
+```
+
+Emulator ports:
+
+| Emulator | Port |
+|----------|------|
+| Auth | 9099 |
+| Firestore | 8080 |
+| Functions | 5001 |
+| Hosting | 5000 |
+| Emulator UI | 4000 |
+
+> **Note:** The frontend does not auto-connect to emulators yet. To connect, set `VITE_USE_EMULATORS=true` in your local `.env` file and add the emulator connection code to `frontend/src/lib/firebase.ts`.
+
+---
+
+## Common Errors and Fixes
+
+### `Promise.withResolvers is not a function`
+**Cause:** `pdfjs-dist` uses a Node.js 22+ API. Older Node versions don't support it.  
+**Fix:** A polyfill in `frontend/src/test-setup.ts` handles this automatically. The CI workflows use Node.js 22.
+
+### `Missing FIREBASE_TOKEN or FIREBASE_SERVICE_ACCOUNT secret`
+**Cause:** Neither Firebase auth secret is set in GitHub.  
+**Fix:** Add `FIREBASE_TOKEN` as described above.
+
+### `TypeError: Argument of type ... is not assignable`
+**Cause:** TypeScript version mismatch with pdfjs-dist type definitions.  
+**Fix:** Fixed by using the `'str' in item` type guard in `file-text-extractor.ts`.
+
+### Firebase deploy fails with `hosting site not found`
+**Cause:** The Firebase Hosting site `lexio` is not created in the project.  
+**Fix:** Go to Firebase Console → Hosting → Add custom site → enter `lexio`.
+
+### Functions deploy fails with `service account ... does not exist`
+**Cause:** The App Engine default service account was deleted.  
+**Fix:** The `datajudProxy` function is configured to use `hocapp-44760@appspot.gserviceaccount.com`. Recreate or use an alternative service account.
+
+---
+
+## Firestore Security Rules
+
+Rules are in `firestore.rules`. They enforce:
+- Users can only read/write their own data (`/users/{uid}/**`)
+- Only admins can access `/settings/**`
+- Everything else is denied
+
+To deploy rules only (without rebuilding the app):
+
+```bash
+firebase deploy --only firestore:rules,firestore:indexes --project hocapp-44760
+```
+
+---
+
+## Adding a New Admin User
+
+1. Have the user log in via Google OAuth through the app.
+2. Their account is created in Firestore at `/users/{uid}` with `role: "user"`.
+3. Update the role to `"admin"` in Firebase Console → Firestore → users → {uid} → role field.
+
+Or set `VITE_ADMIN_EMAIL` to their Google account email before they first log in — the app will assign `admin` role automatically.
