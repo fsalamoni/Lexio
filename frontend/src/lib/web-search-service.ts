@@ -8,7 +8,7 @@
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const MAX_SOURCE_TEXT_LENGTH = 50_000
+const MAX_SOURCE_TEXT_LENGTH = 500_000
 const MAX_WEB_SEARCH_CHARS = 3_000
 const JINA_TIMEOUT = 8_000
 const ALLORIGINS_TIMEOUT = 12_000

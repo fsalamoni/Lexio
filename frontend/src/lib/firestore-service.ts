@@ -1386,6 +1386,68 @@ export async function listResearchNotebooks(uid: string): Promise<{ items: Resea
   return { items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ResearchNotebookData)) }
 }
 
+// ── Firestore notebook size safety ────────────────────────────────────────────
+
+/**
+ * Firestore has a 1 MiB (1,048,576 bytes) document size limit.
+ * We target 950 KB to leave headroom for field names & UTF-8 overhead.
+ */
+const NOTEBOOK_MAX_DOC_BYTES = 950_000
+
+/**
+ * Estimate the byte size of a value when serialised to JSON.
+ * Adds a 10 % margin for multi-byte UTF-8 characters (common in Portuguese).
+ */
+function estimateJsonBytes(value: unknown): number {
+  try {
+    const len = JSON.stringify(value).length
+    return len + Math.ceil(len * 0.1)
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * If the sources array would push the notebook document past the Firestore
+ * size limit, trim the longest `text_content` fields proportionally so
+ * everything fits.  Returns `{ sources, truncated }`.
+ */
+function fitSourcesToFirestoreLimit(
+  sources: NotebookSource[],
+  otherDataEstimateBytes: number,
+): { sources: NotebookSource[]; truncated: boolean } {
+  const totalBytes = estimateJsonBytes(sources) + otherDataEstimateBytes
+  if (totalBytes <= NOTEBOOK_MAX_DOC_BYTES) return { sources, truncated: false }
+
+  const budget = Math.max(NOTEBOOK_MAX_DOC_BYTES - otherDataEstimateBytes, 0)
+
+  // Compute the total text chars currently stored in sources
+  const totalTextChars = sources.reduce((s, src) => s + (src.text_content?.length ?? 0), 0)
+  if (totalTextChars === 0) return { sources, truncated: false }
+
+  // Overhead per source (metadata fields, JSON syntax) — estimate once
+  const metaOverhead = estimateJsonBytes(sources) - Math.ceil(totalTextChars * 1.1)
+  const availableForText = Math.max(budget - metaOverhead, 0)
+
+  // Scale each source's text proportionally to fit
+  const ratio = availableForText / Math.ceil(totalTextChars * 1.1)
+
+  const trimmed: NotebookSource[] = sources.map(src => {
+    const text = src.text_content ?? ''
+    if (text.length === 0 || ratio >= 1) return src
+    const maxChars = Math.max(Math.floor(text.length * ratio), 100)
+    if (maxChars >= text.length) return src
+    return { ...src, text_content: text.slice(0, maxChars) }
+  })
+
+  console.warn(
+    `[Lexio] Notebook sources trimmed to fit Firestore 1 MB limit ` +
+    `(estimated ${(totalBytes / 1000).toFixed(0)} KB → budget ${(NOTEBOOK_MAX_DOC_BYTES / 1000).toFixed(0)} KB)`,
+  )
+
+  return { sources: trimmed, truncated: true }
+}
+
 /**
  * Get a single research notebook by ID.
  */
@@ -1403,11 +1465,13 @@ export async function getResearchNotebook(uid: string, notebookId: string): Prom
 export async function createResearchNotebook(uid: string, data: Omit<ResearchNotebookData, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
   const db = ensureFirestore()
   const now = new Date().toISOString()
-  const sanitized = stripUndefined({
+
+  // Build preliminary payload WITHOUT sources to estimate non-source overhead
+  const baseMeta = stripUndefined({
     title: data.title,
     topic: data.topic,
     description: data.description ?? '',
-    sources: data.sources ?? [],
+    sources: [] as NotebookSource[],
     messages: data.messages ?? [],
     artifacts: data.artifacts ?? [],
     status: data.status ?? 'active',
@@ -1415,6 +1479,10 @@ export async function createResearchNotebook(uid: string, data: Omit<ResearchNot
     created_at: now,
     updated_at: now,
   })
+  const otherBytes = estimateJsonBytes(baseMeta)
+  const { sources } = fitSourcesToFirestoreLimit(data.sources ?? [], otherBytes)
+
+  const sanitized = { ...baseMeta, sources }
   const docRef = await addDoc(collection(db, 'users', uid, 'research_notebooks'), sanitized)
   return docRef.id
 }
@@ -1427,8 +1495,23 @@ export async function updateResearchNotebook(uid: string, notebookId: string, da
   const ref = doc(db, 'users', uid, 'research_notebooks', notebookId)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id, ...rest } = data
-  const sanitized = stripUndefined({ ...rest, updated_at: new Date().toISOString() })
-  await updateDoc(ref, sanitized)
+
+  // When the update includes sources, ensure total estimated size is safe.
+  // We fetch the current document so we can account for existing fields.
+  if (rest.sources) {
+    const snap = await getDoc(ref)
+    const existing = snap.exists() ? snap.data() : {}
+    const merged = { ...existing, ...stripUndefined(rest), updated_at: new Date().toISOString() }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { sources: _src, ...mergedMeta } = merged
+    const otherBytes = estimateJsonBytes(mergedMeta)
+    const { sources } = fitSourcesToFirestoreLimit(rest.sources, otherBytes)
+    const sanitized = stripUndefined({ ...rest, sources, updated_at: new Date().toISOString() })
+    await updateDoc(ref, sanitized)
+  } else {
+    const sanitized = stripUndefined({ ...rest, updated_at: new Date().toISOString() })
+    await updateDoc(ref, sanitized)
+  }
 }
 
 /**
