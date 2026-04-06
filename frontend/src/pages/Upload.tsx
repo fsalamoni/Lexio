@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter, ChevronDown } from 'lucide-react'
+import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter, ChevronDown, Database } from 'lucide-react'
 import api from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
@@ -13,6 +13,7 @@ import {
   updateAcervoEmenta,
   updateAcervoTags,
   updateAcervoTextContent,
+  convertAcervoToJson,
   getSettings,
   loadAdminLegalAreas,
   type AcervoDocumentData,
@@ -23,11 +24,12 @@ import { ModelsNotConfiguredError } from '../lib/model-config'
 import type { UsageExecutionRecord } from '../lib/cost-analytics'
 import { getAssuntosForAreas, getTiposForClassification } from '../lib/classification-data'
 import {
-  extractFileText,
+  extractFileTextWithMeta,
   getFileExtension,
   SUPPORTED_TEXT_FILE_EXTENSIONS,
   SUPPORTED_TEXT_FILE_MIME_TYPES,
 } from '../lib/file-text-extractor'
+import { getStructuredMeta, type StructuredDocumentMeta } from '../lib/document-json-converter'
 
 interface UploadedFile {
   id: string
@@ -64,6 +66,11 @@ function AcervoDocModal({ doc, onClose, onTextSaved }: { doc: AcervoDocumentData
   const [text, setText] = useState(doc.text_content || '')
   const [saving, setSaving] = useState(false)
 
+  // Derive displayable format info from the resolved text
+  const textLen = (doc.text_content || '').length
+  const ext = getFileExtension(doc.filename).replace('.', '').toUpperCase() || 'TXT'
+  const isJson = doc.storage_format === 'json'
+
   const handleSave = async () => {
     if (!onTextSaved) return
     setSaving(true)
@@ -86,16 +93,24 @@ function AcervoDocModal({ doc, onClose, onTextSaved }: { doc: AcervoDocumentData
           <div className="flex items-center gap-2 min-w-0">
             <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
             <span className="font-semibold text-gray-900 truncate text-sm">{doc.filename}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-mono flex-shrink-0">{ext}</span>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-3">
             <X className="w-5 h-5" />
           </button>
         </div>
         {/* Meta */}
-        <div className="flex gap-4 px-5 py-2 border-b bg-gray-50 text-xs text-gray-500">
+        <div className="flex gap-3 px-5 py-2 border-b bg-gray-50 text-xs text-gray-500 flex-wrap items-center">
           <span>{formatSize(doc.size_bytes)}</span>
-          {doc.chunks_count > 0 && <span>{doc.chunks_count} fragmentos</span>}
-          <span>{new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
+          {doc.chunks_count > 0 && <span>· {doc.chunks_count} fragmentos</span>}
+          {textLen > 0 && <span>· {Math.round(textLen / 1000)}K chars</span>}
+          <span>· {new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
+          {isJson && (
+            <span className="inline-flex items-center gap-0.5 text-blue-500">
+              <Database className="w-3 h-3" />
+              JSON estruturado
+            </span>
+          )}
         </div>
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -111,7 +126,11 @@ function AcervoDocModal({ doc, onClose, onTextSaved }: { doc: AcervoDocumentData
             <div className="flex flex-col items-center justify-center py-12 text-gray-400">
               <AlertCircle className="w-10 h-10 mb-3" />
               <p className="text-sm font-medium">Sem conteúdo de texto</p>
-              <p className="text-xs mt-1">Este documento não possui texto extraível (ex.: PDF escaneado ou formato binário sem suporte).</p>
+              <p className="text-xs mt-1 text-center max-w-sm">
+                Este documento não possui texto extraível.
+                {ext === 'PDF' && ' Pode ser um PDF escaneado (baseado em imagem) sem camada de texto.'}
+                {!['PDF', 'DOCX', 'DOC', 'TXT', 'MD', 'RTF', 'HTML', 'HTM'].includes(ext) && ' Verifique se o formato é suportado.'}
+              </p>
             </div>
           )}
         </div>
@@ -941,17 +960,19 @@ export default function Upload() {
         }
         try {
           setLocalFiles(prev =>
-            prev.map(f => f.name === file.name ? { ...f, progress: 20 } : f)
+            prev.map(f => f.name === file.name ? { ...f, progress: 15 } : f)
           )
-          const textContent = await extractFileText(file)
+          const extraction = await extractFileTextWithMeta(file)
           setLocalFiles(prev =>
-            prev.map(f => f.name === file.name ? { ...f, progress: 80 } : f)
+            prev.map(f => f.name === file.name ? { ...f, progress: 60 } : f)
           )
+          // createAcervoDocument converts to structured JSON internally (pageCount for PDFs)
           const result = await createAcervoDocument(userId, {
             filename: file.name,
             content_type: file.type || 'text/plain',
             size_bytes: file.size,
-            text_content: textContent,
+            text_content: extraction.text,
+            pageCount: extraction.pageCount,
           })
           setLocalFiles(prev => prev.filter(f => f.name !== file.name))
           if (result.truncated) {
@@ -1125,7 +1146,9 @@ export default function Upload() {
   // Save text content from document view modal
   const handleSaveText = async (docId: string, textContent: string) => {
     if (!userId) return
-    await updateAcervoTextContent(userId, docId, textContent)
+    const docData = firebaseHistory.find(d => d.id === docId)
+    const filename = docData?.filename || viewDoc?.filename || 'document'
+    await updateAcervoTextContent(userId, docId, textContent, filename)
     setFirebaseHistory(prev => prev.map(d =>
       d.id === docId ? { ...d, text_content: textContent } : d,
     ))
@@ -1185,6 +1208,7 @@ export default function Upload() {
   const docsWithEmenta = firebaseHistory.filter(d => !!d.ementa)
   const docsWithoutTags = firebaseHistory.filter(d => !d.tags_generated && d.text_content && d.status === 'indexed')
   const docsWithTags = firebaseHistory.filter(d => !!d.tags_generated)
+  const docsNotJson = firebaseHistory.filter(d => d.storage_format !== 'json' && d.text_content && d.status === 'indexed')
 
   // Apply search and filter
   const filteredHistory = firebaseHistory.filter(d => {
@@ -1326,7 +1350,12 @@ export default function Upload() {
                   <p className="text-xs text-gray-400">{formatSize(f.size)}</p>
                 </div>
                 {f.status === 'uploading' && (
-                  <span className="text-xs text-brand-600 font-medium flex-shrink-0">{f.progress ?? 0}%</span>
+                  <span className="text-xs text-brand-600 font-medium flex-shrink-0">
+                    {(f.progress ?? 0) < 15 ? 'Preparando...' :
+                     (f.progress ?? 0) < 60 ? 'Extraindo texto...' :
+                     (f.progress ?? 0) < 90 ? 'Convertendo e salvando...' :
+                     'Finalizando...'} {f.progress ?? 0}%
+                  </span>
                 )}
                 {f.status === 'error' && (
                   <div className="flex items-center gap-1 flex-shrink-0">
@@ -1375,6 +1404,29 @@ export default function Upload() {
                 )}
               </div>
               <div className="flex gap-2">
+                {docsNotJson.length > 0 && (
+                  <button
+                    onClick={async () => {
+                      if (!userId) return
+                      const total = docsNotJson.length
+                      let done = 0
+                      for (const d of docsNotJson) {
+                        if (!d.id || !d.text_content) continue
+                        try {
+                          await convertAcervoToJson(userId, d.id, d.text_content, d.filename)
+                          done++
+                        } catch { /* skip individual errors */ }
+                      }
+                      toast.success(`${done}/${total} documento(s) convertido(s) para JSON`)
+                      fetchHistory()
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                    title={`Converter ${docsNotJson.length} documento(s) legado(s) para JSON estruturado`}
+                  >
+                    <Database className="w-3.5 h-3.5" />
+                    Converter {docsNotJson.length} para JSON
+                  </button>
+                )}
                 {apiKey && docsWithoutTags.length > 0 && (
                   <button
                     onClick={handleBulkGenerateTags}
@@ -1459,6 +1511,12 @@ export default function Upload() {
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <span className="text-xs text-gray-400">{formatSize(acervoDoc.size_bytes)}</span>
                         {acervoDoc.chunks_count > 0 && <span className="text-xs text-gray-400">· {acervoDoc.chunks_count} fragmentos</span>}
+                        {acervoDoc.storage_format === 'json' && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500" title="Armazenado em formato JSON estruturado (compacto)">
+                            <Database className="w-3 h-3" />
+                            JSON
+                          </span>
+                        )}
                         {/* Status indicators */}
                         <span className={`inline-flex items-center gap-0.5 text-[10px] ${s.color}`}>
                           <StatusIcon className="w-3 h-3" />
@@ -1501,6 +1559,24 @@ export default function Upload() {
                     </div>
                     {/* Action buttons */}
                     <div className="flex items-center gap-1 flex-shrink-0">
+                      {acervoDoc.storage_format !== 'json' && acervoDoc.text_content && acervoDoc.status === 'indexed' && (
+                        <button
+                          onClick={async () => {
+                            if (!userId || !acervoDoc.id) return
+                            try {
+                              await convertAcervoToJson(userId, acervoDoc.id, acervoDoc.text_content, acervoDoc.filename)
+                              toast.success(`"${acervoDoc.filename}" convertido para JSON estruturado`)
+                              fetchHistory()
+                            } catch (err) {
+                              toast.error('Erro ao converter documento')
+                            }
+                          }}
+                          className="text-gray-300 hover:text-blue-500 transition-colors"
+                          title="Converter para JSON estruturado (reduz tamanho no banco)"
+                        >
+                          <Database className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={() => setTagsDoc(acervoDoc)}
                         className={`transition-colors ${hasTags ? 'text-teal-400 hover:text-teal-600' : 'text-gray-300 hover:text-teal-400'}`}

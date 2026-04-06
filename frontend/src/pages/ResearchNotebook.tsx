@@ -3386,11 +3386,13 @@ Instruções:
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-800 truncate">{source.name}</p>
                           <p className="text-[11px] text-gray-400">
-                            {typeInfo.label} · {source.type === 'link' ? (
-                              (source.text_content?.length ?? 0) >= MIN_SOURCE_CHARS
-                                ? <span className="text-green-600">✓ {Math.round((source.text_content?.length ?? 0) / 1000)}K chars indexados</span>
-                                : <span className="text-amber-600 flex items-center gap-0.5 inline-flex"><AlertCircle className="w-3 h-3" />Sem conteúdo extraído</span>
-                            ) : source.status === 'indexed' ? 'Indexado' : source.status === 'error' ? 'Erro' : 'Pendente'}
+                            {typeInfo.label} · {(source.text_content?.length ?? 0) >= MIN_SOURCE_CHARS
+                              ? <span className="text-green-600">✓ {Math.round((source.text_content?.length ?? 0) / 1000)}K chars</span>
+                              : source.status === 'indexed'
+                                ? <span className="text-amber-600 inline-flex items-center gap-0.5"><AlertCircle className="w-3 h-3" />Pouco conteúdo</span>
+                                : source.status === 'error'
+                                  ? <span className="text-red-500">Erro</span>
+                                  : <span className="text-gray-400">Pendente</span>}
                             {source.added_at && ` · ${formatDate(source.added_at)}`}
                           </p>
                         </div>

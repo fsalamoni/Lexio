@@ -2,7 +2,9 @@
 
 import io
 import logging
+import re
 import uuid
+from html.parser import HTMLParser
 
 import httpx
 
@@ -14,6 +16,67 @@ logger = logging.getLogger("lexio.search.indexer")
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 100
 COLLECTION = settings.qdrant_collection
+
+
+def _strip_rtf(text: str) -> str:
+    """Strip RTF control sequences and return plain text.
+
+    Nested groups (e.g. {\\fonttbl{\\f0 Arial;}}) are handled iteratively —
+    each pass removes groups that contain no nested braces ({\\...}),
+    and the loop repeats until no more such groups remain.
+    """
+    # Iteratively remove brace-delimited RTF groups (no nested braces inside)
+    out = text
+    prev = ""
+    while out != prev:
+        prev = out
+        out = re.sub(r"\{\\[^{}]*\}", "", out)
+    out = re.sub(r"\\[a-zA-Z]+[-]?\d*\s?", " ", out)
+    out = re.sub(r"[{}]", "", out)
+    out = out.replace("\\\\", "\\")
+    out = re.sub(r"\\'[0-9a-fA-F]{2}", "", out)
+    out = re.sub(r"\s+", " ", out).strip()
+    return out
+
+
+class _HTMLTextExtractor(HTMLParser):
+    """Simple HTML parser that extracts visible text content."""
+
+    _skip_tags = frozenset({"script", "style", "noscript", "svg", "head", "meta", "link", "title", "iframe", "object", "embed", "param"})
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in self._skip_tags:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in self._skip_tags and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0 and data.strip():
+            self._parts.append(data.strip())
+
+    def get_text(self) -> str:
+        return " ".join(self._parts)
+
+
+def _strip_html(html: str) -> str:
+    """Strip HTML tags and return plain text."""
+    parser = _HTMLTextExtractor()
+    try:
+        parser.feed(html)
+        return parser.get_text()
+    except Exception:
+        # Minimal fallback: strip angle-bracketed sequences.
+        # Not a sanitizer — only used for text extraction when HTMLParser fails.
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
 
 
 def _extract_text(content: bytes, content_type: str, filename: str) -> str:
@@ -38,8 +101,6 @@ def _extract_text(content: bytes, content_type: str, filename: str) -> str:
         "text/yaml",
         "text/x-yaml",
         "text/html",
-        "application/rtf",
-        "text/rtf",
         "text/log",
         "text/x-log",
     }
@@ -56,7 +117,28 @@ def _extract_text(content: bytes, content_type: str, filename: str) -> str:
         ".log",
     )
 
-    # Plain text
+    # RTF — strip control sequences to get plain text
+    if fname.endswith(".rtf") or normalized_content_type in ("application/rtf", "text/rtf"):
+        try:
+            raw = content.decode("utf-8", errors="replace")
+            return _strip_rtf(raw)
+        except Exception as e:
+            logger.warning(f"RTF extraction failed: {e}")
+            return ""
+
+    # HTML / XHTML — strip tags to get plain text
+    if (
+        fname.endswith((".html", ".htm"))
+        or normalized_content_type in ("text/html", "application/xhtml+xml")
+    ):
+        try:
+            raw = content.decode("utf-8", errors="replace")
+            return _strip_html(raw)
+        except Exception as e:
+            logger.warning(f"HTML extraction failed: {e}")
+            return ""
+
+    # Plain text-like formats (TXT, MD, JSON, CSV, XML, YAML, LOG, etc.)
     if (
         normalized_content_type in text_like_mime_types
         or normalized_content_type.startswith("text/")
@@ -151,12 +233,21 @@ async def index_document(
     collection: str = COLLECTION,
 ) -> int:
     """Extract text, chunk, embed and upsert into Qdrant. Returns number of chunks indexed."""
+    from packages.core.search.document_json import text_to_structured_json
+
     text = _extract_text(content, content_type, filename)
     if not text.strip():
         logger.warning(f"No text extracted from '{filename}'")
         return 0
 
-    chunks = _chunk_text(text)
+    # Build structured JSON for metadata enrichment
+    structured = text_to_structured_json(text, filename)
+    doc_format = structured["meta"]["format"]
+    section_titles = [s["title"] for s in structured.get("sections", [])]
+
+    # Use the normalized full_text for chunking (cleaner, more compact)
+    normalized_text = structured["full_text"]
+    chunks = _chunk_text(normalized_text)
     if not chunks:
         return 0
 
@@ -180,6 +271,8 @@ async def index_document(
                     "document_id": document_id,
                     "organization_id": organization_id,
                     "chunk_index": i,
+                    "format": doc_format,
+                    "section_titles": section_titles,
                 },
             })
 
@@ -194,5 +287,10 @@ async def index_document(
         if resp.status_code not in (200, 201):
             raise RuntimeError(f"Qdrant upsert failed: {resp.text}")
 
-    logger.info(f"Indexed {len(points)} chunks from '{filename}' into '{collection}'")
+    logger.info(
+        f"Indexed {len(points)} chunks from '{filename}' ({doc_format}) into '{collection}' "
+        f"(original: {structured['meta']['chars_original']} chars, "
+        f"normalized: {structured['meta']['chars_stored']} chars, "
+        f"compression: {structured['meta']['compression_ratio']*100:.1f}%)"
+    )
     return len(points)
