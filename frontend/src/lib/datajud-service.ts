@@ -22,6 +22,7 @@ const BATCH_SIZE = 4
 /** Timeout per tribunal request (ms) */
 const REQUEST_TIMEOUT = 15_000
 const MAX_RETRIES = 2
+const RETRY_BASE_DELAY_MS = 250
 
 /** Max results per tribunal */
 const RESULTS_PER_TRIBUNAL = 5
@@ -97,6 +98,7 @@ async function fetchDataJudHits(
       if (signal) signal.addEventListener('abort', onExternalAbort, { once: true })
       const onTimeoutAbort = () => signalController.abort()
       timeoutController.signal.addEventListener('abort', onTimeoutAbort, { once: true })
+      const retryDelay = RETRY_BASE_DELAY_MS * (attempt + 1)
 
       try {
         const resp = await fetch(proxyUrl, {
@@ -110,7 +112,7 @@ async function fetchDataJudHits(
           if (!retriableStatus || attempt >= MAX_RETRIES) {
             throw new Error(`DataJud proxy HTTP ${resp.status}`)
           }
-          await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)))
+          await new Promise(resolve => setTimeout(resolve, retryDelay))
           continue
         }
         const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
@@ -121,11 +123,11 @@ async function fetchDataJudHits(
           const isUserAbort = signal?.aborted
           if (isUserAbort) throw err
           if (attempt >= MAX_RETRIES) break
-          await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)))
+          await new Promise(resolve => setTimeout(resolve, retryDelay))
           continue
         }
         if (attempt >= MAX_RETRIES) break
-        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)))
+        await new Promise(resolve => setTimeout(resolve, retryDelay))
       } finally {
         clearTimeout(timeoutId)
         if (signal) signal.removeEventListener('abort', onExternalAbort)

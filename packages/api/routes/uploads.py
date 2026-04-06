@@ -141,7 +141,7 @@ async def upload_file(
         raise HTTPException(
             status_code=415,
             detail=f"Tipo de arquivo não suportado: {file.content_type or 'desconhecido'}. "
-                   f"Use PDF, DOCX, DOC, TXT, MD, JSON, CSV, XML, YAML, HTML ou RTF.",
+                   f"Use PDF, DOCX, DOC, TXT, MD, JSON, CSV, XML, YAML, HTML, RTF ou LOG.",
         )
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
