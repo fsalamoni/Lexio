@@ -1,10 +1,18 @@
 /**
  * Shared file text extraction utilities for Acervo and Caderno de Pesquisa.
  * Supports common legal research formats and extracts plain text client-side.
+ *
+ * PDF extraction uses the local pdfjs-dist package (bundled by Vite) instead
+ * of a CDN import, avoiding Content-Security-Policy script-src violations on
+ * deployments that do not whitelist external CDN domains.
  */
 
-const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs'
-const PDFJS_WORKER_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+
+// Configure the worker once at module level.
+// The ?url import tells Vite to emit the file as a static asset and return its URL.
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 
 export const SUPPORTED_TEXT_FILE_EXTENSIONS = [
   '.pdf',
@@ -63,16 +71,21 @@ export function isSupportedTextFile(file: File): boolean {
 }
 
 async function extractPdfText(file: File): Promise<string> {
-  const pdfjsLib = await import(/* @vite-ignore */ PDFJS_CDN) as any
-  pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN
   const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) })
+  const pdf = await loadingTask.promise
   const pages: string[] = []
   for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i)
-    const content = await page.getTextContent()
-    const pageText = content.items.map((item: any) => ('str' in item ? item.str : '')).join(' ')
-    pages.push(pageText)
+    try {
+      const page = await pdf.getPage(i)
+      const content = await page.getTextContent()
+      const pageText = content.items
+        .map((item: { str?: string }) => ('str' in item ? item.str : ''))
+        .join(' ')
+      if (pageText.trim()) pages.push(pageText)
+    } catch (pageErr) {
+      console.warn(`Aviso: falha ao extrair texto da página ${i}/${pdf.numPages}`, pageErr)
+    }
   }
   return pages.join('\n').trim()
 }
@@ -80,21 +93,120 @@ async function extractPdfText(file: File): Promise<string> {
 export async function extractFileText(file: File): Promise<string> {
   const ext = getFileExtension(file.name)
 
+  // DOCX / DOC — uses mammoth for raw text extraction
   if (ext === '.docx' || ext === '.doc') {
-    const arrayBuffer = await file.arrayBuffer()
-    const mammoth = await import('mammoth')
-    const result = await mammoth.extractRawText({ arrayBuffer })
-    return result.value.trim()
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const mammoth = await import('mammoth')
+      const result = await mammoth.extractRawText({ arrayBuffer })
+      return result.value.trim()
+    } catch (err) {
+      console.error(`Erro ao extrair texto de ${file.name} (${ext}):`, err)
+      throw new Error(`Falha ao processar arquivo ${ext.toUpperCase()}: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
+    }
   }
 
+  // PDF — uses bundled pdfjs-dist
   if (ext === '.pdf' || file.type === 'application/pdf') {
-    return extractPdfText(file)
+    try {
+      return await extractPdfText(file)
+    } catch (err) {
+      console.error(`Erro ao extrair texto de ${file.name} (PDF):`, err)
+      throw new Error(`Falha ao processar PDF: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
+    }
   }
 
+  // RTF — extract text by stripping RTF control sequences
+  if (ext === '.rtf' || file.type === 'application/rtf' || file.type === 'text/rtf') {
+    try {
+      const rawText = await readFileAsText(file)
+      return stripRtf(rawText).trim()
+    } catch (err) {
+      console.error(`Erro ao extrair texto de ${file.name} (RTF):`, err)
+      throw new Error(`Falha ao processar RTF: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
+    }
+  }
+
+  // HTML/HTM — extract text by stripping tags
+  if (ext === '.html' || ext === '.htm' || file.type === 'text/html' || file.type === 'application/xhtml+xml') {
+    try {
+      const rawHtml = await readFileAsText(file)
+      return stripHtml(rawHtml).trim()
+    } catch (err) {
+      console.error(`Erro ao extrair texto de ${file.name} (HTML):`, err)
+      throw new Error(`Falha ao processar HTML: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
+    }
+  }
+
+  // All other text-like formats: TXT, MD, JSON, CSV, XML, YAML, LOG, etc.
+  try {
+    return await readFileAsText(file)
+  } catch (err) {
+    console.error(`Erro ao ler arquivo ${file.name}:`, err)
+    throw new Error(`Falha ao ler arquivo: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
+  }
+}
+
+// ── Internal helpers ─────────────────────────────────────────────────────────
+
+/** Read a file as text with UTF-8 encoding, falling back to Latin-1 on decode issues. */
+function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result.trim() : '')
+    reader.onload = () => {
+      const text = typeof reader.result === 'string' ? reader.result : ''
+      // If UTF-8 produced replacement characters, try Latin-1
+      if (text.includes('\uFFFD')) {
+        const latin1Reader = new FileReader()
+        latin1Reader.onload = () => resolve(typeof latin1Reader.result === 'string' ? latin1Reader.result.trim() : text.trim())
+        latin1Reader.onerror = () => resolve(text.trim()) // Fall back to UTF-8 result
+        latin1Reader.readAsText(file, 'ISO-8859-1')
+        return
+      }
+      resolve(text.trim())
+    }
     reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
     reader.readAsText(file, 'UTF-8')
   })
+}
+
+/** Strip RTF control sequences and return plain text. */
+function stripRtf(rtf: string): string {
+  // Remove RTF groups and control words, keep text content
+  let text = rtf
+    .replace(/\{\\[^{}]*\}/g, '')         // Remove inline groups like {\fonttbl...}
+    .replace(/\\[a-z]+[-]?\d*\s?/gi, ' ') // Remove control words like \par, \b0
+    .replace(/[{}]/g, '')                  // Remove remaining braces
+    .replace(/\\\\/g, '\\')               // Unescape backslashes
+  // Remove RTF hex escapes like \'ab
+  text = text.replace(new RegExp("\\\\'[0-9a-f]{2}", 'gi'), '')
+  text = text.replace(/\s+/g, ' ').trim()
+  return text
+}
+
+/** Strip HTML tags and decode entities, returning plain text. */
+function stripHtml(html: string): string {
+  // Use DOMParser when available (browser environment)
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html')
+      // Remove script and style elements
+      doc.querySelectorAll('script, style, noscript').forEach(el => el.remove())
+      return (doc.body?.textContent ?? '').replace(/\s+/g, ' ').trim()
+    } catch {
+      // Fall through to regex approach
+    }
+  }
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
 }

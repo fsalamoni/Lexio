@@ -47,6 +47,9 @@ export default defineConfig({
           if (id.includes('node_modules/mammoth')) {
             return 'mammoth-lib'
           }
+          if (id.includes('node_modules/pdfjs-dist')) {
+            return 'pdfjs-lib'
+          }
           if (id.includes('node_modules/file-saver')) {
             return 'file-save-lib'
           }
