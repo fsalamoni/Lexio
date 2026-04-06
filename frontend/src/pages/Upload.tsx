@@ -1127,7 +1127,8 @@ export default function Upload() {
   const handleSaveText = async (docId: string, textContent: string) => {
     if (!userId) return
     const docData = firebaseHistory.find(d => d.id === docId)
-    await updateAcervoTextContent(userId, docId, textContent, docData?.filename)
+    const filename = docData?.filename || viewDoc?.filename || 'document'
+    await updateAcervoTextContent(userId, docId, textContent, filename)
     setFirebaseHistory(prev => prev.map(d =>
       d.id === docId ? { ...d, text_content: textContent } : d,
     ))
