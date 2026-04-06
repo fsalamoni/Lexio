@@ -233,12 +233,21 @@ async def index_document(
     collection: str = COLLECTION,
 ) -> int:
     """Extract text, chunk, embed and upsert into Qdrant. Returns number of chunks indexed."""
+    from packages.core.search.document_json import text_to_structured_json
+
     text = _extract_text(content, content_type, filename)
     if not text.strip():
         logger.warning(f"No text extracted from '{filename}'")
         return 0
 
-    chunks = _chunk_text(text)
+    # Build structured JSON for metadata enrichment
+    structured = text_to_structured_json(text, filename)
+    doc_format = structured["meta"]["format"]
+    section_titles = [s["title"] for s in structured.get("sections", [])]
+
+    # Use the normalized full_text for chunking (cleaner, more compact)
+    normalized_text = structured["full_text"]
+    chunks = _chunk_text(normalized_text)
     if not chunks:
         return 0
 
@@ -262,6 +271,8 @@ async def index_document(
                     "document_id": document_id,
                     "organization_id": organization_id,
                     "chunk_index": i,
+                    "format": doc_format,
+                    "section_titles": section_titles,
                 },
             })
 
@@ -276,5 +287,10 @@ async def index_document(
         if resp.status_code not in (200, 201):
             raise RuntimeError(f"Qdrant upsert failed: {resp.text}")
 
-    logger.info(f"Indexed {len(points)} chunks from '{filename}' into '{collection}'")
+    logger.info(
+        f"Indexed {len(points)} chunks from '{filename}' ({doc_format}) into '{collection}' "
+        f"(original: {structured['meta']['chars_original']} chars, "
+        f"normalized: {structured['meta']['chars_stored']} chars, "
+        f"compression: {structured['meta']['compression_ratio']*100:.1f}%)"
+    )
     return len(points)
