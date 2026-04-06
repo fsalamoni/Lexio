@@ -54,7 +54,11 @@ const CORS_HEADERS: Record<string, string> = {
 // ── Cloud Function (2nd Gen) ──────────────────────────────────────────────
 
 export const datajudProxy = onRequest(
-  { region: "southamerica-east1" },
+  {
+    region: "southamerica-east1",
+    // Use the App Engine default SA — the default Compute Engine SA was deleted.
+    serviceAccount: "hocapp-44760@appspot.gserviceaccount.com",
+  },
   async (req, res) => {
     // Set CORS headers on all responses
     for (const [key, value] of Object.entries(CORS_HEADERS)) {
