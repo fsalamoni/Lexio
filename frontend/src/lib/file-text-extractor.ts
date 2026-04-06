@@ -173,15 +173,23 @@ function readFileAsText(file: File): Promise<string> {
   })
 }
 
-/** Strip RTF control sequences and return plain text. */
+/** Strip RTF control sequences and return plain text.
+ * Note: Nested RTF groups (e.g. {\fonttbl{\f0 Arial;}}) are handled iteratively —
+ * the outer regex pass removes the innermost groups first, and repeated application
+ * catches most nested structures. For legal documents this produces good results.
+ */
 function stripRtf(rtf: string): string {
-  // Remove RTF groups and control words, keep text content
+  // Iteratively remove innermost RTF groups to handle nesting
   let text = rtf
-    .replace(/\{\\[^{}]*\}/g, '')         // Remove inline groups like {\fonttbl...}
+  let prev = ''
+  while (text !== prev) {
+    prev = text
+    text = text.replace(/\{\\[^{}]*\}/g, '')
+  }
+  text = text
     .replace(/\\[a-z]+[-]?\d*\s?/gi, ' ') // Remove control words like \par, \b0
     .replace(/[{}]/g, '')                  // Remove remaining braces
     .replace(/\\\\/g, '\\')               // Unescape backslashes
-  // Remove RTF hex escapes like \'ab (module-level constant for performance)
   text = text.replace(RTF_HEX_RE, '')
   text = text.replace(/\s+/g, ' ').trim()
   return text

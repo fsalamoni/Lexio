@@ -19,9 +19,18 @@ COLLECTION = settings.qdrant_collection
 
 
 def _strip_rtf(text: str) -> str:
-    """Strip RTF control sequences and return plain text."""
-    # Remove RTF groups and control words
-    out = re.sub(r"\{\\[^{}]*\}", "", text)
+    """Strip RTF control sequences and return plain text.
+
+    Nested RTF groups (e.g. {\\fonttbl{\\f0 Arial;}}) are handled
+    iteratively — the regex removes innermost groups first, and
+    repeated application catches most nested structures.
+    """
+    # Iteratively remove innermost RTF groups to handle nesting
+    out = text
+    prev = ""
+    while out != prev:
+        prev = out
+        out = re.sub(r"\{\\[^{}]*\}", "", out)
     out = re.sub(r"\\[a-zA-Z]+[-]?\d*\s?", " ", out)
     out = re.sub(r"[{}]", "", out)
     out = out.replace("\\\\", "\\")
