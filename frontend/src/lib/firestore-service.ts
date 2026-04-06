@@ -65,6 +65,7 @@ import type {
   DocumentData,
   ThesisData,
   AcervoDocumentData,
+  NotebookSource,
   ResearchNotebookData,
   ThesisAnalysisSessionData,
   WizardData,

@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter, ChevronDown, Database } from 'lucide-react'
+import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter, ChevronDown, Database, Copy, Check, Download } from 'lucide-react'
 import api from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
@@ -29,7 +29,14 @@ import {
   SUPPORTED_TEXT_FILE_EXTENSIONS,
   SUPPORTED_TEXT_FILE_MIME_TYPES,
 } from '../lib/file-text-extractor'
-import { getStructuredMeta, type StructuredDocumentMeta } from '../lib/document-json-converter'
+import {
+  getStructuredMeta,
+  getStructuredSections,
+  resolveTextContent,
+  type StructuredDocumentMeta,
+  type StructuredDocumentSection,
+} from '../lib/document-json-converter'
+import DraggablePanel from '../components/DraggablePanel'
 
 interface UploadedFile {
   id: string
@@ -59,17 +66,54 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-// ── Document view modal ──────────────────────────────────────────────────────
+// ── Document viewer — draggable, resizable, collapsible panel ────────────────
+
+/** Format a character count for display. */
+function fmtChars(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
+  return String(n)
+}
+
+/** Render a single structured section (heading + paragraphs). */
+function DocSection({ section, idx }: { section: StructuredDocumentSection; idx: number }) {
+  return (
+    <div className={idx > 0 ? 'mt-6' : ''}>
+      {section.title && section.title !== 'Documento' && (
+        <h3 className="text-base font-semibold text-gray-900 mb-3 pb-1.5 border-b border-gray-100">
+          {section.title}
+        </h3>
+      )}
+      <div className="space-y-3">
+        {section.paragraphs.map((p, i) => (
+          <p key={i} className="text-sm text-gray-700 leading-relaxed">
+            {p}
+          </p>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function AcervoDocModal({ doc, onClose, onTextSaved }: { doc: AcervoDocumentData; onClose: () => void; onTextSaved?: (text: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(doc.text_content || '')
   const [saving, setSaving] = useState(false)
+  const [copied, setCopied] = useState(false)
 
-  // Derive displayable format info from the resolved text
-  const textLen = (doc.text_content || '').length
   const ext = getFileExtension(doc.filename).replace('.', '').toUpperCase() || 'TXT'
-  const isJson = doc.storage_format === 'json'
+
+  // Resolve structured content for display
+  const { plain, sections, meta, charCount } = useMemo(() => {
+    const raw = doc.text_content ?? ''
+    const resolved = resolveTextContent(raw) || raw
+    return {
+      plain: resolved,
+      sections: getStructuredSections(raw),
+      meta: getStructuredMeta(raw),
+      charCount: resolved.length,
+    }
+  }, [doc.text_content])
 
   const handleSave = async () => {
     if (!onTextSaved) return
@@ -82,47 +126,136 @@ function AcervoDocModal({ doc, onClose, onTextSaved }: { doc: AcervoDocumentData
     }
   }
 
+  const handleCopy = () => {
+    navigator.clipboard.writeText(plain)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleDownload = () => {
+    const blob = new Blob([plain], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = (doc.filename.includes('.') ? doc.filename.replace(/\.[^.]+$/, '') : doc.filename) + '.txt'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const hasSections = sections && sections.length > 0
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    <DraggablePanel
+      open
+      onClose={onClose}
+      title={doc.filename}
+      icon={<FileText size={16} />}
+      initialWidth={720}
+      initialHeight={580}
+      minWidth={380}
+      minHeight={280}
     >
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b">
-          <div className="flex items-center gap-2 min-w-0">
-            <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
-            <span className="font-semibold text-gray-900 truncate text-sm">{doc.filename}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-mono flex-shrink-0">{ext}</span>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-3">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        {/* Meta */}
-        <div className="flex gap-3 px-5 py-2 border-b bg-gray-50 text-xs text-gray-500 flex-wrap items-center">
-          <span>{formatSize(doc.size_bytes)}</span>
-          {doc.chunks_count > 0 && <span>· {doc.chunks_count} fragmentos</span>}
-          {textLen > 0 && <span>· {Math.round(textLen / 1000)}K chars</span>}
-          <span>· {new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
-          {isJson && (
-            <span className="inline-flex items-center gap-0.5 text-blue-500">
-              <Database className="w-3 h-3" />
-              JSON estruturado
+      <div className="flex flex-col h-full">
+        {/* ── Toolbar with metadata + actions ─────────────────────────────── */}
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex-shrink-0">
+          {/* Metadata badges */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="inline-flex items-center gap-1 text-[11px] bg-gray-100 text-gray-500 rounded-full px-2.5 py-0.5">
+              <span className="font-medium text-gray-600">Formato:</span> {ext}
             </span>
-          )}
+            <span className="inline-flex items-center gap-1 text-[11px] bg-gray-100 text-gray-500 rounded-full px-2.5 py-0.5">
+              <span className="font-medium text-gray-600">Tamanho:</span> {formatSize(doc.size_bytes)}
+            </span>
+            {meta?.pages && (
+              <span className="inline-flex items-center gap-1 text-[11px] bg-gray-100 text-gray-500 rounded-full px-2.5 py-0.5">
+                <span className="font-medium text-gray-600">Páginas:</span> {meta.pages}
+              </span>
+            )}
+            {meta && (
+              <span className="inline-flex items-center gap-1 text-[11px] bg-gray-100 text-gray-500 rounded-full px-2.5 py-0.5">
+                <span className="font-medium text-gray-600">Parágrafos:</span> {meta.paragraphs}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 text-[11px] bg-gray-100 text-gray-500 rounded-full px-2.5 py-0.5">
+              <span className="font-medium text-gray-600">Caracteres:</span> {fmtChars(charCount)}
+            </span>
+            {doc.chunks_count > 0 && (
+              <span className="inline-flex items-center gap-1 text-[11px] bg-gray-100 text-gray-500 rounded-full px-2.5 py-0.5">
+                <span className="font-medium text-gray-600">Fragmentos:</span> {doc.chunks_count}
+              </span>
+            )}
+          </div>
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {!editing && charCount > 0 && (
+              <>
+                <button
+                  onClick={handleCopy}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium
+                             bg-white border border-gray-200 text-gray-600
+                             hover:bg-gray-50 hover:text-gray-800 transition-colors"
+                  title="Copiar texto"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? 'Copiado' : 'Copiar'}
+                </button>
+                <button
+                  onClick={handleDownload}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium
+                             bg-white border border-gray-200 text-gray-600
+                             hover:bg-gray-50 hover:text-gray-800 transition-colors"
+                  title="Baixar como texto"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Baixar
+                </button>
+              </>
+            )}
+            {onTextSaved && !editing && (
+              <button
+                onClick={() => setEditing(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium
+                           bg-white border border-gray-200 text-gray-600
+                           hover:bg-gray-50 hover:text-gray-800 transition-colors"
+                title="Editar texto"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Editar
+              </button>
+            )}
+            {editing && (
+              <>
+                <button
+                  onClick={() => { setEditing(false); setText(doc.text_content || '') }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium
+                             bg-white border border-gray-200 text-gray-600
+                             hover:bg-gray-50 hover:text-gray-800 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium
+                             bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors"
+                >
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  Salvar
+                </button>
+              </>
+            )}
+          </div>
         </div>
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+
+        {/* ── Body ─────────────────────────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
           {editing ? (
             <textarea
               value={text}
               onChange={e => setText(e.target.value)}
               className="w-full h-full min-h-[300px] border rounded-lg p-3 text-sm text-gray-800 font-sans leading-relaxed focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none resize-y"
             />
-          ) : doc.text_content ? (
-            <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans leading-relaxed">{doc.text_content}</pre>
-          ) : (
+          ) : charCount === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-400">
               <AlertCircle className="w-10 h-10 mb-3" />
               <p className="text-sm font-medium">Sem conteúdo de texto</p>
@@ -132,41 +265,22 @@ function AcervoDocModal({ doc, onClose, onTextSaved }: { doc: AcervoDocumentData
                 {!['PDF', 'DOCX', 'DOC', 'TXT', 'MD', 'RTF', 'HTML', 'HTM'].includes(ext) && ' Verifique se o formato é suportado.'}
               </p>
             </div>
+          ) : hasSections && sections ? (
+            /* Structured view — section headings + paragraphs */
+            <article>
+              {sections.map((sec, i) => (
+                <DocSection key={i} section={sec} idx={i} />
+              ))}
+            </article>
+          ) : (
+            /* Fallback — formatted plain text */
+            <article className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+              {plain}
+            </article>
           )}
         </div>
-        {/* Actions */}
-        {onTextSaved && (
-          <div className="flex items-center justify-end px-5 py-3 border-t bg-gray-50 gap-2">
-            {!editing ? (
-              <button
-                onClick={() => setEditing(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-                Editar
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={() => { setEditing(false); setText(doc.text_content || '') }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors"
-                >
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                  Salvar
-                </button>
-              </>
-            )}
-          </div>
-        )}
       </div>
-    </div>
+    </DraggablePanel>
   )
 }
 
