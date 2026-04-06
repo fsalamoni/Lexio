@@ -51,9 +51,16 @@ const DIRECT_ENDPOINT = '__direct__'
 /** Cached working endpoint — avoids re-probing on every tribunal query */
 let _resolvedEndpoint: string | null = null
 
+/** Timestamp of last successful endpoint resolution (ms since epoch) */
+let _resolvedAt = 0
+
+/** TTL for the cached endpoint (30 minutes). After this, the endpoint is re-probed. */
+const ENDPOINT_CACHE_TTL_MS = 30 * 60 * 1000
+
 /** @internal Reset the cached endpoint (for testing) */
 export function _resetEndpointCache(): void {
   _resolvedEndpoint = null
+  _resolvedAt = 0
 }
 
 /**
@@ -182,6 +189,12 @@ async function fetchDataJudHits(
 ): Promise<Array<{ _source?: Record<string, unknown> }>> {
   if (signal?.aborted) throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
 
+  // Expire cache after TTL
+  if (_resolvedEndpoint && Date.now() - _resolvedAt > ENDPOINT_CACHE_TTL_MS) {
+    _resolvedEndpoint = null
+    _resolvedAt = 0
+  }
+
   // Fast path: use the previously resolved working endpoint
   if (_resolvedEndpoint) {
     try {
@@ -199,6 +212,7 @@ async function fetchDataJudHits(
 
       if (isEndpointIssue) {
         _resolvedEndpoint = null
+        _resolvedAt = 0
         // Fall through to try all candidates below
       } else {
         throw err
@@ -216,6 +230,7 @@ async function fetchDataJudHits(
     try {
       const result = await fetchFromEndpoint(candidate, tribunalAlias, esBody, signal)
       _resolvedEndpoint = candidate // Cache the working endpoint
+      _resolvedAt = Date.now()
       return result
     } catch (err) {
       lastError = err
@@ -652,6 +667,7 @@ function parseDataJudHit(src: Record<string, unknown>, tribunal: TribunalInfo): 
 
 /**
  * Format DataJud results as human-readable text for LLM consumption.
+ * Includes all available movements (up to 5) for richer temporal analysis.
  */
 export function formatDataJudResults(results: DataJudResult[]): string {
   if (results.length === 0) return 'Nenhum resultado encontrado.'
@@ -668,8 +684,8 @@ export function formatDataJudResults(results: DataJudResult[]): string {
       lines.push(`   Assuntos: ${r.assuntos.slice(0, 5).join('; ')}`)
     }
     if (r.movimentos.length > 0) {
-      lines.push(`   Últimas movimentações:`)
-      for (const m of r.movimentos.slice(0, 3)) {
+      lines.push(`   Movimentações processuais (${r.movimentos.length}):`)
+      for (const m of r.movimentos.slice(0, 5)) {
         lines.push(`     • ${m.dataHora} — ${m.nome}`)
       }
     }

@@ -26,6 +26,7 @@ import {
   Mic,
   PenTool,
   ClipboardCheck,
+  BarChart2,
 } from 'lucide-react'
 import {
   RESEARCH_NOTEBOOK_AGENT_DEFS,
@@ -49,6 +50,7 @@ const AGENT_ICONS: Record<string, React.ElementType> = {
   'mic':             Mic,
   'pen-tool':        PenTool,
   'clipboard-check': ClipboardCheck,
+  'bar-chart-2':     BarChart2,
 }
 
 /** Agent keys that belong to the Studio group */

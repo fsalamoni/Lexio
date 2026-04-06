@@ -119,6 +119,7 @@ const PHASE_LABELS: Record<string, string> = {
   notebook_pesquisador_externo: 'Pesquisador Externo',
   notebook_pesquisador_externo_profundo: 'Pesquisador Externo Profundo',
   notebook_pesquisador_jurisprudencia: 'Pesquisador de Jurisprudência (DataJud)',
+  notebook_ranqueador_jurisprudencia: 'Ranqueador de Jurisprudência',
   notebook_analista: 'Analista de Conhecimento',
   notebook_assistente: 'Assistente Conversacional',
   notebook_criador: 'Criador de Conteúdo',

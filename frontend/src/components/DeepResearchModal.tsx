@@ -479,6 +479,7 @@ export function createJurisprudenceSteps(): ResearchStep[] {
   return [
     { id: 'query', label: 'Consultando tribunais', status: 'pending', substeps: [] },
     { id: 'filter', label: 'Filtrando resultados', status: 'pending', substeps: [] },
+    { id: 'rank', label: 'Ranqueando por relevância', status: 'pending', substeps: [] },
     { id: 'analyze', label: 'Analisando jurisprudência', status: 'pending', substeps: [] },
     { id: 'synthesize', label: 'Gerando síntese', status: 'pending', substeps: [] },
   ]
