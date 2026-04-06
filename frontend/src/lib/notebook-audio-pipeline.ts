@@ -253,10 +253,10 @@ export async function generateAudioOverview(
   generateAudio = false,
 ): Promise<AudioOverviewResult> {
   const models = await loadResearchNotebookModels()
-  const scriptModel = models.studio_roteirista || models.notebook_analista
+  const scriptModel = models.studio_roteirista
 
   if (!scriptModel) {
-    throw new Error('Nenhum modelo configurado para o Roteirista. Vá em Administração > Caderno de Pesquisa.')
+    throw new Error('Modelo do Roteirista não configurado. Vá em Administração > Caderno de Pesquisa e configure o agente "Roteirista".')
   }
 
   // ── Step 1: Generate script ──────────────────────────────────────────

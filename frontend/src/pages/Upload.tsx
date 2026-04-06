@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter, ChevronDown } from 'lucide-react'
 import api from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -18,6 +19,7 @@ import {
   type AdminLegalArea,
 } from '../lib/firestore-service'
 import { generateAcervoEmenta, generateAcervoTags, NATUREZA_OPTIONS, type NaturezaValue } from '../lib/generation-service'
+import { ModelsNotConfiguredError } from '../lib/model-config'
 import type { UsageExecutionRecord } from '../lib/cost-analytics'
 import { getAssuntosForAreas, getTiposForClassification } from '../lib/classification-data'
 import {
@@ -180,6 +182,10 @@ function EmentaModal({
       setEditing(true)
     } catch (err) {
       console.error('Erro ao gerar ementa:', err)
+      if (err instanceof ModelsNotConfiguredError) {
+        toast.warning('Modelos não configurados', 'Configure os modelos no Painel Administrativo.')
+        return
+      }
       const msg = err instanceof Error ? err.message : 'Erro desconhecido'
       toast.error(`Falha ao gerar ementa: ${msg}`)
     } finally {

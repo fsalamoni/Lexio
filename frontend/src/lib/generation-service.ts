@@ -23,7 +23,7 @@
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { firestore } from './firebase'
 import { callLLM, callLLMWithFallback } from './llm-client'
-import { loadAgentModels, loadContextDetailModels, loadAcervoEmentaModels, loadAcervoClassificadorModels, type AgentModelMap } from './model-config'
+import { loadAgentModels, loadContextDetailModels, loadAcervoEmentaModels, loadAcervoClassificadorModels, validateModelMap, ModelsNotConfiguredError, PIPELINE_AGENT_DEFS, CONTEXT_DETAIL_AGENT_DEFS, ACERVO_EMENTA_AGENT_DEFS, ACERVO_CLASSIFICADOR_AGENT_DEFS, type AgentModelMap } from './model-config'
 import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, updateAcervoEmenta, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
@@ -74,8 +74,7 @@ const MAX_ACERVO_SELECTED_DOCS = 3
 const MAX_ACERVO_COMPILADOR_CHARS = 120000
 /** Max chars of document text used to generate an ementa. */
 const MAX_EMENTA_SOURCE_CHARS = 8000
-/** Default model for lightweight acervo processing (ementa, classification). */
-const DEFAULT_ACERVO_FAST_MODEL = 'anthropic/claude-3.5-haiku'
+// NOTE: No default models — all models must be configured in admin panel
 /** Max pre-filtered documents sent to the buscador LLM. */
 const MAX_PREFILTERED_DOCS = 30
 
@@ -701,12 +700,9 @@ export async function generateAcervoEmenta(
 ): Promise<{ ementa: string; keywords: string[]; llm_execution: UsageExecutionRecord }> {
   // Load model from admin config if not explicitly provided
   if (!model) {
-    try {
-      const ementaModels = await loadAcervoEmentaModels()
-      model = ementaModels.acervo_ementa || DEFAULT_ACERVO_FAST_MODEL
-    } catch {
-      model = DEFAULT_ACERVO_FAST_MODEL
-    }
+    const ementaModels = await loadAcervoEmentaModels()
+    validateModelMap(ementaModels, ACERVO_EMENTA_AGENT_DEFS, 'acervo_ementa_models')
+    model = ementaModels.acervo_ementa
   }
 
   const systemPrompt = [
@@ -733,7 +729,7 @@ export async function generateAcervoEmenta(
   const sourceText = textContent.slice(0, MAX_EMENTA_SOURCE_CHARS)
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere a ementa e keywords para este documento.`
 
-  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, DEFAULT_ACERVO_FAST_MODEL, 1000, 0.1)
+  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, model, 1000, 0.1)
 
   let jsonStr = result.content.trim()
   const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -811,12 +807,9 @@ export async function generateAcervoTags(
 }> {
   // Load model from admin config if not explicitly provided
   if (!model) {
-    try {
-      const classificadorModels = await loadAcervoClassificadorModels()
-      model = classificadorModels.acervo_classificador || DEFAULT_ACERVO_FAST_MODEL
-    } catch {
-      model = DEFAULT_ACERVO_FAST_MODEL
-    }
+    const classificadorModels = await loadAcervoClassificadorModels()
+    validateModelMap(classificadorModels, ACERVO_CLASSIFICADOR_AGENT_DEFS, 'acervo_classificador_models')
+    model = classificadorModels.acervo_classificador
   }
 
   const systemPrompt = [
@@ -855,7 +848,7 @@ export async function generateAcervoTags(
   const sourceText = textContent.slice(0, MAX_EMENTA_SOURCE_CHARS)
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere as tags de classificação para este documento.`
 
-  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, DEFAULT_ACERVO_FAST_MODEL, 800, 0.1)
+  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, model, 800, 0.1)
 
   let jsonStr = result.content.trim()
   const jsonMatch = jsonStr.match(/\`\`\`(?:json)?\s*([\s\S]*?)\`\`\`/)
@@ -1352,18 +1345,21 @@ export async function generateDocument(
     const apiKey = await getOpenRouterKey()
     const agentModels: AgentModelMap = await loadAgentModels()
 
-    // Model shortcuts — use admin-configured models, falling back to defaults
-    const modelTriagem      = agentModels.triagem       ?? 'anthropic/claude-3.5-haiku'
-    const modelPesquisador  = agentModels.pesquisador    ?? 'anthropic/claude-sonnet-4'
-    const modelJurista      = agentModels.jurista        ?? 'anthropic/claude-sonnet-4'
-    const modelAdvDiabo     = agentModels.advogado_diabo ?? 'anthropic/claude-sonnet-4'
-    const modelJuristaV2    = agentModels.jurista_v2     ?? 'anthropic/claude-sonnet-4'
-    const modelFactChecker  = agentModels.fact_checker   ?? 'anthropic/claude-3.5-haiku'
-    const modelModerador    = agentModels.moderador      ?? 'anthropic/claude-sonnet-4'
-    const modelRedator      = agentModels.redator        ?? 'anthropic/claude-sonnet-4'
-    const modelAcervoBuscador    = agentModels.acervo_buscador    ?? 'anthropic/claude-3.5-haiku'
-    const modelAcervoCompilador  = agentModels.acervo_compilador  ?? 'anthropic/claude-sonnet-4'
-    const modelAcervoRevisor     = agentModels.acervo_revisor     ?? 'anthropic/claude-sonnet-4'
+    // Validate all agent models are configured
+    validateModelMap(agentModels, PIPELINE_AGENT_DEFS, 'document_models')
+
+    // Model shortcuts
+    const modelTriagem      = agentModels.triagem
+    const modelPesquisador  = agentModels.pesquisador
+    const modelJurista      = agentModels.jurista
+    const modelAdvDiabo     = agentModels.advogado_diabo
+    const modelJuristaV2    = agentModels.jurista_v2
+    const modelFactChecker  = agentModels.fact_checker
+    const modelModerador    = agentModels.moderador
+    const modelRedator      = agentModels.redator
+    const modelAcervoBuscador    = agentModels.acervo_buscador
+    const modelAcervoCompilador  = agentModels.acervo_compilador
+    const modelAcervoRevisor     = agentModels.acervo_revisor
 
     // Load admin-configured document type structure template (if defined)
     let customStructure: string | undefined
@@ -1384,7 +1380,7 @@ export async function generateDocument(
       apiKey,
       buildTriageSystem(docType),
       buildTriageUser(request, areas, context, contextDetail),
-      modelTriagem, 'anthropic/claude-3.5-haiku', 800, 0.1,
+      modelTriagem, modelTriagem, 800, 0.1,
     )
 
     // Extract tema from triage JSON
@@ -1462,7 +1458,7 @@ export async function generateDocument(
             apiKey,
             buildAcervoBuscadorSystem(),
             buildAcervoBuscadorUser(triageResult.content, request, docType, docSummaries),
-            modelAcervoBuscador, 'anthropic/claude-3.5-haiku', 2000, 0.1,
+            modelAcervoBuscador, modelAcervoBuscador, 2000, 0.1,
           )
 
           // Parse buscador response
@@ -1508,7 +1504,7 @@ export async function generateDocument(
                 apiKey,
                 buildAcervoCompiladorSystem(docType, tema, profile),
                 buildAcervoCompiladorUser(request, triageResult.content, docType, selectedDocs),
-                modelAcervoCompilador, 'anthropic/claude-sonnet-4', 12000, 0.2,
+                modelAcervoCompilador, modelAcervoCompilador, 12000, 0.2,
               )
 
               // ── Agent 3: Revisor ──
@@ -1517,7 +1513,7 @@ export async function generateDocument(
                 apiKey,
                 buildAcervoRevisorSystem(docType, tema, profile),
                 buildAcervoRevisorUser(request, triageResult.content, docType, compiladorResult.content),
-                modelAcervoRevisor, 'anthropic/claude-sonnet-4', 12000, 0.2,
+                modelAcervoRevisor, modelAcervoRevisor, 12000, 0.2,
               )
 
               acervoBase = revisorBaseResult.content
@@ -1612,7 +1608,7 @@ export async function generateDocument(
       apiKey,
       buildPesquisadorSystem(docType, tema, profile),
       pesquisadorUserParts.join('\n'),
-      modelPesquisador, 'anthropic/claude-sonnet-4', 6000, 0.3,
+      modelPesquisador, modelPesquisador, 6000, 0.3,
     )
 
     // 4. Jurista — initial thesis development
@@ -1621,7 +1617,7 @@ export async function generateDocument(
       apiKey,
       buildJuristaSystem(docType, tema, profile),
       `<triagem>${triageResult.content}</triagem>\n<pesquisa>${pesquisaResult.content}</pesquisa>\nDesenvolva teses jurídicas ROBUSTAS e BEM FUNDAMENTADAS. Para cada tese: TRANSCREVA os artigos de lei citados entre aspas, cite súmulas com enunciado completo, mencione doutrina com autor e obra, e faça subsunção detalhada dos fatos à norma.`,
-      modelJurista, 'anthropic/claude-sonnet-4', 6000, 0.3,
+      modelJurista, modelJurista, 6000, 0.3,
     )
 
     // 5. Advogado do Diabo — critique
@@ -1630,7 +1626,7 @@ export async function generateDocument(
       apiKey,
       buildAdvogadoDiaboSystem(tema, profile),
       `<teses>${juristaResult.content}</teses>\nCritique estas teses rigorosamente. Verifique se os artigos foram transcritos corretamente, se as súmulas existem, se a doutrina é pertinente. Identifique fraquezas e sugira melhorias específicas com referências legais concretas.`,
-      modelAdvDiabo, 'anthropic/claude-sonnet-4', 3000, 0.4,
+      modelAdvDiabo, modelAdvDiabo, 3000, 0.4,
     )
 
     // 6. Jurista v2 — refined theses
@@ -1639,7 +1635,7 @@ export async function generateDocument(
       apiKey,
       buildJuristaV2System(docType, tema, profile),
       `<teses_originais>${juristaResult.content}</teses_originais>\n<criticas>${criticaResult.content}</criticas>\nRefine as teses incorporando as críticas válidas. Fortaleça a fundamentação: TRANSCREVA artigos de lei, cite enunciados completos de súmulas, inclua referências doutrinárias com autor e obra.`,
-      modelJuristaV2, 'anthropic/claude-sonnet-4', 6000, 0.3,
+      modelJuristaV2, modelJuristaV2, 6000, 0.3,
     )
 
     // 7. Fact-checker — verify legal citations
@@ -1648,7 +1644,7 @@ export async function generateDocument(
       apiKey,
       buildFactCheckerSystem(),
       `<teses>${juristaV2Result.content}</teses>\nVerifique TODAS as citações legais. Corrija imprecisões. ADICIONE transcrições de artigos que foram citados sem texto. ADICIONE enunciados de súmulas que foram citadas sem texto completo. Enriqueça a fundamentação.`,
-      modelFactChecker, 'anthropic/claude-3.5-haiku', 6000, 0.1,
+      modelFactChecker, modelFactChecker, 6000, 0.1,
     )
 
     // 8. Moderador — document plan
@@ -1657,7 +1653,7 @@ export async function generateDocument(
       apiKey,
       buildModeradorSystem(docType, tema, profile, customStructure),
       `<pesquisa>${pesquisaResult.content}</pesquisa>\n<teses_verificadas>${factCheckResult.content}</teses_verificadas>\nElabore plano DETALHADO. Para cada seção, especifique: artigos de lei a TRANSCREVER, súmulas com ENUNCIADO COMPLETO, doutrina com AUTOR e OBRA, princípios com ARTIGO DA CF.`,
-      modelModerador, 'anthropic/claude-sonnet-4', 3000, 0.2,
+      modelModerador, modelModerador, 3000, 0.2,
     )
 
     // 9. Redator — write the full document
@@ -1670,7 +1666,7 @@ export async function generateDocument(
         pesquisaResult.content, factCheckResult.content, planoResult.content,
         contextDetail, acervoBase || undefined,
       ),
-      modelRedator, 'anthropic/claude-sonnet-4', 12000, 0.3,
+      modelRedator, modelRedator, 12000, 0.3,
     )
 
     // Accumulate LLM usage across all pipeline agents for Dashboard metrics
@@ -1879,7 +1875,8 @@ export async function generateContextQuestions(
 ): Promise<{ analysis_summary: string; questions: ContextDetailQuestion[]; llm_execution: UsageExecutionRecord }> {
   const apiKey = await getOpenRouterKey()
   const contextDetailModels = await loadContextDetailModels()
-  const model = contextDetailModels.context_detail ?? 'anthropic/claude-sonnet-4'
+  validateModelMap(contextDetailModels, CONTEXT_DETAIL_AGENT_DEFS, 'context_detail_models')
+  const model = contextDetailModels.context_detail
 
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   const areaNames = areas.map(a => AREA_NAMES[a] ?? a).filter(Boolean).join(', ')
@@ -1923,7 +1920,7 @@ export async function generateContextQuestions(
     'Responda APENAS em JSON válido.',
   ].filter(Boolean).join('\n')
 
-  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, 'anthropic/claude-sonnet-4', 3000, 0.3)
+  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, model, 3000, 0.3)
 
   // Parse the JSON response
   let analysis_summary = ''

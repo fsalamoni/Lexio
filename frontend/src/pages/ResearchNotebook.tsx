@@ -91,50 +91,37 @@ import {
   fetchUrlContent as fetchUrlContentService,
   type WebSearchErrorType,
 } from '../lib/web-search-service'
-
-// ── Constants ────────────────────────────────────────────────────────────────
-
-/** Max characters stored per source text content */
-const MAX_SOURCE_TEXT_LENGTH = 50_000
-/** Max characters per source included in LLM context */
-const MAX_CONTEXT_TEXT_LENGTH = 15_000
-/** Max messages from conversation to include as context */
-const MAX_CONVERSATION_CONTEXT_MESSAGES = 20
-/** Max messages from conversation included in studio prompts */
-const MAX_STUDIO_CONTEXT_MESSAGES = 10
-/** Max characters of conversation context included in studio prompts */
-const MAX_STUDIO_CONTEXT_CHARS = 5_000
-/** Max visible length for suggestion button labels */
-const MAX_SUGGESTION_LABEL_LENGTH = 60
-/** Max chars from web search snippets injected into chat context */
-const MAX_WEB_SEARCH_CHARS = 3_000
-/** Max chars for deep external research source */
-const MAX_DEEP_EXTERNAL_TEXT_CHARS = 12_000
-/** Max chars per fetched external page used in deep synthesis prompt */
-const MAX_DEEP_EXTERNAL_SOURCE_SNIPPET_CHARS = 6_000
-/** Min chars in source text_content to be considered indexed */
-const MIN_SOURCE_CHARS = 20
-const ENABLE_LITERAL_MEDIA_AUTOGENERATION =
-  (import.meta.env.VITE_ENABLE_LITERAL_MEDIA_AUTOGENERATION as string | undefined) !== 'false'
-
-/** Human-readable agent labels for error messages */
-const AGENT_LABELS: Record<string, string> = {
-  notebook_pesquisador: 'Pesquisador de Fontes',
-  notebook_analista: 'Analista de Conhecimento',
-  notebook_assistente: 'Assistente Conversacional',
-  studio_pesquisador: 'Pesquisador do Estúdio',
-  studio_escritor: 'Escritor',
-  studio_roteirista: 'Roteirista',
-  studio_visual: 'Designer Visual',
-  studio_revisor: 'Revisor de Qualidade',
-  nb_acervo_triagem: 'Triagem de Acervo',
-  nb_acervo_buscador: 'Buscador de Acervo',
-  nb_acervo_analista: 'Analista de Acervo',
-  nb_acervo_curador: 'Curador de Fontes',
-}
-
-// Old inline fetchUrlContent / searchWeb / searchWebResults / normalizeDataJudSearchQuery
-// replaced by imports from ../lib/web-search-service and ../lib/datajud-service
+import {
+  MAX_SOURCE_TEXT_LENGTH,
+  MAX_CONTEXT_TEXT_LENGTH,
+  MAX_CONVERSATION_CONTEXT_MESSAGES,
+  MAX_STUDIO_CONTEXT_MESSAGES,
+  MAX_STUDIO_CONTEXT_CHARS,
+  MAX_SUGGESTION_LABEL_LENGTH,
+  MAX_WEB_SEARCH_CHARS,
+  MAX_DEEP_EXTERNAL_TEXT_CHARS,
+  MAX_DEEP_EXTERNAL_SOURCE_SNIPPET_CHARS,
+  MIN_SOURCE_CHARS,
+  ENABLE_LITERAL_MEDIA_AUTOGENERATION,
+  REVIEWABLE_ARTIFACT_TYPES,
+  ARTIFACT_COST_KEY,
+  STUDIO_SPECIALIST_LABEL,
+  ACERVO_TRAIL_STEPS,
+  AGENT_LABELS,
+  ARTIFACT_CATEGORIES,
+  ARTIFACT_TYPES,
+  SOURCE_TYPE_LABELS,
+  CopyButton,
+  NotebookListItem,
+  type ArtifactDef,
+  type ArtifactCategory,
+} from './notebook'
+import {
+  generateId,
+  formatDate,
+  getExtensionFromMimeType,
+  renderMarkdownToHtml,
+} from './notebook/utils'
 
 /** Individual search result item for review modal */
 export interface SearchResultItem {
@@ -149,291 +136,6 @@ export interface SearchResultItem {
   /** Raw data from the original search result (for synthesis) */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _raw?: any
-}
-
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-}
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString('pt-BR', {
-      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    })
-  } catch {
-    return iso
-  }
-}
-
-function getExtensionFromMimeType(mimeType?: string, fallback = '.bin'): string {
-  if (!mimeType) return fallback
-  const value = mimeType.toLowerCase()
-  if (value.includes('video/mp4')) return '.mp4'
-  if (value.includes('video/webm')) return '.webm'
-  if (value.includes('video/ogg')) return '.ogv'
-  if (value.includes('video/quicktime')) return '.mov'
-  if (value.includes('audio/wav') || value.includes('audio/x-wav')) return '.wav'
-  if (value.includes('audio/mpeg') || value.includes('audio/mp3')) return '.mp3'
-  if (value.includes('audio/ogg')) return '.ogg'
-  if (value.includes('audio/webm')) return '.weba'
-  if (value.includes('audio/aac')) return '.aac'
-  if (value.includes('image/png')) return '.png'
-  if (value.includes('image/jpeg') || value.includes('image/jpg')) return '.jpg'
-  if (value.includes('image/webp')) return '.webp'
-  return fallback
-}
-
-type ArtifactDef = { type: StudioArtifactType; label: string; icon: React.ElementType; description: string }
-type ArtifactCategory = { label: string; emoji: string; color: string; items: ArtifactDef[] }
-
-const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
-  {
-    label: 'Estudo', emoji: '📚', color: 'blue',
-    items: [
-      { type: 'guia_estruturado', label: 'Guia Estruturado', icon: BookMarked, description: 'Guia completo com principais conceitos e pontos das fontes' },
-      { type: 'cartoes_didaticos', label: 'Cartões Didáticos', icon: CreditCard, description: 'Flashcards interativos para revisão e memorização' },
-      { type: 'teste', label: 'Teste / Quiz', icon: FileQuestion, description: 'Quiz interativo com múltiplos tipos de questão e scoring' },
-    ],
-  },
-  {
-    label: 'Documentos', emoji: '📝', color: 'emerald',
-    items: [
-      { type: 'resumo', label: 'Resumo Executivo', icon: FileText, description: 'Síntese analítica completa do tema pesquisado' },
-      { type: 'relatorio', label: 'Relatório Analítico', icon: BarChart3, description: 'Relatório detalhado com metodologia e recomendações' },
-      { type: 'documento', label: 'Documento Formal', icon: FileText, description: 'Documento técnico/jurídico estruturado' },
-    ],
-  },
-  {
-    label: 'Visual', emoji: '🎨', color: 'purple',
-    items: [
-      { type: 'apresentacao', label: 'Apresentação', icon: Presentation, description: 'Slides profissionais com notas do apresentador' },
-      { type: 'mapa_mental', label: 'Mapa Mental', icon: Map, description: 'Visualização interativa de conceitos e relações' },
-      { type: 'infografico', label: 'Infográfico', icon: PenTool, description: 'Dados e estatísticas em layout visual impactante' },
-      { type: 'tabela_dados', label: 'Tabela de Dados', icon: Table, description: 'Tabela interativa com ordenação e filtros' },
-    ],
-  },
-  {
-    label: 'Mídia', emoji: '🎬', color: 'amber',
-    items: [
-      { type: 'audio_script', label: 'Roteiro de Áudio', icon: Mic, description: 'Script de podcast com timeline e notas de produção' },
-      { type: 'video_script', label: 'Planejamento de Vídeo + Estúdio', icon: Video, description: 'Fase 1: planejamento textual completo. Fase 2: geração literal de imagem/áudio/vídeo no estúdio.' },
-    ],
-  },
-]
-
-/** Flat list for lookups */
-const ARTIFACT_TYPES: ArtifactDef[] = ARTIFACT_CATEGORIES.flatMap(c => c.items)
-
-/** Artifact types that get a review/edit step before saving */
-const REVIEWABLE_ARTIFACT_TYPES: StudioArtifactType[] = ['video_script', 'audio_script', 'apresentacao']
-
-/** Map media artifact types to the correct cost function key */
-const ARTIFACT_COST_KEY: Partial<Record<StudioArtifactType, UsageFunctionKey>> = {
-  video_script: 'video_pipeline',
-  audio_script: 'audio_pipeline',
-  apresentacao: 'presentation_pipeline',
-}
-
-const SOURCE_TYPE_LABELS: Record<string, { label: string; icon: React.ElementType }> = {
-  acervo:  { label: 'Acervo', icon: Database },
-  upload:  { label: 'Upload', icon: Upload },
-  link:    { label: 'Link', icon: Link2 },
-  external: { label: 'Pesquisa Externa', icon: Globe },
-  external_deep: { label: 'Pesquisa Externa Profunda', icon: Brain },
-  jurisprudencia: { label: 'Jurisprudência (DataJud)', icon: Library },
-}
-
-const ACERVO_TRAIL_STEPS = [
-  { key: 'nb_acervo_triagem', label: 'Triagem' },
-  { key: 'nb_acervo_buscador', label: 'Buscador' },
-  { key: 'nb_acervo_analista', label: 'Analista' },
-  { key: 'nb_acervo_curador', label: 'Curador' },
-] as const
-
-const STUDIO_SPECIALIST_LABEL: Record<StudioArtifactType, string> = {
-  resumo: 'Escritor',
-  relatorio: 'Escritor',
-  documento: 'Escritor',
-  cartoes_didaticos: 'Escritor',
-  teste: 'Escritor',
-  guia_estruturado: 'Escritor',
-  apresentacao: 'Designer Visual',
-  mapa_mental: 'Designer Visual',
-  infografico: 'Designer Visual',
-  tabela_dados: 'Designer Visual',
-  audio_script: 'Roteirista',
-  video_script: 'Roteirista',
-  outro: 'Escritor',
-}
-
-// ── Lightweight Markdown renderer ─────────────────────────────────────────────
-
-/** Escape HTML entities to prevent XSS when rendering markdown. */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-/** Only allow http/https links — block javascript:, data:, etc. */
-function sanitizeUrl(url: string): string {
-  const trimmed = url.trim()
-  if (/^https?:\/\//i.test(trimmed)) return trimmed
-  return '#'
-}
-
-/**
- * Converts basic Markdown to sanitised HTML for assistant messages.
- * Supports: headers, bold, italic, inline code, code blocks, lists, links, hr.
- * All text content is HTML-escaped before transformation to prevent XSS.
- * Only assistant LLM output passes through this function.
- */
-function renderMarkdownToHtml(md: string): string {
-  // First, extract code blocks and inline code to protect them from HTML escaping
-  const codeBlocks: string[] = []
-  let safe = md.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, _lang, code) => {
-    const idx = codeBlocks.length
-    codeBlocks.push(`<pre class="bg-gray-800 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-xs"><code>${escapeHtml(code)}</code></pre>`)
-    return `\x00CODEBLOCK${idx}\x00`
-  })
-
-  const inlineCodes: string[] = []
-  safe = safe.replace(/`([^`]+)`/g, (_match, code) => {
-    const idx = inlineCodes.length
-    inlineCodes.push(`<code class="bg-gray-200 text-gray-800 px-1 py-0.5 rounded text-xs">${escapeHtml(code)}</code>`)
-    return `\x00INLINECODE${idx}\x00`
-  })
-
-  // Escape remaining HTML entities
-  safe = escapeHtml(safe)
-
-  let html = safe
-    // Headers
-    .replace(/^#### (.+)$/gm, '<h4 class="font-semibold text-gray-900 mt-3 mb-1 text-sm">$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3 class="font-semibold text-gray-900 mt-3 mb-1">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="font-bold text-gray-900 mt-4 mb-1 text-base">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="font-bold text-gray-900 mt-4 mb-2 text-lg">$1</h1>')
-    // Bold + italic
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    // Bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Italic
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Horizontal rule
-    .replace(/^---+$/gm, '<hr class="my-3 border-gray-200" />')
-    // Links [text](url) — only allow http/https
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) =>
-      `<a href="${sanitizeUrl(url)}" target="_blank" rel="noopener noreferrer" class="text-brand-600 hover:underline">${text}</a>`,
-    )
-    // Unordered list items
-    .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    // Ordered list items
-    .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
-    // Line breaks (double newline -> paragraph break)
-    .replace(/\n\n/g, '</p><p class="mt-2">')
-    // Single line breaks within paragraphs
-    .replace(/\n/g, '<br />')
-
-  // Restore code blocks and inline codes
-  html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (_m, idx) => codeBlocks[Number(idx)])
-  html = html.replace(/\x00INLINECODE(\d+)\x00/g, (_m, idx) => inlineCodes[Number(idx)])
-
-  return `<p>${html}</p>`
-}
-
-// ── Copy Button ───────────────────────────────────────────────────────────────
-
-function CopyButton({ text, className = '' }: { text: string; className?: string }) {
-  const [copied, setCopied] = useState(false)
-  const handle = async () => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch { /* clipboard not available */ }
-  }
-  return (
-    <button
-      onClick={e => { e.stopPropagation(); handle() }}
-      title="Copiar conteúdo"
-      aria-label="Copiar conteúdo"
-      className={`inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-600 transition-colors ${className}`}
-    >
-      {copied
-        ? <><CheckIcon className="w-3.5 h-3.5 text-green-500" /> Copiado</>
-        : <><Copy className="w-3.5 h-3.5" /> Copiar</>
-      }
-    </button>
-  )
-}
-
-// ── Sub-components ───────────────────────────────────────────────────────────
-
-function NotebookListItem({
-  notebook,
-  onSelect,
-  onDelete,
-}: {
-  notebook: ResearchNotebookData
-  onSelect: () => void
-  onDelete: () => void
-}) {
-  const [showMenu, setShowMenu] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  // Close menu on outside click
-  useEffect(() => {
-    if (!showMenu) return
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showMenu])
-
-  return (
-    <div
-      className="group bg-white rounded-xl border border-gray-200 p-4 hover:border-brand-300 hover:shadow-md transition-all cursor-pointer"
-      onClick={onSelect}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-gray-900 truncate">{notebook.title}</h3>
-          <p className="text-xs text-gray-500 mt-0.5 truncate">{notebook.topic}</p>
-          <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-400">
-            <span className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              {formatDate(notebook.created_at)}
-            </span>
-            <span>{notebook.sources.length} fonte{notebook.sources.length !== 1 ? 's' : ''}</span>
-            <span>{notebook.messages.length} msg</span>
-            <span>{notebook.artifacts.length} artefato{notebook.artifacts.length !== 1 ? 's' : ''}</span>
-          </div>
-        </div>
-        <div ref={menuRef} className="relative flex-shrink-0">
-          <button
-            onClick={e => { e.stopPropagation(); setShowMenu(!showMenu) }}
-            className="p-1 rounded hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100"
-          >
-            <MoreVertical className="w-4 h-4 text-gray-400" />
-          </button>
-          {showMenu && (
-            <div className="absolute right-0 top-8 z-10 w-36 bg-white border rounded-lg shadow-lg py-1">
-              <button
-                onClick={e => { e.stopPropagation(); onDelete(); setShowMenu(false) }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-xs text-red-600 hover:bg-red-50"
-              >
-                <Trash2 className="w-3 h-3" /> Excluir
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ── Main Page ────────────────────────────────────────────────────────────────
@@ -1176,7 +878,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           ).join('\n\n')
 
           const models = await loadResearchNotebookModels()
-          const model = models.notebook_pesquisador_externo || models.notebook_analista
+          const model = models.notebook_pesquisador_externo
           if (!model) {
             updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
             setResearchModalCanClose(true)
@@ -1399,7 +1101,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           addModalSubstep('analyze', `Preparando ${selected.length} resultado(s) para análise profunda...`)
 
           const models = await loadResearchNotebookModels()
-          const model = models.notebook_pesquisador_externo_profundo || models.notebook_analista
+          const model = models.notebook_pesquisador_externo_profundo
           if (!model) {
             updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
             setResearchModalCanClose(true)
@@ -1639,7 +1341,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           // Step 3: Analyze
           updateModalStep('analyze', { status: 'active' })
           const models = await loadResearchNotebookModels()
-          const model = models.notebook_pesquisador_jurisprudencia || models.notebook_analista
+          const model = models.notebook_pesquisador_jurisprudencia
           if (!model) {
             updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
             setResearchModalCanClose(true)
@@ -3892,6 +3594,64 @@ Instruções:
       })()}
 
       {/* ── Script Review/Edit Modal (for media artifacts) ──── */}
+      {pendingArtifact && (
+        <DraggablePanel
+          title={`Revisar ${ARTIFACT_TYPES.find(a => a.type === pendingArtifact.artifact.type)?.label || 'Artefato'}`}
+          open={true}
+          onClose={handleDiscardPendingArtifact}
+          initialWidth={700}
+          initialHeight={520}
+        >
+          <div className="flex flex-col h-full gap-3 p-4">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Revise e edite o conteúdo gerado antes de salvar no caderno.
+            </p>
+            <textarea
+              className="flex-1 w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm font-mono resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={pendingContent}
+              onChange={e => setPendingContent(e.target.value)}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={handleDiscardPendingArtifact}
+                className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                Descartar
+              </button>
+              <button
+                onClick={handleConfirmPendingArtifact}
+                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Salvar Artefato
+              </button>
+            </div>
+          </div>
+        </DraggablePanel>
+      )}
+
+      {/* ── Video Generation Cost Modal ──────────────── */}
+      {showVideoGenCost && videoGenSavedArtifact && (
+        <VideoGenerationCostModal
+          scriptContent={videoGenSavedArtifact.content}
+          topic={activeNotebook?.topic || ''}
+          onGenerate={handleGenerateVideo}
+          onSkip={handleSkipVideoGeneration}
+          isGenerating={videoGenLoading}
+          generationProgress={videoGenProgress || undefined}
+        />
+      )}
+
+      {/* ── Video Studio Editor ──────────────────────── */}
+      {videoProduction && (
+        <VideoStudioEditor
+          production={videoProduction}
+          apiKey={videoStudioApiKey}
+          onClose={() => setVideoProduction(null)}
+          onSaveToNotebook={handleSaveVideoStudioToNotebook}
+          autoGenerateMedia={videoStudioAutoGenerate}
+        />
+      )}
+
       {/* ── Deep Research Modal ────────────────────────── */}
       <AgentTrailProgressModal
         isOpen={showAcervoProgressModal}

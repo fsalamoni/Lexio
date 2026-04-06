@@ -9,7 +9,6 @@
  */
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
-export const DEFAULT_FALLBACK_MODEL = 'anthropic/claude-3.5-haiku'
 
 /** Timeout in milliseconds for each OpenRouter request. */
 const REQUEST_TIMEOUT_MS = 120_000
@@ -151,7 +150,7 @@ export async function callLLM(
   apiKey: string,
   system: string,
   user: string,
-  model = 'anthropic/claude-3.5-haiku',
+  model: string,
   maxTokens = 4000,
   temperature = 0.3,
   options?: LLMCallOptions,
@@ -258,7 +257,7 @@ export async function callLLM(
 export async function callLLMWithMessages(
   apiKey: string,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-  model = 'anthropic/claude-3.5-haiku',
+  model: string,
   maxTokens = 4000,
   temperature = 0.3,
   options?: LLMCallOptions,

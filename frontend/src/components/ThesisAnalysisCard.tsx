@@ -37,7 +37,7 @@ import {
   type AgentProgress,
   type ThesisAnalysisResult,
 } from '../lib/thesis-analyzer'
-import { loadThesisAnalystModels } from '../lib/model-config'
+import { loadThesisAnalystModels, ModelsNotConfiguredError } from '../lib/model-config'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -351,8 +351,12 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
         toast.success('Análise concluída', 'Nenhuma ação necessária no momento.')
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erro desconhecido'
-      toast.error('Erro na análise', msg)
+      if (err instanceof ModelsNotConfiguredError) {
+        toast.warning('Modelos não configurados', 'Configure os modelos da Análise de Teses no Painel Administrativo.')
+      } else {
+        const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+        toast.error('Erro na análise', msg)
+      }
       setAgentProgress(prev => prev.map(a => a.status === 'running' ? { ...a, status: 'error' } : a))
     } finally {
       setRunning(false)

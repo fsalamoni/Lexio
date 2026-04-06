@@ -16,6 +16,7 @@ import {
 } from '../lib/firestore-service'
 import { generateDocument, generateContextQuestions, type GenerationProgress } from '../lib/generation-service'
 import { ModelUnavailableError, TransientLLMError } from '../lib/llm-client'
+import { ModelsNotConfiguredError } from '../lib/model-config'
 import type { UserProfileForGeneration } from '../lib/generation-service'
 import PipelineProgressPanel, {
   PIPELINE_AGENTS,
@@ -175,7 +176,10 @@ export default function NewDocument() {
       })
       setShowContextDetail(true)
     } catch (err: any) {
-      if (err instanceof ModelUnavailableError) {
+      if (err instanceof ModelsNotConfiguredError) {
+        toast.warning('Modelos não configurados', 'Configure os modelos no Painel Administrativo antes de usar esta funcionalidade.')
+        navigate('/admin')
+      } else if (err instanceof ModelUnavailableError) {
         toast.warning(`Modelo indisponível: ${err.modelId}`, 'Vá em Administração e substitua-o por outro.')
       } else {
         toast.error('Erro ao detalhar contexto', err?.message || 'Tente novamente')
@@ -249,7 +253,11 @@ export default function NewDocument() {
                   : a,
               ),
             )
-            if (err instanceof ModelUnavailableError) {
+            if (err instanceof ModelsNotConfiguredError) {
+              setPipelineMessage('Modelos não configurados. Vá em Administração.')
+              toast.warning('Modelos não configurados', err.message)
+              navigate('/admin')
+            } else if (err instanceof ModelUnavailableError) {
               setPipelineMessage(`Modelo "${err.modelId}" indisponível. Altere-o em Administração.`)
               toast.warning(
                 `Modelo indisponível: ${err.modelId}`,
