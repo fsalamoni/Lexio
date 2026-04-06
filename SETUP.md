@@ -4,6 +4,18 @@ This guide explains how to configure all required secrets and settings so that G
 
 ---
 
+## Security Headers
+
+### Content Security Policy
+
+The CSP in `firebase.json` uses `'unsafe-inline'` and `'unsafe-eval'` for `script-src` because:
+- `'unsafe-inline'` is required for Vite's CSS injection at runtime.
+- `'unsafe-eval'` is required by `pdfjs-dist` for its worker loader.
+
+These are industry-standard trade-offs for SPAs using Vite and PDF.js. To tighten the CSP further, investigate replacing `'unsafe-eval'` with the [Trusted Types API](https://developer.mozilla.org/en-US/docs/Web/API/Trusted_Types_API) once PDF.js adds support for it.
+
+---
+
 ## Required GitHub Secrets
 
 Go to **GitHub → Repository → Settings → Secrets and variables → Actions → New repository secret** and add the following:
