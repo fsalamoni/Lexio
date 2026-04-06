@@ -21,11 +21,11 @@ COLLECTION = settings.qdrant_collection
 def _strip_rtf(text: str) -> str:
     """Strip RTF control sequences and return plain text.
 
-    Nested RTF groups (e.g. {\\fonttbl{\\f0 Arial;}}) are handled
-    iteratively — the regex removes innermost groups first, and
-    repeated application catches most nested structures.
+    Nested groups (e.g. {\\fonttbl{\\f0 Arial;}}) are handled iteratively —
+    each pass removes groups that contain no nested braces ({\\...}),
+    and the loop repeats until no more such groups remain.
     """
-    # Iteratively remove innermost RTF groups to handle nesting
+    # Iteratively remove brace-delimited RTF groups (no nested braces inside)
     out = text
     prev = ""
     while out != prev:
@@ -42,7 +42,7 @@ def _strip_rtf(text: str) -> str:
 class _HTMLTextExtractor(HTMLParser):
     """Simple HTML parser that extracts visible text content."""
 
-    _skip_tags = frozenset({"script", "style", "noscript", "svg", "head", "meta", "link", "title"})
+    _skip_tags = frozenset({"script", "style", "noscript", "svg", "head", "meta", "link", "title", "iframe", "object", "embed", "param"})
 
     def __init__(self) -> None:
         super().__init__()

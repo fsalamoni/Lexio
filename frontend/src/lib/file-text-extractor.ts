@@ -217,12 +217,13 @@ function readFileAsText(file: File): Promise<string> {
 }
 
 /** Strip RTF control sequences and return plain text.
- * Note: Nested RTF groups (e.g. {\fonttbl{\f0 Arial;}}) are handled iteratively —
- * the outer regex pass removes the innermost groups first, and repeated application
- * catches most nested structures. For legal documents this produces good results.
+ * Nested groups (e.g. {\fonttbl{\f0 Arial;}}) are handled iteratively —
+ * each pass removes groups that contain no nested braces (`{\\...}`),
+ * and the loop repeats until no more such groups remain. This handles
+ * arbitrary nesting depth and works well for legal documents.
  */
 function stripRtf(rtf: string): string {
-  // Iteratively remove innermost RTF groups to handle nesting
+  // Iteratively remove brace-delimited RTF groups (no nested braces inside)
   let text = rtf
   let prev = ''
   while (text !== prev) {
