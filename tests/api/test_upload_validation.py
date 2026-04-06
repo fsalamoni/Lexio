@@ -59,9 +59,16 @@ ALLOWED_EXTENSIONS = {
 def validate_upload(content: bytes, content_type: str | None, filename: str = "arquivo.bin") -> dict:
     """Returns {"ok": True} or {"ok": False, "status": int, "detail": str}."""
     extension = ("." + filename.split(".")[-1].lower()) if "." in filename else ""
-    supported = extension in ALLOWED_EXTENSIONS or (content_type in ALLOWED_CONTENT_TYPES if content_type else False)
+    has_allowed_extension = extension in ALLOWED_EXTENSIONS
+    has_allowed_content_type = content_type in ALLOWED_CONTENT_TYPES if content_type else False
+    supported = has_allowed_extension or has_allowed_content_type
     if not supported:
-        return {"ok": False, "status": 415, "detail": f"Tipo não suportado: {content_type}"}
+        reason = "extensão e MIME não suportados"
+        if not has_allowed_extension and content_type:
+            reason = f"MIME não suportado: {content_type}"
+        elif not has_allowed_extension:
+            reason = f"extensão não suportada: {extension or '(sem extensão)'}"
+        return {"ok": False, "status": 415, "detail": f"Tipo não suportado ({reason})"}
     if len(content) > MAX_UPLOAD_BYTES:
         mb = len(content) / 1024 / 1024
         return {"ok": False, "status": 413, "detail": f"Arquivo muito grande: {mb:.1f}MB"}

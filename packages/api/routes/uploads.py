@@ -4,7 +4,6 @@ import asyncio
 import logging
 import uuid
 from pathlib import Path
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,8 +72,7 @@ ALLOWED_EXTENSIONS = {
 def _get_file_extension(filename: str | None) -> str:
     if not filename:
         return ""
-    parsed = urlparse(filename)
-    return Path(parsed.path).suffix.lower()
+    return Path(filename).suffix.lower()
 
 
 def _is_supported_upload(file: UploadFile) -> bool:

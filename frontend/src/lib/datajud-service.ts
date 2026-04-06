@@ -95,7 +95,8 @@ async function fetchDataJudHits(
 
       const onExternalAbort = () => signalController.abort()
       if (signal) signal.addEventListener('abort', onExternalAbort, { once: true })
-      timeoutController.signal.addEventListener('abort', onExternalAbort, { once: true })
+      const onTimeoutAbort = () => signalController.abort()
+      timeoutController.signal.addEventListener('abort', onTimeoutAbort, { once: true })
 
       try {
         const resp = await fetch(proxyUrl, {
@@ -128,6 +129,7 @@ async function fetchDataJudHits(
       } finally {
         clearTimeout(timeoutId)
         if (signal) signal.removeEventListener('abort', onExternalAbort)
+        timeoutController.signal.removeEventListener('abort', onTimeoutAbort)
       }
     }
   }
