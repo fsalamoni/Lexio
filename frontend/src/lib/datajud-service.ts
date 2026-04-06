@@ -27,89 +27,77 @@ const MAX_RETRIES = 2
 const RESULTS_PER_TRIBUNAL = 5
 
 /**
- * Proxy strategies for browser-side DataJud requests.
- * DataJud API doesn't set CORS headers, so requests must route through proxies.
- * Multiple strategies are tried in order; once one succeeds it's cached.
+ * DataJud request routing strategy:
  *
- * 1. allorigins: GET via allorigins.win with ES ?source= param (most reliable)
- * 2. corsproxy_simple: POST text/plain — avoids CORS preflight entirely
- * 3. corsproxy_full: POST with Authorization + JSON — triggers preflight
+ * 1. Firebase Cloud Function proxy (primary — works on lexio.web.app)
+ *    POST /api/datajud with {tribunal, body} → function forwards with Authorization header
+ *
+ * 2. AllOrigins GET fallback (for GitHub Pages where Cloud Functions aren't available)
+ *    DataJud's ES accepts ?source= query parameter for GET requests; AllOrigins wraps for CORS.
+ *    NOTE: This is unreliable for large queries (URL length limits) and may not work
+ *    if DataJud requires POST. It's a degraded fallback only.
  */
-type DataJudProxyStrategy = 'allorigins' | 'corsproxy_simple' | 'corsproxy_full'
 
-const DATAJUD_STRATEGIES: DataJudProxyStrategy[] = [
-  'allorigins',
-  'corsproxy_simple',
-  'corsproxy_full',
-]
+/** Detect whether we are on Firebase Hosting (has Cloud Function) or GH Pages (fallback) */
+function getDataJudProxyUrl(): string {
+  // Firebase Hosting: use Cloud Function rewrite
+  const host = typeof window !== 'undefined' ? window.location.hostname : ''
+  if (host.includes('lexio.web.app') || host.includes('firebaseapp.com') || host === 'localhost') {
+    return '/api/datajud'
+  }
+  // Also check VITE_BASE_PATH — if '/' it's Firebase
+  const basePath = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BASE_PATH) || '/'
+  if (basePath === '/') {
+    return '/api/datajud'
+  }
+  // GitHub Pages or other: empty string → will use AllOrigins fallback
+  return ''
+}
 
-/** Small delay between batches to avoid overwhelming proxies */
+/** Small delay between batches to avoid overwhelming the proxy */
 const INTER_BATCH_DELAY = 300
 
-/** Adaptive cache: reuse last working strategy; reset after consecutive failures */
-let _provenStrategy: DataJudProxyStrategy | null = null
-let _strategyFailures = 0
-const STRATEGY_RESET_AFTER = 5
-
 /**
- * Execute a single DataJud request using a specific proxy strategy.
- * Throws on any failure so the caller can try the next strategy.
+ * Execute a DataJud request via Firebase Cloud Function proxy.
+ * Falls back to AllOrigins GET if Cloud Function is unavailable.
  */
-async function executeDataJudStrategy(
-  strategy: DataJudProxyStrategy,
-  targetUrl: string,
-  bodyStr: string,
-  apiKey: string,
+async function fetchDataJudHits(
+  tribunalAlias: string,
+  esBody: object,
   signal?: AbortSignal,
 ): Promise<Array<{ _source?: Record<string, unknown> }>> {
+  const proxyUrl = getDataJudProxyUrl()
   const effectiveSignal = signal ?? AbortSignal.timeout(REQUEST_TIMEOUT)
 
-  switch (strategy) {
-    case 'allorigins': {
-      // Elasticsearch supports GET with ?source= param; allorigins.win wraps for CORS
-      const esGetUrl = `${targetUrl}?source=${encodeURIComponent(bodyStr)}&source_content_type=application%2Fjson`
-      const url = `https://api.allorigins.win/get?url=${encodeURIComponent(esGetUrl)}`
-      const resp = await fetch(url, { signal: effectiveSignal })
-      if (!resp.ok) throw new Error(`AllOrigins HTTP ${resp.status}`)
-      const wrapper = await resp.json() as { contents: string; status?: { http_code?: number } }
-      if (wrapper.status?.http_code && wrapper.status.http_code >= 400) {
-        throw new Error(`DataJud HTTP ${wrapper.status.http_code}`)
-      }
-      const data = JSON.parse(wrapper.contents) as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
-      return data.hits?.hits ?? []
+  // Strategy 1: Firebase Cloud Function proxy
+  if (proxyUrl) {
+    const resp = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tribunal: tribunalAlias, body: esBody }),
+      signal: effectiveSignal,
+    })
+    if (!resp.ok) {
+      throw new Error(`DataJud proxy HTTP ${resp.status}`)
     }
-
-    case 'corsproxy_simple': {
-      // POST with text/plain avoids CORS preflight (no custom request headers)
-      const url = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: bodyStr,
-        signal: effectiveSignal,
-      })
-      if (!resp.ok) throw new Error(`CORSProxy HTTP ${resp.status}`)
-      const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
-      return data.hits?.hits ?? []
-    }
-
-    case 'corsproxy_full': {
-      // Full headers — triggers CORS preflight
-      const url = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `APIKey ${apiKey}`,
-        },
-        body: bodyStr,
-        signal: effectiveSignal,
-      })
-      if (!resp.ok) throw new Error(`CORSProxy HTTP ${resp.status}`)
-      const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
-      return data.hits?.hits ?? []
-    }
+    const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
+    return data.hits?.hits ?? []
   }
+
+  // Strategy 2: AllOrigins GET fallback (GitHub Pages)
+  const targetUrl = `${DATAJUD_BASE_URL}/api_publica_${tribunalAlias}/_search`
+  const bodyStr = JSON.stringify(esBody)
+  const esGetUrl = `${targetUrl}?source=${encodeURIComponent(bodyStr)}&source_content_type=application%2Fjson`
+  const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(esGetUrl)}`
+
+  const resp = await fetch(allOriginsUrl, { signal: effectiveSignal })
+  if (!resp.ok) throw new Error(`AllOrigins HTTP ${resp.status}`)
+  const wrapper = await resp.json() as { contents: string; status?: { http_code?: number } }
+  if (wrapper.status?.http_code && wrapper.status.http_code >= 400) {
+    throw new Error(`DataJud HTTP ${wrapper.status.http_code}`)
+  }
+  const data = JSON.parse(wrapper.contents) as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
+  return data.hits?.hits ?? []
 }
 
 // ── Tribunal Registry ──────────────────────────────────────────────────────────
@@ -219,6 +207,25 @@ export const DEFAULT_TRIBUNALS: TribunalInfo[] = [
     .filter(Boolean),
 ]
 
+/** Tribunal groups for UI selection */
+export const TRIBUNAL_GROUPS: Array<{ category: TribunalCategory; label: string; tribunals: TribunalInfo[] }> = [
+  { category: 'superiores', label: 'Tribunais Superiores', tribunals: TRIBUNAIS_SUPERIORES },
+  { category: 'federal', label: 'Justiça Federal', tribunals: JUSTICA_FEDERAL },
+  { category: 'estadual', label: 'Justiça Estadual', tribunals: JUSTICA_ESTADUAL },
+  { category: 'trabalho', label: 'Justiça do Trabalho', tribunals: JUSTICA_TRABALHO },
+  { category: 'eleitoral', label: 'Justiça Eleitoral', tribunals: JUSTICA_ELEITORAL },
+  { category: 'militar', label: 'Justiça Militar', tribunals: JUSTICA_MILITAR },
+]
+
+/** Known grau values for filtering */
+export const DATAJUD_GRAUS = [
+  { value: 'G1', label: '1ª Instância' },
+  { value: 'G2', label: '2ª Instância' },
+  { value: 'JE', label: 'Juizado Especial' },
+  { value: 'REsp', label: 'Recurso Especial' },
+  { value: 'RE', label: 'Recurso Extraordinário' },
+]
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export interface DataJudResult {
@@ -251,6 +258,12 @@ export interface DataJudSearchOptions {
   maxPerTribunal?: number
   /** Total max results across all tribunals (default: 30) */
   maxTotal?: number
+  /** Filter: minimum date (YYYY-MM-DD) for dataAjuizamento */
+  dateFrom?: string
+  /** Filter: maximum date (YYYY-MM-DD) for dataAjuizamento */
+  dateTo?: string
+  /** Filter: restrict to specific grau values (e.g. ['G1', 'G2', 'JE']) */
+  graus?: string[]
   /** Progress callback */
   onProgress?: (progress: DataJudSearchProgress) => void
   /** Abort signal */
@@ -321,88 +334,74 @@ export async function searchDataJud(
   let tribunalsQueried = 0
   let tribunalsWithResults = 0
 
-  // Build Elasticsearch query body
+  // Build Elasticsearch query body with optional filters
+  const boolQuery: Record<string, unknown> = {
+    should: [
+      { match: { 'assuntos.nome': { query, boost: 3 } } },
+      { match: { 'classe.nome': { query, boost: 2 } } },
+      { match: { 'orgaoJulgador.nome': { query, boost: 1 } } },
+    ],
+    minimum_should_match: 1,
+  }
+
+  // Add date range and grau filters if specified
+  const filters: Array<Record<string, unknown>> = []
+  if (options.dateFrom || options.dateTo) {
+    const range: Record<string, string> = {}
+    if (options.dateFrom) range.gte = options.dateFrom
+    if (options.dateTo) range.lte = options.dateTo
+    filters.push({ range: { dataAjuizamento: range } })
+  }
+  if (options.graus && options.graus.length > 0) {
+    filters.push({ terms: { grau: options.graus } })
+  }
+  if (filters.length > 0) {
+    boolQuery.filter = filters
+  }
+
   const esBody = {
     size: maxPerTribunal,
-    query: {
-      bool: {
-        should: [
-          { match: { 'assuntos.nome': { query, boost: 3 } } },
-          { match: { 'classe.nome': { query, boost: 2 } } },
-          { match: { 'orgaoJulgador.nome': { query, boost: 1 } } },
-        ],
-        minimum_should_match: 1,
-      },
-    },
+    query: { bool: boolQuery },
     sort: [{ dataAjuizamento: { order: 'desc' } }],
   }
 
   const fetchTribunalData = async (tribunal: TribunalInfo) => {
     if (signal?.aborted) throw new DataJudRequestError('Operação cancelada pelo usuário.', 'aborted')
 
-    const targetUrl = `${DATAJUD_BASE_URL}/api_publica_${tribunal.alias}/_search`
-    const bodyStr = JSON.stringify(esBody)
-
-    // Order: proven strategy first (if cached), then remaining strategies
-    const strategies = _provenStrategy
-      ? [_provenStrategy, ...DATAJUD_STRATEGIES.filter(s => s !== _provenStrategy)]
-      : [...DATAJUD_STRATEGIES]
-
-    let lastError: unknown = null
-
-    for (const strategy of strategies) {
-      if (signal?.aborted) throw new DataJudRequestError('Operação cancelada pelo usuário.', 'aborted')
-      try {
-        const hits = await executeDataJudStrategy(strategy, targetUrl, bodyStr, DATAJUD_API_KEY, signal)
-        // Strategy succeeded — cache for subsequent requests
-        if (_provenStrategy !== strategy) {
-          _provenStrategy = strategy
-          _strategyFailures = 0
-        }
-        return { tribunal, hits }
-      } catch (err) {
-        lastError = err
-        // Track consecutive failures of the cached strategy
-        if (strategy === _provenStrategy) {
-          _strategyFailures++
-          if (_strategyFailures >= STRATEGY_RESET_AFTER) {
-            _provenStrategy = null
-            _strategyFailures = 0
-          }
-        }
-      }
-    }
-
-    // All strategies exhausted — classify the error
-    if (lastError instanceof DOMException && lastError.name === 'AbortError') {
-      const msg = lastError.message?.toLowerCase?.() ?? ''
-      const isTimeout = msg.includes('time') || msg.includes('timeout')
-      throw new DataJudRequestError(
-        isTimeout ? `${tribunal.alias}: timeout` : 'Operação cancelada pelo usuário.',
-        isTimeout ? 'timeout' : 'aborted',
-        undefined,
-        isTimeout,
-      )
-    }
-    // Propagate HTTP status info from proxy errors (e.g. "HTTP 403")
-    if (lastError instanceof Error) {
-      const statusMatch = lastError.message.match(/HTTP (\d{3})/)
-      if (statusMatch) {
-        const status = Number(statusMatch[1])
+    try {
+      const hits = await fetchDataJudHits(tribunal.alias, esBody, signal)
+      return { tribunal, hits }
+    } catch (err) {
+      // Classify the error
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        const msg = err.message?.toLowerCase?.() ?? ''
+        const isTimeout = msg.includes('time') || msg.includes('timeout')
         throw new DataJudRequestError(
-          `${tribunal.alias}: HTTP ${status}`,
-          classifyStatus(status),
-          status,
-          status === 429 || status >= 500,
+          isTimeout ? `${tribunal.alias}: timeout` : 'Operação cancelada pelo usuário.',
+          isTimeout ? 'timeout' : 'aborted',
+          undefined,
+          isTimeout,
         )
       }
+      if (err instanceof Error) {
+        const statusMatch = err.message.match(/HTTP (\d{3})/)
+        if (statusMatch) {
+          const status = Number(statusMatch[1])
+          throw new DataJudRequestError(
+            `${tribunal.alias}: HTTP ${status}`,
+            classifyStatus(status),
+            status,
+            status === 429 || status >= 500,
+          )
+        }
+      }
+      throw new DataJudRequestError(
+        `${tribunal.alias}: ${err instanceof Error ? err.message : 'falha na requisição'}`,
+        'network',
+        undefined,
+        true,
+      )
     }
-    throw new DataJudRequestError(
-      `${tribunal.alias}: falha em todas as estratégias de proxy`,
-      'network',
-      undefined,
-      true,
-    )
   }
 
   // Process tribunals in batches
@@ -485,15 +484,7 @@ export async function searchDataJudByNumber(
   for (const tribunal of ALL_TRIBUNALS) {
     if (signal?.aborted) break
     try {
-      const targetUrl = `${DATAJUD_BASE_URL}/api_publica_${tribunal.alias}/_search`
-      const bodyStr = JSON.stringify(esBody)
-      const hits = await executeDataJudStrategy(
-        _provenStrategy ?? DATAJUD_STRATEGIES[0],
-        targetUrl,
-        bodyStr,
-        DATAJUD_API_KEY,
-        signal,
-      )
+      const hits = await fetchDataJudHits(tribunal.alias, esBody, signal)
       const hit = hits[0]
       if (hit?._source) return parseDataJudHit(hit._source, tribunal)
     } catch {

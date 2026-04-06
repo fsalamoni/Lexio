@@ -639,7 +639,7 @@ export async function deepWebSearch(
     query,
     resultsFound: results.length,
     urlsFetched: 0,
-    urlsTotal: Math.min(results.length, 5),
+    urlsTotal: Math.min(results.length, 10),
     currentUrl: '',
   })
 
@@ -653,8 +653,8 @@ export async function deepWebSearch(
     }
   }
 
-  // Step 2: Fetch full content from top 5 URLs in parallel
-  const topResults = results.slice(0, 5)
+  // Step 2: Fetch full content from top 10 URLs in parallel
+  const topResults = results.slice(0, 10)
   const contents: Array<{ url: string; title: string; content: string }> = []
   let fetchFailures = 0
   let fetchedCount = 0

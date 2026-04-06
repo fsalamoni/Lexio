@@ -69,13 +69,20 @@ import {
   createDeepSearchSteps,
   createJurisprudenceSteps,
 } from '../components/DeepResearchModal'
+import JurisprudenceConfigModal, { type JurisprudenceSearchConfig } from '../components/JurisprudenceConfigModal'
+import SearchResultsModal from '../components/SearchResultsModal'
 import AgentTrailProgressModal from '../components/AgentTrailProgressModal'
 import {
   searchDataJud,
   formatDataJudResults,
   DEFAULT_TRIBUNALS,
+  TRIBUNAL_GROUPS,
+  DATAJUD_GRAUS,
+  ALL_TRIBUNALS,
+  type TribunalInfo,
   type DataJudSearchProgress,
   type DataJudErrorType,
+  type DataJudResult,
 } from '../lib/datajud-service'
 import {
   searchWebResultsWithDiagnostics,
@@ -128,6 +135,21 @@ const AGENT_LABELS: Record<string, string> = {
 
 // Old inline fetchUrlContent / searchWeb / searchWebResults / normalizeDataJudSearchQuery
 // replaced by imports from ../lib/web-search-service and ../lib/datajud-service
+
+/** Individual search result item for review modal */
+export interface SearchResultItem {
+  id: string
+  title: string
+  subtitle: string
+  snippet: string
+  fullContent?: string
+  metadata: Record<string, string>
+  url?: string
+  selected: boolean
+  /** Raw data from the original search result (for synthesis) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _raw?: any
+}
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -475,6 +497,18 @@ export default function ResearchNotebook() {
   const [acervoDocs, setAcervoDocs] = useState<AcervoDocumentData[]>([])
   const [acervoLoading, setAcervoLoading] = useState(false)
   const sourceUploadInputRef = useRef<HTMLInputElement>(null)
+
+  // Source content viewer
+  const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
+
+  // Jurisprudence config modal (pre-search)
+  const [jurisprudenceConfigOpen, setJurisprudenceConfigOpen] = useState(false)
+
+  // Search results review modal (post-search)
+  const [searchResultsModalOpen, setSearchResultsModalOpen] = useState(false)
+  const [searchResultsItems, setSearchResultsItems] = useState<SearchResultItem[]>([])
+  const [searchResultsVariant, setSearchResultsVariant] = useState<'external' | 'deep' | 'jurisprudencia'>('external')
+  const [searchResultsCallback, setSearchResultsCallback] = useState<((selected: SearchResultItem[]) => Promise<void>) | null>(null)
 
   // Dynamic suggested questions
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -1095,76 +1129,123 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
       if (abortController.signal.aborted) return
 
-      // Step 2: Analyze results
-      updateModalStep('analyze', { status: 'active' })
-      addModalSubstep('analyze', 'Preparando conteúdo para síntese...')
+      // Close progress modal, show results for user review
+      setResearchModalOpen(false)
+      setResearchModalCanClose(true)
 
-      const textContent = results.map((r, i) =>
-        `[${i + 1}] ${r.title}\nURL: ${r.url}\nResumo: ${r.snippet}`,
-      ).join('\n\n')
-
-      const models = await loadResearchNotebookModels()
-      const model = models.notebook_pesquisador_externo || models.notebook_analista
-      if (!model) {
-        updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
-        setResearchModalCanClose(true)
-        toast.warning('Modelo obrigatório não configurado', 'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador Externo".')
-        return
-      }
-      addModalSubstep('analyze', `Usando modelo: ${model}`)
-      updateModalStep('analyze', { status: 'done' })
-
-      // Step 3: Synthesize
-      updateModalStep('synthesize', { status: 'active' })
-      addModalSubstep('synthesize', 'Solicitando síntese ao LLM...')
-      const apiKey = await getOpenRouterKey()
-
-      const externalResult = await callLLM(
-        apiKey,
-        'Você é um pesquisador jurídico externo. Sintetize resultados de busca web em texto objetivo para uso no caderno de pesquisa. Responda em português com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
-        `Consulta do usuário: "${query}"\n\nResultados coletados:\n${textContent}\n\nProduza uma síntese clara e acionável com foco jurídico.`,
-        model,
-        1800,
-        0.2,
-      )
-
-      setResearchModalStats(prev => ({
-        ...prev,
-        tokensUsed: externalResult.tokens_in + externalResult.tokens_out,
-        elapsedMs: Math.round(performance.now() - t0),
+      const reviewItems: SearchResultItem[] = results.map((r, i) => ({
+        id: `ext-${i}`,
+        title: r.title,
+        subtitle: r.url,
+        snippet: r.snippet,
+        url: r.url,
+        metadata: {},
+        selected: true,
+        _raw: r,
       }))
-      addModalSubstep('synthesize', `Síntese gerada (${externalResult.tokens_out} tokens)`)
-      updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
 
-      const source: NotebookSource = {
-        id: generateId(),
-        type: 'external',
-        name: `Pesquisa externa: ${query}`,
-        reference: query,
-        content_type: 'text/plain',
-        size_bytes: externalResult.content.length,
-        text_content: externalResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
-        status: 'indexed',
-        added_at: new Date().toISOString(),
-      }
+      setSearchResultsItems(reviewItems)
+      setSearchResultsVariant('external')
+      setSearchResultsCallback(() => async (selected: SearchResultItem[]) => {
+        setSearchResultsModalOpen(false)
 
-      const execution = createUsageExecutionRecord({
-        source_type: 'caderno_pesquisa',
-        source_id: notebookId,
-        phase: 'notebook_pesquisador_externo',
-        agent_name: 'Pesquisador Externo',
-        model: externalResult.model,
-        tokens_in: externalResult.tokens_in,
-        tokens_out: externalResult.tokens_out,
-        cost_usd: externalResult.cost_usd,
-        duration_ms: externalResult.duration_ms,
+        if (selected.length === 0) {
+          toast.info('Nenhum resultado selecionado.')
+          return
+        }
+
+        // Re-open progress modal for synthesis
+        const synthSteps = createExternalSearchSteps()
+        synthSteps[0].status = 'done'
+        synthSteps[0].detail = `${results.length} resultados`
+        setResearchModalTitle('Pesquisa Externa')
+        setResearchModalSubtitle(query)
+        setResearchModalVariant('external')
+        setResearchModalSteps(synthSteps)
+        setResearchModalStats(prev => ({ ...prev, sourcesFound: selected.length }))
+        setResearchModalCanClose(false)
+        setResearchModalOpen(true)
+
+        try {
+          // Step 2: Analyze results
+          updateModalStep('analyze', { status: 'active' })
+          addModalSubstep('analyze', `Preparando ${selected.length} resultado(s) para síntese...`)
+
+          const textContent = selected.map((r, i) =>
+            `[${i + 1}] ${r.title}\nURL: ${r.url || ''}\nResumo: ${r.snippet}`,
+          ).join('\n\n')
+
+          const models = await loadResearchNotebookModels()
+          const model = models.notebook_pesquisador_externo || models.notebook_analista
+          if (!model) {
+            updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
+            setResearchModalCanClose(true)
+            toast.warning('Modelo obrigatório não configurado', 'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador Externo".')
+            return
+          }
+          addModalSubstep('analyze', `Usando modelo: ${model}`)
+          updateModalStep('analyze', { status: 'done' })
+
+          // Step 3: Synthesize
+          updateModalStep('synthesize', { status: 'active' })
+          addModalSubstep('synthesize', 'Solicitando síntese ao LLM...')
+          const apiKey = await getOpenRouterKey()
+
+          const externalResult = await callLLM(
+            apiKey,
+            'Você é um pesquisador jurídico externo. Sintetize resultados de busca web em texto objetivo para uso no caderno de pesquisa. Responda em português com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
+            `Consulta do usuário: "${query}"\n\nResultados selecionados (${selected.length}):\n${textContent}\n\nProduza uma síntese clara e acionável com foco jurídico.`,
+            model,
+            1800,
+            0.2,
+          )
+
+          setResearchModalStats(prev => ({
+            ...prev,
+            tokensUsed: externalResult.tokens_in + externalResult.tokens_out,
+            elapsedMs: Math.round(performance.now() - t0),
+          }))
+          addModalSubstep('synthesize', `Síntese gerada (${externalResult.tokens_out} tokens)`)
+          updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
+
+          const source: NotebookSource = {
+            id: generateId(),
+            type: 'external',
+            name: `Pesquisa externa: ${query}`,
+            reference: query,
+            content_type: 'text/plain',
+            size_bytes: externalResult.content.length,
+            text_content: externalResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+            status: 'indexed',
+            added_at: new Date().toISOString(),
+          }
+
+          const execution = createUsageExecutionRecord({
+            source_type: 'caderno_pesquisa',
+            source_id: notebookId,
+            phase: 'notebook_pesquisador_externo',
+            agent_name: 'Pesquisador Externo',
+            model: externalResult.model,
+            tokens_in: externalResult.tokens_in,
+            tokens_out: externalResult.tokens_out,
+            cost_usd: externalResult.cost_usd,
+            duration_ms: externalResult.duration_ms,
+          })
+
+          await appendNotebookSourceWithExecution(notebookId, source, execution)
+          setExternalSearchQuery('')
+          setSuggestions([])
+          toast.success(`Pesquisa externa adicionada com ${selected.length} resultado(s).`)
+          autoCloseModal()
+        } catch (err) {
+          console.error('External search synthesis error:', err)
+          failAllActiveSteps(err instanceof Error ? err.message : 'Erro inesperado')
+          toast.error('Erro ao sintetizar pesquisa externa')
+        } finally {
+          setResearchModalCanClose(true)
+        }
       })
-
-      await appendNotebookSourceWithExecution(notebookId, source, execution)
-      setExternalSearchQuery('')
-      setSuggestions([])
-      toast.success(`Pesquisa externa adicionada com ${results.length} resultado(s).`)
-      autoCloseModal()
+      setSearchResultsModalOpen(true)
     } catch (err) {
       if (abortController.signal.aborted) return
       console.error('External search source error:', err)
@@ -1260,85 +1341,147 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
       if (abortController.signal.aborted) return
 
-      // Step 3: Analyze
-      updateModalStep('analyze', { status: 'active' })
-      addModalSubstep('analyze', 'Preparando conteúdo para análise profunda...')
+      // Close progress modal, show results for user review
+      setResearchModalOpen(false)
+      setResearchModalCanClose(true)
 
-      const models = await loadResearchNotebookModels()
-      const model = models.notebook_pesquisador_externo_profundo || models.notebook_analista
-      if (!model) {
-        updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
-        setResearchModalCanClose(true)
-        toast.warning('Modelo não configurado', 'Configure um modelo para o pesquisador externo profundo no Admin.')
-        return
-      }
-      addModalSubstep('analyze', `Modelo: ${model}`)
-      updateModalStep('analyze', { status: 'done' })
+      // Build review items: prefer contents (fetched pages), fallback to search results
+      const reviewItems: SearchResultItem[] = deepResult.contents.length > 0
+        ? deepResult.contents.map((c, i) => ({
+            id: `deep-${i}`,
+            title: c.title,
+            subtitle: c.url,
+            snippet: c.content.slice(0, 300) + (c.content.length > 300 ? '...' : ''),
+            fullContent: c.content.slice(0, 5000),
+            url: c.url,
+            metadata: { Chars: `${(c.content.length / 1000).toFixed(0)}K` },
+            selected: true,
+            _raw: c,
+          }))
+        : deepResult.results.map((r, i) => ({
+            id: `deep-${i}`,
+            title: r.title,
+            subtitle: r.url,
+            snippet: r.snippet,
+            url: r.url,
+            metadata: {},
+            selected: true,
+            _raw: r,
+          }))
 
-      // Step 4: Synthesize
-      updateModalStep('synthesize', { status: 'active' })
-      addModalSubstep('synthesize', 'Sintetizando conhecimento profundo...')
-      const apiKey = await getOpenRouterKey()
+      setSearchResultsItems(reviewItems)
+      setSearchResultsVariant('deep')
+      setSearchResultsCallback(() => async (selected: SearchResultItem[]) => {
+        setSearchResultsModalOpen(false)
 
-      // Build prompt from deep search contents
-      let compiled: string
-      if (deepResult.contents.length > 0) {
-        compiled = deepResult.contents.map((r, i) =>
-          `<fonte_${i + 1}>\nTÍTULO: ${r.title}\nURL: ${r.url}\n${r.content.slice(0, MAX_DEEP_EXTERNAL_SOURCE_SNIPPET_CHARS)}\n</fonte_${i + 1}>`,
-        ).join('\n\n')
-      } else {
-        // Fallback to search snippets if no full content was extracted
-        compiled = deepResult.results.map((r, i) =>
-          `[${i + 1}] ${r.title}\nURL: ${r.url}\nResumo: ${r.snippet}`,
-        ).join('\n\n')
-      }
+        if (selected.length === 0) {
+          toast.info('Nenhum resultado selecionado.')
+          return
+        }
 
-      const llmResult = await callLLM(
-        apiKey,
-        'Você é um pesquisador jurídico externo profundo. Sintetize fontes web em texto objetivo e acionável para caderno de pesquisa. Responda em português, com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
-        `Consulta do usuário: "${query}"\n\nFontes coletadas:\n${compiled}\n\nProduza uma síntese profunda com foco jurídico.`,
-        model,
-        2200,
-        0.2,
-      )
+        // Re-open progress modal for synthesis
+        const synthSteps = createDeepSearchSteps()
+        synthSteps[0].status = 'done'
+        synthSteps[0].detail = `${deepResult.results.length} resultados`
+        synthSteps[1].status = 'done'
+        synthSteps[1].detail = `${selected.length} selecionados`
+        setResearchModalTitle('Pesquisa Profunda')
+        setResearchModalSubtitle(query)
+        setResearchModalVariant('deep')
+        setResearchModalSteps(synthSteps)
+        setResearchModalStats(prev => ({ ...prev, sourcesFound: selected.length }))
+        setResearchModalCanClose(false)
+        setResearchModalOpen(true)
 
-      setResearchModalStats(prev => ({
-        ...prev,
-        tokensUsed: llmResult.tokens_in + llmResult.tokens_out,
-        elapsedMs: Math.round(performance.now() - t0),
-      }))
-      addModalSubstep('synthesize', `Síntese gerada (${llmResult.tokens_out} tokens)`)
-      updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
+        try {
+          // Step 3: Analyze
+          updateModalStep('analyze', { status: 'active' })
+          addModalSubstep('analyze', `Preparando ${selected.length} resultado(s) para análise profunda...`)
 
-      const source: NotebookSource = {
-        id: generateId(),
-        type: 'external_deep',
-        name: `Pesquisa externa profunda: ${query}`,
-        reference: query,
-        content_type: 'text/plain',
-        size_bytes: llmResult.content.length,
-        text_content: llmResult.content.slice(0, MAX_DEEP_EXTERNAL_TEXT_CHARS),
-        status: 'indexed',
-        added_at: new Date().toISOString(),
-      }
+          const models = await loadResearchNotebookModels()
+          const model = models.notebook_pesquisador_externo_profundo || models.notebook_analista
+          if (!model) {
+            updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
+            setResearchModalCanClose(true)
+            toast.warning('Modelo não configurado', 'Configure um modelo para o pesquisador externo profundo no Admin.')
+            return
+          }
+          addModalSubstep('analyze', `Modelo: ${model}`)
+          updateModalStep('analyze', { status: 'done' })
 
-      const execution = createUsageExecutionRecord({
-        source_type: 'caderno_pesquisa',
-        source_id: notebookId,
-        phase: 'notebook_pesquisador_externo_profundo',
-        agent_name: 'Pesquisador Externo Profundo',
-        model: llmResult.model,
-        tokens_in: llmResult.tokens_in,
-        tokens_out: llmResult.tokens_out,
-        cost_usd: llmResult.cost_usd,
-        duration_ms: llmResult.duration_ms,
+          // Step 4: Synthesize
+          updateModalStep('synthesize', { status: 'active' })
+          addModalSubstep('synthesize', 'Sintetizando conhecimento profundo...')
+          const apiKey = await getOpenRouterKey()
+
+          // Build prompt from selected items
+          const hasFullContent = selected.some(s => s.fullContent && s.fullContent.length > 100)
+          let compiled: string
+          if (hasFullContent) {
+            compiled = selected.map((s, i) =>
+              `<fonte_${i + 1}>\nTÍTULO: ${s.title}\nURL: ${s.url || ''}\n${(s.fullContent || s.snippet).slice(0, MAX_DEEP_EXTERNAL_SOURCE_SNIPPET_CHARS)}\n</fonte_${i + 1}>`,
+            ).join('\n\n')
+          } else {
+            compiled = selected.map((s, i) =>
+              `[${i + 1}] ${s.title}\nURL: ${s.url || ''}\nResumo: ${s.snippet}`,
+            ).join('\n\n')
+          }
+
+          const llmResult = await callLLM(
+            apiKey,
+            'Você é um pesquisador jurídico externo profundo. Sintetize fontes web em texto objetivo e acionável para caderno de pesquisa. Responda em português, com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
+            `Consulta do usuário: "${query}"\n\nFontes selecionadas (${selected.length}):\n${compiled}\n\nProduza uma síntese profunda com foco jurídico.`,
+            model,
+            2200,
+            0.2,
+          )
+
+          setResearchModalStats(prev => ({
+            ...prev,
+            tokensUsed: llmResult.tokens_in + llmResult.tokens_out,
+            elapsedMs: Math.round(performance.now() - t0),
+          }))
+          addModalSubstep('synthesize', `Síntese gerada (${llmResult.tokens_out} tokens)`)
+          updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
+
+          const source: NotebookSource = {
+            id: generateId(),
+            type: 'external_deep',
+            name: `Pesquisa externa profunda: ${query}`,
+            reference: query,
+            content_type: 'text/plain',
+            size_bytes: llmResult.content.length,
+            text_content: llmResult.content.slice(0, MAX_DEEP_EXTERNAL_TEXT_CHARS),
+            status: 'indexed',
+            added_at: new Date().toISOString(),
+          }
+
+          const execution = createUsageExecutionRecord({
+            source_type: 'caderno_pesquisa',
+            source_id: notebookId,
+            phase: 'notebook_pesquisador_externo_profundo',
+            agent_name: 'Pesquisador Externo Profundo',
+            model: llmResult.model,
+            tokens_in: llmResult.tokens_in,
+            tokens_out: llmResult.tokens_out,
+            cost_usd: llmResult.cost_usd,
+            duration_ms: llmResult.duration_ms,
+          })
+
+          await appendNotebookSourceWithExecution(notebookId, source, execution)
+          setExternalSearchQuery('')
+          setSuggestions([])
+          toast.success('Pesquisa externa profunda adicionada como fonte.')
+          autoCloseModal()
+        } catch (err) {
+          console.error('Deep search synthesis error:', err)
+          failAllActiveSteps(err instanceof Error ? err.message : 'Erro inesperado')
+          toast.error('Erro na pesquisa externa profunda')
+        } finally {
+          setResearchModalCanClose(true)
+        }
       })
-
-      await appendNotebookSourceWithExecution(notebookId, source, execution)
-      setExternalSearchQuery('')
-      setSuggestions([])
-      toast.success('Pesquisa externa profunda adicionada como fonte.')
-      autoCloseModal()
+      setSearchResultsModalOpen(true)
     } catch (err) {
       if (abortController.signal.aborted) return
       console.error('Deep external search source error:', err)
@@ -1351,15 +1494,22 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     }
   }
 
-  const handleAddJurisprudenceSource = async () => {
+  // Opens the pre-search configuration modal for jurisprudence
+  const handleAddJurisprudenceSource = () => {
     if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
-    const query = externalSearchQuery.trim()
-    const notebookId = activeNotebook.id
+    setJurisprudenceConfigOpen(true)
+  }
 
-    // Open modal
+  // Called from JurisprudenceConfigModal when user confirms config
+  const handleJurisprudenceSearch = async (config: JurisprudenceSearchConfig) => {
+    if (!userId || !activeNotebook?.id) return
+    const notebookId = activeNotebook.id
+    setJurisprudenceConfigOpen(false)
+
+    // Open progress modal
     const steps = createJurisprudenceSteps()
     setResearchModalTitle('Pesquisa de Jurisprudência')
-    setResearchModalSubtitle(query)
+    setResearchModalSubtitle(config.query)
     setResearchModalVariant('jurisprudencia')
     setResearchModalSteps(steps)
     setResearchModalStats({ sourcesFound: 0, urlsExamined: 0, tribunalsQueried: 0, tokensUsed: 0, elapsedMs: 0 })
@@ -1373,9 +1523,14 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     try {
       // Step 1: Query tribunals
       updateModalStep('query', { status: 'active' })
-      addModalSubstep('query', `Consultando ${DEFAULT_TRIBUNALS.length} tribunais em paralelo...`)
+      addModalSubstep('query', `Consultando ${config.tribunals.length} tribunais em paralelo...`)
 
-      const djResult = await searchDataJud(query, {
+      const djResult = await searchDataJud(config.query, {
+        tribunals: config.tribunals,
+        maxPerTribunal: config.maxPerTribunal,
+        dateFrom: config.dateFrom || undefined,
+        dateTo: config.dateTo || undefined,
+        graus: config.graus.length > 0 ? config.graus : undefined,
         onProgress: (progress) => {
           setResearchModalStats(prev => ({
             ...prev,
@@ -1424,77 +1579,139 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         return
       }
 
-      addModalSubstep('filter', `Formatando ${djResult.results.length} resultado(s)...`)
-      const textContent = formatDataJudResults(djResult.results)
-      addModalSubstep('filter', `Conteúdo preparado (${(textContent.length / 1000).toFixed(0)}K chars)`)
-      updateModalStep('filter', { status: 'done', detail: `${djResult.results.length} resultados formatados` })
+      addModalSubstep('filter', `${djResult.results.length} resultado(s) encontrado(s)`)
+      updateModalStep('filter', { status: 'done', detail: `${djResult.results.length} resultados` })
 
-      if (abortController.signal.aborted) return
+      // Close progress modal and show results review
+      setResearchModalOpen(false)
+      setResearchModalCanClose(true)
 
-      // Step 3: Analyze
-      updateModalStep('analyze', { status: 'active' })
-      const models = await loadResearchNotebookModels()
-      const model = models.notebook_pesquisador_jurisprudencia || models.notebook_analista
-      if (!model) {
-        updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
-        setResearchModalCanClose(true)
-        toast.warning('Modelo obrigatório não configurado', 'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador de Jurisprudência (DataJud)".')
-        return
-      }
-      addModalSubstep('analyze', `Modelo: ${model}`)
-      updateModalStep('analyze', { status: 'done' })
-
-      // Step 4: Synthesize
-      updateModalStep('synthesize', { status: 'active' })
-      addModalSubstep('synthesize', 'Gerando síntese jurisprudencial...')
-      const openRouterApiKey = await getOpenRouterKey()
-
-      const jurisprudenceResult = await callLLM(
-        openRouterApiKey,
-        'Você é um pesquisador jurídico especializado em jurisprudência brasileira. Organize e sintetize resultados do DataJud em português com seções: panorama jurisprudencial, precedentes-chave, fundamentos jurídicos e lista de processos.',
-        `Consulta do usuário: "${query}"\n\nResultados DataJud (${djResult.results.length} processos de ${djResult.tribunalsWithResults} tribunais):\n${textContent}\n\nProduza uma síntese objetiva e acionável para o caderno de pesquisa.`,
-        model,
-        2200,
-        0.2,
-      )
-
-      setResearchModalStats(prev => ({
-        ...prev,
-        tokensUsed: jurisprudenceResult.tokens_in + jurisprudenceResult.tokens_out,
-        elapsedMs: Math.round(performance.now() - t0),
+      const reviewItems: SearchResultItem[] = djResult.results.map((r, i) => ({
+        id: `dj-${i}`,
+        title: `${r.classe} — ${r.numeroProcesso}`,
+        subtitle: `${r.tribunalName} · ${r.orgaoJulgador}`,
+        snippet: r.assuntos.join(', ') || 'Sem assuntos',
+        fullContent: [
+          `Processo: ${r.numeroProcesso}`,
+          `Classe: ${r.classe} (${r.classeCode})`,
+          `Tribunal: ${r.tribunalName}`,
+          `Órgão Julgador: ${r.orgaoJulgador}`,
+          `Data de Ajuizamento: ${r.dataAjuizamento}`,
+          `Grau: ${r.grau}`,
+          `Formato: ${r.formato}`,
+          `Assuntos: ${r.assuntos.join('; ') || '—'}`,
+          r.movimentos.length > 0 ? `Movimentos:\n${r.movimentos.slice(0, 5).map(m => `  - ${m.nome} (${m.dataHora})`).join('\n')}` : '',
+        ].filter(Boolean).join('\n'),
+        metadata: {
+          ...(r.grau ? { Grau: r.grau } : {}),
+          ...(r.dataAjuizamento ? { Data: r.dataAjuizamento.split('T')[0] } : {}),
+        },
+        selected: true,
+        _raw: r,
       }))
-      addModalSubstep('synthesize', `Síntese gerada (${jurisprudenceResult.tokens_out} tokens)`)
-      updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
 
-      const source: NotebookSource = {
-        id: generateId(),
-        type: 'jurisprudencia',
-        name: `Jurisprudência DataJud: ${query}`,
-        reference: query,
-        content_type: 'text/plain',
-        size_bytes: jurisprudenceResult.content.length,
-        text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
-        status: 'indexed',
-        added_at: new Date().toISOString(),
-      }
+      setSearchResultsItems(reviewItems)
+      setSearchResultsVariant('jurisprudencia')
+      setSearchResultsCallback(() => async (selected: SearchResultItem[]) => {
+        setSearchResultsModalOpen(false)
 
-      const execution = createUsageExecutionRecord({
-        source_type: 'caderno_pesquisa',
-        source_id: notebookId,
-        phase: 'notebook_pesquisador_jurisprudencia',
-        agent_name: 'Pesquisador de Jurisprudência (DataJud)',
-        model: jurisprudenceResult.model,
-        tokens_in: jurisprudenceResult.tokens_in,
-        tokens_out: jurisprudenceResult.tokens_out,
-        cost_usd: jurisprudenceResult.cost_usd,
-        duration_ms: jurisprudenceResult.duration_ms,
+        if (selected.length === 0) {
+          toast.info('Nenhum resultado selecionado.')
+          return
+        }
+
+        // Re-open progress modal for synthesis
+        const synthSteps = createJurisprudenceSteps()
+        // Mark query+filter as done
+        synthSteps[0].status = 'done'
+        synthSteps[0].detail = `${djResult.results.length} resultados`
+        synthSteps[1].status = 'done'
+        synthSteps[1].detail = `${selected.length} selecionados`
+        setResearchModalTitle('Pesquisa de Jurisprudência')
+        setResearchModalSubtitle(config.query)
+        setResearchModalVariant('jurisprudencia')
+        setResearchModalSteps(synthSteps)
+        setResearchModalStats(prev => ({ ...prev, sourcesFound: selected.length }))
+        setResearchModalCanClose(false)
+        setResearchModalOpen(true)
+
+        try {
+          // Step 3: Analyze
+          updateModalStep('analyze', { status: 'active' })
+          const models = await loadResearchNotebookModels()
+          const model = models.notebook_pesquisador_jurisprudencia || models.notebook_analista
+          if (!model) {
+            updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
+            setResearchModalCanClose(true)
+            toast.warning('Modelo obrigatório não configurado', 'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador de Jurisprudência (DataJud)".')
+            return
+          }
+          addModalSubstep('analyze', `Modelo: ${model}`)
+          updateModalStep('analyze', { status: 'done' })
+
+          // Step 4: Synthesize
+          updateModalStep('synthesize', { status: 'active' })
+          addModalSubstep('synthesize', 'Gerando síntese jurisprudencial...')
+          const openRouterApiKey = await getOpenRouterKey()
+
+          const selectedResults = selected.map(s => s._raw as DataJudResult)
+          const textContent = formatDataJudResults(selectedResults)
+
+          const jurisprudenceResult = await callLLM(
+            openRouterApiKey,
+            'Você é um pesquisador jurídico especializado em jurisprudência brasileira. Organize e sintetize resultados do DataJud em português com seções: panorama jurisprudencial, precedentes-chave, fundamentos jurídicos e lista de processos.',
+            `Consulta do usuário: "${config.query}"\n\nResultados DataJud (${selected.length} processos selecionados):\n${textContent}\n\nProduza uma síntese objetiva e acionável para o caderno de pesquisa.`,
+            model,
+            2200,
+            0.2,
+          )
+
+          setResearchModalStats(prev => ({
+            ...prev,
+            tokensUsed: jurisprudenceResult.tokens_in + jurisprudenceResult.tokens_out,
+            elapsedMs: Math.round(performance.now() - t0),
+          }))
+          addModalSubstep('synthesize', `Síntese gerada (${jurisprudenceResult.tokens_out} tokens)`)
+          updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
+
+          const source: NotebookSource = {
+            id: generateId(),
+            type: 'jurisprudencia',
+            name: `Jurisprudência DataJud: ${config.query}`,
+            reference: config.query,
+            content_type: 'text/plain',
+            size_bytes: jurisprudenceResult.content.length,
+            text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+            status: 'indexed',
+            added_at: new Date().toISOString(),
+          }
+
+          const execution = createUsageExecutionRecord({
+            source_type: 'caderno_pesquisa',
+            source_id: notebookId,
+            phase: 'notebook_pesquisador_jurisprudencia',
+            agent_name: 'Pesquisador de Jurisprudência (DataJud)',
+            model: jurisprudenceResult.model,
+            tokens_in: jurisprudenceResult.tokens_in,
+            tokens_out: jurisprudenceResult.tokens_out,
+            cost_usd: jurisprudenceResult.cost_usd,
+            duration_ms: jurisprudenceResult.duration_ms,
+          })
+
+          await appendNotebookSourceWithExecution(notebookId, source, execution)
+          setExternalSearchQuery('')
+          setSuggestions([])
+          toast.success(`Jurisprudência adicionada com ${selected.length} resultado(s) selecionado(s).`)
+          autoCloseModal()
+        } catch (err) {
+          console.error('Jurisprudence synthesis error:', err)
+          failAllActiveSteps(err instanceof Error ? err.message : 'Erro inesperado')
+          toast.error('Erro ao sintetizar jurisprudência')
+        } finally {
+          setResearchModalCanClose(true)
+        }
       })
-
-      await appendNotebookSourceWithExecution(notebookId, source, execution)
-      setExternalSearchQuery('')
-      setSuggestions([])
-      toast.success(`Jurisprudência adicionada com ${djResult.results.length} resultado(s) de ${djResult.tribunalsWithResults} tribunal(is).`)
-      autoCloseModal()
+      setSearchResultsModalOpen(true)
     } catch (err) {
       if (abortController.signal.aborted) return
       console.error('Jurisprudence source error:', err)
@@ -3456,26 +3673,49 @@ Instruções:
                 {activeNotebook.sources.map(source => {
                   const typeInfo = SOURCE_TYPE_LABELS[source.type] || SOURCE_TYPE_LABELS.upload
                   const TypeIcon = typeInfo.icon
+                  const isExpanded = expandedSourceId === source.id
                   return (
-                    <div key={source.id} className="flex items-center gap-3 bg-white rounded-lg border p-3">
-                      <TypeIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-800 truncate">{source.name}</p>
-                        <p className="text-[11px] text-gray-400">
-                          {typeInfo.label} · {source.type === 'link' ? (
-                            (source.text_content?.length ?? 0) >= MIN_SOURCE_CHARS
-                              ? <span className="text-green-600">✓ {Math.round((source.text_content?.length ?? 0) / 1000)}K chars indexados</span>
-                              : <span className="text-amber-600 flex items-center gap-0.5 inline-flex"><AlertCircle className="w-3 h-3" />Sem conteúdo extraído</span>
-                          ) : source.status === 'indexed' ? 'Indexado' : source.status === 'error' ? 'Erro' : 'Pendente'}
-                          {source.added_at && ` · ${formatDate(source.added_at)}`}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleRemoveSource(source.id)}
-                        className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                    <div key={source.id} className="bg-white rounded-lg border overflow-hidden">
+                      <div
+                        className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                        onClick={() => setExpandedSourceId(isExpanded ? null : source.id)}
                       >
-                        <X className="w-4 h-4" />
-                      </button>
+                        <TypeIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-800 truncate">{source.name}</p>
+                          <p className="text-[11px] text-gray-400">
+                            {typeInfo.label} · {source.type === 'link' ? (
+                              (source.text_content?.length ?? 0) >= MIN_SOURCE_CHARS
+                                ? <span className="text-green-600">✓ {Math.round((source.text_content?.length ?? 0) / 1000)}K chars indexados</span>
+                                : <span className="text-amber-600 flex items-center gap-0.5 inline-flex"><AlertCircle className="w-3 h-3" />Sem conteúdo extraído</span>
+                            ) : source.status === 'indexed' ? 'Indexado' : source.status === 'error' ? 'Erro' : 'Pendente'}
+                            {source.added_at && ` · ${formatDate(source.added_at)}`}
+                          </p>
+                        </div>
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRemoveSource(source.id) }}
+                          className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      {isExpanded && source.text_content && (
+                        <div className="border-t px-4 py-3 bg-gray-50/50">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[11px] font-medium text-gray-500">Conteúdo da fonte ({Math.round(source.text_content.length / 1000)}K chars)</span>
+                            <button
+                              onClick={() => { navigator.clipboard.writeText(source.text_content || '') }}
+                              className="text-[11px] text-brand-600 hover:text-brand-700 flex items-center gap-1"
+                            >
+                              <Copy className="w-3 h-3" /> Copiar
+                            </button>
+                          </div>
+                          <div className="max-h-80 overflow-y-auto text-xs text-gray-700 whitespace-pre-wrap leading-relaxed font-mono bg-white rounded border p-3">
+                            {source.text_content}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -3705,6 +3945,29 @@ Instruções:
         steps={researchModalSteps}
         stats={researchModalStats}
         canClose={researchModalCanClose}
+      />
+
+      <JurisprudenceConfigModal
+        isOpen={jurisprudenceConfigOpen}
+        query={externalSearchQuery.trim()}
+        onSearch={handleJurisprudenceSearch}
+        onClose={() => setJurisprudenceConfigOpen(false)}
+      />
+
+      <SearchResultsModal
+        isOpen={searchResultsModalOpen}
+        items={searchResultsItems}
+        variant={searchResultsVariant}
+        onConfirm={(selected) => {
+          if (searchResultsCallback) {
+            searchResultsCallback(selected).catch(err => {
+              console.error('SearchResultsModal callback error:', err)
+            })
+          }
+        }}
+        onClose={() => {
+          setSearchResultsModalOpen(false)
+        }}
       />
 
       <ConfirmDialog
