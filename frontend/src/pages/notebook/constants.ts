@@ -9,8 +9,8 @@ import type React from 'react'
 
 // ── Source & context limits ───────────────────────────────────────────────────
 
-/** Max characters stored per source text content */
-export const MAX_SOURCE_TEXT_LENGTH = 50_000
+/** Max characters stored per source text content (500 K — covers most legal documents entirely) */
+export const MAX_SOURCE_TEXT_LENGTH = 500_000
 /** Max characters per source included in LLM context */
 export const MAX_CONTEXT_TEXT_LENGTH = 15_000
 /** Max messages from conversation to include as context */

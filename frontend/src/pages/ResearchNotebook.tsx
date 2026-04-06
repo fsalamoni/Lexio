@@ -60,6 +60,7 @@ import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
 import DraggablePanel from '../components/DraggablePanel'
+import SourceContentViewer from '../components/SourceContentViewer'
 import ConfirmDialog from '../components/ConfirmDialog'
 import {
   DeepResearchModal,
@@ -200,8 +201,8 @@ export default function ResearchNotebook() {
   const [acervoLoading, setAcervoLoading] = useState(false)
   const sourceUploadInputRef = useRef<HTMLInputElement>(null)
 
-  // Source content viewer
-  const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
+  // Source content viewer (floating panel)
+  const [viewerSource, setViewerSource] = useState<import('../lib/firestore-service').NotebookSource | null>(null)
 
   // Jurisprudence config modal (pre-search)
   const [jurisprudenceConfigOpen, setJurisprudenceConfigOpen] = useState(false)
@@ -3375,13 +3376,9 @@ Instruções:
                 {activeNotebook.sources.map(source => {
                   const typeInfo = SOURCE_TYPE_LABELS[source.type] || SOURCE_TYPE_LABELS.upload
                   const TypeIcon = typeInfo.icon
-                  const isExpanded = expandedSourceId === source.id
                   return (
                     <div key={source.id} className="bg-white rounded-lg border overflow-hidden">
-                      <div
-                        className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 transition-colors"
-                        onClick={() => setExpandedSourceId(isExpanded ? null : source.id)}
-                      >
+                      <div className="flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors">
                         <TypeIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-800 truncate">{source.name}</p>
@@ -3396,30 +3393,22 @@ Instruções:
                             {source.added_at && ` · ${formatDate(source.added_at)}`}
                           </p>
                         </div>
-                        {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                        {source.text_content && (source.text_content.length ?? 0) >= MIN_SOURCE_CHARS && (
+                          <button
+                            onClick={() => setViewerSource(source)}
+                            className="p-1 rounded hover:bg-brand-50 text-gray-400 hover:text-brand-600 transition-colors"
+                            title="Visualizar conteúdo"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
-                          onClick={(e) => { e.stopPropagation(); handleRemoveSource(source.id) }}
+                          onClick={() => handleRemoveSource(source.id)}
                           className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
-                      {isExpanded && source.text_content && (
-                        <div className="border-t px-4 py-3 bg-gray-50/50">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-[11px] font-medium text-gray-500">Conteúdo da fonte ({Math.round(source.text_content.length / 1000)}K chars)</span>
-                            <button
-                              onClick={() => { navigator.clipboard.writeText(source.text_content || '') }}
-                              className="text-[11px] text-brand-600 hover:text-brand-700 flex items-center gap-1"
-                            >
-                              <Copy className="w-3 h-3" /> Copiar
-                            </button>
-                          </div>
-                          <div className="max-h-80 overflow-y-auto text-xs text-gray-700 whitespace-pre-wrap leading-relaxed font-mono bg-white rounded border p-3">
-                            {source.text_content}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )
                 })}
@@ -3753,6 +3742,12 @@ Instruções:
         danger
         onCancel={() => setPendingArtifactDelete(null)}
         onConfirm={confirmDeleteArtifact}
+      />
+
+      {/* ── Source content viewer (floating, draggable panel) ───────────── */}
+      <SourceContentViewer
+        source={viewerSource}
+        onClose={() => setViewerSource(null)}
       />
     </div>
   )
