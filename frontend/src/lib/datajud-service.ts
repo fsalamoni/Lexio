@@ -27,31 +27,31 @@ const MAX_RETRIES = 2
 const RESULTS_PER_TRIBUNAL = 5
 
 /**
- * DataJud request routing strategy:
+ * DataJud request routing:
  *
- * 1. Firebase Cloud Function proxy (primary — works on lexio.web.app)
- *    POST /api/datajud with {tribunal, body} → function forwards with Authorization header
+ * 1. Firebase Hosting (lexio.web.app) → POST /api/datajud (Cloud Function rewrite)
+ * 2. GitHub Pages / other hosts → POST directly to Cloud Function public URL
  *
- * 2. AllOrigins GET fallback (for GitHub Pages where Cloud Functions aren't available)
- *    DataJud's ES accepts ?source= query parameter for GET requests; AllOrigins wraps for CORS.
- *    NOTE: This is unreliable for large queries (URL length limits) and may not work
- *    if DataJud requires POST. It's a degraded fallback only.
+ * Both paths hit the same datajudProxy Cloud Function which adds the
+ * Authorization header and forwards to DataJud CNJ API.
  */
 
-/** Detect whether we are on Firebase Hosting (has Cloud Function) or GH Pages (fallback) */
+/** Cloud Function public URL (used when not on Firebase Hosting) */
+const CLOUD_FUNCTION_URL = 'https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy'
+
+/** Get the DataJud proxy URL — relative path on Firebase Hosting, absolute URL elsewhere */
 function getDataJudProxyUrl(): string {
-  // Firebase Hosting: use Cloud Function rewrite
   const host = typeof window !== 'undefined' ? window.location.hostname : ''
+  // Firebase Hosting: use Cloud Function rewrite (relative path)
   if (host.includes('lexio.web.app') || host.includes('firebaseapp.com') || host === 'localhost') {
     return '/api/datajud'
   }
-  // Also check VITE_BASE_PATH — if '/' it's Firebase
   const basePath = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BASE_PATH) || '/'
   if (basePath === '/') {
     return '/api/datajud'
   }
-  // GitHub Pages or other: empty string → will use AllOrigins fallback
-  return ''
+  // GitHub Pages or any other host: call the Cloud Function directly
+  return CLOUD_FUNCTION_URL
 }
 
 /** Small delay between batches to avoid overwhelming the proxy */
@@ -59,7 +59,8 @@ const INTER_BATCH_DELAY = 300
 
 /**
  * Execute a DataJud request via Firebase Cloud Function proxy.
- * Falls back to AllOrigins GET if Cloud Function is unavailable.
+ * Works on both Firebase Hosting (relative /api/datajud) and
+ * GitHub Pages (absolute Cloud Function URL).
  */
 async function fetchDataJudHits(
   tribunalAlias: string,
@@ -69,34 +70,16 @@ async function fetchDataJudHits(
   const proxyUrl = getDataJudProxyUrl()
   const effectiveSignal = signal ?? AbortSignal.timeout(REQUEST_TIMEOUT)
 
-  // Strategy 1: Firebase Cloud Function proxy
-  if (proxyUrl) {
-    const resp = await fetch(proxyUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tribunal: tribunalAlias, body: esBody }),
-      signal: effectiveSignal,
-    })
-    if (!resp.ok) {
-      throw new Error(`DataJud proxy HTTP ${resp.status}`)
-    }
-    const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
-    return data.hits?.hits ?? []
+  const resp = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tribunal: tribunalAlias, body: esBody }),
+    signal: effectiveSignal,
+  })
+  if (!resp.ok) {
+    throw new Error(`DataJud proxy HTTP ${resp.status}`)
   }
-
-  // Strategy 2: AllOrigins GET fallback (GitHub Pages)
-  const targetUrl = `${DATAJUD_BASE_URL}/api_publica_${tribunalAlias}/_search`
-  const bodyStr = JSON.stringify(esBody)
-  const esGetUrl = `${targetUrl}?source=${encodeURIComponent(bodyStr)}&source_content_type=application%2Fjson`
-  const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(esGetUrl)}`
-
-  const resp = await fetch(allOriginsUrl, { signal: effectiveSignal })
-  if (!resp.ok) throw new Error(`AllOrigins HTTP ${resp.status}`)
-  const wrapper = await resp.json() as { contents: string; status?: { http_code?: number } }
-  if (wrapper.status?.http_code && wrapper.status.http_code >= 400) {
-    throw new Error(`DataJud HTTP ${wrapper.status.http_code}`)
-  }
-  const data = JSON.parse(wrapper.contents) as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
+  const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
   return data.hits?.hits ?? []
 }
 
