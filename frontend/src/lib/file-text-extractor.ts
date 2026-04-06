@@ -8,6 +8,7 @@
  */
 
 import * as pdfjsLib from 'pdfjs-dist'
+import type { TextItem } from 'pdfjs-dist/types/src/display/api'
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 // Configure the worker once at module level.
@@ -88,7 +89,7 @@ async function extractPdfText(file: File): Promise<PdfExtractionResult> {
       const page = await pdf.getPage(i)
       const content = await page.getTextContent()
       const pageText = content.items
-        .map((item) => ('str' in item ? (item as { str: string }).str : ''))
+        .map((item) => ('str' in item ? (item as TextItem).str : ''))
         .join(' ')
       if (pageText.trim()) {
         pages.push(pageText)
