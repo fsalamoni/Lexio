@@ -1393,6 +1393,8 @@ export async function listResearchNotebooks(uid: string): Promise<{ items: Resea
  * We target 950 KB to leave headroom for field names & UTF-8 overhead.
  */
 const NOTEBOOK_MAX_DOC_BYTES = 950_000
+/** Minimum chars preserved per source when trimming to fit Firestore limits */
+const MIN_SOURCE_TEXT_CHARS = 100
 
 /**
  * Estimate the byte size of a value when serialised to JSON.
@@ -1402,7 +1404,8 @@ function estimateJsonBytes(value: unknown): number {
   try {
     const len = JSON.stringify(value).length
     return len + Math.ceil(len * 0.1)
-  } catch {
+  } catch (err) {
+    console.warn('[Lexio] estimateJsonBytes: JSON.stringify failed', err)
     return 0
   }
 }
@@ -1435,14 +1438,14 @@ function fitSourcesToFirestoreLimit(
   const trimmed: NotebookSource[] = sources.map(src => {
     const text = src.text_content ?? ''
     if (text.length === 0 || ratio >= 1) return src
-    const maxChars = Math.max(Math.floor(text.length * ratio), 100)
+    const maxChars = Math.max(Math.floor(text.length * ratio), MIN_SOURCE_TEXT_CHARS)
     if (maxChars >= text.length) return src
     return { ...src, text_content: text.slice(0, maxChars) }
   })
 
   console.warn(
     `[Lexio] Notebook sources trimmed to fit Firestore 1 MB limit ` +
-    `(estimated ${(totalBytes / 1000).toFixed(0)} KB → budget ${(NOTEBOOK_MAX_DOC_BYTES / 1000).toFixed(0)} KB)`,
+    `(estimated ${(totalBytes / 1024).toFixed(0)} KiB → budget ${(NOTEBOOK_MAX_DOC_BYTES / 1024).toFixed(0)} KiB)`,
   )
 
   return { sources: trimmed, truncated: true }
