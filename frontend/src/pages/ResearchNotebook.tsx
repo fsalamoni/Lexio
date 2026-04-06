@@ -139,6 +139,36 @@ export interface SearchResultItem {
   _raw?: any
 }
 
+// ── Jurisprudence Prompts ────────────────────────────────────────────────────
+
+const JURISPRUDENCE_RANKING_SYSTEM = [
+  'Você é um especialista em relevância jurisprudencial.',
+  'Avalie cada processo quanto à relevância para a consulta do usuário.',
+  'Retorne APENAS um JSON com um array "ranking" onde cada item tem',
+  '"index" (número do processo na lista, começando em 1) e "score" (0 a 100,',
+  'sendo 100 = máxima relevância). Ordene do mais relevante para o menos relevante.',
+  'Considere: (1) alinhamento temático dos assuntos com a consulta,',
+  '(2) grau hierárquico (tribunais superiores têm mais peso como precedente),',
+  '(3) movimentações recentes indicam processos ativos,',
+  '(4) data de ajuizamento mais recente pode indicar jurisprudência atualizada.',
+].join(' ')
+
+const JURISPRUDENCE_SYNTHESIS_SYSTEM = [
+  'Você é um pesquisador jurídico especializado em jurisprudência brasileira.',
+  'Organize e sintetize os resultados do DataJud em português, produzindo as seguintes seções:',
+  '',
+  '1. **Panorama Jurisprudencial**: Visão geral das tendências identificadas,',
+  'incluindo a evolução temporal dos processos com base nas movimentações processuais.',
+  '2. **Precedentes-Chave**: Processos mais relevantes como precedentes,',
+  'priorizando tribunais superiores e decisões recentes.',
+  '3. **Fundamentos Jurídicos**: Principais teses e argumentos jurídicos',
+  'identificados nos assuntos e classes processuais.',
+  '4. **Análise Temporal**: Evolução processual baseada nas movimentações',
+  '(andamentos) dos processos, identificando padrões e status atual.',
+  '5. **Lista de Processos**: Relação completa com número, tribunal, classe,',
+  'órgão julgador e status mais recente.',
+].join('\n')
+
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 type ViewMode = 'list' | 'detail'
@@ -1347,14 +1377,14 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           // Step 3: Rank results by relevance
           updateModalStep('rank', { status: 'active' })
           const rankModel = models.notebook_ranqueador_jurisprudencia
-          let rankedResults = selected.map(s => s._raw as DataJudResult)
+          let selectedResults = selected.map(s => s._raw as DataJudResult)
 
           if (rankModel) {
             addModalSubstep('rank', `Avaliando relevância com ${rankModel}...`)
-            const rankTextContent = formatDataJudResults(rankedResults)
+            const rankTextContent = formatDataJudResults(selectedResults)
             const rankResult = await callLLM(
               openRouterApiKey,
-              'Você é um especialista em relevância jurisprudencial. Avalie cada processo quanto à relevância para a consulta do usuário. Retorne APENAS um JSON com um array "ranking" onde cada item tem "index" (número do processo na lista, começando em 1) e "score" (0 a 100, sendo 100 = máxima relevância). Ordene do mais relevante para o menos relevante. Considere: (1) alinhamento temático dos assuntos com a consulta, (2) grau hierárquico (tribunais superiores têm mais peso como precedente), (3) movimentações recentes indicam processos ativos, (4) data de ajuizamento mais recente pode indicar jurisprudência atualizada.',
+              JURISPRUDENCE_RANKING_SYSTEM,
               `Consulta: "${config.query}"\n\nProcessos para avaliar:\n${rankTextContent}`,
               rankModel,
               800,
@@ -1367,9 +1397,9 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
               const parsed = JSON.parse(cleaned) as { ranking: Array<{ index: number; score: number }> }
               if (parsed.ranking && Array.isArray(parsed.ranking)) {
                 const sorted = parsed.ranking
-                  .filter(r => r.index >= 1 && r.index <= rankedResults.length)
+                  .filter(r => r.index >= 1 && r.index <= selectedResults.length)
                   .sort((a, b) => b.score - a.score)
-                rankedResults = sorted.map(r => rankedResults[r.index - 1])
+                selectedResults = sorted.map(r => selectedResults[r.index - 1])
                 addModalSubstep('rank', `Processos reordenados por relevância (top score: ${sorted[0]?.score ?? '—'})`)
               }
             } catch {
@@ -1393,7 +1423,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
               tokensUsed: (prev.tokensUsed || 0) + rankResult.tokens_in + rankResult.tokens_out,
               elapsedMs: Math.round(performance.now() - t0),
             }))
-            updateModalStep('rank', { status: 'done', detail: `${rankedResults.length} processos ranqueados` })
+            updateModalStep('rank', { status: 'done', detail: `${selectedResults.length} processos ranqueados` })
           } else {
             addModalSubstep('rank', 'Modelo não configurado — mantendo ordem original')
             updateModalStep('rank', { status: 'done', detail: 'Etapa ignorada (sem modelo)' })
@@ -1415,12 +1445,12 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           updateModalStep('synthesize', { status: 'active' })
           addModalSubstep('synthesize', 'Gerando síntese jurisprudencial...')
 
-          const textContent = formatDataJudResults(rankedResults)
+          const textContent = formatDataJudResults(selectedResults)
 
           const jurisprudenceResult = await callLLM(
             openRouterApiKey,
-            'Você é um pesquisador jurídico especializado em jurisprudência brasileira. Organize e sintetize os resultados do DataJud em português, produzindo as seguintes seções:\n\n1. **Panorama Jurisprudencial**: Visão geral das tendências identificadas, incluindo a evolução temporal dos processos com base nas movimentações processuais.\n2. **Precedentes-Chave**: Processos mais relevantes como precedentes, priorizando tribunais superiores e decisões recentes.\n3. **Fundamentos Jurídicos**: Principais teses e argumentos jurídicos identificados nos assuntos e classes processuais.\n4. **Análise Temporal**: Evolução processual baseada nas movimentações (andamentos) dos processos, identificando padrões e status atual.\n5. **Lista de Processos**: Relação completa com número, tribunal, classe, órgão julgador e status mais recente.',
-            `Consulta do usuário: "${config.query}"\n\nResultados DataJud (${rankedResults.length} processos selecionados, ordenados por relevância):\n${textContent}\n\nProduza uma síntese objetiva e acionável para o caderno de pesquisa. Destaque padrões nas movimentações processuais que indiquem tendências de julgamento.`,
+            JURISPRUDENCE_SYNTHESIS_SYSTEM,
+            `Consulta do usuário: "${config.query}"\n\nResultados DataJud (${selectedResults.length} processos selecionados, ordenados por relevância):\n${textContent}\n\nProduza uma síntese objetiva e acionável para o caderno de pesquisa. Destaque padrões nas movimentações processuais que indiquem tendências de julgamento.`,
             synthesisModel,
             2800,
             0.2,
