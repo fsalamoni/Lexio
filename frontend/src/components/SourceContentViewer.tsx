@@ -75,7 +75,7 @@ function DownloadBtn({ text, filename }: { text: string; filename: string }) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = filename.replace(/\.\w+$/, '') + '.txt'
+    a.download = filename.replace(/\.[^.]+$/, '') + '.txt'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -173,7 +173,7 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
             <p className="text-sm text-gray-400 italic">Nenhum conteúdo de texto disponível para este documento.</p>
           ) : hasSections ? (
             /* Structured view — section headings + paragraphs */
-            <article className="space-y-1">
+            <article>
               {sections!.map((sec, i) => (
                 <SectionBlock key={i} section={sec} idx={i} />
               ))}
