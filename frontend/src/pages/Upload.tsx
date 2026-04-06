@@ -24,6 +24,7 @@ import type { UsageExecutionRecord } from '../lib/cost-analytics'
 import { getAssuntosForAreas, getTiposForClassification } from '../lib/classification-data'
 import {
   extractFileText,
+  getFileExtension,
   SUPPORTED_TEXT_FILE_EXTENSIONS,
   SUPPORTED_TEXT_FILE_MIME_TYPES,
 } from '../lib/file-text-extractor'
@@ -906,7 +907,7 @@ export default function Upload() {
 
 
   const validateFile = (file: File): string | null => {
-    const ext = '.' + file.name.split('.').pop()?.toLowerCase()
+    const ext = getFileExtension(file.name)
     if (!ACCEPTED_TYPES.includes(ext) && !ACCEPTED_MIME.includes(file.type)) {
       return `Tipo não suportado: ${ext}`
     }
