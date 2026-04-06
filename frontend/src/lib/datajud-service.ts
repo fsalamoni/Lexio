@@ -63,7 +63,7 @@ export function _resetEndpointCache(): void {
 function getEndpointCandidates(): string[] {
   const host = typeof window !== 'undefined' ? window.location.hostname : ''
   const isFirebase = host === 'lexio.web.app' || host.endsWith('.firebaseapp.com')
-  const isLocal = host === 'localhost' || host === '127.0.0.1'
+  const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '0.0.0.0'
   const isStaticHosting = host.endsWith('.github.io') || host.endsWith('.netlify.app') || host.endsWith('.vercel.app')
 
   if (isFirebase) {
