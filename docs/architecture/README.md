@@ -1,66 +1,102 @@
 # Lexio — Arquitetura
 
 ## Visão Geral
-Lexio é um SaaS de produção jurídica com IA organizado como monorepo com módulos independentes.
+Lexio é um SaaS de produção jurídica com IA que roda **100% no browser**. Toda a lógica LLM executa no frontend TypeScript via OpenRouter API. Firebase fornece auth, banco (Firestore) e hosting. Não há backend Python em produção.
 
 ## Camadas
 ```
-Frontend (React) → API Gateway (FastAPI) → Pipeline Engine → Modules
-                                         ↕
-                              Core Engine (shared infra)
-                                         ↕
-                    PostgreSQL | Qdrant | Ollama | SearXNG | OpenRouter
+Frontend (React 18 + TypeScript + Vite 5)
+    ↕
+Firebase Auth ─── Firebase Firestore (NoSQL)
+    ↕
+OpenRouter API (40+ modelos LLM)
+    ↕
+Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
 ```
 
-## Fluxo Completo de Geração
+## Fluxo Completo de Geração de Documento
 ```
-1. Usuário preenche formulário (tipo + áreas + solicitação + contexto anamnese)
-2. API valida tipo de documento no module_registry
-3. build_pipeline_context() monta contexto com perfil do usuário + campos estruturados
-4. PipelineOrchestrator(doc_id, config, anamnesis_context=ctx) é criado
-5. Pipeline executa:
-   a. Pesquisa paralela (Qdrant + DataJud + SearXNG)
-   b. Deliberação multi-área (se ≥1 área selecionada) — LLM por área + moderador + revisor
-   c. Agentes em sequência (triagem → jurista → advogado_diabo → redator → revisor…)
-   d. Integração (header/footer/pós-processo)
-   e. Quality gate (regras do document_type)
-   f. Geração DOCX
-6. Thesis bank auto-populado (fire-and-forget, 2-5 teses extraídas por LLM)
-7. WebSocket emite progresso em tempo real para o frontend
+1. Usuário preenche formulário (tipo + áreas + solicitação + teses + acervo)
+2. Context Detail (Layer 2) gera perguntas refinamento (se ativado)
+3. Pipeline sequencial de 11 agentes:
+   a. Triagem — extrai tema, subtemas, palavras-chave
+   b. [Condicional] Busca acervo → Compila base → Revisa base
+   c. Pesquisador — legislação e jurisprudência
+   d. Jurista — desenvolve teses legais
+   e. Advogado do Diabo — critica e identifica fraquezas
+   f. Jurista v2 — refina teses pós-crítica
+   g. Fact-Checker — verifica citações
+   h. Moderador — planeja estrutura do documento
+   i. Redator — redige documento final (12k tokens)
+4. Teses são auto-extraídas para o banco de teses
+5. Documento salvo no Firestore com llm_executions[]
+6. Export DOCX disponível (Times New Roman 12pt, A4)
 ```
 
 ## Princípios
-1. **Módulos independentes** — Falha de um não afeta outros
-2. **Pipeline pluggable** — Configuração vem do document_type
-3. **Multi-tenant** — Tudo scoped por organization_id
-4. **Event bus** — Comunicação desacoplada
-5. **Prompts como dados** — Templates .md editáveis
-6. **Anamnese 2 camadas** — Perfil persistente (Layer 1) + contexto por request (Layer 2)
-7. **Deliberação multi-área** — Juristas especializados por área deliberam antes dos agentes principais
-8. **Thesis bank orgânico** — Banco cresce automaticamente a cada documento gerado
+1. **Frontend-only** — Toda lógica roda no browser, sem backend Python
+2. **Multi-pipeline** — 10 pipelines com 53 agentes configuráveis
+3. **Modelo flexível** — Admin escolhe modelo LLM por agente
+4. **Anamnese 2 camadas** — Perfil persistente (Layer 1) + contexto por request (Layer 2)
+5. **Catálogo dinâmico** — Modelos podem ser adicionados/removidos via Admin Panel
+6. **Dual deploy** — GitHub Pages + Firebase Hosting com CI/CD automático
 
-## Módulos Implementados
+## Pipelines Implementados
 
-### document_types (6)
+### 10 pipelines · 53 agentes
+
+| Pipeline | Agentes | Arquivo | Config Firestore |
+|----------|---------|---------|-----------------|
+| Geração de documentos | 11 (3 condicionais) | `generation-service.ts` | `document_models` |
+| Análise de teses | 5 | `thesis-analyzer.ts` | `thesis_analyst_models` |
+| Context detail | 1 | — | `context_detail_models` |
+| Classificador acervo | 1 | — | `acervo_classificador_models` |
+| Ementa acervo | 1 | — | `acervo_ementa_models` |
+| Caderno de pesquisa | 11 | `notebook-studio-pipeline.ts` | `research_notebook_models` |
+| Notebook acervo | 4 | `notebook-acervo-analyzer.ts` | `notebook_acervo_models` |
+| Vídeo | 8 | `video-generation-pipeline.ts` | `video_pipeline_models` |
+| Áudio | 6 | `notebook-audio-pipeline.ts` | `audio_pipeline_models` |
+| Apresentação | 5 | `model-config.ts` | `presentation_pipeline_models` |
+
+## Tipos de Documento (10)
 | ID | Nome |
 |----|------|
-| parecer | Parecer Jurídico (9 agentes; template mprs_caopp intocável) |
-| peticao_inicial | Petição Inicial (8 agentes; CPC/2015 arts. 319-320) |
-| contestacao | Contestação |
-| recurso | Recurso |
-| sentenca | Sentença Judicial (CPC art. 489) |
-| acao_civil_publica | Ação Civil Pública |
+| `parecer` | Parecer Jurídico |
+| `peticao_inicial` | Petição Inicial |
+| `contestacao` | Contestação |
+| `recurso` | Recurso |
+| `sentenca` | Sentença |
+| `acao_civil_publica` | Ação Civil Pública |
+| `mandado_seguranca` | Mandado de Segurança |
+| `habeas_corpus` | Habeas Corpus |
+| `agravo` | Agravo de Instrumento |
+| `embargos_declaracao` | Embargos de Declaração |
 
-### legal_areas (5)
+## Áreas do Direito (17)
 | ID | Nome |
 |----|------|
-| administrative | Direito Administrativo (Lei 14.133/21, 8.429/92) |
-| civil | Direito Civil (CC/2002, CPC/2015) |
-| constitutional | Direito Constitucional (CF/88) |
-| labor | Direito do Trabalho (CLT, TST) |
-| tax | Direito Tributário (CTN, execução fiscal) |
+| `administrative` | Direito Administrativo |
+| `constitutional` | Direito Constitucional |
+| `civil` | Direito Civil |
+| `tax` | Direito Tributário |
+| `labor` | Direito do Trabalho |
+| `criminal` | Direito Penal |
+| `criminal_procedure` | Processo Penal |
+| `civil_procedure` | Processo Civil |
+| `consumer` | Direito do Consumidor |
+| `environmental` | Direito Ambiental |
+| `business` | Direito Empresarial |
+| `family` | Direito de Família |
+| `inheritance` | Direito das Sucessões |
+| `social_security` | Direito Previdenciário |
+| `electoral` | Direito Eleitoral |
+| `international` | Direito Internacional |
+| `digital` | Direito Digital |
 
-### services
-- **anamnesis** — Perfil profissional + campos por doc_type
-- **thesis_bank** — CRUD + auto-populate pós-pipeline
-- **whatsapp_bot** — Máquina de estados via Evolution API
+## Serviços
+- **Anamnese** — Perfil profissional 2 camadas (Layer 1 persistente + Layer 2 por geração)
+- **Banco de Teses** — CRUD + auto-extração + análise batch com 5 agentes
+- **Acervo** — Upload + classificação automática + ementa por IA
+- **Caderno de Pesquisa** — Chat + 6 agentes pesquisa + estúdio de 13 artefatos
+- **DataJud** — Pesquisa de jurisprudência via Cloud Function proxy
+- **Pesquisa Web** — DuckDuckGo + Jina para scraping

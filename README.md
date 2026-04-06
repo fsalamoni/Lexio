@@ -1,6 +1,6 @@
 # Lexio — Produção Jurídica com IA
 
-> SaaS brasileiro de geração de documentos jurídicos usando pipelines multi-agente com LLM. Roda 100% no browser via OpenRouter.
+> SaaS brasileiro de produção jurídica com IA. 10 pipelines multi-agente, 53 agentes LLM, 40+ modelos. Roda 100% no browser via OpenRouter.
 
 [![Deploy Pages](https://github.com/fsalamoni/Lexio/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/fsalamoni/Lexio/actions/workflows/deploy-pages.yml)
 [![Firebase Deploy](https://github.com/fsalamoni/Lexio/actions/workflows/firebase-deploy.yml/badge.svg)](https://github.com/fsalamoni/Lexio/actions/workflows/firebase-deploy.yml)
@@ -13,6 +13,7 @@
 |----------|-----|
 | GitHub Pages | https://fsalamoni.github.io/Lexio/ |
 | Firebase Hosting | https://lexio.web.app |
+| Cloud Function | https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy |
 | Dev local | http://localhost:3000 |
 
 ---
@@ -21,7 +22,7 @@
 
 | Camada | Tecnologia |
 |--------|-----------|
-| Frontend | React 18 + TypeScript + Vite 5 + Tailwind CSS |
+| Frontend | React 18 + TypeScript 5.3 + Vite 5 + Tailwind CSS |
 | Roteamento | React Router DOM 6 (SPA) |
 | Auth | Firebase Auth (email/senha + Google OAuth) |
 | Banco de dados | Firebase Firestore (NoSQL, real-time) |
@@ -29,9 +30,12 @@
 | Editor de texto | TipTap 3 (ProseMirror) |
 | Export | `docx` lib (geração de DOCX client-side) |
 | Charts | Recharts + D3 |
-| Icons | Lucide React |
-| Deploy | GitHub Pages + Firebase Hosting |
-| CI/CD | GitHub Actions (push para `main` dispara ambos) |
+| Ícones | Lucide React |
+| PDF | pdfjs-dist 4.4 |
+| Zip | JSZip 3.10 |
+| Cloud Function | Firebase Functions 2nd Gen (Node.js 22) |
+| Deploy | GitHub Pages + Firebase Hosting (dual) |
+| CI/CD | GitHub Actions (3 workflows) |
 
 > **Não há backend Python em produção.** A pasta `packages/` contém um backend FastAPI em desenvolvimento mas não está ativo. Toda a lógica LLM roda no frontend TypeScript.
 
@@ -39,15 +43,22 @@
 
 ## Funcionalidades
 
-- **Geração de documentos jurídicos** — 9 agentes LLM em pipeline sequencial; 10 tipos de documento; 17 áreas do direito
-- **Acervo** — Upload de documentos de referência com classificação e ementa automática por IA
+- **Geração de documentos jurídicos** — 11 agentes LLM em pipeline sequencial (3 condicionais); 10 tipos de documento; 17 áreas do direito
+- **Acervo** — Upload de documentos de referência com classificação e ementa automática por IA (2 agentes dedicados)
 - **Banco de Teses** — CRUD + extração automática + análise com pipeline de 5 agentes
-- **Caderno de Pesquisa** — Chat com indexação de fontes + Estúdio de Criação (12 tipos de artefato, pipeline 3 agentes)
+- **Caderno de Pesquisa** — Chat com 6 agentes de pesquisa + Estúdio de Criação (13 tipos de artefato, pipeline de 5 agentes)
+- **Análise de acervo no caderno** — 4 agentes para análise de documentos do acervo dentro do caderno
+- **Pipeline de Vídeo** — 8 agentes para produção completa de vídeo (planejamento → renderização)
+- **Pipeline de Áudio** — 6 agentes para produção de podcasts e narrações com TTS
+- **Pipeline de Apresentação** — 5 agentes para criação de apresentações profissionais
 - **Anamnese 2 camadas** — Perfil profissional persistente (Layer 1) + contexto por geração (Layer 2)
-- **Admin Panel** — Gestão de API keys, seleção de modelos por agente, catálogo dinâmico de modelos
+- **Admin Panel** — 18 cartões de configuração: API keys, modelos por agente, catálogo dinâmico, CRUD de tipos/áreas
 - **Health check de modelos** — Verificação automática de disponibilidade contra OpenRouter
-- **Analytics de custo** — Dashboard por modelo/função/provedor em USD e BRL
+- **Analytics de custo** — Dashboard por modelo/função/provedor em USD e BRL (10 funções de rastreamento)
 - **Export DOCX** — Times New Roman 12pt, A4, espaçamento 1.5, gerado no browser
+- **Pesquisa web** — DuckDuckGo + Jina para scraping e extração de conteúdo
+- **Pesquisa de jurisprudência** — DataJud/CNJ via Cloud Function (50+ tribunais)
+- **Geração de imagens** — Via OpenRouter para vídeos e apresentações
 - **Modo Demo** — Offline completo com mock interceptor (sem necessidade de Firebase)
 - **Dual deploy** — GitHub Pages (base `/Lexio/`) + Firebase Hosting (base `/`)
 
@@ -108,25 +119,27 @@ npm run preview      # Pré-visualizar build de produção
 ```
 frontend/
   src/
-    api/           → Axios client com cache TTL + deduplificação de inflight
-    components/    → Componentes UI reutilizáveis
-    contexts/      → AuthContext (estado global de autenticação)
-    data/          → Dados estáticos (seed de teses)
-    demo/          → Mock interceptor para modo demo offline
-    lib/           → TODA a lógica de negócio (LLM, Firestore, modelos, etc.)
-    pages/         → Componentes de página por rota
-  public/
-  index.html
-  vite.config.ts   → base: VITE_BASE_PATH · chunks: tiptap, recharts
+    api/           → Axios client com cache TTL + demo interceptor (2 arquivos)
+    components/    → 32 componentes + 15 artefatos (subdir artifacts/)
+    contexts/      → AuthContext + TaskManagerContext
+    data/          → seed-theses.ts (70+ teses exemplo)
+    demo/          → Mock interceptor para modo demo offline (2 arquivos)
+    lib/           → TODA a lógica de negócio — 37 arquivos (LLM, Firestore, pipelines, modelos)
+    pages/         → 13 páginas principais + 4 auth + módulo notebook
+  public/          → robots.txt
+  index.html       → CSP + meta tags
+  vite.config.ts   → Base path, code splitting, proxy
 
-packages/          → Backend Python (em desenvolvimento, não em produção)
-  api/             → Gateway FastAPI
+functions/         → Cloud Function datajudProxy (Firebase 2nd Gen, Node.js 22)
+
+packages/          → Backend Python FastAPI (em desenvolvimento, NÃO em produção)
+  api/             → Gateway FastAPI com 12 grupos de rotas
   core/            → Infraestrutura compartilhada
-  pipeline/        → Orquestrador de pipeline genérico
+  pipeline/        → Orquestrador genérico
   modules/         → Módulos independentes
 
 .claude/           → CLAUDE.md — contexto completo para agentes IA
-.github/workflows/ → deploy-pages.yml + firebase-deploy.yml
+.github/workflows/ → deploy-pages.yml + firebase-deploy.yml + test.yml
 docs/              → Documentação técnica arquitetural
 ```
 
@@ -140,26 +153,49 @@ Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts
 
 | Pipeline | Agentes | Config Firestore |
 |----------|---------|-----------------|
-| Geração de documentos | 9 agentes sequenciais | `document_models` |
-| Análise do banco de teses | 5 agentes | `thesis_analyst_models` |
-| Estúdio do Caderno (artefatos) | 3 agentes (Pesquisador → Especialista → Revisor) | `research_notebook_models` |
-| Analisador de acervo (Caderno) | 4 agentes | `notebook_acervo_models` |
+| Geração de documentos | 11 agentes (3 condicionais) | `document_models` |
+| Análise de teses | 5 agentes | `thesis_analyst_models` |
+| Context detail (Layer 2) | 1 agente | `context_detail_models` |
 | Classificador de acervo | 1 agente | `acervo_classificador_models` |
 | Ementa de acervo | 1 agente | `acervo_ementa_models` |
-| Context detail (Layer 2) | 1 agente | `context_detail_models` |
+| Caderno de pesquisa | 11 agentes (6 pesquisa + 5 estúdio) | `research_notebook_models` |
+| Notebook acervo | 4 agentes | `notebook_acervo_models` |
+| Pipeline de vídeo | 8 agentes | `video_pipeline_models` |
+| Pipeline de áudio | 6 agentes | `audio_pipeline_models` |
+| Pipeline de apresentação | 5 agentes | `presentation_pipeline_models` |
+| **TOTAL** | **53 agentes · 10 pipelines** | **10 configs** |
 
-### Agentes do Caderno de Pesquisa (8 total)
+### Agentes do Pipeline de Documentos (11)
 
-**Grupo Pesquisa & Análise:**
+| # | Key | Função | Categoria |
+|---|-----|--------|-----------|
+| 1 | `triagem` | Extrai tema, subtemas, palavras-chave | extraction |
+| 2 | `acervo_buscador` | Busca documentos relevantes no acervo (condicional) | extraction |
+| 3 | `acervo_compilador` | Compila documentos do acervo em base unificada (condicional) | synthesis |
+| 4 | `acervo_revisor` | Revisa base compilada (condicional) | synthesis |
+| 5 | `pesquisador` | Pesquisa legislação e jurisprudência | reasoning |
+| 6 | `jurista` | Desenvolve teses jurídicas | reasoning |
+| 7 | `advogado_diabo` | Critica e identifica fraquezas | reasoning |
+| 8 | `jurista_v2` | Refina teses pós-crítica | reasoning |
+| 9 | `fact_checker` | Verifica citações legais | extraction |
+| 10 | `moderador` | Planeja estrutura do documento | synthesis |
+| 11 | `redator` | Redige documento final (12k tokens) | writing |
+
+### Agentes do Caderno de Pesquisa (11)
+
+**Grupo Pesquisa & Análise (6):**
 - `notebook_pesquisador` — Indexa fontes, extrai informações
 - `notebook_analista` — Sintetiza descobertas para guia
 - `notebook_assistente` — Chat conversacional
+- `notebook_pesquisador_externo` — Pesquisa externa web
+- `notebook_pesquisador_externo_profundo` — Pesquisa externa profunda
+- `notebook_pesquisador_jurisprudencia` — Pesquisa jurisprudência (DataJud/CNJ)
 
-**Grupo Estúdio de Criação (pipeline 3 etapas):**
+**Grupo Estúdio de Criação (5):**
 - `studio_pesquisador` — Extrai dados relevantes das fontes
-- `studio_escritor` — Redige textos, resumos, relatórios, cartões, testes
+- `studio_escritor` — Redige textos, resumos, relatórios, flashcards, testes, guias
 - `studio_roteirista` — Cria roteiros de áudio/vídeo com timing
-- `studio_visual` — Estrutura apresentações, mapas mentais, infográficos
+- `studio_visual` — Estrutura apresentações, mapas mentais, infográficos, tabelas
 - `studio_revisor` — Revisão e garantia de qualidade final
 
 ---
@@ -170,6 +206,8 @@ Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts
 |------|--------|-------|
 | `/login` | Login | Público |
 | `/register` | Cadastro | Público |
+| `/forgot-password` | ForgotPassword | Público |
+| `/reset-password` | ResetPassword | Público |
 | `/` | Dashboard | Auth |
 | `/documents` | Lista de documentos | Auth |
 | `/documents/new` | Novo documento | Auth |
@@ -182,15 +220,17 @@ Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts
 | `/admin/costs` | Analytics de custo | Auth + admin |
 | `/onboarding` | Wizard de perfil | Auth |
 | `/profile` | Perfil profissional | Auth |
+| `*` | 404 | — |
 
 ---
 
 ## Deploy
 
-O deploy é **totalmente automático** — qualquer push para `main` dispara ambas as pipelines de CI/CD em paralelo:
+O deploy é **totalmente automático** — qualquer push para `main` dispara as pipelines de CI/CD:
 
-- **GitHub Pages** — usa `VITE_BASE_PATH=/Lexio/`
-- **Firebase Hosting** — usa `VITE_BASE_PATH=/`
+- **GitHub Pages** — usa `VITE_BASE_PATH=/Lexio/` (workflow `deploy-pages.yml`)
+- **Firebase Hosting** — usa `VITE_BASE_PATH=/` (workflow `firebase-deploy.yml`, inclui deploy de Firestore rules)
+- **Testes** — executa em push/PR (workflow `test.yml`)
 
 Para deploy manual:
 ```bash

@@ -1,44 +1,30 @@
 # Como Adicionar um Tipo de Documento
 
-## 1. Criar diretório
-```
-packages/modules/document_types/{nome}/
-```
+> Em produção, tipos de documento são definidos no frontend TypeScript.
 
-## 2. Criar manifest.json
-```json
-{
-    "id": "{nome}",
-    "name": "Nome Exibição",
-    "type": "document_type",
-    "version": "1.0.0",
-    "entry_point": "__init__.py",
-    "enabled": true
+## 1. Adicionar constante
+Em `frontend/src/lib/constants.ts`, adicionar o novo tipo ao mapa de labels:
+```typescript
+export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  // ... tipos existentes ...
+  novo_tipo: 'Novo Tipo de Documento',
 }
 ```
 
-## 3. Implementar BaseDocumentType
-```python
-from packages.modules.document_types.base import BaseDocumentType
-from packages.pipeline.pipeline_config import PipelineConfig, AgentConfig
+## 2. Criar template markdown
+Em `frontend/src/lib/document-structures.ts`, adicionar o template do novo tipo com hierarquia de seções, requisitos mínimos de conteúdo e camadas de citação.
 
-class {Nome}DocumentType(BaseDocumentType):
-    def get_id(self) -> str: return "{nome}"
-    def get_name(self) -> str: return "Nome Exibição"
-    def get_pipeline_config(self, variant=None) -> PipelineConfig:
-        return PipelineConfig(
-            document_type_id="{nome}",
-            agents=[...],
-        )
-```
+## 3. Atualizar classificação
+Em `frontend/src/lib/classification-data.ts`, adicionar o tipo à árvore de classificação se necessário (natureza → área → assuntos → tipos).
 
-## 4. Criar prompts em templates/generic/
-Cada agente precisa de `system_prompt(context)` e `user_prompt(context)`.
+## 4. Atualizar Firestore types
+Em `frontend/src/lib/firestore-types.ts`, atualizar o tipo `AdminDocumentType` se necessário.
 
-## 5. Criar quality_rules.py (opcional)
-Lista QUALITY_RULES com checks específicos.
+## 5. Testar
+- Criar documento no formulário `/documents/new`
+- Verificar que o template é carregado corretamente
+- Verificar que o pipeline de geração funciona com o novo tipo
+- Verificar export DOCX
 
-## 6. Testar
-```bash
-curl localhost:8000/api/v1/admin/test-module/{nome}
-```
+## 6. Admin Panel
+O tipo também pode ser adicionado via Admin Panel → Tipos de Documento (CRUD), que salva no Firestore.

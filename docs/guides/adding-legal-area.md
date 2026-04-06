@@ -1,40 +1,31 @@
 # Como Adicionar uma Área do Direito
 
-## 1. Criar diretório
-```
-packages/modules/legal_areas/{area_id}/
-  __init__.py
-  manifest.json
-  area.py
-  agents/
-  guides/
-  CLAUDE.md
-```
+> Em produção, áreas do direito são definidas no frontend TypeScript.
 
-## 2. Implementar BaseLegalArea
-```python
-from packages.modules.legal_areas.base import BaseLegalArea
+## 1. Adicionar constante
+Em `frontend/src/lib/constants.ts`, adicionar a nova área ao mapa de labels e cores:
+```typescript
+export const LEGAL_AREA_LABELS: Record<string, string> = {
+  // ... áreas existentes ...
+  nova_area: 'Direito Nova Área',
+}
 
-class {Nome}Area(BaseLegalArea):
-    def get_id(self) -> str: return "{area_id}"
-    def get_name(self) -> str: return "Direito {Nome}"
-    def get_specializations(self) -> list[str]: return [...]
-    async def generate_theses(self, context, model=None) -> str: ...
+export const LEGAL_AREA_COLORS: Record<string, string> = {
+  // ... cores existentes ...
+  nova_area: 'emerald', // cor Tailwind
+}
 ```
 
-## 3. Criar agentes especializados
-- `agents/jurista.py` — Teses na perspectiva da área
-- `agents/advogado_diabo.py` — Críticas especializadas
-- `agents/fact_checker.py` — Verificação de normas da área
+## 2. Atualizar classificação
+Em `frontend/src/lib/classification-data.ts`, adicionar a área à árvore de classificação com seus respectivos assuntos e tipos.
 
-## 4. Criar guias normativos
-Arquivos `.md` em `guides/` com:
-- Base constitucional
-- Legislação federal/estadual
-- Jurisprudência relevante (STF, STJ)
-- Pontos de atenção
+## 3. Atualizar Firestore types
+Em `frontend/src/lib/firestore-types.ts`, atualizar o tipo `AdminLegalArea` se necessário.
 
-## 5. Testar
-```bash
-curl localhost:8000/api/v1/admin/test-module/{area_id}
-```
+## 4. Testar
+- Verificar que a área aparece no formulário de criação de documento
+- Verificar que os badges de cor são exibidos corretamente
+- Verificar que a área funciona na classificação de acervo
+
+## 5. Admin Panel
+A área também pode ser adicionada via Admin Panel → Áreas do Direito (CRUD), que salva no Firestore.

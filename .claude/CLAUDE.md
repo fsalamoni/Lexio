@@ -1,264 +1,809 @@
-# Lexio — Contexto Completo para Agentes IA
+# Lexio — Referência Completa do Projeto
 
-> **Última atualização:** Março 2026 · Commit HEAD: `9458735`
-
----
-
-## O que é
-
-Lexio é um SaaS de **produção jurídica com IA**. Gera documentos jurídicos (pareceres, petições, recursos, etc.) usando pipelines multi-agente que rodam **100% no browser** via OpenRouter.  
-Não há backend Python em produção — toda a lógica LLM está no frontend TypeScript.
+> Última atualização: 5 de abril de 2026
 
 ---
 
-## Stack Atual (Produção)
+## Índice
+
+1. [O que é](#o-que-é)
+2. [Stack técnica](#stack-técnica)
+3. [URLs de produção](#urls-de-produção)
+4. [Comandos de desenvolvimento](#comandos-de-desenvolvimento)
+5. [Variáveis de ambiente](#variáveis-de-ambiente)
+6. [Estrutura de diretórios](#estrutura-de-diretórios)
+7. [Rotas da aplicação](#rotas-da-aplicação)
+8. [Catálogo de arquivos lib/](#catálogo-de-arquivos-lib)
+9. [Componentes](#componentes)
+10. [Páginas](#páginas)
+11. [Pipelines e agentes — inventário completo](#pipelines-e-agentes)
+12. [Tipos de documento](#tipos-de-documento)
+13. [Áreas do direito](#áreas-do-direito)
+14. [Naturezas](#naturezas)
+15. [Tipos de artefato](#tipos-de-artefato)
+16. [Modelos LLM](#modelos-llm)
+17. [Firestore — coleções e tipos TypeScript](#firestore)
+18. [Admin Panel — cartões de configuração](#admin-panel)
+19. [Cloud Function](#cloud-function)
+20. [Integrações externas](#integrações-externas)
+21. [Contextos React](#contextos-react)
+22. [Modo Demo](#modo-demo)
+23. [CI/CD — workflows](#cicd)
+24. [Segurança](#segurança)
+25. [Regras para agentes IA](#regras-para-agentes-ia)
+26. [Checklist de features implementadas](#checklist)
+
+---
+
+## 1. O que é {#o-que-é}
+
+Lexio é um SaaS brasileiro de produção jurídica com IA. Roda **100% no browser** — toda a lógica LLM executa no frontend TypeScript via OpenRouter API. Firebase fornece auth, banco (Firestore) e hosting. Não há backend Python em produção (a pasta `packages/` contém um FastAPI em desenvolvimento, inativo).
+
+---
+
+## 2. Stack técnica {#stack-técnica}
 
 | Camada | Tecnologia |
 |--------|-----------|
-| Frontend | React 18 + TypeScript + Vite 5 + Tailwind CSS |
+| Frontend | React 18 + TypeScript 5.3 + Vite 5 + Tailwind CSS |
 | Roteamento | React Router DOM 6 (SPA) |
 | Auth | Firebase Auth (email/senha + Google OAuth) |
 | Banco de dados | Firebase Firestore (NoSQL, real-time) |
 | LLM | OpenRouter API — chamado diretamente do browser |
-| Editor | TipTap 3 (ProseMirror) |
+| Editor de texto | TipTap 3 (ProseMirror) |
 | Export | `docx` lib (DOCX client-side) |
 | Charts | Recharts + D3 |
-| Icons | Lucide React |
-| Deploy | GitHub Pages (`/Lexio/`) + Firebase Hosting (`lexio.web.app`) |
-| CI/CD | GitHub Actions: `deploy-pages.yml` + `firebase-deploy.yml` |
-
-### Firebase
-- **Project ID:** `hocapp-44760`
-- **Firestore:** todas as coleções de dados
-- **Auth:** `onAuthStateChanged` + localStorage persistence
+| Ícones | Lucide React |
+| PDF | pdfjs-dist 4.4 |
+| Zip | JSZip 3.10 |
+| Cloud Function | Firebase Functions 2nd Gen (Node.js 22) |
+| Deploy | GitHub Pages + Firebase Hosting (dual) |
+| CI/CD | GitHub Actions (3 workflows) |
 
 ---
 
-## URLs de Produção
+## 3. URLs de produção {#urls-de-produção}
 
-- **GitHub Pages:** `https://fsalamoni.github.io/Lexio/`
-- **Firebase Hosting:** `https://lexio.web.app` (também `hocapp-44760.firebaseapp.com`)
-- **Dev local:** `npm run dev` → `http://localhost:3000`
+| Ambiente | URL |
+|----------|-----|
+| GitHub Pages | `https://fsalamoni.github.io/Lexio/` |
+| Firebase Hosting | `https://lexio.web.app` |
+| Cloud Function | `https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy` |
+| Dev local | `http://localhost:3000` |
 
 ---
 
-## Comandos Essenciais
+## 4. Comandos de desenvolvimento {#comandos-de-desenvolvimento}
 
 ```bash
 cd frontend
-npm run dev          # Servidor de desenvolvimento (porta 3000)
-npm run build        # Build de produção → frontend/dist/
-npm run typecheck    # Checar erros TypeScript sem buildar
+npm install            # instalar dependências
+npm run dev            # servidor dev (porta 3000)
+npm run build          # build produção → dist/
+npm run typecheck      # verificar erros TS sem buildar
+npm run preview        # pré-visualizar build
 ```
 
-> **Deploy é automático** — qualquer push para `main` dispara ambas as pipelines de CI/CD.
-
 ---
 
-## Variáveis de Ambiente (frontend)
+## 5. Variáveis de ambiente {#variáveis-de-ambiente}
 
-| Variável | Propósito |
+Arquivo: `frontend/.env.local`
+
+| Variável | Descrição |
 |----------|-----------|
-| `VITE_BASE_PATH` | `/Lexio/` para GH Pages · `/` para Firebase |
-| `VITE_DEMO_MODE` | `true` → modo demo offline com mock interceptor |
-| `VITE_OPENROUTER_API_KEY` | Chave OpenRouter (fallback; normalmente vem do Firestore) |
-| `VITE_FIREBASE_*` | Credenciais Firebase (apiKey, authDomain, projectId, etc.) |
+| `VITE_BASE_PATH` | `/Lexio/` (GH Pages) ou `/` (Firebase/local) |
+| `VITE_FIREBASE_API_KEY` | Chave da API Firebase |
+| `VITE_FIREBASE_AUTH_DOMAIN` | `hocapp-44760.firebaseapp.com` |
+| `VITE_FIREBASE_PROJECT_ID` | `hocapp-44760` |
+| `VITE_FIREBASE_STORAGE_BUCKET` | `hocapp-44760.firebasestorage.app` |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | `143237037612` |
+| `VITE_FIREBASE_APP_ID` | `1:143237037612:web:85bd9ddaf81973d5031b89` |
+| `VITE_OPENROUTER_API_KEY` | Fallback quando não há chave no Firestore |
+| `VITE_DEMO_MODE` | `true` para modo offline sem Firebase |
 
 ---
 
-## Estrutura do Projeto
+## 6. Estrutura de diretórios {#estrutura-de-diretórios}
 
 ```
 frontend/
   src/
-    api/          → Axios client com cache TTL + deduplificação de inflight
-    components/   → Componentes UI reutilizáveis
-    contexts/     → AuthContext (estado global de auth)
-    data/         → Dados estáticos (seed de teses)
-    demo/         → Mock interceptor para modo demo offline
-    lib/          → TODA a lógica de negócio (LLM, Firestore, modelos, etc.)
-    pages/        → Componentes de página por rota
-  public/
-  index.html
-  vite.config.ts  → base: VITE_BASE_PATH · chunks: tiptap, recharts
+    api/           → Axios client com cache TTL + demo interceptor (2 arquivos)
+    components/    → 32 componentes + 15 artefatos (subdir artifacts/)
+    contexts/      → AuthContext + TaskManagerContext
+    data/          → seed-theses.ts (70+ teses exemplo)
+    demo/          → Mock interceptor para modo demo offline (2 arquivos)
+    lib/           → TODA a lógica de negócio — 37 arquivos (LLM, Firestore, pipelines, modelos)
+    pages/         → 13 páginas principais + 4 auth + módulo notebook
+  public/          → robots.txt
+  index.html       → CSP + meta tags
+  vite.config.ts   → Base path, code splitting, proxy
 
-packages/         → Backend Python em desenvolvimento (não em produção ainda)
-  core/           → Infraestrutura compartilhada
-  pipeline/       → Orquestrador de pipeline genérico
-  modules/        → Módulos independentes (document_types, legal_areas, etc.)
-  api/            → Gateway FastAPI
+functions/         → Cloud Function datajudProxy (Firebase 2nd Gen, Node.js 22)
 
-.claude/          → Este arquivo e configurações para agentes IA
-.github/
-  workflows/
-    deploy-pages.yml    → Deploy automático GitHub Pages
-    firebase-deploy.yml → Deploy automático Firebase Hosting
+packages/          → Backend Python FastAPI (em desenvolvimento, NÃO em produção)
+  api/             → Gateway FastAPI com 12 grupos de rotas
+  core/            → Infraestrutura compartilhada
+  pipeline/        → Orquestrador genérico
+  modules/         → Módulos independentes
+
+.claude/           → Este arquivo (CLAUDE.md)
+.github/workflows/ → deploy-pages.yml + firebase-deploy.yml + test.yml
+docs/              → Documentação técnica
 ```
 
 ---
 
-## Rotas da Aplicação
+## 7. Rotas da aplicação {#rotas-da-aplicação}
 
 | Rota | Página | Guard |
 |------|--------|-------|
 | `/login` | Login | Público |
-| `/register` | Cadastro | Público |
-| `/forgot-password` | Recuperar senha | Público |
-| `/reset-password` | Redefinir senha | Público |
+| `/register` | Register | Público |
+| `/forgot-password` | ForgotPassword | Público |
+| `/reset-password` | ResetPassword | Público |
 | `/` | Dashboard | Auth |
-| `/documents` | Lista de documentos | Auth |
-| `/documents/new` | Novo documento | Auth |
-| `/documents/:id` | Detalhe do documento | Auth |
-| `/documents/:id/edit` | Editor TipTap | Auth |
-| `/upload` | Upload para acervo | Auth |
-| `/theses` | Banco de teses | Auth |
-| `/notebook` | Caderno de Pesquisa | Auth |
-| `/admin` | Painel administrativo | Auth + admin |
-| `/admin/costs` | Analytics de custo | Auth + admin |
-| `/onboarding` | Wizard de perfil | Auth |
-| `/profile` | Perfil profissional | Auth |
+| `/documents` | DocumentList | Auth |
+| `/documents/new` | NewDocument | Auth |
+| `/documents/:id` | DocumentDetail | Auth |
+| `/documents/:id/edit` | DocumentEditor | Auth |
+| `/upload` | Upload | Auth |
+| `/theses` | ThesisBank | Auth |
+| `/notebook` | ResearchNotebook | Auth |
+| `/admin` | AdminPanel | Auth + admin |
+| `/admin/costs` | CostTokensPage | Auth + admin |
+| `/onboarding` | Onboarding | Auth |
+| `/profile` | Profile | Auth |
+| `*` | NotFound | — |
 
 ---
 
-## Arquivos Lib Principais
+## 8. Catálogo de arquivos lib/ {#catálogo-de-arquivos-lib}
 
-| Arquivo | O que faz |
+### Serviços de autenticação e configuração
+| Arquivo | Descrição |
 |---------|-----------|
-| `lib/llm-client.ts` | Wrapper OpenRouter: `callLLM`, `callLLMWithMessages`; `ModelUnavailableError` (captura 404 "no endpoints" e 400 "not a valid model"); `LLMResult` = `{ content, model, tokens_in, tokens_out, cost_usd, duration_ms }` |
-| `lib/model-config.ts` | `ModelOption` interface; `AVAILABLE_MODELS` (45+ modelos curados); `FREE_TIER_RATE_LIMITS` = 20 req/min · 200 req/dia; `RESEARCH_NOTEBOOK_AGENT_DEFS` (8 agentes); funções `load/save/reset` por pipeline |
-| `lib/model-catalog.ts` | Catálogo dinâmico Firestore; `fetchOpenRouterModels` para adicionar modelos ao vivo; `CATALOG_UPDATED_EVENT` |
-| `lib/model-health-check.ts` | Verifica modelos do catálogo contra OpenRouter; remove modelos inválidos de todas as configs de agentes |
-| `lib/firestore-service.ts` | CRUD completo Firestore — documentos, teses, acervo, settings, cadernos de pesquisa, perfis |
-| `lib/generation-service.ts` | **Pipeline principal de 9 agentes** para geração de documentos jurídicos; roda cliente via OpenRouter; `getOpenRouterKey()` busca chave do Firestore |
-| `lib/notebook-studio-pipeline.ts` | **Pipeline 3 agentes** para artefatos do Estúdio do Caderno: Pesquisador → Especialista (Escritor/Roteirista/Visual) → Revisor; delay 1s entre etapas |
-| `lib/notebook-acervo-analyzer.ts` | Pipeline de 4 agentes para análise do acervo no Caderno (Triagem → Buscador → Analista → Curador) |
-| `lib/thesis-analyzer.ts` | Pipeline de 5 agentes para análise do Banco de Teses |
-| `lib/cost-analytics.ts` | `UsageExecutionRecord` · `createUsageExecutionRecord()` · funções de agregação de custo |
-| `lib/quality-evaluator.ts` | Avaliação de qualidade client-side por tipo de documento |
-| `lib/docx-generator.ts` | Geração de DOCX client-side (Times New Roman 12pt, A4, espaçamento 1.5) |
-| `lib/settings-store.ts` | Persistência de chaves de API no Firestore `/settings/platform` |
-| `lib/constants.ts` | `DOCTYPE_LABELS` (10 tipos) · `AREA_LABELS` (17 áreas) |
-| `lib/classification-data.ts` | Árvore de classificação jurídica brasileira completa |
+| `auth-service.ts` | Firebase Auth (login, registro, Google OAuth, logout) |
+| `firebase.ts` | Inicialização Firebase e credenciais |
+| `settings-store.ts` | Estado UI do Admin de configurações |
+| `constants.ts` | Labels compartilhados (tipos de doc, áreas, badges de cor) |
+
+### Clientes LLM e modelos
+| Arquivo | Descrição |
+|---------|-----------|
+| `llm-client.ts` | Chamadas LLM ao OpenRouter (fallbacks + retries) |
+| `model-config.ts` | Definições de agentes, opções de modelo, fit scores |
+| `model-catalog.ts` | Gerenciamento do catálogo de modelos + bridge OpenRouter |
+| `model-health-check.ts` | Verificação de disponibilidade de modelos |
+
+### Pipelines de geração
+| Arquivo | Descrição |
+|---------|-----------|
+| `generation-service.ts` | Orquestrador principal do pipeline multi-agente (doc generation) |
+| `thesis-analyzer.ts` | Lógica de análise e clustering de teses (5 agentes) |
+| `thesis-extractor.ts` | Extração de teses de documentos |
+| `notebook-studio-pipeline.ts` | Pipeline de geração de artefatos do estúdio (3 etapas) |
+| `notebook-audio-pipeline.ts` | Pipeline de geração de áudio/podcast |
+| `notebook-acervo-analyzer.ts` | Análise de acervo para cadernos (4 agentes) |
+| `video-generation-pipeline.ts` | Orquestração de geração de vídeo (8 agentes) |
+| `literal-video-production.ts` | Renderização de vídeo com presets |
+
+### Dados e classificação
+| Arquivo | Descrição |
+|---------|-----------|
+| `classification-data.ts` | Árvore de classificação: natureza → área → assuntos → tipos |
+| `document-structures.ts` | Templates markdown padrão por tipo de documento |
+| `firestore-types.ts` | Interfaces TypeScript para todas as estruturas Firestore |
+| `firestore-service.ts` | CRUD: perfis, documentos, teses, acervo, notebooks |
+
+### Integrações externas
+| Arquivo | Descrição |
+|---------|-----------|
+| `datajud-service.ts` | Integração API DataJud para pesquisa de jurisprudência |
+| `web-search-service.ts` | Pesquisa web (Jina, DuckDuckGo) |
+| `tts-client.ts` | Integração text-to-speech |
+| `image-generation-client.ts` | Geração de imagens via OpenRouter |
+| `external-video-provider.ts` | Integração de geração de vídeo externo |
+| `media-rate-limiter.ts` | Rate limiting e retry para APIs de mídia |
+
+### Utilitários
+| Arquivo | Descrição |
+|---------|-----------|
+| `file-text-extractor.ts` | Extrai texto de arquivos (PDF, DOCX, TXT) |
+| `docx-generator.ts` | Geração e download de DOCX |
+| `notebook-media-storage.ts` | Armazenamento de artefatos de mídia em notebooks |
+| `quality-evaluator.ts` | Scoring de qualidade de documentos (0-100) |
+| `cost-analytics.ts` | Tracking de uso, custos, métricas |
+| `time-format.ts` | Formatação de data/hora |
+
+### Testes
+| Arquivo | Descrição |
+|---------|-----------|
+| `external-video-provider.test.ts` | Testes do provedor de vídeo |
+| `web-search-service.test.ts` | Testes do serviço de pesquisa web |
+| `datajud-service.test.ts` | Testes do serviço DataJud |
 
 ---
 
-## Coleções Firestore
+## 9. Componentes {#componentes}
+
+### Componentes principais (32)
+
+| # | Componente | Função |
+|---|-----------|--------|
+| 1 | `AcervoClassificadorConfigCard` | Config do agente classificador de acervo |
+| 2 | `AcervoEmentaConfigCard` | Config do agente gerador de ementa |
+| 3 | `AgentTrailProgressModal` | Modal de progresso das trilhas multi-agente |
+| 4 | `AudioPipelineConfigCard` | Config do pipeline de áudio (6 agentes) |
+| 5 | `ConfirmDialog` | Diálogo de confirmação genérico |
+| 6 | `ContextDetailConfigCard` | Config do agente context detail (Layer 2) |
+| 7 | `CostBreakdownModal` | Modal de detalhamento de custos |
+| 8 | `DeepResearchModal` | Modal de pesquisa profunda |
+| 9 | `DraggablePanel` | Painel arrastável |
+| 10 | `ErrorBoundary` | Captura de erros React |
+| 11 | `JurisprudenceConfigModal` | Config de pesquisa de jurisprudência |
+| 12 | `Layout` | Layout principal com sidebar |
+| 13 | `ModelCatalogCard` | Catálogo de modelos disponíveis |
+| 14 | `ModelConfigCard` | Config de modelos por agente (documento) |
+| 15 | `ModelSelectorModal` | Modal de seleção de modelo |
+| 16 | `NotebookAcervoConfigCard` | Config do pipeline notebook acervo (4 agentes) |
+| 17 | `NotificationBell` | Sino de notificações |
+| 18 | `PipelineProgressPanel` | Painel de progresso do pipeline |
+| 19 | `PresentationPipelineConfigCard` | Config do pipeline de apresentação (5 agentes) |
+| 20 | `ProgressTracker` | Tracker genérico de progresso |
+| 21 | `ResearchNotebookConfigCard` | Config dos agentes do caderno (11 agentes) |
+| 22 | `RichTextEditor` | Editor TipTap rico |
+| 23 | `SearchResultsModal` | Modal de resultados de pesquisa |
+| 24 | `Sidebar` | Barra lateral de navegação |
+| 25 | `Skeleton` | Placeholder de carregamento |
+| 26 | `StatusBadge` | Badge de status |
+| 27 | `TaskBar` | Barra de tarefas |
+| 28 | `ThesisAnalysisCard` | Card de análise de tese |
+| 29 | `ThesisAnalystConfigCard` | Config do pipeline analista de teses (5 agentes) |
+| 30 | `Toast` | Notificação toast |
+| 31 | `VideoGenerationCostModal` | Modal de custo de geração de vídeo |
+| 32 | `VideoPipelineConfigCard` | Config do pipeline de vídeo (8 agentes) |
+
+### Componentes de artefato (15 — subdir `artifacts/`)
+
+| # | Componente | Função |
+|---|-----------|--------|
+| 1 | `artifact-exporters.ts` | Utilitários de exportação |
+| 2 | `artifact-parsers.ts` | Parse de JSON de artefato para modelos UI |
+| 3 | `ArtifactViewerModal.tsx` | Modal principal do viewer |
+| 4 | `AudioOverviewPlayer.tsx` | Player de áudio |
+| 5 | `AudioScriptViewer.tsx` | Visualizador de script de áudio |
+| 6 | `DataTableViewer.tsx` | Visualizador de dados tabulares |
+| 7 | `FlashcardViewer.tsx` | UI de flashcards |
+| 8 | `index.ts` | Barrel export |
+| 9 | `InfographicRenderer.tsx` | Renderizador de infográficos |
+| 10 | `MindMapViewer.tsx` | Visualizador de mapa mental |
+| 11 | `PresentationViewer.tsx` | Viewer de apresentação de slides |
+| 12 | `QuizPlayer.tsx` | Player de quiz |
+| 13 | `ReportViewer.tsx` | Visualizador de relatório |
+| 14 | `VideoScriptViewer.tsx` | Visualizador de script de vídeo |
+| 15 | `VideoStudioEditor.tsx` | Editor/produtor de vídeo |
+
+---
+
+## 10. Páginas {#páginas}
+
+### Páginas principais (13)
+| Página | Rota | Função |
+|--------|------|--------|
+| `Dashboard` | `/` | Painel principal do usuário |
+| `DocumentList` | `/documents` | Lista de documentos do usuário |
+| `NewDocument` | `/documents/new` | Formulário de criação de documento |
+| `DocumentDetail` | `/documents/:id` | Visualização de documento |
+| `DocumentEditor` | `/documents/:id/edit` | Editor TipTap do documento |
+| `Upload` | `/upload` | Upload de arquivos para acervo |
+| `ThesisBank` | `/theses` | Banco de teses (CRUD) |
+| `ResearchNotebook` | `/notebook` | Hub do caderno de pesquisa |
+| `AdminPanel` | `/admin` | Hub de configuração admin |
+| `CostTokensPage` | `/admin/costs` | Analytics de custo e tokens |
+| `Onboarding` | `/onboarding` | Wizard de onboarding |
+| `Profile` | `/profile` | Perfil profissional |
+| `NotFound` | `*` | Página 404 |
+
+### Páginas de autenticação (4)
+`Login`, `Register`, `ForgotPassword`, `ResetPassword`
+
+---
+
+## 11. Pipelines e agentes — inventário completo {#pipelines-e-agentes}
+
+### Total: 10 pipelines · 57 agentes
+
+---
+
+### Pipeline 1 — Geração de Documentos (10 agentes)
+**Config Firestore:** `document_models`
+**Arquivo:** `generation-service.ts`
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `triagem` | Triagem | extraction | fast |
+| 2 | `acervo_buscador` | Buscador de Acervo | extraction | fast |
+| 3 | `acervo_compilador` | Compilador de Base | synthesis | balanced |
+| 4 | `acervo_revisor` | Revisor de Base | synthesis | balanced |
+| 5 | `pesquisador` | Pesquisador | reasoning | balanced |
+| 6 | `jurista` | Jurista | reasoning | balanced |
+| 7 | `advogado_diabo` | Advogado do Diabo | reasoning | balanced |
+| 8 | `jurista_v2` | Jurista (revisão) | reasoning | balanced |
+| 9 | `fact_checker` | Fact-Checker | extraction | fast |
+| 10 | `moderador` | Moderador | synthesis | balanced |
+| 11 | `redator` | Redator | writing | balanced |
+
+> Os agentes 2–4 (acervo) são **condicionais** — executam apenas se o usuário tem documentos no acervo.
+
+---
+
+### Pipeline 2 — Análise de Teses (5 agentes)
+**Config Firestore:** `thesis_analyst_models`
+**Arquivo:** `thesis-analyzer.ts`
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `thesis_catalogador` | Catalogador | extraction | fast |
+| 2 | `thesis_analista` | Analista de Redundâncias | reasoning | balanced |
+| 3 | `thesis_compilador` | Compilador | synthesis | balanced |
+| 4 | `thesis_curador` | Curador de Lacunas | synthesis | balanced |
+| 5 | `thesis_revisor` | Revisor Final | synthesis | balanced |
+
+---
+
+### Pipeline 3 — Context Detail / Anamnese Layer 2 (1 agente)
+**Config Firestore:** `context_detail_models`
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `context_detail` | Context Detail | reasoning | balanced |
+
+---
+
+### Pipeline 4 — Classificador de Acervo (1 agente)
+**Config Firestore:** `acervo_classificador_models`
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `acervo_classificador` | Classificador de Acervo | extraction | fast |
+
+---
+
+### Pipeline 5 — Ementa de Acervo (1 agente)
+**Config Firestore:** `acervo_ementa_models`
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `acervo_ementa` | Gerador de Ementa | extraction | fast |
+
+---
+
+### Pipeline 6 — Caderno de Pesquisa (11 agentes)
+**Config Firestore:** `research_notebook_models`
+**Arquivo:** `notebook-studio-pipeline.ts`, `notebook-audio-pipeline.ts`
+
+**Grupo Pesquisa & Análise (6):**
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `notebook_pesquisador` | Pesquisador de Fontes | extraction | fast |
+| 2 | `notebook_analista` | Analista de Conhecimento | reasoning | balanced |
+| 3 | `notebook_assistente` | Assistente Conversacional | reasoning | balanced |
+| 4 | `notebook_pesquisador_externo` | Pesquisador Externo | extraction | fast |
+| 5 | `notebook_pesquisador_externo_profundo` | Pesquisador Externo Profundo | reasoning | balanced |
+| 6 | `notebook_pesquisador_jurisprudencia` | Pesquisador de Jurisprudência (DataJud) | extraction | fast |
+
+**Grupo Estúdio de Criação (5):**
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 7 | `studio_pesquisador` | Pesquisador do Estúdio | extraction | fast |
+| 8 | `studio_escritor` | Escritor | writing | balanced |
+| 9 | `studio_roteirista` | Roteirista | writing | balanced |
+| 10 | `studio_visual` | Designer Visual | synthesis | balanced |
+| 11 | `studio_revisor` | Revisor de Qualidade | synthesis | fast |
+
+**Roteamento de artefatos no Estúdio:**
+- **Escritor** → resumo, relatório, documento, cartões didáticos, teste, guia estruturado
+- **Roteirista** → audio_script, video_script
+- **Designer Visual** → apresentação, mapa mental, infográfico, tabela de dados
+
+---
+
+### Pipeline 7 — Notebook Acervo Analyzer (4 agentes)
+**Config Firestore:** `notebook_acervo_models`
+**Arquivo:** `notebook-acervo-analyzer.ts`
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `nb_acervo_triagem` | Triagem de Acervo | extraction | fast |
+| 2 | `nb_acervo_buscador` | Buscador de Acervo | extraction | fast |
+| 3 | `nb_acervo_analista` | Analista de Acervo | reasoning | balanced |
+| 4 | `nb_acervo_curador` | Curador de Fontes | synthesis | balanced |
+
+---
+
+### Pipeline 8 — Vídeo (8 agentes)
+**Config Firestore:** `video_pipeline_models`
+**Arquivo:** `video-generation-pipeline.ts`
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `video_planejador` | Planejador de Produção | reasoning | premium |
+| 2 | `video_roteirista` | Roteirista | writing | premium |
+| 3 | `video_diretor_cena` | Diretor de Cenas | synthesis | balanced |
+| 4 | `video_storyboarder` | Storyboarder | writing | balanced |
+| 5 | `video_designer` | Designer Visual | synthesis | premium |
+| 6 | `video_compositor` | Compositor de Vídeo | synthesis | premium |
+| 7 | `video_narrador` | Narrador | writing | balanced |
+| 8 | `video_revisor` | Revisor Final de Vídeo | synthesis | balanced |
+
+---
+
+### Pipeline 9 — Áudio (6 agentes)
+**Config Firestore:** `audio_pipeline_models`
+**Arquivo:** `notebook-audio-pipeline.ts`
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `audio_planejador` | Planejador de Áudio | reasoning | balanced |
+| 2 | `audio_roteirista` | Roteirista de Áudio | writing | balanced |
+| 3 | `audio_diretor` | Diretor de Áudio | synthesis | balanced |
+| 4 | `audio_produtor_sonoro` | Produtor Sonoro | writing | balanced |
+| 5 | `audio_narrador` | Narrador / TTS | synthesis | premium |
+| 6 | `audio_revisor` | Revisor Final de Áudio | synthesis | balanced |
+
+---
+
+### Pipeline 10 — Apresentação (5 agentes)
+**Config Firestore:** `presentation_pipeline_models`
+**Arquivo:** `model-config.ts`
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `pres_planejador` | Planejador de Apresentação | reasoning | balanced |
+| 2 | `pres_pesquisador` | Pesquisador de Conteúdo | extraction | fast |
+| 3 | `pres_redator` | Redator de Slides | writing | balanced |
+| 4 | `pres_designer` | Designer de Apresentação | synthesis | premium |
+| 5 | `pres_revisor` | Revisor de Apresentação | synthesis | fast |
+
+---
+
+### Resumo de agentes por pipeline
+
+| Pipeline | Agentes | Config Firestore |
+|----------|---------|-----------------|
+| Geração de documentos | 11 (3 condicionais) | `document_models` |
+| Análise de teses | 5 | `thesis_analyst_models` |
+| Context detail | 1 | `context_detail_models` |
+| Classificador acervo | 1 | `acervo_classificador_models` |
+| Ementa acervo | 1 | `acervo_ementa_models` |
+| Caderno de pesquisa | 11 (6 pesquisa + 5 estúdio) | `research_notebook_models` |
+| Notebook acervo | 4 | `notebook_acervo_models` |
+| Vídeo | 8 | `video_pipeline_models` |
+| Áudio | 6 | `audio_pipeline_models` |
+| Apresentação | 5 | `presentation_pipeline_models` |
+| **TOTAL** | **53 agentes únicos** | **10 configs** |
+
+---
+
+## 12. Tipos de documento {#tipos-de-documento}
+
+### 10 tipos
+
+| ID | Label |
+|----|-------|
+| `parecer` | Parecer Jurídico |
+| `peticao_inicial` | Petição Inicial |
+| `contestacao` | Contestação |
+| `recurso` | Recurso |
+| `sentenca` | Sentença |
+| `acao_civil_publica` | Ação Civil Pública |
+| `mandado_seguranca` | Mandado de Segurança |
+| `habeas_corpus` | Habeas Corpus |
+| `agravo` | Agravo de Instrumento |
+| `embargos_declaracao` | Embargos de Declaração |
+
+Cada tipo tem template markdown em `document-structures.ts` com hierarquia de seções, requisitos mínimos de conteúdo e camadas de citação.
+
+---
+
+## 13. Áreas do direito {#áreas-do-direito}
+
+### 17 áreas
+
+| ID | Label | Cor |
+|----|-------|-----|
+| `administrative` | Direito Administrativo | purple |
+| `constitutional` | Direito Constitucional | red |
+| `civil` | Direito Civil | blue |
+| `tax` | Direito Tributário | orange |
+| `labor` | Direito do Trabalho | teal |
+| `criminal` | Direito Penal | rose |
+| `criminal_procedure` | Processo Penal | pink |
+| `civil_procedure` | Processo Civil | sky |
+| `consumer` | Direito do Consumidor | amber |
+| `environmental` | Direito Ambiental | emerald |
+| `business` | Direito Empresarial | indigo |
+| `family` | Direito de Família | fuchsia |
+| `inheritance` | Direito das Sucessões | violet |
+| `social_security` | Direito Previdenciário | cyan |
+| `electoral` | Direito Eleitoral | lime |
+| `international` | Direito Internacional | slate |
+| `digital` | Direito Digital | zinc |
+
+---
+
+## 14. Naturezas {#naturezas}
+
+### 6 valores
+
+| ID | Descrição |
+|----|-----------|
+| `consultivo` | Consultivo/parecerista |
+| `executorio` | Processual/executório |
+| `transacional` | Transacional/contratual |
+| `negocial` | Negocial/comercial |
+| `doutrinario` | Doutrinário/acadêmico |
+| `decisorio` | Decisório/judicial |
+
+---
+
+## 15. Tipos de artefato {#tipos-de-artefato}
+
+### 13 tipos (`StudioArtifactType`)
+
+| ID | Label | Agente |
+|----|-------|--------|
+| `resumo` | Resumo | studio_escritor |
+| `apresentacao` | Apresentação | studio_visual |
+| `mapa_mental` | Mapa Mental | studio_visual |
+| `cartoes_didaticos` | Flashcards | studio_escritor |
+| `infografico` | Infográfico | studio_visual |
+| `teste` | Quiz | studio_escritor |
+| `relatorio` | Relatório | studio_escritor |
+| `tabela_dados` | Tabela de Dados | studio_visual |
+| `documento` | Documento | studio_escritor |
+| `audio_script` | Roteiro de Áudio | studio_roteirista |
+| `video_script` | Roteiro de Vídeo | studio_roteirista |
+| `guia_estruturado` | Guia Estruturado | studio_escritor |
+| `outro` | Outro | studio_escritor |
+
+---
+
+## 16. Modelos LLM {#modelos-llm}
+
+### Tiers de modelo
+
+| Tier | Uso | Exemplos |
+|------|-----|----------|
+| `fast` | Extração/triagem | Haiku, Flash Lite, GPT-4o Mini |
+| `balanced` | Raciocínio/síntese | Sonnet, Gemini 2.5, GPT-4o |
+| `premium` | Raciocínio complexo | Opus 4, Gemini 2.5 Pro, GPT-4.1, o3 |
+
+### Catálogo — Modelos Pagos (26+)
+
+**Anthropic (5):** claude-3.5-haiku, claude-sonnet-4, claude-3.5-sonnet, claude-3.7-sonnet, claude-opus-4
+**Google (4):** gemini-2.0-flash-001, gemini-2.0-flash-lite-001, gemini-2.5-flash-preview, gemini-2.5-pro-preview
+**OpenAI (8):** gpt-4o-mini, gpt-4.1-nano, gpt-4.1-mini, gpt-4o, gpt-4.1, o3-mini, o4-mini, o3
+**DeepSeek (2):** deepseek-chat-v3-0324, deepseek-r1
+**Meta (3):** llama-4-scout, llama-4-maverick, llama-3.3-70b-instruct
+**Mistral (2):** mistral-small-3.1-24b-instruct, mistral-large-2411
+**Qwen (3):** qwen-2.5-72b-instruct, qwen3-235b-a22b, qwen3-30b-a3b
+**xAI (2):** grok-3-mini, grok-3
+**Cohere (1):** command-r-plus-08-2024
+
+### Catálogo — Modelos Gratuitos (10)
+
+gemini-2.0-flash:free, gemma-3-27b-it:free, llama-4-scout:free, llama-3.3-70b-instruct:free, deepseek-r1:free, qwen3-8b:free, qwen3-30b-a3b:free, mistral-small-3.1-24b-instruct:free, phi-4-multimodal-instruct:free
+
+### Fit Scores
+
+Cada modelo tem pontuação 1-10 para 4 categorias de agente:
+- **extraction** (Triagem, Buscador, Fact-Checker)
+- **synthesis** (Compilador, Revisor, Moderador)
+- **reasoning** (Pesquisador, Jurista, Advogado Diabo)
+- **writing** (Redator)
+
+---
+
+## 17. Firestore — coleções e tipos TypeScript {#firestore}
+
+### Coleções
 
 | Caminho | Conteúdo |
 |---------|----------|
 | `/users/{uid}` | Perfil do usuário + role |
-| `/users/{uid}/profile` | Anamnese Layer 1 (perfil profissional) |
-| `/users/{uid}/documents/{id}` | Documentos jurídicos gerados + `llm_executions[]` |
-| `/users/{uid}/theses/{id}` | Entradas do banco de teses |
-| `/users/{uid}/acervo/{id}` | Documentos de referência (uploads) |
-| `/users/{uid}/research_notebooks/{id}` | Cadernos de pesquisa (fontes, chat, artefatos) |
-| `/settings/platform` | Config global: api_keys, model configs por pipeline, model_catalog |
+| `/users/{uid}/profile/data` | Anamnese Layer 1 (perfil profissional) |
+| `/users/{uid}/documents/{id}` | Documentos gerados + `llm_executions[]` |
+| `/users/{uid}/theses/{id}` | Banco de teses |
+| `/users/{uid}/acervo/{id}` | Documentos de referência (classificados) |
+| `/users/{uid}/research_notebooks/{id}` | Cadernos de pesquisa |
+| `/settings/platform` | Config global (admin): api_keys, model configs, model_catalog |
+
+### Subchaves de `/settings/platform`
+
+| Chave | Conteúdo |
+|-------|----------|
+| `openrouter_api_key` | Chave API OpenRouter |
+| `model_catalog` | Catálogo dinâmico de modelos |
+| `document_models` | Config do pipeline de documentos |
+| `thesis_analyst_models` | Config do pipeline de teses |
+| `context_detail_models` | Config do context detail |
+| `acervo_classificador_models` | Config do classificador de acervo |
+| `acervo_ementa_models` | Config do gerador de ementas |
+| `research_notebook_models` | Config do caderno de pesquisa |
+| `notebook_acervo_models` | Config do notebook acervo analyzer |
+| `video_pipeline_models` | Config do pipeline de vídeo |
+| `audio_pipeline_models` | Config do pipeline de áudio |
+| `presentation_pipeline_models` | Config do pipeline de apresentação |
+
+### Tipos TypeScript de interfaces (`firestore-types.ts`)
+
+| Tipo | Descrição |
+|------|-----------|
+| `ProfileData` | Perfil profissional + preferências |
+| `ContextDetailData` | Contexto refinado Q&A (Layer 2) |
+| `DocumentData` | Documento jurídico gerado |
+| `ThesisData` | Tese jurídica (banco) |
+| `ThesisAnalysisSessionData` | Sessão de análise batch |
+| `AcervoDocumentData` | Metadados de documento de referência |
+| `NotebookSource` | Fonte do caderno (tipo: acervo/upload/link/external/external_deep/jurisprudencia) |
+| `NotebookMessage` | Mensagem de chat no caderno |
+| `StudioArtifact` | Artefato gerado (13 tipos) |
+| `ResearchNotebookData` | Caderno de pesquisa completo |
+| `WizardData` | Estado do wizard de onboarding |
+| `AdminDocumentType` | Tipo de documento gerenciado pelo admin |
+| `AdminLegalArea` | Área do direito gerenciada pelo admin |
+| `AdminClassificationTipos` | Árvore de classificação gerenciada pelo admin |
 
 ---
 
-## Agentes LLM e Pipelines
+## 18. Admin Panel — cartões de configuração {#admin-panel}
 
-### Pipeline de Geração de Documentos (9 agentes)
-Definidos em `generation-service.ts`. Config de modelos salva em `settings/platform.document_models`.
+### Configuração geral
+1. **API Keys** — Gerenciar chave OpenRouter
+2. **Catálogo de Modelos** — Navegar modelos disponíveis
+3. **Config de Modelos (Documentos)** — Config dos 11 agentes do pipeline principal
 
-### Pipeline do Caderno de Pesquisa (8 agentes)
-Definidos em `model-config.ts` → `RESEARCH_NOTEBOOK_AGENT_DEFS`.  
-Config salva em `settings/platform.research_notebook_models`.
+### Agentes de documento e acervo
+4. **Analista de Teses** — Config dos 5 agentes
+5. **Context Detail** — Config do agente de contexto
+6. **Classificador de Acervo** — Config do agente classificador
+7. **Gerador de Ementa** — Config do agente de ementas
 
-**Grupo Pesquisa & Análise (3 agentes):**
-| Chave | Papel | Default |
-|-------|-------|---------|
-| `notebook_pesquisador` | Indexa fontes e extrai informações | `claude-3.5-haiku` |
-| `notebook_analista` | Sintetiza descobertas para guia | `claude-sonnet-4` |
-| `notebook_assistente` | Chat conversacional | `claude-sonnet-4` |
+### Caderno de pesquisa
+8. **Caderno de Pesquisa** — Config dos 11 agentes do caderno
+9. **Notebook Acervo** — Config dos 4 agentes de análise de acervo
 
-**Grupo Estúdio de Criação (5 agentes — pipeline 3 etapas):**
-| Chave | Papel | Default |
-|-------|-------|---------|
-| `studio_pesquisador` | Extrai dados relevantes das fontes | `llama-4-scout:free` |
-| `studio_escritor` | Redige textos, resumos, relatórios, cartões, testes | `llama-3.3-70b:free` |
-| `studio_roteirista` | Cria roteiros de áudio/vídeo com timing | `llama-3.3-70b:free` |
-| `studio_visual` | Estrutura apresentações, mapas mentais, infográficos | `llama-3.3-70b:free` |
-| `studio_revisor` | Revisa e garante qualidade final | `llama-3.3-70b:free` |
+### Pipelines multi-agente
+10. **Pipeline de Vídeo** — Config dos 8 agentes de vídeo
+11. **Pipeline de Áudio** — Config dos 6 agentes de áudio
+12. **Pipeline de Apresentação** — Config dos 5 agentes de apresentação
 
-Roteamento automático por tipo de artefato:
-- **Escritor**: resumo, relatorio, documento, cartoes_didaticos, teste
-- **Visual**: apresentacao, mapa_mental, infografico, tabela_dados  
-- **Roteirista**: audio_script, video_script
-
-### Outros Pipelines
-- **Banco de Teses:** 5 agentes — config em `settings/platform.thesis_analyst_models`
-- **Acervo Classificador:** 1 agente — config em `settings/platform.acervo_classificador_models`
-- **Acervo Ementa:** 1 agente — config em `settings/platform.acervo_ementa_models`
-- **Context Detail:** 1 agente — config em `settings/platform.context_detail_models`
-- **Analisador de Acervo (Caderno):** 4 agentes — config em `settings/platform.notebook_acervo_models`
+### Dados e sistema
+13. **Fila de Revisão** — Aprovar/rejeitar documentos pendentes
+14. **Reindexar** — Re-indexar documentos no Qdrant
+15. **Saúde do Sistema** — Monitorar status (Firebase, OpenRouter)
+16. **Tipos de Documento** — CRUD de tipos
+17. **Áreas do Direito** — CRUD de áreas
+18. **Classificação Tipos** — CRUD de tipos de classificação
 
 ---
 
-## Types Chave
+## 19. Cloud Function {#cloud-function}
 
-```typescript
-// LLM
-interface LLMResult { content: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number; duration_ms: number }
-class ModelUnavailableError extends Error { modelId: string }
+**Nome:** `datajudProxy`
+**Geração:** 2nd Gen
+**Runtime:** Node.js 22
+**Região:** `southamerica-east1`
+**Service Account:** `hocapp-44760@appspot.gserviceaccount.com`
+**URL:** `https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy`
 
-// Modelos
-interface ModelOption { id: string; label: string; provider: string; tier: 'fast'|'balanced'|'premium'; contextWindow: number; inputCost: number; outputCost: number; isFree: boolean; agentFit: AgentFitScores; rateLimits?: { rpm: number; rpd: number; note?: string } }
-const FREE_TIER_RATE_LIMITS = { rpm: 20, rpd: 200 }
+**Função:** Proxy POST para a API DataJud do CNJ. Adiciona header de Authorization (bypass CORS), valida aliases de tribunais (whitelist 50+ tribunais brasileiros) e retorna resultados Elasticsearch.
 
-// Custo
-interface UsageExecutionRecord { id: string; source_type: string; source_id: string; phase: string; agent_name: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number; duration_ms: number; created_at: string }
-
-// Tipos de artefato do Estúdio
-type StudioArtifactType = 'resumo'|'mapa_mental'|'cartoes_didaticos'|'apresentacao'|'relatorio'|'tabela_dados'|'teste'|'infografico'|'documento'|'audio_script'|'video_script'|'outro'
-```
+**Arquivo:** `functions/src/index.ts`
 
 ---
 
-## Regras Importantes para Agentes
+## 20. Integrações externas {#integrações-externas}
 
-1. **Nunca modificar prompts validados** — Os prompts de geração jurídica em `generation-service.ts` foram criteriosamente testados. Alterá-los pode degradar qualidade.
-2. **ModelUnavailableError**: Lançado quando um modelo retorna 404 "no endpoints" OU 400 "not a valid model". NÃO há fallback automático — o usuário é notificado para trocar o modelo no admin.
-3. **Modelos gratuitos têm limite**: 20 req/min · 200 req/dia (OpenRouter free tier). Pipelines multi-agente podem atingir esses limites.
-4. **Deploy automático**: Qualquer `git push` para `main` dispara both pipelines de CI/CD. Sempre verifique o build antes de fazer push.
-5. **Dual deploy**: `VITE_BASE_PATH=/Lexio/` para GH Pages · `/` para Firebase. O roteamento depende disto.
-6. **IS_FIREBASE flag**: Controla se usa Firestore real ou modo mock. Verificar antes de adicionar qualquer chamada Firestore.
-7. **Modo Demo**: `VITE_DEMO_MODE=true` desativa Firebase completamente e usa `demo/interceptor.ts`. Não quebrar compatibilidade.
-8. **Lei 8.666/93 está REVOGADA** — Sempre referenciar Lei 14.133/2021 em contextos de licitação.
-9. **Tipos de artefato**: `StudioArtifactType` está definido em `firestore-service.ts`. Adicionar novos tipos requer atualizar esse union, `ARTIFACT_AGENT_MAP` em `notebook-studio-pipeline.ts`, e `ARTIFACT_TYPES` array em `ResearchNotebook.tsx`.
-10. **Custo**: Toda chamada LLM deve criar um `UsageExecutionRecord` via `createUsageExecutionRecord()` e salvar em `llm_executions` do documento/caderno correspondente.
-
----
-
-## Componentes Administrativos (Admin Panel)
-
-| Componente | Config salva em (`settings/platform.*`) |
-|-----------|----------------------------------------|
-| `ModelConfigCard` | `document_models` |
-| `ThesisAnalystConfigCard` | `thesis_analyst_models` |
-| `ContextDetailConfigCard` | `context_detail_models` |
-| `AcervoClassificadorConfigCard` | `acervo_classificador_models` |
-| `AcervoEmentaConfigCard` | `acervo_ementa_models` |
-| `ResearchNotebookConfigCard` | `research_notebook_models` |
-| `NotebookAcervoConfigCard` | `notebook_acervo_models` |
-| `VideoPipelineConfigCard` | `video_pipeline_models` |
-| `AudioPipelineConfigCard` | `audio_pipeline_models` |
-| `PresentationPipelineConfigCard` | `presentation_pipeline_models` |
-| `ModelCatalogCard` | `model_catalog` |
+| Serviço | Uso | Arquivo |
+|---------|-----|---------|
+| OpenRouter | Roteamento LLM (40+ modelos) | `llm-client.ts` |
+| Firebase | Auth, Firestore, Storage, Functions | `firebase.ts` |
+| DataJud (CNJ) | Pesquisa de jurisprudência | `datajud-service.ts` |
+| DuckDuckGo | Pesquisa web | `web-search-service.ts` |
+| Jina | Scraping/extração de conteúdo web | `web-search-service.ts` |
+| OpenRouter TTS | Text-to-speech | `tts-client.ts` |
+| OpenRouter Images | Geração de imagens | `image-generation-client.ts` |
+| CORS Proxies | corsproxy.io, allorigins.win | `web-search-service.ts` |
 
 ---
 
-## Features Implementadas (estado atual)
+## 21. Contextos React {#contextos-react}
 
-- [x] Geração de documentos jurídicos — 9 agentes, 10 tipos, 17 áreas
-- [x] Acervo — upload + classificação + ementa automática
-- [x] Banco de Teses — CRUD + extração automática + análise de 5 agentes
-- [x] Caderno de Pesquisa — chat + indexação de fontes + Estúdio (12 artefatos, pipeline 3 agentes)
-- [x] Anamnese 2 camadas (perfil profissional Layer 1 + context detail Layer 2)
-- [x] Admin Panel completo — API keys, modelos por agente, catálogo dinâmico
-- [x] Health check de modelos — verificação diária contra OpenRouter
-- [x] Analytics de custo — por modelo/função/provedor em USD e BRL
-- [x] Export DOCX client-side
-- [x] Rate limits visíveis nos modais de seleção (20 req/min · 200 req/dia)
-- [x] Modo Demo offline
-- [x] Dual deploy (GH Pages + Firebase Hosting)
+| Contexto | Arquivo | Conteúdo |
+|----------|---------|----------|
+| `AuthContext` | `contexts/AuthContext.tsx` | token JWT, user, role (admin/user), loading state |
+| `TaskManagerContext` | `contexts/TaskManagerContext.tsx` | Estado de tarefas/jobs em andamento |
+
+---
+
+## 22. Modo Demo {#modo-demo}
+
+**Variável:** `VITE_DEMO_MODE=true`
+**Arquivos:** `demo/data.ts` + `demo/interceptor.ts`
+
+Interceptor Axios substitui todas as respostas de API com dados mock. Permite uso offline completo sem Firebase configurado. Mock data inclui: stats, documents, agents, costs, health.
+
+---
+
+## 23. CI/CD — workflows {#cicd}
+
+### 3 workflows em `.github/workflows/`
+
+| Workflow | Trigger | Ação |
+|----------|---------|------|
+| `deploy-pages.yml` | Push para `main` | Build + deploy GitHub Pages (`VITE_BASE_PATH=/Lexio/`) |
+| `firebase-deploy.yml` | Push para `main` ou `claude/*` | Build + deploy Firebase Hosting + Firestore rules |
+| `test.yml` | Push/PR | Executa testes |
+
+---
+
+## 24. Segurança {#segurança}
+
+- Chaves API armazenadas no Firestore, nunca em código
+- Firebase Rules protegem todos os dados por `uid`
+- CSP restritivo com whitelist de domínios
+- Sem backend público exposto em produção
+- Toda comunicação com OpenRouter usa HTTPS
+- Cloud Function usa Service Account dedicado
+- Ver `SECURITY.md` para política de divulgação
+
+---
+
+## 25. Regras para agentes IA {#regras-para-agentes-ia}
+
+1. **Leia este arquivo inteiro** antes de qualquer modificação.
+2. Toda chamada LLM deve passar por `callLLM()` / `callLLMWithMessages()` de `llm-client.ts`.
+3. Novos agentes devem ser adicionados ao array `*_AGENT_DEFS` correspondente em `model-config.ts`.
+4. Para novo pipeline, criar: definição de agentes em `model-config.ts` + Config Card em `components/` + entrada no Admin Panel + chave em `settings/platform`.
+5. Tipos TypeScript de Firestore ficam em `firestore-types.ts`. Sempre atualizar ao modificar coleções.
+6. Novas rotas devem ser registradas em `App.tsx` e protegidas com `ProtectedRoute` ou `AdminRoute`.
+7. Não criar backend — toda lógica roda no frontend TypeScript.
+8. Export DOCX mantém formato padrão: Times New Roman 12pt, A4, espaçamento 1.5.
+9. Novos tipos de documento devem ter template em `document-structures.ts`.
+10. Commit messages: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`.
+11. O `VITE_BASE_PATH` deve funcionar tanto como `/Lexio/` quanto `/`.
+12. Manter modo demo funcional — atualizar `demo/data.ts` se adicionar novas rotas de API.
+
+---
+
+## 26. Checklist de features implementadas {#checklist}
+
+- [x] Geração de documentos jurídicos (11 agentes, 10 tipos, 17 áreas)
+- [x] Acervo com classificação automática e ementa por IA
+- [x] Banco de teses (CRUD + extração automática + análise com 5 agentes)
+- [x] Caderno de pesquisa (chat + 11 agentes + estúdio de 13 artefatos)
+- [x] Análise de acervo no caderno (4 agentes)
+- [x] Pipeline de vídeo completo (8 agentes + renderização)
+- [x] Pipeline de áudio/podcast (6 agentes + TTS)
+- [x] Pipeline de apresentação (5 agentes)
+- [x] Anamnese 2 camadas (perfil persistente + contexto por geração)
+- [x] Context Detail (Layer 2) com agente dedicado
+- [x] Admin Panel com 18 cartões de configuração
+- [x] Catálogo dinâmico de modelos com health check
+- [x] Analytics de custo por modelo/função/provedor (USD + BRL)
+- [x] Export DOCX formatado (Times New Roman 12pt, A4)
+- [x] Pesquisa web (Jina + DuckDuckGo)
+- [x] Pesquisa de jurisprudência (DataJud via Cloud Function)
+- [x] Modo Demo offline completo
+- [x] Dual deploy (GitHub Pages + Firebase Hosting)
+- [x] TipTap rich text editor com formatação completa
+- [x] Onboarding wizard para perfil profissional
+- [x] Extração de texto de PDF/DOCX/TXT no browser
+- [x] Geração de imagens via OpenRouter
+- [x] Pesquisa externa profunda no caderno

@@ -1,61 +1,85 @@
-# Schema do Banco de Dados
+# Schema do Banco de Dados — Firebase Firestore
 
-## Tabelas (11)
-| Tabela | Descrição |
-|--------|-----------|
-| organizations | Entidade raiz multi-tenant |
-| users | Usuários com auth e org_id |
-| documents | Documentos jurídicos (generalizado) |
-| executions | Registro de cada chamada LLM por agente |
-| uploaded_documents | Arquivos para indexação vetorial |
-| legal_areas | Registry de áreas do direito |
-| document_types | Registry de tipos de documento |
-| user_profiles | Perfil profissional (anamnese Layer 1, 1:1 com users) |
-| theses | Banco de teses jurídicas reutilizáveis (auto-populado) |
-| whatsapp_sessions | Estado da máquina de conversação WhatsApp |
-| platform_settings | Configurações da plataforma gerenciadas pelo admin (chaves de API) |
+> Lexio usa Firebase Firestore (NoSQL) como banco de dados. Não há PostgreSQL em produção.
 
-## Multi-Tenant
-Toda tabela de dados tem `organization_id` (UUID, FK para organizations).
-Queries SEMPRE filtram por org_id via `OrgScopedMixin`.
+## Coleções (7 caminhos)
 
-## ERD Simplificado
-```
-organizations ──< users ──< user_profiles (1:1)
-organizations ──< documents ──< executions
-organizations ──< uploaded_documents
-organizations ──< theses
-organizations ──< whatsapp_sessions
-documents ──> users (author_id)
-theses ──> documents (source_document_id)
-platform_settings (não tem org_id — configuração global)
-```
+| Caminho | Descrição |
+|---------|-----------|
+| `/users/{uid}` | Perfil do usuário + role (admin/user) |
+| `/users/{uid}/profile/data` | Anamnese Layer 1 (perfil profissional) |
+| `/users/{uid}/documents/{id}` | Documentos jurídicos gerados + `llm_executions[]` |
+| `/users/{uid}/theses/{id}` | Banco de teses (CRUD + auto-extração) |
+| `/users/{uid}/acervo/{id}` | Documentos de referência (classificados com ementa) |
+| `/users/{uid}/research_notebooks/{id}` | Cadernos de pesquisa (chat + fontes + artefatos) |
+| `/settings/platform` | Config global (admin): api_keys, model configs, model_catalog |
+
+## Segurança
+- Firebase Rules protegem todos os dados por `uid`
+- Cada usuário só acessa suas subcoleções
+- `/settings/platform` é read-only para users, write para admins
+
+## Subchaves de `/settings/platform` (12 configs)
+
+| Chave | Conteúdo |
+|-------|----------|
+| `openrouter_api_key` | Chave API OpenRouter |
+| `model_catalog` | Catálogo dinâmico de modelos (adicionados/removidos via Admin) |
+| `document_models` | Config do pipeline de documentos (11 agentes) |
+| `thesis_analyst_models` | Config do pipeline de teses (5 agentes) |
+| `context_detail_models` | Config do context detail (1 agente) |
+| `acervo_classificador_models` | Config do classificador de acervo (1 agente) |
+| `acervo_ementa_models` | Config do gerador de ementas (1 agente) |
+| `research_notebook_models` | Config do caderno de pesquisa (11 agentes) |
+| `notebook_acervo_models` | Config do notebook acervo analyzer (4 agentes) |
+| `video_pipeline_models` | Config do pipeline de vídeo (8 agentes) |
+| `audio_pipeline_models` | Config do pipeline de áudio (6 agentes) |
+| `presentation_pipeline_models` | Config do pipeline de apresentação (5 agentes) |
+
+## Tipos TypeScript (`firestore-types.ts`)
+
+| Interface | Descrição |
+|-----------|-----------|
+| `ProfileData` | Perfil profissional + preferências de redação |
+| `ContextDetailData` | Contexto refinado Q&A (Layer 2 anamnese) |
+| `DocumentData` | Documento jurídico: conteúdo, metadata, llm_executions, quality_score |
+| `ThesisData` | Tese: conteúdo, área, tags, quality_score, usage_count, source_type |
+| `ThesisAnalysisSessionData` | Sessão de análise batch de teses |
+| `AcervoDocumentData` | Metadados de documento de referência (natureza, área, ementa) |
+| `NotebookSource` | Fonte do caderno (tipo: acervo/upload/link/external/external_deep/jurisprudencia) |
+| `NotebookMessage` | Mensagem de chat no caderno |
+| `StudioArtifact` | Artefato gerado (13 tipos: resumo, apresentação, mapa mental, etc.) |
+| `ResearchNotebookData` | Caderno completo: topic, sources, messages, artifacts |
+| `WizardData` | Estado do wizard de onboarding |
+| `AdminDocumentType` | Tipo de documento gerenciado pelo admin |
+| `AdminLegalArea` | Área do direito gerenciada pelo admin |
+| `AdminClassificationTipos` | Árvore de classificação gerenciada pelo admin |
 
 ## Campos Notáveis
 
-### documents
-- `document_type_id` — FK lógica para módulo (`parecer`, `peticao_inicial`, etc.)
-- `legal_area_ids` — ARRAY de áreas selecionadas (`administrative`, `civil`, etc.)
-- `template_variant` — variante de template (`mprs_caopp`, `generic`, etc.)
-- `quality_score` — nota 0-100 do quality gate
-- `quality_issues` — JSONB com lista de problemas detectados
-- `metadata_` — JSONB com custo, duração e config do pipeline
-- `origem` — canal de origem (`web`, `whatsapp`)
+### DocumentData
+- `document_type_id` — Tipo (`parecer`, `peticao_inicial`, etc.)
+- `legal_area_ids` — Array de áreas selecionadas
+- `content` — Conteúdo markdown do documento
+- `quality_score` — Nota 0-100 do avaliador de qualidade
+- `llm_executions` — Array de execuções LLM (modelo, tokens, custo)
+- `metadata_` — JSONB com custo total, duração, config
 
-### user_profiles (anamnese Layer 1)
-- `institution`, `position`, `jurisdiction` — perfil profissional
-- `formality_level`, `connective_style`, `citation_style` — preferências de redação
-- `preferred_expressions`, `avoided_expressions` — vocabulário
-- `signature_block`, `header_text` — blocos de texto padrão
-- `onboarding_completed` — flag de onboarding concluído
+### ProfileData (Anamnese Layer 1)
+- `institution`, `position`, `jurisdiction` — Perfil profissional
+- `formality_level`, `connective_style`, `citation_style` — Preferências de redação
+- `preferred_expressions`, `avoided_expressions` — Vocabulário personalizado
+- `signature_block`, `header_text` — Blocos de texto padrão
+- `onboarding_completed` — Flag de onboarding
 
-### theses (thesis bank)
+### ThesisData
 - `source_type` — `auto_extracted` | `manual` | `imported`
-- `legal_basis` — JSONB array `[{"law": "...", "article": "..."}]`
-- `precedents` — JSONB array `[{"court": "...", "case_number": "..."}]`
-- `quality_score`, `usage_count`, `success_rate` — métricas
-- `status` — `active` | `archived` | `draft` (soft delete)
+- `legal_basis` — Array de fundamentação legal
+- `quality_score`, `usage_count` — Métricas de qualidade e uso
+- `status` — `active` | `archived` | `draft`
 
-### whatsapp_sessions
-- Estado da máquina: `welcome → awaiting_doc_type → awaiting_content → processing → complete/error`
-- `expires_at` — expiração após 24h de inatividade
+### ResearchNotebookData
+- `topic` — Tema de pesquisa
+- `sources` — Array de NotebookSource (fontes indexadas)
+- `messages` — Array de NotebookMessage (chat)
+- `artifacts` — Array de StudioArtifact (artefatos gerados)
