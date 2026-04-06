@@ -10,7 +10,11 @@
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-/** Public API key provided by CNJ for DataJud API access */
+/**
+ * Public API key provided by CNJ for DataJud API access.
+ * This is NOT a secret — it is a shared public key published by CNJ
+ * at https://datajud-wiki.cnj.jus.br/api-publica/ for all consumers.
+ */
 const DATAJUD_API_KEY = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=='
 
 /** Base URL for all DataJud endpoints */
@@ -28,121 +32,202 @@ const RETRY_BASE_DELAY_MS = 250
 const RESULTS_PER_TRIBUNAL = 5
 
 /**
- * DataJud request routing:
+ * DataJud request routing (multi-strategy with fallback):
  *
  * 1. Firebase Hosting (lexio.web.app) → POST /api/datajud (Cloud Function rewrite)
- * 2. GitHub Pages / other hosts → POST directly to Cloud Function public URL
+ * 2. Any host → POST directly to Cloud Function public URL
+ * 3. Direct → POST to DataJud CNJ API with Authorization header (CORS fallback)
  *
- * Both paths hit the same datajudProxy Cloud Function which adds the
- * Authorization header and forwards to DataJud CNJ API.
+ * The service tries endpoints in priority order based on the hosting environment.
+ * Once a working endpoint is found, it is cached for subsequent requests.
  */
 
-/** Cloud Function public URL (used when not on Firebase Hosting) */
+/** Cloud Function public URL */
 const CLOUD_FUNCTION_URL = 'https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy'
 
-/** Get the DataJud proxy URL — relative path on Firebase Hosting, absolute URL elsewhere */
-function getDataJudProxyUrl(): string {
-  const host = typeof window !== 'undefined' ? window.location.hostname : ''
-  // Firebase Hosting: use Cloud Function rewrite (relative path)
-  if (host.includes('lexio.web.app') || host.includes('firebaseapp.com') || host === 'localhost') {
-    return '/api/datajud'
-  }
-  const basePath = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BASE_PATH) || '/'
-  if (basePath === '/') {
-    return '/api/datajud'
-  }
-  // GitHub Pages or any other host: call the Cloud Function directly
-  return CLOUD_FUNCTION_URL
+/** Sentinel value indicating direct DataJud API access (no proxy) */
+const DIRECT_ENDPOINT = '__direct__'
+
+/** Cached working endpoint — avoids re-probing on every tribunal query */
+let _resolvedEndpoint: string | null = null
+
+/** @internal Reset the cached endpoint (for testing) */
+export function _resetEndpointCache(): void {
+  _resolvedEndpoint = null
 }
 
-function getDataJudProxyCandidates(): string[] {
-  const primary = getDataJudProxyUrl()
-  const basePath = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BASE_PATH) || '/'
-  const normalizedBase = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath
-  const candidates = new Set<string>()
-  candidates.add(primary)
-  if (primary !== '/api/datajud') {
-    candidates.add('/api/datajud')
+/**
+ * Build an ordered list of endpoint candidates based on the hosting environment.
+ * Avoids candidates known to fail (e.g. relative paths on static hosting).
+ */
+function getEndpointCandidates(): string[] {
+  const host = typeof window !== 'undefined' ? window.location.hostname : ''
+  const isFirebase = host === 'lexio.web.app' || host.endsWith('.firebaseapp.com')
+  const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '0.0.0.0'
+  const isStaticHosting = host.endsWith('.github.io') || host.endsWith('.netlify.app') || host.endsWith('.vercel.app')
+
+  if (isFirebase) {
+    // Firebase Hosting: rewrite /api/datajud → Cloud Function (primary path)
+    return ['/api/datajud', CLOUD_FUNCTION_URL, DIRECT_ENDPOINT]
   }
-  const baseCandidate = `${normalizedBase}/api/datajud`
-  if (normalizedBase && normalizedBase !== '' && baseCandidate !== primary) {
-    candidates.add(baseCandidate)
+
+  if (isLocal) {
+    // Local dev: Vite proxy forwards /api/* to backend, direct as fallback
+    return ['/api/datajud', DIRECT_ENDPOINT, CLOUD_FUNCTION_URL]
   }
-  if (primary !== CLOUD_FUNCTION_URL) {
-    candidates.add(CLOUD_FUNCTION_URL)
+
+  if (isStaticHosting) {
+    // Static hosting (GitHub Pages, Netlify, Vercel): no server-side proxy
+    // Relative paths like /api/datajud will always fail — skip them
+    return [CLOUD_FUNCTION_URL, DIRECT_ENDPOINT]
   }
-  return Array.from(candidates)
+
+  // Unknown host: try all options
+  return [CLOUD_FUNCTION_URL, '/api/datajud', DIRECT_ENDPOINT]
 }
 
 /** Small delay between batches to avoid overwhelming the proxy */
 const INTER_BATCH_DELAY = 300
 
 /**
- * Execute a DataJud request via Firebase Cloud Function proxy.
- * Works on both Firebase Hosting (relative /api/datajud) and
- * GitHub Pages (absolute Cloud Function URL).
+ * Execute a single fetch against a DataJud endpoint (proxy or direct).
+ *
+ * Retries only for transient errors (429, 5xx, timeout, network).
+ * Non-retriable errors (400, 403, 404, 405) fail immediately so the
+ * caller can try the next endpoint candidate without delay.
+ */
+async function fetchFromEndpoint(
+  endpoint: string,
+  tribunalAlias: string,
+  esBody: object,
+  signal?: AbortSignal,
+): Promise<Array<{ _source?: Record<string, unknown> }>> {
+  const isDirect = endpoint === DIRECT_ENDPOINT
+  const url = isDirect
+    ? `${DATAJUD_BASE_URL}/api_publica_${tribunalAlias}/_search`
+    : endpoint
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (isDirect) {
+    headers['Authorization'] = `APIKey ${DATAJUD_API_KEY}`
+  }
+
+  const reqBody = isDirect
+    ? JSON.stringify(esBody)
+    : JSON.stringify({ tribunal: tribunalAlias, body: esBody })
+
+  let lastError: Error = new Error('Falha ao consultar DataJud')
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (signal?.aborted) throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
+    const onAbort = () => controller.abort()
+    if (signal) signal.addEventListener('abort', onAbort, { once: true })
+
+    let shouldRetry = false
+
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: reqBody,
+        signal: controller.signal,
+      })
+
+      if (resp.ok) {
+        const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
+        return data.hits?.hits ?? []
+      }
+
+      // Non-OK response — check if retriable
+      lastError = new Error(`DataJud ${isDirect ? 'direct' : 'proxy'} HTTP ${resp.status}`)
+      shouldRetry = resp.status === 429 || resp.status >= 500
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        if (signal?.aborted) throw err
+        // Timeout — retriable
+        lastError = new Error(`DataJud ${isDirect ? 'direct' : 'proxy'} timeout`)
+        shouldRetry = true
+      } else {
+        // Network or CORS error — may be transient
+        lastError = err instanceof Error ? err : new Error(String(err))
+        shouldRetry = true
+      }
+    } finally {
+      clearTimeout(timeoutId)
+      if (signal) signal.removeEventListener('abort', onAbort)
+    }
+
+    if (!shouldRetry || attempt >= MAX_RETRIES) break
+    await new Promise(r => setTimeout(r, RETRY_BASE_DELAY_MS * (2 ** attempt)))
+  }
+
+  throw lastError
+}
+
+/**
+ * Execute a DataJud request with automatic endpoint resolution and caching.
+ *
+ * Tries endpoints in priority order (proxy → Cloud Function → direct API).
+ * Once a working endpoint is found, it is cached for subsequent calls.
+ * If the cached endpoint later fails with an endpoint-level error (404, 405,
+ * timeout), the cache is reset and all candidates are retried.
  */
 async function fetchDataJudHits(
   tribunalAlias: string,
   esBody: object,
   signal?: AbortSignal,
 ): Promise<Array<{ _source?: Record<string, unknown> }>> {
-  const proxyCandidates = getDataJudProxyCandidates()
-  let lastError: unknown = null
+  if (signal?.aborted) throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
 
-  for (const proxyUrl of proxyCandidates) {
-    if (signal?.aborted) {
-      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
-    }
+  // Fast path: use the previously resolved working endpoint
+  if (_resolvedEndpoint) {
+    try {
+      return await fetchFromEndpoint(_resolvedEndpoint, tribunalAlias, esBody, signal)
+    } catch (err) {
+      // User cancelled — propagate immediately
+      if (err instanceof DOMException && err.name === 'AbortError' && signal?.aborted) throw err
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      const timeoutController = new AbortController()
-      const timeoutId = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT)
-      const signalController = new AbortController()
+      // Only reset cache for endpoint-level failures (404, 405, connection issues).
+      // Tribunal-level errors (400, 401, 403, data issues) should propagate as-is
+      // since switching endpoints won't help.
+      const msg = err instanceof Error ? err.message : ''
+      const isEndpointIssue = err instanceof TypeError ||
+        /HTTP (404|405)/.test(msg) || msg.includes('timeout')
 
-      const onExternalAbort = () => signalController.abort()
-      if (signal) signal.addEventListener('abort', onExternalAbort, { once: true })
-      const onTimeoutAbort = () => signalController.abort()
-      timeoutController.signal.addEventListener('abort', onTimeoutAbort, { once: true })
-      const retryDelay = RETRY_BASE_DELAY_MS * (2 ** attempt)
-
-      try {
-        const resp = await fetch(proxyUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tribunal: tribunalAlias, body: esBody }),
-          signal: signalController.signal,
-        })
-        if (!resp.ok) {
-          const retriableStatus = resp.status === 429 || resp.status >= 500
-          if (!retriableStatus || attempt >= MAX_RETRIES) {
-            throw new Error(`DataJud proxy HTTP ${resp.status}`)
-          }
-          await new Promise(resolve => setTimeout(resolve, retryDelay))
-          continue
-        }
-        const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
-        return data.hits?.hits ?? []
-      } catch (err) {
-        lastError = err
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          const isUserAbort = signal?.aborted
-          if (isUserAbort) throw err
-          if (attempt >= MAX_RETRIES) break
-          await new Promise(resolve => setTimeout(resolve, retryDelay))
-          continue
-        }
-        if (attempt >= MAX_RETRIES) break
-        await new Promise(resolve => setTimeout(resolve, retryDelay))
-      } finally {
-        clearTimeout(timeoutId)
-        if (signal) signal.removeEventListener('abort', onExternalAbort)
-        timeoutController.signal.removeEventListener('abort', onTimeoutAbort)
+      if (isEndpointIssue) {
+        _resolvedEndpoint = null
+        // Fall through to try all candidates below
+      } else {
+        throw err
       }
     }
   }
 
-  throw (lastError instanceof Error ? lastError : new Error('Falha ao consultar DataJud'))
+  // Probe all endpoint candidates in order
+  const candidates = getEndpointCandidates()
+  let lastError: unknown = null
+
+  for (const candidate of candidates) {
+    if (signal?.aborted) throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+
+    try {
+      const result = await fetchFromEndpoint(candidate, tribunalAlias, esBody, signal)
+      _resolvedEndpoint = candidate // Cache the working endpoint
+      return result
+    } catch (err) {
+      lastError = err
+      // User cancelled — propagate immediately
+      if (err instanceof DOMException && err.name === 'AbortError' && signal?.aborted) throw err
+      // This candidate failed — try next one
+      continue
+    }
+  }
+
+  const detail = lastError instanceof Error ? lastError.message : 'erro desconhecido'
+  throw new Error(`Nenhum endpoint DataJud disponível (${detail}). Verifique sua conexão ou tente novamente.`)
 }
 
 // ── Tribunal Registry ──────────────────────────────────────────────────────────

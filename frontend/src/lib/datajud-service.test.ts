@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { searchDataJud, type TribunalInfo } from './datajud-service'
+import { searchDataJud, _resetEndpointCache, type TribunalInfo } from './datajud-service'
 
 describe('datajud-service', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    _resetEndpointCache()
   })
 
   it('classifies 403 responses as auth errors in errorDetails', async () => {
