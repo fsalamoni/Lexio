@@ -1,5 +1,5 @@
 /**
- * DataJud Proxy — Firebase Cloud Function
+ * DataJud Proxy — Firebase Cloud Function (2nd Gen)
  *
  * Proxies browser requests to the DataJud CNJ API, adding the required
  * Authorization header that cannot be sent directly from the browser
@@ -9,9 +9,10 @@
  * Body: { tribunal: string, body: object }
  * Returns: DataJud Elasticsearch response (JSON)
  */
-import * as functions from "firebase-functions";
+import { onRequest } from "firebase-functions/v2/https";
+import { logger } from "firebase-functions/v2";
 
-// ── Constants ──────────────────────────────────────────────────────────────────
+// ── Constants ───────────────────────────────────────────────────────────
 
 const DATAJUD_API_KEY =
   "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==";
@@ -41,7 +42,7 @@ const VALID_ALIASES = new Set([
   "tjmmg", "tjmrs", "tjmsp",
 ]);
 
-// ── CORS helpers ───────────────────────────────────────────────────────────────
+// ── CORS helpers ──────────────────────────────────────────────────────────
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -50,11 +51,11 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Max-Age": "86400",
 };
 
-// ── Cloud Function ─────────────────────────────────────────────────────────────
+// ── Cloud Function (2nd Gen) ──────────────────────────────────────────────
 
-export const datajudProxy = functions
-  .region("southamerica-east1")
-  .https.onRequest(async (req, res) => {
+export const datajudProxy = onRequest(
+  { region: "southamerica-east1" },
+  async (req, res) => {
     // Set CORS headers on all responses
     for (const [key, value] of Object.entries(CORS_HEADERS)) {
       res.set(key, value);
@@ -128,7 +129,8 @@ export const datajudProxy = functions
         return;
       }
       const message = err instanceof Error ? err.message : "Unknown error";
-      functions.logger.error("DataJud proxy error:", message);
+      logger.error("DataJud proxy error:", message);
       res.status(502).json({error: `DataJud proxy error: ${message}`});
     }
-  });
+  }
+);
