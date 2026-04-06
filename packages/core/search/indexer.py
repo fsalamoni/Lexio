@@ -33,7 +33,7 @@ def _strip_rtf(text: str) -> str:
 class _HTMLTextExtractor(HTMLParser):
     """Simple HTML parser that extracts visible text content."""
 
-    _skip_tags = frozenset({"script", "style", "noscript", "svg", "head"})
+    _skip_tags = frozenset({"script", "style", "noscript", "svg", "head", "meta", "link", "title"})
 
     def __init__(self) -> None:
         super().__init__()
@@ -63,10 +63,9 @@ def _strip_html(html: str) -> str:
         parser.feed(html)
         return parser.get_text()
     except Exception:
-        # Regex fallback
-        text = re.sub(r"<script[\s\S]*?</script>", "", html, flags=re.IGNORECASE)
-        text = re.sub(r"<style[\s\S]*?</style>", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"<[^>]+>", " ", text)
+        # Minimal fallback: strip angle-bracketed sequences.
+        # Not a sanitizer — only used for text extraction when HTMLParser fails.
+        text = re.sub(r"<[^>]+>", " ", html)
         text = re.sub(r"\s+", " ", text).strip()
         return text
 

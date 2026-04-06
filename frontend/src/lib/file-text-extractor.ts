@@ -149,6 +149,9 @@ export async function extractFileText(file: File): Promise<string> {
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
+/** Pre-compiled regex for RTF hex escapes (e.g. \'ab) */
+const RTF_HEX_RE = /\\'[0-9a-f]{2}/gi
+
 /** Read a file as text with UTF-8 encoding, falling back to Latin-1 on decode issues. */
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -178,35 +181,27 @@ function stripRtf(rtf: string): string {
     .replace(/\\[a-z]+[-]?\d*\s?/gi, ' ') // Remove control words like \par, \b0
     .replace(/[{}]/g, '')                  // Remove remaining braces
     .replace(/\\\\/g, '\\')               // Unescape backslashes
-  // Remove RTF hex escapes like \'ab
-  text = text.replace(new RegExp("\\\\'[0-9a-f]{2}", 'gi'), '')
+  // Remove RTF hex escapes like \'ab (module-level constant for performance)
+  text = text.replace(RTF_HEX_RE, '')
   text = text.replace(/\s+/g, ' ').trim()
   return text
 }
 
 /** Strip HTML tags and decode entities, returning plain text. */
 function stripHtml(html: string): string {
-  // Use DOMParser when available (browser environment)
+  // DOMParser is always available in modern browsers.
+  // We use it to safely extract text content without regex-based HTML parsing.
   if (typeof DOMParser !== 'undefined') {
     try {
       const doc = new DOMParser().parseFromString(html, 'text/html')
-      // Remove script and style elements
-      doc.querySelectorAll('script, style, noscript').forEach(el => el.remove())
+      // Remove non-visible elements for cleaner text extraction
+      doc.querySelectorAll('script, style, noscript, svg, head').forEach(el => el.remove())
       return (doc.body?.textContent ?? '').replace(/\s+/g, ' ').trim()
     } catch {
-      // Fall through to regex approach
+      // Fall through to basic text extraction
     }
   }
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim()
+  // Minimal fallback: just strip angle-bracketed sequences (not a sanitizer — only for
+  // text extraction in non-browser environments where DOMParser is unavailable).
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 }
