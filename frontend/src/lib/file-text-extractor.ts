@@ -70,11 +70,19 @@ export function isSupportedTextFile(file: File): boolean {
   return SUPPORTED_TEXT_FILE_EXTENSIONS.includes(ext) || SUPPORTED_TEXT_FILE_MIME_TYPES.includes(file.type)
 }
 
-async function extractPdfText(file: File): Promise<string> {
+/** Result from PDF text extraction, including metadata. */
+export interface PdfExtractionResult {
+  text: string
+  pageCount: number
+  pagesWithText: number
+}
+
+async function extractPdfText(file: File): Promise<PdfExtractionResult> {
   const arrayBuffer = await file.arrayBuffer()
   const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) })
   const pdf = await loadingTask.promise
   const pages: string[] = []
+  let pagesWithText = 0
   for (let i = 1; i <= pdf.numPages; i++) {
     try {
       const page = await pdf.getPage(i)
@@ -82,15 +90,45 @@ async function extractPdfText(file: File): Promise<string> {
       const pageText = content.items
         .map((item: { str?: string }) => ('str' in item ? item.str : ''))
         .join(' ')
-      if (pageText.trim()) pages.push(pageText)
+      if (pageText.trim()) {
+        pages.push(pageText)
+        pagesWithText++
+      }
     } catch (pageErr) {
       console.warn(`Aviso: falha ao extrair texto da página ${i}/${pdf.numPages}`, pageErr)
     }
   }
-  return pages.join('\n').trim()
+  return {
+    text: pages.join('\n').trim(),
+    pageCount: pdf.numPages,
+    pagesWithText,
+  }
 }
 
+/** Enriched result from text extraction, including optional metadata. */
+export interface FileExtractionResult {
+  /** Extracted plain text. */
+  text: string
+  /** Page count (PDFs only). */
+  pageCount?: number
+  /** Pages with extractable text (PDFs only). */
+  pagesWithText?: number
+}
+
+/**
+ * Extract text from a file (text-only convenience wrapper).
+ * Use `extractFileTextWithMeta()` when you also need PDF page count.
+ */
 export async function extractFileText(file: File): Promise<string> {
+  const result = await extractFileTextWithMeta(file)
+  return result.text
+}
+
+/**
+ * Extract text from a file with optional metadata (page count for PDFs).
+ * Supports: PDF, DOCX, DOC, RTF, HTML, TXT, MD, JSON, CSV, XML, YAML, LOG.
+ */
+export async function extractFileTextWithMeta(file: File): Promise<FileExtractionResult> {
   const ext = getFileExtension(file.name)
 
   // DOCX / DOC — uses mammoth for raw text extraction
@@ -99,7 +137,7 @@ export async function extractFileText(file: File): Promise<string> {
       const arrayBuffer = await file.arrayBuffer()
       const mammoth = await import('mammoth')
       const result = await mammoth.extractRawText({ arrayBuffer })
-      return result.value.trim()
+      return { text: result.value.trim() }
     } catch (err) {
       console.error(`Erro ao extrair texto de ${file.name} (${ext}):`, err)
       throw new Error(`Falha ao processar arquivo ${ext.toUpperCase()}: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
@@ -109,7 +147,12 @@ export async function extractFileText(file: File): Promise<string> {
   // PDF — uses bundled pdfjs-dist
   if (ext === '.pdf' || file.type === 'application/pdf') {
     try {
-      return await extractPdfText(file)
+      const pdfResult = await extractPdfText(file)
+      return {
+        text: pdfResult.text,
+        pageCount: pdfResult.pageCount,
+        pagesWithText: pdfResult.pagesWithText,
+      }
     } catch (err) {
       console.error(`Erro ao extrair texto de ${file.name} (PDF):`, err)
       throw new Error(`Falha ao processar PDF: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
@@ -120,7 +163,7 @@ export async function extractFileText(file: File): Promise<string> {
   if (ext === '.rtf' || file.type === 'application/rtf' || file.type === 'text/rtf') {
     try {
       const rawText = await readFileAsText(file)
-      return stripRtf(rawText).trim()
+      return { text: stripRtf(rawText).trim() }
     } catch (err) {
       console.error(`Erro ao extrair texto de ${file.name} (RTF):`, err)
       throw new Error(`Falha ao processar RTF: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
@@ -131,7 +174,7 @@ export async function extractFileText(file: File): Promise<string> {
   if (ext === '.html' || ext === '.htm' || file.type === 'text/html' || file.type === 'application/xhtml+xml') {
     try {
       const rawHtml = await readFileAsText(file)
-      return stripHtml(rawHtml).trim()
+      return { text: stripHtml(rawHtml).trim() }
     } catch (err) {
       console.error(`Erro ao extrair texto de ${file.name} (HTML):`, err)
       throw new Error(`Falha ao processar HTML: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
@@ -140,7 +183,7 @@ export async function extractFileText(file: File): Promise<string> {
 
   // All other text-like formats: TXT, MD, JSON, CSV, XML, YAML, LOG, etc.
   try {
-    return await readFileAsText(file)
+    return { text: await readFileAsText(file) }
   } catch (err) {
     console.error(`Erro ao ler arquivo ${file.name}:`, err)
     throw new Error(`Falha ao ler arquivo: ${err instanceof Error ? err.message : 'erro desconhecido'}`)

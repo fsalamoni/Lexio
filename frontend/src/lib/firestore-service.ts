@@ -1007,7 +1007,7 @@ export async function listAcervoDocuments(
  */
 export async function createAcervoDocument(
   uid: string,
-  data: { filename: string; content_type: string; size_bytes: number; text_content: string },
+  data: { filename: string; content_type: string; size_bytes: number; text_content: string; pageCount?: number },
 ): Promise<AcervoDocumentData & { truncated?: boolean }> {
   const db = ensureFirestore()
   const now = new Date().toISOString()
@@ -1029,8 +1029,8 @@ export async function createAcervoDocument(
 
   const raw = data.text_content.trim()
 
-  // Convert to structured JSON for compact storage
-  const structured = textToStructuredJson(raw, data.filename)
+  // Convert to structured JSON for compact storage (pass pageCount for PDF metadata)
+  const structured = textToStructuredJson(raw, data.filename, data.pageCount)
   const jsonStr = serializeStructuredJson(structured)
 
   // Check if the JSON serialization fits within Firestore limits
@@ -1192,6 +1192,20 @@ export async function updateAcervoTextContent(
       ? Math.ceil(structured.full_text.length / ACERVO_CHUNK_SIZE)
       : 0,
   })
+}
+
+/**
+ * Re-convert a legacy plain-text acervo document to structured JSON format.
+ * Reads the current text_content (which listAcervoDocuments already resolved),
+ * reconverts it to JSON, and stores it back. Returns the updated storage_format.
+ */
+export async function convertAcervoToJson(
+  uid: string,
+  docId: string,
+  resolvedTextContent: string,
+  filename: string,
+): Promise<void> {
+  await updateAcervoTextContent(uid, docId, resolvedTextContent, filename)
 }
 
 /**
