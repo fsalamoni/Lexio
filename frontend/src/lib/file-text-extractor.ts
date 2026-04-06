@@ -29,20 +29,32 @@ export const SUPPORTED_TEXT_FILE_MIME_TYPES = [
   'application/msword',
   'text/plain',
   'text/markdown',
+  'text/x-markdown',
   'application/json',
   'text/json',
+  'application/ld+json',
+  'application/x-ndjson',
   'text/csv',
+  'application/vnd.ms-excel',
   'application/xml',
   'text/xml',
+  'application/xhtml+xml',
   'application/rtf',
   'text/rtf',
   'text/html',
   'application/x-yaml',
+  'application/yaml',
   'text/yaml',
+  'text/x-yaml',
+  'text/log',
+  'text/x-log',
 ]
 
 export function getFileExtension(filename: string): string {
-  return '.' + (filename.split('.').pop()?.toLowerCase() ?? '')
+  const trimmed = filename.trim()
+  const dotIndex = trimmed.lastIndexOf('.')
+  if (dotIndex <= 0 || dotIndex === trimmed.length - 1) return ''
+  return trimmed.slice(dotIndex).toLowerCase()
 }
 
 export function isSupportedTextFile(file: File): boolean {

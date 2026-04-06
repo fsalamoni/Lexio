@@ -19,19 +19,29 @@ COLLECTION = settings.qdrant_collection
 def _extract_text(content: bytes, content_type: str, filename: str) -> str:
     """Extract plain text from uploaded file bytes."""
     fname = filename.lower()
+    normalized_content_type = content_type.lower()
     text_like_mime_types = {
         "text/plain",
         "text/markdown",
+        "text/x-markdown",
         "application/json",
         "text/json",
+        "application/ld+json",
+        "application/x-ndjson",
         "text/csv",
+        "application/vnd.ms-excel",
         "application/xml",
         "text/xml",
+        "application/xhtml+xml",
         "application/x-yaml",
+        "application/yaml",
         "text/yaml",
+        "text/x-yaml",
         "text/html",
         "application/rtf",
         "text/rtf",
+        "text/log",
+        "text/x-log",
     }
     text_like_extensions = (
         ".txt",
@@ -48,8 +58,8 @@ def _extract_text(content: bytes, content_type: str, filename: str) -> str:
 
     # Plain text
     if (
-        content_type in text_like_mime_types
-        or content_type.startswith("text/")
+        normalized_content_type in text_like_mime_types
+        or normalized_content_type.startswith("text/")
         or fname.endswith(text_like_extensions)
     ):
         try:
@@ -58,7 +68,7 @@ def _extract_text(content: bytes, content_type: str, filename: str) -> str:
             return content.decode("latin-1", errors="replace")
 
     # DOCX
-    if fname.endswith(".docx") or "wordprocessingml" in content_type:
+    if fname.endswith(".docx") or "wordprocessingml" in normalized_content_type:
         try:
             from docx import Document as DocxDoc
             doc = DocxDoc(io.BytesIO(content))
@@ -68,7 +78,7 @@ def _extract_text(content: bytes, content_type: str, filename: str) -> str:
             return ""
 
     # PDF
-    if fname.endswith(".pdf") or "pdf" in content_type:
+    if fname.endswith(".pdf") or "pdf" in normalized_content_type:
         try:
             from pypdf import PdfReader
             reader = PdfReader(io.BytesIO(content))

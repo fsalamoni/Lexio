@@ -5,6 +5,7 @@ or database, so they run fast and without Docker.
 """
 
 import pytest
+from pathlib import Path
 
 # Constants from the uploads route
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -25,15 +26,50 @@ ALLOWED_CONTENT_TYPES = {
     "text/html",
     "application/rtf",
     "text/rtf",
+    "text/x-markdown",
+    "application/yaml",
+    "text/x-yaml",
+    "application/x-ndjson",
+    "application/ld+json",
+    "application/xhtml+xml",
+    "application/vnd.ms-excel",
+    "text/log",
+    "text/x-log",
+}
+
+ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".txt",
+    ".md",
+    ".json",
+    ".csv",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".html",
+    ".htm",
+    ".rtf",
+    ".log",
 }
 
 
 # ── Inline validation logic (mirrors uploads.py) ──────────────────────────────
 
-def validate_upload(content: bytes, content_type: str | None) -> dict:
+def validate_upload(content: bytes, content_type: str | None, filename: str = "arquivo.bin") -> dict:
     """Returns {"ok": True} or {"ok": False, "status": int, "detail": str}."""
-    if content_type and content_type not in ALLOWED_CONTENT_TYPES:
-        return {"ok": False, "status": 415, "detail": f"Tipo não suportado: {content_type}"}
+    extension = Path(filename).suffix.lower()
+    has_allowed_extension = extension in ALLOWED_EXTENSIONS
+    has_allowed_content_type = content_type in ALLOWED_CONTENT_TYPES if content_type else False
+    supported = has_allowed_extension or has_allowed_content_type
+    if not supported:
+        reason = "extensão e MIME não suportados"
+        if not has_allowed_extension and content_type:
+            reason = f"MIME não suportado: {content_type}"
+        elif not has_allowed_extension:
+            reason = f"extensão não suportada: {extension or '(sem extensão)'}"
+        return {"ok": False, "status": 415, "detail": f"Tipo não suportado ({reason})"}
     if len(content) > MAX_UPLOAD_BYTES:
         mb = len(content) / 1024 / 1024
         return {"ok": False, "status": 413, "detail": f"Arquivo muito grande: {mb:.1f}MB"}
@@ -66,8 +102,17 @@ class TestMimeTypeValidation:
         assert r["status"] == 415
 
     def test_none_content_type_allowed(self):
-        # When content_type is None we don't block (client may not set it)
-        r = validate_upload(b"content", None)
+        # When content_type is None, extension can still authorize the upload.
+        r = validate_upload(b"content", None, "fonte.md")
+        assert r["ok"] is True
+
+    def test_none_content_type_rejected_when_extension_unknown(self):
+        r = validate_upload(b"content", None, "arquivo.bin")
+        assert r["ok"] is False
+        assert r["status"] == 415
+
+    def test_octet_stream_allowed_when_extension_supported(self):
+        r = validate_upload(b"tema: teste", "application/octet-stream", "fonte.yaml")
         assert r["ok"] is True
 
     def test_pdf_explicitly_allowed(self):

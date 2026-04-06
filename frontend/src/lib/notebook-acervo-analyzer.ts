@@ -56,6 +56,7 @@ function throwIfAborted(signal?: AbortSignal): void {
 const MAX_PREFILTERED_DOCS = 30
 const MAX_SELECTED_DOCS = 8
 const MAX_ANALISTA_CHARS_PER_DOC = 15000
+const PREFILTER_TEXT_SAMPLE_CHARS = 20_000
 
 function extractJsonPayload(raw: string): string {
   let jsonStr = raw.trim()
@@ -308,8 +309,23 @@ function extractKeywordsFromTriage(triageContent: string, topic: string, descrip
   return [...new Set(keywords)]
 }
 
+type PreFilterDoc = {
+  id: string
+  filename: string
+  created_at: string
+  text_content: string
+  ementa?: string
+  ementa_keywords?: string[]
+  natureza?: string
+  area_direito?: string[]
+  assuntos?: string[]
+  tipo_documento?: string
+  contexto?: string[]
+  prefilter_text_sample?: string
+}
+
 function preFilterDocs(
-  docs: Array<{ id: string; filename: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: string; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }>,
+  docs: PreFilterDoc[],
   searchKeywords: string[],
 ): typeof docs {
   if (searchKeywords.length === 0) return docs.slice(0, MAX_PREFILTERED_DOCS)
@@ -324,6 +340,7 @@ function preFilterDocs(
     const assuntosLower = (d.assuntos || []).map(a => a.toLowerCase())
     const tipoLower = (d.tipo_documento || '').toLowerCase()
     const contextoLower = (d.contexto || []).map(c => c.toLowerCase())
+    const textSample = d.prefilter_text_sample ?? ''
 
     for (const keyword of normalizedSearch) {
       if (filenameLower.includes(keyword)) score += 3
@@ -333,6 +350,7 @@ function preFilterDocs(
       if (assuntosLower.some(a => a.includes(keyword) || keyword.includes(a))) score += 2
       if (tipoLower && (tipoLower.includes(keyword) || keyword.includes(tipoLower))) score += 2
       if (contextoLower.some(c => c.includes(keyword) || keyword.includes(c))) score += 1
+      if (textSample.includes(keyword)) score += 1
     }
 
     return { ...d, score }
@@ -429,7 +447,11 @@ export async function analyzeNotebookAcervo(
   const searchKeywords = extractKeywordsFromTriage(triageResult.content, topic, description)
   console.log(`[Notebook Acervo Pre-filter] Keywords:`, searchKeywords)
 
-  const preFiltered = preFilterDocs(availableDocs, searchKeywords)
+  const prefilterPreparedDocs: PreFilterDoc[] = availableDocs.map((d) => ({
+    ...d,
+    prefilter_text_sample: (d.text_content || '').slice(0, PREFILTER_TEXT_SAMPLE_CHARS).toLowerCase(),
+  }))
+  const preFiltered = preFilterDocs(prefilterPreparedDocs, searchKeywords)
   console.log(`[Notebook Acervo Pre-filter] ${availableDocs.length} docs → ${preFiltered.length} candidates`)
 
   if (preFiltered.length === 0) {

@@ -40,7 +40,45 @@ ALLOWED_CONTENT_TYPES = {
     "text/html",
     "application/rtf",
     "text/rtf",
+    "text/x-markdown",
+    "application/yaml",
+    "text/x-yaml",
+    "application/x-ndjson",
+    "application/ld+json",
+    "application/xhtml+xml",
+    "application/vnd.ms-excel",
+    "text/log",
+    "text/x-log",
 }
+
+ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".txt",
+    ".md",
+    ".json",
+    ".csv",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".html",
+    ".htm",
+    ".rtf",
+    ".log",
+}
+
+
+def _get_file_extension(filename: str | None) -> str:
+    if not filename:
+        return ""
+    return Path(filename).suffix.lower()
+
+
+def _is_supported_upload(file: UploadFile) -> bool:
+    extension = _get_file_extension(file.filename)
+    content_type = (file.content_type or "").lower()
+    return extension in ALLOWED_EXTENSIONS or content_type in ALLOWED_CONTENT_TYPES
 
 
 async def _index_in_background(
@@ -99,11 +137,11 @@ async def upload_file(
     db: AsyncSession = Depends(get_db),
 ):
     # Validate content type
-    if file.content_type and file.content_type not in ALLOWED_CONTENT_TYPES:
+    if not _is_supported_upload(file):
         raise HTTPException(
             status_code=415,
-            detail=f"Tipo de arquivo não suportado: {file.content_type}. "
-                   f"Use PDF, DOCX, DOC, TXT, MD, JSON, CSV, XML, YAML, HTML ou RTF.",
+            detail=f"Tipo de arquivo não suportado: {file.content_type or 'desconhecido'}. "
+                   f"Use PDF, DOCX, DOC, TXT, MD, JSON, CSV, XML, YAML, HTML, RTF ou LOG.",
         )
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
