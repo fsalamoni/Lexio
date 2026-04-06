@@ -2,7 +2,9 @@
 
 import io
 import logging
+import re
 import uuid
+from html.parser import HTMLParser
 
 import httpx
 
@@ -14,6 +16,59 @@ logger = logging.getLogger("lexio.search.indexer")
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 100
 COLLECTION = settings.qdrant_collection
+
+
+def _strip_rtf(text: str) -> str:
+    """Strip RTF control sequences and return plain text."""
+    # Remove RTF groups and control words
+    out = re.sub(r"\{\\[^{}]*\}", "", text)
+    out = re.sub(r"\\[a-zA-Z]+[-]?\d*\s?", " ", out)
+    out = re.sub(r"[{}]", "", out)
+    out = out.replace("\\\\", "\\")
+    out = re.sub(r"\\'[0-9a-fA-F]{2}", "", out)
+    out = re.sub(r"\s+", " ", out).strip()
+    return out
+
+
+class _HTMLTextExtractor(HTMLParser):
+    """Simple HTML parser that extracts visible text content."""
+
+    _skip_tags = frozenset({"script", "style", "noscript", "svg", "head"})
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in self._skip_tags:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in self._skip_tags and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0 and data.strip():
+            self._parts.append(data.strip())
+
+    def get_text(self) -> str:
+        return " ".join(self._parts)
+
+
+def _strip_html(html: str) -> str:
+    """Strip HTML tags and return plain text."""
+    parser = _HTMLTextExtractor()
+    try:
+        parser.feed(html)
+        return parser.get_text()
+    except Exception:
+        # Regex fallback
+        text = re.sub(r"<script[\s\S]*?</script>", "", html, flags=re.IGNORECASE)
+        text = re.sub(r"<style[\s\S]*?</style>", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
 
 
 def _extract_text(content: bytes, content_type: str, filename: str) -> str:
@@ -38,8 +93,6 @@ def _extract_text(content: bytes, content_type: str, filename: str) -> str:
         "text/yaml",
         "text/x-yaml",
         "text/html",
-        "application/rtf",
-        "text/rtf",
         "text/log",
         "text/x-log",
     }
@@ -56,7 +109,28 @@ def _extract_text(content: bytes, content_type: str, filename: str) -> str:
         ".log",
     )
 
-    # Plain text
+    # RTF — strip control sequences to get plain text
+    if fname.endswith(".rtf") or normalized_content_type in ("application/rtf", "text/rtf"):
+        try:
+            raw = content.decode("utf-8", errors="replace")
+            return _strip_rtf(raw)
+        except Exception as e:
+            logger.warning(f"RTF extraction failed: {e}")
+            return ""
+
+    # HTML / XHTML — strip tags to get plain text
+    if (
+        fname.endswith((".html", ".htm"))
+        or normalized_content_type in ("text/html", "application/xhtml+xml")
+    ):
+        try:
+            raw = content.decode("utf-8", errors="replace")
+            return _strip_html(raw)
+        except Exception as e:
+            logger.warning(f"HTML extraction failed: {e}")
+            return ""
+
+    # Plain text-like formats (TXT, MD, JSON, CSV, XML, YAML, LOG, etc.)
     if (
         normalized_content_type in text_like_mime_types
         or normalized_content_type.startswith("text/")
