@@ -1259,7 +1259,7 @@ export default function Upload() {
           <div>
             <p className="text-sm font-medium text-blue-800">Acervo de documentos de referência</p>
             <p className="text-xs text-blue-600 mt-1">
-              Envie documentos de texto (.txt, .md, .doc, .docx, .pdf) que servirão como base de conhecimento
+              Envie documentos de texto (.pdf, .docx, .doc, .txt, .md, .json, .csv, .xml, .yaml, .yml, .html, .htm, .rtf, .log) que servirão como base de conhecimento
               na elaboração de novos documentos. O conteúdo textual será armazenado e utilizado pelo
               pipeline de geração junto com as teses do banco de teses.
             </p>

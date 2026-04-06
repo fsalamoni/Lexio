@@ -34,7 +34,6 @@ ALLOWED_CONTENT_TYPES = {
     "application/vnd.ms-excel",
     "text/log",
     "text/x-log",
-    "application/octet-stream",
 }
 
 ALLOWED_EXTENSIONS = {
