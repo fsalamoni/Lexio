@@ -110,6 +110,12 @@ export interface AcervoDocumentData {
   chunks_count: number
   status: 'indexed' | 'index_empty' | 'index_error'
   created_at: string
+  /**
+   * Storage format of `text_content`:
+   *  - `'json'` — Structured JSON (v1 schema from document-json-converter)
+   *  - `'text'` or `undefined` — Legacy plain text
+   */
+  storage_format?: 'json' | 'text'
   analyzed_for_theses?: boolean
   ementa?: string
   ementa_keywords?: string[]

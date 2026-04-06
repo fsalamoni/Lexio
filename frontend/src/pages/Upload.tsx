@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter, ChevronDown } from 'lucide-react'
+import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Clock, RefreshCw, X, Trash2, Info, Eye, BookOpen, Sparkles, Loader2, Save, Edit3, Tags, Search, Filter, ChevronDown, Database } from 'lucide-react'
 import api from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
@@ -941,12 +941,13 @@ export default function Upload() {
         }
         try {
           setLocalFiles(prev =>
-            prev.map(f => f.name === file.name ? { ...f, progress: 20 } : f)
+            prev.map(f => f.name === file.name ? { ...f, progress: 15 } : f)
           )
           const textContent = await extractFileText(file)
           setLocalFiles(prev =>
-            prev.map(f => f.name === file.name ? { ...f, progress: 80 } : f)
+            prev.map(f => f.name === file.name ? { ...f, progress: 60 } : f)
           )
+          // createAcervoDocument now converts to structured JSON internally
           const result = await createAcervoDocument(userId, {
             filename: file.name,
             content_type: file.type || 'text/plain',
@@ -1125,7 +1126,8 @@ export default function Upload() {
   // Save text content from document view modal
   const handleSaveText = async (docId: string, textContent: string) => {
     if (!userId) return
-    await updateAcervoTextContent(userId, docId, textContent)
+    const docData = firebaseHistory.find(d => d.id === docId)
+    await updateAcervoTextContent(userId, docId, textContent, docData?.filename)
     setFirebaseHistory(prev => prev.map(d =>
       d.id === docId ? { ...d, text_content: textContent } : d,
     ))
@@ -1459,6 +1461,12 @@ export default function Upload() {
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <span className="text-xs text-gray-400">{formatSize(acervoDoc.size_bytes)}</span>
                         {acervoDoc.chunks_count > 0 && <span className="text-xs text-gray-400">· {acervoDoc.chunks_count} fragmentos</span>}
+                        {acervoDoc.storage_format === 'json' && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500" title="Armazenado em formato JSON estruturado (compacto)">
+                            <Database className="w-3 h-3" />
+                            JSON
+                          </span>
+                        )}
                         {/* Status indicators */}
                         <span className={`inline-flex items-center gap-0.5 text-[10px] ${s.color}`}>
                           <StatusIcon className="w-3 h-3" />
