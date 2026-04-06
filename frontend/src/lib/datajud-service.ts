@@ -54,6 +54,19 @@ function getDataJudProxyUrl(): string {
   return CLOUD_FUNCTION_URL
 }
 
+function getDataJudProxyCandidates(): string[] {
+  const basePath = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BASE_PATH) || '/'
+  const normalizedBase = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath
+  const candidates = new Set<string>()
+  candidates.add(getDataJudProxyUrl())
+  candidates.add('/api/datajud')
+  if (normalizedBase && normalizedBase !== '') {
+    candidates.add(`${normalizedBase}/api/datajud`)
+  }
+  candidates.add(CLOUD_FUNCTION_URL)
+  return Array.from(candidates)
+}
+
 /** Small delay between batches to avoid overwhelming the proxy */
 const INTER_BATCH_DELAY = 300
 
@@ -67,20 +80,59 @@ async function fetchDataJudHits(
   esBody: object,
   signal?: AbortSignal,
 ): Promise<Array<{ _source?: Record<string, unknown> }>> {
-  const proxyUrl = getDataJudProxyUrl()
-  const effectiveSignal = signal ?? AbortSignal.timeout(REQUEST_TIMEOUT)
+  const proxyCandidates = getDataJudProxyCandidates()
+  let lastError: unknown = null
 
-  const resp = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tribunal: tribunalAlias, body: esBody }),
-    signal: effectiveSignal,
-  })
-  if (!resp.ok) {
-    throw new Error(`DataJud proxy HTTP ${resp.status}`)
+  for (const proxyUrl of proxyCandidates) {
+    if (signal?.aborted) {
+      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    }
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const timeoutController = new AbortController()
+      const timeoutId = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT)
+      const signalController = new AbortController()
+
+      const onExternalAbort = () => signalController.abort()
+      if (signal) signal.addEventListener('abort', onExternalAbort, { once: true })
+      timeoutController.signal.addEventListener('abort', onExternalAbort, { once: true })
+
+      try {
+        const resp = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tribunal: tribunalAlias, body: esBody }),
+          signal: signalController.signal,
+        })
+        if (!resp.ok) {
+          const retriableStatus = resp.status === 429 || resp.status >= 500
+          if (!retriableStatus || attempt >= MAX_RETRIES) {
+            throw new Error(`DataJud proxy HTTP ${resp.status}`)
+          }
+          await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)))
+          continue
+        }
+        const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
+        return data.hits?.hits ?? []
+      } catch (err) {
+        lastError = err
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          const isUserAbort = signal?.aborted
+          if (isUserAbort) throw err
+          if (attempt >= MAX_RETRIES) break
+          await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)))
+          continue
+        }
+        if (attempt >= MAX_RETRIES) break
+        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)))
+      } finally {
+        clearTimeout(timeoutId)
+        if (signal) signal.removeEventListener('abort', onExternalAbort)
+      }
+    }
   }
-  const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
-  return data.hits?.hits ?? []
+
+  throw (lastError instanceof Error ? lastError : new Error('Falha ao consultar DataJud'))
 }
 
 // ── Tribunal Registry ──────────────────────────────────────────────────────────

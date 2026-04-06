@@ -309,7 +309,7 @@ function extractKeywordsFromTriage(triageContent: string, topic: string, descrip
 }
 
 function preFilterDocs(
-  docs: Array<{ id: string; filename: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: string; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }>,
+  docs: Array<{ id: string; filename: string; created_at: string; text_content: string; ementa?: string; ementa_keywords?: string[]; natureza?: string; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }>,
   searchKeywords: string[],
 ): typeof docs {
   if (searchKeywords.length === 0) return docs.slice(0, MAX_PREFILTERED_DOCS)
@@ -324,6 +324,7 @@ function preFilterDocs(
     const assuntosLower = (d.assuntos || []).map(a => a.toLowerCase())
     const tipoLower = (d.tipo_documento || '').toLowerCase()
     const contextoLower = (d.contexto || []).map(c => c.toLowerCase())
+    const textSampleLower = (d.text_content || '').slice(0, 20_000).toLowerCase()
 
     for (const keyword of normalizedSearch) {
       if (filenameLower.includes(keyword)) score += 3
@@ -333,6 +334,7 @@ function preFilterDocs(
       if (assuntosLower.some(a => a.includes(keyword) || keyword.includes(a))) score += 2
       if (tipoLower && (tipoLower.includes(keyword) || keyword.includes(tipoLower))) score += 2
       if (contextoLower.some(c => c.includes(keyword) || keyword.includes(c))) score += 1
+      if (textSampleLower.includes(keyword)) score += 1
     }
 
     return { ...d, score }
