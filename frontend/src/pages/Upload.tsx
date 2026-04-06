@@ -137,7 +137,7 @@ function AcervoDocModal({ doc, onClose, onTextSaved }: { doc: AcervoDocumentData
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = doc.filename.replace(/\.[^.]+$/, '') + '.txt'
+    a.download = (doc.filename.includes('.') ? doc.filename.replace(/\.[^.]+$/, '') : doc.filename) + '.txt'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -265,10 +265,10 @@ function AcervoDocModal({ doc, onClose, onTextSaved }: { doc: AcervoDocumentData
                 {!['PDF', 'DOCX', 'DOC', 'TXT', 'MD', 'RTF', 'HTML', 'HTM'].includes(ext) && ' Verifique se o formato é suportado.'}
               </p>
             </div>
-          ) : hasSections ? (
+          ) : hasSections && sections ? (
             /* Structured view — section headings + paragraphs */
             <article>
-              {sections!.map((sec, i) => (
+              {sections.map((sec, i) => (
                 <DocSection key={i} section={sec} idx={i} />
               ))}
             </article>
