@@ -145,6 +145,12 @@ export interface NotebookSource {
   content_type?: string
   size_bytes?: number
   text_content?: string
+  /**
+   * Serialised JSON array of raw DataJudResult objects (jurisprudência sources only).
+   * Stored as a string to avoid Firestore nested-array limitations.
+   * Dropped by fitSourcesToFirestoreLimit when the notebook approaches the 1 MB limit.
+   */
+  results_raw?: string
   status: 'pending' | 'processing' | 'indexed' | 'error'
   added_at: string
 }

@@ -85,9 +85,11 @@ function extractToc(md: string): TocItem[] {
 interface ReportViewerProps {
   content: string
   title?: string
+  /** When true, renders with a gray page-canvas background + white card with shadow, simulating a document page. */
+  pageMode?: boolean
 }
 
-export default function ReportViewer({ content, title }: ReportViewerProps) {
+export default function ReportViewer({ content, title, pageMode = false }: ReportViewerProps) {
   const [showToc, setShowToc] = useState(true)
   const [activeId, setActiveId] = useState<string>('')
   const contentRef = useRef<HTMLDivElement>(null)
@@ -122,57 +124,117 @@ export default function ReportViewer({ content, title }: ReportViewerProps) {
   }, [])
 
   return (
-    <div className="flex gap-6 h-full">
-      {/* TOC sidebar */}
-      {hasToc && showToc && (
-        <nav className="w-56 flex-shrink-0 overflow-y-auto pr-3 border-r border-gray-100">
-          <div className="sticky top-0 bg-white pb-2">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Índice</h4>
+    <div className={pageMode ? 'flex flex-col h-full bg-gray-100 overflow-auto' : 'flex gap-6 h-full'}>
+      {pageMode ? (
+        /* ── Page-canvas layout: white paper on gray background ── */
+        <div className="mx-auto my-6 w-full max-w-3xl">
+          {/* TOC toggle (outside card) */}
+          {hasToc && (
+            <div className="flex items-center justify-between mb-4 px-2">
+              <button
+                onClick={() => setShowToc(s => !s)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  showToc ? 'bg-white text-brand-600 shadow-sm' : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                {showToc ? 'Ocultar índice' : 'Mostrar índice'}
+              </button>
+            </div>
+          )}
+          <div className="flex gap-4">
+            {/* TOC sidebar (page-canvas mode) */}
+            {hasToc && showToc && (
+              <nav className="w-52 flex-shrink-0 overflow-y-auto pr-3">
+                <div className="sticky top-6 bg-gray-100 pb-2">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Índice</h4>
+                </div>
+                <ul className="space-y-0.5">
+                  {toc.map((item, i) => (
+                    <li key={i}>
+                      <button
+                        onClick={() => scrollTo(item.id)}
+                        className={`w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate ${
+                          activeId === item.id
+                            ? 'bg-brand-50 text-brand-700 font-medium'
+                            : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200'
+                        }`}
+                        style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
+                      >
+                        {item.level > 1 && <ChevronRight className="w-3 h-3 inline mr-1 opacity-40" />}
+                        {item.text}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            )}
+            {/* Page card */}
+            <div className="flex-1 bg-white rounded-lg shadow-md px-12 py-10 min-h-[600px]">
+              {title && <h1 className="text-2xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">{title}</h1>}
+              <div
+                ref={contentRef}
+                className="prose prose-sm max-w-none text-gray-800 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-6 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mt-5 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-4 [&_p]:leading-relaxed [&_p]:mb-3"
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
+            </div>
           </div>
-          <ul className="space-y-0.5">
-            {toc.map((item, i) => (
-              <li key={i}>
-                <button
-                  onClick={() => scrollTo(item.id)}
-                  className={`w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate ${
-                    activeId === item.id
-                      ? 'bg-brand-50 text-brand-700 font-medium'
-                      : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'
-                  }`}
-                  style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
-                >
-                  {item.level > 1 && <ChevronRight className="w-3 h-3 inline mr-1 opacity-40" />}
-                  {item.text}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        </div>
+      ) : (
+        /* ── Standard side-by-side layout ── */
+        <>
+          {/* TOC sidebar */}
+          {hasToc && showToc && (
+            <nav className="w-56 flex-shrink-0 overflow-y-auto pr-3 border-r border-gray-100">
+              <div className="sticky top-0 bg-white pb-2">
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Índice</h4>
+              </div>
+              <ul className="space-y-0.5">
+                {toc.map((item, i) => (
+                  <li key={i}>
+                    <button
+                      onClick={() => scrollTo(item.id)}
+                      className={`w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate ${
+                        activeId === item.id
+                          ? 'bg-brand-50 text-brand-700 font-medium'
+                          : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'
+                      }`}
+                      style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
+                    >
+                      {item.level > 1 && <ChevronRight className="w-3 h-3 inline mr-1 opacity-40" />}
+                      {item.text}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            {/* TOC toggle */}
+            {hasToc && (
+              <button
+                onClick={() => setShowToc(s => !s)}
+                className={`mb-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  showToc ? 'bg-brand-50 text-brand-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                {showToc ? 'Ocultar índice' : 'Mostrar índice'}
+              </button>
+            )}
+
+            {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
+
+            <div
+              ref={contentRef}
+              className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </div>
+        </>
       )}
-
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        {/* TOC toggle */}
-        {hasToc && (
-          <button
-            onClick={() => setShowToc(s => !s)}
-            className={`mb-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              showToc ? 'bg-brand-50 text-brand-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-            }`}
-          >
-            <List className="w-3.5 h-3.5" />
-            {showToc ? 'Ocultar índice' : 'Mostrar índice'}
-          </button>
-        )}
-
-        {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
-
-        <div
-          ref={contentRef}
-          className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      </div>
     </div>
   )
 }

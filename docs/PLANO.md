@@ -18,12 +18,12 @@
 
 | Área | Estado | Observações |
 |------|--------|-------------|
-| Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos |
-| Pesquisa de Jurisprudência (DataJud) | ⚠️ Parcial | Metadados retornados; ementa/inteiro teor ausentes |
-| Visualizador de Documentos | ⚠️ Parcial | Texto estruturado OK; renderização jurídica fraca |
-| Geração de Documentos (Estúdio) | ⚠️ Parcial | Pipeline OK; prompts genéricos; não persiste em Documentos |
-| Página de Documentos | ✅ Implementado | Lista, filtros, bulk ops; sem vínculo com artefatos do caderno |
-| Novo Documento | ✅ Implementado | Fluxo completo; sem integração DataJud como fonte |
+| Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos, deep-link |
+| Pesquisa de Jurisprudência (DataJud) | ✅ Implementado | Ementa + inteiro teor + results_raw + tabs Síntese/Processos |
+| Visualizador de Documentos | ✅ Implementado | JurisprudenceViewer + ProcessCard + page-canvas para docs |
+| Geração de Documentos (Estúdio) | ✅ Implementado | Pipeline + prompts aprofundados + persiste em Documentos |
+| Página de Documentos | ✅ Implementado | Lista, filtros, bulk ops, filtro "Do Caderno", link para caderno |
+| Novo Documento | ✅ Implementado | Fluxo completo |
 | Banco de Teses | ✅ Implementado | CRUD completo |
 | Acervo | ✅ Implementado | Upload, indexação, classificação, ementa automática |
 | Pesquisa Web Externa | ✅ Implementado | Agentes + deep search |
@@ -38,25 +38,27 @@
 
 ### Feature 1.1: DataJud — ementa integral e inteiro teor
 
-**Estado:** ✅ Implementado (ciclo 2026-04)
+**Estado:** ✅ Implementado (ciclo 2026-04, atualizado ciclo 2026-04-2)
 
-**Objetivo:** Retornar ementa completa e inteiro teor das decisões quando disponíveis na API pública DataJud (CNJ).
+**Objetivo:** Retornar ementa completa e inteiro teor das decisões quando disponíveis na API pública DataJud (CNJ). Armazenar resultados brutos para exibição individual por processo.
 
 **Arquivos afetados:**
 - `frontend/src/lib/datajud-service.ts` — interface `DataJudResult`, `parseDataJudHit`, `formatDataJudResults`
 - `frontend/src/lib/datajud-service.test.ts` — testes unitários
+- `frontend/src/lib/firestore-types.ts` — campo `results_raw?: string` em `NotebookSource`
+- `frontend/src/pages/ResearchNotebook.tsx` — armazena `results_raw` ao criar fonte jurisprudência
+- `frontend/src/lib/firestore-service.ts` — `fitSourcesToFirestoreLimit` descarta `results_raw` quando ratio < 0.8
 
 **Mudanças implementadas:**
-- Adicionado `ementa?: string` e `inteiroTeor?: string` a `DataJudResult`
-- `parseDataJudHit` agora extrai `src.ementa` (string) e `src.inteiro_teor` (string) do `_source` da API Elasticsearch
-- `formatDataJudResults` inclui ementa e trecho do inteiro teor quando disponíveis
-- Testes atualizados para cobrir novos campos
+- `DataJudResult.ementa` e `DataJudResult.inteiroTeor` extraídos do `_source`
+- `NotebookSource.results_raw` armazena JSON serializado dos top-10 resultados (inteiroTeor cappado em 8KB)
+- `fitSourcesToFirestoreLimit` descarta `results_raw` quando o notebook está próximo do limite de 1MB
 
 **Dependências:** API pública DataJud (CNJ) — endpoint `api-publica.datajud.cnj.jus.br`
 
 **Riscos:**
 - A API CNJ nem sempre retorna ementa/inteiro_teor para todos os processos (dados incompletos)
-- Implementação deve ter fallback gracioso quando campos ausentes
+- `results_raw` pode ser descartado quando o caderno tem muitas fontes (comportamento esperado)
 
 ---
 
@@ -96,28 +98,32 @@
 
 ### Feature 2.1: SourceContentViewer — renderização jurídica rica
 
-**Estado:** ✅ Implementado (ciclo 2026-04)
+**Estado:** ✅ Implementado (ciclo 2026-04, atualizado ciclo 2026-04-2)
 
-**Objetivo:** Transformar exibição de JSON cru/texto plano em visualização documental de alta qualidade. Renderizar documentos jurídicos com tipografia, hierarquia, seções, ementa destacada, dispositivo, etc.
+**Objetivo:** Transformar exibição de JSON cru/texto plano em visualização documental de alta qualidade. Exibir ementa e inteiro teor por processo individual.
 
 **Arquivos afetados:**
-- `frontend/src/components/SourceContentViewer.tsx` — componente principal
-- `frontend/src/lib/datajud-service.ts` — campos ementa/inteiro_teor nos resultados
+- `frontend/src/components/SourceContentViewer.tsx` — componente principal com ProcessCard e tabs
 
 **Mudanças implementadas:**
 - Detecção de fontes jurídicas (DataJud/jurisprudência)
-- Renderização de ementa com destaque visual
-- Seções específicas para documentos jurídicos: processo, tribunal, classe, ementa, inteiro teor
+- **Tab "Síntese"**: texto sintetizado pelo LLM com seções visuais
+- **Tab "Processos"** (só quando `results_raw` presente): cards individuais por processo com ementa + inteiro teor expandíveis
+- `ProcessCard`: número, tribunal, classe, data, badges ementa/inteiro teor, assuntos
 - Fallback seguro para documentos genéricos
 - Melhor tipografia e espaçamento para leitura
 
 ---
 
-### Feature 2.2: ArtifactViewerModal — parser Markdown aprimorado
+### Feature 2.2: ArtifactViewerModal — page-canvas para documentos
 
-**Estado:** ⚠️ Parcial — parser regex básico, sem syntax highlight
+**Estado:** ✅ Implementado (ciclo 2026-04-2)
 
-**Arquivos:** `frontend/src/components/artifacts/ArtifactViewerModal.tsx`
+**Objetivo:** Documentos gerados no Estúdio do tipo `documento` são exibidos em layout page-canvas (fundo cinza + card branco com sombra) para experiência de leitura próxima de um documento real.
+
+**Arquivos afetados:**
+- `frontend/src/components/artifacts/ReportViewer.tsx` — prop `pageMode?: boolean`
+- `frontend/src/components/artifacts/ArtifactViewerModal.tsx` — passa `pageMode={true}` para `documento`
 
 ---
 
@@ -153,21 +159,22 @@
 
 ### Feature 4.1: Documentos do estúdio → página Documentos
 
-**Estado:** ✅ Implementado (ciclo 2026-04)
+**Estado:** ✅ Implementado (ciclo 2026-04, atualizado ciclo 2026-04-2)
 
 **Objetivo:** Artefatos do tipo `documento` gerados no estúdio do Caderno são persistidos como `DocumentData` em Firestore e listados na página Documentos.
 
 **Arquivos afetados:**
-- `frontend/src/lib/firestore-service.ts` — nova função `saveNotebookDocumentToDocuments`
+- `frontend/src/lib/firestore-service.ts` — `saveNotebookDocumentToDocuments` (aceita `document_type_id` e `legal_area_ids` opcionais)
 - `frontend/src/lib/firestore-types.ts` — campo `notebook_id` e `origem: 'caderno'` em `DocumentData`
-- `frontend/src/pages/ResearchNotebook.tsx` — chama `saveNotebookDocumentToDocuments` ao criar artefato tipo `documento`
-- `frontend/src/pages/DocumentList.tsx` — exibe `origem: 'caderno'` com badge indicativo
+- `frontend/src/pages/ResearchNotebook.tsx` — usa `buildStudioDescription()` para gerar tema descritivo; chama `saveNotebookDocumentToDocuments`
+- `frontend/src/pages/DocumentList.tsx` — badge "Caderno" com link direto ao notebook; filtro "Do Caderno"
 
 **Mudanças implementadas:**
-- `DocumentData.origem` aceita agora `'caderno'` além de `'web'`
-- `DocumentData.notebook_id` campo opcional para rastreabilidade
-- Ao gerar artefato `documento` no estúdio, o usuário recebe opção de salvar na página Documentos
-- Badge "Caderno" visível na listagem de documentos
+- `DocumentData.origem` aceita `'caderno'` com link de volta ao caderno
+- Badge "Caderno" na listagem é agora um `<Link>` para `/notebook?open=<id>`
+- Filtro chip "Do Caderno" na listagem filtra por `origem === 'caderno'`
+- `buildStudioDescription(notebookTitle, artifactTitle)` gera tema mais descritivo
+- `saveNotebookDocumentToDocuments` aceita `document_type_id` e `legal_area_ids` opcionais
 
 ---
 
@@ -193,6 +200,33 @@
 
 ---
 
+### Feature 5.2: TypeScript — sem erros em CI
+
+**Estado:** ✅ Implementado (ciclo 2026-04-2)
+
+**Mudanças:** Corrigido `TribunalCategory` typos em testes (`estaduais` → `estadual`, `federais` → `federal`).
+
+---
+
+## Epic 6: Navegação e UX
+
+### Feature 6.1: Deep-link `?open=<notebook_id>` no Caderno
+
+**Estado:** ✅ Implementado (ciclo 2026-04-2)
+
+**Objetivo:** Permitir links diretos de outras páginas para um caderno específico.
+
+**Arquivos afetados:**
+- `frontend/src/pages/ResearchNotebook.tsx` — `useSearchParams`, `deepLinkHandledRef`, `useEffect` que abre notebook pelo `?open=` param
+- `frontend/src/pages/DocumentList.tsx` — badge "Caderno" como `<Link>` para `/notebook?open=<id>`
+
+**Mudanças implementadas:**
+- Ao carregar `/notebook?open=<id>`, o notebook é automaticamente aberto
+- URL limpa (param removido via `replace`) sem quebrar histórico de navegação
+- Fallback gracioso se o ID não existir (toast de aviso)
+
+---
+
 ## Mapeamento de arquivos sensíveis (risco de regressão)
 
 | Arquivo | Sensibilidade | Motivo |
@@ -210,10 +244,11 @@
 
 | Área | Tipo de teste faltando |
 |------|----------------------|
-| Jurisprudência — ementa/inteiro teor | Teste de parseDataJudHit com campos novos |
-| Studio pipeline — qualidade de prompts | Testes de snapshot de prompts |
-| firestore-service — saveNotebookDocument | Teste de integração mock Firestore |
-| SourceContentViewer — renderização jurídica | Testes de renderização de componente |
+| `results_raw` serialização/desserialização | Teste unitário de round-trip |
+| `fitSourcesToFirestoreLimit` — drop de results_raw | Teste com fontes acima do limite |
+| `saveNotebookDocumentToDocuments` | Teste de integração mock Firestore |
+| SourceContentViewer — tabs/ProcessCard | Testes de renderização de componente |
+| Deep-link — `?open=<id>` | Teste de roteamento |
 
 ---
 
@@ -234,7 +269,7 @@
 - [ ] Busca híbrida (semântica + lexical) para jurisprudência
 - [ ] Exportação PDF nativa dos artefatos
 - [ ] Preview de documento na página Documentos
-- [ ] Filtro por `origem: 'caderno'` na página Documentos
+- [x] Filtro por `origem: 'caderno'` na página Documentos ✅
 
 ### Prioridade 2 — Diferenciação de produto
 - [ ] Pesquisa conversacional com contexto (memória multi-turno de filtros)
@@ -250,4 +285,4 @@
 
 ---
 
-*Última atualização: 2026-04-07 — Ciclo: ementa/inteiro teor + visualizador + prompts + integração Caderno↔Documentos*
+*Última atualização: 2026-04-07 — Ciclo 2: results_raw + ProcessCard tabs + deep-link + filtro Do Caderno + page-canvas + buildStudioDescription*

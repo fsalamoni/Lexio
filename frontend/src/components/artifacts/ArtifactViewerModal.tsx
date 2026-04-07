@@ -149,7 +149,8 @@ function ArtifactContent({ artifact, parsed }: { artifact: StudioArtifact; parse
       // Use ReportViewer for text-heavy markdown artifacts
       const textTypes: StudioArtifactType[] = ['resumo', 'relatorio', 'documento', 'guia_estruturado']
       if (textTypes.includes(artifact.type)) {
-        return <ReportViewer content={parsed.data} title={artifact.title} />
+        // 'documento' uses page-canvas layout (white card on gray) for a document-like experience
+        return <ReportViewer content={parsed.data} title={artifact.title} pageMode={artifact.type === 'documento'} />
       }
       // Generic markdown fallback
       return (

@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
   ArrowLeft, Send, Database, Clock, Upload,
@@ -175,6 +176,17 @@ const JURISPRUDENCE_SYNTHESIS_SYSTEM = [
 /** Delay (ms) before showing a secondary toast, to avoid overlapping with the primary toast. */
 const SECONDARY_TOAST_DELAY_MS = 600
 
+/**
+ * Build a human-readable pipeline description for a studio-generated document.
+ * Used as `tema` in the Documents page entry so users can identify the artifact origin.
+ */
+function buildStudioDescription(notebookTitle: string, artifactTitle: string): string {
+  if (!notebookTitle && !artifactTitle) return 'Documento do Caderno de Pesquisa'
+  if (!notebookTitle) return artifactTitle
+  if (!artifactTitle) return `Documento — ${notebookTitle}`
+  return `${artifactTitle} — ${notebookTitle}`
+}
+
 type ViewMode = 'list' | 'detail'
 type DetailTab = 'overview' | 'chat' | 'sources' | 'studio' | 'artifacts'
 
@@ -182,6 +194,7 @@ export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
   const { startTask } = useTaskManager()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   // List state
   const [notebooks, setNotebooks] = useState<ResearchNotebookData[]>([])
@@ -319,6 +332,28 @@ export default function ResearchNotebook() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
+
+  // ── Deep-link: ?open=<notebook_id> ──────────────────────────────────
+  // Allows DocumentList and other pages to navigate directly to a specific notebook.
+  const deepLinkHandledRef = useRef(false)
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || !userId || loading || deepLinkHandledRef.current) return
+    deepLinkHandledRef.current = true
+    // Remove the param from the URL without adding a history entry
+    setSearchParams(prev => { prev.delete('open'); return prev }, { replace: true })
+    getResearchNotebook(userId, openId).then(nb => {
+      if (nb) {
+        setActiveNotebook(nb)
+        setViewMode('detail')
+        setActiveTab('chat')
+      } else {
+        toast.warning('Caderno não encontrado', `Nenhum caderno encontrado com id "${openId}".`)
+      }
+    }).catch(() => {
+      toast.error('Erro ao abrir caderno via link')
+    })
+  }, [searchParams, userId, loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ensure in-flight research tasks are canceled when leaving the page.
   useEffect(() => {
@@ -1501,6 +1536,14 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             content_type: 'text/plain',
             size_bytes: jurisprudenceResult.content.length,
             text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+            // Store raw results (top-10, inteiroTeor capped at 8 KB each) so the
+            // viewer can show individual cases with full ementa + inteiro teor.
+            results_raw: JSON.stringify(
+              selectedResults.slice(0, 10).map(r => ({
+                ...r,
+                inteiroTeor: r.inteiroTeor?.slice(0, 8192),
+              })),
+            ),
             status: 'indexed',
             added_at: new Date().toISOString(),
           }
@@ -1857,7 +1900,7 @@ Instruções:
     if (artifact.type === 'documento' && IS_FIREBASE) {
       try {
         await saveNotebookDocumentToDocuments(userId, {
-          topic: activeNotebook.topic || artifact.title,
+          topic: buildStudioDescription(activeNotebook.title || '', artifact.title),
           content: artifact.content,
           notebookId,
           notebookTitle: activeNotebook.title || '',

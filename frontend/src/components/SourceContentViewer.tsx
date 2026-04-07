@@ -5,12 +5,15 @@
  * Supports:
  * - Structured documents (section headings + paragraphs)
  * - Jurisprudência sources (rich legal document rendering)
+ *   - Tab "Síntese": LLM-synthesised text as structured sections
+ *   - Tab "Processos": individual DataJudResult cards with ementa + inteiro teor
  * - Plain text fallback
  */
 import { useMemo, useState } from 'react'
-import { Copy, Check, FileText, Download, Scale, BookOpen } from 'lucide-react'
+import { Copy, Check, FileText, Download, Scale, BookOpen, ChevronDown, ChevronUp } from 'lucide-react'
 import DraggablePanel from './DraggablePanel'
 import type { NotebookSource } from '../lib/firestore-service'
+import type { DataJudResult } from '../lib/datajud-service'
 import {
   getStructuredSections,
   getStructuredMeta,
@@ -230,6 +233,113 @@ function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain:
   )
 }
 
+/**
+ * Card for an individual DataJud process result.
+ * Shows processo number, tribunal, classe, ementa (expandable), and inteiro teor (expandable).
+ */
+function ProcessCard({ result, index }: { result: DataJudResult; index: number }) {
+  const [showEmenta, setShowEmenta] = useState(false)
+  const [showTeor, setShowTeor] = useState(false)
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+      {/* Card header */}
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">#{index + 1}</span>
+            {result.tribunal && (
+              <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">
+                {result.tribunal}
+              </span>
+            )}
+            {result.classe && (
+              <span className="text-xs text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">
+                {result.classe}
+              </span>
+            )}
+            {result.dataAjuizamento && (
+              <span className="text-[11px] text-gray-400">{result.dataAjuizamento}</span>
+            )}
+          </div>
+          {result.numeroProcesso && (
+            <p className="text-[12px] font-mono text-gray-600 mt-1 truncate" title={result.numeroProcesso}>
+              {result.numeroProcesso}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-1.5 flex-shrink-0">
+          {result.ementa && (
+            <span className="text-[10px] bg-blue-50 text-blue-600 border border-blue-100 rounded px-1.5 py-0.5">
+              Ementa ✓
+            </span>
+          )}
+          {result.inteiroTeor && (
+            <span className="text-[10px] bg-purple-50 text-purple-600 border border-purple-100 rounded px-1.5 py-0.5">
+              Inteiro Teor ✓
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Ementa */}
+      {result.ementa && (
+        <div className="px-4 py-3 border-b border-gray-100">
+          <button
+            className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 uppercase tracking-wide mb-1.5 hover:text-blue-900"
+            onClick={() => setShowEmenta(p => !p)}
+          >
+            {showEmenta ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            Ementa
+          </button>
+          {showEmenta ? (
+            <p className="text-sm text-gray-700 leading-relaxed italic border-l-2 border-blue-200 pl-3">
+              {result.ementa}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 line-clamp-2 italic cursor-pointer" onClick={() => setShowEmenta(true)}>
+              {result.ementa}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Inteiro Teor */}
+      {result.inteiroTeor && (
+        <div className="px-4 py-3">
+          <button
+            className="flex items-center gap-1.5 text-[11px] font-semibold text-purple-700 uppercase tracking-wide mb-1.5 hover:text-purple-900"
+            onClick={() => setShowTeor(p => !p)}
+          >
+            {showTeor ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            Inteiro Teor
+          </button>
+          {showTeor ? (
+            <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap border-l-2 border-purple-200 pl-3 max-h-64 overflow-y-auto">
+              {result.inteiroTeor}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500 line-clamp-2 cursor-pointer" onClick={() => setShowTeor(true)}>
+              {result.inteiroTeor}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Assuntos */}
+      {result.assuntos && result.assuntos.length > 0 && (
+        <div className="px-4 pb-3 flex flex-wrap gap-1">
+          {result.assuntos.map((a, i) => (
+            <span key={i} className="text-[10px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">
+              {a}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function SourceContentViewer({ source, onClose }: SourceContentViewerProps) {
@@ -238,9 +348,23 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
     [source],
   )
 
+  // Tab state for jurisprudência sources that have results_raw
+  const [activeTab, setActiveTab] = useState<'sintese' | 'processos'>('sintese')
+
+  // Parse results_raw (JSON string) into DataJudResult[]
+  const rawResults = useMemo<DataJudResult[]>(() => {
+    if (!source?.results_raw) return []
+    try {
+      return JSON.parse(source.results_raw) as DataJudResult[]
+    } catch {
+      return []
+    }
+  }, [source?.results_raw])
+
   if (!source) return null
 
   const isJurisprudencia = source.type === 'jurisprudencia'
+  const hasRawResults = rawResults.length > 0
   const hasSections = sections && sections.length > 0
   const charCount = plain.length
 
@@ -276,12 +400,41 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
           </div>
         </div>
 
+        {/* ── Tabs (jurisprudência with raw results only) ───────────────── */}
+        {isJurisprudencia && hasRawResults && (
+          <div className="flex border-b border-gray-100 bg-white flex-shrink-0">
+            {([
+              { key: 'sintese' as const, label: 'Síntese' },
+              { key: 'processos' as const, label: `Processos (${rawResults.length})` },
+            ]).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-5 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                  activeTab === tab.key
+                    ? 'border-emerald-500 text-emerald-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ── Body ─────────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {charCount === 0 ? (
+          {charCount === 0 && !hasRawResults ? (
             <p className="text-sm text-gray-400 italic">Nenhum conteúdo de texto disponível para este documento.</p>
+          ) : isJurisprudencia && hasRawResults && activeTab === 'processos' ? (
+            /* Individual DataJud process cards */
+            <div className="space-y-4">
+              {rawResults.map((result, i) => (
+                <ProcessCard key={result.numeroProcesso || i} result={result} index={i} />
+              ))}
+            </div>
           ) : isJurisprudencia ? (
-            /* Rich jurisprudence viewer */
+            /* Rich jurisprudence synthesis viewer */
             <JurisprudenceViewer source={source} plain={plain} />
           ) : hasSections ? (
             /* Structured view — section headings + paragraphs */
