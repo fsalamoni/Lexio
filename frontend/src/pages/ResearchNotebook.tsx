@@ -1393,7 +1393,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
             // Parse ranking and reorder results
             try {
-              const cleaned = rankResult.content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+              const cleaned = rankResult.content.replace(/```(?:json)?\s*/g, '').trim()
               const parsed = JSON.parse(cleaned) as { ranking: Array<{ index: number; score: number }> }
               if (parsed.ranking && Array.isArray(parsed.ranking)) {
                 const sorted = parsed.ranking
@@ -1416,7 +1416,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
                 if (reordered.length > 0) {
                   selectedResults = reordered
-                  addModalSubstep('rank', `Processos reordenados por relevância (top score: ${topScore ?? '—'})`)
+                  addModalSubstep('rank', `Processos reordenados por relevância (top score: ${topScore ?? 'N/A'})`)
                 } else {
                   addModalSubstep('rank', 'Ranking retornou índices inválidos/vazios — mantendo ordem original')
                 }

@@ -685,7 +685,7 @@ export function formatDataJudResults(results: DataJudResult[]): string {
     }
     if (r.movimentos.length > 0) {
       const displayedMovements = r.movimentos.slice(0, 5)
-      const hasTruncatedMovements = r.movimentos.length > displayedMovements.length
+      const hasTruncatedMovements = r.movimentos.length > 5
       lines.push(
         hasTruncatedMovements
           ? `   Movimentações processuais (mostrando ${displayedMovements.length} de ${r.movimentos.length}):`
