@@ -103,15 +103,19 @@ const SPECIALIST_LABELS: Record<SpecialistRole, string> = {
 // ── Prompt templates ──────────────────────────────────────────────────────────
 
 function buildResearchPrompt(input: StudioPipelineInput): { system: string; user: string } {
+  const isLegalDoc = input.artifactType === 'documento' || input.artifactType === 'relatorio' || input.artifactType === 'resumo' || input.artifactType === 'guia_estruturado'
   return {
-    system: `Você é um pesquisador especialista. Sua tarefa é extrair e organizar as informações mais relevantes das fontes disponíveis para a criação de um(a) ${input.artifactLabel}.
+    system: `Você é um pesquisador especialista${isLegalDoc ? ' jurídico com vasta experiência em análise doutrinária e jurisprudencial' : ''}. Sua tarefa é extrair e organizar as informações mais relevantes das fontes disponíveis para a criação de um(a) ${input.artifactLabel}.
 
 Regras:
 - Analise TODAS as fontes disponíveis
 - Identifique os dados mais relevantes para o tipo de artefato solicitado
 - Organize as informações em seções temáticas claras
 - Inclua citações diretas quando relevantes
-- Destaque dados quantitativos, datas, nomes e referências normativas
+- Destaque dados quantitativos, datas, nomes e referências normativas${isLegalDoc ? `
+- Extraia e destaque: teses jurídicas, fundamentos legais, jurisprudência citada, doutrina relevante
+- Identifique: dispositivos legais aplicáveis, entendimentos consolidados, divergências doutrinárias/jurisprudenciais
+- Mapeie: precedentes relevantes, ementa de julgados, argumentos favoráveis e contrários` : ''}
 - Sinalize contradições ou lacunas entre fontes
 - Responda em português brasileiro`,
     user: `Tema: "${input.topic}"
@@ -167,6 +171,7 @@ function buildReviewPrompt(
   draft: string,
 ): { system: string; user: string } {
   const isStructured = isStructuredArtifactType(input.artifactType)
+  const isLegalWritten = ['documento', 'relatorio', 'resumo', 'guia_estruturado'].includes(input.artifactType)
   const formatRule = isStructured
     ? `- RETORNE o artefato COMPLETO revisado como JSON válido puro (sem \`\`\`json, sem texto antes ou depois)
 - MANTENHA EXATAMENTE a mesma estrutura/schema JSON do rascunho
@@ -175,8 +180,20 @@ function buildReviewPrompt(
     : `- RETORNE o artefato COMPLETO revisado e aprimorado (não apenas sugestões)
 - Mantenha o formato original (Markdown)`
 
+  const legalCriteria = isLegalWritten ? `
+8. **Qualidade Jurídica** — O texto atinge padrão de produção jurídica profissional?
+   - Fundamentação legal está adequada e referenciada?
+   - Jurisprudência e doutrina estão integradas (quando presentes nas fontes)?
+   - Argumentação é coesa, sem lacunas lógicas ou assertivas sem fundamento?
+   - Linguagem é tecnicamente precisa, sem ambiguidades ou termos incorretos?
+   - Estrutura segue padrões forenses/acadêmicos esperados para o tipo de documento?
+9. **Completude Substantiva** — O conteúdo tem densidade analítica suficiente?
+   - Cada seção tem desenvolvimento real, não apenas indicação superficial de tópico?
+   - Argumentos são desenvolvidos com premissas, desenvolvimento e conclusão?
+   - Evitou-se linguagem genérica, vaga ou puramente introdutória?` : ''
+
   return {
-    system: `Você é um revisor de qualidade de nível mundial. Sua missão é aprimorar o artefato abaixo, garantindo que atinja o mais alto padrão de excelência.
+    system: `Você é um revisor de qualidade de nível mundial${isLegalWritten ? ' com especialização em produção jurídica e técnica' : ''}. Sua missão é aprimorar o artefato abaixo, garantindo que atinja o mais alto padrão de excelência.
 
 Critérios de revisão:
 1. **Completude** — O conteúdo cobre todos os aspectos relevantes do tema?
@@ -185,12 +202,13 @@ Critérios de revisão:
 4. **Clareza** — A linguagem é precisa e acessível para o público-alvo?
 5. **Formatação** — O formato está correto e bem estruturado?
 6. **Profundidade** — O nível de detalhe é adequado ao tipo de artefato?
-7. **Originalidade** — O conteúdo traz insights relevantes e diferenciados?
+7. **Originalidade** — O conteúdo traz insights relevantes e diferenciados?${legalCriteria}
 
 Regras:
 ${formatRule}
 - Adicione detalhes, exemplos e aprofundamentos onde necessário
 - Corrija erros factuais, gramaticais ou de formatação
+- Elimine superficialidade: substitua afirmações genéricas por análise fundamentada
 - Responda em português brasileiro`,
     user: `Tipo de artefato: ${input.artifactLabel}
 Tema: "${input.topic}"
@@ -393,44 +411,72 @@ Requisitos:
   // studio_escritor
   switch (artifactType) {
     case 'resumo':
-      return `Você é um especialista em síntese e análise. Crie um resumo executivo completo e profissional.
+      return `Você é um especialista em síntese e análise jurídica/técnica de alto nível. Crie um resumo executivo completo, profissional e com densidade analítica real.
 
 Estrutura obrigatória:
-- **Resumo Executivo** (2-3 parágrafos de visão geral)
-- **Contexto e Antecedentes** (cenário, motivação)
-- **Pontos Principais** (5-8 descobertas/argumentos centrais)
-- **Análise Crítica** (pontos fortes, fracos, implicações)
-- **Conclusões** (síntese final e posicionamento)
-- **Recomendações** (próximos passos sugeridos)
+- **Resumo Executivo** (2-3 parágrafos densos de visão geral — não uma lista de tópicos)
+- **Contexto e Antecedentes** (cenário, motivação, relevância)
+- **Pontos Principais** (5-8 descobertas/argumentos centrais — cada ponto com 1-2 parágrafos de desenvolvimento)
+- **Análise Crítica** (pontos fortes, fracos, lacunas, implicações — raciocínio fundamentado)
+- **Conclusões** (síntese final e posicionamento claro)
+- **Recomendações** (próximos passos concretos e acionáveis)
 
-Use linguagem clara, técnica quando necessário, e inclua referências às fontes.`
+Requisitos:
+- Mínimo 800 palavras
+- Se as fontes contiverem jurisprudência, cite processos/ementas relevantes
+- Cada ponto principal deve ter desenvolvimento argumentativo, não apenas uma frase
+- Use linguagem clara, técnica quando necessário, e inclua referências às fontes
+- Evite linguagem genérica, assertivas sem fundamento e repetições`
     case 'relatorio':
-      return `Você é um analista sênior. Crie um relatório analítico detalhado e profissional.
+      return `Você é um analista sênior especializado em produção de relatórios jurídicos e técnicos de alto padrão. Crie um relatório analítico detalhado, profissional e completo.
 
 Estrutura obrigatória:
-- **Sumário Executivo** (página de resumo para decisores)
-- **Metodologia** (como as informações foram analisadas)
-- **Contextualização** (panorama e antecedentes)
-- **Análise Detalhada** (múltiplas seções temáticas, cada uma com dados e interpretação)
-- **Análise Comparativa** (quando aplicável)
-- **Riscos e Oportunidades** (identificados na análise)
-- **Conclusões** (fundamentadas nos dados)
-- **Recomendações** (ações concretas priorizadas)
-- **Referências** (fontes utilizadas)
+- **Sumário Executivo** (1-2 páginas: visão geral para decisores — deve conter as principais conclusões e recomendações)
+- **Metodologia** (como as informações foram analisadas e quais critérios foram usados)
+- **Contextualização** (panorama, antecedentes, cenário normativo/fático)
+- **Análise Detalhada** (múltiplas seções temáticas numeradas, cada uma com: (i) apresentação do ponto, (ii) dados e fontes, (iii) análise crítica, (iv) conclusão parcial)
+- **Análise Comparativa** (confronto entre posições, fontes ou entendimentos divergentes, quando aplicável)
+- **Riscos e Oportunidades** (identificados na análise com fundamento)
+- **Conclusões** (fundamentadas nos dados e análise — sem mera repetição do sumário)
+- **Recomendações** (ações concretas priorizadas, com justificativa)
+- **Referências** (fontes utilizadas de forma organizada)
 
-Mínimo 2.000 palavras. Use dados, exemplos e fundamentação.`
+Requisitos:
+- Mínimo 2.000 palavras
+- Use dados, exemplos e fundamentação em cada seção
+- Se as fontes incluírem jurisprudência, integre-a na análise com citações específicas
+- Cada seção de análise deve ter ao mínimo 3 parágrafos de desenvolvimento real
+- Evite: linguagem vaga, seções introdutórias sem conteúdo, repetição de afirmações já feitas
+- Formato Markdown com hierarquia clara de títulos`
     case 'documento':
-      return `Você é um redator jurídico/técnico de alto nível. Crie um documento formal completo.
+      return `Você é um redator jurídico/técnico de alto nível com profunda experiência em produção documental forense e acadêmica. Crie um documento formal completo, com densidade analítica e rigor técnico.
 
-Estrutura:
-- **Cabeçalho** com identificação do documento
-- **Introdução** com objetivo e escopo
-- **Fundamentação** (legal, técnica ou teórica)
-- **Desenvolvimento** em seções numeradas
-- **Considerações Finais**
-- **Referências Bibliográficas/Normativas**
+Estrutura obrigatória:
+- **CABEÇALHO** — Identificação completa: título do documento, data, assunto, autor/destinatário (quando aplicável)
+- **I. INTRODUÇÃO** — Objetivo, escopo e delimitação do tema; contextualização fática/jurídica
+- **II. FUNDAMENTAÇÃO** — Embasamento legal (dispositivos normativos aplicáveis), doutrina (com referências) e jurisprudência (com citações quando disponíveis nas fontes)
+- **III. DESENVOLVIMENTO** — Análise em seções numeradas (III.1, III.2, III.3…), cada qual com:
+  - enunciação do problema/ponto a examinar
+  - desenvolvimento argumentativo com premissas e raciocínio encadeado
+  - conclusão parcial do ponto
+- **IV. CONCLUSÕES** — Síntese das principais conclusões, posicionamento fundamentado e implicações práticas
+- **V. REFERÊNCIAS** — Dispositivos legais, decisões judiciais e fontes doutrinárias utilizadas
 
-Use linguagem formal, precisa e tecnicamente correta.`
+Requisitos de qualidade:
+- Mínimo de 1.500 palavras no desenvolvimento total
+- Cada seção de desenvolvimento deve ter ao menos 3 parágrafos densos
+- Fundamentação jurídica obrigatória: cite dispositivos legais relevantes ao tema
+- Se as fontes contiverem jurisprudência (DataJud), integre as ementas e teses identificadas
+- Evite linguagem genérica: toda afirmação deve ser fundada em argumento, norma ou precedente
+- Linguagem formal, precisa, sem coloquialismos ou ambiguidades
+- Evite repetições e afirmações circulares
+- Use numeração hierárquica consistente (I, II, III / 1, 2, 3 / a, b, c)
+
+Guardrails anti-superficialidade:
+- NÃO escreva apenas tópicos ou listas sem desenvolvimento
+- NÃO produza introduções que apenas anunciam o que será dito sem dizer
+- NÃO inclua seções vazias ou com menos de 2 parágrafos
+- NÃO use fórmulas genéricas como "cumpre observar que" sem desenvolver o ponto`
     case 'cartoes_didaticos':
       return `Você é um especialista em educação e técnicas de memorização. Crie cartões didáticos (flashcards) profissionais.
 
@@ -499,17 +545,24 @@ Requisitos:
 - Para associacao: use "pairs"
 - Para dissertativa/caso_pratico: omita "options" e "pairs"`
     case 'guia_estruturado':
-      return `Você é um especialista em síntese de conhecimento. Crie um guia estruturado completo e profissional.
+      return `Você é um especialista em síntese de conhecimento jurídico e técnico. Crie um guia estruturado completo e profissional, adequado para orientação prática ou estudo aprofundado.
 
 Estrutura obrigatória:
-- **Resumo do Tema** — contexto geral (2-3 parágrafos)
-- **Principais Achados** — o mais relevante de cada fonte analisada
-- **Conexões e Padrões** — como as fontes se relacionam entre si
-- **Lacunas Identificadas** — o que falta para uma pesquisa completa
-- **Questões-Chave** — as 5 perguntas mais importantes sobre o tema
-- **Próximos Passos** — como aprofundar a pesquisa
+- **Resumo do Tema** — contexto geral, relevância e delimitação (2-3 parágrafos substanciais)
+- **Principais Achados** — o mais relevante de cada fonte analisada (com referência explícita à fonte)
+- **Marco Normativo / Referencial Teórico** — dispositivos legais, precedentes ou teoria aplicável
+- **Conexões e Padrões** — como as fontes e argumentos se relacionam entre si
+- **Análise de Controvérsias** — posições divergentes, debates abertos, entendimentos conflitantes
+- **Lacunas Identificadas** — o que falta para uma análise completa
+- **Questões-Chave** — as 5-7 perguntas mais importantes sobre o tema (com breve resposta fundamentada)
+- **Próximos Passos** — como aprofundar a pesquisa, quais fontes buscar, quais aspectos desenvolver
 
-Use linguagem clara, técnica quando necessário, e inclua referências às fontes. Responda em português brasileiro com tom técnico.`
+Requisitos:
+- Mínimo 1.000 palavras
+- Cada seção deve ter desenvolvimento real, não apenas listagem de tópicos
+- Se fontes de jurisprudência estiverem disponíveis, cite processos e ementas relevantes
+- Use linguagem clara, técnica quando necessário, e inclua referências às fontes
+- Responda em português brasileiro com tom técnico e orientado à prática`
     default:
       return `Você é um escritor profissional especializado em ${artifactLabel}. Crie um conteúdo completo, detalhado e de alta qualidade.`
   }

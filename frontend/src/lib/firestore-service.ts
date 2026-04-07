@@ -404,6 +404,48 @@ export async function deleteDocument(uid: string, docId: string): Promise<void> 
   await deleteDoc(ref)
 }
 
+/**
+ * Persist a studio artifact of type "documento" from a Research Notebook
+ * into the user's Documents collection. This ensures notebook-generated
+ * formal documents appear in the Documents page alongside regular documents.
+ *
+ * @param uid - user ID
+ * @param input - artifact content and notebook metadata
+ * @returns the created DocumentData (with id assigned by Firestore)
+ */
+export async function saveNotebookDocumentToDocuments(uid: string, input: {
+  topic: string
+  content: string
+  notebookId: string
+  notebookTitle: string
+  llm_executions?: DocumentData['llm_executions']
+}): Promise<DocumentData> {
+  const db = ensureFirestore()
+  const colRef = collection(db, 'users', uid, 'documents')
+  const now = new Date().toISOString()
+  const docData = stripUndefined({
+    document_type_id: 'documento_caderno',
+    original_request: input.topic,
+    template_variant: null,
+    legal_area_ids: [],
+    request_context: null,
+    context_detail: null,
+    tema: input.topic,
+    status: 'concluido',
+    quality_score: null,
+    texto_completo: input.content,
+    origem: 'caderno' as const,
+    notebook_id: input.notebookId,
+    notebook_title: input.notebookTitle,
+    llm_executions: input.llm_executions ?? [],
+    created_at: now,
+    updated_at: now,
+  })
+  const ref = await addDoc(colRef, docData)
+  return { id: ref.id, ...docData }
+}
+
+
 // ── Stats (computed from Firestore data) ─────────────────────────────────────
 
 export async function getStats(uid: string) {

@@ -58,7 +58,12 @@ export interface DocumentData {
   texto_completo?: string | null
   created_at: string
   updated_at?: string
-  origem?: string
+  /** Origin of the document: 'web' = created via NewDocument page; 'caderno' = generated in Research Notebook studio */
+  origem?: 'web' | 'caderno' | string
+  /** ID of the Research Notebook that originated this document (when origem = 'caderno') */
+  notebook_id?: string | null
+  /** Title of the notebook that originated this document */
+  notebook_title?: string | null
   llm_tokens_in?: number
   llm_tokens_out?: number
   llm_cost_usd?: number

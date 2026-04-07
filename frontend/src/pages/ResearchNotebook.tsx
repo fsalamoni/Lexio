@@ -29,6 +29,7 @@ import {
   deleteResearchNotebook,
   getResearchNotebook,
   listAcervoDocuments,
+  saveNotebookDocumentToDocuments,
   type ResearchNotebookData,
   type NotebookSource,
   type NotebookMessage,
@@ -1324,7 +1325,9 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         id: `dj-${i}`,
         title: `${r.classe} — ${r.numeroProcesso}`,
         subtitle: `${r.tribunalName} · ${r.orgaoJulgador}`,
-        snippet: r.assuntos.join(', ') || 'Sem assuntos',
+        snippet: r.ementa
+          ? r.ementa.slice(0, 200) + (r.ementa.length > 200 ? '…' : '')
+          : (r.assuntos.join(', ') || 'Sem assuntos'),
         fullContent: [
           `Processo: ${r.numeroProcesso}`,
           `Classe: ${r.classe} (${r.classeCode})`,
@@ -1334,11 +1337,15 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           `Grau: ${r.grau}`,
           `Formato: ${r.formato}`,
           `Assuntos: ${r.assuntos.join('; ') || '—'}`,
+          r.ementa ? `Ementa:\n${r.ementa}` : '',
+          r.inteiroTeor ? `Inteiro Teor:\n${r.inteiroTeor.slice(0, 3000)}${r.inteiroTeor.length > 3000 ? '\n[... texto truncado ...]' : ''}` : '',
           r.movimentos.length > 0 ? `Movimentos:\n${r.movimentos.slice(0, 5).map(m => `  - ${m.nome} (${m.dataHora})`).join('\n')}` : '',
         ].filter(Boolean).join('\n'),
         metadata: {
           ...(r.grau ? { Grau: r.grau } : {}),
           ...(r.dataAjuizamento ? { Data: r.dataAjuizamento.split('T')[0] } : {}),
+          ...(r.ementa ? { Ementa: '✓' } : {}),
+          ...(r.inteiroTeor ? { 'Inteiro Teor': '✓' } : {}),
         },
         selected: true,
         _raw: r,
@@ -1841,6 +1848,26 @@ Instruções:
     setActiveNotebook(prev => prev && prev.id === notebookId
       ? { ...prev, artifacts: updatedArtifacts, llm_executions: updatedExecutions }
       : prev)
+
+    // When the artifact is a formal document, persist it to the Documents page
+    // so it appears alongside documents created via the NewDocument flow.
+    if (artifact.type === 'documento' && IS_FIREBASE) {
+      try {
+        await saveNotebookDocumentToDocuments(userId, {
+          topic: activeNotebook.topic || artifact.title,
+          content: artifact.content,
+          notebookId,
+          notebookTitle: activeNotebook.title || '',
+          llm_executions: newExecutions,
+        })
+        // Secondary toast shown separately after the primary artifact toast
+        setTimeout(() => {
+          toast.success('Documento salvo na página Documentos', 'Acesse Documentos para ver, editar e exportar este documento.')
+        }, 600)
+      } catch (err) {
+        console.warn('Could not persist document artifact to Documents page:', err)
+      }
+    }
   }
 
   // ── Confirm pending artifact (after review/edit) ────────────────────

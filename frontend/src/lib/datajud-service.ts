@@ -385,6 +385,10 @@ export interface DataJudResult {
   grau: string
   formato: string
   movimentos: Array<{ nome: string; dataHora: string }>
+  /** Ementa integral da decisão, quando disponível na API DataJud. */
+  ementa?: string
+  /** Inteiro teor da decisão, quando disponível na API DataJud. */
+  inteiroTeor?: string
 }
 
 export interface DataJudSearchProgress {
@@ -648,6 +652,25 @@ function parseDataJudHit(src: Record<string, unknown>, tribunal: TribunalInfo): 
   const orgao = src.orgaoJulgador as { nome?: string } | undefined
   const formato = src.formato as { nome?: string } | undefined
 
+  // Extract ementa — may be a top-level string field in the DataJud _source
+  const ementaRaw = src.ementa
+  const ementa = typeof ementaRaw === 'string' && ementaRaw.trim()
+    ? ementaRaw.trim()
+    : undefined
+
+  // Extract inteiro_teor — may be nested as { conteudo?: string } or a plain string
+  const inteiroTeorRaw = src.inteiro_teor
+  let inteiroTeor: string | undefined
+  if (typeof inteiroTeorRaw === 'string' && inteiroTeorRaw.trim()) {
+    inteiroTeor = inteiroTeorRaw.trim()
+  } else if (inteiroTeorRaw && typeof inteiroTeorRaw === 'object') {
+    const obj = inteiroTeorRaw as Record<string, unknown>
+    const conteudo = obj.conteudo ?? obj.texto ?? obj.content
+    if (typeof conteudo === 'string' && conteudo.trim()) {
+      inteiroTeor = conteudo.trim()
+    }
+  }
+
   return {
     tribunal: tribunal.alias.toUpperCase(),
     tribunalName: tribunal.name,
@@ -662,12 +685,14 @@ function parseDataJudHit(src: Record<string, unknown>, tribunal: TribunalInfo): 
     movimentos: (movimentosRaw ?? [])
       .slice(0, 5)
       .map(m => ({ nome: m.nome ?? '', dataHora: String(m.dataHora ?? '').slice(0, 10) })),
+    ementa,
+    inteiroTeor,
   }
 }
 
 /**
  * Format DataJud results as human-readable text for LLM consumption.
- * Includes all available movements (up to 5) for richer temporal analysis.
+ * Includes ementa, inteiro_teor (when available), and movements for richer analysis.
  */
 export function formatDataJudResults(results: DataJudResult[]): string {
   if (results.length === 0) return 'Nenhum resultado encontrado.'
@@ -682,6 +707,16 @@ export function formatDataJudResults(results: DataJudResult[]): string {
     ]
     if (r.assuntos.length > 0) {
       lines.push(`   Assuntos: ${r.assuntos.slice(0, 5).join('; ')}`)
+    }
+    if (r.ementa) {
+      lines.push(`   Ementa: ${r.ementa}`)
+    }
+    if (r.inteiroTeor) {
+      // Include up to 2000 chars of inteiro teor to keep LLM context manageable
+      const snippet = r.inteiroTeor.length > 2000
+        ? r.inteiroTeor.slice(0, 2000) + '… [texto truncado]'
+        : r.inteiroTeor
+      lines.push(`   Inteiro Teor: ${snippet}`)
     }
     if (r.movimentos.length > 0) {
       const displayedMovements = r.movimentos.slice(0, 5)

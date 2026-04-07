@@ -2,11 +2,13 @@
  * SourceContentViewer — Draggable, resizable, collapsible panel for viewing
  * notebook source / acervo document text with proper formatting.
  *
- * Uses DraggablePanel for the window chrome, and renders structured documents
- * with section headings + paragraphs, falling back to formatted plain text.
+ * Supports:
+ * - Structured documents (section headings + paragraphs)
+ * - Jurisprudência sources (rich legal document rendering)
+ * - Plain text fallback
  */
 import { useMemo, useState } from 'react'
-import { Copy, Check, FileText, Download } from 'lucide-react'
+import { Copy, Check, FileText, Download, Scale, BookOpen } from 'lucide-react'
 import DraggablePanel from './DraggablePanel'
 import type { NotebookSource } from '../lib/firestore-service'
 import {
@@ -42,6 +44,44 @@ function fmtChars(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
   return String(n)
+}
+
+/**
+ * Parse jurisprudência synthesis text into structured blocks.
+ * The text follows Markdown-ish format with bold headers (## or **).
+ */
+interface JurisprudenceSection {
+  heading?: string
+  body: string
+}
+
+function parseJurisprudenceText(text: string): JurisprudenceSection[] {
+  if (!text.trim()) return []
+  // Split on Markdown headings (## Heading or **Heading**) or numbered headings
+  const lines = text.split('\n')
+  const sections: JurisprudenceSection[] = []
+  let current: JurisprudenceSection = { body: '' }
+
+  for (const line of lines) {
+    // Detect Markdown heading or bold-only line (likely a section title)
+    const headingMatch = line.match(/^#{1,3}\s+(.+)$/) || line.match(/^\*{2}(.+)\*{2}\s*$/)
+    const numberedMatch = line.match(/^(\d+)\.\s+\*{0,2}(.+?)\*{0,2}:?\s*$/)
+
+    if (headingMatch || numberedMatch) {
+      if (current.body.trim() || current.heading) {
+        sections.push({ ...current, body: current.body.trim() })
+      }
+      const title = headingMatch ? headingMatch[1] : numberedMatch![2]
+      current = { heading: title, body: '' }
+    } else {
+      const cleaned = line.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1')
+      current.body += (current.body ? '\n' : '') + cleaned
+    }
+  }
+  if (current.body.trim() || current.heading) {
+    sections.push({ ...current, body: current.body.trim() })
+  }
+  return sections.filter(s => s.body || s.heading)
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -133,6 +173,62 @@ function MetaBadges({ meta, charCount }: { meta: StructuredDocumentMeta | null; 
   )
 }
 
+/**
+ * Rich jurisprudence document viewer.
+ * Renders the LLM-synthesized jurisprudence text as a structured legal document.
+ */
+function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain: string }) {
+  const sections = useMemo(() => parseJurisprudenceText(plain), [plain])
+  const query = source.reference || ''
+
+  return (
+    <article className="max-w-none">
+      {/* Document header */}
+      <div className="mb-6 pb-4 border-b-2 border-emerald-200">
+        <div className="flex items-center gap-2 mb-2">
+          <Scale className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+          <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
+            Pesquisa de Jurisprudência — DataJud / CNJ
+          </span>
+        </div>
+        {query && (
+          <div className="mt-2 px-3 py-2 bg-emerald-50 rounded-lg border border-emerald-100">
+            <span className="text-xs text-emerald-600 font-medium">Consulta: </span>
+            <span className="text-sm text-emerald-800 font-semibold">{query}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Synthesis sections */}
+      {sections.length > 0 ? (
+        <div className="space-y-5">
+          {sections.map((sec, i) => (
+            <div key={i} className={i > 0 ? 'pt-4 border-t border-gray-100' : ''}>
+              {sec.heading && (
+                <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+                  <span className="w-1.5 h-4 bg-emerald-500 rounded-full flex-shrink-0" />
+                  {sec.heading}
+                </h3>
+              )}
+              {sec.body && (
+                <div className="space-y-2">
+                  {sec.body.split('\n').filter(l => l.trim()).map((para, pi) => (
+                    <p key={pi} className="text-sm text-gray-700 leading-relaxed pl-3.5">
+                      {para}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{plain}</p>
+      )}
+    </article>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function SourceContentViewer({ source, onClose }: SourceContentViewerProps) {
@@ -143,24 +239,36 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
 
   if (!source) return null
 
+  const isJurisprudencia = source.type === 'jurisprudencia'
   const hasSections = sections && sections.length > 0
   const charCount = plain.length
+
+  // Choose panel title icon based on source type
+  const icon = isJurisprudencia ? <Scale size={16} /> : hasSections ? <BookOpen size={16} /> : <FileText size={16} />
 
   return (
     <DraggablePanel
       open={!!source}
       onClose={onClose}
       title={source.name || 'Documento'}
-      icon={<FileText size={16} />}
-      initialWidth={700}
-      initialHeight={560}
+      icon={icon}
+      initialWidth={720}
+      initialHeight={580}
       minWidth={380}
       minHeight={280}
     >
       <div className="flex flex-col h-full">
         {/* ── Toolbar ──────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex-shrink-0">
-          <MetaBadges meta={meta} charCount={charCount} />
+          <div className="flex items-center gap-2 min-w-0">
+            {isJurisprudencia && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700 flex-shrink-0">
+                <Scale className="w-3 h-3" />
+                Jurisprudência
+              </span>
+            )}
+            <MetaBadges meta={meta} charCount={charCount} />
+          </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <CopyBtn text={plain} />
             <DownloadBtn text={plain} filename={source.name || 'documento'} />
@@ -171,6 +279,9 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {charCount === 0 ? (
             <p className="text-sm text-gray-400 italic">Nenhum conteúdo de texto disponível para este documento.</p>
+          ) : isJurisprudencia ? (
+            /* Rich jurisprudence viewer */
+            <JurisprudenceViewer source={source} plain={plain} />
           ) : hasSections ? (
             /* Structured view — section headings + paragraphs */
             <article>
@@ -189,3 +300,4 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
     </DraggablePanel>
   )
 }
+

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, Plus, ChevronLeft, ChevronRight, Search, X, Trash2, Download } from 'lucide-react'
+import { FileText, Plus, ChevronLeft, ChevronRight, Search, X, Trash2, Download, BookOpen } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
@@ -21,6 +21,8 @@ interface Document {
   quality_score: number | null
   created_at: string
   origem: string
+  notebook_id?: string | null
+  notebook_title?: string | null
 }
 
 const PAGE_SIZE = 20
@@ -70,7 +72,12 @@ export default function DocumentList() {
         sortDir: sbDir,
       })
         .then(result => {
-          let items = result.items.map(d => ({ ...d, origem: (d as any).origem || 'web' })) as Document[]
+          let items = result.items.map(d => ({
+            ...d,
+            origem: d.origem || 'web',
+            notebook_id: d.notebook_id ?? null,
+            notebook_title: d.notebook_title ?? null,
+          })) as Document[]
           // Client-side search filtering for Firebase mode
           if (searchQuery) {
             const q = searchQuery.toLowerCase()
@@ -425,9 +432,17 @@ export default function DocumentList() {
                       </td>
                       <td className="px-4 py-4">
                         <Link to={`/documents/${doc.id}`} className="text-brand-600 hover:text-brand-800 hover:underline font-medium text-sm">
-                          {DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id}
+                          {DOCTYPE_LABELS[doc.document_type_id] || (doc.document_type_id === 'documento_caderno' ? 'Documento' : doc.document_type_id)}
                         </Link>
-                        {doc.origem && doc.origem !== 'web' && (
+                        {doc.origem === 'caderno' ? (
+                          <span
+                            className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-50 text-violet-700 border border-violet-100"
+                            title={doc.notebook_title ? `Caderno: ${doc.notebook_title}` : 'Gerado no Caderno de Pesquisa'}
+                          >
+                            <BookOpen className="w-2.5 h-2.5" />
+                            Caderno
+                          </span>
+                        ) : doc.origem && doc.origem !== 'web' && (
                           <span className={`ml-2 inline-block px-1.5 py-0.5 text-[10px] font-medium rounded ${
                             doc.origem === 'whatsapp'
                               ? 'bg-green-50 text-green-700'
