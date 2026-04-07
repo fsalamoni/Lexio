@@ -96,7 +96,7 @@ jobs:
             echo "Deploy attempt ${ATTEMPT}/3 for channel ${CHANNEL}"
             set +e
             OUTPUT=$(firebase hosting:channel:deploy "$CHANNEL" \
-              --site lexio \
+              --only lexio \
               --project hocapp-44760 \
               --expires 7d \
               --non-interactive 2>&1)
