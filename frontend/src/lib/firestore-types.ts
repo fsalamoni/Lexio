@@ -145,6 +145,13 @@ export interface NotebookSource {
   content_type?: string
   size_bytes?: number
   text_content?: string
+  /**
+   * JSON-serialised DataJudResult[] for jurisprudência sources (up to 10 results).
+   * Allows the SourceContentViewer to render individual case cards.
+   * inteiroTeor entries are capped at 8 KB each before serialisation.
+   * Dropped automatically by fitSourcesToFirestoreLimit when the document is large.
+   */
+  results_raw?: string
   status: 'pending' | 'processing' | 'indexed' | 'error'
   added_at: string
 }

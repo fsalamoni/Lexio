@@ -1493,6 +1493,17 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           addModalSubstep('synthesize', `Síntese gerada (${jurisprudenceResult.tokens_out} tokens)`)
           updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
 
+          // Serialise top-10 results as raw JSON for the rich viewer.
+          // Cap each inteiroTeor at 8 KB to keep the payload manageable.
+          const INTEIRO_TEOR_CAP = 8 * 1024
+          const resultsForRaw = selectedResults.slice(0, 10).map(r => ({
+            ...r,
+            inteiroTeor: r.inteiroTeor && r.inteiroTeor.length > INTEIRO_TEOR_CAP
+              ? r.inteiroTeor.slice(0, INTEIRO_TEOR_CAP) + '…'
+              : r.inteiroTeor,
+          }))
+          const results_raw = JSON.stringify(resultsForRaw)
+
           const source: NotebookSource = {
             id: generateId(),
             type: 'jurisprudencia',
@@ -1501,6 +1512,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             content_type: 'text/plain',
             size_bytes: jurisprudenceResult.content.length,
             text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+            results_raw,
             status: 'indexed',
             added_at: new Date().toISOString(),
           }

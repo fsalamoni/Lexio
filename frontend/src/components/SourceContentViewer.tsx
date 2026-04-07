@@ -4,13 +4,14 @@
  *
  * Supports:
  * - Structured documents (section headings + paragraphs)
- * - Jurisprudência sources (rich legal document rendering)
+ * - Jurisprudência sources (rich legal document rendering with Síntese + Processos tabs)
  * - Plain text fallback
  */
 import { useMemo, useState } from 'react'
-import { Copy, Check, FileText, Download, Scale, BookOpen } from 'lucide-react'
+import { Copy, Check, FileText, Download, Scale, BookOpen, ChevronDown, ChevronUp } from 'lucide-react'
 import DraggablePanel from './DraggablePanel'
 import type { NotebookSource } from '../lib/firestore-service'
+import type { DataJudResult } from '../lib/datajud-service'
 import {
   getStructuredSections,
   getStructuredMeta,
@@ -175,17 +176,141 @@ function MetaBadges({ meta, charCount }: { meta: StructuredDocumentMeta | null; 
 }
 
 /**
+ * Card showing one individual DataJud result (processo).
+ * Shown in the "Processos" tab of the JurisprudenceViewer.
+ */
+function ProcessCard({ result, index }: { result: DataJudResult; index: number }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasEmenta = !!result.ementa
+  const hasInteiroTeor = !!result.inteiroTeor
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      {/* Card header */}
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold flex items-center justify-center">
+              {index + 1}
+            </span>
+            <span className="text-sm font-semibold text-gray-800 truncate">
+              {result.processo}
+            </span>
+          </div>
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="flex-shrink-0 p-1 rounded hover:bg-gray-200 transition-colors"
+            title={expanded ? 'Recolher' : 'Expandir'}
+          >
+            {expanded
+              ? <ChevronUp className="w-4 h-4 text-gray-500" />
+              : <ChevronDown className="w-4 h-4 text-gray-500" />}
+          </button>
+        </div>
+
+        {/* Metadata row */}
+        <div className="flex flex-wrap gap-2 mt-2">
+          {result.tribunal && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
+              {result.tribunal}
+            </span>
+          )}
+          {result.classe && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-purple-100 text-purple-700">
+              {result.classe}
+            </span>
+          )}
+          {result.dataJulgamento && (
+            <span className="text-[10px] text-gray-500">
+              {new Date(result.dataJulgamento).toLocaleDateString('pt-BR')}
+            </span>
+          )}
+          {hasEmenta && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Ementa ✓
+            </span>
+          )}
+          {hasInteiroTeor && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-50 text-amber-700 border border-amber-200">
+              Inteiro Teor ✓
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded body */}
+      {expanded && (
+        <div className="px-4 py-3 space-y-4">
+          {result.ementa && (
+            <div>
+              <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                Ementa
+              </h4>
+              <p className="text-sm text-gray-700 leading-relaxed bg-emerald-50 rounded-md px-3 py-2 border border-emerald-100">
+                {result.ementa}
+              </p>
+            </div>
+          )}
+          {result.inteiroTeor && (
+            <div>
+              <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                Inteiro Teor
+              </h4>
+              <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-md px-3 py-2 border border-gray-200 max-h-72 overflow-y-auto">
+                {result.inteiroTeor}
+              </div>
+            </div>
+          )}
+          {result.assuntos && result.assuntos.length > 0 && (
+            <div>
+              <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                Assuntos
+              </h4>
+              <div className="flex flex-wrap gap-1.5">
+                {result.assuntos.map((a, i) => (
+                  <span key={i} className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                    {a}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {!result.ementa && !result.inteiroTeor && (
+            <p className="text-sm text-gray-400 italic">
+              Conteúdo completo não disponível para este processo na API DataJud.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
  * Rich jurisprudence document viewer.
- * Renders the LLM-synthesized jurisprudence text as a structured legal document.
+ * Shows two tabs: "Síntese" (LLM synthesis) and "Processos" (individual cases).
  */
 function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain: string }) {
   const sections = useMemo(() => parseJurisprudenceText(plain), [plain])
   const query = source.reference || ''
 
+  // Parse results_raw if available
+  const rawResults = useMemo<DataJudResult[] | null>(() => {
+    if (!source.results_raw) return null
+    try {
+      const parsed = JSON.parse(source.results_raw)
+      return Array.isArray(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  }, [source.results_raw])
+
+  const [activeTab, setActiveTab] = useState<'sintese' | 'processos'>('sintese')
+
   return (
     <article className="max-w-none">
       {/* Document header */}
-      <div className="mb-6 pb-4 border-b-2 border-emerald-200">
+      <div className="mb-4 pb-4 border-b-2 border-emerald-200">
         <div className="flex items-center gap-2 mb-2">
           <Scale className="w-5 h-5 text-emerald-600 flex-shrink-0" />
           <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
@@ -200,31 +325,71 @@ function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain:
         )}
       </div>
 
-      {/* Synthesis sections */}
-      {sections.length > 0 ? (
-        <div className="space-y-5">
-          {sections.map((sec, i) => (
-            <div key={i} className={i > 0 ? 'pt-4 border-t border-gray-100' : ''}>
-              {sec.heading && (
-                <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
-                  <span className="w-1.5 h-4 bg-emerald-500 rounded-full flex-shrink-0" />
-                  {sec.heading}
-                </h3>
-              )}
-              {sec.body && (
-                <div className="space-y-2">
-                  {sec.body.split('\n').filter(l => l.trim()).map((para, pi) => (
-                    <p key={pi} className="text-sm text-gray-700 leading-relaxed pl-3.5">
-                      {para}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
+      {/* Tabs — only show when we have raw results */}
+      {rawResults && rawResults.length > 0 && (
+        <div className="flex gap-1 mb-5 border-b border-gray-200">
+          <button
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'sintese'
+                ? 'border-emerald-500 text-emerald-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            onClick={() => setActiveTab('sintese')}
+          >
+            Síntese
+          </button>
+          <button
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+              activeTab === 'processos'
+                ? 'border-emerald-500 text-emerald-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            onClick={() => setActiveTab('processos')}
+          >
+            Processos
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">
+              {rawResults.length}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Tab: Síntese */}
+      {activeTab === 'sintese' && (
+        sections.length > 0 ? (
+          <div className="space-y-5">
+            {sections.map((sec, i) => (
+              <div key={i} className={i > 0 ? 'pt-4 border-t border-gray-100' : ''}>
+                {sec.heading && (
+                  <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+                    <span className="w-1.5 h-4 bg-emerald-500 rounded-full flex-shrink-0" />
+                    {sec.heading}
+                  </h3>
+                )}
+                {sec.body && (
+                  <div className="space-y-2">
+                    {sec.body.split('\n').filter(l => l.trim()).map((para, pi) => (
+                      <p key={pi} className="text-sm text-gray-700 leading-relaxed pl-3.5">
+                        {para}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{plain}</p>
+        )
+      )}
+
+      {/* Tab: Processos */}
+      {activeTab === 'processos' && rawResults && (
+        <div className="space-y-3">
+          {rawResults.map((r, i) => (
+            <ProcessCard key={r.processo || i} result={r} index={i} />
           ))}
         </div>
-      ) : (
-        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{plain}</p>
       )}
     </article>
   )

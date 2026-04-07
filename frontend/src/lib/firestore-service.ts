@@ -419,15 +419,19 @@ export async function saveNotebookDocumentToDocuments(uid: string, input: {
   notebookId: string
   notebookTitle: string
   llm_executions?: DocumentData['llm_executions']
+  /** Override the default 'documento_caderno' type when the user chose a specific formal type. */
+  document_type_id?: string
+  /** Legal area IDs to associate with the document. */
+  legal_area_ids?: string[]
 }): Promise<DocumentData> {
   const db = ensureFirestore()
   const colRef = collection(db, 'users', uid, 'documents')
   const now = new Date().toISOString()
   const docData = stripUndefined({
-    document_type_id: 'documento_caderno',
+    document_type_id: input.document_type_id ?? 'documento_caderno',
     original_request: input.topic,
     template_variant: null,
-    legal_area_ids: [],
+    legal_area_ids: input.legal_area_ids ?? [],
     request_context: null,
     context_detail: null,
     tema: input.topic,
@@ -1478,7 +1482,14 @@ function fitSourcesToFirestoreLimit(
   // Scale each source's text proportionally to fit
   const ratio = availableForText / Math.ceil(totalTextChars * 1.1)
 
-  const trimmed: NotebookSource[] = sources.map(src => {
+  // When the document is significantly over budget (ratio < 0.8), drop
+  // results_raw first — it is supplemental data for the rich viewer and
+  // does not affect LLM analysis quality.
+  const sourcesWithoutRaw: NotebookSource[] = ratio < 0.8
+    ? sources.map(({ results_raw: _dropped, ...rest }) => rest)
+    : sources
+
+  const trimmed: NotebookSource[] = sourcesWithoutRaw.map(src => {
     const text = src.text_content ?? ''
     if (text.length === 0 || ratio >= 1) return src
     const maxChars = Math.max(Math.floor(text.length * ratio), MIN_SOURCE_TEXT_CHARS)
