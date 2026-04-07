@@ -1493,6 +1493,12 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           addModalSubstep('synthesize', `Síntese gerada (${jurisprudenceResult.tokens_out} tokens)`)
           updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
 
+          // Persist raw DataJud results (individual ementa + inteiro teor) for rich display.
+          // Cap each inteiro teor at 8 KB and total at top-10 results to stay within Firestore budget.
+          const resultsForStorage = selectedResults.slice(0, 10).map(r => ({
+            ...r,
+            inteiroTeor: r.inteiroTeor ? r.inteiroTeor.slice(0, 8000) : undefined,
+          }))
           const source: NotebookSource = {
             id: generateId(),
             type: 'jurisprudencia',
@@ -1501,6 +1507,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             content_type: 'text/plain',
             size_bytes: jurisprudenceResult.content.length,
             text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+            results_raw: JSON.stringify(resultsForStorage),
             status: 'indexed',
             added_at: new Date().toISOString(),
           }

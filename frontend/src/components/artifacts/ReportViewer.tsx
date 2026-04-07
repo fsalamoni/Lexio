@@ -85,9 +85,11 @@ function extractToc(md: string): TocItem[] {
 interface ReportViewerProps {
   content: string
   title?: string
+  /** When true, renders in a page-canvas style (white paper on gray background). Used for 'documento'. */
+  pageMode?: boolean
 }
 
-export default function ReportViewer({ content, title }: ReportViewerProps) {
+export default function ReportViewer({ content, title, pageMode = false }: ReportViewerProps) {
   const [showToc, setShowToc] = useState(true)
   const [activeId, setActiveId] = useState<string>('')
   const contentRef = useRef<HTMLDivElement>(null)
@@ -165,13 +167,51 @@ export default function ReportViewer({ content, title }: ReportViewerProps) {
           </button>
         )}
 
-        {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
-
-        <div
-          ref={contentRef}
-          className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        {pageMode ? (
+          /* Page-canvas mode: white paper on gray background — for formal documents */
+          <div className="bg-gray-100 -mx-0 px-4 py-8 rounded-md">
+            <div className="bg-white shadow-md rounded-sm mx-auto max-w-2xl px-12 py-14 border border-gray-200">
+              {title && (
+                <h1 className="text-xl font-bold text-gray-900 mb-2 text-center">
+                  {title}
+                </h1>
+              )}
+              <div
+                ref={contentRef}
+                className={[
+                  'text-[13.5px] text-gray-800 leading-[1.85]',
+                  '[&_h1]:text-xl [&_h1]:font-bold [&_h1]:text-center [&_h1]:mt-8 [&_h1]:mb-4',
+                  '[&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-7 [&_h2]:mb-3 [&_h2]:border-b [&_h2]:border-gray-200 [&_h2]:pb-1',
+                  '[&_h3]:text-sm [&_h3]:font-bold [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:uppercase [&_h3]:tracking-wide',
+                  '[&_h4]:text-sm [&_h4]:font-semibold [&_h4]:mt-4 [&_h4]:mb-1 [&_h4]:text-gray-700',
+                  '[&_p]:my-3 [&_p]:leading-[1.85] [&_p]:text-justify [&_p]:hyphens-auto',
+                  '[&_strong]:font-semibold',
+                  '[&_em]:italic',
+                  '[&_blockquote]:border-l-4 [&_blockquote]:border-gray-300 [&_blockquote]:pl-4 [&_blockquote]:my-4 [&_blockquote]:italic [&_blockquote]:text-gray-600',
+                  '[&_pre]:bg-gray-50 [&_pre]:rounded [&_pre]:p-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:border [&_pre]:border-gray-200',
+                  '[&_code]:text-xs [&_code]:font-mono',
+                  '[&_ul]:my-3 [&_ul]:ml-6 [&_ul]:list-disc [&_ul]:space-y-1',
+                  '[&_ol]:my-3 [&_ol]:ml-6 [&_ol]:list-decimal [&_ol]:space-y-1',
+                  '[&_li]:leading-relaxed',
+                  '[&_table]:w-full [&_table]:border-collapse [&_table]:my-4',
+                  '[&_td]:border [&_td]:border-gray-200 [&_td]:px-3 [&_td]:py-2 [&_td]:text-sm',
+                  '[&_hr]:my-6 [&_hr]:border-gray-200',
+                  '[&_a]:text-brand-600 [&_a]:underline',
+                ].join(' ')}
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
+            </div>
+          </div>
+        ) : (
+          <>
+            {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
+            <div
+              ref={contentRef}
+              className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </>
+        )}
       </div>
     </div>
   )

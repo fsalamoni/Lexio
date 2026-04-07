@@ -1480,10 +1480,19 @@ function fitSourcesToFirestoreLimit(
 
   const trimmed: NotebookSource[] = sources.map(src => {
     const text = src.text_content ?? ''
-    if (text.length === 0 || ratio >= 1) return src
-    const maxChars = Math.max(Math.floor(text.length * ratio), MIN_SOURCE_TEXT_CHARS)
-    if (maxChars >= text.length) return src
-    return { ...src, text_content: text.slice(0, maxChars) }
+    // Trim text_content proportionally
+    const trimmedSrc: NotebookSource = { ...src }
+    if (text.length > 0 && ratio < 1) {
+      const maxChars = Math.max(Math.floor(text.length * ratio), MIN_SOURCE_TEXT_CHARS)
+      if (maxChars < text.length) {
+        trimmedSrc.text_content = text.slice(0, maxChars)
+      }
+    }
+    // Drop results_raw entirely when near the limit (it's supplementary data)
+    if (ratio < 0.8 && trimmedSrc.results_raw) {
+      trimmedSrc.results_raw = undefined
+    }
+    return trimmedSrc
   })
 
   console.warn(

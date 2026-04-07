@@ -34,6 +34,7 @@ export default function DocumentList() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [origemFilter, setOrigemFilter] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState('date_desc')
@@ -86,6 +87,10 @@ export default function DocumentList() {
               d.document_type_id.toLowerCase().includes(q)
             )
           }
+          // Client-side origem filter
+          if (origemFilter) {
+            items = items.filter(d => d.origem === origemFilter)
+          }
           // Client-side date filtering for Firebase mode
           if (dateFrom) {
             const fromDate = new Date(dateFrom).toISOString()
@@ -126,7 +131,7 @@ export default function DocumentList() {
         .catch(() => toast.error('Erro ao carregar documentos'))
         .finally(() => setLoading(false))
     }
-  }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo, refreshKey]) // eslint-disable-line
+  }, [page, statusFilter, typeFilter, origemFilter, searchQuery, sortBy, dateFrom, dateTo, refreshKey]) // eslint-disable-line
 
   const handleStatusFilter = (s: string) => {
     setStatusFilter(prev => prev === s ? '' : s)
@@ -134,11 +139,12 @@ export default function DocumentList() {
     setSelected(new Set())
   }
 
-  const hasActiveFilters = statusFilter || typeFilter || searchQuery || dateFrom || dateTo
+  const hasActiveFilters = statusFilter || typeFilter || origemFilter || searchQuery || dateFrom || dateTo
 
   const clearAll = () => {
     setStatusFilter('')
     setTypeFilter('')
+    setOrigemFilter('')
     setSearchInput('')
     setSearchQuery('')
     setSortBy('date_desc')
@@ -300,7 +306,7 @@ export default function DocumentList() {
         )}
       </div>
 
-      {/* Status filter chips */}
+      {/* Status filter chips + Caderno origin chip */}
       <div className="flex flex-wrap gap-2 mb-4">
         {([
           { key: 'processando', label: 'Em processamento' },
@@ -322,6 +328,18 @@ export default function DocumentList() {
             {label}
           </button>
         ))}
+        {/* Caderno origin filter */}
+        <button
+          onClick={() => { setOrigemFilter(prev => prev === 'caderno' ? '' : 'caderno'); setPage(0) }}
+          className={`px-3 py-1 rounded-full text-xs border transition-colors flex items-center gap-1.5 ${
+            origemFilter === 'caderno'
+              ? 'bg-violet-600 text-white border-violet-600'
+              : 'bg-white text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <BookOpen className="w-3 h-3" />
+          Do Caderno
+        </button>
         {hasActiveFilters && (
           <button
             onClick={clearAll}

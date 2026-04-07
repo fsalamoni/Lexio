@@ -3,14 +3,18 @@
  * notebook source / acervo document text with proper formatting.
  *
  * Supports:
- * - Structured documents (section headings + paragraphs)
- * - Jurisprudência sources (rich legal document rendering)
- * - Plain text fallback
+ * - Structured documents (section headings + paragraphs) — page-like layout
+ * - Jurisprudência sources (synthesis + individual process cards with ementa/inteiro teor)
+ * - Plain text fallback with pre-wrap formatting
  */
 import { useMemo, useState } from 'react'
-import { Copy, Check, FileText, Download, Scale, BookOpen } from 'lucide-react'
+import {
+  Copy, Check, FileText, Download, Scale, BookOpen,
+  ChevronDown, ChevronUp, FileSearch,
+} from 'lucide-react'
 import DraggablePanel from './DraggablePanel'
 import type { NotebookSource } from '../lib/firestore-service'
+import type { DataJudResult } from '../lib/datajud-service'
 import {
   getStructuredSections,
   getStructuredMeta,
@@ -57,13 +61,11 @@ interface JurisprudenceSection {
 
 function parseJurisprudenceText(text: string): JurisprudenceSection[] {
   if (!text.trim()) return []
-  // Split on Markdown headings (## Heading or **Heading**) or numbered headings
   const lines = text.split('\n')
   const sections: JurisprudenceSection[] = []
   let current: JurisprudenceSection = { body: '' }
 
   for (const line of lines) {
-    // Detect Markdown heading or bold-only line (likely a section title)
     const headingMatch = line.match(/^#{1,3}\s+(.+)$/) || line.match(/^\*{2}(.+)\*{2}\s*$/)
     const numberedMatch = line.match(/^(\d+)\.\s+\*{0,2}(.+?)\*{0,2}:?\s*$/)
 
@@ -71,7 +73,6 @@ function parseJurisprudenceText(text: string): JurisprudenceSection[] {
       if (current.body.trim() || current.heading) {
         sections.push({ ...current, body: current.body.trim() })
       }
-      // headingMatch[1] is the heading text; numberedMatch[2] is the heading after "N. "
       const title = headingMatch ? headingMatch[1] : (numberedMatch?.[2] ?? line)
       current = { heading: title, body: '' }
     } else {
@@ -83,6 +84,17 @@ function parseJurisprudenceText(text: string): JurisprudenceSection[] {
     sections.push({ ...current, body: current.body.trim() })
   }
   return sections.filter(s => s.body || s.heading)
+}
+
+/** Safe parse of results_raw JSON. */
+function parseResultsRaw(raw: string | undefined): DataJudResult[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -134,26 +146,6 @@ function DownloadBtn({ text, filename }: { text: string; filename: string }) {
   )
 }
 
-/** Render a single section (heading + paragraphs). */
-function SectionBlock({ section, idx }: { section: StructuredDocumentSection; idx: number }) {
-  return (
-    <div className={idx > 0 ? 'mt-6' : ''}>
-      {section.title && section.title !== 'Documento' && (
-        <h3 className="text-base font-semibold text-gray-900 mb-3 pb-1.5 border-b border-gray-100">
-          {section.title}
-        </h3>
-      )}
-      <div className="space-y-3">
-        {section.paragraphs.map((p, i) => (
-          <p key={i} className="text-sm text-gray-700 leading-relaxed">
-            {p}
-          </p>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 /** Metadata pill badges. */
 function MetaBadges({ meta, charCount }: { meta: StructuredDocumentMeta | null; charCount: number }) {
   const badges: { label: string; value: string }[] = []
@@ -175,58 +167,288 @@ function MetaBadges({ meta, charCount }: { meta: StructuredDocumentMeta | null; 
 }
 
 /**
+ * A single DataJud process card showing ementa, inteiro teor (collapsible),
+ * and key process metadata.
+ */
+function ProcessCard({ result, index }: { result: DataJudResult; index: number }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+      {/* Card header */}
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800">
+              {index + 1}. {result.classe}
+            </span>
+            <span className="text-xs text-gray-500 font-mono truncate">{result.numeroProcesso}</span>
+          </div>
+          <div className="mt-1 text-xs text-gray-600 flex flex-wrap gap-x-3 gap-y-0.5">
+            <span className="font-medium">{result.tribunalName}</span>
+            {result.orgaoJulgador && <span className="text-gray-500">· {result.orgaoJulgador}</span>}
+            {result.grau && <span className="text-gray-400">· {result.grau}</span>}
+            {result.dataAjuizamento && (
+              <span className="text-gray-400">
+                · {result.dataAjuizamento.split('T')[0]}
+              </span>
+            )}
+          </div>
+        </div>
+        {(result.ementa || result.inteiroTeor) && (
+          <div className="flex items-center gap-1.5 flex-shrink-0 text-[10px] text-gray-400 mt-0.5">
+            {result.ementa && (
+              <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-600 font-medium border border-sky-100">
+                Ementa
+              </span>
+            )}
+            {result.inteiroTeor && (
+              <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 font-medium border border-amber-100">
+                Inteiro Teor
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Assuntos */}
+      {result.assuntos.length > 0 && (
+        <div className="px-4 py-2 bg-gray-50/60 border-b border-gray-100">
+          <div className="flex flex-wrap gap-1">
+            {result.assuntos.slice(0, 6).map((a, i) => (
+              <span key={i} className="px-2 py-0.5 rounded-full text-[10px] bg-gray-100 text-gray-600">{a}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Ementa */}
+      {result.ementa && (
+        <div className="px-4 py-3 border-b border-gray-100">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700 mb-1.5">
+            Ementa
+          </p>
+          <p className="text-sm text-gray-800 leading-relaxed italic">
+            {result.ementa}
+          </p>
+        </div>
+      )}
+
+      {/* Inteiro Teor — collapsible */}
+      {result.inteiroTeor && (
+        <div className="px-4 py-2">
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="flex items-center gap-1.5 text-xs font-medium text-amber-700 hover:text-amber-900 transition-colors"
+          >
+            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {expanded ? 'Ocultar inteiro teor' : 'Ver inteiro teor'}
+            <span className="text-gray-400 font-normal">
+              ({fmtChars(result.inteiroTeor.length)} chars)
+            </span>
+          </button>
+          {expanded && (
+            <div className="mt-2 p-3 bg-amber-50/60 rounded-lg border border-amber-100">
+              <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-mono">
+                {result.inteiroTeor}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* No ementa, no inteiro teor */}
+      {!result.ementa && !result.inteiroTeor && (
+        <div className="px-4 py-2 text-xs text-gray-400 italic">
+          Ementa e inteiro teor não disponíveis para este processo no DataJud.
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
  * Rich jurisprudence document viewer.
- * Renders the LLM-synthesized jurisprudence text as a structured legal document.
+ * Tab 1: Synthesis (LLM-generated) — Tab 2: Processos (individual cards)
  */
 function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain: string }) {
+  const [tab, setTab] = useState<'synthesis' | 'processos'>('synthesis')
   const sections = useMemo(() => parseJurisprudenceText(plain), [plain])
+  const results = useMemo(() => parseResultsRaw(source.results_raw), [source.results_raw])
   const query = source.reference || ''
 
   return (
-    <article className="max-w-none">
+    <article className="max-w-none h-full flex flex-col">
       {/* Document header */}
-      <div className="mb-6 pb-4 border-b-2 border-emerald-200">
-        <div className="flex items-center gap-2 mb-2">
-          <Scale className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+      <div className="mb-4 pb-3 border-b-2 border-emerald-200 flex-shrink-0">
+        <div className="flex items-center gap-2 mb-1">
+          <Scale className="w-4 h-4 text-emerald-600 flex-shrink-0" />
           <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
             Pesquisa de Jurisprudência — DataJud / CNJ
           </span>
         </div>
         {query && (
-          <div className="mt-2 px-3 py-2 bg-emerald-50 rounded-lg border border-emerald-100">
+          <div className="mt-1.5 px-3 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
             <span className="text-xs text-emerald-600 font-medium">Consulta: </span>
             <span className="text-sm text-emerald-800 font-semibold">{query}</span>
           </div>
         )}
       </div>
 
-      {/* Synthesis sections */}
-      {sections.length > 0 ? (
-        <div className="space-y-5">
-          {sections.map((sec, i) => (
-            <div key={i} className={i > 0 ? 'pt-4 border-t border-gray-100' : ''}>
-              {sec.heading && (
-                <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
-                  <span className="w-1.5 h-4 bg-emerald-500 rounded-full flex-shrink-0" />
-                  {sec.heading}
-                </h3>
-              )}
-              {sec.body && (
-                <div className="space-y-2">
-                  {sec.body.split('\n').filter(l => l.trim()).map((para, pi) => (
-                    <p key={pi} className="text-sm text-gray-700 leading-relaxed pl-3.5">
-                      {para}
-                    </p>
-                  ))}
+      {/* Tabs */}
+      <div className="flex gap-1 mb-4 border-b border-gray-200 flex-shrink-0">
+        <button
+          onClick={() => setTab('synthesis')}
+          className={`px-4 py-2 text-xs font-medium rounded-t-md transition-colors ${
+            tab === 'synthesis'
+              ? 'bg-white border border-b-white border-gray-200 text-emerald-700 -mb-px z-10'
+              : 'text-gray-500 hover:text-gray-800'
+          }`}
+        >
+          Síntese
+        </button>
+        {results.length > 0 && (
+          <button
+            onClick={() => setTab('processos')}
+            className={`px-4 py-2 text-xs font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
+              tab === 'processos'
+                ? 'bg-white border border-b-white border-gray-200 text-emerald-700 -mb-px z-10'
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            <FileSearch className="w-3.5 h-3.5" />
+            Processos ({results.length})
+          </button>
+        )}
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto">
+        {tab === 'synthesis' ? (
+          sections.length > 0 ? (
+            <div className="space-y-5">
+              {sections.map((sec, i) => (
+                <div key={i} className={i > 0 ? 'pt-4 border-t border-gray-100' : ''}>
+                  {sec.heading && (
+                    <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+                      <span className="w-1.5 h-4 bg-emerald-500 rounded-full flex-shrink-0" />
+                      {sec.heading}
+                    </h3>
+                  )}
+                  {sec.body && (
+                    <div className="space-y-2">
+                      {sec.body.split('\n').filter(l => l.trim()).map((para, pi) => (
+                        <p key={pi} className="text-sm text-gray-700 leading-relaxed pl-3.5">
+                          {para}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{plain}</p>
-      )}
+          ) : (
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{plain}</p>
+          )
+        ) : (
+          <div className="space-y-4">
+            {results.map((r, i) => (
+              <ProcessCard key={i} result={r} index={i} />
+            ))}
+          </div>
+        )}
+      </div>
     </article>
+  )
+}
+
+/**
+ * Page-like document viewer for structured acervo / uploaded documents.
+ * Renders section headings and paragraphs in a white-page-on-gray-canvas layout.
+ */
+function DocumentPageViewer({ sections, meta, plain }: {
+  sections: StructuredDocumentSection[] | null
+  meta: StructuredDocumentMeta | null
+  plain: string
+}) {
+  const hasRealSections = sections && sections.length > 0
+
+  return (
+    /* Gray canvas — page sits as a centered white card */
+    <div className="bg-gray-100 -mx-6 -mt-0 px-6 py-8 min-h-full">
+      <div className="bg-white shadow-md rounded-sm mx-auto max-w-2xl px-10 py-12 border border-gray-200">
+
+        {/* Document metadata header (if available) */}
+        {meta && (meta.format || meta.pages) && (
+          <div className="mb-8 pb-4 border-b border-gray-200 text-center">
+            <div className="flex justify-center gap-4 text-xs text-gray-400">
+              {meta.format && <span className="uppercase tracking-widest font-semibold">{meta.format}</span>}
+              {meta.pages && <span>· {meta.pages} página{meta.pages > 1 ? 's' : ''}</span>}
+              {meta.paragraphs > 0 && <span>· {meta.paragraphs} parágrafos</span>}
+            </div>
+          </div>
+        )}
+
+        {/* Content */}
+        {hasRealSections ? (
+          <div className="space-y-8">
+            {sections!.map((sec, i) => (
+              <section key={i}>
+                {sec.title && sec.title !== 'Documento' && (
+                  <h2
+                    className={`font-bold text-gray-900 mb-4 pb-2 border-b border-gray-200 ${
+                      i === 0 ? 'text-xl text-center border-b-2' : 'text-base'
+                    }`}
+                  >
+                    {sec.title}
+                  </h2>
+                )}
+                <div className="space-y-4">
+                  {sec.paragraphs.map((p, pi) => {
+                    // Detect sub-headings: all-caps short lines or Roman-numeral patterns
+                    const isSubheading =
+                      (p.length < 80 && p === p.toUpperCase() && /[A-ZÁÉÍÓÚÃÕÂÊÔÇÜ]{3,}/.test(p)) ||
+                      /^[IVXLC]+\.\s/.test(p) ||
+                      /^\d+\.\d*\s/.test(p)
+                    return isSubheading ? (
+                      <h3 key={pi} className="text-sm font-semibold text-gray-800 mt-5 mb-2 uppercase tracking-wide">
+                        {p}
+                      </h3>
+                    ) : (
+                      <p key={pi} className="text-[13.5px] text-gray-800 leading-[1.8] text-justify hyphens-auto indent-8">
+                        {p}
+                      </p>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          /* Plain text — preserve whitespace, use serif-like rendering */
+          <div className="space-y-4">
+            {plain.split(/\n{2,}/).map((block, i) => {
+              const trimmed = block.trim()
+              if (!trimmed) return null
+              // Detect headings in plain text: ALL CAPS, numbered, etc.
+              const isHeading =
+                (trimmed.length < 100 && trimmed === trimmed.toUpperCase() && /[A-ZÁÉÍÓÚÃÕÂÊÔÇÜ]{3,}/.test(trimmed)) ||
+                /^[IVXLC]+\.\s/.test(trimmed) ||
+                /^\d+\.\s/.test(trimmed)
+              return isHeading ? (
+                <h3 key={i} className="text-sm font-semibold text-gray-800 mt-6 mb-1 uppercase tracking-wide">
+                  {trimmed}
+                </h3>
+              ) : (
+                <p key={i} className="text-[13.5px] text-gray-800 leading-[1.8] text-justify hyphens-auto indent-8">
+                  {trimmed}
+                </p>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -253,14 +475,14 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
       onClose={onClose}
       title={source.name || 'Documento'}
       icon={icon}
-      initialWidth={720}
-      initialHeight={580}
-      minWidth={380}
-      minHeight={280}
+      initialWidth={760}
+      initialHeight={640}
+      minWidth={420}
+      minHeight={320}
     >
       <div className="flex flex-col h-full">
         {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex-shrink-0">
+        <div className="flex items-center justify-between gap-3 px-5 py-2.5 border-b border-gray-100 bg-gray-50/60 flex-shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             {isJurisprudencia && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700 flex-shrink-0">
@@ -268,7 +490,7 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
                 Jurisprudência
               </span>
             )}
-            <MetaBadges meta={meta} charCount={charCount} />
+            {!isJurisprudencia && <MetaBadges meta={meta} charCount={charCount} />}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <CopyBtn text={plain} />
@@ -281,20 +503,11 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
           {charCount === 0 ? (
             <p className="text-sm text-gray-400 italic">Nenhum conteúdo de texto disponível para este documento.</p>
           ) : isJurisprudencia ? (
-            /* Rich jurisprudence viewer */
+            /* Rich jurisprudence viewer with tabs */
             <JurisprudenceViewer source={source} plain={plain} />
-          ) : hasSections ? (
-            /* Structured view — section headings + paragraphs */
-            <article>
-              {sections!.map((sec, i) => (
-                <SectionBlock key={i} section={sec} idx={i} />
-              ))}
-            </article>
           ) : (
-            /* Fallback — formatted plain text */
-            <article className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-              {plain}
-            </article>
+            /* Page-like document viewer for acervo/uploaded docs */
+            <DocumentPageViewer sections={sections} meta={meta} plain={plain} />
           )}
         </div>
       </div>
