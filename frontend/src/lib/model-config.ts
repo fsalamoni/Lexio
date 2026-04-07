@@ -1052,6 +1052,15 @@ export const RESEARCH_NOTEBOOK_AGENT_DEFS: AgentModelDef[] = [
     icon: 'search',
     agentCategory: 'extraction',
   },
+  {
+    key: 'notebook_ranqueador_jurisprudencia',
+    label: 'Ranqueador de Jurisprudência',
+    description: 'Avalia a relevância dos resultados do DataJud em relação à consulta e reordena por importância',
+    defaultModel: '',
+    recommendedTier: 'fast',
+    icon: 'bar-chart-2',
+    agentCategory: 'extraction',
+  },
   // ── Estúdio de Criação ──
   {
     key: 'studio_pesquisador',

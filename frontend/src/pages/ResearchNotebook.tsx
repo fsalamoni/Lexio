@@ -139,6 +139,36 @@ export interface SearchResultItem {
   _raw?: any
 }
 
+// ── Jurisprudence Prompts ────────────────────────────────────────────────────
+
+const JURISPRUDENCE_RANKING_SYSTEM = [
+  'Você é um especialista em relevância jurisprudencial.',
+  'Avalie cada processo quanto à relevância para a consulta do usuário.',
+  'Retorne APENAS um JSON com um array "ranking" onde cada item tem',
+  '"index" (número do processo na lista, começando em 1) e "score" (0 a 100,',
+  'sendo 100 = máxima relevância). Ordene do mais relevante para o menos relevante.',
+  'Considere: (1) alinhamento temático dos assuntos com a consulta,',
+  '(2) grau hierárquico (tribunais superiores têm mais peso como precedente),',
+  '(3) movimentações recentes indicam processos ativos,',
+  '(4) data de ajuizamento mais recente pode indicar jurisprudência atualizada.',
+].join(' ')
+
+const JURISPRUDENCE_SYNTHESIS_SYSTEM = [
+  'Você é um pesquisador jurídico especializado em jurisprudência brasileira.',
+  'Organize e sintetize os resultados do DataJud em português, produzindo as seguintes seções:',
+  '',
+  '1. **Panorama Jurisprudencial**: Visão geral das tendências identificadas,',
+  'incluindo a evolução temporal dos processos com base nas movimentações processuais.',
+  '2. **Precedentes-Chave**: Processos mais relevantes como precedentes,',
+  'priorizando tribunais superiores e decisões recentes.',
+  '3. **Fundamentos Jurídicos**: Principais teses e argumentos jurídicos',
+  'identificados nos assuntos e classes processuais.',
+  '4. **Análise Temporal**: Evolução processual baseada nas movimentações',
+  '(andamentos) dos processos, identificando padrões e status atual.',
+  '5. **Lista de Processos**: Relação completa com número, tribunal, classe,',
+  'órgão julgador e status mais recente.',
+].join('\n')
+
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 type ViewMode = 'list' | 'detail'
@@ -763,12 +793,13 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
   const appendNotebookSourceWithExecution = async (
     notebookId: string,
     source: NotebookSource,
-    execution: ReturnType<typeof createUsageExecutionRecord>,
+    execution: ReturnType<typeof createUsageExecutionRecord> | ReturnType<typeof createUsageExecutionRecord>[],
   ) => {
     if (!userId) throw new Error('Usuário não autenticado')
     const freshNotebook = await getFreshNotebookOrThrow(notebookId)
     const updatedSources = [...freshNotebook.sources, source]
-    const updatedExecutions = [...(freshNotebook.llm_executions || []), execution]
+    const executions = Array.isArray(execution) ? execution : [execution]
+    const updatedExecutions = [...(freshNotebook.llm_executions || []), ...executions]
 
     await updateResearchNotebook(userId, notebookId, {
       sources: updatedSources,
@@ -1339,39 +1370,114 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         setResearchModalOpen(true)
 
         try {
-          // Step 3: Analyze
-          updateModalStep('analyze', { status: 'active' })
           const models = await loadResearchNotebookModels()
-          const model = models.notebook_pesquisador_jurisprudencia
-          if (!model) {
+          const openRouterApiKey = await getOpenRouterKey()
+          const llmExecutions: ReturnType<typeof createUsageExecutionRecord>[] = []
+
+          // Step 3: Rank results by relevance
+          updateModalStep('rank', { status: 'active' })
+          const rankModel = models.notebook_ranqueador_jurisprudencia
+          let selectedResults = selected.map(s => s._raw as DataJudResult)
+
+          if (rankModel) {
+            addModalSubstep('rank', `Avaliando relevância com ${rankModel}...`)
+            const rankTextContent = formatDataJudResults(selectedResults)
+            const rankResult = await callLLM(
+              openRouterApiKey,
+              JURISPRUDENCE_RANKING_SYSTEM,
+              `Consulta: "${config.query}"\n\nProcessos para avaliar:\n${rankTextContent}`,
+              rankModel,
+              800,
+              0.1,
+            )
+
+            // Parse ranking and reorder results
+            try {
+              const cleaned = rankResult.content.replace(/```(?:json)?\s*/g, '').trim()
+              const parsed = JSON.parse(cleaned) as { ranking: Array<{ index: number; score: number }> }
+              if (parsed.ranking && Array.isArray(parsed.ranking)) {
+                const sorted = parsed.ranking
+                  .filter(r => r.index >= 1 && r.index <= selectedResults.length)
+                  .sort((a, b) => b.score - a.score)
+
+                const reordered = []
+                const seenIndices = new Set<number>()
+                let topScore: number | null = null
+
+                for (const item of sorted) {
+                  const resultIndex = item.index - 1
+                  if (seenIndices.has(resultIndex)) continue
+                  const process = selectedResults[resultIndex]
+                  if (!process) continue
+                  seenIndices.add(resultIndex)
+                  reordered.push(process)
+                  if (topScore === null) topScore = item.score
+                }
+
+                if (reordered.length > 0) {
+                  selectedResults = reordered
+                  addModalSubstep('rank', `Processos reordenados por relevância (top score: ${topScore ?? 'N/A'})`)
+                } else {
+                  addModalSubstep('rank', 'Ranking retornou índices inválidos/vazios — mantendo ordem original')
+                }
+              }
+            } catch {
+              addModalSubstep('rank', 'Parsing do ranking falhou — mantendo ordem original')
+            }
+
+            llmExecutions.push(createUsageExecutionRecord({
+              source_type: 'caderno_pesquisa',
+              source_id: notebookId,
+              phase: 'notebook_ranqueador_jurisprudencia',
+              agent_name: 'Ranqueador de Jurisprudência',
+              model: rankResult.model,
+              tokens_in: rankResult.tokens_in,
+              tokens_out: rankResult.tokens_out,
+              cost_usd: rankResult.cost_usd,
+              duration_ms: rankResult.duration_ms,
+            }))
+
+            setResearchModalStats(prev => ({
+              ...prev,
+              tokensUsed: (prev.tokensUsed || 0) + rankResult.tokens_in + rankResult.tokens_out,
+              elapsedMs: Math.round(performance.now() - t0),
+            }))
+            updateModalStep('rank', { status: 'done', detail: `${selectedResults.length} processos ranqueados` })
+          } else {
+            addModalSubstep('rank', 'Modelo não configurado — mantendo ordem original')
+            updateModalStep('rank', { status: 'done', detail: 'Etapa ignorada (sem modelo)' })
+          }
+
+          // Step 4: Analyze
+          updateModalStep('analyze', { status: 'active' })
+          const synthesisModel = models.notebook_pesquisador_jurisprudencia
+          if (!synthesisModel) {
             updateModalStep('analyze', { status: 'error', detail: 'Modelo não configurado' })
             setResearchModalCanClose(true)
             toast.warning('Modelo obrigatório não configurado', 'Configure no Admin (Caderno de Pesquisa) o agente "Pesquisador de Jurisprudência (DataJud)".')
             return
           }
-          addModalSubstep('analyze', `Modelo: ${model}`)
+          addModalSubstep('analyze', `Modelo: ${synthesisModel}`)
           updateModalStep('analyze', { status: 'done' })
 
-          // Step 4: Synthesize
+          // Step 5: Synthesize
           updateModalStep('synthesize', { status: 'active' })
           addModalSubstep('synthesize', 'Gerando síntese jurisprudencial...')
-          const openRouterApiKey = await getOpenRouterKey()
 
-          const selectedResults = selected.map(s => s._raw as DataJudResult)
           const textContent = formatDataJudResults(selectedResults)
 
           const jurisprudenceResult = await callLLM(
             openRouterApiKey,
-            'Você é um pesquisador jurídico especializado em jurisprudência brasileira. Organize e sintetize resultados do DataJud em português com seções: panorama jurisprudencial, precedentes-chave, fundamentos jurídicos e lista de processos.',
-            `Consulta do usuário: "${config.query}"\n\nResultados DataJud (${selected.length} processos selecionados):\n${textContent}\n\nProduza uma síntese objetiva e acionável para o caderno de pesquisa.`,
-            model,
-            2200,
+            JURISPRUDENCE_SYNTHESIS_SYSTEM,
+            `Consulta do usuário: "${config.query}"\n\nResultados DataJud (${selectedResults.length} processos selecionados, ordenados por relevância):\n${textContent}\n\nProduza uma síntese objetiva e acionável para o caderno de pesquisa. Destaque padrões nas movimentações processuais que indiquem tendências de julgamento.`,
+            synthesisModel,
+            2800,
             0.2,
           )
 
           setResearchModalStats(prev => ({
             ...prev,
-            tokensUsed: jurisprudenceResult.tokens_in + jurisprudenceResult.tokens_out,
+            tokensUsed: (prev.tokensUsed || 0) + jurisprudenceResult.tokens_in + jurisprudenceResult.tokens_out,
             elapsedMs: Math.round(performance.now() - t0),
           }))
           addModalSubstep('synthesize', `Síntese gerada (${jurisprudenceResult.tokens_out} tokens)`)
@@ -1389,7 +1495,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             added_at: new Date().toISOString(),
           }
 
-          const execution = createUsageExecutionRecord({
+          llmExecutions.push(createUsageExecutionRecord({
             source_type: 'caderno_pesquisa',
             source_id: notebookId,
             phase: 'notebook_pesquisador_jurisprudencia',
@@ -1399,9 +1505,9 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             tokens_out: jurisprudenceResult.tokens_out,
             cost_usd: jurisprudenceResult.cost_usd,
             duration_ms: jurisprudenceResult.duration_ms,
-          })
+          }))
 
-          await appendNotebookSourceWithExecution(notebookId, source, execution)
+          await appendNotebookSourceWithExecution(notebookId, source, llmExecutions)
           setExternalSearchQuery('')
           setSuggestions([])
           toast.success(`Jurisprudência adicionada com ${selected.length} resultado(s) selecionado(s).`)
