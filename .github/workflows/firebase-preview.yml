@@ -106,7 +106,7 @@ jobs:
             echo "$OUTPUT"
 
             # Extract preview URL — Firebase CLI prints "Channel URL (site): https://…"
-            PREVIEW_URL=$(echo "$OUTPUT" | grep -oE 'https://[^[:space:]]+\.web\.app' | head -1 || true)
+            PREVIEW_URL=$(echo "$OUTPUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.web\.app' | head -1 || true)
 
             if [ "$STATUS" -eq 0 ]; then
               break
