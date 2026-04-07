@@ -71,7 +71,8 @@ function parseJurisprudenceText(text: string): JurisprudenceSection[] {
       if (current.body.trim() || current.heading) {
         sections.push({ ...current, body: current.body.trim() })
       }
-      const title = headingMatch ? headingMatch[1] : numberedMatch![2]
+      // headingMatch[1] is the heading text; numberedMatch[2] is the heading after "N. "
+      const title = headingMatch ? headingMatch[1] : (numberedMatch?.[2] ?? line)
       current = { heading: title, body: '' }
     } else {
       const cleaned = line.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1')

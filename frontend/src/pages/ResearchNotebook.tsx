@@ -172,6 +172,9 @@ const JURISPRUDENCE_SYNTHESIS_SYSTEM = [
 
 // ── Main Page ────────────────────────────────────────────────────────────────
 
+/** Delay (ms) before showing a secondary toast, to avoid overlapping with the primary toast. */
+const SECONDARY_TOAST_DELAY_MS = 600
+
 type ViewMode = 'list' | 'detail'
 type DetailTab = 'overview' | 'chat' | 'sources' | 'studio' | 'artifacts'
 
@@ -1863,7 +1866,7 @@ Instruções:
         // Secondary toast shown separately after the primary artifact toast
         setTimeout(() => {
           toast.success('Documento salvo na página Documentos', 'Acesse Documentos para ver, editar e exportar este documento.')
-        }, 600)
+        }, SECONDARY_TOAST_DELAY_MS)
       } catch (err) {
         console.warn('Could not persist document artifact to Documents page:', err)
       }

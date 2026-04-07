@@ -658,7 +658,10 @@ function parseDataJudHit(src: Record<string, unknown>, tribunal: TribunalInfo): 
     ? ementaRaw.trim()
     : undefined
 
-  // Extract inteiro_teor — may be nested as { conteudo?: string } or a plain string
+  // Extract inteiro_teor — may be nested as { conteudo?: string } or a plain string.
+  // The fallback chain checks both Portuguese property names (conteudo, texto) and
+  // the English alias (content) because some tribunal-specific DataJud indexes use
+  // inconsistent schemas for this nested field.
   const inteiroTeorRaw = src.inteiro_teor
   let inteiroTeor: string | undefined
   if (typeof inteiroTeorRaw === 'string' && inteiroTeorRaw.trim()) {
