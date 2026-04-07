@@ -89,14 +89,40 @@ jobs:
         id: preview_deploy
         run: |
           CHANNEL="pr-${{ github.event.pull_request.number }}"
-          OUTPUT=$(firebase hosting:channel:deploy "$CHANNEL" \
-            --site lexio \
-            --project hocapp-44760 \
-            --expires 7d \
-            --non-interactive 2>&1)
-          echo "$OUTPUT"
-          # Extract preview URL — Firebase CLI prints "Channel URL (site): https://…"
-          PREVIEW_URL=$(echo "$OUTPUT" | grep -oP 'https://\S+\.web\.app' | head -1)
+          PREVIEW_URL=""
+          STATUS=1
+
+          for ATTEMPT in 1 2 3; do
+            echo "Deploy attempt ${ATTEMPT}/3 for channel ${CHANNEL}"
+            set +e
+            OUTPUT=$(firebase hosting:channel:deploy "$CHANNEL" \
+              --site lexio \
+              --project hocapp-44760 \
+              --expires 7d \
+              --non-interactive 2>&1)
+            STATUS=$?
+            set -e
+
+            echo "$OUTPUT"
+
+            # Extract preview URL — Firebase CLI prints "Channel URL (site): https://…"
+            PREVIEW_URL=$(echo "$OUTPUT" | grep -oE 'https://[^[:space:]]+\.web\.app' | head -1 || true)
+
+            if [ "$STATUS" -eq 0 ]; then
+              break
+            fi
+
+            echo "::warning::Firebase preview deploy failed (attempt ${ATTEMPT}/3, exit ${STATUS})."
+            if [ "$ATTEMPT" -lt 3 ]; then
+              sleep 5
+            fi
+          done
+
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::Firebase preview deploy failed after 3 attempts."
+            exit "$STATUS"
+          fi
+
           if [ -z "$PREVIEW_URL" ]; then
             echo "::warning::Could not extract preview URL from Firebase CLI output."
           fi
@@ -165,4 +191,3 @@ jobs:
             --force || true
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-
