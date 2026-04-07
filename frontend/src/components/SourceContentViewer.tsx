@@ -30,6 +30,12 @@ interface SourceContentViewerProps {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Page-canvas layout constants — simulate printed document appearance. */
+const PAGE_CANVAS_MAX_WIDTH = 680
+const PAGE_CANVAS_MIN_HEIGHT = 400
+const PAGE_CANVAS_PADDING_V = 40
+const PAGE_CANVAS_PADDING_H = 56
+
 /** Resolve raw source text_content → { plain, sections, meta } */
 function resolveSource(source: NotebookSource) {
   const raw = source.text_content ?? ''
@@ -289,7 +295,7 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
             /* Document page view — simulates printed document appearance */
             <div className="py-6 px-4">
               <div className="mx-auto bg-white shadow-md rounded-sm"
-                   style={{ maxWidth: 680, minHeight: 400, padding: '40px 56px' }}>
+                   style={{ maxWidth: PAGE_CANVAS_MAX_WIDTH, minHeight: PAGE_CANVAS_MIN_HEIGHT, padding: `${PAGE_CANVAS_PADDING_V}px ${PAGE_CANVAS_PADDING_H}px` }}>
                 <article>
                   {sections!.map((sec, i) => (
                     <SectionBlock key={i} section={sec} idx={i} />
@@ -301,7 +307,7 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
             /* Fallback — formatted plain text in page-canvas style */
             <div className="py-6 px-4">
               <div className="mx-auto bg-white shadow-md rounded-sm"
-                   style={{ maxWidth: 680, minHeight: 400, padding: '40px 56px' }}>
+                   style={{ maxWidth: PAGE_CANVAS_MAX_WIDTH, minHeight: PAGE_CANVAS_MIN_HEIGHT, padding: `${PAGE_CANVAS_PADDING_V}px ${PAGE_CANVAS_PADDING_H}px` }}>
                 <article className="text-[13px] text-gray-700 leading-7 whitespace-pre-wrap text-justify">
                   {plain}
                 </article>

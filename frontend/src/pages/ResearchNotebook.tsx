@@ -177,6 +177,23 @@ const JURISPRUDENCE_SYNTHESIS_SYSTEM = [
 /** Delay (ms) before showing a secondary toast, to avoid overlapping with the primary toast. */
 const SECONDARY_TOAST_DELAY_MS = 600
 
+/**
+ * Build the description string passed to the studio pipeline.
+ * For 'documento' artifacts, enriches with document type and legal area labels.
+ */
+function buildStudioDescription(
+  artifactType: StudioArtifactType,
+  docType: string,
+  legalArea: string,
+  notebookDescription: string | undefined,
+): string | undefined {
+  if (artifactType !== 'documento' || !docType) return notebookDescription || undefined
+  const typeLabel = DOCTYPE_LABELS[docType] || docType
+  const areaLabel = legalArea ? ` — Área: ${AREA_LABELS[legalArea] || legalArea}` : ''
+  const notebookSuffix = notebookDescription ? ` — ${notebookDescription}` : ''
+  return `Tipo de documento: ${typeLabel}${areaLabel}${notebookSuffix}`
+}
+
 type ViewMode = 'list' | 'detail'
 type DetailTab = 'overview' | 'chat' | 'sources' | 'studio' | 'artifacts'
 
@@ -342,7 +359,9 @@ export default function ResearchNotebook() {
       // Not in cached list — try fetching directly (may have been just created)
       getResearchNotebook(userId, openId).then(nb => {
         if (nb) { setActiveNotebook(nb); setViewMode('detail'); setActiveTab('overview') }
-      }).catch(() => { /* silently ignore */ })
+      }).catch(err => {
+        console.warn('[ResearchNotebook] Could not auto-open notebook from URL param:', err)
+      })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, notebooks, loading, userId])
@@ -1776,9 +1795,7 @@ Instruções:
       const result = await runStudioPipeline({
         apiKey,
         topic: activeNotebook.topic,
-        description: artifactType === 'documento' && studioDocType
-          ? `Tipo de documento: ${DOCTYPE_LABELS[studioDocType] || studioDocType}${studioLegalArea ? ` — Área: ${AREA_LABELS[studioLegalArea] || studioLegalArea}` : ''}${activeNotebook.description ? ` — ${activeNotebook.description}` : ''}`
-          : (activeNotebook.description || undefined),
+        description: buildStudioDescription(artifactType, studioDocType, studioLegalArea, activeNotebook.description),
         sourceContext: sourceContext || '',
         conversationContext,
         customInstructions: studioCustomPrompt.trim() || undefined,
