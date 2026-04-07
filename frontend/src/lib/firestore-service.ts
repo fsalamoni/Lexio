@@ -419,15 +419,19 @@ export async function saveNotebookDocumentToDocuments(uid: string, input: {
   notebookId: string
   notebookTitle: string
   llm_executions?: DocumentData['llm_executions']
+  /** Optional document type — defaults to 'documento_caderno' when not provided */
+  document_type_id?: string
+  /** Optional legal area IDs */
+  legal_area_ids?: string[]
 }): Promise<DocumentData> {
   const db = ensureFirestore()
   const colRef = collection(db, 'users', uid, 'documents')
   const now = new Date().toISOString()
   const docData = stripUndefined({
-    document_type_id: 'documento_caderno',
+    document_type_id: input.document_type_id || 'documento_caderno',
     original_request: input.topic,
     template_variant: null,
-    legal_area_ids: [],
+    legal_area_ids: input.legal_area_ids ?? [],
     request_context: null,
     context_detail: null,
     tema: input.topic,

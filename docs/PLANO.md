@@ -18,12 +18,12 @@
 
 | Área | Estado | Observações |
 |------|--------|-------------|
-| Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos |
-| Pesquisa de Jurisprudência (DataJud) | ⚠️ Parcial | Metadados retornados; ementa/inteiro teor ausentes |
-| Visualizador de Documentos | ⚠️ Parcial | Texto estruturado OK; renderização jurídica fraca |
-| Geração de Documentos (Estúdio) | ⚠️ Parcial | Pipeline OK; prompts genéricos; não persiste em Documentos |
-| Página de Documentos | ✅ Implementado | Lista, filtros, bulk ops; sem vínculo com artefatos do caderno |
-| Novo Documento | ✅ Implementado | Fluxo completo; sem integração DataJud como fonte |
+| Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos, deep-link por URL |
+| Pesquisa de Jurisprudência (DataJud) | ✅ Implementado | Ementa integral + inteiro teor extraídos e exibidos |
+| Visualizador de Documentos | ✅ Implementado | Layout page-canvas para acervo; renderização rica para jurisprudência |
+| Geração de Documentos (Estúdio) | ✅ Implementado | Pipeline OK; prompts aprofundados; persiste em Documentos com tipo+área |
+| Página de Documentos | ✅ Implementado | Lista, filtros, bulk ops; badge "Caderno" com link de volta ao caderno |
+| Novo Documento | ✅ Implementado | Fluxo completo; estúdio do caderno unificado com seleção de tipo+área |
 | Banco de Teses | ✅ Implementado | CRUD completo |
 | Acervo | ✅ Implementado | Upload, indexação, classificação, ementa automática |
 | Pesquisa Web Externa | ✅ Implementado | Agentes + deep search |
@@ -94,22 +94,21 @@
 
 ## Epic 2: Visualizador Documental
 
-### Feature 2.1: SourceContentViewer — renderização jurídica rica
+### Feature 2.1: SourceContentViewer — renderização jurídica rica e page-canvas
 
-**Estado:** ✅ Implementado (ciclo 2026-04)
+**Estado:** ✅ Implementado (ciclo 2026-04 — atualizado)
 
 **Objetivo:** Transformar exibição de JSON cru/texto plano em visualização documental de alta qualidade. Renderizar documentos jurídicos com tipografia, hierarquia, seções, ementa destacada, dispositivo, etc.
 
 **Arquivos afetados:**
 - `frontend/src/components/SourceContentViewer.tsx` — componente principal
-- `frontend/src/lib/datajud-service.ts` — campos ementa/inteiro_teor nos resultados
 
 **Mudanças implementadas:**
-- Detecção de fontes jurídicas (DataJud/jurisprudência)
-- Renderização de ementa com destaque visual
-- Seções específicas para documentos jurídicos: processo, tribunal, classe, ementa, inteiro teor
-- Fallback seguro para documentos genéricos
-- Melhor tipografia e espaçamento para leitura
+- Detecção de fontes jurídicas (DataJud/jurisprudência) com renderização de ementa e seções
+- **Layout page-canvas para documentos do acervo:** fundo cinza + folha branca com sombra, simulando leitura de documento real
+- Tipografia aprimorada: `text-[13px]`, `leading-7`, `text-justify` para leitura documental
+- Títulos de seção em uppercase com bordas para delimitar claramente o documento
+- Fallback seguro para documentos genéricos e sem conteúdo
 
 ---
 
@@ -173,13 +172,38 @@
 
 ### Feature 4.2: Unificação do documento formal com Novo Documento
 
-**Estado:** ✅ Implementado (ciclo 2026-04)
+**Estado:** ✅ Implementado (ciclo 2026-04 — continuação)
 
-**Objetivo:** O artefato `documento` gerado no estúdio deve ser equivalente ao Novo Documento em qualidade e persistência.
+**Objetivo:** O artefato `documento` gerado no estúdio deve ser equivalente ao Novo Documento em qualidade e persistência — incluindo seleção de tipo de documento e área jurídica.
 
 **Arquivos afetados:**
-- `frontend/src/lib/notebook-studio-pipeline.ts`
-- `frontend/src/lib/firestore-service.ts`
+- `frontend/src/lib/notebook-studio-pipeline.ts` — pipeline já inclui instruções por tipo
+- `frontend/src/lib/firestore-service.ts` — `saveNotebookDocumentToDocuments` agora aceita `document_type_id` e `legal_area_ids`
+- `frontend/src/pages/ResearchNotebook.tsx` — UI de configuração do documento formal no estúdio (tipo + área jurídica); deep-link `?open=<id>`
+
+**Mudanças implementadas:**
+- Painel de configuração "Documento Formal" visível no Estúdio com selects para tipo de documento (parecer, petição inicial, etc.) e área jurídica
+- Tipo selecionado é passado como `description` enriquecida ao pipeline, orientando a geração
+- `document_type_id` correto salvo no Firestore (ex: `parecer`, `peticao_inicial`) em vez de sempre `documento_caderno`
+- `legal_area_ids` opcional salvo junto com o documento
+- Badge do tipo de documento exibido no card do artefato quando tipo está selecionado
+
+---
+
+### Feature 4.3: Navegação DocumentList → Caderno de origem
+
+**Estado:** ✅ Implementado (ciclo 2026-04 — continuação)
+
+**Objetivo:** O badge "Caderno" na página Documentos deve permitir navegar diretamente ao caderno de origem.
+
+**Arquivos afetados:**
+- `frontend/src/pages/DocumentList.tsx` — badge Caderno virou Link para `/notebook?open=<id>`
+- `frontend/src/pages/ResearchNotebook.tsx` — suporte a query param `?open=<notebook_id>` para deep-link
+
+**Mudanças implementadas:**
+- Badge "Caderno" agora é um `<Link>` com tooltip "Abrir caderno: <título>"
+- ResearchNotebook usa `useSearchParams()` e monitora `?open=<id>` para abrir automaticamente o caderno correto
+- Fallback para `getResearchNotebook` direto se o notebook não estiver na lista em cache
 
 ---
 
@@ -210,10 +234,10 @@
 
 | Área | Tipo de teste faltando |
 |------|----------------------|
-| Jurisprudência — ementa/inteiro teor | Teste de parseDataJudHit com campos novos |
 | Studio pipeline — qualidade de prompts | Testes de snapshot de prompts |
 | firestore-service — saveNotebookDocument | Teste de integração mock Firestore |
-| SourceContentViewer — renderização jurídica | Testes de renderização de componente |
+| SourceContentViewer — renderização page-canvas | Testes de renderização de componente |
+| ResearchNotebook — deep-link `?open=<id>` | Teste de integração com mock useSearchParams |
 
 ---
 
@@ -250,4 +274,4 @@
 
 ---
 
-*Última atualização: 2026-04-07 — Ciclo: ementa/inteiro teor + visualizador + prompts + integração Caderno↔Documentos*
+*Última atualização: 2026-04-07 — Ciclo 2 (continuação): unificação Documento Formal↔Novo Documento + tipo/área jurídica no estúdio + page-canvas viewer + link DocumentList→Caderno + deep-link `?open=<id>`*

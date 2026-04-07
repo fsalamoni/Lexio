@@ -435,13 +435,25 @@ export default function DocumentList() {
                           {DOCTYPE_LABELS[doc.document_type_id] || (doc.document_type_id === 'documento_caderno' ? 'Documento' : doc.document_type_id)}
                         </Link>
                         {doc.origem === 'caderno' ? (
-                          <span
-                            className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-50 text-violet-700 border border-violet-100"
-                            title={doc.notebook_title ? `Caderno: ${doc.notebook_title}` : 'Gerado no Caderno de Pesquisa'}
-                          >
-                            <BookOpen className="w-2.5 h-2.5" />
-                            Caderno
-                          </span>
+                          doc.notebook_id ? (
+                            <Link
+                              to={`/notebook?open=${doc.notebook_id}`}
+                              className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-50 text-violet-700 border border-violet-100 hover:bg-violet-100 transition-colors"
+                              title={doc.notebook_title ? `Abrir caderno: ${doc.notebook_title}` : 'Abrir Caderno de Pesquisa'}
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <BookOpen className="w-2.5 h-2.5" />
+                              Caderno
+                            </Link>
+                          ) : (
+                            <span
+                              className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-50 text-violet-700 border border-violet-100"
+                              title="Gerado no Caderno de Pesquisa"
+                            >
+                              <BookOpen className="w-2.5 h-2.5" />
+                              Caderno
+                            </span>
+                          )
                         ) : doc.origem && doc.origem !== 'web' && (
                           <span className={`ml-2 inline-block px-1.5 py-0.5 text-[10px] font-medium rounded ${
                             doc.origem === 'whatsapp'

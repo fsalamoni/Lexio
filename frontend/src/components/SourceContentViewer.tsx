@@ -137,15 +137,15 @@ function DownloadBtn({ text, filename }: { text: string; filename: string }) {
 /** Render a single section (heading + paragraphs). */
 function SectionBlock({ section, idx }: { section: StructuredDocumentSection; idx: number }) {
   return (
-    <div className={idx > 0 ? 'mt-6' : ''}>
+    <div className={idx > 0 ? 'mt-8' : ''}>
       {section.title && section.title !== 'Documento' && (
-        <h3 className="text-base font-semibold text-gray-900 mb-3 pb-1.5 border-b border-gray-100">
+        <h3 className="text-sm font-bold text-gray-800 mb-3 pb-1.5 border-b border-gray-200 uppercase tracking-wide">
           {section.title}
         </h3>
       )}
       <div className="space-y-3">
         {section.paragraphs.map((p, i) => (
-          <p key={i} className="text-sm text-gray-700 leading-relaxed">
+          <p key={i} className="text-[13px] text-gray-700 leading-7 text-justify">
             {p}
           </p>
         ))}
@@ -277,24 +277,36 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
         </div>
 
         {/* ── Body ─────────────────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 overflow-y-auto bg-gray-100">
           {charCount === 0 ? (
-            <p className="text-sm text-gray-400 italic">Nenhum conteúdo de texto disponível para este documento.</p>
+            <p className="text-sm text-gray-400 italic p-6">Nenhum conteúdo de texto disponível para este documento.</p>
           ) : isJurisprudencia ? (
             /* Rich jurisprudence viewer */
-            <JurisprudenceViewer source={source} plain={plain} />
+            <div className="px-6 py-5">
+              <JurisprudenceViewer source={source} plain={plain} />
+            </div>
           ) : hasSections ? (
-            /* Structured view — section headings + paragraphs */
-            <article>
-              {sections!.map((sec, i) => (
-                <SectionBlock key={i} section={sec} idx={i} />
-              ))}
-            </article>
+            /* Document page view — simulates printed document appearance */
+            <div className="py-6 px-4">
+              <div className="mx-auto bg-white shadow-md rounded-sm"
+                   style={{ maxWidth: 680, minHeight: 400, padding: '40px 56px' }}>
+                <article>
+                  {sections!.map((sec, i) => (
+                    <SectionBlock key={i} section={sec} idx={i} />
+                  ))}
+                </article>
+              </div>
+            </div>
           ) : (
-            /* Fallback — formatted plain text */
-            <article className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-              {plain}
-            </article>
+            /* Fallback — formatted plain text in page-canvas style */
+            <div className="py-6 px-4">
+              <div className="mx-auto bg-white shadow-md rounded-sm"
+                   style={{ maxWidth: 680, minHeight: 400, padding: '40px 56px' }}>
+                <article className="text-[13px] text-gray-700 leading-7 whitespace-pre-wrap text-justify">
+                  {plain}
+                </article>
+              </div>
+            </div>
           )}
         </div>
       </div>

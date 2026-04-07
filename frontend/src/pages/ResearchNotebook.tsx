@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
   ArrowLeft, Send, Database, Clock, Upload,
@@ -124,6 +125,7 @@ import {
   getExtensionFromMimeType,
   renderMarkdownToHtml,
 } from './notebook/utils'
+import { DOCTYPE_LABELS, AREA_LABELS } from '../lib/constants'
 
 /** Individual search result item for review modal */
 export interface SearchResultItem {
@@ -182,6 +184,7 @@ export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
   const { startTask } = useTaskManager()
+  const [searchParams] = useSearchParams()
 
   // List state
   const [notebooks, setNotebooks] = useState<ResearchNotebookData[]>([])
@@ -260,6 +263,9 @@ export default function ResearchNotebook() {
   const [studioErrorMessage, setStudioErrorMessage] = useState('')
   const [showStudioProgressModal, setShowStudioProgressModal] = useState(false)
   const studioAbortRef = useRef<AbortController | null>(null)
+  // Studio — document configuration (for "documento" artifact type)
+  const [studioDocType, setStudioDocType] = useState<string>('')
+  const [studioLegalArea, setStudioLegalArea] = useState<string>('')
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
@@ -319,6 +325,27 @@ export default function ResearchNotebook() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
+
+  // Deep-link: open a specific notebook when `?open=<id>` query param is present.
+  // The notebook list is loaded first, then we locate and open the matching one.
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || !userId || loading) return
+    // Only auto-open once — if we're already viewing this notebook, do nothing
+    if (viewMode === 'detail' && activeNotebook?.id === openId) return
+    const match = notebooks.find(nb => nb.id === openId)
+    if (match) {
+      setActiveNotebook(match)
+      setViewMode('detail')
+      setActiveTab('overview')
+    } else if (!loading && IS_FIREBASE) {
+      // Not in cached list — try fetching directly (may have been just created)
+      getResearchNotebook(userId, openId).then(nb => {
+        if (nb) { setActiveNotebook(nb); setViewMode('detail'); setActiveTab('overview') }
+      }).catch(() => { /* silently ignore */ })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, notebooks, loading, userId])
 
   // Ensure in-flight research tasks are canceled when leaving the page.
   useEffect(() => {
@@ -1749,7 +1776,9 @@ Instruções:
       const result = await runStudioPipeline({
         apiKey,
         topic: activeNotebook.topic,
-        description: activeNotebook.description || undefined,
+        description: artifactType === 'documento' && studioDocType
+          ? `Tipo de documento: ${DOCTYPE_LABELS[studioDocType] || studioDocType}${studioLegalArea ? ` — Área: ${AREA_LABELS[studioLegalArea] || studioLegalArea}` : ''}${activeNotebook.description ? ` — ${activeNotebook.description}` : ''}`
+          : (activeNotebook.description || undefined),
         sourceContext: sourceContext || '',
         conversationContext,
         customInstructions: studioCustomPrompt.trim() || undefined,
@@ -1862,6 +1891,8 @@ Instruções:
           notebookId,
           notebookTitle: activeNotebook.title || '',
           llm_executions: newExecutions,
+          document_type_id: studioDocType || 'documento_caderno',
+          legal_area_ids: studioLegalArea ? [studioLegalArea] : [],
         })
         // Secondary toast shown separately after the primary artifact toast
         setTimeout(() => {
@@ -3566,6 +3597,47 @@ Instruções:
               </p>
             </div>
 
+            {/* Document configuration (visible when "documento" type is active or as preparation) */}
+            <div className="mb-4 p-3 rounded-xl border border-purple-200 bg-purple-50/50 space-y-3">
+              <p className="text-xs font-semibold text-purple-700 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5" />
+                Configuração do Documento Formal
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Tipo de documento</label>
+                  <select
+                    value={studioDocType}
+                    onChange={e => setStudioDocType(e.target.value)}
+                    disabled={studioLoading}
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none bg-white disabled:opacity-50"
+                  >
+                    <option value="">Selecionar tipo…</option>
+                    {Object.entries(DOCTYPE_LABELS).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Área jurídica</label>
+                  <select
+                    value={studioLegalArea}
+                    onChange={e => setStudioLegalArea(e.target.value)}
+                    disabled={studioLoading}
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none bg-white disabled:opacity-50"
+                  >
+                    <option value="">Todas as áreas…</option>
+                    {Object.entries(AREA_LABELS).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-[10px] text-purple-600">
+                Aplicado apenas ao artefato "Documento Formal". Os demais artefatos ignoram esses campos.
+              </p>
+            </div>
+
             {/* Custom instructions */}
             <div className="mb-4">
               <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -3619,6 +3691,11 @@ Instruções:
                             <div className="min-w-0 flex-1">
                               <span className="text-sm font-semibold text-gray-900 block">{art.label}</span>
                               <span className="text-[11px] text-gray-500 block mt-0.5 leading-snug">{art.description}</span>
+                              {art.type === 'documento' && studioDocType && !studioLoading && (
+                                <span className="text-[10px] text-purple-600 font-medium block mt-1">
+                                  {DOCTYPE_LABELS[studioDocType]}{studioLegalArea ? ` · ${AREA_LABELS[studioLegalArea]}` : ''}
+                                </span>
+                              )}
                               {isGenerating && studioProgress && (
                                 <span className="text-[10px] text-purple-600 font-medium block mt-1">{studioProgress.phase}</span>
                               )}
