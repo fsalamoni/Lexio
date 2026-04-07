@@ -1399,8 +1399,27 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
                 const sorted = parsed.ranking
                   .filter(r => r.index >= 1 && r.index <= selectedResults.length)
                   .sort((a, b) => b.score - a.score)
-                selectedResults = sorted.map(r => selectedResults[r.index - 1])
-                addModalSubstep('rank', `Processos reordenados por relevância (top score: ${sorted[0]?.score ?? '—'})`)
+
+                const reordered = []
+                const seenIndices = new Set<number>()
+                let topScore: number | null = null
+
+                for (const item of sorted) {
+                  const resultIndex = item.index - 1
+                  if (seenIndices.has(resultIndex)) continue
+                  const process = selectedResults[resultIndex]
+                  if (!process) continue
+                  seenIndices.add(resultIndex)
+                  reordered.push(process)
+                  if (topScore === null) topScore = item.score
+                }
+
+                if (reordered.length > 0) {
+                  selectedResults = reordered
+                  addModalSubstep('rank', `Processos reordenados por relevância (top score: ${topScore ?? '—'})`)
+                } else {
+                  addModalSubstep('rank', 'Ranking retornou índices inválidos/vazios — mantendo ordem original')
+                }
               }
             } catch {
               addModalSubstep('rank', 'Parsing do ranking falhou — mantendo ordem original')

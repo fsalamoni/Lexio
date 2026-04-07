@@ -684,8 +684,14 @@ export function formatDataJudResults(results: DataJudResult[]): string {
       lines.push(`   Assuntos: ${r.assuntos.slice(0, 5).join('; ')}`)
     }
     if (r.movimentos.length > 0) {
-      lines.push(`   Movimentações processuais (${r.movimentos.length}):`)
-      for (const m of r.movimentos.slice(0, 5)) {
+      const displayedMovements = r.movimentos.slice(0, 5)
+      const hasTruncatedMovements = r.movimentos.length > displayedMovements.length
+      lines.push(
+        hasTruncatedMovements
+          ? `   Movimentações processuais (mostrando ${displayedMovements.length} de ${r.movimentos.length}):`
+          : `   Movimentações processuais (${displayedMovements.length}):`,
+      )
+      for (const m of displayedMovements) {
         lines.push(`     • ${m.dataHora} — ${m.nome}`)
       }
     }
