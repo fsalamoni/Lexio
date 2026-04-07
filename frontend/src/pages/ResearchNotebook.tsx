@@ -354,6 +354,8 @@ export default function ResearchNotebook() {
       toast.error('Erro ao abrir caderno via link')
     })
   }, [searchParams, userId, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+  // ↑ Intentionally omits `toast` and `setSearchParams` — both are stable
+  //   references (from context/hook) that never change across renders.
 
   // Ensure in-flight research tasks are canceled when leaving the page.
   useEffect(() => {

@@ -1488,8 +1488,8 @@ function fitSourcesToFirestoreLimit(
     // to reclaim the ~8 KB per jurisprudência source before trimming synthesis text.
     const dropRaw = ratio < 0.8 && src.results_raw !== undefined
     if (dropRaw) {
-      const { results_raw: _dropped, ...rest } = src
-      void _dropped
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { results_raw, ...rest } = src
       if (text.length === 0 || ratio >= 1) return rest
       const maxChars = Math.max(Math.floor(text.length * ratio), MIN_SOURCE_TEXT_CHARS)
       if (maxChars >= text.length) return rest

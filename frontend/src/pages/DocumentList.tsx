@@ -139,6 +139,12 @@ export default function DocumentList() {
     setSelected(new Set())
   }
 
+  const handleOriginFilter = (origin: string) => {
+    setOriginFilter(prev => prev === origin ? '' : origin)
+    setPage(0)
+    setSelected(new Set())
+  }
+
   const hasActiveFilters = statusFilter || typeFilter || originFilter || searchQuery || dateFrom || dateTo
 
   const clearAll = () => {
@@ -330,7 +336,7 @@ export default function DocumentList() {
         ))}
         {/* Origin filter chip */}
         <button
-          onClick={() => { setOriginFilter(prev => prev === 'caderno' ? '' : 'caderno'); setPage(0); setSelected(new Set()) }}
+          onClick={() => handleOriginFilter('caderno')}
           className={`px-3 py-1 rounded-full text-xs border transition-colors ${
             originFilter === 'caderno'
               ? 'bg-violet-600 text-white border-violet-600'
