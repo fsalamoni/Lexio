@@ -409,7 +409,7 @@ function DocumentPageViewer({ sections, meta, plain }: {
                     const isSubheading =
                       (p.length < 80 && p === p.toUpperCase() && /[A-ZÁÉÍÓÚÃÕÂÊÔÇÜ]{3,}/.test(p)) ||
                       /^[IVXLC]+\.\s/.test(p) ||
-                      /^\d+\.\d*\s/.test(p)
+                      /^\d+(\.\d+)?\s/.test(p)
                     return isSubheading ? (
                       <h3 key={pi} className="text-sm font-semibold text-gray-800 mt-5 mb-2 uppercase tracking-wide">
                         {p}
@@ -434,7 +434,7 @@ function DocumentPageViewer({ sections, meta, plain }: {
               const isHeading =
                 (trimmed.length < 100 && trimmed === trimmed.toUpperCase() && /[A-ZÁÉÍÓÚÃÕÂÊÔÇÜ]{3,}/.test(trimmed)) ||
                 /^[IVXLC]+\.\s/.test(trimmed) ||
-                /^\d+\.\s/.test(trimmed)
+                /^\d+(\.\d+)?\s/.test(trimmed)
               return isHeading ? (
                 <h3 key={i} className="text-sm font-semibold text-gray-800 mt-6 mb-1 uppercase tracking-wide">
                   {trimmed}

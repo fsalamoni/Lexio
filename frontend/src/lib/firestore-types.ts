@@ -145,7 +145,7 @@ export interface NotebookSource {
   content_type?: string
   size_bytes?: number
   text_content?: string
-  /** JSON-serialised DataJudResult[] — stored when type === 'jurisprudencia' */
+  /** JSON-serialized DataJudResult[] — stored when type === 'jurisprudencia' */
   results_raw?: string
   status: 'pending' | 'processing' | 'indexed' | 'error'
   added_at: string
