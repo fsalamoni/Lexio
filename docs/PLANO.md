@@ -231,21 +231,23 @@
 
 ### Feature 4.2: Unificação do documento formal com Novo Documento
 
-**Estado:** ⚠️ Parcial (ciclo 2026-04)
+**Estado:** ✅ Implementado (ciclo 2026-04)
 
 **Objetivo:** O artefato `documento` gerado no estúdio deve ser equivalente ao Novo Documento em qualidade e persistência.
 
 **Arquivos afetados:**
 - `frontend/src/lib/notebook-studio-pipeline.ts`
 - `frontend/src/lib/firestore-service.ts`
+- `frontend/src/pages/DocumentDetail.tsx` — botão "Abrir no Gerador" para documentos `origem: 'caderno'`
+- `frontend/src/pages/DocumentList.tsx` — badge "Gerador" (amber) ao lado do badge "Caderno"
+- `frontend/src/pages/NewDocument.tsx` — aceita `?request=` e `?type=` query params para pré-preencher formulário
 
-**O que já funciona:**
+**Mudanças implementadas:**
 - Documentos do caderno e documentos formais aparecem na mesma listagem na página Documentos
 - Pipeline de geração preserva qualidade e persiste com `origem: 'caderno'`
-
-**O que ainda falta:**
-- Botão "Abrir no Gerador" para reabrir documento do caderno no fluxo Novo Documento
-- Geração via pipeline do caderno e do Novo Documento ainda são fluxos separados sem intercambialidade explícita
+- Botão "Abrir no Gerador" na `DocumentDetail` envia `original_request` e `document_type_id` como query params para `/documents/new`
+- Badge "Gerador" na `DocumentList` permite acesso rápido à recriação
+- `NewDocument` aceita `?request=` e `?type=` e pré-preenche campos (request + tipo de documento) com limpeza de URL após uso
 
 ---
 
@@ -325,7 +327,7 @@
 | SourceContentViewer — renderização jurídica | Testes de parseJurisprudenceText, fmtChars, formatDate | ✅ Coberto — SourceContentViewer.test.ts |
 | ReportViewer — pageMode | Testes de renderMarkdownToHtml, extractToc, pageMode | ✅ Coberto — ReportViewer.test.ts |
 | DocumentList — origemFilter interaction | Testes de lógica de filtragem por origem | ✅ Coberto — DocumentList.test.ts |
-| firestore-service — saveNotebookDocument | Teste de integração com mock de Firestore | ❌ Pendente |
+| firestore-service — saveNotebookDocument | Teste com mock do Firebase SDK | ✅ Coberto — 6 testes em firestore-service.test.ts |
 
 ---
 
@@ -365,4 +367,4 @@
 
 ---
 
-*Última atualização: 2026-04-08 — Ciclo: align-docs + testes SourceContentViewer, ReportViewer, DocumentList origemFilter*
+*Última atualização: 2026-04-08 — Ciclo: E4.F2 "Abrir no Gerador" + firestore-service test + align docs*

@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-08",
-    "cycle": "align-docs-ui-tests-source-report-documentlist",
+    "cycle": "e4f2-abrir-gerador-firestore-test",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -104,12 +104,15 @@
       "id": "E4.F2",
       "epic": "Integração Caderno→Documentos",
       "name": "Unificação documento formal com Novo Documento",
-      "state": "partial",
+      "state": "implemented",
       "files": [
         "frontend/src/lib/firestore-service.ts",
-        "frontend/src/lib/notebook-studio-pipeline.ts"
+        "frontend/src/lib/notebook-studio-pipeline.ts",
+        "frontend/src/pages/DocumentDetail.tsx",
+        "frontend/src/pages/DocumentList.tsx",
+        "frontend/src/pages/NewDocument.tsx"
       ],
-      "notes": "Documentos aparecem na mesma listagem; geração via pipeline separado; falta botão 'Abrir no Gerador' para reabrir doc do caderno no fluxo Novo Documento"
+      "notes": "Documentos na mesma listagem; botão 'Abrir no Gerador' em DocumentDetail (violet) e badge 'Gerador' em DocumentList (amber); NewDocument aceita ?request= e ?type= para pré-preencher formulário"
     },
     {
       "id": "E4.F3",
@@ -212,12 +215,11 @@
       "frontend/src/lib/web-search-service.test.ts",
       "frontend/src/lib/external-video-provider.test.ts",
       "frontend/src/lib/notebook-studio-pipeline.test.ts",
+      "frontend/src/lib/firestore-service.test.ts",
       "frontend/src/components/SourceContentViewer.test.ts",
       "frontend/src/components/artifacts/ReportViewer.test.ts",
       "frontend/src/pages/DocumentList.test.ts"
     ],
-    "missing": [
-      "firestore-service saveNotebookDocument integration (mock Firestore)"
-    ]
+    "missing": []
   }
 }
