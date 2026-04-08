@@ -11,6 +11,7 @@ export interface DocumentFilterItem {
   status: string
   quality_score: number | null
   created_at: string
+  /** Origin of the document. Known values: 'caderno' | 'web' | 'whatsapp' */
   origem: string
   notebook_id?: string | null
   notebook_title?: string | null
