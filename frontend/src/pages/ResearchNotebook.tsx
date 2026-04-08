@@ -1699,9 +1699,13 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           searchSummaryLines.push(`- Pesquisa web: "${source.reference}"`)
         }
       }
-      const searchContext = searchSummaryLines.length > 0
-        ? `\nHISTÓRICO DE PESQUISAS REALIZADAS NESTE CADERNO:\n${searchSummaryLines.join('\n')}\n(Use este contexto para sugerir refinamentos, complementos ou novas buscas ao usuário.)\n`
-        : ''
+      const MAX_SEARCH_CONTEXT_CHARS = 2000
+      const searchContextRaw = searchSummaryLines.join('\n')
+      const searchContext = searchSummaryLines.length > 0 && searchContextRaw.length <= MAX_SEARCH_CONTEXT_CHARS
+        ? `\nHISTÓRICO DE PESQUISAS REALIZADAS NESTE CADERNO:\n${searchContextRaw}\n(Use este contexto para sugerir refinamentos, complementos ou novas buscas ao usuário.)\n`
+        : searchSummaryLines.length > 0
+          ? `\nHISTÓRICO DE PESQUISAS REALIZADAS NESTE CADERNO:\n${searchContextRaw.slice(0, MAX_SEARCH_CONTEXT_CHARS)}…\n`
+          : ''
 
       // Optional web search enrichment
       let webSnippet = ''

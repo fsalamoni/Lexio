@@ -362,11 +362,15 @@ function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain:
             <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{plain}</p>
           )
         ) : activeTab === 'processos' ? (
-          <div className="space-y-4">
-            {results.map((r, i) => (
-              <ProcessCard key={i} result={r} index={i} onCompare={results.length >= 2 ? handleCompare : undefined} allResults={results} />
-            ))}
-          </div>
+          results.length === 0 ? (
+            <p className="text-sm text-gray-400 italic py-4">Nenhum processo para exibir.</p>
+          ) : (
+            <div className="space-y-4">
+              {results.map((r, i) => (
+                <ProcessCard key={i} result={r} index={i} onCompare={results.length >= 2 ? handleCompare : undefined} allResults={results} />
+              ))}
+            </div>
+          )
         ) : activeTab === 'timeline' ? (
           <TimelineView results={timelineSorted} />
         ) : activeTab === 'agrupados' ? (
@@ -482,6 +486,10 @@ function GroupedView({ groups }: { groups: ReturnType<typeof groupByArea> }) {
     })
   }
 
+  if (groups.length === 0) {
+    return <p className="text-sm text-gray-400 italic py-4">Nenhum grupo de processos para exibir.</p>
+  }
+
   return (
     <div className="space-y-4">
       {groups.map(group => {
@@ -520,6 +528,10 @@ function GroupedView({ groups }: { groups: ReturnType<typeof groupByArea> }) {
 // ── Comparison view ─────────────────────────────────────────────────────────
 
 function ComparisonView({ comparison: c, onClear }: { comparison: ReturnType<typeof compareProcesses>; onClear: () => void }) {
+  if (!c.left || !c.right) {
+    return <p className="text-sm text-gray-400 italic py-4">Selecione dois processos para comparar.</p>
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -692,7 +704,7 @@ function ProcessCard({ result: r, index, onCompare, allResults }: {
       </div>
 
       {/* Area classification + Assuntos */}
-      {(area || r.assuntos.length > 0) && (
+      {(area || (r.assuntos && r.assuntos.length > 0)) && (
         <div className="px-4 py-2 bg-gray-50/60 border-b border-gray-100">
           <div className="flex flex-wrap gap-1">
             {area && (
@@ -700,11 +712,11 @@ function ProcessCard({ result: r, index, onCompare, allResults }: {
                 {AREA_LABELS[area] || area}
               </span>
             )}
-            {r.assuntos.slice(0, 6).map((a, i) => (
+            {(r.assuntos ?? []).slice(0, 6).map((a, i) => (
               <span key={i} className="px-2 py-0.5 rounded-full text-[10px] bg-gray-100 text-gray-600">{a}</span>
             ))}
-            {r.assuntos.length > 6 && (
-              <span className="text-[10px] text-gray-400">+{r.assuntos.length - 6}</span>
+            {(r.assuntos?.length ?? 0) > 6 && (
+              <span className="text-[10px] text-gray-400">+{r.assuntos!.length - 6}</span>
             )}
           </div>
         </div>
