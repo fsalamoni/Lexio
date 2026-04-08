@@ -1525,9 +1525,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             results_raw: JSON.stringify(
               selectedResults.slice(0, 10).map(r => ({
                 ...r,
-                inteiroTeor: r.inteiroTeor
-                  ? r.inteiroTeor.slice(0, 8 * 1024)
-                  : r.inteiroTeor,
+                inteiroTeor: r.inteiroTeor?.slice(0, 8 * 1024),
               }))
             ),
             status: 'indexed',
