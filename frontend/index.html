@@ -28,9 +28,11 @@
       CORS proxies (corsproxy.io, allorigins.win) e DataJud (api-publica.datajud.cnj.jus.br)
       são necessários para pesquisa externa e de jurisprudência no browser.
       worker-src 'self' blob: é necessário para o Web Worker do pdfjs-dist (extração de texto em PDF).
+      frame-src permite *.firebaseapp.com (iframe oculto do Firebase Auth) e accounts.google.com
+      (popup OAuth do Google Sign-In). Sem isso, o login com Google não funciona.
       'unsafe-eval' foi intencionalmente removido para máxima proteção XSS.
     -->
-    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests; default-src 'self'; script-src 'self' 'unsafe-inline' https://*.googleapis.com https://*.gstatic.com https://*.firebaseapp.com https://*.firebase.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://*.firebaseio.com https://*.firebase.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com wss://*.firebaseio.com https://openrouter.ai https://r.jina.ai https://api.allorigins.win https://api.duckduckgo.com https://html.duckduckgo.com https://corsproxy.io https://api-publica.datajud.cnj.jus.br https://*.cloudfunctions.net; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';" />
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests; default-src 'self'; script-src 'self' 'unsafe-inline' https://*.googleapis.com https://*.gstatic.com https://*.firebaseapp.com https://*.firebase.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://*.firebaseio.com https://*.firebase.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com wss://*.firebaseio.com https://openrouter.ai https://r.jina.ai https://api.allorigins.win https://api.duckduckgo.com https://html.duckduckgo.com https://corsproxy.io https://api-publica.datajud.cnj.jus.br https://*.cloudfunctions.net; frame-src 'self' https://*.firebaseapp.com https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self';" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
 
     <title>Lexio — Produção Jurídica com IA</title>
