@@ -17,6 +17,7 @@ interface Document {
   id: string
   document_type_id: string
   tema: string | null
+  texto_completo?: string | null
   status: string
   quality_score: number | null
   created_at: string
@@ -84,7 +85,8 @@ export default function DocumentList() {
             const q = searchQuery.toLowerCase()
             items = items.filter(d =>
               (d.tema && d.tema.toLowerCase().includes(q)) ||
-              d.document_type_id.toLowerCase().includes(q)
+              d.document_type_id.toLowerCase().includes(q) ||
+              (d.texto_completo && d.texto_completo.toLowerCase().includes(q))
             )
           }
           // Client-side date filtering for Firebase mode
@@ -488,8 +490,13 @@ export default function DocumentList() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-4 text-sm text-gray-700 max-w-xs">
-                        <span className="line-clamp-1">{doc.tema || <span className="text-gray-400">—</span>}</span>
+                      <td className="px-4 py-4 text-sm text-gray-700 max-w-md">
+                        <span className="line-clamp-1 font-medium">{doc.tema || <span className="text-gray-400">—</span>}</span>
+                        {doc.texto_completo && (
+                          <p className="line-clamp-2 text-xs text-gray-400 mt-0.5 leading-relaxed">
+                            {doc.texto_completo.replace(/^#+\s.+\n+/gm, '').replace(/\*+/g, '').trim().slice(0, 200)}
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-4"><StatusBadge status={doc.status} /></td>
                       <td className="px-4 py-4 text-sm">

@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-08",
-    "cycle": "ementa-inteiroTeor-visualizador-prompts-filtros",
+    "cycle": "area-juridica-pdf-preview-testes-studio",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -80,8 +80,12 @@
       "id": "E3.F2",
       "epic": "Estúdio do Caderno",
       "name": "Diferenciação de prompts por área jurídica",
-      "state": "missing",
-      "files": []
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/notebook-studio-pipeline.ts",
+        "frontend/src/lib/notebook-studio-pipeline.test.ts"
+      ],
+      "notes": "detectLegalArea (17 áreas via regex), AREA_PROMPT_ENRICHMENTS (legislação/princípios/jurisprudência por área), enriquecimento em buildResearchPrompt + buildSpecialistPrompt"
     },
     {
       "id": "E4.F1",
@@ -132,6 +136,25 @@
       "files": ["frontend/src/lib/datajud-service.test.ts"]
     },
     {
+      "id": "E5.F3",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Exportação PDF nativa dos artefatos",
+      "state": "implemented",
+      "files": [
+        "frontend/src/components/artifacts/artifact-exporters.ts",
+        "frontend/src/components/artifacts/ArtifactViewerModal.tsx"
+      ],
+      "notes": "printAsPDF via window.print(); opção 'PDF (imprimir)' no dropdown de exportação"
+    },
+    {
+      "id": "E5.F4",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Preview de documento na página Documentos",
+      "state": "implemented",
+      "files": ["frontend/src/pages/DocumentList.tsx"],
+      "notes": "Snippet de texto_completo (2 linhas, max 200 chars) abaixo do tema; busca full-text"
+    },
+    {
       "id": "E5.F2",
       "epic": "Infraestrutura de Qualidade",
       "name": "Rastreabilidade PLANO.md + MANIFEST.json",
@@ -174,13 +197,13 @@
     "covered": [
       "frontend/src/lib/datajud-service.test.ts",
       "frontend/src/lib/web-search-service.test.ts",
-      "frontend/src/lib/external-video-provider.test.ts"
+      "frontend/src/lib/external-video-provider.test.ts",
+      "frontend/src/lib/notebook-studio-pipeline.test.ts"
     ],
     "missing": [
       "SourceContentViewer component tests",
       "ReportViewer pageMode snapshot",
-      "DocumentList origemFilter interaction",
-      "notebook-studio-pipeline document type detection"
+      "DocumentList origemFilter interaction"
     ]
   }
 }

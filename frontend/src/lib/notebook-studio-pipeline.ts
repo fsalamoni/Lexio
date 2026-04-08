@@ -31,6 +31,8 @@ export interface StudioPipelineInput {
   customInstructions?: string
   artifactType: StudioArtifactType
   artifactLabel: string
+  /** Optional legal area id (e.g. 'civil', 'tax', 'criminal'). When provided, prompts are enriched with area-specific guidance. */
+  legalArea?: string
 }
 
 export interface StudioPipelineResult {
@@ -101,10 +103,152 @@ const SPECIALIST_LABELS: Record<SpecialistRole, string> = {
   studio_visual:      'Designer Visual',
 }
 
+// ── Legal area detection and enrichment ───────────────────────────────────────
+
+/** Keyword-based area detection from topic + description. Returns area id or undefined. */
+export function detectLegalArea(topic: string, description?: string): string | undefined {
+  const text = `${topic} ${description || ''}`.toLowerCase()
+  // Order matters: specific areas must come before general ones to avoid false matches.
+  // E.g. 'criminal_procedure' before 'criminal', 'digital' (marco civil) before 'civil'.
+  const patterns: [string, RegExp][] = [
+    ['tax',                /tribut[áa]ri|imposto|icms|iss\b|irpj|csll|pis.?cofins|fiscal|tributo/],
+    ['labor',              /trabalh|clt|empregad|trabalhista|rescis[ãa]o.+contrato.+trabalho|justa causa|fgts|hora extra/],
+    ['criminal_procedure', /processo penal|inqu[ée]rito policial|flagrante|pris[ãa]o preventiva|a[çc][ãa]o penal/],
+    ['criminal',           /\bpenal\b|crime\b|delito|pena privativa|dosimetria|tipicidade|culpabilidade/],
+    ['environmental',      /ambiental|meio ambiente|licenciamento ambiental|fauna|flora|saneamento|[áa]rea degradada/],
+    ['digital',            /\blgpd\b|dados pessoais|cibern[ée]tic|marco civil da internet|direito digital/],
+    ['administrative',     /administrativ|licita[çc][ãa]o|improbidade|ato administrativo|poder de pol[íi]cia|servidor p[úu]blico/],
+    ['civil_procedure',    /processo civil|\bcpc\b|tutela antecipada|cumprimento de senten/],
+    ['consumer',           /consumidor|\bcdc\b|fornecedor|produto defeituoso|v[íi]cio|rela[çc][ãa]o de consumo/],
+    ['inheritance',        /sucess[õo]es|heran[çc]a|invent[áa]rio|testamento|legado|herdeiro|falecido/],
+    ['family',             /fam[íi]lia|div[óo]rcio|alimentos|guarda.+compartilhada|uni[ãa]o est[áa]vel|casamento|partilha/],
+    ['constitutional',     /constitucional|direito fundamental|controle de constitucionalidade|\badi\b|\badpf\b|mandado de injun/],
+    ['business',           /empresarial|societ[áa]rio|fal[êe]ncia|recupera[çc][ãa]o judicial|marca|patente|propriedade intelectual/],
+    ['social_security',    /previdenci[áa]rio|inss|aposentadoria|aux[íi]lio.?doen[çc]a|incapacidade laborat/],
+    ['electoral',          /eleitoral|elei[çc][ãõo]es|candidat|propaganda eleitoral|partido/],
+    ['international',      /internacional|tratado|extradi[çc][ãa]o|homologa[çc][ãa]o de senten[çc]a estrangeira/],
+    ['civil',              /responsabilidade civil|obriga[çc][ãõo]es|dano moral|indeniza[çc]|direito civil|contrato.+civil/],
+  ]
+  for (const [area, re] of patterns) {
+    if (re.test(text)) return area
+  }
+  return undefined
+}
+
+/** Area-specific prompt enrichments for legal documents. */
+const AREA_PROMPT_ENRICHMENTS: Record<string, string> = {
+  tax: `Contexto da área — Direito Tributário:
+- Cite a legislação tributária aplicável (CTN, CF arts. 145-162, leis complementares e ordinárias específicas)
+- Diferencie tributos por espécie (impostos, taxas, contribuições) e competência (federal, estadual, municipal)
+- Considere princípios tributários: legalidade, anterioridade, irretroatividade, capacidade contributiva, não-confisco
+- Use jurisprudência do STF (RE com repercussão geral) e STJ (REsp) em matéria tributária
+- Considere súmulas vinculantes e enunciados do CARF quando aplicáveis`,
+
+  labor: `Contexto da área — Direito do Trabalho:
+- Cite a CLT, CF art. 7º e legislação trabalhista complementar (Lei 13.467/2017 - Reforma Trabalhista)
+- Considere princípios: proteção, irrenunciabilidade, primazia da realidade, continuidade
+- Use jurisprudência do TST (súmulas, OJs da SDI-1 e SDI-2) e TRTs
+- Atenção à competência da Justiça do Trabalho (CF art. 114)
+- Considere convenções e acordos coletivos aplicáveis`,
+
+  criminal: `Contexto da área — Direito Penal:
+- Cite o Código Penal, legislação penal especial e a CF (garantias individuais)
+- Analise elementos do tipo penal: tipicidade, antijuridicidade, culpabilidade
+- Considere princípios: legalidade estrita, anterioridade, intervenção mínima, proporcionalidade
+- Use jurisprudência do STF e STJ em matéria penal (HC, RHC, REsp)
+- Considere causas de aumento, diminuição, agravantes e atenuantes quando aplicável`,
+
+  criminal_procedure: `Contexto da área — Processo Penal:
+- Cite o CPP, leis especiais (Lei 12.850/2013, Lei 9.296/1996) e a CF (garantias processuais)
+- Considere: devido processo legal, ampla defesa, contraditório, presunção de inocência
+- Análise de nulidades processuais (absolutas e relativas)
+- Jurisprudência do STF e STJ sobre prisões, provas e procedimentos`,
+
+  civil: `Contexto da área — Direito Civil:
+- Cite o Código Civil/2002, legislação extravagante e a CF quando aplicável
+- Considere princípios: boa-fé objetiva, função social do contrato, autonomia privada
+- Analise: capacidade, validade dos atos jurídicos, prescrição e decadência
+- Use jurisprudência do STJ (REsp) para interpretação de normas civis
+- Diferencie responsabilidade contratual e extracontratual quando pertinente`,
+
+  civil_procedure: `Contexto da área — Processo Civil:
+- Cite o CPC/2015 (Lei 13.105/2015) e a CF (princípios processuais)
+- Considere: acesso à justiça, contraditório, fundamentação das decisões, cooperação
+- Análise de pressupostos processuais, condições da ação, competência
+- Jurisprudência do STJ sobre procedimentos e recursos`,
+
+  consumer: `Contexto da área — Direito do Consumidor:
+- Cite o CDC (Lei 8.078/1990), Decreto 2.181/1997, CF art. 5º XXXII e art. 170 V
+- Considere: vulnerabilidade do consumidor, inversão do ônus da prova, responsabilidade objetiva
+- Análise de práticas abusivas, cláusulas abusivas, vícios e defeitos
+- Jurisprudência do STJ (temas repetitivos) sobre relações de consumo`,
+
+  administrative: `Contexto da área — Direito Administrativo:
+- Cite a CF (arts. 37-41), Lei 8.666/1993, Lei 14.133/2021, Lei 8.112/1990
+- Considere princípios: legalidade, impessoalidade, moralidade, publicidade, eficiência
+- Análise de atos administrativos (competência, forma, motivo, objeto, finalidade)
+- Jurisprudência do STF e STJ sobre poder discricionário e vinculado`,
+
+  constitutional: `Contexto da área — Direito Constitucional:
+- Cite a CF/1988 e emendas constitucionais relevantes
+- Considere: princípios fundamentais, direitos e garantias individuais, organização do Estado
+- Análise de controle de constitucionalidade (difuso e concentrado)
+- Jurisprudência do STF (ADI, ADC, ADPF, RE com repercussão geral)`,
+
+  environmental: `Contexto da área — Direito Ambiental:
+- Cite a CF art. 225, Lei 6.938/1981, Lei 9.605/1998, Código Florestal (Lei 12.651/2012)
+- Considere princípios: prevenção, precaução, poluidor-pagador, desenvolvimento sustentável
+- Responsabilidade ambiental objetiva e solidária
+- Jurisprudência do STJ sobre danos ambientais`,
+
+  business: `Contexto da área — Direito Empresarial:
+- Cite o Código Civil (Livro II), Lei 11.101/2005, Lei 6.404/1976, Lei 9.279/1996
+- Considere: tipos societários, responsabilidade dos sócios, desconsideração da personalidade jurídica
+- Análise de contratos empresariais, títulos de crédito, propriedade industrial
+- Jurisprudência do STJ sobre matéria empresarial`,
+
+  family: `Contexto da área — Direito de Família:
+- Cite o Código Civil (Livro IV), ECA, CF art. 226-230
+- Considere: princípio do melhor interesse da criança, dignidade, solidariedade familiar
+- Análise de guarda, alimentos, regime de bens, dissolução da união
+- Jurisprudência do STJ sobre família e menores`,
+
+  inheritance: `Contexto da área — Direito das Sucessões:
+- Cite o Código Civil (Livro V), CPC (inventário e partilha)
+- Considere: vocação hereditária, ordem de sucessão, testamentos, legados
+- Análise de colação, deserdação, indignidade, cálculo de legítima
+- Jurisprudência do STJ sobre sucessões`,
+
+  social_security: `Contexto da área — Direito Previdenciário:
+- Cite a CF (arts. 194-204), Lei 8.213/1991, Lei 8.212/1991, Decreto 3.048/1999
+- Considere: princípios da universalidade, seletividade, distributividade
+- Análise de benefícios: aposentadoria, auxílio-doença, pensão por morte, BPC
+- Jurisprudência do STJ e TNU sobre benefícios previdenciários`,
+
+  electoral: `Contexto da área — Direito Eleitoral:
+- Cite a CF (arts. 14-16), Código Eleitoral, Lei 9.504/1997, LC 64/1990
+- Considere: elegibilidade, inelegibilidade, propaganda eleitoral, prestação de contas
+- Jurisprudência do TSE sobre matéria eleitoral`,
+
+  international: `Contexto da área — Direito Internacional:
+- Cite tratados internacionais, CF art. 5º §§ 2º e 3º, Lei de Introdução (LINDB)
+- Considere: hierarquia dos tratados, recepção no ordenamento, conflito de normas
+- Análise de cooperação jurídica internacional, homologação de sentenças estrangeiras`,
+
+  digital: `Contexto da área — Direito Digital:
+- Cite a LGPD (Lei 13.709/2018), Marco Civil da Internet (Lei 12.965/2014), CF
+- Considere: proteção de dados pessoais, privacidade, liberdade de expressão online
+- Análise de responsabilidade de provedores, remoção de conteúdo, contratos digitais
+- Jurisprudência do STJ sobre responsabilidade civil na internet`,
+}
+
 // ── Prompt templates ──────────────────────────────────────────────────────────
 
 function buildResearchPrompt(input: StudioPipelineInput): { system: string; user: string } {
   const isLegalDoc = input.artifactType === 'documento' || input.artifactType === 'relatorio' || input.artifactType === 'resumo' || input.artifactType === 'guia_estruturado'
+  const resolvedArea = input.legalArea || detectLegalArea(input.topic, input.description)
+  const areaEnrichment = resolvedArea && AREA_PROMPT_ENRICHMENTS[resolvedArea]
+    ? `\n\n${AREA_PROMPT_ENRICHMENTS[resolvedArea]}` : ''
   return {
     system: `Você é um pesquisador especialista${isLegalDoc ? ' jurídico com vasta experiência em análise doutrinária e jurisprudencial' : ''}. Sua tarefa é extrair e organizar as informações mais relevantes das fontes disponíveis para a criação de um(a) ${input.artifactLabel}.
 
@@ -118,7 +262,7 @@ Regras:
 - Identifique: dispositivos legais aplicáveis, entendimentos consolidados, divergências doutrinárias/jurisprudenciais
 - Mapeie: precedentes relevantes, ementa de julgados, argumentos favoráveis e contrários` : ''}
 - Sinalize contradições ou lacunas entre fontes
-- Responda em português brasileiro`,
+- Responda em português brasileiro${areaEnrichment}`,
     user: `Tema: "${input.topic}"
 ${input.description ? `Objetivo: ${input.description}` : ''}
 
@@ -151,11 +295,15 @@ function buildSpecialistPrompt(
 - Responda em português brasileiro com tom adequado ao tipo de artefato
 - Use as informações do briefing de pesquisa como base fundamental`
 
+  const resolvedArea = input.legalArea || detectLegalArea(input.topic, input.description)
+  const areaEnrichment = resolvedArea && AREA_PROMPT_ENRICHMENTS[resolvedArea]
+    ? `\n\n${AREA_PROMPT_ENRICHMENTS[resolvedArea]}` : ''
+
   return {
     system: `${roleInstructions}
 
 Contexto do tema: "${input.topic}"
-${input.description ? `Objetivo: ${input.description}` : ''}
+${input.description ? `Objetivo: ${input.description}` : ''}${areaEnrichment}
 
 Conversas anteriores (para manter consistência):
 ${input.conversationContext || '(Sem conversas anteriores)'}

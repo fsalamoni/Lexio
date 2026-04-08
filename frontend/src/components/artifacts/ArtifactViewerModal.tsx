@@ -21,6 +21,7 @@ import {
   exportPresentationAsText,
   exportAudioScriptAsText,
   exportVideoScriptAsText,
+  printAsPDF,
 } from './artifact-exporters'
 import DraggablePanel from '../DraggablePanel'
 
@@ -227,6 +228,7 @@ export default function ArtifactViewerModal({
   const getExportOptions = (): { label: string; action: () => void }[] => {
     const options: { label: string; action: () => void }[] = [
       { label: 'Markdown (.md)', action: () => exportAsMarkdown(artifact.content, safeName) },
+      { label: 'PDF (imprimir)', action: () => printAsPDF(renderMarkdownToHtml(artifact.content), artifact.title) },
     ]
 
     switch (parsed.kind) {

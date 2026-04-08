@@ -156,9 +156,19 @@
 
 ### Feature 3.2: Diferenciação de prompts por área jurídica
 
-**Estado:** ❌ Não implementado
+**Estado:** ✅ Implementado (ciclo 2026-04)
 
 **Objetivo:** Adaptar prompts de acordo com área do direito (civil, penal, trabalhista, etc.)
+
+**Arquivos afetados:**
+- `frontend/src/lib/notebook-studio-pipeline.ts` — `detectLegalArea`, `AREA_PROMPT_ENRICHMENTS`, integração em `buildResearchPrompt` e `buildSpecialistPrompt`
+- `frontend/src/lib/notebook-studio-pipeline.test.ts` — 19 testes para `detectLegalArea` (17 áreas + fallback + negativo)
+
+**Mudanças implementadas:**
+- `StudioPipelineInput.legalArea?: string` — campo opcional para área jurídica explícita
+- `detectLegalArea(topic, description)` — detecção automática por keywords (17 áreas com regex)
+- `AREA_PROMPT_ENRICHMENTS` — mapa de enriquecimento por área com legislação, princípios e jurisprudência específicos
+- Enriquecimento integrado automaticamente nos prompts de pesquisa e especialista
 
 ---
 
@@ -258,8 +268,8 @@
 
 | Área | Tipo de teste faltando |
 |------|----------------------|
-| Jurisprudência — ementa/inteiro teor | Teste de parseDataJudHit com campos novos |
-| Studio pipeline — qualidade de prompts | Testes de snapshot de prompts |
+| Jurispr. — ementa/inteiro teor | ✅ Coberto — 11 testes em datajud-service.test.ts |
+| Studio pipeline — detecção de área | ✅ Coberto — 19 testes em notebook-studio-pipeline.test.ts |
 | firestore-service — saveNotebookDocument | Teste de integração mock Firestore |
 | SourceContentViewer — renderização jurídica | Testes de renderização de componente |
 
@@ -283,8 +293,8 @@
 - [x] Deep-link `/notebook?open=<id>` para abrir caderno diretamente
 - [x] `results_raw` — processCards com ementa/inteiro teor por processo
 - [x] `pageMode` — visualizador de documento como página A4
-- [ ] Exportação PDF nativa dos artefatos
-- [ ] Preview de documento na página Documentos
+- [x] Exportação PDF nativa dos artefatos
+- [x] Preview de documento na página Documentos
 - [ ] Busca híbrida (semântica + lexical) para jurisprudência
 
 ### Prioridade 2 — Diferenciação de produto
@@ -301,4 +311,4 @@
 
 ---
 
-*Última atualização: 2026-04-08 — Ciclo: results_raw + ProcessCard tabs + pageMode + deep-link + filtro Caderno*
+*Última atualização: 2026-04-08 — Ciclo: Feature 3.2 (área jurídica), PDF export, preview DocumentList, testes studio pipeline*

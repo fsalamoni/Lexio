@@ -164,14 +164,7 @@ export function exportAsJSON(data: unknown, filename: string) {
 
 // ── HTML export (for visual artifacts) ──────────────────────────────────────
 
-export function exportAsHTML(htmlContent: string, title: string, filename: string) {
-  const fullHtml = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <style>
+const HTML_STYLE = `
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem; line-height: 1.6; color: #1f2937; }
     h1, h2, h3, h4 { color: #111827; margin-top: 1.5em; }
     table { border-collapse: collapse; width: 100%; margin: 1em 0; }
@@ -183,7 +176,17 @@ export function exportAsHTML(htmlContent: string, title: string, filename: strin
     pre { background: #f3f4f6; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
     .stat { font-size: 2.5rem; font-weight: 700; color: #6366f1; }
     .section { margin: 2rem 0; padding: 1.5rem; border-radius: 0.75rem; background: #f9fafb; }
-  </style>
+    @media print { body { padding: 0; } @page { margin: 2cm; } }
+`
+
+export function exportAsHTML(htmlContent: string, title: string, filename: string) {
+  const fullHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>${HTML_STYLE}</style>
 </head>
 <body>
   <h1>${title}</h1>
@@ -194,4 +197,29 @@ export function exportAsHTML(htmlContent: string, title: string, filename: strin
 </body>
 </html>`
   downloadText(fullHtml, `${filename}.html`, 'text/html')
+}
+
+// ── PDF export (via browser print dialog) ───────────────────────────────────
+
+export function printAsPDF(htmlContent: string, title: string) {
+  const fullHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>${title}</title>
+  <style>${HTML_STYLE}</style>
+</head>
+<body>
+  <h1>${title}</h1>
+  ${htmlContent}
+  <footer style="margin-top:3rem;padding-top:1rem;border-top:1px solid #e5e7eb;font-size:0.75rem;color:#9ca3af;">
+    Gerado por Lexio · ${new Date().toLocaleDateString('pt-BR')}
+  </footer>
+</body>
+</html>`
+  const w = window.open('', '_blank')
+  if (!w) return
+  w.document.write(fullHtml)
+  w.document.close()
+  w.addEventListener('load', () => { w.print() })
 }
