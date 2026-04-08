@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronUp, FileText, ArrowRight, Sparkles, Loader2, MessageCircleQuestion } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
@@ -64,8 +64,10 @@ export default function NewDocument() {
 
   const { userId } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const toast = useToast()
   const { startTask } = useTaskManager()
+  const prefillHandledRef = useRef(false)
 
   const MAX_REQUEST = 2000
 
@@ -160,6 +162,19 @@ export default function NewDocument() {
       ]).catch(() => toast.error('Erro ao carregar tipos de documento e áreas disponíveis')).finally(() => setLoadingTypes(false))
     }
   }, [userId])
+
+  // Pre-fill form from query params (e.g. "Abrir no Gerador" from DocumentDetail)
+  useEffect(() => {
+    if (prefillHandledRef.current || loadingTypes) return
+    const qRequest = searchParams.get('request')
+    const qType = searchParams.get('type')
+    if (!qRequest && !qType) return
+    prefillHandledRef.current = true
+    if (qRequest) setRequest(qRequest)
+    if (qType && docTypes.some(t => t.id === qType)) setSelectedType(qType)
+    // Clean query params without triggering a navigation
+    setSearchParams({}, { replace: true })
+  }, [searchParams, docTypes, loadingTypes, setSearchParams])
 
   const currentType = docTypes.find((t) => t.id === selectedType)
 

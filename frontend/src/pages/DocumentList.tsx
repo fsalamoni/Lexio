@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, Plus, ChevronLeft, ChevronRight, Search, X, Trash2, Download, BookOpen } from 'lucide-react'
+import { FileText, Plus, ChevronLeft, ChevronRight, Search, X, Trash2, Download, BookOpen, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import api from '../api/client'
@@ -463,7 +463,8 @@ export default function DocumentList() {
                           {DOCTYPE_LABELS[doc.document_type_id] || (doc.document_type_id === 'documento_caderno' ? 'Documento' : doc.document_type_id)}
                         </Link>
                         {doc.origem === 'caderno' ? (
-                          doc.notebook_id ? (
+                          <>
+                          {doc.notebook_id ? (
                             <Link
                               to={`/notebook?open=${doc.notebook_id}`}
                               className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-50 text-violet-700 border border-violet-100 hover:bg-violet-100 transition-colors"
@@ -480,7 +481,16 @@ export default function DocumentList() {
                               <BookOpen className="w-2.5 h-2.5" />
                               Caderno
                             </span>
-                          )
+                          )}
+                          <Link
+                            to={`/documents/new?request=${encodeURIComponent(doc.tema || '')}`}
+                            className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-50 text-amber-700 border border-amber-100 hover:bg-amber-100 transition-colors"
+                            title="Recriar no Gerador"
+                          >
+                            <Sparkles className="w-2.5 h-2.5" />
+                            Gerador
+                          </Link>
+                          </>
                         ) : doc.origem && doc.origem !== 'web' && (
                           <span className={`ml-2 inline-block px-1.5 py-0.5 text-[10px] font-medium rounded ${
                             doc.origem === 'whatsapp'

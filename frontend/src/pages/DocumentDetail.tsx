@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, Trash2 } from 'lucide-react'
+import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, Trash2, BookOpen, Sparkles } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import ProgressTracker from '../components/ProgressTracker'
@@ -41,6 +41,9 @@ interface DocumentData {
   legal_area_ids: string[]
   texto_completo: string | null
   context_detail?: ContextDetailData | null
+  origem?: string
+  notebook_id?: string | null
+  notebook_title?: string | null
   metadata_?: {
     rejection_reason?: string
     rejected_by_name?: string
@@ -389,6 +392,25 @@ export default function DocumentDetail() {
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-gray-900 truncate">{docLabel}</h1>
           <p className="text-gray-500 mt-0.5">{doc.tema || 'Processando...'}</p>
+          {doc.origem === 'caderno' && (
+            <div className="flex items-center gap-2 mt-1.5">
+              {doc.notebook_id ? (
+                <button
+                  onClick={() => navigate(`/notebook?open=${doc.notebook_id}`)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-violet-50 text-violet-700 border border-violet-100 hover:bg-violet-100 transition-colors"
+                  title={doc.notebook_title ? `Abrir caderno: ${doc.notebook_title}` : 'Abrir Caderno de Pesquisa'}
+                >
+                  <BookOpen className="w-3 h-3" />
+                  Caderno
+                </button>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-violet-50 text-violet-700 border border-violet-100">
+                  <BookOpen className="w-3 h-3" />
+                  Caderno
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           <StatusBadge status={doc.status} />
@@ -545,6 +567,21 @@ export default function DocumentDetail() {
                 >
                   <Edit3 className="w-4 h-4" />
                   Editar
+                </button>
+              )}
+              {doc.origem === 'caderno' && (
+                <button
+                  onClick={() => {
+                    const params = new URLSearchParams()
+                    if (doc.original_request) params.set('request', doc.original_request)
+                    if (doc.document_type_id && doc.document_type_id !== 'documento_caderno') params.set('type', doc.document_type_id)
+                    navigate(`/documents/new?${params.toString()}`)
+                  }}
+                  className="inline-flex items-center gap-2 border border-violet-400 text-violet-700 px-4 py-2 rounded-lg hover:bg-violet-50 transition-colors text-sm"
+                  title="Recriar este documento usando o fluxo completo do Gerador"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Abrir no Gerador
                 </button>
               )}
               {doc.docx_path && (
