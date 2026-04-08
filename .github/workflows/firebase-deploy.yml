@@ -17,8 +17,11 @@ name: Deploy — Firebase Hosting (lexio.web.app) + Firestore Rules
 
 on:
   push:
-    branches: [main, 'claude/*', 'copilot/*']
+    branches: [main]
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
@@ -74,19 +77,24 @@ jobs:
 
       - name: Validate Firebase auth secret
         run: |
-          if [ -z "${{ secrets.FIREBASE_TOKEN }}" ] && [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
-            echo "Missing FIREBASE_TOKEN or FIREBASE_SERVICE_ACCOUNT secret"
+          if [ -z "$FIREBASE_TOKEN" ] && [ -z "$FIREBASE_SA" ]; then
+            echo "::error::Missing FIREBASE_TOKEN or FIREBASE_SERVICE_ACCOUNT secret"
             exit 1
           fi
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Resolve Firebase auth mode
         id: auth_mode
         run: |
-          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+          if [ -n "$FIREBASE_SA" ]; then
             echo "use_service_account=true" >> "$GITHUB_OUTPUT"
           else
             echo "use_service_account=false" >> "$GITHUB_OUTPUT"
           fi
+        env:
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       # ── Auth opção A: Service Account (se FIREBASE_SERVICE_ACCOUNT estiver setado)
       - name: Authenticate via Service Account
