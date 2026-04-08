@@ -322,12 +322,16 @@ export default function ResearchNotebook() {
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
 
+  // Track whether we've already executed the deep-link navigation to avoid re-opening on re-renders
+  const deepLinkHandledRef = useRef(false)
+
   // Deep-link: if URL has ?open=<notebookId>, auto-open that notebook after loading.
   useEffect(() => {
     const openId = searchParams.get('open')
     if (!openId || !userId || loading) return
-    // Only auto-select if we're still on the list view (no notebook active yet)
-    if (activeNotebook) return
+    // Only auto-select once and only when no notebook is currently active
+    if (activeNotebook || deepLinkHandledRef.current) return
+    deepLinkHandledRef.current = true
     ;(async () => {
       try {
         const nb = await getResearchNotebook(userId, openId)
@@ -340,7 +344,7 @@ export default function ResearchNotebook() {
         // Silently ignore deep-link errors — don't block the list view
       }
     })()
-  }, [searchParams, userId, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchParams, userId, loading, activeNotebook])
 
   // Ensure in-flight research tasks are canceled when leaving the page.
   useEffect(() => {

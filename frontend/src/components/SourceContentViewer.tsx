@@ -48,7 +48,7 @@ function fmtChars(n: number): string {
 }
 
 /** Format a date string (YYYY-MM-DD or ISO) to dd/mm/yyyy. */
-function fmtDate(d: string): string {
+function formatDate(d: string): string {
   if (!d) return ''
   const parts = d.split('T')[0].split('-')
   if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`
@@ -224,7 +224,7 @@ function ProcessCard({ result, index }: { result: DataJudResult; index: number }
             <p className="text-xs text-gray-600 mt-1 font-mono">{result.numeroProcesso}</p>
           </div>
           {result.dataAjuizamento && (
-            <span className="text-[11px] text-gray-400 flex-shrink-0 mt-0.5">{fmtDate(result.dataAjuizamento)}</span>
+            <span className="text-[11px] text-gray-400 flex-shrink-0 mt-0.5">{formatDate(result.dataAjuizamento)}</span>
           )}
         </div>
         {result.orgaoJulgador && (

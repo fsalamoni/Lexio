@@ -80,7 +80,8 @@ function extractToc(md: string): TocItem[] {
   return items
 }
 
-// ── Main Component ──────────────────────────────────────────────────────────
+// A4 page dimensions for page-canvas layout
+const A4_PAGE_MIN_HEIGHT = '29.7cm'
 
 interface ReportViewerProps {
   content: string
@@ -182,7 +183,7 @@ export default function ReportViewer({ content, title, pageMode }: ReportViewerP
     // Page-canvas layout: gray background + white card shadow, simulating a real document page
     return (
       <div className="min-h-full bg-gray-200 py-8 px-4 flex justify-center">
-        <div className="bg-white shadow-lg rounded-sm w-full max-w-3xl min-h-[29.7cm] px-16 py-12">
+        <div className="bg-white shadow-lg rounded-sm w-full max-w-3xl px-16 py-12" style={{ minHeight: A4_PAGE_MIN_HEIGHT }}>
           {contentNode}
         </div>
       </div>
