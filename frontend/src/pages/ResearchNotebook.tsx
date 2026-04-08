@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
   ArrowLeft, Send, Database, Clock, Upload,
@@ -182,6 +183,7 @@ export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
   const { startTask } = useTaskManager()
+  const [searchParams] = useSearchParams()
 
   // List state
   const [notebooks, setNotebooks] = useState<ResearchNotebookData[]>([])
@@ -319,6 +321,22 @@ export default function ResearchNotebook() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
+
+  // ── Deep-link: ?open=<notebookId> opens the notebook directly ──────
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || !userId || loading) return
+    const nb = notebooks.find(n => n.id === openId)
+    if (nb) {
+      setActiveNotebook(nb)
+      setViewMode('detail')
+    } else if (!loading && notebooks.length > 0) {
+      // Notebook not in list (e.g. archived) — fetch directly
+      getResearchNotebook(userId, openId).then(full => {
+        if (full) { setActiveNotebook(full); setViewMode('detail') }
+      }).catch(() => {/* silently ignore — notebook may not exist */})
+    }
+  }, [searchParams, notebooks, userId, loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ensure in-flight research tasks are canceled when leaving the page.
   useEffect(() => {
@@ -1501,6 +1519,17 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             content_type: 'text/plain',
             size_bytes: jurisprudenceResult.content.length,
             text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+            // Persist top-10 raw results so the viewer can render individual
+            // process cards (ementa, inteiro teor, tribunal, etc.).
+            // inteiroTeor is capped at 8 KB per result to stay within limits.
+            results_raw: JSON.stringify(
+              selectedResults.slice(0, 10).map(r => ({
+                ...r,
+                inteiroTeor: r.inteiroTeor
+                  ? r.inteiroTeor.slice(0, 8 * 1024)
+                  : r.inteiroTeor,
+              }))
+            ),
             status: 'indexed',
             added_at: new Date().toISOString(),
           }

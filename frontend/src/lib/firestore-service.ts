@@ -418,16 +418,20 @@ export async function saveNotebookDocumentToDocuments(uid: string, input: {
   content: string
   notebookId: string
   notebookTitle: string
+  /** Defaults to 'documento_caderno' */
+  document_type_id?: string
+  /** Defaults to [] */
+  legal_area_ids?: string[]
   llm_executions?: DocumentData['llm_executions']
 }): Promise<DocumentData> {
   const db = ensureFirestore()
   const colRef = collection(db, 'users', uid, 'documents')
   const now = new Date().toISOString()
   const docData = stripUndefined({
-    document_type_id: 'documento_caderno',
+    document_type_id: input.document_type_id ?? 'documento_caderno',
     original_request: input.topic,
     template_variant: null,
-    legal_area_ids: [],
+    legal_area_ids: input.legal_area_ids ?? [],
     request_context: null,
     context_detail: null,
     tema: input.topic,
@@ -1480,10 +1484,15 @@ function fitSourcesToFirestoreLimit(
 
   const trimmed: NotebookSource[] = sources.map(src => {
     const text = src.text_content ?? ''
-    if (text.length === 0 || ratio >= 1) return src
+    // Drop results_raw first when we are already space-constrained (ratio < 0.8)
+    // to reclaim space before trimming synthesis text.
+    const withoutRaw = ratio < 0.8 && src.results_raw
+      ? (({ results_raw: _drop, ...rest }) => rest)(src)
+      : src
+    if (text.length === 0 || ratio >= 1) return withoutRaw
     const maxChars = Math.max(Math.floor(text.length * ratio), MIN_SOURCE_TEXT_CHARS)
-    if (maxChars >= text.length) return src
-    return { ...src, text_content: text.slice(0, maxChars) }
+    if (maxChars >= text.length) return withoutRaw
+    return { ...withoutRaw, text_content: text.slice(0, maxChars) }
   })
 
   console.warn(

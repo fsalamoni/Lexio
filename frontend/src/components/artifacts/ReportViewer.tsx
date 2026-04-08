@@ -85,9 +85,15 @@ function extractToc(md: string): TocItem[] {
 interface ReportViewerProps {
   content: string
   title?: string
+  /**
+   * When true, the content is displayed in a page-canvas layout:
+   * a white card on a gray background, mimicking a printed document.
+   * Used for 'documento' artifacts to give a formal document feel.
+   */
+  pageMode?: boolean
 }
 
-export default function ReportViewer({ content, title }: ReportViewerProps) {
+export default function ReportViewer({ content, title, pageMode = false }: ReportViewerProps) {
   const [showToc, setShowToc] = useState(true)
   const [activeId, setActiveId] = useState<string>('')
   const contentRef = useRef<HTMLDivElement>(null)
@@ -120,6 +126,70 @@ export default function ReportViewer({ content, title }: ReportViewerProps) {
     const el = contentRef.current?.querySelector(`#${CSS.escape(id)}`)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
+
+  // Page-canvas layout: gray background + white centered card (like a printed document)
+  if (pageMode) {
+    return (
+      <div className="flex h-full gap-4 bg-gray-100 overflow-y-auto">
+        {/* TOC sidebar (floats over gray bg) */}
+        {hasToc && showToc && (
+          <nav className="w-52 flex-shrink-0 overflow-y-auto pl-4 pr-2 py-6">
+            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Índice</h4>
+            <ul className="space-y-0.5">
+              {toc.map((item, i) => (
+                <li key={i}>
+                  <button
+                    onClick={() => scrollTo(item.id)}
+                    className={`w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate ${
+                      activeId === item.id
+                        ? 'bg-white text-brand-700 font-medium shadow-sm'
+                        : 'text-gray-500 hover:text-gray-800 hover:bg-white/60'
+                    }`}
+                    style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
+                  >
+                    {item.level > 1 && <ChevronRight className="w-3 h-3 inline mr-1 opacity-40" />}
+                    {item.text}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+
+        {/* Page canvas */}
+        <div className="flex-1 min-w-0 py-8 pr-6">
+          {hasToc && (
+            <button
+              onClick={() => setShowToc(s => !s)}
+              className={`mb-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                showToc ? 'bg-white text-brand-600 shadow-sm' : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              {showToc ? 'Ocultar índice' : 'Mostrar índice'}
+            </button>
+          )}
+
+          {/* White card — mimics a printed page */}
+          <div className="bg-white rounded-lg shadow-sm mx-auto" style={{ maxWidth: 720 }}>
+            <div className="px-14 py-12">
+              {title && <h1 className="text-2xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">{title}</h1>}
+              <div
+                ref={contentRef}
+                className="prose prose-sm max-w-none text-gray-800 leading-7
+                           [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-8 [&_h1]:mb-3
+                           [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-6 [&_h2]:mb-2
+                           [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-5 [&_h3]:mb-2
+                           [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline
+                           [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex gap-6 h-full">

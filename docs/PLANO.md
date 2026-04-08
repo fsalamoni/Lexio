@@ -18,12 +18,12 @@
 
 | Área | Estado | Observações |
 |------|--------|-------------|
-| Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos |
-| Pesquisa de Jurisprudência (DataJud) | ⚠️ Parcial | Metadados retornados; ementa/inteiro teor ausentes |
-| Visualizador de Documentos | ⚠️ Parcial | Texto estruturado OK; renderização jurídica fraca |
-| Geração de Documentos (Estúdio) | ⚠️ Parcial | Pipeline OK; prompts genéricos; não persiste em Documentos |
-| Página de Documentos | ✅ Implementado | Lista, filtros, bulk ops; sem vínculo com artefatos do caderno |
-| Novo Documento | ✅ Implementado | Fluxo completo; sem integração DataJud como fonte |
+| Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos, deep-link (?open=id) |
+| Pesquisa de Jurisprudência (DataJud) | ✅ Implementado | ementa + inteiro teor extraídos e persistidos (results_raw) |
+| Visualizador de Documentos | ✅ Implementado | Page-canvas para acervo; tabs Síntese+Processos para jurisprudência |
+| Geração de Documentos (Estúdio) | ✅ Implementado | Prompts aprofundados; artefato 'documento' persiste em Documentos |
+| Página de Documentos | ✅ Implementado | Filtro 'Do Caderno'; badge com link deep-link para caderno de origem |
+| Novo Documento | ✅ Implementado | Fluxo completo |
 | Banco de Teses | ✅ Implementado | CRUD completo |
 | Acervo | ✅ Implementado | Upload, indexação, classificação, ementa automática |
 | Pesquisa Web Externa | ✅ Implementado | Agentes + deep search |
@@ -45,18 +45,18 @@
 **Arquivos afetados:**
 - `frontend/src/lib/datajud-service.ts` — interface `DataJudResult`, `parseDataJudHit`, `formatDataJudResults`
 - `frontend/src/lib/datajud-service.test.ts` — testes unitários
+- `frontend/src/lib/firestore-types.ts` — campo `results_raw?: string` em `NotebookSource`
+- `frontend/src/pages/ResearchNotebook.tsx` — persiste `results_raw` (top-10, inteiroTeor ≤ 8 KB) ao criar fonte de jurisprudência
+- `frontend/src/lib/firestore-service.ts` — `fitSourcesToFirestoreLimit` descarta `results_raw` quando ratio < 0.8
+- `frontend/src/components/SourceContentViewer.tsx` — tabs Síntese/Processos com `ProcessCard` (ementa, inteiroTeor, tribunal, classe, etc.)
 
 **Mudanças implementadas:**
 - Adicionado `ementa?: string` e `inteiroTeor?: string` a `DataJudResult`
-- `parseDataJudHit` agora extrai `src.ementa` (string) e `src.inteiro_teor` (string) do `_source` da API Elasticsearch
-- `formatDataJudResults` inclui ementa e trecho do inteiro teor quando disponíveis
+- `parseDataJudHit` agora extrai `src.ementa` e `src.inteiro_teor` (suporta string plana ou objeto aninhado)
+- `formatDataJudResults` inclui ementa e trecho do inteiro teor
+- `NotebookSource.results_raw` persiste JSON dos top-10 resultados brutos
+- `SourceContentViewer` mostra tab "Processos" com `ProcessCard` por resultado quando `results_raw` presente
 - Testes atualizados para cobrir novos campos
-
-**Dependências:** API pública DataJud (CNJ) — endpoint `api-publica.datajud.cnj.jus.br`
-
-**Riscos:**
-- A API CNJ nem sempre retorna ementa/inteiro_teor para todos os processos (dados incompletos)
-- Implementação deve ter fallback gracioso quando campos ausentes
 
 ---
 
@@ -98,26 +98,33 @@
 
 **Estado:** ✅ Implementado (ciclo 2026-04)
 
-**Objetivo:** Transformar exibição de JSON cru/texto plano em visualização documental de alta qualidade. Renderizar documentos jurídicos com tipografia, hierarquia, seções, ementa destacada, dispositivo, etc.
+**Objetivo:** Transformar exibição de JSON cru/texto plano em visualização documental de alta qualidade.
 
 **Arquivos afetados:**
 - `frontend/src/components/SourceContentViewer.tsx` — componente principal
-- `frontend/src/lib/datajud-service.ts` — campos ementa/inteiro_teor nos resultados
 
 **Mudanças implementadas:**
-- Detecção de fontes jurídicas (DataJud/jurisprudência)
-- Renderização de ementa com destaque visual
-- Seções específicas para documentos jurídicos: processo, tribunal, classe, ementa, inteiro teor
+- Detecção de fontes jurídicas (`type === 'jurisprudencia'`)
+- Tabs Síntese / Processos para fontes jurisprudenciais com `results_raw`
+- `ProcessCard` mostra ementa (expansível), inteiro teor (expansível), tribunal, classe, data, assuntos
+- Page-canvas layout (fundo cinza + card branco) para documentos estruturados do acervo
 - Fallback seguro para documentos genéricos
-- Melhor tipografia e espaçamento para leitura
 
 ---
 
-### Feature 2.2: ArtifactViewerModal — parser Markdown aprimorado
+### Feature 2.2: ReportViewer — layout page-canvas para documentos formais
 
-**Estado:** ⚠️ Parcial — parser regex básico, sem syntax highlight
+**Estado:** ✅ Implementado (ciclo 2026-04)
 
-**Arquivos:** `frontend/src/components/artifacts/ArtifactViewerModal.tsx`
+**Arquivos afetados:**
+- `frontend/src/components/artifacts/ReportViewer.tsx` — prop `pageMode`
+- `frontend/src/components/artifacts/ArtifactViewerModal.tsx` — passa `pageMode={artifact.type === 'documento'}`
+
+**Mudanças implementadas:**
+- Prop `pageMode?: boolean` no `ReportViewer`
+- Quando `pageMode=true`: fundo cinza + card branco centrado (max-width 720px) simulando página impressa
+- TOC flutuando sobre o fundo cinza
+- `ArtifactViewerModal` passa `pageMode` para artefatos do tipo `documento`
 
 ---
 
@@ -158,16 +165,17 @@
 **Objetivo:** Artefatos do tipo `documento` gerados no estúdio do Caderno são persistidos como `DocumentData` em Firestore e listados na página Documentos.
 
 **Arquivos afetados:**
-- `frontend/src/lib/firestore-service.ts` — nova função `saveNotebookDocumentToDocuments`
-- `frontend/src/lib/firestore-types.ts` — campo `notebook_id` e `origem: 'caderno'` em `DocumentData`
+- `frontend/src/lib/firestore-service.ts` — `saveNotebookDocumentToDocuments` (aceita `document_type_id` e `legal_area_ids` opcionais)
+- `frontend/src/lib/firestore-types.ts` — campo `notebook_id`, `notebook_title`, `origem: 'caderno'` em `DocumentData`
 - `frontend/src/pages/ResearchNotebook.tsx` — chama `saveNotebookDocumentToDocuments` ao criar artefato tipo `documento`
-- `frontend/src/pages/DocumentList.tsx` — exibe `origem: 'caderno'` com badge indicativo
+- `frontend/src/pages/DocumentList.tsx` — badge "Caderno" com link deep-link; filtro 'Do Caderno'
 
 **Mudanças implementadas:**
-- `DocumentData.origem` aceita agora `'caderno'` além de `'web'`
-- `DocumentData.notebook_id` campo opcional para rastreabilidade
-- Ao gerar artefato `documento` no estúdio, o usuário recebe opção de salvar na página Documentos
-- Badge "Caderno" visível na listagem de documentos
+- `DocumentData.origem` aceita `'caderno'` além de `'web'`
+- `DocumentData.notebook_id` para rastreabilidade
+- Ao gerar artefato `documento` no estúdio, persiste automaticamente na página Documentos
+- Badge "Caderno" é link clicável que abre `/notebook?open=<notebook_id>`
+- Filtro chip 'Do Caderno' (violeta) na barra de filtros da página Documentos
 
 ---
 
@@ -181,9 +189,22 @@
 - `frontend/src/lib/notebook-studio-pipeline.ts`
 - `frontend/src/lib/firestore-service.ts`
 
----
+### Feature 4.3: Deep-link para caderno via ?open=<notebook_id>
 
-## Epic 5: Infraestrutura de Qualidade
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Permitir navegar diretamente para um caderno específico via URL.
+
+**Arquivos afetados:**
+- `frontend/src/pages/ResearchNotebook.tsx` — `useSearchParams`, efeito de deep-link
+
+**Mudanças implementadas:**
+- `useSearchParams` do react-router-dom no `ResearchNotebook`
+- Efeito que lê `?open=<id>` e abre o caderno correspondente automaticamente
+- Se o caderno não estiver na lista local, faz fetch direto por ID
+- Badge "Caderno" na página Documentos usa este deep-link
+
+---
 
 ### Feature 5.1: Testes unitários — DataJud ementa/inteiro_teor
 
@@ -198,11 +219,13 @@
 | Arquivo | Sensibilidade | Motivo |
 |---------|--------------|--------|
 | `frontend/src/lib/datajud-service.ts` | 🔴 Alta | API pública CNJ; múltiplos tribunais em paralelo; endpoint caching |
-| `frontend/src/lib/firestore-service.ts` | 🔴 Alta | CRUD principal; erros causam perda de dados |
+| `frontend/src/lib/firestore-service.ts` | 🔴 Alta | CRUD principal; erros causam perda de dados; fitSourcesToFirestoreLimit |
 | `frontend/src/pages/ResearchNotebook.tsx` | 🔴 Alta | >4000 linhas; estado complexo; múltiplos pipelines |
 | `frontend/src/lib/notebook-studio-pipeline.ts` | 🟡 Média | Prompts de geração; mudanças afetam qualidade de saída |
 | `frontend/src/components/SourceContentViewer.tsx` | 🟢 Baixa | Componente de visualização puro; sem side effects |
 | `frontend/src/components/artifacts/ArtifactViewerModal.tsx` | 🟡 Média | Modal principal de artefatos; múltiplos tipos |
+| `frontend/src/components/artifacts/ReportViewer.tsx` | 🟢 Baixa | Viewer de markdown; agora com pageMode |
+| `frontend/src/pages/DocumentList.tsx` | 🟢 Baixa | Lista de documentos; filtro originFilter adicionado |
 
 ---
 
@@ -210,10 +233,12 @@
 
 | Área | Tipo de teste faltando |
 |------|----------------------|
-| Jurisprudência — ementa/inteiro teor | Teste de parseDataJudHit com campos novos |
 | Studio pipeline — qualidade de prompts | Testes de snapshot de prompts |
 | firestore-service — saveNotebookDocument | Teste de integração mock Firestore |
 | SourceContentViewer — renderização jurídica | Testes de renderização de componente |
+| SourceContentViewer — parseResultsRaw | Teste unitário de parsing de results_raw |
+| ReportViewer — pageMode | Teste de renderização page-canvas |
+| DocumentList — originFilter | Teste de filtragem por origem |
 
 ---
 
@@ -234,7 +259,7 @@
 - [ ] Busca híbrida (semântica + lexical) para jurisprudência
 - [ ] Exportação PDF nativa dos artefatos
 - [ ] Preview de documento na página Documentos
-- [ ] Filtro por `origem: 'caderno'` na página Documentos
+- [x] Filtro por `origem: 'caderno'` na página Documentos — ✅ Implementado
 
 ### Prioridade 2 — Diferenciação de produto
 - [ ] Pesquisa conversacional com contexto (memória multi-turno de filtros)
@@ -250,4 +275,4 @@
 
 ---
 
-*Última atualização: 2026-04-07 — Ciclo: ementa/inteiro teor + visualizador + prompts + integração Caderno↔Documentos*
+*Última atualização: 2026-04-07 — Ciclo: results_raw + ProcessCard + page-canvas + pageMode + filtro Caderno + deep-link*

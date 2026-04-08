@@ -145,6 +145,14 @@ export interface NotebookSource {
   content_type?: string
   size_bytes?: number
   text_content?: string
+  /** JSON-serialised DataJudResult[] — present on jurisprudencia sources only.
+   *  Stored alongside the LLM synthesis so the viewer can render individual
+   *  process cards (ementa, inteiro teor, tribunal, etc.).
+   *  inteiroTeor is capped at 8 KB per result to stay within Firestore limits.
+   *  fitSourcesToFirestoreLimit will drop this field when the document
+   *  approaches the 1 MiB Firestore document size limit.
+   */
+  results_raw?: string
   status: 'pending' | 'processing' | 'indexed' | 'error'
   added_at: string
 }
