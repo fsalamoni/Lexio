@@ -95,6 +95,133 @@
 
 ---
 
+### Feature 1.5: Classificação temática automática de jurisprudência
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Classificar automaticamente cada resultado do DataJud por área do direito (trabalhista, penal, civil, etc.) usando os campos `assuntos`, `classe` e `ementa`.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — `classifyJurisprudenceArea`, `classifyResult`, `JURISPRUDENCE_AREA_PATTERNS`
+- `frontend/src/lib/datajud-service.test.ts` — 16 testes de classificação
+- `frontend/src/components/SourceContentViewer.tsx` — badge colorido de área no `ProcessCard`
+- `frontend/src/lib/constants.ts` — `AREA_LABELS`, `AREA_COLORS` (pré-existentes)
+
+**Mudanças implementadas:**
+- 17 padrões regex para classificar áreas (tax, labor, criminal, etc.)
+- `classifyResult(DataJudResult)` como wrapper de conveniência
+- Badge colorido da área do direito no cabeçalho de cada `ProcessCard`
+- Reutiliza paleta `AREA_COLORS` / `AREA_LABELS` já existente
+
+---
+
+### Feature 1.6: Indicador de posição favorável/desfavorável/neutro
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Indicar ao usuário se cada resultado de jurisprudência é favorável, desfavorável ou neutro em relação à tese/consulta.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — campos `relevanceScore?: number` e `stance?: 'favoravel' | 'desfavoravel' | 'neutro'` em `DataJudResult`
+- `frontend/src/pages/ResearchNotebook.tsx` — prompt de ranking enriquecido com `stance`; parse e attach de stance/score aos resultados
+- `frontend/src/components/SourceContentViewer.tsx` — indicadores visuais (ThumbsUp verde, ThumbsDown vermelho, Minus cinza) + badge de relevância (/100)
+
+**Mudanças implementadas:**
+- Prompt `JURISPRUDENCE_RANKING_SYSTEM` agora solicita `stance` por processo
+- Parser enriquece resultados com `relevanceScore` e `stance` antes da serialização em `results_raw`
+- `ProcessCard` exibe badge de posição + score de relevância
+- Fallback gracioso: se ranking não está configurado, nenhum indicador aparece
+
+---
+
+### Feature 1.7: Linha do tempo jurisprudencial
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Exibir processos organizados cronologicamente em formato de timeline visual para identificar evolução de entendimento.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — `sortByDate(results, ascending)` utility
+- `frontend/src/components/SourceContentViewer.tsx` — tab "Linha do Tempo" no JurisprudenceViewer
+
+**Mudanças implementadas:**
+- `sortByDate` ordena resultados por `dataAjuizamento` (ascendente ou descendente)
+- Tab "Linha do Tempo" com timeline visual vertical (linha emerald + dots coloridos por stance)
+- Cada nó exibe data, classe, área, tribunal, relevância e trecho da ementa
+- Dots coloridos: verde (favorável), vermelho (desfavorável), emerald (neutro/sem classificação)
+
+---
+
+### Feature 1.8: Agrupamento de precedentes por área
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Agrupar resultados do DataJud por área do direito classificada, facilitando análise por tema.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — `groupByArea(results)` utility, interface `AreaGroup`
+- `frontend/src/components/SourceContentViewer.tsx` — tab "Agrupados" no JurisprudenceViewer
+
+**Mudanças implementadas:**
+- `groupByArea` agrupa resultados usando `classifyResult` e retorna `AreaGroup[]` ordenados (nomes antes de "Outros")
+- Tab "Agrupados" com seções colapsáveis por área, badge colorido, contagem de processos
+- Cada grupo mostra ProcessCards dos resultados daquela área
+
+---
+
+### Feature 1.9: Comparação entre dois julgados
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Permitir comparação lado a lado de dois processos, destacando semelhanças e diferenças.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — `compareProcesses(left, right)` utility, interface `ProcessComparison`
+- `frontend/src/components/SourceContentViewer.tsx` — tab "Comparar" + botão "Comparar com outro processo" no ProcessCard
+
+**Mudanças implementadas:**
+- `compareProcesses` calcula: assuntos em comum, mesma área, diferença em dias
+- Botão "Comparar com outro processo" em cada ProcessCard (exibe seletor de processos)
+- Tab "Comparar" com badges resumo (mesma área, N assuntos em comum, X dias de diferença)
+- Layout grid 2 colunas com ComparisonSide por processo
+
+---
+
+### Feature 1.10: Analytics jurisprudencial por tema/período
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Painel de analytics no overview do caderno mostrando distribuição de resultados de jurisprudência por área, posição, ano e tribunal.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — `buildJurisprudenceAnalytics(results)` → `JurisprudenceAnalytics`
+- `frontend/src/lib/datajud-service.test.ts` — 9 testes para analytics
+- `frontend/src/pages/ResearchNotebook.tsx` — painel Analytics na aba Visão Geral
+
+**Mudanças implementadas:**
+- `buildJurisprudenceAnalytics` computa: totalResults, byArea, byStance, byYear, byTribunal, avgRelevanceScore
+- Painel visual no overview com: cards de stance (favoráveis/desfavoráveis/neutros/relevância média), barras de área, mini bar-chart por ano, badges de tribunal
+- Dados derivados automaticamente de `results_raw` das fontes de jurisprudência
+
+---
+
+### Feature 1.11: Pesquisa conversacional com contexto (memória multi-turno)
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** O assistente de chat do caderno recebe histórico de buscas realizadas para sugerir refinamentos e complementos.
+
+**Arquivos afetados:**
+- `frontend/src/pages/ResearchNotebook.tsx` — injeção de `searchContext` no system prompt do chat
+
+**Mudanças implementadas:**
+- Coleta de histórico de pesquisas (jurisprudência + web) a partir das fontes do caderno
+- Injeção como seção `HISTÓRICO DE PESQUISAS REALIZADAS` no system prompt
+- Assistente pode referenciar buscas anteriores e sugerir refinamentos
+- Zero overhead: apenas montagem de string, sem chamada extra de API
+
+---
+
 ## Epic 2: Visualizador Documental
 
 ### Feature 2.1: SourceContentViewer — renderização jurídica rica + tabs
@@ -238,6 +365,16 @@
 **Arquivos afetados:**
 - `frontend/src/lib/notebook-studio-pipeline.ts`
 - `frontend/src/lib/firestore-service.ts`
+- `frontend/src/pages/DocumentDetail.tsx` — botão "Abrir no Gerador" para documentos `origem: 'caderno'`
+- `frontend/src/pages/DocumentList.tsx` — badge "Gerador" (amber) ao lado do badge "Caderno"
+- `frontend/src/pages/NewDocument.tsx` — aceita `?request=` e `?type=` query params para pré-preencher formulário
+
+**Mudanças implementadas:**
+- Documentos do caderno e documentos formais aparecem na mesma listagem na página Documentos
+- Pipeline de geração preserva qualidade e persiste com `origem: 'caderno'`
+- Botão "Abrir no Gerador" na `DocumentDetail` envia `original_request` e `document_type_id` como query params para `/documents/new`
+- Badge "Gerador" na `DocumentList` permite acesso rápido à recriação
+- `NewDocument` aceita `?request=` e `?type=` e pré-preenche campos (request + tipo de documento) com limpeza de URL após uso
 
 ---
 
@@ -248,6 +385,50 @@
 **Estado:** ✅ Implementado (ciclo 2026-04)
 
 **Arquivos:** `frontend/src/lib/datajud-service.test.ts`
+
+---
+
+### Feature 5.2: Rastreabilidade PLANO.md + MANIFEST.json
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Arquivos:** `docs/PLANO.md`, `docs/MANIFEST.json`
+
+---
+
+### Feature 5.3: Exportação PDF nativa dos artefatos
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Permitir exportar artefatos como PDF diretamente do visualizador.
+
+**Arquivos afetados:**
+- `frontend/src/components/artifacts/artifact-exporters.ts` — função `printAsPDF` via `window.print()`
+- `frontend/src/components/artifacts/ArtifactViewerModal.tsx` — opção "PDF (imprimir)" no dropdown de exportação
+
+---
+
+### Feature 5.4: Preview de documento na página Documentos
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Mostrar snippet do conteúdo do documento na listagem para facilitar identificação visual.
+
+**Arquivos afetados:**
+- `frontend/src/pages/DocumentList.tsx` — snippet de `texto_completo` (2 linhas, max 200 chars), busca full-text
+
+---
+
+### Feature 5.5: Testes unitários — SourceContentViewer, ReportViewer, DocumentList
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Cobrir funções puras dos componentes de UI/visualização com testes unitários.
+
+**Arquivos afetados:**
+- `frontend/src/components/SourceContentViewer.test.ts` — `parseJurisprudenceText`, `fmtChars`, `formatDate`
+- `frontend/src/components/artifacts/ReportViewer.test.ts` — `renderMarkdownToHtml`, `extractToc`, pageMode
+- `frontend/src/pages/DocumentList.test.ts` — `applyOrigemFilter`, lógica de filtragem
 
 ---
 
@@ -266,12 +447,14 @@
 
 ## Lacunas de testes (conhecidas)
 
-| Área | Tipo de teste faltando |
-|------|----------------------|
-| Jurispr. — ementa/inteiro teor | ✅ Coberto — 11 testes em datajud-service.test.ts |
-| Studio pipeline — detecção de área | ✅ Coberto — 19 testes em notebook-studio-pipeline.test.ts |
-| firestore-service — saveNotebookDocument | Teste de integração mock Firestore |
-| SourceContentViewer — renderização jurídica | Testes de renderização de componente |
+| Área | Tipo de teste faltando | Estado |
+|------|----------------------|--------|
+| Jurispr. — ementa/inteiro teor | Testes de parseDataJudHit com novos campos | ✅ Coberto — 11 testes em datajud-service.test.ts |
+| Studio pipeline — detecção de área | Testes de detectLegalArea (17 áreas + fallback) | ✅ Coberto — 19 testes em notebook-studio-pipeline.test.ts |
+| SourceContentViewer — renderização jurídica | Testes de parseJurisprudenceText, fmtChars, formatDate | ✅ Coberto — SourceContentViewer.test.ts |
+| ReportViewer — pageMode | Testes de renderMarkdownToHtml, extractToc, pageMode | ✅ Coberto — ReportViewer.test.ts |
+| DocumentList — origemFilter interaction | Testes de lógica de filtragem por origem | ✅ Coberto — DocumentList.test.ts |
+| firestore-service — saveNotebookDocument | Teste com mock do Firebase SDK | ✅ Coberto — 6 testes em firestore-service.test.ts |
 
 ---
 
@@ -298,17 +481,17 @@
 - [ ] Busca híbrida (semântica + lexical) para jurisprudência
 
 ### Prioridade 2 — Diferenciação de produto
-- [ ] Pesquisa conversacional com contexto (memória multi-turno de filtros)
-- [ ] Classificação temática de jurisprudência por área do direito
-- [ ] Linha do tempo jurisprudencial (evolução de entendimento)
-- [ ] Indicador "favorável / desfavorável / neutro" por resultado
+- [x] Pesquisa conversacional com contexto (memória multi-turno de filtros)
+- [x] Classificação temática de jurisprudência por área do direito
+- [x] Linha do tempo jurisprudencial (evolução de entendimento)
+- [x] Indicador "favorável / desfavorável / neutro" por resultado
 
 ### Prioridade 3 — Moat de produto
-- [ ] Deduplicação e agrupamento de precedentes relacionados
-- [ ] Comparação entre dois julgados ("diferencie estes precedentes")
+- [x] Deduplicação e agrupamento de precedentes relacionados
+- [x] Comparação entre dois julgados ("diferencie estes precedentes")
 - [ ] Pesquisa orientada à peça processual (cola petição → recebe jurisprudência relacionada)
-- [ ] Analytics jurisprudencial por tema/período
+- [x] Analytics jurisprudencial por tema/período
 
 ---
 
-*Última atualização: 2026-04-08 — Ciclo: Feature 3.2 (área jurídica), PDF export, preview DocumentList, testes studio pipeline*
+*Última atualização: 2026-04-08 — Ciclo: Analytics jurisprudencial + Pesquisa conversacional com contexto*

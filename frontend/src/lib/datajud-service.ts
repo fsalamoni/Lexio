@@ -389,6 +389,10 @@ export interface DataJudResult {
   ementa?: string
   /** Inteiro teor da decisão, quando disponível na API DataJud. */
   inteiroTeor?: string
+  /** Relevance score (0–100) assigned by the ranking LLM. */
+  relevanceScore?: number
+  /** Stance classification relative to the user's query: favoravel | desfavoravel | neutro. */
+  stance?: 'favoravel' | 'desfavoravel' | 'neutro'
 }
 
 export interface DataJudSearchProgress {
@@ -742,6 +746,222 @@ export function formatDataJudResults(results: DataJudResult[]): string {
  */
 export function getTribunalsByCategory(category: TribunalCategory): TribunalInfo[] {
   return ALL_TRIBUNALS.filter(t => t.category === category)
+}
+
+// ── Jurisprudence area classification ───────────────────────────────────────
+
+/**
+ * Classification patterns for mapping DataJud assuntos/classe to legal areas.
+ * Patterns are ordered from specific → general to prevent false positives.
+ */
+const JURISPRUDENCE_AREA_PATTERNS: [string, RegExp][] = [
+  ['tax',                /tribut[áa]ri|imposto|icms|iss\b|irpj|csll|pis.?cofins|fiscal|tributo|cr[ée]dito tribut/i],
+  ['labor',              /trabalh|clt|empregad|trabalhista|rescis[ãa]o.+trabalho|justa causa|fgts|hora extra|direito do trabalho/i],
+  ['criminal_procedure', /processo penal|inqu[ée]rito|flagrante|pris[ãa]o preventiva|a[çc][ãa]o penal|execu[çc][ãa]o penal/i],
+  ['criminal',           /\bpenal\b|crime|delito|pena privativa|dosimetria|tipicidade|culpabilidade|homic[íi]dio|furto|roubo|tr[áa]fico/i],
+  ['environmental',      /ambiental|meio ambiente|licenciamento ambiental|fauna|flora|saneamento|[áa]rea degradada/i],
+  ['digital',            /\blgpd\b|dados pessoais|cibern[ée]tic|marco civil|direito digital/i],
+  ['administrative',     /administrativ|licita[çc][ãa]o|improbidade|ato administrativo|poder de pol[íi]cia|servidor p[úu]blico|concurso p[úu]blico/i],
+  ['civil_procedure',    /processo civil|\bcpc\b|tutela antecipada|cumprimento de senten|execu[çc][ãa]o de t[íi]tulo/i],
+  ['consumer',           /consumidor|\bcdc\b|fornecedor|produto defeituoso|v[íi]cio|rela[çc][ãa]o de consumo|plano de sa[úu]de/i],
+  ['inheritance',        /sucess[õo]es|heran[çc]a|invent[áa]rio|testamento|legado|herdeiro/i],
+  ['family',             /fam[íi]lia|div[óo]rcio|alimentos|guarda|uni[ãa]o est[áa]vel|casamento|partilha|paternidade/i],
+  ['constitutional',     /constitucional|direito fundamental|controle de constitucionalidade|\badi\b|\badpf\b|mandado de injun/i],
+  ['business',           /empresarial|societ[áa]rio|fal[êe]ncia|recupera[çc][ãa]o judicial|marca|patente|propriedade intelectual/i],
+  ['social_security',    /previdenci[áa]ri|inss|aposentadoria|aux[íi]lio.?doen[çc]a|incapacidade|benef[íi]cio previdenci/i],
+  ['electoral',          /eleitoral|elei[çc][ãõo]es|candidat|propaganda eleitoral|partido/i],
+  ['international',      /internacional|tratado|extradi[çc][ãa]o|homologa[çc][ãa]o.+senten[çc]a.+estrangeira/i],
+  ['civil',              /responsabilidade civil|obriga[çc][ãõo]es|dano moral|indeniza[çc]|direito civil|contrato/i],
+]
+
+/**
+ * Classify a DataJud result into a legal area based on its `assuntos` and `classe` fields.
+ * Returns the area key (e.g. 'civil', 'labor') or undefined if no match is found.
+ */
+export function classifyJurisprudenceArea(
+  assuntos: string[],
+  classe: string,
+  ementa?: string,
+): string | undefined {
+  // Combine all textual fields into a single searchable string
+  const text = assuntos.join(' ') + ' ' + classe + ' ' + (ementa ?? '')
+  for (const [area, re] of JURISPRUDENCE_AREA_PATTERNS) {
+    if (re.test(text)) return area
+  }
+  return undefined
+}
+
+/**
+ * Classify a DataJud result into a legal area. Convenience wrapper accepting a DataJudResult object.
+ */
+export function classifyResult(result: DataJudResult): string | undefined {
+  return classifyJurisprudenceArea(result.assuntos, result.classe, result.ementa)
+}
+
+// ── Timeline & grouping utilities ───────────────────────────────────────────
+
+/** Sort results chronologically by `dataAjuizamento` (ascending = oldest first). */
+export function sortByDate(results: DataJudResult[], ascending = true): DataJudResult[] {
+  return [...results].sort((a, b) => {
+    const cmp = a.dataAjuizamento.localeCompare(b.dataAjuizamento)
+    return ascending ? cmp : -cmp
+  })
+}
+
+/** Group of results sharing the same legal area. */
+export interface AreaGroup {
+  area: string | undefined
+  label: string
+  results: DataJudResult[]
+}
+
+/**
+ * Group results by classified legal area.
+ * Results that don't classify into any area are grouped under `undefined` with label "Outros".
+ */
+export function groupByArea(results: DataJudResult[]): AreaGroup[] {
+  const map = new Map<string | undefined, DataJudResult[]>()
+  for (const r of results) {
+    const area = classifyResult(r)
+    if (!map.has(area)) map.set(area, [])
+    map.get(area)!.push(r)
+  }
+  // Import AREA_LABELS lazily to avoid circular deps — but it's from constants.ts which has no deps
+  const groups: AreaGroup[] = []
+  for (const [area, items] of map.entries()) {
+    groups.push({ area, label: area ?? 'Outros', results: items })
+  }
+  // Sort: named areas first (alphabetically by label), then "Outros" last
+  groups.sort((a, b) => {
+    if (a.area == null && b.area != null) return 1
+    if (a.area != null && b.area == null) return -1
+    return a.label.localeCompare(b.label)
+  })
+  return groups
+}
+
+/** Fields useful for comparing two processes side-by-side. */
+export interface ProcessComparison {
+  left: DataJudResult
+  right: DataJudResult
+  /** True if both processes share at least one assunto. */
+  sharedAssuntos: string[]
+  /** True if both belong to the same classified area. */
+  sameArea: boolean
+  /** Difference in days between dataAjuizamento dates (right − left). */
+  daysDiff: number | null
+}
+
+/**
+ * Build a comparison object between two DataJud results.
+ * Used by the comparison modal to highlight similarities / differences.
+ */
+export function compareProcesses(left: DataJudResult, right: DataJudResult): ProcessComparison {
+  const leftAssuntos = new Set(left.assuntos.map(a => a.toLowerCase().trim()))
+  const sharedAssuntos = right.assuntos.filter(a => leftAssuntos.has(a.toLowerCase().trim()))
+  const leftArea = classifyResult(left)
+  const sameArea = leftArea != null && leftArea === classifyResult(right)
+
+  let daysDiff: number | null = null
+  if (left.dataAjuizamento && right.dataAjuizamento) {
+    const lDate = new Date(left.dataAjuizamento)
+    const rDate = new Date(right.dataAjuizamento)
+    if (!isNaN(lDate.getTime()) && !isNaN(rDate.getTime())) {
+      daysDiff = Math.round((rDate.getTime() - lDate.getTime()) / (1000 * 60 * 60 * 24))
+    }
+  }
+
+  return { left, right, sharedAssuntos, sameArea, daysDiff }
+}
+
+// ── Jurisprudence analytics ──────────────────────────────────────────────────
+
+/** Analytics data for jurisprudence results. */
+export interface JurisprudenceAnalytics {
+  /** Total number of results analyzed. */
+  totalResults: number
+  /** Distribution by classified legal area. */
+  byArea: Array<{ area: string; label: string; count: number }>
+  /** Distribution by stance. */
+  byStance: { favoravel: number; desfavoravel: number; neutro: number; semClassificacao: number }
+  /** Distribution by year (YYYY → count). Sorted ascending. */
+  byYear: Array<{ year: string; count: number }>
+  /** Distribution by tribunal. */
+  byTribunal: Array<{ tribunal: string; count: number }>
+  /** Average relevance score (only among scored results). */
+  avgRelevanceScore: number | null
+}
+
+/**
+ * Build analytics data from an array of DataJudResult.
+ * Used by the notebook overview tab to show jurisprudence stats.
+ */
+export function buildJurisprudenceAnalytics(results: DataJudResult[]): JurisprudenceAnalytics {
+  const areaMap = new Map<string, { label: string; count: number }>()
+  const yearMap = new Map<string, number>()
+  const tribunalMap = new Map<string, number>()
+  const byStance = { favoravel: 0, desfavoravel: 0, neutro: 0, semClassificacao: 0 }
+  let scoreSum = 0
+  let scoreCount = 0
+
+  for (const r of results) {
+    // Area
+    const area = classifyResult(r)
+    if (area) {
+      const existing = areaMap.get(area)
+      if (existing) existing.count++
+      else areaMap.set(area, { label: area, count: 1 })
+    } else {
+      const existing = areaMap.get('outros')
+      if (existing) existing.count++
+      else areaMap.set('outros', { label: 'outros', count: 1 })
+    }
+
+    // Stance
+    if (r.stance === 'favoravel') byStance.favoravel++
+    else if (r.stance === 'desfavoravel') byStance.desfavoravel++
+    else if (r.stance === 'neutro') byStance.neutro++
+    else byStance.semClassificacao++
+
+    // Year from dataAjuizamento (YYYY-MM-DD)
+    const year = r.dataAjuizamento?.slice(0, 4)
+    if (year && /^\d{4}$/.test(year)) {
+      yearMap.set(year, (yearMap.get(year) || 0) + 1)
+    }
+
+    // Tribunal
+    const tribunal = r.tribunalName || r.tribunal
+    if (tribunal) {
+      tribunalMap.set(tribunal, (tribunalMap.get(tribunal) || 0) + 1)
+    }
+
+    // Relevance score
+    if (r.relevanceScore != null) {
+      scoreSum += r.relevanceScore
+      scoreCount++
+    }
+  }
+
+  const byArea = Array.from(areaMap.entries())
+    .map(([area, { label, count }]) => ({ area, label, count }))
+    .sort((a, b) => b.count - a.count)
+
+  const byYear = Array.from(yearMap.entries())
+    .map(([year, count]) => ({ year, count }))
+    .sort((a, b) => a.year.localeCompare(b.year))
+
+  const byTribunal = Array.from(tribunalMap.entries())
+    .map(([tribunal, count]) => ({ tribunal, count }))
+    .sort((a, b) => b.count - a.count)
+
+  return {
+    totalResults: results.length,
+    byArea,
+    byStance,
+    byYear,
+    byTribunal,
+    avgRelevanceScore: scoreCount > 0 ? Math.round(scoreSum / scoreCount) : null,
+  }
 }
 
 function classifyStatus(status: number): DataJudErrorType {

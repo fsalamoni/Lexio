@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-08",
-    "cycle": "area-juridica-pdf-preview-testes-studio",
+    "cycle": "analytics-conversational-context",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -37,7 +37,7 @@
         "frontend/src/pages/ResearchNotebook.tsx",
         "frontend/src/lib/model-config.ts"
       ],
-      "notes": "Agente existe; skip gracioso se modelo não configurado"
+      "notes": "Agente existe; skip gracioso se modelo não configurado; ranking agora retorna stance + score por processo"
     },
     {
       "id": "E1.F4",
@@ -50,11 +50,96 @@
       ]
     },
     {
+      "id": "E1.F5",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Classificação temática automática de jurisprudência",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/components/SourceContentViewer.tsx",
+        "frontend/src/lib/constants.ts"
+      ],
+      "notes": "classifyJurisprudenceArea (17 padrões regex); badge colorido no ProcessCard; usa AREA_LABELS/AREA_COLORS"
+    },
+    {
+      "id": "E1.F6",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Indicador favorável/desfavorável/neutro + relevância",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/components/SourceContentViewer.tsx"
+      ],
+      "notes": "DataJudResult.relevanceScore + stance; prompt JURISPRUDENCE_RANKING_SYSTEM enriquecido; ThumbsUp/ThumbsDown/Minus no ProcessCard"
+    },
+    {
+      "id": "E1.F7",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Linha do tempo jurisprudencial",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/components/SourceContentViewer.tsx"
+      ],
+      "notes": "sortByDate utility; tab Linha do Tempo com timeline visual vertical; dots coloridos por stance"
+    },
+    {
+      "id": "E1.F8",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Agrupamento de precedentes por área",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/components/SourceContentViewer.tsx"
+      ],
+      "notes": "groupByArea + AreaGroup interface; tab Agrupados com seções colapsáveis por área do direito"
+    },
+    {
+      "id": "E1.F9",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Comparação entre dois julgados",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/components/SourceContentViewer.tsx"
+      ],
+      "notes": "compareProcesses + ProcessComparison; tab Comparar com side-by-side; botão Comparar no ProcessCard"
+    },
+    {
+      "id": "E1.F10",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Analytics jurisprudencial por tema/período",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/pages/ResearchNotebook.tsx"
+      ],
+      "notes": "buildJurisprudenceAnalytics → JurisprudenceAnalytics (byArea/byStance/byYear/byTribunal/avgRelevanceScore); painel visual na aba Visão Geral"
+    },
+    {
+      "id": "E1.F11",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Pesquisa conversacional com contexto (memória multi-turno)",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/ResearchNotebook.tsx"
+      ],
+      "notes": "searchContext injetado no system prompt do chat com histórico de buscas realizadas (jurisprudência+web)"
+    },
+    {
       "id": "E2.F1",
       "epic": "Visualizador Documental",
       "name": "SourceContentViewer — page-like + tabs jurisprudência",
       "state": "implemented",
-      "files": ["frontend/src/components/SourceContentViewer.tsx"],
+      "files": [
+        "frontend/src/components/SourceContentViewer.tsx"
+      ],
       "notes": "DocumentPageViewer com canvas cinza/card branco; tabs Síntese+Processos; ProcessCard com ementa/inteiro teor colapsível"
     },
     {
@@ -73,7 +158,9 @@
       "epic": "Estúdio do Caderno",
       "name": "Prompts especializados por tipo de documento",
       "state": "implemented",
-      "files": ["frontend/src/lib/notebook-studio-pipeline.ts"],
+      "files": [
+        "frontend/src/lib/notebook-studio-pipeline.ts"
+      ],
       "notes": "Detecção: parecer | petição inicial | contestação | recurso | contrato/nota técnica | genérico"
     },
     {
@@ -104,12 +191,15 @@
       "id": "E4.F2",
       "epic": "Integração Caderno→Documentos",
       "name": "Unificação documento formal com Novo Documento",
-      "state": "partial",
+      "state": "implemented",
       "files": [
         "frontend/src/lib/firestore-service.ts",
-        "frontend/src/lib/notebook-studio-pipeline.ts"
+        "frontend/src/lib/notebook-studio-pipeline.ts",
+        "frontend/src/pages/DocumentDetail.tsx",
+        "frontend/src/pages/DocumentList.tsx",
+        "frontend/src/pages/NewDocument.tsx"
       ],
-      "notes": "Documentos aparecem na mesma listagem; geração via pipeline separado; falta botão 'Abrir no Gerador'"
+      "notes": "Documentos na mesma listagem; botão 'Abrir no Gerador' em DocumentDetail (violet) e badge 'Gerador' em DocumentList (amber); NewDocument aceita ?request= e ?type= para pré-preencher formulário"
     },
     {
       "id": "E4.F3",
@@ -126,14 +216,18 @@
       "epic": "Integração Caderno→Documentos",
       "name": "Filtro 'Do Caderno' na página Documentos",
       "state": "implemented",
-      "files": ["frontend/src/pages/DocumentList.tsx"]
+      "files": [
+        "frontend/src/pages/DocumentList.tsx"
+      ]
     },
     {
       "id": "E5.F1",
       "epic": "Infraestrutura de Qualidade",
       "name": "Testes unitários DataJud ementa/inteiro_teor",
       "state": "implemented",
-      "files": ["frontend/src/lib/datajud-service.test.ts"]
+      "files": [
+        "frontend/src/lib/datajud-service.test.ts"
+      ]
     },
     {
       "id": "E5.F3",
@@ -151,7 +245,9 @@
       "epic": "Infraestrutura de Qualidade",
       "name": "Preview de documento na página Documentos",
       "state": "implemented",
-      "files": ["frontend/src/pages/DocumentList.tsx"],
+      "files": [
+        "frontend/src/pages/DocumentList.tsx"
+      ],
       "notes": "Snippet de texto_completo (2 linhas, max 200 chars) abaixo do tema; busca full-text"
     },
     {
@@ -159,7 +255,23 @@
       "epic": "Infraestrutura de Qualidade",
       "name": "Rastreabilidade PLANO.md + MANIFEST.json",
       "state": "implemented",
-      "files": ["docs/PLANO.md", "docs/MANIFEST.json"]
+      "files": [
+        "docs/PLANO.md",
+        "docs/MANIFEST.json"
+      ]
+    },
+    {
+      "id": "E5.F5",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Testes unitários — SourceContentViewer, ReportViewer, DocumentList",
+      "state": "implemented",
+      "files": [
+        "frontend/src/components/SourceContentViewer.test.ts",
+        "frontend/src/components/artifacts/ReportViewer.test.ts",
+        "frontend/src/pages/DocumentList.test.ts",
+        "frontend/src/lib/document-filters.ts"
+      ],
+      "notes": "Exportadas fmtChars/formatDate/parseJurisprudenceText (SourceContentViewer), renderMarkdownToHtml/extractToc/A4_PAGE_MIN_HEIGHT (ReportViewer), applyOrigemFilter/toggleFilter extraídas em document-filters.ts; blockquote regex corrigido (escaping ordem)"
     },
     {
       "id": "E6.F1",
@@ -198,12 +310,12 @@
       "frontend/src/lib/datajud-service.test.ts",
       "frontend/src/lib/web-search-service.test.ts",
       "frontend/src/lib/external-video-provider.test.ts",
-      "frontend/src/lib/notebook-studio-pipeline.test.ts"
+      "frontend/src/lib/notebook-studio-pipeline.test.ts",
+      "frontend/src/lib/firestore-service.test.ts",
+      "frontend/src/components/SourceContentViewer.test.ts",
+      "frontend/src/components/artifacts/ReportViewer.test.ts",
+      "frontend/src/pages/DocumentList.test.ts"
     ],
-    "missing": [
-      "SourceContentViewer component tests",
-      "ReportViewer pageMode snapshot",
-      "DocumentList origemFilter interaction"
-    ]
+    "missing": []
   }
 }

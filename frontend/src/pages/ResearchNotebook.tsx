@@ -17,7 +17,7 @@ import {
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
   Copy, Check as CheckIcon, Download, RotateCcw, Edit3, Info,
   Globe, BookMarked, AlertCircle, ChevronUp, ChevronDown,
-  Library, ScanSearch, Save, Eye, Film,
+  Library, ScanSearch, Save, Eye, Film, Scale, ThumbsUp, ThumbsDown,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTaskManager } from '../contexts/TaskManagerContext'
@@ -61,6 +61,7 @@ import { extractFileText, isSupportedTextFile, SUPPORTED_TEXT_FILE_EXTENSIONS } 
 import { generateImageViaOpenRouter, blobToDataUrl } from '../lib/image-generation-client'
 import { generateTTSViaOpenRouter } from '../lib/tts-client'
 import { loadVideoPipelineModels } from '../lib/model-config'
+import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
@@ -81,6 +82,7 @@ import AgentTrailProgressModal from '../components/AgentTrailProgressModal'
 import {
   searchDataJud,
   formatDataJudResults,
+  buildJurisprudenceAnalytics,
   DEFAULT_TRIBUNALS,
   TRIBUNAL_GROUPS,
   DATAJUD_GRAUS,
@@ -146,16 +148,22 @@ export interface SearchResultItem {
 
 // ── Jurisprudence Prompts ────────────────────────────────────────────────────
 
+const VALID_STANCES = ['favoravel', 'desfavoravel', 'neutro'] as const
+
 const JURISPRUDENCE_RANKING_SYSTEM = [
   'Você é um especialista em relevância jurisprudencial.',
   'Avalie cada processo quanto à relevância para a consulta do usuário.',
-  'Retorne APENAS um JSON com um array "ranking" onde cada item tem',
-  '"index" (número do processo na lista, começando em 1) e "score" (0 a 100,',
-  'sendo 100 = máxima relevância). Ordene do mais relevante para o menos relevante.',
+  'Retorne APENAS um JSON com um array "ranking" onde cada item tem:',
+  '"index" (número do processo na lista, começando em 1),',
+  '"score" (0 a 100, sendo 100 = máxima relevância),',
+  '"stance" (classificação da posição do resultado em relação à tese/consulta do usuário:',
+  '"favoravel" se o julgado apoia a tese, "desfavoravel" se contraria, "neutro" se inconclusivo).',
+  'Ordene do mais relevante para o menos relevante.',
   'Considere: (1) alinhamento temático dos assuntos com a consulta,',
   '(2) grau hierárquico (tribunais superiores têm mais peso como precedente),',
   '(3) movimentações recentes indicam processos ativos,',
   '(4) data de ajuizamento mais recente pode indicar jurisprudência atualizada.',
+  'Exemplo de resposta: {"ranking":[{"index":1,"score":85,"stance":"favoravel"}]}',
 ].join(' ')
 
 const JURISPRUDENCE_SYNTHESIS_SYSTEM = [
@@ -1437,13 +1445,13 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             // Parse ranking and reorder results
             try {
               const cleaned = rankResult.content.replace(/```(?:json)?\s*/g, '').trim()
-              const parsed = JSON.parse(cleaned) as { ranking: Array<{ index: number; score: number }> }
+              const parsed = JSON.parse(cleaned) as { ranking: Array<{ index: number; score: number; stance?: string }> }
               if (parsed.ranking && Array.isArray(parsed.ranking)) {
                 const sorted = parsed.ranking
                   .filter(r => r.index >= 1 && r.index <= selectedResults.length)
                   .sort((a, b) => b.score - a.score)
 
-                const reordered = []
+                const reordered: typeof selectedResults = []
                 const seenIndices = new Set<number>()
                 let topScore: number | null = null
 
@@ -1453,7 +1461,13 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
                   const process = selectedResults[resultIndex]
                   if (!process) continue
                   seenIndices.add(resultIndex)
-                  reordered.push(process)
+                  // Attach ranking metadata to the result
+                  const enriched = { ...process, relevanceScore: item.score } as DataJudResult
+                  const rawStance = item.stance?.toLowerCase().trim()
+                  if (rawStance && VALID_STANCES.includes(rawStance as typeof VALID_STANCES[number])) {
+                    enriched.stance = rawStance as DataJudResult['stance']
+                  }
+                  reordered.push(enriched)
                   if (topScore === null) topScore = item.score
                 }
 
@@ -1672,6 +1686,27 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       }
       const sourceContext = buildSourceContext()
 
+      // Build search history context for conversational memory
+      const searchSummaryLines: string[] = []
+      for (const source of activeNotebook.sources) {
+        if (source.type === 'jurisprudencia') {
+          let resultCount = 0
+          if (source.results_raw) {
+            try { resultCount = (JSON.parse(source.results_raw) as unknown[]).length } catch { /* ignore */ }
+          }
+          searchSummaryLines.push(`- Jurisprudência: "${source.reference}" → ${resultCount} resultado(s)`)
+        } else if (source.type === 'external' || source.type === 'external_deep') {
+          searchSummaryLines.push(`- Pesquisa web: "${source.reference}"`)
+        }
+      }
+      const MAX_SEARCH_CONTEXT_CHARS = 2000
+      const searchContextRaw = searchSummaryLines.join('\n')
+      const searchContext = searchSummaryLines.length > 0 && searchContextRaw.length <= MAX_SEARCH_CONTEXT_CHARS
+        ? `\nHISTÓRICO DE PESQUISAS REALIZADAS NESTE CADERNO:\n${searchContextRaw}\n(Use este contexto para sugerir refinamentos, complementos ou novas buscas ao usuário.)\n`
+        : searchSummaryLines.length > 0
+          ? `\nHISTÓRICO DE PESQUISAS REALIZADAS NESTE CADERNO:\n${searchContextRaw.slice(0, MAX_SEARCH_CONTEXT_CHARS)}…\n`
+          : ''
+
       // Optional web search enrichment
       let webSnippet = ''
       if (useWebSearch) {
@@ -1684,7 +1719,7 @@ ${sourceContext
   ? `FONTES DO USUÁRIO (use prioritariamente):\n${sourceContext}`
   : '(Nenhuma fonte adicionada — responda com base no seu conhecimento geral)'
 }
-${webSnippet ? `\nBUSCA WEB:\n${webSnippet}` : ''}
+${searchContext}${webSnippet ? `\nBUSCA WEB:\n${webSnippet}` : ''}
 
 Instruções:
 - Responda sempre em português brasileiro
@@ -2477,6 +2512,22 @@ Instruções:
     )
   }, [notebooks, searchQuery])
 
+  // ── Jurisprudence analytics (derived from results_raw in sources) ──
+  const jurisprudenceAnalytics = useMemo(() => {
+    if (!activeNotebook) return null
+    const allResults: DataJudResult[] = []
+    for (const source of activeNotebook.sources) {
+      if (source.type === 'jurisprudencia' && source.results_raw) {
+        try {
+          const parsed = JSON.parse(source.results_raw) as DataJudResult[]
+          allResults.push(...parsed)
+        } catch { /* ignore parse errors */ }
+      }
+    }
+    if (allResults.length === 0) return null
+    return buildJurisprudenceAnalytics(allResults)
+  }, [activeNotebook?.sources])
+
   const acervoTrailSteps = useMemo(() => {
     const currentIndex = ACERVO_TRAIL_STEPS.findIndex(step => step.key === acervoAnalysisPhase)
     const isConcluded = acervoAnalysisPhase === 'concluido'
@@ -2991,6 +3042,104 @@ Instruções:
                   </div>
                 </div>
               </div>
+
+              {/* Jurisprudence Analytics */}
+              {jurisprudenceAnalytics && (
+                <div className="bg-white rounded-xl border p-5 space-y-4">
+                  <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                    <Scale className="w-4 h-4 text-emerald-600" />
+                    Analytics de Jurisprudência
+                    <span className="text-xs text-gray-400 font-normal">({jurisprudenceAnalytics.totalResults} resultados)</span>
+                  </h4>
+
+                  {/* Stance overview */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-green-50 rounded-lg p-3 text-center border border-green-100">
+                      <div className="flex items-center justify-center gap-1.5 mb-1">
+                        <ThumbsUp className="w-3.5 h-3.5 text-green-600" />
+                        <p className="text-lg font-bold text-green-700">{jurisprudenceAnalytics.byStance.favoravel}</p>
+                      </div>
+                      <p className="text-[10px] text-green-600 font-medium uppercase tracking-wide">Favoráveis</p>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-3 text-center border border-red-100">
+                      <div className="flex items-center justify-center gap-1.5 mb-1">
+                        <ThumbsDown className="w-3.5 h-3.5 text-red-600" />
+                        <p className="text-lg font-bold text-red-700">{jurisprudenceAnalytics.byStance.desfavoravel}</p>
+                      </div>
+                      <p className="text-[10px] text-red-600 font-medium uppercase tracking-wide">Desfavoráveis</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
+                      <p className="text-lg font-bold text-gray-600 mb-1">{jurisprudenceAnalytics.byStance.neutro}</p>
+                      <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Neutros</p>
+                    </div>
+                    {jurisprudenceAnalytics.avgRelevanceScore != null && (
+                      <div className="bg-amber-50 rounded-lg p-3 text-center border border-amber-100">
+                        <p className="text-lg font-bold text-amber-700 mb-1">{jurisprudenceAnalytics.avgRelevanceScore}<span className="text-xs font-normal text-amber-500">/100</span></p>
+                        <p className="text-[10px] text-amber-600 font-medium uppercase tracking-wide">Relevância Média</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Area distribution */}
+                  {jurisprudenceAnalytics.byArea.length > 0 && (
+                    <div>
+                      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Distribuição por Área</p>
+                      <div className="space-y-1.5">
+                        {jurisprudenceAnalytics.byArea.map(({ area, count }) => {
+                          const pct = Math.round((count / jurisprudenceAnalytics.totalResults) * 100)
+                          const areaLabel = AREA_LABELS[area] || (area === 'outros' ? 'Outros' : area)
+                          const colorClasses = AREA_COLORS[area] || 'bg-gray-100 text-gray-600 border-gray-200'
+                          return (
+                            <div key={area} className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border whitespace-nowrap ${colorClasses}`}>
+                                {areaLabel}
+                              </span>
+                              <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${areaLabel}: ${pct}%`}>
+                                <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                              </div>
+                              <span className="text-[11px] text-gray-500 font-mono w-12 text-right">{count} ({pct}%)</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Year distribution */}
+                  {jurisprudenceAnalytics.byYear.length > 1 && (
+                    <div>
+                      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Distribuição por Ano</p>
+                      <div className="flex items-end gap-1 h-20">
+                        {jurisprudenceAnalytics.byYear.map(({ year, count }) => {
+                          const maxCount = Math.max(...jurisprudenceAnalytics.byYear.map(y => y.count))
+                          const pct = maxCount > 0 ? (count / maxCount) * 100 : 0
+                          return (
+                            <div key={year} className="flex-1 flex flex-col items-center gap-0.5" title={`${year}: ${count} processo(s)`}>
+                              <span className="text-[10px] text-gray-500 font-mono">{count}</span>
+                              <div className="w-full bg-emerald-400 rounded-t" style={{ height: `${Math.max(pct, 4)}%` }} />
+                              <span className="text-[10px] text-gray-400">{year.slice(2)}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tribunal distribution */}
+                  {jurisprudenceAnalytics.byTribunal.length > 0 && (
+                    <div>
+                      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Tribunais</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {jurisprudenceAnalytics.byTribunal.slice(0, 10).map(({ tribunal, count }) => (
+                          <span key={tribunal} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                            {tribunal} <span className="text-gray-400">{count}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Audio Overview */}
               {activeNotebook.sources.length > 0 && (
