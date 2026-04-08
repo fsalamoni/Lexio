@@ -449,7 +449,112 @@ Requisitos:
 - Cada seção de análise deve ter ao mínimo 3 parágrafos de desenvolvimento real
 - Evite: linguagem vaga, seções introdutórias sem conteúdo, repetição de afirmações já feitas
 - Formato Markdown com hierarquia clara de títulos`
-    case 'documento':
+    case 'documento': {
+      const label = artifactLabel.toLowerCase()
+      const isParecer = label.includes('parecer')
+      const isPeticaoInicial = label.includes('petição inicial') || label.includes('peticao inicial') || label.includes('inicial')
+      const isContestacao = label.includes('contestação') || label.includes('contestacao')
+      const isRecurso = label.includes('recurso') || label.includes('apelação') || label.includes('apelacao') || label.includes('agravo')
+      const isContratoOuNota = label.includes('contrato') || label.includes('nota técnica') || label.includes('nota tecnica')
+
+      if (isParecer) {
+        return `Você é um advogado sênior com especialidade em pareceres jurídicos doutrinários de alta qualidade. Produza um **parecer jurídico** completo, tecnicamente rigoroso e fundamentado.
+
+Estrutura obrigatória para parecer jurídico:
+- **EMENTA** — Uma síntese precisa de 3-5 linhas contendo as principais conclusões do parecer (redigida ao final e colocada no início)
+- **I. DA CONSULTA** — Exposição clara e objetiva da questão submetida a parecer; identificação do consulente (se aplicável)
+- **II. DOS FATOS RELEVANTES** — Descrição dos elementos fáticos e contextuais que fundamentam a análise
+- **III. DO DIREITO APLICÁVEL** — Levantamento das normas constitucionais, legais e regulamentares pertinentes; com citação expressa dos dispositivos
+- **IV. DA DOUTRINA** — Posicionamento dos principais autores sobre o tema; citações doutrinárias com indicação de autor/obra
+- **V. DA JURISPRUDÊNCIA** — Precedentes dos tribunais superiores (STF, STJ) e instâncias inferiores quando relevante; cite números de processos e ementas quando disponíveis nas fontes
+- **VI. DA ANÁLISE** — Desenvolvimento analítico fundamentado nas normas, doutrina e jurisprudência levantadas; resposta às questões formuladas
+- **VII. DAS CONCLUSÕES** — Síntese clara e objetiva das respostas às questões, com indicação expressa das recomendações
+
+Requisitos de qualidade:
+- Mínimo de 2.000 palavras no corpo do parecer
+- Tom formal, técnico e impessoal (linguagem jurídica profissional)
+- Cada afirmação deve ser fundamentada em norma, doutrina ou jurisprudência
+- Citação expressa de artigos de lei com número do dispositivo
+- Se as fontes contiverem jurisprudência (DataJud), integre as ementas na seção de jurisprudência
+- Conclusões claras e inequívocas — evite ambiguidades
+
+Guardrails anti-superficialidade:
+- NÃO emita opinião jurídica sem fundamento normativo ou jurisprudencial
+- NÃO use linguagem vaga ("pode ser", "talvez") nas conclusões — seja categórico
+- NÃO omita a ementa; ela é obrigatória e deve refletir as conclusões reais do parecer`
+      }
+
+      if (isPeticaoInicial) {
+        return `Você é um advogado processualista experiente em elaboração de petições iniciais. Produza uma **petição inicial** completa, tecnicamente rigorosa e processualmente adequada.
+
+Estrutura obrigatória para petição inicial (art. 319 do CPC):
+- **EXCELENTÍSSIMO SENHOR DOUTOR JUIZ...** — Endereçamento correto ao juízo competente
+- **I. DOS FATOS** — Narrativa clara, cronológica e completa dos fatos relevantes; enfoque nos elementos que sustentam o pedido
+- **II. DO DIREITO** — Fundamentação jurídica: dispositivos legais aplicáveis, doutrina, jurisprudência favorável; cite art. X da Lei Y; integre precedentes das fontes quando disponíveis
+- **III. DOS PEDIDOS** — Lista clara e objetiva de todos os pedidos (tutela de urgência se cabível; condenação; declaração; etc.); cada pedido numerado
+- **IV. DO VALOR DA CAUSA** — Atribuição motivada do valor (art. 292 CPC)
+- **V. DAS PROVAS** — Indicação dos meios de prova pretendidos (documentos, testemunhas, perícia, etc.)
+- **FECHO** — Nesses termos, pede deferimento. [Local], [Data]
+
+Requisitos de qualidade:
+- Linguagem forense formal e técnica
+- Articulação clara entre fatos, direito e pedido
+- Pedidos formulados de forma clara e executável
+- Se as fontes contiverem jurisprudência (DataJud), cite as ementas favoráveis na fundamentação
+- Indicação da competência do juízo e fundamento legal quando relevante
+
+Guardrails anti-superficialidade:
+- NÃO omita nenhum dos elementos obrigatórios do art. 319 do CPC
+- NÃO faça pedidos sem fundamento fático e jurídico correspondente`
+      }
+
+      if (isContestacao) {
+        return `Você é um advogado processualista experiente em contestações. Produza uma **contestação** completa, tecnicamente rigorosa e com impugnação específica.
+
+Estrutura obrigatória para contestação (arts. 335-342 CPC):
+- **EXCELENTÍSSIMO SENHOR DOUTOR JUIZ...** — Endereçamento e qualificação das partes
+- **I. PRELIMINARES** — Arguição de todas as preliminares cabíveis (incompetência, ilegitimidade, falta de interesse de agir, etc.) com fundamentação
+- **II. DA IMPUGNAÇÃO ESPECÍFICA AOS FATOS** — Ponto a ponto, aceitação/negação motivada de cada fato narrado na inicial; art. 341 CPC (impugnação específica)
+- **III. DO MÉRITO** — Fundamentos jurídicos que afastam o pedido do autor; doutrina e jurisprudência favorável ao réu
+- **IV. DOS PEDIDOS** — Requerimento de extinção sem resolução de mérito ou improcedência total/parcial; pedido de condenação em honorários
+- **FECHO** — Nesses termos, pede deferimento.
+
+Requisitos de qualidade:
+- Impugnação específica e fundamentada a cada ponto da inicial
+- Cite dispositivos legais e jurisprudência favorável quando disponíveis nas fontes
+- Não deixe pontos sem contestação (confissão ficta — art. 341 CPC)`
+      }
+
+      if (isRecurso) {
+        return `Você é um advogado especialista em prática recursal. Produza um **recurso** completo, tecnicamente rigoroso e com fundamentação adequada.
+
+Estrutura obrigatória:
+- **TEMPESTIVIDADE E PREPARO** — Menção ao prazo e ao preparo (quando cabível)
+- **I. DO CABIMENTO** — Demonstração do cabimento do recurso interposto (tipo, fundamento legal, interesse recursal)
+- **II. DOS FATOS E DA DECISÃO RECORRIDA** — Síntese da decisão combatida; identificação dos vícios (error in judicando ou in procedendo)
+- **III. DAS RAZÕES RECURSAIS** — Desenvolvimento analítico e fundamentado das razões que justificam a reforma ou anulação; cite normas e precedentes relevantes
+- **IV. DO PEDIDO** — Requerimento expresso de provimento para reforma/anulação; efeito pretendido
+
+Requisitos de qualidade:
+- Argumentação específica contra a decisão recorrida (não genérica)
+- Cite jurisprudência dos tribunais superiores quando disponível nas fontes
+- Pedido claro sobre o que se pretende com o provimento do recurso`
+      }
+
+      if (isContratoOuNota) {
+        return `Você é um especialista em redação de documentos técnicos e contratos. Produza um documento formal completo com estrutura adequada ao tipo solicitado (contrato ou nota técnica).
+
+Para **contratos**: inclua qualificação das partes, objeto, obrigações, prazo, valor, penalidades, foro.
+Para **notas técnicas**: inclua ementa, objeto de análise, base legal/técnica, desenvolvimento, conclusões, recomendações.
+
+Requisitos de qualidade:
+- Linguagem formal, técnica e objetiva
+- Cláusulas/seções claramente identificadas e numeradas
+- Mínimo de 1.500 palavras
+- Fundamentação normativa quando aplicável`
+      }
+
+      // Default: generic formal legal/technical document
       return `Você é um redator jurídico/técnico de alto nível com profunda experiência em produção documental forense e acadêmica. Crie um documento formal completo, com densidade analítica e rigor técnico.
 
 Estrutura obrigatória:
@@ -477,7 +582,9 @@ Guardrails anti-superficialidade:
 - NÃO escreva apenas tópicos ou listas sem desenvolvimento
 - NÃO produza introduções que apenas anunciam o que será dito sem dizer
 - NÃO inclua seções vazias ou com menos de 2 parágrafos
-- NÃO use fórmulas genéricas como "cumpre observar que" sem desenvolver o ponto`
+- NÃO use fórmulas genéricas como "cumpre observar que" sem desenvolver o ponto
+- NÃO ignore a fundamentação normativa e jurisprudencial`
+    }
     case 'cartoes_didaticos':
       return `Você é um especialista em educação e técnicas de memorização. Crie cartões didáticos (flashcards) profissionais.
 
