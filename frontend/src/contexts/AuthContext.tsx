@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { firebaseAuth, IS_FIREBASE } from '../lib/firebase'
-import { firebaseLogin, firebaseRegister, firebaseLogout, firebaseGoogleLogin, translateFirebaseError } from '../lib/auth-service'
+import { firebaseLogin, firebaseRegister, firebaseLogout, firebaseGoogleLogin, handleGoogleRedirectResult, translateFirebaseError } from '../lib/auth-service'
 import api from '../api/client'
 
 interface AuthContextType {
@@ -43,6 +43,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Listen to Firebase auth state (token refresh, logout from another tab, etc.)
   useEffect(() => {
     if (!IS_FIREBASE || !firebaseAuth) return
+
+    // Handle redirect result from signInWithRedirect (Google login fallback).
+    // Must run before onAuthStateChanged so the user profile is persisted.
+    handleGoogleRedirectResult().then((r) => {
+      if (r) {
+        persist(r.token, r.uid, r.role, r.full_name)
+        setToken(r.token); setUserId(r.uid); setRole(r.role); setFullName(r.full_name)
+      }
+    }).catch(() => {})
 
     const unsub = onAuthStateChanged(firebaseAuth, async (fbUser) => {
       if (fbUser) {
