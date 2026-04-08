@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
   ArrowLeft, Send, Database, Clock, Upload,
@@ -182,6 +183,7 @@ export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
   const { startTask } = useTaskManager()
+  const [searchParams] = useSearchParams()
 
   // List state
   const [notebooks, setNotebooks] = useState<ResearchNotebookData[]>([])
@@ -194,6 +196,8 @@ export default function ResearchNotebook() {
 
   // Artifact viewer modal
   const [viewingArtifact, setViewingArtifact] = useState<StudioArtifact | null>(null)
+  /** Guard so the deep-link `?open=<id>` effect runs only once per mount. */
+  const deepLinkHandledRef = useRef(false)
 
   // Create dialog
   const [showCreate, setShowCreate] = useState(false)
@@ -319,6 +323,36 @@ export default function ResearchNotebook() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
+
+  // ── Deep-link: ?open=<notebook_id> → open that notebook directly ─────
+  useEffect(() => {
+    if (deepLinkHandledRef.current) return
+    const openId = searchParams.get('open')
+    if (!openId || !userId) return
+    deepLinkHandledRef.current = true
+
+    // Try the already-loaded list first (fast path when list is ready)
+    const fromList = notebooks.find(nb => nb.id === openId)
+    if (fromList) {
+      setActiveNotebook(fromList)
+      setViewMode('detail')
+      return
+    }
+
+    // Fallback: fetch the specific notebook directly from Firestore
+    if (!IS_FIREBASE) return
+    getResearchNotebook(userId, openId)
+      .then(nb => {
+        if (nb) {
+          setActiveNotebook(nb)
+          setViewMode('detail')
+        }
+      })
+      .catch(() => {
+        // Silently ignore — the user can still browse notebooks normally
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, userId])
 
   // Ensure in-flight research tasks are canceled when leaving the page.
   useEffect(() => {
@@ -1493,6 +1527,14 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           addModalSubstep('synthesize', `Síntese gerada (${jurisprudenceResult.tokens_out} tokens)`)
           updateModalStep('synthesize', { status: 'done', detail: 'Fonte criada com sucesso' })
 
+          // Serialise selected results for rich display in SourceContentViewer.
+          // Cap inteiroTeor at 8 KB each to stay within Firestore limits.
+          const INTEIRO_TEOR_MAX_CHARS = 8_000
+          const resultsForStorage = selectedResults.slice(0, 10).map(r => ({
+            ...r,
+            inteiroTeor: r.inteiroTeor ? r.inteiroTeor.slice(0, INTEIRO_TEOR_MAX_CHARS) : undefined,
+          }))
+
           const source: NotebookSource = {
             id: generateId(),
             type: 'jurisprudencia',
@@ -1501,6 +1543,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             content_type: 'text/plain',
             size_bytes: jurisprudenceResult.content.length,
             text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+            results_raw: JSON.stringify(resultsForStorage),
             status: 'indexed',
             added_at: new Date().toISOString(),
           }

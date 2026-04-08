@@ -82,12 +82,17 @@ function extractToc(md: string): TocItem[] {
 
 // ── Main Component ──────────────────────────────────────────────────────────
 
+/** Minimum height of the A4-like content card in page mode (29.7 cm). */
+const A4_PAGE_MIN_HEIGHT = '29.7cm'
+
 interface ReportViewerProps {
   content: string
   title?: string
+  /** When true, renders as a white document card on a gray background (document-like page view). */
+  pageMode?: boolean
 }
 
-export default function ReportViewer({ content, title }: ReportViewerProps) {
+export default function ReportViewer({ content, title, pageMode }: ReportViewerProps) {
   const [showToc, setShowToc] = useState(true)
   const [activeId, setActiveId] = useState<string>('')
   const contentRef = useRef<HTMLDivElement>(null)
@@ -121,7 +126,7 @@ export default function ReportViewer({ content, title }: ReportViewerProps) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
-  return (
+  const inner = (
     <div className="flex gap-6 h-full">
       {/* TOC sidebar */}
       {hasToc && showToc && (
@@ -175,4 +180,19 @@ export default function ReportViewer({ content, title }: ReportViewerProps) {
       </div>
     </div>
   )
+
+  if (pageMode) {
+    return (
+      <div className="bg-gray-100 min-h-full flex justify-center py-8 px-4">
+        <div
+          className="bg-white shadow-md rounded-sm w-full max-w-3xl px-12 py-10"
+          style={{ minHeight: A4_PAGE_MIN_HEIGHT }}
+        >
+          {inner}
+        </div>
+      </div>
+    )
+  }
+
+  return inner
 }

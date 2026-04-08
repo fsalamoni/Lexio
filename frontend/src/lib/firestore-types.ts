@@ -145,6 +145,14 @@ export interface NotebookSource {
   content_type?: string
   size_bytes?: number
   text_content?: string
+  /**
+   * For jurisprudência sources: JSON-serialised array of `DataJudResult[]` (top-10,
+   * inteiroTeor capped at 8 KB each) stored at the time of indexing.
+   * Enables the SourceContentViewer to render individual process cards (ementa,
+   * inteiro teor, tribunal, etc.) without re-querying the API.
+   * Dropped first by `fitSourcesToFirestoreLimit` when the notebook is near its size limit.
+   */
+  results_raw?: string
   status: 'pending' | 'processing' | 'indexed' | 'error'
   added_at: string
 }

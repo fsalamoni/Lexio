@@ -1462,23 +1462,48 @@ function fitSourcesToFirestoreLimit(
   sources: NotebookSource[],
   otherDataEstimateBytes: number,
 ): { sources: NotebookSource[]; truncated: boolean } {
-  const totalBytes = estimateJsonBytes(sources) + otherDataEstimateBytes
-  if (totalBytes <= NOTEBOOK_MAX_DOC_BYTES) return { sources, truncated: false }
+  let current = sources
+
+  // ── Pass 1: drop `results_raw` (supplementary display data) ────────────────
+  // This preserves the primary `text_content` (LLM-synthesised) while freeing
+  // space used by the raw JSON of individual search results.
+  const withoutRaw = current.map(({ results_raw: _r, ...rest }) => rest as NotebookSource)
+  const bytesWithoutRaw = estimateJsonBytes(withoutRaw) + otherDataEstimateBytes
+  if (bytesWithoutRaw <= NOTEBOOK_MAX_DOC_BYTES) {
+    if (estimateJsonBytes(current) + otherDataEstimateBytes > NOTEBOOK_MAX_DOC_BYTES) {
+      // results_raw was the culprit — use stripped version.
+      // This is expected behaviour when many large jurisprudência sources are indexed.
+      // The LLM-synthesised text_content is preserved; only the supplementary
+      // display data (individual process cards) is dropped.
+      console.warn(
+        '[Lexio] Notebook sources: results_raw stripped to fit Firestore 1 MB limit. ' +
+        'This is expected when many jurisprudência sources are indexed. ' +
+        'Process-card display will fall back to synthesis-text view.',
+      )
+      return { sources: withoutRaw, truncated: true }
+    }
+    return { sources: current, truncated: false }
+  }
+
+  // ── Pass 2: proportionally trim text_content ────────────────────────────────
+  current = withoutRaw
+  const totalBytes = estimateJsonBytes(current) + otherDataEstimateBytes
+  if (totalBytes <= NOTEBOOK_MAX_DOC_BYTES) return { sources: current, truncated: false }
 
   const budget = Math.max(NOTEBOOK_MAX_DOC_BYTES - otherDataEstimateBytes, 0)
 
   // Compute the total text chars currently stored in sources
-  const totalTextChars = sources.reduce((s, src) => s + (src.text_content?.length ?? 0), 0)
-  if (totalTextChars === 0) return { sources, truncated: false }
+  const totalTextChars = current.reduce((s, src) => s + (src.text_content?.length ?? 0), 0)
+  if (totalTextChars === 0) return { sources: current, truncated: false }
 
   // Overhead per source (metadata fields, JSON syntax) — estimate once
-  const metaOverhead = estimateJsonBytes(sources) - Math.ceil(totalTextChars * 1.1)
+  const metaOverhead = estimateJsonBytes(current) - Math.ceil(totalTextChars * 1.1)
   const availableForText = Math.max(budget - metaOverhead, 0)
 
   // Scale each source's text proportionally to fit
   const ratio = availableForText / Math.ceil(totalTextChars * 1.1)
 
-  const trimmed: NotebookSource[] = sources.map(src => {
+  const trimmed: NotebookSource[] = current.map(src => {
     const text = src.text_content ?? ''
     if (text.length === 0 || ratio >= 1) return src
     const maxChars = Math.max(Math.floor(text.length * ratio), MIN_SOURCE_TEXT_CHARS)
