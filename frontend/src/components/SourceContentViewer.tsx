@@ -357,6 +357,9 @@ function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain:
   )
 }
 
+const RELEVANCE_SCORE_HIGH = 70
+const RELEVANCE_SCORE_MEDIUM = 40
+
 /** Card for a single DataJud process result. */
 function ProcessCard({ result: r, index }: { result: DataJudResult; index: number }) {
   const [expanded, setExpanded] = useState(false)
@@ -402,8 +405,8 @@ function ProcessCard({ result: r, index }: { result: DataJudResult; index: numbe
           {/* Relevance score */}
           {r.relevanceScore != null && (
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-              r.relevanceScore >= 70 ? 'bg-green-50 text-green-700' :
-              r.relevanceScore >= 40 ? 'bg-yellow-50 text-yellow-700' :
+              r.relevanceScore >= RELEVANCE_SCORE_HIGH ? 'bg-green-50 text-green-700' :
+              r.relevanceScore >= RELEVANCE_SCORE_MEDIUM ? 'bg-yellow-50 text-yellow-700' :
               'bg-gray-50 text-gray-500'
             }`} title={`Relevância: ${r.relevanceScore}/100`}>
               {r.relevanceScore}/100

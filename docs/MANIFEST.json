@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-08",
-    "cycle": "e4f2-abrir-gerador-firestore-test",
+    "cycle": "classification-stance-ranking-enrichment",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -37,7 +37,7 @@
         "frontend/src/pages/ResearchNotebook.tsx",
         "frontend/src/lib/model-config.ts"
       ],
-      "notes": "Agente existe; skip gracioso se modelo não configurado"
+      "notes": "Agente existe; skip gracioso se modelo não configurado; ranking agora retorna stance + score por processo"
     },
     {
       "id": "E1.F4",
@@ -48,6 +48,31 @@
         "frontend/src/components/JurisprudenceConfigModal.tsx",
         "frontend/src/lib/datajud-service.ts"
       ]
+    },
+    {
+      "id": "E1.F5",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Classificação temática automática de jurisprudência",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/components/SourceContentViewer.tsx",
+        "frontend/src/lib/constants.ts"
+      ],
+      "notes": "classifyJurisprudenceArea (17 padrões regex); badge colorido no ProcessCard; usa AREA_LABELS/AREA_COLORS"
+    },
+    {
+      "id": "E1.F6",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Indicador favorável/desfavorável/neutro + relevância",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/components/SourceContentViewer.tsx"
+      ],
+      "notes": "DataJudResult.relevanceScore + stance; prompt JURISPRUDENCE_RANKING_SYSTEM enriquecido; ThumbsUp/ThumbsDown/Minus no ProcessCard"
     },
     {
       "id": "E2.F1",

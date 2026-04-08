@@ -95,6 +95,45 @@
 
 ---
 
+### Feature 1.5: Classificação temática automática de jurisprudência
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Classificar automaticamente cada resultado do DataJud por área do direito (trabalhista, penal, civil, etc.) usando os campos `assuntos`, `classe` e `ementa`.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — `classifyJurisprudenceArea`, `classifyResult`, `JURISPRUDENCE_AREA_PATTERNS`
+- `frontend/src/lib/datajud-service.test.ts` — 16 testes de classificação
+- `frontend/src/components/SourceContentViewer.tsx` — badge colorido de área no `ProcessCard`
+- `frontend/src/lib/constants.ts` — `AREA_LABELS`, `AREA_COLORS` (pré-existentes)
+
+**Mudanças implementadas:**
+- 17 padrões regex para classificar áreas (tax, labor, criminal, etc.)
+- `classifyResult(DataJudResult)` como wrapper de conveniência
+- Badge colorido da área do direito no cabeçalho de cada `ProcessCard`
+- Reutiliza paleta `AREA_COLORS` / `AREA_LABELS` já existente
+
+---
+
+### Feature 1.6: Indicador de posição favorável/desfavorável/neutro
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Indicar ao usuário se cada resultado de jurisprudência é favorável, desfavorável ou neutro em relação à tese/consulta.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — campos `relevanceScore?: number` e `stance?: 'favoravel' | 'desfavoravel' | 'neutro'` em `DataJudResult`
+- `frontend/src/pages/ResearchNotebook.tsx` — prompt de ranking enriquecido com `stance`; parse e attach de stance/score aos resultados
+- `frontend/src/components/SourceContentViewer.tsx` — indicadores visuais (ThumbsUp verde, ThumbsDown vermelho, Minus cinza) + badge de relevância (/100)
+
+**Mudanças implementadas:**
+- Prompt `JURISPRUDENCE_RANKING_SYSTEM` agora solicita `stance` por processo
+- Parser enriquece resultados com `relevanceScore` e `stance` antes da serialização em `results_raw`
+- `ProcessCard` exibe badge de posição + score de relevância
+- Fallback gracioso: se ranking não está configurado, nenhum indicador aparece
+
+---
+
 ## Epic 2: Visualizador Documental
 
 ### Feature 2.1: SourceContentViewer — renderização jurídica rica + tabs
@@ -355,9 +394,9 @@
 
 ### Prioridade 2 — Diferenciação de produto
 - [ ] Pesquisa conversacional com contexto (memória multi-turno de filtros)
-- [ ] Classificação temática de jurisprudência por área do direito
+- [x] Classificação temática de jurisprudência por área do direito
 - [ ] Linha do tempo jurisprudencial (evolução de entendimento)
-- [ ] Indicador "favorável / desfavorável / neutro" por resultado
+- [x] Indicador "favorável / desfavorável / neutro" por resultado
 
 ### Prioridade 3 — Moat de produto
 - [ ] Deduplicação e agrupamento de precedentes relacionados
@@ -367,4 +406,4 @@
 
 ---
 
-*Última atualização: 2026-04-08 — Ciclo: E4.F2 "Abrir no Gerador" + firestore-service test + align docs*
+*Última atualização: 2026-04-08 — Ciclo: Classificação temática + Indicador de posição + ranking enrichment*

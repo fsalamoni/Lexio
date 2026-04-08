@@ -784,7 +784,7 @@ export function classifyJurisprudenceArea(
   ementa?: string,
 ): string | undefined {
   // Combine all textual fields into a single searchable string
-  const text = [...assuntos, classe, ementa ?? ''].join(' ')
+  const text = assuntos.join(' ') + ' ' + classe + ' ' + (ementa ?? '')
   for (const [area, re] of JURISPRUDENCE_AREA_PATTERNS) {
     if (re.test(text)) return area
   }

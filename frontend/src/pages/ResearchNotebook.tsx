@@ -146,6 +146,8 @@ export interface SearchResultItem {
 
 // ── Jurisprudence Prompts ────────────────────────────────────────────────────
 
+const VALID_STANCES = ['favoravel', 'desfavoravel', 'neutro'] as const
+
 const JURISPRUDENCE_RANKING_SYSTEM = [
   'Você é um especialista em relevância jurisprudencial.',
   'Avalie cada processo quanto à relevância para a consulta do usuário.',
@@ -1460,8 +1462,8 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
                   // Attach ranking metadata to the result
                   const enriched = { ...process, relevanceScore: item.score } as DataJudResult
                   const rawStance = item.stance?.toLowerCase().trim()
-                  if (rawStance === 'favoravel' || rawStance === 'desfavoravel' || rawStance === 'neutro') {
-                    enriched.stance = rawStance
+                  if (rawStance && VALID_STANCES.includes(rawStance as typeof VALID_STANCES[number])) {
+                    enriched.stance = rawStance as DataJudResult['stance']
                   }
                   reordered.push(enriched)
                   if (topScore === null) topScore = item.score
