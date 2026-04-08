@@ -145,6 +145,8 @@ export interface NotebookSource {
   content_type?: string
   size_bytes?: number
   text_content?: string
+  /** JSON-encoded DataJudResult[] for jurisprudência sources (inteiroTeor capped at 8 KB each). */
+  results_raw?: string
   status: 'pending' | 'processing' | 'indexed' | 'error'
   added_at: string
 }

@@ -1465,20 +1465,30 @@ function fitSourcesToFirestoreLimit(
   const totalBytes = estimateJsonBytes(sources) + otherDataEstimateBytes
   if (totalBytes <= NOTEBOOK_MAX_DOC_BYTES) return { sources, truncated: false }
 
+  // First pass: strip results_raw from all jurisprudência sources — cheapest way to reclaim space
+  const withoutRaw: NotebookSource[] = sources.map(src =>
+    src.results_raw ? (({ results_raw: _r, ...rest }) => rest)(src) : src
+  )
+  const bytesAfterStrip = estimateJsonBytes(withoutRaw) + otherDataEstimateBytes
+  if (bytesAfterStrip <= NOTEBOOK_MAX_DOC_BYTES) {
+    console.warn('[Lexio] results_raw stripped from jurisprudência sources to fit Firestore 1 MB limit')
+    return { sources: withoutRaw, truncated: true }
+  }
+
   const budget = Math.max(NOTEBOOK_MAX_DOC_BYTES - otherDataEstimateBytes, 0)
 
-  // Compute the total text chars currently stored in sources
-  const totalTextChars = sources.reduce((s, src) => s + (src.text_content?.length ?? 0), 0)
-  if (totalTextChars === 0) return { sources, truncated: false }
+  // Compute the total text chars currently stored in sources (after stripping results_raw)
+  const totalTextChars = withoutRaw.reduce((s, src) => s + (src.text_content?.length ?? 0), 0)
+  if (totalTextChars === 0) return { sources: withoutRaw, truncated: true }
 
   // Overhead per source (metadata fields, JSON syntax) — estimate once
-  const metaOverhead = estimateJsonBytes(sources) - Math.ceil(totalTextChars * 1.1)
+  const metaOverhead = estimateJsonBytes(withoutRaw) - Math.ceil(totalTextChars * 1.1)
   const availableForText = Math.max(budget - metaOverhead, 0)
 
   // Scale each source's text proportionally to fit
   const ratio = availableForText / Math.ceil(totalTextChars * 1.1)
 
-  const trimmed: NotebookSource[] = sources.map(src => {
+  const trimmed: NotebookSource[] = withoutRaw.map(src => {
     const text = src.text_content ?? ''
     if (text.length === 0 || ratio >= 1) return src
     const maxChars = Math.max(Math.floor(text.length * ratio), MIN_SOURCE_TEXT_CHARS)

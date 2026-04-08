@@ -85,9 +85,11 @@ function extractToc(md: string): TocItem[] {
 interface ReportViewerProps {
   content: string
   title?: string
+  /** When true, render as a page canvas (white card on gray bg) to simulate a real document. */
+  pageMode?: boolean
 }
 
-export default function ReportViewer({ content, title }: ReportViewerProps) {
+export default function ReportViewer({ content, title, pageMode }: ReportViewerProps) {
   const [showToc, setShowToc] = useState(true)
   const [activeId, setActiveId] = useState<string>('')
   const contentRef = useRef<HTMLDivElement>(null)
@@ -121,7 +123,7 @@ export default function ReportViewer({ content, title }: ReportViewerProps) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
-  return (
+  const contentNode = (
     <div className="flex gap-6 h-full">
       {/* TOC sidebar */}
       {hasToc && showToc && (
@@ -175,4 +177,17 @@ export default function ReportViewer({ content, title }: ReportViewerProps) {
       </div>
     </div>
   )
+
+  if (pageMode) {
+    // Page-canvas layout: gray background + white card shadow, simulating a real document page
+    return (
+      <div className="min-h-full bg-gray-200 py-8 px-4 flex justify-center">
+        <div className="bg-white shadow-lg rounded-sm w-full max-w-3xl min-h-[29.7cm] px-16 py-12">
+          {contentNode}
+        </div>
+      </div>
+    )
+  }
+
+  return contentNode
 }

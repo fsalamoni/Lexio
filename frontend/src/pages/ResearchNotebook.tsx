@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
   ArrowLeft, Send, Database, Clock, Upload,
@@ -182,6 +183,7 @@ export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
   const { startTask } = useTaskManager()
+  const [searchParams] = useSearchParams()
 
   // List state
   const [notebooks, setNotebooks] = useState<ResearchNotebookData[]>([])
@@ -319,6 +321,26 @@ export default function ResearchNotebook() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
+
+  // Deep-link: if URL has ?open=<notebookId>, auto-open that notebook after loading.
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || !userId || loading) return
+    // Only auto-select if we're still on the list view (no notebook active yet)
+    if (activeNotebook) return
+    ;(async () => {
+      try {
+        const nb = await getResearchNotebook(userId, openId)
+        if (nb) {
+          setActiveNotebook(nb)
+          setViewMode('detail')
+          setActiveTab('chat')
+        }
+      } catch {
+        // Silently ignore deep-link errors — don't block the list view
+      }
+    })()
+  }, [searchParams, userId, loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ensure in-flight research tasks are canceled when leaving the page.
   useEffect(() => {
@@ -1501,6 +1523,14 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             content_type: 'text/plain',
             size_bytes: jurisprudenceResult.content.length,
             text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+            // Store top-10 raw results so the viewer can show individual cases with ementa/inteiroTeor.
+            // inteiroTeor is capped at 8 KB to stay within Firestore limits.
+            results_raw: JSON.stringify(
+              selectedResults.slice(0, 10).map(r => ({
+                ...r,
+                inteiroTeor: r.inteiroTeor ? r.inteiroTeor.slice(0, 8192) : undefined,
+              }))
+            ),
             status: 'indexed',
             added_at: new Date().toISOString(),
           }
