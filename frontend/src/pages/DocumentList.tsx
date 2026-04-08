@@ -40,6 +40,7 @@ export default function DocumentList() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [originFilter, setOriginFilter] = useState('')
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkExporting, setBulkExporting] = useState(false)
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
@@ -95,6 +96,10 @@ export default function DocumentList() {
             const toDate = new Date(dateTo + 'T23:59:59').toISOString()
             items = items.filter(d => d.created_at <= toDate)
           }
+          // Client-side origin filtering
+          if (originFilter) {
+            items = items.filter(d => d.origem === originFilter)
+          }
           const totalFiltered = items.length
           // Client-side pagination
           const start = page * PAGE_SIZE
@@ -114,6 +119,7 @@ export default function DocumentList() {
       if (searchQuery) params.set('q', searchQuery)
       if (dateFrom) params.set('date_from', dateFrom)
       if (dateTo) params.set('date_to', dateTo)
+      if (originFilter) params.set('origem', originFilter)
       const [sbField, sbDir] = sortBy.split('_')
       params.set('sort_by', sbField === 'date' ? 'created_at' : 'quality_score')
       params.set('sort_dir', sbDir)
@@ -126,7 +132,7 @@ export default function DocumentList() {
         .catch(() => toast.error('Erro ao carregar documentos'))
         .finally(() => setLoading(false))
     }
-  }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo, refreshKey]) // eslint-disable-line
+  }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo, originFilter, refreshKey]) // eslint-disable-line
 
   const handleStatusFilter = (s: string) => {
     setStatusFilter(prev => prev === s ? '' : s)
@@ -134,7 +140,13 @@ export default function DocumentList() {
     setSelected(new Set())
   }
 
-  const hasActiveFilters = statusFilter || typeFilter || searchQuery || dateFrom || dateTo
+  const handleOriginFilter = (o: string) => {
+    setOriginFilter(prev => prev === o ? '' : o)
+    setPage(0)
+    setSelected(new Set())
+  }
+
+  const hasActiveFilters = statusFilter || typeFilter || searchQuery || dateFrom || dateTo || originFilter
 
   const clearAll = () => {
     setStatusFilter('')
@@ -144,6 +156,7 @@ export default function DocumentList() {
     setSortBy('date_desc')
     setDateFrom('')
     setDateTo('')
+    setOriginFilter('')
     setPage(0)
     setSelected(new Set())
   }
@@ -322,6 +335,18 @@ export default function DocumentList() {
             {label}
           </button>
         ))}
+        {/* Origin filter chip */}
+        <button
+          onClick={() => handleOriginFilter('caderno')}
+          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition-colors ${
+            originFilter === 'caderno'
+              ? 'bg-violet-600 text-white border-violet-600'
+              : 'bg-white text-violet-700 border-violet-200 hover:bg-violet-50'
+          }`}
+        >
+          <BookOpen className="w-3 h-3" />
+          Do Caderno
+        </button>
         {hasActiveFilters && (
           <button
             onClick={clearAll}
@@ -435,13 +460,24 @@ export default function DocumentList() {
                           {DOCTYPE_LABELS[doc.document_type_id] || (doc.document_type_id === 'documento_caderno' ? 'Documento' : doc.document_type_id)}
                         </Link>
                         {doc.origem === 'caderno' ? (
-                          <span
-                            className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-50 text-violet-700 border border-violet-100"
-                            title={doc.notebook_title ? `Caderno: ${doc.notebook_title}` : 'Gerado no Caderno de Pesquisa'}
-                          >
-                            <BookOpen className="w-2.5 h-2.5" />
-                            Caderno
-                          </span>
+                          doc.notebook_id ? (
+                            <Link
+                              to={`/notebook?open=${doc.notebook_id}`}
+                              className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-50 text-violet-700 border border-violet-100 hover:bg-violet-100 transition-colors"
+                              title={doc.notebook_title ? `Abrir caderno: ${doc.notebook_title}` : 'Abrir Caderno de Pesquisa'}
+                            >
+                              <BookOpen className="w-2.5 h-2.5" />
+                              Caderno
+                            </Link>
+                          ) : (
+                            <span
+                              className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-50 text-violet-700 border border-violet-100"
+                              title="Gerado no Caderno de Pesquisa"
+                            >
+                              <BookOpen className="w-2.5 h-2.5" />
+                              Caderno
+                            </span>
+                          )
                         ) : doc.origem && doc.origem !== 'web' && (
                           <span className={`ml-2 inline-block px-1.5 py-0.5 text-[10px] font-medium rounded ${
                             doc.origem === 'whatsapp'

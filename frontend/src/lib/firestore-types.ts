@@ -145,6 +145,9 @@ export interface NotebookSource {
   content_type?: string
   size_bytes?: number
   text_content?: string
+  /** JSON-serialised DataJudResult[] (top-10); stored only for jurisprudencia sources.
+   *  Dropped by fitSourcesToFirestoreLimit when the notebook approaches the 1 MiB limit. */
+  results_raw?: string
   status: 'pending' | 'processing' | 'indexed' | 'error'
   added_at: string
 }

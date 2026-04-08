@@ -18,11 +18,11 @@
 
 | Área | Estado | Observações |
 |------|--------|-------------|
-| Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos |
-| Pesquisa de Jurisprudência (DataJud) | ⚠️ Parcial | Metadados retornados; ementa/inteiro teor ausentes |
-| Visualizador de Documentos | ⚠️ Parcial | Texto estruturado OK; renderização jurídica fraca |
-| Geração de Documentos (Estúdio) | ⚠️ Parcial | Pipeline OK; prompts genéricos; não persiste em Documentos |
-| Página de Documentos | ✅ Implementado | Lista, filtros, bulk ops; sem vínculo com artefatos do caderno |
+| Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos, deep-link |
+| Pesquisa de Jurisprudência (DataJud) | ✅ Implementado | Ementa + inteiro teor + results_raw por processo |
+| Visualizador de Documentos | ✅ Implementado | Tabs Síntese+Processos (jurisprudência), page-canvas (documento) |
+| Geração de Documentos (Estúdio) | ✅ Implementado | Pipeline + prompts aprofundados + persiste em Documentos |
+| Página de Documentos | ✅ Implementado | Lista, filtros, bulk ops, filtro "Do Caderno", link para caderno |
 | Novo Documento | ✅ Implementado | Fluxo completo; sem integração DataJud como fonte |
 | Banco de Teses | ✅ Implementado | CRUD completo |
 | Acervo | ✅ Implementado | Upload, indexação, classificação, ementa automática |
@@ -36,21 +36,24 @@
 
 ## Epic 1: Sistema de Pesquisa de Jurisprudência
 
-### Feature 1.1: DataJud — ementa integral e inteiro teor
+### Feature 1.1: DataJud — ementa integral e inteiro teor + results_raw
 
 **Estado:** ✅ Implementado (ciclo 2026-04)
 
-**Objetivo:** Retornar ementa completa e inteiro teor das decisões quando disponíveis na API pública DataJud (CNJ).
+**Objetivo:** Retornar ementa completa e inteiro teor das decisões quando disponíveis na API pública DataJud (CNJ). Armazenar resultados brutos para exibição rich no visualizador.
 
 **Arquivos afetados:**
 - `frontend/src/lib/datajud-service.ts` — interface `DataJudResult`, `parseDataJudHit`, `formatDataJudResults`
 - `frontend/src/lib/datajud-service.test.ts` — testes unitários
+- `frontend/src/lib/firestore-types.ts` — `NotebookSource.results_raw?: string`
+- `frontend/src/pages/ResearchNotebook.tsx` — serializa top-10 resultados em `results_raw` ao criar fonte
 
 **Mudanças implementadas:**
 - Adicionado `ementa?: string` e `inteiroTeor?: string` a `DataJudResult`
-- `parseDataJudHit` agora extrai `src.ementa` (string) e `src.inteiro_teor` (string) do `_source` da API Elasticsearch
-- `formatDataJudResults` inclui ementa e trecho do inteiro teor quando disponíveis
-- Testes atualizados para cobrir novos campos
+- `parseDataJudHit` extrai `src.ementa` e `src.inteiro_teor` (string ou objeto aninhado)
+- `formatDataJudResults` inclui ementa e trecho do inteiro teor no texto enviado ao LLM
+- `NotebookSource.results_raw` armazena JSON dos top-10 DataJudResult (inteiroTeor limitado a 8KB)
+- `fitSourcesToFirestoreLimit` remove `results_raw` primeiro quando notebook se aproxima do limite 1MiB
 
 **Dependências:** API pública DataJud (CNJ) — endpoint `api-publica.datajud.cnj.jus.br`
 
@@ -94,30 +97,40 @@
 
 ## Epic 2: Visualizador Documental
 
-### Feature 2.1: SourceContentViewer — renderização jurídica rica
+### Feature 2.1: SourceContentViewer — renderização jurídica rica + tabs
 
 **Estado:** ✅ Implementado (ciclo 2026-04)
 
-**Objetivo:** Transformar exibição de JSON cru/texto plano em visualização documental de alta qualidade. Renderizar documentos jurídicos com tipografia, hierarquia, seções, ementa destacada, dispositivo, etc.
+**Objetivo:** Transformar exibição de JSON cru/texto plano em visualização documental de alta qualidade. Exibir processos individuais com ementa e inteiro teor em aba separada.
 
 **Arquivos afetados:**
 - `frontend/src/components/SourceContentViewer.tsx` — componente principal
-- `frontend/src/lib/datajud-service.ts` — campos ementa/inteiro_teor nos resultados
 
 **Mudanças implementadas:**
 - Detecção de fontes jurídicas (DataJud/jurisprudência)
-- Renderização de ementa com destaque visual
-- Seções específicas para documentos jurídicos: processo, tribunal, classe, ementa, inteiro teor
+- Tabs **Síntese** + **Processos (N)** quando `results_raw` presente
+- `ProcessCard` por resultado: ementa, inteiro teor expandível, tribunal, classe, data, assuntos
+- Renderização de síntese com destaque visual, seções e barras coloridas
+- `formatDate` helper para datas ISO
 - Fallback seguro para documentos genéricos
-- Melhor tipografia e espaçamento para leitura
 
 ---
 
-### Feature 2.2: ArtifactViewerModal — parser Markdown aprimorado
+### Feature 2.2: ReportViewer — pageMode (page-canvas)
 
-**Estado:** ⚠️ Parcial — parser regex básico, sem syntax highlight
+**Estado:** ✅ Implementado (ciclo 2026-04)
 
-**Arquivos:** `frontend/src/components/artifacts/ArtifactViewerModal.tsx`
+**Objetivo:** Artefatos do tipo `documento` renderizados com visual de folha A4 (fundo cinza + card branco com sombra).
+
+**Arquivos afetados:**
+- `frontend/src/components/artifacts/ReportViewer.tsx` — prop `pageMode?: boolean`, layout page-canvas
+- `frontend/src/components/artifacts/ArtifactViewerModal.tsx` — passa `pageMode={artifact.type === 'documento'}`
+
+**Mudanças implementadas:**
+- `ReportViewer` aceita `pageMode?: boolean`
+- Quando `pageMode=true`: fundo cinza (`bg-gray-100`) + card branco (max-w-3xl, `minHeight: 29.7cm`, `shadow-md`)
+- TOC sidebar dentro do page-canvas no modo página
+- `ArtifactViewerModal` passa `pageMode` automaticamente para tipo `documento`
 
 ---
 
@@ -167,7 +180,42 @@
 - `DocumentData.origem` aceita agora `'caderno'` além de `'web'`
 - `DocumentData.notebook_id` campo opcional para rastreabilidade
 - Ao gerar artefato `documento` no estúdio, o usuário recebe opção de salvar na página Documentos
-- Badge "Caderno" visível na listagem de documentos
+- Badge "Caderno" visível na listagem de documentos, com link para `/notebook?open=<id>` quando `notebook_id` presente
+
+---
+
+### Feature 4.3: Deep-link Caderno (?open=<notebook_id>)
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Permitir abrir um caderno específico diretamente via URL `/notebook?open=<id>`.
+
+**Arquivos afetados:**
+- `frontend/src/pages/ResearchNotebook.tsx` — `useSearchParams`, efeito `deepLinkHandledRef`
+- `frontend/src/pages/DocumentList.tsx` — badge "Caderno" link para `/notebook?open=<id>`
+
+**Mudanças implementadas:**
+- `useSearchParams` do react-router-dom
+- `deepLinkHandledRef` garante execução única
+- Resolve notebook da lista em memória ou via `getResearchNotebook` (Firestore)
+- Limpa o query param após abrir (replace: true)
+
+---
+
+### Feature 4.4: Filtro "Do Caderno" na página Documentos
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Filtrar documentos por `origem: 'caderno'` com chip visual violet.
+
+**Arquivos afetados:**
+- `frontend/src/pages/DocumentList.tsx` — estado `originFilter`, `handleOriginFilter`, chip UI
+
+**Mudanças implementadas:**
+- Estado `originFilter` com toggle igual aos filtros de status
+- Chip violeta "Do Caderno" (BookOpen icon) na barra de filtros
+- Filtragem client-side (Firebase) e via query param (API REST)
+- Incluído em `hasActiveFilters` e `clearAll`
 
 ---
 
@@ -231,10 +279,13 @@
 ## Roadmap de próximas features (backlog priorizado)
 
 ### Prioridade 1 — Alto impacto imediato
-- [ ] Busca híbrida (semântica + lexical) para jurisprudência
+- [x] Filtro por `origem: 'caderno'` na página Documentos
+- [x] Deep-link `/notebook?open=<id>` para abrir caderno diretamente
+- [x] `results_raw` — processCards com ementa/inteiro teor por processo
+- [x] `pageMode` — visualizador de documento como página A4
 - [ ] Exportação PDF nativa dos artefatos
 - [ ] Preview de documento na página Documentos
-- [ ] Filtro por `origem: 'caderno'` na página Documentos
+- [ ] Busca híbrida (semântica + lexical) para jurisprudência
 
 ### Prioridade 2 — Diferenciação de produto
 - [ ] Pesquisa conversacional com contexto (memória multi-turno de filtros)
@@ -250,4 +301,4 @@
 
 ---
 
-*Última atualização: 2026-04-07 — Ciclo: ementa/inteiro teor + visualizador + prompts + integração Caderno↔Documentos*
+*Última atualização: 2026-04-08 — Ciclo: results_raw + ProcessCard tabs + pageMode + deep-link + filtro Caderno*

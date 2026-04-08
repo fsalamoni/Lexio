@@ -82,12 +82,17 @@ function extractToc(md: string): TocItem[] {
 
 // ── Main Component ──────────────────────────────────────────────────────────
 
+/** Minimum document height matching an A4 page (29.7 cm at 96 dpi ≈ 1123 px). */
+const A4_PAGE_MIN_HEIGHT = '29.7cm'
+
 interface ReportViewerProps {
   content: string
   title?: string
+  /** When true, renders as a "page canvas" (white card on gray bg) for documento-type artifacts. */
+  pageMode?: boolean
 }
 
-export default function ReportViewer({ content, title }: ReportViewerProps) {
+export default function ReportViewer({ content, title, pageMode }: ReportViewerProps) {
   const [showToc, setShowToc] = useState(true)
   const [activeId, setActiveId] = useState<string>('')
   const contentRef = useRef<HTMLDivElement>(null)
@@ -122,57 +127,114 @@ export default function ReportViewer({ content, title }: ReportViewerProps) {
   }, [])
 
   return (
-    <div className="flex gap-6 h-full">
-      {/* TOC sidebar */}
-      {hasToc && showToc && (
-        <nav className="w-56 flex-shrink-0 overflow-y-auto pr-3 border-r border-gray-100">
-          <div className="sticky top-0 bg-white pb-2">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Índice</h4>
-          </div>
-          <ul className="space-y-0.5">
-            {toc.map((item, i) => (
-              <li key={i}>
-                <button
-                  onClick={() => scrollTo(item.id)}
-                  className={`w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate ${
-                    activeId === item.id
-                      ? 'bg-brand-50 text-brand-700 font-medium'
-                      : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'
-                  }`}
-                  style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
-                >
-                  {item.level > 1 && <ChevronRight className="w-3 h-3 inline mr-1 opacity-40" />}
-                  {item.text}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      )}
-
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        {/* TOC toggle */}
-        {hasToc && (
-          <button
-            onClick={() => setShowToc(s => !s)}
-            className={`mb-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              showToc ? 'bg-brand-50 text-brand-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-            }`}
-          >
-            <List className="w-3.5 h-3.5" />
-            {showToc ? 'Ocultar índice' : 'Mostrar índice'}
-          </button>
-        )}
-
-        {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
-
+    <div className={pageMode ? 'flex flex-col items-center min-h-full bg-gray-100 py-8 px-4' : 'flex gap-6 h-full'}>
+      {pageMode ? (
+        /* Page-canvas layout: white A4-like card on gray background */
         <div
-          ref={contentRef}
-          className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      </div>
+          className="w-full max-w-3xl bg-white shadow-md rounded-sm px-16 py-14 flex gap-6"
+          style={{ minHeight: A4_PAGE_MIN_HEIGHT }}
+        >
+          {/* TOC sidebar (page mode) */}
+          {hasToc && showToc && (
+            <nav className="w-48 flex-shrink-0 overflow-y-auto pr-3 border-r border-gray-100">
+              <div className="sticky top-0 bg-white pb-2">
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Índice</h4>
+              </div>
+              <ul className="space-y-0.5">
+                {toc.map((item, i) => (
+                  <li key={i}>
+                    <button
+                      onClick={() => scrollTo(item.id)}
+                      className={`w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate ${
+                        activeId === item.id
+                          ? 'bg-brand-50 text-brand-700 font-medium'
+                          : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'
+                      }`}
+                      style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
+                    >
+                      {item.level > 1 && <ChevronRight className="w-3 h-3 inline mr-1 opacity-40" />}
+                      {item.text}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
+          {/* Page content */}
+          <div className="flex-1 min-w-0">
+            {hasToc && (
+              <button
+                onClick={() => setShowToc(s => !s)}
+                className={`mb-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  showToc ? 'bg-brand-50 text-brand-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                {showToc ? 'Ocultar índice' : 'Mostrar índice'}
+              </button>
+            )}
+            {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
+            <div
+              ref={contentRef}
+              className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* TOC sidebar */}
+          {hasToc && showToc && (
+            <nav className="w-56 flex-shrink-0 overflow-y-auto pr-3 border-r border-gray-100">
+              <div className="sticky top-0 bg-white pb-2">
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Índice</h4>
+              </div>
+              <ul className="space-y-0.5">
+                {toc.map((item, i) => (
+                  <li key={i}>
+                    <button
+                      onClick={() => scrollTo(item.id)}
+                      className={`w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate ${
+                        activeId === item.id
+                          ? 'bg-brand-50 text-brand-700 font-medium'
+                          : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'
+                      }`}
+                      style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
+                    >
+                      {item.level > 1 && <ChevronRight className="w-3 h-3 inline mr-1 opacity-40" />}
+                      {item.text}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            {/* TOC toggle */}
+            {hasToc && (
+              <button
+                onClick={() => setShowToc(s => !s)}
+                className={`mb-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  showToc ? 'bg-brand-50 text-brand-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                {showToc ? 'Ocultar índice' : 'Mostrar índice'}
+              </button>
+            )}
+
+            {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
+
+            <div
+              ref={contentRef}
+              className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

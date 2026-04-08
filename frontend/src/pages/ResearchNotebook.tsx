@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
   ArrowLeft, Send, Database, Clock, Upload,
@@ -182,6 +183,7 @@ export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
   const { startTask } = useTaskManager()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   // List state
   const [notebooks, setNotebooks] = useState<ResearchNotebookData[]>([])
@@ -319,6 +321,34 @@ export default function ResearchNotebook() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
+
+  // ── Deep-link: ?open=<notebook_id> ─────────────────────────────────
+  // Runs once after the notebook list is loaded. If the URL has ?open=<id>,
+  // open that notebook directly (falling back to a direct Firestore fetch
+  // when the id is not yet in the list).
+  const deepLinkHandledRef = useRef(false)
+  useEffect(() => {
+    if (deepLinkHandledRef.current) return
+    const openId = searchParams.get('open')
+    if (!openId || !userId || loading) return
+    deepLinkHandledRef.current = true
+    // Clear the param from the URL immediately so a page refresh is clean.
+    setSearchParams(prev => { prev.delete('open'); return prev }, { replace: true })
+    const fromList = notebooks.find(nb => nb.id === openId)
+    const resolve = fromList
+      ? Promise.resolve(fromList)
+      : getResearchNotebook(userId, openId)
+    resolve.then(nb => {
+      if (nb) {
+        setActiveNotebook(nb)
+        setViewMode('detail')
+        setActiveTab('chat')
+        setSuggestions([])
+      }
+    }).catch(() => {
+      // silently ignore — notebook may have been deleted
+    })
+  }, [userId, loading, notebooks, searchParams, setSearchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ensure in-flight research tasks are canceled when leaving the page.
   useEffect(() => {
@@ -1501,6 +1531,14 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             content_type: 'text/plain',
             size_bytes: jurisprudenceResult.content.length,
             text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+            // Store raw results for rich per-process display in SourceContentViewer.
+            // inteiroTeor is capped to 8 KB per entry to stay well within limits.
+            results_raw: JSON.stringify(
+              selectedResults.slice(0, 10).map(r => ({
+                ...r,
+                inteiroTeor: r.inteiroTeor?.slice(0, 8_000),
+              })),
+            ),
             status: 'indexed',
             added_at: new Date().toISOString(),
           }
