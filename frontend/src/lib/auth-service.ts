@@ -178,6 +178,7 @@ export function translateFirebaseError(code: string): string {
     'auth/popup-closed-by-user':   'Login cancelado. Tente novamente.',
     'auth/popup-blocked':          'Popup bloqueado pelo navegador. Permita popups e tente novamente.',
     'auth/account-exists-with-different-credential': 'Este e-mail já está cadastrado com outro método de login.',
+    'auth/unauthorized-domain':    'Este domínio ainda não está autorizado no Firebase Auth. Contate o suporte para liberar o acesso.',
     'permission-denied':           'Erro de permissão no banco de dados. Tente novamente ou contate o administrador.',
     'unavailable':                 'Serviço temporariamente indisponível. Tente novamente.',
   }

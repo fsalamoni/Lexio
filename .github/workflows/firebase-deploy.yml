@@ -98,10 +98,79 @@ jobs:
 
       # ── Auth opção A: Service Account (se FIREBASE_SERVICE_ACCOUNT estiver setado)
       - name: Authenticate via Service Account
+        id: google_auth
         if: steps.auth_mode.outputs.use_service_account == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - name: Ensure Firebase Auth authorized domains
+        if: steps.auth_mode.outputs.use_service_account == 'true'
+        env:
+          ACCESS_TOKEN: ${{ steps.google_auth.outputs.access_token }}
+          PROJECT_ID: hocapp-44760
+          PRIMARY_AUTH_DOMAIN: lexio.web.app
+        run: |
+          node <<'NODE'
+          const projectId = process.env.PROJECT_ID;
+          const accessToken = process.env.ACCESS_TOKEN;
+          const primaryAuthDomain = process.env.PRIMARY_AUTH_DOMAIN;
+
+          if (!projectId || !accessToken || !primaryAuthDomain) {
+            console.error('Missing Firebase Auth domain sync configuration.');
+            process.exit(1);
+          }
+
+          const endpoint = `https://identitytoolkit.googleapis.com/admin/v2/projects/${projectId}/config`;
+          const requiredDomains = Array.from(new Set([
+            primaryAuthDomain,
+            `${projectId}.web.app`,
+            `${projectId}.firebaseapp.com`,
+          ]));
+
+          async function request(url, options = {}) {
+            const response = await fetch(url, {
+              ...options,
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                ...(options.headers || {}),
+              },
+            });
+
+            if (!response.ok) {
+              const body = await response.text();
+              throw new Error(`${response.status} ${response.statusText}: ${body}`);
+            }
+
+            return response.json();
+          }
+
+          async function main() {
+            const config = await request(endpoint);
+            const currentDomains = Array.isArray(config.authorizedDomains) ? config.authorizedDomains : [];
+            const mergedDomains = Array.from(new Set([...currentDomains, ...requiredDomains])).sort();
+
+            if (mergedDomains.length === currentDomains.length &&
+                mergedDomains.every((domain, index) => domain === [...currentDomains].sort()[index])) {
+              console.log(`Firebase Auth authorized domains already include: ${requiredDomains.join(', ')}`);
+              return;
+            }
+
+            await request(`${endpoint}?updateMask=authorizedDomains`, {
+              method: 'PATCH',
+              body: JSON.stringify({ authorizedDomains: mergedDomains }),
+            });
+
+            console.log(`Updated Firebase Auth authorized domains: ${mergedDomains.join(', ')}`);
+          }
+
+          main().catch((error) => {
+            console.error(`Failed to sync Firebase Auth authorized domains: ${error.message}`);
+            process.exit(1);
+          });
+          NODE
 
       - name: Install Firebase CLI
         run: npm install -g firebase-tools@latest
