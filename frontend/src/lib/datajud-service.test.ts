@@ -4,6 +4,9 @@ import {
   formatDataJudResults,
   classifyJurisprudenceArea,
   classifyResult,
+  sortByDate,
+  groupByArea,
+  compareProcesses,
   _resetEndpointCache,
   type TribunalInfo,
   type DataJudResult,
@@ -357,6 +360,162 @@ describe('classifyResult', () => {
       grau: 'G1', formato: 'Eletrônico', movimentos: [],
     }
     expect(classifyResult(result)).toBeUndefined()
+  })
+})
+
+// ── sortByDate ────────────────────────────────────────────────────────────
+
+describe('sortByDate', () => {
+  function makeResult(date: string, classe = 'Apelação'): DataJudResult {
+    return {
+      tribunal: 'tjsp', tribunalName: 'TJSP',
+      numeroProcesso: '0001234-56.2023.8.26.0100',
+      classe, classeCode: 1,
+      assuntos: [],
+      orgaoJulgador: '1ª Vara', dataAjuizamento: date,
+      grau: 'G1', formato: 'Eletrônico', movimentos: [],
+    }
+  }
+
+  it('sorts ascending by default (oldest first)', () => {
+    const results = [makeResult('2024-06-01'), makeResult('2022-01-15'), makeResult('2023-03-20')]
+    const sorted = sortByDate(results)
+    expect(sorted.map(r => r.dataAjuizamento)).toEqual(['2022-01-15', '2023-03-20', '2024-06-01'])
+  })
+
+  it('sorts descending when ascending=false (newest first)', () => {
+    const results = [makeResult('2024-06-01'), makeResult('2022-01-15'), makeResult('2023-03-20')]
+    const sorted = sortByDate(results, false)
+    expect(sorted.map(r => r.dataAjuizamento)).toEqual(['2024-06-01', '2023-03-20', '2022-01-15'])
+  })
+
+  it('does not mutate original array', () => {
+    const results = [makeResult('2024-06-01'), makeResult('2022-01-15')]
+    const sorted = sortByDate(results)
+    expect(sorted).not.toBe(results)
+    expect(results[0].dataAjuizamento).toBe('2024-06-01') // unchanged
+  })
+
+  it('handles empty array', () => {
+    expect(sortByDate([])).toEqual([])
+  })
+})
+
+// ── groupByArea ─────────────────────────────────────────────────────────────
+
+describe('groupByArea', () => {
+  function makeResult(assuntos: string[], classe: string): DataJudResult {
+    return {
+      tribunal: 'tjsp', tribunalName: 'TJSP',
+      numeroProcesso: '0001234-56.2023.8.26.0100',
+      classe, classeCode: 1,
+      assuntos,
+      orgaoJulgador: '1ª Vara', dataAjuizamento: '2023-01-01',
+      grau: 'G1', formato: 'Eletrônico', movimentos: [],
+    }
+  }
+
+  it('groups results by classified area', () => {
+    const results = [
+      makeResult(['Rescisão do Contrato de Trabalho'], 'Reclamação Trabalhista'),
+      makeResult(['ICMS'], 'Mandado de Segurança'),
+      makeResult(['Hora Extra'], 'Reclamação Trabalhista'),
+    ]
+    const groups = groupByArea(results)
+    expect(groups.length).toBe(2)
+    const laborGroup = groups.find(g => g.area === 'labor')
+    expect(laborGroup).toBeDefined()
+    expect(laborGroup!.results.length).toBe(2)
+    const taxGroup = groups.find(g => g.area === 'tax')
+    expect(taxGroup).toBeDefined()
+    expect(taxGroup!.results.length).toBe(1)
+  })
+
+  it('places unclassified results under "Outros"', () => {
+    const results = [makeResult(['Outros'], 'Procedimento Comum')]
+    const groups = groupByArea(results)
+    expect(groups.length).toBe(1)
+    expect(groups[0].area).toBeUndefined()
+    expect(groups[0].label).toBe('Outros')
+  })
+
+  it('sorts named areas before "Outros"', () => {
+    const results = [
+      makeResult(['Outros'], 'Procedimento'),
+      makeResult(['ICMS'], 'Mandado de Segurança'),
+    ]
+    const groups = groupByArea(results)
+    expect(groups[0].area).toBeDefined() // tax first
+    expect(groups[1].area).toBeUndefined() // Outros last
+  })
+
+  it('handles empty input', () => {
+    expect(groupByArea([])).toEqual([])
+  })
+})
+
+// ── compareProcesses ────────────────────────────────────────────────────────
+
+describe('compareProcesses', () => {
+  function makeResult(overrides: Partial<DataJudResult> = {}): DataJudResult {
+    return {
+      tribunal: 'tjsp', tribunalName: 'TJSP',
+      numeroProcesso: '0001234-56.2023.8.26.0100',
+      classe: 'Apelação Cível', classeCode: 1001,
+      assuntos: ['Responsabilidade Civil'],
+      orgaoJulgador: '1ª Vara', dataAjuizamento: '2023-01-01',
+      grau: 'G1', formato: 'Eletrônico', movimentos: [],
+      ...overrides,
+    }
+  }
+
+  it('identifies shared assuntos (case-insensitive)', () => {
+    const left = makeResult({ assuntos: ['Dano Moral', 'Responsabilidade Civil'] })
+    const right = makeResult({ assuntos: ['responsabilidade civil', 'Contrato'] })
+    const c = compareProcesses(left, right)
+    expect(c.sharedAssuntos).toEqual(['responsabilidade civil'])
+  })
+
+  it('computes daysDiff between dates', () => {
+    const left = makeResult({ dataAjuizamento: '2023-01-01' })
+    const right = makeResult({ dataAjuizamento: '2023-01-11' })
+    const c = compareProcesses(left, right)
+    expect(c.daysDiff).toBe(10)
+  })
+
+  it('returns negative daysDiff when right is older', () => {
+    const left = makeResult({ dataAjuizamento: '2023-06-01' })
+    const right = makeResult({ dataAjuizamento: '2023-01-01' })
+    const c = compareProcesses(left, right)
+    expect(c.daysDiff!).toBeLessThan(0)
+  })
+
+  it('detects same area', () => {
+    const left = makeResult({ assuntos: ['Rescisão do Contrato de Trabalho'], classe: 'Reclamação Trabalhista' })
+    const right = makeResult({ assuntos: ['Hora Extra'], classe: 'Reclamação Trabalhista' })
+    const c = compareProcesses(left, right)
+    expect(c.sameArea).toBe(true)
+  })
+
+  it('returns sameArea=false for different areas', () => {
+    const left = makeResult({ assuntos: ['Rescisão do Contrato de Trabalho'], classe: 'Reclamação Trabalhista' })
+    const right = makeResult({ assuntos: ['ICMS'], classe: 'Mandado de Segurança' })
+    const c = compareProcesses(left, right)
+    expect(c.sameArea).toBe(false)
+  })
+
+  it('returns sameArea=false when both unclassified', () => {
+    const left = makeResult({ assuntos: ['Outros'], classe: 'Procedimento' })
+    const right = makeResult({ assuntos: ['Outros'], classe: 'Procedimento' })
+    const c = compareProcesses(left, right)
+    expect(c.sameArea).toBe(false)
+  })
+
+  it('handles missing dates (daysDiff=null)', () => {
+    const left = makeResult({ dataAjuizamento: '' })
+    const right = makeResult({ dataAjuizamento: '2023-01-01' })
+    const c = compareProcesses(left, right)
+    expect(c.daysDiff).toBeNull()
   })
 })
 

@@ -798,6 +798,81 @@ export function classifyResult(result: DataJudResult): string | undefined {
   return classifyJurisprudenceArea(result.assuntos, result.classe, result.ementa)
 }
 
+// ── Timeline & grouping utilities ───────────────────────────────────────────
+
+/** Sort results chronologically by `dataAjuizamento` (ascending = oldest first). */
+export function sortByDate(results: DataJudResult[], ascending = true): DataJudResult[] {
+  return [...results].sort((a, b) => {
+    const cmp = a.dataAjuizamento.localeCompare(b.dataAjuizamento)
+    return ascending ? cmp : -cmp
+  })
+}
+
+/** Group of results sharing the same legal area. */
+export interface AreaGroup {
+  area: string | undefined
+  label: string
+  results: DataJudResult[]
+}
+
+/**
+ * Group results by classified legal area.
+ * Results that don't classify into any area are grouped under `undefined` with label "Outros".
+ */
+export function groupByArea(results: DataJudResult[]): AreaGroup[] {
+  const map = new Map<string | undefined, DataJudResult[]>()
+  for (const r of results) {
+    const area = classifyResult(r)
+    if (!map.has(area)) map.set(area, [])
+    map.get(area)!.push(r)
+  }
+  // Import AREA_LABELS lazily to avoid circular deps — but it's from constants.ts which has no deps
+  const groups: AreaGroup[] = []
+  for (const [area, items] of map.entries()) {
+    groups.push({ area, label: area ?? 'Outros', results: items })
+  }
+  // Sort: named areas first (alphabetically by label), then "Outros" last
+  groups.sort((a, b) => {
+    if (a.area == null && b.area != null) return 1
+    if (a.area != null && b.area == null) return -1
+    return a.label.localeCompare(b.label)
+  })
+  return groups
+}
+
+/** Fields useful for comparing two processes side-by-side. */
+export interface ProcessComparison {
+  left: DataJudResult
+  right: DataJudResult
+  /** True if both processes share at least one assunto. */
+  sharedAssuntos: string[]
+  /** True if both belong to the same classified area. */
+  sameArea: boolean
+  /** Difference in days between dataAjuizamento dates (right − left). */
+  daysDiff: number | null
+}
+
+/**
+ * Build a comparison object between two DataJud results.
+ * Used by the comparison modal to highlight similarities / differences.
+ */
+export function compareProcesses(left: DataJudResult, right: DataJudResult): ProcessComparison {
+  const leftAssuntos = new Set(left.assuntos.map(a => a.toLowerCase().trim()))
+  const sharedAssuntos = right.assuntos.filter(a => leftAssuntos.has(a.toLowerCase().trim()))
+  const sameArea = classifyResult(left) === classifyResult(right) && classifyResult(left) != null
+
+  let daysDiff: number | null = null
+  if (left.dataAjuizamento && right.dataAjuizamento) {
+    const lDate = new Date(left.dataAjuizamento)
+    const rDate = new Date(right.dataAjuizamento)
+    if (!isNaN(lDate.getTime()) && !isNaN(rDate.getTime())) {
+      daysDiff = Math.round((rDate.getTime() - lDate.getTime()) / (1000 * 60 * 60 * 24))
+    }
+  }
+
+  return { left, right, sharedAssuntos, sameArea, daysDiff }
+}
+
 function classifyStatus(status: number): DataJudErrorType {
   if (status === 429) return 'rate_limit'
   if (status === 401 || status === 403) return 'auth'

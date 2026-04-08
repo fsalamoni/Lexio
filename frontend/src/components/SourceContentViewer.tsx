@@ -8,11 +8,11 @@
  * - Plain text fallback
  */
 import { useMemo, useState } from 'react'
-import { Copy, Check, FileText, Download, Scale, BookOpen, ChevronDown, ChevronUp, FileSearch, ThumbsUp, ThumbsDown, Minus } from 'lucide-react'
+import { Copy, Check, FileText, Download, Scale, BookOpen, ChevronDown, ChevronUp, FileSearch, ThumbsUp, ThumbsDown, Minus, Clock, Layers, ArrowLeftRight } from 'lucide-react'
 import DraggablePanel from './DraggablePanel'
 import type { NotebookSource } from '../lib/firestore-service'
 import type { DataJudResult } from '../lib/datajud-service'
-import { classifyResult } from '../lib/datajud-service'
+import { classifyResult, sortByDate, groupByArea, compareProcesses } from '../lib/datajud-service'
 import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
 import {
   getStructuredSections,
@@ -270,7 +270,25 @@ function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain:
     try { return JSON.parse(source.results_raw) as DataJudResult[] } catch { return [] }
   }, [source.results_raw])
 
-  const [activeTab, setActiveTab] = useState<'sintese' | 'processos'>('sintese')
+  // Derived data for new tabs
+  const timelineSorted = useMemo(() => sortByDate(results, true), [results])
+  const areaGroups = useMemo(() => groupByArea(results), [results])
+
+  type TabId = 'sintese' | 'processos' | 'timeline' | 'agrupados' | 'comparar'
+  const [activeTab, setActiveTab] = useState<TabId>('sintese')
+  const [compareSelection, setCompareSelection] = useState<[number, number] | null>(null)
+
+  const comparison = useMemo(() => {
+    if (!compareSelection) return null
+    const [a, b] = compareSelection
+    if (results[a] && results[b]) return compareProcesses(results[a], results[b])
+    return null
+  }, [compareSelection, results])
+
+  const handleCompare = (indexA: number, indexB: number) => {
+    setCompareSelection([indexA, indexB])
+    setActiveTab('comparar')
+  }
 
   return (
     <article className="max-w-none h-full flex flex-col">
@@ -291,29 +309,27 @@ function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain:
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 border-b border-gray-200 flex-shrink-0">
-        <button
-          onClick={() => setActiveTab('sintese')}
-          className={`px-4 py-2 text-xs font-medium rounded-t-md transition-colors ${
-            activeTab === 'sintese'
-              ? 'bg-white border border-b-white border-gray-200 text-emerald-700 -mb-px z-10'
-              : 'text-gray-500 hover:text-gray-800'
-          }`}
-        >
+      <div className="flex gap-1 mb-4 border-b border-gray-200 flex-shrink-0 overflow-x-auto">
+        <TabButton active={activeTab === 'sintese'} onClick={() => setActiveTab('sintese')}>
           Síntese
-        </button>
+        </TabButton>
         {results.length > 0 && (
-          <button
-            onClick={() => setActiveTab('processos')}
-            className={`px-4 py-2 text-xs font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
-              activeTab === 'processos'
-                ? 'bg-white border border-b-white border-gray-200 text-emerald-700 -mb-px z-10'
-                : 'text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            <FileSearch className="w-3.5 h-3.5" />
-            Processos ({results.length})
-          </button>
+          <>
+            <TabButton active={activeTab === 'processos'} onClick={() => setActiveTab('processos')} icon={<FileSearch className="w-3.5 h-3.5" />}>
+              Processos ({results.length})
+            </TabButton>
+            <TabButton active={activeTab === 'timeline'} onClick={() => setActiveTab('timeline')} icon={<Clock className="w-3.5 h-3.5" />}>
+              Linha do Tempo
+            </TabButton>
+            <TabButton active={activeTab === 'agrupados'} onClick={() => setActiveTab('agrupados')} icon={<Layers className="w-3.5 h-3.5" />}>
+              Agrupados ({areaGroups.length})
+            </TabButton>
+            {comparison && (
+              <TabButton active={activeTab === 'comparar'} onClick={() => setActiveTab('comparar')} icon={<ArrowLeftRight className="w-3.5 h-3.5" />}>
+                Comparar
+              </TabButton>
+            )}
+          </>
         )}
       </div>
 
@@ -345,15 +361,257 @@ function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain:
           ) : (
             <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{plain}</p>
           )
-        ) : (
+        ) : activeTab === 'processos' ? (
           <div className="space-y-4">
             {results.map((r, i) => (
-              <ProcessCard key={i} result={r} index={i} />
+              <ProcessCard key={i} result={r} index={i} onCompare={results.length >= 2 ? handleCompare : undefined} allResults={results} />
             ))}
+          </div>
+        ) : activeTab === 'timeline' ? (
+          <TimelineView results={timelineSorted} />
+        ) : activeTab === 'agrupados' ? (
+          <GroupedView groups={areaGroups} />
+        ) : activeTab === 'comparar' && comparison ? (
+          <ComparisonView comparison={comparison} onClear={() => { setCompareSelection(null); setActiveTab('processos') }} />
+        ) : null}
+      </div>
+    </article>
+  )
+}
+
+// ── Tab button helper ───────────────────────────────────────────────────────
+
+function TabButton({ active, onClick, children, icon }: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+  icon?: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 text-xs font-medium rounded-t-md transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+        active
+          ? 'bg-white border border-b-white border-gray-200 text-emerald-700 -mb-px z-10'
+          : 'text-gray-500 hover:text-gray-800'
+      }`}
+    >
+      {icon}
+      {children}
+    </button>
+  )
+}
+
+// ── Timeline view ───────────────────────────────────────────────────────────
+
+function TimelineView({ results }: { results: DataJudResult[] }) {
+  if (results.length === 0) return <p className="text-sm text-gray-400 italic">Nenhum processo para exibir.</p>
+
+  return (
+    <div className="relative pl-6">
+      {/* Vertical line */}
+      <div className="absolute left-2.5 top-2 bottom-2 w-px bg-emerald-200" />
+
+      <div className="space-y-4">
+        {results.map((r, i) => {
+          const area = classifyResult(r)
+          return (
+            <div key={i} className="relative">
+              {/* Dot */}
+              <div className={`absolute -left-[14px] top-3 w-2.5 h-2.5 rounded-full border-2 ${
+                r.stance === 'favoravel' ? 'bg-green-500 border-green-300' :
+                r.stance === 'desfavoravel' ? 'bg-red-500 border-red-300' :
+                'bg-emerald-500 border-emerald-300'
+              }`} />
+
+              {/* Card */}
+              <div className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-emerald-700">
+                        {r.dataAjuizamento ? formatDate(r.dataAjuizamento) : 'Sem data'}
+                      </span>
+                      <span className="text-[11px] font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
+                        {r.classe}
+                      </span>
+                      {area && (
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${AREA_COLORS[area] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                          {AREA_LABELS[area] || area}
+                        </span>
+                      )}
+                      {r.stance === 'favoravel' && <ThumbsUp className="w-3 h-3 text-green-600" />}
+                      {r.stance === 'desfavoravel' && <ThumbsDown className="w-3 h-3 text-red-600" />}
+                    </div>
+                    <p className="mt-0.5 text-xs text-gray-500 font-mono truncate">{r.numeroProcesso}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">{r.tribunalName || r.tribunal} · {r.orgaoJulgador || ''}</p>
+                  </div>
+                  {r.relevanceScore != null && (
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                      r.relevanceScore >= RELEVANCE_SCORE_HIGH ? 'bg-green-50 text-green-700' :
+                      r.relevanceScore >= RELEVANCE_SCORE_MEDIUM ? 'bg-yellow-50 text-yellow-700' :
+                      'bg-gray-50 text-gray-500'
+                    }`}>
+                      {r.relevanceScore}/100
+                    </span>
+                  )}
+                </div>
+                {r.ementa && (
+                  <p className="mt-2 text-xs text-gray-600 leading-relaxed italic line-clamp-3">{r.ementa}</p>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Grouped view ────────────────────────────────────────────────────────────
+
+function GroupedView({ groups }: { groups: ReturnType<typeof groupByArea> }) {
+  const [expanded, setExpanded] = useState<Set<string | undefined>>(() => new Set(groups.map(g => g.area)))
+
+  const toggleGroup = (area: string | undefined) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(area)) next.delete(area)
+      else next.add(area)
+      return next
+    })
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map(group => {
+        const isOpen = expanded.has(group.area)
+        const areaColor = group.area ? (AREA_COLORS[group.area] || 'bg-gray-100 text-gray-600 border-gray-200') : 'bg-gray-100 text-gray-600 border-gray-200'
+        const areaLabel = group.area ? (AREA_LABELS[group.area] || group.area) : 'Outros'
+
+        return (
+          <div key={group.area ?? '__outros'} className="border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              onClick={() => toggleGroup(group.area)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${areaColor}`}>
+                  {areaLabel}
+                </span>
+                <span className="text-xs text-gray-500">{group.results.length} processo{group.results.length !== 1 ? 's' : ''}</span>
+              </div>
+              {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </button>
+            {isOpen && (
+              <div className="p-3 space-y-3">
+                {group.results.map((r, i) => (
+                  <ProcessCard key={i} result={r} index={i} />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Comparison view ─────────────────────────────────────────────────────────
+
+function ComparisonView({ comparison: c, onClear }: { comparison: ReturnType<typeof compareProcesses>; onClear: () => void }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+          <ArrowLeftRight className="w-4 h-4 text-emerald-600" />
+          Comparação de Julgados
+        </h3>
+        <button onClick={onClear} className="text-xs text-gray-500 hover:text-gray-700 underline">
+          Voltar aos processos
+        </button>
+      </div>
+
+      {/* Summary badges */}
+      <div className="flex flex-wrap gap-2">
+        {c.sameArea && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+            Mesma área do direito
+          </span>
+        )}
+        {c.sharedAssuntos.length > 0 && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+            {c.sharedAssuntos.length} assunto{c.sharedAssuntos.length !== 1 ? 's' : ''} em comum
+          </span>
+        )}
+        {c.daysDiff != null && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+            {Math.abs(c.daysDiff)} dia{Math.abs(c.daysDiff) !== 1 ? 's' : ''} de diferença
+          </span>
+        )}
+      </div>
+
+      {/* Shared assuntos */}
+      {c.sharedAssuntos.length > 0 && (
+        <div className="px-3 py-2 bg-blue-50/60 rounded-lg border border-blue-100">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700 mb-1">Assuntos em comum</p>
+          <div className="flex flex-wrap gap-1">
+            {c.sharedAssuntos.map((a, i) => (
+              <span key={i} className="px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-700">{a}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Side by side */}
+      <div className="grid grid-cols-2 gap-3">
+        <ComparisonSide label="Processo A" result={c.left} />
+        <ComparisonSide label="Processo B" result={c.right} />
+      </div>
+    </div>
+  )
+}
+
+function ComparisonSide({ label, result: r }: { label: string; result: DataJudResult }) {
+  const area = classifyResult(r)
+  return (
+    <div className="border border-gray-200 rounded-lg p-3 bg-white">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-2">{label}</p>
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold text-gray-800">{r.classe}</p>
+        <p className="text-[11px] text-gray-500 font-mono">{r.numeroProcesso}</p>
+        <p className="text-xs text-gray-600">{r.tribunalName || r.tribunal}</p>
+        {r.dataAjuizamento && <p className="text-xs text-gray-500">{formatDate(r.dataAjuizamento)}</p>}
+        {area && (
+          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium border ${AREA_COLORS[area] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+            {AREA_LABELS[area] || area}
+          </span>
+        )}
+        {r.stance && (
+          <div className="flex items-center gap-1">
+            {r.stance === 'favoravel' && <ThumbsUp className="w-3 h-3 text-green-600" />}
+            {r.stance === 'desfavoravel' && <ThumbsDown className="w-3 h-3 text-red-600" />}
+            {r.stance === 'neutro' && <Minus className="w-3 h-3 text-gray-500" />}
+            <span className="text-[10px] text-gray-600 capitalize">{r.stance}</span>
+          </div>
+        )}
+        {r.relevanceScore != null && (
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded inline-block ${
+            r.relevanceScore >= RELEVANCE_SCORE_HIGH ? 'bg-green-50 text-green-700' :
+            r.relevanceScore >= RELEVANCE_SCORE_MEDIUM ? 'bg-yellow-50 text-yellow-700' :
+            'bg-gray-50 text-gray-500'
+          }`}>
+            {r.relevanceScore}/100
+          </span>
+        )}
+        {r.ementa && (
+          <div className="mt-2 pt-2 border-t border-gray-100">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-700 mb-1">Ementa</p>
+            <p className="text-xs text-gray-700 leading-relaxed italic line-clamp-5">{r.ementa}</p>
           </div>
         )}
       </div>
-    </article>
+    </div>
   )
 }
 
@@ -361,8 +619,14 @@ const RELEVANCE_SCORE_HIGH = 70
 const RELEVANCE_SCORE_MEDIUM = 40
 
 /** Card for a single DataJud process result. */
-function ProcessCard({ result: r, index }: { result: DataJudResult; index: number }) {
+function ProcessCard({ result: r, index, onCompare, allResults }: {
+  result: DataJudResult
+  index: number
+  onCompare?: (a: number, b: number) => void
+  allResults?: DataJudResult[]
+}) {
   const [expanded, setExpanded] = useState(false)
+  const [compareWith, setCompareWith] = useState(false)
   const area = classifyResult(r)
 
   return (
@@ -481,6 +745,42 @@ function ProcessCard({ result: r, index }: { result: DataJudResult; index: numbe
       {!r.ementa && !r.inteiroTeor && (
         <div className="px-4 py-2 text-xs text-gray-400 italic">
           Ementa e inteiro teor não disponíveis para este processo no DataJud.
+        </div>
+      )}
+
+      {/* Compare button */}
+      {onCompare && allResults && allResults.length >= 2 && (
+        <div className="px-4 py-2 border-t border-gray-100">
+          {!compareWith ? (
+            <button
+              onClick={() => setCompareWith(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              Comparar com outro processo
+            </button>
+          ) : (
+            <div className="space-y-1.5">
+              <p className="text-[11px] text-gray-500 font-medium">Selecione o processo para comparar:</p>
+              <div className="flex flex-wrap gap-1">
+                {allResults.map((other, j) => j !== index && (
+                  <button
+                    key={j}
+                    onClick={() => { setCompareWith(false); onCompare(index, j) }}
+                    className="px-2 py-0.5 text-[10px] rounded bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                  >
+                    {j + 1}. {other.classe}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setCompareWith(false)}
+                  className="px-2 py-0.5 text-[10px] rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
