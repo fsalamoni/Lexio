@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-08",
-    "cycle": "timeline-grouping-comparison",
+    "cycle": "analytics-conversational-context",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -109,6 +109,28 @@
         "frontend/src/components/SourceContentViewer.tsx"
       ],
       "notes": "compareProcesses + ProcessComparison; tab Comparar com side-by-side; botão Comparar no ProcessCard"
+    },
+    {
+      "id": "E1.F10",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Analytics jurisprudencial por tema/período",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/pages/ResearchNotebook.tsx"
+      ],
+      "notes": "buildJurisprudenceAnalytics → JurisprudenceAnalytics (byArea/byStance/byYear/byTribunal/avgRelevanceScore); painel visual na aba Visão Geral"
+    },
+    {
+      "id": "E1.F11",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Pesquisa conversacional com contexto (memória multi-turno)",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/ResearchNotebook.tsx"
+      ],
+      "notes": "searchContext injetado no system prompt do chat com histórico de buscas realizadas (jurisprudência+web)"
     },
     {
       "id": "E2.F1",

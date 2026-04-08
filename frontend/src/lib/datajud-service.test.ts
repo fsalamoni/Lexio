@@ -7,6 +7,7 @@ import {
   sortByDate,
   groupByArea,
   compareProcesses,
+  buildJurisprudenceAnalytics,
   _resetEndpointCache,
   type TribunalInfo,
   type DataJudResult,
@@ -519,3 +520,110 @@ describe('compareProcesses', () => {
   })
 })
 
+
+// ── buildJurisprudenceAnalytics ─────────────────────────────────────────────
+
+describe('buildJurisprudenceAnalytics', () => {
+  function makeResult(overrides: Partial<DataJudResult> = {}): DataJudResult {
+    return {
+      tribunal: 'tjsp', tribunalName: 'TJSP',
+      numeroProcesso: '0001234-56.2023.8.26.0100',
+      classe: 'Apelação Cível', classeCode: 1001,
+      assuntos: ['Responsabilidade Civil'],
+      orgaoJulgador: '1ª Vara', dataAjuizamento: '2023-06-15',
+      grau: 'G1', formato: 'Eletrônico', movimentos: [],
+      ...overrides,
+    }
+  }
+
+  it('returns correct totalResults', () => {
+    const results = [makeResult(), makeResult(), makeResult()]
+    const analytics = buildJurisprudenceAnalytics(results)
+    expect(analytics.totalResults).toBe(3)
+  })
+
+  it('counts stance distribution correctly', () => {
+    const results = [
+      makeResult({ stance: 'favoravel' }),
+      makeResult({ stance: 'favoravel' }),
+      makeResult({ stance: 'desfavoravel' }),
+      makeResult({ stance: 'neutro' }),
+      makeResult(),
+    ]
+    const a = buildJurisprudenceAnalytics(results)
+    expect(a.byStance.favoravel).toBe(2)
+    expect(a.byStance.desfavoravel).toBe(1)
+    expect(a.byStance.neutro).toBe(1)
+    expect(a.byStance.semClassificacao).toBe(1)
+  })
+
+  it('groups by legal area', () => {
+    const results = [
+      makeResult({ assuntos: ['ICMS'], classe: 'Mandado de Segurança' }),
+      makeResult({ assuntos: ['Rescisão do Contrato de Trabalho'], classe: 'Reclamação Trabalhista' }),
+      makeResult({ assuntos: ['ICMS'], classe: 'Mandado de Segurança' }),
+    ]
+    const a = buildJurisprudenceAnalytics(results)
+    const taxArea = a.byArea.find(x => x.area === 'tax')
+    const laborArea = a.byArea.find(x => x.area === 'labor')
+    expect(taxArea?.count).toBe(2)
+    expect(laborArea?.count).toBe(1)
+  })
+
+  it('groups by year from dataAjuizamento', () => {
+    const results = [
+      makeResult({ dataAjuizamento: '2020-01-10' }),
+      makeResult({ dataAjuizamento: '2020-06-15' }),
+      makeResult({ dataAjuizamento: '2023-03-01' }),
+    ]
+    const a = buildJurisprudenceAnalytics(results)
+    expect(a.byYear).toEqual([
+      { year: '2020', count: 2 },
+      { year: '2023', count: 1 },
+    ])
+  })
+
+  it('groups by tribunal', () => {
+    const results = [
+      makeResult({ tribunalName: 'TJSP' }),
+      makeResult({ tribunalName: 'TJSP' }),
+      makeResult({ tribunalName: 'TRT-2' }),
+    ]
+    const a = buildJurisprudenceAnalytics(results)
+    expect(a.byTribunal[0]).toEqual({ tribunal: 'TJSP', count: 2 })
+    expect(a.byTribunal[1]).toEqual({ tribunal: 'TRT-2', count: 1 })
+  })
+
+  it('computes average relevance score', () => {
+    const results = [
+      makeResult({ relevanceScore: 80 }),
+      makeResult({ relevanceScore: 60 }),
+      makeResult(), // no score
+    ]
+    const a = buildJurisprudenceAnalytics(results)
+    expect(a.avgRelevanceScore).toBe(70)
+  })
+
+  it('returns null avgRelevanceScore when no scores', () => {
+    const a = buildJurisprudenceAnalytics([makeResult()])
+    expect(a.avgRelevanceScore).toBeNull()
+  })
+
+  it('handles empty array', () => {
+    const a = buildJurisprudenceAnalytics([])
+    expect(a.totalResults).toBe(0)
+    expect(a.byArea).toEqual([])
+    expect(a.byStance).toEqual({ favoravel: 0, desfavoravel: 0, neutro: 0, semClassificacao: 0 })
+    expect(a.byYear).toEqual([])
+    expect(a.byTribunal).toEqual([])
+    expect(a.avgRelevanceScore).toBeNull()
+  })
+
+  it('puts unclassified results under "outros"', () => {
+    const results = [makeResult({ assuntos: ['Outros'], classe: 'Procedimento Comum' })]
+    const a = buildJurisprudenceAnalytics(results)
+    expect(a.byArea.length).toBe(1)
+    expect(a.byArea[0].area).toBe('outros')
+    expect(a.byArea[0].count).toBe(1)
+  })
+})

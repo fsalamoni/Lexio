@@ -187,6 +187,41 @@
 
 ---
 
+### Feature 1.10: Analytics jurisprudencial por tema/período
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Painel de analytics no overview do caderno mostrando distribuição de resultados de jurisprudência por área, posição, ano e tribunal.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — `buildJurisprudenceAnalytics(results)` → `JurisprudenceAnalytics`
+- `frontend/src/lib/datajud-service.test.ts` — 9 testes para analytics
+- `frontend/src/pages/ResearchNotebook.tsx` — painel Analytics na aba Visão Geral
+
+**Mudanças implementadas:**
+- `buildJurisprudenceAnalytics` computa: totalResults, byArea, byStance, byYear, byTribunal, avgRelevanceScore
+- Painel visual no overview com: cards de stance (favoráveis/desfavoráveis/neutros/relevância média), barras de área, mini bar-chart por ano, badges de tribunal
+- Dados derivados automaticamente de `results_raw` das fontes de jurisprudência
+
+---
+
+### Feature 1.11: Pesquisa conversacional com contexto (memória multi-turno)
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** O assistente de chat do caderno recebe histórico de buscas realizadas para sugerir refinamentos e complementos.
+
+**Arquivos afetados:**
+- `frontend/src/pages/ResearchNotebook.tsx` — injeção de `searchContext` no system prompt do chat
+
+**Mudanças implementadas:**
+- Coleta de histórico de pesquisas (jurisprudência + web) a partir das fontes do caderno
+- Injeção como seção `HISTÓRICO DE PESQUISAS REALIZADAS` no system prompt
+- Assistente pode referenciar buscas anteriores e sugerir refinamentos
+- Zero overhead: apenas montagem de string, sem chamada extra de API
+
+---
+
 ## Epic 2: Visualizador Documental
 
 ### Feature 2.1: SourceContentViewer — renderização jurídica rica + tabs
@@ -446,7 +481,7 @@
 - [ ] Busca híbrida (semântica + lexical) para jurisprudência
 
 ### Prioridade 2 — Diferenciação de produto
-- [ ] Pesquisa conversacional com contexto (memória multi-turno de filtros)
+- [x] Pesquisa conversacional com contexto (memória multi-turno de filtros)
 - [x] Classificação temática de jurisprudência por área do direito
 - [x] Linha do tempo jurisprudencial (evolução de entendimento)
 - [x] Indicador "favorável / desfavorável / neutro" por resultado
@@ -455,8 +490,8 @@
 - [x] Deduplicação e agrupamento de precedentes relacionados
 - [x] Comparação entre dois julgados ("diferencie estes precedentes")
 - [ ] Pesquisa orientada à peça processual (cola petição → recebe jurisprudência relacionada)
-- [ ] Analytics jurisprudencial por tema/período
+- [x] Analytics jurisprudencial por tema/período
 
 ---
 
-*Última atualização: 2026-04-08 — Ciclo: Timeline + Agrupamento + Comparação de julgados*
+*Última atualização: 2026-04-08 — Ciclo: Analytics jurisprudencial + Pesquisa conversacional com contexto*

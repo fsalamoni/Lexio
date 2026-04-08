@@ -874,6 +874,96 @@ export function compareProcesses(left: DataJudResult, right: DataJudResult): Pro
   return { left, right, sharedAssuntos, sameArea, daysDiff }
 }
 
+// ── Jurisprudence analytics ──────────────────────────────────────────────────
+
+/** Analytics data for jurisprudence results. */
+export interface JurisprudenceAnalytics {
+  /** Total number of results analyzed. */
+  totalResults: number
+  /** Distribution by classified legal area. */
+  byArea: Array<{ area: string; label: string; count: number }>
+  /** Distribution by stance. */
+  byStance: { favoravel: number; desfavoravel: number; neutro: number; semClassificacao: number }
+  /** Distribution by year (YYYY → count). Sorted ascending. */
+  byYear: Array<{ year: string; count: number }>
+  /** Distribution by tribunal. */
+  byTribunal: Array<{ tribunal: string; count: number }>
+  /** Average relevance score (only among scored results). */
+  avgRelevanceScore: number | null
+}
+
+/**
+ * Build analytics data from an array of DataJudResult.
+ * Used by the notebook overview tab to show jurisprudence stats.
+ */
+export function buildJurisprudenceAnalytics(results: DataJudResult[]): JurisprudenceAnalytics {
+  const areaMap = new Map<string, { label: string; count: number }>()
+  const yearMap = new Map<string, number>()
+  const tribunalMap = new Map<string, number>()
+  const byStance = { favoravel: 0, desfavoravel: 0, neutro: 0, semClassificacao: 0 }
+  let scoreSum = 0
+  let scoreCount = 0
+
+  for (const r of results) {
+    // Area
+    const area = classifyResult(r)
+    if (area) {
+      const existing = areaMap.get(area)
+      if (existing) existing.count++
+      else areaMap.set(area, { label: area, count: 1 })
+    } else {
+      const existing = areaMap.get('outros')
+      if (existing) existing.count++
+      else areaMap.set('outros', { label: 'outros', count: 1 })
+    }
+
+    // Stance
+    if (r.stance === 'favoravel') byStance.favoravel++
+    else if (r.stance === 'desfavoravel') byStance.desfavoravel++
+    else if (r.stance === 'neutro') byStance.neutro++
+    else byStance.semClassificacao++
+
+    // Year from dataAjuizamento (YYYY-MM-DD)
+    const year = r.dataAjuizamento?.slice(0, 4)
+    if (year && /^\d{4}$/.test(year)) {
+      yearMap.set(year, (yearMap.get(year) || 0) + 1)
+    }
+
+    // Tribunal
+    const tribunal = r.tribunalName || r.tribunal
+    if (tribunal) {
+      tribunalMap.set(tribunal, (tribunalMap.get(tribunal) || 0) + 1)
+    }
+
+    // Relevance score
+    if (r.relevanceScore != null) {
+      scoreSum += r.relevanceScore
+      scoreCount++
+    }
+  }
+
+  const byArea = Array.from(areaMap.entries())
+    .map(([area, { label, count }]) => ({ area, label, count }))
+    .sort((a, b) => b.count - a.count)
+
+  const byYear = Array.from(yearMap.entries())
+    .map(([year, count]) => ({ year, count }))
+    .sort((a, b) => a.year.localeCompare(b.year))
+
+  const byTribunal = Array.from(tribunalMap.entries())
+    .map(([tribunal, count]) => ({ tribunal, count }))
+    .sort((a, b) => b.count - a.count)
+
+  return {
+    totalResults: results.length,
+    byArea,
+    byStance,
+    byYear,
+    byTribunal,
+    avgRelevanceScore: scoreCount > 0 ? Math.round(scoreSum / scoreCount) : null,
+  }
+}
+
 function classifyStatus(status: number): DataJudErrorType {
   if (status === 429) return 'rate_limit'
   if (status === 401 || status === 403) return 'auth'
