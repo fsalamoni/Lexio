@@ -1470,7 +1470,6 @@ function fitSourcesToFirestoreLimit(
   // the largest payload and has the least impact on analysis quality.
   const withoutRaw: NotebookSource[] = sources.map(src => {
     if (src.type !== 'jurisprudencia' || !src.results_raw) return src
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { results_raw: _dropped, ...rest } = src
     return rest
   })

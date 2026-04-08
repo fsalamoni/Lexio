@@ -333,7 +333,7 @@ export default function ResearchNotebook() {
     if (!openId || !userId || loading) return
     deepLinkHandledRef.current = true
     // Clear the param from the URL immediately so a page refresh is clean.
-    setSearchParams(prev => { prev.delete('open'); return prev }, { replace: true })
+    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('open'); return next }, { replace: true })
     const fromList = notebooks.find(nb => nb.id === openId)
     const resolve = fromList
       ? Promise.resolve(fromList)

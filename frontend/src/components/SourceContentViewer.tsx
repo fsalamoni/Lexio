@@ -318,11 +318,11 @@ function ProcessCard({ result: r, index }: { result: DataJudResult; index: numbe
         )}
       </div>
 
-      {/* Ementa (always visible when present) */}
+      {/* Ementa (truncated by default; full text shown when expanded) */}
       {r.ementa && (
         <div className="px-4 py-3 border-t border-gray-100">
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Ementa</p>
-          <p className="text-xs text-gray-700 leading-relaxed line-clamp-3">{r.ementa}</p>
+          <p className={`text-xs text-gray-700 leading-relaxed ${expanded ? '' : 'line-clamp-3'}`}>{r.ementa}</p>
         </div>
       )}
 
