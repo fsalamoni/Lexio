@@ -389,6 +389,10 @@ export interface DataJudResult {
   ementa?: string
   /** Inteiro teor da decisão, quando disponível na API DataJud. */
   inteiroTeor?: string
+  /** Relevance score (0–100) assigned by the ranking LLM. */
+  relevanceScore?: number
+  /** Stance classification relative to the user's query: favoravel | desfavoravel | neutro. */
+  stance?: 'favoravel' | 'desfavoravel' | 'neutro'
 }
 
 export interface DataJudSearchProgress {
@@ -742,6 +746,56 @@ export function formatDataJudResults(results: DataJudResult[]): string {
  */
 export function getTribunalsByCategory(category: TribunalCategory): TribunalInfo[] {
   return ALL_TRIBUNALS.filter(t => t.category === category)
+}
+
+// ── Jurisprudence area classification ───────────────────────────────────────
+
+/**
+ * Classification patterns for mapping DataJud assuntos/classe to legal areas.
+ * Patterns are ordered from specific → general to prevent false positives.
+ */
+const JURISPRUDENCE_AREA_PATTERNS: [string, RegExp][] = [
+  ['tax',                /tribut[áa]ri|imposto|icms|iss\b|irpj|csll|pis.?cofins|fiscal|tributo|cr[ée]dito tribut/i],
+  ['labor',              /trabalh|clt|empregad|trabalhista|rescis[ãa]o.+trabalho|justa causa|fgts|hora extra|direito do trabalho/i],
+  ['criminal_procedure', /processo penal|inqu[ée]rito|flagrante|pris[ãa]o preventiva|a[çc][ãa]o penal|execu[çc][ãa]o penal/i],
+  ['criminal',           /\bpenal\b|crime|delito|pena privativa|dosimetria|tipicidade|culpabilidade|homic[íi]dio|furto|roubo|tr[áa]fico/i],
+  ['environmental',      /ambiental|meio ambiente|licenciamento ambiental|fauna|flora|saneamento|[áa]rea degradada/i],
+  ['digital',            /\blgpd\b|dados pessoais|cibern[ée]tic|marco civil|direito digital/i],
+  ['administrative',     /administrativ|licita[çc][ãa]o|improbidade|ato administrativo|poder de pol[íi]cia|servidor p[úu]blico|concurso p[úu]blico/i],
+  ['civil_procedure',    /processo civil|\bcpc\b|tutela antecipada|cumprimento de senten|execu[çc][ãa]o de t[íi]tulo/i],
+  ['consumer',           /consumidor|\bcdc\b|fornecedor|produto defeituoso|v[íi]cio|rela[çc][ãa]o de consumo|plano de sa[úu]de/i],
+  ['inheritance',        /sucess[õo]es|heran[çc]a|invent[áa]rio|testamento|legado|herdeiro/i],
+  ['family',             /fam[íi]lia|div[óo]rcio|alimentos|guarda|uni[ãa]o est[áa]vel|casamento|partilha|paternidade/i],
+  ['constitutional',     /constitucional|direito fundamental|controle de constitucionalidade|\badi\b|\badpf\b|mandado de injun/i],
+  ['business',           /empresarial|societ[áa]rio|fal[êe]ncia|recupera[çc][ãa]o judicial|marca|patente|propriedade intelectual/i],
+  ['social_security',    /previdenci[áa]ri|inss|aposentadoria|aux[íi]lio.?doen[çc]a|incapacidade|benef[íi]cio previdenci/i],
+  ['electoral',          /eleitoral|elei[çc][ãõo]es|candidat|propaganda eleitoral|partido/i],
+  ['international',      /internacional|tratado|extradi[çc][ãa]o|homologa[çc][ãa]o.+senten[çc]a.+estrangeira/i],
+  ['civil',              /responsabilidade civil|obriga[çc][ãõo]es|dano moral|indeniza[çc]|direito civil|contrato/i],
+]
+
+/**
+ * Classify a DataJud result into a legal area based on its `assuntos` and `classe` fields.
+ * Returns the area key (e.g. 'civil', 'labor') or undefined if no match is found.
+ */
+export function classifyJurisprudenceArea(
+  assuntos: string[],
+  classe: string,
+  ementa?: string,
+): string | undefined {
+  // Combine all textual fields into a single searchable string
+  const text = [...assuntos, classe, ementa ?? ''].join(' ')
+  for (const [area, re] of JURISPRUDENCE_AREA_PATTERNS) {
+    if (re.test(text)) return area
+  }
+  return undefined
+}
+
+/**
+ * Classify a DataJud result into a legal area. Convenience wrapper accepting a DataJudResult object.
+ */
+export function classifyResult(result: DataJudResult): string | undefined {
+  return classifyJurisprudenceArea(result.assuntos, result.classe, result.ementa)
 }
 
 function classifyStatus(status: number): DataJudErrorType {

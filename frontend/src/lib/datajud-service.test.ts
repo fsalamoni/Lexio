@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   searchDataJud,
   formatDataJudResults,
+  classifyJurisprudenceArea,
+  classifyResult,
   _resetEndpointCache,
   type TribunalInfo,
   type DataJudResult,
@@ -263,6 +265,98 @@ describe('datajud-service', () => {
       expect(result.results[0].ementa).toBeUndefined()
       expect(result.results[0].inteiroTeor).toBeUndefined()
     })
+  })
+})
+
+// ── classifyJurisprudenceArea ───────────────────────────────────────────────
+
+describe('classifyJurisprudenceArea', () => {
+  it('classifies labor area from assuntos', () => {
+    expect(classifyJurisprudenceArea(['Rescisão do Contrato de Trabalho'], 'Reclamação Trabalhista')).toBe('labor')
+  })
+
+  it('classifies criminal from assuntos', () => {
+    expect(classifyJurisprudenceArea(['Homicídio Qualificado'], 'Recurso em Sentido Estrito')).toBe('criminal')
+  })
+
+  it('classifies consumer area', () => {
+    expect(classifyJurisprudenceArea(['Relação de Consumo', 'Produto Defeituoso'], 'Ação Indenizatória')).toBe('consumer')
+  })
+
+  it('classifies tax area', () => {
+    expect(classifyJurisprudenceArea(['ICMS', 'Substituição Tributária'], 'Mandado de Segurança')).toBe('tax')
+  })
+
+  it('classifies civil area from dano moral', () => {
+    expect(classifyJurisprudenceArea(['Dano Moral'], 'Apelação Cível')).toBe('civil')
+  })
+
+  it('classifies family area', () => {
+    expect(classifyJurisprudenceArea(['Divórcio'], 'Ação de Família')).toBe('family')
+  })
+
+  it('classifies administrative area', () => {
+    expect(classifyJurisprudenceArea(['Improbidade Administrativa'], 'Ação Civil Pública')).toBe('administrative')
+  })
+
+  it('classifies environmental area', () => {
+    expect(classifyJurisprudenceArea(['Meio Ambiente'], 'Ação Civil Pública')).toBe('environmental')
+  })
+
+  it('classifies social_security area', () => {
+    expect(classifyJurisprudenceArea(['Aposentadoria por Invalidez'], 'Procedimento Comum')).toBe('social_security')
+  })
+
+  it('classifies constitutional area', () => {
+    expect(classifyJurisprudenceArea(['Controle de Constitucionalidade'], 'ADI')).toBe('constitutional')
+  })
+
+  it('classifies business area', () => {
+    expect(classifyJurisprudenceArea(['Recuperação Judicial'], 'Falência')).toBe('business')
+  })
+
+  it('returns undefined for unclassifiable results', () => {
+    expect(classifyJurisprudenceArea(['Outros'], 'Procedimento Comum')).toBeUndefined()
+  })
+
+  it('uses ementa for classification when assuntos are generic', () => {
+    expect(classifyJurisprudenceArea(
+      ['Outros'], 'Apelação',
+      'Trata-se de ação de indenização por dano moral decorrente de relação de consumo',
+    )).toBe('consumer')
+  })
+
+  it('prioritizes specific areas over general ones', () => {
+    // "processo penal" should match criminal_procedure, not criminal
+    expect(classifyJurisprudenceArea(['Processo Penal'], 'Recurso')).toBe('criminal_procedure')
+  })
+})
+
+// ── classifyResult ──────────────────────────────────────────────────────────
+
+describe('classifyResult', () => {
+  it('classifies a full DataJudResult object', () => {
+    const result: DataJudResult = {
+      tribunal: 'tjsp', tribunalName: 'TJSP',
+      numeroProcesso: '0001234-56.2023.8.26.0100',
+      classe: 'Reclamação Trabalhista', classeCode: 1001,
+      assuntos: ['Rescisão do Contrato de Trabalho'],
+      orgaoJulgador: '1ª Vara', dataAjuizamento: '2023-01-01',
+      grau: 'G1', formato: 'Eletrônico', movimentos: [],
+    }
+    expect(classifyResult(result)).toBe('labor')
+  })
+
+  it('returns undefined when no area matches', () => {
+    const result: DataJudResult = {
+      tribunal: 'tjsp', tribunalName: 'TJSP',
+      numeroProcesso: '0001234-56.2023.8.26.0100',
+      classe: 'Procedimento Comum', classeCode: 1,
+      assuntos: ['Outros'],
+      orgaoJulgador: '1ª Vara', dataAjuizamento: '2023-01-01',
+      grau: 'G1', formato: 'Eletrônico', movimentos: [],
+    }
+    expect(classifyResult(result)).toBeUndefined()
   })
 })
 

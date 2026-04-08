@@ -8,10 +8,12 @@
  * - Plain text fallback
  */
 import { useMemo, useState } from 'react'
-import { Copy, Check, FileText, Download, Scale, BookOpen, ChevronDown, ChevronUp, FileSearch } from 'lucide-react'
+import { Copy, Check, FileText, Download, Scale, BookOpen, ChevronDown, ChevronUp, FileSearch, ThumbsUp, ThumbsDown, Minus } from 'lucide-react'
 import DraggablePanel from './DraggablePanel'
 import type { NotebookSource } from '../lib/firestore-service'
 import type { DataJudResult } from '../lib/datajud-service'
+import { classifyResult } from '../lib/datajud-service'
+import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
 import {
   getStructuredSections,
   getStructuredMeta,
@@ -358,6 +360,7 @@ function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain:
 /** Card for a single DataJud process result. */
 function ProcessCard({ result: r, index }: { result: DataJudResult; index: number }) {
   const [expanded, setExpanded] = useState(false)
+  const area = classifyResult(r)
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
@@ -369,6 +372,22 @@ function ProcessCard({ result: r, index }: { result: DataJudResult; index: numbe
               {index + 1}. {r.classe}
             </span>
             <span className="text-xs text-gray-500 font-mono truncate">{r.numeroProcesso}</span>
+            {/* Stance indicator */}
+            {r.stance === 'favoravel' && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-700 border border-green-200" title="Favorável à tese">
+                <ThumbsUp className="w-2.5 h-2.5" /> Favorável
+              </span>
+            )}
+            {r.stance === 'desfavoravel' && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700 border border-red-200" title="Desfavorável à tese">
+                <ThumbsDown className="w-2.5 h-2.5" /> Desfavorável
+              </span>
+            )}
+            {r.stance === 'neutro' && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-600 border border-gray-200" title="Neutro / inconclusivo">
+                <Minus className="w-2.5 h-2.5" /> Neutro
+              </span>
+            )}
           </div>
           <div className="mt-1 text-xs text-gray-600 flex flex-wrap gap-x-3 gap-y-0.5">
             <span className="font-medium">{r.tribunalName || r.tribunal}</span>
@@ -379,8 +398,18 @@ function ProcessCard({ result: r, index }: { result: DataJudResult; index: numbe
             )}
           </div>
         </div>
-        {(r.ementa || r.inteiroTeor) && (
-          <div className="flex items-center gap-1.5 flex-shrink-0 text-[10px] text-gray-400 mt-0.5">
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          {/* Relevance score */}
+          {r.relevanceScore != null && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+              r.relevanceScore >= 70 ? 'bg-green-50 text-green-700' :
+              r.relevanceScore >= 40 ? 'bg-yellow-50 text-yellow-700' :
+              'bg-gray-50 text-gray-500'
+            }`} title={`Relevância: ${r.relevanceScore}/100`}>
+              {r.relevanceScore}/100
+            </span>
+          )}
+          <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
             {r.ementa && (
               <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-600 font-medium border border-sky-100">
                 Ementa
@@ -392,13 +421,18 @@ function ProcessCard({ result: r, index }: { result: DataJudResult; index: numbe
               </span>
             )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Assuntos */}
-      {r.assuntos.length > 0 && (
+      {/* Area classification + Assuntos */}
+      {(area || r.assuntos.length > 0) && (
         <div className="px-4 py-2 bg-gray-50/60 border-b border-gray-100">
           <div className="flex flex-wrap gap-1">
+            {area && (
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${AREA_COLORS[area] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                {AREA_LABELS[area] || area}
+              </span>
+            )}
             {r.assuntos.slice(0, 6).map((a, i) => (
               <span key={i} className="px-2 py-0.5 rounded-full text-[10px] bg-gray-100 text-gray-600">{a}</span>
             ))}

@@ -149,13 +149,17 @@ export interface SearchResultItem {
 const JURISPRUDENCE_RANKING_SYSTEM = [
   'Você é um especialista em relevância jurisprudencial.',
   'Avalie cada processo quanto à relevância para a consulta do usuário.',
-  'Retorne APENAS um JSON com um array "ranking" onde cada item tem',
-  '"index" (número do processo na lista, começando em 1) e "score" (0 a 100,',
-  'sendo 100 = máxima relevância). Ordene do mais relevante para o menos relevante.',
+  'Retorne APENAS um JSON com um array "ranking" onde cada item tem:',
+  '"index" (número do processo na lista, começando em 1),',
+  '"score" (0 a 100, sendo 100 = máxima relevância),',
+  '"stance" (classificação da posição do resultado em relação à tese/consulta do usuário:',
+  '"favoravel" se o julgado apoia a tese, "desfavoravel" se contraria, "neutro" se inconclusivo).',
+  'Ordene do mais relevante para o menos relevante.',
   'Considere: (1) alinhamento temático dos assuntos com a consulta,',
   '(2) grau hierárquico (tribunais superiores têm mais peso como precedente),',
   '(3) movimentações recentes indicam processos ativos,',
   '(4) data de ajuizamento mais recente pode indicar jurisprudência atualizada.',
+  'Exemplo de resposta: {"ranking":[{"index":1,"score":85,"stance":"favoravel"}]}',
 ].join(' ')
 
 const JURISPRUDENCE_SYNTHESIS_SYSTEM = [
@@ -1437,13 +1441,13 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             // Parse ranking and reorder results
             try {
               const cleaned = rankResult.content.replace(/```(?:json)?\s*/g, '').trim()
-              const parsed = JSON.parse(cleaned) as { ranking: Array<{ index: number; score: number }> }
+              const parsed = JSON.parse(cleaned) as { ranking: Array<{ index: number; score: number; stance?: string }> }
               if (parsed.ranking && Array.isArray(parsed.ranking)) {
                 const sorted = parsed.ranking
                   .filter(r => r.index >= 1 && r.index <= selectedResults.length)
                   .sort((a, b) => b.score - a.score)
 
-                const reordered = []
+                const reordered: typeof selectedResults = []
                 const seenIndices = new Set<number>()
                 let topScore: number | null = null
 
@@ -1453,7 +1457,13 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
                   const process = selectedResults[resultIndex]
                   if (!process) continue
                   seenIndices.add(resultIndex)
-                  reordered.push(process)
+                  // Attach ranking metadata to the result
+                  const enriched = { ...process, relevanceScore: item.score } as DataJudResult
+                  const rawStance = item.stance?.toLowerCase().trim()
+                  if (rawStance === 'favoravel' || rawStance === 'desfavoravel' || rawStance === 'neutro') {
+                    enriched.stance = rawStance
+                  }
+                  reordered.push(enriched)
                   if (topScore === null) topScore = item.score
                 }
 
