@@ -3090,7 +3090,7 @@ Instruções:
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border whitespace-nowrap ${colorClasses}`}>
                                 {areaLabel}
                               </span>
-                              <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${areaLabel}: ${pct}%`}>
                                 <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
                               </div>
                               <span className="text-[11px] text-gray-500 font-mono w-12 text-right">{count} ({pct}%)</span>
@@ -3111,9 +3111,9 @@ Instruções:
                           const pct = maxCount > 0 ? (count / maxCount) * 100 : 0
                           return (
                             <div key={year} className="flex-1 flex flex-col items-center gap-0.5" title={`${year}: ${count} processo(s)`}>
-                              <span className="text-[9px] text-gray-500 font-mono">{count}</span>
+                              <span className="text-[10px] text-gray-500 font-mono">{count}</span>
                               <div className="w-full bg-emerald-400 rounded-t" style={{ height: `${Math.max(pct, 4)}%` }} />
-                              <span className="text-[9px] text-gray-400">{year.slice(2)}</span>
+                              <span className="text-[10px] text-gray-400">{year.slice(2)}</span>
                             </div>
                           )
                         })}
