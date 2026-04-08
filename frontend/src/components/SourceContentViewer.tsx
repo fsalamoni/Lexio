@@ -41,14 +41,16 @@ function resolveSource(source: NotebookSource) {
 }
 
 /** Format a character count for display. */
-function fmtChars(n: number): string {
+/** @internal exported for unit testing only */
+export function fmtChars(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
   return String(n)
 }
 
 /** Format an ISO date string to a localised short date. */
-function formatDate(iso: string): string {
+/** @internal exported for unit testing only */
+export function formatDate(iso: string): string {
   if (!iso) return ''
   try {
     return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -61,12 +63,13 @@ function formatDate(iso: string): string {
  * Parse jurisprudência synthesis text into structured blocks.
  * The text follows Markdown-ish format with bold headers (## or **).
  */
-interface JurisprudenceSection {
+export interface JurisprudenceSection {
   heading?: string
   body: string
 }
 
-function parseJurisprudenceText(text: string): JurisprudenceSection[] {
+/** @internal exported for unit testing only */
+export function parseJurisprudenceText(text: string): JurisprudenceSection[] {
   if (!text.trim()) return []
   // Split on Markdown headings (## Heading or **Heading**) or numbered headings
   const lines = text.split('\n')

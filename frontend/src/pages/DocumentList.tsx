@@ -12,6 +12,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { IS_FIREBASE } from '../lib/firebase'
 import { listDocuments, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
 import { DOCTYPE_LABELS } from '../lib/constants'
+import { applyOrigemFilter, toggleFilter } from '../lib/document-filters'
 
 interface Document {
   id: string
@@ -100,7 +101,7 @@ export default function DocumentList() {
           }
           // Client-side origin filtering
           if (originFilter) {
-            items = items.filter(d => d.origem === originFilter)
+            items = applyOrigemFilter(items, originFilter)
           }
           const totalFiltered = items.length
           // Client-side pagination
@@ -143,7 +144,7 @@ export default function DocumentList() {
   }
 
   const handleOriginFilter = (o: string) => {
-    setOriginFilter(prev => prev === o ? '' : o)
+    setOriginFilter(prev => toggleFilter(prev, o))
     setPage(0)
     setSelected(new Set())
   }

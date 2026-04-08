@@ -231,13 +231,21 @@
 
 ### Feature 4.2: Unificação do documento formal com Novo Documento
 
-**Estado:** ✅ Implementado (ciclo 2026-04)
+**Estado:** ⚠️ Parcial (ciclo 2026-04)
 
 **Objetivo:** O artefato `documento` gerado no estúdio deve ser equivalente ao Novo Documento em qualidade e persistência.
 
 **Arquivos afetados:**
 - `frontend/src/lib/notebook-studio-pipeline.ts`
 - `frontend/src/lib/firestore-service.ts`
+
+**O que já funciona:**
+- Documentos do caderno e documentos formais aparecem na mesma listagem na página Documentos
+- Pipeline de geração preserva qualidade e persiste com `origem: 'caderno'`
+
+**O que ainda falta:**
+- Botão "Abrir no Gerador" para reabrir documento do caderno no fluxo Novo Documento
+- Geração via pipeline do caderno e do Novo Documento ainda são fluxos separados sem intercambialidade explícita
 
 ---
 
@@ -248,6 +256,50 @@
 **Estado:** ✅ Implementado (ciclo 2026-04)
 
 **Arquivos:** `frontend/src/lib/datajud-service.test.ts`
+
+---
+
+### Feature 5.2: Rastreabilidade PLANO.md + MANIFEST.json
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Arquivos:** `docs/PLANO.md`, `docs/MANIFEST.json`
+
+---
+
+### Feature 5.3: Exportação PDF nativa dos artefatos
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Permitir exportar artefatos como PDF diretamente do visualizador.
+
+**Arquivos afetados:**
+- `frontend/src/components/artifacts/artifact-exporters.ts` — função `printAsPDF` via `window.print()`
+- `frontend/src/components/artifacts/ArtifactViewerModal.tsx` — opção "PDF (imprimir)" no dropdown de exportação
+
+---
+
+### Feature 5.4: Preview de documento na página Documentos
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Mostrar snippet do conteúdo do documento na listagem para facilitar identificação visual.
+
+**Arquivos afetados:**
+- `frontend/src/pages/DocumentList.tsx` — snippet de `texto_completo` (2 linhas, max 200 chars), busca full-text
+
+---
+
+### Feature 5.5: Testes unitários — SourceContentViewer, ReportViewer, DocumentList
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Cobrir funções puras dos componentes de UI/visualização com testes unitários.
+
+**Arquivos afetados:**
+- `frontend/src/components/SourceContentViewer.test.ts` — `parseJurisprudenceText`, `fmtChars`, `formatDate`
+- `frontend/src/components/artifacts/ReportViewer.test.ts` — `renderMarkdownToHtml`, `extractToc`, pageMode
+- `frontend/src/pages/DocumentList.test.ts` — `applyOrigemFilter`, lógica de filtragem
 
 ---
 
@@ -266,12 +318,14 @@
 
 ## Lacunas de testes (conhecidas)
 
-| Área | Tipo de teste faltando |
-|------|----------------------|
-| Jurispr. — ementa/inteiro teor | ✅ Coberto — 11 testes em datajud-service.test.ts |
-| Studio pipeline — detecção de área | ✅ Coberto — 19 testes em notebook-studio-pipeline.test.ts |
-| firestore-service — saveNotebookDocument | Teste de integração mock Firestore |
-| SourceContentViewer — renderização jurídica | Testes de renderização de componente |
+| Área | Tipo de teste faltando | Estado |
+|------|----------------------|--------|
+| Jurispr. — ementa/inteiro teor | Testes de parseDataJudHit com novos campos | ✅ Coberto — 11 testes em datajud-service.test.ts |
+| Studio pipeline — detecção de área | Testes de detectLegalArea (17 áreas + fallback) | ✅ Coberto — 19 testes em notebook-studio-pipeline.test.ts |
+| SourceContentViewer — renderização jurídica | Testes de parseJurisprudenceText, fmtChars, formatDate | ✅ Coberto — SourceContentViewer.test.ts |
+| ReportViewer — pageMode | Testes de renderMarkdownToHtml, extractToc, pageMode | ✅ Coberto — ReportViewer.test.ts |
+| DocumentList — origemFilter interaction | Testes de lógica de filtragem por origem | ✅ Coberto — DocumentList.test.ts |
+| firestore-service — saveNotebookDocument | Teste de integração com mock de Firestore | ❌ Pendente |
 
 ---
 
@@ -311,4 +365,4 @@
 
 ---
 
-*Última atualização: 2026-04-08 — Ciclo: Feature 3.2 (área jurídica), PDF export, preview DocumentList, testes studio pipeline*
+*Última atualização: 2026-04-08 — Ciclo: align-docs + testes SourceContentViewer, ReportViewer, DocumentList origemFilter*

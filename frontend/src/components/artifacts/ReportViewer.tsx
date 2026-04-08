@@ -8,7 +8,8 @@ import { List, ChevronRight } from 'lucide-react'
 
 // ── Markdown → HTML (same as ArtifactViewerModal but richer) ────────────────
 
-function renderMarkdownToHtml(md: string): string {
+/** @internal exported for unit testing only */
+export function renderMarkdownToHtml(md: string): string {
   let html = md
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -16,8 +17,8 @@ function renderMarkdownToHtml(md: string): string {
 
   // Code blocks
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-gray-100 rounded-lg p-3 my-2 overflow-x-auto"><code>$2</code></pre>')
-  // Blockquotes
-  html = html.replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-brand-300 pl-4 my-3 italic text-gray-600">$1</blockquote>')
+  // Blockquotes — match after HTML-escaping (> becomes &gt;)
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote class="border-l-4 border-brand-300 pl-4 my-3 italic text-gray-600">$1</blockquote>')
   // Headers with IDs for scroll-spy
   html = html.replace(/^#### (.+)$/gm, (_m, t) => `<h4 id="${slugify(t)}" class="text-sm font-bold mt-4 mb-1 scroll-mt-4">${t}</h4>`)
   html = html.replace(/^### (.+)$/gm, (_m, t) => `<h3 id="${slugify(t)}" class="text-base font-bold mt-5 mb-2 scroll-mt-4">${t}</h3>`)
@@ -60,13 +61,14 @@ function slugify(text: string): string {
 
 // ── TOC extraction ──────────────────────────────────────────────────────────
 
-interface TocItem {
+export interface TocItem {
   id: string
   text: string
   level: number
 }
 
-function extractToc(md: string): TocItem[] {
+/** @internal exported for unit testing only */
+export function extractToc(md: string): TocItem[] {
   const items: TocItem[] = []
   const lines = md.split('\n')
   for (const line of lines) {
@@ -83,7 +85,7 @@ function extractToc(md: string): TocItem[] {
 // ── Main Component ──────────────────────────────────────────────────────────
 
 /** Minimum document height matching an A4 page (29.7 cm at 96 dpi ≈ 1123 px). */
-const A4_PAGE_MIN_HEIGHT = '29.7cm'
+export const A4_PAGE_MIN_HEIGHT = '29.7cm'
 
 interface ReportViewerProps {
   content: string

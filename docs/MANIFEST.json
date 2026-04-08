@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-08",
-    "cycle": "area-juridica-pdf-preview-testes-studio",
+    "cycle": "align-docs-ui-tests-source-report-documentlist",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -109,7 +109,7 @@
         "frontend/src/lib/firestore-service.ts",
         "frontend/src/lib/notebook-studio-pipeline.ts"
       ],
-      "notes": "Documentos aparecem na mesma listagem; geração via pipeline separado; falta botão 'Abrir no Gerador'"
+      "notes": "Documentos aparecem na mesma listagem; geração via pipeline separado; falta botão 'Abrir no Gerador' para reabrir doc do caderno no fluxo Novo Documento"
     },
     {
       "id": "E4.F3",
@@ -162,6 +162,19 @@
       "files": ["docs/PLANO.md", "docs/MANIFEST.json"]
     },
     {
+      "id": "E5.F5",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Testes unitários — SourceContentViewer, ReportViewer, DocumentList",
+      "state": "implemented",
+      "files": [
+        "frontend/src/components/SourceContentViewer.test.ts",
+        "frontend/src/components/artifacts/ReportViewer.test.ts",
+        "frontend/src/pages/DocumentList.test.ts",
+        "frontend/src/lib/document-filters.ts"
+      ],
+      "notes": "Exportadas fmtChars/formatDate/parseJurisprudenceText (SourceContentViewer), renderMarkdownToHtml/extractToc/A4_PAGE_MIN_HEIGHT (ReportViewer), applyOrigemFilter/toggleFilter extraídas em document-filters.ts; blockquote regex corrigido (escaping ordem)"
+    },
+    {
       "id": "E6.F1",
       "epic": "Pipeline de Vídeo",
       "name": "Pipeline de vídeo completo (11 etapas)",
@@ -198,12 +211,13 @@
       "frontend/src/lib/datajud-service.test.ts",
       "frontend/src/lib/web-search-service.test.ts",
       "frontend/src/lib/external-video-provider.test.ts",
-      "frontend/src/lib/notebook-studio-pipeline.test.ts"
+      "frontend/src/lib/notebook-studio-pipeline.test.ts",
+      "frontend/src/components/SourceContentViewer.test.ts",
+      "frontend/src/components/artifacts/ReportViewer.test.ts",
+      "frontend/src/pages/DocumentList.test.ts"
     ],
     "missing": [
-      "SourceContentViewer component tests",
-      "ReportViewer pageMode snapshot",
-      "DocumentList origemFilter interaction"
+      "firestore-service saveNotebookDocument integration (mock Firestore)"
     ]
   }
 }
