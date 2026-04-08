@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-08",
-    "cycle": "classification-stance-ranking-enrichment",
+    "cycle": "timeline-grouping-comparison",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -75,11 +75,49 @@
       "notes": "DataJudResult.relevanceScore + stance; prompt JURISPRUDENCE_RANKING_SYSTEM enriquecido; ThumbsUp/ThumbsDown/Minus no ProcessCard"
     },
     {
+      "id": "E1.F7",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Linha do tempo jurisprudencial",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/components/SourceContentViewer.tsx"
+      ],
+      "notes": "sortByDate utility; tab Linha do Tempo com timeline visual vertical; dots coloridos por stance"
+    },
+    {
+      "id": "E1.F8",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Agrupamento de precedentes por área",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/components/SourceContentViewer.tsx"
+      ],
+      "notes": "groupByArea + AreaGroup interface; tab Agrupados com seções colapsáveis por área do direito"
+    },
+    {
+      "id": "E1.F9",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Comparação entre dois julgados",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/components/SourceContentViewer.tsx"
+      ],
+      "notes": "compareProcesses + ProcessComparison; tab Comparar com side-by-side; botão Comparar no ProcessCard"
+    },
+    {
       "id": "E2.F1",
       "epic": "Visualizador Documental",
       "name": "SourceContentViewer — page-like + tabs jurisprudência",
       "state": "implemented",
-      "files": ["frontend/src/components/SourceContentViewer.tsx"],
+      "files": [
+        "frontend/src/components/SourceContentViewer.tsx"
+      ],
       "notes": "DocumentPageViewer com canvas cinza/card branco; tabs Síntese+Processos; ProcessCard com ementa/inteiro teor colapsível"
     },
     {
@@ -98,7 +136,9 @@
       "epic": "Estúdio do Caderno",
       "name": "Prompts especializados por tipo de documento",
       "state": "implemented",
-      "files": ["frontend/src/lib/notebook-studio-pipeline.ts"],
+      "files": [
+        "frontend/src/lib/notebook-studio-pipeline.ts"
+      ],
       "notes": "Detecção: parecer | petição inicial | contestação | recurso | contrato/nota técnica | genérico"
     },
     {
@@ -154,14 +194,18 @@
       "epic": "Integração Caderno→Documentos",
       "name": "Filtro 'Do Caderno' na página Documentos",
       "state": "implemented",
-      "files": ["frontend/src/pages/DocumentList.tsx"]
+      "files": [
+        "frontend/src/pages/DocumentList.tsx"
+      ]
     },
     {
       "id": "E5.F1",
       "epic": "Infraestrutura de Qualidade",
       "name": "Testes unitários DataJud ementa/inteiro_teor",
       "state": "implemented",
-      "files": ["frontend/src/lib/datajud-service.test.ts"]
+      "files": [
+        "frontend/src/lib/datajud-service.test.ts"
+      ]
     },
     {
       "id": "E5.F3",
@@ -179,7 +223,9 @@
       "epic": "Infraestrutura de Qualidade",
       "name": "Preview de documento na página Documentos",
       "state": "implemented",
-      "files": ["frontend/src/pages/DocumentList.tsx"],
+      "files": [
+        "frontend/src/pages/DocumentList.tsx"
+      ],
       "notes": "Snippet de texto_completo (2 linhas, max 200 chars) abaixo do tema; busca full-text"
     },
     {
@@ -187,7 +233,10 @@
       "epic": "Infraestrutura de Qualidade",
       "name": "Rastreabilidade PLANO.md + MANIFEST.json",
       "state": "implemented",
-      "files": ["docs/PLANO.md", "docs/MANIFEST.json"]
+      "files": [
+        "docs/PLANO.md",
+        "docs/MANIFEST.json"
+      ]
     },
     {
       "id": "E5.F5",

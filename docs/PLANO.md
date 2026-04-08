@@ -134,6 +134,59 @@
 
 ---
 
+### Feature 1.7: Linha do tempo jurisprudencial
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Exibir processos organizados cronologicamente em formato de timeline visual para identificar evolução de entendimento.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — `sortByDate(results, ascending)` utility
+- `frontend/src/components/SourceContentViewer.tsx` — tab "Linha do Tempo" no JurisprudenceViewer
+
+**Mudanças implementadas:**
+- `sortByDate` ordena resultados por `dataAjuizamento` (ascendente ou descendente)
+- Tab "Linha do Tempo" com timeline visual vertical (linha emerald + dots coloridos por stance)
+- Cada nó exibe data, classe, área, tribunal, relevância e trecho da ementa
+- Dots coloridos: verde (favorável), vermelho (desfavorável), emerald (neutro/sem classificação)
+
+---
+
+### Feature 1.8: Agrupamento de precedentes por área
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Agrupar resultados do DataJud por área do direito classificada, facilitando análise por tema.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — `groupByArea(results)` utility, interface `AreaGroup`
+- `frontend/src/components/SourceContentViewer.tsx` — tab "Agrupados" no JurisprudenceViewer
+
+**Mudanças implementadas:**
+- `groupByArea` agrupa resultados usando `classifyResult` e retorna `AreaGroup[]` ordenados (nomes antes de "Outros")
+- Tab "Agrupados" com seções colapsáveis por área, badge colorido, contagem de processos
+- Cada grupo mostra ProcessCards dos resultados daquela área
+
+---
+
+### Feature 1.9: Comparação entre dois julgados
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Permitir comparação lado a lado de dois processos, destacando semelhanças e diferenças.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — `compareProcesses(left, right)` utility, interface `ProcessComparison`
+- `frontend/src/components/SourceContentViewer.tsx` — tab "Comparar" + botão "Comparar com outro processo" no ProcessCard
+
+**Mudanças implementadas:**
+- `compareProcesses` calcula: assuntos em comum, mesma área, diferença em dias
+- Botão "Comparar com outro processo" em cada ProcessCard (exibe seletor de processos)
+- Tab "Comparar" com badges resumo (mesma área, N assuntos em comum, X dias de diferença)
+- Layout grid 2 colunas com ComparisonSide por processo
+
+---
+
 ## Epic 2: Visualizador Documental
 
 ### Feature 2.1: SourceContentViewer — renderização jurídica rica + tabs
@@ -395,15 +448,15 @@
 ### Prioridade 2 — Diferenciação de produto
 - [ ] Pesquisa conversacional com contexto (memória multi-turno de filtros)
 - [x] Classificação temática de jurisprudência por área do direito
-- [ ] Linha do tempo jurisprudencial (evolução de entendimento)
+- [x] Linha do tempo jurisprudencial (evolução de entendimento)
 - [x] Indicador "favorável / desfavorável / neutro" por resultado
 
 ### Prioridade 3 — Moat de produto
-- [ ] Deduplicação e agrupamento de precedentes relacionados
-- [ ] Comparação entre dois julgados ("diferencie estes precedentes")
+- [x] Deduplicação e agrupamento de precedentes relacionados
+- [x] Comparação entre dois julgados ("diferencie estes precedentes")
 - [ ] Pesquisa orientada à peça processual (cola petição → recebe jurisprudência relacionada)
 - [ ] Analytics jurisprudencial por tema/período
 
 ---
 
-*Última atualização: 2026-04-08 — Ciclo: Classificação temática + Indicador de posição + ranking enrichment*
+*Última atualização: 2026-04-08 — Ciclo: Timeline + Agrupamento + Comparação de julgados*

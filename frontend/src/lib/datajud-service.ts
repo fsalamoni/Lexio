@@ -859,7 +859,8 @@ export interface ProcessComparison {
 export function compareProcesses(left: DataJudResult, right: DataJudResult): ProcessComparison {
   const leftAssuntos = new Set(left.assuntos.map(a => a.toLowerCase().trim()))
   const sharedAssuntos = right.assuntos.filter(a => leftAssuntos.has(a.toLowerCase().trim()))
-  const sameArea = classifyResult(left) === classifyResult(right) && classifyResult(left) != null
+  const leftArea = classifyResult(left)
+  const sameArea = leftArea != null && leftArea === classifyResult(right)
 
   let daysDiff: number | null = null
   if (left.dataAjuizamento && right.dataAjuizamento) {
