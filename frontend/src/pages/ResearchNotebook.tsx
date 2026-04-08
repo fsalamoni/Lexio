@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
   ArrowLeft, Send, Database, Clock, Upload,
@@ -182,6 +183,7 @@ export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
   const { startTask } = useTaskManager()
+  const [searchParams] = useSearchParams()
 
   // List state
   const [notebooks, setNotebooks] = useState<ResearchNotebookData[]>([])
@@ -275,6 +277,8 @@ export default function ResearchNotebook() {
   const [acervoAnalysisResults, setAcervoAnalysisResults] = useState<AnalyzedDocument[]>([])
   const [selectedAnalysisIds, setSelectedAnalysisIds] = useState<Set<string>>(new Set())
   const acervoAbortRef = useRef<AbortController | null>(null)
+  /** Tracks whether the ?open= deep-link was already handled (run once per mount). */
+  const deepLinkHandledRef = useRef(false)
 
   // Script review/edit before saving (for media artifacts: video, audio, presentation)
   const [pendingArtifact, setPendingArtifact] = useState<{
@@ -319,6 +323,26 @@ export default function ResearchNotebook() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
+
+  // ── Deep-link: ?open=<notebook_id> opens a specific notebook ────────────
+  useEffect(() => {
+    if (deepLinkHandledRef.current || loading) return
+    const openId = searchParams.get('open')
+    if (!openId) return
+    deepLinkHandledRef.current = true
+    const found = notebooks.find(n => n.id === openId)
+    if (found) {
+      setActiveNotebook(found)
+      setViewMode('detail')
+    } else if (userId) {
+      // Not in cached list (or list is empty) — fetch directly
+      getResearchNotebook(userId, openId)
+        .then(nb => {
+          if (nb) { setActiveNotebook(nb); setViewMode('detail') }
+        })
+        .catch(() => { /* notebook not found or not authorized; stay on list */ })
+    }
+  }, [loading, notebooks, searchParams, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ensure in-flight research tasks are canceled when leaving the page.
   useEffect(() => {
@@ -1501,6 +1525,13 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             content_type: 'text/plain',
             size_bytes: jurisprudenceResult.content.length,
             text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
+            // Cap inteiroTeor at 8 KB per result to avoid Firestore size limits
+            results_raw: JSON.stringify(
+              selectedResults.slice(0, 10).map(r => ({
+                ...r,
+                inteiroTeor: r.inteiroTeor ? r.inteiroTeor.slice(0, 8192) : undefined,
+              }))
+            ),
             status: 'indexed',
             added_at: new Date().toISOString(),
           }

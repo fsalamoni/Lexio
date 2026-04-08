@@ -18,11 +18,11 @@
 
 | Área | Estado | Observações |
 |------|--------|-------------|
-| Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos |
-| Pesquisa de Jurisprudência (DataJud) | ⚠️ Parcial | Metadados retornados; ementa/inteiro teor ausentes |
-| Visualizador de Documentos | ⚠️ Parcial | Texto estruturado OK; renderização jurídica fraca |
-| Geração de Documentos (Estúdio) | ⚠️ Parcial | Pipeline OK; prompts genéricos; não persiste em Documentos |
-| Página de Documentos | ✅ Implementado | Lista, filtros, bulk ops; sem vínculo com artefatos do caderno |
+| Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos, deep-link |
+| Pesquisa de Jurisprudência (DataJud) | ✅ Implementado | ementa + inteiro teor + results_raw por fonte |
+| Visualizador de Documentos | ✅ Implementado | Tabs Síntese+Processos, ProcessCard, pageMode para documentos |
+| Geração de Documentos (Estúdio) | ✅ Implementado | Pipeline OK; prompts aprofundados; persiste em Documentos |
+| Página de Documentos | ✅ Implementado | Lista, filtros, bulk ops; filtro "Do Caderno"; badge com link |
 | Novo Documento | ✅ Implementado | Fluxo completo; sem integração DataJud como fonte |
 | Banco de Teses | ✅ Implementado | CRUD completo |
 | Acervo | ✅ Implementado | Upload, indexação, classificação, ementa automática |
@@ -51,6 +51,10 @@
 - `parseDataJudHit` agora extrai `src.ementa` (string) e `src.inteiro_teor` (string) do `_source` da API Elasticsearch
 - `formatDataJudResults` inclui ementa e trecho do inteiro teor quando disponíveis
 - Testes atualizados para cobrir novos campos
+- `NotebookSource` ganha campo `results_raw?: string` (JSON de DataJudResult[], inteiroTeor limitado a 8KB por item)
+- `fitSourcesToFirestoreLimit` remove `results_raw` primeiro antes de truncar `text_content`
+- `SourceContentViewer` exibe tabs Síntese+Processos quando `results_raw` está disponível
+- `ProcessCard` mostra ementa, tribunal, classe, data, assuntos, inteiro teor expandível por processo
 
 **Dependências:** API pública DataJud (CNJ) — endpoint `api-publica.datajud.cnj.jus.br`
 
@@ -106,18 +110,29 @@
 
 **Mudanças implementadas:**
 - Detecção de fontes jurídicas (DataJud/jurisprudência)
-- Renderização de ementa com destaque visual
-- Seções específicas para documentos jurídicos: processo, tribunal, classe, ementa, inteiro teor
-- Fallback seguro para documentos genéricos
+- Renderização de ementa com destaque visual via `JurisprudenceViewer`
+- Quando `results_raw` presente: tabs Síntese (síntese LLM) e Processos (ProcessCard por resultado)
+- `ProcessCard`: ementa, tribunal, classe, data, assuntos, inteiro teor expandível
+- Seções parse de Markdown via `parseJurisprudenceText` com headings e body
+- Fallback seguro para documentos genéricos e texto plano
 - Melhor tipografia e espaçamento para leitura
 
 ---
 
-### Feature 2.2: ArtifactViewerModal — parser Markdown aprimorado
+### Feature 2.2: ArtifactViewerModal — visualização de documento em page-canvas
 
-**Estado:** ⚠️ Parcial — parser regex básico, sem syntax highlight
+**Estado:** ✅ Implementado (ciclo 2026-04 sessão 5)
 
-**Arquivos:** `frontend/src/components/artifacts/ArtifactViewerModal.tsx`
+**Objetivo:** Artefatos do tipo `documento` são exibidos com layout page-canvas (fundo cinza + card branco estilo A4) para melhor experiência de leitura.
+
+**Arquivos afetados:**
+- `frontend/src/components/artifacts/ReportViewer.tsx` — prop `pageMode?: boolean`, A4_PAGE_MIN_HEIGHT constant
+- `frontend/src/components/artifacts/ArtifactViewerModal.tsx` — passa `pageMode={artifact.type === 'documento'}`
+
+**Mudanças implementadas:**
+- `ReportViewer` aceita `pageMode` que ativa layout page-canvas (gray bg + white card, max-w-3xl, min-height 29.7cm)
+- Quando `pageMode=false` (padrão), comportamento anterior com TOC e scroll spy mantido
+- `ArtifactViewerModal` passa `pageMode={artifact.type === 'documento'}` para `ReportViewer`
 
 ---
 
@@ -171,6 +186,40 @@
 
 ---
 
+### Feature 4.3: Filtro "Do Caderno" na página Documentos
+
+**Estado:** ✅ Implementado (ciclo 2026-04 sessão 5)
+
+**Objetivo:** Permitir filtrar a lista de documentos para exibir apenas documentos gerados a partir do Caderno de Pesquisa.
+
+**Arquivos afetados:**
+- `frontend/src/pages/DocumentList.tsx` — `originFilter` state, `handleOriginFilter`, filtro client-side
+
+**Mudanças implementadas:**
+- Chip de filtro "Do Caderno" com ícone BookOpen e cor violet
+- `originFilter` state gerencia seleção
+- Filtragem client-side por `origem === 'caderno'` no modo Firebase
+- Badge "Caderno" é um Link clicável para `/notebook?open=<notebook_id>`
+
+---
+
+### Feature 4.4: Deep-link `?open=<notebook_id>` no Caderno de Pesquisa
+
+**Estado:** ✅ Implementado (ciclo 2026-04 sessão 5)
+
+**Objetivo:** Permitir navegar diretamente para um caderno específico via URL, facilitando links a partir da página Documentos.
+
+**Arquivos afetados:**
+- `frontend/src/pages/ResearchNotebook.tsx` — `useSearchParams`, `deepLinkHandledRef`
+
+**Mudanças implementadas:**
+- `useSearchParams` para ler `?open=<id>` da URL
+- Efeito que ao completar carregamento da lista, abre o notebook cujo ID corresponde ao parâmetro
+- Fallback: se não estiver na lista carregada, tenta `getResearchNotebook` diretamente
+- `deepLinkHandledRef` evita reexecução em re-renders
+
+---
+
 ### Feature 4.2: Unificação do documento formal com Novo Documento
 
 **Estado:** ✅ Implementado (ciclo 2026-04)
@@ -210,10 +259,11 @@
 
 | Área | Tipo de teste faltando |
 |------|----------------------|
-| Jurisprudência — ementa/inteiro teor | Teste de parseDataJudHit com campos novos |
 | Studio pipeline — qualidade de prompts | Testes de snapshot de prompts |
 | firestore-service — saveNotebookDocument | Teste de integração mock Firestore |
-| SourceContentViewer — renderização jurídica | Testes de renderização de componente |
+| SourceContentViewer — tabs Síntese+Processos | Testes de renderização de componente |
+| fitSourcesToFirestoreLimit — results_raw stripping | Testes unitários de trimming com results_raw |
+| ResearchNotebook — deep-link ?open= | Testes de integração com useSearchParams mock |
 
 ---
 
@@ -231,10 +281,10 @@
 ## Roadmap de próximas features (backlog priorizado)
 
 ### Prioridade 1 — Alto impacto imediato
-- [ ] Busca híbrida (semântica + lexical) para jurisprudência
+- [x] ~~Filtro por `origem: 'caderno'` na página Documentos~~ (implementado sessão 5)
 - [ ] Exportação PDF nativa dos artefatos
-- [ ] Preview de documento na página Documentos
-- [ ] Filtro por `origem: 'caderno'` na página Documentos
+- [ ] Preview de documento na página Documentos (PDF inline ou modal)
+- [ ] Busca híbrida (semântica + lexical) para jurisprudência
 
 ### Prioridade 2 — Diferenciação de produto
 - [ ] Pesquisa conversacional com contexto (memória multi-turno de filtros)
@@ -250,4 +300,4 @@
 
 ---
 
-*Última atualização: 2026-04-07 — Ciclo: ementa/inteiro teor + visualizador + prompts + integração Caderno↔Documentos*
+*Última atualização: 2026-04-08 — Ciclo: results_raw + ProcessCard tabs + pageMode + originFilter + deep-link Caderno*

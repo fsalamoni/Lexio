@@ -145,6 +145,8 @@ export interface NotebookSource {
   content_type?: string
   size_bytes?: number
   text_content?: string
+  /** Serialized JSON array of raw DataJudResult[] (top-10) for jurisprudência sources. */
+  results_raw?: string
   status: 'pending' | 'processing' | 'indexed' | 'error'
   added_at: string
 }

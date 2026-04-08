@@ -82,12 +82,17 @@ function extractToc(md: string): TocItem[] {
 
 // ── Main Component ──────────────────────────────────────────────────────────
 
+// Minimum height for A4-like page canvas
+const A4_PAGE_MIN_HEIGHT = '29.7cm'
+
 interface ReportViewerProps {
   content: string
   title?: string
+  /** When true, renders content as an A4-like page (white card on gray bg). */
+  pageMode?: boolean
 }
 
-export default function ReportViewer({ content, title }: ReportViewerProps) {
+export default function ReportViewer({ content, title, pageMode = false }: ReportViewerProps) {
   const [showToc, setShowToc] = useState(true)
   const [activeId, setActiveId] = useState<string>('')
   const contentRef = useRef<HTMLDivElement>(null)
@@ -120,6 +125,24 @@ export default function ReportViewer({ content, title }: ReportViewerProps) {
     const el = contentRef.current?.querySelector(`#${CSS.escape(id)}`)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
+
+  if (pageMode) {
+    // A4-like page canvas: gray bg + centered white card
+    return (
+      <div className="flex justify-center bg-gray-100 min-h-full p-6 overflow-y-auto">
+        <div
+          className="bg-white shadow-md rounded-sm w-full max-w-3xl px-12 py-10"
+          style={{ minHeight: A4_PAGE_MIN_HEIGHT }}
+        >
+          {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
+          <div
+            className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex gap-6 h-full">

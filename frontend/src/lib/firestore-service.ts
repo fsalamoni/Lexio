@@ -1462,23 +1462,32 @@ function fitSourcesToFirestoreLimit(
   sources: NotebookSource[],
   otherDataEstimateBytes: number,
 ): { sources: NotebookSource[]; truncated: boolean } {
-  const totalBytes = estimateJsonBytes(sources) + otherDataEstimateBytes
-  if (totalBytes <= NOTEBOOK_MAX_DOC_BYTES) return { sources, truncated: false }
+  let working = sources
+
+  // First pass: strip results_raw from all sources (large, optional field)
+  const totalBytes = estimateJsonBytes(working) + otherDataEstimateBytes
+  if (totalBytes > NOTEBOOK_MAX_DOC_BYTES) {
+    // results_raw is optional in NotebookSource; destructuring it out produces a valid NotebookSource
+    working = working.map(({ results_raw: _dropped, ...rest }) => rest as NotebookSource)
+  }
+
+  const bytesAfterStrip = estimateJsonBytes(working) + otherDataEstimateBytes
+  if (bytesAfterStrip <= NOTEBOOK_MAX_DOC_BYTES) return { sources: working, truncated: false }
 
   const budget = Math.max(NOTEBOOK_MAX_DOC_BYTES - otherDataEstimateBytes, 0)
 
   // Compute the total text chars currently stored in sources
-  const totalTextChars = sources.reduce((s, src) => s + (src.text_content?.length ?? 0), 0)
-  if (totalTextChars === 0) return { sources, truncated: false }
+  const totalTextChars = working.reduce((s, src) => s + (src.text_content?.length ?? 0), 0)
+  if (totalTextChars === 0) return { sources: working, truncated: false }
 
   // Overhead per source (metadata fields, JSON syntax) — estimate once
-  const metaOverhead = estimateJsonBytes(sources) - Math.ceil(totalTextChars * 1.1)
+  const metaOverhead = estimateJsonBytes(working) - Math.ceil(totalTextChars * 1.1)
   const availableForText = Math.max(budget - metaOverhead, 0)
 
   // Scale each source's text proportionally to fit
   const ratio = availableForText / Math.ceil(totalTextChars * 1.1)
 
-  const trimmed: NotebookSource[] = sources.map(src => {
+  const trimmed: NotebookSource[] = working.map(src => {
     const text = src.text_content ?? ''
     if (text.length === 0 || ratio >= 1) return src
     const maxChars = Math.max(Math.floor(text.length * ratio), MIN_SOURCE_TEXT_CHARS)
