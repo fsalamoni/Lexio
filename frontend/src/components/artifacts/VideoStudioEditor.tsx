@@ -4,44 +4,23 @@
  * the user to edit, cut, extend, and create new segments.
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import {
   Video, Mic, Music, Sparkles, Type, Clock, Plus,
-  Scissors, ChevronDown, ChevronUp, Palette, Eye, EyeOff,
-  Camera, Layers, X, Save, ZoomIn, ZoomOut,
-  Film, CheckCircle2, Image, Loader2, Volume2, BookOpen, Upload, Download,
+  Scissors, Maximize2, Minimize2, Play, Pause, SkipBack,
+  ChevronDown, ChevronUp, Palette, Eye, EyeOff,
+  Camera, Layers, X, Save, Download, ZoomIn, ZoomOut,
+  Film, AlertCircle, CheckCircle2, RefreshCw, ImagePlus,
+  Volume2, Loader2,
 } from 'lucide-react'
-import JSZip from 'jszip'
 import type {
-  LiteralGenerationState,
-  VideoAudioAsset,
-  VideoClipAsset,
   VideoProductionPackage,
-  VideoRenderPreset,
-  VideoRenderQueueItem,
-  VideoRenderScope,
-  ScopedRenderedVideoAsset,
   VideoTrack,
   TrackSegment,
   VideoScene,
-  VideoSceneAsset,
+  VideoClip,
+  NarrationSegment,
 } from '../../lib/video-generation-pipeline'
-import { createVideoRenderScopeLabel } from '../../lib/video-generation-pipeline'
-import { generateImageViaOpenRouter } from '../../lib/image-generation-client'
-import { generateTTSViaOpenRouter } from '../../lib/tts-client'
-import {
-  getDefaultVideoRenderPresets,
-  generateLiteralMediaAssets,
-  renderLiteralVideoByScope,
-  resolveVideoRenderPreset,
-} from '../../lib/literal-video-production'
-import {
-  getExternalVideoProviderConfig,
-  getExternalVideoProviderDiagnostics,
-  isExternalVideoProviderConfigured,
-} from '../../lib/external-video-provider'
-import { formatSecondsToMMSS } from '../../lib/time-format'
-import { useToast } from '../Toast'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -67,185 +46,17 @@ const PIXELS_PER_SECOND_BASE = 8
 
 interface VideoStudioEditorProps {
   production: VideoProductionPackage
-  apiKey?: string
   onClose: () => void
   onSave?: (production: VideoProductionPackage) => void
-  onSaveToNotebook?: (production: VideoProductionPackage) => void | Promise<void>
-  autoGenerateMedia?: boolean
+  /** Callback to regenerate image for a specific scene */
+  onRegenerateImage?: (sceneNumber: number) => Promise<string | null>
+  /** Callback to regenerate TTS for a specific narration segment */
+  onRegenerateTTS?: (sceneNumber: number) => Promise<string | null>
 }
 
 interface SelectedSegment {
   trackIndex: number
   segmentIndex: number
-}
-
-const DEFAULT_SCENE_CLIP_DURATION_SECONDS = 8
-const FALLBACK_RENDER_PRESET_ID = 'render-standard-720p'
-
-function hasCompleteMediaAssets(
-  scenes: VideoScene[],
-  imageMap: Record<number, string>,
-  audioMap: Record<number, string>,
-  soundtrackUrl?: string | null,
-): boolean {
-  return Boolean(soundtrackUrl)
-    && scenes.every(scene => Boolean(imageMap[scene.number]) || Boolean(audioMap[scene.number]))
-}
-
-function hasLiteralFailures(state?: LiteralGenerationState): boolean {
-  if (!state) return false
-  if (state.status === 'failed') return true
-  return state.scenes.some(scene =>
-    scene.imageStatus === 'failed' ||
-    scene.narrationStatus === 'failed' ||
-    scene.clipsStatus === 'failed',
-  )
-}
-
-function shouldAutoResumeLiteralGeneration(
-  state: LiteralGenerationState | undefined,
-  hasCompleteAssets: boolean,
-): boolean {
-  if (!state) return false
-  if (hasCompleteAssets) return false
-  return state.status === 'running' || state.status === 'failed'
-}
-
-function formatLiteralStepStatus(status: 'pending' | 'running' | 'completed' | 'failed'): string {
-  if (status === 'completed') return 'Concluido'
-  if (status === 'running') return 'Em execucao'
-  if (status === 'failed') return 'Falhou'
-  return 'Pendente'
-}
-
-function literalStatusBadgeClass(status: 'pending' | 'running' | 'completed' | 'failed'): string {
-  if (status === 'completed') return 'bg-emerald-100 text-emerald-700 border-emerald-200'
-  if (status === 'running') return 'bg-amber-100 text-amber-700 border-amber-200'
-  if (status === 'failed') return 'bg-red-100 text-red-700 border-red-200'
-  return 'bg-gray-100 text-gray-600 border-gray-200'
-}
-
-interface LiteralPreflightResult {
-  blockingErrors: string[]
-  warnings: string[]
-}
-
-function runLiteralMediaPreflight(
-  production: VideoProductionPackage,
-  apiKey?: string,
-): LiteralPreflightResult {
-  const blockingErrors: string[] = []
-  const warnings: string[] = []
-
-  if (!apiKey) {
-    blockingErrors.push('Chave OpenRouter ausente. Configure a chave para gerar mídia literal.')
-  }
-
-  if (!production.scenes || production.scenes.length === 0) {
-    blockingErrors.push('Nenhuma cena disponível. Reexecute o planejamento da Fase 1.')
-  }
-
-  const hasSourceContent = production.scenes.some(scene => Boolean(scene.imagePrompt) || Boolean(scene.narration))
-  if (!hasSourceContent && !(production.sceneAssets && production.sceneAssets.length > 0)) {
-    blockingErrors.push('Sem prompts visuais/narrações para mídia literal. Revise o planejamento da Fase 1.')
-  }
-
-  if (typeof window !== 'undefined') {
-    if (typeof MediaRecorder === 'undefined') {
-      warnings.push('Render local limitado neste navegador. Chrome/Edge oferecem melhor estabilidade.')
-    } else {
-      const hasWebm = MediaRecorder.isTypeSupported('video/webm')
-      const hasVp8 = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-      const hasVp9 = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-      if (!hasWebm && !hasVp8 && !hasVp9) {
-        warnings.push('Codec de vídeo local não suportado. Pode haver falhas no render final.')
-      }
-    }
-
-    const ua = window.navigator.userAgent.toLowerCase()
-    const isIos = /iphone|ipad|ipod/.test(ua)
-    const isSafari = /safari/.test(ua) && !/chrome|crios|edg|fxios/.test(ua)
-    if (isIos || isSafari) {
-      warnings.push('Safari/iOS pode limitar renderização longa. Prefira render por cena/parte com retentativas.')
-    }
-  }
-
-  const provider = getExternalVideoProviderConfig()
-  const providerDiagnostics = getExternalVideoProviderDiagnostics()
-  blockingErrors.push(...providerDiagnostics.blockingErrors)
-  warnings.push(...providerDiagnostics.warnings)
-  if (!providerDiagnostics.configured && provider.provider !== 'none') {
-    warnings.push('Provedor externo declarado, mas incompleto; fallback local será usado para clipes.')
-  }
-
-  const estimatedClipCount = production.scenes.reduce((sum, scene) => {
-    const perSceneParts = Math.max(1, Math.ceil(
-      Math.max(1, scene.duration)
-      / Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS),
-    ))
-    return sum + perSceneParts
-  }, 0)
-  const estimatedExternalCostUsd = estimatedClipCount * 0.03
-  const configuredBudgetUsd = Number.parseFloat(String(import.meta.env.VITE_LITERAL_MEDIA_BUDGET_USD || '0'))
-  if (configuredBudgetUsd > 0 && estimatedExternalCostUsd > configuredBudgetUsd) {
-    warnings.push(`Estimativa de custo de clipes (~US$ ${estimatedExternalCostUsd.toFixed(2)}) acima do budget configurado (US$ ${configuredBudgetUsd.toFixed(2)}).`)
-  }
-
-  return { blockingErrors, warnings }
-}
-
-async function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => typeof reader.result === 'string'
-      ? resolve(reader.result)
-      : reject(new Error('Falha ao converter blob em data URL'))
-    reader.onerror = () => reject(reader.error ?? new Error('Falha ao ler blob'))
-    reader.readAsDataURL(blob)
-  })
-}
-
-function parseTimeToSeconds(value?: string): number {
-  if (!value) return 0
-  const parts = value.split(':').map(part => Number.parseInt(part, 10))
-  if (parts.some(Number.isNaN)) return 0
-  if (parts.length === 2) return parts[0] * 60 + parts[1]
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
-  return 0
-}
-
-function sanitizeName(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9-_]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 80)
-    .trim() || 'video'
-}
-
-function normalizeRenderPresets(production: VideoProductionPackage): VideoRenderPreset[] {
-  const base = getDefaultVideoRenderPresets()
-  const merged = [...base, ...(production.renderPresets || [])]
-  const unique = new Map<string, VideoRenderPreset>()
-  merged.forEach(preset => unique.set(preset.id, preset))
-  return Array.from(unique.values())
-}
-
-function getInitialRenderPresetSelection(production: VideoProductionPackage): {
-  presets: VideoRenderPreset[]
-  selectedPresetId: string
-} {
-  const presets = normalizeRenderPresets(production)
-  return {
-    presets,
-    selectedPresetId: production.selectedRenderPresetId || presets[0]?.id || FALLBACK_RENDER_PRESET_ID,
-  }
-}
-
-async function dataUrlFromFile(file: File): Promise<string> {
-  return blobToDataUrl(file)
 }
 
 // ── Timeline Ruler ────────────────────────────────────────────────────────────
@@ -323,11 +134,13 @@ function TrackRow({
           const left = seg.startTime * pixelsPerSecond
           const width = Math.max((seg.endTime - seg.startTime) * pixelsPerSecond, 20)
           const isSelected = selectedSegment?.trackIndex === trackIndex && selectedSegment?.segmentIndex === segIdx
+          const hasImage = track.type === 'video' && seg.generatedMediaUrl
+          const hasAudio = track.type === 'narration' && seg.generatedMediaUrl
 
           return (
             <div
               key={seg.id}
-              className={`absolute top-1.5 h-11 rounded-md border cursor-pointer transition-all
+              className={`absolute top-1.5 h-11 rounded-md border cursor-pointer transition-all overflow-hidden
                 ${colors.segment}
                 ${isSelected ? 'ring-2 ring-offset-1 ring-gray-900 shadow-md' : 'shadow-sm'}
               `}
@@ -335,10 +148,32 @@ function TrackRow({
               onClick={() => onSelectSegment(isSelected ? null : { trackIndex, segmentIndex: segIdx })}
               title={seg.label}
             >
-              <div className="px-1.5 py-1 overflow-hidden h-full">
-                <p className="text-[10px] font-semibold truncate leading-tight">{seg.label}</p>
-                <p className="text-[9px] text-gray-500 truncate leading-tight mt-0.5">{seg.content.slice(0, 60)}</p>
-              </div>
+              {/* Show thumbnail for video segments with generated images */}
+              {hasImage ? (
+                <div className="flex h-full">
+                  <img
+                    src={seg.generatedMediaUrl}
+                    alt={seg.label}
+                    className="h-full w-16 object-cover flex-shrink-0 rounded-l-md"
+                  />
+                  <div className="px-1.5 py-1 overflow-hidden flex-1 min-w-0">
+                    <p className="text-[10px] font-semibold truncate leading-tight">{seg.label}</p>
+                  </div>
+                </div>
+              ) : hasAudio ? (
+                <div className="px-1.5 py-1 overflow-hidden h-full flex items-center gap-1.5">
+                  <Volume2 className="w-3 h-3 text-violet-500 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold truncate leading-tight">{seg.label}</p>
+                    <p className="text-[9px] text-gray-500 truncate leading-tight mt-0.5">{seg.content.slice(0, 40)}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="px-1.5 py-1 overflow-hidden h-full">
+                  <p className="text-[10px] font-semibold truncate leading-tight">{seg.label}</p>
+                  <p className="text-[9px] text-gray-500 truncate leading-tight mt-0.5">{seg.content.slice(0, 60)}</p>
+                </div>
+              )}
             </div>
           )
         })}
@@ -355,12 +190,16 @@ function SegmentDetailPanel({
   onUpdate,
   onDelete,
   onClose,
+  onRegenerateMedia,
+  isRegenerating,
 }: {
   segment: TrackSegment
   track: VideoTrack
   onUpdate: (updated: TrackSegment) => void
   onDelete: () => void
   onClose: () => void
+  onRegenerateMedia?: () => void
+  isRegenerating?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState(segment.content)
@@ -377,6 +216,9 @@ function SegmentDetailPanel({
   const startSec = segment.startTime % 60
   const endMin = Math.floor(segment.endTime / 60)
   const endSec = segment.endTime % 60
+
+  const hasImage = track.type === 'video' && segment.generatedMediaUrl
+  const hasAudio = track.type === 'narration' && segment.generatedMediaUrl
 
   return (
     <div className={`border rounded-xl ${colors.border} ${colors.bg} p-4 space-y-3`}>
@@ -408,6 +250,29 @@ function SegmentDetailPanel({
           </button>
         </div>
       </div>
+
+      {/* Generated image preview */}
+      {hasImage && (
+        <div className="rounded-lg overflow-hidden border border-rose-200">
+          <img
+            src={segment.generatedMediaUrl}
+            alt={segment.label}
+            className="w-full h-40 object-cover"
+          />
+        </div>
+      )}
+
+      {/* Generated audio player */}
+      {hasAudio && (
+        <div className="bg-white rounded-lg p-2.5 border border-violet-200">
+          <audio
+            controls
+            src={segment.generatedMediaUrl}
+            className="w-full h-8"
+            style={{ height: '32px' }}
+          />
+        </div>
+      )}
 
       {editing ? (
         <textarea
@@ -457,6 +322,27 @@ function SegmentDetailPanel({
               <Scissors className="w-3 h-3" />
               Editar
             </button>
+            {/* Regenerate media button for video/narration tracks */}
+            {onRegenerateMedia && (track.type === 'video' || track.type === 'narration') && (
+              <button
+                onClick={onRegenerateMedia}
+                disabled={isRegenerating}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 border border-blue-200 disabled:opacity-50"
+              >
+                {isRegenerating ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : segment.generatedMediaUrl ? (
+                  <RefreshCw className="w-3 h-3" />
+                ) : track.type === 'video' ? (
+                  <ImagePlus className="w-3 h-3" />
+                ) : (
+                  <Volume2 className="w-3 h-3" />
+                )}
+                {segment.generatedMediaUrl
+                  ? 'Regenerar'
+                  : track.type === 'video' ? 'Gerar Imagem' : 'Gerar Narração'}
+              </button>
+            )}
             <button
               onClick={onDelete}
               className="flex items-center gap-1.5 px-3 py-1.5 text-red-600 text-xs font-medium hover:bg-red-50 rounded-lg border border-red-200"
@@ -521,9 +407,16 @@ function SceneNavigator({
               </p>
               <p className="text-gray-500 truncate">{scene.narration.slice(0, 50)}...</p>
             </div>
-            <span className="text-[10px] text-gray-400 flex-shrink-0">
-              {scene.duration}s
-            </span>
+            <div className="flex flex-col items-end flex-shrink-0">
+              <span className="text-[10px] text-gray-400">
+                {scene.duration}s
+              </span>
+              {scene.clips && scene.clips.length > 0 && (
+                <span className="text-[9px] text-rose-400">
+                  {scene.clips.filter(c => c.generatedImageUrl).length}/{scene.clips.length} clips
+                </span>
+              )}
+            </div>
           </button>
         ))}
       </div>
@@ -611,8 +504,10 @@ function DesignGuidePanel({ designGuide }: { designGuide: VideoProductionPackage
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function VideoStudioEditor({ production, apiKey, onClose, onSave, onSaveToNotebook, autoGenerateMedia }: VideoStudioEditorProps) {
-  const toast = useToast()
+// Import React explicitly for createElement usage in SegmentDetailPanel
+import React from 'react'
+
+export default function VideoStudioEditor({ production, onClose, onSave, onRegenerateImage, onRegenerateTTS }: VideoStudioEditorProps) {
   const [selectedSegment, setSelectedSegment] = useState<SelectedSegment | null>(null)
   const [selectedScene, setSelectedScene] = useState<number | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -622,154 +517,14 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
     return vis
   })
   const [localTracks, setLocalTracks] = useState<VideoTrack[]>(production.tracks)
+  const [localScenes, setLocalScenes] = useState(production.scenes)
+  const [localNarration, setLocalNarration] = useState(production.narration)
   const [qualityOpen, setQualityOpen] = useState(false)
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
-
-  // Media generation state
-  const [generatedImages, setGeneratedImages] = useState<Record<number, string>>({})
-  const [generatingImageFor, setGeneratingImageFor] = useState<number | null>(null)
-  const [imageError, setImageError] = useState<Record<number, string>>({})
-
-  const [generatedAudio, setGeneratedAudio] = useState<Record<number, string>>({})
-  const [generatingAudioFor, setGeneratingAudioFor] = useState<number | null>(null)
-  const [audioError, setAudioError] = useState<Record<number, string>>({})
-  const [generatedClips, setGeneratedClips] = useState<Record<number, VideoClipAsset[]>>({})
-  const [generatedSoundtrack, setGeneratedSoundtrack] = useState<string | null>(production.soundtrackAsset?.url || null)
-  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(production.renderedVideo?.url || null)
-  const [generatedVideoMimeType, setGeneratedVideoMimeType] = useState<string>(production.renderedVideo?.mimeType || 'video/webm')
-  const [generatingFullVideo, setGeneratingFullVideo] = useState(false)
-  const [fullVideoStatus, setFullVideoStatus] = useState<string>('')
-  const [fullVideoError, setFullVideoError] = useState<string>('')
-  const [mediaGenerationComplete, setMediaGenerationComplete] = useState(false)
-  const [renderedScopes, setRenderedScopes] = useState<ScopedRenderedVideoAsset[]>(production.renderedScopes || [])
-  const [renderQueue, setRenderQueue] = useState<VideoRenderQueueItem[]>(production.renderQueue || [])
-  const [selectedRenderScope, setSelectedRenderScope] = useState<VideoRenderScope>('full')
-  const [selectedRenderScene, setSelectedRenderScene] = useState<number>(production.scenes[0]?.number || 1)
-  const [selectedRenderPart, setSelectedRenderPart] = useState<number>(1)
-  const [{ presets: initialRenderPresets, selectedPresetId: initialSelectedRenderPresetId }] = useState(() => getInitialRenderPresetSelection(production))
-  const [renderPresets, setRenderPresets] = useState<VideoRenderPreset[]>(initialRenderPresets)
-  const [selectedRenderPresetId, setSelectedRenderPresetId] = useState<string>(initialSelectedRenderPresetId)
-
-  const [savingToNotebook, setSavingToNotebook] = useState(false)
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const autoGenerationStarted = useRef(false)
-  const literalGenerationAbortRef = useRef<AbortController | null>(null)
-
-  useEffect(() => {
-    const imageMap: Record<number, string> = {}
-    const audioMap: Record<number, string> = {}
-    const clipsMap: Record<number, VideoClipAsset[]> = {}
-    ;(production.sceneAssets || []).forEach(asset => {
-      if (asset.imageUrl) imageMap[asset.sceneNumber] = asset.imageUrl
-      if (asset.narrationUrl) audioMap[asset.sceneNumber] = asset.narrationUrl
-      if (asset.videoClips?.length) clipsMap[asset.sceneNumber] = asset.videoClips
-    })
-    setGeneratedImages(imageMap)
-    setGeneratedAudio(audioMap)
-    setGeneratedClips(clipsMap)
-    setGeneratedSoundtrack(production.soundtrackAsset?.url || null)
-    setGeneratedVideoUrl(production.renderedVideo?.url || null)
-    setGeneratedVideoMimeType(production.renderedVideo?.mimeType || 'video/webm')
-    setRenderedScopes(production.renderedScopes || [])
-    setRenderQueue(production.renderQueue || [])
-    const nextPresets = normalizeRenderPresets(production)
-    setRenderPresets(nextPresets)
-    setSelectedRenderPresetId(production.selectedRenderPresetId || nextPresets[0]?.id || FALLBACK_RENDER_PRESET_ID)
-    setSelectedRenderScene(production.scenes[0]?.number || 1)
-    setSelectedRenderPart(1)
-    setMediaGenerationComplete(hasCompleteMediaAssets(
-      production.scenes,
-      imageMap,
-      audioMap,
-      production.soundtrackAsset?.url,
-    ))
-  }, [production])
 
   const pixelsPerSecond = PIXELS_PER_SECOND_BASE * zoom
   const totalDuration = production.totalDuration || 600
-  const activeRenderJob = renderQueue.find(item => item.status === 'processing')
-  const literalState = production.literalGenerationState
-  const literalHasFailures = hasLiteralFailures(literalState)
-  const literalStatusLabel = literalState
-    ? literalState.status === 'running'
-      ? `Geração literal: ${literalState.phase.replace(/_/g, ' ')}`
-      : literalState.status === 'completed'
-        ? 'Geração literal concluída'
-        : literalState.status === 'failed'
-          ? 'Geração literal com falhas'
-          : 'Geração literal em espera'
-    : null
-  const literalSceneCheckpoints = literalState?.scenes || []
-  const literalCompletedScenes = literalSceneCheckpoints.filter(scene =>
-    scene.imageStatus === 'completed'
-    && scene.narrationStatus === 'completed'
-    && scene.clipsStatus === 'completed',
-  ).length
-  const literalPreflight = runLiteralMediaPreflight(production, apiKey)
-  const providerDiagnostics = getExternalVideoProviderDiagnostics()
-
-  const buildCurrentProduction = useCallback((): VideoProductionPackage => {
-    const sceneAssets: VideoSceneAsset[] = production.scenes.map(scene => ({
-      sceneNumber: scene.number,
-      imageUrl: generatedImages[scene.number],
-      narrationUrl: generatedAudio[scene.number],
-      videoClips: generatedClips[scene.number],
-    })).filter(asset => asset.imageUrl || asset.narrationUrl || (asset.videoClips && asset.videoClips.length > 0))
-    const soundtrackAsset: VideoAudioAsset | undefined = generatedSoundtrack
-      ? {
-          url: generatedSoundtrack,
-          mimeType: 'audio/wav',
-          generatedAt: production.soundtrackAsset?.generatedAt || new Date().toISOString(),
-          description: production.soundtrackAsset?.description || 'Trilha sonora procedural gerada automaticamente',
-        }
-      : production.soundtrackAsset
-    return {
-      ...production,
-      tracks: localTracks,
-      sceneClipDurationSeconds: production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS,
-      sceneAssets,
-      soundtrackAsset,
-      renderedVideo: generatedVideoUrl
-        ? {
-            url: generatedVideoUrl,
-            mimeType: generatedVideoMimeType,
-            generatedAt: production.renderedVideo?.generatedAt || new Date().toISOString(),
-            storagePath: production.renderedVideo?.storagePath,
-          }
-        : production.renderedVideo,
-      renderedScopes,
-      renderQueue,
-      renderPresets,
-      selectedRenderPresetId,
-    }
-  }, [
-    production,
-    localTracks,
-    generatedImages,
-    generatedAudio,
-    generatedClips,
-    generatedSoundtrack,
-    generatedVideoUrl,
-    generatedVideoMimeType,
-    renderedScopes,
-    renderQueue,
-    renderPresets,
-    selectedRenderPresetId,
-  ])
-
-  const upsertRenderedScope = useCallback((asset: ScopedRenderedVideoAsset) => {
-    setRenderedScopes(prev => {
-      const next = [...prev.filter(item => item.scopeKey !== asset.scopeKey), asset]
-      next.sort((a, b) => a.scopeKey.localeCompare(b.scopeKey))
-      return next
-    })
-    if (asset.scope === 'full') {
-      setGeneratedVideoUrl(asset.url)
-      setGeneratedVideoMimeType(asset.mimeType || 'video/webm')
-    }
-  }, [])
 
   const toggleTrackVisibility = useCallback((type: string) => {
     setTrackVisibility(prev => ({ ...prev, [type]: !prev[type] }))
@@ -783,7 +538,6 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       next[trackIdx] = track
       return next
     })
-    setHasUnsavedChanges(true)
   }, [])
 
   const handleDeleteSegment = useCallback((trackIdx: number, segIdx: number) => {
@@ -795,7 +549,6 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       return next
     })
     setSelectedSegment(null)
-    setHasUnsavedChanges(true)
   }, [])
 
   const handleAddSegment = useCallback((trackIdx: number) => {
@@ -814,567 +567,62 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
       next[trackIdx] = track
       return next
     })
-    setHasUnsavedChanges(true)
   }, [totalDuration])
 
   const handleSave = useCallback(() => {
     if (onSave) {
-      setSaving(true)
-      onSave(buildCurrentProduction())
-      setHasUnsavedChanges(false)
-      setSaving(false)
+      onSave({ ...production, tracks: localTracks, scenes: localScenes, narration: localNarration })
     }
-  }, [onSave, buildCurrentProduction])
+  }, [onSave, production, localTracks, localScenes, localNarration])
 
-  const handleSaveToNotebook = useCallback(async () => {
-    if (!onSaveToNotebook) return
-    setSavingToNotebook(true)
+  // Handle media regeneration for a specific segment
+  const handleRegenerateMedia = useCallback(async (trackType: string, sceneNumber: number | undefined) => {
+    if (!sceneNumber) return
+    const regenId = `${trackType}_${sceneNumber}`
+    setRegeneratingId(regenId)
+
     try {
-      await onSaveToNotebook(buildCurrentProduction())
-      setHasUnsavedChanges(false)
-    } finally {
-      setSavingToNotebook(false)
-    }
-  }, [onSaveToNotebook, buildCurrentProduction])
-
-  const handleCloseRequest = useCallback(() => {
-    if (hasUnsavedChanges) {
-      setShowCloseConfirm(true)
-    } else {
-      onClose()
-    }
-  }, [hasUnsavedChanges, onClose])
-
-  const handleConfirmClose = useCallback(async () => {
-    // Auto-save to notebook before closing if possible
-    if (onSaveToNotebook) {
-      setSavingToNotebook(true)
-      try {
-        await onSaveToNotebook(buildCurrentProduction())
-      } catch { /* ignore save error on close */ }
-      setSavingToNotebook(false)
-    }
-    setShowCloseConfirm(false)
-    onClose()
-  }, [onSaveToNotebook, onClose, buildCurrentProduction])
-
-  const handleDiscardClose = useCallback(() => {
-    setShowCloseConfirm(false)
-    onClose()
-  }, [onClose])
-
-  // ── Image generation per scene ────────────────────────────────────────────
-  const handleGenerateImage = useCallback(async (scene: VideoScene) => {
-    if (!apiKey || !scene.imagePrompt || generatingImageFor !== null) return
-    setGeneratingImageFor(scene.number)
-    setImageError(prev => ({ ...prev, [scene.number]: '' }))
-    try {
-      const result = await generateImageViaOpenRouter({
-        apiKey,
-        prompt: scene.imagePrompt,
-        size: '1792x1024',
-      })
-      if (result.b64_json) {
-        setGeneratedImages(prev => ({ ...prev, [scene.number]: `data:image/png;base64,${result.b64_json}` }))
-      } else if (result.url) {
-        const response = await fetch(result.url)
-        if (!response.ok) {
-          throw new Error(`Falha ao baixar imagem gerada (${response.status})`)
-        }
-        const dataUrl = await response.blob().then(blobToDataUrl)
-        setGeneratedImages(prev => ({ ...prev, [scene.number]: dataUrl }))
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro ao gerar imagem'
-      setImageError(prev => ({ ...prev, [scene.number]: msg }))
-      toast.error('Falha ao gerar imagem', msg.length > 80 ? msg.slice(0, 80) + '...' : msg)
-    } finally {
-      setGeneratingImageFor(null)
-    }
-  }, [apiKey, generatingImageFor])
-
-  // ── TTS generation per narration segment ─────────────────────────────────
-  const handleGenerateNarration = useCallback(async (sceneNumber: number, text: string) => {
-    if (!apiKey || !text || generatingAudioFor !== null) return
-    setGeneratingAudioFor(sceneNumber)
-    setAudioError(prev => ({ ...prev, [sceneNumber]: '' }))
-    try {
-      const result = await generateTTSViaOpenRouter({
-        apiKey,
-        text,
-        voice: 'nova',
-        model: 'openai/tts-1-hd',
-      })
-      const dataUrl = await blobToDataUrl(result.audioBlob)
-      setGeneratedAudio(prev => ({ ...prev, [sceneNumber]: dataUrl }))
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro ao gerar narração'
-      setAudioError(prev => ({ ...prev, [sceneNumber]: msg }))
-      toast.error('Falha ao gerar narração', msg.length > 80 ? msg.slice(0, 80) + '...' : msg)
-    } finally {
-      setGeneratingAudioFor(null)
-    }
-  }, [apiKey, generatingAudioFor, generatedAudio])
-
-  const handleGenerateLiteralVideo = useCallback(async () => {
-    if (generatingFullVideo) return
-    const preflight = runLiteralMediaPreflight(production, apiKey)
-    if (preflight.blockingErrors.length > 0) {
-      const first = preflight.blockingErrors[0]
-      setFullVideoError(first)
-      toast.error('Preflight bloqueou a geração literal', first)
-      return
-    }
-    if (preflight.warnings.length > 0) {
-      toast.warning('Preflight com alertas', preflight.warnings[0])
-    }
-    const effectiveApiKey = apiKey
-    if (!effectiveApiKey) return
-
-    const controller = new AbortController()
-    literalGenerationAbortRef.current = controller
-
-    setGeneratingFullVideo(true)
-    setFullVideoError('')
-    setFullVideoStatus('')
-    setMediaGenerationComplete(false)
-    try {
-      const currentProduction: VideoProductionPackage = {
-        ...production,
-        tracks: localTracks,
-        sceneAssets: production.scenes.map(scene => ({
-          sceneNumber: scene.number,
-          imageUrl: generatedImages[scene.number],
-          narrationUrl: generatedAudio[scene.number],
-          videoClips: generatedClips[scene.number],
-        })).filter(asset => asset.imageUrl || asset.narrationUrl || (asset.videoClips && asset.videoClips.length > 0)),
-        soundtrackAsset: generatedSoundtrack
-          ? {
-              url: generatedSoundtrack,
-              mimeType: 'audio/wav',
-              generatedAt: production.soundtrackAsset?.generatedAt || new Date().toISOString(),
-              description: production.soundtrackAsset?.description || 'Trilha sonora procedural gerada automaticamente',
+      if (trackType === 'video' && onRegenerateImage) {
+        const newImageUrl = await onRegenerateImage(sceneNumber)
+        if (newImageUrl) {
+          // Update local scenes
+          setLocalScenes(prev => prev.map(s =>
+            s.number === sceneNumber ? { ...s, generatedImageUrl: newImageUrl } : s
+          ))
+          // Update video track segment
+          setLocalTracks(prev => prev.map(t => {
+            if (t.type !== 'video') return t
+            return {
+              ...t,
+              segments: t.segments.map(seg =>
+                seg.sceneNumber === sceneNumber ? { ...seg, generatedMediaUrl: newImageUrl } : seg
+              ),
             }
-          : production.soundtrackAsset,
-        renderedVideo: production.renderedVideo,
-      }
-
-      const result = await generateLiteralMediaAssets(
-        effectiveApiKey,
-        currentProduction,
-        (_step, _total, _phase, label) => {
-          setFullVideoStatus(label)
-        },
-        async partial => {
-          const nextImagesPartial: Record<number, string> = {}
-          const nextAudioPartial: Record<number, string> = {}
-          const nextClipsPartial: Record<number, VideoClipAsset[]> = {}
-          ;(partial.sceneAssets || []).forEach(asset => {
-            if (asset.imageUrl) nextImagesPartial[asset.sceneNumber] = asset.imageUrl
-            if (asset.narrationUrl) nextAudioPartial[asset.sceneNumber] = asset.narrationUrl
-            if (asset.videoClips?.length) nextClipsPartial[asset.sceneNumber] = asset.videoClips
-          })
-          setGeneratedImages(prev => ({ ...prev, ...nextImagesPartial }))
-          setGeneratedAudio(prev => ({ ...prev, ...nextAudioPartial }))
-          setGeneratedClips(prev => ({ ...prev, ...nextClipsPartial }))
-          setGeneratedSoundtrack(prev => partial.soundtrackAsset?.url || prev || null)
-          const enrichedPartial: VideoProductionPackage = {
-            ...partial,
-            tracks: localTracks,
-            renderedVideo: generatedVideoUrl
-              ? {
-                  url: generatedVideoUrl,
-                  mimeType: generatedVideoMimeType,
-                  generatedAt: production.renderedVideo?.generatedAt || new Date().toISOString(),
-                  storagePath: production.renderedVideo?.storagePath,
-                }
-              : production.renderedVideo,
-            renderedScopes,
-            renderQueue,
-            renderPresets,
-            selectedRenderPresetId,
-          }
-          if (onSave) onSave(enrichedPartial)
-          if (onSaveToNotebook) await onSaveToNotebook(enrichedPartial)
-        },
-        { signal: controller.signal },
-      )
-
-      const nextImages: Record<number, string> = {}
-      const nextAudio: Record<number, string> = {}
-      const nextClips: Record<number, VideoClipAsset[]> = {}
-      ;(result.production.sceneAssets || []).forEach(asset => {
-        if (asset.imageUrl) nextImages[asset.sceneNumber] = asset.imageUrl
-        if (asset.narrationUrl) nextAudio[asset.sceneNumber] = asset.narrationUrl
-        if (asset.videoClips?.length) nextClips[asset.sceneNumber] = asset.videoClips
-      })
-      const mergedImages = { ...generatedImages, ...nextImages }
-      const mergedAudio = { ...generatedAudio, ...nextAudio }
-      const mergedClips = { ...generatedClips, ...nextClips }
-      setGeneratedImages(mergedImages)
-      setGeneratedAudio(mergedAudio)
-      setGeneratedClips(mergedClips)
-      setGeneratedSoundtrack(result.production.soundtrackAsset?.url || null)
-      setMediaGenerationComplete(hasCompleteMediaAssets(
-        result.production.scenes,
-        mergedImages,
-        mergedAudio,
-        result.production.soundtrackAsset?.url,
-      ))
-      setHasUnsavedChanges(false)
-
-      const finalMediaProduction: VideoProductionPackage = {
-        ...result.production,
-        tracks: localTracks,
-        renderedVideo: generatedVideoUrl
-          ? {
-              url: generatedVideoUrl,
-              mimeType: generatedVideoMimeType,
-              generatedAt: production.renderedVideo?.generatedAt || new Date().toISOString(),
-              storagePath: production.renderedVideo?.storagePath,
+          }))
+        }
+      } else if (trackType === 'narration' && onRegenerateTTS) {
+        const newAudioUrl = await onRegenerateTTS(sceneNumber)
+        if (newAudioUrl) {
+          // Update local narration
+          setLocalNarration(prev => prev.map(n =>
+            n.sceneNumber === sceneNumber ? { ...n, generatedAudioUrl: newAudioUrl } : n
+          ))
+          // Update narration track segment
+          setLocalTracks(prev => prev.map(t => {
+            if (t.type !== 'narration') return t
+            return {
+              ...t,
+              segments: t.segments.map(seg =>
+                seg.sceneNumber === sceneNumber ? { ...seg, generatedMediaUrl: newAudioUrl } : seg
+              ),
             }
-          : production.renderedVideo,
-        renderedScopes,
-        renderQueue,
-        renderPresets,
-        selectedRenderPresetId,
-      }
-      if (onSave) onSave(finalMediaProduction)
-      if (onSaveToNotebook) await onSaveToNotebook(finalMediaProduction)
-
-      if (result.errors.length > 0) {
-        const first = result.errors[0]
-        setFullVideoError(first)
-        toast.warning('Geração parcial concluída', `${result.errors.length} item(ns) falharam. Verifique as cenas com erro.`)
-      } else {
-        toast.success('Partes do vídeo geradas cena a cena com sucesso!')
-      }
-
-      setFullVideoStatus('Partes concluídas. Render final opcional.')
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao gerar partes do vídeo'
-      setFullVideoError(message)
-      if (message.toLowerCase().includes('cancelled')) {
-        toast.warning('Geração literal cancelada', 'Você pode retomar depois sem perder o progresso salvo.')
-      } else {
-        toast.error('Falha ao gerar partes do vídeo', message)
+          }))
+        }
       }
     } finally {
-      literalGenerationAbortRef.current = null
-      setGeneratingFullVideo(false)
+      setRegeneratingId(null)
     }
-  }, [apiKey, generatingFullVideo, production, localTracks, generatedImages, generatedAudio, generatedClips, generatedSoundtrack, generatedVideoUrl, generatedVideoMimeType, renderedScopes, renderQueue, renderPresets, selectedRenderPresetId, onSave, onSaveToNotebook, toast])
-
-  const handleCancelLiteralGeneration = useCallback(() => {
-    if (!generatingFullVideo) return
-    literalGenerationAbortRef.current?.abort()
-    setFullVideoStatus('Cancelando geração literal...')
-  }, [generatingFullVideo])
-
-  const handleRetryFailedLiteralGeneration = useCallback(async () => {
-    setFullVideoError('')
-    setFullVideoStatus('Retomando apenas etapas pendentes/falhadas...')
-    await handleGenerateLiteralVideo()
-  }, [handleGenerateLiteralVideo])
-
-  const enqueueRenderJob = useCallback((scope: VideoRenderScope, sceneNumber?: number, partNumber?: number) => {
-    const id = `render_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    const now = new Date().toISOString()
-    const preset = resolveVideoRenderPreset(buildCurrentProduction(), selectedRenderPresetId)
-    const item: VideoRenderQueueItem = {
-      id,
-      scope,
-      presetId: preset.id,
-      status: 'pending',
-      progress: 0,
-      createdAt: now,
-      sceneNumber,
-      partNumber,
-      message: `Na fila: ${createVideoRenderScopeLabel(scope, sceneNumber, partNumber)}`,
-    }
-    setRenderQueue(prev => [...prev, item])
-    setHasUnsavedChanges(true)
-    toast.success(`Adicionado à fila: ${createVideoRenderScopeLabel(scope, sceneNumber, partNumber)}`)
-  }, [buildCurrentProduction, selectedRenderPresetId, toast])
-
-  const handleEnqueueSelectedRender = useCallback(() => {
-    if (selectedRenderScope === 'full') {
-      enqueueRenderJob('full')
-      return
-    }
-    if (selectedRenderScope === 'scene') {
-      enqueueRenderJob('scene', selectedRenderScene)
-      return
-    }
-    enqueueRenderJob('part', selectedRenderScene, Math.max(1, selectedRenderPart))
-  }, [selectedRenderScope, selectedRenderScene, selectedRenderPart, enqueueRenderJob])
-
-  const handleRequeueItem = useCallback((itemId: string) => {
-    const requeueItemById = (item: VideoRenderQueueItem): VideoRenderQueueItem => {
-      if (item.id !== itemId) return item
-      return {
-        ...item,
-        status: 'pending',
-        progress: 0,
-        error: undefined,
-        startedAt: undefined,
-        completedAt: undefined,
-        resultScopeKey: undefined,
-        message: 'Reenfileirado',
-      }
-    }
-    setRenderQueue(prev => prev.map(requeueItemById))
-  }, [])
-
-  const updateRenderQueueItem = useCallback((itemId: string, update: Partial<VideoRenderQueueItem>) => {
-    setRenderQueue(prev => prev.map(item => item.id === itemId ? { ...item, ...update } : item))
-  }, [])
-
-  const mapRenderQueueItemUpdate = useCallback((
-    queue: VideoRenderQueueItem[],
-    itemId: string,
-    update: Partial<VideoRenderQueueItem>,
-  ): VideoRenderQueueItem[] => queue.map(item => item.id === itemId ? { ...item, ...update } : item), [])
-
-  useEffect(() => {
-    if (generatingFullVideo) return
-    const pending = renderQueue.find(item => item.status === 'pending')
-    if (!pending) return
-    let cancelled = false
-
-    const run = async () => {
-      setGeneratingFullVideo(true)
-      setFullVideoError('')
-      updateRenderQueueItem(pending.id, {
-        status: 'processing',
-        startedAt: new Date().toISOString(),
-        progress: 5,
-        message: `Renderizando ${createVideoRenderScopeLabel(pending.scope, pending.sceneNumber, pending.partNumber)}...`,
-      })
-
-      try {
-        const currentProduction = buildCurrentProduction()
-        const preset = resolveVideoRenderPreset(currentProduction, pending.presetId)
-        const result = await renderLiteralVideoByScope(currentProduction, {
-          scope: pending.scope,
-          sceneNumber: pending.sceneNumber,
-          partNumber: pending.partNumber,
-          preset,
-          onProgress: (_step, _total, _phase, label) => {
-            if (cancelled) return
-            const percentMatch = label.match(/(\d{1,3})%/)
-            const percent = percentMatch ? Number.parseInt(percentMatch[1], 10) : 0
-            updateRenderQueueItem(pending.id, {
-              progress: Math.min(99, Math.max(10, percent || 50)),
-              message: label,
-            })
-            setFullVideoStatus(label)
-          },
-        })
-        if (cancelled) return
-
-        const mergedScopes = [
-          ...(currentProduction.renderedScopes || []).filter(asset => asset.scopeKey !== result.asset.scopeKey),
-          result.asset,
-        ].sort((a, b) => a.scopeKey.localeCompare(b.scopeKey))
-        upsertRenderedScope(result.asset)
-
-        const completedUpdate: Partial<VideoRenderQueueItem> = {
-          status: 'completed',
-          progress: 100,
-          completedAt: new Date().toISOString(),
-          resultScopeKey: result.asset.scopeKey,
-          message: `Concluído: ${result.asset.label}`,
-        }
-        let finalizedQueue: VideoRenderQueueItem[] = []
-        setRenderQueue(prev => {
-          finalizedQueue = mapRenderQueueItemUpdate(prev, pending.id, completedUpdate)
-          return finalizedQueue
-        })
-
-        const outputProduction: VideoProductionPackage = {
-          ...currentProduction,
-          renderedScopes: mergedScopes,
-          renderQueue: finalizedQueue,
-          renderedVideo: result.asset.scope === 'full' ? result.asset : currentProduction.renderedVideo,
-        }
-        if (onSave) onSave(outputProduction)
-        if (onSaveToNotebook) await onSaveToNotebook(outputProduction)
-        setHasUnsavedChanges(!onSaveToNotebook && !onSave)
-        toast.success(`Render concluído: ${result.asset.label}`)
-      } catch (err) {
-        if (cancelled) return
-        const message = err instanceof Error ? err.message : 'Falha ao processar item da fila de render'
-        setFullVideoError(message)
-        setRenderQueue(prev => mapRenderQueueItemUpdate(prev, pending.id, {
-          status: 'failed',
-          progress: 100,
-          completedAt: new Date().toISOString(),
-          error: message,
-          message: `Falha: ${message}`,
-        }))
-        toast.error('Falha no render por escopo', message)
-      } finally {
-        if (!cancelled) {
-          setGeneratingFullVideo(false)
-          setFullVideoStatus('')
-        }
-      }
-    }
-
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [renderQueue, generatingFullVideo, buildCurrentProduction, onSave, onSaveToNotebook, upsertRenderedScope, toast, updateRenderQueueItem, mapRenderQueueItemUpdate])
-
-  const handleRenderFinalVideo = useCallback(async () => {
-    enqueueRenderJob('full')
-  }, [enqueueRenderJob])
-
-  const handleRegenerateSceneClips = useCallback(async (scene: VideoScene) => {
-    enqueueRenderJob('scene', scene.number)
-  }, [enqueueRenderJob])
-
-  const handleRegenerateClipPart = useCallback(async (scene: VideoScene, partNumber: number) => {
-    enqueueRenderJob('part', scene.number, partNumber)
-  }, [enqueueRenderJob])
-
-  const handleUploadClipPart = useCallback(async (scene: VideoScene, partNumber: number, file: File | null) => {
-    if (!file) return
-    const dataUrl = await dataUrlFromFile(file)
-    const sceneStart = parseTimeToSeconds(scene.timeStart)
-    const clipDuration = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
-    const partStart = sceneStart + (partNumber - 1) * clipDuration
-    const partEnd = Math.min(sceneStart + Math.max(1, scene.duration), partStart + clipDuration)
-    const clip: VideoClipAsset = {
-      sceneNumber: scene.number,
-      partNumber,
-      startTime: partStart,
-      endTime: partEnd,
-      duration: Math.max(1, partEnd - partStart),
-      url: dataUrl,
-      mimeType: file.type || 'video/webm',
-      generatedAt: new Date().toISOString(),
-      source: 'uploaded',
-      generationEngine: 'manual-upload',
-      providerName: 'manual-upload',
-    }
-    setGeneratedClips(prev => {
-      const current = prev[scene.number] || []
-      const rest = current.filter(item => item.partNumber !== partNumber)
-      return { ...prev, [scene.number]: [...rest, clip].sort((a, b) => a.partNumber - b.partNumber) }
-    })
-    setHasUnsavedChanges(true)
-    toast.success(`Arquivo enviado para cena ${scene.number} parte ${partNumber}.`)
-  }, [production.sceneClipDurationSeconds, toast])
-
-  const handleUploadFullVideo = useCallback(async (file: File | null) => {
-    if (!file) return
-    const dataUrl = await dataUrlFromFile(file)
-    setGeneratedVideoUrl(dataUrl)
-    setGeneratedVideoMimeType(file.type || 'video/webm')
-    setHasUnsavedChanges(true)
-    toast.success('Vídeo completo enviado com sucesso.')
-  }, [toast])
-
-  const handleDownloadMediaZip = useCallback(async () => {
-    const zip = new JSZip()
-    const root = zip.folder(sanitizeName(production.title)) || zip
-
-    if (generatedVideoUrl) {
-      const blob = await fetch(generatedVideoUrl).then(resp => resp.blob())
-      const ext = generatedVideoMimeType.includes('mp4')
-        ? 'mp4'
-        : generatedVideoMimeType.includes('ogg')
-        ? 'ogv'
-        : 'webm'
-      root.file(`video-completo.${ext}`, blob)
-    }
-    if (renderedScopes.length > 0) {
-      const scopedFolder = root.folder('renders-escopo')
-      for (const scoped of renderedScopes) {
-        if (!scoped.url) continue
-        const blob = await fetch(scoped.url).then(resp => resp.blob())
-        const ext = scoped.mimeType.includes('mp4')
-          ? 'mp4'
-          : scoped.mimeType.includes('ogg')
-          ? 'ogv'
-          : 'webm'
-        scopedFolder?.file(`${sanitizeName(scoped.label)}.${ext}`, blob)
-      }
-    }
-    if (generatedSoundtrack) {
-      const blob = await fetch(generatedSoundtrack).then(resp => resp.blob())
-      root.file('audio/trilha.wav', blob)
-    }
-
-    for (const scene of production.scenes) {
-      const sceneFolder = root.folder(`cena-${String(scene.number).padStart(2, '0')}`)
-      if (!sceneFolder) continue
-      const image = generatedImages[scene.number]
-      if (image) {
-        const imageBlob = await fetch(image).then(resp => resp.blob()) as Blob
-        sceneFolder.file('imagem.png', imageBlob)
-      }
-      const narration = generatedAudio[scene.number]
-      if (narration) {
-        const narrationBlob = await fetch(narration).then(resp => resp.blob()) as Blob
-        sceneFolder.file('narracao.wav', narrationBlob)
-      }
-
-      const clips = generatedClips[scene.number] || []
-      if (clips.length > 0) {
-        const clipsFolder = sceneFolder.folder('partes')
-        for (const clip of clips) {
-          const clipBlob = await fetch(clip.url).then(resp => resp.blob()) as Blob
-          clipsFolder?.file(
-            `parte-${String(clip.partNumber).padStart(2, '0')}.webm`,
-            clipBlob,
-          )
-        }
-      }
-    }
-
-    const blob = await zip.generateAsync({ type: 'blob' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `${sanitizeName(production.title)}-midias.zip`
-    a.click()
-    URL.revokeObjectURL(a.href)
-  }, [production, renderedScopes, generatedVideoUrl, generatedVideoMimeType, generatedSoundtrack, generatedImages, generatedAudio, generatedClips])
-
-  useEffect(() => {
-    if (autoGenerationStarted.current || !apiKey || generatingFullVideo) return
-    const hasCompleteAssets = hasCompleteMediaAssets(
-      production.scenes,
-      generatedImages,
-      generatedAudio,
-      generatedSoundtrack,
-    )
-    const shouldResume = shouldAutoResumeLiteralGeneration(production.literalGenerationState, hasCompleteAssets)
-    if (!autoGenerateMedia && !shouldResume) return
-
-    autoGenerationStarted.current = true
-    void handleGenerateLiteralVideo().catch(() => {
-      autoGenerationStarted.current = false
-    })
-  }, [
-    autoGenerateMedia,
-    apiKey,
-    generatingFullVideo,
-    production,
-    generatedImages,
-    generatedAudio,
-    generatedSoundtrack,
-    handleGenerateLiteralVideo,
-  ])
-
-  useEffect(() => {
-    return () => {
-      literalGenerationAbortRef.current?.abort()
-    }
-  }, [])
+  }, [onRegenerateImage, onRegenerateTTS])
 
   // Get selected segment data
   const selectedSeg = selectedSegment
@@ -1395,11 +643,9 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
           <div>
             <h1 className="text-sm font-bold text-white truncate max-w-md">
               {production.title}
-              {hasUnsavedChanges && <span className="ml-2 text-amber-400 text-[10px] font-normal">● não salvo</span>}
             </h1>
             <p className="text-[10px] text-gray-400">
-              {production.scenes.length} cenas · {Math.floor(totalDuration / 60)}:{String(totalDuration % 60).padStart(2, '0')} min
-              {literalStatusLabel ? ` · ${literalStatusLabel}` : ''}
+              {localScenes.length} cenas · {Math.floor(totalDuration / 60)}:{String(totalDuration % 60).padStart(2, '0')} min
             </p>
           </div>
         </div>
@@ -1421,84 +667,15 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
           {onSave && (
             <button
               onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-60"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700"
             >
-              {saving
-                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                : <Save className="w-3.5 h-3.5" />}
+              <Save className="w-3.5 h-3.5" />
               Salvar
             </button>
           )}
 
-          {onSaveToNotebook && (
-            <button
-              onClick={handleSaveToNotebook}
-              disabled={savingToNotebook}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-60"
-            >
-              {savingToNotebook
-                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                : <BookOpen className="w-3.5 h-3.5" />}
-              Salvar no Caderno
-            </button>
-          )}
-
           <button
-            onClick={handleGenerateLiteralVideo}
-            disabled={generatingFullVideo || literalPreflight.blockingErrors.length > 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 text-white text-xs font-medium rounded-lg hover:bg-rose-700 disabled:opacity-60"
-          >
-            {generatingFullVideo
-              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              : <Film className="w-3.5 h-3.5" />}
-            {generatingFullVideo ? 'Gerando partes...' : 'Gerar partes por cena'}
-          </button>
-
-          {generatingFullVideo && (
-            <button
-              onClick={handleCancelLiteralGeneration}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-white text-xs font-medium rounded-lg hover:bg-gray-600"
-            >
-              <X className="w-3.5 h-3.5" />
-              Cancelar geração
-            </button>
-          )}
-
-          {literalHasFailures && (
-            <button
-              onClick={() => void handleRetryFailedLiteralGeneration()}
-              disabled={generatingFullVideo || !apiKey}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-lg hover:bg-amber-700 disabled:opacity-60"
-            >
-              {generatingFullVideo
-                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                : <Sparkles className="w-3.5 h-3.5" />}
-              {generatingFullVideo ? 'Retomando...' : 'Retentar falhas'}
-            </button>
-          )}
-
-          <button
-            onClick={handleRenderFinalVideo}
-            disabled={generatingFullVideo || !mediaGenerationComplete}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-700 disabled:opacity-60"
-          >
-            {generatingFullVideo
-              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              : <Video className="w-3.5 h-3.5" />}
-            {generatingFullVideo ? 'Renderizando...' : 'Render final (opcional)'}
-          </button>
-
-          <button
-            onClick={handleDownloadMediaZip}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-lg hover:bg-amber-700"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Baixar ZIP
-          </button>
-
-          <button
-            onClick={handleCloseRequest}
+            onClick={onClose}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-gray-300 text-xs font-medium rounded-lg hover:bg-gray-600"
           >
             <X className="w-3.5 h-3.5" />
@@ -1507,272 +684,17 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
         </div>
       </div>
 
-      {/* Unsaved changes confirmation dialog */}
-      {showCloseConfirm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Alterações não salvas</h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Você tem alterações que ainda não foram salvas no caderno. O que deseja fazer?
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={handleDiscardClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-              >
-                Descartar e fechar
-              </button>
-              <button
-                onClick={() => setShowCloseConfirm(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-              >
-                Voltar ao estúdio
-              </button>
-              <button
-                onClick={handleConfirmClose}
-                disabled={savingToNotebook}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60"
-              >
-                {savingToNotebook ? 'Salvando...' : 'Salvar e fechar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main layout */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left sidebar - Scenes + Design Guide */}
         <div className="w-72 bg-white border-r border-gray-200 overflow-y-auto p-4 space-y-4 flex-shrink-0">
           <SceneNavigator
-            scenes={production.scenes}
+            scenes={localScenes}
             selectedScene={selectedScene}
             onSelectScene={setSelectedScene}
           />
 
           <DesignGuidePanel designGuide={production.designGuide} />
-
-          <div className="border rounded-xl overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b">
-              <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                <Film className="w-3.5 h-3.5 text-rose-600" />
-                Vídeo Final
-              </span>
-            </div>
-            <div className="p-4 bg-white space-y-3">
-              {generatedVideoUrl ? (
-                <video controls src={generatedVideoUrl} className="w-full rounded-lg border bg-black" />
-              ) : (
-                <p className="text-xs text-gray-500">
-                  Gere as partes por cena e, se desejar, faça o render final no estúdio.
-                </p>
-              )}
-              {generatedSoundtrack && (
-                <div>
-                  <p className="text-[10px] font-semibold text-emerald-600 mb-1 flex items-center gap-1">
-                    <Music className="w-3 h-3" /> Trilha Gerada
-                  </p>
-                  <audio controls src={generatedSoundtrack} className="w-full h-8" />
-                </div>
-              )}
-              {generatingFullVideo && (
-                <p className="text-xs text-rose-600">{fullVideoStatus || 'Gerando partes do vídeo...'}</p>
-              )}
-              {mediaGenerationComplete && !generatingFullVideo && (
-                <p className="text-xs text-emerald-600">
-                  Partes geradas por cena. Você já pode salvar e/ou renderizar o vídeo final.
-                </p>
-              )}
-              {fullVideoError && (
-                <p className="text-xs text-red-600">{fullVideoError}</p>
-              )}
-              {literalPreflight.blockingErrors.length > 0 && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-2 space-y-1">
-                  <p className="text-[10px] font-semibold text-red-700 uppercase">Preflight Bloqueado</p>
-                  {literalPreflight.blockingErrors.map(item => (
-                    <p key={item} className="text-[10px] text-red-700">• {item}</p>
-                  ))}
-                </div>
-              )}
-              {literalPreflight.warnings.length > 0 && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 space-y-1">
-                  <p className="text-[10px] font-semibold text-amber-700 uppercase">Alertas de Preflight</p>
-                  {literalPreflight.warnings.map(item => (
-                    <p key={item} className="text-[10px] text-amber-700">• {item}</p>
-                  ))}
-                </div>
-              )}
-              {literalState && (
-                <div className="rounded-lg border bg-white p-2 space-y-1">
-                  <p className="text-[10px] font-semibold text-gray-600 uppercase">Checkpoint Literal</p>
-                  <p className="text-[10px] text-gray-600">
-                    Status: <span className="font-semibold">{literalState.status}</span> · Fase: {literalState.phase.replace(/_/g, ' ')}
-                  </p>
-                  <p className="text-[10px] text-gray-500">
-                    Cenas completas: {literalCompletedScenes}/{production.scenes.length} · Versao: {literalState.checkpointVersion}
-                  </p>
-                  <p className="text-[10px] text-gray-500">
-                    Execucoes: {literalState.runCount || 1} · Retomadas: {literalState.resumeCount || 0}
-                  </p>
-                  {literalState.events && literalState.events.length > 0 && (
-                    <p className="text-[10px] text-gray-500 truncate">
-                      Ultimo evento: {literalState.events[literalState.events.length - 1]?.message || literalState.events[literalState.events.length - 1]?.type}
-                    </p>
-                  )}
-                  <p className="text-[10px] text-gray-500">
-                    Provedor externo: {isExternalVideoProviderConfigured()
-                      ? `ativo (${providerDiagnostics.provider})`
-                      : `inativo (fallback local${providerDiagnostics.provider !== 'none' ? ' por configuracao incompleta' : ''})`}
-                  </p>
-                  <p className="text-[10px] text-gray-500 truncate">
-                    Poll: {providerDiagnostics.pollIntervalMs}ms · Timeout: {Math.round(providerDiagnostics.pollTimeoutMs / 1000)}s
-                  </p>
-                </div>
-              )}
-              <label className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white text-xs font-medium rounded-lg border cursor-pointer hover:bg-gray-50">
-                <Upload className="w-3.5 h-3.5" />
-                Upload vídeo completo
-                <input
-                  type="file"
-                  accept="video/*"
-                  className="hidden"
-                  onChange={e => {
-                    const file = e.target.files?.[0] || null
-                    void handleUploadFullVideo(file)
-                    e.currentTarget.value = ''
-                  }}
-                />
-              </label>
-              <div className="rounded-lg border bg-gray-50 p-2 space-y-2">
-                <p className="text-[10px] font-semibold text-gray-600 uppercase">Render por Escopo (CapCut-like)</p>
-                <div className="grid grid-cols-3 gap-1">
-                  {(['full', 'scene', 'part'] as VideoRenderScope[]).map(scope => (
-                    <button
-                      key={scope}
-                      onClick={() => setSelectedRenderScope(scope)}
-                      className={`px-2 py-1 text-[10px] rounded border ${
-                        selectedRenderScope === scope
-                          ? 'bg-violet-600 text-white border-violet-600'
-                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
-                      }`}
-                    >
-                      {scope === 'full' ? 'Projeto' : scope === 'scene' ? 'Cena' : 'Parte'}
-                    </button>
-                  ))}
-                </div>
-                {selectedRenderScope !== 'full' && (
-                  <div className="grid grid-cols-2 gap-1">
-                    <select
-                      value={selectedRenderScene}
-                      onChange={e => {
-                        const scene = Number.parseInt(e.target.value, 10) || production.scenes[0]?.number || 1
-                        setSelectedRenderScene(scene)
-                        setSelectedRenderPart(1)
-                      }}
-                      className="px-2 py-1 text-[10px] border rounded bg-white"
-                    >
-                      {production.scenes.map(scene => (
-                        <option key={scene.number} value={scene.number}>Cena {scene.number}</option>
-                      ))}
-                    </select>
-                    {selectedRenderScope === 'part' ? (
-                      <input
-                        type="number"
-                        min={1}
-                        value={selectedRenderPart}
-                        onChange={e => setSelectedRenderPart(Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
-                        className="px-2 py-1 text-[10px] border rounded bg-white"
-                        placeholder="Parte"
-                      />
-                    ) : (
-                      <div className="px-2 py-1 text-[10px] border rounded bg-gray-100 text-gray-500 flex items-center">
-                        Cena inteira
-                      </div>
-                    )}
-                  </div>
-                )}
-                <select
-                  value={selectedRenderPresetId}
-                  onChange={e => setSelectedRenderPresetId(e.target.value)}
-                  className="w-full px-2 py-1 text-[10px] border rounded bg-white"
-                >
-                  {renderPresets.map(preset => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name} · {preset.width}x{preset.height} · {preset.frameRate}fps
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={handleEnqueueSelectedRender}
-                  disabled={generatingFullVideo}
-                  className="w-full px-2 py-1.5 text-[10px] font-semibold rounded bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-60"
-                >
-                  {generatingFullVideo ? 'Processando fila...' : 'Adicionar à fila de render'}
-                </button>
-              </div>
-              {renderedScopes.length > 0 && (
-                <div className="rounded-lg border bg-white p-2 space-y-1">
-                  <p className="text-[10px] font-semibold text-gray-600 uppercase">Renders por Escopo</p>
-                  <div className="space-y-1 max-h-32 overflow-auto">
-                    {renderedScopes.map(asset => (
-                      <div key={asset.scopeKey} className="border rounded p-1.5 bg-gray-50">
-                        <p className="text-[10px] font-medium text-gray-700">{asset.label}</p>
-                        <video controls src={asset.url} className="w-full rounded border bg-black mt-1" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {renderQueue.length > 0 && (
-                <div className="rounded-lg border bg-white p-2 space-y-1">
-                  <p className="text-[10px] font-semibold text-gray-600 uppercase">Fila de Render</p>
-                  <div className="space-y-1 max-h-36 overflow-auto">
-                    {renderQueue.map(item => (
-                      <div key={item.id} className="border rounded p-1.5 bg-gray-50">
-                        <p className="text-[10px] font-medium text-gray-700">
-                          {createVideoRenderScopeLabel(item.scope, item.sceneNumber, item.partNumber)}
-                        </p>
-                        <p className="text-[10px] text-gray-500">{item.message || item.status}</p>
-                        <div className="w-full h-1.5 bg-gray-200 rounded mt-1">
-                          <div
-                            className={`h-1.5 rounded ${
-                              item.status === 'failed'
-                                ? 'bg-red-500'
-                                : item.status === 'completed'
-                                ? 'bg-emerald-500'
-                                : 'bg-violet-500'
-                            }`}
-                            style={{ width: `${Math.max(0, Math.min(100, item.progress || 0))}%` }}
-                          />
-                        </div>
-                        <div className="mt-1 flex items-center gap-1">
-                          {(item.status === 'pending' || item.status === 'failed') && (
-                            <button
-                              onClick={() => handleRequeueItem(item.id)}
-                              className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-600 text-white hover:bg-indigo-700"
-                            >
-                              Recolocar na Fila
-                            </button>
-                          )}
-                          {item.status === 'pending' && (
-                            <button
-                              onClick={() => {
-                                setRenderQueue(prev => prev.filter(curr => curr.id !== item.id))
-                                setHasUnsavedChanges(true)
-                              }}
-                              className="px-1.5 py-0.5 text-[10px] rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
-                            >
-                              Cancelar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
 
           {/* Quality Report */}
           <div className="border rounded-xl overflow-hidden">
@@ -1881,235 +803,150 @@ export default function VideoStudioEditor({ production, apiKey, onClose, onSave,
               onUpdate={(updated) => handleUpdateSegment(selectedSegment!.trackIndex, selectedSegment!.segmentIndex, updated)}
               onDelete={() => handleDeleteSegment(selectedSegment!.trackIndex, selectedSegment!.segmentIndex)}
               onClose={() => setSelectedSegment(null)}
+              onRegenerateMedia={
+                (selectedTrack.type === 'video' || selectedTrack.type === 'narration') && selectedSeg.sceneNumber
+                  ? () => handleRegenerateMedia(selectedTrack.type, selectedSeg.sceneNumber)
+                  : undefined
+              }
+              isRegenerating={regeneratingId === `${selectedTrack.type}_${selectedSeg.sceneNumber}`}
             />
           ) : selectedScene ? (
-            /* Scene detail view */
+            /* Scene detail view with clips */
             <div className="space-y-3">
               <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
                 <Camera className="w-4 h-4 text-rose-600" />
                 Cena {selectedScene}
               </h3>
               {(() => {
-                const scene = production.scenes.find(s => s.number === selectedScene)
+                const scene = localScenes.find(s => s.number === selectedScene)
                 if (!scene) return <p className="text-xs text-gray-400">Cena não encontrada</p>
-                const fallbackPartsCount = Math.max(
-                  1,
-                  Math.ceil(
-                    Math.max(1, scene.duration)
-                    / Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS),
-                  ),
-                )
-                const sceneImage = generatedImages[scene.number]
-                const sceneAudio = generatedAudio[scene.number]
-                const sceneClips = (generatedClips[scene.number] || []).sort((a, b) => a.partNumber - b.partNumber)
-                const isGeneratingImage = generatingImageFor === scene.number
-                const isGeneratingAudio = generatingAudioFor === scene.number
-                const sceneCheckpoint = literalState?.scenes?.find(item => item.sceneNumber === scene.number)
+                const narSeg = localNarration.find(n => n.sceneNumber === selectedScene)
+                const clips = scene.clips || []
+                const clipsWithImages = clips.filter(c => c.generatedImageUrl)
+
                 return (
                   <div className="space-y-3">
-                    {sceneCheckpoint && (
-                      <div className="bg-gray-50 rounded-lg p-3 border space-y-2">
-                        <p className="text-[10px] font-semibold text-gray-600 uppercase">Checkpoint da Cena</p>
-                        <div className="grid grid-cols-3 gap-1">
-                          <span className={`px-2 py-1 rounded border text-[10px] font-medium ${literalStatusBadgeClass(sceneCheckpoint.imageStatus)}`}>
-                            Img: {formatLiteralStepStatus(sceneCheckpoint.imageStatus)}
-                          </span>
-                          <span className={`px-2 py-1 rounded border text-[10px] font-medium ${literalStatusBadgeClass(sceneCheckpoint.narrationStatus)}`}>
-                            TTS: {formatLiteralStepStatus(sceneCheckpoint.narrationStatus)}
-                          </span>
-                          <span className={`px-2 py-1 rounded border text-[10px] font-medium ${literalStatusBadgeClass(sceneCheckpoint.clipsStatus)}`}>
-                            Clips: {formatLiteralStepStatus(sceneCheckpoint.clipsStatus)}
-                          </span>
+                    {/* Clips grid — the core visual sequence */}
+                    {clips.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1.5 flex items-center gap-1">
+                          <Film className="w-3 h-3" />
+                          Clips ({clipsWithImages.length}/{clips.length} gerados)
+                        </p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {clips.map(clip => (
+                            <div
+                              key={`clip_${clip.sceneNumber}_${clip.clipNumber}`}
+                              className="border rounded-lg overflow-hidden bg-white hover:shadow-sm transition-shadow"
+                            >
+                              {clip.generatedImageUrl ? (
+                                <img
+                                  src={clip.generatedImageUrl}
+                                  alt={`Cena ${clip.sceneNumber} Clip ${clip.clipNumber}`}
+                                  className="w-full h-20 object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-20 bg-gray-100 flex items-center justify-center">
+                                  <ImagePlus className="w-4 h-4 text-gray-300" />
+                                </div>
+                              )}
+                              <div className="px-1.5 py-1">
+                                <p className="text-[9px] font-semibold text-gray-700">
+                                  Clip {clip.clipNumber} · {clip.duration}s
+                                </p>
+                                <p className="text-[8px] text-gray-400 truncate" title={clip.description}>
+                                  {clip.description.slice(0, 60)}
+                                </p>
+                                {clip.motionDescription && (
+                                  <p className="text-[8px] text-rose-400 truncate mt-0.5">
+                                    🎬 {clip.motionDescription}
+                                  </p>
+                                )}
+                              </div>
+                              {/* Regenerate individual clip */}
+                              {onRegenerateImage && (
+                                <button
+                                  onClick={() => handleRegenerateMedia('video', scene.number)}
+                                  disabled={!!regeneratingId}
+                                  className="w-full flex items-center justify-center gap-1 py-1 text-[9px] text-rose-600 hover:bg-rose-50 border-t disabled:opacity-40"
+                                >
+                                  {clip.generatedImageUrl ? (
+                                    <><RefreshCw className="w-2.5 h-2.5" /> Regenerar</>
+                                  ) : (
+                                    <><ImagePlus className="w-2.5 h-2.5" /> Gerar</>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                        <p className="text-[10px] text-gray-500">
-                          Tentativas: Img {sceneCheckpoint.imageAttempts || 0} · TTS {sceneCheckpoint.narrationAttempts || 0} · Clips {sceneCheckpoint.clipsAttempts || 0}
-                        </p>
-                        <p className="text-[10px] text-gray-500">
-                          Partes concluídas: {sceneCheckpoint.clipPartsCompleted}/{sceneCheckpoint.clipPartsTotal}
-                        </p>
-                        {sceneCheckpoint.lastError && (
-                          <p className="text-[10px] text-red-600">{sceneCheckpoint.lastError}</p>
-                        )}
                       </div>
                     )}
+
+                    {/* Scene thumbnail (first clip) when no clips */}
+                    {clips.length === 0 && scene.generatedImageUrl && (
+                      <div className="rounded-lg overflow-hidden border border-rose-200">
+                        <img
+                          src={scene.generatedImageUrl}
+                          alt={`Cena ${scene.number}`}
+                          className="w-full h-44 object-cover"
+                        />
+                      </div>
+                    )}
+
+                    {/* Generated narration audio */}
+                    {narSeg?.generatedAudioUrl && (
+                      <div className="bg-violet-50 rounded-lg p-2.5 border border-violet-200">
+                        <p className="text-[10px] font-semibold text-violet-600 uppercase mb-1.5">Narração Gerada</p>
+                        <audio
+                          controls
+                          src={narSeg.generatedAudioUrl}
+                          className="w-full"
+                          style={{ height: '32px' }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Regenerate TTS button */}
+                    {onRegenerateTTS && (
+                      <button
+                        onClick={() => handleRegenerateMedia('narration', scene.number)}
+                        disabled={regeneratingId === `narration_${scene.number}`}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-50 text-violet-700 text-xs font-medium rounded-lg hover:bg-violet-100 border border-violet-200 disabled:opacity-50"
+                      >
+                        {regeneratingId === `narration_${scene.number}` ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : narSeg?.generatedAudioUrl ? (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        ) : (
+                          <Volume2 className="w-3.5 h-3.5" />
+                        )}
+                        {narSeg?.generatedAudioUrl ? 'Regenerar Narração' : 'Gerar Narração'}
+                      </button>
+                    )}
+
                     <div className="bg-gray-50 rounded-lg p-3 border">
                       <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Timing</p>
-                      <p className="text-xs text-gray-700">{scene.timeStart} → {scene.timeEnd} ({scene.duration}s)</p>
+                      <p className="text-xs text-gray-700">
+                        {scene.timeStart} → {scene.timeEnd} ({scene.duration}s)
+                        {clips.length > 0 && (
+                          <span className="text-gray-400 ml-1">· {clips.length} clips</span>
+                        )}
+                      </p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 border">
                       <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Visual</p>
                       <p className="text-xs text-gray-700 leading-relaxed">{scene.visual}</p>
                     </div>
-
-                    {/* Narration + TTS generation */}
-                    <div className="bg-violet-50 rounded-lg p-3 border border-violet-200 space-y-2">
-                      <p className="text-[10px] font-semibold text-violet-600 uppercase">Narração</p>
+                    <div className="bg-gray-50 rounded-lg p-3 border">
+                      <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Narração</p>
                       <p className="text-xs text-gray-700 leading-relaxed">{scene.narration}</p>
-                      {apiKey && scene.narration && (
-                        <button
-                          onClick={() => handleGenerateNarration(scene.number, scene.narration)}
-                          disabled={isGeneratingAudio}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-700 disabled:opacity-60 mt-1"
-                        >
-                          {isGeneratingAudio
-                            ? <Loader2 className="w-3 h-3 animate-spin" />
-                            : <Mic className="w-3 h-3" />}
-                          {isGeneratingAudio ? 'Gerando...' : 'Gerar Narração (TTS)'}
-                        </button>
-                      )}
-                      {audioError[scene.number] && (
-                        <p className="text-[10px] text-red-600">{audioError[scene.number]}</p>
-                      )}
-                      {sceneAudio && (
-                        <div className="mt-1">
-                          <p className="text-[10px] font-semibold text-violet-600 mb-1 flex items-center gap-1">
-                            <Volume2 className="w-3 h-3" /> Narração Gerada
-                          </p>
-                          <audio controls src={sceneAudio} className="w-full h-8" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Image prompt + generation */}
-                    {scene.imagePrompt && (
-                      <div className="bg-rose-50 rounded-lg p-3 border border-rose-200 space-y-2">
-                        <p className="text-[10px] font-semibold text-rose-600 uppercase">Prompt de Imagem</p>
-                        <p className="text-xs text-gray-600 leading-relaxed font-mono">{scene.imagePrompt}</p>
-                        {apiKey && (
-                          <button
-                            onClick={() => handleGenerateImage(scene)}
-                            disabled={isGeneratingImage}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 text-white text-xs font-medium rounded-lg hover:bg-rose-700 disabled:opacity-60 mt-1"
-                          >
-                            {isGeneratingImage
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <Image className="w-3 h-3" />}
-                            {isGeneratingImage ? 'Gerando...' : 'Gerar Imagem (DALL-E)'}
-                          </button>
-                        )}
-                        {imageError[scene.number] && (
-                          <p className="text-[10px] text-red-600">{imageError[scene.number]}</p>
-                        )}
-                        {sceneImage && (
-                          <div className="mt-1">
-                            <p className="text-[10px] font-semibold text-rose-600 mb-1">Imagem Gerada</p>
-                            <img
-                              src={sceneImage}
-                              alt={`Cena ${scene.number}`}
-                              className="w-full rounded-lg border shadow-sm"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {scene.videoPrompt && (
-                      <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
-                        <p className="text-[10px] font-semibold text-amber-600 uppercase mb-1">Prompt de Vídeo</p>
-                        <p className="text-xs text-gray-700 leading-relaxed font-mono">{scene.videoPrompt}</p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <button
-                            onClick={() => handleRegenerateSceneClips(scene)}
-                            disabled={Boolean(activeRenderJob)}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-600 text-white text-[10px] font-medium rounded hover:bg-amber-700 disabled:opacity-60"
-                          >
-                            {activeRenderJob?.scope === 'scene' && activeRenderJob.sceneNumber === scene.number
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <Film className="w-3 h-3" />}
-                            Renderizar Cena Completa
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-                      <p className="text-[10px] font-semibold text-slate-600 uppercase mb-2">
-                        Partes da Cena
-                      </p>
-                      <div className="space-y-2">
-                        {(sceneClips.length > 0
-                          ? sceneClips
-                          : Array.from({ length: fallbackPartsCount }, (_, i) => ({
-                              sceneNumber: scene.number,
-                              partNumber: i + 1,
-                              startTime: 0,
-                              endTime: 0,
-                              duration: 0,
-                              url: '',
-                              mimeType: 'video/webm',
-                              generatedAt: '',
-                              source: 'generated' as const,
-                              generationEngine: 'browser-local' as const,
-                              providerName: 'browser-renderer',
-                            }))
-                        ).map((clip) => (
-                          <div key={`clip-${scene.number}-${clip.partNumber}`} className="rounded border bg-white p-2">
-                            <div className="flex items-center justify-between mb-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] font-semibold text-gray-700">Parte {clip.partNumber}</span>
-                                {clip.generationEngine && (
-                                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
-                                    {clip.generationEngine === 'external-provider'
-                                      ? `externo${clip.providerName ? `:${clip.providerName}` : ''}`
-                                      : clip.generationEngine === 'browser-local'
-                                      ? 'local'
-                                      : 'upload'}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => handleRegenerateClipPart(scene, clip.partNumber)}
-                                  disabled={Boolean(activeRenderJob)}
-                                  className="px-2 py-1 text-[10px] rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
-                                >
-                                  {activeRenderJob?.scope === 'part'
-                                    && activeRenderJob.sceneNumber === scene.number
-                                    && activeRenderJob.partNumber === clip.partNumber
-                                    ? 'Renderizando...'
-                                    : 'Renderizar'}
-                                </button>
-                                <label className="px-2 py-1 text-[10px] rounded border cursor-pointer hover:bg-gray-50">
-                                  Upload
-                                  <input
-                                    type="file"
-                                    accept="video/*"
-                                    className="hidden"
-                                    onChange={e => {
-                                      const file = e.target.files?.[0] || null
-                                      void handleUploadClipPart(scene, clip.partNumber, file)
-                                      e.currentTarget.value = ''
-                                    }}
-                                  />
-                                </label>
-                              </div>
-                            </div>
-                            {clip.url ? (
-                              <>
-                                <video controls src={clip.url} className="w-full rounded border bg-black" />
-                                <p className="text-[10px] text-gray-500 mt-1">
-                                  {clip.duration > 0 ? `Duração: ${Math.round(clip.duration)}s` : 'Duração não informada'}
-                                </p>
-                              </>
-                            ) : (
-                              <p className="text-[10px] text-gray-500">Ainda sem vídeo para esta parte.</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
                     </div>
                     {scene.transition && (
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full border border-purple-200">
                           Transição: {scene.transition}
                         </span>
-                      </div>
-                    )}
-                    {scene.soundtrack && (
-                      <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
-                        <p className="text-[10px] font-semibold text-emerald-600 uppercase mb-1 flex items-center gap-1">
-                          <Music className="w-3 h-3" /> Trilha Sonora
-                        </p>
-                        <p className="text-xs text-gray-700 leading-relaxed">{scene.soundtrack}</p>
                       </div>
                     )}
                   </div>

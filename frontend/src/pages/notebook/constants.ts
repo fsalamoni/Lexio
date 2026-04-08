@@ -43,6 +43,7 @@ export const REVIEWABLE_ARTIFACT_TYPES: StudioArtifactType[] = ['video_script', 
 /** Map media artifact types to the correct cost function key */
 export const ARTIFACT_COST_KEY: Partial<Record<StudioArtifactType, UsageFunctionKey>> = {
   video_script: 'video_pipeline',
+  video_production: 'video_pipeline',
   audio_script: 'audio_pipeline',
   apresentacao: 'presentation_pipeline',
 }
@@ -60,6 +61,7 @@ export const STUDIO_SPECIALIST_LABEL: Record<StudioArtifactType, string> = {
   tabela_dados: 'Designer Visual',
   audio_script: 'Roteirista',
   video_script: 'Roteirista',
+  video_production: 'Pipeline de Vídeo',
   outro: 'Escritor',
 }
 

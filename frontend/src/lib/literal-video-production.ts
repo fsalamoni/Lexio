@@ -961,13 +961,9 @@ export async function generateLiteralMediaAssets(
             apiKey,
             model: chooseImageModel(models.video_designer),
             prompt: scene.imagePrompt,
-            size: '1792x1024',
+            aspectRatio: '16:9',
           })
-          nextAsset.imageUrl = result.b64_json
-            ? `data:image/png;base64,${result.b64_json}`
-            : result.url
-            ? await remoteImageToDataUrl(result.url)
-            : undefined
+          nextAsset.imageUrl = result.imageDataUrl
           executions.push(makeExecution('media_image_generation', chooseImageModel(models.video_designer) || 'openai/dall-e-3', performance.now() - startedAt))
           updateSceneCheckpoint(literalState, scene.number, { imageStatus: 'completed', lastError: undefined })
           pushLiteralEvent(literalState, {

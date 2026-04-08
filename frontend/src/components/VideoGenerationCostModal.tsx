@@ -9,7 +9,7 @@ import {
   Video, Zap, DollarSign, Loader2,
   AlertCircle, Clock, Layers, CheckCircle2,
   Eye, Edit3, ChevronDown, ChevronUp,
-  Image, Mic, Film, FileText,
+  Image, Mic, Film, FileText, ImagePlus, Volume2,
 } from 'lucide-react'
 import { estimateVideoGenerationCost } from '../lib/video-generation-pipeline'
 import DraggablePanel from './DraggablePanel'
@@ -24,6 +24,7 @@ const AGENT_MODEL_RECOMMENDATIONS: Record<string, { icon: React.ElementType; cap
   video_compositor:   { icon: Film,     capability: 'Texto', note: 'Monta a timeline e a estrutura de composição antes da renderização literal.' },
   video_narrador:     { icon: Mic,      capability: 'Texto', note: 'Gera roteiro de narração e marcações de timing para a etapa de TTS.' },
   video_revisor:      { icon: FileText, capability: 'Texto', note: 'Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, GPT-4o Mini, Qwen 2.5 72B, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Mistral Small:free' },
+  video_clip_planner: { icon: Film,     capability: 'Texto', note: 'Chamado 1x por cena. Baratos e rápidos: Gemini 2.5 Flash, GPT-4o Mini, DeepSeek V3. Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free' },
 }
 
 interface VideoGenerationCostModalProps {
@@ -123,41 +124,51 @@ export default function VideoGenerationCostModal({
                 </p>
               </div>
 
-              {/* Agent pipeline steps */}
+              {/* Pipeline steps — 8 LLM agents + 3 media generation steps */}
               <div className="space-y-1.5">
                 {[
-                  'Planejador de Produção',
-                  'Roteirista',
-                  'Diretor de Cenas',
-                  'Storyboarder',
-                  'Designer Visual',
-                  'Compositor de Vídeo',
-                  'Narrador',
-                  'Revisor Final',
+                  { label: 'Planejador de Produção', icon: FileText },
+                  { label: 'Roteirista', icon: FileText },
+                  { label: 'Diretor de Cenas', icon: Film },
+                  { label: 'Storyboarder', icon: Image },
+                  { label: 'Designer Visual', icon: Image },
+                  { label: 'Compositor de Vídeo', icon: Film },
+                  { label: 'Narrador', icon: Mic },
+                  { label: 'Revisor Final', icon: FileText },
+                  { label: 'Planejando Clips por Cena', icon: Film },
+                  { label: 'Gerando Imagens dos Clips', icon: ImagePlus },
+                  { label: 'Gerando Narração TTS', icon: Volume2 },
                 ].map((agent, i) => {
                   const step = i + 1
                   const current = generationProgress?.step || 0
                   const isDone = step < current
                   const isActive = step === current
+                  const isMedia = step >= 9
+                  const AgentIcon = agent.icon
                   return (
                     <div
-                      key={agent}
+                      key={agent.label}
                       className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs ${
                         isDone
                           ? 'bg-green-50 text-green-700'
                           : isActive
-                          ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200'
+                          ? isMedia ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'bg-rose-50 text-rose-700 ring-1 ring-rose-200'
                           : 'bg-gray-50 text-gray-400'
                       }`}
                     >
                       {isDone ? (
                         <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
                       ) : isActive ? (
-                        <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
-                        <Clock className="w-3.5 h-3.5" />
+                        <AgentIcon className="w-3.5 h-3.5" />
                       )}
-                      <span className="font-medium">{step}. {agent}</span>
+                      <span className="font-medium">{step}. {agent.label}</span>
+                      {isActive && generationProgress?.agent && step >= 9 && (
+                        <span className="text-[10px] text-gray-500 ml-auto truncate max-w-[200px]">
+                          {generationProgress.agent}
+                        </span>
+                      )}
                     </div>
                   )
                 })}
@@ -169,21 +180,14 @@ export default function VideoGenerationCostModal({
               <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-xl border border-amber-200">
                 <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
                 <div className="text-sm text-amber-800">
-                  <p className="font-semibold mb-1">Fluxo em 2 fases para vídeo literal</p>
-                  <p>Esta tela executa a <strong>Fase 1 (planejamento textual com 8 agentes)</strong>. A <strong>Fase 2 (mídia real)</strong> acontece no Estúdio, com geração literal de imagens, narrações, clipes e render final.</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700">Fase 1</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">Planejamento de Produção</p>
-                  <p className="text-xs text-rose-700 mt-1">Roteiro, cenas, prompts visuais, narração e estrutura de timeline.</p>
-                </div>
-                <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-violet-700">Fase 2</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">Geração Literal de Mídia</p>
-                  <p className="text-xs text-violet-700 mt-1">No Estúdio: criação de arquivos reais de imagem/áudio/vídeo + render final.</p>
+                  <p className="font-semibold mb-1">Geração completa de vídeo com mídia real</p>
+                  <p>Revise o roteiro na aba <strong>Roteiro</strong> antes de gerar. O pipeline de <strong>11 etapas</strong> irá:</p>
+                  <ul className="mt-1.5 space-y-0.5 text-xs">
+                    <li>1–8. Planejar, roteirizar, dirigir cenas, criar storyboard, prompts visuais, timeline e narração</li>
+                    <li><strong>9. Subdividir cada cena em clips</strong> sequenciais (~8s cada) com continuidade visual</li>
+                    <li><strong>10. Gerar imagens reais</strong> para cada clip usando IA generativa</li>
+                    <li><strong>11. Gerar narração com voz</strong> sintetizada (TTS) para cada segmento</li>
+                  </ul>
                 </div>
               </div>
 
@@ -264,13 +268,38 @@ export default function VideoGenerationCostModal({
                 </div>
               </div>
 
+              {/* Media generation cost breakdown */}
+              {estimate.mediaBreakdown && estimate.mediaBreakdown.length > 0 && (
+                <div className="bg-blue-50 rounded-xl p-5 border border-blue-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <ImagePlus className="w-4 h-4 text-blue-600" />
+                    <h3 className="text-sm font-bold text-blue-900">Geração de Mídia Real</h3>
+                    <span className="text-xs text-blue-600 ml-auto font-mono">
+                      ${estimate.mediaCostUsd.toFixed(4)}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {estimate.mediaBreakdown.map((item) => (
+                      <div key={item.type} className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border text-xs">
+                        <div className="flex items-center gap-2">
+                          {item.type === 'image' ? <Image className="w-3.5 h-3.5 text-rose-500" /> : <Volume2 className="w-3.5 h-3.5 text-violet-500" />}
+                          <span className="font-medium text-gray-700">{item.label}</span>
+                          <span className="text-gray-400">({item.count} itens)</span>
+                        </div>
+                        <span className="font-mono text-gray-600">${item.estimatedCostUsd.toFixed(4)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Pipeline info */}
               <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-xl border border-blue-200">
                 <Layers className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div className="text-xs text-blue-800">
-                  <p className="font-semibold mb-1">Pipeline textual da Fase 1 (8 Agentes)</p>
-                  <p>Planejador → Roteirista → Diretor de Cenas → Storyboarder → Designer Visual → Compositor → Narrador → Revisor Final</p>
-                  <p className="mt-1 text-blue-600">Após concluir, o Estúdio abre para iniciar/retomar a geração literal da Fase 2.</p>
+                  <p className="font-semibold mb-1">Pipeline de 11 Etapas</p>
+                  <p>Planejador → Roteirista → Diretor → Storyboarder → Designer → Compositor → Narrador → Revisor → <strong>Clips por Cena</strong> → <strong>Imagens IA</strong> → <strong>Narração TTS</strong></p>
+                  <p className="mt-1 text-blue-600">Cada cena é subdividida em clips sequenciais (~8s cada). Imagens e narração são geradas automaticamente para cada clip.</p>
                 </div>
               </div>
             </>

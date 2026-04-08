@@ -91,6 +91,7 @@ const ARTIFACT_AGENT_MAP: Record<StudioArtifactType, SpecialistRole> = {
   tabela_dados:      'studio_visual',
   audio_script:      'studio_roteirista',
   video_script:      'studio_roteirista',
+  video_production:  'studio_roteirista',
   outro:             'studio_escritor',
 }
 

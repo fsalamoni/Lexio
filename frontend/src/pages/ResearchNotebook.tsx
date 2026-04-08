@@ -17,7 +17,7 @@ import {
   Presentation, Mic, Video, X, CheckCircle2, Brain, Link2,
   Copy, Check as CheckIcon, Download, RotateCcw, Edit3, Info,
   Globe, BookMarked, AlertCircle, ChevronUp, ChevronDown,
-  Library, ScanSearch, Save, Eye,
+  Library, ScanSearch, Save, Eye, Film,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTaskManager } from '../contexts/TaskManagerContext'
@@ -58,6 +58,9 @@ import {
 } from '../lib/notebook-media-storage'
 import { synthesizeAudioFromScript } from '../lib/notebook-audio-pipeline'
 import { extractFileText, isSupportedTextFile, SUPPORTED_TEXT_FILE_EXTENSIONS } from '../lib/file-text-extractor'
+import { generateImageViaOpenRouter, blobToDataUrl } from '../lib/image-generation-client'
+import { generateTTSViaOpenRouter } from '../lib/tts-client'
+import { loadVideoPipelineModels } from '../lib/model-config'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
@@ -2005,6 +2008,7 @@ Instruções:
         scriptContent,
         topic: activeNotebook.topic,
         sourceId: activeNotebook.id,
+        generateMedia: true,
       }, onProgress)
 
       // Save video generation executions as cost records
@@ -2032,21 +2036,22 @@ Instruções:
         : prev)
 
       // Show the video studio editor
-      if (!result.package || !result.package.scenes || result.package.scenes.length === 0) {
-        toast.warning('Produção incompleta', 'O pipeline não gerou cenas válidas. Tente novamente com outro modelo.')
-        resolveTask(null)
-      } else {
-        setVideoProduction(result.package)
-        setVideoStudioAutoGenerate(ENABLE_LITERAL_MEDIA_AUTOGENERATION)
-        setShowVideoGenCost(false)
-        setVideoGenSavedArtifact(null)
-        toast.success(
-          ENABLE_LITERAL_MEDIA_AUTOGENERATION
-            ? 'Fase 1 concluída. O estúdio abrirá e iniciará automaticamente a Fase 2 (geração literal de mídia).'
-            : 'Fase 1 concluída. O estúdio abrirá para você iniciar manualmente a Fase 2 (geração literal de mídia).',
+      setVideoProduction(result.package)
+      setShowVideoGenCost(false)
+      setVideoGenSavedArtifact(null)
+
+      // Report media generation status
+      if (result.mediaErrors && result.mediaErrors.length > 0) {
+        toast.warning(
+          'Vídeo gerado com avisos',
+          `${result.mediaErrors.length} erro(s) na geração de mídia. Verifique as notas de produção.`,
         )
-        resolveTask(result.package)
+      } else {
+        const totalClips = result.package.scenes.reduce((sum, s) => sum + (s.clips?.length || 0), 0)
+        const clipsWithImages = result.package.scenes.reduce((sum, s) => sum + (s.clips?.filter(c => c.generatedImageUrl).length || 0), 0)
+        toast.success(`Vídeo gerado! ${clipsWithImages}/${totalClips} clips com imagem, narração pronta.`)
       }
+      resolveTask(result.package)
     } catch (err) {
       console.error('Video generation error:', err)
       rejectTask(err)
@@ -3694,7 +3699,23 @@ Instruções:
                 <button
                   key={artifact.id}
                   type="button"
-                  onClick={() => setViewingArtifact(artifact)}
+                  onClick={() => {
+                    // Open video_production artifacts directly in the VideoStudioEditor
+                    if (artifact.type === 'video_production') {
+                      try {
+                        const pkg = JSON.parse(artifact.content) as VideoProductionPackage
+                        // Ensure backwards compatibility: add empty clips array to scenes that lack it
+                        if (pkg.scenes) {
+                          pkg.scenes = pkg.scenes.map(s => ({ ...s, clips: s.clips || [] }))
+                        }
+                        setVideoProduction(pkg)
+                      } catch {
+                        toast.error('Erro ao carregar produção de vídeo')
+                      }
+                    } else {
+                      setViewingArtifact(artifact)
+                    }
+                  }}
                   className="w-full flex items-center justify-between p-4 bg-white rounded-xl border hover:border-brand-300 hover:shadow-sm transition-all text-left group"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -3810,10 +3831,86 @@ Instruções:
       {videoProduction && (
         <VideoStudioEditor
           production={videoProduction}
-          apiKey={videoStudioApiKey}
           onClose={() => setVideoProduction(null)}
-          onSaveToNotebook={handleSaveVideoStudioToNotebook}
-          autoGenerateMedia={videoStudioAutoGenerate}
+          onSave={async (updated) => {
+            setVideoProduction(updated)
+            // Save as video_production artifact in the notebook
+            if (userId && activeNotebook?.id) {
+              try {
+                const artifact: StudioArtifact = {
+                  id: `video_prod_${Date.now()}`,
+                  type: 'video_production',
+                  title: updated.title || 'Produção de Vídeo',
+                  content: JSON.stringify(updated),
+                  format: 'json',
+                  created_at: new Date().toISOString(),
+                }
+                // Check if a video_production artifact already exists for this title — update it
+                const existingIdx = activeNotebook.artifacts.findIndex(
+                  a => a.type === 'video_production' && a.title === artifact.title
+                )
+                let updatedArtifacts: StudioArtifact[]
+                if (existingIdx >= 0) {
+                  updatedArtifacts = [...activeNotebook.artifacts]
+                  updatedArtifacts[existingIdx] = { ...updatedArtifacts[existingIdx], content: artifact.content }
+                } else {
+                  updatedArtifacts = [...activeNotebook.artifacts, artifact]
+                }
+                await updateResearchNotebook(userId, activeNotebook.id, { artifacts: updatedArtifacts })
+                setActiveNotebook({ ...activeNotebook, artifacts: updatedArtifacts })
+                toast.success('Produção de vídeo salva no caderno!')
+              } catch (err) {
+                console.error('Error saving video production artifact:', err)
+                toast.error('Erro ao salvar produção de vídeo')
+              }
+            } else {
+              toast.success('Produção de vídeo atualizada!')
+            }
+          }}
+          onRegenerateImage={async (sceneNumber) => {
+            try {
+              const apiKey = await getOpenRouterKey()
+              if (!apiKey) { toast.error('Chave da API não configurada.'); return null }
+              const scene = videoProduction.scenes.find(s => s.number === sceneNumber)
+              if (!scene?.imagePrompt) { toast.error('Cena sem prompt de imagem.'); return null }
+              const models = await loadVideoPipelineModels()
+              const result = await generateImageViaOpenRouter({
+                apiKey,
+                prompt: scene.imagePrompt,
+                model: models.video_image_generator || undefined,
+                aspectRatio: '16:9',
+              })
+              toast.success(`Imagem da cena ${sceneNumber} gerada!`)
+              return result.imageDataUrl
+            } catch (err) {
+              console.error('Image regeneration error:', err)
+              toast.error(`Erro ao gerar imagem da cena ${sceneNumber}`)
+              return null
+            }
+          }}
+          onRegenerateTTS={async (sceneNumber) => {
+            try {
+              const apiKey = await getOpenRouterKey()
+              if (!apiKey) { toast.error('Chave da API não configurada.'); return null }
+              const narSeg = videoProduction.narration.find(n => n.sceneNumber === sceneNumber)
+              if (!narSeg?.text) { toast.error('Cena sem texto de narração.'); return null }
+              const cleanText = narSeg.text.replace(/\*([^*]+)\*/g, '$1').replace(/\[pausa?\]/gi, '...').trim()
+              const models = await loadVideoPipelineModels()
+              const result = await generateTTSViaOpenRouter({
+                apiKey,
+                text: cleanText,
+                model: models.video_tts || 'openai/tts-1-hd',
+                voice: 'nova',
+              })
+              const audioDataUrl = await blobToDataUrl(result.audioBlob)
+              toast.success(`Narração da cena ${sceneNumber} gerada!`)
+              return audioDataUrl
+            } catch (err) {
+              console.error('TTS regeneration error:', err)
+              toast.error(`Erro ao gerar narração da cena ${sceneNumber}`)
+              return null
+            }
+          }}
         />
       )}
 

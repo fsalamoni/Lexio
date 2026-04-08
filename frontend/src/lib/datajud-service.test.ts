@@ -217,7 +217,7 @@ describe('datajud-service', () => {
 
     it('parses inteiro_teor from nested object with conteudo field', async () => {
       const tribunals: TribunalInfo[] = [
-        { alias: 'tjsp', name: 'TJSP', category: 'estaduais' },
+        { alias: 'tjsp', name: 'TJSP', category: 'estadual' },
       ]
 
       const fakeHit = makeHit({
@@ -243,7 +243,7 @@ describe('datajud-service', () => {
 
     it('leaves ementa and inteiroTeor undefined when absent from API response', async () => {
       const tribunals: TribunalInfo[] = [
-        { alias: 'trf1', name: 'TRF 1ª Região', category: 'federais' },
+        { alias: 'trf1', name: 'TRF 1ª Região', category: 'federal' },
       ]
 
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(

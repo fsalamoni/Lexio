@@ -5,7 +5,7 @@
 import React from 'react'
 import {
   BookMarked, CreditCard, FileQuestion, FileText, BarChart3,
-  Presentation, Map, PenTool, Table, Mic, Video,
+  Presentation, Map, PenTool, Table, Mic, Video, Film,
   Database, Upload, Link2, Globe, Brain, Library,
 } from 'lucide-react'
 import type { StudioArtifactType } from '../../lib/firestore-service'
@@ -49,7 +49,11 @@ export const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
 ]
 
 /** Flat list for lookups */
-export const ARTIFACT_TYPES: ArtifactDef[] = ARTIFACT_CATEGORIES.flatMap(c => c.items)
+export const ARTIFACT_TYPES: ArtifactDef[] = [
+  ...ARTIFACT_CATEGORIES.flatMap(c => c.items),
+  // Generated-only types (not user-creatable, but need icon/label for display)
+  { type: 'video_production', label: 'Produção de Vídeo', icon: Film, description: 'Pacote de produção com cenas, clips, imagens e narração gerados' },
+]
 
 // ── Source type labels (with icons) ──────────────────────────────────────────
 
