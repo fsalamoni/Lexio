@@ -28,7 +28,7 @@
 | Banco de dados | Firebase Firestore (NoSQL, real-time) |
 | LLM | OpenRouter API — chamado diretamente do browser |
 | Editor de texto | TipTap 3 (ProseMirror) |
-| Export | `docx` lib (geração de DOCX client-side) |
+| Export | `docx` + `pptxgenjs` (DOCX e PPTX client-side) |
 | Charts | Recharts + D3 |
 | Ícones | Lucide React |
 | PDF | pdfjs-dist 4.4 |
@@ -46,17 +46,17 @@
 - **Geração de documentos jurídicos** — 11 agentes LLM em pipeline sequencial (3 condicionais); 10 tipos de documento; 17 áreas do direito
 - **Acervo** — Upload de documentos de referência com classificação e ementa automática por IA (2 agentes dedicados)
 - **Banco de Teses** — CRUD + extração automática + análise com pipeline de 5 agentes
-- **Caderno de Pesquisa** — Chat com 7 agentes de pesquisa + Estúdio de Criação (13 tipos de artefato, pipeline de 5 agentes + renderização visual automática)
+- **Caderno de Pesquisa** — Chat com 7 agentes de pesquisa + Estúdio de Criação (13 tipos de artefato, pipeline de 5 agentes + renderização visual automática e geração de mídia internalizada)
 - **Análise de acervo no caderno** — 4 agentes para análise de documentos do acervo dentro do caderno
 - **Pipeline de Vídeo** — 11 agentes configuráveis para produção completa de vídeo (planejamento, clips, imagem, TTS → renderização)
-- **Pipeline de Áudio** — 6 agentes para produção de podcasts e narrações com TTS
-- **Pipeline de Apresentação** — 6 agentes para criação de apresentações profissionais com imagens de slides
+- **Pipeline de Áudio** — 6 agentes para produção de podcasts e narrações com TTS e síntese literal internalizada
+- **Pipeline de Apresentação** — 6 agentes para criação de apresentações profissionais com imagens de slides contextuais e exportação PPTX
 - **Anamnese 2 camadas** — Perfil profissional persistente (Layer 1) + contexto por geração (Layer 2)
 - **Configurações por usuário** — API keys, modelos por agente, catálogo, tipos e áreas ficam isolados em cada perfil
 - **Painel administrativo da plataforma** — Visão agregada de uso, pipelines, agentes, documentos, custos e tokens globais
 - **Health check de modelos** — Verificação automática de disponibilidade contra OpenRouter
 - **Analytics de custo** — Dashboard por modelo/função/provedor em USD e BRL (10 funções de rastreamento)
-- **Export DOCX** — Times New Roman 12pt, A4, espaçamento 1.5, gerado no browser
+- **Export DOCX/PPTX** — DOCX jurídico formatado e apresentações com exportação PowerPoint gerados no browser
 - **Pesquisa web** — DuckDuckGo + Jina para scraping e extração de conteúdo
 - **Pesquisa de jurisprudência** — DataJud/CNJ via Cloud Function (50+ tribunais)
 - **Geração de imagens** — Via OpenRouter para vídeos e apresentações
@@ -159,7 +159,7 @@ Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts
 | Context detail (Layer 2) | 1 agente | `context_detail_models` |
 | Classificador de acervo | 1 agente | `acervo_classificador_models` |
 | Ementa de acervo | 1 agente | `acervo_ementa_models` |
-| Caderno de pesquisa | 11 agentes (6 pesquisa + 5 estúdio) | `research_notebook_models` |
+| Caderno de pesquisa | 12 agentes (7 pesquisa + 5 estúdio) | `research_notebook_models` |
 | Notebook acervo | 4 agentes | `notebook_acervo_models` |
 | Pipeline de vídeo | 11 agentes | `video_pipeline_models` |
 | Pipeline de áudio | 6 agentes | `audio_pipeline_models` |

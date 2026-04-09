@@ -51,7 +51,7 @@ Lexio é um SaaS brasileiro de produção jurídica com IA. Roda **100% no brows
 | Banco de dados | Firebase Firestore (NoSQL, real-time) |
 | LLM | OpenRouter API — chamado diretamente do browser |
 | Editor de texto | TipTap 3 (ProseMirror) |
-| Export | `docx` lib (DOCX client-side) |
+| Export | `docx` + `pptxgenjs` (DOCX e PPTX client-side) |
 | Charts | Recharts + D3 |
 | Ícones | Lucide React |
 | PDF | pdfjs-dist 4.4 |
@@ -809,6 +809,7 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 - [x] Catálogo dinâmico de modelos com health check
 - [x] Analytics de custo por modelo/função/provedor (USD + BRL)
 - [x] Export DOCX formatado (Times New Roman 12pt, A4)
+- [x] Export PPTX para apresentações com slides renderizados
 - [x] Pesquisa web (Jina + DuckDuckGo)
 - [x] Pesquisa de jurisprudência (DataJud via Cloud Function)
 - [x] Modo Demo offline completo

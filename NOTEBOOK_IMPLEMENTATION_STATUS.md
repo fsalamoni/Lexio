@@ -1,7 +1,7 @@
 # Caderno de Pesquisa — Status de Implementacao (NotebookLM+)
 
 > Documento de tracking para agentes IA. Atualizado automaticamente.
-> Branch: `claude/review-notebook-implementation-HoS5Q`
+> Branch: `main`
 
 ---
 
@@ -51,11 +51,17 @@
 - Dropdown no modal com opcoes por tipo:
   - Flashcards: Markdown, CSV Anki, JSON
   - Quiz: Prova TXT, Gabarito TXT, JSON
-  - Apresentacao: Texto slides, JSON
+  - Apresentacao: PowerPoint (PPTX), Texto slides, PNG ZIP, JSON
   - Tabela: CSV, JSON
   - Audio/Video: Roteiro TXT, JSON
   - Mind Map/Infografico: JSON
   - Textos: Markdown
+
+### Atualizacoes Recentes ✅
+- Geracao de midia da apresentacao movida para `lib/presentation-generation-pipeline.ts`
+- Geracao literal de audio movida para `lib/audio-generation-pipeline.ts`
+- Renderizacao final de infografico, mapa mental e tabela centralizada em `lib/notebook-studio-pipeline.ts`
+- Slides agora combinam imagem contextual com layout final antes de persistir no notebook
 
 ### Etapa 10 — Audio Overview Pipeline ✅
 - **Arquivos**: `lib/tts-client.ts`, `lib/notebook-audio-pipeline.ts`, `components/artifacts/AudioOverviewPlayer.tsx`
@@ -113,7 +119,6 @@ frontend/src/pages/ResearchNotebook.tsx        — Modal, categorias, Audio Over
 ---
 
 ## Melhorias Futuras (nao implementadas)
-- [ ] PPTX export via pptxgenjs
 - [ ] PDF export via jspdf
 - [ ] D3.js para mind map (atualmente puro CSS)
 - [ ] Spaced repetition algorithm para flashcards
