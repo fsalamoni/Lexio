@@ -23,12 +23,12 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   FIREBASE_PROJECT_ID: hocapp-44760
+  FIREBASE_HOSTING_DOMAIN: lexio.web.app
   FIREBASE_PRIMARY_AUTH_DOMAIN: hocapp-44760.firebaseapp.com
 
 permissions:
   contents: read
   id-token: write   # necessário para google-github-actions/auth
-
 jobs:
   deploy:
     name: Build & deploy to lexio.web.app
@@ -46,6 +46,15 @@ jobs:
       - name: Install frontend deps
         run: npm ci
         working-directory: frontend
+
+      - name: Validate frontend Firebase env
+        run: |
+          if [ -z "$FIREBASE_API_KEY" ]; then
+            echo "::error::Missing FIREBASE_API_KEY secret"
+            exit 1
+          fi
+        env:
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
 
       - name: Typecheck
         run: npm run typecheck
@@ -71,6 +80,13 @@ jobs:
           test -d frontend/dist/assets
           if [ "$(wc -c < frontend/dist/index.html)" -le 1024 ]; then
             echo "frontend/dist/index.html appears unexpectedly small"
+            exit 1
+          fi
+
+      - name: Validate Firebase auth domain in bundle
+        run: |
+          if ! grep -R -q "$FIREBASE_PRIMARY_AUTH_DOMAIN" frontend/dist/assets; then
+            echo "::error::Expected auth domain not found in built assets: $FIREBASE_PRIMARY_AUTH_DOMAIN"
             exit 1
           fi
 
@@ -118,15 +134,17 @@ jobs:
         continue-on-error: true
         env:
           ACCESS_TOKEN: ${{ steps.google_auth.outputs.access_token }}
+          HOSTING_DOMAIN: ${{ env.FIREBASE_HOSTING_DOMAIN }}
           PROJECT_ID: ${{ env.FIREBASE_PROJECT_ID }}
           PRIMARY_AUTH_DOMAIN: ${{ env.FIREBASE_PRIMARY_AUTH_DOMAIN }}
         run: |
           node <<'NODE'
           const projectId = process.env.PROJECT_ID;
           const accessToken = process.env.ACCESS_TOKEN;
+          const hostingDomain = process.env.HOSTING_DOMAIN;
           const primaryAuthDomain = process.env.PRIMARY_AUTH_DOMAIN;
 
-          if (!projectId || !accessToken || !primaryAuthDomain) {
+          if (!projectId || !accessToken || !primaryAuthDomain || !hostingDomain) {
             console.error('Missing Firebase Auth domain sync configuration.');
             process.exit(1);
           }
@@ -134,7 +152,7 @@ jobs:
           const endpoint = `https://identitytoolkit.googleapis.com/admin/v2/projects/${projectId}/config`;
           const requiredDomains = Array.from(new Set([
             primaryAuthDomain,
-            'lexio.web.app',
+            hostingDomain,
             `${projectId}.web.app`,
             `${projectId}.firebaseapp.com`,
           ]));
