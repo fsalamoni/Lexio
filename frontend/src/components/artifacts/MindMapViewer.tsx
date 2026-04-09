@@ -183,6 +183,12 @@ export default function MindMapViewer({ data }: MindMapViewerProps) {
 
   return (
     <div className="flex flex-col gap-4">
+      {data.renderedImageUrl && (
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <img src={data.renderedImageUrl} alt={data.centralNode} className="w-full h-auto object-contain" />
+        </div>
+      )}
+
       {/* Controls */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-bold text-gray-900 truncate">{data.centralNode}</h3>

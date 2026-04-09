@@ -59,8 +59,8 @@ export const STUDIO_SPECIALIST_LABEL: Record<StudioArtifactType, string> = {
   mapa_mental: 'Designer Visual',
   infografico: 'Designer Visual',
   tabela_dados: 'Designer Visual',
-  audio_script: 'Roteirista',
-  video_script: 'Roteirista',
+  audio_script: 'Roteirista de Áudio',
+  video_script: 'Pipeline de Vídeo',
   video_production: 'Pipeline de Vídeo',
   outro: 'Escritor',
 }

@@ -158,6 +158,8 @@ const PHASE_LABELS: Record<string, string> = {
   media_video_clip_generation: 'Vídeo: Geração de Clipes por Partes',
   media_soundtrack_generation: 'Vídeo: Trilha Sonora',
   media_video_render: 'Vídeo: Renderização Final',
+  audio_literal_generation: 'Áudio: Geração Literal Final',
+  visual_artifact_render: 'Caderno: Renderização Visual Final',
   // ── Audio pipeline phases ──
   audio_planejador: 'Áudio: Planejador',
   audio_roteirista: 'Áudio: Roteirista',
@@ -173,6 +175,22 @@ const PHASE_LABELS: Record<string, string> = {
   pres_revisor: 'Apresentação: Revisor Final',
 }
 
+const STUDIO_ARTIFACT_LABELS: Record<string, string> = {
+  resumo: 'Resumo',
+  apresentacao: 'Apresentação',
+  mapa_mental: 'Mapa Mental',
+  cartoes_didaticos: 'Cartões Didáticos',
+  infografico: 'Infográfico',
+  teste: 'Teste',
+  relatorio: 'Relatório',
+  tabela_dados: 'Tabela de Dados',
+  documento: 'Documento',
+  audio_script: 'Resumo em Áudio',
+  video_script: 'Vídeo',
+  guia_estruturado: 'Guia Estruturado',
+  outro: 'Outro',
+}
+
 function round6(value: number) {
   return Number(value.toFixed(6))
 }
@@ -186,6 +204,19 @@ export function getFunctionLabel(functionKey: UsageFunctionKey): string {
 }
 
 export function getPhaseLabel(phase: string): string {
+  const studioMatch = phase.match(/^(studio_pesquisador|studio_escritor|studio_roteirista|studio_visual|studio_revisor)_(.+)$/)
+  if (studioMatch) {
+    const [, role, artifactType] = studioMatch
+    const artifactLabel = STUDIO_ARTIFACT_LABELS[artifactType] ?? artifactType.replace(/_/g, ' ')
+    const roleLabel = {
+      studio_pesquisador: 'Estúdio: Pesquisador',
+      studio_escritor: 'Estúdio: Escritor',
+      studio_roteirista: 'Estúdio: Roteirista',
+      studio_visual: 'Estúdio: Designer Visual',
+      studio_revisor: 'Estúdio: Revisor',
+    }[role]
+    if (roleLabel) return `${roleLabel} · ${artifactLabel}`
+  }
   return PHASE_LABELS[phase] ?? phase.replace(/_/g, ' ')
 }
 

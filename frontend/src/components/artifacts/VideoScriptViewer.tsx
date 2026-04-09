@@ -131,6 +131,18 @@ export default function VideoScriptViewer({ data }: VideoScriptViewerProps) {
         )}
       </div>
 
+      {data.renderedVideoUrl && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-700 mb-2">
+            Video literal gerado
+          </p>
+          <video controls preload="metadata" className="w-full rounded-xl bg-black">
+            <source src={data.renderedVideoUrl} type="video/mp4" />
+            Seu navegador nao suporta reproducao de video.
+          </video>
+        </div>
+      )}
+
       {/* Storyboard */}
       <div className="space-y-5">
         {data.scenes.map(scene => (

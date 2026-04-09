@@ -10,7 +10,7 @@
  */
 
 import { callLLM, type LLMResult } from './llm-client'
-import { loadResearchNotebookModels } from './model-config'
+import { loadResearchNotebookModels, validateScopedAgentModels } from './model-config'
 import type { AudioSegment } from '../components/artifacts/artifact-parsers'
 import { generateTTSViaOpenRouter, type TTSResult } from './tts-client'
 
@@ -253,6 +253,7 @@ export async function generateAudioOverview(
   generateAudio = false,
 ): Promise<AudioOverviewResult> {
   const models = await loadResearchNotebookModels()
+  await validateScopedAgentModels('research_notebook_models', { studio_roteirista: models.studio_roteirista })
   const scriptModel = models.studio_roteirista
 
   if (!scriptModel) {

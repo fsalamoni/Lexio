@@ -116,6 +116,12 @@ export default function DataTableViewer({ data }: DataTableViewerProps) {
 
   return (
     <div className="flex flex-col gap-4">
+      {data.renderedImageUrl && (
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <img src={data.renderedImageUrl} alt={data.title} className="w-full h-auto object-contain" />
+        </div>
+      )}
+
       {/* Title + search */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h3 className="text-lg font-bold text-gray-900 truncate">{data.title}</h3>

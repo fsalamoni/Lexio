@@ -47,7 +47,10 @@ const PIXELS_PER_SECOND_BASE = 8
 interface VideoStudioEditorProps {
   production: VideoProductionPackage
   onClose: () => void
-  onSave?: (production: VideoProductionPackage) => void
+  onSave?: (production: VideoProductionPackage) => void | Promise<void>
+  onGenerateLiteralMedia?: (production: VideoProductionPackage) => void | Promise<void>
+  isLiteralGenerating?: boolean
+  literalProgress?: { step: number; total: number; phase: string; agent: string }
   /** Callback to regenerate image for a specific scene */
   onRegenerateImage?: (sceneNumber: number) => Promise<string | null>
   /** Callback to regenerate TTS for a specific narration segment */
@@ -507,7 +510,16 @@ function DesignGuidePanel({ designGuide }: { designGuide: VideoProductionPackage
 // Import React explicitly for createElement usage in SegmentDetailPanel
 import React from 'react'
 
-export default function VideoStudioEditor({ production, onClose, onSave, onRegenerateImage, onRegenerateTTS }: VideoStudioEditorProps) {
+export default function VideoStudioEditor({
+  production,
+  onClose,
+  onSave,
+  onGenerateLiteralMedia,
+  isLiteralGenerating,
+  literalProgress,
+  onRegenerateImage,
+  onRegenerateTTS,
+}: VideoStudioEditorProps) {
   const [selectedSegment, setSelectedSegment] = useState<SelectedSegment | null>(null)
   const [selectedScene, setSelectedScene] = useState<number | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -521,7 +533,34 @@ export default function VideoStudioEditor({ production, onClose, onSave, onRegen
   const [localNarration, setLocalNarration] = useState(production.narration)
   const [qualityOpen, setQualityOpen] = useState(false)
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
+  const [isAutoSaving, setIsAutoSaving] = useState(false)
   const timelineRef = useRef<HTMLDivElement>(null)
+  const autosaveTimerRef = useRef<number | null>(null)
+  const lastSavedSnapshotRef = useRef('')
+
+  const productionSnapshot = useMemo(
+    () => JSON.stringify({ tracks: production.tracks, scenes: production.scenes, narration: production.narration }),
+    [production.narration, production.scenes, production.tracks],
+  )
+
+  const localSnapshot = useMemo(
+    () => JSON.stringify({ tracks: localTracks, scenes: localScenes, narration: localNarration }),
+    [localNarration, localScenes, localTracks],
+  )
+
+  const isDirty = localSnapshot !== productionSnapshot
+
+  useEffect(() => {
+    if (isDirty && productionSnapshot !== lastSavedSnapshotRef.current) return
+    setLocalTracks(production.tracks)
+    setLocalScenes(production.scenes)
+    setLocalNarration(production.narration)
+    lastSavedSnapshotRef.current = productionSnapshot
+  }, [isDirty, production, productionSnapshot])
+
+  useEffect(() => {
+    lastSavedSnapshotRef.current = productionSnapshot
+  }, [productionSnapshot])
 
   const pixelsPerSecond = PIXELS_PER_SECOND_BASE * zoom
   const totalDuration = production.totalDuration || 600
@@ -569,11 +608,68 @@ export default function VideoStudioEditor({ production, onClose, onSave, onRegen
     })
   }, [totalDuration])
 
-  const handleSave = useCallback(() => {
+  const buildCurrentProduction = useCallback((): VideoProductionPackage => ({
+    ...production,
+    tracks: localTracks,
+    scenes: localScenes,
+    narration: localNarration,
+  }), [localNarration, localScenes, localTracks, production])
+
+  const handleSave = useCallback(async () => {
     if (onSave) {
-      onSave({ ...production, tracks: localTracks, scenes: localScenes, narration: localNarration })
+      lastSavedSnapshotRef.current = localSnapshot
+      await onSave(buildCurrentProduction())
     }
-  }, [onSave, production, localTracks, localScenes, localNarration])
+  }, [buildCurrentProduction, localSnapshot, onSave])
+
+  const handleGenerateLiteral = useCallback(async () => {
+    if (!onGenerateLiteralMedia || isLiteralGenerating) return
+    const nextProduction = buildCurrentProduction()
+    if (onSave && isDirty) {
+      lastSavedSnapshotRef.current = localSnapshot
+      await onSave(nextProduction)
+    }
+    await onGenerateLiteralMedia(nextProduction)
+  }, [buildCurrentProduction, isDirty, isLiteralGenerating, localSnapshot, onGenerateLiteralMedia, onSave])
+
+  const handleClose = useCallback(async () => {
+    if (isDirty && onSave) {
+      await handleSave()
+    }
+    onClose()
+  }, [handleSave, isDirty, onClose, onSave])
+
+  useEffect(() => {
+    if (!onSave || !isDirty || isLiteralGenerating) return
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current)
+    }
+
+    autosaveTimerRef.current = window.setTimeout(() => {
+      setIsAutoSaving(true)
+      Promise.resolve(handleSave()).finally(() => {
+        setIsAutoSaving(false)
+      })
+    }, 1200)
+
+    return () => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+    }
+  }, [handleSave, isDirty, isLiteralGenerating, onSave])
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [isDirty])
 
   // Handle media regeneration for a specific segment
   const handleRegenerateMedia = useCallback(async (trackType: string, sceneNumber: number | undefined) => {
@@ -647,10 +743,28 @@ export default function VideoStudioEditor({ production, onClose, onSave, onRegen
             <p className="text-[10px] text-gray-400">
               {localScenes.length} cenas · {Math.floor(totalDuration / 60)}:{String(totalDuration % 60).padStart(2, '0')} min
             </p>
+            <p className="text-[10px] text-gray-500 mt-0.5">
+              {isAutoSaving ? 'Salvando alterações...' : isDirty ? 'Alterações pendentes' : 'Tudo salvo'}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {onGenerateLiteralMedia && (
+            <button
+              onClick={() => {
+                void handleGenerateLiteral()
+              }}
+              disabled={isLiteralGenerating}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 text-white text-xs font-medium rounded-lg hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {isLiteralGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Film className="w-3.5 h-3.5" />}
+              {production.literalGenerationState?.status === 'failed' || production.literalGenerationState?.status === 'running'
+                ? 'Retomar Vídeo Literal'
+                : 'Gerar Vídeo Literal'}
+            </button>
+          )}
+
           {/* Zoom controls */}
           <div className="flex items-center gap-1 bg-gray-800 rounded-lg px-2 py-1">
             <button onClick={() => setZoom(z => Math.max(0.25, z - 0.25))} className="p-0.5 hover:bg-gray-700 rounded">
@@ -666,7 +780,9 @@ export default function VideoStudioEditor({ production, onClose, onSave, onRegen
 
           {onSave && (
             <button
-              onClick={handleSave}
+              onClick={() => {
+                void handleSave()
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700"
             >
               <Save className="w-3.5 h-3.5" />
@@ -675,7 +791,9 @@ export default function VideoStudioEditor({ production, onClose, onSave, onRegen
           )}
 
           <button
-            onClick={onClose}
+            onClick={() => {
+              void handleClose()
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-gray-300 text-xs font-medium rounded-lg hover:bg-gray-600"
           >
             <X className="w-3.5 h-3.5" />
@@ -688,6 +806,17 @@ export default function VideoStudioEditor({ production, onClose, onSave, onRegen
       <div className="flex flex-1 overflow-hidden">
         {/* Left sidebar - Scenes + Design Guide */}
         <div className="w-72 bg-white border-r border-gray-200 overflow-y-auto p-4 space-y-4 flex-shrink-0">
+          {literalProgress && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5">
+              <div className="flex items-center gap-2 text-xs font-semibold text-rose-700">
+                {isLiteralGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Film className="w-3.5 h-3.5" />}
+                {literalProgress.agent}
+              </div>
+              <p className="mt-1 text-[11px] text-rose-800">{literalProgress.phase}</p>
+              <p className="mt-1 text-[10px] text-rose-500">Etapa {literalProgress.step} de {literalProgress.total}</p>
+            </div>
+          )}
+
           <SceneNavigator
             scenes={localScenes}
             selectedScene={selectedScene}

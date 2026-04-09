@@ -103,6 +103,12 @@ export default function InfographicRenderer({ data }: InfographicRendererProps) 
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
+      {data.renderedImageUrl && (
+        <div className="rounded-3xl overflow-hidden border border-gray-200 shadow-sm bg-white">
+          <img src={data.renderedImageUrl} alt={data.title} className="w-full h-auto object-cover" />
+        </div>
+      )}
+
       {/* Title section */}
       <div className="text-center space-y-2 pb-4 border-b border-gray-200">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight">

@@ -19,6 +19,35 @@ interface PresentationViewerProps {
 // ── Slide Content (reused in main view and fullscreen) ─────────────────────
 
 function SlideContent({ slide, large }: { slide: ParsedSlide; large?: boolean }) {
+  if (slide.renderedImageUrl) {
+    return (
+      <div className="flex flex-col h-full bg-white">
+        <div className="relative flex-1 min-h-0 overflow-hidden bg-gray-100">
+          <img
+            src={slide.renderedImageUrl}
+            alt={slide.title}
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-6 sm:px-10 py-6 text-left text-white">
+            <h2 className={`${large ? 'text-3xl sm:text-5xl' : 'text-xl sm:text-3xl'} font-bold leading-tight`}>
+              {slide.title}
+            </h2>
+            {slide.bullets.length > 0 && (
+              <ul className={`mt-4 space-y-2 ${large ? 'text-lg sm:text-xl' : 'text-sm sm:text-base'}`}>
+                {slide.bullets.slice(0, 4).map((bullet, i) => (
+                  <li key={i} className="flex items-start gap-3">
+                    <span className="mt-1.5 h-2 w-2 rounded-full bg-white/90 shrink-0" />
+                    <span>{bullet}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 sm:px-12 py-8 text-center">
       <h2
@@ -71,14 +100,20 @@ function Thumbnail({
       }`}
       aria-label={`Ir para slide ${slide.number}`}
     >
-      <div className="aspect-video bg-white flex flex-col items-center justify-center p-2 text-center">
-        <p className="text-[10px] font-semibold text-gray-800 leading-tight line-clamp-2">
-          {slide.title}
-        </p>
-        {slide.bullets.length > 0 && (
-          <p className="text-[8px] text-gray-400 mt-1 line-clamp-1">
-            {slide.bullets[0]}
-          </p>
+      <div className="aspect-video bg-white flex flex-col items-center justify-center p-2 text-center overflow-hidden">
+        {slide.renderedImageUrl ? (
+          <img src={slide.renderedImageUrl} alt={slide.title} className="h-full w-full object-cover" />
+        ) : (
+          <>
+            <p className="text-[10px] font-semibold text-gray-800 leading-tight line-clamp-2">
+              {slide.title}
+            </p>
+            {slide.bullets.length > 0 && (
+              <p className="text-[8px] text-gray-400 mt-1 line-clamp-1">
+                {slide.bullets[0]}
+              </p>
+            )}
+          </>
         )}
       </div>
       <div className="bg-gray-100 text-[9px] text-gray-500 text-center py-0.5">

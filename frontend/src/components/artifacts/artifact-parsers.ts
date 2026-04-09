@@ -56,6 +56,8 @@ export interface ParsedSlide {
   bullets: string[]
   speakerNotes: string
   visualSuggestion?: string
+  renderedImageUrl?: string
+  renderedImageStoragePath?: string
 }
 export interface ParsedPresentation {
   title?: string
@@ -72,6 +74,8 @@ export interface MindMapNode {
 export interface ParsedMindMap {
   centralNode: string
   branches: MindMapNode[]
+  renderedImageUrl?: string
+  renderedImageStoragePath?: string
 }
 
 // -- Flashcards
@@ -125,6 +129,8 @@ export interface ParsedDataTable {
   summary?: Record<string, string | number>
   legend?: string
   footnotes?: string[]
+  renderedImageUrl?: string
+  renderedImageStoragePath?: string
 }
 
 // -- Infographic
@@ -146,6 +152,8 @@ export interface ParsedInfographic {
   sections: InfographicSection[]
   conclusion?: string
   sources?: string[]
+  renderedImageUrl?: string
+  renderedImageStoragePath?: string
 }
 
 // -- Audio Script
@@ -182,6 +190,8 @@ export interface ParsedVideoScript {
   duration?: string
   scenes: VideoScene[]
   postProductionNotes?: string[]
+  renderedVideoUrl?: string
+  renderedVideoStoragePath?: string
 }
 
 // ── Union type ──────────────────────────────────────────────────────────────
@@ -208,6 +218,8 @@ function parsePresentation(raw: string): ParsedPresentation | null {
     bullets: Array.isArray(s.bullets) ? s.bullets.map(String) : [],
     speakerNotes: String(s.speakerNotes ?? s.speaker_notes ?? ''),
     visualSuggestion: s.visualSuggestion ? String(s.visualSuggestion) : s.visual_suggestion ? String(s.visual_suggestion) : undefined,
+    renderedImageUrl: s.renderedImageUrl ? String(s.renderedImageUrl) : s.rendered_image_url ? String(s.rendered_image_url) : undefined,
+    renderedImageStoragePath: s.renderedImageStoragePath ? String(s.renderedImageStoragePath) : s.rendered_image_storage_path ? String(s.rendered_image_storage_path) : undefined,
   }))
   if (slides.length === 0) return null
   return { title: obj.title ? String(obj.title) : undefined, slides }
@@ -229,7 +241,12 @@ function parseMindMap(raw: string): ParsedMindMap | null {
       children: Array.isArray(n.children) ? n.children.map((c: Record<string, unknown>) => mapNode(c)) : undefined,
     }
   }
-  return { centralNode, branches: branches.map((b: Record<string, unknown>) => mapNode(b)) }
+  return {
+    centralNode,
+    branches: branches.map((b: Record<string, unknown>) => mapNode(b)),
+    renderedImageUrl: obj.renderedImageUrl ? String(obj.renderedImageUrl) : obj.rendered_image_url ? String(obj.rendered_image_url) : undefined,
+    renderedImageStoragePath: obj.renderedImageStoragePath ? String(obj.renderedImageStoragePath) : obj.rendered_image_storage_path ? String(obj.rendered_image_storage_path) : undefined,
+  }
 }
 
 function parseFlashcards(raw: string): ParsedFlashcards | null {
@@ -293,6 +310,8 @@ function parseDataTable(raw: string): ParsedDataTable | null {
     summary: obj.summary as Record<string, string | number> | undefined,
     legend: obj.legend ? String(obj.legend) : undefined,
     footnotes: Array.isArray(obj.footnotes) ? obj.footnotes.map(String) : undefined,
+    renderedImageUrl: obj.renderedImageUrl ? String(obj.renderedImageUrl) : obj.rendered_image_url ? String(obj.rendered_image_url) : undefined,
+    renderedImageStoragePath: obj.renderedImageStoragePath ? String(obj.renderedImageStoragePath) : obj.rendered_image_storage_path ? String(obj.rendered_image_storage_path) : undefined,
   }
 }
 
@@ -317,6 +336,8 @@ function parseInfographic(raw: string): ParsedInfographic | null {
     sections,
     conclusion: obj.conclusion ? String(obj.conclusion) : undefined,
     sources: Array.isArray(obj.sources) ? obj.sources.map(String) : undefined,
+    renderedImageUrl: obj.renderedImageUrl ? String(obj.renderedImageUrl) : obj.rendered_image_url ? String(obj.rendered_image_url) : undefined,
+    renderedImageStoragePath: obj.renderedImageStoragePath ? String(obj.renderedImageStoragePath) : obj.rendered_image_storage_path ? String(obj.rendered_image_storage_path) : undefined,
   }
 }
 
@@ -332,7 +353,7 @@ function parseAudioScript(raw: string): ParsedAudioScript | null {
     notes: s.notes ? String(s.notes) : s.notas ? String(s.notas) : undefined,
   }))
   return {
-    title: String(obj.title ?? obj.titulo ?? 'Roteiro de Audio'),
+    title: String(obj.title ?? obj.titulo ?? 'Resumo em Áudio'),
     duration: obj.duration ? String(obj.duration) : obj.duracao ? String(obj.duracao) : undefined,
     segments,
     productionNotes: Array.isArray(obj.productionNotes ?? obj.notas_producao)
@@ -359,12 +380,14 @@ function parseVideoScript(raw: string): ParsedVideoScript | null {
     notes: s.notes ? String(s.notes) : s.notas ? String(s.notas) : undefined,
   }))
   return {
-    title: String(obj.title ?? obj.titulo ?? 'Gerador de Vídeo'),
+    title: String(obj.title ?? obj.titulo ?? 'Vídeo'),
     duration: obj.duration ? String(obj.duration) : obj.duracao ? String(obj.duracao) : undefined,
     scenes,
     postProductionNotes: Array.isArray(obj.postProductionNotes ?? obj.notas_pos_producao)
       ? (obj.postProductionNotes as string[] ?? obj.notas_pos_producao as string[]).map(String)
       : undefined,
+    renderedVideoUrl: obj.renderedVideoUrl ? String(obj.renderedVideoUrl) : obj.rendered_video_url ? String(obj.rendered_video_url) : undefined,
+    renderedVideoStoragePath: obj.renderedVideoStoragePath ? String(obj.renderedVideoStoragePath) : obj.rendered_video_storage_path ? String(obj.rendered_video_storage_path) : undefined,
   }
 }
 

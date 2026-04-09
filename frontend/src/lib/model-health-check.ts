@@ -18,6 +18,7 @@ import {
   fetchOpenRouterModels,
   emitCatalogUpdated,
 } from './model-catalog'
+import { AGENT_CONFIG_DEFS, sanitizeModelCapabilitiesAgainstDefs } from './model-config'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -136,6 +137,7 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
     const resolvedUid = getCurrentUserId()
     if (!resolvedUid) return noopResult
     const settings = await ensureUserSettingsMigrated(resolvedUid)
+    const catalogForValidation = cleanCatalog
     const updates: Record<string, unknown> = {
       [HEALTH_CHECK_KEY]: Date.now(),
     }
@@ -151,6 +153,21 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
           delete cleanMap[agentKey]
           changed = true
         }
+      }
+
+      const capabilitySource = { ...cleanMap }
+      const capabilitySanitized = sanitizeModelCapabilitiesAgainstDefs(AGENT_CONFIG_DEFS[configKey], capabilitySource, catalogForValidation)
+      if (Object.keys(capabilitySanitized).length !== Object.keys(capabilitySource).length) {
+        for (const [agentKey, modelId] of Object.entries(capabilitySource)) {
+          if (!(agentKey in capabilitySanitized)) {
+            clearedAgents.push({ configKey, agentKey, modelId })
+          }
+        }
+        for (const agentKey of Object.keys(cleanMap)) {
+          if (!(agentKey in capabilitySanitized)) delete cleanMap[agentKey]
+        }
+        Object.assign(cleanMap, capabilitySanitized)
+        changed = true
       }
 
       if (changed) {

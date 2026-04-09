@@ -7,7 +7,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   Download, Copy, Check as CheckIcon, Trash2, RotateCcw,
   FileText, Map, CreditCard, BarChart3, Table, FileQuestion,
-  Presentation, Mic, Video, PenTool, BookMarked, Sparkles,
+  Presentation, Mic, Video, PenTool, BookMarked, Sparkles, Image as ImageIcon,
   ChevronDown,
 } from 'lucide-react'
 import type { StudioArtifact, StudioArtifactType } from '../../lib/firestore-service'
@@ -21,6 +21,8 @@ import {
   exportPresentationAsText,
   exportAudioScriptAsText,
   exportVideoScriptAsText,
+  exportFileFromUrl,
+  exportPresentationImagesAsZip,
   printAsPDF,
 } from './artifact-exporters'
 import DraggablePanel from '../DraggablePanel'
@@ -66,8 +68,8 @@ const ARTIFACT_LABELS: Record<StudioArtifactType, string> = {
   mapa_mental: 'Mapa Mental',
   infografico: 'Infográfico',
   tabela_dados: 'Tabela de Dados',
-  audio_script: 'Roteiro de Áudio',
-  video_script: 'Gerador de Vídeo',
+  audio_script: 'Resumo em Áudio',
+  video_script: 'Vídeo',
   video_production: 'Produção de Vídeo',
   outro: 'Outro',
 }
@@ -182,6 +184,7 @@ interface ArtifactViewerModalProps {
   onRegenerate?: () => void
   onGenerateVideo?: () => void
   onGenerateAudio?: () => void
+  onGenerateImage?: () => void
   onOpenStudio?: () => void
 }
 
@@ -193,6 +196,7 @@ export default function ArtifactViewerModal({
   onRegenerate,
   onGenerateVideo,
   onGenerateAudio,
+  onGenerateImage,
   onOpenStudio,
 }: ArtifactViewerModalProps) {
   const Icon = ARTIFACT_ICONS[artifact.type] || Sparkles
@@ -225,8 +229,8 @@ export default function ArtifactViewerModal({
 
   const safeName = artifact.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)
 
-  const getExportOptions = (): { label: string; action: () => void }[] => {
-    const options: { label: string; action: () => void }[] = [
+  const getExportOptions = (): { label: string; action: () => void | Promise<void> }[] => {
+    const options: { label: string; action: () => void | Promise<void> }[] = [
       { label: 'Markdown (.md)', action: () => exportAsMarkdown(artifact.content, safeName) },
       { label: 'PDF (imprimir)', action: () => printAsPDF(renderMarkdownToHtml(artifact.content), artifact.title) },
     ]
@@ -243,22 +247,42 @@ export default function ArtifactViewerModal({
         break
       case 'presentation':
         options.push({ label: 'Texto Slides (.txt)', action: () => exportPresentationAsText(parsed.data, safeName) })
+        if (parsed.data.slides.some(slide => slide.renderedImageUrl)) {
+          options.push({ label: 'Slides em PNG (.zip)', action: () => void exportPresentationImagesAsZip(parsed.data, safeName) })
+        }
         options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
         break
       case 'datatable':
         options.push({ label: 'CSV (.csv)', action: () => exportDataTableAsCSV(parsed.data, safeName) })
+        if (parsed.data.renderedImageUrl) {
+          options.push({ label: 'Imagem Final (.png)', action: () => void exportFileFromUrl(parsed.data.renderedImageUrl!, safeName, '.png') })
+        }
         options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
         break
       case 'audio_script':
-        options.push({ label: 'Roteiro (.txt)', action: () => exportAudioScriptAsText(parsed.data, safeName) })
+        if (parsed.data.audioUrl) {
+          options.push({ label: 'Audio Final (.mp3)', action: () => void exportFileFromUrl(parsed.data.audioUrl!, safeName, '.mp3') })
+        }
+        options.push({ label: 'Resumo em texto (.txt)', action: () => exportAudioScriptAsText(parsed.data, safeName) })
         options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
         break
       case 'video_script':
-        options.push({ label: 'Storyboard (.txt)', action: () => exportVideoScriptAsText(parsed.data, safeName) })
+        if (parsed.data.renderedVideoUrl) {
+          options.push({ label: 'Video Final (.mp4)', action: () => void exportFileFromUrl(parsed.data.renderedVideoUrl!, safeName, '.mp4') })
+        }
+        options.push({ label: 'Planejamento em texto (.txt)', action: () => exportVideoScriptAsText(parsed.data, safeName) })
         options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
         break
       case 'mindmap':
+        if (parsed.data.renderedImageUrl) {
+          options.push({ label: 'Imagem Final (.png)', action: () => void exportFileFromUrl(parsed.data.renderedImageUrl!, safeName, '.png') })
+        }
+        options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
+        break
       case 'infographic':
+        if (parsed.data.renderedImageUrl) {
+          options.push({ label: 'Imagem Final (.png)', action: () => void exportFileFromUrl(parsed.data.renderedImageUrl!, safeName, '.png') })
+        }
         options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
         break
     }
@@ -306,7 +330,12 @@ export default function ArtifactViewerModal({
                   {getExportOptions().map((opt, i) => (
                     <button
                       key={i}
-                      onClick={() => { opt.action(); setShowExportMenu(false) }}
+                      onClick={() => {
+                        Promise.resolve(opt.action()).catch(error => {
+                          console.error('Artifact export failed:', error)
+                        })
+                        setShowExportMenu(false)
+                      }}
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       {opt.label}
@@ -338,10 +367,20 @@ export default function ArtifactViewerModal({
               <button
                 onClick={onGenerateAudio}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm"
-                title="Gerar Áudio Literal"
+                title="Gerar Resumo em Áudio"
               >
                 <Mic className="w-3.5 h-3.5" />
-                Gerar Áudio
+                Gerar Resumo em Áudio
+              </button>
+            )}
+            {onGenerateImage && ['apresentacao', 'mapa_mental', 'infografico', 'tabela_dados'].includes(artifact.type) && (
+              <button
+                onClick={onGenerateImage}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 transition-colors shadow-sm"
+                title={artifact.type === 'apresentacao' ? 'Gerar slides visuais' : 'Gerar imagem final'}
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                {artifact.type === 'apresentacao' ? 'Gerar Slides Visuais' : 'Gerar Imagem Final'}
               </button>
             )}
             {onOpenStudio && artifact.type === 'video_script' && (

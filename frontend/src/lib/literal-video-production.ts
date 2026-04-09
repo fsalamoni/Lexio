@@ -114,14 +114,23 @@ function makeExecution(
   phase: string,
   model: string,
   durationMs: number,
+  costUsd = 0,
 ): VideoGenerationStepExecution {
+  const agentName = {
+    media_image_generation: 'Gerador de Imagens',
+    media_tts_generation: 'Narrador TTS',
+    media_video_clip_generation: 'Gerador de Clipes',
+    media_soundtrack_generation: 'Trilha Sonora',
+    media_video_render: 'Renderizador de Vídeo',
+  }[phase] ?? phase
+
   return {
     phase,
-    agent_name: phase,
+    agent_name: agentName,
     model,
     tokens_in: 0,
     tokens_out: 0,
-    cost_usd: 0,
+    cost_usd: Math.max(0, costUsd),
     duration_ms: Math.max(0, Math.round(durationMs)),
   }
 }
@@ -146,6 +155,24 @@ function prepareTimings(production: VideoProductionPackage): PreparedSceneTiming
     cursor = end
     return { scene, start, end }
   })
+}
+
+function buildLiteralClipPrompt(scene: VideoScene, clipNumber: number): string {
+  const plannedClip = scene.clips?.find(clip => clip.clipNumber === clipNumber)
+  if (!plannedClip) return scene.videoPrompt || scene.imagePrompt || scene.visual
+
+  return [
+    scene.videoPrompt,
+    `Scene ${scene.number}, clip ${plannedClip.clipNumber}.`,
+    `Visual moment: ${plannedClip.description}.`,
+    plannedClip.motionDescription ? `Camera and motion: ${plannedClip.motionDescription}.` : '',
+    `Transition to next beat: ${plannedClip.transition || scene.transition || 'cut'}.`,
+    `Maintain absolute continuity with the rest of scene ${scene.number}: same characters, wardrobe, palette, lighting, setting, and chronology.`,
+  ].filter(Boolean).join(' ')
+}
+
+function getPlannedClipImage(scene: VideoScene, clipNumber: number): string | undefined {
+  return scene.clips?.find(clip => clip.clipNumber === clipNumber)?.generatedImageUrl
 }
 
 function buildScenePartTimings(
@@ -950,7 +977,11 @@ export async function generateLiteralMediaAssets(
 
     onProgress?.(1, 4, 'media_image_generation', `Gerando imagens das cenas (${index + 1}/${production.scenes.length})`)
     updateSceneCheckpoint(literalState, scene.number, { imageStatus: 'running' })
-    if (!nextAsset.imageUrl && scene.imagePrompt) {
+    const plannedSceneImage = scene.generatedImageUrl || getPlannedClipImage(scene, 1)
+    if (!nextAsset.imageUrl && plannedSceneImage) {
+      nextAsset.imageUrl = plannedSceneImage
+      updateSceneCheckpoint(literalState, scene.number, { imageStatus: 'completed', lastError: undefined })
+    } else if (!nextAsset.imageUrl && scene.imagePrompt) {
       let success = false
       for (let attempt = 1; attempt <= MAX_LITERAL_STEP_ATTEMPTS; attempt++) {
         assertNotCancelled(signal)
@@ -959,12 +990,17 @@ export async function generateLiteralMediaAssets(
           const startedAt = performance.now()
           const result = await generateImageViaOpenRouter({
             apiKey,
-            model: chooseImageModel(models.video_designer),
+            model: chooseImageModel(models.video_image_generator),
             prompt: scene.imagePrompt,
             aspectRatio: '16:9',
           })
           nextAsset.imageUrl = result.imageDataUrl
-          executions.push(makeExecution('media_image_generation', chooseImageModel(models.video_designer) || 'openai/dall-e-3', performance.now() - startedAt))
+          executions.push(makeExecution(
+            'media_image_generation',
+            chooseImageModel(models.video_image_generator) || 'openai/dall-e-3',
+            performance.now() - startedAt,
+            result.cost_usd,
+          ))
           updateSceneCheckpoint(literalState, scene.number, { imageStatus: 'completed', lastError: undefined })
           pushLiteralEvent(literalState, {
             type: 'step_success',
@@ -1041,12 +1077,17 @@ export async function generateLiteralMediaAssets(
           const startedAt = performance.now()
           const result = await generateTTSViaOpenRouter({
             apiKey,
-            model: chooseAudioModel(models.video_narrador),
+            model: chooseAudioModel(models.video_tts),
             text: scene.narration,
             voice: 'nova',
           })
           asset.narrationUrl = await blobToDataUrl(result.audioBlob)
-          executions.push(makeExecution('media_tts_generation', chooseAudioModel(models.video_narrador) || 'openai/tts-1-hd', performance.now() - startedAt))
+          executions.push(makeExecution(
+            'media_tts_generation',
+            chooseAudioModel(models.video_tts) || 'openai/tts-1-hd',
+            performance.now() - startedAt,
+            0.015 * (scene.narration.length / 1000),
+          ))
           updateSceneCheckpoint(literalState, scene.number, { narrationStatus: 'completed', lastError: undefined })
           pushLiteralEvent(literalState, {
             type: 'step_success',
@@ -1138,11 +1179,13 @@ export async function generateLiteralMediaAssets(
         updateSceneCheckpoint(literalState, scene.number, { clipsAttempts: attempt })
         try {
           let clip = null as VideoClipAsset | null
+          const plannedClipImage = getPlannedClipImage(scene, part.partNumber)
+          const literalClipPrompt = buildLiteralClipPrompt(scene, part.partNumber)
 
-          if (scene.videoPrompt) {
+          if (literalClipPrompt) {
             try {
               const providerResult = await requestExternalVideoClip({
-                prompt: scene.videoPrompt,
+                prompt: literalClipPrompt,
                 durationSeconds: part.duration,
                 sceneNumber: scene.number,
                 partNumber: part.partNumber,
@@ -1174,7 +1217,7 @@ export async function generateLiteralMediaAssets(
             clip = await renderSceneClip(
               scene,
               part,
-              sceneAsset.imageUrl,
+              plannedClipImage || sceneAsset.imageUrl,
               sceneAsset.narrationUrl,
             )
             if (clip) {

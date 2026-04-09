@@ -387,6 +387,22 @@ export interface AgentModelDef {
   bestModelNote?: string
 }
 
+export class ModelCapabilityMismatchError extends Error {
+  agentKey: string
+  agentLabel: string
+  modelId: string
+  requiredCapability: ModelCapability
+
+  constructor(agent: AgentModelDef, modelId: string, requiredCapability: ModelCapability) {
+    super(`O modelo "${modelId}" não atende a capability obrigatória "${requiredCapability}" para o agente "${agent.label}".`)
+    this.name = 'ModelCapabilityMismatchError'
+    this.agentKey = agent.key
+    this.agentLabel = agent.label
+    this.modelId = modelId
+    this.requiredCapability = requiredCapability
+  }
+}
+
 // ── Models Not Configured Error ───────────────────────────────────────────────
 
 /**
@@ -543,6 +559,70 @@ export type AgentModelMap = Record<string, string>
 /** Set of hardcoded model IDs for fast lookup. */
 const AVAILABLE_MODEL_IDS = new Set(AVAILABLE_MODELS.map(m => m.id))
 
+function inferCapabilitiesFromModelId(modelId: string): ModelCapability[] {
+  const haystack = modelId.toLowerCase()
+  const capabilities: ModelCapability[] = []
+  if (/(tts|audio|speech|voice)/.test(haystack)) capabilities.push('audio')
+  if (/(image|flux|dall|imagen|recraft|sdxl|seedream)/.test(haystack)) capabilities.push('image')
+  if (/(video|veo|sora|runway|pika|kling|hailuo|ltx)/.test(haystack)) capabilities.push('video')
+  if (capabilities.length === 0) capabilities.push('text')
+  if (!capabilities.includes('text') && capabilities.length > 0) capabilities.unshift('text')
+  return [...new Set(capabilities)]
+}
+
+function buildCatalogEntries(settings: Record<string, unknown>): ModelOption[] {
+  const entries = [...AVAILABLE_MODELS]
+  const dynamicCatalog = settings.model_catalog
+  if (Array.isArray(dynamicCatalog)) {
+    for (const model of dynamicCatalog) {
+      if (model && typeof model === 'object' && typeof (model as { id?: string }).id === 'string') {
+        entries.push(model as ModelOption)
+      }
+    }
+  }
+  return entries
+}
+
+function getModelCapabilities(modelId: string, catalogEntries: ModelOption[]): ModelCapability[] {
+  const exact = catalogEntries.find(model => model.id === modelId)
+  if (exact?.capabilities && exact.capabilities.length > 0) return exact.capabilities
+  return inferCapabilitiesFromModelId(modelId)
+}
+
+function validateModelCapabilitiesAgainstDefs(
+  defs: AgentModelDef[],
+  models: Record<string, string>,
+  catalogEntries: ModelOption[],
+): void {
+  for (const agent of defs) {
+    const modelId = models[agent.key]
+    const requiredCapability = agent.requiredCapability
+    if (!modelId || !requiredCapability) continue
+    const capabilities = getModelCapabilities(modelId, catalogEntries)
+    if (!capabilities.includes(requiredCapability)) {
+      throw new ModelCapabilityMismatchError(agent, modelId, requiredCapability)
+    }
+  }
+}
+
+export function sanitizeModelCapabilitiesAgainstDefs<T extends Record<string, string>>(
+  defs: AgentModelDef[],
+  models: T,
+  catalogEntries: ModelOption[],
+): T {
+  const next = { ...models }
+  for (const agent of defs) {
+    const modelId = next[agent.key]
+    const requiredCapability = agent.requiredCapability
+    if (!modelId || !requiredCapability) continue
+    const capabilities = getModelCapabilities(modelId, catalogEntries)
+    if (!capabilities.includes(requiredCapability)) {
+      delete next[agent.key]
+    }
+  }
+  return next
+}
+
 /**
  * Build a Set of valid model IDs from both the hardcoded catalog AND
  * the dynamic Firestore catalog (settings.model_catalog).
@@ -584,11 +664,15 @@ function applySavedModelOverrides<T extends Record<string, string>>(
   defs: AgentModelDef[],
   saved: Record<string, string>,
   catalogIds: Set<string>,
+  catalogEntries: ModelOption[],
 ): T {
   const mutableTarget = target as Record<string, string>
   for (const def of defs) {
     if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-      mutableTarget[def.key] = saved[def.key]
+      const capabilities = getModelCapabilities(saved[def.key], catalogEntries)
+      if (!def.requiredCapability || capabilities.includes(def.requiredCapability)) {
+        mutableTarget[def.key] = saved[def.key]
+      }
     }
   }
   return target
@@ -605,10 +689,12 @@ async function loadScopedModelMap<T extends Record<string, string>>(
   try {
     const resolvedUid = resolveScopedUid(uid)
     const userSettings = resolvedUid ? await ensureUserSettingsMigrated(resolvedUid) : {} as UserSettingsData
-    const catalogIds = buildCatalogIdSet(userSettings as unknown as Record<string, unknown>)
+    const settingsRecord = userSettings as unknown as Record<string, unknown>
+    const catalogIds = buildCatalogIdSet(settingsRecord)
+    const catalogEntries = buildCatalogEntries(settingsRecord)
     const userSaved = (userSettings[key] ?? {}) as Record<string, string>
 
-    applySavedModelOverrides(defaults, defs, userSaved, catalogIds)
+    applySavedModelOverrides(defaults, defs, userSaved, catalogIds, catalogEntries)
   } catch {
     // On error, just return defaults silently
   }
@@ -627,6 +713,10 @@ async function saveScopedModelMap<T extends Record<string, string>>(
 
   const resolvedUid = resolveScopedUid(uid)
   if (!resolvedUid) throw new Error('Usuário não autenticado.')
+
+  const userSettings = await ensureUserSettingsMigrated(resolvedUid)
+  const catalogEntries = buildCatalogEntries(userSettings as unknown as Record<string, unknown>)
+  validateModelCapabilitiesAgainstDefs(defs, models, catalogEntries)
 
   const overrides = {} as Record<string, string>
 
@@ -1431,12 +1521,12 @@ export const AUDIO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     key: 'audio_narrador',
     label: 'Narrador / TTS',
     description: 'Gera a narração de áudio real com entonações e pausas a partir do roteiro',
-    defaultModel: '',
+    defaultModel: 'openai/tts-1-hd',
     recommendedTier: 'premium',
     icon: 'mic',
     agentCategory: 'synthesis',
-    requiredCapability: 'text',
-    bestModelNote: 'Esta etapa gera instruções e estrutura de narração em JSON no pipeline. Prefira modelos de texto sólidos para saída estruturada.',
+    requiredCapability: 'audio',
+    bestModelNote: 'Use um modelo TTS real. Padrão recomendado: OpenAI TTS HD para síntese final do áudio.',
   },
   {
     key: 'audio_revisor',
@@ -1588,4 +1678,28 @@ export async function savePresentationPipelineModels(models: PresentationPipelin
 /** Reset presentation pipeline models to defaults. */
 export async function resetPresentationPipelineModels(uid?: string): Promise<void> {
   await resetScopedModelMap('presentation_pipeline_models', uid)
+}
+
+export const AGENT_CONFIG_DEFS: Record<ScopedModelSettingsKey, AgentModelDef[]> = {
+  agent_models: PIPELINE_AGENT_DEFS,
+  thesis_analyst_models: THESIS_ANALYST_AGENT_DEFS,
+  context_detail_models: CONTEXT_DETAIL_AGENT_DEFS,
+  acervo_classificador_models: ACERVO_CLASSIFICADOR_AGENT_DEFS,
+  acervo_ementa_models: ACERVO_EMENTA_AGENT_DEFS,
+  research_notebook_models: RESEARCH_NOTEBOOK_AGENT_DEFS,
+  notebook_acervo_models: NOTEBOOK_ACERVO_AGENT_DEFS,
+  video_pipeline_models: VIDEO_PIPELINE_AGENT_DEFS,
+  audio_pipeline_models: AUDIO_PIPELINE_AGENT_DEFS,
+  presentation_pipeline_models: PRESENTATION_PIPELINE_AGENT_DEFS,
+}
+
+export async function validateScopedAgentModels(
+  key: ScopedModelSettingsKey,
+  models: Record<string, string>,
+  uid?: string,
+): Promise<void> {
+  const resolvedUid = resolveScopedUid(uid)
+  const userSettings = resolvedUid ? await ensureUserSettingsMigrated(resolvedUid) : {} as UserSettingsData
+  const catalogEntries = buildCatalogEntries(userSettings as unknown as Record<string, unknown>)
+  validateModelCapabilitiesAgainstDefs(AGENT_CONFIG_DEFS[key], models, catalogEntries)
 }

@@ -42,8 +42,8 @@ export const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
   {
     label: 'Mídia', emoji: '🎬', color: 'amber',
     items: [
-      { type: 'audio_script', label: 'Roteiro de Áudio', icon: Mic, description: 'Script de podcast com timeline e notas de produção' },
-      { type: 'video_script', label: 'Planejamento de Vídeo + Estúdio', icon: Video, description: 'Fase 1: planejamento textual completo. Fase 2: geração literal de imagem/áudio/vídeo no estúdio.' },
+      { type: 'audio_script', label: 'Resumo em Áudio', icon: Mic, description: 'Resumo em áudio com roteiro, síntese falada e arquivo final persistido' },
+      { type: 'video_script', label: 'Vídeo', icon: Video, description: 'Planejamento, imagens, narração e render final do vídeo em um único fluxo.' },
     ],
   },
 ]

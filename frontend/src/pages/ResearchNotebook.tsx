@@ -53,16 +53,30 @@ import {
   type VideoGenerationProgressCallback,
 } from '../lib/video-generation-pipeline'
 import {
+  type StoredNotebookMedia,
   uploadNotebookMediaArtifact,
   uploadNotebookVideoArtifact,
 } from '../lib/notebook-media-storage'
+import {
+  generateLiteralMediaAssets,
+  renderLiteralVideo,
+} from '../lib/literal-video-production'
+import {
+  renderDataTableImage,
+  renderInfographicImage,
+  renderMindMapImage,
+  renderPresentationSlidePoster,
+} from '../lib/notebook-visual-artifact-renderer'
+import { runAudioGenerationPipeline } from '../lib/audio-generation-pipeline'
+import { runPresentationGenerationPipeline } from '../lib/presentation-generation-pipeline'
 import { synthesizeAudioFromScript } from '../lib/notebook-audio-pipeline'
 import { extractFileText, isSupportedTextFile, SUPPORTED_TEXT_FILE_EXTENSIONS } from '../lib/file-text-extractor'
 import { generateImageViaOpenRouter, blobToDataUrl } from '../lib/image-generation-client'
 import { generateTTSViaOpenRouter } from '../lib/tts-client'
-import { loadVideoPipelineModels } from '../lib/model-config'
+import { loadAudioPipelineModels, loadVideoPipelineModels } from '../lib/model-config'
 import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
+import { isStructuredArtifactType, parseArtifactContent } from '../components/artifacts/artifact-parsers'
 import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
 import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
 import DraggablePanel from '../components/DraggablePanel'
@@ -306,9 +320,14 @@ export default function ResearchNotebook() {
   const [videoProduction, setVideoProduction] = useState<VideoProductionPackage | null>(null)
   const [videoStudioApiKey, setVideoStudioApiKey] = useState<string | undefined>(undefined)
   const [videoStudioAutoGenerate, setVideoStudioAutoGenerate] = useState(false)
+  const [videoStudioLiteralLoading, setVideoStudioLiteralLoading] = useState(false)
+  const [videoStudioLiteralProgress, setVideoStudioLiteralProgress] = useState<{ step: number; total: number; phase: string; agent: string } | null>(null)
   const [audioGenLoading, setAudioGenLoading] = useState(false)
   const [audioGeneratingArtifactId, setAudioGeneratingArtifactId] = useState<string | null>(null)
+  const [visualGenLoading, setVisualGenLoading] = useState(false)
+  const [visualGeneratingArtifactId, setVisualGeneratingArtifactId] = useState<string | null>(null)
   const [showClearChatConfirm, setShowClearChatConfirm] = useState(false)
+  const videoStudioUploadCacheRef = useRef<globalThis.Map<string, StoredNotebookMedia>>(new globalThis.Map<string, StoredNotebookMedia>())
 
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
@@ -1822,7 +1841,7 @@ Instruções:
         setStudioLastProgress({ step, total, phase })
       }
 
-      const result = await runStudioPipeline({
+      const pipelineInput = {
         apiKey,
         topic: activeNotebook.topic,
         description: activeNotebook.description || undefined,
@@ -1831,15 +1850,21 @@ Instruções:
         customInstructions: studioCustomPrompt.trim() || undefined,
         artifactType,
         artifactLabel: artifactDef?.label || artifactType,
-      }, onProgress, abortController.signal)
-  setStudioLastProgress({ step: 3, total: 3, phase: 'Trilha concluída com sucesso.' })
+      }
+
+      const result = artifactType === 'audio_script'
+        ? await runAudioGenerationPipeline(pipelineInput, onProgress, abortController.signal)
+        : artifactType === 'apresentacao'
+          ? await runPresentationGenerationPipeline(pipelineInput, onProgress, abortController.signal)
+          : await runStudioPipeline(pipelineInput, onProgress, abortController.signal)
+      setStudioLastProgress({ step: result.executions.length, total: result.executions.length, phase: 'Trilha concluída com sucesso.' })
 
       const artifact: StudioArtifact = {
         id: generateId(),
         type: artifactType,
         title: `${artifactDef?.label || artifactType} — ${activeNotebook.topic}`,
         content: result.content,
-        format: 'markdown',
+        format: isStructuredArtifactType(artifactType) ? 'json' : 'markdown',
         created_at: new Date().toISOString(),
       }
 
@@ -1854,7 +1879,13 @@ Instruções:
         await saveArtifactToNotebook(artifact, result.executions)
         setActiveTab('artifacts')
         setStudioCustomPrompt('')
-        toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso! (pipeline de 3 agentes)`)
+        toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso! (${result.executions.length} etapa(s) rastreadas)`)
+        if (
+          ENABLE_LITERAL_MEDIA_AUTOGENERATION
+          && ['mapa_mental', 'infografico', 'tabela_dados'].includes(artifact.type)
+        ) {
+          void handleGenerateVisualArtifact(artifact)
+        }
       }
     } catch (err) {
       console.error('Studio pipeline error:', err)
@@ -1949,6 +1980,240 @@ Instruções:
     }
   }
 
+  const appendNotebookExecutions = useCallback(async (
+    notebookId: string,
+    sourceType: UsageFunctionKey,
+    executions: Array<{
+      phase: string
+      agent_name: string
+      model: string
+      tokens_in: number
+      tokens_out: number
+      cost_usd: number
+      duration_ms: number
+    }>,
+  ) => {
+    if (!userId || executions.length === 0) return
+    const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+    const newExecutions = executions.map(ex =>
+      createUsageExecutionRecord({
+        source_type: sourceType,
+        source_id: notebookId,
+        phase: ex.phase,
+        agent_name: ex.agent_name,
+        model: ex.model,
+        tokens_in: ex.tokens_in,
+        tokens_out: ex.tokens_out,
+        cost_usd: ex.cost_usd,
+        duration_ms: ex.duration_ms,
+      }),
+    )
+    const updatedExecutions = [...(freshNotebook.llm_executions || []), ...newExecutions]
+    await updateResearchNotebook(userId, notebookId, { llm_executions: updatedExecutions })
+    setActiveNotebook(prev => prev && prev.id === notebookId
+      ? { ...prev, llm_executions: updatedExecutions }
+      : prev)
+  }, [getFreshNotebookOrThrow, userId])
+
+  async function handleGenerateVisualArtifact(artifact: StudioArtifact) {
+    if (!userId || !activeNotebook?.id || visualGenLoading) return
+    if (!['apresentacao', 'mapa_mental', 'infografico', 'tabela_dados'].includes(artifact.type)) return
+
+    const uid = userId
+    const notebookId = activeNotebook.id
+    setVisualGenLoading(true)
+    setVisualGeneratingArtifactId(artifact.id)
+
+    try {
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const currentArtifact = freshNotebook.artifacts.find(item => item.id === artifact.id) ?? artifact
+      const parsed = parseArtifactContent(currentArtifact.type, currentArtifact.content)
+
+      let nextContent = currentArtifact.content
+      let successMessage = 'Imagem final atualizada com sucesso.'
+      const visualExecutions: Array<{
+        phase: string
+        agent_name: string
+        model: string
+        tokens_in: number
+        tokens_out: number
+        cost_usd: number
+        duration_ms: number
+      }> = []
+
+      if (currentArtifact.type === 'apresentacao' && parsed.kind === 'presentation') {
+        const apiKey = await getOpenRouterKey().catch(() => '')
+        const original = JSON.parse(currentArtifact.content) as Record<string, unknown>
+        const sourceSlides = Array.isArray(original.slides) ? original.slides as Record<string, unknown>[] : []
+        const updatedSlides: Record<string, unknown>[] = []
+
+        for (let index = 0; index < parsed.data.slides.length; index++) {
+          const slide = parsed.data.slides[index]
+          const baseSlide = sourceSlides[index] || {}
+          let imageBlob: Blob | null = null
+          let imageModel = 'browser/svg-render'
+          let imageCostUsd = 0
+          const renderStartedAt = Date.now()
+
+          if (apiKey) {
+            try {
+              const prompt = [
+                'Crie uma imagem editorial premium para um slide de apresentação jurídica.',
+                `Título: ${slide.title}.`,
+                slide.bullets.length ? `Pontos-chave: ${slide.bullets.join('; ')}.` : '',
+                slide.visualSuggestion ? `Direção visual: ${slide.visualSuggestion}.` : '',
+                'Sem texto legível na imagem. Aparência sofisticada, documental, profissional, coerente com direito e pesquisa.',
+              ].filter(Boolean).join(' ')
+              const generated = await generateImageViaOpenRouter({
+                apiKey,
+                prompt,
+                aspectRatio: '16:9',
+              })
+              imageBlob = await fetch(generated.imageDataUrl).then(response => response.blob())
+              imageModel = generated.model
+              imageCostUsd = generated.cost_usd
+            } catch (error) {
+              console.warn(`Falling back to poster render for slide ${slide.number}:`, error)
+            }
+          }
+
+          if (!imageBlob) {
+            const rendered = await renderPresentationSlidePoster(parsed.data, slide)
+            imageBlob = rendered.blob
+          }
+
+          const storedImage = await uploadNotebookMediaArtifact(
+            uid,
+            notebookId,
+            `${currentArtifact.title}-slide-${slide.number}`,
+            imageBlob,
+            'images',
+            getExtensionFromMimeType(imageBlob.type, '.png'),
+          )
+
+          updatedSlides.push({
+            ...baseSlide,
+            number: slide.number,
+            title: slide.title,
+            bullets: slide.bullets,
+            speakerNotes: slide.speakerNotes,
+            visualSuggestion: slide.visualSuggestion,
+            renderedImageUrl: storedImage.url,
+            renderedImageStoragePath: storedImage.path,
+          })
+          visualExecutions.push({
+            phase: 'visual_artifact_render',
+            agent_name: 'Renderizador Visual de Apresentação',
+            model: imageModel,
+            tokens_in: 0,
+            tokens_out: 0,
+            cost_usd: imageCostUsd,
+            duration_ms: Date.now() - renderStartedAt,
+          })
+        }
+
+        nextContent = JSON.stringify({
+          ...original,
+          title: parsed.data.title,
+          slides: updatedSlides,
+        }, null, 2)
+        successMessage = `${updatedSlides.length} slide(s) visual(is) gerado(s) com sucesso.`
+      } else if (currentArtifact.type === 'infografico' && parsed.kind === 'infographic') {
+        const original = JSON.parse(currentArtifact.content) as Record<string, unknown>
+        const renderStartedAt = Date.now()
+        const rendered = await renderInfographicImage(parsed.data)
+        const storedImage = await uploadNotebookMediaArtifact(
+          uid,
+          notebookId,
+          `${currentArtifact.title}-infografico-final`,
+          rendered.blob,
+          'images',
+          rendered.extension,
+        )
+        nextContent = JSON.stringify({
+          ...original,
+          renderedImageUrl: storedImage.url,
+          renderedImageStoragePath: storedImage.path,
+        }, null, 2)
+        visualExecutions.push({ phase: 'visual_artifact_render', agent_name: 'Renderizador Visual Final', model: 'browser/svg-render', tokens_in: 0, tokens_out: 0, cost_usd: 0, duration_ms: Date.now() - renderStartedAt })
+      } else if (currentArtifact.type === 'mapa_mental' && parsed.kind === 'mindmap') {
+        const original = JSON.parse(currentArtifact.content) as Record<string, unknown>
+        const renderStartedAt = Date.now()
+        const rendered = await renderMindMapImage(parsed.data)
+        const storedImage = await uploadNotebookMediaArtifact(
+          uid,
+          notebookId,
+          `${currentArtifact.title}-mapa-mental-final`,
+          rendered.blob,
+          'images',
+          rendered.extension,
+        )
+        nextContent = JSON.stringify({
+          ...original,
+          renderedImageUrl: storedImage.url,
+          renderedImageStoragePath: storedImage.path,
+        }, null, 2)
+        visualExecutions.push({ phase: 'visual_artifact_render', agent_name: 'Renderizador Visual Final', model: 'browser/svg-render', tokens_in: 0, tokens_out: 0, cost_usd: 0, duration_ms: Date.now() - renderStartedAt })
+      } else if (currentArtifact.type === 'tabela_dados' && parsed.kind === 'datatable') {
+        const original = JSON.parse(currentArtifact.content) as Record<string, unknown>
+        const renderStartedAt = Date.now()
+        const rendered = await renderDataTableImage(parsed.data)
+        const storedImage = await uploadNotebookMediaArtifact(
+          uid,
+          notebookId,
+          `${currentArtifact.title}-tabela-final`,
+          rendered.blob,
+          'images',
+          rendered.extension,
+        )
+        nextContent = JSON.stringify({
+          ...original,
+          renderedImageUrl: storedImage.url,
+          renderedImageStoragePath: storedImage.path,
+        }, null, 2)
+        visualExecutions.push({ phase: 'visual_artifact_render', agent_name: 'Renderizador Visual Final', model: 'browser/svg-render', tokens_in: 0, tokens_out: 0, cost_usd: 0, duration_ms: Date.now() - renderStartedAt })
+      } else {
+        throw new Error('O artefato visual não possui estrutura válida para gerar imagem final.')
+      }
+
+      const updatedArtifacts: StudioArtifact[] = freshNotebook.artifacts.map((current) =>
+        current.id === currentArtifact.id
+          ? {
+              ...current,
+              format: 'json',
+              content: nextContent,
+            }
+          : current,
+      )
+
+      await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
+
+      setActiveNotebook(prev => prev && prev.id === notebookId
+        ? { ...prev, artifacts: updatedArtifacts }
+        : prev)
+
+      await appendNotebookExecutions(
+        notebookId,
+        currentArtifact.type === 'apresentacao' ? 'presentation_pipeline' : 'caderno_pesquisa',
+        visualExecutions,
+      )
+
+      if (viewingArtifact?.id === currentArtifact.id) {
+        const refreshed = updatedArtifacts.find(item => item.id === currentArtifact.id)
+        if (refreshed) setViewingArtifact(refreshed)
+      }
+
+      toast.success(successMessage)
+    } catch (error) {
+      console.error('Visual artifact generation error:', error)
+      const message = error instanceof Error ? error.message : 'Falha ao gerar mídia visual.'
+      toast.error('Falha na geração visual', message)
+    } finally {
+      setVisualGenLoading(false)
+      setVisualGeneratingArtifactId(null)
+    }
+  }
+
   // ── Confirm pending artifact (after review/edit) ────────────────────
   const handleConfirmPendingArtifact = async () => {
     if (!pendingArtifact) return
@@ -1965,6 +2230,15 @@ Instruções:
       if (finalArtifact.type === 'video_script') {
         setVideoGenSavedArtifact(finalArtifact)
         setShowVideoGenCost(true)
+      } else if (finalArtifact.type === 'audio_script' && ENABLE_LITERAL_MEDIA_AUTOGENERATION) {
+        setActiveTab('artifacts')
+        void handleGenerateAudioFromArtifact(finalArtifact)
+      } else if (
+        ['apresentacao', 'mapa_mental', 'infografico', 'tabela_dados'].includes(finalArtifact.type)
+        && ENABLE_LITERAL_MEDIA_AUTOGENERATION
+      ) {
+        setActiveTab('artifacts')
+        void handleGenerateVisualArtifact(finalArtifact)
       } else {
         setActiveTab('artifacts')
       }
@@ -2127,9 +2401,13 @@ Instruções:
         return
       }
 
+      const audioModels = await loadAudioPipelineModels()
+      const ttsModel = audioModels.audio_narrador || 'openai/tts-1-hd'
+
       const synthesis = await synthesizeAudioFromScript({
         apiKey,
         rawScriptContent: artifact.content,
+        model: ttsModel,
       })
 
       const storedAudio = await uploadNotebookMediaArtifact(
@@ -2141,7 +2419,8 @@ Instruções:
         getExtensionFromMimeType(synthesis.mimeType, '.mp3'),
       )
 
-      const updatedArtifacts: StudioArtifact[] = activeNotebook.artifacts.map((current): StudioArtifact => {
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const updatedArtifacts: StudioArtifact[] = freshNotebook.artifacts.map((current): StudioArtifact => {
         if (current.id !== artifact.id) return current
 
         try {
@@ -2167,17 +2446,26 @@ Instruções:
 
       await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
 
-      setActiveNotebook({
-        ...activeNotebook,
-        artifacts: updatedArtifacts,
-      })
+      await appendNotebookExecutions(notebookId, 'audio_pipeline', [{
+        phase: 'audio_literal_generation',
+        agent_name: 'Narrador / TTS',
+        model: ttsModel,
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: 0.015 * (artifact.content.length / 1000),
+        duration_ms: 0,
+      }])
+
+      setActiveNotebook(prev => prev && prev.id === notebookId
+        ? { ...prev, artifacts: updatedArtifacts }
+        : prev)
 
       if (viewingArtifact?.id === artifact.id) {
         const refreshed = updatedArtifacts.find(a => a.id === artifact.id)
         if (refreshed) setViewingArtifact(refreshed)
       }
 
-      toast.success('Áudio literal gerado com sucesso!', `${synthesis.chunkCount} parte(s) sintetizada(s)`)    
+      toast.success('Resumo em áudio gerado com sucesso!', `${synthesis.chunkCount} parte(s) sintetizada(s)`)    
     } catch (err) {
       console.error('Audio literal generation error:', err)
       const msg = err instanceof Error ? err.message : String(err)
@@ -2193,11 +2481,17 @@ Instruções:
   }
 
   // ── Save video studio production as notebook artifact ──────────────
-  const handleSaveVideoStudioToNotebook = async (production: VideoProductionPackage) => {
-    if (!userId || !activeNotebook?.id) return
+  const handleSaveVideoStudioToNotebook = async (
+    production: VideoProductionPackage,
+    options?: { silent?: boolean; syncEditorState?: boolean },
+  ): Promise<VideoProductionPackage> => {
+    if (!userId || !activeNotebook?.id) {
+      throw new Error('Usuário ou caderno indisponível para salvar produção de vídeo.')
+    }
     const uid = userId
     const notebookId = activeNotebook.id
     try {
+      const uploadCache = videoStudioUploadCacheRef.current
       const uploadWithRetry = async <T,>(
         label: string,
         task: () => Promise<T>,
@@ -2221,16 +2515,20 @@ Instruções:
       const renderedVideoUrl = production.renderedVideo?.url || ''
 
       if (renderedVideoUrl && (renderedVideoUrl.startsWith('blob:') || renderedVideoUrl.startsWith('data:'))) {
-        const videoBlob = await fetch(renderedVideoUrl).then(resp => resp.blob())
-        const storedVideo = await uploadWithRetry(
-          'Upload do vídeo final',
-          () => uploadNotebookVideoArtifact(
-            uid,
-            notebookId,
-            production.title,
-            videoBlob,
-          ),
-        )
+        const storedVideo = uploadCache.get(renderedVideoUrl) || await (async () => {
+          const videoBlob = await fetch(renderedVideoUrl).then(resp => resp.blob())
+          const stored = await uploadWithRetry(
+            'Upload do vídeo final',
+            () => uploadNotebookVideoArtifact(
+              uid,
+              notebookId,
+              production.title,
+              videoBlob,
+            ),
+          )
+          uploadCache.set(renderedVideoUrl, stored)
+          return stored
+        })()
         productionToSave = {
           ...production,
           renderedVideo: {
@@ -2246,18 +2544,22 @@ Instruções:
           if (!renderedScope.url || (!renderedScope.url.startsWith('blob:') && !renderedScope.url.startsWith('data:'))) {
             return renderedScope
           }
-          const scopedBlob = await fetch(renderedScope.url).then(resp => resp.blob())
-          const stored = await uploadWithRetry(
-            `Upload render de escopo ${renderedScope.scopeKey}`,
-            () => uploadNotebookMediaArtifact(
-              uid,
-              notebookId,
-              `${production.title}-${renderedScope.scopeKey}`,
-              scopedBlob,
-              'videos',
-              getExtensionFromMimeType(renderedScope.mimeType || scopedBlob.type, '.webm'),
-            ),
-          )
+          const stored = uploadCache.get(renderedScope.url) || await (async () => {
+            const scopedBlob = await fetch(renderedScope.url).then(resp => resp.blob())
+            const uploaded = await uploadWithRetry(
+              `Upload render de escopo ${renderedScope.scopeKey}`,
+              () => uploadNotebookMediaArtifact(
+                uid,
+                notebookId,
+                `${production.title}-${renderedScope.scopeKey}`,
+                scopedBlob,
+                'videos',
+                getExtensionFromMimeType(renderedScope.mimeType || scopedBlob.type, '.webm'),
+              ),
+            )
+            uploadCache.set(renderedScope.url, uploaded)
+            return uploaded
+          })()
           return {
             ...renderedScope,
             url: stored.url,
@@ -2278,35 +2580,43 @@ Instruções:
         let videoClips = sceneAsset.videoClips
 
         if (imageUrl && (imageUrl.startsWith('blob:') || imageUrl.startsWith('data:'))) {
-          const imageBlob = await fetch(imageUrl).then(resp => resp.blob())
-          const stored = await uploadWithRetry(
-            `Upload imagem cena ${sceneAsset.sceneNumber}`,
-            () => uploadNotebookMediaArtifact(
-              uid,
-              notebookId,
-              `${production.title}-scene-${sceneAsset.sceneNumber}-image`,
-              imageBlob,
-              'images',
-              getExtensionFromMimeType(imageBlob.type, '.png'),
-            ),
-          )
+          const stored = uploadCache.get(imageUrl) || await (async () => {
+            const imageBlob = await fetch(imageUrl).then(resp => resp.blob())
+            const uploaded = await uploadWithRetry(
+              `Upload imagem cena ${sceneAsset.sceneNumber}`,
+              () => uploadNotebookMediaArtifact(
+                uid,
+                notebookId,
+                `${production.title}-scene-${sceneAsset.sceneNumber}-image`,
+                imageBlob,
+                'images',
+                getExtensionFromMimeType(imageBlob.type, '.png'),
+              ),
+            )
+            uploadCache.set(imageUrl, uploaded)
+            return uploaded
+          })()
           imageUrl = stored.url
           imageStoragePath = stored.path
         }
 
         if (narrationUrl && (narrationUrl.startsWith('blob:') || narrationUrl.startsWith('data:'))) {
-          const narrationBlob = await fetch(narrationUrl).then(resp => resp.blob())
-          const stored = await uploadWithRetry(
-            `Upload narração cena ${sceneAsset.sceneNumber}`,
-            () => uploadNotebookMediaArtifact(
-              uid,
-              notebookId,
-              `${production.title}-scene-${sceneAsset.sceneNumber}-narration`,
-              narrationBlob,
-              'audios',
-              getExtensionFromMimeType(narrationBlob.type, '.wav'),
-            ),
-          )
+          const stored = uploadCache.get(narrationUrl) || await (async () => {
+            const narrationBlob = await fetch(narrationUrl).then(resp => resp.blob())
+            const uploaded = await uploadWithRetry(
+              `Upload narração cena ${sceneAsset.sceneNumber}`,
+              () => uploadNotebookMediaArtifact(
+                uid,
+                notebookId,
+                `${production.title}-scene-${sceneAsset.sceneNumber}-narration`,
+                narrationBlob,
+                'audios',
+                getExtensionFromMimeType(narrationBlob.type, '.wav'),
+              ),
+            )
+            uploadCache.set(narrationUrl, uploaded)
+            return uploaded
+          })()
           narrationUrl = stored.url
           narrationStoragePath = stored.path
         }
@@ -2314,18 +2624,22 @@ Instruções:
         if (videoClips?.length) {
           videoClips = await Promise.all(videoClips.map(async clip => {
             if (!clip.url || (!clip.url.startsWith('blob:') && !clip.url.startsWith('data:'))) return clip
-            const clipBlob = await fetch(clip.url).then(resp => resp.blob())
-            const stored = await uploadWithRetry(
-              `Upload clip cena ${clip.sceneNumber} parte ${clip.partNumber}`,
-              () => uploadNotebookMediaArtifact(
-                uid,
-                notebookId,
-                `${production.title}-scene-${clip.sceneNumber}-part-${clip.partNumber}`,
-                clipBlob,
-                'videos',
-                getExtensionFromMimeType(clip.mimeType || clipBlob.type, '.webm'),
-              ),
-            )
+            const stored = uploadCache.get(clip.url) || await (async () => {
+              const clipBlob = await fetch(clip.url).then(resp => resp.blob())
+              const uploaded = await uploadWithRetry(
+                `Upload clip cena ${clip.sceneNumber} parte ${clip.partNumber}`,
+                () => uploadNotebookMediaArtifact(
+                  uid,
+                  notebookId,
+                  `${production.title}-scene-${clip.sceneNumber}-part-${clip.partNumber}`,
+                  clipBlob,
+                  'videos',
+                  getExtensionFromMimeType(clip.mimeType || clipBlob.type, '.webm'),
+                ),
+              )
+              uploadCache.set(clip.url, uploaded)
+              return uploaded
+            })()
             return {
               ...clip,
               url: stored.url,
@@ -2346,18 +2660,22 @@ Instruções:
 
       let soundtrackAsset = productionToSave.soundtrackAsset
       if (soundtrackAsset?.url && (soundtrackAsset.url.startsWith('blob:') || soundtrackAsset.url.startsWith('data:'))) {
-        const soundtrackBlob = await fetch(soundtrackAsset.url).then(resp => resp.blob())
-        const stored = await uploadWithRetry(
-          'Upload trilha sonora',
-          () => uploadNotebookMediaArtifact(
-            userId,
-            notebookId,
-            `${production.title}-soundtrack`,
-            soundtrackBlob,
-            'audios',
-            getExtensionFromMimeType(soundtrackAsset?.mimeType || soundtrackBlob.type, '.wav'),
-          ),
-        )
+        const stored = uploadCache.get(soundtrackAsset.url) || await (async () => {
+          const soundtrackBlob = await fetch(soundtrackAsset.url).then(resp => resp.blob())
+          const uploaded = await uploadWithRetry(
+            'Upload trilha sonora',
+            () => uploadNotebookMediaArtifact(
+              userId,
+              notebookId,
+              `${production.title}-soundtrack`,
+              soundtrackBlob,
+              'audios',
+              getExtensionFromMimeType(soundtrackAsset?.mimeType || soundtrackBlob.type, '.wav'),
+            ),
+          )
+          uploadCache.set(soundtrackAsset.url, uploaded)
+          return uploaded
+        })()
         soundtrackAsset = {
           ...soundtrackAsset,
           url: stored.url,
@@ -2373,16 +2691,17 @@ Instruções:
 
       const artifactTitle = `Estúdio de Vídeo: ${production.title}`
       const content = JSON.stringify(productionToSave)
-      
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+
       // Check if a video studio artifact with same title already exists — update instead of duplicate
-      const existingIdx = activeNotebook.artifacts.findIndex(
+      const existingIdx = freshNotebook.artifacts.findIndex(
         a => a.type === 'video_script' && a.format === 'json' && a.title === artifactTitle
       )
-      
+
       let updatedArtifacts: StudioArtifact[]
       if (existingIdx >= 0) {
         // Update existing artifact
-        updatedArtifacts = [...activeNotebook.artifacts]
+        updatedArtifacts = [...freshNotebook.artifacts]
         updatedArtifacts[existingIdx] = {
           ...updatedArtifacts[existingIdx],
           content,
@@ -2398,20 +2717,129 @@ Instruções:
           format: 'json',
           created_at: new Date().toISOString(),
         }
-        updatedArtifacts = [...activeNotebook.artifacts, artifact]
+        updatedArtifacts = [...freshNotebook.artifacts, artifact]
       }
 
-      await updateResearchNotebook(userId, activeNotebook.id, {
+      await updateResearchNotebook(userId, notebookId, {
         artifacts: updatedArtifacts,
       })
-      setActiveNotebook(prev => prev && prev.id === activeNotebook.id ? { ...prev, artifacts: updatedArtifacts } : prev)
-      toast.success(existingIdx >= 0 ? 'Estúdio de vídeo atualizado!' : 'Estúdio de vídeo salvo nos artefatos do caderno!')
-      setVideoProduction(productionToSave)
+      setActiveNotebook(prev => prev && prev.id === notebookId ? { ...prev, artifacts: updatedArtifacts } : prev)
+      if (options?.syncEditorState !== false) {
+        setVideoProduction(productionToSave)
+      }
+      if (!options?.silent) {
+        toast.success(existingIdx >= 0 ? 'Estúdio de vídeo atualizado!' : 'Estúdio de vídeo salvo nos artefatos do caderno!')
+      }
+      return productionToSave
     } catch (err) {
       console.error('Error saving video studio artifact:', err)
-      toast.error('Erro ao salvar estúdio nos artefatos.')
+      if (!options?.silent) {
+        toast.error('Erro ao salvar estúdio nos artefatos.')
+      }
+      throw err
     }
   }
+
+  const handleRunLiteralVideoStudioProduction = useCallback(async (production: VideoProductionPackage) => {
+    if (!userId || !activeNotebook?.id || videoStudioLiteralLoading) return
+
+    const notebookId = activeNotebook.id
+    const apiKey = videoStudioApiKey || await getOpenRouterKey()
+    if (!apiKey) {
+      toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
+      return
+    }
+
+    const taskName = `Vídeo literal: ${production.title.slice(0, 40)}`
+    let reportTaskProgress: (update: { progress: number; phase: string }) => void = () => {}
+    let resolveTask: (value: VideoProductionPackage) => void = () => {}
+    let rejectTask: (reason?: unknown) => void = () => {}
+    const taskPromise = new Promise<VideoProductionPackage>((resolve, reject) => {
+      resolveTask = resolve
+      rejectTask = reject
+    })
+
+    startTask(taskName, (onTaskProgress) => {
+      reportTaskProgress = onTaskProgress
+      onTaskProgress({ progress: 0, phase: 'Preparando geração literal...' })
+      return taskPromise
+    })
+
+    try {
+      setVideoStudioAutoGenerate(false)
+      setVideoStudioLiteralLoading(true)
+      setVideoStudioApiKey(apiKey)
+
+      const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent) => {
+        setVideoStudioLiteralProgress({ step, total, phase, agent })
+        reportTaskProgress({
+          progress: total > 0 ? Math.round((step / total) * 100) : 0,
+          phase: agent ? `${agent}: ${phase}` : phase,
+        })
+      }
+
+      const media = await generateLiteralMediaAssets(
+        apiKey,
+        production,
+        onProgress,
+        async (partialProduction) => {
+          const persisted = await handleSaveVideoStudioToNotebook(partialProduction, { silent: true, syncEditorState: false })
+          setVideoProduction(persisted)
+        },
+      )
+
+      await appendNotebookExecutions(notebookId, 'video_pipeline', media.executions)
+
+      const renderStartedAt = Date.now()
+      const rendered = await renderLiteralVideo(media.production, onProgress)
+      const persistedFinal = await handleSaveVideoStudioToNotebook({
+        ...media.production,
+        renderedVideo: rendered.asset,
+      }, { silent: true, syncEditorState: false })
+
+      await appendNotebookExecutions(notebookId, 'video_pipeline', [{
+        phase: 'media_video_render',
+        agent_name: 'Renderizador de Vídeo',
+        model: `browser/${rendered.asset.mimeType}`,
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: 0,
+        duration_ms: Date.now() - renderStartedAt,
+      }])
+
+      setVideoProduction(persistedFinal)
+
+      if (viewingArtifact?.type === 'video_script') {
+        const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+        const refreshed = freshNotebook.artifacts.find(item => item.title === `Estúdio de Vídeo: ${persistedFinal.title}`)
+        if (refreshed) setViewingArtifact(refreshed)
+      }
+
+      if (media.errors.length > 0) {
+        toast.warning(
+          'Vídeo literal retomado com avisos',
+          `${media.errors.length} etapa(s) falharam. O checkpoint foi salvo para nova retomada sem perder progresso.`,
+        )
+      } else {
+        toast.success('Vídeo literal concluído e salvo com sucesso!')
+      }
+
+      resolveTask(persistedFinal)
+    } catch (error) {
+      console.error('Literal video studio generation error:', error)
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error('Falha na geração literal do vídeo', message)
+      rejectTask(error)
+    } finally {
+      setVideoStudioLiteralLoading(false)
+      setVideoStudioLiteralProgress(null)
+    }
+  }, [activeNotebook?.id, getFreshNotebookOrThrow, startTask, userId, videoStudioApiKey, videoStudioLiteralLoading, viewingArtifact?.type])
+
+  useEffect(() => {
+    if (!videoProduction || !videoStudioAutoGenerate || videoStudioLiteralLoading) return
+    void handleRunLiteralVideoStudioProduction(videoProduction)
+  }, [handleRunLiteralVideoStudioProduction, videoProduction, videoStudioAutoGenerate, videoStudioLiteralLoading])
 
   // ── Delete artifact ─────────────────────────────────────────────────
   const handleDeleteArtifact = async (artifactId: string) => {
@@ -3910,6 +4338,12 @@ Instruções:
             onGenerateAudio={viewingArtifact.type === 'audio_script' ? () => {
               handleGenerateAudioFromArtifact(viewingArtifact)
             } : undefined}
+            onGenerateImage={['apresentacao', 'mapa_mental', 'infografico', 'tabela_dados'].includes(viewingArtifact.type)
+              ? () => {
+                  if (visualGenLoading && visualGeneratingArtifactId === viewingArtifact.id) return
+                  handleGenerateVisualArtifact(viewingArtifact)
+                }
+              : undefined}
             onOpenStudio={isVideoStudio ? () => {
               try {
                 const pkg = JSON.parse(viewingArtifact.content)
@@ -3982,40 +4416,13 @@ Instruções:
           production={videoProduction}
           onClose={() => setVideoProduction(null)}
           onSave={async (updated) => {
-            setVideoProduction(updated)
-            // Save as video_production artifact in the notebook
-            if (userId && activeNotebook?.id) {
-              try {
-                const artifact: StudioArtifact = {
-                  id: `video_prod_${Date.now()}`,
-                  type: 'video_production',
-                  title: updated.title || 'Produção de Vídeo',
-                  content: JSON.stringify(updated),
-                  format: 'json',
-                  created_at: new Date().toISOString(),
-                }
-                // Check if a video_production artifact already exists for this title — update it
-                const existingIdx = activeNotebook.artifacts.findIndex(
-                  a => a.type === 'video_production' && a.title === artifact.title
-                )
-                let updatedArtifacts: StudioArtifact[]
-                if (existingIdx >= 0) {
-                  updatedArtifacts = [...activeNotebook.artifacts]
-                  updatedArtifacts[existingIdx] = { ...updatedArtifacts[existingIdx], content: artifact.content }
-                } else {
-                  updatedArtifacts = [...activeNotebook.artifacts, artifact]
-                }
-                await updateResearchNotebook(userId, activeNotebook.id, { artifacts: updatedArtifacts })
-                setActiveNotebook({ ...activeNotebook, artifacts: updatedArtifacts })
-                toast.success('Produção de vídeo salva no caderno!')
-              } catch (err) {
-                console.error('Error saving video production artifact:', err)
-                toast.error('Erro ao salvar produção de vídeo')
-              }
-            } else {
-              toast.success('Produção de vídeo atualizada!')
-            }
+            await handleSaveVideoStudioToNotebook(updated)
           }}
+          onGenerateLiteralMedia={(updatedProduction) => {
+            void handleRunLiteralVideoStudioProduction(updatedProduction)
+          }}
+          isLiteralGenerating={videoStudioLiteralLoading}
+          literalProgress={videoStudioLiteralProgress || undefined}
           onRegenerateImage={async (sceneNumber) => {
             try {
               const apiKey = await getOpenRouterKey()

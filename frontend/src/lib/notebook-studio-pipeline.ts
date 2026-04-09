@@ -16,7 +16,7 @@
  */
 
 import { callLLM, type LLMResult } from './llm-client'
-import { loadResearchNotebookModels, type ResearchNotebookModelMap } from './model-config'
+import { loadResearchNotebookModels, validateScopedAgentModels, type ResearchNotebookModelMap } from './model-config'
 import type { StudioArtifactType } from './firestore-service'
 import { isStructuredArtifactType } from '../components/artifacts/artifact-parsers'
 
@@ -856,6 +856,12 @@ export async function runStudioPipeline(
       'Vá em Configurações > Caderno de Pesquisa e selecione modelos para todos os agentes do estúdio.',
     )
   }
+
+  await validateScopedAgentModels('research_notebook_models', {
+    studio_pesquisador: models.studio_pesquisador,
+    [specialistRole]: models[specialistRole],
+    studio_revisor: models.studio_revisor,
+  })
 
   // ── Step 1: Research ────────────────────────────────────────────────
   throwIfAborted(signal)

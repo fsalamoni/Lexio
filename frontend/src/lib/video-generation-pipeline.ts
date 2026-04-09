@@ -24,7 +24,7 @@
  */
 
 import { callLLM, type LLMResult } from './llm-client'
-import { loadVideoPipelineModels, VIDEO_PIPELINE_AGENT_DEFS } from './model-config'
+import { loadVideoPipelineModels, validateScopedAgentModels, VIDEO_PIPELINE_AGENT_DEFS } from './model-config'
 import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
 import { generateTTSViaOpenRouter } from './tts-client'
@@ -479,6 +479,7 @@ export async function runVideoGenerationPipeline(
   onProgress?: VideoGenerationProgressCallback,
 ): Promise<VideoGenerationResult> {
   const models = await loadVideoPipelineModels()
+  await validateScopedAgentModels('video_pipeline_models', models)
   const executions: VideoGenerationStepExecution[] = []
   const wantMedia = input.generateMedia !== false // default true
   const totalSteps = wantMedia ? 11 : 8
@@ -1209,7 +1210,7 @@ REQUISITOS OBRIGATÓRIOS:
 
           executions.push({
             phase: 'media_image_generation',
-            agent_name: `image_s${r.value.sceneNumber}_c${r.value.clipNumber}`,
+            agent_name: 'Gerador de Imagens',
             model: r.value.model,
             tokens_in: 0,
             tokens_out: 0,
@@ -1300,7 +1301,7 @@ REQUISITOS OBRIGATÓRIOS:
 
         executions.push({
           phase: 'media_tts_generation',
-          agent_name: `tts_scene_${segment.sceneNumber}`,
+          agent_name: 'Narrador TTS',
           model: ttsModel,
           tokens_in: 0,
           tokens_out: 0,

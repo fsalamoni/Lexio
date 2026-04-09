@@ -31,10 +31,56 @@ function downloadText(content: string, filename: string, mimeType = 'text/plain'
   downloadBlob(new Blob([content], { type: `${mimeType};charset=utf-8` }), filename)
 }
 
+async function fetchUrlAsBlob(url: string): Promise<Blob> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar mídia (${response.status})`)
+  }
+  return response.blob()
+}
+
+function inferExtensionFromBlob(blob: Blob, fallback: string): string {
+  const type = blob.type.toLowerCase()
+  if (type.includes('image/png')) return '.png'
+  if (type.includes('image/jpeg')) return '.jpg'
+  if (type.includes('image/webp')) return '.webp'
+  if (type.includes('audio/mpeg')) return '.mp3'
+  if (type.includes('audio/wav')) return '.wav'
+  if (type.includes('audio/ogg')) return '.ogg'
+  if (type.includes('video/mp4')) return '.mp4'
+  if (type.includes('video/webm')) return '.webm'
+  return fallback
+}
+
 // ── Markdown export (universal fallback) ────────────────────────────────────
 
 export function exportAsMarkdown(content: string, filename: string) {
   downloadText(content, `${filename}.md`, 'text/markdown')
+}
+
+export async function exportFileFromUrl(url: string, filename: string, fallbackExtension = '') {
+  const blob = await fetchUrlAsBlob(url)
+  const extension = inferExtensionFromBlob(blob, fallbackExtension)
+  downloadBlob(blob, `${filename}${extension}`)
+}
+
+export async function exportPresentationImagesAsZip(data: ParsedPresentation, filename: string) {
+  const slideImages = data.slides.filter(slide => slide.renderedImageUrl)
+  if (slideImages.length === 0) {
+    throw new Error('Nenhum slide visual gerado para exportar.')
+  }
+
+  const JSZip = (await import('jszip')).default
+  const zip = new JSZip()
+
+  await Promise.all(slideImages.map(async (slide) => {
+    const blob = await fetchUrlAsBlob(slide.renderedImageUrl!)
+    const extension = inferExtensionFromBlob(blob, '.png')
+    zip.file(`slide-${String(slide.number).padStart(2, '0')}${extension}`, blob)
+  }))
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' })
+  downloadBlob(zipBlob, `${filename}_slides.zip`)
 }
 
 // ── CSV export for DataTable ────────────────────────────────────────────────
