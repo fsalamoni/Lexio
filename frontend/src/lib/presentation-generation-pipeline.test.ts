@@ -23,6 +23,7 @@ describe('runPresentationGenerationPipeline', () => {
       pres_pesquisador: 'google/gemini-2.0-flash-001',
       pres_redator: 'anthropic/claude-sonnet-4',
       pres_designer: 'deepseek/deepseek-chat-v3-0324',
+      pres_image_generator: 'google/gemini-2.5-flash-preview:image-output',
       pres_revisor: 'openai/gpt-4o',
     })
     validateScopedAgentModelsMock.mockResolvedValue(undefined)

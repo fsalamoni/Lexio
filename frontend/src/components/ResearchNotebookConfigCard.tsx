@@ -25,6 +25,7 @@ import {
   ChevronRight,
   Mic,
   PenTool,
+  Image,
   ClipboardCheck,
   BarChart2,
 } from 'lucide-react'
@@ -49,6 +50,7 @@ const AGENT_ICONS: Record<string, React.ElementType> = {
   'file-text':       FileText,
   'mic':             Mic,
   'pen-tool':        PenTool,
+  'image':           Image,
   'clipboard-check': ClipboardCheck,
   'bar-chart-2':     BarChart2,
 }
@@ -294,6 +296,15 @@ export default function ResearchNotebookConfigCard() {
               </p>
             </div>
 
+            <div className="p-3 mb-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+              <p className="text-xs text-indigo-800">
+                <strong>🖼️ Saída visual real:</strong> quando o estúdio produz <strong>infográficos</strong>,
+                <strong> mapas mentais</strong> ou <strong>tabelas de dados</strong>, o notebook executa uma etapa
+                automática de <strong>renderização final em imagem</strong> depois da revisão, persiste o PNG no
+                notebook e registra a operação no demonstrativo de execuções/custos.
+              </p>
+            </div>
+
             <div className="space-y-0 mb-4">
               {STUDIO_AGENTS.map((agent, idx) => {
                 const Icon         = AGENT_ICONS[agent.icon] ?? Brain
@@ -395,7 +406,7 @@ export default function ResearchNotebookConfigCard() {
                 <strong>📖 Sobre estes agentes:</strong> O Caderno de Pesquisa conta com {RESEARCH_NOTEBOOK_AGENT_DEFS.length} agentes especializados em dois grupos.
                 <strong> Pesquisa & Análise</strong> — Pesquisador indexa fontes, Analista sintetiza descobertas, Assistente responde perguntas.
                 <strong> Estúdio de Criação</strong> — pipeline de 3 etapas (pesquisa → criação especializada → revisão de qualidade) para cada artefato.
-                Escritor redige textos, Roteirista cria scripts de áudio/vídeo, Designer Visual estrutura apresentações e infográficos.
+                Escritor redige textos, Roteirista cria scripts de áudio/vídeo, Designer Visual estrutura apresentações e infográficos, e a etapa automática de mídia transforma os artefatos visuais em imagens persistidas.
                 Modelos <strong>✦ Grátis</strong> são uma ótima opção para testes e redução de custos.
               </p>
             </div>

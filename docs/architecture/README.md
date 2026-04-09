@@ -35,7 +35,7 @@ Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
 
 ## Princípios
 1. **Frontend-only** — Toda lógica roda no browser, sem backend Python
-2. **Multi-pipeline** — 10 pipelines com 53 agentes configuráveis
+2. **Multi-pipeline** — 10 pipelines com 58 agentes configuráveis
 3. **Modelo flexível** — Cada usuário escolhe o modelo LLM dos próprios agentes
 4. **Anamnese 2 camadas** — Perfil persistente (Layer 1) + contexto por request (Layer 2)
 5. **Catálogo dinâmico** — Modelos podem ser adicionados/removidos nas configurações pessoais
@@ -43,7 +43,7 @@ Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
 
 ## Pipelines Implementados
 
-### 10 pipelines · 53 agentes
+### 10 pipelines · 58 agentes
 
 | Pipeline | Agentes | Arquivo | Config Firestore |
 |----------|---------|---------|-----------------|

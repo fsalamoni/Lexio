@@ -30,7 +30,7 @@ interface AgentModelDef {
 | `NOTEBOOK_ACERVO_AGENT_DEFS` | Notebook acervo | 4 |
 | `VIDEO_PIPELINE_AGENT_DEFS` | Vídeo | 8 |
 | `AUDIO_PIPELINE_AGENT_DEFS` | Áudio | 6 |
-| `PRESENTATION_PIPELINE_AGENT_DEFS` | Apresentação | 5 |
+| `PRESENTATION_PIPELINE_AGENT_DEFS` | Apresentação | 6 |
 
 ## Configuração de Modelos
 1. Admin configura modelos por agente no Admin Panel

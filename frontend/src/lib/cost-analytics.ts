@@ -172,6 +172,7 @@ const PHASE_LABELS: Record<string, string> = {
   pres_pesquisador: 'Apresentação: Pesquisador',
   pres_redator: 'Apresentação: Redator de Slides',
   pres_designer: 'Apresentação: Designer Visual',
+  pres_image_generator: 'Apresentação: Gerador de Imagens',
   pres_revisor: 'Apresentação: Revisor Final',
 }
 
