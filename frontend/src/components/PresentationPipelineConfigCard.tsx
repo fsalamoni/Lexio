@@ -20,6 +20,7 @@ import {
   FileText,
   Search,
   PenTool,
+  Image,
   Cpu,
   Coins,
   ChevronRight,
@@ -44,6 +45,7 @@ const AGENT_ICONS: Record<string, React.ElementType> = {
   'file-text':       FileText,
   'search':          Search,
   'pen-tool':        PenTool,
+  'image-plus':      Image,
 }
 
 const TIER_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -161,7 +163,7 @@ export default function PresentationPipelineConfigCard() {
             <div className="flex items-center gap-2 mb-4 pb-3 border-b">
               <Presentation className="w-4 h-4 text-sky-500" />
               <span className="text-sm font-semibold text-gray-700">Trilha Multiagente de Apresentação</span>
-              <span className="text-xs text-gray-400 ml-auto">5 agentes · criação de apresentação profissional</span>
+              <span className="text-xs text-gray-400 ml-auto">{PRESENTATION_PIPELINE_AGENT_DEFS.length} agentes · criação de apresentação profissional</span>
             </div>
 
             {/* Agent flow */}
@@ -276,9 +278,10 @@ export default function PresentationPipelineConfigCard() {
             {/* Info box */}
             <div className="mt-4 p-3 bg-sky-50 border border-sky-200 rounded-lg">
               <p className="text-xs text-sky-800">
-                <strong>💡 Informações:</strong> Esta trilha usa agentes de <strong>texto</strong> para montar
-                planejamento, conteúdo e diretrizes visuais em formato estruturado. A criação de assets visuais
-                reais pode ocorrer em etapas posteriores de mídia, fora desta configuração de trilha.
+                <strong>💡 Informações:</strong> Esta trilha agora cobre tanto a estrutura textual quanto a geração
+                das <strong>imagens reais dos slides</strong>. Os 5 primeiros agentes montam o plano, a pesquisa e o
+                conteúdo; o agente final <strong>Gerador de Imagens de Slides</strong> é usado na etapa automática de
+                mídia para materializar os visuais e registrar seus custos no demonstrativo.
               </p>
             </div>
 

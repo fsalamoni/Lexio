@@ -40,7 +40,7 @@ import {
 } from '../lib/firestore-service'
 import { callLLM, callLLMWithMessages, ModelUnavailableError, type LLMResult } from '../lib/llm-client'
 import { getOpenRouterKey } from '../lib/generation-service'
-import { loadResearchNotebookModels } from '../lib/model-config'
+import { loadPresentationPipelineModels, loadResearchNotebookModels } from '../lib/model-config'
 import {
   createUsageExecutionRecord,
   type UsageFunctionKey,
@@ -2043,6 +2043,10 @@ Instruções:
 
       if (currentArtifact.type === 'apresentacao' && parsed.kind === 'presentation') {
         const apiKey = await getOpenRouterKey().catch(() => '')
+        const presentationModels: Record<string, string> = apiKey
+          ? await loadPresentationPipelineModels().catch(() => ({}))
+          : {}
+        const presentationImageModel = presentationModels.pres_image_generator
         const original = JSON.parse(currentArtifact.content) as Record<string, unknown>
         const sourceSlides = Array.isArray(original.slides) ? original.slides as Record<string, unknown>[] : []
         const updatedSlides: Record<string, unknown>[] = []
@@ -2067,6 +2071,7 @@ Instruções:
               const generated = await generateImageViaOpenRouter({
                 apiKey,
                 prompt,
+                model: presentationImageModel,
                 aspectRatio: '16:9',
               })
               imageBlob = await fetch(generated.imageDataUrl).then(response => response.blob())
@@ -2102,8 +2107,8 @@ Instruções:
             renderedImageStoragePath: storedImage.path,
           })
           visualExecutions.push({
-            phase: 'visual_artifact_render',
-            agent_name: 'Renderizador Visual de Apresentação',
+            phase: imageModel === 'browser/svg-render' ? 'visual_artifact_render' : 'pres_image_generator',
+            agent_name: imageModel === 'browser/svg-render' ? 'Renderizador Visual de Apresentação' : 'Gerador de Imagens de Slides',
             model: imageModel,
             tokens_in: 0,
             tokens_out: 0,

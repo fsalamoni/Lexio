@@ -1045,6 +1045,9 @@ export async function resetAcervoEmentaModels(uid?: string): Promise<void> {
  *  6. Roteirista             — creates scripts with narration, timing and production notes (audio/video)
  *  7. Designer Visual        — builds visual structures (presentations, mind maps, infographics, tables)
  *  8. Revisor                — quality-checks, refines and enhances any artifact before delivery
+ *
+ * Visual artifacts then pass through dedicated media stages in the notebook
+ * flow, where structured JSON is rendered into persisted images or posters.
  */
 export const RESEARCH_NOTEBOOK_AGENT_DEFS: AgentModelDef[] = [
   // ── Pesquisa & Análise ──
@@ -1142,7 +1145,7 @@ export const RESEARCH_NOTEBOOK_AGENT_DEFS: AgentModelDef[] = [
   {
     key: 'studio_visual',
     label: 'Designer Visual',
-    description: 'Gera JSON estruturado para apresentações, mapas mentais, infográficos e tabelas interativas',
+    description: 'Gera JSON estruturado para apresentações, mapas mentais, infográficos e tabelas que depois são renderizados em imagem final',
     defaultModel: '',
     recommendedTier: 'balanced',
     icon: 'pen-tool',
@@ -1577,7 +1580,7 @@ export async function resetAudioPipelineModels(uid?: string): Promise<void> {
 // ── Presentation Pipeline Agent Definitions ──────────────────────────────────
 
 /**
- * Five-agent pipeline for comprehensive presentation generation.
+ * Six-agent pipeline for comprehensive presentation generation.
  *
  * Multi-agent trail for creating professional presentations with structured
  * content, visual design, and speaker notes.
@@ -1586,8 +1589,9 @@ export async function resetAudioPipelineModels(uid?: string): Promise<void> {
  *  1. Planejador         — analyzes topic, audience and creates outline with budget estimate
  *  2. Pesquisador        — gathers and organizes relevant content from sources
  *  3. Redator de Slides  — writes slide content, titles, bullet points and speaker notes
- *  4. Designer Visual    — creates visual layout, color schemes, chart specs (requires image capability for visuals)
+ *  4. Designer Visual    — creates visual layout, color schemes, chart specs and slide-by-slide image briefs
  *  5. Revisor Final      — quality-checks slides for consistency, flow and completeness
+ *  6. Gerador de Imagens — materializes slide visuals with an image-capable model
  */
 export const PRESENTATION_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
   {
@@ -1626,13 +1630,24 @@ export const PRESENTATION_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
   {
     key: 'pres_designer',
     label: 'Designer de Apresentação',
-    description: 'Cria assets visuais reais para os slides — gráficos, ícones, imagens de fundo e ilustrações',
+    description: 'Cria o plano visual dos slides, com direção de layout, contraste e briefings específicos para cada imagem',
     defaultModel: '',
     recommendedTier: 'premium',
     icon: 'pen-tool',
     agentCategory: 'synthesis',
     requiredCapability: 'text',
     bestModelNote: 'Produz diretrizes visuais e especificações de layout em JSON. Prefira modelos de texto com boa estruturação de conteúdo.',
+  },
+  {
+    key: 'pres_image_generator',
+    label: 'Gerador de Imagens de Slides',
+    description: 'Gera imagens reais para os slides a partir das diretrizes visuais aprovadas no pipeline',
+    defaultModel: 'google/gemini-2.5-flash-preview:image-output',
+    recommendedTier: 'balanced',
+    icon: 'image-plus',
+    agentCategory: 'synthesis',
+    requiredCapability: 'image',
+    bestModelNote: 'Gera imagens reais para os slides. Gemini Flash Image oferece boa relação custo/velocidade; Flux 1.1 Pro e Imagen atendem quando a qualidade visual é prioritária.',
   },
   {
     key: 'pres_revisor',

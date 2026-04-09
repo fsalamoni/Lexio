@@ -53,8 +53,11 @@ const AGENT_ICONS: Record<string, React.ElementType> = {
   'layers':          Layers,
   'pen-tool':        PenTool,
   'image':           Image,
+  'image-plus':      Image,
   'video':           Video,
+  'film':            Video,
   'mic':             Mic,
+  'volume-2':        Mic,
   'music':           Music,
 }
 
@@ -187,7 +190,7 @@ export default function VideoPipelineConfigCard() {
             <div className="flex items-center gap-2 mb-4 pb-3 border-b">
               <Video className="w-4 h-4 text-rose-500" />
               <span className="text-sm font-semibold text-gray-700">Trilha Multiagente de Vídeo</span>
-              <span className="text-xs text-gray-400 ml-auto">8 agentes · criação de vídeo profissional</span>
+              <span className="text-xs text-gray-400 ml-auto">{VIDEO_PIPELINE_AGENT_DEFS.length} agentes configuráveis · criação de vídeo profissional</span>
             </div>
 
             {/* Agent flow */}
@@ -302,10 +305,20 @@ export default function VideoPipelineConfigCard() {
             <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-lg">
               <p className="text-xs text-rose-800">
                 <strong>💡 Informações:</strong> O pipeline suporta vídeos de <strong>15+ minutos</strong>,
-                dividindo inteligentemente em segmentos. Os 8 agentes desta trilha usam modelos de
-                <strong> texto</strong> para planejamento e composição estrutural em JSON. A geração real de
-                mídia (imagens, narrações, clipes e render final) ocorre depois na etapa de renderização dedicada.{' '}O <strong>Planejador</strong> estima
+                dividindo inteligentemente em segmentos. Esta configuração já cobre o planejamento textual,
+                o <strong>planejador de clips</strong>, o <strong>gerador de imagens</strong> e o <strong>TTS</strong>.
+                A geração de clipes e o render final acontecem na etapa literal dedicada, usando o provedor
+                externo configurado ou o fallback local do navegador. O <strong>Planejador</strong> estima
                 custos em tokens antes de iniciar a produção.
+              </p>
+            </div>
+
+            <div className="mt-3 p-3 bg-white border border-gray-200 rounded-lg">
+              <p className="text-xs text-gray-700">
+                <strong>Etapas literais de vídeo:</strong> depois dos agentes configuráveis, o sistema executa
+                <strong> geração de clipes por partes</strong>, <strong>trilha sonora</strong> e <strong>renderização final</strong>,
+                com rastreamento nas fases <strong>media_video_clip_generation</strong>,
+                <strong> media_soundtrack_generation</strong> e <strong> media_video_render</strong>.
               </p>
             </div>
 

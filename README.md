@@ -1,6 +1,6 @@
 # Lexio — Produção Jurídica com IA
 
-> SaaS brasileiro de produção jurídica com IA. 10 pipelines multi-agente, 53 agentes LLM, 40+ modelos. Roda 100% no browser via OpenRouter.
+> SaaS brasileiro de produção jurídica com IA. 10 pipelines multi-agente, 58 agentes configuráveis, 40+ modelos. Roda 100% no browser via OpenRouter.
 
 [![Deploy Pages](https://github.com/fsalamoni/Lexio/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/fsalamoni/Lexio/actions/workflows/deploy-pages.yml)
 [![Firebase Deploy](https://github.com/fsalamoni/Lexio/actions/workflows/firebase-deploy.yml/badge.svg)](https://github.com/fsalamoni/Lexio/actions/workflows/firebase-deploy.yml)
@@ -46,11 +46,11 @@
 - **Geração de documentos jurídicos** — 11 agentes LLM em pipeline sequencial (3 condicionais); 10 tipos de documento; 17 áreas do direito
 - **Acervo** — Upload de documentos de referência com classificação e ementa automática por IA (2 agentes dedicados)
 - **Banco de Teses** — CRUD + extração automática + análise com pipeline de 5 agentes
-- **Caderno de Pesquisa** — Chat com 6 agentes de pesquisa + Estúdio de Criação (13 tipos de artefato, pipeline de 5 agentes)
+- **Caderno de Pesquisa** — Chat com 7 agentes de pesquisa + Estúdio de Criação (13 tipos de artefato, pipeline de 5 agentes + renderização visual automática)
 - **Análise de acervo no caderno** — 4 agentes para análise de documentos do acervo dentro do caderno
-- **Pipeline de Vídeo** — 8 agentes para produção completa de vídeo (planejamento → renderização)
+- **Pipeline de Vídeo** — 11 agentes configuráveis para produção completa de vídeo (planejamento, clips, imagem, TTS → renderização)
 - **Pipeline de Áudio** — 6 agentes para produção de podcasts e narrações com TTS
-- **Pipeline de Apresentação** — 5 agentes para criação de apresentações profissionais
+- **Pipeline de Apresentação** — 6 agentes para criação de apresentações profissionais com imagens de slides
 - **Anamnese 2 camadas** — Perfil profissional persistente (Layer 1) + contexto por geração (Layer 2)
 - **Configurações por usuário** — API keys, modelos por agente, catálogo, tipos e áreas ficam isolados em cada perfil
 - **Painel administrativo da plataforma** — Visão agregada de uso, pipelines, agentes, documentos, custos e tokens globais
@@ -161,10 +161,10 @@ Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts
 | Ementa de acervo | 1 agente | `acervo_ementa_models` |
 | Caderno de pesquisa | 11 agentes (6 pesquisa + 5 estúdio) | `research_notebook_models` |
 | Notebook acervo | 4 agentes | `notebook_acervo_models` |
-| Pipeline de vídeo | 8 agentes | `video_pipeline_models` |
+| Pipeline de vídeo | 11 agentes | `video_pipeline_models` |
 | Pipeline de áudio | 6 agentes | `audio_pipeline_models` |
-| Pipeline de apresentação | 5 agentes | `presentation_pipeline_models` |
-| **TOTAL** | **53 agentes · 10 pipelines** | **10 configs** |
+| Pipeline de apresentação | 6 agentes | `presentation_pipeline_models` |
+| **TOTAL** | **58 agentes · 10 pipelines** | **10 configs** |
 
 ### Agentes do Pipeline de Documentos (11)
 

@@ -37,7 +37,7 @@ Pesquisa: Pesquisador → Analista → Assistente + Pesq. Externo + Pesq. Profun
 Estúdio: Pesquisador → [Escritor | Roteirista | Designer Visual] → Revisor → Artefato
 ```
 
-## Pipeline de Vídeo (8 agentes)
+## Pipeline de Vídeo (11 agentes)
 ```
 Planejador → Roteirista → Diretor → Storyboarder → Designer → Compositor → Narrador → Revisor
 ```
@@ -47,7 +47,7 @@ Planejador → Roteirista → Diretor → Storyboarder → Designer → Composit
 Planejador → Roteirista → Diretor → Produtor Sonoro → Narrador/TTS → Revisor
 ```
 
-## Pipeline de Apresentação (5 agentes)
+## Pipeline de Apresentação (6 agentes)
 ```
 Planejador → Pesquisador → Redator → Designer → Revisor
 ```

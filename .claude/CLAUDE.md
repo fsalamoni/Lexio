@@ -252,7 +252,7 @@ docs/              → Documentação técnica
 | 16 | `NotebookAcervoConfigCard` | Config do pipeline notebook acervo (4 agentes) |
 | 17 | `NotificationBell` | Sino de notificações |
 | 18 | `PipelineProgressPanel` | Painel de progresso do pipeline |
-| 19 | `PresentationPipelineConfigCard` | Config do pipeline de apresentação (5 agentes) |
+| 19 | `PresentationPipelineConfigCard` | Config do pipeline de apresentação (6 agentes) |
 | 20 | `ProgressTracker` | Tracker genérico de progresso |
 | 21 | `ResearchNotebookConfigCard` | Config dos agentes do caderno (11 agentes) |
 | 22 | `RichTextEditor` | Editor TipTap rico |
@@ -265,7 +265,7 @@ docs/              → Documentação técnica
 | 29 | `ThesisAnalystConfigCard` | Config do pipeline analista de teses (5 agentes) |
 | 30 | `Toast` | Notificação toast |
 | 31 | `VideoGenerationCostModal` | Modal de custo de geração de vídeo |
-| 32 | `VideoPipelineConfigCard` | Config do pipeline de vídeo (8 agentes) |
+| 32 | `VideoPipelineConfigCard` | Config do pipeline de vídeo (11 agentes) |
 
 ### Componentes de artefato (15 — subdir `artifacts/`)
 
@@ -317,7 +317,7 @@ docs/              → Documentação técnica
 
 ## 11. Pipelines e agentes — inventário completo {#pipelines-e-agentes}
 
-### Total: 10 pipelines · 57 agentes
+### Total: 10 pipelines · 58 agentes
 
 ---
 
@@ -384,11 +384,11 @@ docs/              → Documentação técnica
 
 ---
 
-### Pipeline 6 — Caderno de Pesquisa (11 agentes)
+### Pipeline 6 — Caderno de Pesquisa (12 agentes)
 **Config Firestore:** `research_notebook_models`
 **Arquivo:** `notebook-studio-pipeline.ts`, `notebook-audio-pipeline.ts`
 
-**Grupo Pesquisa & Análise (6):**
+**Grupo Pesquisa & Análise (7):**
 
 | # | Key | Label | Categoria | Tier |
 |---|-----|-------|-----------|------|
@@ -398,16 +398,17 @@ docs/              → Documentação técnica
 | 4 | `notebook_pesquisador_externo` | Pesquisador Externo | extraction | fast |
 | 5 | `notebook_pesquisador_externo_profundo` | Pesquisador Externo Profundo | reasoning | balanced |
 | 6 | `notebook_pesquisador_jurisprudencia` | Pesquisador de Jurisprudência (DataJud) | extraction | fast |
+| 7 | `notebook_ranqueador_jurisprudencia` | Ranqueador de Jurisprudência | extraction | fast |
 
 **Grupo Estúdio de Criação (5):**
 
 | # | Key | Label | Categoria | Tier |
 |---|-----|-------|-----------|------|
-| 7 | `studio_pesquisador` | Pesquisador do Estúdio | extraction | fast |
-| 8 | `studio_escritor` | Escritor | writing | balanced |
-| 9 | `studio_roteirista` | Roteirista | writing | balanced |
-| 10 | `studio_visual` | Designer Visual | synthesis | balanced |
-| 11 | `studio_revisor` | Revisor de Qualidade | synthesis | fast |
+| 8 | `studio_pesquisador` | Pesquisador do Estúdio | extraction | fast |
+| 9 | `studio_escritor` | Escritor | writing | balanced |
+| 10 | `studio_roteirista` | Roteirista | writing | balanced |
+| 11 | `studio_visual` | Designer Visual | synthesis | balanced |
+| 12 | `studio_revisor` | Revisor de Qualidade | synthesis | fast |
 
 **Roteamento de artefatos no Estúdio:**
 - **Escritor** → resumo, relatório, documento, cartões didáticos, teste, guia estruturado
@@ -429,7 +430,7 @@ docs/              → Documentação técnica
 
 ---
 
-### Pipeline 8 — Vídeo (8 agentes)
+### Pipeline 8 — Vídeo (11 agentes)
 **Config Firestore:** `video_pipeline_models`
 **Arquivo:** `video-generation-pipeline.ts`
 
@@ -443,6 +444,9 @@ docs/              → Documentação técnica
 | 6 | `video_compositor` | Compositor de Vídeo | synthesis | premium |
 | 7 | `video_narrador` | Narrador | writing | balanced |
 | 8 | `video_revisor` | Revisor Final de Vídeo | synthesis | balanced |
+| 9 | `video_clip_planner` | Planejador de Clips | synthesis | balanced |
+| 10 | `video_image_generator` | Gerador de Imagens | synthesis | balanced |
+| 11 | `video_tts` | Narrador TTS | synthesis | premium |
 
 ---
 
@@ -461,7 +465,7 @@ docs/              → Documentação técnica
 
 ---
 
-### Pipeline 10 — Apresentação (5 agentes)
+### Pipeline 10 — Apresentação (6 agentes)
 **Config Firestore:** `presentation_pipeline_models`
 **Arquivo:** `model-config.ts`
 
@@ -471,7 +475,8 @@ docs/              → Documentação técnica
 | 2 | `pres_pesquisador` | Pesquisador de Conteúdo | extraction | fast |
 | 3 | `pres_redator` | Redator de Slides | writing | balanced |
 | 4 | `pres_designer` | Designer de Apresentação | synthesis | premium |
-| 5 | `pres_revisor` | Revisor de Apresentação | synthesis | fast |
+| 5 | `pres_image_generator` | Gerador de Imagens de Slides | synthesis | balanced |
+| 6 | `pres_revisor` | Revisor de Apresentação | synthesis | fast |
 
 ---
 
@@ -484,12 +489,12 @@ docs/              → Documentação técnica
 | Context detail | 1 | `context_detail_models` |
 | Classificador acervo | 1 | `acervo_classificador_models` |
 | Ementa acervo | 1 | `acervo_ementa_models` |
-| Caderno de pesquisa | 11 (6 pesquisa + 5 estúdio) | `research_notebook_models` |
+| Caderno de pesquisa | 12 (7 pesquisa + 5 estúdio) | `research_notebook_models` |
 | Notebook acervo | 4 | `notebook_acervo_models` |
-| Vídeo | 8 | `video_pipeline_models` |
+| Vídeo | 11 | `video_pipeline_models` |
 | Áudio | 6 | `audio_pipeline_models` |
-| Apresentação | 5 | `presentation_pipeline_models` |
-| **TOTAL** | **53 agentes únicos** | **10 configs** |
+| Apresentação | 6 | `presentation_pipeline_models` |
+| **TOTAL** | **58 agentes únicos** | **10 configs** |
 
 ---
 
@@ -681,11 +686,11 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 4. **Context Detail** — Config do agente de contexto
 5. **Classificador de Acervo** — Config do agente classificador
 6. **Gerador de Ementa** — Config do agente de ementas
-7. **Caderno de Pesquisa** — Config dos 11 agentes do caderno
+7. **Caderno de Pesquisa** — Config dos 12 agentes do caderno
 8. **Notebook Acervo** — Config dos 4 agentes de análise de acervo
-9. **Pipeline de Vídeo** — Config dos 8 agentes de vídeo
+9. **Pipeline de Vídeo** — Config dos 11 agentes de vídeo
 10. **Pipeline de Áudio** — Config dos 6 agentes de áudio
-11. **Pipeline de Apresentação** — Config dos 5 agentes de apresentação
+11. **Pipeline de Apresentação** — Config dos 6 agentes de apresentação
 12. **Fila de Revisão** — Itens do próprio usuário em revisão
 
 ### Administração da plataforma (`/admin`)
@@ -792,11 +797,11 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 - [x] Geração de documentos jurídicos (11 agentes, 10 tipos, 17 áreas)
 - [x] Acervo com classificação automática e ementa por IA
 - [x] Banco de teses (CRUD + extração automática + análise com 5 agentes)
-- [x] Caderno de pesquisa (chat + 11 agentes + estúdio de 13 artefatos)
+- [x] Caderno de pesquisa (chat + 12 agentes + estúdio de 13 artefatos)
 - [x] Análise de acervo no caderno (4 agentes)
-- [x] Pipeline de vídeo completo (8 agentes + renderização)
+- [x] Pipeline de vídeo completo (11 agentes configuráveis + renderização)
 - [x] Pipeline de áudio/podcast (6 agentes + TTS)
-- [x] Pipeline de apresentação (5 agentes)
+- [x] Pipeline de apresentação (6 agentes)
 - [x] Anamnese 2 camadas (perfil persistente + contexto por geração)
 - [x] Context Detail (Layer 2) com agente dedicado
 - [x] Admin Panel com 18 cartões de configuração

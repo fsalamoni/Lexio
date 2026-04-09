@@ -32,9 +32,9 @@
 | `acervo_ementa_models` | Config do gerador de ementas (1 agente) |
 | `research_notebook_models` | Config do caderno de pesquisa (11 agentes) |
 | `notebook_acervo_models` | Config do notebook acervo analyzer (4 agentes) |
-| `video_pipeline_models` | Config do pipeline de vídeo (8 agentes) |
+| `video_pipeline_models` | Config do pipeline de vídeo (11 agentes) |
 | `audio_pipeline_models` | Config do pipeline de áudio (6 agentes) |
-| `presentation_pipeline_models` | Config do pipeline de apresentação (5 agentes) |
+| `presentation_pipeline_models` | Config do pipeline de apresentação (6 agentes) |
 
 ## Tipos TypeScript (`firestore-types.ts`)
 
