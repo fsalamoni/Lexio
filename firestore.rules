@@ -28,7 +28,8 @@ service cloud.firestore {
     // Users can read/write their own profile.
     // Admins can read all profiles (for management).
     match /users/{userId} {
-      allow read:   if isSelf(userId) || isAdmin();
+      allow get:    if isSelf(userId) || isAdmin();
+      allow list:   if isAdmin();
       allow create: if isSelf(userId) && isValidUserCreate();
       allow update: if isSelf(userId) && isValidUserUpdate();
       allow delete: if isAdmin();
@@ -93,6 +94,29 @@ service cloud.firestore {
         allow read: if isSelf(userId) || isAdmin();
         allow write: if isSelf(userId);
       }
+    }
+
+    // ── Collection group access for platform analytics ──────────────────────
+    // The admin dashboard reads user operational data across all users through
+    // collectionGroup queries. These rules are intentionally admin-read-only.
+    match /{path=**}/documents/{docId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/theses/{thesisId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/thesis_analysis_sessions/{sessionId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/acervo/{docId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/research_notebooks/{notebookId} {
+      allow read: if isAdmin();
     }
 
     // ── /settings/{document} ─────────────────────────────────────────────────

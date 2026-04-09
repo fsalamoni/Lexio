@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
+import { doc, getDoc } from 'firebase/firestore'
 import { firebaseAuth, IS_FIREBASE } from '../lib/firebase'
+import { firestore } from '../lib/firebase'
 import { firebaseLogin, firebaseRegister, firebaseLogout, firebaseGoogleLogin, handleGoogleRedirectResult, translateFirebaseError } from '../lib/auth-service'
 import api from '../api/client'
 
@@ -58,6 +60,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const newToken = await fbUser.getIdToken()
         localStorage.setItem('lexio_token', newToken)
         setToken(newToken)
+
+        if (firestore) {
+          try {
+            const userSnap = await getDoc(doc(firestore, 'users', fbUser.uid))
+            if (userSnap.exists()) {
+              const userData = userSnap.data() as { role?: string; full_name?: string }
+              const nextRole = userData.role ?? 'user'
+              const nextName = userData.full_name ?? fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
+              localStorage.setItem('lexio_user_id', fbUser.uid)
+              localStorage.setItem('lexio_role', nextRole)
+              localStorage.setItem('lexio_full_name', nextName)
+              setUserId(fbUser.uid)
+              setRole(nextRole)
+              setFullName(nextName)
+            }
+          } catch {
+            localStorage.setItem('lexio_user_id', fbUser.uid)
+            setUserId(fbUser.uid)
+          }
+        }
       } else {
         clearStorage()
         setToken(null); setUserId(null); setRole(null); setFullName(null)
