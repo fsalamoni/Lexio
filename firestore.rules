@@ -48,32 +48,50 @@ service cloud.firestore {
       // ── /users/{userId}/profile/{doc} ────────────────────────────────────
       // Anamnesis / professional profile data — user can read/write their own.
       match /profile/{document} {
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
+      }
+
+      // ── /users/{userId}/settings/{doc} ───────────────────────────────────
+      // User-scoped API keys and model preferences — owner-only access.
+      match /settings/{document} {
         allow read, write: if isSelf(userId);
       }
 
       // ── /users/{userId}/documents/{docId} ────────────────────────────────
       // User's generated documents — user can CRUD their own.
       match /documents/{docId} {
-        allow read, write: if isSelf(userId);
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
       }
 
       // ── /users/{userId}/theses/{thesisId} ─────────────────────────────────
       // User's thesis bank — user can CRUD their own theses.
       match /theses/{thesisId} {
-        allow read, write: if isSelf(userId);
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
+      }
+
+      // ── /users/{userId}/thesis_analysis_sessions/{sessionId} ─────────────
+      // Historical thesis-analysis runs — owner read/write, admin read-only.
+      match /thesis_analysis_sessions/{sessionId} {
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
       }
 
       // ── /users/{userId}/acervo/{docId} ──────────────────────────────────
       // User's reference documents (acervo) — uploaded texts used as
       // knowledge base during document generation.  Owner-only access.
       match /acervo/{docId} {
-        allow read, write: if isSelf(userId);
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
       }
 
       // ── /users/{userId}/research_notebooks/{notebookId} ──────────────
       // Research notebooks (Caderno de Pesquisa) — owner-only access.
       match /research_notebooks/{notebookId} {
-        allow read, write: if isSelf(userId);
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
       }
     }
 

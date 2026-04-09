@@ -5,6 +5,7 @@ import api from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
+import { loadApiKeyValues } from '../lib/settings-store'
 import { useAuth } from '../contexts/AuthContext'
 import {
   listAcervoDocuments,
@@ -14,9 +15,10 @@ import {
   updateAcervoTags,
   updateAcervoTextContent,
   convertAcervoToJson,
-  getSettings,
+  loadAdminClassificationTipos,
   loadAdminLegalAreas,
   type AcervoDocumentData,
+  type AdminClassificationTipos,
   type AdminLegalArea,
 } from '../lib/firestore-service'
 import { generateAcervoEmenta, generateAcervoTags, NATUREZA_OPTIONS, type NaturezaValue } from '../lib/generation-service'
@@ -317,7 +319,7 @@ function EmentaModal({
     } catch (err) {
       console.error('Erro ao gerar ementa:', err)
       if (err instanceof ModelsNotConfiguredError) {
-        toast.warning('Modelos não configurados', 'Configure os modelos no Painel Administrativo.')
+        toast.warning('Modelos não configurados', 'Configure os modelos em Configurações.')
         return
       }
       const msg = err instanceof Error ? err.message : 'Erro desconhecido'
@@ -676,13 +678,20 @@ function TagsModal({
   const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(!doc.tags_generated)
   const [legalAreas, setLegalAreas] = useState<AdminLegalArea[]>([])
+  const [classificationTipos, setClassificationTipos] = useState<AdminClassificationTipos['tipos']>({})
   const [pendingExecution, setPendingExecution] = useState<UsageExecutionRecord | null>(null)
   const toast = useToast()
 
   // Load legal areas from admin settings
   useEffect(() => {
-    loadAdminLegalAreas()
-      .then(setLegalAreas)
+    Promise.all([
+      loadAdminLegalAreas(),
+      loadAdminClassificationTipos(),
+    ])
+      .then(([areas, classification]) => {
+        setLegalAreas(areas)
+        setClassificationTipos(classification.tipos)
+      })
       .catch(() => toast.warning('Não foi possível carregar áreas do direito para classificação'))
   }, [])
 
@@ -718,7 +727,7 @@ function TagsModal({
 
   // Get available tipos based on natureza + areas + assuntos
   const availableTipos = natureza && selectedAreaIds.length > 0
-    ? getTiposForClassification(natureza, selectedAreaIds, selectedAssuntos)
+    ? getTiposForClassification(natureza, selectedAreaIds, selectedAssuntos, classificationTipos)
     : []
 
   // Helper: compute valid assuntos for given natureza + area names (tree + admin)
@@ -1011,13 +1020,11 @@ export default function Upload() {
       try {
         const envKey = import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined
         if (envKey && envKey.startsWith('sk-')) { setApiKey(envKey); return }
-        const settings = await getSettings()
-        const apiKeys = (settings?.api_keys ?? {}) as Record<string, string>
-        const key = apiKeys.openrouter_api_key ?? (settings?.openrouter_api_key as string) ?? ''
-        setApiKey(key)
+        const apiKeys = await loadApiKeyValues(userId ?? undefined)
+        setApiKey(apiKeys.openrouter_api_key ?? '')
       } catch { /* ignore */ }
     })()
-  }, [])
+  }, [userId])
 
   const fetchHistory = useCallback(() => {
     if (IS_FIREBASE && userId) {

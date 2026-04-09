@@ -4,8 +4,8 @@
  * Calls the OpenRouter chat completions API directly from the browser.
  * OpenRouter supports CORS, so this works without a proxy/backend.
  *
- * The API key is read from Firestore `/settings/platform.openrouter_api_key`
- * (configured in the Admin Panel).
+ * The API key is resolved from the authenticated user's saved settings
+ * (with environment fallback when configured).
  */
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'

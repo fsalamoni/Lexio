@@ -442,7 +442,7 @@ export default function ResearchNotebook() {
       if (!model) {
         if (!suggestionModelWarnedRef.current) {
           suggestionModelWarnedRef.current = true
-          toast.warning('Sugestões automáticas indisponíveis', 'Configure o agente Pesquisador de Fontes no painel administrativo para habilitar sugestões dinâmicas.')
+          toast.warning('Sugestões automáticas indisponíveis', 'Configure o agente Pesquisador de Fontes em Configurações para habilitar sugestões dinâmicas.')
         }
         return
       }
@@ -1680,7 +1680,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       const models = await loadResearchNotebookModels()
       const model = models.notebook_assistente
       if (!model) {
-        toast.warning('Modelo não configurado', `O agente "${AGENT_LABELS.notebook_assistente}" não possui modelo. Vá em Administração > Caderno de Pesquisa e selecione um.`)
+        toast.warning('Modelo não configurado', `O agente "${AGENT_LABELS.notebook_assistente}" não possui modelo. Vá em Configurações > Caderno de Pesquisa e selecione um.`)
         setChatLoading(false)
         return
       }
@@ -1783,7 +1783,7 @@ Instruções:
       if (err instanceof ModelUnavailableError) {
         toast.warning(
           `Modelo indisponível: ${err.modelId}`,
-          `O modelo do agente "${AGENT_LABELS.notebook_assistente}" foi removido do OpenRouter. Vá em Administração > Caderno de Pesquisa e substitua-o.`,
+          `O modelo do agente "${AGENT_LABELS.notebook_assistente}" foi removido do OpenRouter. Vá em Configurações > Caderno de Pesquisa e substitua-o.`,
         )
       } else {
         toast.error('Erro ao gerar resposta. Verifique sua chave de API.')
@@ -1866,17 +1866,17 @@ Instruções:
       if (err instanceof ModelUnavailableError) {
         toast.warning(
           `Modelo indisponível: ${err.modelId}`,
-          'Um modelo do pipeline do estúdio foi removido do OpenRouter. Vá em Administração > Caderno de Pesquisa e substitua-o.',
+          'Um modelo do pipeline do estúdio foi removido do OpenRouter. Vá em Configurações > Caderno de Pesquisa e substitua-o.',
         )
       } else if (err instanceof Error && err.message.includes('Agente(s) sem modelo')) {
         toast.warning('Modelos não configurados', err.message)
       } else if (err instanceof Error && err.message.includes('429')) {
         toast.warning(
           'Limite de requisições atingido',
-          'O modelo está sobrecarregado ou sua conta atingiu o limite. Aguarde 30 segundos e tente novamente. Considere usar modelos ✦ Grátis no painel administrativo.',
+          'O modelo está sobrecarregado ou sua conta atingiu o limite. Aguarde 30 segundos e tente novamente. Considere usar modelos ✦ Grátis em Configurações.',
         )
       } else if (err instanceof Error && err.message.includes('API key')) {
-        toast.error('Chave da API não configurada. Acesse Administração > Chaves de API.')
+        toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
       } else {
         toast.error('Erro ao gerar artefato. Tente novamente ou troque o modelo do agente.')
       }
@@ -2011,7 +2011,7 @@ Instruções:
       setVideoGenLoading(true)
       const apiKey = await getOpenRouterKey()
       if (!apiKey) {
-        toast.error('Chave da API não configurada. Acesse Administração > Chaves de API.')
+        toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
         return
       }
       // Store api key for use in VideoStudioEditor (image/TTS generation)
@@ -2123,7 +2123,7 @@ Instruções:
     try {
       const apiKey = await getOpenRouterKey()
       if (!apiKey) {
-        toast.error('Chave da API não configurada. Acesse Administração > Chaves de API.')
+        toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
         return
       }
 
@@ -2604,7 +2604,7 @@ Instruções:
           <h1 className="text-xl font-bold text-gray-700">Caderno de Pesquisa</h1>
           <p className="text-sm text-gray-500 mt-2 max-w-lg mx-auto">
             Esta funcionalidade requer a integração com Firebase/Firestore para armazenar os cadernos, fontes e conversas.
-            Configure o Firebase no painel de administração para habilitar o Caderno de Pesquisa.
+            Configure o Firebase em Configurações para habilitar o Caderno de Pesquisa.
           </p>
         </div>
       )

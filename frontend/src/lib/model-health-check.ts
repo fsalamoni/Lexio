@@ -4,14 +4,14 @@
  * Runs on app load (once per session) and can be triggered manually.
  * Compares the local model catalog against the live OpenRouter models list.
  * Removes unavailable models from:
- *   1. The catalog (Firestore /settings/platform.model_catalog)
+ *   1. The current user's catalog in Firestore settings
  *   2. All agent configs that reference them (agent_models, thesis_analyst_models, etc.)
  *
  * Users are notified of removed models so they can select replacements.
  */
 
 import { IS_FIREBASE } from './firebase'
-import { getSettings, saveSettings } from './firestore-service'
+import { ensureUserSettingsMigrated, getCurrentUserId, saveUserSettings } from './firestore-service'
 import {
   loadModelCatalog,
   saveModelCatalog,
@@ -30,6 +30,9 @@ const AGENT_CONFIG_KEYS = [
   'acervo_ementa_models',
   'research_notebook_models',
   'notebook_acervo_models',
+  'video_pipeline_models',
+  'audio_pipeline_models',
+  'presentation_pipeline_models',
 ] as const
 
 /** Key under which we store the last health check timestamp */
@@ -76,8 +79,10 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
   // Interval guard — don't check more than once per 24h unless forced
   if (!force) {
     try {
-      const settings = await getSettings()
-      const lastRun = settings[HEALTH_CHECK_KEY] as number | undefined
+      const resolvedUid = getCurrentUserId()
+      if (!resolvedUid) return noopResult
+      const userSettings = await ensureUserSettingsMigrated(resolvedUid)
+      const lastRun = (userSettings as Record<string, unknown>)[HEALTH_CHECK_KEY] as number | undefined
       if (lastRun && Date.now() - lastRun < CHECK_INTERVAL_MS) {
         sessionCheckDone = true
         return noopResult
@@ -108,7 +113,9 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
 
     if (invalidModels.length === 0) {
       // All good — just update timestamp
-      await saveSettings({ [HEALTH_CHECK_KEY]: Date.now() })
+      const resolvedUid = getCurrentUserId()
+      if (!resolvedUid) return { removedModels: [], clearedAgents: [], catalogSize: catalog.length, didRun: true }
+      await saveUserSettings(resolvedUid, { [HEALTH_CHECK_KEY]: Date.now() } as Partial<Record<string, unknown>>)
       return {
         removedModels: [],
         clearedAgents: [],
@@ -126,7 +133,9 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
 
     // 5. Clear invalid models from all agent configs
     const clearedAgents: HealthCheckResult['clearedAgents'] = []
-    const settings = await getSettings()
+    const resolvedUid = getCurrentUserId()
+    if (!resolvedUid) return noopResult
+    const settings = await ensureUserSettingsMigrated(resolvedUid)
     const updates: Record<string, unknown> = {
       [HEALTH_CHECK_KEY]: Date.now(),
     }
@@ -149,7 +158,7 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
       }
     }
 
-    await saveSettings(updates)
+    await saveUserSettings(resolvedUid, updates as Record<string, unknown>)
 
     return {
       removedModels: invalidModels.map(m => ({ id: m.id, label: m.label })),
@@ -191,7 +200,7 @@ export function formatHealthCheckMessage(result: HealthCheckResult): {
   return {
     title: `${result.removedModels.length} modelo(s) removido(s) do catálogo`,
     message: agentCount > 0
-      ? `Os seguintes modelos não estão mais disponíveis no OpenRouter e foram removidos: ${modelNames}. ${agentCount} agente(s) foram desconfigurados e precisam de um novo modelo. Vá em Administração para selecionar substitutos.`
+      ? `Os seguintes modelos não estão mais disponíveis no OpenRouter e foram removidos: ${modelNames}. ${agentCount} agente(s) foram desconfigurados e precisam de um novo modelo. Vá em Configurações para selecionar substitutos.`
       : `Os seguintes modelos não estão mais disponíveis no OpenRouter e foram removidos: ${modelNames}. Nenhum agente foi afetado.`,
   }
 }

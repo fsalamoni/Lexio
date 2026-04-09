@@ -2,7 +2,8 @@
  * Firestore data types — all type/interface definitions used by the Firestore
  * data layer and consumed throughout the application.
  */
-import type { UsageExecutionRecord, UsageSummary } from './cost-analytics'
+import type { CostBreakdownItem, UsageExecutionRecord, UsageSummary } from './cost-analytics'
+import type { ModelOption } from './model-config'
 
 // ── Profile ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,25 @@ export interface ProfileData {
   argument_depth?: string
   include_opposing_view?: boolean
   onboarding_completed?: boolean
+}
+
+export interface UserSettingsData {
+  legacy_migrated_at?: string
+  api_keys?: Record<string, string>
+  model_catalog?: ModelOption[]
+  agent_models?: Record<string, string>
+  thesis_analyst_models?: Record<string, string>
+  context_detail_models?: Record<string, string>
+  acervo_classificador_models?: Record<string, string>
+  acervo_ementa_models?: Record<string, string>
+  research_notebook_models?: Record<string, string>
+  notebook_acervo_models?: Record<string, string>
+  video_pipeline_models?: Record<string, string>
+  audio_pipeline_models?: Record<string, string>
+  presentation_pipeline_models?: Record<string, string>
+  document_types?: AdminDocumentType[]
+  legal_areas?: AdminLegalArea[]
+  classification_tipos?: Record<string, Record<string, string[]>>
 }
 
 export interface ContextDetailQuestion {
@@ -247,4 +267,57 @@ export interface AdminLegalArea {
 
 export interface AdminClassificationTipos {
   tipos: Record<string, Record<string, string[]>>
+}
+
+export interface PlatformAggregateRow {
+  key: string
+  label: string
+  count: number
+}
+
+export interface PlatformUsageRow extends CostBreakdownItem {
+  count: number
+}
+
+export interface PlatformOverviewData {
+  total_users: number
+  admin_users: number
+  standard_users: number
+  new_users_30d: number
+  active_users_30d: number
+  total_documents: number
+  completed_documents: number
+  processing_documents: number
+  pending_review_documents: number
+  average_quality_score: number | null
+  total_theses: number
+  total_acervo_documents: number
+  total_notebooks: number
+  total_artifacts: number
+  total_sources: number
+  total_thesis_sessions: number
+  total_cost_usd: number
+  total_tokens: number
+  total_calls: number
+  documents_by_status: PlatformAggregateRow[]
+  documents_by_origin: PlatformAggregateRow[]
+  documents_by_type: PlatformAggregateRow[]
+  artifacts_by_type: PlatformAggregateRow[]
+  functions_by_usage: PlatformUsageRow[]
+  top_models: PlatformUsageRow[]
+  top_agents: PlatformUsageRow[]
+  top_providers: PlatformUsageRow[]
+}
+
+export interface PlatformDailyUsagePoint {
+  dia: string
+  usuarios_ativos: number
+  novos_usuarios: number
+  documentos: number
+  cadernos: number
+  uploads_acervo: number
+  sessoes_teses: number
+  chamadas_llm: number
+  tokens: number
+  custo_usd: number
 }

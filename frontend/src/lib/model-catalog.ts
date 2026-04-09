@@ -1,7 +1,7 @@
 /**
  * Model Catalog — manages the master list of available models for the platform.
  *
- * The catalog is stored in Firestore at /settings/platform.model_catalog.
+ * The catalog is stored in the authenticated user's Firestore settings.
  * On first use, it defaults to AVAILABLE_MODELS from model-config.ts.
  *
  * Components listen for CATALOG_UPDATED_EVENT to refresh when catalog changes.
@@ -10,18 +10,23 @@
 
 import { useState, useEffect } from 'react'
 import { IS_FIREBASE } from './firebase'
-import { getSettings, saveSettings } from './firestore-service'
+import { ensureUserSettingsMigrated, getCurrentUserId, saveUserSettings } from './firestore-service'
 import { AVAILABLE_MODELS, type ModelOption, type ModelCapability, type AgentFitScores, type AgentCategory } from './model-config'
+import type { UserSettingsData } from './firestore-types'
 
 // ── Event bus ─────────────────────────────────────────────────────────────────
 
 export const CATALOG_UPDATED_EVENT = 'lexio:catalog_updated'
 
 /** In-memory cache — avoids redundant Firestore reads across components */
-let catalogCache: ModelOption[] | null = null
+const catalogCache = new Map<string, ModelOption[]>()
 
-export function emitCatalogUpdated(updated?: ModelOption[]): void {
-  if (updated) catalogCache = updated
+function getCatalogCacheKey(uid?: string): string {
+  return uid ?? getCurrentUserId() ?? 'anonymous'
+}
+
+export function emitCatalogUpdated(updated?: ModelOption[], uid?: string): void {
+  if (updated) catalogCache.set(getCatalogCacheKey(uid), updated)
   window.dispatchEvent(new CustomEvent(CATALOG_UPDATED_EVENT))
 }
 
@@ -31,13 +36,16 @@ export function emitCatalogUpdated(updated?: ModelOption[]): void {
  * Load the model catalog.
  * Returns catalog from Firestore (or in-memory cache) falling back to AVAILABLE_MODELS.
  */
-export async function loadModelCatalog(): Promise<ModelOption[]> {
-  if (catalogCache) return catalogCache
+export async function loadModelCatalog(uid?: string): Promise<ModelOption[]> {
+  const cacheKey = getCatalogCacheKey(uid)
+  const cached = catalogCache.get(cacheKey)
+  if (cached) return cached
 
   if (IS_FIREBASE) {
     try {
-      const settings = await getSettings()
-      const saved = settings.model_catalog as ModelOption[] | undefined
+      const resolvedUid = uid ?? getCurrentUserId() ?? undefined
+      const userSettings = resolvedUid ? await ensureUserSettingsMigrated(resolvedUid) : {} as UserSettingsData
+      const saved = userSettings.model_catalog as ModelOption[] | undefined
       if (Array.isArray(saved) && saved.length > 0) {
         const validated = normalizeModelCatalog(saved)
 
@@ -52,7 +60,7 @@ export async function loadModelCatalog(): Promise<ModelOption[]> {
           0,
         )
         if (maxScore > 5) {
-          catalogCache = validated
+          catalogCache.set(cacheKey, validated)
           return validated
         }
         // Old scale detected — fall through to AVAILABLE_MODELS defaults below
@@ -62,25 +70,28 @@ export async function loadModelCatalog(): Promise<ModelOption[]> {
     }
   }
 
-  catalogCache = normalizeModelCatalog(AVAILABLE_MODELS)
-  return catalogCache
+  const fallback = normalizeModelCatalog(AVAILABLE_MODELS)
+  catalogCache.set(cacheKey, fallback)
+  return fallback
 }
 
 /**
  * Persist catalog to Firestore and notify all listeners.
  */
-export async function saveModelCatalog(models: ModelOption[]): Promise<void> {
+export async function saveModelCatalog(models: ModelOption[], uid?: string): Promise<void> {
   const normalized = normalizeModelCatalog(models)
-  catalogCache = normalized
+  const resolvedUid = uid ?? getCurrentUserId() ?? undefined
+  catalogCache.set(getCatalogCacheKey(resolvedUid), normalized)
   if (IS_FIREBASE) {
-    await saveSettings({ model_catalog: normalized })
+    if (!resolvedUid) throw new Error('Usuário não autenticado.')
+    await saveUserSettings(resolvedUid, { model_catalog: normalized } as UserSettingsData)
   }
-  emitCatalogUpdated(normalized)
+  emitCatalogUpdated(normalized, resolvedUid)
 }
 
 /** Invalidate the in-memory cache (forces next loadModelCatalog to hit Firestore). */
-export function invalidateCatalogCache(): void {
-  catalogCache = null
+export function invalidateCatalogCache(uid?: string): void {
+  catalogCache.delete(getCatalogCacheKey(uid))
 }
 
 // ── React hook ────────────────────────────────────────────────────────────────
@@ -90,7 +101,8 @@ export function invalidateCatalogCache(): void {
  * Subscribes to CATALOG_UPDATED_EVENT so the component re-renders on changes.
  */
 export function useCatalogModels(): ModelOption[] {
-  const [models, setModels] = useState<ModelOption[]>(() => catalogCache ?? normalizeModelCatalog(AVAILABLE_MODELS))
+  const cacheKey = getCatalogCacheKey()
+  const [models, setModels] = useState<ModelOption[]>(() => catalogCache.get(cacheKey) ?? normalizeModelCatalog(AVAILABLE_MODELS))
 
   useEffect(() => {
     // Load from Firestore on mount
@@ -100,7 +112,8 @@ export function useCatalogModels(): ModelOption[] {
 
     // Refresh when catalog changes (e.g., ModelCatalogCard saved)
     const handler = () => {
-      if (catalogCache) setModels(catalogCache)
+      const current = catalogCache.get(getCatalogCacheKey())
+      if (current) setModels(current)
       else loadModelCatalog().then(setModels).catch((err) => {
         console.warn('Failed to refresh model catalog:', err)
       })

@@ -6,12 +6,12 @@
  *   PATCH /api/v1/admin/settings → update keys, persisted in PostgreSQL
  *
  * Firebase mode:
- *   Reads/writes to Firestore /settings/api_keys document.
+ *   Reads from user-scoped Firestore settings after one-time migration.
  */
 
 import api from '../api/client'
 import { IS_FIREBASE } from './firebase'
-import { getSettings, saveSettings } from './firestore-service'
+import { ensureUserSettingsMigrated, getCurrentUserId, getUserSettings, saveUserSettings } from './firestore-service'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -52,15 +52,26 @@ const DEFAULT_KEY_DEFS: Omit<ApiKeyEntry, 'is_set' | 'masked_value' | 'source'>[
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 
-export async function loadApiKeys(): Promise<ApiKeyEntry[]> {
+export async function loadApiKeyValues(uid?: string): Promise<Record<string, string>> {
+  if (!IS_FIREBASE) return {}
+
+  const resolvedUid = uid ?? getCurrentUserId() ?? undefined
+  const userSettings = resolvedUid ? await ensureUserSettingsMigrated(resolvedUid) : {}
+  const userApiKeys = (userSettings.api_keys ?? {}) as Record<string, string>
+  return userApiKeys
+}
+
+export async function loadApiKeys(uid?: string): Promise<ApiKeyEntry[]> {
   if (IS_FIREBASE) {
-    const settings = await getSettings()
-    const apiKeys = (settings.api_keys ?? {}) as Record<string, string>
+    const resolvedUid = uid ?? getCurrentUserId() ?? undefined
+    const userSettings = resolvedUid ? await ensureUserSettingsMigrated(resolvedUid) : {}
+    const userApiKeys = (userSettings.api_keys ?? {}) as Record<string, string>
+
     return DEFAULT_KEY_DEFS.map(def => ({
       ...def,
-      is_set: Boolean(apiKeys[def.key]),
-      masked_value: apiKeys[def.key] ? maskValue(apiKeys[def.key]) : null,
-      source: apiKeys[def.key] ? 'firestore' : 'not_set',
+      is_set: Boolean(userApiKeys[def.key]),
+      masked_value: userApiKeys[def.key] ? maskValue(userApiKeys[def.key]) : null,
+      source: userApiKeys[def.key] ? 'perfil' : 'not_set',
     }))
   }
   const res = await api.get('/admin/settings')
@@ -69,11 +80,14 @@ export async function loadApiKeys(): Promise<ApiKeyEntry[]> {
 
 // ── Save ──────────────────────────────────────────────────────────────────────
 
-export async function saveApiKeys(updates: Record<string, string>): Promise<void> {
+export async function saveApiKeys(updates: Record<string, string>, uid?: string): Promise<void> {
   if (IS_FIREBASE) {
-    const settings = await getSettings()
+    const resolvedUid = uid ?? getCurrentUserId()
+    if (!resolvedUid) throw new Error('Usuário não autenticado.')
+
+    const settings = await getUserSettings(resolvedUid)
     const current = (settings.api_keys ?? {}) as Record<string, string>
-    await saveSettings({ api_keys: { ...current, ...updates } })
+    await saveUserSettings(resolvedUid, { api_keys: { ...current, ...updates } })
     return
   }
   await api.patch('/admin/settings', { updates })

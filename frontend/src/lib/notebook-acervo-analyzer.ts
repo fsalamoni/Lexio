@@ -393,7 +393,7 @@ export async function analyzeNotebookAcervo(
     !modelAnalista && 'Analista', !modelCurador && 'Curador',
   ].filter(Boolean)
   if (missingAgents.length > 0) {
-    throw new Error(`Agente(s) sem modelo configurado: ${missingAgents.join(', ')}. Vá em Administração e selecione modelos para os agentes do Acervo.`)
+    throw new Error(`Agente(s) sem modelo configurado: ${missingAgents.join(', ')}. Vá em Configurações e selecione modelos para os agentes do Acervo.`)
   }
 
   // ── 1. Load acervo ──

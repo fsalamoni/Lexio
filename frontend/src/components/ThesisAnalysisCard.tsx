@@ -18,6 +18,7 @@ import {
 import AgentTrailProgressModal from './AgentTrailProgressModal'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from './Toast'
+import { loadApiKeyValues } from '../lib/settings-store'
 import {
   listTheses,
   getAcervoAnalysisStatus,
@@ -27,7 +28,6 @@ import {
   createThesis,
   updateThesis,
   deleteThesis,
-  getSettings,
   type ThesisData,
   type ThesisAnalysisSessionData,
 } from '../lib/firestore-service'
@@ -257,9 +257,8 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
   const resolveApiKey = async (): Promise<string> => {
     const envKey = import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined
     if (envKey && envKey.startsWith('sk-')) return envKey
-    const settings = await getSettings()
-    const apiKeys = (settings?.api_keys ?? {}) as Record<string, string>
-    return apiKeys.openrouter_api_key ?? (settings?.openrouter_api_key as string) ?? ''
+    const apiKeys = await loadApiKeyValues(userId ?? undefined)
+    return apiKeys.openrouter_api_key ?? ''
   }
 
   // ── Run analysis ───────────────────────────────────────────────────────────
@@ -270,7 +269,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
 
     const apiKey = await resolveApiKey()
     if (!apiKey || !apiKey.startsWith('sk-')) {
-      toast.error('Chave da API OpenRouter não configurada', 'Configure em Administração → Chaves de API')
+      toast.error('Chave da API OpenRouter não configurada', 'Configure em Configurações > Chaves de API')
       return
     }
 
@@ -352,7 +351,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
       }
     } catch (err: unknown) {
       if (err instanceof ModelsNotConfiguredError) {
-        toast.warning('Modelos não configurados', 'Configure os modelos da Análise de Teses no Painel Administrativo.')
+        toast.warning('Modelos não configurados', 'Configure os modelos da Análise de Teses em Configurações.')
       } else {
         const msg = err instanceof Error ? err.message : 'Erro desconhecido'
         toast.error('Erro na análise', msg)

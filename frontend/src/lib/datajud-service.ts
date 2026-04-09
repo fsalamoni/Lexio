@@ -8,6 +8,8 @@
  * @see https://datajud-wiki.cnj.jus.br/api-publica/
  */
 
+import { loadApiKeyValues } from './settings-store'
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 /**
@@ -16,6 +18,15 @@
  * at https://datajud-wiki.cnj.jus.br/api-publica/ for all consumers.
  */
 const DATAJUD_API_KEY = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=='
+
+async function getDataJudApiKey(): Promise<string> {
+  try {
+    const apiKeys = await loadApiKeyValues()
+    return apiKeys.datajud_api_key || DATAJUD_API_KEY
+  } catch {
+    return DATAJUD_API_KEY
+  }
+}
 
 /** Base URL for all DataJud endpoints */
 const DATAJUD_BASE_URL = 'https://api-publica.datajud.cnj.jus.br'
@@ -110,13 +121,14 @@ async function fetchFromEndpoint(
   signal?: AbortSignal,
 ): Promise<Array<{ _source?: Record<string, unknown> }>> {
   const isDirect = endpoint === DIRECT_ENDPOINT
+  const dataJudApiKey = isDirect ? await getDataJudApiKey() : null
   const url = isDirect
     ? `${DATAJUD_BASE_URL}/api_publica_${tribunalAlias}/_search`
     : endpoint
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (isDirect) {
-    headers['Authorization'] = `APIKey ${DATAJUD_API_KEY}`
+    headers['Authorization'] = `APIKey ${dataJudApiKey}`
   }
 
   const reqBody = isDirect

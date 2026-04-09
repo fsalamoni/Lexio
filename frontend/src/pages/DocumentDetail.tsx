@@ -292,12 +292,12 @@ export default function DocumentDetail() {
           console.error('Retry generation failed:', err)
           setPipelineError(true)
           if (err instanceof ModelsNotConfiguredError) {
-            setPipelineMessage('Modelos não configurados. Vá em Administração.')
+            setPipelineMessage('Modelos não configurados. Vá em Configurações.')
             toast.warning('Modelos não configurados', err.message)
-            navigate('/admin')
+            navigate('/settings')
           } else {
             const errorMsg = err instanceof TransientLLMError
-              ? 'O modelo LLM não respondeu. Tente novamente ou altere o modelo em Administração.'
+              ? 'O modelo LLM não respondeu. Tente novamente ou altere o modelo em Configurações.'
               : err?.message?.includes('API key')
                 ? 'Chave de API não configurada ou inválida'
                 : err?.message?.includes('fetch') || err?.message?.includes('network')

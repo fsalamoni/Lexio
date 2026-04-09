@@ -12,7 +12,7 @@
 
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc,
-  collection, getDocs, addDoc, query, orderBy, limit, where,
+  collection, collectionGroup, getDocs, addDoc, query, orderBy, limit, where,
   serverTimestamp,
   type QueryConstraint,
 } from 'firebase/firestore'
@@ -40,6 +40,7 @@ import {
 
 export type {
   ProfileData,
+  UserSettingsData,
   ContextDetailQuestion,
   ContextDetailData,
   DocumentData,
@@ -58,9 +59,14 @@ export type {
   AdminDocumentType,
   AdminLegalArea,
   AdminClassificationTipos,
+  PlatformAggregateRow,
+  PlatformUsageRow,
+  PlatformOverviewData,
+  PlatformDailyUsagePoint,
 } from './firestore-types'
 import type {
   ProfileData,
+  UserSettingsData,
   ContextDetailData,
   DocumentData,
   ThesisData,
@@ -74,6 +80,10 @@ import type {
   AdminDocumentType,
   AdminLegalArea,
   AdminClassificationTipos,
+  PlatformAggregateRow,
+  PlatformUsageRow,
+  PlatformOverviewData,
+  PlatformDailyUsagePoint,
 } from './firestore-types'
 
 // Re-export DEFAULT_DOC_STRUCTURES for backward compatibility
@@ -86,6 +96,11 @@ function ensureFirestore() {
     throw new Error('Firestore não está configurado')
   }
   return firestore
+}
+
+export function getCurrentUserId(): string | null {
+  if (typeof window === 'undefined') return null
+  return window.localStorage.getItem('lexio_user_id')
 }
 
 /**
@@ -119,6 +134,40 @@ function round6(value: number) {
   return Number(value.toFixed(6))
 }
 
+const USER_SETTINGS_MIGRATION_FLAG = 'legacy_migrated_at'
+const USER_SETTINGS_MODEL_KEYS = [
+  'agent_models',
+  'thesis_analyst_models',
+  'context_detail_models',
+  'acervo_classificador_models',
+  'acervo_ementa_models',
+  'research_notebook_models',
+  'notebook_acervo_models',
+  'video_pipeline_models',
+  'audio_pipeline_models',
+  'presentation_pipeline_models',
+] as const satisfies ReadonlyArray<keyof UserSettingsData>
+
+const PLATFORM_ANALYTICS_CACHE_TTL_MS = 60_000
+
+type PlatformUserRecord = {
+  id: string
+  role?: string
+  created_at?: string
+}
+
+type PlatformCollectionsSnapshot = {
+  fetchedAt: number
+  users: PlatformUserRecord[]
+  documents: Array<DocumentData & { _owner_user_id?: string }>
+  theses: Array<ThesisData & { _owner_user_id?: string }>
+  sessions: Array<ThesisAnalysisSessionData & { _owner_user_id?: string }>
+  acervo: Array<AcervoDocumentData & { _owner_user_id?: string }>
+  notebooks: Array<ResearchNotebookData & { _owner_user_id?: string }>
+}
+
+let platformCollectionsCache: PlatformCollectionsSnapshot | null = null
+
 function matchesDocumentFilters(doc: DocumentData, opts?: {
   status?: string
   document_type_id?: string
@@ -147,6 +196,153 @@ function getErrorMessage(error: unknown) {
     return error.message
   }
   return 'Erro desconhecido'
+}
+
+function getRefUserId(refPath: string): string | null {
+  const parts = refPath.split('/')
+  if (parts.length >= 2 && parts[0] === 'users') return parts[1]
+  return null
+}
+
+function getIsoDateKey(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value.length >= 10 ? value.slice(0, 10) : null
+  }
+  if (typeof value === 'number') {
+    return new Date(value).toISOString().slice(0, 10)
+  }
+  if (value && typeof value === 'object' && 'toMillis' in value && typeof value.toMillis === 'function') {
+    return new Date(value.toMillis()).toISOString().slice(0, 10)
+  }
+  return null
+}
+
+function isWithinLastDays(value: unknown, days: number): boolean {
+  const day = getIsoDateKey(value)
+  if (!day) return false
+  const now = Date.now()
+  const cutoff = new Date(now - days * 86_400_000).toISOString().slice(0, 10)
+  return day >= cutoff
+}
+
+function addCount(map: Map<string, number>, key: string) {
+  map.set(key, (map.get(key) ?? 0) + 1)
+}
+
+function mapToRows(map: Map<string, number>, labeler?: (key: string) => string): PlatformAggregateRow[] {
+  return Array.from(map.entries())
+    .map(([key, count]) => ({ key, label: labeler ? labeler(key) : key, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+}
+
+function artifactTypeLabel(type: string): string {
+  return type.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+async function getLegacySettingsDocData(documentId: string): Promise<Record<string, unknown>> {
+  const db = ensureFirestore()
+  const snap = await getDoc(doc(db, 'settings', documentId))
+  return snap.exists() ? (snap.data() as Record<string, unknown>) : {}
+}
+
+export async function ensureUserSettingsMigrated(uid: string): Promise<UserSettingsData> {
+  const current = await getUserSettings(uid)
+  if (current[USER_SETTINGS_MIGRATION_FLAG]) return current
+
+  const patch: Partial<UserSettingsData> = {
+    [USER_SETTINGS_MIGRATION_FLAG]: new Date().toISOString(),
+  }
+
+  try {
+    const globalSettings = await getSettings().catch(() => ({} as Record<string, unknown>))
+    const mergedApiKeys = { ...((globalSettings.api_keys ?? {}) as Record<string, string>) }
+
+    for (const flatKey of ['openrouter_api_key', 'datajud_api_key'] as const) {
+      const flatValue = globalSettings[flatKey]
+      if (typeof flatValue === 'string' && flatValue.trim() && !mergedApiKeys[flatKey]) {
+        mergedApiKeys[flatKey] = flatValue
+      }
+    }
+
+    if ((!current.api_keys || Object.keys(current.api_keys).length === 0) && Object.keys(mergedApiKeys).length > 0) {
+      patch.api_keys = mergedApiKeys
+    }
+
+    if ((!current.model_catalog || current.model_catalog.length === 0) && Array.isArray(globalSettings.model_catalog) && globalSettings.model_catalog.length > 0) {
+      patch.model_catalog = globalSettings.model_catalog as UserSettingsData['model_catalog']
+    }
+
+    for (const key of USER_SETTINGS_MODEL_KEYS) {
+      const existingValue = current[key]
+      const legacyValue = globalSettings[key]
+      if (
+        (!existingValue || Object.keys(existingValue as Record<string, string>).length === 0) &&
+        legacyValue && typeof legacyValue === 'object' && !Array.isArray(legacyValue)
+      ) {
+        patch[key] = legacyValue as UserSettingsData[typeof key]
+      }
+    }
+
+    if (!current.document_types?.length) {
+      const legacyDocTypes = await getLegacySettingsDocData('admin_document_types').catch(() => ({} as Record<string, unknown>))
+      if (Array.isArray(legacyDocTypes.items) && legacyDocTypes.items.length > 0) {
+        patch.document_types = legacyDocTypes.items as AdminDocumentType[]
+      }
+    }
+
+    if (!current.legal_areas?.length) {
+      const legacyAreas = await getLegacySettingsDocData('admin_legal_areas').catch(() => ({} as Record<string, unknown>))
+      if (Array.isArray(legacyAreas.items) && legacyAreas.items.length > 0) {
+        patch.legal_areas = legacyAreas.items as AdminLegalArea[]
+      }
+    }
+
+    if (!current.classification_tipos || Object.keys(current.classification_tipos).length === 0) {
+      const legacyTipos = await getLegacySettingsDocData('admin_classification_tipos').catch(() => ({} as Record<string, unknown>))
+      if (legacyTipos.tipos && typeof legacyTipos.tipos === 'object' && !Array.isArray(legacyTipos.tipos)) {
+        patch.classification_tipos = legacyTipos.tipos as Record<string, Record<string, string[]>>
+      }
+    }
+  } catch {
+    // If legacy docs are inaccessible (e.g. non-admin users), mark migration as done
+    // so the app falls back to user defaults without leaking platform data.
+  }
+
+  await saveUserSettings(uid, patch)
+  return { ...current, ...patch }
+}
+
+async function loadPlatformCollections(force = false): Promise<PlatformCollectionsSnapshot> {
+  if (!force && platformCollectionsCache && Date.now() - platformCollectionsCache.fetchedAt < PLATFORM_ANALYTICS_CACHE_TTL_MS) {
+    return platformCollectionsCache
+  }
+
+  const db = ensureFirestore()
+  const [usersSnap, documentsSnap, thesesSnap, sessionsSnap, acervoSnap, notebooksSnap] = await Promise.all([
+    getDocs(collection(db, 'users')),
+    getDocs(collectionGroup(db, 'documents')),
+    getDocs(collectionGroup(db, 'theses')),
+    getDocs(collectionGroup(db, 'thesis_analysis_sessions')),
+    getDocs(collectionGroup(db, 'acervo')),
+    getDocs(collectionGroup(db, 'research_notebooks')),
+  ])
+
+  const snapshot: PlatformCollectionsSnapshot = {
+    fetchedAt: Date.now(),
+    users: usersSnap.docs.map(d => ({ ...(d.data() as PlatformUserRecord), id: d.id })),
+    documents: documentsSnap.docs.map(d => ({ ...(d.data() as DocumentData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as DocumentData & { _owner_user_id?: string })),
+    theses: thesesSnap.docs.map(d => ({ ...(d.data() as ThesisData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ThesisData & { _owner_user_id?: string })),
+    sessions: sessionsSnap.docs.map(d => ({ ...(d.data() as ThesisAnalysisSessionData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ThesisAnalysisSessionData & { _owner_user_id?: string })),
+    acervo: acervoSnap.docs.map(d => ({ ...(d.data() as AcervoDocumentData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as AcervoDocumentData & { _owner_user_id?: string })),
+    notebooks: notebooksSnap.docs.map(d => ({ ...(d.data() as ResearchNotebookData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ResearchNotebookData & { _owner_user_id?: string })),
+  }
+
+  platformCollectionsCache = snapshot
+  return snapshot
+}
+
+export function invalidatePlatformAnalyticsCache(): void {
+  platformCollectionsCache = null
 }
 
 function sortDocuments(items: DocumentData[], sortDir?: string) {
@@ -593,6 +789,207 @@ export async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
   return buildCostBreakdown(executions)
 }
 
+export async function getPlatformCostBreakdown(force = false): Promise<CostBreakdown> {
+  const snapshot = await loadPlatformCollections(force)
+  const executions = [
+    ...snapshot.documents.flatMap(doc => extractDocumentUsageExecutions(doc)),
+    ...snapshot.sessions.flatMap(session => extractThesisSessionExecutions(session)),
+    ...snapshot.acervo.flatMap(acervoDoc => extractAcervoUsageExecutions({
+      id: acervoDoc.id,
+      filename: acervoDoc.filename,
+      created_at: acervoDoc.created_at,
+      llm_executions: acervoDoc.llm_executions,
+    })),
+    ...snapshot.notebooks.flatMap(nb => extractNotebookUsageExecutions({
+      id: nb.id,
+      title: nb.title,
+      created_at: nb.created_at,
+      llm_executions: nb.llm_executions,
+      usage_summary: nb.usage_summary,
+    })),
+  ]
+
+  return buildCostBreakdown(executions)
+}
+
+export async function getPlatformOverview(force = false): Promise<PlatformOverviewData> {
+  const snapshot = await loadPlatformCollections(force)
+  const breakdown = await getPlatformCostBreakdown(force)
+  const statusMap = new Map<string, number>()
+  const originMap = new Map<string, number>()
+  const documentTypeMap = new Map<string, number>()
+  const artifactTypeMap = new Map<string, number>()
+  const activeUsers = new Set<string>()
+  const scores = snapshot.documents.map(doc => doc.quality_score).filter((score): score is number => score != null)
+
+  for (const user of snapshot.users) {
+    if (isWithinLastDays(user.created_at, 30)) activeUsers.add(user.id)
+  }
+
+  for (const doc of snapshot.documents) {
+    addCount(statusMap, doc.status || 'desconhecido')
+    addCount(originMap, doc.origem || 'web')
+    addCount(documentTypeMap, doc.document_type_id || 'desconhecido')
+    if (isWithinLastDays(doc.created_at, 30)) {
+      const ownerId = doc._owner_user_id ?? null
+      if (ownerId) activeUsers.add(ownerId)
+    }
+  }
+
+  for (const thesis of snapshot.theses) {
+    if (isWithinLastDays(thesis.created_at, 30) && thesis._owner_user_id) activeUsers.add(thesis._owner_user_id)
+  }
+
+  for (const session of snapshot.sessions) {
+    if (isWithinLastDays(session.created_at, 30) && session._owner_user_id) activeUsers.add(session._owner_user_id)
+  }
+
+  for (const acervoDoc of snapshot.acervo) {
+    if (isWithinLastDays(acervoDoc.created_at, 30) && acervoDoc._owner_user_id) activeUsers.add(acervoDoc._owner_user_id)
+  }
+
+  for (const notebook of snapshot.notebooks) {
+    if (isWithinLastDays(notebook.created_at, 30) && notebook._owner_user_id) activeUsers.add(notebook._owner_user_id)
+  }
+
+  for (const notebook of snapshot.notebooks) {
+    for (const artifact of notebook.artifacts || []) {
+      addCount(artifactTypeMap, artifact.type)
+    }
+  }
+
+  const newUsers30d = snapshot.users.filter(user => isWithinLastDays(user.created_at, 30)).length
+
+  return {
+    total_users: snapshot.users.length,
+    admin_users: snapshot.users.filter(user => user.role === 'admin').length,
+    standard_users: snapshot.users.filter(user => user.role !== 'admin').length,
+    new_users_30d: newUsers30d,
+    active_users_30d: activeUsers.size,
+    total_documents: snapshot.documents.length,
+    completed_documents: snapshot.documents.filter(doc => doc.status === 'concluido' || doc.status === 'aprovado').length,
+    processing_documents: snapshot.documents.filter(doc => doc.status === 'processando').length,
+    pending_review_documents: snapshot.documents.filter(doc => doc.status === 'em_revisao' || doc.status === 'rascunho').length,
+    average_quality_score: scores.length > 0 ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : null,
+    total_theses: snapshot.theses.length,
+    total_acervo_documents: snapshot.acervo.length,
+    total_notebooks: snapshot.notebooks.length,
+    total_artifacts: snapshot.notebooks.reduce((sum, notebook) => sum + (notebook.artifacts?.length ?? 0), 0),
+    total_sources: snapshot.notebooks.reduce((sum, notebook) => sum + (notebook.sources?.length ?? 0), 0),
+    total_thesis_sessions: snapshot.sessions.length,
+    total_cost_usd: breakdown.total_cost_usd,
+    total_tokens: breakdown.total_tokens,
+    total_calls: breakdown.total_calls,
+    documents_by_status: mapToRows(statusMap, key => key.replace(/_/g, ' ')),
+    documents_by_origin: mapToRows(originMap, key => key === 'caderno' ? 'Caderno de Pesquisa' : key === 'web' ? 'Web' : key),
+    documents_by_type: mapToRows(documentTypeMap),
+    artifacts_by_type: mapToRows(artifactTypeMap, artifactTypeLabel),
+    functions_by_usage: breakdown.by_function.map(row => ({ ...row, count: row.calls })),
+    top_models: breakdown.by_model.slice(0, 10).map(row => ({ ...row, count: row.calls })),
+    top_agents: breakdown.by_agent.slice(0, 10).map(row => ({ ...row, count: row.calls })),
+    top_providers: breakdown.by_provider.slice(0, 10).map(row => ({ ...row, count: row.calls })),
+  }
+}
+
+export async function getPlatformDailyUsage(days = 30, force = false): Promise<PlatformDailyUsagePoint[]> {
+  const snapshot = await loadPlatformCollections(force)
+  const now = Date.now()
+  const cutoff = new Date(now - days * 86_400_000).toISOString().slice(0, 10)
+  const dayMap = new Map<string, PlatformDailyUsagePoint & { users: Set<string> }>()
+
+  for (let i = days - 1; i >= 0; i--) {
+    const dia = new Date(now - i * 86_400_000).toISOString().slice(0, 10)
+    dayMap.set(dia, {
+      dia,
+      usuarios_ativos: 0,
+      novos_usuarios: 0,
+      documentos: 0,
+      cadernos: 0,
+      uploads_acervo: 0,
+      sessoes_teses: 0,
+      chamadas_llm: 0,
+      tokens: 0,
+      custo_usd: 0,
+      users: new Set<string>(),
+    })
+  }
+
+  const markUserDay = (day: string | null, userId: string | null) => {
+    if (!day || day < cutoff || !userId) return
+    const entry = dayMap.get(day)
+    if (!entry) return
+    entry.users.add(userId)
+  }
+
+  for (const user of snapshot.users) {
+    const day = getIsoDateKey(user.created_at)
+    if (!day || day < cutoff) continue
+    const entry = dayMap.get(day)
+    if (entry) entry.novos_usuarios += 1
+  }
+
+  for (const doc of snapshot.documents) {
+    const day = getIsoDateKey(doc.created_at)
+    if (!day || day < cutoff) continue
+    const entry = dayMap.get(day)
+    if (entry) entry.documentos += 1
+  }
+
+  for (const notebook of snapshot.notebooks) {
+    const day = getIsoDateKey(notebook.created_at)
+    if (!day || day < cutoff) continue
+    const entry = dayMap.get(day)
+    if (entry) entry.cadernos += 1
+  }
+
+  for (const acervoDoc of snapshot.acervo) {
+    const day = getIsoDateKey(acervoDoc.created_at)
+    if (!day || day < cutoff) continue
+    const entry = dayMap.get(day)
+    if (entry) entry.uploads_acervo += 1
+  }
+
+  for (const session of snapshot.sessions) {
+    const day = getIsoDateKey(session.created_at)
+    if (!day || day < cutoff) continue
+    const entry = dayMap.get(day)
+    if (entry) entry.sessoes_teses += 1
+  }
+
+  const executionGroups = [
+    ...snapshot.documents.flatMap(doc => extractDocumentUsageExecutions(doc)),
+    ...snapshot.sessions.flatMap(session => extractThesisSessionExecutions(session)),
+    ...snapshot.acervo.flatMap(acervoDoc => extractAcervoUsageExecutions({
+      id: acervoDoc.id,
+      filename: acervoDoc.filename,
+      created_at: acervoDoc.created_at,
+      llm_executions: acervoDoc.llm_executions,
+    })),
+    ...snapshot.notebooks.flatMap(nb => extractNotebookUsageExecutions({
+      id: nb.id,
+      title: nb.title,
+      created_at: nb.created_at,
+      llm_executions: nb.llm_executions,
+      usage_summary: nb.usage_summary,
+    })),
+  ]
+
+  for (const execution of executionGroups) {
+    const day = getIsoDateKey(execution.created_at)
+    if (!day || day < cutoff) continue
+    const entry = dayMap.get(day)
+    if (!entry) continue
+    entry.chamadas_llm += 1
+    entry.tokens += execution.total_tokens
+    entry.custo_usd = round6(entry.custo_usd + execution.cost_usd)
+  }
+
+  return Array.from(dayMap.values()).map(({ users, ...entry }) => ({
+    ...entry,
+    usuarios_ativos: users.size,
+  }))
+}
+
 // ── Document types & legal areas (static definitions for Firebase mode) ──────
 
 const DOCUMENT_TYPES = [
@@ -649,21 +1046,24 @@ function mergeDefaultStructures(items: AdminDocumentType[]): AdminDocumentType[]
 export async function loadAdminDocumentTypes(): Promise<AdminDocumentType[]> {
   if (!IS_FIREBASE) return mergeDefaultStructures(DOCUMENT_TYPES.map(dt => ({ ...dt, is_enabled: true })))
   try {
-    const db = ensureFirestore()
-    const ref = doc(db, 'settings', 'admin_document_types')
-    const snap = await getDoc(ref)
-    if (snap.exists()) {
-      const data = snap.data()
-      if (Array.isArray(data?.items) && data.items.length > 0) return mergeDefaultStructures(data.items)
+    const resolvedUid = getCurrentUserId()
+    if (resolvedUid) {
+      const userSettings = await ensureUserSettingsMigrated(resolvedUid)
+      if (Array.isArray(userSettings.document_types) && userSettings.document_types.length > 0) {
+        return mergeDefaultStructures(userSettings.document_types)
+      }
     }
   } catch { /* fallback to defaults */ }
   return mergeDefaultStructures(DOCUMENT_TYPES.map(dt => ({ ...dt, is_enabled: true })))
 }
 
 export async function saveAdminDocumentTypes(items: AdminDocumentType[]): Promise<void> {
-  const db = ensureFirestore()
-  const ref = doc(db, 'settings', 'admin_document_types')
-  await setDoc(ref, { items, updated_at: serverTimestamp() })
+  const resolvedUid = getCurrentUserId()
+  if (IS_FIREBASE && resolvedUid) {
+    await saveUserSettings(resolvedUid, { document_types: items })
+    return
+  }
+  throw new Error('Usuário não autenticado.')
 }
 
 // ── Admin CRUD for Legal Areas (Firestore /settings/admin_legal_areas) ───────
@@ -681,21 +1081,24 @@ function mergeDefaultAssuntos(items: AdminLegalArea[]): AdminLegalArea[] {
 export async function loadAdminLegalAreas(): Promise<AdminLegalArea[]> {
   if (!IS_FIREBASE) return mergeDefaultAssuntos(LEGAL_AREAS.map(la => ({ ...la, is_enabled: true })))
   try {
-    const db = ensureFirestore()
-    const ref = doc(db, 'settings', 'admin_legal_areas')
-    const snap = await getDoc(ref)
-    if (snap.exists()) {
-      const data = snap.data()
-      if (Array.isArray(data?.items) && data.items.length > 0) return mergeDefaultAssuntos(data.items)
+    const resolvedUid = getCurrentUserId()
+    if (resolvedUid) {
+      const userSettings = await ensureUserSettingsMigrated(resolvedUid)
+      if (Array.isArray(userSettings.legal_areas) && userSettings.legal_areas.length > 0) {
+        return mergeDefaultAssuntos(userSettings.legal_areas)
+      }
     }
   } catch { /* fallback to defaults */ }
   return mergeDefaultAssuntos(LEGAL_AREAS.map(la => ({ ...la, is_enabled: true })))
 }
 
 export async function saveAdminLegalAreas(items: AdminLegalArea[]): Promise<void> {
-  const db = ensureFirestore()
-  const ref = doc(db, 'settings', 'admin_legal_areas')
-  await setDoc(ref, { items, updated_at: serverTimestamp() })
+  const resolvedUid = getCurrentUserId()
+  if (IS_FIREBASE && resolvedUid) {
+    await saveUserSettings(resolvedUid, { legal_areas: items })
+    return
+  }
+  throw new Error('Usuário não autenticado.')
 }
 
 // ── Admin CRUD for Classification Tipos (Firestore /settings/admin_classification_tipos) ─
@@ -704,21 +1107,24 @@ export async function loadAdminClassificationTipos(): Promise<AdminClassificatio
   const defaultTipos = CLASSIFICATION_TIPOS as Record<string, Record<string, string[]>>
   if (!IS_FIREBASE) return { tipos: defaultTipos }
   try {
-    const db = ensureFirestore()
-    const ref = doc(db, 'settings', 'admin_classification_tipos')
-    const snap = await getDoc(ref)
-    if (snap.exists()) {
-      const data = snap.data()
-      if (data?.tipos && typeof data.tipos === 'object') return { tipos: data.tipos }
+    const resolvedUid = getCurrentUserId()
+    if (resolvedUid) {
+      const userSettings = await ensureUserSettingsMigrated(resolvedUid)
+      if (userSettings.classification_tipos && typeof userSettings.classification_tipos === 'object') {
+        return { tipos: userSettings.classification_tipos }
+      }
     }
   } catch { /* fallback to defaults */ }
   return { tipos: defaultTipos }
 }
 
 export async function saveAdminClassificationTipos(tipos: Record<string, Record<string, string[]>>): Promise<void> {
-  const db = ensureFirestore()
-  const ref = doc(db, 'settings', 'admin_classification_tipos')
-  await setDoc(ref, { tipos, updated_at: serverTimestamp() })
+  const resolvedUid = getCurrentUserId()
+  if (IS_FIREBASE && resolvedUid) {
+    await saveUserSettings(resolvedUid, { classification_tipos: tipos })
+    return
+  }
+  throw new Error('Usuário não autenticado.')
 }
 
 // ── Profile-based filtering ─────────────────────────────────────────────────
@@ -758,8 +1164,8 @@ const POSITION_DOCTYPE_MAP: Record<string, string[]> = {
  * other words should not).
  * Falls back to the full list when no profile or position match is found.
  */
-export function getDocumentTypesForProfile(profile: ProfileData | null): typeof DOCUMENT_TYPES {
-  if (!profile?.position) return DOCUMENT_TYPES
+export function getDocumentTypesForProfile(profile: ProfileData | null, source: typeof DOCUMENT_TYPES = DOCUMENT_TYPES): typeof DOCUMENT_TYPES {
+  if (!profile?.position) return source
 
   const posLower = profile.position.toLowerCase()
   // Sort keywords longest-first so more specific titles match before generic ones
@@ -770,21 +1176,21 @@ export function getDocumentTypesForProfile(profile: ProfileData | null): typeof 
     // Use word-boundary regex to avoid partial substring matches
     const regex = new RegExp(`\\b${keyword}\\b`, 'i')
     if (regex.test(posLower)) {
-      const filtered = DOCUMENT_TYPES.filter(dt => allowedIds.includes(dt.id))
-      return filtered.length > 0 ? filtered : DOCUMENT_TYPES
+      const filtered = source.filter(dt => allowedIds.includes(dt.id))
+      return filtered.length > 0 ? filtered : source
     }
   }
-  return DOCUMENT_TYPES
+  return source
 }
 
 /**
  * Returns legal areas sorted so the user's primary areas appear first.
  */
-export function getLegalAreasForProfile(profile: ProfileData | null): typeof LEGAL_AREAS {
-  if (!profile?.primary_areas || profile.primary_areas.length === 0) return LEGAL_AREAS
+export function getLegalAreasForProfile(profile: ProfileData | null, source: typeof LEGAL_AREAS = LEGAL_AREAS): typeof LEGAL_AREAS {
+  if (!profile?.primary_areas || profile.primary_areas.length === 0) return source
   const primarySet = new Set(profile.primary_areas)
-  const primary = LEGAL_AREAS.filter(a => primarySet.has(a.id))
-  const others = LEGAL_AREAS.filter(a => !primarySet.has(a.id))
+  const primary = source.filter(a => primarySet.has(a.id))
+  const others = source.filter(a => !primarySet.has(a.id))
   return [...primary, ...others]
 }
 
@@ -1322,9 +1728,23 @@ export async function getSettings(): Promise<Record<string, unknown>> {
   return snap.data() as Record<string, unknown>
 }
 
+export async function getUserSettings(uid: string): Promise<UserSettingsData> {
+  const db = ensureFirestore()
+  const ref = doc(db, 'users', uid, 'settings', 'preferences')
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return {}
+  return snap.data() as UserSettingsData
+}
+
 export async function saveSettings(data: Record<string, unknown>): Promise<void> {
   const db = ensureFirestore()
   const ref = doc(db, 'settings', 'platform')
+  await setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true })
+}
+
+export async function saveUserSettings(uid: string, data: Partial<UserSettingsData>): Promise<void> {
+  const db = ensureFirestore()
+  const ref = doc(db, 'users', uid, 'settings', 'preferences')
   await setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true })
 }
 

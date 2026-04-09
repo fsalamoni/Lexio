@@ -16,8 +16,10 @@ const NewDocument = lazy(() => import('./pages/NewDocument'))
 const DocumentDetail = lazy(() => import('./pages/DocumentDetail'))
 const DocumentEditor = lazy(() => import('./pages/DocumentEditor'))
 const Upload = lazy(() => import('./pages/Upload'))
-const AdminPanel = lazy(() => import('./pages/AdminPanel'))
-const CostTokensPage = lazy(() => import('./pages/CostTokensPage'))
+const SettingsPanel = lazy(() => import('./pages/AdminPanel'))
+const PersonalCostTokensPage = lazy(() => import('./pages/CostTokensPage'))
+const PlatformAdminPanel = lazy(() => import('./pages/PlatformAdminPanel'))
+const PlatformCostsPage = lazy(() => import('./pages/PlatformCostsPage'))
 const Onboarding = lazy(() => import('./pages/Onboarding'))
 const ThesisBank = lazy(() => import('./pages/ThesisBank'))
 const ResearchNotebook = lazy(() => import('./pages/ResearchNotebook'))
@@ -39,9 +41,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { token, role } = useAuth()
-  if (!token) return <Navigate to="/login" replace />
-  if (role !== "admin") return <Navigate to="/" replace />
+  const { role } = useAuth()
+  if (role !== 'admin') return <Navigate to="/settings" replace />
   return <>{children}</>
 }
 
@@ -67,8 +68,10 @@ function AppRoutes() {
                   <Route path="/upload" element={<Upload />} />
                   <Route path="/theses" element={<ThesisBank />} />
                   <Route path="/notebook" element={<ResearchNotebook />} />
-                  <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
-                  <Route path="/admin/costs" element={<AdminRoute><CostTokensPage /></AdminRoute>} />
+                  <Route path="/settings" element={<SettingsPanel />} />
+                  <Route path="/settings/costs" element={<PersonalCostTokensPage />} />
+                  <Route path="/admin" element={<AdminRoute><PlatformAdminPanel /></AdminRoute>} />
+                  <Route path="/admin/costs" element={<AdminRoute><PlatformCostsPage /></AdminRoute>} />
                   <Route path="/onboarding" element={<Onboarding />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="*" element={<NotFound />} />

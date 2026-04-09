@@ -17,16 +17,18 @@
  * 8.  Moderador          — Outline/plan the final document (Sonnet)
  * 9.  Redator            — Write the full document (Sonnet, 12k tokens)
  *
- * The API key is read from Firestore /settings/platform (admin-only).
+ * The API key is resolved from the authenticated user's settings with
+ * optional environment fallback for local/dev compatibility.
  */
 
-import { doc, getDoc, updateDoc } from 'firebase/firestore'
-import { firestore } from './firebase'
+import { doc, updateDoc } from 'firebase/firestore'
 import { callLLM, callLLMWithFallback } from './llm-client'
 import { loadAgentModels, loadContextDetailModels, loadAcervoEmentaModels, loadAcervoClassificadorModels, validateModelMap, ModelsNotConfiguredError, PIPELINE_AGENT_DEFS, CONTEXT_DETAIL_AGENT_DEFS, ACERVO_EMENTA_AGENT_DEFS, ACERVO_CLASSIFICADOR_AGENT_DEFS, type AgentModelMap } from './model-config'
 import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, updateAcervoEmenta, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
+import { loadApiKeyValues } from './settings-store'
+import { firestore } from './firebase'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -81,26 +83,15 @@ const MAX_PREFILTERED_DOCS = 30
 // ── API key retrieval ─────────────────────────────────────────────────────────
 
 export async function getOpenRouterKey(): Promise<string> {
-  // Try environment variable first (works without Firestore admin setup)
+  // Try environment variable first (works without Firestore setup)
   const envKey = import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined
   if (envKey && envKey.startsWith('sk-')) return envKey
 
-  // Fall back to Firestore /settings/platform
-  if (!firestore) throw new Error('Firestore não configurado')
-  const ref = doc(firestore, 'settings', 'platform')
-  const snap = await getDoc(ref)
-  if (!snap.exists()) {
-    throw new Error(
-      'Configurações não encontradas. Configure a API key do OpenRouter no Painel Administrativo ou defina VITE_OPENROUTER_API_KEY.',
-    )
-  }
-  const data = snap.data()
-  // API keys stored under api_keys nested object by settings-store
-  const apiKeys = (data?.api_keys ?? {}) as Record<string, string>
-  const key = apiKeys.openrouter_api_key ?? (data?.openrouter_api_key as string | undefined)
+  const apiKeys = await loadApiKeyValues()
+  const key = apiKeys.openrouter_api_key
   if (!key || !key.startsWith('sk-')) {
     throw new Error(
-      'API key do OpenRouter não configurada. Acesse o Painel Administrativo → Chaves de API.',
+      'API key do OpenRouter não configurada. Acesse Configurações → Chaves de API.',
     )
   }
   return key

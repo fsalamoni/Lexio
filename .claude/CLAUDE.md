@@ -1,6 +1,6 @@
 # Lexio — Referência Completa do Projeto
 
-> Última atualização: 5 de abril de 2026
+> Última atualização: 9 de abril de 2026
 
 ---
 
@@ -151,8 +151,10 @@ docs/              → Documentação técnica
 | `/upload` | Upload | Auth |
 | `/theses` | ThesisBank | Auth |
 | `/notebook` | ResearchNotebook | Auth |
-| `/admin` | AdminPanel | Auth + admin |
-| `/admin/costs` | CostTokensPage | Auth + admin |
+| `/settings` | AdminPanel (Configurações Pessoais) | Auth |
+| `/settings/costs` | CostTokensPage | Auth |
+| `/admin` | PlatformAdminPanel | Auth + admin |
+| `/admin/costs` | PlatformCostsPage | Auth + admin |
 | `/onboarding` | Onboarding | Auth |
 | `/profile` | Profile | Auth |
 | `*` | NotFound | — |
@@ -289,7 +291,7 @@ docs/              → Documentação técnica
 
 ## 10. Páginas {#páginas}
 
-### Páginas principais (13)
+### Páginas principais (15)
 | Página | Rota | Função |
 |--------|------|--------|
 | `Dashboard` | `/` | Painel principal do usuário |
@@ -300,8 +302,10 @@ docs/              → Documentação técnica
 | `Upload` | `/upload` | Upload de arquivos para acervo |
 | `ThesisBank` | `/theses` | Banco de teses (CRUD) |
 | `ResearchNotebook` | `/notebook` | Hub do caderno de pesquisa |
-| `AdminPanel` | `/admin` | Hub de configuração admin |
-| `CostTokensPage` | `/admin/costs` | Analytics de custo e tokens |
+| `AdminPanel` | `/settings` | Configurações pessoais do usuário |
+| `CostTokensPage` | `/settings/costs` | Uso, custos e tokens do usuário |
+| `PlatformAdminPanel` | `/admin` | Painel admin com analytics agregados da plataforma |
+| `PlatformCostsPage` | `/admin/costs` | Custos e tokens agregados da plataforma |
 | `Onboarding` | `/onboarding` | Wizard de onboarding |
 | `Profile` | `/profile` | Perfil profissional |
 | `NotFound` | `*` | Página 404 |
@@ -318,7 +322,7 @@ docs/              → Documentação técnica
 ---
 
 ### Pipeline 1 — Geração de Documentos (10 agentes)
-**Config Firestore:** `document_models`
+**Config Firestore:** `agent_models`
 **Arquivo:** `generation-service.ts`
 
 | # | Key | Label | Categoria | Tier |
@@ -475,7 +479,7 @@ docs/              → Documentação técnica
 
 | Pipeline | Agentes | Config Firestore |
 |----------|---------|-----------------|
-| Geração de documentos | 11 (3 condicionais) | `document_models` |
+| Geração de documentos | 11 (3 condicionais) | `agent_models` |
 | Análise de teses | 5 | `thesis_analyst_models` |
 | Context detail | 1 | `context_detail_models` |
 | Classificador acervo | 1 | `acervo_classificador_models` |
@@ -617,19 +621,22 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 |---------|----------|
 | `/users/{uid}` | Perfil do usuário + role |
 | `/users/{uid}/profile/data` | Anamnese Layer 1 (perfil profissional) |
+| `/users/{uid}/settings/preferences` | Configurações persistentes do usuário |
 | `/users/{uid}/documents/{id}` | Documentos gerados + `llm_executions[]` |
 | `/users/{uid}/theses/{id}` | Banco de teses |
+| `/users/{uid}/thesis_analysis_sessions/{id}` | Sessões históricas de análise de teses |
 | `/users/{uid}/acervo/{id}` | Documentos de referência (classificados) |
 | `/users/{uid}/research_notebooks/{id}` | Cadernos de pesquisa |
-| `/settings/platform` | Config global (admin): api_keys, model configs, model_catalog |
+| `/settings/platform` | Config global legada usada apenas como origem de migração |
 
-### Subchaves de `/settings/platform`
+### Subchaves de `/users/{uid}/settings/preferences`
 
 | Chave | Conteúdo |
 |-------|----------|
-| `openrouter_api_key` | Chave API OpenRouter |
-| `model_catalog` | Catálogo dinâmico de modelos |
-| `document_models` | Config do pipeline de documentos |
+| `api_keys.openrouter_api_key` | Chave API OpenRouter do usuário |
+| `api_keys.datajud_api_key` | Chave DataJud do usuário |
+| `model_catalog` | Catálogo dinâmico de modelos do usuário |
+| `agent_models` | Config do pipeline de documentos |
 | `thesis_analyst_models` | Config do pipeline de teses |
 | `context_detail_models` | Config do context detail |
 | `acervo_classificador_models` | Config do classificador de acervo |
@@ -639,6 +646,10 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 | `video_pipeline_models` | Config do pipeline de vídeo |
 | `audio_pipeline_models` | Config do pipeline de áudio |
 | `presentation_pipeline_models` | Config do pipeline de apresentação |
+| `document_types` | Tipos de documento customizados do usuário |
+| `legal_areas` | Áreas do direito customizadas do usuário |
+| `classification_tipos` | Tipos por classificação do usuário |
+| `legacy_migrated_at` | Timestamp da migração única das configs legadas |
 
 ### Tipos TypeScript de interfaces (`firestore-types.ts`)
 
@@ -663,33 +674,25 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 
 ## 18. Admin Panel — cartões de configuração {#admin-panel}
 
-### Configuração geral
-1. **API Keys** — Gerenciar chave OpenRouter
-2. **Catálogo de Modelos** — Navegar modelos disponíveis
-3. **Config de Modelos (Documentos)** — Config dos 11 agentes do pipeline principal
+### Configurações pessoais (`/settings`)
+1. **API Keys** — Chaves persistidas no perfil do usuário
+2. **Config de Modelos (Documentos)** — Config dos 11 agentes do pipeline principal
+3. **Analista de Teses** — Config dos 5 agentes
+4. **Context Detail** — Config do agente de contexto
+5. **Classificador de Acervo** — Config do agente classificador
+6. **Gerador de Ementa** — Config do agente de ementas
+7. **Caderno de Pesquisa** — Config dos 11 agentes do caderno
+8. **Notebook Acervo** — Config dos 4 agentes de análise de acervo
+9. **Pipeline de Vídeo** — Config dos 8 agentes de vídeo
+10. **Pipeline de Áudio** — Config dos 6 agentes de áudio
+11. **Pipeline de Apresentação** — Config dos 5 agentes de apresentação
+12. **Fila de Revisão** — Itens do próprio usuário em revisão
 
-### Agentes de documento e acervo
-4. **Analista de Teses** — Config dos 5 agentes
-5. **Context Detail** — Config do agente de contexto
-6. **Classificador de Acervo** — Config do agente classificador
-7. **Gerador de Ementa** — Config do agente de ementas
-
-### Caderno de pesquisa
-8. **Caderno de Pesquisa** — Config dos 11 agentes do caderno
-9. **Notebook Acervo** — Config dos 4 agentes de análise de acervo
-
-### Pipelines multi-agente
-10. **Pipeline de Vídeo** — Config dos 8 agentes de vídeo
-11. **Pipeline de Áudio** — Config dos 6 agentes de áudio
-12. **Pipeline de Apresentação** — Config dos 5 agentes de apresentação
-
-### Dados e sistema
-13. **Fila de Revisão** — Aprovar/rejeitar documentos pendentes
-14. **Reindexar** — Re-indexar documentos no Qdrant
-15. **Saúde do Sistema** — Monitorar status (Firebase, OpenRouter)
-16. **Tipos de Documento** — CRUD de tipos
-17. **Áreas do Direito** — CRUD de áreas
-18. **Classificação Tipos** — CRUD de tipos de classificação
+### Administração da plataforma (`/admin`)
+1. **Visão geral agregada** — Usuários, documentos, teses, acervo, cadernos, artefatos e qualidade média
+2. **Uso por dia** — Séries agregadas de atividade, chamadas, tokens e custo
+3. **Top modelos, agentes, provedores e funções** — Consumo agregado sem expor preferências privadas
+4. **Custos da plataforma (`/admin/costs`)** — Breakdown agregado por provedor, modelo, função, fase, agente e tipo de documento
 
 ---
 
@@ -755,8 +758,9 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 
 ## 24. Segurança {#segurança}
 
-- Chaves API armazenadas no Firestore, nunca em código
+- Chaves API armazenadas nas configurações do próprio usuário, nunca em código
 - Firebase Rules protegem todos os dados por `uid`
+- Admin pode ler subcoleções operacionais para analytics agregados, mas não lê `/users/{uid}/settings/preferences`
 - CSP restritivo com whitelist de domínios
 - Sem backend público exposto em produção
 - Toda comunicação com OpenRouter usa HTTPS
@@ -770,7 +774,7 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 1. **Leia este arquivo inteiro** antes de qualquer modificação.
 2. Toda chamada LLM deve passar por `callLLM()` / `callLLMWithMessages()` de `llm-client.ts`.
 3. Novos agentes devem ser adicionados ao array `*_AGENT_DEFS` correspondente em `model-config.ts`.
-4. Para novo pipeline, criar: definição de agentes em `model-config.ts` + Config Card em `components/` + entrada no Admin Panel + chave em `settings/platform`.
+4. Para novo pipeline, criar: definição de agentes em `model-config.ts` + Config Card em `components/` + entrada em `Configurações` e, se houver visão global, também no painel `/admin`.
 5. Tipos TypeScript de Firestore ficam em `firestore-types.ts`. Sempre atualizar ao modificar coleções.
 6. Novas rotas devem ser registradas em `App.tsx` e protegidas com `ProtectedRoute` ou `AdminRoute`.
 7. Não criar backend — toda lógica roda no frontend TypeScript.
@@ -779,6 +783,7 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 10. Commit messages: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`.
 11. O `VITE_BASE_PATH` deve funcionar tanto como `/Lexio/` quanto `/`.
 12. Manter modo demo funcional — atualizar `demo/data.ts` se adicionar novas rotas de API.
+13. Configurações pessoais devem persistir em `/users/{uid}/settings/preferences`; não reintroduzir dependência runtime em `/settings/platform`.
 
 ---
 

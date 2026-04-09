@@ -256,7 +256,7 @@ export async function generateAudioOverview(
   const scriptModel = models.studio_roteirista
 
   if (!scriptModel) {
-    throw new Error('Modelo do Roteirista não configurado. Vá em Administração > Caderno de Pesquisa e configure o agente "Roteirista".')
+    throw new Error('Modelo do Roteirista não configurado. Vá em Configurações > Caderno de Pesquisa e configure o agente "Roteirista".')
   }
 
   // ── Step 1: Generate script ──────────────────────────────────────────

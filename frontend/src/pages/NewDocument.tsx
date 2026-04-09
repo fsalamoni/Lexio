@@ -8,7 +8,7 @@ import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
-  getDocumentTypes, getLegalAreas,
+  loadAdminDocumentTypes, loadAdminLegalAreas,
   createDocument,
   getDocumentTypesForProfile, getLegalAreasForProfile,
   getProfile, type ProfileData,
@@ -134,27 +134,34 @@ export default function NewDocument() {
   useEffect(() => {
     if (IS_FIREBASE && userId) {
       // Load user profile first, then filter doc types/areas accordingly
-      getProfile(userId).then((profile: ProfileData | null) => {
+      Promise.all([
+        getProfile(userId),
+        loadAdminDocumentTypes(),
+        loadAdminLegalAreas(),
+      ]).then(([profile, availableDocTypes, availableLegalAreas]: [ProfileData | null, DocType[], LegalAreaOption[]]) => {
         setUserProfile(profile ?? null)
-        setDocTypes(getDocumentTypesForProfile(profile ?? null))
-        const sortedAreas = getLegalAreasForProfile(profile ?? null)
+        setDocTypes(getDocumentTypesForProfile(profile ?? null, availableDocTypes))
+        const sortedAreas = getLegalAreasForProfile(profile ?? null, availableLegalAreas)
         setLegalAreas(sortedAreas)
-        // Pre-select user's primary legal areas
         if (profile?.primary_areas && profile.primary_areas.length > 0) {
           setSelectedAreas(profile.primary_areas)
         }
-        // Pre-select default document type if set in profile
         if (profile?.default_document_type) {
           setSelectedType(profile.default_document_type)
         }
       }).catch(() => {
-        setDocTypes(getDocumentTypes())
-        setLegalAreas(getLegalAreas())
+        toast.error('Erro ao carregar tipos de documento e áreas disponíveis')
       }).finally(() => setLoadingTypes(false))
     } else if (IS_FIREBASE) {
-      setDocTypes(getDocumentTypes())
-      setLegalAreas(getLegalAreas())
-      setLoadingTypes(false)
+      Promise.all([
+        loadAdminDocumentTypes(),
+        loadAdminLegalAreas(),
+      ]).then(([availableDocTypes, availableLegalAreas]: [DocType[], LegalAreaOption[]]) => {
+        setDocTypes(availableDocTypes)
+        setLegalAreas(availableLegalAreas)
+      }).catch(() => {
+        toast.error('Erro ao carregar tipos de documento e áreas disponíveis')
+      }).finally(() => setLoadingTypes(false))
     } else {
       Promise.all([
         api.get('/document-types').then(res => setDocTypes(Array.isArray(res.data) ? res.data : [])),
@@ -192,10 +199,10 @@ export default function NewDocument() {
       setShowContextDetail(true)
     } catch (err: any) {
       if (err instanceof ModelsNotConfiguredError) {
-        toast.warning('Modelos não configurados', 'Configure os modelos no Painel Administrativo antes de usar esta funcionalidade.')
-        navigate('/admin')
+        toast.warning('Modelos não configurados', 'Configure os modelos em Configurações antes de usar esta funcionalidade.')
+        navigate('/settings')
       } else if (err instanceof ModelUnavailableError) {
-        toast.warning(`Modelo indisponível: ${err.modelId}`, 'Vá em Administração e substitua-o por outro.')
+        toast.warning(`Modelo indisponível: ${err.modelId}`, 'Vá em Configurações e substitua-o por outro.')
       } else {
         toast.error('Erro ao detalhar contexto', err?.message || 'Tente novamente')
       }
@@ -269,17 +276,17 @@ export default function NewDocument() {
               ),
             )
             if (err instanceof ModelsNotConfiguredError) {
-              setPipelineMessage('Modelos não configurados. Vá em Administração.')
+              setPipelineMessage('Modelos não configurados. Vá em Configurações.')
               toast.warning('Modelos não configurados', err.message)
-              navigate('/admin')
+              navigate('/settings')
             } else if (err instanceof ModelUnavailableError) {
-              setPipelineMessage(`Modelo "${err.modelId}" indisponível. Altere-o em Administração.`)
+              setPipelineMessage(`Modelo "${err.modelId}" indisponível. Altere-o em Configurações.`)
               toast.warning(
                 `Modelo indisponível: ${err.modelId}`,
-                'Este modelo foi removido do OpenRouter. Vá em Administração e substitua-o por outro.',
+                'Este modelo foi removido do OpenRouter. Vá em Configurações e substitua-o por outro.',
               )
             } else if (err instanceof TransientLLMError) {
-              const msg = 'O modelo LLM não respondeu. Tente novamente ou altere o modelo em Administração.'
+              const msg = 'O modelo LLM não respondeu. Tente novamente ou altere o modelo em Configurações.'
               setPipelineMessage(msg)
               toast.error('Modelo sem resposta', msg)
             } else {

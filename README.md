@@ -52,7 +52,8 @@
 - **Pipeline de Áudio** — 6 agentes para produção de podcasts e narrações com TTS
 - **Pipeline de Apresentação** — 5 agentes para criação de apresentações profissionais
 - **Anamnese 2 camadas** — Perfil profissional persistente (Layer 1) + contexto por geração (Layer 2)
-- **Admin Panel** — 18 cartões de configuração: API keys, modelos por agente, catálogo dinâmico, CRUD de tipos/áreas
+- **Configurações por usuário** — API keys, modelos por agente, catálogo, tipos e áreas ficam isolados em cada perfil
+- **Painel administrativo da plataforma** — Visão agregada de uso, pipelines, agentes, documentos, custos e tokens globais
 - **Health check de modelos** — Verificação automática de disponibilidade contra OpenRouter
 - **Analytics de custo** — Dashboard por modelo/função/provedor em USD e BRL (10 funções de rastreamento)
 - **Export DOCX** — Times New Roman 12pt, A4, espaçamento 1.5, gerado no browser
@@ -147,13 +148,13 @@ docs/              → Documentação técnica arquitetural
 
 ## Arquitetura de LLM
 
-Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts`, que chama a OpenRouter API diretamente do browser. A chave de API do OpenRouter é buscada do Firestore (`/settings/platform`) e pode ser configurada no Admin Panel.
+Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts`, que chama a OpenRouter API diretamente do browser. A chave de API do OpenRouter é resolvida a partir das configurações salvas do usuário autenticado em `/users/{uid}/settings/preferences`, com fallback opcional por variável de ambiente em desenvolvimento.
 
 ### Pipelines Ativos
 
 | Pipeline | Agentes | Config Firestore |
 |----------|---------|-----------------|
-| Geração de documentos | 11 agentes (3 condicionais) | `document_models` |
+| Geração de documentos | 11 agentes (3 condicionais) | `agent_models` |
 | Análise de teses | 5 agentes | `thesis_analyst_models` |
 | Context detail (Layer 2) | 1 agente | `context_detail_models` |
 | Classificador de acervo | 1 agente | `acervo_classificador_models` |
@@ -216,8 +217,10 @@ Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts
 | `/upload` | Upload para acervo | Auth |
 | `/theses` | Banco de teses | Auth |
 | `/notebook` | Caderno de Pesquisa | Auth |
-| `/admin` | Painel administrativo | Auth + admin |
-| `/admin/costs` | Analytics de custo | Auth + admin |
+| `/settings` | Configurações pessoais | Auth |
+| `/settings/costs` | Uso, custos e tokens do usuário | Auth |
+| `/admin` | Painel administrativo da plataforma | Auth + admin |
+| `/admin/costs` | Custos e tokens agregados da plataforma | Auth + admin |
 | `/onboarding` | Wizard de perfil | Auth |
 | `/profile` | Perfil profissional | Auth |
 | `*` | 404 | — |
@@ -234,8 +237,8 @@ O deploy é **totalmente automático** — qualquer push para `main` dispara as 
 
 Para deploy manual:
 ```bash
-# Firebase
-firebase deploy --only hosting
+# Firebase Hosting + Firestore Rules
+firebase deploy --only "hosting,firestore:rules"
 
 # GitHub Pages (via workflow)
 git push origin main
@@ -253,11 +256,18 @@ git push origin main
 |---------|----------|
 | `/users/{uid}` | Perfil do usuário + role |
 | `/users/{uid}/profile` | Anamnese Layer 1 |
+| `/users/{uid}/settings/preferences` | API keys, catálogo de modelos, modelos por agente e metadados do usuário |
 | `/users/{uid}/documents/{id}` | Documentos gerados + `llm_executions[]` |
 | `/users/{uid}/theses/{id}` | Banco de teses |
+| `/users/{uid}/thesis_analysis_sessions/{id}` | Histórico de execuções da análise de teses |
 | `/users/{uid}/acervo/{id}` | Documentos de referência |
 | `/users/{uid}/research_notebooks/{id}` | Cadernos de pesquisa |
-| `/settings/platform` | Config global: api_keys, model configs, model_catalog |
+
+### Regras de acesso
+
+- Cada usuário lê e grava apenas seus próprios documentos, preferências, custos, tokens e modelos.
+- Administradores têm leitura agregada dos dados operacionais para analytics da plataforma.
+- Administradores não têm acesso às preferências privadas em `/users/{uid}/settings/preferences`.
 
 ---
 
@@ -273,7 +283,7 @@ O arquivo [.claude/CLAUDE.md](.claude/CLAUDE.md) contém o contexto completo e a
 
 Ver [SECURITY.md](SECURITY.md) para política de divulgação de vulnerabilidades.
 
-- Chaves de API armazenadas no Firestore, nunca em código
+- Chaves de API armazenadas nas configurações do próprio usuário, nunca em código
 - Firebase Rules protegem todos os dados por `uid`
 - Sem backend público exposto em produção
 - Toda comunicação com OpenRouter usa HTTPS

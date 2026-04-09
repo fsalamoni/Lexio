@@ -1,7 +1,7 @@
 import { NavLink, matchPath, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, PlusCircle, Upload,
-  Scale, LogOut, Shield, BookOpen, ChevronRight, UserCircle, DollarSign, Brain,
+  Scale, LogOut, Settings, BookOpen, ChevronRight, UserCircle, DollarSign, Brain, Shield,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useEffect, useMemo, useState } from 'react'
@@ -95,9 +95,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const [pendingReview, setPendingReview] = useState(0)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
-  // Poll pending review count for admins every 60s
+  // Poll the current user's pending review count every 60s.
   useEffect(() => {
-    if (role !== 'admin') return
+    if (!userId) return
     const fetchPending = () => {
       if (IS_FIREBASE && userId) {
         listDocuments(userId, { status: 'em_revisao' })
@@ -112,7 +112,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     fetchPending()
     const interval = setInterval(fetchPending, 60_000)
     return () => clearInterval(interval)
-  }, [role, userId])
+  }, [userId])
 
   const handleLogout = () => {
     setShowLogoutConfirm(true)
@@ -150,22 +150,34 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             inactivePatterns={inactivePatterns}
           />
         ))}
+        <NavItem
+          to="/settings"
+          label="Configurações"
+          icon={Settings}
+          onClick={onClose}
+          badge={pendingReview}
+        />
+        <NavItem
+          to="/settings/costs"
+          label="Uso e Custos"
+          icon={DollarSign}
+          onClick={onClose}
+        />
         {role === 'admin' && (
-          <NavItem
-            to="/admin"
-            label="Administração"
-            icon={Shield}
-            onClick={onClose}
-            badge={pendingReview}
-          />
-        )}
-        {role === 'admin' && (
-          <NavItem
-            to="/admin/costs"
-            label="Custos e Tokens"
-            icon={DollarSign}
-            onClick={onClose}
-          />
+          <>
+            <NavItem
+              to="/admin"
+              label="Administração"
+              icon={Shield}
+              onClick={onClose}
+            />
+            <NavItem
+              to="/admin/costs"
+              label="Custos da Plataforma"
+              icon={DollarSign}
+              onClick={onClose}
+            />
+          </>
         )}
       </nav>
 

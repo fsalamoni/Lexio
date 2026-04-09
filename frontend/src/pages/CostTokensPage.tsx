@@ -453,7 +453,7 @@ export default function CostTokensPage() {
         <div className="flex items-center gap-3">
           <DollarSign className="w-8 h-8 text-amber-600" />
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Custos e Tokens</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Uso, Custos e Tokens</h1>
             <p className="text-gray-500">Carregando detalhamento...</p>
           </div>
         </div>
@@ -470,9 +470,9 @@ export default function CostTokensPage() {
       <div className="flex items-center gap-3">
         <DollarSign className="w-8 h-8 text-amber-600" />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Custos e Tokens</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Uso, Custos e Tokens</h1>
           <p className="text-gray-500">
-            Visão consolidada por API, modelo, função, fase, tipo de documento e agentes.
+            Visão consolidada do seu uso por API, modelo, função, fase, tipo de documento e agentes.
           </p>
         </div>
       </div>

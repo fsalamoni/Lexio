@@ -14,7 +14,7 @@ import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { DOCTYPE_LABELS } from '../lib/constants'
 import { IS_FIREBASE } from '../lib/firebase'
-import { getStats as firestoreGetStats, getDocumentTypes, getLegalAreas,
+import { getStats as firestoreGetStats,
   listDocuments, updateDocument,
   loadAdminDocumentTypes, saveAdminDocumentTypes,
   loadAdminLegalAreas, saveAdminLegalAreas,
@@ -234,8 +234,8 @@ function ApiKeysCard() {
       </div>
 
       <p className="text-sm text-gray-500 mb-6">
-        As chaves inseridas aqui são <strong>persistidas no banco de dados</strong> e aplicadas
-        imediatamente — sem necessidade de reiniciar o servidor. Apenas administradores têm acesso.
+        As chaves inseridas aqui são <strong>persistidas no seu perfil</strong> e aplicadas
+        imediatamente às suas execuções, sem afetar outros usuários.
       </p>
 
       <div className="space-y-4">
@@ -639,7 +639,8 @@ export default function AdminPanel() {
   const [toggling, setToggling] = useState<string | null>(null)
   const [collapseState, setCollapseState] = useState<Record<string, boolean>>(loadAdminCollapseState)
   const toast = useToast()
-  const { userId } = useAuth()
+  const { role, userId } = useAuth()
+  const showPlatformSections = false
 
   const toggleCollapse = useCallback((id: string) => {
     setCollapseState(prev => {
@@ -652,30 +653,42 @@ export default function AdminPanel() {
   const fetchData = () => {
     if (IS_FIREBASE) {
       if (!userId) { setLoading(false); return }
-      // Firebase mode: build data from Firestore + static definitions
-      const docTypes = getDocumentTypes().map(dt => ({
-        id: dt.id, name: dt.name, type: 'document_type' as const, version: '1.0.0',
-        is_enabled: true, is_healthy: true, error: null, description: dt.description,
-      }))
-      const areas = getLegalAreas().map(la => ({
-        id: la.id, name: la.name, type: 'legal_area' as const, version: '1.0.0',
-        is_enabled: true, is_healthy: true, error: null, description: la.description,
-      }))
-      setModules([...docTypes, ...areas])
-      setHealth({
-        status: 'ok', app: 'Lexio', version: '1.0.0',
-        services: { firebase: 'ok', openrouter: 'ok' },
-        modules: { total: docTypes.length + areas.length, healthy: docTypes.length + areas.length },
-      })
-      firestoreGetStats(userId).then(s => setStats({
-        total_documents: s.total_documents,
-        completed_documents: s.completed_documents,
-        processing_documents: s.processing_documents,
-        pending_review_documents: s.pending_review_documents,
-        average_quality_score: s.average_quality_score,
-        total_cost_usd: s.total_cost_usd,
-      })).catch(() => toast.error('Erro ao carregar estatísticas do Firebase')).finally(() => setLoading(false))
+      Promise.all([
+        loadAdminDocumentTypes(),
+        loadAdminLegalAreas(),
+        firestoreGetStats(userId),
+      ]).then(([documentTypes, legalAreas, stats]) => {
+        const docTypes = documentTypes.map(dt => ({
+          id: dt.id, name: dt.name, type: 'document_type' as const, version: '1.0.0',
+          is_enabled: true, is_healthy: true, error: null, description: dt.description,
+        }))
+        const areas = legalAreas.map(la => ({
+          id: la.id, name: la.name, type: 'legal_area' as const, version: '1.0.0',
+          is_enabled: true, is_healthy: true, error: null, description: la.description,
+        }))
+        setModules([...docTypes, ...areas])
+        setHealth({
+          status: 'ok', app: 'Lexio', version: '1.0.0',
+          services: { firebase: 'ok', openrouter: 'ok' },
+          modules: { total: docTypes.length + areas.length, healthy: docTypes.length + areas.length },
+        })
+        setStats({
+          total_documents: stats.total_documents,
+          completed_documents: stats.completed_documents,
+          processing_documents: stats.processing_documents,
+          pending_review_documents: stats.pending_review_documents,
+          average_quality_score: stats.average_quality_score,
+          total_cost_usd: stats.total_cost_usd,
+        })
+      }).catch(() => toast.error('Erro ao carregar configurações e estatísticas do Firebase')).finally(() => setLoading(false))
     } else {
+      if (role !== 'admin') {
+        setModules([])
+        setHealth(null)
+        setStats(null)
+        setLoading(false)
+        return
+      }
       Promise.all([
         api.get('/admin/modules').then(res => setModules(Array.isArray(res.data) ? res.data : [])).catch(() => toast.error('Erro ao carregar módulos')),
         api.get('/health').then(res => { if (res.data && typeof res.data === 'object') setHealth(res.data) }).catch(() => toast.error('Erro ao verificar saúde do sistema')),
@@ -684,7 +697,7 @@ export default function AdminPanel() {
     }
   }
 
-  useEffect(() => { fetchData() }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchData() }, [role, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggle = async (moduleId: string) => {
     setToggling(moduleId)
@@ -726,15 +739,15 @@ export default function AdminPanel() {
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
-        <Shield className="w-8 h-8 text-brand-600" />
+        <Key className="w-8 h-8 text-brand-600" />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Painel Administrativo</h1>
-          <p className="text-gray-500">Configurações, módulos, serviços e métricas</p>
+          <h1 className="text-2xl font-bold text-gray-900">Configurações Pessoais</h1>
+          <p className="text-gray-500">Suas APIs, modelos, revisão de documentos e preferências de execução</p>
         </div>
       </div>
 
       {/* Quick Stats — always visible */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+      <div className={`grid grid-cols-2 ${showPlatformSections ? 'md:grid-cols-6' : 'md:grid-cols-5'} gap-4 mb-6`}>
         <div className="bg-white rounded-xl border p-4">
           <div className="flex items-center gap-2 mb-1">
             <FileText className="w-4 h-4 text-brand-600" />
@@ -776,13 +789,15 @@ export default function AdminPanel() {
             ${stats?.total_cost_usd?.toFixed(2) || '0.00'}
           </p>
         </div>
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <BarChart3 className="w-4 h-4 text-purple-600" />
-            <span className="text-xs text-gray-500">Módulos</span>
+        {showPlatformSections && (
+          <div className="bg-white rounded-xl border p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <BarChart3 className="w-4 h-4 text-purple-600" />
+              <span className="text-xs text-gray-500">Módulos</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{healthyModules}/{modules.length}</p>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{healthyModules}/{modules.length}</p>
-        </div>
+        )}
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════ */}
@@ -802,7 +817,7 @@ export default function AdminPanel() {
       </AdminCollapsibleSection>
 
       {/* Reindex — API mode only */}
-      {!IS_FIREBASE && (
+      {!IS_FIREBASE && showPlatformSections && (
         <AdminCollapsibleSection
           id="section_reindex"
           title="Reindexação Vetorial"
@@ -827,18 +842,20 @@ export default function AdminPanel() {
       )}
 
       {/* API Keys */}
-      <AdminCollapsibleSection
-        id="section_api_keys"
-        title="Chaves de API"
-        icon={Key}
-        collapseState={collapseState}
-        onToggle={toggleCollapse}
-      >
-        <ApiKeysCard />
-      </AdminCollapsibleSection>
+      {(IS_FIREBASE || showPlatformSections) && (
+        <AdminCollapsibleSection
+          id="section_api_keys"
+          title="Chaves de API"
+          icon={Key}
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ApiKeysCard />
+        </AdminCollapsibleSection>
+      )}
 
       {/* Model Catalog — Firebase mode */}
-      {IS_FIREBASE && (
+      {IS_FIREBASE && showPlatformSections && (
         <AdminCollapsibleSection
           id="section_model_catalog"
           title="Catálogo de Modelos"
@@ -1030,13 +1047,16 @@ export default function AdminPanel() {
       {/* ── BLOCO: Dados & Sistema ─────────────────────────────────────── */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
 
-      <div className="mt-8 mb-3">
-        <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
-          <Activity className="w-3.5 h-3.5" /> Dados, Módulos & Sistema
-        </h2>
-      </div>
+      {showPlatformSections && (
+        <div className="mt-8 mb-3">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+            <Activity className="w-3.5 h-3.5" /> Dados, Módulos & Sistema
+          </h2>
+        </div>
+      )}
 
       {/* System Health + Module Pie */}
+      {showPlatformSections && (
       <AdminCollapsibleSection
         id="section_health"
         title="Saúde do Sistema"
@@ -1099,48 +1119,55 @@ export default function AdminPanel() {
           )}
         </div>
       </AdminCollapsibleSection>
+      )}
 
       {/* Document Types — CRUD */}
-      <AdminCollapsibleSection
-        id="section_document_types"
-        title="Tipos de Documento"
-        icon={FileText}
-        iconColor="text-blue-600"
-        badge={docTypesCount}
-        collapseState={collapseState}
-        onToggle={toggleCollapse}
-      >
-        <DocumentTypesCrud />
-      </AdminCollapsibleSection>
+      {showPlatformSections && (
+        <AdminCollapsibleSection
+          id="section_document_types"
+          title="Tipos de Documento"
+          icon={FileText}
+          iconColor="text-blue-600"
+          badge={docTypesCount}
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <DocumentTypesCrud />
+        </AdminCollapsibleSection>
+      )}
 
       {/* Legal Areas — CRUD */}
-      <AdminCollapsibleSection
-        id="section_legal_areas"
-        title="Áreas do Direito"
-        icon={Scale}
-        iconColor="text-purple-600"
-        badge={legalAreasCount}
-        collapseState={collapseState}
-        onToggle={toggleCollapse}
-      >
-        <LegalAreasCrud />
-      </AdminCollapsibleSection>
+      {showPlatformSections && (
+        <AdminCollapsibleSection
+          id="section_legal_areas"
+          title="Áreas do Direito"
+          icon={Scale}
+          iconColor="text-purple-600"
+          badge={legalAreasCount}
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <LegalAreasCrud />
+        </AdminCollapsibleSection>
+      )}
 
       {/* Classification Tipos — CRUD */}
-      <AdminCollapsibleSection
-        id="section_classification_tipos"
-        title="Tipos de Documento por Classificação"
-        icon={Tags}
-        iconColor="text-green-600"
-        collapseState={collapseState}
-        onToggle={toggleCollapse}
-        defaultOpen={false}
-      >
-        <ClassificationTiposCrud />
-      </AdminCollapsibleSection>
+      {showPlatformSections && (
+        <AdminCollapsibleSection
+          id="section_classification_tipos"
+          title="Tipos de Documento por Classificação"
+          icon={Tags}
+          iconColor="text-green-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+          defaultOpen={false}
+        >
+          <ClassificationTiposCrud />
+        </AdminCollapsibleSection>
+      )}
 
       {/* Features */}
-      {features.length > 0 && (
+      {showPlatformSections && features.length > 0 && (
         <AdminCollapsibleSection
           id="section_features"
           title={`Módulos Funcionais (${features.length})`}
@@ -1157,10 +1184,10 @@ export default function AdminPanel() {
       )}
 
       {/* Pipeline Execution Logs — API mode only */}
-      {!IS_FIREBASE && <PipelineLogs />}
+      {!IS_FIREBASE && showPlatformSections && <PipelineLogs />}
 
       {/* User Management — API mode only */}
-      {!IS_FIREBASE && (
+      {!IS_FIREBASE && showPlatformSections && (
         <AdminCollapsibleSection
           id="section_users"
           title="Usuários"

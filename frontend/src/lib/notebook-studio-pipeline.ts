@@ -853,7 +853,7 @@ export async function runStudioPipeline(
   if (missing.length > 0) {
     throw new Error(
       `Agente(s) sem modelo configurado: ${missing.map(a => a.label).join(', ')}. ` +
-      'Vá em Administração > Caderno de Pesquisa e selecione modelos para todos os agentes do estúdio.',
+      'Vá em Configurações > Caderno de Pesquisa e selecione modelos para todos os agentes do estúdio.',
     )
   }
 

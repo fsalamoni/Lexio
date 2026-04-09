@@ -2,7 +2,7 @@
  * Agent model configuration — defines which LLM model each pipeline agent uses.
  *
  * Persistence:
- *   Firebase mode → Firestore /settings/platform.agent_models
+ *   Firebase mode → Firestore /users/{uid}/settings/preferences.agent_models
  *   Backend mode  → not yet wired (uses defaults)
  *
  * The generation-service reads these at generation time so admin changes
@@ -10,7 +10,8 @@
  */
 
 import { IS_FIREBASE } from './firebase'
-import { getSettings, saveSettings } from './firestore-service'
+import { ensureUserSettingsMigrated, getCurrentUserId, saveUserSettings } from './firestore-service'
+import type { UserSettingsData } from './firestore-types'
 
 // ── Available OpenRouter models (curated) ─────────────────────────────────────
 
@@ -400,7 +401,7 @@ export class ModelsNotConfiguredError extends Error {
 
   constructor(pipelineName: string, missingAgents: string[]) {
     const agentList = missingAgents.join(', ')
-    super(`Modelos não configurados para o pipeline "${pipelineName}". Agentes sem modelo: ${agentList}. Configure os modelos no Painel Administrativo.`)
+    super(`Modelos não configurados para o pipeline "${pipelineName}". Agentes sem modelo: ${agentList}. Configure os modelos em Configurações.`)
     this.name = 'ModelsNotConfiguredError'
     this.pipelineName = pipelineName
     this.missingAgents = missingAgents
@@ -562,6 +563,92 @@ function buildCatalogIdSet(settings: Record<string, unknown>): Set<string> {
   return ids
 }
 
+type ScopedModelSettingsKey =
+  | 'agent_models'
+  | 'thesis_analyst_models'
+  | 'context_detail_models'
+  | 'acervo_classificador_models'
+  | 'acervo_ementa_models'
+  | 'research_notebook_models'
+  | 'notebook_acervo_models'
+  | 'video_pipeline_models'
+  | 'audio_pipeline_models'
+  | 'presentation_pipeline_models'
+
+function resolveScopedUid(uid?: string): string | undefined {
+  return uid ?? getCurrentUserId() ?? undefined
+}
+
+function applySavedModelOverrides<T extends Record<string, string>>(
+  target: T,
+  defs: AgentModelDef[],
+  saved: Record<string, string>,
+  catalogIds: Set<string>,
+): T {
+  const mutableTarget = target as Record<string, string>
+  for (const def of defs) {
+    if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
+      mutableTarget[def.key] = saved[def.key]
+    }
+  }
+  return target
+}
+
+async function loadScopedModelMap<T extends Record<string, string>>(
+  key: ScopedModelSettingsKey,
+  defs: AgentModelDef[],
+  defaults: T,
+  uid?: string,
+): Promise<T> {
+  if (!IS_FIREBASE) return defaults
+
+  try {
+    const resolvedUid = resolveScopedUid(uid)
+    const userSettings = resolvedUid ? await ensureUserSettingsMigrated(resolvedUid) : {} as UserSettingsData
+    const catalogIds = buildCatalogIdSet(userSettings as unknown as Record<string, unknown>)
+    const userSaved = (userSettings[key] ?? {}) as Record<string, string>
+
+    applySavedModelOverrides(defaults, defs, userSaved, catalogIds)
+  } catch {
+    // On error, just return defaults silently
+  }
+
+  return defaults
+}
+
+async function saveScopedModelMap<T extends Record<string, string>>(
+  key: ScopedModelSettingsKey,
+  defs: AgentModelDef[],
+  defaults: T,
+  models: T,
+  uid?: string,
+): Promise<void> {
+  if (!IS_FIREBASE) return
+
+  const resolvedUid = resolveScopedUid(uid)
+  if (!resolvedUid) throw new Error('Usuário não autenticado.')
+
+  const overrides = {} as Record<string, string>
+
+  for (const def of defs) {
+    const model = models[def.key]
+    if (model && model !== defaults[def.key]) {
+      overrides[def.key] = model
+    }
+  }
+
+  await saveUserSettings(resolvedUid, { [key]: overrides } as Partial<UserSettingsData>)
+}
+
+async function resetScopedModelMap(key: ScopedModelSettingsKey, uid?: string): Promise<void> {
+  if (!IS_FIREBASE) return
+
+  const resolvedUid = resolveScopedUid(uid)
+  if (!resolvedUid) throw new Error('Usuário não autenticado.')
+
+  await saveUserSettings(resolvedUid, { [key]: {} } as Partial<UserSettingsData>)
+}
+
 // ── Load / Save ───────────────────────────────────────────────────────────────
 
 /** Build the default model map from PIPELINE_AGENT_DEFS. */
@@ -577,54 +664,23 @@ export function getDefaultModelMap(): AgentModelMap {
  * Load the current agent model configuration.
  * Returns the saved overrides merged with defaults (so every agent always has a model).
  */
-export async function loadAgentModels(): Promise<AgentModelMap> {
-  const defaults = getDefaultModelMap()
-
-  if (!IS_FIREBASE) return defaults
-
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.agent_models ?? {}) as Record<string, string>
-    // Merge saved over defaults, but only for known agents with valid model IDs
-    for (const def of PIPELINE_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // On error, just return defaults silently
-  }
-
-  return defaults
+export async function loadAgentModels(uid?: string): Promise<AgentModelMap> {
+  return loadScopedModelMap('agent_models', PIPELINE_AGENT_DEFS, getDefaultModelMap(), uid)
 }
 
 /**
  * Save agent model configuration to Firestore.
  * Only saves entries that differ from defaults (to keep stored data minimal).
  */
-export async function saveAgentModels(models: AgentModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-
-  const defaults = getDefaultModelMap()
-  const overrides: AgentModelMap = {}
-
-  for (const def of PIPELINE_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-
-  await saveSettings({ agent_models: overrides })
+export async function saveAgentModels(models: AgentModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('agent_models', PIPELINE_AGENT_DEFS, getDefaultModelMap(), models, uid)
 }
 
 /**
  * Reset all agent models to defaults by clearing the stored overrides.
  */
-export async function resetAgentModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ agent_models: {} })
+export async function resetAgentModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('agent_models', uid)
 }
 
 // ── Thesis Analyst Agent Definitions ─────────────────────────────────────────
@@ -703,45 +759,21 @@ export function getDefaultThesisAnalystModelMap(): ThesisAnalystModelMap {
  * Load thesis analyst model configuration.
  * Returns saved overrides merged with defaults.
  */
-export async function loadThesisAnalystModels(): Promise<ThesisAnalystModelMap> {
-  const defaults = getDefaultThesisAnalystModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.thesis_analyst_models ?? {}) as Record<string, string>
-    for (const def of THESIS_ANALYST_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
+export async function loadThesisAnalystModels(uid?: string): Promise<ThesisAnalystModelMap> {
+  return loadScopedModelMap('thesis_analyst_models', THESIS_ANALYST_AGENT_DEFS, getDefaultThesisAnalystModelMap(), uid)
 }
 
 /**
  * Save thesis analyst model configuration to Firestore.
  * Only stores non-default values to keep data minimal.
  */
-export async function saveThesisAnalystModels(models: ThesisAnalystModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultThesisAnalystModelMap()
-  const overrides: ThesisAnalystModelMap = {}
-  for (const def of THESIS_ANALYST_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ thesis_analyst_models: overrides })
+export async function saveThesisAnalystModels(models: ThesisAnalystModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('thesis_analyst_models', THESIS_ANALYST_AGENT_DEFS, getDefaultThesisAnalystModelMap(), models, uid)
 }
 
 /** Reset thesis analyst models to defaults. */
-export async function resetThesisAnalystModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ thesis_analyst_models: {} })
+export async function resetThesisAnalystModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('thesis_analyst_models', uid)
 }
 
 // ── Context Detail Agent Definition ──────────────────────────────────────────
@@ -780,45 +812,21 @@ export function getDefaultContextDetailModelMap(): ContextDetailModelMap {
  * Load context detail model configuration.
  * Returns saved overrides merged with defaults.
  */
-export async function loadContextDetailModels(): Promise<ContextDetailModelMap> {
-  const defaults = getDefaultContextDetailModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.context_detail_models ?? {}) as Record<string, string>
-    for (const def of CONTEXT_DETAIL_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
+export async function loadContextDetailModels(uid?: string): Promise<ContextDetailModelMap> {
+  return loadScopedModelMap('context_detail_models', CONTEXT_DETAIL_AGENT_DEFS, getDefaultContextDetailModelMap(), uid)
 }
 
 /**
  * Save context detail model configuration to Firestore.
  * Only stores non-default values to keep data minimal.
  */
-export async function saveContextDetailModels(models: ContextDetailModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultContextDetailModelMap()
-  const overrides: ContextDetailModelMap = {}
-  for (const def of CONTEXT_DETAIL_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ context_detail_models: overrides })
+export async function saveContextDetailModels(models: ContextDetailModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('context_detail_models', CONTEXT_DETAIL_AGENT_DEFS, getDefaultContextDetailModelMap(), models, uid)
 }
 
 /** Reset context detail models to defaults. */
-export async function resetContextDetailModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ context_detail_models: {} })
+export async function resetContextDetailModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('context_detail_models', uid)
 }
 
 // ── Acervo Classificador Agent Definition ────────────────────────────────────
@@ -857,45 +865,21 @@ export function getDefaultAcervoClassificadorModelMap(): AcervoClassificadorMode
  * Load acervo classificador model configuration.
  * Returns saved overrides merged with defaults.
  */
-export async function loadAcervoClassificadorModels(): Promise<AcervoClassificadorModelMap> {
-  const defaults = getDefaultAcervoClassificadorModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.acervo_classificador_models ?? {}) as Record<string, string>
-    for (const def of ACERVO_CLASSIFICADOR_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
+export async function loadAcervoClassificadorModels(uid?: string): Promise<AcervoClassificadorModelMap> {
+  return loadScopedModelMap('acervo_classificador_models', ACERVO_CLASSIFICADOR_AGENT_DEFS, getDefaultAcervoClassificadorModelMap(), uid)
 }
 
 /**
  * Save acervo classificador model configuration to Firestore.
  * Only stores non-default values to keep data minimal.
  */
-export async function saveAcervoClassificadorModels(models: AcervoClassificadorModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultAcervoClassificadorModelMap()
-  const overrides: AcervoClassificadorModelMap = {}
-  for (const def of ACERVO_CLASSIFICADOR_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ acervo_classificador_models: overrides })
+export async function saveAcervoClassificadorModels(models: AcervoClassificadorModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('acervo_classificador_models', ACERVO_CLASSIFICADOR_AGENT_DEFS, getDefaultAcervoClassificadorModelMap(), models, uid)
 }
 
 /** Reset acervo classificador models to defaults. */
-export async function resetAcervoClassificadorModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ acervo_classificador_models: {} })
+export async function resetAcervoClassificadorModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('acervo_classificador_models', uid)
 }
 
 // ── Acervo Ementa Agent Definition ───────────────────────────────────────────
@@ -934,45 +918,21 @@ export function getDefaultAcervoEmentaModelMap(): AcervoEmentaModelMap {
  * Load acervo ementa model configuration.
  * Returns saved overrides merged with defaults.
  */
-export async function loadAcervoEmentaModels(): Promise<AcervoEmentaModelMap> {
-  const defaults = getDefaultAcervoEmentaModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.acervo_ementa_models ?? {}) as Record<string, string>
-    for (const def of ACERVO_EMENTA_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
+export async function loadAcervoEmentaModels(uid?: string): Promise<AcervoEmentaModelMap> {
+  return loadScopedModelMap('acervo_ementa_models', ACERVO_EMENTA_AGENT_DEFS, getDefaultAcervoEmentaModelMap(), uid)
 }
 
 /**
  * Save acervo ementa model configuration to Firestore.
  * Only stores non-default values to keep data minimal.
  */
-export async function saveAcervoEmentaModels(models: AcervoEmentaModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultAcervoEmentaModelMap()
-  const overrides: AcervoEmentaModelMap = {}
-  for (const def of ACERVO_EMENTA_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ acervo_ementa_models: overrides })
+export async function saveAcervoEmentaModels(models: AcervoEmentaModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('acervo_ementa_models', ACERVO_EMENTA_AGENT_DEFS, getDefaultAcervoEmentaModelMap(), models, uid)
 }
 
 /** Reset acervo ementa models to defaults. */
-export async function resetAcervoEmentaModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ acervo_ementa_models: {} })
+export async function resetAcervoEmentaModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('acervo_ementa_models', uid)
 }
 
 // ── Research Notebook (Caderno de Pesquisa) Agent Definitions ─────────────────
@@ -1125,45 +1085,21 @@ export function getDefaultResearchNotebookModelMap(): ResearchNotebookModelMap {
  * Load research notebook model configuration.
  * Returns saved overrides merged with defaults.
  */
-export async function loadResearchNotebookModels(): Promise<ResearchNotebookModelMap> {
-  const defaults = getDefaultResearchNotebookModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.research_notebook_models ?? {}) as Record<string, string>
-    for (const def of RESEARCH_NOTEBOOK_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
+export async function loadResearchNotebookModels(uid?: string): Promise<ResearchNotebookModelMap> {
+  return loadScopedModelMap('research_notebook_models', RESEARCH_NOTEBOOK_AGENT_DEFS, getDefaultResearchNotebookModelMap(), uid)
 }
 
 /**
  * Save research notebook model configuration to Firestore.
  * Only stores non-default values to keep data minimal.
  */
-export async function saveResearchNotebookModels(models: ResearchNotebookModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultResearchNotebookModelMap()
-  const overrides: ResearchNotebookModelMap = {}
-  for (const def of RESEARCH_NOTEBOOK_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ research_notebook_models: overrides })
+export async function saveResearchNotebookModels(models: ResearchNotebookModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('research_notebook_models', RESEARCH_NOTEBOOK_AGENT_DEFS, getDefaultResearchNotebookModelMap(), models, uid)
 }
 
 /** Reset research notebook models to defaults. */
-export async function resetResearchNotebookModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ research_notebook_models: {} })
+export async function resetResearchNotebookModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('research_notebook_models', uid)
 }
 
 // ── Notebook Acervo Analyzer Agent Definitions ───────────────────────────────
@@ -1232,45 +1168,21 @@ export function getDefaultNotebookAcervoModelMap(): NotebookAcervoModelMap {
  * Load notebook acervo analyzer model configuration.
  * Returns saved overrides merged with defaults.
  */
-export async function loadNotebookAcervoModels(): Promise<NotebookAcervoModelMap> {
-  const defaults = getDefaultNotebookAcervoModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.notebook_acervo_models ?? {}) as Record<string, string>
-    for (const def of NOTEBOOK_ACERVO_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
+export async function loadNotebookAcervoModels(uid?: string): Promise<NotebookAcervoModelMap> {
+  return loadScopedModelMap('notebook_acervo_models', NOTEBOOK_ACERVO_AGENT_DEFS, getDefaultNotebookAcervoModelMap(), uid)
 }
 
 /**
  * Save notebook acervo analyzer model configuration to Firestore.
  * Only stores non-default values to keep data minimal.
  */
-export async function saveNotebookAcervoModels(models: NotebookAcervoModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultNotebookAcervoModelMap()
-  const overrides: NotebookAcervoModelMap = {}
-  for (const def of NOTEBOOK_ACERVO_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ notebook_acervo_models: overrides })
+export async function saveNotebookAcervoModels(models: NotebookAcervoModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('notebook_acervo_models', NOTEBOOK_ACERVO_AGENT_DEFS, getDefaultNotebookAcervoModelMap(), models, uid)
 }
 
 /** Reset notebook acervo analyzer models to defaults. */
-export async function resetNotebookAcervoModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ notebook_acervo_models: {} })
+export async function resetNotebookAcervoModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('notebook_acervo_models', uid)
 }
 
 // ── Video Pipeline Agent Definitions ─────────────────────────────────────────
@@ -1437,45 +1349,21 @@ export function getDefaultVideoPipelineModelMap(): VideoPipelineModelMap {
  * Load video pipeline model configuration.
  * Returns saved overrides merged with defaults.
  */
-export async function loadVideoPipelineModels(): Promise<VideoPipelineModelMap> {
-  const defaults = getDefaultVideoPipelineModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.video_pipeline_models ?? {}) as Record<string, string>
-    for (const def of VIDEO_PIPELINE_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
+export async function loadVideoPipelineModels(uid?: string): Promise<VideoPipelineModelMap> {
+  return loadScopedModelMap('video_pipeline_models', VIDEO_PIPELINE_AGENT_DEFS, getDefaultVideoPipelineModelMap(), uid)
 }
 
 /**
  * Save video pipeline model configuration to Firestore.
  * Only stores non-default values to keep data minimal.
  */
-export async function saveVideoPipelineModels(models: VideoPipelineModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultVideoPipelineModelMap()
-  const overrides: VideoPipelineModelMap = {}
-  for (const def of VIDEO_PIPELINE_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ video_pipeline_models: overrides })
+export async function saveVideoPipelineModels(models: VideoPipelineModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('video_pipeline_models', VIDEO_PIPELINE_AGENT_DEFS, getDefaultVideoPipelineModelMap(), models, uid)
 }
 
 /** Reset video pipeline models to defaults. */
-export async function resetVideoPipelineModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ video_pipeline_models: {} })
+export async function resetVideoPipelineModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('video_pipeline_models', uid)
 }
 
 // ── Audio Pipeline Agent Definitions ─────────────────────────────────────────
@@ -1579,45 +1467,21 @@ export function getDefaultAudioPipelineModelMap(): AudioPipelineModelMap {
  * Load audio pipeline model configuration.
  * Returns saved overrides merged with defaults.
  */
-export async function loadAudioPipelineModels(): Promise<AudioPipelineModelMap> {
-  const defaults = getDefaultAudioPipelineModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.audio_pipeline_models ?? {}) as Record<string, string>
-    for (const def of AUDIO_PIPELINE_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
+export async function loadAudioPipelineModels(uid?: string): Promise<AudioPipelineModelMap> {
+  return loadScopedModelMap('audio_pipeline_models', AUDIO_PIPELINE_AGENT_DEFS, getDefaultAudioPipelineModelMap(), uid)
 }
 
 /**
  * Save audio pipeline model configuration to Firestore.
  * Only stores non-default values to keep data minimal.
  */
-export async function saveAudioPipelineModels(models: AudioPipelineModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultAudioPipelineModelMap()
-  const overrides: AudioPipelineModelMap = {}
-  for (const def of AUDIO_PIPELINE_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ audio_pipeline_models: overrides })
+export async function saveAudioPipelineModels(models: AudioPipelineModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('audio_pipeline_models', AUDIO_PIPELINE_AGENT_DEFS, getDefaultAudioPipelineModelMap(), models, uid)
 }
 
 /** Reset audio pipeline models to defaults. */
-export async function resetAudioPipelineModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ audio_pipeline_models: {} })
+export async function resetAudioPipelineModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('audio_pipeline_models', uid)
 }
 
 // ── Presentation Pipeline Agent Definitions ──────────────────────────────────
@@ -1709,43 +1573,19 @@ export function getDefaultPresentationPipelineModelMap(): PresentationPipelineMo
  * Load presentation pipeline model configuration.
  * Returns saved overrides merged with defaults.
  */
-export async function loadPresentationPipelineModels(): Promise<PresentationPipelineModelMap> {
-  const defaults = getDefaultPresentationPipelineModelMap()
-  if (!IS_FIREBASE) return defaults
-  try {
-    const settings = await getSettings()
-    const catalogIds = buildCatalogIdSet(settings)
-    const saved = (settings.presentation_pipeline_models ?? {}) as Record<string, string>
-    for (const def of PRESENTATION_PIPELINE_AGENT_DEFS) {
-      if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-        defaults[def.key] = saved[def.key]
-      }
-    }
-  } catch {
-    // Fall back to defaults silently
-  }
-  return defaults
+export async function loadPresentationPipelineModels(uid?: string): Promise<PresentationPipelineModelMap> {
+  return loadScopedModelMap('presentation_pipeline_models', PRESENTATION_PIPELINE_AGENT_DEFS, getDefaultPresentationPipelineModelMap(), uid)
 }
 
 /**
  * Save presentation pipeline model configuration to Firestore.
  * Only stores non-default values to keep data minimal.
  */
-export async function savePresentationPipelineModels(models: PresentationPipelineModelMap): Promise<void> {
-  if (!IS_FIREBASE) return
-  const defaults = getDefaultPresentationPipelineModelMap()
-  const overrides: PresentationPipelineModelMap = {}
-  for (const def of PRESENTATION_PIPELINE_AGENT_DEFS) {
-    const model = models[def.key]
-    if (model && model !== defaults[def.key]) {
-      overrides[def.key] = model
-    }
-  }
-  await saveSettings({ presentation_pipeline_models: overrides })
+export async function savePresentationPipelineModels(models: PresentationPipelineModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('presentation_pipeline_models', PRESENTATION_PIPELINE_AGENT_DEFS, getDefaultPresentationPipelineModelMap(), models, uid)
 }
 
 /** Reset presentation pipeline models to defaults. */
-export async function resetPresentationPipelineModels(): Promise<void> {
-  if (!IS_FIREBASE) return
-  await saveSettings({ presentation_pipeline_models: {} })
+export async function resetPresentationPipelineModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('presentation_pipeline_models', uid)
 }

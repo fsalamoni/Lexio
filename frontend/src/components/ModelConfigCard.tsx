@@ -8,7 +8,7 @@
  * - Model tier badges (fast/balanced/premium)
  * - Free-tier model badges
  * - Save/reset/restore defaults
- * - Persists to Firestore /settings/platform.agent_models
+ * - Persists to Firestore /users/{uid}/settings/preferences.agent_models
  */
 
 import { useEffect, useState } from 'react'

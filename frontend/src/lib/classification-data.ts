@@ -1157,8 +1157,9 @@ export function getTiposForClassification(
   natureza: string,
   areaIds: string[],
   assuntos: string[],
+  tiposSource?: Record<string, Record<string, string[]>>,
 ): string[] {
-  const tipoMap = CLASSIFICATION_TIPOS[natureza]
+  const tipoMap = (tiposSource ?? CLASSIFICATION_TIPOS)[natureza]
   if (!tipoMap) return []
 
   // Reserved for future finer-grained filtering by assuntos
