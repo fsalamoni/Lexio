@@ -18,7 +18,13 @@
 import { callLLM, type LLMResult } from './llm-client'
 import { loadResearchNotebookModels, validateScopedAgentModels, type ResearchNotebookModelMap } from './model-config'
 import type { StudioArtifactType } from './firestore-service'
-import { isStructuredArtifactType } from '../components/artifacts/artifact-parsers'
+import { isStructuredArtifactType, parseArtifactContent } from '../components/artifacts/artifact-parsers'
+import {
+  renderDataTableImage,
+  renderInfographicImage,
+  renderMindMapImage,
+  type RenderedArtifactImage,
+} from './notebook-visual-artifact-renderer'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,6 +45,11 @@ export interface StudioPipelineResult {
   content: string
   /** Execution records for each pipeline step */
   executions: StudioStepExecution[]
+}
+
+export interface StudioVisualMediaResult {
+  rendered: RenderedArtifactImage
+  execution: StudioStepExecution
 }
 
 export interface StudioStepExecution {
@@ -943,4 +954,59 @@ export async function runStudioPipeline(
     content: reviewResult.content,
     executions,
   }
+}
+
+export async function generateStructuredVisualArtifactMedia(
+  artifactType: StudioArtifactType,
+  rawContent: string,
+): Promise<StudioVisualMediaResult> {
+  const startedAt = Date.now()
+  const parsed = parseArtifactContent(artifactType, rawContent)
+
+  if (artifactType === 'infografico' && parsed.kind === 'infographic') {
+    return {
+      rendered: await renderInfographicImage(parsed.data),
+      execution: {
+        phase: 'visual_artifact_render',
+        agent_name: 'Renderizador Visual Final',
+        model: 'browser/svg-render',
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: 0,
+        duration_ms: Date.now() - startedAt,
+      },
+    }
+  }
+
+  if (artifactType === 'mapa_mental' && parsed.kind === 'mindmap') {
+    return {
+      rendered: await renderMindMapImage(parsed.data),
+      execution: {
+        phase: 'visual_artifact_render',
+        agent_name: 'Renderizador Visual Final',
+        model: 'browser/svg-render',
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: 0,
+        duration_ms: Date.now() - startedAt,
+      },
+    }
+  }
+
+  if (artifactType === 'tabela_dados' && parsed.kind === 'datatable') {
+    return {
+      rendered: await renderDataTableImage(parsed.data),
+      execution: {
+        phase: 'visual_artifact_render',
+        agent_name: 'Renderizador Visual Final',
+        model: 'browser/svg-render',
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: 0,
+        duration_ms: Date.now() - startedAt,
+      },
+    }
+  }
+
+  throw new Error('O artefato visual não possui estrutura válida para gerar imagem final.')
 }

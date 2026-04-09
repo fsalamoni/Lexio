@@ -83,6 +83,98 @@ export async function exportPresentationImagesAsZip(data: ParsedPresentation, fi
   downloadBlob(zipBlob, `${filename}_slides.zip`)
 }
 
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('Falha ao converter mídia para data URL.'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+export async function exportPresentationAsPptx(data: ParsedPresentation, filename: string) {
+  const PptxGenJS = (await import('pptxgenjs')).default
+  const pptx = new PptxGenJS()
+  pptx.layout = 'LAYOUT_WIDE'
+  pptx.author = 'Lexio'
+  pptx.company = 'Lexio'
+  pptx.subject = data.title || filename
+  pptx.title = data.title || filename
+  pptx.theme = {
+    headFontFace: 'Aptos Display',
+    bodyFontFace: 'Aptos',
+  }
+
+  for (const slideData of data.slides) {
+    const slide = pptx.addSlide()
+    slide.background = { color: 'F8FAFC' }
+
+    if (slideData.renderedImageUrl) {
+      const blob = await fetchUrlAsBlob(slideData.renderedImageUrl)
+      const imageData = await blobToDataUrl(blob)
+      slide.addImage({ data: imageData, x: 0, y: 0, w: 13.333, h: 7.5 })
+    } else {
+      slide.addText(slideData.title, {
+        x: 0.6,
+        y: 0.45,
+        w: 12.1,
+        h: 0.7,
+        fontFace: 'Aptos Display',
+        fontSize: 24,
+        bold: true,
+        color: '0F172A',
+        margin: 0,
+      })
+
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 0.6,
+        y: 1.35,
+        w: 12.1,
+        h: 4.9,
+        rectRadius: 0.12,
+        fill: { color: 'FFFFFF' },
+        line: { color: 'DBEAFE', pt: 1.2 },
+      })
+
+      const bulletRuns = slideData.bullets.length > 0
+        ? slideData.bullets.map(bullet => ({ text: bullet, options: { bullet: { indent: 14 } } }))
+        : [{ text: slideData.visualSuggestion || 'Slide sem bullets estruturados.' }]
+
+      slide.addText(bulletRuns, {
+        x: 1.0,
+        y: 1.85,
+        w: 6.2,
+        h: 3.8,
+        fontFace: 'Aptos',
+        fontSize: 18,
+        color: '1F2937',
+        breakLine: true,
+        margin: 0,
+      })
+
+      slide.addText(slideData.visualSuggestion || 'Direção visual sugerida pelo pipeline.', {
+        x: 7.8,
+        y: 1.85,
+        w: 4.35,
+        h: 3.0,
+        fontFace: 'Aptos',
+        fontSize: 16,
+        color: '334155',
+        italic: true,
+        margin: 0.12,
+        fill: { color: 'EFF6FF' },
+        line: { color: 'BFDBFE', pt: 1 },
+      })
+    }
+
+    const notes = [slideData.speakerNotes, slideData.visualSuggestion].filter(Boolean).join('\n\n')
+    const notesTarget = slide as unknown as { addNotes?: (text: string) => void }
+    notesTarget.addNotes?.(notes)
+  }
+
+  await pptx.writeFile({ fileName: `${filename}.pptx` })
+}
+
 // ── CSV export for DataTable ────────────────────────────────────────────────
 
 export function exportDataTableAsCSV(data: ParsedDataTable, filename: string) {

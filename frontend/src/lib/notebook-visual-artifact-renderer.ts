@@ -117,12 +117,27 @@ function buildBaseSvg(width: number, height: number, body: string, extraStyles =
 export async function renderPresentationSlidePoster(
   presentation: ParsedPresentation,
   slide: ParsedSlide,
+  options?: { backgroundImageUrl?: string },
 ): Promise<RenderedArtifactImage> {
   const width = 1600
   const height = 900
   const titleLines = wrapText(slide.title, 30).slice(0, 3)
   const bulletLines = slide.bullets.slice(0, 5).flatMap((bullet) => wrapText(bullet, 44).slice(0, 2))
   const suggestionLines = wrapText(slide.visualSuggestion || presentation.title || 'Apresentação jurídica', 32).slice(0, 3)
+  const backgroundPanel = options?.backgroundImageUrl
+    ? [
+        `<rect x="1044" y="228" width="366" height="240" rx="24" fill="#dbeafe"/>`,
+        `<clipPath id="slideVisualClip"><rect x="1044" y="228" width="366" height="240" rx="24"/></clipPath>`,
+        `<image x="1044" y="228" width="366" height="240" href="${escapeXml(options.backgroundImageUrl)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#slideVisualClip)"/>`,
+        '<rect x="1044" y="228" width="366" height="240" rx="24" fill="rgba(15,23,42,0.10)"/>',
+      ].join('')
+    : [
+        '<rect x="1044" y="228" width="366" height="240" rx="24" fill="#dbeafe"/>',
+        '<path d="M1086 412 C1166 320, 1274 502, 1364 350" fill="none" stroke="#1d4ed8" stroke-width="14" stroke-linecap="round"/>',
+        '<circle cx="1120" cy="308" r="24" fill="#93c5fd"/>',
+        '<circle cx="1278" cy="284" r="18" fill="#60a5fa"/>',
+        '<circle cx="1358" cy="372" r="28" fill="#3b82f6"/>',
+      ].join('')
 
   const body = [
     `<rect width="${width}" height="${height}" fill="url(#heroGradient)"/>`,
@@ -141,11 +156,7 @@ export async function renderPresentationSlidePoster(
       })
       .join(''),
     '<rect x="1012" y="194" width="430" height="468" rx="30" fill="url(#softGradient)" stroke="#bfdbfe" stroke-width="3"/>',
-    '<rect x="1044" y="228" width="366" height="240" rx="24" fill="#dbeafe"/>',
-    '<path d="M1086 412 C1166 320, 1274 502, 1364 350" fill="none" stroke="#1d4ed8" stroke-width="14" stroke-linecap="round"/>',
-    '<circle cx="1120" cy="308" r="24" fill="#93c5fd"/>',
-    '<circle cx="1278" cy="284" r="18" fill="#60a5fa"/>',
-    '<circle cx="1358" cy="372" r="28" fill="#3b82f6"/>',
+    backgroundPanel,
     linesToSvg(suggestionLines, 1048, 540, 34, 'strong'),
     '<text x="1048" y="678" class="small">Slide visual final pronto para uso no caderno e em exportações.</text>',
     `<text x="126" y="760" class="small">Slide ${slide.number} • Gerado automaticamente pelo Studio Lexio</text>`,

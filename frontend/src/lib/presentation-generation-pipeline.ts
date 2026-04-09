@@ -1,17 +1,34 @@
 import { parseArtifactContent } from '../components/artifacts/artifact-parsers'
+import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL } from './image-generation-client'
 import { callLLM, type LLMResult } from './llm-client'
 import {
   loadPresentationPipelineModels,
   validateScopedAgentModels,
 } from './model-config'
+import { renderPresentationSlidePoster } from './notebook-visual-artifact-renderer'
 import type {
   StudioPipelineInput,
   StudioProgressCallback,
   StudioStepExecution,
 } from './notebook-studio-pipeline'
+import type { ParsedPresentation, ParsedSlide } from '../components/artifacts/artifact-parsers'
 
 export interface PresentationGenerationPipelineResult {
   content: string
+  executions: StudioStepExecution[]
+}
+
+export interface GeneratedPresentationSlideVisual {
+  slideNumber: number
+  blob: Blob
+  mimeType: string
+  extension: string
+  model: string
+  costUsd: number
+}
+
+export interface PresentationMediaGenerationResult {
+  slideVisuals: GeneratedPresentationSlideVisual[]
   executions: StudioStepExecution[]
 }
 
@@ -113,6 +130,143 @@ function toExecution(
     tokens_out: result.tokens_out,
     cost_usd: result.cost_usd,
     duration_ms: result.duration_ms,
+  }
+}
+
+function buildDeckVisualSystem(input: Pick<StudioPipelineInput, 'topic' | 'description'>, presentation: ParsedPresentation): string {
+  const slideTitles = presentation.slides.slice(0, 6).map(slide => slide.title).join(' | ')
+  return [
+    `Tema central: ${input.topic}.`,
+    input.description ? `Objetivo executivo: ${input.description}.` : '',
+    `Título da apresentação: ${presentation.title || input.topic}.`,
+    slideTitles ? `Linha narrativa dos slides: ${slideTitles}.` : '',
+    'Direção visual fixa: premium editorial, jurídico-institucional, elegante, contemporâneo, legível e coeso.',
+    'Paleta dominante: navy profundo, azul cobalto, marfim, prata suave e acentos discretos.',
+    'A imagem deve reforçar o conteúdo do slide sem introduzir assunto paralelo nem elementos aleatórios.',
+  ].filter(Boolean).join(' ')
+}
+
+function buildPresentationImagePrompt(
+  input: Pick<StudioPipelineInput, 'topic' | 'description'>,
+  presentation: ParsedPresentation,
+  slide: ParsedSlide,
+  slideIndex: number,
+): { prompt: string; negativePrompt: string } {
+  const previous = slideIndex > 0 ? presentation.slides[slideIndex - 1]?.title : ''
+  const next = slideIndex < presentation.slides.length - 1 ? presentation.slides[slideIndex + 1]?.title : ''
+  const bulletSummary = slide.bullets.slice(0, 5).join('; ')
+  const notesSnippet = slide.speakerNotes ? slide.speakerNotes.slice(0, 260) : ''
+  const visualSystem = buildDeckVisualSystem(input, presentation)
+
+  return {
+    prompt: [
+      'Crie uma imagem premium para compor um slide de apresentação jurídica.',
+      visualSystem,
+      `Slide ${slide.number} de ${presentation.slides.length}.`,
+      `Título do slide: ${slide.title}.`,
+      bulletSummary ? `Pontos centrais: ${bulletSummary}.` : '',
+      notesSnippet ? `Contexto narrativo do apresentador: ${notesSnippet}.` : '',
+      slide.visualSuggestion ? `Direção visual desejada: ${slide.visualSuggestion}.` : '',
+      previous ? `Slide anterior: ${previous}.` : '',
+      next ? `Próximo slide: ${next}.` : '',
+      'A imagem será integrada ao layout final do slide, portanto precisa funcionar como herói visual ou painel editorial sofisticado.',
+      'Use composição limpa, elementos relevantes ao conteúdo, profundidade elegante, sem poluição visual.',
+      'Se houver pessoas, mantenha expressão profissional e contexto verossímil. Se o conteúdo for normativo, privilegie metáforas visuais institucionais, documentos, arquitetura, fluxos, conexões e símbolos discretos.',
+    ].filter(Boolean).join(' '),
+    negativePrompt: [
+      'texto legível',
+      'legendas',
+      'parágrafos',
+      'watermark',
+      'mockup genérico desconexo',
+      'elementos infantis',
+      'estilo cartoon',
+      'baixa resolução',
+      'tipografia embutida',
+      'infográfico textual',
+      'mãos deformadas',
+      'assunto fora do contexto',
+    ].join(', '),
+  }
+}
+
+export async function generatePresentationMediaAssets(
+  input: Pick<StudioPipelineInput, 'apiKey' | 'topic' | 'description'>,
+  rawPresentationContent: string,
+  onProgress?: StudioProgressCallback,
+  signal?: AbortSignal,
+): Promise<PresentationMediaGenerationResult> {
+  throwIfAborted(signal)
+  const parsed = parseArtifactContent('apresentacao', rawPresentationContent)
+  if (parsed.kind !== 'presentation') {
+    throw new Error('A apresentação não possui estrutura válida para gerar slides visuais.')
+  }
+
+  const models = await loadPresentationPipelineModels()
+  await validateScopedAgentModels('presentation_pipeline_models', models)
+  const imageModel = models.pres_image_generator || DEFAULT_IMAGE_MODEL
+
+  const slideVisuals: GeneratedPresentationSlideVisual[] = []
+  const executions: StudioStepExecution[] = []
+
+  for (let index = 0; index < parsed.data.slides.length; index++) {
+    throwIfAborted(signal)
+    const slide = parsed.data.slides[index]
+    const renderStartedAt = Date.now()
+    const stepLabel = `Gerando visual do slide ${index + 1} de ${parsed.data.slides.length}…`
+    onProgress?.(index + 1, parsed.data.slides.length, stepLabel)
+
+    let composed
+    let execution: StudioStepExecution
+
+    try {
+      const prompt = buildPresentationImagePrompt(input, parsed.data, slide, index)
+      const generated = await generateImageViaOpenRouter({
+        apiKey: input.apiKey,
+        prompt: prompt.prompt,
+        negativePrompt: prompt.negativePrompt,
+        model: imageModel,
+        aspectRatio: '16:9',
+      })
+      composed = await renderPresentationSlidePoster(parsed.data, slide, {
+        backgroundImageUrl: generated.imageDataUrl,
+      })
+      execution = {
+        phase: 'pres_image_generator',
+        agent_name: 'Gerador de Imagens de Slides',
+        model: generated.model,
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: generated.cost_usd,
+        duration_ms: Date.now() - renderStartedAt,
+      }
+    } catch {
+      composed = await renderPresentationSlidePoster(parsed.data, slide)
+      execution = {
+        phase: 'visual_artifact_render',
+        agent_name: 'Renderizador Visual de Apresentação',
+        model: 'browser/svg-render',
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: 0,
+        duration_ms: Date.now() - renderStartedAt,
+      }
+    }
+
+    slideVisuals.push({
+      slideNumber: slide.number,
+      blob: composed.blob,
+      mimeType: composed.mimeType,
+      extension: composed.extension,
+      model: execution.model,
+      costUsd: execution.cost_usd,
+    })
+    executions.push(execution)
+  }
+
+  return {
+    slideVisuals,
+    executions,
   }
 }
 

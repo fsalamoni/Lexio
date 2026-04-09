@@ -1,5 +1,6 @@
 import { parseArtifactContent } from '../components/artifacts/artifact-parsers'
 import { callLLM, type LLMResult } from './llm-client'
+import { synthesizeAudioFromScript } from './notebook-audio-pipeline'
 import {
   loadAudioPipelineModels,
   validateScopedAgentModels,
@@ -13,6 +14,14 @@ import type {
 export interface AudioGenerationPipelineResult {
   content: string
   executions: StudioStepExecution[]
+}
+
+export interface AudioLiteralGenerationResult {
+  audioBlob: Blob
+  mimeType: string
+  chunkCount: number
+  segmentCount: number
+  execution: StudioStepExecution
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -167,5 +176,40 @@ export async function runAudioGenerationPipeline(
   return {
     content: finalContent,
     executions,
+  }
+}
+
+export async function generateAudioLiteralMedia(
+  input: {
+    apiKey: string
+    rawScriptContent: string
+    voice?: string
+    model?: string
+  },
+  onProgress?: StudioProgressCallback,
+): Promise<AudioLiteralGenerationResult> {
+  const models = await loadAudioPipelineModels()
+  const ttsModel = input.model || models.audio_narrador || 'openai/tts-1-hd'
+  const startedAt = Date.now()
+  onProgress?.(1, 1, 'Gerando áudio literal…')
+
+  const synthesis = await synthesizeAudioFromScript({
+    apiKey: input.apiKey,
+    rawScriptContent: input.rawScriptContent,
+    voice: input.voice,
+    model: ttsModel,
+  })
+
+  return {
+    ...synthesis,
+    execution: {
+      phase: 'audio_literal_generation',
+      agent_name: 'Narrador / TTS',
+      model: ttsModel,
+      tokens_in: 0,
+      tokens_out: 0,
+      cost_usd: 0.015 * (input.rawScriptContent.length / 1000),
+      duration_ms: Date.now() - startedAt,
+    },
   }
 }

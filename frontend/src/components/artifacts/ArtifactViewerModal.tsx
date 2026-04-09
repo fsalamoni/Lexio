@@ -19,6 +19,7 @@ import {
   exportFlashcardsAsCSV,
   exportQuizAsText,
   exportPresentationAsText,
+  exportPresentationAsPptx,
   exportAudioScriptAsText,
   exportVideoScriptAsText,
   exportFileFromUrl,
@@ -246,6 +247,7 @@ export default function ArtifactViewerModal({
         options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
         break
       case 'presentation':
+        options.push({ label: 'PowerPoint (.pptx)', action: () => void exportPresentationAsPptx(parsed.data, safeName) })
         options.push({ label: 'Texto Slides (.txt)', action: () => exportPresentationAsText(parsed.data, safeName) })
         if (parsed.data.slides.some(slide => slide.renderedImageUrl)) {
           options.push({ label: 'Slides em PNG (.zip)', action: () => void exportPresentationImagesAsZip(parsed.data, safeName) })

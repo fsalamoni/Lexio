@@ -40,13 +40,17 @@ import {
 } from '../lib/firestore-service'
 import { callLLM, callLLMWithMessages, ModelUnavailableError, type LLMResult } from '../lib/llm-client'
 import { getOpenRouterKey } from '../lib/generation-service'
-import { loadPresentationPipelineModels, loadResearchNotebookModels } from '../lib/model-config'
+import { loadResearchNotebookModels } from '../lib/model-config'
 import {
   createUsageExecutionRecord,
   type UsageFunctionKey,
 } from '../lib/cost-analytics'
 import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
-import { runStudioPipeline, type StudioProgressCallback } from '../lib/notebook-studio-pipeline'
+import {
+  generateStructuredVisualArtifactMedia,
+  runStudioPipeline,
+  type StudioProgressCallback,
+} from '../lib/notebook-studio-pipeline'
 import {
   runVideoGenerationPipeline,
   type VideoProductionPackage,
@@ -61,19 +65,12 @@ import {
   generateLiteralMediaAssets,
   renderLiteralVideo,
 } from '../lib/literal-video-production'
-import {
-  renderDataTableImage,
-  renderInfographicImage,
-  renderMindMapImage,
-  renderPresentationSlidePoster,
-} from '../lib/notebook-visual-artifact-renderer'
-import { runAudioGenerationPipeline } from '../lib/audio-generation-pipeline'
-import { runPresentationGenerationPipeline } from '../lib/presentation-generation-pipeline'
-import { synthesizeAudioFromScript } from '../lib/notebook-audio-pipeline'
+import { generateAudioLiteralMedia, runAudioGenerationPipeline } from '../lib/audio-generation-pipeline'
+import { generatePresentationMediaAssets, runPresentationGenerationPipeline } from '../lib/presentation-generation-pipeline'
 import { extractFileText, isSupportedTextFile, SUPPORTED_TEXT_FILE_EXTENSIONS } from '../lib/file-text-extractor'
 import { generateImageViaOpenRouter, blobToDataUrl } from '../lib/image-generation-client'
 import { generateTTSViaOpenRouter } from '../lib/tts-client'
-import { loadAudioPipelineModels, loadVideoPipelineModels } from '../lib/model-config'
+import { loadVideoPipelineModels } from '../lib/model-config'
 import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import { isStructuredArtifactType, parseArtifactContent } from '../components/artifacts/artifact-parsers'
@@ -2042,11 +2039,12 @@ Instruções:
       }> = []
 
       if (currentArtifact.type === 'apresentacao' && parsed.kind === 'presentation') {
-        const apiKey = await getOpenRouterKey().catch(() => '')
-        const presentationModels: Record<string, string> = apiKey
-          ? await loadPresentationPipelineModels().catch(() => ({}))
-          : {}
-        const presentationImageModel = presentationModels.pres_image_generator
+        const apiKey = await getOpenRouterKey()
+        const media = await generatePresentationMediaAssets({
+          apiKey,
+          topic: activeNotebook.topic,
+          description: activeNotebook.description || undefined,
+        }, currentArtifact.content)
         const original = JSON.parse(currentArtifact.content) as Record<string, unknown>
         const sourceSlides = Array.isArray(original.slides) ? original.slides as Record<string, unknown>[] : []
         const updatedSlides: Record<string, unknown>[] = []
@@ -2054,46 +2052,18 @@ Instruções:
         for (let index = 0; index < parsed.data.slides.length; index++) {
           const slide = parsed.data.slides[index]
           const baseSlide = sourceSlides[index] || {}
-          let imageBlob: Blob | null = null
-          let imageModel = 'browser/svg-render'
-          let imageCostUsd = 0
-          const renderStartedAt = Date.now()
-
-          if (apiKey) {
-            try {
-              const prompt = [
-                'Crie uma imagem editorial premium para um slide de apresentação jurídica.',
-                `Título: ${slide.title}.`,
-                slide.bullets.length ? `Pontos-chave: ${slide.bullets.join('; ')}.` : '',
-                slide.visualSuggestion ? `Direção visual: ${slide.visualSuggestion}.` : '',
-                'Sem texto legível na imagem. Aparência sofisticada, documental, profissional, coerente com direito e pesquisa.',
-              ].filter(Boolean).join(' ')
-              const generated = await generateImageViaOpenRouter({
-                apiKey,
-                prompt,
-                model: presentationImageModel,
-                aspectRatio: '16:9',
-              })
-              imageBlob = await fetch(generated.imageDataUrl).then(response => response.blob())
-              imageModel = generated.model
-              imageCostUsd = generated.cost_usd
-            } catch (error) {
-              console.warn(`Falling back to poster render for slide ${slide.number}:`, error)
-            }
-          }
-
-          if (!imageBlob) {
-            const rendered = await renderPresentationSlidePoster(parsed.data, slide)
-            imageBlob = rendered.blob
+          const generatedSlide = media.slideVisuals.find(item => item.slideNumber === slide.number)
+          if (!generatedSlide) {
+            throw new Error(`Não foi possível gerar o visual do slide ${slide.number}.`)
           }
 
           const storedImage = await uploadNotebookMediaArtifact(
             uid,
             notebookId,
             `${currentArtifact.title}-slide-${slide.number}`,
-            imageBlob,
+            generatedSlide.blob,
             'images',
-            getExtensionFromMimeType(imageBlob.type, '.png'),
+            generatedSlide.extension,
           )
 
           updatedSlides.push({
@@ -2106,16 +2076,8 @@ Instruções:
             renderedImageUrl: storedImage.url,
             renderedImageStoragePath: storedImage.path,
           })
-          visualExecutions.push({
-            phase: imageModel === 'browser/svg-render' ? 'visual_artifact_render' : 'pres_image_generator',
-            agent_name: imageModel === 'browser/svg-render' ? 'Renderizador Visual de Apresentação' : 'Gerador de Imagens de Slides',
-            model: imageModel,
-            tokens_in: 0,
-            tokens_out: 0,
-            cost_usd: imageCostUsd,
-            duration_ms: Date.now() - renderStartedAt,
-          })
         }
+        visualExecutions.push(...media.executions)
 
         nextContent = JSON.stringify({
           ...original,
@@ -2125,58 +2087,55 @@ Instruções:
         successMessage = `${updatedSlides.length} slide(s) visual(is) gerado(s) com sucesso.`
       } else if (currentArtifact.type === 'infografico' && parsed.kind === 'infographic') {
         const original = JSON.parse(currentArtifact.content) as Record<string, unknown>
-        const renderStartedAt = Date.now()
-        const rendered = await renderInfographicImage(parsed.data)
+        const media = await generateStructuredVisualArtifactMedia(currentArtifact.type, currentArtifact.content)
         const storedImage = await uploadNotebookMediaArtifact(
           uid,
           notebookId,
           `${currentArtifact.title}-infografico-final`,
-          rendered.blob,
+          media.rendered.blob,
           'images',
-          rendered.extension,
+          media.rendered.extension,
         )
         nextContent = JSON.stringify({
           ...original,
           renderedImageUrl: storedImage.url,
           renderedImageStoragePath: storedImage.path,
         }, null, 2)
-        visualExecutions.push({ phase: 'visual_artifact_render', agent_name: 'Renderizador Visual Final', model: 'browser/svg-render', tokens_in: 0, tokens_out: 0, cost_usd: 0, duration_ms: Date.now() - renderStartedAt })
+        visualExecutions.push(media.execution)
       } else if (currentArtifact.type === 'mapa_mental' && parsed.kind === 'mindmap') {
         const original = JSON.parse(currentArtifact.content) as Record<string, unknown>
-        const renderStartedAt = Date.now()
-        const rendered = await renderMindMapImage(parsed.data)
+        const media = await generateStructuredVisualArtifactMedia(currentArtifact.type, currentArtifact.content)
         const storedImage = await uploadNotebookMediaArtifact(
           uid,
           notebookId,
           `${currentArtifact.title}-mapa-mental-final`,
-          rendered.blob,
+          media.rendered.blob,
           'images',
-          rendered.extension,
+          media.rendered.extension,
         )
         nextContent = JSON.stringify({
           ...original,
           renderedImageUrl: storedImage.url,
           renderedImageStoragePath: storedImage.path,
         }, null, 2)
-        visualExecutions.push({ phase: 'visual_artifact_render', agent_name: 'Renderizador Visual Final', model: 'browser/svg-render', tokens_in: 0, tokens_out: 0, cost_usd: 0, duration_ms: Date.now() - renderStartedAt })
+        visualExecutions.push(media.execution)
       } else if (currentArtifact.type === 'tabela_dados' && parsed.kind === 'datatable') {
         const original = JSON.parse(currentArtifact.content) as Record<string, unknown>
-        const renderStartedAt = Date.now()
-        const rendered = await renderDataTableImage(parsed.data)
+        const media = await generateStructuredVisualArtifactMedia(currentArtifact.type, currentArtifact.content)
         const storedImage = await uploadNotebookMediaArtifact(
           uid,
           notebookId,
           `${currentArtifact.title}-tabela-final`,
-          rendered.blob,
+          media.rendered.blob,
           'images',
-          rendered.extension,
+          media.rendered.extension,
         )
         nextContent = JSON.stringify({
           ...original,
           renderedImageUrl: storedImage.url,
           renderedImageStoragePath: storedImage.path,
         }, null, 2)
-        visualExecutions.push({ phase: 'visual_artifact_render', agent_name: 'Renderizador Visual Final', model: 'browser/svg-render', tokens_in: 0, tokens_out: 0, cost_usd: 0, duration_ms: Date.now() - renderStartedAt })
+        visualExecutions.push(media.execution)
       } else {
         throw new Error('O artefato visual não possui estrutura válida para gerar imagem final.')
       }
@@ -2406,13 +2365,9 @@ Instruções:
         return
       }
 
-      const audioModels = await loadAudioPipelineModels()
-      const ttsModel = audioModels.audio_narrador || 'openai/tts-1-hd'
-
-      const synthesis = await synthesizeAudioFromScript({
+      const synthesis = await generateAudioLiteralMedia({
         apiKey,
         rawScriptContent: artifact.content,
-        model: ttsModel,
       })
 
       const storedAudio = await uploadNotebookMediaArtifact(
@@ -2452,13 +2407,7 @@ Instruções:
       await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
 
       await appendNotebookExecutions(notebookId, 'audio_pipeline', [{
-        phase: 'audio_literal_generation',
-        agent_name: 'Narrador / TTS',
-        model: ttsModel,
-        tokens_in: 0,
-        tokens_out: 0,
-        cost_usd: 0.015 * (artifact.content.length / 1000),
-        duration_ms: 0,
+        ...synthesis.execution,
       }])
 
       setActiveNotebook(prev => prev && prev.id === notebookId

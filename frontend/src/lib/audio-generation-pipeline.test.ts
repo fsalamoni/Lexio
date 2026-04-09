@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const callLLMMock = vi.fn()
 const loadAudioPipelineModelsMock = vi.fn()
 const validateScopedAgentModelsMock = vi.fn()
+const synthesizeAudioFromScriptMock = vi.fn()
 
 vi.mock('./llm-client', () => ({
   callLLM: (...args: unknown[]) => callLLMMock(...args),
@@ -13,7 +14,11 @@ vi.mock('./model-config', () => ({
   validateScopedAgentModels: (...args: unknown[]) => validateScopedAgentModelsMock(...args),
 }))
 
-import { runAudioGenerationPipeline } from './audio-generation-pipeline'
+vi.mock('./notebook-audio-pipeline', () => ({
+  synthesizeAudioFromScript: (...args: unknown[]) => synthesizeAudioFromScriptMock(...args),
+}))
+
+import { generateAudioLiteralMedia, runAudioGenerationPipeline } from './audio-generation-pipeline'
 
 describe('runAudioGenerationPipeline', () => {
   beforeEach(() => {
@@ -27,6 +32,12 @@ describe('runAudioGenerationPipeline', () => {
       audio_narrador: 'openai/tts-1-hd',
     })
     validateScopedAgentModelsMock.mockResolvedValue(undefined)
+    synthesizeAudioFromScriptMock.mockResolvedValue({
+      audioBlob: new Blob(['fake-audio'], { type: 'audio/mpeg' }),
+      mimeType: 'audio/mpeg',
+      chunkCount: 1,
+      segmentCount: 2,
+    })
 
     callLLMMock
       .mockResolvedValueOnce({ content: '{"title":"Plano de áudio"}', model: 'openai/gpt-4.1-mini', tokens_in: 100, tokens_out: 50, cost_usd: 0.001, duration_ms: 100 })
@@ -102,5 +113,17 @@ describe('runAudioGenerationPipeline', () => {
       'audio_revisor',
     ])
     expect(validateScopedAgentModelsMock).toHaveBeenCalledWith('audio_pipeline_models', expect.any(Object))
+  })
+
+  it('generates literal audio inside the audio pipeline module', async () => {
+    const result = await generateAudioLiteralMedia({
+      apiKey: 'key',
+      rawScriptContent: '{"title":"Teste"}',
+    })
+
+    expect(result.mimeType).toBe('audio/mpeg')
+    expect(result.execution.phase).toBe('audio_literal_generation')
+    expect(result.execution.agent_name).toBe('Narrador / TTS')
+    expect(synthesizeAudioFromScriptMock).toHaveBeenCalledTimes(1)
   })
 })

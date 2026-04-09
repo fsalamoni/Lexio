@@ -30,7 +30,7 @@ Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
    i. Redator — redige documento final (12k tokens)
 4. Teses são auto-extraídas para o banco de teses
 5. Documento salvo no Firestore com llm_executions[]
-6. Export DOCX disponível (Times New Roman 12pt, A4)
+6. Export DOCX e PPTX disponível no browser
 ```
 
 ## Princípios
@@ -52,11 +52,11 @@ Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
 | Context detail | 1 | — | `context_detail_models` |
 | Classificador acervo | 1 | — | `acervo_classificador_models` |
 | Ementa acervo | 1 | — | `acervo_ementa_models` |
-| Caderno de pesquisa | 11 | `notebook-studio-pipeline.ts` | `research_notebook_models` |
+| Caderno de pesquisa | 12 | `notebook-studio-pipeline.ts` | `research_notebook_models` |
 | Notebook acervo | 4 | `notebook-acervo-analyzer.ts` | `notebook_acervo_models` |
-| Vídeo | 8 | `video-generation-pipeline.ts` | `video_pipeline_models` |
-| Áudio | 6 | `notebook-audio-pipeline.ts` | `audio_pipeline_models` |
-| Apresentação | 5 | `model-config.ts` | `presentation_pipeline_models` |
+| Vídeo | 11 | `video-generation-pipeline.ts` | `video_pipeline_models` |
+| Áudio | 6 | `audio-generation-pipeline.ts` | `audio_pipeline_models` |
+| Apresentação | 6 | `presentation-generation-pipeline.ts` | `presentation_pipeline_models` |
 
 ## Tipos de Documento (10)
 | ID | Nome |
