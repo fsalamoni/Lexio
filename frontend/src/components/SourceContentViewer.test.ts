@@ -32,8 +32,8 @@ describe('formatDate', () => {
   })
 
   it('formats a valid ISO date to pt-BR locale', () => {
-    // Use a fixed UTC date to avoid timezone drift
-    const result = formatDate('2024-01-15T00:00:00.000Z')
+    // Use midday UTC to avoid date shifting across timezones (e.g. BRT -3)
+    const result = formatDate('2024-01-15T12:00:00.000Z')
     // Accepts any locale-formatted date containing "15" and "2024"
     expect(result).toMatch(/15/)
     expect(result).toMatch(/2024/)
