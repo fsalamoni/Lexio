@@ -1,0 +1,32 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAllowedMediaKind(mediaKind) {
+      return mediaKind in ['images', 'audios', 'videos'];
+    }
+
+    function isReasonableUpload() {
+      return request.resource != null
+        && request.resource.size < 50 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|audio/.*|video/.*');
+    }
+
+    match /research_notebooks/{userId}/{notebookId}/{mediaKind}/{fileName} {
+      allow read: if isSelf(userId);
+      allow write: if isSelf(userId) && isAllowedMediaKind(mediaKind) && isReasonableUpload();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

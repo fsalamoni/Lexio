@@ -33,6 +33,27 @@ function inferExtensionFromMimeType(mimeType?: string, fallback = ''): string {
   return fallback
 }
 
+function describeStorageUploadError(error: unknown): string {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code?: unknown }).code || '')
+    : ''
+  const message = error instanceof Error ? error.message : String(error || '')
+
+  if (code === 'storage/unauthorized') {
+    return 'Sem permissão para salvar mídia no Cloud Storage. Publique as storage rules do projeto ou revise o acesso do usuário autenticado.'
+  }
+  if (code === 'storage/canceled') {
+    return 'Upload de mídia cancelado antes da conclusão.'
+  }
+  if (code === 'storage/retry-limit-exceeded') {
+    return 'O upload de mídia excedeu o limite de tentativas. Verifique a conexão e tente novamente.'
+  }
+  if (code === 'storage/unknown' && message) {
+    return `Falha no upload de mídia: ${message}`
+  }
+  return message || 'Falha desconhecida ao salvar mídia no Cloud Storage.'
+}
+
 export async function uploadNotebookVideoArtifact(
   userId: string,
   notebookId: string,
@@ -60,10 +81,14 @@ export async function uploadNotebookMediaArtifact(
   const path = `research_notebooks/${userId}/${notebookId}/${mediaKind}/${fileName}`
   const storageRef = ref(storage, path)
 
-  await uploadBytes(storageRef, blob, {
-    contentType: blob.type || 'application/octet-stream',
-    cacheControl: 'public,max-age=31536000,immutable',
-  })
+  try {
+    await uploadBytes(storageRef, blob, {
+      contentType: blob.type || 'application/octet-stream',
+      cacheControl: 'public,max-age=31536000,immutable',
+    })
+  } catch (error) {
+    throw new Error(describeStorageUploadError(error))
+  }
 
   return {
     url: await getDownloadURL(storageRef),

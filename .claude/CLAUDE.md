@@ -756,7 +756,7 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 | Workflow | Trigger | Ação |
 |----------|---------|------|
 | `deploy-pages.yml` | Push para `main` | Build + deploy GitHub Pages (`VITE_BASE_PATH=/Lexio/`) |
-| `firebase-deploy.yml` | Push para `main` ou `claude/*` | Build + deploy Firebase Hosting + Firestore rules |
+| `firebase-deploy.yml` | Push para `main` ou `claude/*` | Build + deploy Firebase Hosting + Firestore rules + Storage rules |
 | `test.yml` | Push/PR | Executa testes |
 
 ---
@@ -765,6 +765,7 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 
 - Chaves API armazenadas nas configurações do próprio usuário, nunca em código
 - Firebase Rules protegem todos os dados por `uid`
+- Cloud Storage usa regras dedicadas para mídia persistida dos cadernos de pesquisa
 - Admin pode ler subcoleções operacionais para analytics agregados, mas não lê `/users/{uid}/settings/preferences`
 - CSP restritivo com whitelist de domínios
 - Sem backend público exposto em produção

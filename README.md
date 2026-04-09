@@ -232,13 +232,13 @@ Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts
 O deploy é **totalmente automático** — qualquer push para `main` dispara as pipelines de CI/CD:
 
 - **GitHub Pages** — usa `VITE_BASE_PATH=/Lexio/` (workflow `deploy-pages.yml`)
-- **Firebase Hosting** — usa `VITE_BASE_PATH=/` (workflow `firebase-deploy.yml`, inclui deploy de Firestore rules)
+- **Firebase Hosting** — usa `VITE_BASE_PATH=/` (workflow `firebase-deploy.yml`, inclui deploy de Firestore rules e Storage rules)
 - **Testes** — executa em push/PR (workflow `test.yml`)
 
 Para deploy manual:
 ```bash
-# Firebase Hosting + Firestore Rules
-firebase deploy --only "hosting,firestore:rules"
+# Firebase Hosting + Firestore + Storage Rules
+firebase deploy --only "hosting,firestore:rules,storage"
 
 # GitHub Pages (via workflow)
 git push origin main
@@ -268,6 +268,7 @@ git push origin main
 - Cada usuário lê e grava apenas seus próprios documentos, preferências, custos, tokens e modelos.
 - Administradores têm leitura agregada dos dados operacionais para analytics da plataforma.
 - Administradores não têm acesso às preferências privadas em `/users/{uid}/settings/preferences`.
+- Mídias do caderno em `research_notebooks/{uid}/{notebookId}/{images|audios|videos}/...` usam Cloud Storage com regras por usuário autenticado.
 
 ---
 

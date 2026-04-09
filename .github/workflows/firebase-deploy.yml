@@ -1,4 +1,4 @@
-name: Deploy — Firebase Hosting (lexio.web.app) + Firestore Rules
+name: Deploy — Firebase Hosting (lexio.web.app) + Firestore/Storage Rules
 
 # ──────────────────────────────────────────────────────────────────────────────
 # SECRETS NECESSÁRIOS (GitHub → Settings → Secrets → Actions):
@@ -212,13 +212,13 @@ jobs:
         run: npx tsc
         working-directory: functions
 
-      # ── Deploy Hosting + Firestore Rules + Functions ──────────────────────
+      # ── Deploy Hosting + Firestore/Storage Rules + Functions ──────────────
       # Auth opção B: FIREBASE_TOKEN (gerado por `firebase login:ci`)
       # Firebase CLI usa FIREBASE_TOKEN se setado, caso contrário usa GOOGLE_APPLICATION_CREDENTIALS
       - name: Deploy to Firebase
         run: |
           firebase deploy \
-            --only hosting:lexio,firestore:rules,firestore:indexes,functions \
+            --only hosting:lexio,firestore:rules,firestore:indexes,storage,functions \
             --project "$FIREBASE_PROJECT_ID" \
             --non-interactive
         env:
