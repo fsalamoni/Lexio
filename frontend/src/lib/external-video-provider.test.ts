@@ -94,6 +94,56 @@ describe('external-video-provider', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('polls full operation resource names without encoding path separators', async () => {
+    vi.stubEnv('VITE_EXTERNAL_VIDEO_PROVIDER', 'google-veo')
+    vi.stubEnv('VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT', 'https://provider.example/v1beta/video:generate')
+    vi.stubEnv('VITE_EXTERNAL_VIDEO_PROVIDER_STATUS_ENDPOINT', 'https://provider.example/v1beta/{jobId}')
+    vi.stubEnv('VITE_EXTERNAL_VIDEO_PROVIDER_POLL_INTERVAL_MS', '1000')
+
+    const operationName = 'projects/demo/locations/us-central1/operations/veo-123'
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => new Response(
+        JSON.stringify({ name: operationName, done: false }),
+        {
+          status: 202,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ))
+      .mockImplementationOnce(async (input: RequestInfo | URL) => {
+        expect(String(input)).toBe(`https://provider.example/v1beta/${operationName}`)
+        return new Response(
+          JSON.stringify({
+            name: operationName,
+            done: true,
+            response: {
+              generatedVideos: [
+                { video: { uri: 'https://cdn.example/veo-123.mp4' } },
+              ],
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        )
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await requestExternalVideoClip({
+      prompt: 'Sequência institucional cinematográfica',
+      durationSeconds: 8,
+      sceneNumber: 3,
+      partNumber: 1,
+    })
+
+    expect(result).not.toBeNull()
+    expect(result?.url).toBe('https://cdn.example/veo-123.mp4')
+    expect(result?.jobId).toBe(operationName)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('health check marks auth failure as actionable warning', async () => {
     vi.stubEnv('VITE_EXTERNAL_VIDEO_PROVIDER', 'kling')
     vi.stubEnv('VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT', 'https://provider.example/generate')

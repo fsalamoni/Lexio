@@ -305,13 +305,17 @@ interface ExternalVideoResponsePayload {
   output_url?: string
   result_url?: string
   download_url?: string
+  name?: string
   mime_type?: string
   status?: string
   state?: string
+  done?: boolean
   job_id?: string
   id?: string
   poll_url?: string
-  error?: string
+  response?: Record<string, unknown>
+  result?: Record<string, unknown>
+  error?: string | Record<string, unknown>
   message?: string
   details?: string
   [key: string]: unknown
@@ -345,14 +349,48 @@ function getResultUrl(payload: ExternalVideoResponsePayload): string | undefined
   const nested = payload.data && typeof payload.data === 'object'
     ? payload.data as Record<string, unknown>
     : undefined
+  const response = payload.response && typeof payload.response === 'object'
+    ? payload.response as Record<string, unknown>
+    : undefined
+  const result = payload.result && typeof payload.result === 'object'
+    ? payload.result as Record<string, unknown>
+    : undefined
+  const generatedVideos = Array.isArray(response?.generatedVideos)
+    ? response.generatedVideos
+    : Array.isArray(response?.generated_videos)
+      ? response.generated_videos
+      : Array.isArray(result?.generatedVideos)
+        ? result.generatedVideos
+        : Array.isArray(result?.generated_videos)
+          ? result.generated_videos
+          : undefined
+  const firstGeneratedVideo = generatedVideos?.[0] && typeof generatedVideos[0] === 'object'
+    ? generatedVideos[0] as Record<string, unknown>
+    : undefined
+  const firstVideoRecord = firstGeneratedVideo?.video && typeof firstGeneratedVideo.video === 'object'
+    ? firstGeneratedVideo.video as Record<string, unknown>
+    : undefined
   const candidate = payload.url
     || payload.video_url
     || payload.output_url
     || payload.result_url
     || payload.download_url
+    || (typeof payload.uri === 'string' ? payload.uri : undefined)
     || (typeof nested?.url === 'string' ? nested.url : undefined)
     || (typeof nested?.video_url === 'string' ? nested.video_url : undefined)
     || (typeof nested?.output_url === 'string' ? nested.output_url : undefined)
+    || (typeof response?.url === 'string' ? response.url : undefined)
+    || (typeof response?.video_url === 'string' ? response.video_url : undefined)
+    || (typeof response?.output_url === 'string' ? response.output_url : undefined)
+    || (typeof response?.uri === 'string' ? response.uri : undefined)
+    || (typeof result?.url === 'string' ? result.url : undefined)
+    || (typeof result?.video_url === 'string' ? result.video_url : undefined)
+    || (typeof result?.output_url === 'string' ? result.output_url : undefined)
+    || (typeof result?.uri === 'string' ? result.uri : undefined)
+    || (typeof firstGeneratedVideo?.uri === 'string' ? firstGeneratedVideo.uri : undefined)
+    || (typeof firstGeneratedVideo?.videoUri === 'string' ? firstGeneratedVideo.videoUri : undefined)
+    || (typeof firstVideoRecord?.uri === 'string' ? firstVideoRecord.uri : undefined)
+    || (typeof firstVideoRecord?.url === 'string' ? firstVideoRecord.url : undefined)
   return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate.trim() : undefined
 }
 
@@ -360,15 +398,25 @@ function getJobId(payload: ExternalVideoResponsePayload): string | undefined {
   const nested = payload.data && typeof payload.data === 'object'
     ? payload.data as Record<string, unknown>
     : undefined
+  const response = payload.response && typeof payload.response === 'object'
+    ? payload.response as Record<string, unknown>
+    : undefined
   const value = payload.job_id
     || payload.id
+    || payload.name
     || (typeof payload.job === 'object' && payload.job ? (payload.job as Record<string, unknown>).id : undefined)
     || (typeof nested?.job_id === 'string' ? nested.job_id : undefined)
     || (typeof nested?.id === 'string' ? nested.id : undefined)
+    || (typeof nested?.name === 'string' ? nested.name : undefined)
+    || (typeof response?.job_id === 'string' ? response.job_id : undefined)
+    || (typeof response?.id === 'string' ? response.id : undefined)
+    || (typeof response?.name === 'string' ? response.name : undefined)
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
 
 function getStatusValue(payload: ExternalVideoResponsePayload): string {
+  if (payload.done === true) return 'completed'
+  if (payload.done === false) return 'processing'
   const status = String(payload.status || payload.state || '').trim().toLowerCase()
   return status
 }
@@ -436,13 +484,34 @@ function getPayloadError(payload: ExternalVideoResponsePayload, fallbackText: st
   const nested = payload.data && typeof payload.data === 'object'
     ? payload.data as Record<string, unknown>
     : undefined
+  const response = payload.response && typeof payload.response === 'object'
+    ? payload.response as Record<string, unknown>
+    : undefined
+  const errorObject = payload.error && typeof payload.error === 'object'
+    ? payload.error as Record<string, unknown>
+    : undefined
   const candidate = payload.error
     || payload.message
     || payload.details
+    || (typeof errorObject?.message === 'string' ? errorObject.message : undefined)
+    || (typeof response?.error === 'string' ? response.error : undefined)
     || (typeof nested?.error === 'string' ? nested.error : undefined)
     || (typeof nested?.message === 'string' ? nested.message : undefined)
     || fallbackText
   return String(candidate || 'Unknown provider error').trim()
+}
+
+function isFullResourceName(value: string): boolean {
+  const trimmed = value.trim()
+  return trimmed.startsWith('projects/') || trimmed.includes('/operations/')
+}
+
+function normalizeJobReference(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return trimmed
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  if (isFullResourceName(trimmed)) return trimmed.replace(/^\/+/, '')
+  return encodeURIComponent(trimmed)
 }
 
 function buildJobStatusUrl(
@@ -450,17 +519,31 @@ function buildJobStatusUrl(
   jobId: string | undefined,
   pollUrl?: string,
 ): string {
-  if (pollUrl && pollUrl.trim().length > 0) return pollUrl
+  if (pollUrl && pollUrl.trim().length > 0) {
+    const trimmedPollUrl = pollUrl.trim()
+    if (/^https?:\/\//i.test(trimmedPollUrl)) return trimmedPollUrl
+    if (cfg.statusEndpoint) {
+      const normalizedPoll = normalizeJobReference(trimmedPollUrl)
+      if (cfg.statusEndpoint.includes(':jobId') || cfg.statusEndpoint.includes('{jobId}')) {
+        return cfg.statusEndpoint
+          .replace(':jobId', normalizedPoll)
+          .replace('{jobId}', normalizedPoll)
+      }
+      return `${cfg.statusEndpoint.replace(/\/$/, '')}/${normalizedPoll}`
+    }
+    return trimmedPollUrl
+  }
   if (!jobId && cfg.statusEndpoint) {
     return cfg.statusEndpoint
   }
+  const normalizedJob = jobId ? normalizeJobReference(jobId) : undefined
   if (cfg.statusEndpoint && jobId && (cfg.statusEndpoint.includes(':jobId') || cfg.statusEndpoint.includes('{jobId}'))) {
     return cfg.statusEndpoint
-      .replace(':jobId', encodeURIComponent(jobId))
-      .replace('{jobId}', encodeURIComponent(jobId))
+      .replace(':jobId', normalizedJob || '')
+      .replace('{jobId}', normalizedJob || '')
   }
   if (cfg.statusEndpoint && cfg.statusEndpoint.trim().length > 0 && jobId) {
-    return `${cfg.statusEndpoint.replace(/\/$/, '')}/${encodeURIComponent(jobId)}`
+    return `${cfg.statusEndpoint.replace(/\/$/, '')}/${normalizedJob || ''}`
   }
   if (!cfg.endpoint) {
     throw new Error('External video provider status endpoint is not configured')
@@ -468,7 +551,7 @@ function buildJobStatusUrl(
   if (!jobId) {
     throw new Error('External video provider did not return job id or poll URL')
   }
-  return `${cfg.endpoint.replace(/\/$/, '')}/${encodeURIComponent(jobId)}`
+  return `${cfg.endpoint.replace(/\/$/, '')}/${normalizedJob || ''}`
 }
 
 async function pollExternalVideoResult(
