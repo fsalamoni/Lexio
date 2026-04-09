@@ -125,6 +125,7 @@ export async function firebaseGoogleLogin(): Promise<AuthResult> {
   try {
     cred = await signInWithPopup(firebaseAuth, googleProvider)
   } catch (err: any) {
+    console.error('[Google Auth] signInWithPopup error:', err.code, err.message)
     // If popup was blocked by the browser, fall back to redirect-based flow.
     // signInWithRedirect navigates the page to Google; the result is handled
     // on reload via handleGoogleRedirectResult().

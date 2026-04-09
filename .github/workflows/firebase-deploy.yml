@@ -23,7 +23,7 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   FIREBASE_PROJECT_ID: hocapp-44760
-  FIREBASE_PRIMARY_AUTH_DOMAIN: lexio.web.app
+  FIREBASE_PRIMARY_AUTH_DOMAIN: hocapp-44760.firebaseapp.com
 
 permissions:
   contents: read
@@ -127,6 +127,7 @@ jobs:
           const endpoint = `https://identitytoolkit.googleapis.com/admin/v2/projects/${projectId}/config`;
           const requiredDomains = Array.from(new Set([
             primaryAuthDomain,
+            'lexio.web.app',
             `${projectId}.web.app`,
             `${projectId}.firebaseapp.com`,
           ]));
