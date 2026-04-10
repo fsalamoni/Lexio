@@ -317,7 +317,6 @@ export default function ResearchNotebook() {
   const [videoGenProgress, setVideoGenProgress] = useState<{ step: number; total: number; phase: string; agent: string } | null>(null)
   const [videoProduction, setVideoProduction] = useState<VideoProductionPackage | null>(null)
   const [videoStudioApiKey, setVideoStudioApiKey] = useState<string | undefined>(undefined)
-  const [videoStudioAutoGenerate, setVideoStudioAutoGenerate] = useState(false)
   const [videoStudioLiteralLoading, setVideoStudioLiteralLoading] = useState(false)
   const [videoStudioLiteralProgress, setVideoStudioLiteralProgress] = useState<{ step: number; total: number; phase: string; agent: string } | null>(null)
   const [audioGenLoading, setAudioGenLoading] = useState(false)
@@ -2721,7 +2720,6 @@ Instruções:
     })
 
     try {
-      setVideoStudioAutoGenerate(false)
       setVideoStudioLiteralLoading(true)
       setVideoStudioApiKey(apiKey)
 
@@ -2790,11 +2788,6 @@ Instruções:
       setVideoStudioLiteralProgress(null)
     }
   }, [activeNotebook?.id, getFreshNotebookOrThrow, startTask, userId, videoStudioApiKey, videoStudioLiteralLoading, viewingArtifact?.type])
-
-  useEffect(() => {
-    if (!videoProduction || !videoStudioAutoGenerate || videoStudioLiteralLoading) return
-    void handleRunLiteralVideoStudioProduction(videoProduction)
-  }, [handleRunLiteralVideoStudioProduction, videoProduction, videoStudioAutoGenerate, videoStudioLiteralLoading])
 
   // ── Delete artifact ─────────────────────────────────────────────────
   const handleDeleteArtifact = async (artifactId: string) => {
@@ -4303,11 +4296,6 @@ Instruções:
               try {
                 const pkg = JSON.parse(viewingArtifact.content)
                 setVideoProduction(pkg)
-                const shouldAutoResume = ENABLE_LITERAL_MEDIA_AUTOGENERATION && (
-                  pkg?.literalGenerationState?.status === 'running' ||
-                  pkg?.literalGenerationState?.status === 'failed'
-                )
-                setVideoStudioAutoGenerate(Boolean(shouldAutoResume))
                 setViewingArtifact(null)
               } catch {
                 toast.error('Erro ao abrir estúdio', 'O artefato de vídeo contém dados corrompidos.')
