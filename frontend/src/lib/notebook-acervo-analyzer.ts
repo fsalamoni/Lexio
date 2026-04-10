@@ -11,7 +11,7 @@
  *  4. Curador     — Final curation with summaries and recommendations
  */
 
-import { callLLM } from './llm-client'
+import { callLLM, ModelUnavailableError, TransientLLMError } from './llm-client'
 import { getAllAcervoDocumentsForSearch, updateAcervoEmenta, type AcervoDocumentData } from './firestore-service'
 import { getOpenRouterKey, generateAcervoEmenta } from './generation-service'
 import { loadNotebookAcervoModels, type NotebookAcervoModelMap } from './model-config'
@@ -56,6 +56,8 @@ function throwIfAborted(signal?: AbortSignal): void {
 const MAX_PREFILTERED_DOCS = 30
 const MAX_SELECTED_DOCS = 8
 const MAX_ANALISTA_CHARS_PER_DOC = 15000
+const MAX_ANALISTA_TOTAL_CHARS = 48_000
+const MIN_ANALISTA_CHARS_PER_DOC = 4_000
 const PREFILTER_TEXT_SAMPLE_CHARS = 20_000
 
 function extractJsonPayload(raw: string): string {
@@ -65,6 +67,65 @@ function extractJsonPayload(raw: string): string {
   const objectMatch = jsonStr.match(/\{[\s\S]*\}/)
   if (objectMatch) jsonStr = objectMatch[0]
   return jsonStr
+}
+
+function isRecoverableAgentError(err: unknown): boolean {
+  if (err instanceof ModelUnavailableError || err instanceof TransientLLMError) return true
+  if (!(err instanceof Error)) return false
+  const message = err.message.toLowerCase()
+  return (
+    message.includes('timeout')
+    || message.includes('tempo limite')
+    || message.includes('empty response')
+    || message.includes('no endpoints')
+  )
+}
+
+type SelectedDocForAnalista = {
+  id: string
+  filename: string
+  text_content: string
+  created_at: string
+  buscadorScore: number
+  buscadorReason: string
+}
+
+function buildSelectedDocsForAnalista(
+  selectedIds: Array<{ id: string; score: number; reason: string }>,
+  allAcervoDocs: Array<{ id: string; filename: string; text_content: string; created_at: string }>,
+): SelectedDocForAnalista[] {
+  const charsPerDoc = Math.min(
+    MAX_ANALISTA_CHARS_PER_DOC,
+    Math.max(MIN_ANALISTA_CHARS_PER_DOC, Math.floor(MAX_ANALISTA_TOTAL_CHARS / Math.max(1, selectedIds.length))),
+  )
+
+  return selectedIds
+    .map(sel => {
+      const full = allAcervoDocs.find(d => d.id === sel.id)
+      if (!full) return null
+      return {
+        id: full.id,
+        filename: full.filename,
+        text_content: full.text_content.slice(0, charsPerDoc),
+        created_at: full.created_at,
+        buscadorScore: sel.score,
+        buscadorReason: sel.reason,
+      }
+    })
+    .filter((d): d is SelectedDocForAnalista => d !== null)
+}
+
+function buildAnalistaFallbackResult(selectedDocs: SelectedDocForAnalista[]): string {
+  return JSON.stringify({
+    analyses: selectedDocs.map((doc) => ({
+      id: doc.id,
+      relevance: doc.buscadorScore >= 0.7 ? 'alta' : doc.buscadorScore >= 0.4 ? 'media' : 'baixa',
+      score: doc.buscadorScore,
+      summary: doc.buscadorReason || `Documento "${doc.filename}" selecionado pelo Buscador como referência potencial para a pesquisa.`,
+      key_points: [],
+      reusable_content: '',
+    })),
+  })
 }
 
 // ── Prompt builders ───────────────────────────────────────────────────────────
@@ -544,89 +605,104 @@ export async function analyzeNotebookAcervo(
   onProgress?.({ phase: 'nb_acervo_analista', message: `Analisando ${selectedIds.length} documento(s) selecionado(s)...`, percent: 50 })
   throwIfAborted(signal)
 
-  const selectedDocs = selectedIds
-    .map(sel => {
-      const full = allAcervoDocs.find(d => d.id === sel.id)
-      if (!full) return null
-      return {
-        id: full.id,
-        filename: full.filename,
-        text_content: full.text_content.slice(0, MAX_ANALISTA_CHARS_PER_DOC),
-        created_at: full.created_at,
-        content_type: (full as AcervoDocumentData).content_type,
-        size_bytes: (full as AcervoDocumentData).size_bytes,
-        buscadorScore: sel.score,
-        buscadorReason: sel.reason,
-      }
+  const selectedDocs = buildSelectedDocsForAnalista(selectedIds, allAcervoDocs)
+  let analistaContent = buildAnalistaFallbackResult(selectedDocs)
+
+  try {
+    const analistaResult = await callLLM(
+      apiKey,
+      buildAnalistaSystem(),
+      buildAnalistaUser(topic, triageResult.content, selectedDocs),
+      modelAnalista, 4000, 0.2,
+      { signal },
+    )
+
+    executions.push(createUsageExecutionRecord({
+      source_type: 'caderno_pesquisa',
+      source_id: notebookId,
+      phase: 'nb_acervo_analista',
+      agent_name: 'Analista de Acervo',
+      model: analistaResult.model,
+      tokens_in: analistaResult.tokens_in,
+      tokens_out: analistaResult.tokens_out,
+      cost_usd: analistaResult.cost_usd,
+      duration_ms: analistaResult.duration_ms,
+    }))
+
+    analistaContent = analistaResult.content
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err
+    if (!isRecoverableAgentError(err)) throw err
+    console.warn('[Notebook Acervo Analista] Falling back to buscador selection after recoverable error:', err)
+    onProgress?.({
+      phase: 'nb_acervo_analista',
+      message: 'Analista indisponível no momento; seguindo com curadoria rápida.',
+      percent: 60,
     })
-    .filter((d): d is NonNullable<typeof d> => d !== null)
-
-  const analistaResult = await callLLM(
-    apiKey,
-    buildAnalistaSystem(),
-    buildAnalistaUser(topic, triageResult.content, selectedDocs),
-    modelAnalista, 4000, 0.2,
-    { signal },
-  )
-
-  executions.push(createUsageExecutionRecord({
-    source_type: 'caderno_pesquisa',
-    source_id: notebookId,
-    phase: 'nb_acervo_analista',
-    agent_name: 'Analista de Acervo',
-    model: analistaResult.model,
-    tokens_in: analistaResult.tokens_in,
-    tokens_out: analistaResult.tokens_out,
-    cost_usd: analistaResult.cost_usd,
-    duration_ms: analistaResult.duration_ms,
-  }))
+  }
 
   // ── 5. Curador — final curation ──
   onProgress?.({ phase: 'nb_acervo_curador', message: 'Fazendo curadoria final dos documentos...', percent: 75 })
   throwIfAborted(signal)
 
-  const curadorResult = await callLLM(
-    apiKey,
-    buildCuradorSystem(),
-    buildCuradorUser(topic, triageResult.content, analistaResult.content, buscadorResult.content),
-    modelCurador, 3000, 0.2,
-    { signal },
-  )
+  let curadorContent: string | null = null
+  try {
+    const curadorResult = await callLLM(
+      apiKey,
+      buildCuradorSystem(),
+      buildCuradorUser(topic, triageResult.content, analistaContent, buscadorResult.content),
+      modelCurador, 3000, 0.2,
+      { signal },
+    )
 
-  executions.push(createUsageExecutionRecord({
-    source_type: 'caderno_pesquisa',
-    source_id: notebookId,
-    phase: 'nb_acervo_curador',
-    agent_name: 'Curador de Acervo',
-    model: curadorResult.model,
-    tokens_in: curadorResult.tokens_in,
-    tokens_out: curadorResult.tokens_out,
-    cost_usd: curadorResult.cost_usd,
-    duration_ms: curadorResult.duration_ms,
-  }))
+    executions.push(createUsageExecutionRecord({
+      source_type: 'caderno_pesquisa',
+      source_id: notebookId,
+      phase: 'nb_acervo_curador',
+      agent_name: 'Curador de Acervo',
+      model: curadorResult.model,
+      tokens_in: curadorResult.tokens_in,
+      tokens_out: curadorResult.tokens_out,
+      cost_usd: curadorResult.cost_usd,
+      duration_ms: curadorResult.duration_ms,
+    }))
+
+    curadorContent = curadorResult.content
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err
+    if (!isRecoverableAgentError(err)) throw err
+    console.warn('[Notebook Acervo Curador] Falling back to buscador ranking after recoverable error:', err)
+    onProgress?.({
+      phase: 'nb_acervo_curador',
+      message: 'Curador indisponível no momento; usando ranking do Buscador.',
+      percent: 85,
+    })
+  }
 
   // ── 6. Build final result ──
   onProgress?.({ phase: 'concluido', message: 'Análise do acervo concluída!', percent: 100 })
 
   // Parse curador result for final recommendations
-  let recommended: Array<{ id: string; score: number; summary: string }> = []
-  try {
-    const parsed = JSON.parse(extractJsonPayload(curadorResult.content)) as Record<string, unknown>
-    recommended = (Array.isArray(parsed.recommended) ? parsed.recommended : [])
-      .filter((r): r is { id?: string; score?: number; summary?: string } => !!r && typeof r === 'object')
-      .filter((r) => typeof r.id === 'string' && r.id.length > 0)
-      .map((r) => ({
-        id: String(r.id),
-        score: r.score ?? 0,
-        summary: typeof r.summary === 'string' ? r.summary : '',
-      }))
-  } catch {
-    // If curador parse fails, use buscador results as fallback
-    recommended = selectedIds.map(s => ({
-      id: s.id,
-      score: s.score,
-      summary: s.reason,
-    }))
+  let recommended: Array<{ id: string; score: number; summary: string }> = selectedIds.map(s => ({
+    id: s.id,
+    score: s.score,
+    summary: s.reason,
+  }))
+  if (curadorContent) {
+    try {
+      const parsed = JSON.parse(extractJsonPayload(curadorContent)) as Record<string, unknown>
+      const curated = (Array.isArray(parsed.recommended) ? parsed.recommended : [])
+        .filter((r): r is { id?: string; score?: number; summary?: string } => !!r && typeof r === 'object')
+        .filter((r) => typeof r.id === 'string' && r.id.length > 0)
+        .map((r) => ({
+          id: String(r.id),
+          score: r.score ?? 0,
+          summary: typeof r.summary === 'string' ? r.summary : '',
+        }))
+      if (curated.length > 0) recommended = curated
+    } catch {
+      // Keep Buscador fallback.
+    }
   }
 
   // Build final documents list
