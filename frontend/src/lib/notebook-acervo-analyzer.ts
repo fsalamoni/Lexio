@@ -55,11 +55,24 @@ function throwIfAborted(signal?: AbortSignal): void {
 
 const MAX_PREFILTERED_DOCS = 30
 const MAX_SELECTED_DOCS = 8
-const MAX_ANALISTA_CHARS_PER_DOC = 15000
-const MAX_ANALISTA_INPUT_CHARS = 48_000
-const MIN_CHARS_PER_ANALISTA_DOC = 4_000
+const MAX_ANALISTA_DOCS_PER_BATCH = 2
+const MAX_ANALISTA_CHARS_PER_DOC = 8_000
+const MAX_ANALISTA_INPUT_CHARS = 16_000
+const MIN_CHARS_PER_ANALISTA_DOC = 2_500
+const MIN_HIGH_RELEVANCE_SCORE = 0.7
+const MIN_MEDIUM_RELEVANCE_SCORE = 0.4
+const MAX_FALLBACK_TRIAGE_CHARS = 600
+const MAX_REUSABLE_CONTENT_CHARS = 500
+const ANALISTA_SCORE_WEIGHT = 0.7
+const BUSCADOR_SCORE_WEIGHT = 0.3
+const MIN_SCORE_FOR_LOW_RELEVANCE = 0.45
+const ANALISTA_MAX_TOKENS = 2200
+const ANALISTA_TEMPERATURE = 0.15
+const CURADOR_MAX_TOKENS = 1800
+const CURADOR_TEMPERATURE = 0.15
 const PREFILTER_TEXT_SAMPLE_CHARS = 20_000
 const DEFAULT_BUSCADOR_SUMMARY_TEMPLATE = 'Documento "%s" selecionado pelo Buscador como referência potencial para a pesquisa.'
+const DEFAULT_ANALISTA_SUMMARY_TEMPLATE = 'Documento "%s" potencialmente útil para a pesquisa, com base na aderência temática identificada pelo Buscador.'
 
 function extractJsonPayload(raw: string): string {
   let jsonStr = raw.trim()
@@ -91,6 +104,72 @@ type SelectedDocForAnalista = {
   buscadorReason: string
 }
 
+type AnalistaAnalysis = {
+  id: string
+  relevance: 'alta' | 'media' | 'baixa'
+  score: number
+  summary: string
+  key_points: string[]
+  reusable_content: string
+}
+
+type CuratedRecommendation = {
+  id: string
+  score: number
+  summary: string
+}
+
+function clampScore(score: number): number {
+  return Math.max(0, Math.min(1, Number.isFinite(score) ? score : 0))
+}
+
+function inferRelevance(score: number): AnalistaAnalysis['relevance'] {
+  if (score >= MIN_HIGH_RELEVANCE_SCORE) return 'alta'
+  if (score >= MIN_MEDIUM_RELEVANCE_SCORE) return 'media'
+  return 'baixa'
+}
+
+function normalizeRelevance(value: unknown, fallbackScore: number): AnalistaAnalysis['relevance'] {
+  if (value === 'alta' || value === 'media' || value === 'baixa') return value
+  if (value === 'média') return 'media'
+  return inferRelevance(fallbackScore)
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  if (chunkSize <= 0) {
+    throw new Error(`chunkSize inválido: ${chunkSize}`)
+  }
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize))
+  }
+  return chunks
+}
+
+function buildCompactTriageContext(triageContent: string, topic: string): string {
+  try {
+    const triage = JSON.parse(extractJsonPayload(triageContent)) as Record<string, unknown>
+    const parts: string[] = []
+    const tema = typeof triage.tema === 'string' ? triage.tema.trim() : topic
+    if (tema) parts.push(`Tema: ${tema}`)
+    const subtemas = Array.isArray(triage.subtemas)
+      ? triage.subtemas.filter((value): value is string => typeof value === 'string').slice(0, 5)
+      : []
+    if (subtemas.length > 0) parts.push(`Subtemas: ${subtemas.join('; ')}`)
+    const areas = Array.isArray(triage.areas_direito)
+      ? triage.areas_direito.filter((value): value is string => typeof value === 'string').slice(0, 5)
+      : []
+    if (areas.length > 0) parts.push(`Áreas: ${areas.join('; ')}`)
+    const keywords = Array.isArray(triage.palavras_chave)
+      ? triage.palavras_chave.filter((value): value is string => typeof value === 'string').slice(0, 8)
+      : []
+    if (keywords.length > 0) parts.push(`Palavras-chave: ${keywords.join('; ')}`)
+    return parts.join('\n') || `Tema: ${topic}`
+  } catch {
+    return `Tema: ${topic}\nTriagem: ${triageContent.slice(0, MAX_FALLBACK_TRIAGE_CHARS)}`
+  }
+}
+
 function buildSelectedDocsForAnalista(
   selectedIds: Array<{ id: string; score: number; reason: string }>,
   allAcervoDocs: Array<{ id: string; filename: string; text_content: string; created_at: string }>,
@@ -117,17 +196,76 @@ function buildSelectedDocsForAnalista(
     .filter((d): d is SelectedDocForAnalista => d !== null)
 }
 
-function buildAnalistaFallbackResult(selectedDocs: SelectedDocForAnalista[]): string {
-  return JSON.stringify({
-    analyses: selectedDocs.map((doc) => ({
-      id: doc.id,
-      relevance: doc.buscadorScore >= 0.7 ? 'alta' : doc.buscadorScore >= 0.4 ? 'media' : 'baixa',
-      score: doc.buscadorScore,
-      summary: doc.buscadorReason || DEFAULT_BUSCADOR_SUMMARY_TEMPLATE.replace('%s', doc.filename),
-      key_points: [],
-      reusable_content: '',
-    })),
-  })
+function buildAnalistaFallbackAnalyses(selectedDocs: SelectedDocForAnalista[]): AnalistaAnalysis[] {
+  return selectedDocs.map((doc) => ({
+    id: doc.id,
+    relevance: inferRelevance(doc.buscadorScore),
+    score: clampScore(doc.buscadorScore),
+    summary: doc.buscadorReason || DEFAULT_ANALISTA_SUMMARY_TEMPLATE.replace('%s', doc.filename),
+    key_points: [],
+    reusable_content: '',
+  }))
+}
+
+function parseAnalistaAnalyses(
+  rawContent: string,
+  selectedDocs: SelectedDocForAnalista[],
+): AnalistaAnalysis[] {
+  const fallbackById = new Map(buildAnalistaFallbackAnalyses(selectedDocs).map((analysis) => [analysis.id, analysis]))
+  const parsed = JSON.parse(extractJsonPayload(rawContent)) as Record<string, unknown>
+  const rawAnalyses = Array.isArray(parsed.analyses) ? parsed.analyses : []
+
+  return rawAnalyses
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .map((item) => {
+      const id = typeof item.id === 'string' ? item.id : ''
+      const fallback = fallbackById.get(id)
+      if (!fallback) return null
+      const parsedScore = typeof item.score === 'number' ? item.score : fallback.score
+      const score = clampScore(parsedScore)
+      const relevance = normalizeRelevance(item.relevance, score)
+      return {
+        id,
+        relevance,
+        score,
+        summary: typeof item.summary === 'string' && item.summary.trim().length > 0
+          ? item.summary.trim()
+          : fallback.summary,
+        key_points: Array.isArray(item.key_points)
+          ? item.key_points.filter((value): value is string => typeof value === 'string').slice(0, 5)
+          : [],
+        reusable_content: typeof item.reusable_content === 'string'
+          ? item.reusable_content.trim().slice(0, MAX_REUSABLE_CONTENT_CHARS)
+          : '',
+      } satisfies AnalistaAnalysis
+    })
+    .filter((analysis): analysis is AnalistaAnalysis => analysis !== null)
+}
+
+function buildFallbackRecommendations(
+  selectedDocs: SelectedDocForAnalista[],
+  analyses: AnalistaAnalysis[],
+): CuratedRecommendation[] {
+  const analysesById = new Map(analyses.map((analysis) => [analysis.id, analysis]))
+
+  return selectedDocs
+    .map((doc) => {
+      const analysis = analysesById.get(doc.id)
+      const score = clampScore(
+        analysis
+          ? (analysis.score * ANALISTA_SCORE_WEIGHT) + (doc.buscadorScore * BUSCADOR_SCORE_WEIGHT)
+          : doc.buscadorScore,
+      )
+      const summary = analysis?.summary || doc.buscadorReason || DEFAULT_BUSCADOR_SUMMARY_TEMPLATE.replace('%s', doc.filename)
+      return {
+        id: doc.id,
+        score,
+        summary,
+      }
+    })
+    .filter((item) => inferRelevance(item.score) !== 'baixa' || item.score >= MIN_SCORE_FOR_LOW_RELEVANCE)
+    .sort((a, b) => b.score - a.score)
+    .map(({ id, score, summary }) => ({ id, score, summary }))
 }
 
 // ── Prompt builders ───────────────────────────────────────────────────────────
@@ -273,14 +411,14 @@ function buildAnalistaUser(
 
   return [
     `<tema_pesquisa>${topic}</tema_pesquisa>`,
-    `<triagem>${triagem}</triagem>`,
+    `<triagem>${buildCompactTriageContext(triagem, topic)}</triagem>`,
     '',
     '<documentos_selecionados>',
     docsStr,
     '</documentos_selecionados>',
     '',
     'Analise cada documento e avalie sua relevância e utilidade para a pesquisa sobre o tema acima.',
-    'Forneça análise detalhada por documento.',
+    'Seja conciso, focado em utilidade prática e cite só o essencial.',
   ].join('\n')
 }
 
@@ -311,20 +449,36 @@ function buildCuradorSystem(): string {
 function buildCuradorUser(
   topic: string,
   triagem: string,
-  analistaResult: string,
-  buscadorResult: string,
+  selectedDocs: SelectedDocForAnalista[],
+  analistaAnalyses: AnalistaAnalysis[],
 ): string {
+  const analysesById = new Map(analistaAnalyses.map((analysis) => [analysis.id, analysis]))
+  const docsStr = selectedDocs.map((doc, index) => {
+    const analysis = analysesById.get(doc.id)
+    const parts = [
+      `[${index + 1}] ID: ${doc.id}`,
+      `Arquivo: ${doc.filename}`,
+      `Data: ${doc.created_at}`,
+      `Score do Buscador: ${doc.buscadorScore.toFixed(2)}`,
+      `Motivo do Buscador: ${doc.buscadorReason || DEFAULT_BUSCADOR_SUMMARY_TEMPLATE.replace('%s', doc.filename)}`,
+    ]
+    if (analysis) {
+      parts.push(`Relevância do Analista: ${analysis.relevance}`)
+      parts.push(`Score do Analista: ${analysis.score.toFixed(2)}`)
+      parts.push(`Resumo do Analista: ${analysis.summary}`)
+      if (analysis.key_points.length > 0) parts.push(`Pontos-chave: ${analysis.key_points.join('; ')}`)
+      if (analysis.reusable_content) parts.push(`Conteúdo reutilizável: ${analysis.reusable_content}`)
+    }
+    return parts.join('\n')
+  }).join('\n\n')
+
   return [
     `<tema_pesquisa>${topic}</tema_pesquisa>`,
-    `<triagem>${triagem}</triagem>`,
+    `<triagem>${buildCompactTriageContext(triagem, topic)}</triagem>`,
     '',
-    '<resultado_buscador>',
-    buscadorResult,
-    '</resultado_buscador>',
-    '',
-    '<resultado_analista>',
-    analistaResult,
-    '</resultado_analista>',
+    '<documentos_analisados>',
+    docsStr,
+    '</documentos_analisados>',
     '',
     'Faça a curadoria final dos documentos analisados.',
     'Ordene por relevância. Exclua documentos com baixa relevância.',
@@ -608,42 +762,74 @@ export async function analyzeNotebookAcervo(
   throwIfAborted(signal)
 
   const selectedDocs = buildSelectedDocsForAnalista(selectedIds, allAcervoDocs)
-  let analistaContent = buildAnalistaFallbackResult(selectedDocs)
+  const analistaFallbackAnalyses = buildAnalistaFallbackAnalyses(selectedDocs)
+  const analistaBatches = chunkArray(selectedDocs, MAX_ANALISTA_DOCS_PER_BATCH)
+  const analistaAnalysesById = new Map(analistaFallbackAnalyses.map((analysis) => [analysis.id, analysis]))
+  let usedAnalistaFallback = false
 
-  try {
-    const analistaResult = await callLLM(
-      apiKey,
-      buildAnalistaSystem(),
-      buildAnalistaUser(topic, triageResult.content, selectedDocs),
-      modelAnalista, 4000, 0.2,
-      { signal },
-    )
-
-    executions.push(createUsageExecutionRecord({
-      source_type: 'caderno_pesquisa',
-      source_id: notebookId,
-      phase: 'nb_acervo_analista',
-      agent_name: 'Analista de Acervo',
-      model: analistaResult.model,
-      tokens_in: analistaResult.tokens_in,
-      tokens_out: analistaResult.tokens_out,
-      cost_usd: analistaResult.cost_usd,
-      duration_ms: analistaResult.duration_ms,
-    }))
-
-    analistaContent = analistaResult.content
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err
-    if (!isRecoverableAgentError(err)) throw err
-    console.warn('[Notebook Acervo Analista] Falling back to buscador selection after recoverable error', {
-      error: err instanceof Error ? err.message : String(err),
-      notebookId,
-      selectedDocs: selectedDocs.length,
-    })
+  for (let batchIndex = 0; batchIndex < analistaBatches.length; batchIndex++) {
+    const batch = analistaBatches[batchIndex]
+    const percent = 50 + Math.round(((batchIndex + 1) / Math.max(1, analistaBatches.length)) * 15)
     onProgress?.({
       phase: 'nb_acervo_analista',
-      message: 'Analista indisponível no momento; seguindo com curadoria rápida.',
-      percent: 60,
+      message: `Analista: lote ${batchIndex + 1}/${analistaBatches.length} (${batch.length} documento(s))...`,
+      percent,
+    })
+    throwIfAborted(signal)
+
+    try {
+      const analistaResult = await callLLM(
+        apiKey,
+        buildAnalistaSystem(),
+        buildAnalistaUser(topic, triageResult.content, batch),
+        modelAnalista, ANALISTA_MAX_TOKENS, ANALISTA_TEMPERATURE,
+        { signal },
+      )
+
+      executions.push(createUsageExecutionRecord({
+        source_type: 'caderno_pesquisa',
+        source_id: notebookId,
+        phase: 'nb_acervo_analista',
+        agent_name: 'Analista de Acervo',
+        model: analistaResult.model,
+        tokens_in: analistaResult.tokens_in,
+        tokens_out: analistaResult.tokens_out,
+        cost_usd: analistaResult.cost_usd,
+        duration_ms: analistaResult.duration_ms,
+      }))
+
+      const parsedBatch = parseAnalistaAnalyses(analistaResult.content, batch)
+      if (parsedBatch.length === 0) {
+        throw new TransientLLMError('Analista retornou JSON sem análises válidas')
+      }
+      for (const analysis of parsedBatch) {
+        analistaAnalysesById.set(analysis.id, analysis)
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      if (!isRecoverableAgentError(err)) throw err
+      usedAnalistaFallback = true
+      console.warn('[Notebook Acervo Analista] Falling back to buscador selection after recoverable error', {
+        error: err instanceof Error ? err.message : String(err),
+        notebookId,
+        batchIndex,
+        batchSize: batch.length,
+      })
+      for (const fallbackAnalysis of buildAnalistaFallbackAnalyses(batch)) {
+        analistaAnalysesById.set(fallbackAnalysis.id, fallbackAnalysis)
+      }
+    }
+  }
+
+  const analistaAnalyses = selectedDocs
+    .map((doc) => analistaAnalysesById.get(doc.id))
+    .filter((analysis): analysis is AnalistaAnalysis => !!analysis)
+
+  if (usedAnalistaFallback) {
+    onProgress?.({
+      phase: 'nb_acervo_analista',
+      message: 'Analista parcialmente indisponível; concluído com fallback seguro.',
+      percent: 65,
     })
   }
 
@@ -652,12 +838,13 @@ export async function analyzeNotebookAcervo(
   throwIfAborted(signal)
 
   let curadorContent: string | null = null
+  let recommended: CuratedRecommendation[] = buildFallbackRecommendations(selectedDocs, analistaAnalyses)
   try {
     const curadorResult = await callLLM(
       apiKey,
       buildCuradorSystem(),
-      buildCuradorUser(topic, triageResult.content, analistaContent, buscadorResult.content),
-      modelCurador, 3000, 0.2,
+      buildCuradorUser(topic, triageResult.content, selectedDocs, analistaAnalyses),
+      modelCurador, CURADOR_MAX_TOKENS, CURADOR_TEMPERATURE,
       { signal },
     )
 
@@ -693,11 +880,6 @@ export async function analyzeNotebookAcervo(
   onProgress?.({ phase: 'concluido', message: 'Análise do acervo concluída!', percent: 100 })
 
   // Parse curador result for final recommendations
-  let recommended: Array<{ id: string; score: number; summary: string }> = selectedIds.map(s => ({
-    id: s.id,
-    score: s.score,
-    summary: s.reason,
-  }))
   if (curadorContent) {
     try {
       const parsed = JSON.parse(extractJsonPayload(curadorContent)) as Record<string, unknown>
@@ -706,12 +888,12 @@ export async function analyzeNotebookAcervo(
         .filter((r) => typeof r.id === 'string' && r.id.length > 0)
         .map((r) => ({
           id: String(r.id),
-          score: r.score ?? 0,
+          score: clampScore(r.score ?? 0),
           summary: typeof r.summary === 'string' ? r.summary : '',
         }))
       if (curated.length > 0) recommended = curated
     } catch {
-      // Keep Buscador fallback.
+      // Keep deterministic fallback recommendation.
     }
   }
 
