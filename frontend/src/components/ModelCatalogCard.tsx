@@ -443,6 +443,12 @@ export default function ModelCatalogCard() {
       .finally(() => setLoading(false))
   }, [])
 
+  useEffect(() => {
+    if (window.location.hash === '#section_model_catalog') {
+      setExpanded(true)
+    }
+  }, [])
+
   const hasChanges = JSON.stringify(catalog) !== JSON.stringify(original)
 
   const handleHealthCheck = useCallback(async () => {
@@ -551,7 +557,7 @@ export default function ModelCatalogCard() {
                 {' · '}
                 {catalog.filter(m => m.isFree).length} gratuitos
                 {' · '}
-                Fonte de referência para todos os agentes
+                Lista pessoal persistida para os seus seletores de agentes
               </p>
             </div>
           </div>

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Activity, BarChart3, BookOpen, Brain, Database, DollarSign, FileText,
-  FolderArchive, Shield, Sparkles, Users,
+  FolderArchive, Settings2, Shield, Sparkles, Users,
 } from 'lucide-react'
 import {
   Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -151,6 +152,29 @@ export default function PlatformAdminPanel() {
         <StatCard icon={BarChart3} label="Tokens totais" value={fmtInt(overview.total_tokens)} tone="text-indigo-600" />
         <StatCard icon={FileText} label="Documentos" value={fmtInt(overview.total_documents)} tone="text-brand-600" />
         <StatCard icon={Database} label="Qualidade média" value={overview.average_quality_score != null ? `${overview.average_quality_score}/100` : 'N/D'} tone="text-rose-600" />
+      </div>
+
+      <div className="bg-white rounded-xl border p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
+              <Settings2 className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Catálogo de Modelos do Usuário</h2>
+              <p className="text-sm text-gray-500">
+                Cada usuário mantém seu próprio catálogo persistido no Firestore. Para editar o seu catálogo e definir os modelos disponíveis nos seus seletores, use o atalho abaixo.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/settings#section_model_catalog"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+          >
+            <Brain className="w-4 h-4" />
+            Abrir meu catálogo
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">

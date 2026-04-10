@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Shield, CheckCircle, XCircle, Activity, Server, Database, Brain, Search,
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
@@ -640,7 +640,9 @@ export default function AdminPanel() {
   const [collapseState, setCollapseState] = useState<Record<string, boolean>>(loadAdminCollapseState)
   const toast = useToast()
   const { role, userId } = useAuth()
+  const location = useLocation()
   const showPlatformSections = false
+  const showPersonalModelCatalog = IS_FIREBASE
 
   const toggleCollapse = useCallback((id: string) => {
     setCollapseState(prev => {
@@ -649,6 +651,16 @@ export default function AdminPanel() {
       return next
     })
   }, [])
+
+  useEffect(() => {
+    if (location.hash !== '#section_model_catalog') return
+    setCollapseState(prev => {
+      if (prev.section_model_catalog === true) return prev
+      const next = { ...prev, section_model_catalog: true }
+      saveAdminCollapseState(next)
+      return next
+    })
+  }, [location.hash])
 
   const fetchData = () => {
     if (IS_FIREBASE) {
@@ -854,8 +866,8 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* Model Catalog — Firebase mode */}
-      {IS_FIREBASE && showPlatformSections && (
+      {/* Model Catalog — user-scoped catalog for each authenticated profile */}
+      {showPersonalModelCatalog && (
         <AdminCollapsibleSection
           id="section_model_catalog"
           title="Catálogo de Modelos"
