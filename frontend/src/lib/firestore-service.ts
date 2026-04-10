@@ -98,6 +98,21 @@ function ensureFirestore() {
   return firestore
 }
 
+function normalizeFirestoreDocumentId(value: string): string {
+  const trimmed = String(value || '').trim()
+  if (!trimmed) return trimmed
+
+  const documentsMarker = '/documents/'
+  if (trimmed.includes(documentsMarker)) {
+    const [, pathAfterDocuments = ''] = trimmed.split(documentsMarker)
+    const segments = pathAfterDocuments.split('/').filter(Boolean)
+    return segments.length > 0 ? segments[segments.length - 1] : trimmed
+  }
+
+  const segments = trimmed.split('/').filter(Boolean)
+  return segments.length > 1 ? segments[segments.length - 1] : trimmed
+}
+
 export function getCurrentUserId(): string | null {
   if (typeof window === 'undefined') return null
   return window.localStorage.getItem('lexio_user_id')
@@ -1932,7 +1947,7 @@ function fitSourcesToFirestoreLimit(
  */
 export async function getResearchNotebook(uid: string, notebookId: string): Promise<ResearchNotebookData | null> {
   const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'research_notebooks', notebookId)
+  const ref = doc(db, 'users', uid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
   const snap = await getDoc(ref)
   if (!snap.exists()) return null
   return { id: snap.id, ...snap.data() } as ResearchNotebookData
@@ -1971,7 +1986,7 @@ export async function createResearchNotebook(uid: string, data: Omit<ResearchNot
  */
 export async function updateResearchNotebook(uid: string, notebookId: string, data: Partial<ResearchNotebookData>): Promise<void> {
   const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'research_notebooks', notebookId)
+  const ref = doc(db, 'users', uid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id, ...rest } = data
 
@@ -1998,7 +2013,7 @@ export async function updateResearchNotebook(uid: string, notebookId: string, da
  */
 export async function deleteResearchNotebook(uid: string, notebookId: string): Promise<void> {
   const db = ensureFirestore()
-  await deleteDoc(doc(db, 'users', uid, 'research_notebooks', notebookId))
+  await deleteDoc(doc(db, 'users', uid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId)))
 }
 
 // ── Password change via Firebase Auth ────────────────────────────────────────

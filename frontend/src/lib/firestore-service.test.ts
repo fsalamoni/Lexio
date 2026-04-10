@@ -10,14 +10,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockAddDoc = vi.fn()
 const mockCollection = vi.fn()
+const mockDoc = vi.fn()
+const mockGetDoc = vi.fn()
+const mockUpdateDoc = vi.fn()
 
 vi.mock('firebase/firestore', () => ({
   addDoc: (...args: unknown[]) => mockAddDoc(...args),
   collection: (...args: unknown[]) => mockCollection(...args),
-  doc: vi.fn(),
-  getDoc: vi.fn(),
+  doc: (...args: unknown[]) => mockDoc(...args),
+  getDoc: (...args: unknown[]) => mockGetDoc(...args),
   setDoc: vi.fn(),
-  updateDoc: vi.fn(),
+  updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
   deleteDoc: vi.fn(),
   getDocs: vi.fn(),
   query: vi.fn(),
@@ -55,7 +58,11 @@ vi.mock('./document-json-converter', () => ({
 
 // ── Import under test (AFTER mocks are registered) ──────────────────────────
 
-import { saveNotebookDocumentToDocuments } from './firestore-service'
+import {
+  getResearchNotebook,
+  saveNotebookDocumentToDocuments,
+  updateResearchNotebook,
+} from './firestore-service'
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
@@ -72,6 +79,9 @@ describe('saveNotebookDocumentToDocuments', () => {
     vi.clearAllMocks()
     mockCollection.mockReturnValue('col-ref')
     mockAddDoc.mockResolvedValue({ id: 'new-doc-id' })
+    mockDoc.mockImplementation((...segments: unknown[]) => ({ path: segments.join('/') }))
+    mockGetDoc.mockResolvedValue({ exists: () => true, id: 'nb-abc', data: () => ({ title: 'Notebook' }) })
+    mockUpdateDoc.mockResolvedValue(undefined)
   })
 
   it('creates a document in the correct Firestore collection path', async () => {
@@ -140,5 +150,25 @@ describe('saveNotebookDocumentToDocuments', () => {
     // stripUndefined should remove any key with value `undefined`
     const values = Object.values(docData)
     expect(values.every(v => v !== undefined)).toBe(true)
+  })
+
+  it('normalizes a full Firestore resource path when reading a notebook', async () => {
+    await getResearchNotebook(uid, 'projects/hocapp-44760/databases/(default)/documents/users/user-123/research_notebooks/nb-xyz')
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'research_notebooks', 'nb-xyz',
+    )
+    expect(mockGetDoc).toHaveBeenCalledOnce()
+  })
+
+  it('normalizes a slash-delimited notebook path when updating a notebook', async () => {
+    await updateResearchNotebook(uid, 'users/user-123/research_notebooks/nb-xyz', { title: 'Atualizado' })
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'research_notebooks', 'nb-xyz',
+    )
+    expect(mockUpdateDoc).toHaveBeenCalledOnce()
   })
 })
