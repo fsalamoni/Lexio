@@ -59,6 +59,15 @@ const MAX_ANALISTA_DOCS_PER_BATCH = 2
 const MAX_ANALISTA_CHARS_PER_DOC = 8_000
 const MAX_ANALISTA_INPUT_CHARS = 16_000
 const MIN_CHARS_PER_ANALISTA_DOC = 2_500
+const MAX_FALLBACK_TRIAGE_CHARS = 600
+const MAX_REUSABLE_CONTENT_CHARS = 500
+const ANALISTA_SCORE_WEIGHT = 0.7
+const BUSCADOR_SCORE_WEIGHT = 0.3
+const MIN_SCORE_FOR_LOW_RELEVANCE = 0.45
+const ANALISTA_MAX_TOKENS = 2200
+const ANALISTA_TEMPERATURE = 0.15
+const CURADOR_MAX_TOKENS = 1800
+const CURADOR_TEMPERATURE = 0.15
 const PREFILTER_TEXT_SAMPLE_CHARS = 20_000
 const DEFAULT_BUSCADOR_SUMMARY_TEMPLATE = 'Documento "%s" selecionado pelo Buscador como referência potencial para a pesquisa.'
 const DEFAULT_ANALISTA_SUMMARY_TEMPLATE = 'Documento "%s" potencialmente útil para a pesquisa, com base na aderência temática identificada pelo Buscador.'
@@ -153,7 +162,7 @@ function buildCompactTriageContext(triageContent: string, topic: string): string
     if (keywords.length > 0) parts.push(`Palavras-chave: ${keywords.join('; ')}`)
     return parts.join('\n') || `Tema: ${topic}`
   } catch {
-    return `Tema: ${topic}\nTriagem: ${triageContent.slice(0, 600)}`
+    return `Tema: ${topic}\nTriagem: ${triageContent.slice(0, MAX_FALLBACK_TRIAGE_CHARS)}`
   }
 }
 
@@ -222,7 +231,7 @@ function parseAnalistaAnalyses(
           ? item.key_points.filter((value): value is string => typeof value === 'string').slice(0, 5)
           : [],
         reusable_content: typeof item.reusable_content === 'string'
-          ? item.reusable_content.trim().slice(0, 500)
+          ? item.reusable_content.trim().slice(0, MAX_REUSABLE_CONTENT_CHARS)
           : '',
       } satisfies AnalistaAnalysis
     })
@@ -238,7 +247,11 @@ function buildFallbackRecommendations(
   return selectedDocs
     .map((doc) => {
       const analysis = analysesById.get(doc.id)
-      const score = clampScore(analysis ? (analysis.score * 0.7) + (doc.buscadorScore * 0.3) : doc.buscadorScore)
+      const score = clampScore(
+        analysis
+          ? (analysis.score * ANALISTA_SCORE_WEIGHT) + (doc.buscadorScore * BUSCADOR_SCORE_WEIGHT)
+          : doc.buscadorScore,
+      )
       const summary = analysis?.summary || doc.buscadorReason || DEFAULT_BUSCADOR_SUMMARY_TEMPLATE.replace('%s', doc.filename)
       return {
         id: doc.id,
@@ -247,7 +260,7 @@ function buildFallbackRecommendations(
         relevance: analysis?.relevance ?? inferRelevance(score),
       }
     })
-    .filter((item) => item.relevance !== 'baixa' || item.score >= 0.45)
+    .filter((item) => item.relevance !== 'baixa' || item.score >= MIN_SCORE_FOR_LOW_RELEVANCE)
     .sort((a, b) => b.score - a.score)
     .map(({ id, score, summary }) => ({ id, score, summary }))
 }
@@ -766,7 +779,7 @@ export async function analyzeNotebookAcervo(
         apiKey,
         buildAnalistaSystem(),
         buildAnalistaUser(topic, triageResult.content, batch),
-        modelAnalista, 2200, 0.15,
+        modelAnalista, ANALISTA_MAX_TOKENS, ANALISTA_TEMPERATURE,
         { signal },
       )
 
@@ -828,7 +841,7 @@ export async function analyzeNotebookAcervo(
       apiKey,
       buildCuradorSystem(),
       buildCuradorUser(topic, triageResult.content, selectedDocs, analistaAnalyses),
-      modelCurador, 1800, 0.15,
+      modelCurador, CURADOR_MAX_TOKENS, CURADOR_TEMPERATURE,
       { signal },
     )
 
