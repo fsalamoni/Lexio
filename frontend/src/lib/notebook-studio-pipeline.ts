@@ -1019,5 +1019,5 @@ export async function generateStructuredVisualArtifactMedia(
     throw new Error(`O artefato visual "${artifactType}" não pôde ser renderizado. ${detail}`)
   }
 
-  throw new Error('O artefato visual não possui estrutura válida para gerar imagem final.')
+  throw new Error(`O artefato visual "${artifactType}" possui estrutura inválida para gerar imagem final.`)
 }
