@@ -221,12 +221,14 @@ export async function generatePresentationMediaAssets(
 
     try {
       const prompt = buildPresentationImagePrompt(input, parsed.data, slide, index)
+      throwIfAborted(signal)
       const generated = await generateImageViaOpenRouter({
         apiKey: input.apiKey,
         prompt: prompt.prompt,
         negativePrompt: prompt.negativePrompt,
         model: imageModel,
         aspectRatio: '16:9',
+        signal,
       })
       composed = await renderPresentationSlidePoster(parsed.data, slide, {
         backgroundImageUrl: generated.imageDataUrl,
@@ -240,7 +242,10 @@ export async function generatePresentationMediaAssets(
         cost_usd: generated.cost_usd,
         duration_ms: Date.now() - renderStartedAt,
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw error
+      }
       composed = await renderPresentationSlidePoster(parsed.data, slide)
       execution = {
         phase: 'visual_artifact_render',

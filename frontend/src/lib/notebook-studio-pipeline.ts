@@ -961,51 +961,62 @@ export async function generateStructuredVisualArtifactMedia(
   rawContent: string,
 ): Promise<StudioVisualMediaResult> {
   const startedAt = Date.now()
-  const parsed = parseArtifactContent(artifactType, rawContent)
-
-  if (artifactType === 'infografico' && parsed.kind === 'infographic') {
-    return {
-      rendered: await renderInfographicImage(parsed.data),
-      execution: {
-        phase: 'visual_artifact_render',
-        agent_name: 'Renderizador Visual Final',
-        model: 'browser/svg-render',
-        tokens_in: 0,
-        tokens_out: 0,
-        cost_usd: 0,
-        duration_ms: Date.now() - startedAt,
-      },
-    }
+  let parsed: ReturnType<typeof parseArtifactContent>
+  try {
+    parsed = parseArtifactContent(artifactType, rawContent)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'estrutura inválida'
+    throw new Error(`O artefato visual "${artifactType}" possui estrutura inválida para gerar imagem final. ${detail}`)
   }
 
-  if (artifactType === 'mapa_mental' && parsed.kind === 'mindmap') {
-    return {
-      rendered: await renderMindMapImage(parsed.data),
-      execution: {
-        phase: 'visual_artifact_render',
-        agent_name: 'Renderizador Visual Final',
-        model: 'browser/svg-render',
-        tokens_in: 0,
-        tokens_out: 0,
-        cost_usd: 0,
-        duration_ms: Date.now() - startedAt,
-      },
+  try {
+    if (artifactType === 'infografico' && parsed.kind === 'infographic') {
+      return {
+        rendered: await renderInfographicImage(parsed.data),
+        execution: {
+          phase: 'visual_artifact_render',
+          agent_name: 'Renderizador Visual Final',
+          model: 'browser/svg-render',
+          tokens_in: 0,
+          tokens_out: 0,
+          cost_usd: 0,
+          duration_ms: Date.now() - startedAt,
+        },
+      }
     }
-  }
 
-  if (artifactType === 'tabela_dados' && parsed.kind === 'datatable') {
-    return {
-      rendered: await renderDataTableImage(parsed.data),
-      execution: {
-        phase: 'visual_artifact_render',
-        agent_name: 'Renderizador Visual Final',
-        model: 'browser/svg-render',
-        tokens_in: 0,
-        tokens_out: 0,
-        cost_usd: 0,
-        duration_ms: Date.now() - startedAt,
-      },
+    if (artifactType === 'mapa_mental' && parsed.kind === 'mindmap') {
+      return {
+        rendered: await renderMindMapImage(parsed.data),
+        execution: {
+          phase: 'visual_artifact_render',
+          agent_name: 'Renderizador Visual Final',
+          model: 'browser/svg-render',
+          tokens_in: 0,
+          tokens_out: 0,
+          cost_usd: 0,
+          duration_ms: Date.now() - startedAt,
+        },
+      }
     }
+
+    if (artifactType === 'tabela_dados' && parsed.kind === 'datatable') {
+      return {
+        rendered: await renderDataTableImage(parsed.data),
+        execution: {
+          phase: 'visual_artifact_render',
+          agent_name: 'Renderizador Visual Final',
+          model: 'browser/svg-render',
+          tokens_in: 0,
+          tokens_out: 0,
+          cost_usd: 0,
+          duration_ms: Date.now() - startedAt,
+        },
+      }
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'falha de renderização'
+    throw new Error(`O artefato visual "${artifactType}" não pôde ser renderizado. ${detail}`)
   }
 
   throw new Error('O artefato visual não possui estrutura válida para gerar imagem final.')

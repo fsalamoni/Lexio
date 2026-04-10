@@ -18,6 +18,7 @@ export interface TTSOptions {
   voice?: string        // e.g., 'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'
   model?: string        // e.g., 'openai/gpt-4o-audio-preview'
   speed?: number        // 0.25 to 4.0
+  signal?: AbortSignal
 }
 
 export interface TTSResult {
@@ -54,9 +55,11 @@ export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSRes
   const voice = opts.voice || 'nova'
   const speed = opts.speed || 1.0
 
-  const response = await withRateLimit('openrouter:tts', 18, async () =>
-    withRetryAfterDelay(async () =>
-      fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const response = await withRateLimit(
+    'openrouter:tts',
+    18,
+    async () => withRetryAfterDelay(
+      async () => fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${opts.apiKey}`,
@@ -80,13 +83,16 @@ export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSRes
           speed,
           stream: true,
         }),
+        signal: opts.signal,
       }).then(async resp => {
         if (resp.status === 429) {
           throw new Error('RATE_LIMIT_429')
         }
         return resp
       }),
+      { signal: opts.signal },
     ),
+    opts.signal,
   )
 
   if (!response.ok) {
@@ -104,6 +110,9 @@ export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSRes
   const audioChunks: string[] = []
 
   while (true) {
+    if (opts.signal?.aborted) {
+      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    }
     const { value, done } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })

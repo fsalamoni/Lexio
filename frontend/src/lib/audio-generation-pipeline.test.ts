@@ -126,4 +126,20 @@ describe('runAudioGenerationPipeline', () => {
     expect(result.execution.agent_name).toBe('Narrador / TTS')
     expect(synthesizeAudioFromScriptMock).toHaveBeenCalledTimes(1)
   })
+
+  it('surfaces a helpful error when an audio stage returns invalid JSON', async () => {
+    callLLMMock.mockReset()
+    callLLMMock
+      .mockResolvedValueOnce({ content: '{"title":"Plano de áudio"}', model: 'openai/gpt-4.1-mini', tokens_in: 100, tokens_out: 50, cost_usd: 0.001, duration_ms: 100 })
+      .mockResolvedValueOnce({ content: 'resposta inválida', model: 'anthropic/claude-sonnet-4', tokens_in: 120, tokens_out: 200, cost_usd: 0.002, duration_ms: 120 })
+
+    await expect(runAudioGenerationPipeline({
+      apiKey: 'key',
+      topic: 'Tema de Teste',
+      sourceContext: 'Fonte A',
+      conversationContext: '',
+      artifactType: 'audio_script',
+      artifactLabel: 'Resumo em Áudio',
+    })).rejects.toThrow('O roteirista de áudio retornou um roteiro inválido.')
+  })
 })

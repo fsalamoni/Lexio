@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { detectLegalArea } from './notebook-studio-pipeline'
+import { detectLegalArea, generateStructuredVisualArtifactMedia } from './notebook-studio-pipeline'
 
 describe('detectLegalArea', () => {
   it('detects tributário from topic with tax keywords', () => {
@@ -98,5 +98,10 @@ describe('detectLegalArea', () => {
   it('detects sucessões from inheritance keywords', () => {
     expect(detectLegalArea('Inventário e partilha de herança')).toBe('inheritance')
     expect(detectLegalArea('Testamento e legado do herdeiro')).toBe('inheritance')
+  })
+
+  it('returns a descriptive error for invalid structured visual artifacts', async () => {
+    await expect(generateStructuredVisualArtifactMedia('infografico', 'conteúdo inválido'))
+      .rejects.toThrow('O artefato visual "infografico" possui estrutura inválida para gerar imagem final.')
   })
 })

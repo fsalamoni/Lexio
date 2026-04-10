@@ -299,9 +299,27 @@ function shouldRetryLiteralError(error: unknown): boolean {
     || lower.includes('abort')
 }
 
-async function waitBeforeRetry(attempt: number): Promise<void> {
+async function waitBeforeRetry(attempt: number, signal?: AbortSignal): Promise<void> {
   const delayMs = 900 * attempt
-  await new Promise(resolve => setTimeout(resolve, delayMs))
+  if (!signal) {
+    await new Promise(resolve => setTimeout(resolve, delayMs))
+    return
+  }
+  if (signal.aborted) {
+    throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+  }
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve(undefined)
+    }, delayMs)
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      reject(new DOMException('Operação cancelada pelo usuário.', 'AbortError'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 function assertNotCancelled(signal?: AbortSignal): void {
@@ -1122,6 +1140,7 @@ export async function generateLiteralMediaAssets(
             model: chooseImageModel(models.video_image_generator),
             prompt: scene.imagePrompt,
             aspectRatio: '16:9',
+            signal,
           })
           nextAsset.imageUrl = result.imageDataUrl
           executions.push(makeExecution(
@@ -1151,7 +1170,7 @@ export async function generateLiteralMediaAssets(
               attempt,
               message,
             })
-            await waitBeforeRetry(attempt)
+            await waitBeforeRetry(attempt, signal)
             assertNotCancelled(signal)
             continue
           }
@@ -1209,6 +1228,7 @@ export async function generateLiteralMediaAssets(
             model: chooseAudioModel(models.video_tts),
             text: scene.narration,
             voice: 'nova',
+            signal,
           })
           asset.narrationBlob = result.audioBlob
           asset.narrationUrl = blobToObjectUrl(result.audioBlob)
@@ -1239,7 +1259,7 @@ export async function generateLiteralMediaAssets(
               attempt,
               message,
             })
-            await waitBeforeRetry(attempt)
+            await waitBeforeRetry(attempt, signal)
             assertNotCancelled(signal)
             continue
           }
@@ -1393,7 +1413,7 @@ export async function generateLiteralMediaAssets(
               attempt,
               message,
             })
-            await waitBeforeRetry(attempt)
+            await waitBeforeRetry(attempt, signal)
             assertNotCancelled(signal)
             continue
           }

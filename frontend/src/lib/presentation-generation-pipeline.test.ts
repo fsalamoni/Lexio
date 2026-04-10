@@ -107,4 +107,22 @@ describe('runPresentationGenerationPipeline', () => {
     expect(generateImageViaOpenRouterMock).toHaveBeenCalledTimes(2)
     expect(renderPresentationSlidePosterMock).toHaveBeenCalledTimes(2)
   })
+
+  it('propagates cancellation during visual generation instead of silently falling back', async () => {
+    const signal = AbortSignal.abort()
+
+    await expect(generatePresentationMediaAssets({
+      apiKey: 'key',
+      topic: 'Tema de Teste',
+      description: 'Descrição',
+    }, JSON.stringify({
+      title: 'Apresentação de Teste',
+      slides: [
+        { number: 1, title: 'Introdução', bullets: ['Ponto 1'], speakerNotes: 'Abra com contexto.', visualSuggestion: 'Cena institucional premium.' },
+      ],
+    }), undefined, signal)).rejects.toMatchObject({ name: 'AbortError' })
+
+    expect(generateImageViaOpenRouterMock).not.toHaveBeenCalled()
+    expect(renderPresentationSlidePosterMock).not.toHaveBeenCalled()
+  })
 })
