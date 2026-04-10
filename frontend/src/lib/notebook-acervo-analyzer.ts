@@ -59,6 +59,8 @@ const MAX_ANALISTA_DOCS_PER_BATCH = 2
 const MAX_ANALISTA_CHARS_PER_DOC = 8_000
 const MAX_ANALISTA_INPUT_CHARS = 16_000
 const MIN_CHARS_PER_ANALISTA_DOC = 2_500
+const MIN_HIGH_RELEVANCE_SCORE = 0.7
+const MIN_MEDIUM_RELEVANCE_SCORE = 0.4
 const MAX_FALLBACK_TRIAGE_CHARS = 600
 const MAX_REUSABLE_CONTENT_CHARS = 500
 const ANALISTA_SCORE_WEIGHT = 0.7
@@ -122,8 +124,8 @@ function clampScore(score: number): number {
 }
 
 function inferRelevance(score: number): AnalistaAnalysis['relevance'] {
-  if (score >= 0.7) return 'alta'
-  if (score >= 0.4) return 'media'
+  if (score >= MIN_HIGH_RELEVANCE_SCORE) return 'alta'
+  if (score >= MIN_MEDIUM_RELEVANCE_SCORE) return 'media'
   return 'baixa'
 }
 
@@ -134,7 +136,9 @@ function normalizeRelevance(value: unknown, fallbackScore: number): AnalistaAnal
 }
 
 function chunkArray<T>(items: T[], chunkSize: number): T[][] {
-  if (chunkSize <= 0) return [items]
+  if (chunkSize <= 0) {
+    throw new Error(`chunkSize inválido: ${chunkSize}`)
+  }
   const chunks: T[][] = []
   for (let i = 0; i < items.length; i += chunkSize) {
     chunks.push(items.slice(i, i + chunkSize))
@@ -257,10 +261,9 @@ function buildFallbackRecommendations(
         id: doc.id,
         score,
         summary,
-        relevance: analysis?.relevance ?? inferRelevance(score),
       }
     })
-    .filter((item) => item.relevance !== 'baixa' || item.score >= MIN_SCORE_FOR_LOW_RELEVANCE)
+    .filter((item) => inferRelevance(item.score) !== 'baixa' || item.score >= MIN_SCORE_FOR_LOW_RELEVANCE)
     .sort((a, b) => b.score - a.score)
     .map(({ id, score, summary }) => ({ id, score, summary }))
 }

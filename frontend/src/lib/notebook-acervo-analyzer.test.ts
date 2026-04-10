@@ -47,11 +47,11 @@ function llmResult(content: string, model: string) {
   }
 }
 
-function makeDoc(id: string, filename: string, ementa: string, fill: string, createdAt: string) {
+function makeDoc(id: string, filename: string, ementa: string, repeatedChar: string, createdAt: string) {
   return {
     id,
     filename,
-    text_content: fill.repeat(12_000),
+    text_content: repeatedChar.repeat(12_000),
     created_at: createdAt,
     ementa,
     content_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
