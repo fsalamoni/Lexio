@@ -1820,6 +1820,8 @@ Instruções:
     setStudioProgress(null)
     setStudioLastProgress(null)
     setStudioErrorMessage('')
+    setPendingArtifact(null)
+    setPendingContent('')
     setShowStudioProgressModal(true)
 
     try {
@@ -1886,6 +1888,8 @@ Instruções:
       }
     } catch (err) {
       console.error('Studio pipeline error:', err)
+      setPendingArtifact(null)
+      setPendingContent('')
       setStudioErrorMessage(err instanceof Error ? err.message : 'Erro inesperado no pipeline do estúdio')
       if (err instanceof DOMException && err.name === 'AbortError') {
         toast.info('Geração cancelada')

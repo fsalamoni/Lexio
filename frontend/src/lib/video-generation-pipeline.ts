@@ -309,6 +309,31 @@ export type VideoGenerationProgressCallback = (
   agentLabel: string,
 ) => void
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+  }
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise(resolve => setTimeout(resolve, ms))
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('Operação cancelada pelo usuário.', 'AbortError'))
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      reject(new DOMException('Operação cancelada pelo usuário.', 'AbortError'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 // ── Cost Estimation ───────────────────────────────────────────────────────────
 
 /**
@@ -432,15 +457,17 @@ async function safeCallAgent(
   phase: string,
   executions: VideoGenerationStepExecution[],
   maxRetries = 2,
+  signal?: AbortSignal,
 ): Promise<{ data: Record<string, unknown>; failed: boolean }> {
   let lastError: unknown
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    throwIfAborted(signal)
     try {
       if (attempt > 0) {
         const delay = Math.min(1000 * Math.pow(2, attempt), 8000)
-        await new Promise(r => setTimeout(r, delay))
+        await sleep(delay, signal)
       }
-      const result = await callAgent(apiKey, model, prompt)
+      const result = await callAgent(apiKey, model, prompt, signal)
       executions.push(makeExecution(phase, model, result))
       const data = safeParseJSON(result.content)
       if (!data) {
@@ -482,7 +509,9 @@ function generateSegmentId(): string {
 export async function runVideoGenerationPipeline(
   input: VideoGenerationInput,
   onProgress?: VideoGenerationProgressCallback,
+  signal?: AbortSignal,
 ): Promise<VideoGenerationResult> {
+  throwIfAborted(signal)
   const models = await loadVideoPipelineModels()
   await validateScopedAgentModels('video_pipeline_models', models)
   const executions: VideoGenerationStepExecution[] = []
@@ -534,7 +563,7 @@ Requisitos:
 - Liste elementos visuais recorrentes (logo, lower thirds, bordas, transições padrão) com posição e estilo exatos
 - Planeje a duração de cada segmento em segundos
 - Total deve somar a duração indicada no roteiro
-- O Guia de Design será usado como REFERÊNCIA OBRIGATÓRIA por todos os demais agentes — seja o mais específico possível`, 'video_planejador', executions)
+- O Guia de Design será usado como REFERÊNCIA OBRIGATÓRIA por todos os demais agentes — seja o mais específico possível`, 'video_planejador', executions, 2, signal)
 
   // ── Step 2: Roteirista (refinar roteiro) ──────────────────────────────────
   onProgress?.(2, totalSteps, 'video_roteirista', 'Roteirista')
@@ -581,7 +610,7 @@ O vídeo DEVE ser um produto visual HARMONIOSO e UNIFORME do início ao fim.
 Requisitos adicionais:
 - Narração detalhada com marcações de tom e ênfase
 - Cada cena deve ter indicação precisa de início e fim
-- Cronologia e encadeamento lógico de ideias`, 'video_roteirista', executions)
+- Cronologia e encadeamento lógico de ideias`, 'video_roteirista', executions, 2, signal)
   if (!scriptData.scenes) scriptData.scenes = []
 
   // ── Step 3: Diretor de Cenas ──────────────────────────────────────────────
@@ -627,7 +656,7 @@ O vídeo DEVE manter UNIFORMIDADE VISUAL ABSOLUTA entre todas as cenas:
 Requisitos adicionais:
 - Adicione instruções de câmera para cada cena
 - Refine os timings para encadeamento suave
-- Garanta continuidade visual entre cenas consecutivas`, 'video_diretor_cena', executions)
+- Garanta continuidade visual entre cenas consecutivas`, 'video_diretor_cena', executions, 2, signal)
   if (!directedScenes.scenes) directedScenes.scenes = scriptData.scenes || []
 
   // ── Step 4: Storyboarder ──────────────────────────────────────────────────
@@ -670,7 +699,7 @@ REGRA DE HARMONIA VISUAL (OBRIGATÓRIA):
 Requisitos adicionais:
 - 2-4 frames chave por cena (keyframes)
 - Descrições visuais detalhadas e precisas
-- Indique posição e tamanho dos elementos na composição`, 'video_storyboarder', executions)
+- Indique posição e tamanho dos elementos na composição`, 'video_storyboarder', executions, 2, signal)
 
   // ── Step 5: Designer Visual ───────────────────────────────────────────────
   onProgress?.(5, totalSteps, 'video_designer', 'Designer Visual')
@@ -724,7 +753,7 @@ PROIBIDO:
 Requisitos adicionais:
 - Um prompt de imagem principal por cena (thumbnail/keyframe)
 - Um prompt de vídeo curto por cena (para composição)
-- Prompts em inglês para melhor compatibilidade com modelos de geração`, 'video_designer', executions)
+- Prompts em inglês para melhor compatibilidade com modelos de geração`, 'video_designer', executions, 2, signal)
 
   // ── Step 6: Compositor de Vídeo ───────────────────────────────────────────
   onProgress?.(6, totalSteps, 'video_compositor', 'Compositor de Vídeo')
@@ -823,7 +852,7 @@ REGRA DE HARMONIA (OBRIGATÓRIA):
 - Color grading DEVE ser o MESMO em todas as cenas (use o mesmo efeito/filtro)
 - Transições entre cenas devem seguir um PADRÃO UNIFORME — não misture tipos
 - Trilha sonora deve ter continuidade — NÃO mude de gênero entre segmentos
-- Lower thirds e overlays devem seguir o MESMO estilo de design em todo o vídeo`, 'video_compositor', executions)
+- Lower thirds e overlays devem seguir o MESMO estilo de design em todo o vídeo`, 'video_compositor', executions, 2, signal)
 
   // ── Step 7: Narrador ──────────────────────────────────────────────────────
   onProgress?.(7, totalSteps, 'video_narrador', 'Narrador')
@@ -873,7 +902,7 @@ Requisitos adicionais:
 - Texto exato e completo para cada segmento de narração
 - Marcações de ênfase com *asteriscos*
 - Indicações de [pausa] onde necessário
-- Timing sincronizado com a timeline do compositor`, 'video_narrador', executions)
+- Timing sincronizado com a timeline do compositor`, 'video_narrador', executions, 2, signal)
 
   // ── Step 8: Revisor Final ─────────────────────────────────────────────────
   onProgress?.(8, totalSteps, 'video_revisor', 'Revisor Final de Vídeo')
@@ -942,7 +971,7 @@ Se QUALQUER item falhar, defina approved=false e qualityScore < 6.
 Requisitos adicionais:
 - Valide sincronização entre narração e visual
 - Avalie encadeamento lógico de ideias
-- Identifique possíveis problemas e sugira melhorias`, 'video_revisor', executions)
+- Identifique possíveis problemas e sugira melhorias`, 'video_revisor', executions, 2, signal)
 
   // ── Assemble final package ────────────────────────────────────────────────
 
@@ -1031,6 +1060,7 @@ Requisitos adicionais:
     console.log(`[Video] Step 9: Subdividing ${scenes.length} scenes into clips (~${clipDuration}s each)`)
 
     for (let sceneIdx = 0; sceneIdx < scenes.length; sceneIdx++) {
+      throwIfAborted(signal)
       const scene = scenes[sceneIdx]
       const numClips = Math.max(1, Math.ceil(scene.duration / clipDuration))
 
@@ -1085,7 +1115,7 @@ REQUISITOS OBRIGATÓRIOS:
 5. Timestamps absolutos: o primeiro clip começa em ${sceneStartSeconds}s
 6. Cada clip subsequente começa onde o anterior termina
 7. Descreva movimentos de câmera para guiar a progressão visual
-8. Transições suaves entre clips (crossfade, dissolve, cut)`)
+8. Transições suaves entre clips (crossfade, dissolve, cut)`, signal)
 
         executions.push(makeExecution('clip_subdivision', clipPlannerModel, clipResult))
 
@@ -1145,7 +1175,7 @@ REQUISITOS OBRIGATÓRIOS:
 
       // Small delay between scene planning calls to respect rate limits
       if (sceneIdx < scenes.length - 1) {
-        await new Promise(r => setTimeout(r, 500))
+        await sleep(500, signal)
       }
     }
 
@@ -1168,6 +1198,7 @@ REQUISITOS OBRIGATÓRIOS:
     console.log(`[Video] Step 10: Generating images for ${allClips.length} clips with model ${imageModel}`)
 
     for (let i = 0; i < allClips.length; i += CONCURRENCY) {
+      throwIfAborted(signal)
       const batch = allClips.slice(i, i + CONCURRENCY)
 
       onProgress?.(10, totalSteps, 'media_image_generation',
@@ -1182,6 +1213,7 @@ REQUISITOS OBRIGATÓRIOS:
               prompt: clip.imagePrompt,
               model: imageModel,
               aspectRatio: '16:9',
+              signal,
             })
             return {
               sceneNumber: clip.sceneNumber,
@@ -1272,6 +1304,7 @@ REQUISITOS OBRIGATÓRIOS:
     console.log(`[Video] Step 11: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice}`)
 
     for (let idx = 0; idx < validSegments.length; idx++) {
+      throwIfAborted(signal)
       const segment = validSegments[idx]
 
       onProgress?.(11, totalSteps, 'media_tts_generation',
@@ -1290,6 +1323,7 @@ REQUISITOS OBRIGATÓRIOS:
           text: cleanText,
           voice: ttsVoice,
           model: ttsModel,
+          signal,
         })
 
         // Convert blob to data URL for persistence
@@ -1355,12 +1389,15 @@ REQUISITOS OBRIGATÓRIOS:
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function callAgent(apiKey: string, model: string, prompt: string): Promise<LLMResult> {
+async function callAgent(apiKey: string, model: string, prompt: string, signal?: AbortSignal): Promise<LLMResult> {
   return callLLM(
     apiKey,
     'Você é um agente especialista em produção de vídeo profissional. Responda SEMPRE com JSON puro e válido, sem markdown, sem explicações adicionais.',
     prompt,
     model,
+    undefined,
+    undefined,
+    { signal },
   )
 }
 

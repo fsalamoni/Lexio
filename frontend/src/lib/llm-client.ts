@@ -175,6 +175,9 @@ export async function callLLM(
 
   // Retry loop for empty responses (separate from fetchWithRetry network retries)
   for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_RESPONSE_RETRIES; emptyAttempt++) {
+    if (options?.signal?.aborted) {
+      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    }
     if (emptyAttempt > 0) {
       const delayMs = 1500 * emptyAttempt
       console.warn(`[LLM] Resposta vazia, tentativa ${emptyAttempt + 1}/${MAX_EMPTY_RESPONSE_RETRIES + 1} após ${delayMs}ms...`)
@@ -197,6 +200,9 @@ export async function callLLM(
     }
 
     const rawText = await resp.text()
+    if (options?.signal?.aborted) {
+      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    }
     if (!rawText || rawText.trim().length === 0) {
       if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
       throw new TransientLLMError('OpenRouter returned empty response body')
@@ -274,6 +280,9 @@ export async function callLLMWithMessages(
 
   // Retry loop for empty responses (separate from fetchWithRetry network retries)
   for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_RESPONSE_RETRIES; emptyAttempt++) {
+    if (options?.signal?.aborted) {
+      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    }
     if (emptyAttempt > 0) {
       const delayMs = 1500 * emptyAttempt
       console.warn(`[LLM] Resposta vazia, tentativa ${emptyAttempt + 1}/${MAX_EMPTY_RESPONSE_RETRIES + 1} após ${delayMs}ms...`)
@@ -296,6 +305,9 @@ export async function callLLMWithMessages(
     }
 
     const rawText = await resp.text()
+    if (options?.signal?.aborted) {
+      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    }
     if (!rawText || rawText.trim().length === 0) {
       if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
       throw new TransientLLMError('OpenRouter returned empty response body')

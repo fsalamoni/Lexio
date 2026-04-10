@@ -28,12 +28,32 @@ export interface ImageGenerationOptions {
   negativePrompt?: string
   model?: string
   aspectRatio?: string   // '16:9', '1:1', '9:16', etc.
+  signal?: AbortSignal
 }
 
 export interface ImageGenerationResult {
   imageDataUrl: string   // base64 data URL (data:image/png;base64,...)
   model: string
   cost_usd: number
+}
+
+function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise(resolve => setTimeout(resolve, ms))
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('Operação cancelada pelo usuário.', 'AbortError'))
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      reject(new DOMException('Operação cancelada pelo usuário.', 'AbortError'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 // ── Image Generation ────────────────────────────────────────────────────────
@@ -79,9 +99,12 @@ export async function generateImageViaOpenRouter(opts: ImageGenerationOptions): 
   let lastError: Error | null = null
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (opts.signal?.aborted) {
+      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    }
     if (attempt > 0) {
       console.log(`[ImageGen] Retry attempt ${attempt} for model ${model}...`)
-      await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+      await sleepWithSignal(RETRY_DELAY_MS, opts.signal)
     }
 
     try {
@@ -89,6 +112,7 @@ export async function generateImageViaOpenRouter(opts: ImageGenerationOptions): 
         method: 'POST',
         headers,
         body: bodyStr,
+        signal: opts.signal,
       })
 
       if (!response.ok) {

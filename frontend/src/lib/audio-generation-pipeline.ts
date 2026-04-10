@@ -49,6 +49,18 @@ function normalizeAudioScript(raw: string): string {
   }, null, 2)
 }
 
+function normalizeAudioScriptOrThrow(raw: string, phaseLabel: string): string {
+  try {
+    return normalizeAudioScript(raw)
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+    const detail = error instanceof Error ? error.message : 'JSON inválido'
+    throw new Error(`${phaseLabel} retornou um roteiro inválido. ${detail}`)
+  }
+}
+
 function buildPlanPrompt(input: StudioPipelineInput): { system: string; user: string } {
   return {
     system: 'Você é um Planejador de Áudio sênior. Estruture um plano editorial e técnico para um resumo em áudio jurídico. Responda em JSON puro com: title, objective, targetDuration, tone, segmentPlan[], soundIdentity, risks, sourceUsePlan.',
@@ -149,28 +161,28 @@ export async function runAudioGenerationPipeline(
   onProgress?.(2, 5, 'Escrevendo o roteiro-base do áudio…')
   const writerPrompt = buildWriterPrompt(input, planResult.content, input.sourceContext || 'Sem fontes adicionais.')
   const writerResult = await callLLM(input.apiKey, writerPrompt.system, writerPrompt.user, models.audio_roteirista, 7000, 0.35, { signal })
-  const writerDraft = normalizeAudioScript(writerResult.content)
+  const writerDraft = normalizeAudioScriptOrThrow(writerResult.content, 'O roteirista de áudio')
   executions.push(toExecution('audio_roteirista', 'Roteirista de Áudio', writerResult))
 
   throwIfAborted(signal)
   onProgress?.(3, 5, 'Estruturando timing e transições…')
   const directorPrompt = buildDirectorPrompt(writerDraft)
   const directorResult = await callLLM(input.apiKey, directorPrompt.system, directorPrompt.user, models.audio_diretor, 7000, 0.25, { signal })
-  const directedDraft = normalizeAudioScript(directorResult.content)
+  const directedDraft = normalizeAudioScriptOrThrow(directorResult.content, 'O diretor de áudio')
   executions.push(toExecution('audio_diretor', 'Diretor de Áudio', directorResult))
 
   throwIfAborted(signal)
   onProgress?.(4, 5, 'Aplicando direção sonora e cues…')
   const producerPrompt = buildProducerPrompt(directedDraft)
   const producerResult = await callLLM(input.apiKey, producerPrompt.system, producerPrompt.user, models.audio_produtor_sonoro, 7000, 0.25, { signal })
-  const producedDraft = normalizeAudioScript(producerResult.content)
+  const producedDraft = normalizeAudioScriptOrThrow(producerResult.content, 'O produtor sonoro')
   executions.push(toExecution('audio_produtor_sonoro', 'Produtor Sonoro', producerResult))
 
   throwIfAborted(signal)
   onProgress?.(5, 5, 'Revisando o resumo em áudio…')
   const reviewPrompt = buildReviewPrompt(producedDraft)
   const reviewResult = await callLLM(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.audio_revisor, 7000, 0.15, { signal })
-  const finalContent = normalizeAudioScript(reviewResult.content)
+  const finalContent = normalizeAudioScriptOrThrow(reviewResult.content, 'O revisor final de áudio')
   executions.push(toExecution('audio_revisor', 'Revisor Final de Áudio', reviewResult))
 
   return {
