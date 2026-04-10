@@ -57,7 +57,7 @@ const MAX_PREFILTERED_DOCS = 30
 const MAX_SELECTED_DOCS = 8
 const MAX_ANALISTA_CHARS_PER_DOC = 15000
 const MAX_ANALISTA_TOTAL_CHARS = 48_000
-const MIN_ANALISTA_CHARS_PER_DOC = 4_000
+const MIN_ANALISTA_DOC_CHARS = 4_000
 const PREFILTER_TEXT_SAMPLE_CHARS = 20_000
 
 function extractJsonPayload(raw: string): string {
@@ -94,9 +94,10 @@ function buildSelectedDocsForAnalista(
   selectedIds: Array<{ id: string; score: number; reason: string }>,
   allAcervoDocs: Array<{ id: string; filename: string; text_content: string; created_at: string }>,
 ): SelectedDocForAnalista[] {
+  const distributedCharsPerDoc = Math.floor(MAX_ANALISTA_TOTAL_CHARS / Math.max(1, selectedIds.length))
   const charsPerDoc = Math.min(
     MAX_ANALISTA_CHARS_PER_DOC,
-    Math.max(MIN_ANALISTA_CHARS_PER_DOC, Math.floor(MAX_ANALISTA_TOTAL_CHARS / Math.max(1, selectedIds.length))),
+    Math.max(MIN_ANALISTA_DOC_CHARS, distributedCharsPerDoc),
   )
 
   return selectedIds
