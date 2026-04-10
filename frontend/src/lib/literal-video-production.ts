@@ -39,6 +39,12 @@ export interface LiteralMediaGenerationResult {
   errors: string[]
 }
 
+export interface LiteralClipGenerationResult {
+  production: VideoProductionPackage
+  clip: VideoClipAsset
+  execution: VideoGenerationStepExecution
+}
+
 const MIN_SOUNDTRACK_DURATION_SECONDS = 1
 const INT16_PCM_MIN = -0x8000
 const INT16_PCM_MAX = 0x7fff
@@ -930,6 +936,121 @@ export async function produceLiteralVideoProduction(
     },
     videoBlob: rendered.blob,
     executions,
+  }
+}
+
+export async function generateLiteralVideoClipAsset(
+  apiKey: string,
+  production: VideoProductionPackage,
+  sceneNumber: number,
+  partNumber: number,
+  signal?: AbortSignal,
+): Promise<LiteralClipGenerationResult> {
+  assertNotCancelled(signal)
+
+  const models = await loadVideoPipelineModels()
+  const clipDurationSeconds = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
+  const timings = prepareTimings(production)
+  const scene = production.scenes.find(item => item.number === sceneNumber)
+  const timing = timings.find(item => item.scene.number === sceneNumber)
+
+  if (!scene || !timing) {
+    throw new Error(`Cena ${sceneNumber} não encontrada para geração literal do clip.`)
+  }
+
+  const part = buildScenePartTimings(timing, clipDurationSeconds).find(item => item.partNumber === partNumber)
+  if (!part) {
+    throw new Error(`Parte ${partNumber} não encontrada na cena ${sceneNumber}.`)
+  }
+
+  const sceneAsset = (production.sceneAssets || []).find(item => item.sceneNumber === sceneNumber) || { sceneNumber }
+  const plannedClipImage = getPlannedClipImage(scene, partNumber)
+  const literalClipPrompt = buildLiteralClipPrompt(scene, partNumber)
+  const startedAt = performance.now()
+  let clip: VideoClipAsset | null = null
+
+  if (literalClipPrompt) {
+    try {
+      const providerResult = await requestExternalVideoClip({
+        prompt: literalClipPrompt,
+        durationSeconds: part.duration,
+        sceneNumber,
+        partNumber,
+        aspectRatio: '16:9',
+        signal,
+      })
+
+      if (providerResult?.url) {
+        clip = {
+          sceneNumber: part.sceneNumber,
+          partNumber: part.partNumber,
+          startTime: part.startTime,
+          endTime: part.endTime,
+          duration: part.duration,
+          url: await remoteVideoToDataUrl(providerResult.url),
+          mimeType: providerResult.mimeType || 'video/mp4',
+          generatedAt: new Date().toISOString(),
+          source: 'generated',
+          generationEngine: 'external-provider',
+          providerName: providerResult.provider,
+          providerJobId: providerResult.jobId,
+        }
+      }
+    } catch {
+      // Fallback to local browser render when the external provider fails.
+    }
+  }
+
+  if (!clip) {
+    clip = await renderSceneClip(
+      scene,
+      part,
+      plannedClipImage || sceneAsset.imageUrl,
+      sceneAsset.narrationUrl,
+    )
+
+    if (clip) {
+      clip = {
+        ...clip,
+        generationEngine: 'browser-local',
+        providerName: 'browser-renderer',
+      }
+    }
+  }
+
+  if (!clip) {
+    throw new Error(`Não foi possível gerar o vídeo da cena ${sceneNumber}, parte ${partNumber}.`)
+  }
+
+  const nextSceneAssets = [...(production.sceneAssets || [])]
+  const sceneAssetIndex = nextSceneAssets.findIndex(item => item.sceneNumber === sceneNumber)
+  const existingSceneAsset = sceneAssetIndex >= 0 ? nextSceneAssets[sceneAssetIndex] : sceneAsset
+  const mergedSceneAsset: VideoSceneAsset = {
+    ...existingSceneAsset,
+    sceneNumber,
+    videoClips: [
+      ...((existingSceneAsset.videoClips || []).filter(item => item.partNumber !== partNumber)),
+      clip,
+    ].sort((left, right) => left.partNumber - right.partNumber),
+  }
+
+  if (sceneAssetIndex >= 0) {
+    nextSceneAssets[sceneAssetIndex] = mergedSceneAsset
+  } else {
+    nextSceneAssets.push(mergedSceneAsset)
+  }
+
+  const executionModel = clip.generationEngine === 'external-provider'
+    ? `${clip.providerName || 'external-provider'}/${clip.mimeType}`
+    : `browser/${clip.mimeType}`
+
+  return {
+    production: {
+      ...production,
+      sceneAssets: nextSceneAssets,
+    },
+    clip,
+    execution: makeExecution('media_video_clip_generation', executionModel, performance.now() - startedAt),
   }
 }
 

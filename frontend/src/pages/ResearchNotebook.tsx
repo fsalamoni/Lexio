@@ -62,6 +62,7 @@ import {
   uploadNotebookVideoArtifact,
 } from '../lib/notebook-media-storage'
 import {
+  generateLiteralVideoClipAsset,
   generateLiteralMediaAssets,
   renderLiteralVideo,
 } from '../lib/literal-video-production'
@@ -4374,6 +4375,38 @@ Instruções:
           }}
           onGenerateLiteralMedia={(updatedProduction) => {
             void handleRunLiteralVideoStudioProduction(updatedProduction)
+          }}
+          onGenerateClipVideo={async (currentProduction, sceneNumber, clipNumber) => {
+            try {
+              const notebookId = activeNotebook?.id
+              if (!userId || !notebookId) return null
+
+              const apiKey = videoStudioApiKey || await getOpenRouterKey()
+              if (!apiKey) {
+                toast.error('Chave da API não configurada.')
+                return null
+              }
+
+              const result = await generateLiteralVideoClipAsset(apiKey, currentProduction, sceneNumber, clipNumber)
+              const persisted = await handleSaveVideoStudioToNotebook(result.production, { silent: true, syncEditorState: false })
+
+              await appendNotebookExecutions(notebookId, 'video_pipeline', [result.execution])
+              setVideoProduction(persisted)
+
+              if (viewingArtifact?.type === 'video_script') {
+                const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+                const refreshed = freshNotebook.artifacts.find(item => item.title === `Estúdio de Vídeo: ${persisted.title}`)
+                if (refreshed) setViewingArtifact(refreshed)
+              }
+
+              toast.success(`Vídeo da cena ${sceneNumber}, clip ${clipNumber} gerado com sucesso!`)
+              return persisted
+            } catch (err) {
+              console.error('Clip video regeneration error:', err)
+              const message = err instanceof Error ? err.message : String(err)
+              toast.error(`Erro ao gerar vídeo da cena ${sceneNumber}, clip ${clipNumber}`, message)
+              return null
+            }
           }}
           isLiteralGenerating={videoStudioLiteralLoading}
           literalProgress={videoStudioLiteralProgress || undefined}

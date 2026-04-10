@@ -49,6 +49,7 @@ interface VideoStudioEditorProps {
   onClose: () => void
   onSave?: (production: VideoProductionPackage) => void | Promise<void>
   onGenerateLiteralMedia?: (production: VideoProductionPackage) => void | Promise<void>
+  onGenerateClipVideo?: (production: VideoProductionPackage, sceneNumber: number, clipNumber: number) => Promise<VideoProductionPackage | null>
   isLiteralGenerating?: boolean
   literalProgress?: { step: number; total: number; phase: string; agent: string }
   /** Callback to regenerate image for a specific scene */
@@ -195,6 +196,8 @@ function SegmentDetailPanel({
   onClose,
   onRegenerateMedia,
   isRegenerating,
+  regenerateLabel,
+  generatedVideoUrl,
 }: {
   segment: TrackSegment
   track: VideoTrack
@@ -203,6 +206,8 @@ function SegmentDetailPanel({
   onClose: () => void
   onRegenerateMedia?: () => void
   isRegenerating?: boolean
+  regenerateLabel?: string
+  generatedVideoUrl?: string
 }) {
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState(segment.content)
@@ -222,6 +227,7 @@ function SegmentDetailPanel({
 
   const hasImage = track.type === 'video' && segment.generatedMediaUrl
   const hasAudio = track.type === 'narration' && segment.generatedMediaUrl
+  const hasVideo = track.type === 'video' && Boolean(generatedVideoUrl)
 
   return (
     <div className={`border rounded-xl ${colors.border} ${colors.bg} p-4 space-y-3`}>
@@ -255,7 +261,15 @@ function SegmentDetailPanel({
       </div>
 
       {/* Generated image preview */}
-      {hasImage && (
+      {hasVideo && generatedVideoUrl ? (
+        <div className="rounded-lg overflow-hidden border border-rose-200 bg-black">
+          <video
+            src={generatedVideoUrl}
+            controls
+            className="w-full h-44"
+          />
+        </div>
+      ) : hasImage && (
         <div className="rounded-lg overflow-hidden border border-rose-200">
           <img
             src={segment.generatedMediaUrl}
@@ -336,14 +350,16 @@ function SegmentDetailPanel({
                   <Loader2 className="w-3 h-3 animate-spin" />
                 ) : segment.generatedMediaUrl ? (
                   <RefreshCw className="w-3 h-3" />
+                ) : regenerateLabel?.includes('Vídeo') ? (
+                  <Film className="w-3 h-3" />
                 ) : track.type === 'video' ? (
                   <ImagePlus className="w-3 h-3" />
                 ) : (
                   <Volume2 className="w-3 h-3" />
                 )}
-                {segment.generatedMediaUrl
+                {regenerateLabel || (segment.generatedMediaUrl
                   ? 'Regenerar'
-                  : track.type === 'video' ? 'Gerar Imagem' : 'Gerar Narração'}
+                  : track.type === 'video' ? 'Gerar Imagem' : 'Gerar Narração')}
               </button>
             )}
             <button
@@ -515,6 +531,7 @@ export default function VideoStudioEditor({
   onClose,
   onSave,
   onGenerateLiteralMedia,
+  onGenerateClipVideo,
   isLiteralGenerating,
   literalProgress,
   onRegenerateImage,
@@ -531,6 +548,7 @@ export default function VideoStudioEditor({
   const [localTracks, setLocalTracks] = useState<VideoTrack[]>(production.tracks)
   const [localScenes, setLocalScenes] = useState(production.scenes)
   const [localNarration, setLocalNarration] = useState(production.narration)
+  const [localSceneAssets, setLocalSceneAssets] = useState(production.sceneAssets || [])
   const [qualityOpen, setQualityOpen] = useState(false)
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
   const [isAutoSaving, setIsAutoSaving] = useState(false)
@@ -539,13 +557,13 @@ export default function VideoStudioEditor({
   const lastSavedSnapshotRef = useRef('')
 
   const productionSnapshot = useMemo(
-    () => JSON.stringify({ tracks: production.tracks, scenes: production.scenes, narration: production.narration }),
-    [production.narration, production.scenes, production.tracks],
+    () => JSON.stringify({ tracks: production.tracks, scenes: production.scenes, narration: production.narration, sceneAssets: production.sceneAssets || [] }),
+    [production.narration, production.scenes, production.sceneAssets, production.tracks],
   )
 
   const localSnapshot = useMemo(
-    () => JSON.stringify({ tracks: localTracks, scenes: localScenes, narration: localNarration }),
-    [localNarration, localScenes, localTracks],
+    () => JSON.stringify({ tracks: localTracks, scenes: localScenes, narration: localNarration, sceneAssets: localSceneAssets }),
+    [localNarration, localSceneAssets, localScenes, localTracks],
   )
 
   const isDirty = localSnapshot !== productionSnapshot
@@ -555,6 +573,7 @@ export default function VideoStudioEditor({
     setLocalTracks(production.tracks)
     setLocalScenes(production.scenes)
     setLocalNarration(production.narration)
+    setLocalSceneAssets(production.sceneAssets || [])
     lastSavedSnapshotRef.current = productionSnapshot
   }, [isDirty, production, productionSnapshot])
 
@@ -613,7 +632,8 @@ export default function VideoStudioEditor({
     tracks: localTracks,
     scenes: localScenes,
     narration: localNarration,
-  }), [localNarration, localScenes, localTracks, production])
+    sceneAssets: localSceneAssets,
+  }), [localNarration, localSceneAssets, localScenes, localTracks, production])
 
   const handleSave = useCallback(async () => {
     if (onSave) {
@@ -672,13 +692,18 @@ export default function VideoStudioEditor({
   }, [isDirty])
 
   // Handle media regeneration for a specific segment
-  const handleRegenerateMedia = useCallback(async (trackType: string, sceneNumber: number | undefined) => {
+  const handleRegenerateMedia = useCallback(async (trackType: string, sceneNumber: number | undefined, clipNumber?: number) => {
     if (!sceneNumber) return
-    const regenId = `${trackType}_${sceneNumber}`
+    const regenId = clipNumber ? `${trackType}_${sceneNumber}_${clipNumber}` : `${trackType}_${sceneNumber}`
     setRegeneratingId(regenId)
 
     try {
-      if (trackType === 'video' && onRegenerateImage) {
+      if (trackType === 'video' && clipNumber && onGenerateClipVideo) {
+        const updatedProduction = await onGenerateClipVideo(buildCurrentProduction(), sceneNumber, clipNumber)
+        if (updatedProduction) {
+          setLocalSceneAssets(updatedProduction.sceneAssets || [])
+        }
+      } else if (trackType === 'video' && onRegenerateImage) {
         const newImageUrl = await onRegenerateImage(sceneNumber)
         if (newImageUrl) {
           // Update local scenes
@@ -718,7 +743,7 @@ export default function VideoStudioEditor({
     } finally {
       setRegeneratingId(null)
     }
-  }, [onRegenerateImage, onRegenerateTTS])
+  }, [buildCurrentProduction, onGenerateClipVideo, onRegenerateImage, onRegenerateTTS])
 
   // Get selected segment data
   const selectedSeg = selectedSegment
@@ -727,6 +752,11 @@ export default function VideoStudioEditor({
   const selectedTrack = selectedSegment
     ? localTracks[selectedSegment.trackIndex]
     : null
+  const selectedClipAsset = selectedTrack?.type === 'video' && selectedSeg?.sceneNumber && selectedSeg?.clipNumber
+    ? localSceneAssets
+      .find(item => item.sceneNumber === selectedSeg.sceneNumber)
+      ?.videoClips?.find(item => item.partNumber === selectedSeg.clipNumber)
+    : undefined
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gray-900">
@@ -934,10 +964,14 @@ export default function VideoStudioEditor({
               onClose={() => setSelectedSegment(null)}
               onRegenerateMedia={
                 (selectedTrack.type === 'video' || selectedTrack.type === 'narration') && selectedSeg.sceneNumber
-                  ? () => handleRegenerateMedia(selectedTrack.type, selectedSeg.sceneNumber)
+                  ? () => handleRegenerateMedia(selectedTrack.type, selectedSeg.sceneNumber, selectedSeg.clipNumber)
                   : undefined
               }
-              isRegenerating={regeneratingId === `${selectedTrack.type}_${selectedSeg.sceneNumber}`}
+              isRegenerating={regeneratingId === (selectedSeg.clipNumber ? `${selectedTrack.type}_${selectedSeg.sceneNumber}_${selectedSeg.clipNumber}` : `${selectedTrack.type}_${selectedSeg.sceneNumber}`)}
+              regenerateLabel={selectedTrack.type === 'video'
+                ? (selectedSeg.clipNumber ? (selectedClipAsset?.url ? 'Regenerar Vídeo' : 'Gerar Vídeo') : (selectedSeg.generatedMediaUrl ? 'Regenerar Imagem' : 'Gerar Imagem'))
+                : (selectedSeg.generatedMediaUrl ? 'Regenerar Narração' : 'Gerar Narração')}
+              generatedVideoUrl={selectedClipAsset?.url}
             />
           ) : selectedScene ? (
             /* Scene detail view with clips */
@@ -951,7 +985,9 @@ export default function VideoStudioEditor({
                 if (!scene) return <p className="text-xs text-gray-400">Cena não encontrada</p>
                 const narSeg = localNarration.find(n => n.sceneNumber === selectedScene)
                 const clips = scene.clips || []
-                const clipsWithImages = clips.filter(c => c.generatedImageUrl)
+                const sceneAsset = localSceneAssets.find(item => item.sceneNumber === selectedScene)
+                const generatedClipAssets = sceneAsset?.videoClips || []
+                const clipsWithVideo = generatedClipAssets.filter(c => Boolean(c.url))
 
                 return (
                   <div className="space-y-3">
@@ -960,54 +996,68 @@ export default function VideoStudioEditor({
                       <div>
                         <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1.5 flex items-center gap-1">
                           <Film className="w-3 h-3" />
-                          Clips ({clipsWithImages.length}/{clips.length} gerados)
+                          Clips ({clipsWithVideo.length}/{clips.length} vídeos gerados)
                         </p>
                         <div className="grid grid-cols-2 gap-1.5">
-                          {clips.map(clip => (
-                            <div
-                              key={`clip_${clip.sceneNumber}_${clip.clipNumber}`}
-                              className="border rounded-lg overflow-hidden bg-white hover:shadow-sm transition-shadow"
-                            >
-                              {clip.generatedImageUrl ? (
-                                <img
-                                  src={clip.generatedImageUrl}
-                                  alt={`Cena ${clip.sceneNumber} Clip ${clip.clipNumber}`}
-                                  className="w-full h-20 object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-20 bg-gray-100 flex items-center justify-center">
-                                  <ImagePlus className="w-4 h-4 text-gray-300" />
-                                </div>
-                              )}
-                              <div className="px-1.5 py-1">
-                                <p className="text-[9px] font-semibold text-gray-700">
-                                  Clip {clip.clipNumber} · {clip.duration}s
-                                </p>
-                                <p className="text-[8px] text-gray-400 truncate" title={clip.description}>
-                                  {clip.description.slice(0, 60)}
-                                </p>
-                                {clip.motionDescription && (
-                                  <p className="text-[8px] text-rose-400 truncate mt-0.5">
-                                    🎬 {clip.motionDescription}
+                          {clips.map(clip => {
+                            const clipAsset = generatedClipAssets.find(item => item.partNumber === clip.clipNumber)
+                            const clipRegenId = `video_${scene.number}_${clip.clipNumber}`
+
+                            return (
+                              <div
+                                key={`clip_${clip.sceneNumber}_${clip.clipNumber}`}
+                                className="border rounded-lg overflow-hidden bg-white hover:shadow-sm transition-shadow"
+                              >
+                                {clipAsset?.url ? (
+                                  <video
+                                    src={clipAsset.url}
+                                    className="w-full h-20 object-cover bg-black"
+                                    muted
+                                    controls
+                                    playsInline
+                                  />
+                                ) : clip.generatedImageUrl ? (
+                                  <img
+                                    src={clip.generatedImageUrl}
+                                    alt={`Cena ${clip.sceneNumber} Clip ${clip.clipNumber}`}
+                                    className="w-full h-20 object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-20 bg-gray-100 flex items-center justify-center">
+                                    <Film className="w-4 h-4 text-gray-300" />
+                                  </div>
+                                )}
+                                <div className="px-1.5 py-1">
+                                  <p className="text-[9px] font-semibold text-gray-700">
+                                    Clip {clip.clipNumber} · {clip.duration}s
                                   </p>
+                                  <p className="text-[8px] text-gray-400 truncate" title={clip.description}>
+                                    {clip.description.slice(0, 60)}
+                                  </p>
+                                  {clip.motionDescription && (
+                                    <p className="text-[8px] text-rose-400 truncate mt-0.5">
+                                      🎬 {clip.motionDescription}
+                                    </p>
+                                  )}
+                                </div>
+                                {onGenerateClipVideo && (
+                                  <button
+                                    onClick={() => handleRegenerateMedia('video', scene.number, clip.clipNumber)}
+                                    disabled={Boolean(regeneratingId)}
+                                    className="w-full flex items-center justify-center gap-1 py-1 text-[9px] text-rose-600 hover:bg-rose-50 border-t disabled:opacity-40"
+                                  >
+                                    {regeneratingId === clipRegenId ? (
+                                      <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Gerando vídeo</>
+                                    ) : clipAsset?.url ? (
+                                      <><RefreshCw className="w-2.5 h-2.5" /> Regenerar Vídeo</>
+                                    ) : (
+                                      <><Film className="w-2.5 h-2.5" /> Gerar Vídeo</>
+                                    )}
+                                  </button>
                                 )}
                               </div>
-                              {/* Regenerate individual clip */}
-                              {onRegenerateImage && (
-                                <button
-                                  onClick={() => handleRegenerateMedia('video', scene.number)}
-                                  disabled={!!regeneratingId}
-                                  className="w-full flex items-center justify-center gap-1 py-1 text-[9px] text-rose-600 hover:bg-rose-50 border-t disabled:opacity-40"
-                                >
-                                  {clip.generatedImageUrl ? (
-                                    <><RefreshCw className="w-2.5 h-2.5" /> Regenerar</>
-                                  ) : (
-                                    <><ImagePlus className="w-2.5 h-2.5" /> Gerar</>
-                                  )}
-                                </button>
-                              )}
-                            </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       </div>
                     )}
