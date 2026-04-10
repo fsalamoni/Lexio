@@ -56,9 +56,10 @@ function throwIfAborted(signal?: AbortSignal): void {
 const MAX_PREFILTERED_DOCS = 30
 const MAX_SELECTED_DOCS = 8
 const MAX_ANALISTA_CHARS_PER_DOC = 15000
-const MAX_ANALISTA_TOTAL_CHARS = 48_000
-const MIN_ANALISTA_DOC_CHARS = 4_000
+const MAX_ANALISTA_INPUT_CHARS = 48_000
+const MIN_CHARS_PER_ANALISTA_DOC = 4_000
 const PREFILTER_TEXT_SAMPLE_CHARS = 20_000
+const DEFAULT_BUSCADOR_SUMMARY_TEMPLATE = 'Documento "%s" selecionado pelo Buscador como referência potencial para a pesquisa.'
 
 function extractJsonPayload(raw: string): string {
   let jsonStr = raw.trim()
@@ -94,10 +95,10 @@ function buildSelectedDocsForAnalista(
   selectedIds: Array<{ id: string; score: number; reason: string }>,
   allAcervoDocs: Array<{ id: string; filename: string; text_content: string; created_at: string }>,
 ): SelectedDocForAnalista[] {
-  const distributedCharsPerDoc = Math.floor(MAX_ANALISTA_TOTAL_CHARS / Math.max(1, selectedIds.length))
+  const distributedCharsPerDoc = Math.floor(MAX_ANALISTA_INPUT_CHARS / Math.max(1, selectedIds.length))
   const charsPerDoc = Math.min(
     MAX_ANALISTA_CHARS_PER_DOC,
-    Math.max(MIN_ANALISTA_DOC_CHARS, distributedCharsPerDoc),
+    Math.max(MIN_CHARS_PER_ANALISTA_DOC, distributedCharsPerDoc),
   )
 
   return selectedIds
@@ -122,7 +123,7 @@ function buildAnalistaFallbackResult(selectedDocs: SelectedDocForAnalista[]): st
       id: doc.id,
       relevance: doc.buscadorScore >= 0.7 ? 'alta' : doc.buscadorScore >= 0.4 ? 'media' : 'baixa',
       score: doc.buscadorScore,
-      summary: doc.buscadorReason || `Documento "${doc.filename}" selecionado pelo Buscador como referência potencial para a pesquisa.`,
+      summary: doc.buscadorReason || DEFAULT_BUSCADOR_SUMMARY_TEMPLATE.replace('%s', doc.filename),
       key_points: [],
       reusable_content: '',
     })),
@@ -634,7 +635,11 @@ export async function analyzeNotebookAcervo(
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     if (!isRecoverableAgentError(err)) throw err
-    console.warn('[Notebook Acervo Analista] Falling back to buscador selection after recoverable error:', err)
+    console.warn('[Notebook Acervo Analista] Falling back to buscador selection after recoverable error', {
+      error: err instanceof Error ? err.message : String(err),
+      notebookId,
+      selectedDocs: selectedDocs.length,
+    })
     onProgress?.({
       phase: 'nb_acervo_analista',
       message: 'Analista indisponível no momento; seguindo com curadoria rápida.',
@@ -672,7 +677,11 @@ export async function analyzeNotebookAcervo(
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     if (!isRecoverableAgentError(err)) throw err
-    console.warn('[Notebook Acervo Curador] Falling back to buscador ranking after recoverable error:', err)
+    console.warn('[Notebook Acervo Curador] Falling back to buscador ranking after recoverable error', {
+      error: err instanceof Error ? err.message : String(err),
+      notebookId,
+      selectedDocs: selectedDocs.length,
+    })
     onProgress?.({
       phase: 'nb_acervo_curador',
       message: 'Curador indisponível no momento; usando ranking do Buscador.',
