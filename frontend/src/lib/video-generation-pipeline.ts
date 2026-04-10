@@ -45,7 +45,7 @@ export interface VideoGenerationInput {
   imageModel?: string
   /** TTS voice for narration (e.g., 'nova', 'alloy', 'echo') */
   ttsVoice?: string
-  /** TTS model override (e.g., 'openai/tts-1-hd') */
+  /** TTS model override (e.g., 'openai/gpt-4o-audio-preview') */
   ttsModel?: string
   /** Target duration per clip in seconds (default 8) */
   clipDurationSeconds?: number
@@ -1266,7 +1266,7 @@ REQUISITOS OBRIGATÓRIOS:
   // ── Step 11: Generate Narration TTS ───────────────────────────────────────
   if (wantMedia && narration.length > 0) {
     const ttsVoice = input.ttsVoice || 'nova'
-    const ttsModel = input.ttsModel || 'openai/tts-1-hd'
+    const ttsModel = input.ttsModel || 'openai/gpt-4o-audio-preview'
     const validSegments = narration.filter(s => s.text && s.text.trim().length >= 5)
 
     console.log(`[Video] Step 11: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice}`)

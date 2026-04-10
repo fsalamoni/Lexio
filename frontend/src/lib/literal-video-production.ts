@@ -1214,7 +1214,7 @@ export async function generateLiteralMediaAssets(
           asset.narrationUrl = blobToObjectUrl(result.audioBlob)
           executions.push(makeExecution(
             'media_tts_generation',
-            chooseAudioModel(models.video_tts) || 'openai/tts-1-hd',
+            chooseAudioModel(models.video_tts) || 'openai/gpt-4o-audio-preview',
             performance.now() - startedAt,
             0.015 * (scene.narration.length / 1000),
           ))

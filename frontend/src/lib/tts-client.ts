@@ -2,7 +2,7 @@
  * TTS Client — Text-to-Speech via OpenRouter or browser fallback.
  *
  * Supports:
- * 1. OpenRouter TTS models (openai/tts-1, openai/tts-1-hd)
+ * 1. OpenRouter audio-output chat models
  * 2. Browser Web Speech API fallback (free, lower quality)
  *
  * Returns audio as a Blob (audio/mpeg or audio/wav).
@@ -16,7 +16,7 @@ export interface TTSOptions {
   apiKey: string
   text: string
   voice?: string        // e.g., 'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'
-  model?: string        // e.g., 'openai/tts-1-hd'
+  model?: string        // e.g., 'openai/gpt-4o-audio-preview'
   speed?: number        // 0.25 to 4.0
 }
 
@@ -27,18 +27,36 @@ export interface TTSResult {
 
 // ── OpenRouter TTS ──────────────────────────────────────────────────────────
 
+export const DEFAULT_OPENROUTER_TTS_MODEL = 'openai/gpt-4o-audio-preview'
+
+function normalizeTTSModel(model?: string): string {
+  const value = String(model || '').trim()
+  if (!value) return DEFAULT_OPENROUTER_TTS_MODEL
+  if (/^openai\/tts-1(?:-hd)?$/i.test(value)) return DEFAULT_OPENROUTER_TTS_MODEL
+  return value
+}
+
+function decodeBase64ToUint8Array(value: string): Uint8Array {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
 /**
- * Generate speech audio via OpenRouter's TTS endpoint.
- * Uses the OpenAI-compatible /audio/speech endpoint.
+ * Generate speech audio via OpenRouter chat completions audio output.
+ * OpenRouter exposes audio generation through streamed chat completions.
  */
 export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSResult> {
-  const model = opts.model || 'openai/tts-1-hd'
+  const model = normalizeTTSModel(opts.model)
   const voice = opts.voice || 'nova'
   const speed = opts.speed || 1.0
 
   const response = await withRateLimit('openrouter:tts', 18, async () =>
     withRetryAfterDelay(async () =>
-      fetch('https://openrouter.ai/api/v1/audio/speech', {
+      fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${opts.apiKey}`,
@@ -48,10 +66,19 @@ export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSRes
         },
         body: JSON.stringify({
           model,
-          input: opts.text,
-          voice,
+          messages: [
+            {
+              role: 'user',
+              content: opts.text,
+            },
+          ],
+          modalities: ['text', 'audio'],
+          audio: {
+            voice,
+            format: 'mp3',
+          },
           speed,
-          response_format: 'mp3',
+          stream: true,
         }),
       }).then(async resp => {
         if (resp.status === 429) {
@@ -67,7 +94,54 @@ export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSRes
     throw new Error(`TTS API error (${response.status}): ${errorText}`)
   }
 
-  const audioBlob = await response.blob()
+  if (!response.body) {
+    throw new Error('TTS API error: resposta sem stream de áudio')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  const audioChunks: string[] = []
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split(/\r?\n/)
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data:')) continue
+      const payload = trimmed.slice(5).trim()
+      if (!payload || payload === '[DONE]') continue
+      try {
+        const chunk = JSON.parse(payload) as {
+          choices?: Array<{
+            delta?: {
+              audio?: {
+                data?: string
+              }
+            }
+          }>
+        }
+        const audioData = chunk.choices?.[0]?.delta?.audio?.data
+        if (audioData) audioChunks.push(audioData)
+      } catch {
+        // Ignore non-JSON keepalive/control frames.
+      }
+    }
+  }
+
+  if (audioChunks.length === 0) {
+    throw new Error('TTS API error: stream concluído sem áudio')
+  }
+
+  const merged = audioChunks.join('')
+  const audioBytes = decodeBase64ToUint8Array(merged)
+  const audioBuffer = new ArrayBuffer(audioBytes.byteLength)
+  new Uint8Array(audioBuffer).set(audioBytes)
+  const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' })
   // Rough estimate: ~150 words per minute at 1x speed
   const wordCount = opts.text.split(/\s+/).length
   const durationEstimate = Math.round((wordCount / 150) * 60 / speed)
@@ -147,6 +221,5 @@ export const TTS_VOICES = [
 ] as const
 
 export const TTS_MODELS = [
-  { id: 'openai/tts-1', label: 'TTS Standard', description: 'Rápido, boa qualidade' },
-  { id: 'openai/tts-1-hd', label: 'TTS HD', description: 'Mais lento, qualidade premium' },
+  { id: DEFAULT_OPENROUTER_TTS_MODEL, label: 'GPT-4o Audio Preview', description: 'Saída de áudio via chat completions streaming' },
 ] as const

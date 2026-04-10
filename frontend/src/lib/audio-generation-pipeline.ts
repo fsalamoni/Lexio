@@ -189,7 +189,7 @@ export async function generateAudioLiteralMedia(
   onProgress?: StudioProgressCallback,
 ): Promise<AudioLiteralGenerationResult> {
   const models = await loadAudioPipelineModels()
-  const ttsModel = input.model || models.audio_narrador || 'openai/tts-1-hd'
+  const ttsModel = input.model || models.audio_narrador || 'openai/gpt-4o-audio-preview'
   const startedAt = Date.now()
   onProgress?.(1, 1, 'Gerando áudio literal…')
 

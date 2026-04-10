@@ -4562,7 +4562,7 @@ Instruções:
               const result = await generateTTSViaOpenRouter({
                 apiKey,
                 text: cleanText,
-                model: models.video_tts || 'openai/tts-1-hd',
+                model: models.video_tts || 'openai/gpt-4o-audio-preview',
                 voice: 'nova',
               })
               const audioDataUrl = await blobToDataUrl(result.audioBlob)
