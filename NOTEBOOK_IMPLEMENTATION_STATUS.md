@@ -62,10 +62,13 @@
 - Geracao literal de audio movida para `lib/audio-generation-pipeline.ts`
 - Renderizacao final de infografico, mapa mental e tabela centralizada em `lib/notebook-studio-pipeline.ts`
 - Slides agora combinam imagem contextual com layout final antes de persistir no notebook
+- Estudio de video literal agora faz upload de blobs temporarios para Cloud Storage e salva apenas JSON compactado no Firestore
+- Persistencia do notebook normaliza estado literal para evitar estouro do limite de 1 MiB por documento
+- CSP do frontend/Firebase Hosting permite `blob:` em fluxos necessarios de upload/render do estudio
 
 ### Etapa 10 — Audio Overview Pipeline ✅
 - **Arquivos**: `lib/tts-client.ts`, `lib/notebook-audio-pipeline.ts`, `components/artifacts/AudioOverviewPlayer.tsx`
-- TTS client: OpenRouter (openai/tts-1-hd) + Web Speech API fallback
+- TTS client: OpenRouter chat completions com saida de audio por streaming (`openai/gpt-4o-audio-preview`) + Web Speech API fallback
 - Pipeline gera script podcast 2 vozes (Host A / Host B)
 - Player com controles, velocidade, download MP3, transcricao sincronizada
 - Card de Audio Overview na aba Overview (estilo NotebookLM)

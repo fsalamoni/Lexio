@@ -725,7 +725,7 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 | DataJud (CNJ) | Pesquisa de jurisprudência | `datajud-service.ts` |
 | DuckDuckGo | Pesquisa web | `web-search-service.ts` |
 | Jina | Scraping/extração de conteúdo web | `web-search-service.ts` |
-| OpenRouter TTS | Text-to-speech | `tts-client.ts` |
+| OpenRouter TTS | Text-to-speech via chat completions com áudio em streaming | `tts-client.ts` |
 | OpenRouter Images | Geração de imagens | `image-generation-client.ts` |
 | CORS Proxies | corsproxy.io, allorigins.win | `web-search-service.ts` |
 

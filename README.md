@@ -51,6 +51,7 @@
 - **Pipeline de Vídeo** — 11 agentes configuráveis para produção completa de vídeo (planejamento, clips, imagem, TTS → renderização)
 - **Pipeline de Áudio** — 6 agentes para produção de podcasts e narrações com TTS e síntese literal internalizada
 - **Pipeline de Apresentação** — 6 agentes para criação de apresentações profissionais com imagens de slides contextuais e exportação PPTX
+- **Persistência de mídia do estúdio** — Vídeos, áudios e imagens temporários do notebook são enviados para Cloud Storage; o artefato salvo no Firestore mantém apenas URLs persistidas e checkpoint compactado para respeitar o limite de 1 MiB por documento
 - **Anamnese 2 camadas** — Perfil profissional persistente (Layer 1) + contexto por geração (Layer 2)
 - **Configurações por usuário** — API keys, modelos por agente, catálogo, tipos e áreas ficam isolados em cada perfil
 - **Painel administrativo da plataforma** — Visão agregada de uso, pipelines, agentes, documentos, custos e tokens globais
@@ -269,6 +270,7 @@ git push origin main
 - Administradores têm leitura agregada dos dados operacionais para analytics da plataforma.
 - Administradores não têm acesso às preferências privadas em `/users/{uid}/settings/preferences`.
 - Mídias do caderno em `research_notebooks/{uid}/{notebookId}/{images|audios|videos}/...` usam Cloud Storage com regras por usuário autenticado.
+- Artefatos de vídeo do caderno persistem estado compacto no Firestore e armazenam blobs grandes apenas no Cloud Storage para evitar estouro do limite de 1 MiB por documento.
 
 ---
 
