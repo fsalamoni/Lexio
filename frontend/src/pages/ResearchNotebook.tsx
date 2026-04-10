@@ -2435,6 +2435,130 @@ Instruções:
   }
 
   // ── Save video studio production as notebook artifact ──────────────
+  const isInlineMediaUrl = (value?: string): value is string => Boolean(value && (value.startsWith('blob:') || value.startsWith('data:')))
+
+  const compactLiteralGenerationState = (state?: VideoProductionPackage['literalGenerationState']) => {
+    if (!state) return undefined
+    return {
+      ...state,
+      errors: state.errors.slice(-8),
+      events: state.events?.slice(-12).map(event => ({
+        at: event.at,
+        type: event.type,
+        phase: event.phase,
+        sceneNumber: event.sceneNumber,
+        partNumber: event.partNumber,
+        attempt: event.attempt,
+        message: event.message,
+      })),
+      scenes: state.scenes.map(scene => ({
+        sceneNumber: scene.sceneNumber,
+        imageStatus: scene.imageStatus,
+        narrationStatus: scene.narrationStatus,
+        clipsStatus: scene.clipsStatus,
+        imageAttempts: scene.imageAttempts,
+        narrationAttempts: scene.narrationAttempts,
+        clipsAttempts: scene.clipsAttempts,
+        clipPartsCompleted: scene.clipPartsCompleted,
+        clipPartsTotal: scene.clipPartsTotal,
+        lastError: scene.lastError,
+        updatedAt: scene.updatedAt,
+      })),
+    }
+  }
+
+  const compactVideoProductionForPersistence = (production: VideoProductionPackage): VideoProductionPackage => {
+    const sceneAssets = (production.sceneAssets || []).map(sceneAsset => ({
+      sceneNumber: sceneAsset.sceneNumber,
+      imageUrl: isInlineMediaUrl(sceneAsset.imageUrl) ? undefined : sceneAsset.imageUrl,
+      narrationUrl: isInlineMediaUrl(sceneAsset.narrationUrl) ? undefined : sceneAsset.narrationUrl,
+      imageStoragePath: sceneAsset.imageStoragePath,
+      narrationStoragePath: sceneAsset.narrationStoragePath,
+      videoClips: sceneAsset.videoClips?.map(clip => ({
+        sceneNumber: clip.sceneNumber,
+        partNumber: clip.partNumber,
+        startTime: clip.startTime,
+        endTime: clip.endTime,
+        duration: clip.duration,
+        url: isInlineMediaUrl(clip.url) ? '' : clip.url,
+        mimeType: clip.mimeType,
+        generatedAt: clip.generatedAt,
+        source: clip.source,
+        generationEngine: clip.generationEngine,
+        providerName: clip.providerName,
+        providerJobId: clip.providerJobId,
+        storagePath: clip.storagePath,
+      })).filter(clip => Boolean(clip.url)),
+    }))
+    const sceneAssetMap = new globalThis.Map(sceneAssets.map(asset => [asset.sceneNumber, asset] as const))
+
+    return {
+      ...production,
+      scenes: production.scenes.map(scene => ({
+        ...scene,
+        generatedImageUrl: undefined,
+        clips: scene.clips?.map(clip => ({
+          ...clip,
+          generatedImageUrl: undefined,
+        })) || [],
+      })),
+      narration: production.narration.map(segment => ({
+        ...segment,
+        generatedAudioUrl: isInlineMediaUrl(segment.generatedAudioUrl) ? undefined : segment.generatedAudioUrl,
+      })),
+      tracks: production.tracks.map(track => ({
+        ...track,
+        segments: track.segments.map(segment => {
+          let generatedMediaUrl: string | undefined = isInlineMediaUrl(segment.generatedMediaUrl) ? undefined : segment.generatedMediaUrl
+          const sceneAsset = segment.sceneNumber ? sceneAssetMap.get(segment.sceneNumber) : undefined
+          if (track.type === 'narration') {
+            generatedMediaUrl = sceneAsset?.narrationUrl || generatedMediaUrl
+          } else if (track.type === 'video') {
+            const clipUrl = segment.clipNumber
+              ? sceneAsset?.videoClips?.find((clip) => clip.partNumber === segment.clipNumber)?.url
+              : undefined
+            generatedMediaUrl = clipUrl || sceneAsset?.imageUrl || generatedMediaUrl
+          }
+          return {
+            ...segment,
+            generatedMediaUrl,
+          }
+        }),
+      })),
+      sceneAssets,
+      soundtrackAsset: production.soundtrackAsset && !isInlineMediaUrl(production.soundtrackAsset.url)
+        ? {
+            url: production.soundtrackAsset.url,
+            mimeType: production.soundtrackAsset.mimeType,
+            generatedAt: production.soundtrackAsset.generatedAt,
+            description: production.soundtrackAsset.description,
+            storagePath: production.soundtrackAsset.storagePath,
+          }
+        : undefined,
+      renderedVideo: production.renderedVideo && !isInlineMediaUrl(production.renderedVideo.url)
+        ? {
+            url: production.renderedVideo.url,
+            mimeType: production.renderedVideo.mimeType,
+            generatedAt: production.renderedVideo.generatedAt,
+            storagePath: production.renderedVideo.storagePath,
+          }
+        : undefined,
+      renderedScopes: production.renderedScopes?.map(scope => ({
+        url: isInlineMediaUrl(scope.url) ? '' : scope.url,
+        mimeType: scope.mimeType,
+        generatedAt: scope.generatedAt,
+        storagePath: scope.storagePath,
+        scope: scope.scope,
+        scopeKey: scope.scopeKey,
+        label: scope.label,
+        presetId: scope.presetId,
+        sceneNumber: scope.sceneNumber,
+        partNumber: scope.partNumber,
+      })).filter(scope => Boolean(scope.url)),
+      literalGenerationState: compactLiteralGenerationState(production.literalGenerationState),
+    }
+  }
+
   const handleSaveVideoStudioToNotebook = async (
     production: VideoProductionPackage,
     options?: { silent?: boolean; syncEditorState?: boolean },
@@ -2465,12 +2589,18 @@ Instruções:
         throw new Error(`${label} falhou após múltiplas tentativas: ${lastError instanceof Error ? lastError.message : String(lastError)}`)
       }
 
+      const resolveMediaBlob = async (url: string, runtimeBlob?: Blob): Promise<Blob> => {
+        if (runtimeBlob) return runtimeBlob
+        const response = await fetch(url)
+        return response.blob()
+      }
+
       let productionToSave = production
       const renderedVideoUrl = production.renderedVideo?.url || ''
 
       if (renderedVideoUrl && (renderedVideoUrl.startsWith('blob:') || renderedVideoUrl.startsWith('data:'))) {
         const storedVideo = uploadCache.get(renderedVideoUrl) || await (async () => {
-          const videoBlob = await fetch(renderedVideoUrl).then(resp => resp.blob())
+          const videoBlob = await resolveMediaBlob(renderedVideoUrl, production.renderedVideo?.blob)
           const stored = await uploadWithRetry(
             'Upload do vídeo final',
             () => uploadNotebookVideoArtifact(
@@ -2499,7 +2629,7 @@ Instruções:
             return renderedScope
           }
           const stored = uploadCache.get(renderedScope.url) || await (async () => {
-            const scopedBlob = await fetch(renderedScope.url).then(resp => resp.blob())
+            const scopedBlob = await resolveMediaBlob(renderedScope.url, renderedScope.blob)
             const uploaded = await uploadWithRetry(
               `Upload render de escopo ${renderedScope.scopeKey}`,
               () => uploadNotebookMediaArtifact(
@@ -2556,7 +2686,7 @@ Instruções:
 
         if (narrationUrl && (narrationUrl.startsWith('blob:') || narrationUrl.startsWith('data:'))) {
           const stored = uploadCache.get(narrationUrl) || await (async () => {
-            const narrationBlob = await fetch(narrationUrl).then(resp => resp.blob())
+            const narrationBlob = await resolveMediaBlob(narrationUrl, sceneAsset.narrationBlob)
             const uploaded = await uploadWithRetry(
               `Upload narração cena ${sceneAsset.sceneNumber}`,
               () => uploadNotebookMediaArtifact(
@@ -2579,7 +2709,7 @@ Instruções:
           videoClips = await Promise.all(videoClips.map(async clip => {
             if (!clip.url || (!clip.url.startsWith('blob:') && !clip.url.startsWith('data:'))) return clip
             const stored = uploadCache.get(clip.url) || await (async () => {
-              const clipBlob = await fetch(clip.url).then(resp => resp.blob())
+              const clipBlob = await resolveMediaBlob(clip.url, clip.blob)
               const uploaded = await uploadWithRetry(
                 `Upload clip cena ${clip.sceneNumber} parte ${clip.partNumber}`,
                 () => uploadNotebookMediaArtifact(
@@ -2615,7 +2745,7 @@ Instruções:
       let soundtrackAsset = productionToSave.soundtrackAsset
       if (soundtrackAsset?.url && (soundtrackAsset.url.startsWith('blob:') || soundtrackAsset.url.startsWith('data:'))) {
         const stored = uploadCache.get(soundtrackAsset.url) || await (async () => {
-          const soundtrackBlob = await fetch(soundtrackAsset.url).then(resp => resp.blob())
+          const soundtrackBlob = await resolveMediaBlob(soundtrackAsset.url, soundtrackAsset.blob)
           const uploaded = await uploadWithRetry(
             'Upload trilha sonora',
             () => uploadNotebookMediaArtifact(
@@ -2642,6 +2772,8 @@ Instruções:
         sceneAssets: uploadedSceneAssets,
         soundtrackAsset,
       }
+
+      productionToSave = compactVideoProductionForPersistence(productionToSave)
 
       const artifactTitle = `Estúdio de Vídeo: ${production.title}`
       const content = JSON.stringify(productionToSave)

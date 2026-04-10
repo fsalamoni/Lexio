@@ -436,6 +436,7 @@ async function renderSceneClip(
     mimeType,
     generatedAt: new Date().toISOString(),
     source: 'generated',
+    blob,
   }
 }
 
@@ -450,6 +451,10 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   })
 }
 
+function blobToObjectUrl(blob: Blob): string {
+  return URL.createObjectURL(blob)
+}
+
 async function remoteImageToDataUrl(url: string): Promise<string> {
   const response = await fetch(url)
   if (!response.ok) {
@@ -458,12 +463,12 @@ async function remoteImageToDataUrl(url: string): Promise<string> {
   return blobToDataUrl(await response.blob())
 }
 
-async function remoteVideoToDataUrl(url: string): Promise<string> {
+async function remoteVideoToBlob(url: string): Promise<Blob> {
   const response = await fetch(url)
   if (!response.ok) {
     throw new Error(`Falha ao baixar vídeo gerado (${response.status}) em ${url}`)
   }
-  return blobToDataUrl(await response.blob())
+  return response.blob()
 }
 
 function chooseImageModel(model?: string): string | undefined {
@@ -811,9 +816,10 @@ export async function renderLiteralVideo(
   return {
     blob,
     asset: {
-      url: URL.createObjectURL(blob),
+      url: blobToObjectUrl(blob),
       mimeType,
       generatedAt: new Date().toISOString(),
+      blob,
     },
   }
 }
@@ -981,19 +987,21 @@ export async function generateLiteralVideoClipAsset(
       })
 
       if (providerResult?.url) {
+        const providerBlob = await remoteVideoToBlob(providerResult.url)
         clip = {
           sceneNumber: part.sceneNumber,
           partNumber: part.partNumber,
           startTime: part.startTime,
           endTime: part.endTime,
           duration: part.duration,
-          url: await remoteVideoToDataUrl(providerResult.url),
+          url: blobToObjectUrl(providerBlob),
           mimeType: providerResult.mimeType || 'video/mp4',
           generatedAt: new Date().toISOString(),
           source: 'generated',
           generationEngine: 'external-provider',
           providerName: providerResult.provider,
           providerJobId: providerResult.jobId,
+          blob: providerBlob,
         }
       }
     } catch {
@@ -1202,7 +1210,8 @@ export async function generateLiteralMediaAssets(
             text: scene.narration,
             voice: 'nova',
           })
-          asset.narrationUrl = await blobToDataUrl(result.audioBlob)
+          asset.narrationBlob = result.audioBlob
+          asset.narrationUrl = blobToObjectUrl(result.audioBlob)
           executions.push(makeExecution(
             'media_tts_generation',
             chooseAudioModel(models.video_tts) || 'openai/tts-1-hd',
@@ -1314,19 +1323,21 @@ export async function generateLiteralMediaAssets(
                 signal,
               })
               if (providerResult?.url) {
+                const providerBlob = await remoteVideoToBlob(providerResult.url)
                 clip = {
                   sceneNumber: part.sceneNumber,
                   partNumber: part.partNumber,
                   startTime: part.startTime,
                   endTime: part.endTime,
                   duration: part.duration,
-                  url: await remoteVideoToDataUrl(providerResult.url),
+                  url: blobToObjectUrl(providerBlob),
                   mimeType: providerResult.mimeType || 'video/mp4',
                   generatedAt: new Date().toISOString(),
                   source: 'generated',
                   generationEngine: 'external-provider',
                   providerName: providerResult.provider,
                   providerJobId: providerResult.jobId,
+                  blob: providerBlob,
                 }
               }
             } catch {
@@ -1439,10 +1450,11 @@ export async function generateLiteralMediaAssets(
         production.scenes.map(scene => scene.soundtrack).join(' '),
       )
       soundtrackAsset = {
-        url: await blobToDataUrl(soundtrackBlob),
+        url: blobToObjectUrl(soundtrackBlob),
         mimeType: soundtrackBlob.type || 'audio/wav',
         generatedAt: new Date().toISOString(),
         description: 'Trilha sonora procedural gerada automaticamente',
+        blob: soundtrackBlob,
       }
       executions.push(makeExecution('media_soundtrack_generation', 'browser/procedural-audio', performance.now() - soundtrackStartedAt))
     } catch (error) {

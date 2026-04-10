@@ -139,6 +139,8 @@ export interface VideoSceneAsset {
   narrationUrl?: string
   imageStoragePath?: string
   narrationStoragePath?: string
+  imageBlob?: Blob
+  narrationBlob?: Blob
   videoClips?: VideoClipAsset[]
 }
 
@@ -156,6 +158,7 @@ export interface VideoClipAsset {
   providerName?: string
   providerJobId?: string
   storagePath?: string
+  blob?: Blob
 }
 
 export interface VideoAudioAsset {
@@ -164,6 +167,7 @@ export interface VideoAudioAsset {
   generatedAt: string
   description?: string
   storagePath?: string
+  blob?: Blob
 }
 
 export interface RenderedVideoAsset {
@@ -171,6 +175,7 @@ export interface RenderedVideoAsset {
   mimeType: string
   generatedAt: string
   storagePath?: string
+  blob?: Blob
 }
 
 export type VideoRenderScope = 'full' | 'scene' | 'part'
