@@ -86,22 +86,22 @@ function getEndpointCandidates(): string[] {
 
   if (isFirebase) {
     // Firebase Hosting: rewrite /api/datajud → Cloud Function (primary path)
-    return ['/api/datajud', CLOUD_FUNCTION_URL, DIRECT_ENDPOINT]
+    return ['/api/datajud', CLOUD_FUNCTION_URL]
   }
 
   if (isLocal) {
-    // Local dev: Vite proxy forwards /api/* to backend, direct as fallback
-    return ['/api/datajud', DIRECT_ENDPOINT, CLOUD_FUNCTION_URL]
+    // Local dev: Vite proxy forwards /api/* to backend; Cloud Function is a safe fallback.
+    return ['/api/datajud', CLOUD_FUNCTION_URL, DIRECT_ENDPOINT]
   }
 
   if (isStaticHosting) {
-    // Static hosting (GitHub Pages, Netlify, Vercel): no server-side proxy
-    // Relative paths like /api/datajud will always fail — skip them
-    return [CLOUD_FUNCTION_URL, DIRECT_ENDPOINT]
+    // Static hosting (GitHub Pages, Netlify, Vercel): no server-side proxy.
+    // Avoid direct browser calls to DataJud because CNJ endpoints do not provide stable CORS headers.
+    return [CLOUD_FUNCTION_URL]
   }
 
-  // Unknown host: try all options
-  return [CLOUD_FUNCTION_URL, '/api/datajud', DIRECT_ENDPOINT]
+  // Unknown host: prefer managed proxies only to avoid browser-side CORS failures.
+  return [CLOUD_FUNCTION_URL, '/api/datajud']
 }
 
 /** Small delay between batches to avoid overwhelming the proxy */

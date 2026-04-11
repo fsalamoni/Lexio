@@ -1,5 +1,6 @@
-import { X, Loader2, CheckCircle2, AlertCircle, Circle } from 'lucide-react'
+import { Loader2, CheckCircle2, AlertCircle, Circle, Activity } from 'lucide-react'
 import type { ReactNode } from 'react'
+import DraggablePanel from './DraggablePanel'
 
 export type TrailStepStatus = 'pending' | 'active' | 'completed' | 'error'
 
@@ -58,38 +59,22 @@ export default function AgentTrailProgressModal({
     .map(step => step.label)
 
   return (
-    <div className="fixed inset-0 z-[75] flex items-center justify-center">
-      <div
-        className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-        onClick={canClose ? onClose : undefined}
-        aria-hidden="true"
-      />
+    <DraggablePanel
+      open={isOpen}
+      onClose={canClose ? onClose : () => {}}
+      title={title}
+      icon={<Activity size={16} />}
+      initialWidth={860}
+      initialHeight={620}
+      minWidth={420}
+      minHeight={300}
+      closeOnEscape={canClose}
+    >
+      <div className="h-full bg-white flex flex-col">
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-slate-50 to-white">
+          {subtitle && <p className="text-xs text-gray-500 truncate">{subtitle}</p>}
 
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative w-full max-w-3xl mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden"
-      >
-        <div className="px-6 py-4 border-b bg-gradient-to-r from-slate-50 to-white flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-            {subtitle && <p className="text-xs text-gray-500 mt-0.5 truncate">{subtitle}</p>}
-          </div>
-          {canClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-              aria-label="Fechar"
-              title="Fechar"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        <div className="px-6 pt-4 pb-3 border-b bg-white">
-          <div className="flex items-center gap-2 text-sm mb-2">
+          <div className="mt-3 flex items-center gap-2 text-sm mb-2">
             {isComplete ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             ) : hasError ? (
@@ -125,7 +110,7 @@ export default function AgentTrailProgressModal({
           </div>
         </div>
 
-        <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
+        <div className="p-6 flex-1 overflow-y-auto space-y-4">
           <div className="space-y-2">
             {steps.map(step => (
               <div key={step.key} className="flex items-start gap-2.5 p-2 rounded-lg border border-gray-100 bg-gray-50/70">
@@ -155,6 +140,6 @@ export default function AgentTrailProgressModal({
           {children}
         </div>
       </div>
-    </div>
+    </DraggablePanel>
   )
 }

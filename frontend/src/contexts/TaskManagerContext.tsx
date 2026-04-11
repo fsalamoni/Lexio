@@ -25,6 +25,8 @@ import {
 
 export type TaskStatus = 'running' | 'completed' | 'error'
 
+export type TaskMetadata = Record<string, unknown>
+
 export interface TaskInfo {
   id: string
   name: string
@@ -32,22 +34,31 @@ export interface TaskInfo {
   progress: number
   phase: string
   startedAt: number
+  currentStep?: number
+  totalSteps?: number
   completedAt?: number
   error?: string
   result?: unknown
+  metadata?: TaskMetadata
 }
 
 export interface TaskProgress {
   progress: number
   phase: string
+  currentStep?: number
+  totalSteps?: number
 }
 
 type TaskExecutor = (onProgress: (p: TaskProgress) => void) => Promise<unknown>
 
+interface StartTaskOptions {
+  metadata?: TaskMetadata
+}
+
 interface TaskManagerContextType {
   tasks: TaskInfo[]
   /** Starts a new persistent task. Returns task id. */
-  startTask: (name: string, executor: TaskExecutor) => string
+  startTask: (name: string, executor: TaskExecutor, options?: StartTaskOptions) => string
   /** Dismiss a completed/errored task from the list */
   dismissTask: (id: string) => void
   /** Get a specific task by id */
@@ -76,7 +87,7 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t))
   }, [])
 
-  const startTask = useCallback((name: string, executor: TaskExecutor): string => {
+  const startTask = useCallback((name: string, executor: TaskExecutor, options?: StartTaskOptions): string => {
     const id = `task_${++idCounter.current}_${Date.now()}`
     const task: TaskInfo = {
       id,
@@ -85,11 +96,17 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
       progress: 0,
       phase: 'Iniciando...',
       startedAt: Date.now(),
+      metadata: options?.metadata,
     }
     setTasks(prev => [...prev, task])
 
     const onProgress = (p: TaskProgress) => {
-      updateTask(id, { progress: Math.min(100, Math.max(0, p.progress)), phase: p.phase })
+      updateTask(id, {
+        progress: Math.min(100, Math.max(0, p.progress)),
+        phase: p.phase,
+        currentStep: p.currentStep,
+        totalSteps: p.totalSteps,
+      })
     }
 
     // Execute in background — survives navigation

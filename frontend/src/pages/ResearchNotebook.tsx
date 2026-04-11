@@ -198,15 +198,38 @@ const JURISPRUDENCE_SYNTHESIS_SYSTEM = [
 
 /** Delay (ms) before showing a secondary toast, to avoid overlapping with the primary toast. */
 const SECONDARY_TOAST_DELAY_MS = 600
+const STUDIO_PIPELINE_TOTAL_STEPS = 3
 
 type ViewMode = 'list' | 'detail'
 type DetailTab = 'overview' | 'chat' | 'sources' | 'studio' | 'artifacts'
 
+type NotebookArtifactTaskMetadata = {
+  taskKind: 'notebook-artifact'
+  notebookId: string
+  artifactType: StudioArtifactType
+  artifactLabel: string
+}
+
+function getNotebookArtifactTaskMetadata(metadata: Record<string, unknown> | undefined): NotebookArtifactTaskMetadata | null {
+  if (!metadata) return null
+  if (metadata.taskKind !== 'notebook-artifact') return null
+  if (typeof metadata.notebookId !== 'string') return null
+  if (typeof metadata.artifactType !== 'string') return null
+  if (typeof metadata.artifactLabel !== 'string') return null
+  return {
+    taskKind: 'notebook-artifact',
+    notebookId: metadata.notebookId,
+    artifactType: metadata.artifactType as StudioArtifactType,
+    artifactLabel: metadata.artifactLabel,
+  }
+}
+
 export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
-  const { startTask } = useTaskManager()
+  const { startTask, tasks } = useTaskManager()
   const [searchParams, setSearchParams] = useSearchParams()
+  const mountedRef = useRef(true)
 
   // List state
   const [notebooks, setNotebooks] = useState<ResearchNotebookData[]>([])
@@ -277,14 +300,9 @@ export default function ResearchNotebook() {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
 
   // Studio
-  const [studioLoading, setStudioLoading] = useState(false)
-  const [selectedArtifactType, setSelectedArtifactType] = useState<StudioArtifactType | null>(null)
   const [studioCustomPrompt, setStudioCustomPrompt] = useState('')
-  const [studioProgress, setStudioProgress] = useState<{ step: number; total: number; phase: string } | null>(null)
-  const [studioLastProgress, setStudioLastProgress] = useState<{ step: number; total: number; phase: string } | null>(null)
-  const [studioErrorMessage, setStudioErrorMessage] = useState('')
   const [showStudioProgressModal, setShowStudioProgressModal] = useState(false)
-  const studioAbortRef = useRef<AbortController | null>(null)
+  const [selectedStudioTaskId, setSelectedStudioTaskId] = useState<string | null>(null)
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
@@ -379,13 +397,13 @@ export default function ResearchNotebook() {
 
   // Ensure in-flight research tasks are canceled when leaving the page.
   useEffect(() => {
+    mountedRef.current = true
     return () => {
+      mountedRef.current = false
       researchAbortRef.current?.abort()
       researchAbortRef.current = null
       acervoAbortRef.current?.abort()
       acervoAbortRef.current = null
-      studioAbortRef.current?.abort()
-      studioAbortRef.current = null
     }
   }, [])
 
@@ -395,6 +413,36 @@ export default function ResearchNotebook() {
     if (!fresh) throw new Error('Caderno não encontrado para atualização')
     return fresh
   }, [userId])
+
+  const notebookArtifactTasks = useMemo(() => {
+    if (!activeNotebook?.id) return []
+    return tasks.filter(task => {
+      const metadata = getNotebookArtifactTaskMetadata(task.metadata)
+      return metadata?.notebookId === activeNotebook.id
+    })
+  }, [activeNotebook?.id, tasks])
+
+  const runningArtifactTasksByType = useMemo(() => {
+    const map = new globalThis.Map<StudioArtifactType, typeof notebookArtifactTasks[number]>()
+    for (const task of notebookArtifactTasks) {
+      const metadata = getNotebookArtifactTaskMetadata(task.metadata)
+      if (!metadata || task.status !== 'running') continue
+      map.set(metadata.artifactType, task)
+    }
+    return map
+  }, [notebookArtifactTasks])
+
+  const selectedStudioTask = useMemo(() => {
+    if (selectedStudioTaskId) {
+      const found = notebookArtifactTasks.find(task => task.id === selectedStudioTaskId)
+      if (found) return found
+    }
+    return notebookArtifactTasks.find(task => task.status === 'running') || null
+  }, [notebookArtifactTasks, selectedStudioTaskId])
+
+  const selectedStudioTaskMetadata = selectedStudioTask
+    ? getNotebookArtifactTaskMetadata(selectedStudioTask.metadata)
+    : null
 
   // ── Auto-scroll chat to bottom on new messages ──────────────────────
   useEffect(() => {
@@ -1811,122 +1859,154 @@ Instruções:
 
   // ── Studio: generate artifact (multi-agent pipeline) ────────────────
   const handleGenerateArtifact = async (artifactType: StudioArtifactType) => {
-    if (!userId || !activeNotebook?.id || studioLoading) return
+    if (!userId || !activeNotebook?.id) return
 
-    const abortController = new AbortController()
-    studioAbortRef.current = abortController
-    setStudioLoading(true)
-    setSelectedArtifactType(artifactType)
-    setStudioProgress(null)
-    setStudioLastProgress(null)
-    setStudioErrorMessage('')
-    setPendingArtifact(null)
-    setPendingContent('')
-    setShowStudioProgressModal(true)
+    const existingTask = runningArtifactTasksByType.get(artifactType)
+    if (existingTask) {
+      setSelectedStudioTaskId(existingTask.id)
+      setShowStudioProgressModal(true)
+      toast.info('Esta geração já está em andamento.', 'Abra o painel de progresso para acompanhar a trilha.')
+      return
+    }
 
-    try {
-      const apiKey = await getOpenRouterKey()
-      const sourceContext = buildSourceContext()
-      const artifactDef = ARTIFACT_TYPES.find(a => a.type === artifactType)
-
-      const conversationContext = activeNotebook.messages
+    const artifactDef = ARTIFACT_TYPES.find(a => a.type === artifactType)
+    const notebookSnapshot = {
+      id: activeNotebook.id,
+      topic: activeNotebook.topic,
+      title: activeNotebook.title,
+      description: activeNotebook.description || undefined,
+      sourceContext: buildSourceContext() || '',
+      conversationContext: activeNotebook.messages
         .slice(-MAX_STUDIO_CONTEXT_MESSAGES)
         .map(m => `${m.role}: ${m.content}`)
         .join('\n')
-        .slice(0, MAX_STUDIO_CONTEXT_CHARS)
-
-      const onProgress: StudioProgressCallback = (step, total, phase) => {
-        setStudioProgress({ step, total, phase })
-        setStudioLastProgress({ step, total, phase })
-      }
-
-      const pipelineInput = {
-        apiKey,
-        topic: activeNotebook.topic,
-        description: activeNotebook.description || undefined,
-        sourceContext: sourceContext || '',
-        conversationContext,
-        customInstructions: studioCustomPrompt.trim() || undefined,
-        artifactType,
-        artifactLabel: artifactDef?.label || artifactType,
-      }
-
-      const result = artifactType === 'audio_script'
-        ? await runAudioGenerationPipeline(pipelineInput, onProgress, abortController.signal)
-        : artifactType === 'apresentacao'
-          ? await runPresentationGenerationPipeline(pipelineInput, onProgress, abortController.signal)
-          : await runStudioPipeline(pipelineInput, onProgress, abortController.signal)
-      setStudioLastProgress({ step: result.executions.length, total: result.executions.length, phase: 'Trilha concluída com sucesso.' })
-
-      const artifact: StudioArtifact = {
-        id: generateId(),
-        type: artifactType,
-        title: `${artifactDef?.label || artifactType} — ${activeNotebook.topic}`,
-        content: result.content,
-        format: isStructuredArtifactType(artifactType) ? 'json' : 'markdown',
-        created_at: new Date().toISOString(),
-      }
-
-      // For reviewable media types, show review modal before saving
-      if (REVIEWABLE_ARTIFACT_TYPES.includes(artifactType)) {
-        setPendingArtifact({ artifact, executions: result.executions })
-        setPendingContent(result.content)
-        setStudioCustomPrompt('')
-        toast.success(`Proposta de ${artifactDef?.label || 'Artefato'} gerada! Revise e edite antes de salvar.`)
-      } else {
-        // Non-reviewable types: save immediately
-        await saveArtifactToNotebook(artifact, result.executions)
-        setActiveTab('artifacts')
-        setStudioCustomPrompt('')
-        toast.success(`${artifactDef?.label || 'Artefato'} gerado com sucesso! (${result.executions.length} etapa(s) rastreadas)`)
-        if (
-          ENABLE_LITERAL_MEDIA_AUTOGENERATION
-          && ['mapa_mental', 'infografico', 'tabela_dados'].includes(artifact.type)
-        ) {
-          void handleGenerateVisualArtifact(artifact)
-        }
-      }
-    } catch (err) {
-      console.error('Studio pipeline error:', err)
-      setPendingArtifact(null)
-      setPendingContent('')
-      setStudioErrorMessage(err instanceof Error ? err.message : 'Erro inesperado no pipeline do estúdio')
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        toast.info('Geração cancelada')
-        return
-      }
-      if (err instanceof ModelUnavailableError) {
-        toast.warning(
-          `Modelo indisponível: ${err.modelId}`,
-          'Um modelo do pipeline do estúdio foi removido do OpenRouter. Vá em Configurações > Caderno de Pesquisa e substitua-o.',
-        )
-      } else if (err instanceof Error && err.message.includes('Agente(s) sem modelo')) {
-        toast.warning('Modelos não configurados', err.message)
-      } else if (err instanceof Error && err.message.includes('429')) {
-        toast.warning(
-          'Limite de requisições atingido',
-          'O modelo está sobrecarregado ou sua conta atingiu o limite. Aguarde 30 segundos e tente novamente. Considere usar modelos ✦ Grátis em Configurações.',
-        )
-      } else if (err instanceof Error && err.message.includes('API key')) {
-        toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
-      } else {
-        toast.error('Erro ao gerar artefato. Tente novamente ou troque o modelo do agente.')
-      }
-    } finally {
-      studioAbortRef.current = null
-      setStudioLoading(false)
-      setSelectedArtifactType(null)
-      setStudioProgress(null)
+        .slice(0, MAX_STUDIO_CONTEXT_CHARS),
+      customInstructions: studioCustomPrompt.trim() || undefined,
     }
+
+    const taskId = startTask(
+      `Estúdio: ${artifactDef?.label || artifactType}`,
+      async (onTaskProgress) => {
+        try {
+          onTaskProgress({
+            progress: 0,
+            phase: 'Inicializando pipeline do estúdio...',
+            currentStep: 0,
+            totalSteps: STUDIO_PIPELINE_TOTAL_STEPS,
+          })
+
+          const apiKey = await getOpenRouterKey()
+          const onProgress: StudioProgressCallback = (step, total, phase) => {
+            onTaskProgress({
+              progress: Math.round((step / Math.max(total, 1)) * 100),
+              phase,
+              currentStep: step,
+              totalSteps: total,
+            })
+          }
+
+          const pipelineInput = {
+            apiKey,
+            topic: notebookSnapshot.topic,
+            description: notebookSnapshot.description,
+            sourceContext: notebookSnapshot.sourceContext,
+            conversationContext: notebookSnapshot.conversationContext,
+            customInstructions: notebookSnapshot.customInstructions,
+            artifactType,
+            artifactLabel: artifactDef?.label || artifactType,
+          }
+
+          const result = artifactType === 'audio_script'
+            ? await runAudioGenerationPipeline(pipelineInput, onProgress)
+            : artifactType === 'apresentacao'
+              ? await runPresentationGenerationPipeline(pipelineInput, onProgress)
+              : await runStudioPipeline(pipelineInput, onProgress)
+
+          const artifact: StudioArtifact = {
+            id: generateId(),
+            type: artifactType,
+            title: `${artifactDef?.label || artifactType} — ${notebookSnapshot.topic}`,
+            content: result.content,
+            format: isStructuredArtifactType(artifactType) ? 'json' : 'markdown',
+            created_at: new Date().toISOString(),
+          }
+
+          onTaskProgress({
+            progress: 95,
+            phase: 'Salvando artefato no caderno...',
+            currentStep: STUDIO_PIPELINE_TOTAL_STEPS,
+            totalSteps: STUDIO_PIPELINE_TOTAL_STEPS,
+          })
+
+          await saveArtifactToNotebook(artifact, result.executions, {
+            notebookId: notebookSnapshot.id,
+            notebookTopic: notebookSnapshot.topic,
+            notebookTitle: notebookSnapshot.title,
+          })
+
+          if (mountedRef.current) {
+            setStudioCustomPrompt('')
+          }
+
+          toast.success(
+            REVIEWABLE_ARTIFACT_TYPES.includes(artifactType)
+              ? `${artifactDef?.label || 'Artefato'} gerado e salvo. Abra em Artefatos para revisar ou continuar a produção.`
+              : `${artifactDef?.label || 'Artefato'} gerado com sucesso!`,
+          )
+
+          return { artifactId: artifact.id, artifactType }
+        } catch (err) {
+          console.error('Studio pipeline error:', err)
+          if (err instanceof ModelUnavailableError) {
+            toast.warning(
+              `Modelo indisponível: ${err.modelId}`,
+              'Um modelo do pipeline do estúdio foi removido do OpenRouter. Vá em Configurações > Caderno de Pesquisa e substitua-o.',
+            )
+          } else if (err instanceof Error && err.message.includes('Agente(s) sem modelo')) {
+            toast.warning('Modelos não configurados', err.message)
+          } else if (err instanceof Error && err.message.includes('429')) {
+            toast.warning(
+              'Limite de requisições atingido',
+              'O modelo está sobrecarregado ou sua conta atingiu o limite. Aguarde 30 segundos e tente novamente. Considere usar modelos gratuitos em Configurações.',
+            )
+          } else if (err instanceof Error && err.message.includes('API key')) {
+            toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
+          } else {
+            toast.error('Erro ao gerar artefato. Tente novamente ou troque o modelo do agente.')
+          }
+          throw err
+        }
+      },
+      {
+        metadata: {
+          taskKind: 'notebook-artifact',
+          notebookId: notebookSnapshot.id,
+          artifactType,
+          artifactLabel: artifactDef?.label || artifactType,
+        },
+      },
+    )
+
+    setSelectedStudioTaskId(taskId)
+    setShowStudioProgressModal(true)
   }
 
   // ── Save artifact to notebook (shared by direct save and review confirm) ──
   const saveArtifactToNotebook = async (
     artifact: StudioArtifact,
     executions: { phase: string; agent_name: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number; duration_ms: number }[],
+    options?: {
+      notebookId?: string
+      notebookTopic?: string
+      notebookTitle?: string
+      activateArtifactsTab?: boolean
+    },
   ) => {
-    if (!userId || !activeNotebook?.id) return
-    const notebookId = activeNotebook.id
+    if (!userId) return
+    const notebookId = options?.notebookId ?? activeNotebook?.id
+    if (!notebookId) return
+    const notebookTopic = options?.notebookTopic ?? activeNotebook?.topic ?? artifact.title
+    const notebookTitle = options?.notebookTitle ?? activeNotebook?.title ?? ''
 
     const freshNotebook = await getFreshNotebookOrThrow(notebookId)
     const updatedArtifacts = [...freshNotebook.artifacts, artifact]
@@ -1956,19 +2036,24 @@ Instruções:
       llm_executions: updatedExecutions,
     })
 
-    setActiveNotebook(prev => prev && prev.id === notebookId
-      ? { ...prev, artifacts: updatedArtifacts, llm_executions: updatedExecutions }
-      : prev)
+    if (mountedRef.current) {
+      setActiveNotebook(prev => prev && prev.id === notebookId
+        ? { ...prev, artifacts: updatedArtifacts, llm_executions: updatedExecutions }
+        : prev)
+      if (options?.activateArtifactsTab !== false) {
+        setActiveTab('artifacts')
+      }
+    }
 
     // When the artifact is a formal document, persist it to the Documents page
     // so it appears alongside documents created via the NewDocument flow.
     if (artifact.type === 'documento' && IS_FIREBASE) {
       try {
         await saveNotebookDocumentToDocuments(userId, {
-          topic: activeNotebook.topic || artifact.title,
+          topic: notebookTopic,
           content: artifact.content,
           notebookId,
-          notebookTitle: activeNotebook.title || '',
+          notebookTitle,
           llm_executions: newExecutions,
         })
         // Secondary toast shown separately after the primary artifact toast
@@ -3070,15 +3155,17 @@ Instruções:
   }, [acervoAnalysisError, acervoAnalysisLoading, acervoAnalysisMessage, acervoAnalysisPhase])
 
   const studioTrailSteps = useMemo(() => {
+    const selectedArtifactType = selectedStudioTaskMetadata?.artifactType ?? null
     const specialistLabel = selectedArtifactType ? STUDIO_SPECIALIST_LABEL[selectedArtifactType] : 'Especialista'
     const steps = [
       { key: 'studio_pesquisador', label: 'Pesquisador do Estúdio' },
       { key: 'studio_specialist', label: specialistLabel },
       { key: 'studio_revisor', label: 'Revisor de Qualidade' },
     ]
-    const progress = studioProgress ?? studioLastProgress
-    const progressStep = progress?.step ?? 0
+    const progressStep = selectedStudioTask?.currentStep ?? 0
     const errorIndex = progressStep > 0 ? Math.min(progressStep, steps.length) - 1 : 0
+    const studioLoading = selectedStudioTask?.status === 'running'
+    const studioErrorMessage = selectedStudioTask?.status === 'error' ? (selectedStudioTask.error || 'Erro no pipeline') : ''
 
     return steps.map((step, index) => {
       let status: 'pending' | 'active' | 'completed' | 'error' = 'pending'
@@ -3100,10 +3187,10 @@ Instruções:
         key: step.key,
         label: step.label,
         status,
-        detail: status === 'active' ? (progress?.phase || undefined) : undefined,
+        detail: status === 'active' ? (selectedStudioTask?.phase || undefined) : undefined,
       }
     })
-  }, [selectedArtifactType, studioErrorMessage, studioLastProgress, studioLoading, studioProgress])
+  }, [selectedStudioTask, selectedStudioTaskMetadata])
 
   // ── Render: List View ───────────────────────────────────────────────
 
@@ -3666,11 +3753,18 @@ Instruções:
                         Gere um podcast com dois hosts discutindo suas fontes — como o NotebookLM.
                       </p>
                       <button
-                        onClick={() => handleGenerateArtifact('audio_script' as StudioArtifactType)}
-                        disabled={studioLoading}
+                        onClick={() => {
+                          const runningTask = runningArtifactTasksByType.get('audio_script')
+                          if (runningTask) {
+                            setSelectedStudioTaskId(runningTask.id)
+                            setShowStudioProgressModal(true)
+                            return
+                          }
+                          void handleGenerateArtifact('audio_script' as StudioArtifactType)
+                        }}
                         className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-white text-brand-700 rounded-lg text-xs font-bold hover:bg-white/90 transition-colors disabled:opacity-60"
                       >
-                        {studioLoading && selectedArtifactType === 'audio_script' ? (
+                        {runningArtifactTasksByType.get('audio_script') ? (
                           <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Gerando...</>
                         ) : (
                           <><Mic className="w-3.5 h-3.5" /> Gerar Audio Overview</>
@@ -4303,18 +4397,24 @@ Instruções:
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {category.items.map(art => {
                         const ArtIcon = art.icon
-                        const isGenerating = studioLoading && selectedArtifactType === art.type
+                        const runningTask = runningArtifactTasksByType.get(art.type)
                         return (
                           <button
                             key={art.type}
-                            onClick={() => handleGenerateArtifact(art.type)}
-                            disabled={studioLoading}
+                            onClick={() => {
+                              if (runningTask) {
+                                setSelectedStudioTaskId(runningTask.id)
+                                setShowStudioProgressModal(true)
+                                return
+                              }
+                              void handleGenerateArtifact(art.type)
+                            }}
                             className={`flex items-start gap-3 p-3 rounded-xl border ${colors.border} ${colors.hoverBorder} hover:shadow-sm transition-all text-left group ${
-                              studioLoading ? 'opacity-60 cursor-not-allowed' : ''
+                              runningTask ? 'ring-1 ring-brand-200 bg-brand-50/40' : ''
                             }`}
                           >
                             <div className={`p-2 rounded-lg ${colors.bg} group-hover:scale-105 transition-transform`}>
-                              {isGenerating ? (
+                              {runningTask ? (
                                 <Loader2 className={`w-4 h-4 animate-spin ${colors.text}`} />
                               ) : (
                                 <ArtIcon className={`w-4 h-4 ${colors.text}`} />
@@ -4323,8 +4423,8 @@ Instruções:
                             <div className="min-w-0 flex-1">
                               <span className="text-sm font-semibold text-gray-900 block">{art.label}</span>
                               <span className="text-[11px] text-gray-500 block mt-0.5 leading-snug">{art.description}</span>
-                              {isGenerating && studioProgress && (
-                                <span className="text-[10px] text-purple-600 font-medium block mt-1">{studioProgress.phase}</span>
+                              {runningTask && (
+                                <span className="text-[10px] text-purple-600 font-medium block mt-1">{runningTask.phase}</span>
                               )}
                             </div>
                           </button>
@@ -4592,42 +4692,27 @@ Instruções:
         isComplete={acervoAnalysisPhase === 'concluido' && !acervoAnalysisError}
         hasError={Boolean(acervoAnalysisError)}
         canClose
-        onClose={() => {
-          if (acervoAnalysisLoading) {
-            acervoAbortRef.current?.abort()
-          }
-          setShowAcervoProgressModal(false)
-        }}
+        onClose={() => setShowAcervoProgressModal(false)}
       />
 
       <AgentTrailProgressModal
-        isOpen={showStudioProgressModal}
+        isOpen={showStudioProgressModal && Boolean(selectedStudioTask)}
         title="Trilha Multiagente do Estúdio"
-        subtitle={selectedArtifactType ? (ARTIFACT_TYPES.find(a => a.type === selectedArtifactType)?.label || selectedArtifactType) : undefined}
-        currentMessage={studioErrorMessage || studioProgress?.phase || studioLastProgress?.phase || 'Inicializando pipeline do estúdio...'}
-        percent={studioProgress
-          ? Math.round((studioProgress.step / Math.max(studioProgress.total, 1)) * 100)
-          : studioLastProgress
-            ? Math.round((studioLastProgress.step / Math.max(studioLastProgress.total, 1)) * 100)
-            : 0}
+        subtitle={selectedStudioTaskMetadata?.artifactLabel}
+        currentMessage={selectedStudioTask?.status === 'error'
+          ? (selectedStudioTask.error || 'Erro no pipeline do estúdio')
+          : selectedStudioTask?.phase || 'Inicializando pipeline do estúdio...'}
+        percent={selectedStudioTask?.progress || 0}
         steps={studioTrailSteps}
-        isComplete={!studioLoading && !studioErrorMessage && (studioLastProgress?.step ?? 0) >= 3}
-        hasError={Boolean(studioErrorMessage)}
+        isComplete={selectedStudioTask?.status === 'completed'}
+        hasError={selectedStudioTask?.status === 'error'}
         canClose
-        onClose={() => {
-          if (studioLoading) {
-            studioAbortRef.current?.abort()
-          }
-          setShowStudioProgressModal(false)
-        }}
+        onClose={() => setShowStudioProgressModal(false)}
       />
 
       <DeepResearchModal
         isOpen={researchModalOpen}
-        onClose={() => {
-          researchAbortRef.current?.abort()
-          setResearchModalOpen(false)
-        }}
+        onClose={() => setResearchModalOpen(false)}
         title={researchModalTitle}
         subtitle={researchModalSubtitle}
         variant={researchModalVariant}
