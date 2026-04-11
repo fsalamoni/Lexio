@@ -173,10 +173,12 @@ const JURISPRUDENCE_RANKING_SYSTEM = [
   '"stance" (classificação da posição do resultado em relação à tese/consulta do usuário:',
   '"favoravel" se o julgado apoia a tese, "desfavoravel" se contraria, "neutro" se inconclusivo).',
   'Ordene do mais relevante para o menos relevante.',
-  'Considere: (1) alinhamento temático dos assuntos com a consulta,',
-  '(2) grau hierárquico (tribunais superiores têm mais peso como precedente),',
-  '(3) movimentações recentes indicam processos ativos,',
-  '(4) data de ajuizamento mais recente pode indicar jurisprudência atualizada.',
+  'Considere prioritariamente: (1) aderência jurídica da EMENTA e do INTEIRO TEOR à consulta,',
+  '(2) coincidência concreta entre a matéria pesquisada e os fundamentos do julgado,',
+  '(3) grau hierárquico do tribunal, sem permitir que isso supere a aderência temática,',
+  '(4) recência como critério secundário, nunca principal.',
+  'Penalize fortemente resultados genéricos, tangenciais, com assuntos amplos demais ou sem texto decisório suficiente.',
+  'Se faltar ementa ou inteiro teor, reduza a nota; se ambos faltarem, reduza ainda mais.',
   'Exemplo de resposta: {"ranking":[{"index":1,"score":85,"stance":"favoravel"}]}',
 ].join(' ')
 
@@ -1412,6 +1414,8 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         dateFrom: config.dateFrom || undefined,
         dateTo: config.dateTo || undefined,
         graus: config.graus.length > 0 ? config.graus : undefined,
+        enrichMissingText: true,
+        maxTextEnrichment: 5,
         onProgress: (progress) => {
           setResearchModalStats(prev => ({
             ...prev,
@@ -1419,7 +1423,9 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             sourcesFound: progress.resultsFound,
             elapsedMs: Math.round(performance.now() - t0),
           }))
-          if (progress.currentTribunal) {
+          if (progress.phase === 'processing') {
+            addModalSubstep('filter', 'Refinando relevância jurídica e enriquecendo textos dos acórdãos...')
+          } else if (progress.currentTribunal) {
             addModalSubstep('query', `${progress.currentTribunal} (${progress.tribunalsQueried}/${progress.tribunalsTotal})`)
           }
         },
@@ -1472,8 +1478,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         title: `${r.classe} — ${r.numeroProcesso}`,
         subtitle: `${r.tribunalName} · ${r.orgaoJulgador}`,
         snippet: r.ementa
-          ? r.ementa.slice(0, 200) + (r.ementa.length > 200 ? '…' : '')
-          : (r.assuntos.join(', ') || 'Sem assuntos'),
+          ? r.ementa.slice(0, 260) + (r.ementa.length > 260 ? '…' : '')
+          : r.inteiroTeor
+            ? r.inteiroTeor.slice(0, 260) + (r.inteiroTeor.length > 260 ? '…' : '')
+            : (r.assuntos.join(', ') || 'Sem assuntos'),
         fullContent: [
           `Processo: ${r.numeroProcesso}`,
           `Classe: ${r.classe} (${r.classeCode})`,
@@ -1483,8 +1491,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           `Grau: ${r.grau}`,
           `Formato: ${r.formato}`,
           `Assuntos: ${r.assuntos.join('; ') || '—'}`,
+          r.relevanceScore != null ? `Relevância local: ${r.relevanceScore}/100` : '',
+          r.textSource ? `Texto obtido via: ${r.textSource}${r.textSourceUrl ? ` (${r.textSourceUrl})` : ''}` : '',
           r.ementa ? `Ementa:\n${r.ementa}` : '',
-          r.inteiroTeor ? `Inteiro Teor:\n${r.inteiroTeor.slice(0, 3000)}${r.inteiroTeor.length > 3000 ? '\n[... texto truncado ...]' : ''}` : '',
+          r.inteiroTeor ? `Inteiro Teor:\n${r.inteiroTeor.slice(0, 6000)}${r.inteiroTeor.length > 6000 ? '\n[... texto truncado ...]' : ''}` : '',
           r.movimentos.length > 0 ? `Movimentos:\n${r.movimentos.slice(0, 5).map(m => `  - ${m.nome} (${m.dataHora})`).join('\n')}` : '',
         ].filter(Boolean).join('\n'),
         metadata: {
@@ -1492,6 +1502,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           ...(r.dataAjuizamento ? { Data: r.dataAjuizamento.split('T')[0] } : {}),
           ...(r.ementa ? { Ementa: '✓' } : {}),
           ...(r.inteiroTeor ? { 'Inteiro Teor': '✓' } : {}),
+          ...(r.relevanceScore != null ? { Relevância: `${r.relevanceScore}/100` } : {}),
         },
         selected: true,
         _raw: r,

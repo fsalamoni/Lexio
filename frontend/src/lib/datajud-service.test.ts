@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   _getEndpointCandidatesForHost,
+  buildDataJudSearchBody,
   searchDataJud,
   formatDataJudResults,
   classifyJurisprudenceArea,
   classifyResult,
+  scoreDataJudResult,
   sortByDate,
   groupByArea,
   compareProcesses,
@@ -68,6 +70,25 @@ describe('datajud-service', () => {
     ])
   })
 
+  it('builds a stricter DataJud query body ordered by score before date', () => {
+    const body = buildDataJudSearchBody('responsabilidade civil plano de saúde', {
+      maxPerTribunal: 5,
+      dateFrom: '2023-01-01',
+      graus: ['G2'],
+    }) as {
+      sort: Array<Record<string, unknown>>
+      query: { bool: { should: Array<Record<string, unknown>>; filter: Array<Record<string, unknown>> } }
+    }
+
+    expect(body.sort[0]).toEqual({ _score: { order: 'desc' } })
+    expect(body.sort[1]).toEqual({ dataAjuizamento: { order: 'desc' } })
+    expect(body.query.bool.should.length).toBeGreaterThanOrEqual(3)
+    expect(body.query.bool.filter).toEqual(expect.arrayContaining([
+      { range: { dataAjuizamento: { gte: '2023-01-01' } } },
+      { terms: { grau: ['G2'] } },
+    ]))
+  })
+
   it('parses nested ementa and inteiro teor variants and normalizes dates/text', async () => {
     const tribunals: TribunalInfo[] = [
       { alias: 'stj', name: 'Superior Tribunal de JustiÃ§a', category: 'superiores' },
@@ -104,6 +125,63 @@ describe('datajud-service', () => {
     expect(result.results[0].dataAjuizamento).toBe('2026-03-31')
     expect(result.results[0].ementa).toContain('PRISÃO PREVENTIVA')
     expect(result.results[0].inteiroTeor).toContain('ACÓRDÃO')
+  })
+
+  it('enriches missing ementa and inteiro teor from a public jurisprudence page when DataJud lacks text', async () => {
+    const tribunals: TribunalInfo[] = [
+      { alias: 'stj', name: 'Superior Tribunal de Justiça', category: 'superiores' },
+    ]
+
+    const fakeHit = makeHit({
+      numeroProcesso: '012134620263000000',
+      classe: { nome: 'Habeas Corpus', codigo: 1722 },
+      assuntos: [{ nome: 'Tráfico de Drogas e Condutas Afins' }],
+      orgaoJulgador: { nome: 'GABINETE DO MINISTRO MESSOD AZULAY NETO' },
+    })
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({ hits: { hits: [{ _source: fakeHit }] } }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+
+      if (url.includes('duckduckgo.com')) {
+        return new Response([
+          'HC 012134620263000000 - Superior Tribunal de Justiça',
+          'https://www.stj.jus.br/sites/portalp/Paginas/Comunicacao/Noticias/2026/HC-012134620263000000.aspx',
+          'Julgado do STJ com ementa e acórdão integrais.',
+        ].join('\n'), { status: 200 })
+      }
+
+      if (url.includes('https://r.jina.ai/https://www.stj.jus.br/sites/portalp/Paginas/Comunicacao/Noticias/2026/HC-012134620263000000.aspx')) {
+        return new Response([
+          'Processo 012134620263000000',
+          'EMENTA: HABEAS CORPUS. TRÁFICO DE DROGAS. PRISÃO PREVENTIVA. FUNDAMENTAÇÃO CONCRETA.',
+          'ACÓRDÃO',
+          'Vistos, relatados e discutidos estes autos, acordam os Ministros da Sexta Turma, por unanimidade, em denegar a ordem.',
+          'Documento assinado eletronicamente',
+        ].join('\n'), { status: 200 })
+      }
+
+      return new Response('', { status: 404 })
+    })
+
+    const result = await searchDataJud('habeas corpus tráfico de drogas prisão preventiva', {
+      tribunals,
+      maxPerTribunal: 1,
+      maxTotal: 1,
+      enrichMissingText: true,
+      maxTextEnrichment: 1,
+    })
+
+    expect(result.results).toHaveLength(1)
+    expect(result.results[0].ementa).toContain('PRISÃO PREVENTIVA')
+    expect(result.results[0].inteiroTeor).toContain('denegar a ordem')
+    expect(result.results[0].textSource).toBe('web')
+    expect(result.results[0].textSourceUrl).toContain('stj.jus.br')
   })
 
   describe('formatDataJudResults', () => {
@@ -174,8 +252,8 @@ describe('datajud-service', () => {
       expect(formatted).toContain('ACÓRDÃO')
     })
 
-    it('truncates inteiro_teor longer than 2000 chars', () => {
-      const longText = 'A'.repeat(3000)
+    it('truncates inteiro_teor longer than 3500 chars', () => {
+      const longText = 'A'.repeat(5000)
       const result: DataJudResult = {
         tribunal: 'TRT1',
         tribunalName: 'TRT 1ª Região',
@@ -379,6 +457,32 @@ describe('classifyJurisprudenceArea', () => {
   it('prioritizes specific areas over general ones', () => {
     // "processo penal" should match criminal_procedure, not criminal
     expect(classifyJurisprudenceArea(['Processo Penal'], 'Recurso')).toBe('criminal_procedure')
+  })
+})
+
+describe('scoreDataJudResult', () => {
+  it('gives higher score to results with aligned ementa and inteiro teor', () => {
+    const relevant: DataJudResult = {
+      tribunal: 'STJ', tribunalName: 'Superior Tribunal de Justiça',
+      numeroProcesso: '1',
+      classe: 'Recurso Especial', classeCode: 1,
+      assuntos: ['Plano de Saúde', 'Responsabilidade Civil'],
+      orgaoJulgador: '3ª Turma', dataAjuizamento: '2025-01-01',
+      grau: 'SUP', formato: 'Eletrônico', movimentos: [],
+      ementa: 'PLANO DE SAÚDE. RESPONSABILIDADE CIVIL. NEGATIVA DE COBERTURA. DANO MORAL.',
+      inteiroTeor: 'O acórdão reconhece a abusividade da negativa de cobertura e confirma a indenização.',
+    }
+    const weak: DataJudResult = {
+      tribunal: 'TJRS', tribunalName: 'TJRS — Rio Grande do Sul',
+      numeroProcesso: '2',
+      classe: 'Procedimento Comum Cível', classeCode: 1,
+      assuntos: ['Auxílio-Acidente'],
+      orgaoJulgador: '21ª Vara', dataAjuizamento: '2025-01-01',
+      grau: 'G1', formato: 'Eletrônico', movimentos: [],
+    }
+
+    expect(scoreDataJudResult('responsabilidade civil plano de saúde negativa de cobertura', relevant))
+      .toBeGreaterThan(scoreDataJudResult('responsabilidade civil plano de saúde negativa de cobertura', weak))
   })
 })
 

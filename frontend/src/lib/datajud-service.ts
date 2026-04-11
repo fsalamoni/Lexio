@@ -8,6 +8,7 @@
  * @see https://datajud-wiki.cnj.jus.br/api-publica/
  */
 
+import { fetchUrlContent, searchWebResults } from './web-search-service'
 import { loadApiKeyValues } from './settings-store'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -39,6 +40,10 @@ const BATCH_SIZE = 4
 const REQUEST_TIMEOUT = 30_000
 const MAX_RETRIES = 2
 const RETRY_BASE_DELAY_MS = 250
+const MAX_TEXT_ENRICHMENT_RESULTS = 4
+const MAX_ENRICHMENT_FETCHES_PER_RESULT = 3
+const MAX_EMENTA_CHARS = 6_000
+const MAX_INTEIRO_TEOR_CHARS = 16_000
 
 /** Max results per tribunal */
 const RESULTS_PER_TRIBUNAL = 5
@@ -112,6 +117,34 @@ function getEndpointCandidates(): string[] {
 
 /** Small delay between batches to avoid overwhelming the proxy */
 const INTER_BATCH_DELAY = 300
+
+const DATAJUD_SEARCH_FIELDS = [
+  'ementa^10',
+  'dadosBasicos.ementa^10',
+  'julgamento.ementa^9',
+  'documento.ementa^9',
+  'inteiro_teor^7',
+  'inteiroTeor^7',
+  'dadosBasicos.inteiro_teor^7',
+  'dadosBasicos.inteiroTeor^7',
+  'acordao.texto^6',
+  'acordao.texto_integral^6',
+  'acórdão.texto^6',
+  'acórdão.texto_integral^6',
+  'documento.conteudo^5',
+  'documento.texto^5',
+  'documento.paginas.conteudo^5',
+  'metadados.decisao.conteudo_integral^5',
+  'assuntos.nome^8',
+  'classe.nome^6',
+  'orgaoJulgador.nome^2',
+] as const
+
+const PORTUGUESE_STOPWORDS = new Set([
+  'a', 'ao', 'aos', 'as', 'com', 'como', 'contra', 'da', 'das', 'de', 'do', 'dos', 'e', 'em', 'entre',
+  'na', 'nas', 'no', 'nos', 'o', 'os', 'ou', 'para', 'pela', 'pelas', 'pelo', 'pelos', 'por', 'que',
+  'sem', 'sob', 'sobre', 'um', 'uma', 'uns', 'umas', 'art', 'arts', 'lei', 'leis', 'tema', 'temas',
+])
 
 /**
  * Execute a single fetch against a DataJud endpoint (proxy or direct).
@@ -421,6 +454,9 @@ export interface DataJudResult {
   relevanceScore?: number
   /** Stance classification relative to the user's query: favoravel | desfavoravel | neutro. */
   stance?: 'favoravel' | 'desfavoravel' | 'neutro'
+  /** Source from which ementa / inteiro teor were resolved. */
+  textSource?: 'datajud' | 'web'
+  textSourceUrl?: string
 }
 
 interface TextFieldCandidate {
@@ -454,6 +490,10 @@ export interface DataJudSearchOptions {
   onProgress?: (progress: DataJudSearchProgress) => void
   /** Abort signal */
   signal?: AbortSignal
+  /** Try to enrich missing ementa / inteiro teor using public jurisprudence pages. */
+  enrichMissingText?: boolean
+  /** Max number of results to enrich externally. */
+  maxTextEnrichment?: number
 }
 
 export interface DataJudSearchResult {
@@ -513,43 +553,20 @@ export async function searchDataJud(
   const maxTotal = options.maxTotal ?? 30
   const onProgress = options.onProgress
   const signal = options.signal
+  const enrichMissingText = options.enrichMissingText ?? false
+  const maxTextEnrichment = options.maxTextEnrichment ?? MAX_TEXT_ENRICHMENT_RESULTS
 
   const allResults: DataJudResult[] = []
   const errors: string[] = []
   const errorDetails: DataJudErrorDetail[] = []
   let tribunalsQueried = 0
   let tribunalsWithResults = 0
-
-  // Build Elasticsearch query body with optional filters
-  const boolQuery: Record<string, unknown> = {
-    should: [
-      { match: { 'assuntos.nome': { query, boost: 3 } } },
-      { match: { 'classe.nome': { query, boost: 2 } } },
-      { match: { 'orgaoJulgador.nome': { query, boost: 1 } } },
-    ],
-    minimum_should_match: 1,
-  }
-
-  // Add date range and grau filters if specified
-  const filters: Array<Record<string, unknown>> = []
-  if (options.dateFrom || options.dateTo) {
-    const range: Record<string, string> = {}
-    if (options.dateFrom) range.gte = options.dateFrom
-    if (options.dateTo) range.lte = options.dateTo
-    filters.push({ range: { dataAjuizamento: range } })
-  }
-  if (options.graus && options.graus.length > 0) {
-    filters.push({ terms: { grau: options.graus } })
-  }
-  if (filters.length > 0) {
-    boolQuery.filter = filters
-  }
-
-  const esBody = {
-    size: maxPerTribunal,
-    query: { bool: boolQuery },
-    sort: [{ dataAjuizamento: { order: 'desc' } }],
-  }
+  const esBody = buildDataJudSearchBody(query, {
+    maxPerTribunal,
+    dateFrom: options.dateFrom,
+    dateTo: options.dateTo,
+    graus: options.graus,
+  })
 
   const fetchTribunalData = async (tribunal: TribunalInfo) => {
     if (signal?.aborted) throw new DataJudRequestError('Operação cancelada pelo usuário.', 'aborted')
@@ -636,11 +653,29 @@ export async function searchDataJud(
     }
   }
 
-  // Sort all results by date descending
-  allResults.sort((a, b) => b.dataAjuizamento.localeCompare(a.dataAjuizamento))
+  onProgress?.({
+    phase: 'processing',
+    tribunalsQueried,
+    tribunalsTotal: tribunals.length,
+    resultsFound: allResults.length,
+    currentTribunal: '',
+    errors: errors.length,
+  })
+
+  let refinedResults = rankAndFilterDataJudResults(query, allResults, maxTotal)
+
+  if (enrichMissingText && refinedResults.length > 0) {
+    refinedResults = await enrichResultsWithDecisionText(
+      query,
+      refinedResults,
+      Math.min(maxTextEnrichment, refinedResults.length),
+      signal,
+    )
+    refinedResults = rankAndFilterDataJudResults(query, refinedResults, maxTotal)
+  }
 
   return {
-    results: allResults.slice(0, maxTotal),
+    results: refinedResults.slice(0, maxTotal),
     tribunalsQueried,
     tribunalsWithResults,
     errors,
@@ -682,6 +717,191 @@ export async function searchDataJudByNumber(
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+interface BuildDataJudSearchBodyOptions {
+  maxPerTribunal: number
+  dateFrom?: string
+  dateTo?: string
+  graus?: string[]
+}
+
+export function buildDataJudSearchBody(query: string, options: BuildDataJudSearchBodyOptions): Record<string, unknown> {
+  const significantTerms = extractSignificantQueryTerms(query)
+  const compactQuery = significantTerms.join(' ')
+  const filters: Array<Record<string, unknown>> = []
+
+  if (options.dateFrom || options.dateTo) {
+    const range: Record<string, string> = {}
+    if (options.dateFrom) range.gte = options.dateFrom
+    if (options.dateTo) range.lte = options.dateTo
+    filters.push({ range: { dataAjuizamento: range } })
+  }
+
+  if (options.graus && options.graus.length > 0) {
+    filters.push({ terms: { grau: options.graus } })
+  }
+
+  const should: Record<string, unknown>[] = [
+    {
+      multi_match: {
+        query,
+        fields: [...DATAJUD_SEARCH_FIELDS],
+        type: 'best_fields',
+        operator: 'and',
+        boost: 7,
+      },
+    },
+    {
+      multi_match: {
+        query,
+        fields: [...DATAJUD_SEARCH_FIELDS],
+        type: 'phrase',
+        slop: 2,
+        boost: 11,
+      },
+    },
+    {
+      multi_match: {
+        query,
+        fields: ['assuntos.nome^10', 'classe.nome^7', 'ementa^8', 'dadosBasicos.ementa^8'],
+        type: 'phrase_prefix',
+        max_expansions: 20,
+        boost: 5,
+      },
+    },
+  ]
+
+  if (compactQuery && compactQuery !== query.trim()) {
+    should.push({
+      multi_match: {
+        query: compactQuery,
+        fields: [...DATAJUD_SEARCH_FIELDS],
+        type: 'cross_fields',
+        operator: significantTerms.length <= 3 ? 'and' : 'or',
+        minimum_should_match: significantTerms.length >= 4 ? '75%' : '100%',
+        boost: 6,
+      },
+    })
+  }
+
+  const boolQuery: Record<string, unknown> = {
+    should,
+    minimum_should_match: 1,
+  }
+
+  if (filters.length > 0) {
+    boolQuery.filter = filters
+  }
+
+  return {
+    size: options.maxPerTribunal,
+    query: { bool: boolQuery },
+    sort: [
+      { _score: { order: 'desc' } },
+      { dataAjuizamento: { order: 'desc' } },
+    ],
+    track_scores: true,
+  }
+}
+
+function rankAndFilterDataJudResults(query: string, results: DataJudResult[], maxTotal: number): DataJudResult[] {
+  const scored = results
+    .map(result => ({
+      ...result,
+      relevanceScore: scoreDataJudResult(query, result),
+    }))
+    .sort((left, right) => {
+      const scoreDiff = (right.relevanceScore ?? 0) - (left.relevanceScore ?? 0)
+      if (scoreDiff !== 0) return scoreDiff
+      return right.dataAjuizamento.localeCompare(left.dataAjuizamento)
+    })
+
+  if (scored.length === 0) return []
+
+  const topScore = scored[0].relevanceScore ?? 0
+  const minimumAcceptedScore = topScore >= 75 ? 28 : topScore >= 55 ? 22 : 16
+  let filtered = scored.filter((result, index) => index < 3 || (result.relevanceScore ?? 0) >= minimumAcceptedScore)
+
+  if (filtered.length < Math.min(5, scored.length)) {
+    filtered = scored.slice(0, Math.min(scored.length, Math.max(5, maxTotal)))
+  }
+
+  return filtered.slice(0, maxTotal)
+}
+
+export function scoreDataJudResult(query: string, result: DataJudResult): number {
+  const normalizedQuery = normalizeForSearch(query)
+  const terms = extractSignificantQueryTerms(query)
+  const texts = [
+    { value: result.ementa, weight: 14 },
+    { value: result.inteiroTeor, weight: 10 },
+    { value: result.assuntos.join(' '), weight: 8 },
+    { value: result.classe, weight: 6 },
+    { value: result.orgaoJulgador, weight: 2 },
+  ]
+
+  let score = tribunalCategoryWeight(result.tribunalName, result.tribunal)
+  const matchedTerms = new Set<string>()
+
+  for (const text of texts) {
+    const normalized = normalizeForSearch(text.value || '')
+    if (!normalized) continue
+
+    if (normalizedQuery && normalized.includes(normalizedQuery)) {
+      score += text.weight * 2.4
+    }
+
+    for (const term of terms) {
+      if (normalized.includes(term)) {
+        matchedTerms.add(term)
+        score += text.weight
+      }
+    }
+  }
+
+  const overlapRatio = terms.length > 0 ? matchedTerms.size / terms.length : 0
+  score += overlapRatio * 28
+
+  if (result.ementa) score += 6
+  if (result.inteiroTeor) score += 4
+  if (!result.ementa && !result.inteiroTeor) score -= 18
+  else if (!result.ementa || !result.inteiroTeor) score -= 6
+
+  if (result.dataAjuizamento) {
+    const year = Number(result.dataAjuizamento.slice(0, 4))
+    if (!Number.isNaN(year) && year >= new Date().getFullYear() - 5) {
+      score += 4
+    }
+  }
+
+  return Math.max(0, Math.min(100, Math.round(score)))
+}
+
+function tribunalCategoryWeight(tribunalName: string, tribunalAlias: string): number {
+  const normalized = normalizeForSearch(`${tribunalName} ${tribunalAlias}`)
+  if (/supremo|superior tribunal|\bstj\b|\bstf\b|\btst\b|\btse\b|\bstm\b/.test(normalized)) return 12
+  if (/\btrf\b/.test(normalized)) return 8
+  if (/\btj\b|tribunal de justica/.test(normalized)) return 6
+  if (/\btrt\b|trabalho/.test(normalized)) return 5
+  return 4
+}
+
+function extractSignificantQueryTerms(query: string): string[] {
+  const normalized = normalizeForSearch(query)
+  const tokens = normalized.split(/[^a-z0-9]+/).filter(Boolean)
+  const filtered = tokens.filter(token => token.length >= 3 && !PORTUGUESE_STOPWORDS.has(token))
+  return Array.from(new Set(filtered))
+}
+
+function normalizeForSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function parseDataJudHit(src: Record<string, unknown>, tribunal: TribunalInfo): DataJudResult {
   const assuntosRaw = src.assuntos as Array<{ nome?: string; codigo?: number }> | undefined
   const movimentosRaw = src.movimentos as Array<{ nome?: string; dataHora?: string }> | undefined
@@ -707,6 +927,7 @@ function parseDataJudHit(src: Record<string, unknown>, tribunal: TribunalInfo): 
       .map(m => ({ nome: repairMojibake(m.nome ?? ''), dataHora: normalizeDataJudDate(m.dataHora) })),
     ementa,
     inteiroTeor,
+    textSource: ementa || inteiroTeor ? 'datajud' : undefined,
   }
 }
 
@@ -755,11 +976,11 @@ function repairMojibake(value: string): string {
 }
 
 function collectTextCandidates(value: unknown, path: string[] = [], depth = 0): TextFieldCandidate[] {
-  if (depth > 6 || value == null) return []
+  if (depth > 10 || value == null) return []
 
   if (typeof value === 'string') {
     const text = value.trim()
-    return text.length >= 20 ? [{ path, value: repairMojibake(text) }] : []
+    return text.length >= 10 ? [{ path, value: repairMojibake(text) }] : []
   }
 
   if (Array.isArray(value)) {
@@ -812,21 +1033,26 @@ function pickCandidateByPatterns(
 }
 
 function extractEmenta(src: Record<string, unknown>): string | undefined {
-  return pickCandidateByPatterns(
+  const value = pickCandidateByPatterns(
     src,
     [
       ['ementa'],
       ['dadosBasicos', 'ementa'],
       ['julgamento', 'ementa'],
       ['documento', 'ementa'],
+      ['metadados', 'ementa'],
+      ['metadados', 'decisao', 'ementa'],
+      ['acordao', 'ementa'],
+      ['acórdão', 'ementa'],
     ],
-    [/\bementa\b/i, /\bresumo\b/i],
-    [/movimentos/i, /assuntos/i],
+    [/\bementa\b/i, /\bresumo\b/i, /sumula/i],
+    [/movimentos/i, /assuntos/i, /documento\.paginas\./i],
   )
+  return value ? trimDecisionText(value, MAX_EMENTA_CHARS) : undefined
 }
 
 function extractInteiroTeor(src: Record<string, unknown>): string | undefined {
-  return pickCandidateByPatterns(
+  const value = pickCandidateByPatterns(
     src,
     [
       ['inteiro_teor'],
@@ -834,14 +1060,190 @@ function extractInteiroTeor(src: Record<string, unknown>): string | undefined {
       ['dadosBasicos', 'inteiro_teor'],
       ['dadosBasicos', 'inteiroTeor'],
       ['acordao'],
+      ['acordao', 'texto_integral'],
+      ['acordao', 'texto'],
       ['acórdão'],
+      ['acórdão', 'texto_integral'],
+      ['acórdão', 'texto'],
       ['documento', 'conteudo'],
       ['documento', 'texto'],
+      ['documento', 'paginas'],
+      ['metadados', 'decisao', 'conteudo_integral'],
+      ['metadados', 'decisao', 'texto'],
       ['julgamento', 'inteiro_teor'],
     ],
     [/inteiro[_-]?teor/i, /ac[oó]rd[aã]o/i, /decis[aã]o/i, /julgad/i, /conteudo/i, /texto/i],
-    [/movimentos/i, /assuntos/i, /classe/i, /orgaoJulgador/i, /sistema/i, /formato/i],
+    [/movimentos/i, /assuntos/i, /classe/i, /orgaoJulgador/i, /sistema/i, /formato/i, /complementosTabelados/i],
   )
+  return value ? trimDecisionText(value, MAX_INTEIRO_TEOR_CHARS) : undefined
+}
+
+function trimDecisionText(value: string, maxChars: number): string {
+  const trimmed = repairMojibake(value).replace(/\n{3,}/g, '\n\n').trim()
+  return trimmed.length > maxChars ? `${trimmed.slice(0, maxChars)}…` : trimmed
+}
+
+async function enrichResultsWithDecisionText(
+  query: string,
+  results: DataJudResult[],
+  maxItems: number,
+  signal?: AbortSignal,
+): Promise<DataJudResult[]> {
+  const candidates = results
+    .map((result, index) => ({ result, index }))
+    .filter(({ result }) => !result.ementa || !result.inteiroTeor)
+    .slice(0, maxItems)
+
+  if (candidates.length === 0) return results
+
+  const updates = await Promise.all(candidates.map(async ({ result, index }) => ({
+    index,
+    result: await enrichResultDecisionText(query, result, signal),
+  })))
+
+  const enriched = [...results]
+  for (const update of updates) {
+    enriched[update.index] = update.result
+  }
+  return enriched
+}
+
+async function enrichResultDecisionText(
+  query: string,
+  result: DataJudResult,
+  signal?: AbortSignal,
+): Promise<DataJudResult> {
+  if (signal?.aborted) return result
+
+  const searchQuery = buildJurisprudenceEnrichmentQuery(query, result)
+  const searchResults = await searchWebResults(searchQuery, signal)
+  const candidates = rankEnrichmentCandidates(searchResults, result).slice(0, MAX_ENRICHMENT_FETCHES_PER_RESULT)
+
+  for (const candidate of candidates) {
+    if (signal?.aborted) return result
+    const content = await fetchUrlContent(candidate.url)
+    if (!content) continue
+
+    const extracted = extractDecisionTextFromWebContent(content, result)
+    if (extracted.ementa || extracted.inteiroTeor) {
+      return {
+        ...result,
+        ementa: extracted.ementa ?? result.ementa,
+        inteiroTeor: extracted.inteiroTeor ?? result.inteiroTeor,
+        textSource: 'web',
+        textSourceUrl: candidate.url,
+      }
+    }
+  }
+
+  return result
+}
+
+function buildJurisprudenceEnrichmentQuery(query: string, result: DataJudResult): string {
+  const numeroCompacto = result.numeroProcesso.replace(/\D/g, '')
+  return [
+    `"${result.numeroProcesso}"`,
+    numeroCompacto.length >= 10 ? `"${numeroCompacto}"` : '',
+    `"${result.tribunalName}"`,
+    result.classe,
+    query,
+    'ementa acórdão inteiro teor jurisprudência',
+  ].filter(Boolean).join(' ')
+}
+
+function rankEnrichmentCandidates(
+  candidates: Array<{ title: string; url: string; snippet: string }>,
+  result: DataJudResult,
+): Array<{ title: string; url: string; snippet: string }> {
+  const tribunalKey = normalizeForSearch(result.tribunalName)
+  const processDigits = result.numeroProcesso.replace(/\D/g, '')
+
+  return [...candidates].sort((left, right) => scoreCandidate(right) - scoreCandidate(left))
+
+  function scoreCandidate(candidate: { title: string; url: string; snippet: string }): number {
+    const text = normalizeForSearch(`${candidate.title} ${candidate.url} ${candidate.snippet}`)
+    let score = 0
+    if (/jurisprud|acord|consulta|processo|tribunal/.test(text)) score += 10
+    if (tribunalKey && text.includes(tribunalKey.slice(0, Math.min(tribunalKey.length, 18)))) score += 12
+    if (processDigits && candidate.url.replace(/\D/g, '').includes(processDigits.slice(-10))) score += 20
+    if (processDigits && text.includes(processDigits.slice(-7))) score += 10
+    if (/ementa|inteiro teor|acordao|acordão/.test(text)) score += 8
+    return score
+  }
+}
+
+function extractDecisionTextFromWebContent(content: string, result: DataJudResult): { ementa?: string; inteiroTeor?: string } {
+  const text = repairMojibake(content)
+  const ementa = extractLabeledSection(
+    text,
+    ['ementa'],
+    ['acórdão', 'acordao', 'inteiro teor', 'relatório', 'relatorio', 'voto', 'dispositivo'],
+    MAX_EMENTA_CHARS,
+  )
+
+  const inteiroTeor = extractLabeledSection(
+    text,
+    ['inteiro teor', 'acórdão', 'acordao', 'decisão', 'decisao'],
+    ['documento assinado eletronicamente', 'consulta processual', 'voltar', 'jurisprudência em teses'],
+    MAX_INTEIRO_TEOR_CHARS,
+  ) ?? extractWholeDecisionText(text, result)
+
+  return {
+    ementa: ementa ? trimDecisionText(ementa, MAX_EMENTA_CHARS) : undefined,
+    inteiroTeor: inteiroTeor ? trimDecisionText(inteiroTeor, MAX_INTEIRO_TEOR_CHARS) : undefined,
+  }
+}
+
+function extractLabeledSection(
+  text: string,
+  labels: string[],
+  stopLabels: string[],
+  maxChars: number,
+): string | undefined {
+  const normalized = normalizeForSearch(text)
+
+  for (const label of labels) {
+    const normalizedLabel = normalizeForSearch(label)
+    const idx = normalized.indexOf(normalizedLabel)
+    if (idx < 0) continue
+
+    const start = Math.max(0, idx)
+    const textSlice = text.slice(start, start + maxChars * 2)
+    let end = textSlice.length
+
+    for (const stop of stopLabels) {
+      const pattern = new RegExp(`(?:^|\\n|\\r)\\s*${escapeRegex(stop)}\\s*[:\\-]?`, 'i')
+      const match = pattern.exec(textSlice.slice(normalizedLabel.length))
+      if (match && match.index < end) {
+        end = match.index + normalizedLabel.length
+      }
+    }
+
+    const cleaned = textSlice
+      .replace(new RegExp(`^\\s*${escapeRegex(label)}\\s*[:\\-]?\\s*`, 'i'), '')
+      .slice(0, end)
+      .trim()
+
+    if (cleaned.length >= 60) return cleaned.slice(0, maxChars)
+  }
+
+  return undefined
+}
+
+function extractWholeDecisionText(text: string, result: DataJudResult): string | undefined {
+  const normalized = normalizeForSearch(text)
+  const processDigits = result.numeroProcesso.replace(/\D/g, '')
+  if (processDigits && !normalized.includes(processDigits.slice(-7))) return undefined
+  if (!/acorda|decisao|ementa|relator|processo/.test(normalized)) return undefined
+
+  const relevantStart = normalized.search(/acorda|decisao|ementa|relatorio|voto/)
+  const sliceStart = relevantStart >= 0 ? relevantStart : 0
+  const extracted = text.slice(sliceStart).trim()
+  return extracted.length >= 400 ? extracted.slice(0, MAX_INTEIRO_TEOR_CHARS) : undefined
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**
@@ -866,9 +1268,8 @@ export function formatDataJudResults(results: DataJudResult[]): string {
       lines.push(`   Ementa: ${r.ementa}`)
     }
     if (r.inteiroTeor) {
-      // Include up to 2000 chars of inteiro teor to keep LLM context manageable
-      const snippet = r.inteiroTeor.length > 2000
-        ? r.inteiroTeor.slice(0, 2000) + '… [texto truncado]'
+      const snippet = r.inteiroTeor.length > 3500
+        ? r.inteiroTeor.slice(0, 3500) + '… [texto truncado]'
         : r.inteiroTeor
       lines.push(`   Inteiro Teor: ${snippet}`)
     }
