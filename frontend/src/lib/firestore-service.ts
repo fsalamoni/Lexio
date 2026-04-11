@@ -7,7 +7,7 @@
  *   /users/{uid}/documents/{docId}— user's documents
  *   /users/{uid}/theses/{thesisId}— user's thesis bank
  *   /users/{uid}/acervo/{docId}   — user's reference documents (acervo)
- *   /settings/{key}               — platform settings (admin-only)
+ *   /users/{uid}/settings/preferences — user-scoped settings and model configuration
  */
 
 import {

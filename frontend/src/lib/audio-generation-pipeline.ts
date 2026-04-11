@@ -1,4 +1,4 @@
-import { parseArtifactContent } from '../components/artifacts/artifact-parsers'
+import { parseArtifactContent } from './artifact-parsers'
 import { callLLM, type LLMResult } from './llm-client'
 import { synthesizeAudioFromScript } from './notebook-audio-pipeline'
 import {

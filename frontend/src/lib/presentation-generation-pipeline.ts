@@ -1,4 +1,4 @@
-import { parseArtifactContent } from '../components/artifacts/artifact-parsers'
+import { parseArtifactContent } from './artifact-parsers'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL } from './image-generation-client'
 import { callLLM, type LLMResult } from './llm-client'
 import {
@@ -11,7 +11,7 @@ import type {
   StudioProgressCallback,
   StudioStepExecution,
 } from './notebook-studio-pipeline'
-import type { ParsedPresentation, ParsedSlide } from '../components/artifacts/artifact-parsers'
+import type { ParsedPresentation, ParsedSlide } from './artifact-parsers'
 
 export interface PresentationGenerationPipelineResult {
   content: string

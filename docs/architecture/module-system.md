@@ -1,9 +1,9 @@
 # Sistema de Configuração de Pipelines
 
-> Em produção, Lexio não usa módulos Python. Todos os pipelines são definidos em TypeScript no frontend.
+> Em produção, Lexio não usa módulos Python. Todos os pipelines são definidos em TypeScript no frontend e devem respeitar fronteiras modulares entre núcleo compartilhado e módulos de domínio.
 
 ## Definição de Agentes
-Cada pipeline é definido como um array de `AgentModelDef` em `model-config.ts`:
+Cada pipeline é definido como arrays de `AgentModelDef` registrados em `model-config.ts`, mas novas implementações devem evoluir para módulos por pipeline em subdiretórios próprios de `frontend/src/lib`.
 
 ```typescript
 interface AgentModelDef {
@@ -33,10 +33,17 @@ interface AgentModelDef {
 | `PRESENTATION_PIPELINE_AGENT_DEFS` | Apresentação | 6 |
 
 ## Configuração de Modelos
-1. Admin configura modelos por agente no Admin Panel
-2. Config é salva no Firestore em `/settings/platform`
-3. Cada pipeline tem funções `load*Models()`, `save*Models()`, `reset*Models()`
-4. Se não há config salva, usa modelo default (vazio = OpenRouter seleciona automaticamente)
+1. Cada usuário configura seus próprios modelos por agente nas Configurações Pessoais
+2. A configuração persistida vive em `/users/{uid}/settings/preferences`
+3. Cada pipeline tem funções `load*Models()`, `save*Models()`, `reset*Models()` user-scoped
+4. O catálogo pessoal persistido é a fonte de verdade para seletores e validações runtime
+
+## Regra Arquitetural Obrigatória
+
+- O núcleo compartilhado deve ficar em módulos reutilizáveis de `frontend/src/lib`.
+- Código de negócio não pode importar nada de `frontend/src/components`.
+- Qualquer novo pipeline, trilha, agente ou integração deve nascer em módulo próprio, com tipos, prompts, adaptadores e testes isolados.
+- Não ampliar arquivos centrais monolíticos quando a mudança puder ser extraída para submódulo dedicado.
 
 ## Fluxo de Chamada LLM
 ```

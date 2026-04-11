@@ -5,7 +5,7 @@ import type {
   ParsedPresentation,
   ParsedSlide,
   MindMapNode,
-} from '../components/artifacts/artifact-parsers'
+} from './artifact-parsers'
 
 export interface RenderedArtifactImage {
   blob: Blob

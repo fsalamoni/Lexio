@@ -791,6 +791,7 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 11. O `VITE_BASE_PATH` deve funcionar tanto como `/Lexio/` quanto `/`.
 12. Manter modo demo funcional — atualizar `demo/data.ts` se adicionar novas rotas de API.
 13. Configurações pessoais devem persistir em `/users/{uid}/settings/preferences`; não reintroduzir dependência runtime em `/settings/platform`.
+14. Toda nova implementação deve nascer modularizada: núcleo compartilhado em `lib/`, módulos de domínio/pipeline isolados, e nunca criar dependência de `lib` para `components`.
 
 ---
 

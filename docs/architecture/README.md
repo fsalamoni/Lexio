@@ -40,6 +40,14 @@ Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
 4. **Anamnese 2 camadas** — Perfil persistente (Layer 1) + contexto por request (Layer 2)
 5. **Catálogo dinâmico** — Modelos podem ser adicionados/removidos nas configurações pessoais; o catálogo persistido de cada usuário é a fonte de verdade para os seletores e validações dos próprios agentes
 6. **Dual deploy** — GitHub Pages + Firebase Hosting com CI/CD automático
+7. **Fronteiras modulares obrigatórias** — lógica central compartilhada em módulos de `lib`; UI consome módulos, mas módulos não dependem de UI
+
+## Política de Modularização
+
+- Qualquer nova feature deve ser criada como módulo isolado por domínio, com API explícita, tipos próprios e testes próximos ao módulo.
+- O núcleo compartilhado deve concentrar contratos, adapters e utilitários transversais; implementações específicas devem morar em módulos/pipelines dedicados.
+- Dependências entre camadas devem ser unidirecionais: `components -> lib`, nunca `lib -> components`.
+- Ao identificar arquivos monolíticos, a evolução correta é extrair submódulos por responsabilidade, sem duplicar fontes de verdade.
 
 ## Pipelines Implementados
 

@@ -2,7 +2,7 @@
 
 > Lexio usa Firebase Firestore (NoSQL) como banco de dados. Não há PostgreSQL em produção.
 
-## Coleções (7 caminhos)
+## Coleções (8 caminhos)
 
 | Caminho | Descrição |
 |---------|-----------|
@@ -12,29 +12,34 @@
 | `/users/{uid}/theses/{id}` | Banco de teses (CRUD + auto-extração) |
 | `/users/{uid}/acervo/{id}` | Documentos de referência (classificados com ementa) |
 | `/users/{uid}/research_notebooks/{id}` | Cadernos de pesquisa (chat + fontes + artefatos) |
-| `/settings/platform` | Config global (admin): api_keys, model configs, model_catalog |
+| `/users/{uid}/settings/preferences` | Configurações pessoais persistidas: chaves, catálogo pessoal, modelos por agente, tipos e áreas customizadas |
+| `/settings/platform` | Config global legada usada apenas como origem de migração, não como fonte runtime |
 
 ## Segurança
 - Firebase Rules protegem todos os dados por `uid`
 - Cada usuário só acessa suas subcoleções
-- `/settings/platform` é read-only para users, write para admins
+- `/users/{uid}/settings/preferences` é owner-only e fonte de verdade runtime para configurações pessoais
+- `/settings/platform` não deve voltar a ser dependência runtime da aplicação
 
-## Subchaves de `/settings/platform` (12 configs)
+## Subchaves de `/users/{uid}/settings/preferences`
 
 | Chave | Conteúdo |
 |-------|----------|
-| `openrouter_api_key` | Chave API OpenRouter |
-| `model_catalog` | Catálogo dinâmico de modelos (adicionados/removidos via Admin) |
-| `document_models` | Config do pipeline de documentos (11 agentes) |
+| `api_keys.openrouter_api_key` | Chave API OpenRouter do usuário |
+| `api_keys.datajud_api_key` | Chave DataJud do usuário |
+| `model_catalog` | Catálogo pessoal persistido, fonte de verdade para seletores e validações |
+| `agent_models` | Config do pipeline de documentos (11 agentes) |
 | `thesis_analyst_models` | Config do pipeline de teses (5 agentes) |
 | `context_detail_models` | Config do context detail (1 agente) |
 | `acervo_classificador_models` | Config do classificador de acervo (1 agente) |
 | `acervo_ementa_models` | Config do gerador de ementas (1 agente) |
-| `research_notebook_models` | Config do caderno de pesquisa (11 agentes) |
+| `research_notebook_models` | Config do caderno de pesquisa (12 agentes) |
 | `notebook_acervo_models` | Config do notebook acervo analyzer (4 agentes) |
 | `video_pipeline_models` | Config do pipeline de vídeo (11 agentes) |
 | `audio_pipeline_models` | Config do pipeline de áudio (6 agentes) |
 | `presentation_pipeline_models` | Config do pipeline de apresentação (6 agentes) |
+| `document_types`, `legal_areas`, `classification_tipos` | Customizações estruturais do usuário |
+| `legacy_migrated_at` | Timestamp da migração única das configurações globais legadas |
 
 ## Tipos TypeScript (`firestore-types.ts`)
 

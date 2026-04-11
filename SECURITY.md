@@ -33,6 +33,12 @@ Before deploying Lexio in production:
 6. **Use HTTPS** in production (reverse proxy: nginx/Caddy)
 7. **Restrict network access** — only expose ports 80/443 publicly; keep database ports internal
 
+## Frontend-Only Production Notes
+
+- Lexio roda com chamadas LLM no browser. Em produção, prefira chaves por usuário salvas em `/users/{uid}/settings/preferences` e evite depender de fallbacks globais em runtime.
+- Integrações de terceiros sujeitas a CORS devem passar por proxy controlado quando necessário; evite fallback direto do browser para endpoints que não oferecem política CORS estável.
+- Novos módulos devem respeitar fronteiras de camada para reduzir blast radius: lógica de negócio em módulos reutilizáveis, UI apenas como consumidora.
+
 ## Secrets Management
 
 All secrets must be provided via environment variables. The following are **required** in production:

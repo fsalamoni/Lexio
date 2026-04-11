@@ -18,7 +18,7 @@
 import { callLLM, type LLMResult } from './llm-client'
 import { loadResearchNotebookModels, validateScopedAgentModels, type ResearchNotebookModelMap } from './model-config'
 import type { StudioArtifactType } from './firestore-service'
-import { isStructuredArtifactType, parseArtifactContent } from '../components/artifacts/artifact-parsers'
+import { isStructuredArtifactType, parseArtifactContent } from './artifact-parsers'
 import {
   renderDataTableImage,
   renderInfographicImage,

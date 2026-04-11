@@ -11,7 +11,7 @@
 
 import { callLLM, type LLMResult } from './llm-client'
 import { loadResearchNotebookModels, validateScopedAgentModels } from './model-config'
-import type { AudioSegment } from '../components/artifacts/artifact-parsers'
+import type { AudioSegment } from './artifact-parsers'
 import { generateTTSViaOpenRouter, type TTSResult } from './tts-client'
 
 // ── Types ───────────────────────────────────────────────────────────────────

@@ -234,7 +234,16 @@ O deploy é **totalmente automático** — qualquer push para `main` dispara as 
 
 - **GitHub Pages** — usa `VITE_BASE_PATH=/Lexio/` (workflow `deploy-pages.yml`)
 - **Firebase Hosting** — usa `VITE_BASE_PATH=/` (workflow `firebase-deploy.yml`, inclui deploy de Firestore rules e Storage rules)
+- **Firebase Preview por PR** — publica canal temporário por pull request (workflow `firebase-preview.yml`)
 - **Testes** — executa em push/PR (workflow `test.yml`)
+
+## Diretriz de Modularização
+
+- Toda nova implementação deve seguir fronteiras modulares: núcleo compartilhado em `frontend/src/lib` e módulos/pipelines especializados em subdiretórios próprios.
+- Código de negócio não pode depender de `components/`; componentes podem consumir módulos de `lib`, nunca o inverso.
+- Novos pipelines devem nascer isolados por domínio, com seus próprios tipos, prompts, validadores e testes, evitando crescimento de arquivos monolíticos.
+- Configurações, modelos e dados de referência devem ser carregados de fontes únicas de verdade por usuário, sem reintroduzir dependência runtime em configurações globais legadas.
+- Refactors devem privilegiar extração incremental de módulos pequenos em vez de ampliar arquivos centrais já grandes.
 
 Para deploy manual:
 ```bash
