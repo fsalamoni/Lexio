@@ -10,10 +10,9 @@
 
 const MAX_SOURCE_TEXT_LENGTH = 500_000
 const MAX_WEB_SEARCH_CHARS = 3_000
-const JINA_TIMEOUT = 8_000
-const ALLORIGINS_TIMEOUT = 12_000
-const SEARCH_RETRY_ATTEMPTS = 2
-const CORS_PROXY_PREFIX = 'https://corsproxy.io/?'
+const JINA_TIMEOUT = 15_000
+const SEARCH_RETRY_ATTEMPTS = 3
+const RESULT_FETCH_TIMEOUT = 20_000
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -73,55 +72,28 @@ interface SearchStrategyOutcome {
 // ── URL Content Fetching ───────────────────────────────────────────────────────
 
 /**
- * Fetches readable text from a URL using Jina Reader, falling back to
- * allorigins CORS proxy. Both are free, no-auth CORS-friendly services.
+ * Fetches readable text from a URL using Jina Reader.
+ * Public CORS proxies proved unstable in production and are intentionally
+ * avoided here to keep deep research deterministic.
  */
 export async function fetchUrlContent(url: string): Promise<string> {
-  // Try Jina Reader first with short retries.
   for (let attempt = 0; attempt < SEARCH_RETRY_ATTEMPTS; attempt++) {
     try {
       const jinaUrl = `https://r.jina.ai/${url}`
       const resp = await fetch(jinaUrl, {
         headers: { Accept: 'text/plain', 'X-Return-Format': 'text' },
-        signal: AbortSignal.timeout(JINA_TIMEOUT + 5_000),
+        signal: AbortSignal.timeout(RESULT_FETCH_TIMEOUT + attempt * 2_000),
       })
       if (resp.ok) {
         const text = await resp.text()
         if (text && text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
       }
     } catch {
-      // Try fallback providers below.
+      // Retry below.
     }
     if (attempt < SEARCH_RETRY_ATTEMPTS - 1) {
-      await wait(260 + attempt * 220)
+      await wait(320 + attempt * 260)
     }
-  }
-
-  // Fallback 2: allorigins proxy (most reliable CORS proxy).
-  try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(ALLORIGINS_TIMEOUT) })
-    if (resp.ok) {
-      const data = await resp.json() as { contents?: string }
-      const raw = data.contents ?? ''
-      const text = raw.replace(/<[^>]+>/g, ' ').replace(/\s{3,}/g, ' ').trim()
-      if (text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
-    }
-  } catch {
-    // Try next fallback.
-  }
-
-  // Fallback 3: corsproxy.io (less reliable, may return 403).
-  try {
-    const proxyUrl = `${CORS_PROXY_PREFIX}${encodeURIComponent(url)}`
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12_000) })
-    if (resp.ok) {
-      const raw = await resp.text()
-      const text = raw.replace(/<[^>]+>/g, ' ').replace(/\s{3,}/g, ' ').trim()
-      if (text.length > 100) return text.slice(0, MAX_SOURCE_TEXT_LENGTH)
-    }
-  } catch {
-    // Not available, return empty for graceful degradation.
   }
 
   return ''
@@ -191,15 +163,15 @@ export async function searchWebResultsWithDiagnostics(
     }
   }
 
-  // Strategy 2: DuckDuckGo HTML through CORS proxy (raw HTML — fallback for Jina)
-  const proxyOutcome = await searchViaDDGProxy(query, signal)
+  // Strategy 2: DuckDuckGo Lite through Jina Reader.
+  const liteOutcome = await searchViaDDGLite(query, signal)
   strategyDiagnostics.push({
-    strategy: proxyOutcome.strategy,
-    resultsCount: proxyOutcome.results.length,
-    errorType: proxyOutcome.errorType,
-    message: proxyOutcome.message,
+    strategy: liteOutcome.strategy,
+    resultsCount: liteOutcome.results.length,
+    errorType: liteOutcome.errorType,
+    message: liteOutcome.message,
   })
-  const merged1 = deduplicateResults([...jinaOutcome.results, ...proxyOutcome.results])
+  const merged1 = deduplicateResults([...jinaOutcome.results, ...liteOutcome.results])
   if (merged1.length >= 2) {
     return {
       results: merged1.slice(0, 10),
@@ -214,17 +186,17 @@ export async function searchWebResultsWithDiagnostics(
     }
   }
 
-  // Strategy 3: DuckDuckGo Instant API (direct first, CORS proxy fallback)
-  const instantOutcome = await searchViaDDGInstant(query, signal)
+  // Strategy 3: DuckDuckGo HTML mirror through Jina Reader.
+  const mirrorOutcome = await searchViaDDGMirror(query, signal)
   strategyDiagnostics.push({
-    strategy: instantOutcome.strategy,
-    resultsCount: instantOutcome.results.length,
-    errorType: instantOutcome.errorType,
-    message: instantOutcome.message,
+    strategy: mirrorOutcome.strategy,
+    resultsCount: mirrorOutcome.results.length,
+    errorType: mirrorOutcome.errorType,
+    message: mirrorOutcome.message,
   })
 
   return {
-    results: deduplicateResults([...merged1, ...instantOutcome.results]).slice(0, 10),
+    results: deduplicateResults([...merged1, ...mirrorOutcome.results]).slice(0, 10),
     diagnostics: buildDiagnostics(query, strategyDiagnostics),
   }
 }
@@ -247,56 +219,12 @@ async function searchViaDDGJina(query: string, signal?: AbortSignal): Promise<Se
 }
 
 /**
- * Fetch DuckDuckGo HTML results through AllOrigins proxy.
- * Primary fallback when Jina Reader is down or rate-limited.
- * AllOrigins wraps any URL and returns {contents: "html..."}.
+ * Alternate DuckDuckGo layout via Jina Reader.
  */
-async function searchViaDDGProxy(query: string, signal?: AbortSignal): Promise<SearchStrategyOutcome> {
-  if (signal?.aborted) {
-    return { strategy: 'ddg_proxy', results: [], errorType: 'aborted', message: 'Busca cancelada' }
-  }
-
-  const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(ddgUrl)}`
-
-  try {
-    const resp = await fetch(proxyUrl, {
-      signal: signal ?? AbortSignal.timeout(12_000),
-    })
-    if (!resp.ok) {
-      return {
-        strategy: 'ddg_proxy',
-        results: [],
-        errorType: classifyStatus(resp.status),
-        message: `AllOrigins retornou HTTP ${resp.status}`,
-      }
-    }
-    const wrapper = await resp.json() as { contents?: string }
-    const html = wrapper.contents ?? ''
-    if (!html || html.length < 100) {
-      return {
-        strategy: 'ddg_proxy',
-        results: [],
-        errorType: 'empty',
-        message: 'AllOrigins retornou conteúdo vazio',
-      }
-    }
-    const results = extractResultsFromDDGHTML(html)
-    return {
-      strategy: 'ddg_proxy',
-      results,
-      errorType: results.length > 0 ? 'none' : 'empty',
-      message: results.length > 0 ? undefined : 'Sem resultados extraídos do DuckDuckGo via proxy',
-    }
-  } catch (error) {
-    const errorType = classifyFetchError(error)
-    return {
-      strategy: 'ddg_proxy',
-      results: [],
-      errorType,
-      message: error instanceof Error ? error.message : 'Falha ao consultar DuckDuckGo via AllOrigins',
-    }
-  }
+async function searchViaDDGLite(query: string, signal?: AbortSignal): Promise<SearchStrategyOutcome> {
+  const ddgLiteUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`
+  const readerUrl = `https://r.jina.ai/${ddgLiteUrl}`
+  return searchViaJinaReader('ddg_lite', readerUrl, signal)
 }
 
 /**
@@ -348,65 +276,10 @@ function extractResultsFromDDGHTML(html: string): WebSearchResult[] {
   return results
 }
 
-async function searchViaDDGInstant(query: string, signal?: AbortSignal): Promise<SearchStrategyOutcome> {
-  const baseUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
-
-  // Try direct first, then AllOrigins proxy fallback
-  const urls = [
-    baseUrl,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl)}`,
-  ]
-
-  for (const url of urls) {
-    if (signal?.aborted) {
-      return { strategy: 'ddg_instant', results: [], errorType: 'aborted', message: 'Busca cancelada' }
-    }
-    try {
-      const resp = await fetch(url, { signal: signal ?? AbortSignal.timeout(10_000) })
-      if (!resp.ok) continue
-
-      const data = await resp.json() as {
-        AbstractText?: string
-        AbstractURL?: string
-        Heading?: string
-        RelatedTopics?: Array<{ Text?: string; FirstURL?: string }>
-      }
-      const results: WebSearchResult[] = []
-      if (data.AbstractText && data.AbstractURL) {
-        results.push({
-          title: data.Heading || 'Result',
-          url: data.AbstractURL,
-          snippet: data.AbstractText.slice(0, 300),
-        })
-      }
-      for (const t of (data.RelatedTopics ?? []).slice(0, 8)) {
-        if (t.FirstURL && t.Text) {
-          results.push({
-            title: t.Text.slice(0, 120),
-            url: t.FirstURL,
-            snippet: t.Text.slice(0, 300),
-          })
-        }
-      }
-
-      return {
-        strategy: 'ddg_instant',
-        results,
-        errorType: results.length > 0 ? 'none' : 'empty',
-        message: results.length > 0 ? undefined : 'DuckDuckGo Instant sem resultados',
-      }
-    } catch {
-      // Try next URL (proxy fallback)
-      continue
-    }
-  }
-
-  return {
-    strategy: 'ddg_instant',
-    results: [],
-    errorType: 'network',
-    message: 'Falha ao consultar DuckDuckGo Instant (direto + proxy)',
-  }
+async function searchViaDDGMirror(query: string, signal?: AbortSignal): Promise<SearchStrategyOutcome> {
+  const ddgMirrorUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
+  const readerUrl = `https://r.jina.ai/${ddgMirrorUrl}`
+  return searchViaJinaReader('ddg_lite', readerUrl, signal)
 }
 
 async function searchViaJinaReader(
@@ -475,7 +348,8 @@ async function searchViaJinaReader(
 
 /**
  * Extract structured results from Jina Reader plain text output.
- * Jina returns DuckDuckGo HTML as readable text with URLs embedded.
+ * DuckDuckGo currently returns a title line followed by a bare domain/path line,
+ * so the parser supports both explicit links and text-only result layouts.
  */
 function extractResultsFromJinaText(text: string): WebSearchResult[] {
   const results: WebSearchResult[] = []
@@ -522,6 +396,25 @@ function extractResultsFromJinaText(text: string): WebSearchResult[] {
     }
   }
 
+  // Strategy D: plain text result blocks with title line followed by bare domain/path.
+  if (results.length < 3) {
+    const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
+    for (let index = 1; index < lines.length && results.length < 10; index++) {
+      const url = toAbsoluteResultUrl(lines[index])
+      if (!url || isDDGInternal(url) || seen.has(url)) continue
+
+      const title = cleanResultTitle(lines[index - 1])
+      if (!title || title.length < 4) continue
+
+      const snippet = lines[index + 1] && !toAbsoluteResultUrl(lines[index + 1])
+        ? lines[index + 1].slice(0, 400)
+        : extractSnippetAround(text, text.indexOf(lines[index]), 300)
+
+      seen.add(url)
+      results.push({ title, url, snippet })
+    }
+  }
+
   return results
 }
 
@@ -534,6 +427,22 @@ function cleanUrl(url: string): string {
 
 function isDDGInternal(url: string): boolean {
   return /^https?:\/\/(www\.)?duckduckgo\.com\/?($|\?|js\/)|r\.search\.yahoo/i.test(url)
+}
+
+function toAbsoluteResultUrl(value: string): string | null {
+  const candidate = value.trim().match(/^((?:https?:\/\/)?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s]*)?)/i)?.[1]
+  if (!candidate) return null
+  const normalized = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`
+  return cleanUrl(resolveDDGRedirect(normalized))
+}
+
+function cleanResultTitle(value: string): string {
+  return value
+    .replace(/^PDF\s+/i, '')
+    .replace(/^[#*•\-\d.]+\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)
 }
 
 /**

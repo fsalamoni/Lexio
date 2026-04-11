@@ -30,12 +30,13 @@ async function getDataJudApiKey(): Promise<string> {
 
 /** Base URL for all DataJud endpoints */
 const DATAJUD_BASE_URL = 'https://api-publica.datajud.cnj.jus.br'
+const LOCAL_PROXY_ENDPOINT = '/api/datajud'
 
 /** Concurrency limit for parallel tribunal queries */
 const BATCH_SIZE = 4
 
 /** Timeout per tribunal request (ms) */
-const REQUEST_TIMEOUT = 15_000
+const REQUEST_TIMEOUT = 30_000
 const MAX_RETRIES = 2
 const RETRY_BASE_DELAY_MS = 250
 
@@ -78,20 +79,20 @@ export function _resetEndpointCache(): void {
  * Build an ordered list of endpoint candidates based on the hosting environment.
  * Avoids candidates known to fail (e.g. relative paths on static hosting).
  */
-function getEndpointCandidates(): string[] {
-  const host = typeof window !== 'undefined' ? window.location.hostname : ''
+export function _getEndpointCandidatesForHost(host: string): string[] {
   const isFirebase = host === 'lexio.web.app' || host.endsWith('.firebaseapp.com')
   const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '0.0.0.0'
   const isStaticHosting = host.endsWith('.github.io') || host.endsWith('.netlify.app') || host.endsWith('.vercel.app')
 
-  if (isFirebase) {
-    // Firebase Hosting: rewrite /api/datajud → Cloud Function (primary path)
-    return ['/api/datajud', CLOUD_FUNCTION_URL]
-  }
-
   if (isLocal) {
     // Local dev: Vite proxy forwards /api/* to backend; Cloud Function is a safe fallback.
-    return ['/api/datajud', CLOUD_FUNCTION_URL, DIRECT_ENDPOINT]
+    return [LOCAL_PROXY_ENDPOINT, CLOUD_FUNCTION_URL, DIRECT_ENDPOINT]
+  }
+
+  if (isFirebase) {
+    // Production Firebase Hosting has shown unstable rewrite behavior for POSTs.
+    // Prefer the public Cloud Function endpoint, which is CORS-enabled.
+    return [CLOUD_FUNCTION_URL, LOCAL_PROXY_ENDPOINT]
   }
 
   if (isStaticHosting) {
@@ -101,7 +102,12 @@ function getEndpointCandidates(): string[] {
   }
 
   // Unknown host: prefer managed proxies only to avoid browser-side CORS failures.
-  return [CLOUD_FUNCTION_URL, '/api/datajud']
+  return [CLOUD_FUNCTION_URL, LOCAL_PROXY_ENDPOINT]
+}
+
+function getEndpointCandidates(): string[] {
+  const host = typeof window !== 'undefined' ? window.location.hostname : ''
+  return _getEndpointCandidatesForHost(host)
 }
 
 /** Small delay between batches to avoid overwhelming the proxy */
@@ -186,6 +192,15 @@ async function fetchFromEndpoint(
   throw lastError
 }
 
+function isEndpointIssueForCandidate(endpoint: string, err: unknown): boolean {
+  if (err instanceof TypeError) return true
+  const message = err instanceof Error ? err.message : String(err)
+  if (message.includes('timeout')) return true
+  if (/HTTP 405/.test(message)) return true
+  if (endpoint === LOCAL_PROXY_ENDPOINT && /HTTP 404/.test(message)) return true
+  return false
+}
+
 /**
  * Execute a DataJud request with automatic endpoint resolution and caching.
  *
@@ -218,9 +233,7 @@ async function fetchDataJudHits(
       // Only reset cache for endpoint-level failures (404, 405, connection issues).
       // Tribunal-level errors (400, 401, 403, data issues) should propagate as-is
       // since switching endpoints won't help.
-      const msg = err instanceof Error ? err.message : ''
-      const isEndpointIssue = err instanceof TypeError ||
-        /HTTP (404|405)/.test(msg) || msg.includes('timeout')
+      const isEndpointIssue = isEndpointIssueForCandidate(_resolvedEndpoint, err)
 
       if (isEndpointIssue) {
         _resolvedEndpoint = null
@@ -248,6 +261,9 @@ async function fetchDataJudHits(
       lastError = err
       // User cancelled — propagate immediately
       if (err instanceof DOMException && err.name === 'AbortError' && signal?.aborted) throw err
+      if (!isEndpointIssueForCandidate(candidate, err)) {
+        throw err
+      }
       // This candidate failed — try next one
       continue
     }
@@ -356,10 +372,10 @@ export const ALL_TRIBUNALS: TribunalInfo[] = [
  * Covers Superiores + all TRFs + top TJs by case volume.
  */
 export const DEFAULT_TRIBUNALS: TribunalInfo[] = [
-  ...TRIBUNAIS_SUPERIORES,
-  ...JUSTICA_FEDERAL,
-  // Top TJs by volume
-  ...['tjsp', 'tjrj', 'tjmg', 'tjrs', 'tjpr', 'tjba', 'tjdft', 'tjpe', 'tjsc', 'tjgo']
+  ...['trf1', 'trf2', 'trf3', 'trf4']
+    .map(alias => JUSTICA_FEDERAL.find(t => t.alias === alias)!)
+    .filter(Boolean),
+  ...['tjdft', 'tjmg', 'tjrs']
     .map(alias => JUSTICA_ESTADUAL.find(t => t.alias === alias)!)
     .filter(Boolean),
 ]

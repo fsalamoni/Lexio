@@ -25,28 +25,41 @@ describe('web-search-service', () => {
     expect(diagnostics.strategies[0].errorType).toBe('none')
   })
 
-  it('falls back through AllOrigins proxy and instant API when Jina is down', async () => {
+  it('extracts results from the current Jina plain-text DuckDuckGo layout', async () => {
+    const text = [
+      'Lei de Contratação Temporária',
+      'www.planalto.gov.br/ccivil_03/LEIS/L8745cons.htm',
+      'Art. 1º Para atender a necessidade temporária de excepcional interesse público...',
+      'Contrato temporário - delimitação dos direitos trabalhistas',
+      'www.tjdft.jus.br/consultas/jurisprudencia/jurisprudencia-em-temas/direito-constitucional/contrato-temporario-e-a-delimitacao-dos-direitos-trabalhistas',
+      'A Constituição Federal, em seu art. 37, inciso IX, permite a contratação...',
+    ].join('\n')
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(text, { status: 200 }),
+    )
+
+    const { results, diagnostics } = await searchWebResultsWithDiagnostics('contratação temporária')
+
+    expect(results.length).toBeGreaterThanOrEqual(2)
+    expect(results[0].url).toBe('https://www.planalto.gov.br/ccivil_03/LEIS/L8745cons.htm')
+    expect(results[0].title).toContain('Lei de Contratação Temporária')
+    expect(diagnostics.strategies[0].errorType).toBe('none')
+  })
+
+  it('falls back through additional Jina-backed strategies when the primary search fails', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
       // Jina Reader — network error (CORS/down)
-      if (url.includes('r.jina.ai/')) {
+      if (url.includes('r.jina.ai/') && url.includes('duckduckgo.com/html/')) {
         throw new TypeError('network down')
       }
-      // AllOrigins proxy for DuckDuckGo HTML search — also fails
-      if (url.includes('allorigins.win') && url.includes('html.duckduckgo.com')) {
-        throw new TypeError('proxy down')
-      }
-      // DDG Instant direct — CORS error
-      if (url.includes('api.duckduckgo.com') && !url.includes('allorigins')) {
-        throw new TypeError('CORS blocked')
-      }
-      // DDG Instant via AllOrigins proxy — works
-      if (url.includes('allorigins.win') && url.includes('api.duckduckgo.com')) {
-        return new Response(JSON.stringify({
-          RelatedTopics: [
-            { Text: 'Tema de socioafetividade no STJ', FirstURL: 'https://www.stj.jus.br/tema/socioafetividade' },
-          ],
-        }), { status: 200 })
+      if (url.includes('r.jina.ai/') && url.includes('lite.duckduckgo.com/lite/')) {
+        return new Response([
+          'Tema de socioafetividade no STJ',
+          'www.stj.jus.br/tema/socioafetividade',
+          'Julgado relevante sobre paternidade socioafetiva.',
+        ].join('\n'), { status: 200 })
       }
       return new Response('', { status: 500 })
     })
@@ -57,6 +70,7 @@ describe('web-search-service', () => {
     expect(results[0].url).toContain('stj.jus.br')
     expect(diagnostics.hadTechnicalError).toBe(true)
     expect(diagnostics.strategies.some(s => s.errorType === 'network')).toBe(true)
+    expect(diagnostics.strategies.some(s => s.strategy === 'ddg_lite' && s.errorType === 'none')).toBe(true)
     fetchMock.mockRestore()
   })
 })

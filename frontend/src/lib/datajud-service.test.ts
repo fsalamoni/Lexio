@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  _getEndpointCandidatesForHost,
   searchDataJud,
   formatDataJudResults,
   classifyJurisprudenceArea,
@@ -58,6 +59,13 @@ describe('datajud-service', () => {
     expect(result.errorDetails).toHaveLength(1)
     expect(result.errorDetails[0].type).toBe('auth')
     expect(result.errors[0]).toContain('HTTP 403')
+  })
+
+  it('prefers the public Cloud Function endpoint on production Firebase Hosting', () => {
+    expect(_getEndpointCandidatesForHost('lexio.web.app')).toEqual([
+      'https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy',
+      '/api/datajud',
+    ])
   })
 
   describe('formatDataJudResults', () => {

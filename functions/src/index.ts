@@ -17,7 +17,7 @@ import { logger } from "firebase-functions/v2";
 const DATAJUD_API_KEY =
   "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==";
 const DATAJUD_BASE_URL = "https://api-publica.datajud.cnj.jus.br";
-const REQUEST_TIMEOUT_MS = 20_000;
+const REQUEST_TIMEOUT_MS = 35_000;
 
 /**
  * Whitelist of valid tribunal aliases (prevents SSRF).
