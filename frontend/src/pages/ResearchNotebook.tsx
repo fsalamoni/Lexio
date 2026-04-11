@@ -29,7 +29,9 @@ import {
   updateResearchNotebook,
   deleteResearchNotebook,
   getResearchNotebook,
+  getUserSettings,
   listAcervoDocuments,
+  saveUserSettings,
   saveNotebookDocumentToDocuments,
   type ResearchNotebookData,
   type NotebookSource,
@@ -288,6 +290,7 @@ export default function ResearchNotebook() {
 
   // Jurisprudence config modal (pre-search)
   const [jurisprudenceConfigOpen, setJurisprudenceConfigOpen] = useState(false)
+  const [lastJurisprudenceTribunalAliases, setLastJurisprudenceTribunalAliases] = useState<string[]>(DEFAULT_TRIBUNALS.map(t => t.alias))
 
   // Search results review modal (post-search)
   const [searchResultsModalOpen, setSearchResultsModalOpen] = useState(false)
@@ -367,6 +370,29 @@ export default function ResearchNotebook() {
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
 
+  useEffect(() => {
+    if (!userId || !IS_FIREBASE) return
+    let cancelled = false
+
+    getUserSettings(userId)
+      .then(settings => {
+        if (cancelled) return
+        const aliases = settings.last_jurisprudence_tribunal_aliases
+        if (!Array.isArray(aliases) || aliases.length === 0) return
+        const validAliases = aliases.filter(alias => ALL_TRIBUNALS.some(t => t.alias === alias))
+        if (validAliases.length > 0) {
+          setLastJurisprudenceTribunalAliases(validAliases)
+        }
+      })
+      .catch(() => {
+        // Ignore settings load failures and fall back to defaults.
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
   // ── Deep-link: ?open=<notebook_id> ─────────────────────────────────
   // Runs once after the notebook list is loaded. If the URL has ?open=<id>,
   // open that notebook directly (falling back to a direct Firestore fetch
@@ -387,7 +413,7 @@ export default function ResearchNotebook() {
       if (nb) {
         setActiveNotebook(nb)
         setViewMode('detail')
-        setActiveTab('chat')
+        setActiveTab('overview')
         setSuggestions([])
       }
     }).catch(() => {
@@ -617,7 +643,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       if (full) {
         setActiveNotebook(full)
         setViewMode('detail')
-        setActiveTab('chat')
+        setActiveTab('overview')
         setSuggestions([])
       }
     } catch {
@@ -1348,6 +1374,18 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     if (!userId || !activeNotebook?.id) return
     const notebookId = activeNotebook.id
     setJurisprudenceConfigOpen(false)
+
+    const selectedTribunalAliases = config.tribunals.map(tribunal => tribunal.alias)
+    setLastJurisprudenceTribunalAliases(selectedTribunalAliases)
+    if (IS_FIREBASE) {
+      try {
+        await saveUserSettings(userId, {
+          last_jurisprudence_tribunal_aliases: selectedTribunalAliases,
+        })
+      } catch (error) {
+        console.warn('Failed to persist last jurisprudence tribunal selection:', error)
+      }
+    }
 
     // Open progress modal
     const steps = createJurisprudenceSteps()
@@ -4724,6 +4762,7 @@ Instruções:
       <JurisprudenceConfigModal
         isOpen={jurisprudenceConfigOpen}
         query={externalSearchQuery.trim()}
+        initialSelectedAliases={lastJurisprudenceTribunalAliases}
         onSearch={handleJurisprudenceSearch}
         onClose={() => setJurisprudenceConfigOpen(false)}
       />

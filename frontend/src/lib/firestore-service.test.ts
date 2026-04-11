@@ -12,6 +12,8 @@ const mockAddDoc = vi.fn()
 const mockCollection = vi.fn()
 const mockDoc = vi.fn()
 const mockGetDoc = vi.fn()
+const mockSetDoc = vi.fn()
+const mockServerTimestamp = vi.fn()
 const mockUpdateDoc = vi.fn()
 
 vi.mock('firebase/firestore', () => ({
@@ -19,7 +21,7 @@ vi.mock('firebase/firestore', () => ({
   collection: (...args: unknown[]) => mockCollection(...args),
   doc: (...args: unknown[]) => mockDoc(...args),
   getDoc: (...args: unknown[]) => mockGetDoc(...args),
-  setDoc: vi.fn(),
+  setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
   deleteDoc: vi.fn(),
   getDocs: vi.fn(),
@@ -27,7 +29,7 @@ vi.mock('firebase/firestore', () => ({
   orderBy: vi.fn(),
   limit: vi.fn(),
   where: vi.fn(),
-  serverTimestamp: vi.fn(),
+  serverTimestamp: (...args: unknown[]) => mockServerTimestamp(...args),
 }))
 
 // ── Mock local firebase module ──────────────────────────────────────────────
@@ -59,7 +61,9 @@ vi.mock('./document-json-converter', () => ({
 // ── Import under test (AFTER mocks are registered) ──────────────────────────
 
 import {
+  getUserSettings,
   getResearchNotebook,
+  saveUserSettings,
   saveNotebookDocumentToDocuments,
   updateResearchNotebook,
 } from './firestore-service'
@@ -79,8 +83,13 @@ describe('saveNotebookDocumentToDocuments', () => {
     vi.clearAllMocks()
     mockCollection.mockReturnValue('col-ref')
     mockAddDoc.mockResolvedValue({ id: 'new-doc-id' })
-    mockDoc.mockImplementation((...segments: unknown[]) => ({ path: segments.join('/') }))
+    mockDoc.mockImplementation((...segments: unknown[]) => {
+      const pathSegments = typeof segments[0] === 'object' ? segments.slice(1) : segments
+      return { path: pathSegments.join('/') }
+    })
     mockGetDoc.mockResolvedValue({ exists: () => true, id: 'nb-abc', data: () => ({ title: 'Notebook' }) })
+    mockSetDoc.mockResolvedValue(undefined)
+    mockServerTimestamp.mockReturnValue('__server_timestamp__')
     mockUpdateDoc.mockResolvedValue(undefined)
   })
 
@@ -170,5 +179,34 @@ describe('saveNotebookDocumentToDocuments', () => {
       'users', uid, 'research_notebooks', 'nb-xyz',
     )
     expect(mockUpdateDoc).toHaveBeenCalledOnce()
+  })
+
+  it('loads user settings from the preferences document', async () => {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ last_jurisprudence_tribunal_aliases: ['trf1', 'tjrs'] }),
+    })
+
+    const result = await getUserSettings(uid)
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'settings', 'preferences',
+    )
+    expect(result.last_jurisprudence_tribunal_aliases).toEqual(['trf1', 'tjrs'])
+  })
+
+  it('persists user settings to the preferences document with merge', async () => {
+    await saveUserSettings(uid, { last_jurisprudence_tribunal_aliases: ['trf2', 'tjmg'] })
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'settings', 'preferences',
+    )
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/settings/preferences' },
+      expect.objectContaining({ last_jurisprudence_tribunal_aliases: ['trf2', 'tjmg'] }),
+      { merge: true },
+    )
   })
 })

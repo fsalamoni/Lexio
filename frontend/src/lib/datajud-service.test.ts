@@ -68,6 +68,44 @@ describe('datajud-service', () => {
     ])
   })
 
+  it('parses nested ementa and inteiro teor variants and normalizes dates/text', async () => {
+    const tribunals: TribunalInfo[] = [
+      { alias: 'stj', name: 'Superior Tribunal de JustiÃ§a', category: 'superiores' },
+    ]
+
+    const fakeHit = makeHit({
+      orgaoJulgador: { nome: 'GABINETE DO MINISTRO REYNALDO SOARES DA FONSECA' },
+      dataAjuizamento: '20260331000000',
+      assuntos: [[{ nome: 'PrisÃ£o Preventiva' }], { nome: 'TrÃ¡fico de Drogas' }],
+      dadosBasicos: {
+        ementa: 'HABEAS CORPUS. PRISÃO PREVENTIVA. FUNDAMENTAÇÃO IDÔNEA.',
+      },
+      acordao: {
+        texto: 'ACÓRDÃO. Vistos, relatados e discutidos estes autos, acordam os Ministros...',
+      },
+    })
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ hits: { hits: [{ _source: fakeHit }] } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const result = await searchDataJud('habeas corpus', {
+      tribunals,
+      maxPerTribunal: 1,
+      maxTotal: 1,
+    })
+
+    expect(result.results).toHaveLength(1)
+    expect(result.results[0].tribunalName).toBe('Superior Tribunal de Justiça')
+    expect(result.results[0].assuntos).toEqual(['Prisão Preventiva', 'Tráfico de Drogas'])
+    expect(result.results[0].dataAjuizamento).toBe('2026-03-31')
+    expect(result.results[0].ementa).toContain('PRISÃO PREVENTIVA')
+    expect(result.results[0].inteiroTeor).toContain('ACÓRDÃO')
+  })
+
   describe('formatDataJudResults', () => {
     it('returns empty message when results array is empty', () => {
       expect(formatDataJudResults([])).toBe('Nenhum resultado encontrado.')

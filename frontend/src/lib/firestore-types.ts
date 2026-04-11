@@ -34,6 +34,7 @@ export interface ProfileData {
 export interface UserSettingsData {
   legacy_migrated_at?: string
   api_keys?: Record<string, string>
+  last_jurisprudence_tribunal_aliases?: string[]
   model_catalog?: ModelOption[]
   agent_models?: Record<string, string>
   thesis_analyst_models?: Record<string, string>

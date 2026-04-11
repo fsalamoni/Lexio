@@ -423,6 +423,11 @@ export interface DataJudResult {
   stance?: 'favoravel' | 'desfavoravel' | 'neutro'
 }
 
+interface TextFieldCandidate {
+  path: string[]
+  value: string
+}
+
 export interface DataJudSearchProgress {
   phase: 'querying' | 'processing' | 'done'
   tribunalsQueried: number
@@ -683,46 +688,160 @@ function parseDataJudHit(src: Record<string, unknown>, tribunal: TribunalInfo): 
   const classe = src.classe as { nome?: string; codigo?: number } | undefined
   const orgao = src.orgaoJulgador as { nome?: string } | undefined
   const formato = src.formato as { nome?: string } | undefined
-
-  // Extract ementa — may be a top-level string field in the DataJud _source
-  const ementaRaw = src.ementa
-  const ementa = typeof ementaRaw === 'string' && ementaRaw.trim()
-    ? ementaRaw.trim()
-    : undefined
-
-  // Extract inteiro_teor — may be nested as { conteudo?: string } or a plain string.
-  // The fallback chain checks both Portuguese property names (conteudo, texto) and
-  // the English alias (content) because some tribunal-specific DataJud indexes use
-  // inconsistent schemas for this nested field.
-  const inteiroTeorRaw = src.inteiro_teor
-  let inteiroTeor: string | undefined
-  if (typeof inteiroTeorRaw === 'string' && inteiroTeorRaw.trim()) {
-    inteiroTeor = inteiroTeorRaw.trim()
-  } else if (inteiroTeorRaw && typeof inteiroTeorRaw === 'object') {
-    const obj = inteiroTeorRaw as Record<string, unknown>
-    const conteudo = obj.conteudo ?? obj.texto ?? obj.content
-    if (typeof conteudo === 'string' && conteudo.trim()) {
-      inteiroTeor = conteudo.trim()
-    }
-  }
+  const ementa = extractEmenta(src)
+  const inteiroTeor = extractInteiroTeor(src)
 
   return {
-    tribunal: tribunal.alias.toUpperCase(),
-    tribunalName: tribunal.name,
+    tribunal: repairMojibake(tribunal.alias.toUpperCase()),
+    tribunalName: repairMojibake(tribunal.name),
     numeroProcesso: String(src.numeroProcesso ?? ''),
-    classe: classe?.nome ?? '',
+    classe: repairMojibake(classe?.nome ?? ''),
     classeCode: classe?.codigo ?? 0,
-    assuntos: (assuntosRaw ?? []).map(a => a.nome ?? '').filter(Boolean),
-    orgaoJulgador: orgao?.nome ?? '',
-    dataAjuizamento: String(src.dataAjuizamento ?? '').slice(0, 10),
+    assuntos: extractAssuntoNames(assuntosRaw ?? []),
+    orgaoJulgador: repairMojibake(orgao?.nome ?? ''),
+    dataAjuizamento: normalizeDataJudDate(src.dataAjuizamento),
     grau: String(src.grau ?? ''),
-    formato: formato?.nome ?? '',
+    formato: repairMojibake(formato?.nome ?? ''),
     movimentos: (movimentosRaw ?? [])
       .slice(0, 5)
-      .map(m => ({ nome: m.nome ?? '', dataHora: String(m.dataHora ?? '').slice(0, 10) })),
+      .map(m => ({ nome: repairMojibake(m.nome ?? ''), dataHora: normalizeDataJudDate(m.dataHora) })),
     ementa,
     inteiroTeor,
   }
+}
+
+function extractAssuntoNames(assuntosRaw: unknown[]): string[] {
+  const names: string[] = []
+
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(visit)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+
+    const nome = (value as { nome?: unknown }).nome
+    if (typeof nome === 'string' && nome.trim()) {
+      names.push(repairMojibake(nome.trim()))
+    }
+  }
+
+  assuntosRaw.forEach(visit)
+  return Array.from(new Set(names))
+}
+
+function normalizeDataJudDate(value: unknown): string {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (!raw) return ''
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`
+
+  const compactMatch = raw.match(/^(\d{4})(\d{2})(\d{2})/)
+  if (compactMatch) return `${compactMatch[1]}-${compactMatch[2]}-${compactMatch[3]}`
+
+  return raw.slice(0, 10)
+}
+
+function repairMojibake(value: string): string {
+  if (!value || !/[ÃÂâ€]|�/.test(value)) return value
+  try {
+    const bytes = Uint8Array.from(value, char => char.charCodeAt(0) & 0xff)
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    return decoded || value
+  } catch {
+    return value
+  }
+}
+
+function collectTextCandidates(value: unknown, path: string[] = [], depth = 0): TextFieldCandidate[] {
+  if (depth > 6 || value == null) return []
+
+  if (typeof value === 'string') {
+    const text = value.trim()
+    return text.length >= 20 ? [{ path, value: repairMojibake(text) }] : []
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) => collectTextCandidates(entry, [...path, String(index)], depth + 1))
+  }
+
+  if (typeof value !== 'object') return []
+
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, nested]) =>
+    collectTextCandidates(nested, [...path, key], depth + 1),
+  )
+}
+
+function pickCandidateByPatterns(
+  src: Record<string, unknown>,
+  preferredPaths: string[][],
+  pathMatchers: RegExp[],
+  excludedPathMatchers: RegExp[] = [],
+): string | undefined {
+  for (const path of preferredPaths) {
+    let current: unknown = src
+    for (const segment of path) {
+      if (!current || typeof current !== 'object') {
+        current = undefined
+        break
+      }
+      current = (current as Record<string, unknown>)[segment]
+    }
+
+    if (typeof current === 'string' && current.trim()) {
+      return repairMojibake(current.trim())
+    }
+
+    if (current && typeof current === 'object') {
+      const nestedCandidates = collectTextCandidates(current, path)
+      if (nestedCandidates.length > 0) return nestedCandidates[0].value
+    }
+  }
+
+  const candidates = collectTextCandidates(src)
+  for (const candidate of candidates) {
+    const joinedPath = candidate.path.join('.')
+    if (excludedPathMatchers.some(matcher => matcher.test(joinedPath))) continue
+    if (pathMatchers.some(matcher => matcher.test(joinedPath))) {
+      return candidate.value
+    }
+  }
+
+  return undefined
+}
+
+function extractEmenta(src: Record<string, unknown>): string | undefined {
+  return pickCandidateByPatterns(
+    src,
+    [
+      ['ementa'],
+      ['dadosBasicos', 'ementa'],
+      ['julgamento', 'ementa'],
+      ['documento', 'ementa'],
+    ],
+    [/\bementa\b/i, /\bresumo\b/i],
+    [/movimentos/i, /assuntos/i],
+  )
+}
+
+function extractInteiroTeor(src: Record<string, unknown>): string | undefined {
+  return pickCandidateByPatterns(
+    src,
+    [
+      ['inteiro_teor'],
+      ['inteiroTeor'],
+      ['dadosBasicos', 'inteiro_teor'],
+      ['dadosBasicos', 'inteiroTeor'],
+      ['acordao'],
+      ['acórdão'],
+      ['documento', 'conteudo'],
+      ['documento', 'texto'],
+      ['julgamento', 'inteiro_teor'],
+    ],
+    [/inteiro[_-]?teor/i, /ac[oó]rd[aã]o/i, /decis[aã]o/i, /julgad/i, /conteudo/i, /texto/i],
+    [/movimentos/i, /assuntos/i, /classe/i, /orgaoJulgador/i, /sistema/i, /formato/i],
+  )
 }
 
 /**

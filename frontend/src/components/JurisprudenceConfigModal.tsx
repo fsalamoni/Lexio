@@ -26,6 +26,7 @@ export interface JurisprudenceSearchConfig {
 interface JurisprudenceConfigModalProps {
   isOpen: boolean
   query: string
+  initialSelectedAliases?: string[]
   onSearch: (config: JurisprudenceSearchConfig) => void
   onClose: () => void
 }
@@ -33,10 +34,16 @@ interface JurisprudenceConfigModalProps {
 export default function JurisprudenceConfigModal({
   isOpen,
   query: initialQuery,
+  initialSelectedAliases,
   onSearch,
   onClose,
 }: JurisprudenceConfigModalProps) {
-  const defaultAliases = useMemo(() => new Set(DEFAULT_TRIBUNALS.map(t => t.alias)), [])
+  const defaultAliases = useMemo(
+    () => new Set((initialSelectedAliases && initialSelectedAliases.length > 0)
+      ? initialSelectedAliases
+      : DEFAULT_TRIBUNALS.map(t => t.alias)),
+    [initialSelectedAliases],
+  )
 
   const [query, setQuery] = useState(initialQuery)
   const [selectedAliases, setSelectedAliases] = useState<Set<string>>(() => new Set(defaultAliases))
@@ -46,6 +53,12 @@ export default function JurisprudenceConfigModal({
   const [selectedGraus, setSelectedGraus] = useState<Set<string>>(new Set())
   const [maxPerTribunal, setMaxPerTribunal] = useState(5)
   const [showFilters, setShowFilters] = useState(false)
+
+  React.useEffect(() => {
+    if (!isOpen) return
+    setQuery(initialQuery)
+    setSelectedAliases(new Set(defaultAliases))
+  }, [isOpen, initialQuery, defaultAliases])
 
   const toggleGroup = useCallback((category: string) => {
     setExpandedGroups(prev => {
