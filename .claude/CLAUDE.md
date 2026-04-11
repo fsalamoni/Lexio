@@ -640,7 +640,7 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 |-------|----------|
 | `api_keys.openrouter_api_key` | Chave API OpenRouter do usuário |
 | `api_keys.datajud_api_key` | Chave DataJud do usuário |
-| `model_catalog` | Catálogo dinâmico de modelos do usuário |
+| `model_catalog` | Catálogo dinâmico pessoal do usuário, persistido e usado como fonte de verdade para seletores e validações |
 | `agent_models` | Config do pipeline de documentos |
 | `thesis_analyst_models` | Config do pipeline de teses |
 | `context_detail_models` | Config do context detail |
@@ -681,17 +681,18 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 
 ### Configurações pessoais (`/settings`)
 1. **API Keys** — Chaves persistidas no perfil do usuário
-2. **Config de Modelos (Documentos)** — Config dos 11 agentes do pipeline principal
-3. **Analista de Teses** — Config dos 5 agentes
-4. **Context Detail** — Config do agente de contexto
-5. **Classificador de Acervo** — Config do agente classificador
-6. **Gerador de Ementa** — Config do agente de ementas
-7. **Caderno de Pesquisa** — Config dos 12 agentes do caderno
-8. **Notebook Acervo** — Config dos 4 agentes de análise de acervo
-9. **Pipeline de Vídeo** — Config dos 11 agentes de vídeo
-10. **Pipeline de Áudio** — Config dos 6 agentes de áudio
-11. **Pipeline de Apresentação** — Config dos 6 agentes de apresentação
-12. **Fila de Revisão** — Itens do próprio usuário em revisão
+2. **Catálogo de Modelos** — Catálogo pessoal do usuário, persistido em Firestore e base única para os modelos disponíveis nos seletores
+3. **Config de Modelos (Documentos)** — Config dos 11 agentes do pipeline principal
+4. **Analista de Teses** — Config dos 5 agentes
+5. **Context Detail** — Config do agente de contexto
+6. **Classificador de Acervo** — Config do agente classificador
+7. **Gerador de Ementa** — Config do agente de ementas
+8. **Caderno de Pesquisa** — Config dos 12 agentes do caderno
+9. **Notebook Acervo** — Config dos 4 agentes de análise de acervo
+10. **Pipeline de Vídeo** — Config dos 11 agentes de vídeo
+11. **Pipeline de Áudio** — Config dos 6 agentes de áudio
+12. **Pipeline de Apresentação** — Config dos 6 agentes de apresentação
+13. **Fila de Revisão** — Itens do próprio usuário em revisão
 
 ### Administração da plataforma (`/admin`)
 1. **Visão geral agregada** — Usuários, documentos, teses, acervo, cadernos, artefatos e qualidade média

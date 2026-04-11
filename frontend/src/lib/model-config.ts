@@ -556,9 +556,6 @@ export type AgentModelMap = Record<string, string>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Set of hardcoded model IDs for fast lookup. */
-const AVAILABLE_MODEL_IDS = new Set(AVAILABLE_MODELS.map(m => m.id))
-
 function inferCapabilitiesFromModelId(modelId: string): ModelCapability[] {
   const haystack = modelId.toLowerCase()
   const capabilities: ModelCapability[] = []
@@ -571,16 +568,14 @@ function inferCapabilitiesFromModelId(modelId: string): ModelCapability[] {
 }
 
 function buildCatalogEntries(settings: Record<string, unknown>): ModelOption[] {
-  const entries = [...AVAILABLE_MODELS]
   const dynamicCatalog = settings.model_catalog
-  if (Array.isArray(dynamicCatalog)) {
-    for (const model of dynamicCatalog) {
-      if (model && typeof model === 'object' && typeof (model as { id?: string }).id === 'string') {
-        entries.push(model as ModelOption)
-      }
-    }
+  if (Array.isArray(dynamicCatalog) && dynamicCatalog.length > 0) {
+    return dynamicCatalog
+      .filter((model): model is ModelOption =>
+        Boolean(model) && typeof model === 'object' && typeof (model as { id?: string }).id === 'string',
+      )
   }
-  return entries
+  return AVAILABLE_MODELS
 }
 
 function getModelCapabilities(modelId: string, catalogEntries: ModelOption[]): ModelCapability[] {
@@ -624,23 +619,46 @@ export function sanitizeModelCapabilitiesAgainstDefs<T extends Record<string, st
 }
 
 /**
- * Build a Set of valid model IDs from both the hardcoded catalog AND
- * the dynamic Firestore catalog (settings.model_catalog).
- *
- * This ensures that models added via "Adicionar do OpenRouter" are
- * recognized when loading agent configs, not just the hardcoded defaults.
+ * Build a Set of valid model IDs from the user's personal catalog.
+ * The hardcoded curated catalog is used only as the bootstrap seed when the
+ * user still has no catalog persisted in Firestore.
  */
 function buildCatalogIdSet(settings: Record<string, unknown>): Set<string> {
-  const ids = new Set(AVAILABLE_MODEL_IDS)
-  const dynamicCatalog = settings.model_catalog
-  if (Array.isArray(dynamicCatalog)) {
-    for (const m of dynamicCatalog) {
-      if (m && typeof m === 'object' && typeof (m as { id?: string }).id === 'string') {
-        ids.add((m as { id: string }).id)
-      }
+  const ids = new Set<string>()
+  for (const model of buildCatalogEntries(settings)) {
+    if (model?.id) {
+      ids.add(model.id)
     }
   }
   return ids
+}
+
+export class ModelNotInUserCatalogError extends Error {
+  agentKey: string
+  agentLabel: string
+  modelId: string
+
+  constructor(agent: AgentModelDef, modelId: string) {
+    super(`O modelo "${modelId}" não está presente no catálogo pessoal do usuário para o agente "${agent.label}".`)
+    this.name = 'ModelNotInUserCatalogError'
+    this.agentKey = agent.key
+    this.agentLabel = agent.label
+    this.modelId = modelId
+  }
+}
+
+function validateModelIdsAgainstCatalog(
+  defs: AgentModelDef[],
+  models: Record<string, string>,
+  catalogIds: Set<string>,
+): void {
+  for (const agent of defs) {
+    const modelId = models[agent.key]
+    if (!modelId) continue
+    if (!catalogIds.has(modelId)) {
+      throw new ModelNotInUserCatalogError(agent, modelId)
+    }
+  }
 }
 
 type ScopedModelSettingsKey =
@@ -715,7 +733,10 @@ async function saveScopedModelMap<T extends Record<string, string>>(
   if (!resolvedUid) throw new Error('Usuário não autenticado.')
 
   const userSettings = await ensureUserSettingsMigrated(resolvedUid)
-  const catalogEntries = buildCatalogEntries(userSettings as unknown as Record<string, unknown>)
+  const settingsRecord = userSettings as unknown as Record<string, unknown>
+  const catalogEntries = buildCatalogEntries(settingsRecord)
+  const catalogIds = buildCatalogIdSet(settingsRecord)
+  validateModelIdsAgainstCatalog(defs, models, catalogIds)
   validateModelCapabilitiesAgainstDefs(defs, models, catalogEntries)
 
   const overrides = {} as Record<string, string>
@@ -1715,6 +1736,9 @@ export async function validateScopedAgentModels(
 ): Promise<void> {
   const resolvedUid = resolveScopedUid(uid)
   const userSettings = resolvedUid ? await ensureUserSettingsMigrated(resolvedUid) : {} as UserSettingsData
-  const catalogEntries = buildCatalogEntries(userSettings as unknown as Record<string, unknown>)
+  const settingsRecord = userSettings as unknown as Record<string, unknown>
+  const catalogEntries = buildCatalogEntries(settingsRecord)
+  const catalogIds = buildCatalogIdSet(settingsRecord)
+  validateModelIdsAgainstCatalog(AGENT_CONFIG_DEFS[key], models, catalogIds)
   validateModelCapabilitiesAgainstDefs(AGENT_CONFIG_DEFS[key], models, catalogEntries)
 }

@@ -2,7 +2,8 @@
  * Model Catalog — manages the master list of available models for the platform.
  *
  * The catalog is stored in the authenticated user's Firestore settings.
- * On first use, it defaults to AVAILABLE_MODELS from model-config.ts.
+ * On first use, the user's personal catalog is seeded from AVAILABLE_MODELS
+ * and persisted immediately into that user's own Firestore settings.
  *
  * Components listen for CATALOG_UPDATED_EVENT to refresh when catalog changes.
  * A module-level cache avoids redundant Firestore reads.
@@ -25,6 +26,10 @@ function getCatalogCacheKey(uid?: string): string {
   return uid ?? getCurrentUserId() ?? 'anonymous'
 }
 
+function getSeedCatalog(): ModelOption[] {
+  return normalizeModelCatalog(AVAILABLE_MODELS)
+}
+
 export function emitCatalogUpdated(updated?: ModelOption[], uid?: string): void {
   if (updated) catalogCache.set(getCatalogCacheKey(uid), updated)
   window.dispatchEvent(new CustomEvent(CATALOG_UPDATED_EVENT))
@@ -34,16 +39,19 @@ export function emitCatalogUpdated(updated?: ModelOption[], uid?: string): void 
 
 /**
  * Load the model catalog.
- * Returns catalog from Firestore (or in-memory cache) falling back to AVAILABLE_MODELS.
+ * Returns catalog from Firestore (or in-memory cache), seeding the user's
+ * personal catalog in Firestore on first use when necessary.
  */
 export async function loadModelCatalog(uid?: string): Promise<ModelOption[]> {
   const cacheKey = getCatalogCacheKey(uid)
   const cached = catalogCache.get(cacheKey)
   if (cached) return cached
 
+  const resolvedUid = uid ?? getCurrentUserId() ?? undefined
+  const seededCatalog = getSeedCatalog()
+
   if (IS_FIREBASE) {
     try {
-      const resolvedUid = uid ?? getCurrentUserId() ?? undefined
       const userSettings = resolvedUid ? await ensureUserSettingsMigrated(resolvedUid) : {} as UserSettingsData
       const saved = userSettings.model_catalog as ModelOption[] | undefined
       if (Array.isArray(saved) && saved.length > 0) {
@@ -63,22 +71,30 @@ export async function loadModelCatalog(uid?: string): Promise<ModelOption[]> {
           catalogCache.set(cacheKey, validated)
           return validated
         }
-        // Old scale detected — fall through to AVAILABLE_MODELS defaults below
+        // Old scale detected — reseed the personal catalog below.
       }
     } catch {
-      // Fall through to defaults
+      // Fall through to seeded defaults.
     }
   }
 
-  const fallback = normalizeModelCatalog(AVAILABLE_MODELS)
-  catalogCache.set(cacheKey, fallback)
-  return fallback
+  catalogCache.set(cacheKey, seededCatalog)
+
+  if (IS_FIREBASE && resolvedUid) {
+    await saveUserSettings(resolvedUid, { model_catalog: seededCatalog } as UserSettingsData)
+  }
+
+  return seededCatalog
 }
 
 /**
  * Persist catalog to Firestore and notify all listeners.
  */
 export async function saveModelCatalog(models: ModelOption[], uid?: string): Promise<void> {
+  if (models.length === 0) {
+    throw new Error('O catálogo pessoal deve conter pelo menos um modelo.')
+  }
+
   const normalized = normalizeModelCatalog(models)
   const resolvedUid = uid ?? getCurrentUserId() ?? undefined
   catalogCache.set(getCatalogCacheKey(resolvedUid), normalized)
@@ -102,7 +118,7 @@ export function invalidateCatalogCache(uid?: string): void {
  */
 export function useCatalogModels(): ModelOption[] {
   const cacheKey = getCatalogCacheKey()
-  const [models, setModels] = useState<ModelOption[]>(() => catalogCache.get(cacheKey) ?? normalizeModelCatalog(AVAILABLE_MODELS))
+  const [models, setModels] = useState<ModelOption[]>(() => catalogCache.get(cacheKey) ?? [])
 
   useEffect(() => {
     // Load from Firestore on mount

@@ -53,7 +53,7 @@
 - **Pipeline de Apresentação** — 6 agentes para criação de apresentações profissionais com imagens de slides contextuais e exportação PPTX
 - **Persistência de mídia do estúdio** — Vídeos, áudios e imagens temporários do notebook são enviados para Cloud Storage; o artefato salvo no Firestore mantém apenas URLs persistidas e checkpoint compactado para respeitar o limite de 1 MiB por documento
 - **Anamnese 2 camadas** — Perfil profissional persistente (Layer 1) + contexto por geração (Layer 2)
-- **Configurações por usuário** — API keys, modelos por agente, catálogo, tipos e áreas ficam isolados em cada perfil
+- **Configurações por usuário** — API keys, catálogo pessoal, modelos por agente, tipos e áreas ficam isolados em cada perfil, persistidos em Firestore e usados como única fonte de verdade para aquele usuário
 - **Painel administrativo da plataforma** — Visão agregada de uso, pipelines, agentes, documentos, custos e tokens globais
 - **Health check de modelos** — Verificação automática de disponibilidade contra OpenRouter
 - **Analytics de custo** — Dashboard por modelo/função/provedor em USD e BRL (10 funções de rastreamento)
@@ -149,7 +149,7 @@ docs/              → Documentação técnica arquitetural
 
 ## Arquitetura de LLM
 
-Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts`, que chama a OpenRouter API diretamente do browser. A chave de API do OpenRouter é resolvida a partir das configurações salvas do usuário autenticado em `/users/{uid}/settings/preferences`, com fallback opcional por variável de ambiente em desenvolvimento.
+Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts`, que chama a OpenRouter API diretamente do browser. A chave de API do OpenRouter é resolvida a partir das configurações salvas do usuário autenticado em `/users/{uid}/settings/preferences`, com fallback opcional por variável de ambiente em desenvolvimento. O catálogo de modelos e os mapas de agentes também são carregados desse mesmo escopo do usuário; modelos fora do catálogo pessoal não são aceitos em runtime.
 
 ### Pipelines Ativos
 
@@ -266,7 +266,8 @@ git push origin main
 
 ### Regras de acesso
 
-- Cada usuário lê e grava apenas seus próprios documentos, preferências, custos, tokens e modelos.
+- Cada usuário lê e grava apenas seus próprios documentos, preferências, custos, tokens, catálogo e modelos.
+- O catálogo de modelos é semeado no primeiro uso dentro de `/users/{uid}/settings/preferences` e, a partir daí, passa a reger os seletores e validações de agentes daquele usuário.
 - Administradores têm leitura agregada dos dados operacionais para analytics da plataforma.
 - Administradores não têm acesso às preferências privadas em `/users/{uid}/settings/preferences`.
 - Mídias do caderno em `research_notebooks/{uid}/{notebookId}/{images|audios|videos}/...` usam Cloud Storage com regras por usuário autenticado.

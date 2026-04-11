@@ -38,7 +38,7 @@ Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
 2. **Multi-pipeline** — 10 pipelines com 58 agentes configuráveis
 3. **Modelo flexível** — Cada usuário escolhe o modelo LLM dos próprios agentes
 4. **Anamnese 2 camadas** — Perfil persistente (Layer 1) + contexto por request (Layer 2)
-5. **Catálogo dinâmico** — Modelos podem ser adicionados/removidos nas configurações pessoais
+5. **Catálogo dinâmico** — Modelos podem ser adicionados/removidos nas configurações pessoais; o catálogo persistido de cada usuário é a fonte de verdade para os seletores e validações dos próprios agentes
 6. **Dual deploy** — GitHub Pages + Firebase Hosting com CI/CD automático
 
 ## Pipelines Implementados
