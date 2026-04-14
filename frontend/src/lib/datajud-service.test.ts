@@ -64,10 +64,10 @@ describe('datajud-service', () => {
     expect(result.errors[0]).toContain('HTTP 403')
   })
 
-  it('prefers the hosting rewrite on production Firebase Hosting', () => {
+  it('prefers the public Cloud Function on production Firebase Hosting', () => {
     expect(_getEndpointCandidatesForHost('lexio.web.app')).toEqual([
-      '/api/datajud',
       'https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy',
+      '/api/datajud',
     ])
   })
 

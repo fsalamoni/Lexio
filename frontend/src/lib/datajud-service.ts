@@ -61,8 +61,8 @@ const RESULTS_PER_TRIBUNAL = 5
 /**
  * DataJud request routing (multi-strategy with fallback):
  *
- * 1. Firebase Hosting (lexio.web.app) → POST /api/datajud (Cloud Function rewrite)
- * 2. Any host → POST directly to Cloud Function public URL
+ * 1. Any host → POST directly to Cloud Function public URL
+ * 2. Firebase Hosting/local dev → POST /api/datajud (rewrite/proxy fallback)
  * 3. Direct → POST to DataJud CNJ API with Authorization header (CORS fallback)
  *
  * The service tries endpoints in priority order based on the hosting environment.
@@ -105,9 +105,10 @@ export function _getEndpointCandidatesForHost(host: string, localProxyEndpoint =
   }
 
   if (isFirebase) {
-    // On Firebase Hosting, prefer the first-party rewrite and fall back to the
-    // public Cloud Function URL only if the rewrite is temporarily unavailable.
-    return [localProxyEndpoint, CLOUD_FUNCTION_URL]
+    // In production, prefer the public Cloud Function URL first because the
+    // Hosting rewrite can transiently 404 during propagation and causes noisy
+    // console errors in the browser even when the function is healthy.
+    return [CLOUD_FUNCTION_URL, localProxyEndpoint]
   }
 
   if (isStaticHosting) {
