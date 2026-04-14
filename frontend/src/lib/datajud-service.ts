@@ -81,8 +81,8 @@ let _resolvedEndpoint: string | null = null
 /** Timestamp of last successful endpoint resolution (ms since epoch) */
 let _resolvedAt = 0
 
-/** TTL for the cached endpoint (30 minutes). After this, the endpoint is re-probed. */
-const ENDPOINT_CACHE_TTL_MS = 30 * 60 * 1000
+/** TTL for the cached endpoint (5 minutes). After this, the endpoint is re-probed. */
+const ENDPOINT_CACHE_TTL_MS = 5 * 60 * 1000
 
 /** @internal Reset the cached endpoint (for testing) */
 export function _resetEndpointCache(): void {
@@ -253,9 +253,10 @@ function isEndpointIssueForCandidate(endpoint: string, err: unknown): boolean {
  * timeout), the cache is reset and all candidates are retried.
  */
 async function fetchDataJudHits(
-  tribunalAlias: string,
+  tribunal: TribunalInfo,
   esBody: object,
   signal?: AbortSignal,
+  attempts: DataJudEndpointAttempt[] = [],
 ): Promise<Array<{ _source?: Record<string, unknown> }>> {
   if (signal?.aborted) throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
 
@@ -268,8 +269,11 @@ async function fetchDataJudHits(
   // Fast path: use the previously resolved working endpoint
   if (_resolvedEndpoint) {
     try {
-      return await fetchFromEndpoint(_resolvedEndpoint, tribunalAlias, esBody, signal)
+      const hits = await fetchFromEndpoint(_resolvedEndpoint, tribunal.alias, esBody, signal)
+      recordEndpointAttempt(attempts, tribunal, _resolvedEndpoint, 'success', true)
+      return hits
     } catch (err) {
+      recordEndpointAttempt(attempts, tribunal, _resolvedEndpoint, 'error', true, err)
       // User cancelled — propagate immediately
       if (err instanceof DOMException && err.name === 'AbortError' && signal?.aborted) throw err
 
@@ -296,12 +300,14 @@ async function fetchDataJudHits(
     if (signal?.aborted) throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
 
     try {
-      const result = await fetchFromEndpoint(candidate, tribunalAlias, esBody, signal)
+      const result = await fetchFromEndpoint(candidate, tribunal.alias, esBody, signal)
+      recordEndpointAttempt(attempts, tribunal, candidate, 'success', false)
       _resolvedEndpoint = candidate // Cache the working endpoint
       _resolvedAt = Date.now()
       return result
     } catch (err) {
       lastError = err
+      recordEndpointAttempt(attempts, tribunal, candidate, 'error', false, err)
       // User cancelled — propagate immediately
       if (err instanceof DOMException && err.name === 'AbortError' && signal?.aborted) throw err
       if (!isEndpointIssueForCandidate(candidate, err)) {
@@ -466,6 +472,34 @@ export interface DataJudResult {
   /** Source from which ementa / inteiro teor were resolved. */
   textSource?: 'datajud' | 'web'
   textSourceUrl?: string
+  /** Whether the persisted inteiro teor was truncated for storage/display safety. */
+  inteiroTeorTruncated?: boolean
+  /** Overall completeness of the decision text available for the result. */
+  textCompleteness?: 'complete' | 'partial' | 'missing'
+}
+
+export interface DataJudTextStats {
+  withEmenta: number
+  withInteiroTeor: number
+  withBoth: number
+  missingBoth: number
+  enrichedFromWeb: number
+}
+
+export interface DataJudEndpointAttempt {
+  tribunalAlias: string
+  tribunalName: string
+  endpoint: string
+  endpointLabel: string
+  fromCache: boolean
+  outcome: 'success' | 'error'
+  status?: number
+  message?: string
+}
+
+export interface DataJudRuntimeDiagnostics {
+  endpointAttempts: DataJudEndpointAttempt[]
+  cacheTtlMs: number
 }
 
 interface TextFieldCandidate {
@@ -512,6 +546,8 @@ export interface DataJudSearchResult {
   errors: string[]
   errorDetails: DataJudErrorDetail[]
   durationMs: number
+  textStats: DataJudTextStats
+  runtimeDiagnostics: DataJudRuntimeDiagnostics
 }
 
 export type DataJudErrorType =
@@ -530,19 +566,22 @@ export interface DataJudErrorDetail {
   status?: number
   retryable: boolean
   message: string
+  lastEndpointLabel?: string
 }
 
 class DataJudRequestError extends Error {
   readonly type: DataJudErrorType
   readonly status?: number
   readonly retryable: boolean
+  readonly attempts?: DataJudEndpointAttempt[]
 
-  constructor(message: string, type: DataJudErrorType, status?: number, retryable = false) {
+  constructor(message: string, type: DataJudErrorType, status?: number, retryable = false, attempts?: DataJudEndpointAttempt[]) {
     super(message)
     this.name = 'DataJudRequestError'
     this.type = type
     this.status = status
     this.retryable = retryable
+    this.attempts = attempts
   }
 }
 
@@ -568,6 +607,7 @@ export async function searchDataJud(
   const allResults: DataJudResult[] = []
   const errors: string[] = []
   const errorDetails: DataJudErrorDetail[] = []
+  const endpointAttempts: DataJudEndpointAttempt[] = []
   let tribunalsQueried = 0
   let tribunalsWithResults = 0
   const esBody = buildDataJudSearchBody(query, {
@@ -580,9 +620,11 @@ export async function searchDataJud(
   const fetchTribunalData = async (tribunal: TribunalInfo) => {
     if (signal?.aborted) throw new DataJudRequestError('Operação cancelada pelo usuário.', 'aborted')
 
+    const tribunalAttempts: DataJudEndpointAttempt[] = []
+
     try {
-      const hits = await fetchDataJudHits(tribunal.alias, esBody, signal)
-      return { tribunal, hits }
+      const hits = await fetchDataJudHits(tribunal, esBody, signal, tribunalAttempts)
+      return { tribunal, hits, attempts: tribunalAttempts }
     } catch (err) {
       // Classify the error
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -593,6 +635,7 @@ export async function searchDataJud(
           isTimeout ? 'timeout' : 'aborted',
           undefined,
           isTimeout,
+          tribunalAttempts,
         )
       }
       if (err instanceof Error) {
@@ -604,6 +647,7 @@ export async function searchDataJud(
             classifyStatus(status),
             status,
             status === 429 || status >= 500,
+            tribunalAttempts,
           )
         }
       }
@@ -612,6 +656,7 @@ export async function searchDataJud(
         'network',
         undefined,
         true,
+        tribunalAttempts,
       )
     }
   }
@@ -634,10 +679,14 @@ export async function searchDataJud(
         const detail = toErrorDetail(result.reason, batch[idx] ?? batch[0])
         errors.push(`${detail.tribunalAlias}: ${detail.message}`)
         errorDetails.push(detail)
+        if (result.reason instanceof DataJudRequestError && result.reason.attempts) {
+          endpointAttempts.push(...result.reason.attempts)
+        }
         continue
       }
 
       const { tribunal, hits } = result.value
+      endpointAttempts.push(...result.value.attempts)
       if (hits.length > 0) tribunalsWithResults++
 
       for (const hit of hits) {
@@ -683,13 +732,23 @@ export async function searchDataJud(
     refinedResults = rankAndFilterDataJudResults(query, refinedResults, maxTotal)
   }
 
+  const finalizedResults = refinedResults.map(result => ({
+    ...result,
+    textCompleteness: inferTextCompleteness(result),
+  }))
+
   return {
-    results: refinedResults.slice(0, maxTotal),
+    results: finalizedResults.slice(0, maxTotal),
     tribunalsQueried,
     tribunalsWithResults,
     errors,
     errorDetails,
     durationMs: Math.round(performance.now() - start),
+    textStats: buildTextStats(finalizedResults),
+    runtimeDiagnostics: {
+      endpointAttempts,
+      cacheTtlMs: ENDPOINT_CACHE_TTL_MS,
+    },
   }
 }
 
@@ -714,7 +773,7 @@ export async function searchDataJudByNumber(
   for (const tribunal of ALL_TRIBUNALS) {
     if (signal?.aborted) break
     try {
-      const hits = await fetchDataJudHits(tribunal.alias, esBody, signal)
+      const hits = await fetchDataJudHits(tribunal, esBody, signal)
       const hit = hits[0]
       if (hit?._source) return parseDataJudHit(hit._source, tribunal)
     } catch {
@@ -911,6 +970,45 @@ function normalizeForSearch(value: string): string {
     .trim()
 }
 
+function endpointLabel(endpoint: string): string {
+  if (endpoint === DIRECT_ENDPOINT) return 'DataJud direto'
+  if (endpoint === CLOUD_FUNCTION_URL) return 'Cloud Function pública'
+  if (/\/api\/datajud$/i.test(endpoint)) return 'Rewrite /api/datajud'
+  return endpoint
+}
+
+function extractStatusFromError(err: unknown): number | undefined {
+  if (!(err instanceof Error)) return undefined
+  const match = err.message.match(/HTTP (\d{3})/)
+  return match ? Number(match[1]) : undefined
+}
+
+function shortenErrorMessage(err: unknown): string | undefined {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  return undefined
+}
+
+function recordEndpointAttempt(
+  attempts: DataJudEndpointAttempt[],
+  tribunal: TribunalInfo,
+  endpoint: string,
+  outcome: 'success' | 'error',
+  fromCache: boolean,
+  err?: unknown,
+): void {
+  attempts.push({
+    tribunalAlias: tribunal.alias,
+    tribunalName: tribunal.name,
+    endpoint,
+    endpointLabel: endpointLabel(endpoint),
+    fromCache,
+    outcome,
+    status: extractStatusFromError(err),
+    message: shortenErrorMessage(err),
+  })
+}
+
 function parseDataJudHit(src: Record<string, unknown>, tribunal: TribunalInfo): DataJudResult {
   const assuntosRaw = src.assuntos as Array<{ nome?: string; codigo?: number }> | undefined
   const movimentosRaw = src.movimentos as Array<{ nome?: string; dataHora?: string }> | undefined
@@ -937,6 +1035,7 @@ function parseDataJudHit(src: Record<string, unknown>, tribunal: TribunalInfo): 
     ementa,
     inteiroTeor,
     textSource: ementa || inteiroTeor ? 'datajud' : undefined,
+    textCompleteness: inferTextCompleteness({ ementa, inteiroTeor }),
   }
 }
 
@@ -989,7 +1088,7 @@ function collectTextCandidates(value: unknown, path: string[] = [], depth = 0): 
 
   if (typeof value === 'string') {
     const text = value.trim()
-    return text.length >= 10 ? [{ path, value: repairMojibake(text) }] : []
+    return text.length >= 3 ? [{ path, value: repairMojibake(text) }] : []
   }
 
   if (Array.isArray(value)) {
@@ -1025,20 +1124,40 @@ function pickCandidateByPatterns(
 
     if (current && typeof current === 'object') {
       const nestedCandidates = collectTextCandidates(current, path)
-      if (nestedCandidates.length > 0) return nestedCandidates[0].value
+      const bestNestedCandidate = selectBestTextCandidate(nestedCandidates, pathMatchers, [], true)
+      if (bestNestedCandidate) return bestNestedCandidate.value
     }
   }
 
-  const candidates = collectTextCandidates(src)
-  for (const candidate of candidates) {
-    const joinedPath = candidate.path.join('.')
-    if (excludedPathMatchers.some(matcher => matcher.test(joinedPath))) continue
-    if (pathMatchers.some(matcher => matcher.test(joinedPath))) {
-      return candidate.value
-    }
-  }
+  return selectBestTextCandidate(collectTextCandidates(src), pathMatchers, excludedPathMatchers)?.value
+}
 
-  return undefined
+function selectBestTextCandidate(
+  candidates: TextFieldCandidate[],
+  pathMatchers: RegExp[],
+  excludedPathMatchers: RegExp[] = [],
+  allowAnyCandidate = false,
+): TextFieldCandidate | undefined {
+  const ranked = candidates
+    .filter(candidate => {
+      const joinedPath = candidate.path.join('.')
+      if (excludedPathMatchers.some(matcher => matcher.test(joinedPath))) return false
+      if (allowAnyCandidate) return true
+      return pathMatchers.some(matcher => matcher.test(joinedPath))
+    })
+    .map(candidate => {
+      const joinedPath = candidate.path.join('.')
+      let score = Math.min(candidate.value.length, 5000)
+      if (pathMatchers.some(matcher => matcher.test(joinedPath))) score += 4000
+      if (/ementa|inteiro|acord|decis|conteudo|texto/i.test(joinedPath)) score += 1200
+      if (/documento\.paginas\.[0-9]+\.(conteudo|texto)/i.test(joinedPath)) score += 900
+      if (/metadados\.decisao\./i.test(joinedPath)) score += 900
+      score -= candidate.path.length * 10
+      return { candidate, score }
+    })
+    .sort((left, right) => right.score - left.score)
+
+  return ranked[0]?.candidate
 }
 
 function extractEmenta(src: Record<string, unknown>): string | undefined {
@@ -1076,9 +1195,15 @@ function extractInteiroTeor(src: Record<string, unknown>): string | undefined {
       ['acórdão', 'texto'],
       ['documento', 'conteudo'],
       ['documento', 'texto'],
+      ['documento', 'paginas', '0', 'conteudo'],
+      ['documento', 'paginas', '1', 'conteudo'],
+      ['documento', 'paginas', '0', 'texto'],
       ['documento', 'paginas'],
       ['metadados', 'decisao', 'conteudo_integral'],
       ['metadados', 'decisao', 'texto'],
+      ['metadados', 'decisao', 'acordao', 'texto'],
+      ['metadados', 'decisao', 'acordao', 'conteudo'],
+      ['julgamento', 'acordao_redacao'],
       ['julgamento', 'inteiro_teor'],
     ],
     [/inteiro[_-]?teor/i, /ac[oó]rd[aã]o/i, /decis[aã]o/i, /julgad/i, /conteudo/i, /texto/i],
@@ -1124,23 +1249,41 @@ async function enrichResultDecisionText(
 ): Promise<DataJudResult> {
   if (signal?.aborted) return result
 
-  const searchQuery = buildJurisprudenceEnrichmentQuery(query, result)
-  const searchResults = await searchWebResults(searchQuery, signal)
-  const candidates = rankEnrichmentCandidates(searchResults, result).slice(0, MAX_ENRICHMENT_FETCHES_PER_RESULT)
+  const searchQueries = buildJurisprudenceEnrichmentQueries(query, result)
 
-  for (const candidate of candidates) {
-    if (signal?.aborted) return result
-    const content = await fetchUrlContent(candidate.url)
-    if (!content) continue
+  for (const searchQuery of searchQueries) {
+    let searchResults: Array<{ title: string; url: string; snippet: string }> = []
+    try {
+      searchResults = await searchWebResults(searchQuery, signal)
+    } catch {
+      continue
+    }
 
-    const extracted = extractDecisionTextFromWebContent(content, result)
-    if (extracted.ementa || extracted.inteiroTeor) {
-      return {
-        ...result,
-        ementa: extracted.ementa ?? result.ementa,
-        inteiroTeor: extracted.inteiroTeor ?? result.inteiroTeor,
-        textSource: 'web',
-        textSourceUrl: candidate.url,
+    const candidates = rankEnrichmentCandidates(searchResults, result).slice(0, MAX_ENRICHMENT_FETCHES_PER_RESULT)
+
+    for (const candidate of candidates) {
+      if (signal?.aborted) return result
+
+      let content = ''
+      try {
+        content = await fetchUrlContent(candidate.url)
+      } catch {
+        continue
+      }
+
+      if (!content) continue
+
+      const extracted = extractDecisionTextFromWebContent(content, result)
+      if (extracted.ementa || extracted.inteiroTeor) {
+        const nextResult: DataJudResult = {
+          ...result,
+          ementa: extracted.ementa ?? result.ementa,
+          inteiroTeor: extracted.inteiroTeor ?? result.inteiroTeor,
+          textSource: 'web',
+          textSourceUrl: candidate.url,
+        }
+        nextResult.textCompleteness = inferTextCompleteness(nextResult)
+        return nextResult
       }
     }
   }
@@ -1148,16 +1291,23 @@ async function enrichResultDecisionText(
   return result
 }
 
-function buildJurisprudenceEnrichmentQuery(query: string, result: DataJudResult): string {
+function buildJurisprudenceEnrichmentQueries(query: string, result: DataJudResult): string[] {
   const numeroCompacto = result.numeroProcesso.replace(/\D/g, '')
   return [
-    `"${result.numeroProcesso}"`,
-    numeroCompacto.length >= 10 ? `"${numeroCompacto}"` : '',
-    `"${result.tribunalName}"`,
-    result.classe,
-    query,
-    'ementa acórdão inteiro teor jurisprudência',
-  ].filter(Boolean).join(' ')
+    [
+      `"${result.numeroProcesso}"`,
+      numeroCompacto.length >= 10 ? `"${numeroCompacto}"` : '',
+      `"${result.tribunalName}"`,
+      result.classe,
+      query,
+      'ementa acórdão inteiro teor jurisprudência',
+    ].filter(Boolean).join(' '),
+    [
+      `"${result.numeroProcesso}"`,
+      result.tribunalName,
+      'ementa inteiro teor acórdão pdf',
+    ].filter(Boolean).join(' '),
+  ]
 }
 
 function rankEnrichmentCandidates(
@@ -1209,29 +1359,24 @@ function extractLabeledSection(
   stopLabels: string[],
   maxChars: number,
 ): string | undefined {
-  const normalized = normalizeForSearch(text)
-
   for (const label of labels) {
-    const normalizedLabel = normalizeForSearch(label)
-    const idx = normalized.indexOf(normalizedLabel)
-    if (idx < 0) continue
+    const startPattern = new RegExp(`(?:^|[\\r\\n])\\s*${escapeRegex(label)}\\s*[:\\-–—]?\\s*`, 'i')
+    const startMatch = startPattern.exec(text)
+    if (!startMatch) continue
 
-    const start = Math.max(0, idx)
-    const textSlice = text.slice(start, start + maxChars * 2)
-    let end = textSlice.length
+    const start = startMatch.index + startMatch[0].length
+    const rawSlice = text.slice(start, start + maxChars * 2)
+    let end = rawSlice.length
 
     for (const stop of stopLabels) {
-      const pattern = new RegExp(`(?:^|\\n|\\r)\\s*${escapeRegex(stop)}\\s*[:\\-]?`, 'i')
-      const match = pattern.exec(textSlice.slice(normalizedLabel.length))
+      const pattern = new RegExp(`(?:^|[\\r\\n])\\s*${escapeRegex(stop)}\\s*[:\\-–—]?`, 'i')
+      const match = pattern.exec(rawSlice)
       if (match && match.index < end) {
-        end = match.index + normalizedLabel.length
+        end = match.index
       }
     }
 
-    const cleaned = textSlice
-      .replace(new RegExp(`^\\s*${escapeRegex(label)}\\s*[:\\-]?\\s*`, 'i'), '')
-      .slice(0, end)
-      .trim()
+    const cleaned = rawSlice.slice(0, end).trim()
 
     if (cleaned.length >= 60) return cleaned.slice(0, maxChars)
   }
@@ -1242,8 +1387,11 @@ function extractLabeledSection(
 function extractWholeDecisionText(text: string, result: DataJudResult): string | undefined {
   const normalized = normalizeForSearch(text)
   const processDigits = result.numeroProcesso.replace(/\D/g, '')
-  if (processDigits && !normalized.includes(processDigits.slice(-7))) return undefined
+  const referencesProcess = processDigits ? normalized.includes(processDigits.slice(-7)) : false
   if (!/acorda|decisao|ementa|relator|processo/.test(normalized)) return undefined
+  if (!referencesProcess && !normalized.includes(normalizeForSearch(result.tribunalName).slice(0, 8))) {
+    return undefined
+  }
 
   const relevantStart = normalized.search(/acorda|decisao|ementa|relatorio|voto/)
   const sliceStart = relevantStart >= 0 ? relevantStart : 0
@@ -1282,6 +1430,9 @@ export function formatDataJudResults(results: DataJudResult[]): string {
         : r.inteiroTeor
       lines.push(`   Inteiro Teor: ${snippet}`)
     }
+    if (!r.ementa && !r.inteiroTeor) {
+      lines.push('   Texto decisório: ausente após DataJud e tentativas de enriquecimento público')
+    }
     if (r.movimentos.length > 0) {
       const displayedMovements = r.movimentos.slice(0, 5)
       const hasTruncatedMovements = r.movimentos.length > 5
@@ -1303,6 +1454,29 @@ export function formatDataJudResults(results: DataJudResult[]): string {
  */
 export function getTribunalsByCategory(category: TribunalCategory): TribunalInfo[] {
   return ALL_TRIBUNALS.filter(t => t.category === category)
+}
+
+function inferTextCompleteness(result: Pick<DataJudResult, 'ementa' | 'inteiroTeor'>): DataJudResult['textCompleteness'] {
+  if (result.ementa && result.inteiroTeor) return 'complete'
+  if (result.ementa || result.inteiroTeor) return 'partial'
+  return 'missing'
+}
+
+function buildTextStats(results: DataJudResult[]): DataJudTextStats {
+  return results.reduce<DataJudTextStats>((stats, result) => {
+    if (result.ementa) stats.withEmenta += 1
+    if (result.inteiroTeor) stats.withInteiroTeor += 1
+    if (result.ementa && result.inteiroTeor) stats.withBoth += 1
+    if (!result.ementa && !result.inteiroTeor) stats.missingBoth += 1
+    if (result.textSource === 'web') stats.enrichedFromWeb += 1
+    return stats
+  }, {
+    withEmenta: 0,
+    withInteiroTeor: 0,
+    withBoth: 0,
+    missingBoth: 0,
+    enrichedFromWeb: 0,
+  })
 }
 
 // ── Jurisprudence area classification ───────────────────────────────────────
@@ -1537,6 +1711,7 @@ function toErrorDetail(reason: unknown, tribunal: TribunalInfo): DataJudErrorDet
       status: reason.status,
       retryable: reason.retryable,
       message: reason.message,
+      lastEndpointLabel: reason.attempts?.[reason.attempts.length - 1]?.endpointLabel,
     }
   }
 

@@ -645,6 +645,13 @@ function ProcessCard({ result: r, index, onCompare, allResults }: {
     : r.textSource === 'datajud'
       ? 'Texto obtido no DataJud'
       : null
+  const textCompletenessLabel = r.textCompleteness === 'complete'
+    ? 'Texto decisório completo'
+    : r.textCompleteness === 'partial'
+      ? 'Texto decisório parcial'
+      : r.textCompleteness === 'missing'
+        ? 'Sem texto decisório'
+        : null
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
@@ -694,6 +701,17 @@ function ProcessCard({ result: r, index, onCompare, allResults }: {
             </span>
           )}
           <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+            {textCompletenessLabel && (
+              <span className={`px-1.5 py-0.5 rounded border font-medium ${
+                r.textCompleteness === 'complete'
+                  ? 'bg-green-50 text-green-700 border-green-100'
+                  : r.textCompleteness === 'partial'
+                    ? 'bg-amber-50 text-amber-700 border-amber-100'
+                    : 'bg-gray-50 text-gray-500 border-gray-200'
+              }`}>
+                {textCompletenessLabel}
+              </span>
+            )}
             {r.ementa && (
               <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-600 font-medium border border-sky-100">
                 Ementa
@@ -754,6 +772,11 @@ function ProcessCard({ result: r, index, onCompare, allResults }: {
             <span className="text-gray-400 font-normal">
               ({fmtChars(r.inteiroTeor.length)} chars)
             </span>
+            {r.inteiroTeorTruncated && (
+              <span className="text-[10px] text-amber-700 font-normal">
+                texto salvo truncado
+              </span>
+            )}
           </button>
           {expanded && (
             <div className="mt-2 p-3 bg-amber-50/60 rounded-lg border border-amber-100">
@@ -771,6 +794,11 @@ function ProcessCard({ result: r, index, onCompare, allResults }: {
                       <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
+                </div>
+              )}
+              {r.inteiroTeorTruncated && (
+                <div className="mb-2 text-[10px] text-amber-800 bg-amber-100/70 border border-amber-200 rounded px-2 py-1">
+                  O inteiro teor exibido foi truncado para armazenamento seguro no caderno. O resultado original continha mais texto.
                 </div>
               )}
               <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-mono">

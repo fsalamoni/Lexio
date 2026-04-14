@@ -212,6 +212,14 @@ jobs:
         run: npx tsc
         working-directory: functions
 
+      - name: Validate functions build output
+        run: |
+          test -s functions/lib/index.js
+          if ! grep -q "exports.datajudProxy" functions/lib/index.js; then
+            echo "::error::Expected Cloud Function export not found: datajudProxy"
+            exit 1
+          fi
+
       # ── Deploy Hosting + Firestore/Storage Rules + Functions ──────────────
       # Auth opção B: FIREBASE_TOKEN (gerado por `firebase login:ci`)
       # Firebase CLI usa FIREBASE_TOKEN se setado, caso contrário usa GOOGLE_APPLICATION_CREDENTIALS

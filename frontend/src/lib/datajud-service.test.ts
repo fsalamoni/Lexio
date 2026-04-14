@@ -164,6 +164,39 @@ describe('datajud-service', () => {
     expect(result.results[0].inteiroTeor).toContain('ACÓRDÃO')
   })
 
+  it('extracts inteiro teor from deeply nested tribunal-specific fields', async () => {
+    const tribunals: TribunalInfo[] = [
+      { alias: 'tjsp', name: 'Tribunal de Justiça de São Paulo', category: 'estadual' },
+    ]
+
+    const fakeHit = makeHit({
+      metadados: {
+        decisao: {
+          acordao: {
+            texto: 'ACÓRDÃO. Recurso provido para reconhecer a nulidade da cobrança indevida.',
+          },
+        },
+      },
+    })
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ hits: { hits: [{ _source: fakeHit }] } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const result = await searchDataJud('cobrança indevida', {
+      tribunals,
+      maxPerTribunal: 1,
+      maxTotal: 1,
+    })
+
+    expect(result.results).toHaveLength(1)
+    expect(result.results[0].inteiroTeor).toContain('cobrança indevida')
+    expect(result.textStats.withInteiroTeor).toBe(1)
+  })
+
   it('enriches missing ementa and inteiro teor from a public jurisprudence page when DataJud lacks text', async () => {
     const tribunals: TribunalInfo[] = [
       { alias: 'stj', name: 'Superior Tribunal de Justiça', category: 'superiores' },
@@ -219,6 +252,42 @@ describe('datajud-service', () => {
     expect(result.results[0].inteiroTeor).toContain('denegar a ordem')
     expect(result.results[0].textSource).toBe('web')
     expect(result.results[0].textSourceUrl).toContain('stj.jus.br')
+  })
+
+  it('keeps DataJud results when public enrichment fails', async () => {
+    const tribunals: TribunalInfo[] = [
+      { alias: 'stj', name: 'Superior Tribunal de Justiça', category: 'superiores' },
+    ]
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({ hits: { hits: [{ _source: makeHit({ assuntos: [{ nome: 'Plano de Saúde' }] }) }] } }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+
+      if (url.includes('duckduckgo.com')) {
+        return new Response('resultado quebrado\nhttps://exemplo.invalid/acordao', { status: 200 })
+      }
+
+      return new Response('', { status: 500 })
+    })
+
+    const result = await searchDataJud('plano de saúde', {
+      tribunals,
+      maxPerTribunal: 1,
+      maxTotal: 1,
+      enrichMissingText: true,
+      maxTextEnrichment: 1,
+    })
+
+    expect(result.results).toHaveLength(1)
+    expect(result.results[0].assuntos).toContain('Plano de Saúde')
+    expect(result.results[0].ementa).toBeUndefined()
+    expect(result.results[0].inteiroTeor).toBeUndefined()
+    expect(result.textStats.missingBoth).toBe(1)
   })
 
   describe('formatDataJudResults', () => {

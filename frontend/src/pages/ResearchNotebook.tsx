@@ -105,6 +105,7 @@ import {
   type DataJudSearchProgress,
   type DataJudErrorType,
   type DataJudResult,
+  type DataJudEndpointAttempt,
 } from '../lib/datajud-service'
 import {
   searchWebResultsWithDiagnostics,
@@ -178,7 +179,9 @@ const JURISPRUDENCE_RANKING_SYSTEM = [
   '(3) grau hierárquico do tribunal, sem permitir que isso supere a aderência temática,',
   '(4) recência como critério secundário, nunca principal.',
   'Penalize fortemente resultados genéricos, tangenciais, com assuntos amplos demais ou sem texto decisório suficiente.',
-  'Se faltar ementa ou inteiro teor, reduza a nota; se ambos faltarem, reduza ainda mais.',
+  'Se faltar ementa ou inteiro teor, reduza a nota de forma agressiva; se ambos faltarem, trate como baixa confiança e evite score alto.',
+  'Resultados apoiados apenas por metadados não podem superar julgados com texto decisório aderente à consulta.',
+  'Quando o texto estiver incompleto, reflita isso também na stance e na pontuação final.',
   'Exemplo de resposta: {"ranking":[{"index":1,"score":85,"stance":"favoravel"}]}',
 ].join(' ')
 
@@ -927,6 +930,23 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     return 'erro desconhecido'
   }
 
+  const summarizeEndpointAttempts = (attempts: DataJudEndpointAttempt[]): string[] => {
+    const grouped = new globalThis.Map<string, { errors: number; successes: number }>()
+
+    for (const attempt of attempts) {
+      const existing = grouped.get(attempt.endpointLabel) ?? { errors: 0, successes: 0 }
+      if (attempt.outcome === 'success') existing.successes += 1
+      else existing.errors += 1
+      grouped.set(attempt.endpointLabel, existing)
+    }
+
+    return Array.from(grouped.entries()).map(([label, counts]) => {
+      if (counts.errors > 0 && counts.successes > 0) return `${label}: ${counts.errors} falha(s), ${counts.successes} sucesso(s)`
+      if (counts.errors > 0) return `${label}: ${counts.errors} falha(s)`
+      return `${label}: ${counts.successes} sucesso(s)`
+    })
+  }
+
   const appendNotebookSourceWithExecution = async (
     notebookId: string,
     source: NotebookSource,
@@ -1437,6 +1457,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         detail: `${djResult.results.length} resultado(s) de ${djResult.tribunalsWithResults} tribunal(is)`,
       })
 
+      summarizeEndpointAttempts(djResult.runtimeDiagnostics.endpointAttempts)
+        .slice(0, 3)
+        .forEach(summary => addModalSubstep('query', summary))
+
       if (djResult.errors.length > 0) {
         addModalSubstep('query', `${djResult.errors.length} tribunal(is) com erro (ignorados)`)
         const groupedErrors = djResult.errorDetails.reduce<Record<string, number>>((acc, item) => {
@@ -1447,6 +1471,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         Object.entries(groupedErrors).forEach(([kind, count]) => {
           addModalSubstep('query', `${count} tribunal(is) com ${kind}`)
         })
+        djResult.errorDetails
+          .filter(item => item.lastEndpointLabel)
+          .slice(0, 3)
+          .forEach(item => addModalSubstep('query', `${item.tribunalAlias}: última tentativa em ${item.lastEndpointLabel}`))
       }
 
       // Step 2: Filter results
@@ -1467,6 +1495,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       }
 
       addModalSubstep('filter', `${djResult.results.length} resultado(s) encontrado(s)`)
+      addModalSubstep('filter', `${djResult.textStats.withBoth} com ementa + inteiro teor; ${djResult.textStats.missingBoth} sem texto decisório`)
+      if (djResult.textStats.enrichedFromWeb > 0) {
+        addModalSubstep('filter', `${djResult.textStats.enrichedFromWeb} resultado(s) complementados por fonte pública`)
+      }
       updateModalStep('filter', { status: 'done', detail: `${djResult.results.length} resultados` })
 
       // Close progress modal and show results review
@@ -1492,6 +1524,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           `Formato: ${r.formato}`,
           `Assuntos: ${r.assuntos.join('; ') || '—'}`,
           r.relevanceScore != null ? `Relevância local: ${r.relevanceScore}/100` : '',
+          r.textCompleteness ? `Completude do texto: ${r.textCompleteness}` : '',
           r.textSource ? `Texto obtido via: ${r.textSource}${r.textSourceUrl ? ` (${r.textSourceUrl})` : ''}` : '',
           r.ementa ? `Ementa:\n${r.ementa}` : '',
           r.inteiroTeor ? `Inteiro Teor:\n${r.inteiroTeor.slice(0, 6000)}${r.inteiroTeor.length > 6000 ? '\n[... texto truncado ...]' : ''}` : '',
@@ -1502,6 +1535,8 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           ...(r.dataAjuizamento ? { Data: r.dataAjuizamento.split('T')[0] } : {}),
           ...(r.ementa ? { Ementa: '✓' } : {}),
           ...(r.inteiroTeor ? { 'Inteiro Teor': '✓' } : {}),
+          ...(!r.ementa && !r.inteiroTeor ? { Texto: 'ausente' } : {}),
+          ...(r.textSource ? { Origem: r.textSource === 'web' ? 'fonte pública' : 'DataJud' } : {}),
           ...(r.relevanceScore != null ? { Relevância: `${r.relevanceScore}/100` } : {}),
         },
         selected: true,
@@ -1662,11 +1697,13 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             size_bytes: jurisprudenceResult.content.length,
             text_content: jurisprudenceResult.content.slice(0, MAX_SOURCE_TEXT_LENGTH),
             // Store raw results for rich per-process display in SourceContentViewer.
-            // inteiroTeor is capped to 8 KB per entry to stay well within limits.
+            // Persist fewer results would hurt review quality more than storing slightly
+            // longer decision text, so keep up to 15 with 12 KB per inteiro teor.
             results_raw: JSON.stringify(
-              selectedResults.slice(0, 10).map(r => ({
+              selectedResults.slice(0, 15).map(r => ({
                 ...r,
-                inteiroTeor: r.inteiroTeor?.slice(0, 8_000),
+                inteiroTeorTruncated: Boolean(r.inteiroTeor && r.inteiroTeor.length > 12_000),
+                inteiroTeor: r.inteiroTeor?.slice(0, 12_000),
               })),
             ),
             status: 'indexed',
