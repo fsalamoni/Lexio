@@ -31,7 +31,17 @@ async function getDataJudApiKey(): Promise<string> {
 
 /** Base URL for all DataJud endpoints */
 const DATAJUD_BASE_URL = 'https://api-publica.datajud.cnj.jus.br'
-const LOCAL_PROXY_ENDPOINT = '/api/datajud'
+
+export function _resolveLocalProxyEndpoint(baseUrl?: string): string {
+  const resolvedBase = baseUrl
+    ?? (typeof import.meta !== 'undefined' ? import.meta.env.BASE_URL : '/')
+  const normalizedBase = resolvedBase && resolvedBase !== '/'
+    ? resolvedBase.replace(/\/+$/, '')
+    : ''
+  return `${normalizedBase}/api/datajud`
+}
+
+const LOCAL_PROXY_ENDPOINT = _resolveLocalProxyEndpoint()
 
 /** Concurrency limit for parallel tribunal queries */
 const BATCH_SIZE = 4
@@ -84,20 +94,20 @@ export function _resetEndpointCache(): void {
  * Build an ordered list of endpoint candidates based on the hosting environment.
  * Avoids candidates known to fail (e.g. relative paths on static hosting).
  */
-export function _getEndpointCandidatesForHost(host: string): string[] {
+export function _getEndpointCandidatesForHost(host: string, localProxyEndpoint = LOCAL_PROXY_ENDPOINT): string[] {
   const isFirebase = host === 'lexio.web.app' || host.endsWith('.firebaseapp.com')
   const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '0.0.0.0'
   const isStaticHosting = host.endsWith('.github.io') || host.endsWith('.netlify.app') || host.endsWith('.vercel.app')
 
   if (isLocal) {
     // Local dev: Vite proxy forwards /api/* to backend; Cloud Function is a safe fallback.
-    return [LOCAL_PROXY_ENDPOINT, CLOUD_FUNCTION_URL, DIRECT_ENDPOINT]
+    return [localProxyEndpoint, CLOUD_FUNCTION_URL, DIRECT_ENDPOINT]
   }
 
   if (isFirebase) {
-    // Production Firebase Hosting has shown unstable rewrite behavior for POSTs.
-    // Prefer the public Cloud Function endpoint, which is CORS-enabled.
-    return [CLOUD_FUNCTION_URL, LOCAL_PROXY_ENDPOINT]
+    // On Firebase Hosting, prefer the first-party rewrite and fall back to the
+    // public Cloud Function URL only if the rewrite is temporarily unavailable.
+    return [localProxyEndpoint, CLOUD_FUNCTION_URL]
   }
 
   if (isStaticHosting) {
@@ -107,12 +117,12 @@ export function _getEndpointCandidatesForHost(host: string): string[] {
   }
 
   // Unknown host: prefer managed proxies only to avoid browser-side CORS failures.
-  return [CLOUD_FUNCTION_URL, LOCAL_PROXY_ENDPOINT]
+  return [CLOUD_FUNCTION_URL, localProxyEndpoint]
 }
 
 function getEndpointCandidates(): string[] {
   const host = typeof window !== 'undefined' ? window.location.hostname : ''
-  return _getEndpointCandidatesForHost(host)
+  return _getEndpointCandidatesForHost(host, LOCAL_PROXY_ENDPOINT)
 }
 
 /** Small delay between batches to avoid overwhelming the proxy */
@@ -230,7 +240,7 @@ function isEndpointIssueForCandidate(endpoint: string, err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
   if (message.includes('timeout')) return true
   if (/HTTP 405/.test(message)) return true
-  if (endpoint === LOCAL_PROXY_ENDPOINT && /HTTP 404/.test(message)) return true
+  if (endpoint !== DIRECT_ENDPOINT && /HTTP 404/.test(message)) return true
   return false
 }
 
@@ -401,14 +411,13 @@ export const ALL_TRIBUNALS: TribunalInfo[] = [
 ]
 
 /**
- * Smart default subset of ~20 high-volume tribunals.
- * Covers Superiores + all TRFs + top TJs by case volume.
+ * Smart default subset with broad coverage and good public availability.
+ * Covers all superiores, all TRFs, and top state courts by case volume.
  */
 export const DEFAULT_TRIBUNALS: TribunalInfo[] = [
-  ...['trf1', 'trf2', 'trf3', 'trf4']
-    .map(alias => JUSTICA_FEDERAL.find(t => t.alias === alias)!)
-    .filter(Boolean),
-  ...['tjdft', 'tjmg', 'tjrs']
+  ...TRIBUNAIS_SUPERIORES,
+  ...JUSTICA_FEDERAL,
+  ...['tjsp', 'tjrj', 'tjmg', 'tjrs', 'tjpr', 'tjba', 'tjdft', 'tjpe', 'tjsc', 'tjgo']
     .map(alias => JUSTICA_ESTADUAL.find(t => t.alias === alias)!)
     .filter(Boolean),
 ]

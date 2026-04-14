@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   _getEndpointCandidatesForHost,
+  _resolveLocalProxyEndpoint,
   buildDataJudSearchBody,
   searchDataJud,
   formatDataJudResults,
@@ -63,11 +64,47 @@ describe('datajud-service', () => {
     expect(result.errors[0]).toContain('HTTP 403')
   })
 
-  it('prefers the public Cloud Function endpoint on production Firebase Hosting', () => {
+  it('prefers the hosting rewrite on production Firebase Hosting', () => {
     expect(_getEndpointCandidatesForHost('lexio.web.app')).toEqual([
-      'https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy',
       '/api/datajud',
+      'https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy',
     ])
+  })
+
+  it('resolves the local proxy endpoint from the app base path', () => {
+    expect(_resolveLocalProxyEndpoint('/')).toBe('/api/datajud')
+    expect(_resolveLocalProxyEndpoint('/Lexio/')).toBe('/Lexio/api/datajud')
+  })
+
+  it('falls back from a 404 Cloud Function URL to the next managed endpoint', async () => {
+    const tribunals: TribunalInfo[] = [
+      { alias: 'stj', name: 'Superior Tribunal de Justiça', category: 'superiores' },
+    ]
+    let callCount = 0
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      callCount += 1
+      const url = String(input)
+      if (callCount === 1) {
+        expect(url).toBe('https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy')
+        return new Response('missing', { status: 404 })
+      }
+
+      expect(url).toBe('/api/datajud')
+      return new Response(
+        JSON.stringify({ hits: { hits: [{ _source: makeHit({ ementa: 'EMENTA RELEVANTE' }) }] } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    })
+
+    const result = await searchDataJud('responsabilidade civil', {
+      tribunals,
+      maxPerTribunal: 1,
+      maxTotal: 1,
+    })
+
+    expect(result.results).toHaveLength(1)
+    expect(result.results[0].ementa).toBe('EMENTA RELEVANTE')
   })
 
   it('builds a stricter DataJud query body ordered by score before date', () => {

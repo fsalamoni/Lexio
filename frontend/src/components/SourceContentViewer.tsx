@@ -8,7 +8,7 @@
  * - Plain text fallback
  */
 import { useMemo, useState } from 'react'
-import { Copy, Check, FileText, Download, Scale, BookOpen, ChevronDown, ChevronUp, FileSearch, ThumbsUp, ThumbsDown, Minus, Clock, Layers, ArrowLeftRight } from 'lucide-react'
+import { Copy, Check, FileText, Download, Scale, BookOpen, ChevronDown, ChevronUp, FileSearch, ThumbsUp, ThumbsDown, Minus, Clock, Layers, ArrowLeftRight, ExternalLink } from 'lucide-react'
 import DraggablePanel from './DraggablePanel'
 import type { NotebookSource } from '../lib/firestore-service'
 import type { DataJudResult } from '../lib/datajud-service'
@@ -640,6 +640,11 @@ function ProcessCard({ result: r, index, onCompare, allResults }: {
   const [expanded, setExpanded] = useState(false)
   const [compareWith, setCompareWith] = useState(false)
   const area = classifyResult(r)
+  const textSourceLabel = r.textSource === 'web'
+    ? 'Texto complementado via fonte pública'
+    : r.textSource === 'datajud'
+      ? 'Texto obtido no DataJud'
+      : null
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
@@ -725,7 +730,14 @@ function ProcessCard({ result: r, index, onCompare, allResults }: {
       {/* Ementa */}
       {r.ementa && (
         <div className="px-4 py-3 border-b border-gray-100">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700 mb-1.5">Ementa</p>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Ementa</p>
+            {textSourceLabel && (
+              <span className="text-[10px] text-gray-500">
+                {textSourceLabel}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-800 leading-relaxed italic">{r.ementa}</p>
         </div>
       )}
@@ -745,6 +757,22 @@ function ProcessCard({ result: r, index, onCompare, allResults }: {
           </button>
           {expanded && (
             <div className="mt-2 p-3 bg-amber-50/60 rounded-lg border border-amber-100">
+              {textSourceLabel && (
+                <div className="mb-2 flex items-center justify-between gap-2 text-[10px] text-gray-500">
+                  <span>{textSourceLabel}</span>
+                  {r.textSourceUrl && (
+                    <a
+                      href={r.textSourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-amber-700 hover:text-amber-900"
+                    >
+                      Fonte pública
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              )}
               <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-mono">
                 {r.inteiroTeor}
               </p>
@@ -756,7 +784,7 @@ function ProcessCard({ result: r, index, onCompare, allResults }: {
       {/* No ementa, no inteiro teor */}
       {!r.ementa && !r.inteiroTeor && (
         <div className="px-4 py-2 text-xs text-gray-400 italic">
-          Ementa e inteiro teor não disponíveis para este processo no DataJud.
+          Ementa e inteiro teor não disponíveis nem no DataJud nem nas fontes públicas consultadas.
         </div>
       )}
 
