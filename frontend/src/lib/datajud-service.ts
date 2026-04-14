@@ -31,6 +31,7 @@ async function getDataJudApiKey(): Promise<string> {
 
 /** Base URL for all DataJud endpoints */
 const DATAJUD_BASE_URL = 'https://api-publica.datajud.cnj.jus.br'
+const KNOWN_UNAVAILABLE_TRIBUNAL_ALIASES = new Set(['stf'])
 
 export function _resolveLocalProxyEndpoint(baseUrl?: string): string {
   const resolvedBase = baseUrl
@@ -157,6 +158,34 @@ const PORTUGUESE_STOPWORDS = new Set([
   'sem', 'sob', 'sobre', 'um', 'uma', 'uns', 'umas', 'art', 'arts', 'lei', 'leis', 'tema', 'temas',
 ])
 
+function summarizeErrorResponseBody(body: string): string | undefined {
+  const trimmed = body.trim()
+  if (!trimmed) return undefined
+
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      error?: {
+        type?: string
+        reason?: string
+        root_cause?: Array<{ type?: string; reason?: string }>
+      }
+      status?: number
+    }
+    const type = parsed.error?.type ?? parsed.error?.root_cause?.[0]?.type
+    const reason = parsed.error?.reason ?? parsed.error?.root_cause?.[0]?.reason
+    if (type || reason) return [type, reason].filter(Boolean).join(': ')
+  } catch {
+    // Ignore invalid JSON and fall back to plain text.
+  }
+
+  return trimmed.replace(/\s+/g, ' ').slice(0, 200)
+}
+
+function isMissingTribunalIndexErrorMessage(message: string): boolean {
+  return /index_not_found_exception/i.test(message)
+    || /no such index \[api_publica_/i.test(message)
+}
+
 /**
  * Execute a single fetch against a DataJud endpoint (proxy or direct).
  *
@@ -211,7 +240,9 @@ async function fetchFromEndpoint(
       }
 
       // Non-OK response — check if retriable
-      lastError = new Error(`DataJud ${isDirect ? 'direct' : 'proxy'} HTTP ${resp.status}`)
+      const responseText = await resp.text()
+      const responseSummary = summarizeErrorResponseBody(responseText)
+      lastError = new Error(`DataJud ${isDirect ? 'direct' : 'proxy'} HTTP ${resp.status}${responseSummary ? ` (${responseSummary})` : ''}`)
       shouldRetry = resp.status === 429 || resp.status >= 500
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -241,7 +272,10 @@ function isEndpointIssueForCandidate(endpoint: string, err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
   if (message.includes('timeout')) return true
   if (/HTTP 405/.test(message)) return true
-  if (endpoint !== DIRECT_ENDPOINT && /HTTP 404/.test(message)) return true
+  if (/HTTP 404/.test(message)) {
+    if (isMissingTribunalIndexErrorMessage(message)) return false
+    return endpoint !== DIRECT_ENDPOINT
+  }
   return false
 }
 
@@ -422,7 +456,7 @@ export const ALL_TRIBUNALS: TribunalInfo[] = [
  * Covers all superiores, all TRFs, and top state courts by case volume.
  */
 export const DEFAULT_TRIBUNALS: TribunalInfo[] = [
-  ...TRIBUNAIS_SUPERIORES,
+  ...TRIBUNAIS_SUPERIORES.filter(t => !KNOWN_UNAVAILABLE_TRIBUNAL_ALIASES.has(t.alias)),
   ...JUSTICA_FEDERAL,
   ...['tjsp', 'tjrj', 'tjmg', 'tjrs', 'tjpr', 'tjba', 'tjdft', 'tjpe', 'tjsc', 'tjgo']
     .map(alias => JUSTICA_ESTADUAL.find(t => t.alias === alias)!)
@@ -622,6 +656,16 @@ export async function searchDataJud(
     if (signal?.aborted) throw new DataJudRequestError('Operação cancelada pelo usuário.', 'aborted')
 
     const tribunalAttempts: DataJudEndpointAttempt[] = []
+
+    if (KNOWN_UNAVAILABLE_TRIBUNAL_ALIASES.has(tribunal.alias)) {
+      throw new DataJudRequestError(
+        `DataJud público indisponível para ${tribunal.alias.toUpperCase()} (índice ausente no CNJ).`,
+        'http',
+        404,
+        false,
+        tribunalAttempts,
+      )
+    }
 
     try {
       const hits = await fetchDataJudHits(tribunal, esBody, signal, tribunalAttempts)

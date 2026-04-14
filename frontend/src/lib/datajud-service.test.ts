@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  DEFAULT_TRIBUNALS,
   _getEndpointCandidatesForHost,
   _resolveLocalProxyEndpoint,
   buildDataJudSearchBody,
@@ -45,7 +46,7 @@ describe('datajud-service', () => {
 
   it('classifies 403 responses as auth errors in errorDetails', async () => {
     const tribunals: TribunalInfo[] = [
-      { alias: 'stf', name: 'Supremo Tribunal Federal', category: 'superiores' },
+      { alias: 'stj', name: 'Superior Tribunal de Justiça', category: 'superiores' },
     ]
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -74,6 +75,29 @@ describe('datajud-service', () => {
   it('resolves the local proxy endpoint from the app base path', () => {
     expect(_resolveLocalProxyEndpoint('/')).toBe('/api/datajud')
     expect(_resolveLocalProxyEndpoint('/Lexio/')).toBe('/Lexio/api/datajud')
+  })
+
+  it('omits STF from default tribunals because the public DataJud index is unavailable', () => {
+    expect(DEFAULT_TRIBUNALS.some(tribunal => tribunal.alias === 'stf')).toBe(false)
+  })
+
+  it('short-circuits known unavailable tribunals without retrying proxy endpoints', async () => {
+    const tribunals: TribunalInfo[] = [
+      { alias: 'stf', name: 'Supremo Tribunal Federal', category: 'superiores' },
+    ]
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    const result = await searchDataJud('tema constitucional', {
+      tribunals,
+      maxPerTribunal: 1,
+      maxTotal: 1,
+    })
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(result.results).toHaveLength(0)
+    expect(result.errorDetails).toHaveLength(1)
+    expect(result.errorDetails[0].status).toBe(404)
+    expect(result.errorDetails[0].message).toContain('índice ausente no CNJ')
   })
 
   it('falls back from a 404 Cloud Function URL to the next managed endpoint', async () => {
@@ -427,7 +451,7 @@ describe('datajud-service', () => {
 
     it('parses inteiro_teor string field from API response', async () => {
       const tribunals: TribunalInfo[] = [
-        { alias: 'stf', name: 'Supremo Tribunal Federal', category: 'superiores' },
+        { alias: 'stj', name: 'Superior Tribunal de Justiça', category: 'superiores' },
       ]
 
       const fakeHit = makeHit({
