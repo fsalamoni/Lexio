@@ -51,7 +51,7 @@ const BATCH_SIZE = 4
 const REQUEST_TIMEOUT = 30_000
 const MAX_RETRIES = 2
 const RETRY_BASE_DELAY_MS = 250
-const MAX_TEXT_ENRICHMENT_RESULTS = 4
+const MAX_TEXT_ENRICHMENT_RESULTS = 10
 const MAX_ENRICHMENT_FETCHES_PER_RESULT = 3
 const MAX_EMENTA_CHARS = 6_000
 const MAX_INTEIRO_TEOR_CHARS = 16_000
@@ -131,22 +131,9 @@ function getEndpointCandidates(): string[] {
 const INTER_BATCH_DELAY = 300
 
 const DATAJUD_SEARCH_FIELDS = [
-  'ementa^10',
-  'dadosBasicos.ementa^10',
-  'julgamento.ementa^9',
-  'documento.ementa^9',
-  'inteiro_teor^7',
-  'inteiroTeor^7',
-  'dadosBasicos.inteiro_teor^7',
-  'dadosBasicos.inteiroTeor^7',
-  'acordao.texto^6',
-  'acordao.texto_integral^6',
-  'acórdão.texto^6',
-  'acórdão.texto_integral^6',
-  'documento.conteudo^5',
-  'documento.texto^5',
-  'documento.paginas.conteudo^5',
-  'metadados.decisao.conteudo_integral^5',
+  // Only fields that actually exist in the DataJud public Elasticsearch index.
+  // Fields like ementa, inteiro_teor, dadosBasicos.*, acordao.*, documento.*
+  // do NOT exist — text must be obtained via web enrichment (JusBrasil, etc.).
   'assuntos.nome^8',
   'classe.nome^6',
   'orgaoJulgador.nome^2',
@@ -953,7 +940,7 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
     {
       multi_match: {
         query,
-        fields: ['assuntos.nome^10', 'classe.nome^7', 'ementa^8', 'dadosBasicos.ementa^8'],
+        fields: ['assuntos.nome^10', 'classe.nome^7'],
         type: 'phrase_prefix',
         max_expansions: 20,
         boost: 5,
@@ -977,7 +964,7 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
     should.push({
       multi_match: {
         query: compactQuery,
-        fields: ['ementa^5', 'dadosBasicos.ementa^5', 'assuntos.nome^4', 'classe.nome^3'],
+        fields: ['assuntos.nome^4', 'classe.nome^3'],
         type: 'most_fields',
         operator: 'or',
         boost: 2,
@@ -1040,7 +1027,7 @@ function buildFallbackSearchBody(
       {
         multi_match: {
           query: compactQuery,
-          fields: ['ementa^8', 'dadosBasicos.ementa^8', 'assuntos.nome^6', 'classe.nome^4', 'inteiro_teor^3', 'inteiroTeor^3'],
+          fields: ['assuntos.nome^6', 'classe.nome^4'],
           type: 'most_fields',
           operator: 'or',
         },
@@ -1048,7 +1035,7 @@ function buildFallbackSearchBody(
       {
         multi_match: {
           query: compactQuery,
-          fields: ['ementa^5', 'dadosBasicos.ementa^5', 'assuntos.nome^4'],
+          fields: ['assuntos.nome^4', 'classe.nome^3'],
           type: 'cross_fields',
           operator: 'or',
           minimum_should_match: '40%',
@@ -1142,8 +1129,9 @@ export function scoreDataJudResult(query: string, result: DataJudResult): number
 
   if (result.ementa) score += 6
   if (result.inteiroTeor) score += 4
-  if (!result.ementa && !result.inteiroTeor) score -= 18
-  else if (!result.ementa || !result.inteiroTeor) score -= 6
+  // Light penalty: text is typically missing from DataJud and populated via enrichment
+  if (!result.ementa && !result.inteiroTeor) score -= 4
+  else if (!result.ementa || !result.inteiroTeor) score -= 1
 
   if (result.dataAjuizamento) {
     const year = Number(result.dataAjuizamento.slice(0, 4))
@@ -1460,6 +1448,11 @@ async function enrichResultDecisionText(
 ): Promise<DataJudResult> {
   if (signal?.aborted) return result
 
+  // ── Strategy 1: Direct JusBrasil fetch (most reliable) ──────────────────
+  const jusBrasilResult = await enrichViaJusBrasil(result, signal)
+  if (jusBrasilResult) return jusBrasilResult
+
+  // ── Strategy 2: DuckDuckGo web search fallback ─────────────────────────
   const searchQueries = buildJurisprudenceEnrichmentQueries(query, result)
 
   for (const searchQuery of searchQueries) {
@@ -1502,22 +1495,133 @@ async function enrichResultDecisionText(
   return result
 }
 
-function buildJurisprudenceEnrichmentQueries(query: string, result: DataJudResult): string[] {
-  const numeroCompacto = result.numeroProcesso.replace(/\D/g, '')
+/**
+ * Enrichment Strategy 1: Directly fetch JusBrasil jurisprudence search page.
+ * JusBrasil indexes most Brazilian court decisions and returns structured ementas.
+ */
+async function enrichViaJusBrasil(
+  result: DataJudResult,
+  signal?: AbortSignal,
+): Promise<DataJudResult | null> {
+  if (signal?.aborted) return null
+
+  const numeroFormatado = result.numeroProcesso.includes('-')
+    ? result.numeroProcesso
+    : formatProcessoNumber(result.numeroProcesso)
+  const jusBrasilUrl = `https://www.jusbrasil.com.br/jurisprudencia/busca?q=${encodeURIComponent(numeroFormatado)}`
+
+  let content = ''
+  try {
+    content = await fetchUrlContent(jusBrasilUrl)
+  } catch {
+    return null
+  }
+
+  if (!content || content.length < 200) return null
+
+  const extracted = extractFromJusBrasilContent(content, result)
+  if (!extracted.ementa && !extracted.inteiroTeor) return null
+
+  const enriched: DataJudResult = {
+    ...result,
+    ementa: extracted.ementa ?? result.ementa,
+    inteiroTeor: extracted.inteiroTeor ?? result.inteiroTeor,
+    textSource: 'web',
+    textSourceUrl: jusBrasilUrl,
+  }
+  enriched.textCompleteness = inferTextCompleteness(enriched)
+
+  if (isDataJudDebug()) {
+    console.debug(`[DataJud] JusBrasil enrichment succeeded for ${result.numeroProcesso}`, {
+      ementaLen: extracted.ementa?.length ?? 0,
+      inteiroTeorLen: extracted.inteiroTeor?.length ?? 0,
+    })
+  }
+
+  return enriched
+}
+
+/**
+ * Format a raw (digits-only) processo number into CNJ standard format:
+ * NNNNNNN-DD.AAAA.J.TR.OOOO
+ */
+function formatProcessoNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length !== 20) return raw
+  return `${digits.slice(0, 7)}-${digits.slice(7, 9)}.${digits.slice(9, 13)}.${digits.slice(13, 14)}.${digits.slice(14, 16)}.${digits.slice(16, 20)}`
+}
+
+/**
+ * Extract ementa and inteiro teor from JusBrasil search results page content.
+ * JusBrasil returns structured text like:
+ *   "Ementa: EMENTA: [text]" or "Inteiro teor: [text]"
+ */
+function extractFromJusBrasilContent(
+  content: string,
+  result: DataJudResult,
+): { ementa?: string; inteiroTeor?: string } {
+  const processDigits = result.numeroProcesso.replace(/\D/g, '')
+  const lastDigits = processDigits.slice(-7)
+
+  // Check content mentions this process
+  if (!content.includes(lastDigits)) {
+    return {}
+  }
+
+  let ementa: string | undefined
+  let inteiroTeor: string | undefined
+
+  // JusBrasil format: "Ementa: EMENTA: [text]" or "Ementa: E M E N T A – [text]"
+  const ementaPatterns = [
+    /Ementa:\s*(?:EMENTA\s*[:\-–—]?\s*)?(.{80,}?)(?:\nMostrar mais|\nContr|\nDecis|\n(?:TJ|STF|STJ|TST|TRF|TRT|TRE)[ -])/si,
+    /EMENTA\s*[:\-–—]?\s*(.{80,}?)(?:\nMostrar mais|\nContr|\nDecis|\n(?:TJ|STF|STJ|TST|TRF|TRT|TRE)[ -])/si,
+    /E\s*M\s*E\s*N\s*T\s*A\s*[:\-–—]?\s*(.{80,}?)(?:\nMostrar mais|\nContr|\nDecis)/si,
+  ]
+
+  for (const pattern of ementaPatterns) {
+    const match = pattern.exec(content)
+    if (match?.[1]) {
+      const cleaned = match[1].replace(/\n{3,}/g, '\n\n').trim()
+      if (cleaned.length >= 80) {
+        ementa = trimDecisionText(cleaned, MAX_EMENTA_CHARS)
+        break
+      }
+    }
+  }
+
+  // JusBrasil format for inteiro teor: "Inteiro teor: [text]"
+  const inteiroTeorPatterns = [
+    /Inteiro teor:\s*(.{100,}?)(?:\nMostrar mais|\nPara todas|\n(?:TJ|STF|STJ|TST|TRF|TRT|TRE)[ -])/si,
+    /INTEIRO TEOR\s*[:\-–—]?\s*(.{100,}?)(?:\nMostrar mais|\nPara todas)/si,
+  ]
+
+  for (const pattern of inteiroTeorPatterns) {
+    const match = pattern.exec(content)
+    if (match?.[1]) {
+      const cleaned = match[1].replace(/\n{3,}/g, '\n\n').trim()
+      if (cleaned.length >= 100) {
+        inteiroTeor = trimDecisionText(cleaned, MAX_INTEIRO_TEOR_CHARS)
+        break
+      }
+    }
+  }
+
+  // If we found ementa but not inteiro teor, also try the generic extraction
+  if (ementa && !inteiroTeor) {
+    const generic = extractDecisionTextFromWebContent(content, result)
+    inteiroTeor = generic.inteiroTeor
+  }
+
+  return { ementa, inteiroTeor }
+}
+
+function buildJurisprudenceEnrichmentQueries(_query: string, result: DataJudResult): string[] {
+  const numero = result.numeroProcesso.includes('-')
+    ? result.numeroProcesso
+    : formatProcessoNumber(result.numeroProcesso)
   return [
-    [
-      `"${result.numeroProcesso}"`,
-      numeroCompacto.length >= 10 ? `"${numeroCompacto}"` : '',
-      `"${result.tribunalName}"`,
-      result.classe,
-      query,
-      'ementa acórdão inteiro teor jurisprudência',
-    ].filter(Boolean).join(' '),
-    [
-      `"${result.numeroProcesso}"`,
-      result.tribunalName,
-      'ementa inteiro teor acórdão pdf',
-    ].filter(Boolean).join(' '),
+    `"${numero}" ementa acórdão`,
+    `"${numero}" ${result.tribunal.toUpperCase()} inteiro teor`,
   ]
 }
 

@@ -1435,7 +1435,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         dateTo: config.dateTo || undefined,
         graus: config.graus.length > 0 ? config.graus : undefined,
         enrichMissingText: true,
-        maxTextEnrichment: 5,
+        maxTextEnrichment: 10,
         onProgress: (progress) => {
           setResearchModalStats(prev => ({
             ...prev,
