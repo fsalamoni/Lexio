@@ -150,6 +150,40 @@ describe('datajud-service', () => {
     ]))
   })
 
+  it('uses relaxed operator "or" with minimum_should_match in the primary clause', () => {
+    const body = buildDataJudSearchBody('contratação por tempo determinado atender necessidade', {
+      maxPerTribunal: 5,
+    }) as {
+      query: { bool: { should: Array<{ multi_match?: { operator?: string; minimum_should_match?: string; type?: string; boost?: number } }> } }
+    }
+
+    const primaryClause = body.query.bool.should[0]?.multi_match
+    expect(primaryClause).toBeDefined()
+    expect(primaryClause?.operator).toBe('or')
+    expect(primaryClause?.minimum_should_match).toBe('60%')
+    expect(primaryClause?.type).toBe('best_fields')
+  })
+
+  it('always includes cross_fields and safety-net clauses when significant terms exist', () => {
+    const body = buildDataJudSearchBody('responsabilidade civil extracontratual dano moral', {
+      maxPerTribunal: 5,
+    }) as {
+      query: { bool: { should: Array<{ multi_match?: { type?: string; boost?: number; operator?: string } }> } }
+    }
+
+    const clauses = body.query.bool.should
+    // Should have 5 clauses: best_fields, phrase, phrase_prefix, cross_fields, safety-net
+    expect(clauses.length).toBeGreaterThanOrEqual(5)
+
+    const crossFields = clauses.find(c => c.multi_match?.type === 'cross_fields')
+    expect(crossFields).toBeDefined()
+    expect(crossFields?.multi_match?.operator).toBe('or')
+
+    const safetyNet = clauses.find(c => c.multi_match?.type === 'most_fields' && c.multi_match?.boost === 2)
+    expect(safetyNet).toBeDefined()
+    expect(safetyNet?.multi_match?.operator).toBe('or')
+  })
+
   it('parses nested ementa and inteiro teor variants and normalizes dates/text', async () => {
     const tribunals: TribunalInfo[] = [
       { alias: 'stj', name: 'Superior Tribunal de JustiÃ§a', category: 'superiores' },

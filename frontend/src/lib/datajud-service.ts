@@ -236,7 +236,11 @@ async function fetchFromEndpoint(
 
       if (resp.ok) {
         const data = await resp.json() as { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } }
-        return data.hits?.hits ?? []
+        const hits = data.hits?.hits ?? []
+        if (isDataJudDebug()) {
+          console.debug(`[DataJud] ${tribunalAlias}: ${hits.length} hit(s) via ${isDirect ? 'direct' : 'proxy'}`)
+        }
+        return hits
       }
 
       // Non-OK response — check if retriable
@@ -756,6 +760,63 @@ export async function searchDataJud(
     }
   }
 
+  // ── Fallback retry with relaxed query when initial round returns 0 results ──
+  if (allResults.length === 0 && tribunalsQueried > 0 && !signal?.aborted) {
+    const significantTerms = extractSignificantQueryTerms(query)
+    if (significantTerms.length > 0) {
+      const fallbackBody = buildFallbackSearchBody(significantTerms, {
+        maxPerTribunal,
+        dateFrom: options.dateFrom,
+        dateTo: options.dateTo,
+        graus: options.graus,
+      })
+
+      onProgress?.({
+        phase: 'querying',
+        tribunalsQueried,
+        tribunalsTotal: tribunals.length,
+        resultsFound: 0,
+        currentTribunal: '(busca ampliada)',
+        errors: errors.length,
+      })
+
+      for (let i = 0; i < tribunals.length; i += BATCH_SIZE) {
+        if (signal?.aborted) break
+        if (allResults.length >= maxTotal) break
+        const batch = tribunals.slice(i, i + BATCH_SIZE)
+
+        const batchResults = await Promise.allSettled(
+          batch.map(async (tribunal) => {
+            if (KNOWN_UNAVAILABLE_TRIBUNAL_ALIASES.has(tribunal.alias)) return { tribunal, hits: [] as Array<{ _source?: Record<string, unknown> }>, attempts: [] as DataJudEndpointAttempt[] }
+            const attempts: DataJudEndpointAttempt[] = []
+            const hits = await fetchDataJudHits(tribunal, fallbackBody, signal, attempts)
+            return { tribunal, hits, attempts }
+          }),
+        )
+
+        for (const result of batchResults) {
+          if (result.status === 'rejected') continue
+          const { tribunal, hits } = result.value
+          endpointAttempts.push(...result.value.attempts)
+          if (hits.length > 0) tribunalsWithResults++
+          for (const hit of hits) {
+            if (allResults.length >= maxTotal) break
+            const src = hit._source ?? {}
+            allResults.push(parseDataJudHit(src, tribunal))
+          }
+        }
+
+        if (i + BATCH_SIZE < tribunals.length && !signal?.aborted) {
+          await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY))
+        }
+      }
+
+      if (isDataJudDebug()) {
+        console.debug('[DataJud] Fallback retry produced', allResults.length, 'results')
+      }
+    }
+  }
+
   onProgress?.({
     phase: 'processing',
     tribunalsQueried,
@@ -765,7 +826,15 @@ export async function searchDataJud(
     errors: errors.length,
   })
 
+  if (isDataJudDebug()) {
+    console.debug(`[DataJud] Raw results: ${allResults.length} from ${tribunalsWithResults} tribunal(is), ${errors.length} error(s)`)
+  }
+
   let refinedResults = rankAndFilterDataJudResults(query, allResults, maxTotal)
+
+  if (isDataJudDebug()) {
+    console.debug(`[DataJud] After ranking: ${refinedResults.length} results (max ${maxTotal})`)
+  }
 
   if (enrichMissingText && refinedResults.length > 0) {
     refinedResults = await enrichResultsWithDecisionText(
@@ -859,7 +928,8 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
         query,
         fields: [...DATAJUD_SEARCH_FIELDS],
         type: 'best_fields',
-        operator: 'and',
+        operator: 'or',
+        minimum_should_match: '60%',
         boost: 7,
       },
     },
@@ -883,21 +953,97 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
     },
   ]
 
-  if (compactQuery && compactQuery !== query.trim()) {
+  if (compactQuery) {
     should.push({
       multi_match: {
         query: compactQuery,
         fields: [...DATAJUD_SEARCH_FIELDS],
         type: 'cross_fields',
         operator: significantTerms.length <= 3 ? 'and' : 'or',
-        minimum_should_match: significantTerms.length >= 4 ? '75%' : '100%',
+        minimum_should_match: significantTerms.length >= 4 ? '60%' : '100%',
         boost: 6,
+      },
+    })
+
+    // Broad safety-net: ensures at least some results when stricter clauses all fail
+    should.push({
+      multi_match: {
+        query: compactQuery,
+        fields: ['ementa^5', 'dadosBasicos.ementa^5', 'assuntos.nome^4', 'classe.nome^3'],
+        type: 'most_fields',
+        operator: 'or',
+        boost: 2,
       },
     })
   }
 
   const boolQuery: Record<string, unknown> = {
     should,
+    minimum_should_match: 1,
+  }
+
+  if (filters.length > 0) {
+    boolQuery.filter = filters
+  }
+
+  const esResult = {
+    size: options.maxPerTribunal,
+    query: { bool: boolQuery },
+    sort: [
+      { _score: { order: 'desc' } },
+      { dataAjuizamento: { order: 'desc' } },
+    ],
+    track_scores: true,
+  }
+
+  if (isDataJudDebug()) {
+    console.debug('[DataJud] ES query body:', JSON.stringify(esResult, null, 2))
+    console.debug('[DataJud] significant terms:', significantTerms, '| clauses:', should.length)
+  }
+
+  return esResult
+
+  return esResult
+}
+
+/** Maximum-lenient fallback query used when the primary query returns 0 hits. */
+function buildFallbackSearchBody(
+  significantTerms: string[],
+  options: BuildDataJudSearchBodyOptions,
+): Record<string, unknown> {
+  const compactQuery = significantTerms.join(' ')
+  const filters: Array<Record<string, unknown>> = []
+
+  if (options.dateFrom || options.dateTo) {
+    const range: Record<string, string> = {}
+    if (options.dateFrom) range.gte = options.dateFrom
+    if (options.dateTo) range.lte = options.dateTo
+    filters.push({ range: { dataAjuizamento: range } })
+  }
+  if (options.graus && options.graus.length > 0) {
+    filters.push({ terms: { grau: options.graus } })
+  }
+
+  const boolQuery: Record<string, unknown> = {
+    should: [
+      {
+        multi_match: {
+          query: compactQuery,
+          fields: ['ementa^8', 'dadosBasicos.ementa^8', 'assuntos.nome^6', 'classe.nome^4', 'inteiro_teor^3', 'inteiroTeor^3'],
+          type: 'most_fields',
+          operator: 'or',
+        },
+      },
+      {
+        multi_match: {
+          query: compactQuery,
+          fields: ['ementa^5', 'dadosBasicos.ementa^5', 'assuntos.nome^4'],
+          type: 'cross_fields',
+          operator: 'or',
+          minimum_should_match: '40%',
+        },
+      },
+    ],
     minimum_should_match: 1,
   }
 
@@ -913,6 +1059,15 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
       { dataAjuizamento: { order: 'desc' } },
     ],
     track_scores: true,
+  }
+}
+
+/** Check localStorage debug flag — gated to avoid runtime issues in non-browser contexts. */
+function isDataJudDebug(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem('DATAJUD_DEBUG') === 'true'
+  } catch {
+    return false
   }
 }
 
