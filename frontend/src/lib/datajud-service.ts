@@ -259,6 +259,50 @@ function classifyResultByArea(result: DataJudResult, legalArea: string): boolean
 }
 
 /**
+ * Infer the most likely legal area from the query text alone.
+ * Uses LEGAL_AREA_KEYWORDS positive arrays — returns the area with the highest
+ * match count if it has ≥ 2 hits and leads by at least 1 over the runner-up.
+ * Returns undefined when ambiguous or no strong signal.
+ */
+function inferLegalAreaFromQuery(query: string): string | undefined {
+  const normalizedQuery = normalizeForSearch(query)
+  if (!normalizedQuery) return undefined
+
+  let bestArea: string | undefined
+  let bestScore = 0
+  let secondScore = 0
+
+  for (const [area, config] of Object.entries(LEGAL_AREA_KEYWORDS)) {
+    let hits = 0
+    for (const term of config.positive) {
+      if (normalizedQuery.includes(normalizeForSearch(term))) hits++
+    }
+    if (hits > bestScore) {
+      secondScore = bestScore
+      bestScore = hits
+      bestArea = area
+    } else if (hits > secondScore) {
+      secondScore = hits
+    }
+  }
+
+  // Require at least 2 positive keyword matches AND a clear lead over the runner-up
+  if (bestArea && bestScore >= 2 && bestScore > secondScore) return bestArea
+  return undefined
+}
+
+/** Regex matching clearly criminal case classes (used for scoring penalty). */
+const CRIMINAL_CLASS_RE = /criminal|penal|inquerito policial|habeas corpus|execucao penal|carta de ordem|acao penal|revisao criminal|recurso em sentido estrito/
+
+/** Check if a query contains any criminal-positive keywords. */
+function queryHasCriminalTerms(query: string): boolean {
+  const normalized = normalizeForSearch(query)
+  const criminalConfig = LEGAL_AREA_KEYWORDS['criminal']
+  if (!criminalConfig) return false
+  return criminalConfig.positive.some(term => normalized.includes(normalizeForSearch(term)))
+}
+
+/**
  * Build JusBrasil negative query terms for a legal area.
  * Returns string like "-crime -penal -homicídio" to append to URL query.
  * Only uses a subset (max 5) of the most distinctive negative terms to avoid
@@ -796,6 +840,13 @@ export async function searchDataJud(
   const enrichMissingText = options.enrichMissingText ?? false
   const maxTextEnrichment = options.maxTextEnrichment ?? MAX_TEXT_ENRICHMENT_RESULTS
 
+  // Auto-detect legal area from query when user didn't select one manually
+  const effectiveLegalArea = options.legalArea || inferLegalAreaFromQuery(query)
+
+  if (isDataJudDebug() && effectiveLegalArea && !options.legalArea) {
+    console.debug(`[DataJud] Auto-detected legal area: ${effectiveLegalArea}`)
+  }
+
   const allResults: DataJudResult[] = []
   const errors: string[] = []
   const errorDetails: DataJudErrorDetail[] = []
@@ -806,7 +857,7 @@ export async function searchDataJud(
   // ── Start JusBrasil topic search in parallel (primary relevance source) ──
   const allowedTribunalAliases = new Set(tribunals.map(t => t.alias))
   const jusBrasilPromise = enrichMissingText
-    ? searchJusBrasilByTopic(query, allowedTribunalAliases, signal, options.legalArea).catch(() => [] as DataJudResult[])
+    ? searchJusBrasilByTopic(query, allowedTribunalAliases, signal, effectiveLegalArea).catch(() => [] as DataJudResult[])
     : Promise.resolve([] as DataJudResult[])
 
   const esBody = buildDataJudSearchBody(query, {
@@ -814,7 +865,7 @@ export async function searchDataJud(
     dateFrom: options.dateFrom,
     dateTo: options.dateTo,
     graus: options.graus,
-    legalArea: options.legalArea,
+    legalArea: effectiveLegalArea,
   })
 
   const fetchTribunalData = async (tribunal: TribunalInfo) => {
@@ -930,7 +981,7 @@ export async function searchDataJud(
         dateFrom: options.dateFrom,
         dateTo: options.dateTo,
         graus: options.graus,
-        legalArea: options.legalArea,
+        legalArea: effectiveLegalArea,
       })
 
       onProgress?.({
@@ -992,7 +1043,7 @@ export async function searchDataJud(
     console.debug(`[DataJud] Raw results: ${allResults.length} from ${tribunalsWithResults} tribunal(is), ${errors.length} error(s)`)
   }
 
-  let refinedResults = rankAndFilterDataJudResults(query, allResults, maxTotal, options.legalArea)
+  let refinedResults = rankAndFilterDataJudResults(query, allResults, maxTotal, effectiveLegalArea)
 
   if (isDataJudDebug()) {
     console.debug(`[DataJud] After ranking: ${refinedResults.length} results (max ${maxTotal})`)
@@ -1005,7 +1056,7 @@ export async function searchDataJud(
       Math.min(maxTextEnrichment, refinedResults.length),
       signal,
     )
-    refinedResults = rankAndFilterDataJudResults(query, refinedResults, maxTotal, options.legalArea)
+    refinedResults = rankAndFilterDataJudResults(query, refinedResults, maxTotal, effectiveLegalArea)
   }
 
   // ── Merge JusBrasil topic search results (primary relevance source) ──────
@@ -1017,11 +1068,11 @@ export async function searchDataJud(
     // Score JusBrasil results and merge with DataJud results
     const scoredJB = jusBrasilResults.map(r => ({
       ...r,
-      relevanceScore: scoreDataJudResult(query, r, options.legalArea),
+      relevanceScore: scoreDataJudResult(query, r, effectiveLegalArea),
     }))
     // Combine: JusBrasil results first (they have ementa + are topically relevant)
     const combined = [...scoredJB, ...refinedResults]
-    refinedResults = rankAndFilterDataJudResults(query, combined, maxTotal, options.legalArea)
+    refinedResults = rankAndFilterDataJudResults(query, combined, maxTotal, effectiveLegalArea)
   }
 
   const finalizedResults = refinedResults.map(result => ({
@@ -1317,7 +1368,8 @@ export function scoreDataJudResult(query: string, result: DataJudResult, legalAr
   const texts = [
     { value: result.ementa, weight: 14 },
     { value: result.inteiroTeor, weight: 10 },
-    { value: result.assuntos.join(' '), weight: 8 },
+    // Cap at 10 assuntos for scoring — catalog entries with 200+ assuntos game term overlap
+    { value: result.assuntos.slice(0, 10).join(' '), weight: 8 },
     { value: result.classe, weight: 6 },
     { value: result.orgaoJulgador, weight: 2 },
   ]
@@ -1346,9 +1398,20 @@ export function scoreDataJudResult(query: string, result: DataJudResult, legalAr
 
   if (result.ementa) score += 6
   if (result.inteiroTeor) score += 4
-  // Light penalty: text is typically missing from DataJud and populated via enrichment
-  if (!result.ementa && !result.inteiroTeor) score -= 4
+  // Results without any text are useless for legal research
+  if (!result.ementa && !result.inteiroTeor) score -= 10
   else if (!result.ementa || !result.inteiroTeor) score -= 1
+
+  // Anomalous assunto count — catalog/procedural dumps have 30-500+ assuntos;
+  // real jurisprudence typically has 1-5
+  if (result.assuntos.length > 100) score -= 40
+  else if (result.assuntos.length > 30) score -= 25
+
+  // Criminal class appearing in a non-criminal query — strong wrong-area signal
+  if (!queryHasCriminalTerms(query)) {
+    const normalizedClasse = normalizeForSearch(result.classe)
+    if (CRIMINAL_CLASS_RE.test(normalizedClasse)) score -= 20
+  }
 
   if (result.dataAjuizamento) {
     const year = Number(result.dataAjuizamento.slice(0, 4))
