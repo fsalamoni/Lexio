@@ -146,7 +146,7 @@ describe('datajud-service', () => {
     expect(body.query.bool.should.length).toBeGreaterThanOrEqual(3)
     expect(body.query.bool.filter).toEqual(expect.arrayContaining([
       { range: { dataAjuizamento: { gte: '2023-01-01' } } },
-      { terms: { grau: ['G2'] } },
+      { bool: { should: [{ match: { grau: 'G2' } }], minimum_should_match: 1 } },
     ]))
   })
 
@@ -160,7 +160,7 @@ describe('datajud-service', () => {
     const primaryClause = body.query.bool.should[0]?.multi_match
     expect(primaryClause).toBeDefined()
     expect(primaryClause?.operator).toBe('or')
-    expect(primaryClause?.minimum_should_match).toBe('60%')
+    expect(primaryClause?.minimum_should_match).toBe('30%')
     expect(primaryClause?.type).toBe('best_fields')
   })
 

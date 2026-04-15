@@ -482,6 +482,7 @@ export const DATAJUD_GRAUS = [
   { value: 'G1', label: '1ª Instância' },
   { value: 'G2', label: '2ª Instância' },
   { value: 'JE', label: 'Juizado Especial' },
+  { value: 'SUP', label: 'Tribunais Superiores' },
   { value: 'REsp', label: 'Recurso Especial' },
   { value: 'RE', label: 'Recurso Extraordinário' },
 ]
@@ -919,7 +920,14 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
   }
 
   if (options.graus && options.graus.length > 0) {
-    filters.push({ terms: { grau: options.graus } })
+    // grau is a text field in DataJud — use bool/should+match (not terms) so the
+    // standard analyzer lowercases values automatically (G2 → g2, SUP → sup, etc.)
+    filters.push({
+      bool: {
+        should: options.graus.map(g => ({ match: { grau: g } })),
+        minimum_should_match: 1,
+      },
+    })
   }
 
   const should: Record<string, unknown>[] = [
@@ -929,7 +937,7 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
         fields: [...DATAJUD_SEARCH_FIELDS],
         type: 'best_fields',
         operator: 'or',
-        minimum_should_match: '60%',
+        minimum_should_match: '30%',
         boost: 7,
       },
     },
@@ -960,7 +968,7 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
         fields: [...DATAJUD_SEARCH_FIELDS],
         type: 'cross_fields',
         operator: significantTerms.length <= 3 ? 'and' : 'or',
-        minimum_should_match: significantTerms.length >= 4 ? '60%' : '100%',
+        minimum_should_match: significantTerms.length >= 4 ? '40%' : '100%',
         boost: 6,
       },
     })
@@ -1002,8 +1010,6 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
   }
 
   return esResult
-
-  return esResult
 }
 
 /** Maximum-lenient fallback query used when the primary query returns 0 hits. */
@@ -1021,7 +1027,12 @@ function buildFallbackSearchBody(
     filters.push({ range: { dataAjuizamento: range } })
   }
   if (options.graus && options.graus.length > 0) {
-    filters.push({ terms: { grau: options.graus } })
+    filters.push({
+      bool: {
+        should: options.graus.map(g => ({ match: { grau: g } })),
+        minimum_should_match: 1,
+      },
+    })
   }
 
   const boolQuery: Record<string, unknown> = {
