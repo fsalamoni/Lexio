@@ -637,6 +637,12 @@ export async function searchDataJud(
   const endpointAttempts: DataJudEndpointAttempt[] = []
   let tribunalsQueried = 0
   let tribunalsWithResults = 0
+
+  // ── Start JusBrasil topic search in parallel (primary relevance source) ──
+  const jusBrasilPromise = enrichMissingText
+    ? searchJusBrasilByTopic(query, signal).catch(() => [] as DataJudResult[])
+    : Promise.resolve([] as DataJudResult[])
+
   const esBody = buildDataJudSearchBody(query, {
     maxPerTribunal,
     dateFrom: options.dateFrom,
@@ -834,6 +840,22 @@ export async function searchDataJud(
     refinedResults = rankAndFilterDataJudResults(query, refinedResults, maxTotal)
   }
 
+  // ── Merge JusBrasil topic search results (primary relevance source) ──────
+  const jusBrasilResults = await jusBrasilPromise
+  if (jusBrasilResults.length > 0) {
+    if (isDataJudDebug()) {
+      console.debug(`[DataJud] JusBrasil topic search returned ${jusBrasilResults.length} results`)
+    }
+    // Score JusBrasil results and merge with DataJud results
+    const scoredJB = jusBrasilResults.map(r => ({
+      ...r,
+      relevanceScore: scoreDataJudResult(query, r),
+    }))
+    // Combine: JusBrasil results first (they have ementa + are topically relevant)
+    const combined = [...scoredJB, ...refinedResults]
+    refinedResults = rankAndFilterDataJudResults(query, combined, maxTotal)
+  }
+
   const finalizedResults = refinedResults.map(result => ({
     ...result,
     textCompleteness: inferTextCompleteness(result),
@@ -923,8 +945,8 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
         query,
         fields: [...DATAJUD_SEARCH_FIELDS],
         type: 'best_fields',
-        operator: 'or',
-        minimum_should_match: '30%',
+        operator: significantTerms.length <= 3 ? 'and' : 'or',
+        minimum_should_match: '60%',
         boost: 7,
       },
     },
@@ -954,8 +976,8 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
         query: compactQuery,
         fields: [...DATAJUD_SEARCH_FIELDS],
         type: 'cross_fields',
-        operator: significantTerms.length <= 3 ? 'and' : 'or',
-        minimum_should_match: significantTerms.length >= 4 ? '40%' : '100%',
+        operator: significantTerms.length <= 4 ? 'and' : 'or',
+        minimum_should_match: significantTerms.length > 4 ? '60%' : '100%',
         boost: 6,
       },
     })
@@ -1424,7 +1446,7 @@ async function enrichResultsWithDecisionText(
 ): Promise<DataJudResult[]> {
   const candidates = results
     .map((result, index) => ({ result, index }))
-    .filter(({ result }) => !result.ementa || !result.inteiroTeor)
+    .filter(({ result }) => result.textSource !== 'web' && (!result.ementa || !result.inteiroTeor))
     .slice(0, maxItems)
 
   if (candidates.length === 0) return results
@@ -1549,6 +1571,108 @@ function formatProcessoNumber(raw: string): string {
   const digits = raw.replace(/\D/g, '')
   if (digits.length !== 20) return raw
   return `${digits.slice(0, 7)}-${digits.slice(7, 9)}.${digits.slice(9, 13)}.${digits.slice(13, 14)}.${digits.slice(14, 16)}.${digits.slice(16, 20)}`
+}
+
+// ── JusBrasil Topic Search (primary relevance source) ──────────────────────
+
+/**
+ * Search JusBrasil by topic query. Returns results with ementa text.
+ * JusBrasil has full-text search over ementas and inteiro teor, unlike DataJud
+ * which only indexes metadata (assuntos.nome, classe.nome).
+ */
+async function searchJusBrasilByTopic(
+  query: string,
+  signal?: AbortSignal,
+): Promise<DataJudResult[]> {
+  if (signal?.aborted) return []
+
+  const url = `https://www.jusbrasil.com.br/jurisprudencia/busca?q=${encodeURIComponent(query)}`
+
+  let content = ''
+  try {
+    content = await fetchUrlContent(url)
+  } catch {
+    return []
+  }
+
+  if (!content || content.length < 500) return []
+
+  const results = parseJusBrasilTopicResults(content)
+
+  if (isDataJudDebug()) {
+    console.debug(`[DataJud] JusBrasil topic search parsed ${results.length} results from ${content.length} chars`)
+  }
+
+  return results
+}
+
+/** Regex for JusBrasil tribunal header lines (e.g., "STF - RECURSO EXTRAORDINÁRIO: RE XXXXX MG") */
+const JUSBRASIL_TRIBUNAL_RE = /\b(STF|STJ|TST|TSE|STM|TJ-?[A-Z]{2,4}|TRF-?\d|TRT-?\d{1,2}|TRE-?[A-Z]{2,3})\s+-\s+(.+)/i
+
+function parseJusBrasilTopicResults(content: string): DataJudResult[] {
+  const results: DataJudResult[] = []
+  // JusBrasil separates results with "Mostrar mais"
+  const chunks = content.split(/\nMostrar mais\s*\n?/)
+
+  for (const chunk of chunks) {
+    if (results.length >= 10) break
+
+    const headerMatch = chunk.match(JUSBRASIL_TRIBUNAL_RE)
+    if (!headerMatch) continue
+
+    const tribunalJB = headerMatch[1].trim()
+    const restOfHeader = headerMatch[2].trim()
+
+    // Split rest into class and identifier
+    let classe: string
+    let identifier: string
+    const colonIdx = restOfHeader.indexOf(':')
+    if (colonIdx > 0 && colonIdx < 80) {
+      classe = restOfHeader.slice(0, colonIdx).trim()
+      identifier = restOfHeader.slice(colonIdx + 1).trim()
+    } else {
+      // No colon — split at XXXXX or long digit sequence
+      const splitMatch = restOfHeader.match(/^(.+?)\s+(XXXXX|\d{7,})/)
+      if (splitMatch) {
+        classe = splitMatch[1].trim()
+        identifier = restOfHeader.slice(splitMatch[1].length).trim()
+      } else {
+        classe = restOfHeader
+        identifier = ''
+      }
+    }
+
+    // Extract ementa text
+    const ementaMatch = chunk.match(/Ementa:\s*(?:EMENTA\s*[:\-–—]?\s*)?(.{50,})/si)
+    if (!ementaMatch) continue
+
+    const ementaText = ementaMatch[1].replace(/\n{3,}/g, '\n\n').trim()
+    if (ementaText.length < 50) continue
+
+    // Map tribunal alias (TJ-MG → tjmg, STF → stf)
+    const alias = tribunalJB.toLowerCase().replace(/-/g, '')
+    const tribunalInfo = ALL_TRIBUNALS.find(t => t.alias === alias)
+
+    results.push({
+      tribunal: (tribunalInfo?.alias || alias).toUpperCase(),
+      tribunalName: tribunalInfo?.name || tribunalJB,
+      numeroProcesso: identifier || `JB-${results.length + 1}`,
+      classe,
+      classeCode: 0,
+      assuntos: [],
+      orgaoJulgador: '',
+      dataAjuizamento: '',
+      grau: /^(stf|stj|tst|tse|stm)$/.test(alias) ? 'SUP' : 'G2',
+      formato: '',
+      movimentos: [],
+      ementa: trimDecisionText(ementaText, MAX_EMENTA_CHARS),
+      textSource: 'web',
+      textSourceUrl: 'https://www.jusbrasil.com.br',
+      textCompleteness: 'partial',
+    })
+  }
+
+  return results
 }
 
 /**

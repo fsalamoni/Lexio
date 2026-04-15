@@ -150,7 +150,7 @@ describe('datajud-service', () => {
     ]))
   })
 
-  it('uses relaxed operator "or" with minimum_should_match in the primary clause', () => {
+  it('uses stricter operator and minimum_should_match in the primary clause', () => {
     const body = buildDataJudSearchBody('contratação por tempo determinado atender necessidade', {
       maxPerTribunal: 5,
     }) as {
@@ -159,8 +159,7 @@ describe('datajud-service', () => {
 
     const primaryClause = body.query.bool.should[0]?.multi_match
     expect(primaryClause).toBeDefined()
-    expect(primaryClause?.operator).toBe('or')
-    expect(primaryClause?.minimum_should_match).toBe('30%')
+    expect(primaryClause?.minimum_should_match).toBe('60%')
     expect(primaryClause?.type).toBe('best_fields')
   })
 

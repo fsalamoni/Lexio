@@ -1424,9 +1424,9 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     setJurisprudenceLoading(true)
     const t0 = performance.now()
     try {
-      // Step 1: Query tribunals
+      // Step 1: Query tribunals + JusBrasil
       updateModalStep('query', { status: 'active' })
-      addModalSubstep('query', `Consultando ${config.tribunals.length} tribunais em paralelo...`)
+      addModalSubstep('query', `Consultando JusBrasil + ${config.tribunals.length} tribunais DataJud em paralelo...`)
 
       const djResult = await searchDataJud(config.query, {
         tribunals: config.tribunals,
