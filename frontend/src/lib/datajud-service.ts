@@ -639,8 +639,9 @@ export async function searchDataJud(
   let tribunalsWithResults = 0
 
   // ── Start JusBrasil topic search in parallel (primary relevance source) ──
+  const allowedTribunalAliases = new Set(tribunals.map(t => t.alias))
   const jusBrasilPromise = enrichMissingText
-    ? searchJusBrasilByTopic(query, signal).catch(() => [] as DataJudResult[])
+    ? searchJusBrasilByTopic(query, allowedTribunalAliases, signal).catch(() => [] as DataJudResult[])
     : Promise.resolve([] as DataJudResult[])
 
   const esBody = buildDataJudSearchBody(query, {
@@ -1582,6 +1583,7 @@ function formatProcessoNumber(raw: string): string {
  */
 async function searchJusBrasilByTopic(
   query: string,
+  allowedTribunalAliases: Set<string>,
   signal?: AbortSignal,
 ): Promise<DataJudResult[]> {
   if (signal?.aborted) return []
@@ -1597,10 +1599,26 @@ async function searchJusBrasilByTopic(
 
   if (!content || content.length < 500) return []
 
-  const results = parseJusBrasilTopicResults(content)
+  const allParsed = parseJusBrasilTopicResults(content)
+
+  // Filter to only tribunals the user selected
+  const results = allParsed.filter(r => {
+    const alias = r.tribunal.toLowerCase()
+    if (allowedTribunalAliases.has(alias)) return true
+    // Also match tribunal category: if user selected any tj*, allow all tjs from JusBrasil
+    const isTJ = alias.startsWith('tj')
+    const isTRF = alias.startsWith('trf')
+    const isTRT = alias.startsWith('trt')
+    const isTRE = alias.startsWith('tre')
+    if (isTJ) return [...allowedTribunalAliases].some(a => a.startsWith('tj'))
+    if (isTRF) return [...allowedTribunalAliases].some(a => a.startsWith('trf'))
+    if (isTRT) return [...allowedTribunalAliases].some(a => a.startsWith('trt'))
+    if (isTRE) return [...allowedTribunalAliases].some(a => a.startsWith('tre'))
+    return false
+  })
 
   if (isDataJudDebug()) {
-    console.debug(`[DataJud] JusBrasil topic search parsed ${results.length} results from ${content.length} chars`)
+    console.debug(`[DataJud] JusBrasil topic search: ${allParsed.length} parsed, ${results.length} after tribunal filter (allowed: ${[...allowedTribunalAliases].join(', ')})`)
   }
 
   return results
@@ -1652,10 +1670,23 @@ function parseJusBrasilTopicResults(content: string): DataJudResult[] {
     // Map tribunal alias (TJ-MG → tjmg, STF → stf)
     const alias = tribunalJB.toLowerCase().replace(/-/g, '')
     const tribunalInfo = ALL_TRIBUNALS.find(t => t.alias === alias)
+    const tribunalDisplay = tribunalInfo?.name || tribunalJB
+
+    // Build citation reference to append to ementa
+    // Format: (Classe Identificador, Tribunal.)
+    const citationParts: string[] = []
+    if (classe) citationParts.push(identifier ? `${classe} ${identifier}` : classe)
+    citationParts.push(tribunalDisplay)
+    const citation = `(${citationParts.join(', ')}.)`
+
+    // Append citation to ementa if not already present
+    const ementaWithCitation = ementaText.endsWith(')')
+      ? ementaText  // likely already has citation
+      : `${ementaText} ${citation}`
 
     results.push({
       tribunal: (tribunalInfo?.alias || alias).toUpperCase(),
-      tribunalName: tribunalInfo?.name || tribunalJB,
+      tribunalName: tribunalDisplay,
       numeroProcesso: identifier || `JB-${results.length + 1}`,
       classe,
       classeCode: 0,
@@ -1665,7 +1696,7 @@ function parseJusBrasilTopicResults(content: string): DataJudResult[] {
       grau: /^(stf|stj|tst|tse|stm)$/.test(alias) ? 'SUP' : 'G2',
       formato: '',
       movimentos: [],
-      ementa: trimDecisionText(ementaText, MAX_EMENTA_CHARS),
+      ementa: trimDecisionText(ementaWithCitation, MAX_EMENTA_CHARS),
       textSource: 'web',
       textSourceUrl: 'https://www.jusbrasil.com.br',
       textCompleteness: 'partial',

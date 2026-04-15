@@ -161,6 +161,35 @@ export interface SearchResultItem {
   _raw?: any
 }
 
+// ── Citation Suffix Builder ──────────────────────────────────────────────────
+
+/**
+ * Build a citation suffix for DataJud results that already have metadata.
+ * JusBrasil results already have citation appended in the ementa itself.
+ * DataJud results have orgaoJulgador, dataAjuizamento, etc. that we can use.
+ * Returns empty string if the ementa already ends with a parenthetical citation.
+ */
+function buildCitationSuffix(r: DataJudResult): string {
+  // If ementa already ends with citation (parenthetical), skip
+  if (r.ementa?.trimEnd().endsWith(')')) return ''
+  // Only add citation for DataJud-sourced results that have metadata
+  if (r.textSource === 'web' && !r.orgaoJulgador) return ''
+
+  const parts: string[] = []
+  if (r.classe && r.numeroProcesso && !r.numeroProcesso.startsWith('JB-')) {
+    const numero = r.numeroProcesso.includes('-')
+      ? r.numeroProcesso
+      : r.numeroProcesso.replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, '$1-$2.$3.$4.$5.$6')
+    parts.push(`${r.classe} n. ${numero}`)
+  }
+  if (r.orgaoJulgador) parts.push(r.orgaoJulgador)
+  if (r.tribunalName) parts.push(r.tribunalName)
+  if (r.dataAjuizamento) parts.push(`data: ${r.dataAjuizamento}`)
+
+  if (parts.length === 0) return ''
+  return `\n(${parts.join(', ')}.)`
+}
+
 // ── Jurisprudence Prompts ────────────────────────────────────────────────────
 
 const VALID_STANCES = ['favoravel', 'desfavoravel', 'neutro'] as const
@@ -1518,15 +1547,15 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           `Processo: ${r.numeroProcesso}`,
           `Classe: ${r.classe} (${r.classeCode})`,
           `Tribunal: ${r.tribunalName}`,
-          `Órgão Julgador: ${r.orgaoJulgador}`,
-          `Data de Ajuizamento: ${r.dataAjuizamento}`,
-          `Grau: ${r.grau}`,
-          `Formato: ${r.formato}`,
-          `Assuntos: ${r.assuntos.join('; ') || '—'}`,
+          r.orgaoJulgador ? `Órgão Julgador: ${r.orgaoJulgador}` : '',
+          r.dataAjuizamento ? `Data de Ajuizamento: ${r.dataAjuizamento}` : '',
+          r.grau ? `Grau: ${r.grau}` : '',
+          r.formato ? `Formato: ${r.formato}` : '',
+          r.assuntos.length > 0 ? `Assuntos: ${r.assuntos.join('; ')}` : '',
           r.relevanceScore != null ? `Relevância local: ${r.relevanceScore}/100` : '',
           r.textCompleteness ? `Completude do texto: ${r.textCompleteness}` : '',
           r.textSource ? `Texto obtido via: ${r.textSource}${r.textSourceUrl ? ` (${r.textSourceUrl})` : ''}` : '',
-          r.ementa ? `Ementa:\n${r.ementa}` : '',
+          r.ementa ? `Ementa:\n${r.ementa}${buildCitationSuffix(r)}` : '',
           r.inteiroTeor ? `Inteiro Teor:\n${r.inteiroTeor.slice(0, 6000)}${r.inteiroTeor.length > 6000 ? '\n[... texto truncado ...]' : ''}` : '',
           r.movimentos.length > 0 ? `Movimentos:\n${r.movimentos.slice(0, 5).map(m => `  - ${m.nome} (${m.dataHora})`).join('\n')}` : '',
         ].filter(Boolean).join('\n'),
