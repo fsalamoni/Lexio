@@ -191,11 +191,11 @@ const LEGAL_AREA_KEYWORDS: Record<string, { positive: string[]; negative: string
     negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'trabalhista', 'clt', 'fgts', 'tributario', 'icms', 'execucao fiscal', 'consumidor'],
   },
   inheritance: {
-    positive: ['sucessoes', 'heranca', 'inventario', 'testamento', 'meacao', 'partilha', 'espólio', 'herdeiro', 'legatario', 'colacao'],
+    positive: ['sucessoes', 'heranca', 'inventario', 'testamento', 'meacao', 'partilha', 'espolio', 'herdeiro', 'legatario', 'colacao'],
     negative: ['crime', 'penal', 'homicidio', 'trabalhista', 'clt', 'fgts', 'tributario', 'icms', 'consumidor', 'locacao'],
   },
   business: {
-    positive: ['empresarial', 'societario', 'falencia', 'recuperacao judicial', 'marca', 'patente', 'propriedade industrial', 'titulo de credito', 'contrato social', 'dissolucao'],
+    positive: ['empresarial', 'societario', 'falencia', 'recuperacao judicial', 'empresa', 'sociedade', 'marca', 'patente', 'propriedade industrial', 'titulo de credito', 'contrato social', 'dissolucao'],
     negative: ['crime', 'penal', 'homicidio', 'trabalhista', 'clt', 'fgts', 'familia', 'divorcio', 'alimentos'],
   },
   social_security: {
@@ -286,8 +286,24 @@ function inferLegalAreaFromQuery(query: string): string | undefined {
     }
   }
 
-  // Require at least 2 positive keyword matches AND a clear lead over the runner-up
+  // Require at least 2 positive keyword matches AND a clear lead over the runner-up.
   if (bestArea && bestScore >= 2 && bestScore > secondScore) return bestArea
+
+  // Exception: allow 1 hit when NO other area matches, but only if the keyword is a
+  // whole-word match (not a substring). This avoids "juri" matching "jurisprudencia",
+  // "adi" matching "administracao", "pis" matching "piso", etc.
+  if (bestArea && bestScore === 1 && secondScore === 0) {
+    const config = LEGAL_AREA_KEYWORDS[bestArea]
+    const hasWordBoundaryMatch = config.positive.some(term => {
+      const normalized = normalizeForSearch(term)
+      // Compound terms (with spaces) use substring match — they're already specific enough
+      if (normalized.includes(' ')) return normalizedQuery.includes(normalized)
+      // Single-word terms require word-boundary match to avoid false positives
+      return new RegExp(`\\b${normalized}\\b`).test(normalizedQuery)
+    })
+    if (hasWordBoundaryMatch) return bestArea
+  }
+
   return undefined
 }
 
