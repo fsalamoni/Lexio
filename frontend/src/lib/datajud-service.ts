@@ -139,6 +139,169 @@ const DATAJUD_SEARCH_FIELDS = [
   'orgaoJulgador.nome^2',
 ] as const
 
+// ── Legal Area Filtering ───────────────────────────────────────────────────────
+
+/**
+ * Keyword map for each legal area (área do direito).
+ * `negative` terms are used to EXCLUDE results clearly from a different area
+ * in both JusBrasil queries (via `-term` URL syntax), DataJud ES queries
+ * (via `must_not`), and post-filter scoring.
+ * `positive` terms identify results that belong to the area.
+ * All terms are normalized (no accents, lowercase) for matching.
+ */
+const LEGAL_AREA_KEYWORDS: Record<string, { positive: string[]; negative: string[] }> = {
+  civil: {
+    positive: ['civil', 'contrato', 'indenizacao', 'obrigacao', 'locacao', 'dano moral', 'responsabilidade civil', 'posse', 'propriedade', 'usucapiao', 'condominio', 'servidao'],
+    negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'prisao', 'pena privativa', 'reclusao', 'detencao', 'latrocinio', 'estelionato', 'trabalhista', 'empregado', 'empregador', 'clt', 'fgts', 'reclamacao trabalhista', 'tributario', 'imposto', 'icms', 'issqn'],
+  },
+  civil_procedure: {
+    positive: ['processo civil', 'cpc', 'procedimento comum', 'execucao civil', 'tutela provisoria', 'recurso especial', 'agravo de instrumento', 'apelacao civel'],
+    negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'prisao', 'pena privativa', 'reclusao', 'trabalhista', 'clt', 'fgts', 'reclamacao trabalhista'],
+  },
+  criminal: {
+    positive: ['penal', 'crime', 'pena', 'prisao', 'homicidio', 'furto', 'roubo', 'trafico', 'reclusao', 'detencao', 'latrocinio', 'estelionato', 'reu', 'condenacao criminal', 'absolvicao', 'tipicidade'],
+    negative: ['contrato civil', 'consumidor', 'locacao', 'tributario', 'trabalhista', 'empregado', 'clt', 'fgts', 'previdenciario', 'aposentadoria', 'indenizacao por dano moral', 'condominio'],
+  },
+  criminal_procedure: {
+    positive: ['processo penal', 'cpp', 'inquerito policial', 'denuncia criminal', 'habeas corpus', 'prisao preventiva', 'fianca', 'juri'],
+    negative: ['contrato civil', 'consumidor', 'locacao', 'tributario', 'trabalhista', 'empregado', 'clt', 'fgts', 'previdenciario'],
+  },
+  labor: {
+    positive: ['trabalhista', 'empregado', 'empregador', 'clt', 'fgts', 'rescisao trabalhista', 'reclamacao trabalhista', 'horas extras', 'aviso previo', 'adicional noturno', 'insalubridade', 'periculosidade'],
+    negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'prisao', 'tributario', 'icms', 'imposto', 'consumidor', 'locacao', 'condominio'],
+  },
+  tax: {
+    positive: ['tributario', 'imposto', 'tributo', 'icms', 'iss', 'issqn', 'ipi', 'irpf', 'irpj', 'cofins', 'pis', 'csll', 'contribuicao', 'execucao fiscal', 'divida ativa', 'fisco', 'lancamento tributario'],
+    negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trabalhista', 'clt', 'fgts', 'consumidor', 'locacao', 'condominio', 'familia', 'divorcio'],
+  },
+  consumer: {
+    positive: ['consumidor', 'cdc', 'fornecedor', 'produto defeituoso', 'servico defeituoso', 'propaganda enganosa', 'relacao de consumo', 'vicio', 'recall'],
+    negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'prisao', 'trabalhista', 'clt', 'fgts', 'tributario', 'icms', 'execucao fiscal'],
+  },
+  administrative: {
+    positive: ['administrativo', 'servidor publico', 'licitacao', 'concurso publico', 'improbidade', 'poder de policia', 'desapropriacao', 'concessao', 'permissao', 'ato administrativo'],
+    negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'trabalhista', 'clt', 'fgts', 'consumidor', 'locacao', 'familia', 'divorcio'],
+  },
+  constitutional: {
+    positive: ['constitucional', 'constituicao', 'direito fundamental', 'adi', 'adpf', 'mandado de seguranca', 'controle de constitucionalidade', 'repercussao geral'],
+    negative: ['trabalhista', 'clt', 'fgts', 'consumidor', 'locacao', 'tributario', 'icms', 'execucao fiscal'],
+  },
+  family: {
+    positive: ['familia', 'divorcio', 'guarda', 'alimentos', 'pensao alimenticia', 'uniao estavel', 'casamento', 'paternidade', 'adocao', 'alienacao parental', 'regulamentacao de visitas'],
+    negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'trabalhista', 'clt', 'fgts', 'tributario', 'icms', 'execucao fiscal', 'consumidor'],
+  },
+  inheritance: {
+    positive: ['sucessoes', 'heranca', 'inventario', 'testamento', 'meacao', 'partilha', 'espólio', 'herdeiro', 'legatario', 'colacao'],
+    negative: ['crime', 'penal', 'homicidio', 'trabalhista', 'clt', 'fgts', 'tributario', 'icms', 'consumidor', 'locacao'],
+  },
+  business: {
+    positive: ['empresarial', 'societario', 'falencia', 'recuperacao judicial', 'marca', 'patente', 'propriedade industrial', 'titulo de credito', 'contrato social', 'dissolucao'],
+    negative: ['crime', 'penal', 'homicidio', 'trabalhista', 'clt', 'fgts', 'familia', 'divorcio', 'alimentos'],
+  },
+  social_security: {
+    positive: ['previdenciario', 'aposentadoria', 'inss', 'beneficio previdenciario', 'auxilio doenca', 'pensao por morte', 'contribuicao previdenciaria', 'tempo de servico', 'incapacidade'],
+    negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trabalhista', 'clt', 'consumidor', 'locacao', 'tributario', 'icms'],
+  },
+  environmental: {
+    positive: ['ambiental', 'meio ambiente', 'poluicao', 'desmatamento', 'licenciamento ambiental', 'area de preservacao', 'crime ambiental', 'fauna', 'flora', 'ibama'],
+    negative: ['trabalhista', 'clt', 'fgts', 'consumidor', 'locacao', 'tributario', 'icms', 'familia', 'divorcio'],
+  },
+  electoral: {
+    positive: ['eleitoral', 'eleicao', 'candidato', 'propaganda eleitoral', 'registro de candidatura', 'prestacao de contas', 'inelegibilidade', 'diplomacao'],
+    negative: ['crime', 'penal', 'homicidio', 'trabalhista', 'clt', 'fgts', 'consumidor', 'tributario', 'icms', 'familia'],
+  },
+  international: {
+    positive: ['internacional', 'tratado', 'extradicao', 'homologacao de sentenca estrangeira', 'carta rogatoria', 'cooperacao internacional'],
+    negative: ['trabalhista', 'clt', 'fgts', 'consumidor', 'locacao', 'tributario', 'icms', 'familia', 'divorcio'],
+  },
+  digital: {
+    positive: ['digital', 'internet', 'dados pessoais', 'lgpd', 'marco civil', 'direito ao esquecimento', 'cibernetico', 'plataforma digital'],
+    negative: ['trabalhista', 'clt', 'fgts', 'tributario', 'icms', 'execucao fiscal', 'familia', 'divorcio'],
+  },
+}
+
+/**
+ * Check if a DataJud result belongs to the given legal area.
+ * Returns `true` if the result matches positive keywords, `false` if it matches
+ * negative keywords more strongly, or `undefined` if indeterminate.
+ */
+function classifyResultByArea(result: DataJudResult, legalArea: string): boolean | undefined {
+  const areaConfig = LEGAL_AREA_KEYWORDS[legalArea]
+  if (!areaConfig) return undefined
+
+  // Build a single normalized text blob from all searchable fields
+  const blob = normalizeForSearch([
+    result.classe,
+    result.assuntos.join(' '),
+    result.orgaoJulgador,
+    result.ementa?.slice(0, 2000) ?? '',
+  ].join(' '))
+
+  if (!blob) return undefined
+
+  let positiveHits = 0
+  let negativeHits = 0
+
+  for (const term of areaConfig.positive) {
+    if (blob.includes(normalizeForSearch(term))) positiveHits++
+  }
+  for (const term of areaConfig.negative) {
+    if (blob.includes(normalizeForSearch(term))) negativeHits++
+  }
+
+  // Strong negative signal: more negatives than positives, and at least 2 negatives
+  if (negativeHits >= 2 && negativeHits > positiveHits) return false
+  // Strong positive signal
+  if (positiveHits >= 1 && positiveHits > negativeHits) return true
+  // Single negative with zero positives — likely wrong area
+  if (negativeHits >= 1 && positiveHits === 0) return false
+  return undefined
+}
+
+/**
+ * Build JusBrasil negative query terms for a legal area.
+ * Returns string like "-crime -penal -homicídio" to append to URL query.
+ * Only uses a subset (max 5) of the most distinctive negative terms to avoid
+ * over-filtering that could eliminate valid cross-area references.
+ */
+function buildJusBrasilNegativeTerms(legalArea: string): string {
+  const areaConfig = LEGAL_AREA_KEYWORDS[legalArea]
+  if (!areaConfig) return ''
+  // Pick top 5 most distinctive single-word negatives (multi-word terms don't work
+  // reliably as JusBrasil excludes the first word only)
+  const singleWordNegatives = areaConfig.negative
+    .filter(t => !t.includes(' '))
+    .slice(0, 5)
+  return singleWordNegatives.map(t => `-${t}`).join(' ')
+}
+
+/**
+ * Build ES `must_not` clauses for negative-area terms in DataJud queries.
+ * Returns an array of `multi_match` clauses for the `must_not` position.
+ */
+function buildLegalAreaMustNot(legalArea: string): Array<Record<string, unknown>> {
+  const areaConfig = LEGAL_AREA_KEYWORDS[legalArea]
+  if (!areaConfig || areaConfig.negative.length === 0) return []
+  // Only filter on structured metadata fields (assuntos.nome, classe.nome),
+  // NOT on ementa/inteiro_teor (which DataJud doesn't index anyway).
+  // Single-word terms are more reliable for must_not filtering.
+  const negativeTerms = areaConfig.negative
+    .filter(t => !t.includes(' '))
+    .slice(0, 8)
+    .join(' ')
+  if (!negativeTerms) return []
+  return [
+    {
+      multi_match: {
+        query: negativeTerms,
+        fields: ['assuntos.nome', 'classe.nome'],
+        type: 'best_fields',
+        operator: 'or',
+      },
+    },
+  ]
+}
+
 const PORTUGUESE_STOPWORDS = new Set([
   'a', 'ao', 'aos', 'as', 'com', 'como', 'contra', 'da', 'das', 'de', 'do', 'dos', 'e', 'em', 'entre',
   'na', 'nas', 'no', 'nos', 'o', 'os', 'ou', 'para', 'pela', 'pelas', 'pelo', 'pelos', 'por', 'que',
@@ -556,6 +719,8 @@ export interface DataJudSearchOptions {
   dateTo?: string
   /** Filter: restrict to specific grau values (e.g. ['G1', 'G2', 'JE']) */
   graus?: string[]
+  /** Filter: legal area key (e.g. 'civil', 'criminal', 'labor') — excludes results from other areas */
+  legalArea?: string
   /** Progress callback */
   onProgress?: (progress: DataJudSearchProgress) => void
   /** Abort signal */
@@ -641,7 +806,7 @@ export async function searchDataJud(
   // ── Start JusBrasil topic search in parallel (primary relevance source) ──
   const allowedTribunalAliases = new Set(tribunals.map(t => t.alias))
   const jusBrasilPromise = enrichMissingText
-    ? searchJusBrasilByTopic(query, allowedTribunalAliases, signal).catch(() => [] as DataJudResult[])
+    ? searchJusBrasilByTopic(query, allowedTribunalAliases, signal, options.legalArea).catch(() => [] as DataJudResult[])
     : Promise.resolve([] as DataJudResult[])
 
   const esBody = buildDataJudSearchBody(query, {
@@ -649,6 +814,7 @@ export async function searchDataJud(
     dateFrom: options.dateFrom,
     dateTo: options.dateTo,
     graus: options.graus,
+    legalArea: options.legalArea,
   })
 
   const fetchTribunalData = async (tribunal: TribunalInfo) => {
@@ -764,6 +930,7 @@ export async function searchDataJud(
         dateFrom: options.dateFrom,
         dateTo: options.dateTo,
         graus: options.graus,
+        legalArea: options.legalArea,
       })
 
       onProgress?.({
@@ -825,7 +992,7 @@ export async function searchDataJud(
     console.debug(`[DataJud] Raw results: ${allResults.length} from ${tribunalsWithResults} tribunal(is), ${errors.length} error(s)`)
   }
 
-  let refinedResults = rankAndFilterDataJudResults(query, allResults, maxTotal)
+  let refinedResults = rankAndFilterDataJudResults(query, allResults, maxTotal, options.legalArea)
 
   if (isDataJudDebug()) {
     console.debug(`[DataJud] After ranking: ${refinedResults.length} results (max ${maxTotal})`)
@@ -838,7 +1005,7 @@ export async function searchDataJud(
       Math.min(maxTextEnrichment, refinedResults.length),
       signal,
     )
-    refinedResults = rankAndFilterDataJudResults(query, refinedResults, maxTotal)
+    refinedResults = rankAndFilterDataJudResults(query, refinedResults, maxTotal, options.legalArea)
   }
 
   // ── Merge JusBrasil topic search results (primary relevance source) ──────
@@ -850,11 +1017,11 @@ export async function searchDataJud(
     // Score JusBrasil results and merge with DataJud results
     const scoredJB = jusBrasilResults.map(r => ({
       ...r,
-      relevanceScore: scoreDataJudResult(query, r),
+      relevanceScore: scoreDataJudResult(query, r, options.legalArea),
     }))
     // Combine: JusBrasil results first (they have ementa + are topically relevant)
     const combined = [...scoredJB, ...refinedResults]
-    refinedResults = rankAndFilterDataJudResults(query, combined, maxTotal)
+    refinedResults = rankAndFilterDataJudResults(query, combined, maxTotal, options.legalArea)
   }
 
   const finalizedResults = refinedResults.map(result => ({
@@ -915,6 +1082,7 @@ interface BuildDataJudSearchBodyOptions {
   dateFrom?: string
   dateTo?: string
   graus?: string[]
+  legalArea?: string
 }
 
 export function buildDataJudSearchBody(query: string, options: BuildDataJudSearchBodyOptions): Record<string, unknown> {
@@ -1004,6 +1172,14 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
     boolQuery.filter = filters
   }
 
+  // Exclude results from clearly unrelated legal areas
+  if (options.legalArea) {
+    const mustNotClauses = buildLegalAreaMustNot(options.legalArea)
+    if (mustNotClauses.length > 0) {
+      boolQuery.must_not = mustNotClauses
+    }
+  }
+
   const esResult = {
     size: options.maxPerTribunal,
     query: { bool: boolQuery },
@@ -1016,7 +1192,7 @@ export function buildDataJudSearchBody(query: string, options: BuildDataJudSearc
 
   if (isDataJudDebug()) {
     console.debug('[DataJud] ES query body:', JSON.stringify(esResult, null, 2))
-    console.debug('[DataJud] significant terms:', significantTerms, '| clauses:', should.length)
+    console.debug('[DataJud] significant terms:', significantTerms, '| clauses:', should.length, '| legalArea:', options.legalArea ?? 'none')
   }
 
   return esResult
@@ -1072,6 +1248,13 @@ function buildFallbackSearchBody(
     boolQuery.filter = filters
   }
 
+  if (options.legalArea) {
+    const mustNotClauses = buildLegalAreaMustNot(options.legalArea)
+    if (mustNotClauses.length > 0) {
+      boolQuery.must_not = mustNotClauses
+    }
+  }
+
   return {
     size: options.maxPerTribunal,
     query: { bool: boolQuery },
@@ -1092,11 +1275,11 @@ function isDataJudDebug(): boolean {
   }
 }
 
-function rankAndFilterDataJudResults(query: string, results: DataJudResult[], maxTotal: number): DataJudResult[] {
+function rankAndFilterDataJudResults(query: string, results: DataJudResult[], maxTotal: number, legalArea?: string): DataJudResult[] {
   const scored = results
     .map(result => ({
       ...result,
-      relevanceScore: scoreDataJudResult(query, result),
+      relevanceScore: scoreDataJudResult(query, result, legalArea),
     }))
     .sort((left, right) => {
       const scoreDiff = (right.relevanceScore ?? 0) - (left.relevanceScore ?? 0)
@@ -1106,18 +1289,29 @@ function rankAndFilterDataJudResults(query: string, results: DataJudResult[], ma
 
   if (scored.length === 0) return []
 
-  const topScore = scored[0].relevanceScore ?? 0
-  const minimumAcceptedScore = topScore >= 75 ? 28 : topScore >= 55 ? 22 : 16
-  let filtered = scored.filter((result, index) => index < 3 || (result.relevanceScore ?? 0) >= minimumAcceptedScore)
+  // When a legal area is set, remove results clearly from wrong area (keep top 3 always)
+  let areaFiltered = scored
+  if (legalArea) {
+    areaFiltered = scored.filter((result, index) => {
+      if (index < 3) return true
+      const classification = classifyResultByArea(result, legalArea)
+      return classification !== false
+    })
+    if (areaFiltered.length === 0) areaFiltered = scored.slice(0, 3)
+  }
 
-  if (filtered.length < Math.min(5, scored.length)) {
-    filtered = scored.slice(0, Math.min(scored.length, Math.max(5, maxTotal)))
+  const topScore = areaFiltered[0]?.relevanceScore ?? 0
+  const minimumAcceptedScore = topScore >= 75 ? 28 : topScore >= 55 ? 22 : 16
+  let filtered = areaFiltered.filter((result, index) => index < 3 || (result.relevanceScore ?? 0) >= minimumAcceptedScore)
+
+  if (filtered.length < Math.min(5, areaFiltered.length)) {
+    filtered = areaFiltered.slice(0, Math.min(areaFiltered.length, Math.max(5, maxTotal)))
   }
 
   return filtered.slice(0, maxTotal)
 }
 
-export function scoreDataJudResult(query: string, result: DataJudResult): number {
+export function scoreDataJudResult(query: string, result: DataJudResult, legalArea?: string): number {
   const normalizedQuery = normalizeForSearch(query)
   const terms = extractSignificantQueryTerms(query)
   const texts = [
@@ -1161,6 +1355,13 @@ export function scoreDataJudResult(query: string, result: DataJudResult): number
     if (!Number.isNaN(year) && year >= new Date().getFullYear() - 5) {
       score += 4
     }
+  }
+
+  // Legal area relevance: penalize results from clearly wrong area, bonus for matching
+  if (legalArea) {
+    const areaClassification = classifyResultByArea(result, legalArea)
+    if (areaClassification === false) score -= 30
+    else if (areaClassification === true) score += 8
   }
 
   return Math.max(0, Math.min(100, Math.round(score)))
@@ -1585,10 +1786,13 @@ async function searchJusBrasilByTopic(
   query: string,
   allowedTribunalAliases: Set<string>,
   signal?: AbortSignal,
+  legalArea?: string,
 ): Promise<DataJudResult[]> {
   if (signal?.aborted) return []
 
-  const url = `https://www.jusbrasil.com.br/jurisprudencia/busca?q=${encodeURIComponent(query)}`
+  const negativeTerms = legalArea ? buildJusBrasilNegativeTerms(legalArea) : ''
+  const fullQuery = negativeTerms ? `${query} ${negativeTerms}` : query
+  const url = `https://www.jusbrasil.com.br/jurisprudencia/busca?q=${encodeURIComponent(fullQuery)}`
 
   let content = ''
   try {

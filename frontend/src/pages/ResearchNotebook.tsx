@@ -1463,6 +1463,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         dateFrom: config.dateFrom || undefined,
         dateTo: config.dateTo || undefined,
         graus: config.graus.length > 0 ? config.graus : undefined,
+        legalArea: config.legalArea || undefined,
         enrichMissingText: true,
         maxTextEnrichment: 10,
         onProgress: (progress) => {

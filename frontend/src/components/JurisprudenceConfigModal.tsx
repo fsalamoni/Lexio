@@ -13,6 +13,7 @@ import {
   DATAJUD_GRAUS,
   type TribunalInfo,
 } from '../lib/datajud-service'
+import { AREA_LABELS } from '../lib/constants'
 
 export interface JurisprudenceSearchConfig {
   query: string
@@ -21,6 +22,7 @@ export interface JurisprudenceSearchConfig {
   dateTo: string
   graus: string[]
   maxPerTribunal: number
+  legalArea: string
 }
 
 interface JurisprudenceConfigModalProps {
@@ -52,6 +54,7 @@ export default function JurisprudenceConfigModal({
   const [dateTo, setDateTo] = useState('')
   const [selectedGraus, setSelectedGraus] = useState<Set<string>>(new Set())
   const [maxPerTribunal, setMaxPerTribunal] = useState(5)
+  const [legalArea, setLegalArea] = useState('')
   const [showFilters, setShowFilters] = useState(false)
 
   React.useEffect(() => {
@@ -126,6 +129,7 @@ export default function JurisprudenceConfigModal({
       dateTo,
       graus: Array.from(selectedGraus),
       maxPerTribunal,
+      legalArea,
     })
   }
 
@@ -191,7 +195,7 @@ export default function JurisprudenceConfigModal({
           >
             <Filter className="w-3 h-3" />
             Filtros
-            {(dateFrom || dateTo || selectedGraus.size > 0) && (
+            {(dateFrom || dateTo || selectedGraus.size > 0 || legalArea) && (
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             )}
           </button>
@@ -257,6 +261,19 @@ export default function JurisprudenceConfigModal({
                   </button>
                 ))}
               </div>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-600 mb-1.5">Área do Direito</label>
+              <select
+                value={legalArea}
+                onChange={e => setLegalArea(e.target.value)}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
+              >
+                <option value="">Todas as áreas</option>
+                {Object.entries(AREA_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
             </div>
           </div>
         )}
