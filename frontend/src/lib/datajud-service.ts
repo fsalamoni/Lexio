@@ -159,15 +159,15 @@ const LEGAL_AREA_KEYWORDS: Record<string, { positive: string[]; negative: string
     negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'prisao', 'pena privativa', 'reclusao', 'trabalhista', 'clt', 'fgts', 'reclamacao trabalhista'],
   },
   criminal: {
-    positive: ['penal', 'crime', 'pena', 'prisao', 'homicidio', 'furto', 'roubo', 'trafico', 'reclusao', 'detencao', 'latrocinio', 'estelionato', 'reu', 'condenacao criminal', 'absolvicao', 'tipicidade'],
+    positive: ['penal', 'crime', 'pena', 'prisao', 'homicidio', 'furto', 'roubo', 'trafico', 'reclusao', 'detencao', 'latrocinio', 'estelionato', 'reu', 'condenacao criminal', 'absolvicao', 'tipicidade', 'codigo penal', 'execucao penal', 'inquerito'],
     negative: ['contrato civil', 'consumidor', 'locacao', 'tributario', 'trabalhista', 'empregado', 'clt', 'fgts', 'previdenciario', 'aposentadoria', 'indenizacao por dano moral', 'condominio'],
   },
   criminal_procedure: {
-    positive: ['processo penal', 'cpp', 'inquerito policial', 'denuncia criminal', 'habeas corpus', 'prisao preventiva', 'fianca', 'juri'],
+    positive: ['processo penal', 'cpp', 'inquerito policial', 'denuncia criminal', 'habeas corpus', 'prisao preventiva', 'fianca', 'juri', 'execucao penal', 'acao penal', 'flagrante'],
     negative: ['contrato civil', 'consumidor', 'locacao', 'tributario', 'trabalhista', 'empregado', 'clt', 'fgts', 'previdenciario'],
   },
   labor: {
-    positive: ['trabalhista', 'empregado', 'empregador', 'clt', 'fgts', 'rescisao trabalhista', 'reclamacao trabalhista', 'horas extras', 'aviso previo', 'adicional noturno', 'insalubridade', 'periculosidade'],
+    positive: ['trabalhista', 'empregado', 'empregador', 'clt', 'fgts', 'rescisao trabalhista', 'reclamacao trabalhista', 'horas extras', 'aviso previo', 'adicional noturno', 'insalubridade', 'periculosidade', 'contrato de trabalho', 'carteira de trabalho', 'justa causa', 'dissidio'],
     negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'prisao', 'tributario', 'icms', 'imposto', 'consumidor', 'locacao', 'condominio'],
   },
   tax: {
@@ -179,11 +179,11 @@ const LEGAL_AREA_KEYWORDS: Record<string, { positive: string[]; negative: string
     negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'prisao', 'trabalhista', 'clt', 'fgts', 'tributario', 'icms', 'execucao fiscal'],
   },
   administrative: {
-    positive: ['administrativo', 'servidor publico', 'licitacao', 'concurso publico', 'improbidade', 'poder de policia', 'desapropriacao', 'concessao', 'permissao', 'ato administrativo'],
+    positive: ['administrativo', 'servidor publico', 'servidor', 'licitacao', 'concurso publico', 'improbidade', 'poder de policia', 'desapropriacao', 'concessao', 'permissao', 'ato administrativo', 'contratacao temporaria', 'contratacao', 'cargo publico', 'nomeacao', 'exoneracao', 'processo administrativo', 'pregao', 'tomada de precos', 'regime juridico'],
     negative: ['crime', 'penal', 'homicidio', 'furto', 'roubo', 'trafico', 'trabalhista', 'clt', 'fgts', 'consumidor', 'locacao', 'familia', 'divorcio'],
   },
   constitutional: {
-    positive: ['constitucional', 'constituicao', 'direito fundamental', 'adi', 'adpf', 'mandado de seguranca', 'controle de constitucionalidade', 'repercussao geral'],
+    positive: ['constitucional', 'constituicao', 'direito fundamental', 'adi', 'adpf', 'mandado de seguranca', 'controle de constitucionalidade', 'repercussao geral', 'recurso extraordinario', 'stf', 'supremo tribunal federal'],
     negative: ['trabalhista', 'clt', 'fgts', 'consumidor', 'locacao', 'tributario', 'icms', 'execucao fiscal'],
   },
   family: {
