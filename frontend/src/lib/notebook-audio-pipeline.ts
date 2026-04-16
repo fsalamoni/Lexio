@@ -9,7 +9,7 @@
  * The script uses two hosts (A and B) discussing the topic naturally.
  */
 
-import { callLLM, type LLMResult } from './llm-client'
+import { callLLMWithFallback, type LLMResult } from './llm-client'
 import { loadResearchNotebookModels, validateScopedAgentModels } from './model-config'
 import type { AudioSegment } from './artifact-parsers'
 import { generateTTSViaOpenRouter, type TTSResult } from './tts-client'
@@ -264,10 +264,11 @@ export async function generateAudioOverview(
   onProgress?.('Gerando roteiro do podcast...', 'Criando diálogo entre os hosts')
 
   const prompt = buildScriptPrompt(input)
-  const llmResult: LLMResult = await callLLM(
+  const llmResult: LLMResult = await callLLMWithFallback(
     input.apiKey,
     prompt.system,
     prompt.user,
+    scriptModel,
     scriptModel,
     10000,
     0.6, // Higher temperature for more natural conversation

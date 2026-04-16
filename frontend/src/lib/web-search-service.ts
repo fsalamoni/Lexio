@@ -31,12 +31,18 @@ export interface DeepSearchProgress {
   currentUrl: string
 }
 
+export interface DeepSearchWarning {
+  kind: 'fallback_to_snippets' | 'jina_fallback_used' | 'all_providers_failed'
+  attempted: string[]
+}
+
 export interface DeepSearchResult {
   results: WebSearchResult[]
   contents: Array<{ url: string; title: string; content: string }>
   durationMs: number
   fetchFailures: number
   diagnostics?: WebSearchDiagnostics
+  warnings?: DeepSearchWarning[]
 }
 
 export type WebSearchErrorType =
@@ -50,7 +56,7 @@ export type WebSearchErrorType =
   | 'empty'
 
 export interface WebSearchStrategyDiagnostic {
-  strategy: 'ddg_jina' | 'ddg_lite' | 'ddg_proxy' | 'ddg_instant'
+  strategy: 'ddg_jina' | 'ddg_lite' | 'ddg_proxy' | 'ddg_instant' | 'jina_search'
   resultsCount: number
   errorType: WebSearchErrorType
   message?: string
@@ -280,6 +286,88 @@ async function searchViaDDGMirror(query: string, signal?: AbortSignal): Promise<
   const ddgMirrorUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
   const readerUrl = `https://r.jina.ai/${ddgMirrorUrl}`
   return searchViaJinaReader('ddg_lite', readerUrl, signal)
+}
+
+/**
+ * Fallback search using Jina Search API (s.jina.ai).
+ * Free, no API key required. Returns structured JSON results directly.
+ */
+async function searchViaJinaSearchAPI(
+  query: string,
+  signal?: AbortSignal,
+): Promise<SearchStrategyOutcome> {
+  const strategy = 'jina_search' as const
+
+  for (let attempt = 0; attempt < SEARCH_RETRY_ATTEMPTS; attempt++) {
+    if (signal?.aborted) {
+      return { strategy, results: [], errorType: 'aborted', message: 'Busca cancelada' }
+    }
+    try {
+      const url = `https://s.jina.ai/${encodeURIComponent(query)}`
+      const resp = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: signal ?? AbortSignal.timeout(JINA_TIMEOUT + attempt * 2_000),
+      })
+      if (!resp.ok) {
+        const errorType = classifyStatus(resp.status)
+        if (!isRetriableStatus(resp.status) || attempt === SEARCH_RETRY_ATTEMPTS - 1) {
+          return {
+            strategy,
+            results: [],
+            errorType,
+            message: `Jina Search API retornou HTTP ${resp.status}`,
+          }
+        }
+        await wait(220 + attempt * 260)
+        continue
+      }
+      const json = await resp.json() as {
+        data?: Array<{ title?: string; url?: string; description?: string; content?: string }>
+      }
+      const items = json.data ?? []
+      const results: WebSearchResult[] = items
+        .filter((item): item is { title: string; url: string; description?: string; content?: string } =>
+          typeof item.url === 'string' && item.url.startsWith('http') && typeof item.title === 'string',
+        )
+        .slice(0, 10)
+        .map(item => ({
+          title: item.title.slice(0, 200),
+          url: cleanUrl(item.url),
+          snippet: (item.description || item.content || '').slice(0, 400),
+        }))
+
+      return {
+        strategy,
+        results,
+        errorType: results.length > 0 ? 'none' : 'empty',
+        message: results.length > 0 ? undefined : 'Jina Search API não retornou resultados',
+      }
+    } catch (error) {
+      const errorType = classifyFetchError(error)
+      if (errorType === 'aborted') {
+        return { strategy, results: [], errorType, message: 'Busca cancelada' }
+      }
+      if (errorType === 'network') {
+        return {
+          strategy,
+          results: [],
+          errorType,
+          message: error instanceof Error ? error.message : 'Falha de rede ao consultar Jina Search API',
+        }
+      }
+      if (attempt === SEARCH_RETRY_ATTEMPTS - 1) {
+        return {
+          strategy,
+          results: [],
+          errorType,
+          message: error instanceof Error ? error.message : 'Falha ao consultar Jina Search API',
+        }
+      }
+      await wait(250 + attempt * 300)
+    }
+  }
+
+  return { strategy, results: [], errorType: 'empty', message: 'Sem resultados' }
 }
 
 async function searchViaJinaReader(
@@ -541,7 +629,30 @@ export async function deepWebSearch(
     currentUrl: '',
   })
 
-  const { results, diagnostics } = await searchWebResultsWithDiagnostics(query, signal)
+  const { results: initialResults, diagnostics } = await searchWebResultsWithDiagnostics(query, signal)
+  const warnings: DeepSearchWarning[] = []
+
+  // Jina Search API fallback when DuckDuckGo strategies returned nothing
+  let results = initialResults
+  if (results.length === 0 && !signal?.aborted) {
+    const jinaSearchOutcome = await searchViaJinaSearchAPI(query, signal)
+    diagnostics.strategies.push({
+      strategy: jinaSearchOutcome.strategy,
+      resultsCount: jinaSearchOutcome.results.length,
+      errorType: jinaSearchOutcome.errorType,
+      message: jinaSearchOutcome.message,
+    })
+    if (jinaSearchOutcome.errorType !== 'none' && jinaSearchOutcome.errorType !== 'empty') {
+      diagnostics.hadTechnicalError = true
+    }
+    if (jinaSearchOutcome.results.length > 0) {
+      results = deduplicateResults([...results, ...jinaSearchOutcome.results])
+      warnings.push({
+        kind: 'jina_fallback_used',
+        attempted: diagnostics.strategies.map(s => s.strategy),
+      })
+    }
+  }
 
   onProgress?.({
     phase: 'fetching',
@@ -553,12 +664,17 @@ export async function deepWebSearch(
   })
 
   if (results.length === 0) {
+    warnings.push({
+      kind: 'all_providers_failed',
+      attempted: diagnostics.strategies.map(s => s.strategy),
+    })
     return {
       results: [],
       contents: [],
       durationMs: Math.round(performance.now() - start),
       fetchFailures: 0,
       diagnostics,
+      warnings,
     }
   }
 
@@ -598,6 +714,14 @@ export async function deepWebSearch(
     }
   }
 
+  // Warn when results exist but no full content could be fetched
+  if (results.length > 0 && contents.length === 0) {
+    warnings.push({
+      kind: 'fallback_to_snippets',
+      attempted: topResults.map(r => r.url),
+    })
+  }
+
   onProgress?.({
     phase: 'done',
     query,
@@ -613,5 +737,6 @@ export async function deepWebSearch(
     durationMs: Math.round(performance.now() - start),
     fetchFailures,
     diagnostics,
+    warnings: warnings.length > 0 ? warnings : undefined,
   }
 }

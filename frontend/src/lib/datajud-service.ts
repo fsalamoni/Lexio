@@ -31,7 +31,17 @@ async function getDataJudApiKey(): Promise<string> {
 
 /** Base URL for all DataJud endpoints */
 const DATAJUD_BASE_URL = 'https://api-publica.datajud.cnj.jus.br'
-const KNOWN_UNAVAILABLE_TRIBUNAL_ALIASES = new Set(['stf'])
+/**
+ * Tribunal aliases whose Elasticsearch indices don't exist on the DataJud public API.
+ * These are skipped for DataJud ES queries, but may still be searched via website fallback.
+ */
+const DATAJUD_API_UNAVAILABLE_ALIASES = new Set(['stf'])
+
+/**
+ * STF jurisprudence portal URL template.
+ * STF decisions are NOT indexed in DataJud, so we scrape the STF website via Jina Reader.
+ */
+const STF_JURISPRUDENCE_URL = 'https://jurisprudencia.stf.jus.br/pages/search'
 
 export function _resolveLocalProxyEndpoint(baseUrl?: string): string {
   const resolvedBase = baseUrl
@@ -670,7 +680,7 @@ export const ALL_TRIBUNALS: TribunalInfo[] = [
  * Covers all superiores, all TRFs, and top state courts by case volume.
  */
 export const DEFAULT_TRIBUNALS: TribunalInfo[] = [
-  ...TRIBUNAIS_SUPERIORES.filter(t => !KNOWN_UNAVAILABLE_TRIBUNAL_ALIASES.has(t.alias)),
+  ...TRIBUNAIS_SUPERIORES,
   ...JUSTICA_FEDERAL,
   ...['tjsp', 'tjrj', 'tjmg', 'tjrs', 'tjpr', 'tjba', 'tjdft', 'tjpe', 'tjsc', 'tjgo']
     .map(alias => JUSTICA_ESTADUAL.find(t => t.alias === alias)!)
@@ -876,6 +886,12 @@ export async function searchDataJud(
     ? searchJusBrasilByTopic(query, allowedTribunalAliases, signal, effectiveLegalArea).catch(() => [] as DataJudResult[])
     : Promise.resolve([] as DataJudResult[])
 
+  // ── Start STF website search in parallel if STF is among requested tribunals ──
+  const stfRequested = tribunals.some(t => DATAJUD_API_UNAVAILABLE_ALIASES.has(t.alias) && t.alias === 'stf')
+  const stfWebsitePromise = stfRequested
+    ? searchSTFViaWebsite(query, maxPerTribunal, signal).catch(() => [] as DataJudResult[])
+    : Promise.resolve([] as DataJudResult[])
+
   const esBody = buildDataJudSearchBody(query, {
     maxPerTribunal,
     dateFrom: options.dateFrom,
@@ -889,7 +905,7 @@ export async function searchDataJud(
 
     const tribunalAttempts: DataJudEndpointAttempt[] = []
 
-    if (KNOWN_UNAVAILABLE_TRIBUNAL_ALIASES.has(tribunal.alias)) {
+    if (DATAJUD_API_UNAVAILABLE_ALIASES.has(tribunal.alias)) {
       throw new DataJudRequestError(
         `DataJud público indisponível para ${tribunal.alias.toUpperCase()} (índice ausente no CNJ).`,
         'http',
@@ -1016,7 +1032,7 @@ export async function searchDataJud(
 
         const batchResults = await Promise.allSettled(
           batch.map(async (tribunal) => {
-            if (KNOWN_UNAVAILABLE_TRIBUNAL_ALIASES.has(tribunal.alias)) return { tribunal, hits: [] as Array<{ _source?: Record<string, unknown> }>, attempts: [] as DataJudEndpointAttempt[] }
+            if (DATAJUD_API_UNAVAILABLE_ALIASES.has(tribunal.alias)) return { tribunal, hits: [] as Array<{ _source?: Record<string, unknown> }>, attempts: [] as DataJudEndpointAttempt[] }
             const attempts: DataJudEndpointAttempt[] = []
             const hits = await fetchDataJudHits(tribunal, fallbackBody, signal, attempts)
             return { tribunal, hits, attempts }
@@ -1089,6 +1105,29 @@ export async function searchDataJud(
     // Combine: JusBrasil results first (they have ementa + are topically relevant)
     const combined = [...scoredJB, ...refinedResults]
     refinedResults = rankAndFilterDataJudResults(query, combined, maxTotal, effectiveLegalArea)
+  }
+
+  // ── Merge STF website search results (fallback for DataJud-unavailable STF) ──
+  const stfWebsiteResults = await stfWebsitePromise
+  if (stfWebsiteResults.length > 0) {
+    if (isDataJudDebug()) {
+      console.debug(`[DataJud] STF website search returned ${stfWebsiteResults.length} results`)
+    }
+    tribunalsWithResults++
+    const scoredSTF = stfWebsiteResults.map(r => ({
+      ...r,
+      relevanceScore: scoreDataJudResult(query, r, effectiveLegalArea),
+    }))
+    const combined = [...scoredSTF, ...refinedResults]
+    refinedResults = rankAndFilterDataJudResults(query, combined, maxTotal, effectiveLegalArea)
+
+    // Remove the DataJud "index unavailable" error for STF since website search succeeded
+    const stfErrorIdx = errorDetails.findIndex(e => e.tribunalAlias === 'stf')
+    if (stfErrorIdx >= 0) {
+      errorDetails.splice(stfErrorIdx, 1)
+      const stfErrMsgIdx = errors.findIndex(e => e.startsWith('stf:'))
+      if (stfErrMsgIdx >= 0) errors.splice(stfErrMsgIdx, 1)
+    }
   }
 
   const finalizedResults = refinedResults.map(result => ({
@@ -1987,6 +2026,272 @@ function parseJusBrasilTopicResults(content: string): DataJudResult[] {
   }
 
   return results
+}
+
+// ── STF Website Search (fallback for DataJud-unavailable STF) ─────────────
+
+/**
+ * Search STF jurisprudence portal via Jina Reader.
+ * DataJud does not index STF decisions, so we scrape the STF website as a fallback.
+ * Returns DataJudResult[] with tribunal='STF'.
+ */
+async function searchSTFViaWebsite(
+  query: string,
+  maxResults = 5,
+  signal?: AbortSignal,
+): Promise<DataJudResult[]> {
+  if (signal?.aborted) return []
+
+  const stfUrl = `${STF_JURISPRUDENCE_URL}?base=acordaos&pesquisa_inteiro_teor=false&sinonimo=true&plural=true&radicais=false&buscaExata=true&page=1&pageSize=${maxResults}&queryString=${encodeURIComponent(query)}&sort=_score&sortBy=desc`
+
+  let content = ''
+  try {
+    content = await fetchUrlContent(stfUrl)
+  } catch {
+    if (isDataJudDebug()) {
+      console.debug('[DataJud] STF website search failed (fetch error)')
+    }
+    return []
+  }
+
+  if (!content || content.length < 200) {
+    if (isDataJudDebug()) {
+      console.debug('[DataJud] STF website search returned empty/short content')
+    }
+    return []
+  }
+
+  const results = parseSTFWebsiteResults(content, maxResults)
+
+  if (isDataJudDebug()) {
+    console.debug(`[DataJud] STF website search: ${results.length} result(s) parsed`)
+  }
+
+  return results
+}
+
+/**
+ * Parse STF jurisprudence portal results scraped via Jina Reader.
+ *
+ * The STF portal returns results in a structured format. When rendered through
+ * Jina Reader, typical patterns include:
+ *   - Process identifiers (RE, ADI, HC, MS, etc.) with numbers
+ *   - Relator (reporting justice) names
+ *   - Ementa text blocks
+ *   - Julgamento (judgment) dates
+ */
+function parseSTFWebsiteResults(content: string, maxResults: number): DataJudResult[] {
+  const results: DataJudResult[] = []
+
+  // Strategy 1: Split by common STF result delimiters
+  // The STF portal typically presents results with process class + number headers
+  const resultBlocks = splitSTFResultBlocks(content)
+
+  for (const block of resultBlocks) {
+    if (results.length >= maxResults) break
+
+    const parsed = parseSTFResultBlock(block)
+    if (parsed) {
+      results.push(parsed)
+    }
+  }
+
+  // Strategy 2: If structured parsing fails, try extracting ementa-like text blocks
+  if (results.length === 0) {
+    const fallbackResults = extractSTFFallbackResults(content, maxResults)
+    results.push(...fallbackResults)
+  }
+
+  return results
+}
+
+/**
+ * Split STF portal content into individual result blocks.
+ * Looks for patterns like "RE 123456", "ADI 1234", "HC 12345", etc.
+ */
+function splitSTFResultBlocks(content: string): string[] {
+  // STF process classes that appear as headers
+  const stfClassPattern = /(?:^|\n)(?=\s*(?:RE|ADI|ADC|ADPF|HC|MS|MI|RHC|AgR|ED|ARE|AI|ACO|Rcl|AP|Inq|Pet|SS|SL|STA|IF|AO|AS|AC|AR|EXT|PPE|HDE)\s+\d)/gm
+  const positions: number[] = []
+  let match: RegExpExecArray | null
+
+  while ((match = stfClassPattern.exec(content)) !== null) {
+    positions.push(match.index)
+  }
+
+  if (positions.length === 0) return [content]
+
+  const blocks: string[] = []
+  for (let i = 0; i < positions.length; i++) {
+    const start = positions[i]
+    const end = positions[i + 1] ?? content.length
+    const block = content.slice(start, end).trim()
+    if (block.length >= 100) {
+      blocks.push(block)
+    }
+  }
+
+  return blocks
+}
+
+/** Regex for STF process class + number header. */
+const STF_PROCESS_HEADER_RE = /^\s*(RE|ADI|ADC|ADPF|HC|MS|MI|RHC|AgR|ED|ARE|AI|ACO|Rcl|AP|Inq|Pet|SS|SL|STA|IF|AO|AS|AC|AR|EXT|PPE|HDE)\s+(\d[\d./-]*\d?)/m
+
+/** Regex for relator (reporting justice). */
+const STF_RELATOR_RE = /(?:Relator|Min\.|Ministro)\s*[:(]?\s*(?:Min\.\s*)?([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s.]+)/i
+
+/** Regex for judgment date. */
+const STF_DATE_RE = /(?:Julgamento|Data|DJ[eE]?|Publicação|DJE|Sessão)\s*[:\-]?\s*(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/i
+
+/**
+ * Parse a single STF result block into a DataJudResult.
+ */
+function parseSTFResultBlock(block: string): DataJudResult | null {
+  const headerMatch = block.match(STF_PROCESS_HEADER_RE)
+  if (!headerMatch) return null
+
+  const classe = headerMatch[1]
+  const numero = headerMatch[2]
+
+  // Extract ementa
+  const ementaMatch = block.match(/(?:EMENTA|Ementa)\s*[:\-–—]?\s*(.{50,})/si)
+  let ementaText: string | undefined
+  if (ementaMatch) {
+    // Take ementa text up to the next major section or end of block
+    let ementaRaw = ementaMatch[1]
+    // Truncate at common section boundaries
+    const sectionBoundary = ementaRaw.search(/\n\s*(?:Decisão|DECISÃO|Acórdão|ACÓRDÃO|Relatório|RELATÓRIO|Voto|VOTO|Inteiro Teor)\s*[:\-–—]?/i)
+    if (sectionBoundary > 50) {
+      ementaRaw = ementaRaw.slice(0, sectionBoundary)
+    }
+    ementaText = trimDecisionText(ementaRaw.trim(), MAX_EMENTA_CHARS)
+  }
+
+  // If no ementa found, skip this result (not useful without text)
+  if (!ementaText || ementaText.length < 50) return null
+
+  // Extract relator as orgaoJulgador
+  const relatorMatch = block.match(STF_RELATOR_RE)
+  const relator = relatorMatch ? relatorMatch[1].trim() : ''
+
+  // Extract date
+  const dateMatch = block.match(STF_DATE_RE)
+  let dataAjuizamento = ''
+  if (dateMatch) {
+    dataAjuizamento = normalizeSTFDate(dateMatch[1])
+  }
+
+  return {
+    tribunal: 'STF',
+    tribunalName: 'Supremo Tribunal Federal',
+    numeroProcesso: `${classe} ${numero}`,
+    classe: mapSTFClasseLabel(classe),
+    classeCode: 0,
+    assuntos: [],
+    orgaoJulgador: relator ? `Min. ${relator}` : 'Supremo Tribunal Federal',
+    dataAjuizamento,
+    grau: 'SUP',
+    formato: '',
+    movimentos: [],
+    ementa: ementaText,
+    textSource: 'web',
+    textSourceUrl: STF_JURISPRUDENCE_URL,
+    textCompleteness: 'partial',
+  }
+}
+
+/**
+ * Fallback extraction when structured parsing fails.
+ * Looks for any ementa-like text blocks in the STF content.
+ */
+function extractSTFFallbackResults(content: string, maxResults: number): DataJudResult[] {
+  const results: DataJudResult[] = []
+
+  // Find all ementa blocks
+  const ementaPattern = /(?:EMENTA|Ementa)\s*[:\-–—]?\s*(.{100,?}?)(?=\n\s*(?:EMENTA|Ementa|Decisão|DECISÃO|Acórdão|ACÓRDÃO|$))/gsi
+  let match: RegExpExecArray | null
+
+  while ((match = ementaPattern.exec(content)) !== null && results.length < maxResults) {
+    const ementaText = trimDecisionText(match[1].trim(), MAX_EMENTA_CHARS)
+    if (ementaText.length < 80) continue
+
+    results.push({
+      tribunal: 'STF',
+      tribunalName: 'Supremo Tribunal Federal',
+      numeroProcesso: `STF-WEB-${results.length + 1}`,
+      classe: '',
+      classeCode: 0,
+      assuntos: [],
+      orgaoJulgador: 'Supremo Tribunal Federal',
+      dataAjuizamento: '',
+      grau: 'SUP',
+      formato: '',
+      movimentos: [],
+      ementa: ementaText,
+      textSource: 'web',
+      textSourceUrl: STF_JURISPRUDENCE_URL,
+      textCompleteness: 'partial',
+    })
+  }
+
+  return results
+}
+
+/**
+ * Normalize an STF date string (DD/MM/YYYY or DD-MM-YYYY) to ISO format (YYYY-MM-DD).
+ */
+function normalizeSTFDate(raw: string): string {
+  const cleaned = raw.replace(/[./\-]/g, '/')
+  const parts = cleaned.split('/')
+  if (parts.length !== 3) return ''
+
+  let [day, month, year] = parts
+  if (year.length === 2) {
+    const yearNum = Number(year)
+    year = yearNum > 50 ? `19${year}` : `20${year}`
+  }
+
+  if (day.length === 1) day = `0${day}`
+  if (month.length === 1) month = `0${month}`
+
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Map STF process class abbreviations to readable labels.
+ */
+function mapSTFClasseLabel(classe: string): string {
+  const map: Record<string, string> = {
+    'RE': 'Recurso Extraordinário',
+    'ADI': 'Ação Direta de Inconstitucionalidade',
+    'ADC': 'Ação Declaratória de Constitucionalidade',
+    'ADPF': 'Arguição de Descumprimento de Preceito Fundamental',
+    'HC': 'Habeas Corpus',
+    'MS': 'Mandado de Segurança',
+    'MI': 'Mandado de Injunção',
+    'RHC': 'Recurso em Habeas Corpus',
+    'AgR': 'Agravo Regimental',
+    'ED': 'Embargos de Declaração',
+    'ARE': 'Recurso Extraordinário com Agravo',
+    'AI': 'Agravo de Instrumento',
+    'ACO': 'Ação Cível Originária',
+    'Rcl': 'Reclamação',
+    'AP': 'Ação Penal',
+    'Inq': 'Inquérito',
+    'Pet': 'Petição',
+    'SS': 'Suspensão de Segurança',
+    'SL': 'Suspensão de Liminar',
+    'STA': 'Suspensão de Tutela Antecipada',
+    'IF': 'Intervenção Federal',
+    'AO': 'Ação Originária',
+    'AS': 'Arguição de Suspeição',
+    'AC': 'Ação Cautelar',
+    'AR': 'Ação Rescisória',
+    'EXT': 'Extradição',
+    'PPE': 'Prisão Preventiva para Extradição',
+    'HDE': 'Habeas Data Eletrônico',
+  }
+  return map[classe] ?? classe
 }
 
 /**

@@ -23,7 +23,7 @@
  * used by the VideoStudioEditor component.
  */
 
-import { callLLM, type LLMResult } from './llm-client'
+import { callLLMWithFallback, ModelUnavailableError, TransientLLMError, type LLMResult } from './llm-client'
 import { loadVideoPipelineModels, validateScopedAgentModels, VIDEO_PIPELINE_AGENT_DEFS } from './model-config'
 import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
@@ -478,8 +478,15 @@ async function safeCallAgent(
       return { data, failed: false }
     } catch (err) {
       lastError = err
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
       const errMsg = err instanceof Error ? err.message : String(err)
-      const isRetryable = errMsg.includes('429') || errMsg.includes('timeout') || errMsg.includes('503') || errMsg.includes('ECONNRESET')
+      const isRetryable =
+        err instanceof ModelUnavailableError ||
+        err instanceof TransientLLMError ||
+        errMsg.includes('429') ||
+        errMsg.includes('timeout') ||
+        errMsg.includes('503') ||
+        errMsg.includes('ECONNRESET')
       if (!isRetryable || attempt >= maxRetries) break
       console.warn(`[Video Pipeline] Agent ${phase} retryable error (attempt ${attempt + 1}):`, errMsg)
     }
@@ -1390,10 +1397,11 @@ REQUISITOS OBRIGATÓRIOS:
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function callAgent(apiKey: string, model: string, prompt: string, signal?: AbortSignal): Promise<LLMResult> {
-  return callLLM(
+  return callLLMWithFallback(
     apiKey,
     'Você é um agente especialista em produção de vídeo profissional. Responda SEMPRE com JSON puro e válido, sem markdown, sem explicações adicionais.',
     prompt,
+    model,
     model,
     undefined,
     undefined,

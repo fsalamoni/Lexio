@@ -12,6 +12,7 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
+  AlertTriangle,
   Settings,
   Save,
   Library,
@@ -97,6 +98,8 @@ interface Props {
   currentMessage: string
   isComplete: boolean
   hasError: boolean
+  warning?: string
+  resumeAction?: { label: string; onClick: () => void }
 }
 
 export default function PipelineProgressPanel({
@@ -105,6 +108,8 @@ export default function PipelineProgressPanel({
   currentMessage,
   isComplete,
   hasError,
+  warning,
+  resumeAction,
 }: Props) {
   const [expanded, setExpanded] = useState(true)
 
@@ -260,6 +265,28 @@ export default function PipelineProgressPanel({
               )
             })}
           </div>
+
+          {/* Warning banner */}
+          {warning && (
+            <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700">{warning}</p>
+            </div>
+          )}
+
+          {/* Resume action button */}
+          {resumeAction && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={resumeAction.onClick}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                {resumeAction.label}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

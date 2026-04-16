@@ -4,6 +4,7 @@ const generateTTSViaOpenRouterMock = vi.fn()
 
 vi.mock('./llm-client', () => ({
   callLLM: vi.fn(),
+  callLLMWithFallback: vi.fn(),
 }))
 
 vi.mock('./model-config', () => ({

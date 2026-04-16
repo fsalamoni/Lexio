@@ -7,6 +7,7 @@ const synthesizeAudioFromScriptMock = vi.fn()
 
 vi.mock('./llm-client', () => ({
   callLLM: (...args: unknown[]) => callLLMMock(...args),
+  callLLMWithFallback: (...args: unknown[]) => callLLMMock(...args),
 }))
 
 vi.mock('./model-config', () => ({

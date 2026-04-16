@@ -1,6 +1,6 @@
 import { parseArtifactContent } from './artifact-parsers'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL } from './image-generation-client'
-import { callLLM, type LLMResult } from './llm-client'
+import { callLLMWithFallback, type LLMResult } from './llm-client'
 import {
   loadPresentationPipelineModels,
   validateScopedAgentModels,
@@ -301,33 +301,33 @@ export async function runPresentationGenerationPipeline(
   throwIfAborted(signal)
   onProgress?.(1, 5, 'Planejando a apresentação…')
   const planPrompt = buildPlanPrompt(input)
-  const planResult = await callLLM(input.apiKey, planPrompt.system, planPrompt.user, models.pres_planejador, 3000, 0.2, { signal })
+  const planResult = await callLLMWithFallback(input.apiKey, planPrompt.system, planPrompt.user, models.pres_planejador, models.pres_planejador, 3000, 0.2, { signal })
   executions.push(toExecution('pres_planejador', 'Planejador de Apresentação', planResult))
 
   throwIfAborted(signal)
   onProgress?.(2, 5, 'Pesquisando evidências e mensagens-chave…')
   const researchPrompt = buildResearchPrompt(input, planResult.content)
-  const researchResult = await callLLM(input.apiKey, researchPrompt.system, researchPrompt.user, models.pres_pesquisador, 3500, 0.2, { signal })
+  const researchResult = await callLLMWithFallback(input.apiKey, researchPrompt.system, researchPrompt.user, models.pres_pesquisador, models.pres_pesquisador, 3500, 0.2, { signal })
   executions.push(toExecution('pres_pesquisador', 'Pesquisador de Conteúdo', researchResult))
 
   throwIfAborted(signal)
   onProgress?.(3, 5, 'Escrevendo os slides…')
   const writerPrompt = buildWriterPrompt(input, planResult.content, researchResult.content)
-  const writerResult = await callLLM(input.apiKey, writerPrompt.system, writerPrompt.user, models.pres_redator, 9000, 0.3, { signal })
+  const writerResult = await callLLMWithFallback(input.apiKey, writerPrompt.system, writerPrompt.user, models.pres_redator, models.pres_redator, 9000, 0.3, { signal })
   const writtenSlides = normalizePresentation(writerResult.content)
   executions.push(toExecution('pres_redator', 'Redator de Slides', writerResult))
 
   throwIfAborted(signal)
   onProgress?.(4, 5, 'Refinando direção visual dos slides…')
   const designerPrompt = buildDesignerPrompt(writtenSlides)
-  const designerResult = await callLLM(input.apiKey, designerPrompt.system, designerPrompt.user, models.pres_designer, 9000, 0.25, { signal })
+  const designerResult = await callLLMWithFallback(input.apiKey, designerPrompt.system, designerPrompt.user, models.pres_designer, models.pres_designer, 9000, 0.25, { signal })
   const designedSlides = normalizePresentation(designerResult.content)
   executions.push(toExecution('pres_designer', 'Designer de Apresentação', designerResult))
 
   throwIfAborted(signal)
   onProgress?.(5, 5, 'Revisando a apresentação…')
   const reviewPrompt = buildReviewPrompt(designedSlides)
-  const reviewResult = await callLLM(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.pres_revisor, 9000, 0.15, { signal })
+  const reviewResult = await callLLMWithFallback(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.pres_revisor, models.pres_revisor, 9000, 0.15, { signal })
   const finalContent = normalizePresentation(reviewResult.content)
   executions.push(toExecution('pres_revisor', 'Revisor de Apresentação', reviewResult))
 
