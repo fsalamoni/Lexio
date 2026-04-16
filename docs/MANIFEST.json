@@ -1,8 +1,8 @@
 {
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
-    "updated": "2026-04-08",
-    "cycle": "analytics-conversational-context",
+    "updated": "2026-04-16",
+    "cycle": "media-fallback-search-resilience",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -47,7 +47,8 @@
       "files": [
         "frontend/src/components/JurisprudenceConfigModal.tsx",
         "frontend/src/lib/datajud-service.ts"
-      ]
+      ],
+      "notes": "effectiveLegalArea com inferência automática; must_not por área jurídica; penalidades para ruído temático e classes penais"
     },
     {
       "id": "E1.F5",
@@ -131,6 +132,19 @@
         "frontend/src/pages/ResearchNotebook.tsx"
       ],
       "notes": "searchContext injetado no system prompt do chat com histórico de buscas realizadas (jurisprudência+web)"
+    },
+    {
+      "id": "E1.F12",
+      "epic": "Pesquisa de Jurisprudência",
+      "name": "Resiliência de busca externa e jurisprudencial",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/web-search-service.ts",
+        "frontend/src/lib/llm-client.ts",
+        "frontend/src/pages/ResearchNotebook.tsx"
+      ],
+      "notes": "fallbacks DDG/Jina, complemento STF/JusBrasil, warnings de degradação e fallback automático de modelos"
     },
     {
       "id": "E2.F1",

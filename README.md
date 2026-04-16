@@ -2,6 +2,8 @@
 
 > SaaS brasileiro de produção jurídica com IA. 10 pipelines multi-agente, 58 agentes configuráveis, 40+ modelos. Roda 100% no browser via OpenRouter.
 
+> Referência sincronizada com `main` em 16 de abril de 2026.
+
 [![Deploy Pages](https://github.com/fsalamoni/Lexio/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/fsalamoni/Lexio/actions/workflows/deploy-pages.yml)
 [![Firebase Deploy](https://github.com/fsalamoni/Lexio/actions/workflows/firebase-deploy.yml/badge.svg)](https://github.com/fsalamoni/Lexio/actions/workflows/firebase-deploy.yml)
 
@@ -51,6 +53,7 @@
 - **Pipeline de Vídeo** — 11 agentes configuráveis para produção completa de vídeo (planejamento, clips, imagem, TTS → renderização)
 - **Pipeline de Áudio** — 6 agentes para produção de podcasts e narrações com TTS e síntese literal internalizada
 - **Pipeline de Apresentação** — 6 agentes para criação de apresentações profissionais com imagens de slides contextuais e exportação PPTX
+- **Resiliência de mídia e LLM** — Pipelines de áudio, vídeo, apresentação e estúdio usam fallback automático de modelo em indisponibilidade/transientes, com avisos visíveis de degradação e incompatibilidade de capacidade
 - **Persistência de mídia do estúdio** — Vídeos, áudios e imagens temporários do notebook são enviados para Cloud Storage; o artefato salvo no Firestore mantém apenas URLs persistidas e checkpoint compactado para respeitar o limite de 1 MiB por documento
 - **Anamnese 2 camadas** — Perfil profissional persistente (Layer 1) + contexto por geração (Layer 2)
 - **Configurações por usuário** — API keys, catálogo pessoal, modelos por agente, tipos e áreas ficam isolados em cada perfil, persistidos em Firestore e usados como única fonte de verdade para aquele usuário
@@ -58,8 +61,8 @@
 - **Health check de modelos** — Verificação automática de disponibilidade contra OpenRouter
 - **Analytics de custo** — Dashboard por modelo/função/provedor em USD e BRL (10 funções de rastreamento)
 - **Export DOCX/PPTX** — DOCX jurídico formatado e apresentações com exportação PowerPoint gerados no browser
-- **Pesquisa web** — DuckDuckGo + Jina para scraping e extração de conteúdo
-- **Pesquisa de jurisprudência** — DataJud/CNJ via Cloud Function (50+ tribunais)
+- **Pesquisa web** — DuckDuckGo + Jina com fallbacks progressivos, diagnósticos técnicos e deep search resiliente
+- **Pesquisa de jurisprudência** — DataJud/CNJ via Cloud Function, busca complementar no STF e filtragem temática por área do direito
 - **Geração de imagens** — Via OpenRouter para vídeos e apresentações
 - **Modo Demo** — Offline completo com mock interceptor (sem necessidade de Firebase)
 - **Dual deploy** — GitHub Pages (base `/Lexio/`) + Firebase Hosting (base `/`)
@@ -149,7 +152,7 @@ docs/              → Documentação técnica arquitetural
 
 ## Arquitetura de LLM
 
-Toda chamada LLM usa `callLLM()` / `callLLMWithMessages()` de `lib/llm-client.ts`, que chama a OpenRouter API diretamente do browser. A chave de API do OpenRouter é resolvida a partir das configurações salvas do usuário autenticado em `/users/{uid}/settings/preferences`, com fallback opcional por variável de ambiente em desenvolvimento. O catálogo de modelos e os mapas de agentes também são carregados desse mesmo escopo do usuário; modelos fora do catálogo pessoal não são aceitos em runtime.
+Toda chamada LLM usa `callLLM()`, `callLLMWithMessages()` ou `callLLMWithFallback()` de `lib/llm-client.ts`, que chama a OpenRouter API diretamente do browser. A chave de API do OpenRouter é resolvida a partir das configurações salvas do usuário autenticado em `/users/{uid}/settings/preferences`, com fallback opcional por variável de ambiente em desenvolvimento. O catálogo de modelos e os mapas de agentes também são carregados desse mesmo escopo do usuário; modelos fora do catálogo pessoal não são aceitos em runtime. Para pipelines de mídia e fluxos críticos do notebook, falhas transitórias e modelos `:free`/instáveis podem ser reencaminhados automaticamente para modelos fallback mais confiáveis.
 
 ### Pipelines Ativos
 

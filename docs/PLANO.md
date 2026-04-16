@@ -19,7 +19,7 @@
 | Área | Estado | Observações |
 |------|--------|-------------|
 | Caderno de Pesquisa (Notebook) | ✅ Implementado | Fontes, chat, estúdio, artefatos, deep-link |
-| Pesquisa de Jurisprudência (DataJud) | ✅ Implementado | Ementa + inteiro teor + results_raw por processo |
+| Pesquisa de Jurisprudência (DataJud) | ✅ Implementado | Ementa + inteiro teor + results_raw por processo + fallback STF/classificação temática |
 | Visualizador de Documentos | ✅ Implementado | Tabs Síntese+Processos (jurisprudência), page-canvas (documento) |
 | Geração de Documentos (Estúdio) | ✅ Implementado | Pipeline + prompts aprofundados + persiste em Documentos |
 | Página de Documentos | ✅ Implementado | Lista, filtros, bulk ops, filtro "Do Caderno", link para caderno |
@@ -93,6 +93,13 @@
 
 **Arquivos:** `frontend/src/components/JurisprudenceConfigModal.tsx`, `frontend/src/lib/datajud-service.ts`
 
+**Mudanças implementadas:**
+- Modal expõe tribunal, grau, janela temporal e área do direito
+- `searchDataJud()` calcula `effectiveLegalArea` com prioridade para seleção manual e fallback por inferência automática da consulta
+- Query Elasticsearch aplica `must_not` por área jurídica para reduzir contaminação temática
+- Ranking local penaliza classes penais, excesso anômalo de assuntos e resultados sem texto útil
+- Pós-filtro remove itens claramente de área errada fora do top-3 e o enriquecimento complementar pode incluir STF/JusBrasil quando necessário
+
 ---
 
 ### Feature 1.5: Classificação temática automática de jurisprudência
@@ -131,6 +138,25 @@
 - Parser enriquece resultados com `relevanceScore` e `stance` antes da serialização em `results_raw`
 - `ProcessCard` exibe badge de posição + score de relevância
 - Fallback gracioso: se ranking não está configurado, nenhum indicador aparece
+
+---
+
+### Feature 1.12: Resiliência de busca externa e jurisprudencial
+
+**Estado:** ✅ Implementado (ciclo 2026-04)
+
+**Objetivo:** Manter pesquisa profunda e jurisprudencial operando mesmo com falhas parciais de provedores, modelos ou fontes públicas.
+
+**Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — score local endurecido, classificação temática, complemento STF/JusBrasil e diagnósticos
+- `frontend/src/lib/web-search-service.ts` — estratégias DuckDuckGo/Jina com fallback e telemetria técnica
+- `frontend/src/pages/ResearchNotebook.tsx` — warnings visíveis, toasts e continuidade degradada do fluxo
+- `frontend/src/lib/llm-client.ts` — fallback para modelos confiáveis em falhas transitórias/indisponibilidade
+
+**Mudanças implementadas:**
+- Busca profunda alterna entre estratégias DDG/Jina e retorna diagnósticos para distinguir vazio real de falha técnica
+- Pesquisa jurisprudencial pode complementar com scraping estruturado do STF e fontes públicas quando o DataJud vier incompleto
+- Pipelines críticos do notebook e de mídia passaram a usar fallback automático de modelo e warnings de degradação/capability mismatch
 
 ---
 
@@ -494,4 +520,4 @@
 
 ---
 
-*Última atualização: 2026-04-08 — Ciclo: Analytics jurisprudencial + Pesquisa conversacional com contexto*
+*Última atualização: 2026-04-16 — Ciclo: Resiliência de busca e fallback de mídia/LLM*

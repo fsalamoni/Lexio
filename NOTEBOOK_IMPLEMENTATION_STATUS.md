@@ -65,6 +65,8 @@
 - Estudio de video literal agora faz upload de blobs temporarios para Cloud Storage e salva apenas JSON compactado no Firestore
 - Persistencia do notebook normaliza estado literal para evitar estouro do limite de 1 MiB por documento
 - CSP do frontend/Firebase Hosting permite `blob:` em fluxos necessarios de upload/render do estudio
+- Pipelines criticos do notebook e de midia passaram a usar fallback automatico para modelos confiaveis quando modelos instaveis/transientes falham
+- Pesquisa profunda e jurisprudencial passou a exibir warnings de degradacao, diagnosticos tecnicos e complemento por STF/Jina quando necessario
 
 ### Etapa 10 — Audio Overview Pipeline ✅
 - **Arquivos**: `lib/tts-client.ts`, `lib/notebook-audio-pipeline.ts`, `components/artifacts/AudioOverviewPlayer.tsx`

@@ -1,6 +1,6 @@
 # Lexio — Referência Completa do Projeto
 
-> Última atualização: 9 de abril de 2026
+> Última atualização: 16 de abril de 2026
 
 ---
 
@@ -174,7 +174,7 @@ docs/              → Documentação técnica
 ### Clientes LLM e modelos
 | Arquivo | Descrição |
 |---------|-----------|
-| `llm-client.ts` | Chamadas LLM ao OpenRouter (fallbacks + retries) |
+| `llm-client.ts` | Chamadas LLM ao OpenRouter (fallbacks, retries e resolução de modelos confiáveis) |
 | `model-config.ts` | Definições de agentes, opções de modelo, fit scores |
 | `model-catalog.ts` | Gerenciamento do catálogo de modelos + bridge OpenRouter |
 | `model-health-check.ts` | Verificação de disponibilidade de modelos |
@@ -202,8 +202,8 @@ docs/              → Documentação técnica
 ### Integrações externas
 | Arquivo | Descrição |
 |---------|-----------|
-| `datajud-service.ts` | Integração API DataJud para pesquisa de jurisprudência |
-| `web-search-service.ts` | Pesquisa web (Jina, DuckDuckGo) |
+| `datajud-service.ts` | Integração DataJud/STF para pesquisa de jurisprudência com filtragem temática e ranking local |
+| `web-search-service.ts` | Pesquisa web com estratégias DuckDuckGo/Jina, diagnósticos e fallbacks de deep search |
 | `tts-client.ts` | Integração text-to-speech |
 | `image-generation-client.ts` | Geração de imagens via OpenRouter |
 | `external-video-provider.ts` | Integração de geração de vídeo externo |
@@ -713,6 +713,8 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 
 **Função:** Proxy POST para a API DataJud do CNJ. Adiciona header de Authorization (bypass CORS), valida aliases de tribunais (whitelist 50+ tribunais brasileiros) e retorna resultados Elasticsearch.
 
+**Observação operacional:** A pesquisa jurisprudencial no frontend também pode complementar resultados com scraping estruturado do STF e reclassificação local por área do direito quando a resposta do DataJud vier ruidosa ou incompleta.
+
 **Arquivo:** `functions/src/index.ts`
 
 ---
@@ -721,14 +723,14 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 
 | Serviço | Uso | Arquivo |
 |---------|-----|---------|
-| OpenRouter | Roteamento LLM (40+ modelos) | `llm-client.ts` |
+| OpenRouter | Roteamento LLM com fallback automático para modelos confiáveis | `llm-client.ts` |
 | Firebase | Auth, Firestore, Storage, Functions | `firebase.ts` |
-| DataJud (CNJ) | Pesquisa de jurisprudência | `datajud-service.ts` |
+| DataJud (CNJ) | Pesquisa de jurisprudência primária | `datajud-service.ts` |
+| STF | Busca complementar de jurisprudência por scraping estruturado | `datajud-service.ts` |
 | DuckDuckGo | Pesquisa web | `web-search-service.ts` |
-| Jina | Scraping/extração de conteúdo web | `web-search-service.ts` |
+| Jina | Scraping/extração de conteúdo web e fallback de pesquisa profunda | `web-search-service.ts` |
 | OpenRouter TTS | Text-to-speech via chat completions com áudio em streaming | `tts-client.ts` |
 | OpenRouter Images | Geração de imagens | `image-generation-client.ts` |
-| CORS Proxies | corsproxy.io, allorigins.win | `web-search-service.ts` |
 
 ---
 
@@ -812,8 +814,8 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 - [x] Analytics de custo por modelo/função/provedor (USD + BRL)
 - [x] Export DOCX formatado (Times New Roman 12pt, A4)
 - [x] Export PPTX para apresentações com slides renderizados
-- [x] Pesquisa web (Jina + DuckDuckGo)
-- [x] Pesquisa de jurisprudência (DataJud via Cloud Function)
+- [x] Pesquisa web (Jina + DuckDuckGo com fallbacks e diagnósticos)
+- [x] Pesquisa de jurisprudência (DataJud via Cloud Function + complemento STF)
 - [x] Modo Demo offline completo
 - [x] Dual deploy (GitHub Pages + Firebase Hosting)
 - [x] TipTap rich text editor com formatação completa
