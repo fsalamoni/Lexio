@@ -2399,7 +2399,17 @@ Instruções:
     } catch (error) {
       console.error('Visual artifact generation error:', error)
       const message = error instanceof Error ? error.message : 'Falha ao gerar mídia visual.'
-      toast.error('Falha na geração visual', message)
+      const isCapabilityError = message.toLowerCase().includes('capability')
+        || message.toLowerCase().includes('modalities')
+        || /não atende.*capability/i.test(message)
+      if (isCapabilityError) {
+        toast.error(
+          'Modelo incompatível com geração de imagem',
+          `${message} — Acesse Configurações → Pipeline de Apresentação e escolha um modelo com capacidade de imagem para "Gerador de Imagens de Slides".`,
+        )
+      } else {
+        toast.error('Falha na geração visual', message)
+      }
     } finally {
       setVisualGenLoading(false)
       setVisualGeneratingArtifactId(null)
@@ -2651,7 +2661,15 @@ Instruções:
     } catch (err) {
       console.error('Audio literal generation error:', err)
       const msg = err instanceof Error ? err.message : String(err)
-      if (msg.includes('429')) {
+      const isCapabilityError = msg.toLowerCase().includes('capability')
+        || msg.toLowerCase().includes('modalities')
+        || /não atende.*capability/i.test(msg)
+      if (isCapabilityError) {
+        toast.error(
+          'Modelo incompatível com geração de áudio',
+          `${msg} — Acesse Configurações → Pipeline de Áudio e escolha um modelo com capacidade de áudio para "Narrador / TTS".`,
+        )
+      } else if (msg.includes('429')) {
         toast.warning('Limite de TTS atingido', 'Aguarde alguns segundos e tente novamente.')
       } else {
         toast.error('Falha na geração literal de áudio', msg)
