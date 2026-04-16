@@ -151,7 +151,7 @@ firebase deploy --only firestore:rules,firestore:indexes --project hocapp-44760
 ```
 
 To capture a local operational snapshot of the current Firebase cloud state
-(Firestore documents + Cloud Storage object metadata) into `backups/`:
+(Firestore documents + Cloud Storage object metadata and file contents) into `backups/`:
 
 ```bash
 node scripts/firebase-cloud-sync.mjs --project hocapp-44760

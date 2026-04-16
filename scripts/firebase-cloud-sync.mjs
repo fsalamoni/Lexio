@@ -28,6 +28,7 @@ function parseArgs(argv) {
     project: undefined,
     bucket: undefined,
     outDir: undefined,
+    skipStorageDownload: false,
   }
 
   for (let index = 2; index < argv.length; index++) {
@@ -35,6 +36,7 @@ function parseArgs(argv) {
     if (value === '--project') result.project = argv[++index]
     else if (value === '--bucket') result.bucket = argv[++index]
     else if (value === '--out-dir') result.outDir = argv[++index]
+    else if (value === '--skip-storage-download') result.skipStorageDownload = true
   }
 
   return result
@@ -275,6 +277,46 @@ async function listStorageObjects(bucket, accessToken) {
   return objects
 }
 
+async function downloadStorageObject(bucket, objectName, accessToken) {
+  const encodedName = encodeURIComponent(objectName)
+  const url = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}/o/${encodedName}?alt=media`
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '')
+    throw new Error(`HTTP ${response.status} downloading ${objectName}: ${errorText.slice(0, 400)}`)
+  }
+
+  const arrayBuffer = await response.arrayBuffer()
+  return Buffer.from(arrayBuffer)
+}
+
+async function downloadStorageObjects(bucket, objects, accessToken, outDir) {
+  const storageRoot = path.join(outDir, 'storage-files')
+  let downloadedCount = 0
+
+  for (const object of objects) {
+    const objectPath = String(object.name || '')
+    if (!objectPath) continue
+
+    log(`Downloading storage object ${objectPath}`)
+    const fileBuffer = await downloadStorageObject(bucket, objectPath, accessToken)
+    const targetPath = path.join(storageRoot, ...objectPath.split('/'))
+    await fs.mkdir(path.dirname(targetPath), { recursive: true })
+    await fs.writeFile(targetPath, fileBuffer)
+    downloadedCount++
+  }
+
+  return {
+    storageRoot,
+    downloadedCount,
+  }
+}
+
 async function writeSnapshotFile(filePath, data) {
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8')
 }
@@ -299,12 +341,27 @@ async function main() {
 
   let storageObjects = []
   let storageError = null
+  let storageDownload = {
+    storageRoot: null,
+    downloadedCount: 0,
+    error: null,
+  }
   try {
     log(`Listing Cloud Storage objects from bucket ${bucket}`)
     storageObjects = await listStorageObjects(bucket, accessToken)
+    if (!args.skipStorageDownload && storageObjects.length > 0) {
+      storageDownload = {
+        ...await downloadStorageObjects(bucket, storageObjects, accessToken, outDir),
+        error: null,
+      }
+    }
   } catch (error) {
     storageError = error instanceof Error ? error.message : String(error)
     log(`Storage listing failed: ${storageError}`)
+  }
+
+  if (!storageError && args.skipStorageDownload) {
+    storageDownload.error = 'Skipped by --skip-storage-download'
   }
 
   await writeSnapshotFile(path.join(outDir, 'firestore.database.json'), firestoreMetadata)
@@ -314,6 +371,7 @@ async function main() {
     objects: storageObjects,
     error: storageError,
   })
+  await writeSnapshotFile(path.join(outDir, 'storage.download.json'), storageDownload)
   await writeSnapshotFile(path.join(outDir, 'manifest.json'), {
     exportedAt: new Date().toISOString(),
     projectId,
@@ -327,16 +385,19 @@ async function main() {
     storage: {
       objects: storageObjects.length,
       error: storageError,
+      downloadedFiles: storageDownload.downloadedCount,
+      downloadError: storageDownload.error,
     },
     files: [
       'firestore.database.json',
       'firestore.snapshot.json',
       'storage.objects.json',
+      'storage.download.json',
       'manifest.json',
     ],
   })
 
-  log(`Done. Firestore documents: ${firestoreSnapshot.documents.length}; storage objects: ${storageObjects.length}`)
+  log(`Done. Firestore documents: ${firestoreSnapshot.documents.length}; storage objects: ${storageObjects.length}; downloaded files: ${storageDownload.downloadedCount}`)
 }
 
 main().catch(error => {
