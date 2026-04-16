@@ -1,4 +1,4 @@
-import { Loader2, CheckCircle2, AlertCircle, Circle, Activity } from 'lucide-react'
+import { Loader2, CheckCircle2, AlertCircle, AlertTriangle, Circle, Activity, Settings } from 'lucide-react'
 import type { ReactNode } from 'react'
 import DraggablePanel from './DraggablePanel'
 
@@ -22,6 +22,8 @@ interface AgentTrailProgressModalProps {
   hasError: boolean
   canClose?: boolean
   onClose: () => void
+  warning?: string
+  settingsHint?: string
   children?: ReactNode
 }
 
@@ -49,6 +51,8 @@ export default function AgentTrailProgressModal({
   hasError,
   canClose = true,
   onClose,
+  warning,
+  settingsHint,
   children,
 }: AgentTrailProgressModalProps) {
   if (!isOpen) return null
@@ -136,6 +140,31 @@ export default function AgentTrailProgressModal({
               </div>
             ))}
           </div>
+
+          {/* Warning banner */}
+          {warning && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700">{warning}</p>
+            </div>
+          )}
+
+          {/* Settings hint for capability errors */}
+          {settingsHint && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200">
+              <Settings className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-xs text-red-700">{settingsHint}</p>
+                <a
+                  href="/settings"
+                  className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-red-600 hover:text-red-800 underline"
+                >
+                  <Settings className="w-3 h-3" />
+                  Abrir Configurações
+                </a>
+              </div>
+            </div>
+          )}
 
           {children}
         </div>

@@ -15,7 +15,7 @@
  *       → studio_pesquisador → studio_roteirista → studio_revisor
  */
 
-import { callLLM, type LLMResult } from './llm-client'
+import { callLLMWithFallback, type LLMResult } from './llm-client'
 import { loadResearchNotebookModels, validateScopedAgentModels, type ResearchNotebookModelMap } from './model-config'
 import type { StudioArtifactType } from './firestore-service'
 import { isStructuredArtifactType, parseArtifactContent } from './artifact-parsers'
@@ -879,10 +879,11 @@ export async function runStudioPipeline(
   onProgress?.(1, 3, 'Pesquisando e organizando fontes…')
 
   const researchPrompt = buildResearchPrompt(input)
-  const researchResult: LLMResult = await callLLM(
+  const researchResult: LLMResult = await callLLMWithFallback(
     input.apiKey,
     researchPrompt.system,
     researchPrompt.user,
+    models.studio_pesquisador,
     models.studio_pesquisador,
     4000,
     0.2,
@@ -906,10 +907,11 @@ export async function runStudioPipeline(
   onProgress?.(2, 3, `${SPECIALIST_LABELS[specialistRole]} criando conteúdo…`)
 
   const specialistPrompt = buildSpecialistPrompt(input, researchResult.content, specialistRole)
-  const specialistResult: LLMResult = await callLLM(
+  const specialistResult: LLMResult = await callLLMWithFallback(
     input.apiKey,
     specialistPrompt.system,
     specialistPrompt.user,
+    models[specialistRole],
     models[specialistRole],
     8000,
     0.4,
@@ -931,10 +933,11 @@ export async function runStudioPipeline(
   onProgress?.(3, 3, 'Revisando e aprimorando…')
 
   const reviewPrompt = buildReviewPrompt(input, specialistResult.content)
-  const reviewResult: LLMResult = await callLLM(
+  const reviewResult: LLMResult = await callLLMWithFallback(
     input.apiKey,
     reviewPrompt.system,
     reviewPrompt.user,
+    models.studio_revisor,
     models.studio_revisor,
     10000,
     0.2,

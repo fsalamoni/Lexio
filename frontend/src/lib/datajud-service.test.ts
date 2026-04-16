@@ -77,15 +77,17 @@ describe('datajud-service', () => {
     expect(_resolveLocalProxyEndpoint('/Lexio/')).toBe('/Lexio/api/datajud')
   })
 
-  it('omits STF from default tribunals because the public DataJud index is unavailable', () => {
-    expect(DEFAULT_TRIBUNALS.some(tribunal => tribunal.alias === 'stf')).toBe(false)
+  it('includes STF in default tribunals (searched via website fallback)', () => {
+    expect(DEFAULT_TRIBUNALS.some(tribunal => tribunal.alias === 'stf')).toBe(true)
   })
 
-  it('short-circuits known unavailable tribunals without retrying proxy endpoints', async () => {
+  it('skips DataJud API for STF but attempts website fallback via Jina Reader', async () => {
     const tribunals: TribunalInfo[] = [
       { alias: 'stf', name: 'Supremo Tribunal Federal', category: 'superiores' },
     ]
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', { status: 200 }),
+    )
 
     const result = await searchDataJud('tema constitucional', {
       tribunals,
@@ -93,8 +95,19 @@ describe('datajud-service', () => {
       maxTotal: 1,
     })
 
-    expect(fetchSpy).not.toHaveBeenCalled()
-    expect(result.results).toHaveLength(0)
+    // STF website search is attempted via Jina Reader (fetchUrlContent calls fetch)
+    const stfWebsiteCalls = fetchSpy.mock.calls.filter(
+      ([url]) => typeof url === 'string' && url.includes('jurisprudencia.stf.jus.br'),
+    )
+    expect(stfWebsiteCalls.length).toBeGreaterThan(0)
+
+    // No DataJud proxy calls should have been made for STF
+    const datajudCalls = fetchSpy.mock.calls.filter(
+      ([url]) => typeof url === 'string' && (url.includes('datajud') || url.includes('cloudfunctions.net')),
+    )
+    expect(datajudCalls).toHaveLength(0)
+
+    // When website returns empty content, STF error from DataJud should remain
     expect(result.errorDetails).toHaveLength(1)
     expect(result.errorDetails[0].status).toBe(404)
     expect(result.errorDetails[0].message).toContain('índice ausente no CNJ')

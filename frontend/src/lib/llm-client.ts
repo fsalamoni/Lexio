@@ -126,6 +126,31 @@ export class TransientLLMError extends Error {
   }
 }
 
+/**
+ * Reliable text fallback used when a `:free` / `:experimental` model picked by the
+ * user returns `ModelUnavailableError` or `TransientLLMError`. Gemini 2.0 Flash is
+ * cheap, fast, and supports JSON-structured outputs — making it a safe pinch-hitter
+ * for notebook pipelines (studio, audio scripting, presentation scripting, video
+ * scripting agents) without forcing a config change mid-run.
+ */
+export const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.0-flash-001'
+
+/**
+ * Given a primary model chosen by the user, pick a reliable alternative to try
+ * when the primary fails. If the primary is already reliable (paid, non-experimental),
+ * returns the primary unchanged.
+ */
+export function pickReliableFallback(primaryModel: string): string {
+  const lower = primaryModel.toLowerCase()
+  const isUnreliable = lower.endsWith(':free') || lower.includes(':experimental')
+  if (!isUnreliable) return primaryModel
+  if (lower.startsWith('google/gemini-2.0-flash')) {
+    // Avoid returning the same family; use Haiku as secondary fallback
+    return 'anthropic/claude-3.5-haiku'
+  }
+  return RELIABLE_TEXT_FALLBACK_MODEL
+}
+
 export interface LLMResult {
   content: string
   model: string
@@ -372,21 +397,31 @@ export async function callLLMWithFallback(
   fallbackModel: string,
   maxTokens = 4000,
   temperature = 0.3,
+  options?: LLMCallOptions,
 ): Promise<LLMResult> {
   try {
-    return await callLLM(apiKey, system, user, model, maxTokens, temperature)
+    return await callLLM(apiKey, system, user, model, maxTokens, temperature, options)
   } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err
     const isRecoverable = err instanceof ModelUnavailableError || err instanceof TransientLLMError
     if (isRecoverable) {
+      // Resolve an effective fallback: if caller passed the same model as both
+      // primary and fallback, pick a reliable alternative so notebook pipelines
+      // configured with `:free` models can still complete.
+      let effectiveFallback = fallbackModel
       if (model === fallbackModel) {
-        // Both primary and fallback are the same model — propagate error
-        throw err
+        const alt = pickReliableFallback(model)
+        if (alt === model) {
+          // No alternative available — propagate error
+          throw err
+        }
+        effectiveFallback = alt
       }
       console.warn(
         `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
-        ` Usando fallback: "${fallbackModel}".`,
+        ` Usando fallback: "${effectiveFallback}".`,
       )
-      return callLLM(apiKey, system, user, fallbackModel, maxTokens, temperature)
+      return callLLM(apiKey, system, user, effectiveFallback, maxTokens, temperature, options)
     }
     throw err
   }
@@ -402,18 +437,25 @@ export async function callLLMWithMessagesFallback(
   fallbackModel: string,
   maxTokens = 4000,
   temperature = 0.3,
+  options?: LLMCallOptions,
 ): Promise<LLMResult> {
   try {
-    return await callLLMWithMessages(apiKey, messages, model, maxTokens, temperature)
+    return await callLLMWithMessages(apiKey, messages, model, maxTokens, temperature, options)
   } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err
     const isRecoverable = err instanceof ModelUnavailableError || err instanceof TransientLLMError
     if (isRecoverable) {
-      if (model === fallbackModel) throw err
+      let effectiveFallback = fallbackModel
+      if (model === fallbackModel) {
+        const alt = pickReliableFallback(model)
+        if (alt === model) throw err
+        effectiveFallback = alt
+      }
       console.warn(
         `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
-        ` Usando fallback: "${fallbackModel}".`,
+        ` Usando fallback: "${effectiveFallback}".`,
       )
-      return callLLMWithMessages(apiKey, messages, fallbackModel, maxTokens, temperature)
+      return callLLMWithMessages(apiKey, messages, effectiveFallback, maxTokens, temperature, options)
     }
     throw err
   }

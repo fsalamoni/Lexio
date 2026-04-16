@@ -8,6 +8,9 @@ const generateTTSViaOpenRouterMock = vi.fn()
 
 vi.mock('./llm-client', () => ({
   callLLM: (...args: unknown[]) => callLLMMock(...args),
+  callLLMWithFallback: (...args: unknown[]) => callLLMMock(...args),
+  ModelUnavailableError: class ModelUnavailableError extends Error { constructor(msg: string) { super(msg); this.name = 'ModelUnavailableError' } },
+  TransientLLMError: class TransientLLMError extends Error { constructor(msg: string) { super(msg); this.name = 'TransientLLMError' } },
 }))
 
 vi.mock('./model-config', () => ({

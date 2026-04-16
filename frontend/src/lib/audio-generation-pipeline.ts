@@ -1,5 +1,5 @@
 import { parseArtifactContent } from './artifact-parsers'
-import { callLLM, type LLMResult } from './llm-client'
+import { callLLMWithFallback, type LLMResult } from './llm-client'
 import { synthesizeAudioFromScript } from './notebook-audio-pipeline'
 import {
   loadAudioPipelineModels,
@@ -154,34 +154,34 @@ export async function runAudioGenerationPipeline(
   throwIfAborted(signal)
   onProgress?.(1, 5, 'Planejando estrutura do áudio…')
   const planPrompt = buildPlanPrompt(input)
-  const planResult = await callLLM(input.apiKey, planPrompt.system, planPrompt.user, models.audio_planejador, 2500, 0.2, { signal })
+  const planResult = await callLLMWithFallback(input.apiKey, planPrompt.system, planPrompt.user, models.audio_planejador, models.audio_planejador, 2500, 0.2, { signal })
   executions.push(toExecution('audio_planejador', 'Planejador de Áudio', planResult))
 
   throwIfAborted(signal)
   onProgress?.(2, 5, 'Escrevendo o roteiro-base do áudio…')
   const writerPrompt = buildWriterPrompt(input, planResult.content, input.sourceContext || 'Sem fontes adicionais.')
-  const writerResult = await callLLM(input.apiKey, writerPrompt.system, writerPrompt.user, models.audio_roteirista, 7000, 0.35, { signal })
+  const writerResult = await callLLMWithFallback(input.apiKey, writerPrompt.system, writerPrompt.user, models.audio_roteirista, models.audio_roteirista, 7000, 0.35, { signal })
   const writerDraft = normalizeAudioScriptOrThrow(writerResult.content, 'O roteirista de áudio')
   executions.push(toExecution('audio_roteirista', 'Roteirista de Áudio', writerResult))
 
   throwIfAborted(signal)
   onProgress?.(3, 5, 'Estruturando timing e transições…')
   const directorPrompt = buildDirectorPrompt(writerDraft)
-  const directorResult = await callLLM(input.apiKey, directorPrompt.system, directorPrompt.user, models.audio_diretor, 7000, 0.25, { signal })
+  const directorResult = await callLLMWithFallback(input.apiKey, directorPrompt.system, directorPrompt.user, models.audio_diretor, models.audio_diretor, 7000, 0.25, { signal })
   const directedDraft = normalizeAudioScriptOrThrow(directorResult.content, 'O diretor de áudio')
   executions.push(toExecution('audio_diretor', 'Diretor de Áudio', directorResult))
 
   throwIfAborted(signal)
   onProgress?.(4, 5, 'Aplicando direção sonora e cues…')
   const producerPrompt = buildProducerPrompt(directedDraft)
-  const producerResult = await callLLM(input.apiKey, producerPrompt.system, producerPrompt.user, models.audio_produtor_sonoro, 7000, 0.25, { signal })
+  const producerResult = await callLLMWithFallback(input.apiKey, producerPrompt.system, producerPrompt.user, models.audio_produtor_sonoro, models.audio_produtor_sonoro, 7000, 0.25, { signal })
   const producedDraft = normalizeAudioScriptOrThrow(producerResult.content, 'O produtor sonoro')
   executions.push(toExecution('audio_produtor_sonoro', 'Produtor Sonoro', producerResult))
 
   throwIfAborted(signal)
   onProgress?.(5, 5, 'Revisando o resumo em áudio…')
   const reviewPrompt = buildReviewPrompt(producedDraft)
-  const reviewResult = await callLLM(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.audio_revisor, 7000, 0.15, { signal })
+  const reviewResult = await callLLMWithFallback(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.audio_revisor, models.audio_revisor, 7000, 0.15, { signal })
   const finalContent = normalizeAudioScriptOrThrow(reviewResult.content, 'O revisor final de áudio')
   executions.push(toExecution('audio_revisor', 'Revisor Final de Áudio', reviewResult))
 

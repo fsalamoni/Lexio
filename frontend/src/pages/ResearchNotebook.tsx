@@ -40,7 +40,7 @@ import {
   type StudioArtifactType,
   type AcervoDocumentData,
 } from '../lib/firestore-service'
-import { callLLM, callLLMWithMessages, ModelUnavailableError, type LLMResult } from '../lib/llm-client'
+import { callLLM, callLLMWithFallback, callLLMWithMessages, ModelUnavailableError, type LLMResult } from '../lib/llm-client'
 import { getOpenRouterKey } from '../lib/generation-service'
 import { loadResearchNotebookModels } from '../lib/model-config'
 import {
@@ -57,6 +57,7 @@ import {
   runVideoGenerationPipeline,
   type VideoProductionPackage,
   type VideoGenerationProgressCallback,
+  type RenderedVideoAsset,
 } from '../lib/video-generation-pipeline'
 import {
   type StoredNotebookMedia,
@@ -69,6 +70,7 @@ import {
   renderLiteralVideo,
 } from '../lib/literal-video-production'
 import { generateAudioLiteralMedia, runAudioGenerationPipeline } from '../lib/audio-generation-pipeline'
+import { isExternalVideoProviderConfigured, requestExternalVideoClip } from '../lib/external-video-provider'
 import { generatePresentationMediaAssets, runPresentationGenerationPipeline } from '../lib/presentation-generation-pipeline'
 import { extractFileText, isSupportedTextFile, SUPPORTED_TEXT_FILE_EXTENSIONS } from '../lib/file-text-extractor'
 import { generateImageViaOpenRouter, blobToDataUrl } from '../lib/image-generation-client'
@@ -571,11 +573,11 @@ export default function ResearchNotebook() {
         return
       }
       const preview = sourceCtx.slice(0, 4_000)
-      const result = await callLLM(apiKey,
+      const result = await callLLMWithFallback(apiKey,
         'Você gera perguntas de pesquisa relevantes com base em fontes jurídicas.',
         `Tema: "${activeNotebook.topic}"
 Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas que o usuário poderia fazer ao assistente.\nFormato: uma pergunta por linha, sem numeração, sem prefixos.`,
-        model, 300, 0.5)
+        model, model, 300, 0.5)
 
       // Track usage for suggestions
       const execution = createUsageExecutionRecord({
@@ -1111,10 +1113,11 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           addModalSubstep('synthesize', 'Solicitando síntese ao LLM...')
           const apiKey = await getOpenRouterKey()
 
-          const externalResult = await callLLM(
+          const externalResult = await callLLMWithFallback(
             apiKey,
             'Você é um pesquisador jurídico externo. Sintetize resultados de busca web em texto objetivo para uso no caderno de pesquisa. Responda em português com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
             `Consulta do usuário: "${query}"\n\nResultados selecionados (${selected.length}):\n${textContent}\n\nProduza uma síntese clara e acionável com foco jurídico.`,
+            model,
             model,
             1800,
             0.2,
@@ -1243,7 +1246,22 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       })
       addModalSubstep('fetch', `${deepResult.contents.length} página(s) com conteúdo extraído`)
       if (deepResult.fetchFailures > 0) {
-        addModalSubstep('fetch', `${deepResult.fetchFailures} URL(s) falharam na extração`) 
+        addModalSubstep('fetch', `${deepResult.fetchFailures} URL(s) falharam na extração`)
+      }
+
+      // Surface deep search warnings
+      if (deepResult.warnings?.length) {
+        for (const w of deepResult.warnings) {
+          if (w.kind === 'jina_fallback_used') {
+            addModalSubstep('search', 'Resultados obtidos via Jina Search API (fallback)')
+            toast.info('Pesquisa profunda usou provedor alternativo', 'DuckDuckGo não retornou resultados; Jina Search API foi usada como fallback.')
+          } else if (w.kind === 'fallback_to_snippets') {
+            addModalSubstep('fetch', 'Usando apenas snippets da busca (conteúdo completo indisponível)')
+            toast.warning('Pesquisa profunda degradada', 'Não foi possível extrair o conteúdo completo das páginas. Os snippets da busca serão usados.')
+          } else if (w.kind === 'all_providers_failed') {
+            addModalSubstep('search', `Todos os provedores falharam: ${w.attempted.join(', ')}`)
+          }
+        }
       }
 
       if (deepResult.contents.length === 0 && deepResult.results.length === 0) {
@@ -1347,10 +1365,11 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             ).join('\n\n')
           }
 
-          const llmResult = await callLLM(
+          const llmResult = await callLLMWithFallback(
             apiKey,
             'Você é um pesquisador jurídico externo profundo. Sintetize fontes web em texto objetivo e acionável para caderno de pesquisa. Responda em português, com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
             `Consulta do usuário: "${query}"\n\nFontes selecionadas (${selected.length}):\n${compiled}\n\nProduza uma síntese profunda com foco jurídico.`,
+            model,
             model,
             2200,
             0.2,
@@ -1611,10 +1630,11 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           if (rankModel) {
             addModalSubstep('rank', `Avaliando relevância com ${rankModel}...`)
             const rankTextContent = formatDataJudResults(selectedResults)
-            const rankResult = await callLLM(
+            const rankResult = await callLLMWithFallback(
               openRouterApiKey,
               JURISPRUDENCE_RANKING_SYSTEM,
               `Consulta: "${config.query}"\n\nProcessos para avaliar:\n${rankTextContent}`,
+              rankModel,
               rankModel,
               800,
               0.1,
@@ -1656,8 +1676,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
                   addModalSubstep('rank', 'Ranking retornou índices inválidos/vazios — mantendo ordem original')
                 }
               }
-            } catch {
+            } catch (rankParseError) {
+              console.warn('Jurisprudence ranking parse failed:', rankParseError)
               addModalSubstep('rank', 'Parsing do ranking falhou — mantendo ordem original')
+              toast.warning('Ranking de jurisprudência falhou', 'O modelo retornou JSON inválido. Os resultados serão exibidos na ordem original.')
             }
 
             llmExecutions.push(createUsageExecutionRecord({
@@ -1701,10 +1723,11 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
           const textContent = formatDataJudResults(selectedResults)
 
-          const jurisprudenceResult = await callLLM(
+          const jurisprudenceResult = await callLLMWithFallback(
             openRouterApiKey,
             JURISPRUDENCE_SYNTHESIS_SYSTEM,
             `Consulta do usuário: "${config.query}"\n\nResultados DataJud (${selectedResults.length} processos selecionados, ordenados por relevância):\n${textContent}\n\nProduza uma síntese objetiva e acionável para o caderno de pesquisa. Destaque padrões nas movimentações processuais que indiquem tendências de julgamento.`,
+            synthesisModel,
             synthesisModel,
             2800,
             0.2,
@@ -3081,16 +3104,61 @@ Instruções:
       await appendNotebookExecutions(notebookId, 'video_pipeline', media.executions)
 
       const renderStartedAt = Date.now()
-      const rendered = await renderLiteralVideo(media.production, onProgress)
+      let renderedAsset: RenderedVideoAsset
+      let renderModel = 'browser/video'
+      let usedExternalProvider = false
+      try {
+        const localRendered = await renderLiteralVideo(media.production, onProgress)
+        renderedAsset = localRendered.asset
+        renderModel = `browser/${localRendered.asset.mimeType}`
+      } catch (renderError) {
+        // If local rendering fails (canvas OOM, MediaRecorder unsupported, quota exceeded),
+        // try the external video provider as fallback when configured.
+        const renderMsg = renderError instanceof Error ? renderError.message : String(renderError)
+        const isRenderInfraError = /mediarecorder|canvas|quota|oom|memory|encodererror|securityerror/i.test(renderMsg)
+          || renderMsg.includes('NotSupportedError')
+          || renderMsg.includes('NotAllowedError')
+
+        if (isRenderInfraError && isExternalVideoProviderConfigured()) {
+          onProgress(0, 1, 'Renderer local falhou. Tentando provedor externo de vídeo...', 'Provedor Externo')
+          toast.info('Renderer local indisponível', 'Tentando provedor externo de vídeo como fallback...')
+
+          const firstScene = media.production.scenes?.[0]
+          const clipResult = await requestExternalVideoClip({
+            prompt: firstScene?.imagePrompt || media.production.title,
+            durationSeconds: 30,
+            aspectRatio: '16:9',
+          })
+
+          if (clipResult?.url) {
+            const videoResp = await fetch(clipResult.url)
+            const videoBlob = await videoResp.blob()
+            const videoUrl = URL.createObjectURL(videoBlob)
+            renderedAsset = {
+              url: videoUrl,
+              mimeType: clipResult.mimeType || 'video/mp4',
+              generatedAt: new Date().toISOString(),
+              blob: videoBlob,
+            }
+            renderModel = `external/${clipResult.provider}`
+            usedExternalProvider = true
+          } else {
+            throw renderError
+          }
+        } else {
+          throw renderError
+        }
+      }
+
       const persistedFinal = await handleSaveVideoStudioToNotebook({
         ...media.production,
-        renderedVideo: rendered.asset,
+        renderedVideo: renderedAsset,
       }, { silent: true, syncEditorState: false })
 
       await appendNotebookExecutions(notebookId, 'video_pipeline', [{
-        phase: 'media_video_render',
-        agent_name: 'Renderizador de Vídeo',
-        model: `browser/${rendered.asset.mimeType}`,
+        phase: usedExternalProvider ? 'external_video_render' : 'media_video_render',
+        agent_name: usedExternalProvider ? 'Provedor Externo de Vídeo' : 'Renderizador de Vídeo',
+        model: renderModel,
         tokens_in: 0,
         tokens_out: 0,
         cost_usd: 0,
@@ -3110,6 +3178,8 @@ Instruções:
           'Vídeo literal retomado com avisos',
           `${media.errors.length} etapa(s) falharam. O checkpoint foi salvo para nova retomada sem perder progresso.`,
         )
+      } else if (usedExternalProvider) {
+        toast.success('Vídeo gerado via provedor externo', 'O renderer local não estava disponível; o vídeo foi produzido pelo provedor externo configurado.')
       } else {
         toast.success('Vídeo literal concluído e salvo com sucesso!')
       }
@@ -3118,7 +3188,20 @@ Instruções:
     } catch (error) {
       console.error('Literal video studio generation error:', error)
       const message = error instanceof Error ? error.message : String(error)
-      toast.error('Falha na geração literal do vídeo', message)
+      const isCapabilityError = message.toLowerCase().includes('capability')
+        || message.toLowerCase().includes('modalities')
+        || /não atende.*capability/i.test(message)
+      if (isCapabilityError) {
+        toast.error(
+          'Modelo incompatível com geração de vídeo',
+          `${message} — Acesse Configurações → Pipeline de Vídeo e escolha modelos compatíveis (imagem para "Gerador de Imagens", áudio para "Narrador TTS").`,
+        )
+      } else {
+        toast.error(
+          'Falha na geração literal do vídeo',
+          `${message} — O progresso parcial foi salvo. Clique novamente em "Produzir vídeo literal" para retomar a partir da última cena concluída.`,
+        )
+      }
       rejectTask(error)
     } finally {
       setVideoStudioLiteralLoading(false)
