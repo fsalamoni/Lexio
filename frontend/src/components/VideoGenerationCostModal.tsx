@@ -11,7 +11,7 @@ import {
   Eye, Edit3, ChevronDown, ChevronUp,
   Image, Mic, Film, FileText, ImagePlus, Volume2,
 } from 'lucide-react'
-import { estimateVideoGenerationCost } from '../lib/video-generation-pipeline'
+import { estimateVideoGenerationCost, type VideoCheckpoint } from '../lib/video-generation-pipeline'
 import { VIDEO_PIPELINE_STAGES, type VideoPipelineProgressState } from '../lib/video-pipeline-progress'
 import DraggablePanel from './DraggablePanel'
 
@@ -35,6 +35,7 @@ interface VideoGenerationCostModalProps {
   onSkip: () => void
   isGenerating: boolean
   generationProgress?: VideoPipelineProgressState
+  lastCheckpoint?: VideoCheckpoint
 }
 
 export default function VideoGenerationCostModal({
@@ -44,6 +45,7 @@ export default function VideoGenerationCostModal({
   onSkip,
   isGenerating,
   generationProgress,
+  lastCheckpoint,
 }: VideoGenerationCostModalProps) {
   const [editedContent, setEditedContent] = useState(scriptContent)
   const [activeTab, setActiveTab] = useState<'cost' | 'script'>('cost')
@@ -382,24 +384,37 @@ export default function VideoGenerationCostModal({
 
         {/* Footer */}
         {!isGenerating && (
-          <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50/80 flex-shrink-0">
-            <p className="text-xs text-gray-500">
-              {hasEdits ? '⚠️ O roteiro foi editado. As alterações serão usadas na Fase 1.' : 'Os custos de mídia literal da Fase 2 podem variar conforme modelo e número de cenas.'}
-            </p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={onSkip}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
-              >
-                Apenas salvar roteiro
-              </button>
-              <button
-                onClick={() => onGenerate(editedContent)}
-                className="flex items-center gap-2 px-5 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 transition-colors shadow-sm"
-              >
-                <Video className="w-4 h-4" />
-                Executar Fase 1
-              </button>
+          <div className="flex flex-col gap-2 px-6 py-4 border-t bg-gray-50/80 flex-shrink-0">
+            {lastCheckpoint && lastCheckpoint.completedStep > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>
+                  A geração anterior foi interrompida no passo <strong>{lastCheckpoint.completedStep}/{lastCheckpoint.totalSteps}</strong>.
+                  {lastCheckpoint.imagesGenerated > 0 && ` ${lastCheckpoint.imagesGenerated} imagens geradas.`}
+                  {lastCheckpoint.ttsGenerated > 0 && ` ${lastCheckpoint.ttsGenerated} narrações geradas.`}
+                  {' '}Ao executar novamente, o pipeline recomeça do início.
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500">
+                {hasEdits ? '⚠️ O roteiro foi editado. As alterações serão usadas na Fase 1.' : 'Os custos de mídia literal da Fase 2 podem variar conforme modelo e número de cenas.'}
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={onSkip}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  Apenas salvar roteiro
+                </button>
+                <button
+                  onClick={() => onGenerate(editedContent)}
+                  className="flex items-center gap-2 px-5 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 transition-colors shadow-sm"
+                >
+                  <Video className="w-4 h-4" />
+                  {lastCheckpoint && lastCheckpoint.completedStep > 0 ? 'Regenerar Fase 1' : 'Executar Fase 1'}
+                </button>
+              </div>
             </div>
           </div>
         )}

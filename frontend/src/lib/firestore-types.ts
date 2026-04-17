@@ -53,6 +53,23 @@ export interface UserSettingsData {
   platform_admin_alert_profile?: PlatformAdminAlertProfile
   platform_admin_alert_recommendation_policy?: PlatformAdminAlertRecommendationPolicy
   platform_admin_alert_recommendation_history?: PlatformAdminAlertRecommendationHistoryEntry[]
+  token_budget?: TokenBudgetConfig
+}
+
+/** Token/cost budget configuration for spending controls */
+export interface TokenBudgetConfig {
+  /** Monthly spending limit in USD (0 = unlimited) */
+  monthly_limit_usd?: number
+  /** Daily spending limit in USD (0 = unlimited) */
+  daily_limit_usd?: number
+  /** Per-pipeline spending limit in USD (0 = unlimited) */
+  per_pipeline_limit_usd?: number
+  /** Warning threshold as percentage of limit (0-100, default 80) */
+  warning_threshold_pct?: number
+  /** Whether to hard-block calls when budget is exceeded */
+  hard_block?: boolean
+  /** Whether budget alerts are enabled */
+  alerts_enabled?: boolean
 }
 
 export type PlatformAdminAlertProfile = 'conservative' | 'balanced' | 'aggressive' | 'custom'

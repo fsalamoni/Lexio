@@ -5,7 +5,33 @@
 
 ---
 
-## Status Geral: Etapas 1-43 IMPLEMENTADAS
+## Status Geral: Etapas 1-47 IMPLEMENTADAS
+
+### Etapa 47 — UI de Orçamento de Tokens ✅
+- **Arquivos**: `pages/CostTokensPage.tsx`
+- Adicionada seção "Orçamento e Limites" no painel de custos pessoal com cards de status (mensal/diário) com indicação visual por cores (verde/amarelo/vermelho)
+- Campos de configuração: limite mensal, diário e por pipeline (USD), percentual de alerta, toggle de bloqueio rígido
+- Persistência direta em Firestore (`/users/{uid}/settings/preferences.token_budget`) com feedback de salvamento
+- Budget status calculado em tempo real via useMemo com aproximação do gasto atual
+
+### Etapa 46 — Estimativa de Custo para Geração de Documentos ✅
+- **Arquivos**: `lib/generation-service.ts`
+- Adicionada função `estimateDocumentGenerationCost(requestLength, hasAcervo, thesesCount)` que retorna estimativa de tokens e custo por agente
+- Considera fatores de escala (comprimento do request, número de teses) e taxas por tier (fast/balanced)
+- Os 3 agentes de acervo são condicionais — só incluídos na estimativa se `hasAcervo=true`
+
+### Etapa 45 — Framework de Orçamento de Tokens ✅
+- **Arquivos**: `lib/firestore-types.ts`, `lib/cost-analytics.ts`
+- Novo tipo `TokenBudgetConfig` com limites mensais, diários e por pipeline (USD), threshold de alerta, bloqueio rígido e alertas
+- Funções `checkBudget`, `getCurrentMonthSpend`, `getTodaySpend` para verificação de orçamento contra arrays de execuções
+- Retorna `BudgetCheckResult` com status (`ok`/`warning`/`exceeded`), gasto atual, limite e mensagem
+
+### Etapa 44 — UI de Retomada de Checkpoint de Vídeo ✅
+- **Arquivos**: `pages/ResearchNotebook.tsx`, `components/VideoGenerationCostModal.tsx`
+- O modal de geração de vídeo agora exibe banner informativo quando há checkpoint salvo de execução anterior (etapas completas, imagens/TTS gerados)
+- O estado de checkpoint é capturado do erro lançado pelo pipeline e armazenado no state do componente
+- Texto do botão muda para "Regenerar Fase 1" quando há checkpoint disponível
+- Toast de erro inclui informação de progresso salvo
 
 ### Etapa 43 — Reranking Jurídico Determinístico Aprimorado ✅
 - **Arquivos**: `lib/datajud-service.ts`

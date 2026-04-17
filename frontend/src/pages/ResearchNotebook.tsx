@@ -60,6 +60,7 @@ import {
   type VideoProductionPackage,
   type VideoGenerationProgressCallback,
   type RenderedVideoAsset,
+  type VideoCheckpoint,
 } from '../lib/video-generation-pipeline'
 import { buildVideoPipelineProgress, type VideoPipelineProgressState } from '../lib/video-pipeline-progress'
 import {
@@ -496,6 +497,7 @@ export default function ResearchNotebook() {
   const [videoGenStartedAt, setVideoGenStartedAt] = useState<number | null>(null)
   const [videoGenOperationalSummary, setVideoGenOperationalSummary] = useState<TaskOperationalSummary>(createEmptyOperationalSummary)
   const [videoProduction, setVideoProduction] = useState<VideoProductionPackage | null>(null)
+  const [videoGenLastCheckpoint, setVideoGenLastCheckpoint] = useState<VideoCheckpoint | null>(null)
   const [videoStudioApiKey, setVideoStudioApiKey] = useState<string | undefined>(undefined)
   const [videoStudioLiteralLoading, setVideoStudioLiteralLoading] = useState(false)
   const [videoStudioLiteralProgress, setVideoStudioLiteralProgress] = useState<VideoPipelineProgressState | null>(null)
@@ -3037,6 +3039,7 @@ Instruções:
 
     try {
       setVideoGenLoading(true)
+      setVideoGenLastCheckpoint(null)
       setVideoGenStartedAt(Date.now())
       setVideoGenOperationalSummary(createEmptyOperationalSummary())
       videoGenOperationalEventKeysRef.current = new Set()
@@ -3150,20 +3153,25 @@ Instruções:
     } catch (err) {
       console.error('Video generation error:', err)
       rejectTask(err)
+      // Capture checkpoint from the thrown error for potential resume
+      const checkpoint = (err as Error & { videoCheckpoint?: VideoCheckpoint }).videoCheckpoint ?? null
+      if (checkpoint && checkpoint.completedStep > 0) {
+        setVideoGenLastCheckpoint(checkpoint)
+      }
       const errMsg = err instanceof Error ? err.message : String(err)
       if (errMsg.includes('429')) {
         toast.warning(
           'Limite de requisições atingido',
-          'O modelo está sobrecarregado. Aguarde alguns minutos e tente novamente.',
+          checkpoint ? `Progresso salvo (${checkpoint.completedStep}/${checkpoint.totalSteps} etapas). Aguarde e tente novamente.` : 'O modelo está sobrecarregado. Aguarde alguns minutos e tente novamente.',
         )
       } else if (errMsg.includes('401') || errMsg.toLowerCase().includes('auth')) {
         toast.error('Chave de API inválida', 'Verifique sua chave de API nas configurações.')
       } else if (errMsg.includes('timeout') || errMsg.includes('TIMEOUT')) {
-        toast.error('Tempo esgotado', 'O modelo demorou muito para responder. Tente um modelo mais rápido.')
+        toast.error('Tempo esgotado', checkpoint ? `Progresso salvo (${checkpoint.completedStep}/${checkpoint.totalSteps} etapas). Tente um modelo mais rápido.` : 'O modelo demorou muito para responder. Tente um modelo mais rápido.')
       } else if (errMsg.includes('model') || errMsg.includes('Model')) {
         toast.error('Modelo indisponível', 'O modelo configurado não está disponível. Altere nas configurações do pipeline.')
       } else {
-        toast.error('Erro ao gerar vídeo', 'Verifique sua conexão, chave de API e configuração dos modelos.')
+        toast.error('Erro ao gerar vídeo', checkpoint ? `Progresso salvo (${checkpoint.completedStep}/${checkpoint.totalSteps} etapas). Verifique sua conexão e tente novamente.` : 'Verifique sua conexão, chave de API e configuração dos modelos.')
       }
     } finally {
       setVideoGenLoading(false)
@@ -6273,6 +6281,7 @@ Instruções:
           onSkip={handleSkipVideoGeneration}
           isGenerating={videoGenLoading}
           generationProgress={videoGenProgress || undefined}
+          lastCheckpoint={videoGenLastCheckpoint || undefined}
         />
       )}
 

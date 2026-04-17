@@ -597,3 +597,121 @@ export function extractNotebookUsageExecutions(notebook: NotebookUsageSummary): 
     }),
   ]
 }
+
+// ── Token Budget Checking ────────────────────────────────────────────────────
+
+import type { TokenBudgetConfig } from './firestore-types'
+
+export type BudgetStatus = 'ok' | 'warning' | 'exceeded'
+
+export interface BudgetCheckResult {
+  status: BudgetStatus
+  /** Current spending in USD for the checked period */
+  currentSpendUsd: number
+  /** Limit in USD that applies */
+  limitUsd: number
+  /** Percentage of limit consumed (0-100+) */
+  percentUsed: number
+  /** Human-readable message */
+  message: string
+}
+
+/**
+ * Check whether the user's spending is within budget for a given period.
+ * Returns the most restrictive result across daily/monthly/per-pipeline checks.
+ */
+export function checkBudget(
+  executions: UsageExecutionRecord[],
+  config: TokenBudgetConfig | undefined,
+  pipelineKey?: UsageFunctionKey,
+): BudgetCheckResult {
+  if (!config) return { status: 'ok', currentSpendUsd: 0, limitUsd: 0, percentUsed: 0, message: '' }
+
+  const warningPct = config.warning_threshold_pct ?? 80
+  const now = new Date()
+
+  const results: BudgetCheckResult[] = []
+
+  // Monthly check
+  if (config.monthly_limit_usd && config.monthly_limit_usd > 0) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const monthlySpend = executions
+      .filter(e => e.created_at >= monthStart)
+      .reduce((sum, e) => sum + e.cost_usd, 0)
+    const pct = (monthlySpend / config.monthly_limit_usd) * 100
+    results.push({
+      status: pct >= 100 ? 'exceeded' : pct >= warningPct ? 'warning' : 'ok',
+      currentSpendUsd: monthlySpend,
+      limitUsd: config.monthly_limit_usd,
+      percentUsed: pct,
+      message: pct >= 100
+        ? `Orçamento mensal excedido: $${monthlySpend.toFixed(2)} / $${config.monthly_limit_usd.toFixed(2)}`
+        : pct >= warningPct
+          ? `Orçamento mensal em alerta: $${monthlySpend.toFixed(2)} / $${config.monthly_limit_usd.toFixed(2)} (${Math.round(pct)}%)`
+          : '',
+    })
+  }
+
+  // Daily check
+  if (config.daily_limit_usd && config.daily_limit_usd > 0) {
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+    const dailySpend = executions
+      .filter(e => e.created_at >= dayStart)
+      .reduce((sum, e) => sum + e.cost_usd, 0)
+    const pct = (dailySpend / config.daily_limit_usd) * 100
+    results.push({
+      status: pct >= 100 ? 'exceeded' : pct >= warningPct ? 'warning' : 'ok',
+      currentSpendUsd: dailySpend,
+      limitUsd: config.daily_limit_usd,
+      percentUsed: pct,
+      message: pct >= 100
+        ? `Orçamento diário excedido: $${dailySpend.toFixed(2)} / $${config.daily_limit_usd.toFixed(2)}`
+        : pct >= warningPct
+          ? `Orçamento diário em alerta: $${dailySpend.toFixed(2)} / $${config.daily_limit_usd.toFixed(2)} (${Math.round(pct)}%)`
+          : '',
+    })
+  }
+
+  // Per-pipeline check
+  if (config.per_pipeline_limit_usd && config.per_pipeline_limit_usd > 0 && pipelineKey) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const pipelineSpend = executions
+      .filter(e => e.created_at >= monthStart && e.function_key === pipelineKey)
+      .reduce((sum, e) => sum + e.cost_usd, 0)
+    const pct = (pipelineSpend / config.per_pipeline_limit_usd) * 100
+    results.push({
+      status: pct >= 100 ? 'exceeded' : pct >= warningPct ? 'warning' : 'ok',
+      currentSpendUsd: pipelineSpend,
+      limitUsd: config.per_pipeline_limit_usd,
+      percentUsed: pct,
+      message: pct >= 100
+        ? `Orçamento do pipeline excedido: $${pipelineSpend.toFixed(2)} / $${config.per_pipeline_limit_usd.toFixed(2)}`
+        : pct >= warningPct
+          ? `Orçamento do pipeline em alerta: $${pipelineSpend.toFixed(2)} / $${config.per_pipeline_limit_usd.toFixed(2)} (${Math.round(pct)}%)`
+          : '',
+    })
+  }
+
+  if (results.length === 0) return { status: 'ok', currentSpendUsd: 0, limitUsd: 0, percentUsed: 0, message: '' }
+
+  // Return the most restrictive result
+  const exceeded = results.find(r => r.status === 'exceeded')
+  if (exceeded) return exceeded
+  const warning = results.find(r => r.status === 'warning')
+  if (warning) return warning
+  return results[0]
+}
+
+/** Summarize spending in the current month from execution records */
+export function getCurrentMonthSpend(executions: UsageExecutionRecord[]): number {
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+  return executions.filter(e => e.created_at >= monthStart).reduce((sum, e) => sum + e.cost_usd, 0)
+}
+
+/** Summarize spending today from execution records */
+export function getTodaySpend(executions: UsageExecutionRecord[]): number {
+  const now = new Date()
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+  return executions.filter(e => e.created_at >= dayStart).reduce((sum, e) => sum + e.cost_usd, 0)
+}

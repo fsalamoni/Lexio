@@ -1882,6 +1882,55 @@ export async function generateDocument(
   }
 }
 
+// ── Document Generation Cost Estimation ──────────────────────────────────────
+
+/**
+ * Estimate the cost of a document generation pipeline run before it starts.
+ * Uses the same agent definitions as the actual pipeline with conservative token estimates.
+ */
+export function estimateDocumentGenerationCost(requestLength: number, hasAcervo: boolean, thesesCount: number): {
+  estimatedTokens: number
+  estimatedCostUsd: number
+  breakdown: { agent: string; label: string; estimatedTokens: number; estimatedCostUsd: number }[]
+  agentCount: number
+} {
+  const scaleFactor = Math.max(1, requestLength / 2000)
+
+  // Conservative token estimates per agent tier
+  const AGENT_ESTIMATES: { key: string; label: string; baseTokens: number; costPer1kTokens: number; conditional?: boolean }[] = [
+    { key: 'triagem', label: 'Triagem', baseTokens: 1500, costPer1kTokens: 0.0005 },
+    { key: 'acervo_buscador', label: 'Buscador de Acervo', baseTokens: 2000, costPer1kTokens: 0.0005, conditional: true },
+    { key: 'acervo_compilador', label: 'Compilador de Base', baseTokens: 8000, costPer1kTokens: 0.003, conditional: true },
+    { key: 'acervo_revisor', label: 'Revisor de Base', baseTokens: 5000, costPer1kTokens: 0.003, conditional: true },
+    { key: 'pesquisador', label: 'Pesquisador', baseTokens: 6000, costPer1kTokens: 0.003 },
+    { key: 'jurista', label: 'Jurista', baseTokens: 8000, costPer1kTokens: 0.003 },
+    { key: 'advogado_diabo', label: 'Advogado do Diabo', baseTokens: 6000, costPer1kTokens: 0.003 },
+    { key: 'jurista_v2', label: 'Jurista (revisão)', baseTokens: 7000, costPer1kTokens: 0.003 },
+    { key: 'fact_checker', label: 'Fact-Checker', baseTokens: 3000, costPer1kTokens: 0.0005 },
+    { key: 'moderador', label: 'Moderador', baseTokens: 5000, costPer1kTokens: 0.003 },
+    { key: 'redator', label: 'Redator', baseTokens: 12000, costPer1kTokens: 0.003 },
+  ]
+
+  // Filter out acervo agents if user has no acervo
+  const activeAgents = AGENT_ESTIMATES.filter(a => !a.conditional || hasAcervo)
+
+  // Scale token estimate based on theses context size
+  const thesesScale = thesesCount > 0 ? 1 + (Math.min(thesesCount, 15) * 0.05) : 1
+
+  const breakdown = activeAgents.map(a => {
+    const estimatedTokens = Math.round(a.baseTokens * scaleFactor * thesesScale)
+    const estimatedCostUsd = (estimatedTokens / 1000) * a.costPer1kTokens
+    return { agent: a.key, label: a.label, estimatedTokens, estimatedCostUsd }
+  })
+
+  return {
+    estimatedTokens: breakdown.reduce((sum, b) => sum + b.estimatedTokens, 0),
+    estimatedCostUsd: breakdown.reduce((sum, b) => sum + b.estimatedCostUsd, 0),
+    breakdown,
+    agentCount: activeAgents.length,
+  }
+}
+
 // ── Context Detail — AI-assisted context enrichment ──────────────────────────
 
 /**

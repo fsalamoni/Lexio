@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DollarSign, Coins, Cpu, BrainCircuit, ChevronDown, ChevronUp,
   FileText, BookOpen, TrendingUp, Loader2, MessageCircleQuestion, Tags, Brain,
-  Video, Headphones, Presentation, Database,
+  Video, Headphones, Presentation, Database, Shield, AlertTriangle, Save,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -10,9 +10,11 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
-import { getCostBreakdown as firestoreGetCostBreakdown } from '../lib/firestore-service'
+import { getCostBreakdown as firestoreGetCostBreakdown, getUserSettings, saveUserSettings } from '../lib/firestore-service'
 import api from '../api/client'
 import type { CostBreakdown, CostBreakdownItem } from '../lib/cost-analytics'
+import type { BudgetStatus } from '../lib/cost-analytics'
+import type { TokenBudgetConfig } from '../lib/firestore-types'
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 
@@ -314,6 +316,9 @@ export default function CostTokensPage() {
   const [breakdown, setBreakdown] = useState<CostBreakdown | null>(null)
   const [loading, setLoading] = useState(true)
   const [collapseState, setCollapseState] = useState<Record<string, boolean>>(loadCollapseState)
+  const [budgetConfig, setBudgetConfig] = useState<TokenBudgetConfig>({})
+  const [budgetDirty, setBudgetDirty] = useState(false)
+  const [budgetSaving, setBudgetSaving] = useState(false)
 
   const toggleCollapse = useCallback((id: string) => {
     setCollapseState(prev => {
@@ -333,7 +338,12 @@ export default function CostTokensPage() {
       setLoading(true)
       try {
         if (IS_FIREBASE && userId) {
-          setBreakdown(await firestoreGetCostBreakdown(userId))
+          const [bd, settings] = await Promise.all([
+            firestoreGetCostBreakdown(userId),
+            getUserSettings(userId),
+          ])
+          setBreakdown(bd)
+          if (settings?.token_budget) setBudgetConfig(settings.token_budget)
         } else {
           const res = await api.get('/stats/cost-breakdown')
           setBreakdown(res.data as CostBreakdown)
@@ -447,6 +457,52 @@ export default function CostTokensPage() {
     return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, highlights: hl }
   }, [breakdown])
 
+  // ── Budget status ──────────────────────────────────────────────────────
+  const budgetStatus = useMemo<{ monthly: { spend: number; limit: number; pct: number; status: BudgetStatus }; daily: { spend: number; limit: number; pct: number; status: BudgetStatus } } | null>(() => {
+    if (!breakdown) return null
+    // We need raw executions for accurate period filtering, but CostBreakdown doesn't carry them.
+    // Approximate: total_cost_usd is lifetime, so we use it as the monthly upper bound.
+    // For a real implementation, we'd filter by created_at. For now, use the total as approximation.
+    const monthlyLimit = budgetConfig.monthly_limit_usd ?? 0
+    const dailyLimit = budgetConfig.daily_limit_usd ?? 0
+    const warningPct = budgetConfig.warning_threshold_pct ?? 80
+    const monthlySpend = breakdown.total_cost_usd // approximation — real would filter by month
+    const dailySpend = monthlySpend / 30 // rough daily average
+
+    const mPct = monthlyLimit > 0 ? (monthlySpend / monthlyLimit) * 100 : 0
+    const dPct = dailyLimit > 0 ? (dailySpend / dailyLimit) * 100 : 0
+
+    return {
+      monthly: {
+        spend: monthlySpend, limit: monthlyLimit, pct: mPct,
+        status: monthlyLimit > 0 ? (mPct >= 100 ? 'exceeded' : mPct >= warningPct ? 'warning' : 'ok') : 'ok',
+      },
+      daily: {
+        spend: dailySpend, limit: dailyLimit, pct: dPct,
+        status: dailyLimit > 0 ? (dPct >= 100 ? 'exceeded' : dPct >= warningPct ? 'warning' : 'ok') : 'ok',
+      },
+    }
+  }, [breakdown, budgetConfig])
+
+  const handleSaveBudget = async () => {
+    if (!userId) return
+    setBudgetSaving(true)
+    try {
+      await saveUserSettings(userId, { token_budget: budgetConfig })
+      setBudgetDirty(false)
+      toast.success('Orçamento salvo com sucesso')
+    } catch {
+      toast.error('Erro ao salvar orçamento')
+    } finally {
+      setBudgetSaving(false)
+    }
+  }
+
+  const updateBudgetField = (field: keyof TokenBudgetConfig, value: number | boolean) => {
+    setBudgetConfig(prev => ({ ...prev, [field]: value }))
+    setBudgetDirty(true)
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -503,7 +559,105 @@ export default function CostTokensPage() {
                 </div>
               </CollapsibleCard>
             )}
+            {/* ── Budget Configuration ─────────────────────────────────── */}
+            <CollapsibleCard id="general_budget" title="Orçamento e Limites" collapseState={collapseState} onToggle={toggleCollapse} defaultOpen={false}>
+              <div className="space-y-4">
+                {/* Status indicators */}
+                {budgetStatus && (budgetStatus.monthly.limit > 0 || budgetStatus.daily.limit > 0) && (
+                  <div className="flex flex-wrap gap-3 mb-3">
+                    {budgetStatus.monthly.limit > 0 && (
+                      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium ${
+                        budgetStatus.monthly.status === 'exceeded' ? 'bg-red-50 text-red-700 border border-red-200'
+                        : budgetStatus.monthly.status === 'warning' ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      }`}>
+                        {budgetStatus.monthly.status === 'exceeded' ? <AlertTriangle className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
+                        Mensal: {fmtUsd(budgetStatus.monthly.spend)} / {fmtUsd(budgetStatus.monthly.limit)} ({Math.round(budgetStatus.monthly.pct)}%)
+                      </div>
+                    )}
+                    {budgetStatus.daily.limit > 0 && (
+                      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium ${
+                        budgetStatus.daily.status === 'exceeded' ? 'bg-red-50 text-red-700 border border-red-200'
+                        : budgetStatus.daily.status === 'warning' ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      }`}>
+                        {budgetStatus.daily.status === 'exceeded' ? <AlertTriangle className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
+                        Diário: {fmtUsd(budgetStatus.daily.spend)} / {fmtUsd(budgetStatus.daily.limit)} ({Math.round(budgetStatus.daily.pct)}%)
+                      </div>
+                    )}
+                  </div>
+                )}
 
+                {/* Configuration fields */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Limite mensal (USD)</label>
+                    <input
+                      type="number" min={0} step={0.5}
+                      value={budgetConfig.monthly_limit_usd ?? ''}
+                      onChange={e => updateBudgetField('monthly_limit_usd', parseFloat(e.target.value) || 0)}
+                      placeholder="0 = ilimitado"
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Limite diário (USD)</label>
+                    <input
+                      type="number" min={0} step={0.1}
+                      value={budgetConfig.daily_limit_usd ?? ''}
+                      onChange={e => updateBudgetField('daily_limit_usd', parseFloat(e.target.value) || 0)}
+                      placeholder="0 = ilimitado"
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Limite por pipeline (USD)</label>
+                    <input
+                      type="number" min={0} step={0.5}
+                      value={budgetConfig.per_pipeline_limit_usd ?? ''}
+                      onChange={e => updateBudgetField('per_pipeline_limit_usd', parseFloat(e.target.value) || 0)}
+                      placeholder="0 = ilimitado"
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Alerta em (% do limite)</label>
+                    <input
+                      type="number" min={0} max={100} step={5}
+                      value={budgetConfig.warning_threshold_pct ?? 80}
+                      onChange={e => updateBudgetField('warning_threshold_pct', parseInt(e.target.value) || 80)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={budgetConfig.hard_block ?? false}
+                        onChange={e => updateBudgetField('hard_block', e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      Bloquear chamadas ao exceder
+                    </label>
+                  </div>
+                  <div className="flex items-end justify-end">
+                    <button
+                      onClick={handleSaveBudget}
+                      disabled={!budgetDirty || budgetSaving}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-40 transition-colors"
+                    >
+                      {budgetSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      Salvar orçamento
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400">
+                  Limites com valor 0 são tratados como ilimitados. O alerta aparece quando o gasto atinge o percentual configurado.
+                </p>
+              </div>
+            </CollapsibleCard>
             <CollapsibleCard id="general_tbl_provider" title="Por API / provedor" collapseState={collapseState} onToggle={toggleCollapse}>
               <BreakdownTable rows={breakdown.by_provider} emptyLabel="Nenhuma API/provedor com consumo registrado." />
             </CollapsibleCard>
