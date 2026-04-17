@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronUp, FileText, ArrowRight, Sparkles, Loader2, MessageCircleQuestion } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
@@ -14,7 +14,7 @@ import {
   getProfile, type ProfileData,
   type ContextDetailData, type ContextDetailQuestion,
 } from '../lib/firestore-service'
-import { generateDocument, generateContextQuestions, type GenerationProgress } from '../lib/generation-service'
+import { generateDocument, generateContextQuestions, estimateDocumentGenerationCost, type GenerationProgress } from '../lib/generation-service'
 import { ModelUnavailableError, TransientLLMError } from '../lib/llm-client'
 import { ModelsNotConfiguredError } from '../lib/model-config'
 import type { UserProfileForGeneration } from '../lib/generation-service'
@@ -77,6 +77,12 @@ export default function NewDocument() {
 
   // Whether the main form fields are ready for generation
   const formReady = !!selectedType && request.trim().length > 0
+
+  // Cost estimate based on current form state
+  const costEstimate = useMemo(() => {
+    if (!formReady) return null
+    return estimateDocumentGenerationCost(request.length, true, 0)
+  }, [formReady, request.length])
 
   // Initialise pipeline agents state from template
   const initPipeline = useCallback(() => {
@@ -466,6 +472,14 @@ export default function NewDocument() {
                 </>
               )}
             </button>
+          )}
+
+          {/* Cost estimate preview */}
+          {costEstimate && !generating && (
+            <div className="w-full text-xs text-gray-500 flex items-center justify-between px-1">
+              <span>Estimativa: ~{costEstimate.agentCount} agentes, ~{(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens</span>
+              <span className="font-medium text-amber-600">~${costEstimate.estimatedCostUsd.toFixed(3)} USD</span>
+            </div>
           )}
 
           {/* Generate button */}

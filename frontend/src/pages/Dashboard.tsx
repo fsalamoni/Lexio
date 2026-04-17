@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   FileText, CheckCircle, Clock, DollarSign, TrendingUp,
-  Activity, ChevronRight, Download,
+  Activity, ChevronRight, Download, Plus, Upload, BookOpen, Search,
 } from 'lucide-react'
 import {
   BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -274,6 +274,25 @@ export default function Dashboard() {
           ))}
         </div>
       )}
+
+      {/* Quick actions */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: 'Novo Documento', icon: Plus, to: '/documents/new', color: 'bg-brand-50 text-brand-700 border-brand-100' },
+          { label: 'Upload de Acervo', icon: Upload, to: '/upload', color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+          { label: 'Caderno de Pesquisa', icon: BookOpen, to: '/notebook', color: 'bg-violet-50 text-violet-700 border-violet-100' },
+          { label: 'Banco de Teses', icon: Search, to: '/theses', color: 'bg-amber-50 text-amber-700 border-amber-100' },
+        ].map(action => (
+          <Link
+            key={action.to}
+            to={action.to}
+            className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors hover:shadow-sm ${action.color}`}
+          >
+            <action.icon className="w-4 h-4 flex-shrink-0" />
+            <span className="text-sm font-medium">{action.label}</span>
+          </Link>
+        ))}
+      </div>
 
       {/* Charts row */}
       {daily.length > 0 && (
