@@ -750,11 +750,38 @@ export default function AdminPanel() {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
-        <Key className="w-8 h-8 text-brand-600" />
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Configurações Pessoais</h1>
-          <p className="text-gray-500">Suas APIs, modelos, revisão de documentos e preferências de execução</p>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <Key className="w-8 h-8 text-brand-600" />
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Configurações Pessoais</h1>
+            <p className="text-gray-500">Suas APIs, modelos, revisão de documentos e preferências de execução</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              const allOpen: Record<string, boolean> = {}
+              Object.keys(collapseState).forEach(k => { allOpen[k] = true })
+              ;['section_review_queue', 'section_model_catalog', 'section_pipelines', 'section_document_types', 'section_legal_areas', 'section_advanced'].forEach(k => { allOpen[k] = true })
+              setCollapseState(allOpen)
+              saveAdminCollapseState(allOpen)
+            }}
+            className="text-xs px-3 py-1.5 rounded-lg border text-gray-500 hover:bg-gray-50 transition-colors"
+          >
+            Expandir tudo
+          </button>
+          <button
+            onClick={() => {
+              const allClosed: Record<string, boolean> = {}
+              Object.keys(collapseState).forEach(k => { allClosed[k] = false })
+              setCollapseState(allClosed)
+              saveAdminCollapseState(allClosed)
+            }}
+            className="text-xs px-3 py-1.5 rounded-lg border text-gray-500 hover:bg-gray-50 transition-colors"
+          >
+            Recolher tudo
+          </button>
         </div>
       </div>
 

@@ -5,14 +5,18 @@
 
 ---
 
-## Status Geral: Etapas 1-51 IMPLEMENTADAS
+## Status Geral: Etapas 1-62 IMPLEMENTADAS
 
-### Etapa 51 — Empty States, Budget Warning e Context Compactor ✅
-- **Arquivos**: `pages/DocumentList.tsx`, `pages/ThesisBank.tsx`, `pages/NewDocument.tsx`, `lib/generation-service.ts`, `lib/context-compactor.ts`
-- Empty states de DocumentList e ThesisBank agora incluem CTAs claros (botões de ação) para guiar o usuário quando não há dados
-- NewDocument exibe estimativa de custo (agentes, tokens, USD) antes da geração e verifica orçamento (warning/block) ao submeter
-- Context compactor: `lib/context-compactor.ts` — deduplica segmentos, trunca com preservação de estrutura (headers, início/fim), compacta múltiplas fontes por prioridade
-- Integração do compactor na pipeline documental: knowledge base >40k chars é compactada automaticamente antes de ir para o pesquisador
+### Etapa 62 — Dashboard Continue Working + Admin Expand/Collapse + Date Presets + Error Humanizer ✅
+- **Arquivos**: `pages/Dashboard.tsx`, `pages/AdminPanel.tsx`, `pages/DocumentList.tsx`, `pages/Upload.tsx`, `pages/DocumentEditor.tsx`, `lib/error-humanizer.ts`, `lib/context-compactor.test.ts`, `lib/generation-service.ts`
+- Etapa 55: 13 unit tests for context-compactor (deduplicateSegments, truncateWithStructure, compactContext)
+- Etapa 56: Upload page enhanced empty state with prominent CTA, guidance text and supported formats
+- Etapa 57: Pipeline progress now reports context compaction stats (originalLen → compactedChars, segmentsDropped)
+- Etapa 58: DocumentEditor shows agent provenance badges from llm_executions metadata
+- Etapa 59: `error-humanizer.ts` — centralized PT-BR error translation for network, HTTP, LLM, Firebase errors
+- Etapa 60: DocumentList quick date presets ("7 dias", "Este mês") above date range inputs
+- Etapa 61: AdminPanel "Expandir tudo" / "Recolher tudo" buttons in header for collapsible sections
+- Etapa 62: Dashboard "Continuar trabalhando" card linking to most recent active document
 
 ### Etapa 48-50 — Cost Preview, Context Compactor, Dashboard Hub ✅
 - **Arquivos**: `pages/NewDocument.tsx`, `pages/Dashboard.tsx`, `lib/context-compactor.ts`

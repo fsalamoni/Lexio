@@ -275,6 +275,31 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Continue working — show most recent in-progress or review document */}
+      {recent.length > 0 && (() => {
+        const resumable = recent.find(d => d.status === 'processando' || d.status === 'em_revisao' || d.status === 'concluido')
+        if (!resumable) return null
+        const statusLabel = resumable.status === 'processando' ? 'em processamento' : resumable.status === 'em_revisao' ? 'aguardando revisão' : 'concluído'
+        return (
+          <Link
+            to={`/documents/${resumable.id}`}
+            className="flex items-center gap-4 rounded-xl border border-brand-100 bg-brand-50/50 px-5 py-3 hover:bg-brand-50 transition-colors group"
+          >
+            <Activity className="w-5 h-5 text-brand-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">
+                Continuar: {resumable.tema || DOCTYPE_LABELS[resumable.document_type_id] || 'Documento'}
+              </p>
+              <p className="text-xs text-gray-500">
+                {DOCTYPE_LABELS[resumable.document_type_id] || resumable.document_type_id} · {statusLabel} ·{' '}
+                {format(new Date(resumable.created_at), "dd/MM 'às' HH:mm", { locale: ptBR })}
+              </p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-brand-600 transition-colors flex-shrink-0" />
+          </Link>
+        )
+      })()}
+
       {/* Quick actions */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[

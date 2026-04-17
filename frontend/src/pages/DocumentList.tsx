@@ -291,6 +291,26 @@ export default function DocumentList() {
       {/* Date range filter row */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <span className="text-xs text-gray-500 whitespace-nowrap">Período:</span>
+        <button
+          onClick={() => { const d = new Date(); d.setDate(d.getDate() - 7); setDateFrom(d.toISOString().slice(0, 10)); setDateTo(''); setPage(0) }}
+          className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+            dateFrom && !dateTo && new Date(dateFrom).getTime() >= Date.now() - 8 * 86400000
+              ? 'bg-brand-50 text-brand-700 border-brand-200'
+              : 'bg-white text-gray-500 hover:bg-gray-50'
+          }`}
+        >
+          7 dias
+        </button>
+        <button
+          onClick={() => { const d = new Date(); setDateFrom(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`); setDateTo(''); setPage(0) }}
+          className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+            dateFrom && dateFrom.endsWith('-01') && !dateTo
+              ? 'bg-brand-50 text-brand-700 border-brand-200'
+              : 'bg-white text-gray-500 hover:bg-gray-50'
+          }`}
+        >
+          Este mês
+        </button>
         <input
           type="date"
           value={dateFrom}
