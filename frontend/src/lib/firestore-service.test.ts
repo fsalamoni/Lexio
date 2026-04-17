@@ -162,13 +162,22 @@ describe('saveNotebookDocumentToDocuments', () => {
   })
 
   it('normalizes a full Firestore resource path when reading a notebook', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, id: 'nb-xyz', data: () => ({ title: 'Notebook' }) })
+      .mockResolvedValueOnce({ exists: () => false, id: 'search_memory', data: () => ({}) })
+
     await getResearchNotebook(uid, 'projects/hocapp-44760/databases/(default)/documents/users/user-123/research_notebooks/nb-xyz')
 
     expect(mockDoc).toHaveBeenCalledWith(
       { _fake: true },
       'users', uid, 'research_notebooks', 'nb-xyz',
     )
-    expect(mockGetDoc).toHaveBeenCalledOnce()
+    // getResearchNotebook now performs a second read for dedicated search memory.
+    expect(mockGetDoc).toHaveBeenCalledTimes(2)
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'research_notebooks', 'nb-xyz', 'memory', 'search_memory',
+    )
   })
 
   it('normalizes a slash-delimited notebook path when updating a notebook', async () => {

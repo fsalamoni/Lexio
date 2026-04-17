@@ -5,7 +5,13 @@
 
 ---
 
-## Status Geral: Etapas 1-37 IMPLEMENTADAS
+## Status Geral: Etapas 1-38 IMPLEMENTADAS
+
+### Etapa 38 — Hardening de Testes Frontend para CI ✅
+- **Arquivos**: `lib/firestore-service.test.ts`, `lib/web-search-service.test.ts`
+- Ajustado o teste de normalização de notebook para refletir o novo comportamento de dual-read com memória dedicada (`search_memory`), removendo expectativa obsoleta de leitura única
+- Endurecido o teste de parser plain-text do DuckDuckGo/Jina para evitar dependência de rede em estratégias de fallback, eliminando timeout intermitente no CI
+- Validação local concluída em `frontend/`: `npm run typecheck`, `npm run test` (188/188) e `npm run build` com sucesso
 
 ### Etapa 37 — Refatoração dos Handlers de Fonte no Notebook ✅
 - **Arquivos**: `pages/ResearchNotebook.tsx`

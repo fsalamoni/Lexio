@@ -35,9 +35,10 @@ describe('web-search-service', () => {
       'A Constituição Federal, em seu art. 37, inciso IX, permite a contratação...',
     ].join('\n')
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(text, { status: 200 }),
-    )
+    // Keep all fallback strategies local to the test to avoid real network calls.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => (
+      new Response(text, { status: 200 })
+    ))
 
     const { results, diagnostics } = await searchWebResultsWithDiagnostics('contratação temporária')
 
