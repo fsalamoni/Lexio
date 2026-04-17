@@ -1792,13 +1792,26 @@ export default function Upload() {
       )}
 
       {((IS_FIREBASE ? firebaseHistory.length : history.length) === 0) && localFiles.length === 0 && !uploading && (
-        <div className="text-center py-8">
-          <p className="text-sm text-gray-400">
-            Nenhum documento no acervo ainda.
+        <div className="text-center py-12 bg-white rounded-xl border">
+          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Database className="w-8 h-8 text-gray-300" />
+          </div>
+          <p className="font-medium text-gray-700 mb-1">Nenhum documento no acervo</p>
+          <p className="text-sm text-gray-400 mb-4 max-w-md mx-auto">
+            Envie documentos jurídicos (PDF, DOCX) para alimentar sua base de conhecimento.
+            Eles serão usados como referência na geração de novos documentos.
           </p>
-          <p className="text-xs text-gray-300 mt-1">
-            Os documentos enviados servirão como base de conhecimento na elaboração de novos documentos.
-          </p>
+          <label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors cursor-pointer">
+            <UploadIcon className="w-4 h-4" />
+            Enviar primeiro documento
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.docx,.doc,.txt,.odt,.rtf"
+              onChange={handleInputChange}
+              className="hidden"
+            />
+          </label>
         </div>
       )}
     </div>

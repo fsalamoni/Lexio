@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Save, ArrowLeft, FileText, Check, Download } from 'lucide-react'
+import { Save, ArrowLeft, FileText, Check, Download, Bot } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import RichTextEditor from '../components/RichTextEditor'
@@ -9,6 +9,7 @@ import { IS_FIREBASE } from '../lib/firebase'
 import { getDocument, updateDocument } from '../lib/firestore-service'
 import { generateAndDownloadDocx } from '../lib/docx-generator'
 import { DOCTYPE_LABELS } from '../lib/constants'
+import type { UsageExecutionRecord } from '../lib/cost-analytics'
 
 export default function DocumentEditor() {
   const { id } = useParams<{ id: string }>()
@@ -25,8 +26,21 @@ export default function DocumentEditor() {
   const [hasChanges, setHasChanges] = useState(false)
   const [wordCount, setWordCount] = useState(0)
   const [charCount, setCharCount] = useState(0)
+  const [executions, setExecutions] = useState<UsageExecutionRecord[]>([])
   const { userId } = useAuth()
   const toast = useToast()
+
+  // Derive unique agents from llm_executions
+  const agentBadges = useMemo(() => {
+    if (!executions.length) return []
+    const seen = new Map<string, { label: string; model: string | null }>()
+    for (const ex of executions) {
+      if (!seen.has(ex.phase)) {
+        seen.set(ex.phase, { label: ex.phase_label || ex.agent_name, model: ex.model_label || ex.model })
+      }
+    }
+    return Array.from(seen.values())
+  }, [executions])
 
   // Warn before navigating away with unsaved changes
   useEffect(() => {
@@ -52,6 +66,7 @@ export default function DocumentEditor() {
               document_type_id: doc.document_type_id,
               tema: doc.tema ?? null,
             })
+            if (doc.llm_executions?.length) setExecutions(doc.llm_executions)
           }
         })
         .catch(() => toast.error('Erro ao carregar documento'))
@@ -216,6 +231,23 @@ export default function DocumentEditor() {
               <span>~{Math.ceil(wordCount / 200)} min de leitura</span>
             </>
           )}
+        </div>
+      )}
+
+      {/* Agent provenance badges */}
+      {agentBadges.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap mb-3 px-1">
+          <Bot className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+          <span className="text-xs text-gray-400">Agentes:</span>
+          {agentBadges.map((badge, i) => (
+            <span
+              key={i}
+              title={badge.model || undefined}
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600 border border-gray-200"
+            >
+              {badge.label}
+            </span>
+          ))}
         </div>
       )}
 

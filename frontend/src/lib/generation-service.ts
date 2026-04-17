@@ -1594,11 +1594,13 @@ export async function generateDocument(
 
     // Apply context compaction if knowledge base is very large (>40k chars)
     if (knowledgeBase.length > 40000) {
+      const originalLen = knowledgeBase.length
       const compacted = compactContext(
         [{ label: 'base_conhecimento', text: knowledgeBase, priority: 0 }],
         40000,
       )
       knowledgeBase = compacted.text
+      reportProgress('acervo_compilador', `Base de conhecimento compactada: ${Math.round(originalLen / 1000)}k → ${Math.round(compacted.compactedChars / 1000)}k chars (${compacted.segmentsDropped} segmentos removidos)`, 20)
     }
 
     // 3. Pesquisador — legal research synthesis
