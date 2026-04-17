@@ -49,6 +49,45 @@ export interface UserSettingsData {
   document_types?: AdminDocumentType[]
   legal_areas?: AdminLegalArea[]
   classification_tipos?: Record<string, Record<string, string[]>>
+  platform_admin_alert_thresholds?: PlatformAdminAlertThresholds
+  platform_admin_alert_profile?: PlatformAdminAlertProfile
+  platform_admin_alert_recommendation_policy?: PlatformAdminAlertRecommendationPolicy
+  platform_admin_alert_recommendation_history?: PlatformAdminAlertRecommendationHistoryEntry[]
+}
+
+export type PlatformAdminAlertProfile = 'conservative' | 'balanced' | 'aggressive' | 'custom'
+
+export interface PlatformAdminAlertThresholds {
+  memory_discard_total_7d_critical?: number
+  memory_discard_trend_multiplier_warning?: number
+  memory_coverage_warning_min?: number
+  memory_no_updates_days_info?: number
+}
+
+export interface PlatformAdminAlertRecommendationPolicy {
+  recommendation_window_days?: number
+  rollout_mode?: 'manual' | 'assisted'
+}
+
+export interface PlatformAdminAlertRecommendationHistoryEntry {
+  id: string
+  created_at: string
+  action: 'recommendation_applied' | 'thresholds_saved'
+  rollout_mode: 'manual' | 'assisted'
+  recommendation_window_days: number
+  scale_profile: 'small' | 'medium' | 'large'
+  recommended_thresholds?: PlatformAdminAlertThresholds
+  applied_thresholds: PlatformAdminAlertThresholds
+  impact_current?: {
+    critical?: number
+    warning?: number
+    info?: number
+  }
+  impact_projected?: {
+    critical?: number
+    warning?: number
+    info?: number
+  }
 }
 
 export interface ContextDetailQuestion {
@@ -182,6 +221,38 @@ export interface NotebookMessage {
   created_at: string
 }
 
+export interface NotebookResearchAuditEntry {
+  variant: 'external' | 'deep' | 'jurisprudencia'
+  mode: 'preview' | 'executed'
+  query: string
+  queryChars: number
+  tribunalCount?: number
+  tribunalAliases?: string[]
+  resultCount?: number
+  selectedCount?: number
+  extractedCount?: number
+  compiledChars?: number
+  usedSnippetFallback?: boolean
+  legalArea?: string | null
+  dateFrom?: string | null
+  dateTo?: string | null
+  graus?: string[]
+  maxPerTribunal?: number
+  dateRangeLabel?: string | null
+  sourceKindLabel?: string
+  totalContextChars: number
+  created_at: string
+}
+
+export interface NotebookSavedSearchEntry extends Omit<NotebookResearchAuditEntry, 'created_at'> {
+  id: string
+  title: string
+  pinned?: boolean
+  tags?: string[]
+  created_at: string
+  updated_at: string
+}
+
 export type StudioArtifactType =
   | 'resumo'
   | 'apresentacao'
@@ -215,6 +286,8 @@ export interface ResearchNotebookData {
   sources: NotebookSource[]
   messages: NotebookMessage[]
   artifacts: StudioArtifact[]
+  research_audits?: NotebookResearchAuditEntry[]
+  saved_searches?: NotebookSavedSearchEntry[]
   status: 'active' | 'archived'
   created_at: string
   updated_at?: string
@@ -294,6 +367,12 @@ export interface PlatformOverviewData {
   total_theses: number
   total_acervo_documents: number
   total_notebooks: number
+  notebooks_with_dedicated_search_memory: number
+  total_notebook_search_memory_docs: number
+  total_search_memory_audits: number
+  total_search_memory_saved_searches: number
+  total_search_memory_audits_dropped: number
+  total_search_memory_saved_searches_dropped: number
   total_artifacts: number
   total_sources: number
   total_thesis_sessions: number
@@ -318,6 +397,8 @@ export interface PlatformDailyUsagePoint {
   cadernos: number
   uploads_acervo: number
   sessoes_teses: number
+  memoria_busca_atualizacoes: number
+  memoria_busca_descartes: number
   chamadas_llm: number
   tokens: number
   custo_usd: number

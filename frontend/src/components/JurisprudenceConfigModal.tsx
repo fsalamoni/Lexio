@@ -29,6 +29,7 @@ interface JurisprudenceConfigModalProps {
   isOpen: boolean
   query: string
   initialSelectedAliases?: string[]
+  initialConfig?: Partial<JurisprudenceSearchConfig> | null
   onSearch: (config: JurisprudenceSearchConfig) => void
   onClose: () => void
 }
@@ -37,6 +38,7 @@ export default function JurisprudenceConfigModal({
   isOpen,
   query: initialQuery,
   initialSelectedAliases,
+  initialConfig,
   onSearch,
   onClose,
 }: JurisprudenceConfigModalProps) {
@@ -59,9 +61,14 @@ export default function JurisprudenceConfigModal({
 
   React.useEffect(() => {
     if (!isOpen) return
-    setQuery(initialQuery)
-    setSelectedAliases(new Set(defaultAliases))
-  }, [isOpen, initialQuery, defaultAliases])
+    setQuery(initialConfig?.query ?? initialQuery)
+    setSelectedAliases(new Set((initialConfig?.tribunals?.map(tribunal => tribunal.alias) ?? Array.from(defaultAliases))))
+    setDateFrom(initialConfig?.dateFrom ?? '')
+    setDateTo(initialConfig?.dateTo ?? '')
+    setSelectedGraus(new Set(initialConfig?.graus ?? []))
+    setMaxPerTribunal(initialConfig?.maxPerTribunal ?? 5)
+    setLegalArea(initialConfig?.legalArea ?? '')
+  }, [isOpen, initialConfig, initialQuery, defaultAliases])
 
   const toggleGroup = useCallback((category: string) => {
     setExpandedGroups(prev => {

@@ -20,7 +20,7 @@ import {
   Library, ScanSearch, Save, Eye, Film, Scale, ThumbsUp, ThumbsDown,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { useTaskManager } from '../contexts/TaskManagerContext'
+import { useTaskManager, type TaskOperationalSummary } from '../contexts/TaskManagerContext'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
@@ -36,6 +36,8 @@ import {
   type ResearchNotebookData,
   type NotebookSource,
   type NotebookMessage,
+  type NotebookResearchAuditEntry,
+  type NotebookSavedSearchEntry,
   type StudioArtifact,
   type StudioArtifactType,
   type AcervoDocumentData,
@@ -59,6 +61,24 @@ import {
   type VideoGenerationProgressCallback,
   type RenderedVideoAsset,
 } from '../lib/video-generation-pipeline'
+import { buildVideoPipelineProgress, type VideoPipelineProgressState } from '../lib/video-pipeline-progress'
+import {
+  buildChatContextAudit,
+  buildResearchContextAudit,
+  buildStudioContextAudit,
+  type ChatContextAuditSummary,
+  type ResearchContextAuditSummary,
+} from '../lib/notebook-context-audit'
+import {
+  buildAcervoModalProgressState,
+  buildAcervoProgressState,
+  buildAcervoTrailSteps,
+  buildNotebookOperationalSummaries,
+  buildStudioModalProgressState,
+  buildStudioTaskPhaseMessage,
+  buildStudioTrailSteps,
+  type NotebookOperationalAggregate,
+} from '../lib/notebook-pipeline-progress'
 import {
   type StoredNotebookMedia,
   uploadNotebookMediaArtifact,
@@ -130,8 +150,6 @@ import {
   ENABLE_LITERAL_MEDIA_AUTOGENERATION,
   REVIEWABLE_ARTIFACT_TYPES,
   ARTIFACT_COST_KEY,
-  STUDIO_SPECIALIST_LABEL,
-  ACERVO_TRAIL_STEPS,
   AGENT_LABELS,
   ARTIFACT_CATEGORIES,
   ARTIFACT_TYPES,
@@ -195,6 +213,8 @@ function buildCitationSuffix(r: DataJudResult): string {
 // ── Jurisprudence Prompts ────────────────────────────────────────────────────
 
 const VALID_STANCES = ['favoravel', 'desfavoravel', 'neutro'] as const
+const MAX_PERSISTED_RESEARCH_AUDITS = 12
+const MAX_PERSISTED_SAVED_SEARCHES = 12
 
 const JURISPRUDENCE_RANKING_SYSTEM = [
   'Você é um especialista em relevância jurisprudencial.',
@@ -262,6 +282,89 @@ function getNotebookArtifactTaskMetadata(metadata: Record<string, unknown> | und
   }
 }
 
+function createEmptyOperationalSummary(): TaskOperationalSummary {
+  return {
+    totalCostUsd: 0,
+    totalDurationMs: 0,
+    totalRetryCount: 0,
+    fallbackCount: 0,
+    degradationReasons: [],
+    phaseCounts: {},
+  }
+}
+
+function buildOperationalEventKey(update: {
+  phase?: string
+  costUsd?: number
+  durationMs?: number
+  retryCount?: number
+  usedFallback?: boolean
+  fallbackReason?: string
+  fallbackFrom?: string
+}): string | null {
+  const hasSignal =
+    (update.costUsd ?? 0) > 0 ||
+    (update.durationMs ?? 0) > 0 ||
+    (update.retryCount ?? 0) > 0 ||
+    Boolean(update.usedFallback) ||
+    Boolean(update.fallbackReason) ||
+    Boolean(update.fallbackFrom)
+
+  if (!hasSignal) return null
+
+  return [
+    update.phase ?? '',
+    update.costUsd ?? 0,
+    update.durationMs ?? 0,
+    update.retryCount ?? 0,
+    update.usedFallback ? 1 : 0,
+    update.fallbackReason ?? '',
+    update.fallbackFrom ?? '',
+  ].join('|')
+}
+
+function accumulateOperationalSummary(
+  current: TaskOperationalSummary,
+  update: {
+    phase?: string
+    costUsd?: number
+    durationMs?: number
+    retryCount?: number
+    usedFallback?: boolean
+    fallbackReason?: string
+    fallbackFrom?: string
+  },
+): TaskOperationalSummary {
+  const degradationReason = update.fallbackReason
+    || (update.fallbackFrom ? `Fallback de ${update.fallbackFrom.split('/').pop() || update.fallbackFrom}` : undefined)
+    || (update.usedFallback ? 'Fallback ativado' : undefined)
+
+  const degradationReasons = degradationReason
+    ? Array.from(new Set([...(current.degradationReasons || []), degradationReason]))
+    : (current.degradationReasons || [])
+
+  const phaseCounts = {
+    ...(current.phaseCounts || {}),
+  }
+  if (update.phase) {
+    phaseCounts[update.phase] = (phaseCounts[update.phase] || 0) + 1
+  }
+
+  return {
+    totalCostUsd: Number((current.totalCostUsd + (update.costUsd ?? 0)).toFixed(6)),
+    totalDurationMs: current.totalDurationMs + Math.max(0, update.durationMs ?? 0),
+    totalRetryCount: current.totalRetryCount + Math.max(0, update.retryCount ?? 0),
+    fallbackCount: current.fallbackCount + (update.usedFallback ? 1 : 0),
+    degradationReasons,
+    phaseCounts,
+  }
+}
+
+function formatContextChars(value: number): string {
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k chars`
+  return `${value} chars`
+}
+
 export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
@@ -295,6 +398,7 @@ export default function ResearchNotebook() {
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [useWebSearch, setUseWebSearch] = useState(false)
+  const [lastChatContextAudit, setLastChatContextAudit] = useState<ChatContextAuditSummary | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -314,6 +418,7 @@ export default function ResearchNotebook() {
   const [researchModalSteps, setResearchModalSteps] = useState<ResearchStep[]>([])
   const [researchModalStats, setResearchModalStats] = useState<ResearchStats>({ sourcesFound: 0, urlsExamined: 0, tribunalsQueried: 0, tokensUsed: 0, elapsedMs: 0 })
   const [researchModalCanClose, setResearchModalCanClose] = useState(false)
+  const [lastResearchContextAudit, setLastResearchContextAudit] = useState<ResearchContextAuditSummary | null>(null)
   const researchAbortRef = useRef<AbortController | null>(null)
   const suggestionModelWarnedRef = useRef(false)
   const [sourceUploadLoading, setSourceUploadLoading] = useState(false)
@@ -326,6 +431,7 @@ export default function ResearchNotebook() {
 
   // Jurisprudence config modal (pre-search)
   const [jurisprudenceConfigOpen, setJurisprudenceConfigOpen] = useState(false)
+  const [jurisprudenceConfigPreset, setJurisprudenceConfigPreset] = useState<Partial<JurisprudenceSearchConfig> | null>(null)
   const [lastJurisprudenceTribunalAliases, setLastJurisprudenceTribunalAliases] = useState<string[]>(DEFAULT_TRIBUNALS.map(t => t.alias))
 
   // Search results review modal (post-search)
@@ -351,12 +457,16 @@ export default function ResearchNotebook() {
   const [acervoAnalysisLoading, setAcervoAnalysisLoading] = useState(false)
   const [acervoAnalysisPhase, setAcervoAnalysisPhase] = useState('')
   const [acervoAnalysisMessage, setAcervoAnalysisMessage] = useState('')
+  const [acervoAnalysisStartedAt, setAcervoAnalysisStartedAt] = useState<number | null>(null)
   const [acervoAnalysisPercent, setAcervoAnalysisPercent] = useState(0)
+  const [acervoAnalysisMeta, setAcervoAnalysisMeta] = useState('')
   const [acervoAnalysisError, setAcervoAnalysisError] = useState('')
   const [showAcervoProgressModal, setShowAcervoProgressModal] = useState(false)
   const [acervoAnalysisResults, setAcervoAnalysisResults] = useState<AnalyzedDocument[]>([])
+  const [acervoOperationalSummary, setAcervoOperationalSummary] = useState<TaskOperationalSummary>(createEmptyOperationalSummary)
   const [selectedAnalysisIds, setSelectedAnalysisIds] = useState<Set<string>>(new Set())
   const acervoAbortRef = useRef<AbortController | null>(null)
+  const acervoOperationalEventKeysRef = useRef<Set<string>>(new Set())
 
   // Script review/edit before saving (for media artifacts: video, audio, presentation)
   const [pendingArtifact, setPendingArtifact] = useState<{
@@ -365,23 +475,40 @@ export default function ResearchNotebook() {
   } | null>(null)
   const [pendingContent, setPendingContent] = useState('')
   const [pendingArtifactDelete, setPendingArtifactDelete] = useState<{ id: string; title: string } | null>(null)
+  const [pendingSavedSearchDelete, setPendingSavedSearchDelete] = useState<{ id: string; title: string } | null>(null)
+  const [pendingSavedSearchBulkDeleteIds, setPendingSavedSearchBulkDeleteIds] = useState<string[]>([])
+  const [selectedSavedSearchIds, setSelectedSavedSearchIds] = useState<Set<string>>(new Set())
+  const [editingSavedSearchId, setEditingSavedSearchId] = useState<string | null>(null)
+  const [editingSavedSearchTitle, setEditingSavedSearchTitle] = useState('')
+  const [editingSavedSearchTags, setEditingSavedSearchTags] = useState('')
+  const [showAllResearchAudits, setShowAllResearchAudits] = useState(false)
+  const [showAllSavedSearches, setShowAllSavedSearches] = useState(false)
+  const [savedSearchFilter, setSavedSearchFilter] = useState('')
+  const [savedSearchVariantFilter, setSavedSearchVariantFilter] = useState<'all' | 'external' | 'deep' | 'jurisprudencia'>('all')
+  const [bulkSavedSearchTagInput, setBulkSavedSearchTagInput] = useState('')
   const [clearingChat, setClearingChat] = useState(false)
 
   // Video generation flow
   const [showVideoGenCost, setShowVideoGenCost] = useState(false)
   const [videoGenSavedArtifact, setVideoGenSavedArtifact] = useState<StudioArtifact | null>(null)
   const [videoGenLoading, setVideoGenLoading] = useState(false)
-  const [videoGenProgress, setVideoGenProgress] = useState<{ step: number; total: number; phase: string; agent: string } | null>(null)
+  const [videoGenProgress, setVideoGenProgress] = useState<VideoPipelineProgressState | null>(null)
+  const [videoGenStartedAt, setVideoGenStartedAt] = useState<number | null>(null)
+  const [videoGenOperationalSummary, setVideoGenOperationalSummary] = useState<TaskOperationalSummary>(createEmptyOperationalSummary)
   const [videoProduction, setVideoProduction] = useState<VideoProductionPackage | null>(null)
   const [videoStudioApiKey, setVideoStudioApiKey] = useState<string | undefined>(undefined)
   const [videoStudioLiteralLoading, setVideoStudioLiteralLoading] = useState(false)
-  const [videoStudioLiteralProgress, setVideoStudioLiteralProgress] = useState<{ step: number; total: number; phase: string; agent: string } | null>(null)
+  const [videoStudioLiteralProgress, setVideoStudioLiteralProgress] = useState<VideoPipelineProgressState | null>(null)
+  const [videoStudioLiteralStartedAt, setVideoStudioLiteralStartedAt] = useState<number | null>(null)
+  const [videoLiteralOperationalSummary, setVideoLiteralOperationalSummary] = useState<TaskOperationalSummary>(createEmptyOperationalSummary)
   const [audioGenLoading, setAudioGenLoading] = useState(false)
   const [audioGeneratingArtifactId, setAudioGeneratingArtifactId] = useState<string | null>(null)
   const [visualGenLoading, setVisualGenLoading] = useState(false)
   const [visualGeneratingArtifactId, setVisualGeneratingArtifactId] = useState<string | null>(null)
   const [showClearChatConfirm, setShowClearChatConfirm] = useState(false)
   const videoStudioUploadCacheRef = useRef<globalThis.Map<string, StoredNotebookMedia>>(new globalThis.Map<string, StoredNotebookMedia>())
+  const videoGenOperationalEventKeysRef = useRef<Set<string>>(new Set())
+  const videoLiteralOperationalEventKeysRef = useRef<Set<string>>(new Set())
 
   // Edit notebook info
   const [showEditInfo, setShowEditInfo] = useState(false)
@@ -441,10 +568,7 @@ export default function ResearchNotebook() {
     deepLinkHandledRef.current = true
     // Clear the param from the URL immediately so a page refresh is clean.
     setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('open'); return next }, { replace: true })
-    const fromList = notebooks.find(nb => nb.id === openId)
-    const resolve = fromList
-      ? Promise.resolve(fromList)
-      : getResearchNotebook(userId, openId)
+    const resolve = getResearchNotebook(userId, openId)
     resolve.then(nb => {
       if (nb) {
         setActiveNotebook(nb)
@@ -750,12 +874,16 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     acervoAbortRef.current = abortController
 
     setAcervoAnalysisLoading(true)
+    setAcervoAnalysisStartedAt(Date.now())
     setAcervoAnalysisResults([])
     setSelectedAnalysisIds(new Set())
     setAcervoAnalysisPhase('')
     setAcervoAnalysisMessage('Iniciando análise...')
     setAcervoAnalysisPercent(0)
+    setAcervoAnalysisMeta('')
     setAcervoAnalysisError('')
+    setAcervoOperationalSummary(createEmptyOperationalSummary())
+    acervoOperationalEventKeysRef.current = new Set()
     setShowAcervoProgressModal(true)
 
     try {
@@ -772,9 +900,31 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         existingSourceNames,
         existingSourceIds,
         (progress: AcervoAnalysisProgress) => {
-          setAcervoAnalysisPhase(progress.phase)
-          setAcervoAnalysisMessage(progress.message)
-          setAcervoAnalysisPercent(progress.percent)
+          const enriched = buildAcervoProgressState(progress)
+          setAcervoAnalysisPhase(enriched.phase)
+          setAcervoAnalysisMessage(enriched.message)
+          setAcervoAnalysisPercent(enriched.percent)
+          setAcervoAnalysisMeta(enriched.stageMeta || '')
+
+          const eventKey = buildOperationalEventKey({
+            phase: progress.phase,
+            costUsd: progress.costUsd,
+            durationMs: progress.durationMs,
+            retryCount: progress.retryCount,
+            usedFallback: progress.usedFallback,
+            fallbackReason: progress.fallbackReason,
+          })
+          if (eventKey && !acervoOperationalEventKeysRef.current.has(eventKey)) {
+            acervoOperationalEventKeysRef.current.add(eventKey)
+            setAcervoOperationalSummary(prev => accumulateOperationalSummary(prev, {
+              phase: progress.phase,
+              costUsd: progress.costUsd,
+              durationMs: progress.durationMs,
+              retryCount: progress.retryCount,
+              usedFallback: progress.usedFallback,
+              fallbackReason: progress.fallbackReason,
+            }))
+          }
         },
         abortController.signal,
       )
@@ -804,10 +954,12 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       if (err instanceof DOMException && err.name === 'AbortError') {
         setAcervoAnalysisError('')
         setAcervoAnalysisMessage('Análise de acervo cancelada pelo usuário.')
+        setAcervoAnalysisMeta('Cancelado manualmente')
         toast.info('Análise de acervo cancelada')
         return
       }
       setAcervoAnalysisError(err instanceof Error ? err.message : 'Erro inesperado')
+      setAcervoAnalysisMeta('Execução interrompida')
       if (err instanceof ModelUnavailableError) {
         toast.warning(
           'Modelo indisponível',
@@ -818,6 +970,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
       }
     } finally {
       setAcervoAnalysisLoading(false)
+      setAcervoAnalysisStartedAt(null)
       acervoAbortRef.current = null
     }
   }
@@ -982,26 +1135,35 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     notebookId: string,
     source: NotebookSource,
     execution: ReturnType<typeof createUsageExecutionRecord> | ReturnType<typeof createUsageExecutionRecord>[],
+    researchAudit?: ResearchContextAuditSummary,
   ) => {
     if (!userId) throw new Error('Usuário não autenticado')
     const freshNotebook = await getFreshNotebookOrThrow(notebookId)
     const updatedSources = [...freshNotebook.sources, source]
     const executions = Array.isArray(execution) ? execution : [execution]
     const updatedExecutions = [...(freshNotebook.llm_executions || []), ...executions]
+    const updatedResearchAudits = researchAudit
+      ? [{
+          ...researchAudit,
+          created_at: new Date().toISOString(),
+        } satisfies NotebookResearchAuditEntry, ...(freshNotebook.research_audits || [])].slice(0, MAX_PERSISTED_RESEARCH_AUDITS)
+      : freshNotebook.research_audits
 
     await updateResearchNotebook(userId, notebookId, {
       sources: updatedSources,
       llm_executions: updatedExecutions,
+      research_audits: updatedResearchAudits,
     })
 
     setActiveNotebook(prev => prev && prev.id === notebookId
-      ? { ...prev, sources: updatedSources, llm_executions: updatedExecutions }
+      ? { ...prev, sources: updatedSources, llm_executions: updatedExecutions, research_audits: updatedResearchAudits }
       : prev)
   }
 
-  const handleAddExternalSearchSource = async () => {
-    if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
-    const query = externalSearchQuery.trim()
+  const handleAddExternalSearchSource = async (queryOverride?: string) => {
+    const effectiveQuery = queryOverride ?? externalSearchQuery
+    if (!userId || !activeNotebook?.id || !effectiveQuery.trim()) return
+    const query = effectiveQuery.trim()
     const notebookId = activeNotebook.id
 
     // Open modal
@@ -1097,6 +1259,17 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             `[${i + 1}] ${r.title}\nURL: ${r.url || ''}\nResumo: ${r.snippet}`,
           ).join('\n\n')
 
+          const researchAudit = buildResearchContextAudit({
+            variant: 'external',
+            mode: 'executed',
+            query,
+            resultCount: results.length,
+            selectedCount: selected.length,
+            compiledChars: textContent.length,
+            sourceKindLabel: 'Pesquisa externa',
+          })
+          setLastResearchContextAudit(researchAudit)
+
           const models = await loadResearchNotebookModels()
           const model = models.notebook_pesquisador_externo
           if (!model) {
@@ -1155,7 +1328,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             duration_ms: externalResult.duration_ms,
           })
 
-          await appendNotebookSourceWithExecution(notebookId, source, execution)
+          await appendNotebookSourceWithExecution(notebookId, source, execution, researchAudit)
           setExternalSearchQuery('')
           setSuggestions([])
           toast.success(`Pesquisa externa adicionada com ${selected.length} resultado(s).`)
@@ -1181,9 +1354,10 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     }
   }
 
-  const handleAddDeepExternalSearchSource = async () => {
-    if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
-    const query = externalSearchQuery.trim()
+  const handleAddDeepExternalSearchSource = async (queryOverride?: string) => {
+    const effectiveQuery = queryOverride ?? externalSearchQuery
+    if (!userId || !activeNotebook?.id || !effectiveQuery.trim()) return
+    const query = effectiveQuery.trim()
     const notebookId = activeNotebook.id
 
     // Open modal
@@ -1365,6 +1539,19 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             ).join('\n\n')
           }
 
+          const researchAudit = buildResearchContextAudit({
+            variant: 'deep',
+            mode: 'executed',
+            query,
+            resultCount: deepResult.results.length,
+            selectedCount: selected.length,
+            extractedCount: deepResult.contents.length,
+            compiledChars: compiled.length,
+            usedSnippetFallback: !hasFullContent,
+            sourceKindLabel: 'Pesquisa profunda',
+          })
+          setLastResearchContextAudit(researchAudit)
+
           const llmResult = await callLLMWithFallback(
             apiKey,
             'Você é um pesquisador jurídico externo profundo. Sintetize fontes web em texto objetivo e acionável para caderno de pesquisa. Responda em português, com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
@@ -1407,7 +1594,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             duration_ms: llmResult.duration_ms,
           })
 
-          await appendNotebookSourceWithExecution(notebookId, source, execution)
+          await appendNotebookSourceWithExecution(notebookId, source, execution, researchAudit)
           setExternalSearchQuery('')
           setSuggestions([])
           toast.success('Pesquisa externa profunda adicionada como fonte.')
@@ -1433,10 +1620,325 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
     }
   }
 
-  // Opens the pre-search configuration modal for jurisprudence
-  const handleAddJurisprudenceSource = () => {
-    if (!userId || !activeNotebook?.id || !externalSearchQuery.trim()) return
+  // Opens the pre-search configuration modal for jurisprudence.
+  // Supports query/config overrides so history replays can reuse the same entrypoint.
+  const handleAddJurisprudenceSource = (
+    queryOverride?: string,
+    presetOverride?: Partial<JurisprudenceSearchConfig> | null,
+  ) => {
+    if (!userId || !activeNotebook?.id) return
+    const effectiveQuery = (queryOverride ?? externalSearchQuery).trim()
+    if (!effectiveQuery) return
+
+    setExternalSearchQuery(effectiveQuery)
+    setJurisprudenceConfigPreset(presetOverride ?? null)
     setJurisprudenceConfigOpen(true)
+  }
+
+  const handleReplayResearchAudit = (audit: NotebookResearchAuditEntry | NotebookSavedSearchEntry) => {
+    if (isAnyResearchLoading) return
+
+    setExternalSearchQuery(audit.query)
+    setLastResearchContextAudit(audit)
+
+    if (audit.variant === 'external') {
+      void handleAddExternalSearchSource(audit.query)
+      return
+    }
+
+    if (audit.variant === 'deep') {
+      void handleAddDeepExternalSearchSource(audit.query)
+      return
+    }
+
+    const tribunals = ALL_TRIBUNALS.filter(tribunal => audit.tribunalAliases?.includes(tribunal.alias))
+    setLastJurisprudenceTribunalAliases(audit.tribunalAliases && audit.tribunalAliases.length > 0
+      ? audit.tribunalAliases
+      : lastJurisprudenceTribunalAliases)
+    void handleAddJurisprudenceSource(audit.query, {
+      query: audit.query,
+      tribunals,
+      dateFrom: audit.dateFrom || '',
+      dateTo: audit.dateTo || '',
+      graus: audit.graus || [],
+      maxPerTribunal: audit.maxPerTribunal || 5,
+      legalArea: audit.legalArea || '',
+    })
+  }
+
+  const triggerExternalSearch = () => {
+    void handleAddExternalSearchSource()
+  }
+
+  const triggerDeepExternalSearch = () => {
+    void handleAddDeepExternalSearchSource()
+  }
+
+  const triggerJurisprudenceSearch = () => {
+    void handleAddJurisprudenceSource()
+  }
+
+  const buildSavedSearchTitle = (audit: NotebookResearchAuditEntry): string => {
+    const prefix = audit.variant === 'jurisprudencia'
+      ? 'Jurisprudência'
+      : audit.variant === 'deep'
+        ? 'Pesquisa profunda'
+        : 'Pesquisa externa'
+    const trimmedQuery = audit.query.trim()
+    if (!trimmedQuery) return prefix
+    const compact = trimmedQuery.length > 56 ? `${trimmedQuery.slice(0, 53)}...` : trimmedQuery
+    return `${prefix}: ${compact}`
+  }
+
+  const buildSavedSearchTags = (audit: NotebookResearchAuditEntry): string[] => {
+    const tags = new Set<string>()
+
+    if (audit.variant === 'jurisprudencia') tags.add('jurisprudencia')
+    else if (audit.variant === 'deep') tags.add('pesquisa-profunda')
+    else tags.add('pesquisa-externa')
+
+    if (audit.legalArea) {
+      const areaLabel = AREA_LABELS[audit.legalArea] || audit.legalArea
+      if (areaLabel) tags.add(areaLabel.toLowerCase())
+    }
+
+    if (audit.dateRangeLabel) tags.add('recorte-temporal')
+    if ((audit.tribunalCount || 0) > 0) tags.add('tribunais')
+    if (audit.usedSnippetFallback) tags.add('fallback-snippets')
+
+    return Array.from(tags).slice(0, 5)
+  }
+
+  const saveResearchAuditPreset = async (audit: NotebookResearchAuditEntry) => {
+    if (!userId || !activeNotebook?.id) return
+    try {
+      const notebookId = activeNotebook.id
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const now = new Date().toISOString()
+      const existing = freshNotebook.saved_searches || []
+      const duplicate = existing.find(item =>
+        item.variant === audit.variant
+        && item.query.trim() === audit.query.trim()
+        && (item.legalArea || '') === (audit.legalArea || '')
+        && (item.dateFrom || '') === (audit.dateFrom || '')
+        && (item.dateTo || '') === (audit.dateTo || '')
+        && (item.maxPerTribunal || 0) === (audit.maxPerTribunal || 0),
+      )
+
+      const entry: NotebookSavedSearchEntry = duplicate
+        ? {
+            ...duplicate,
+            ...audit,
+            title: duplicate.title,
+            tags: duplicate.tags && duplicate.tags.length > 0 ? duplicate.tags : buildSavedSearchTags(audit),
+            created_at: duplicate.created_at,
+            updated_at: now,
+          }
+        : {
+            id: generateId(),
+            title: buildSavedSearchTitle(audit),
+            tags: buildSavedSearchTags(audit),
+            ...audit,
+            created_at: now,
+            updated_at: now,
+          }
+
+      const updatedSavedSearches = [
+        entry,
+        ...existing.filter(item => item.id !== entry.id),
+      ].slice(0, MAX_PERSISTED_SAVED_SEARCHES)
+
+      await updateResearchNotebook(userId, notebookId, { saved_searches: updatedSavedSearches })
+      setActiveNotebook(prev => prev && prev.id === notebookId
+        ? { ...prev, saved_searches: updatedSavedSearches }
+        : prev)
+      toast.success(duplicate ? 'Busca salva atualizada' : 'Busca salva no caderno')
+    } catch (error) {
+      console.error('Failed to save research preset:', error)
+      toast.error('Erro ao salvar busca')
+    }
+  }
+
+  const persistSavedSearches = async (updater: (current: NotebookSavedSearchEntry[]) => NotebookSavedSearchEntry[]) => {
+    if (!userId || !activeNotebook?.id) return false
+    const notebookId = activeNotebook.id
+    const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+    const updatedSavedSearches = updater(freshNotebook.saved_searches || []).slice(0, MAX_PERSISTED_SAVED_SEARCHES)
+    await updateResearchNotebook(userId, notebookId, { saved_searches: updatedSavedSearches })
+    setActiveNotebook(prev => prev && prev.id === notebookId
+      ? { ...prev, saved_searches: updatedSavedSearches }
+      : prev)
+    return true
+  }
+
+  const startEditingSavedSearch = (search: NotebookSavedSearchEntry) => {
+    setEditingSavedSearchId(search.id)
+    setEditingSavedSearchTitle(search.title)
+    setEditingSavedSearchTags((search.tags || []).join(', '))
+  }
+
+  const cancelEditingSavedSearch = () => {
+    setEditingSavedSearchId(null)
+    setEditingSavedSearchTitle('')
+    setEditingSavedSearchTags('')
+  }
+
+  const confirmRenameSavedSearch = async () => {
+    if (!editingSavedSearchId) return
+    const trimmedTitle = editingSavedSearchTitle.trim()
+    if (!trimmedTitle) {
+      toast.info('Informe um título para a busca salva.')
+      return
+    }
+    const normalizedTags = Array.from(new Set(
+      editingSavedSearchTags
+        .split(',')
+        .map(tag => tag.trim().toLowerCase())
+        .filter(Boolean),
+    )).slice(0, 8)
+    try {
+      const updated = await persistSavedSearches(current => current.map(search =>
+        search.id === editingSavedSearchId
+          ? { ...search, title: trimmedTitle, tags: normalizedTags, updated_at: new Date().toISOString() }
+          : search,
+      ))
+      if (updated) {
+        toast.success('Busca salva atualizada')
+        cancelEditingSavedSearch()
+      }
+    } catch (error) {
+      console.error('Failed to rename saved search:', error)
+      toast.error('Erro ao renomear busca salva')
+    }
+  }
+
+  const togglePinSavedSearch = async (searchId: string) => {
+    try {
+      let pinned = false
+      const updated = await persistSavedSearches(current => current.map(search => {
+        if (search.id !== searchId) return search
+        pinned = !search.pinned
+        return { ...search, pinned, updated_at: new Date().toISOString() }
+      }))
+      if (updated) {
+        toast.success(pinned ? 'Busca salva fixada' : 'Busca salva desafixada')
+      }
+    } catch (error) {
+      console.error('Failed to pin saved search:', error)
+      toast.error('Erro ao fixar busca salva')
+    }
+  }
+
+  const confirmDeleteSavedSearch = async () => {
+    if (!userId || !activeNotebook?.id || !pendingSavedSearchDelete?.id) return
+    try {
+      const updated = await persistSavedSearches(current => current.filter(item => item.id !== pendingSavedSearchDelete.id))
+      if (updated) toast.success('Busca salva removida')
+    } catch (error) {
+      console.error('Failed to delete saved search:', error)
+      toast.error('Erro ao excluir busca salva')
+    } finally {
+      setPendingSavedSearchDelete(null)
+    }
+  }
+
+  const toggleSavedSearchSelection = (searchId: string) => {
+    setSelectedSavedSearchIds(current => {
+      const next = new Set(current)
+      if (next.has(searchId)) {
+        next.delete(searchId)
+      } else {
+        next.add(searchId)
+      }
+      return next
+    })
+  }
+
+  const toggleSelectAllVisibleSavedSearches = () => {
+    setSelectedSavedSearchIds(current => {
+      const next = new Set(current)
+      if (allVisibleSavedSearchesSelected) {
+        visibleSavedSearchIds.forEach(id => next.delete(id))
+      } else {
+        visibleSavedSearchIds.forEach(id => next.add(id))
+      }
+      return next
+    })
+  }
+
+  const clearSelectedSavedSearches = () => {
+    setSelectedSavedSearchIds(new Set())
+  }
+
+  const bulkSetPinnedSavedSearches = async (pinned: boolean) => {
+    if (selectedSavedSearchIds.size === 0) return
+    const selectedIds = new Set(selectedSavedSearchIds)
+    try {
+      const updated = await persistSavedSearches(current => current.map(search =>
+        selectedIds.has(search.id)
+          ? { ...search, pinned, updated_at: new Date().toISOString() }
+          : search,
+      ))
+      if (updated) {
+        toast.success(pinned ? 'Buscas selecionadas fixadas' : 'Buscas selecionadas desafixadas')
+      }
+    } catch (error) {
+      console.error('Failed to bulk update saved searches:', error)
+      toast.error('Erro ao atualizar buscas selecionadas')
+    }
+  }
+
+  const bulkUpdateTagSavedSearches = async (mode: 'add' | 'remove') => {
+    if (selectedSavedSearchIds.size === 0) return
+    const normalizedTag = bulkSavedSearchTagInput.trim().toLowerCase()
+    if (!normalizedTag) {
+      toast.info('Informe uma tag para aplicar em lote.')
+      return
+    }
+    const selectedIds = new Set(selectedSavedSearchIds)
+    try {
+      const updated = await persistSavedSearches(current => current.map(search => {
+        if (!selectedIds.has(search.id)) return search
+        const tags = new Set((search.tags || []).map(tag => tag.trim().toLowerCase()).filter(Boolean))
+        if (mode === 'add') {
+          tags.add(normalizedTag)
+        } else {
+          tags.delete(normalizedTag)
+        }
+        return {
+          ...search,
+          tags: Array.from(tags).slice(0, 8),
+          updated_at: new Date().toISOString(),
+        }
+      }))
+      if (updated) {
+        toast.success(mode === 'add' ? 'Tag aplicada nas buscas selecionadas' : 'Tag removida das buscas selecionadas')
+      }
+    } catch (error) {
+      console.error('Failed to bulk update saved search tags:', error)
+      toast.error('Erro ao atualizar tags em lote')
+    }
+  }
+
+  const confirmDeleteSelectedSavedSearches = async () => {
+    if (!userId || !activeNotebook?.id || pendingSavedSearchBulkDeleteIds.length === 0) return
+    const selectedIds = new Set(pendingSavedSearchBulkDeleteIds)
+    try {
+      const updated = await persistSavedSearches(current => current.filter(item => !selectedIds.has(item.id)))
+      if (updated) {
+        setSelectedSavedSearchIds(current => {
+          const next = new Set(current)
+          pendingSavedSearchBulkDeleteIds.forEach(id => next.delete(id))
+          return next
+        })
+        toast.success('Buscas selecionadas removidas')
+      }
+    } catch (error) {
+      console.error('Failed to delete selected saved searches:', error)
+      toast.error('Erro ao excluir buscas selecionadas')
+    } finally {
+      setPendingSavedSearchBulkDeleteIds([])
+    }
   }
 
   // Called from JurisprudenceConfigModal when user confirms config
@@ -1723,6 +2225,24 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
 
           const textContent = formatDataJudResults(selectedResults)
 
+          const researchAudit = buildResearchContextAudit({
+            variant: 'jurisprudencia',
+            mode: 'executed',
+            query: config.query,
+            tribunalCount: config.tribunals.length,
+            tribunalAliases: config.tribunals.map(tribunal => tribunal.alias),
+            resultCount: djResult.results.length,
+            selectedCount: selected.length,
+            compiledChars: textContent.length,
+            legalArea: config.legalArea || null,
+            dateFrom: config.dateFrom || null,
+            dateTo: config.dateTo || null,
+            graus: config.graus,
+            maxPerTribunal: config.maxPerTribunal,
+            sourceKindLabel: 'Pesquisa de jurisprudência',
+          })
+          setLastResearchContextAudit(researchAudit)
+
           const jurisprudenceResult = await callLLMWithFallback(
             openRouterApiKey,
             JURISPRUDENCE_SYNTHESIS_SYSTEM,
@@ -1775,7 +2295,7 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
             duration_ms: jurisprudenceResult.duration_ms,
           }))
 
-          await appendNotebookSourceWithExecution(notebookId, source, llmExecutions)
+          await appendNotebookSourceWithExecution(notebookId, source, llmExecutions, researchAudit)
           setExternalSearchQuery('')
           setSuggestions([])
           toast.success(`Jurisprudência adicionada com ${selected.length} resultado(s) selecionado(s).`)
@@ -1887,34 +2407,38 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         setChatLoading(false)
         return
       }
-      const sourceContext = buildSourceContext()
-
-      // Build search history context for conversational memory
-      const searchSummaryLines: string[] = []
-      for (const source of activeNotebook.sources) {
-        if (source.type === 'jurisprudencia') {
-          let resultCount = 0
-          if (source.results_raw) {
-            try { resultCount = (JSON.parse(source.results_raw) as unknown[]).length } catch { /* ignore */ }
-          }
-          searchSummaryLines.push(`- Jurisprudência: "${source.reference}" → ${resultCount} resultado(s)`)
-        } else if (source.type === 'external' || source.type === 'external_deep') {
-          searchSummaryLines.push(`- Pesquisa web: "${source.reference}"`)
-        }
-      }
-      const MAX_SEARCH_CONTEXT_CHARS = 2000
-      const searchContextRaw = searchSummaryLines.join('\n')
-      const searchContext = searchSummaryLines.length > 0 && searchContextRaw.length <= MAX_SEARCH_CONTEXT_CHARS
-        ? `\nHISTÓRICO DE PESQUISAS REALIZADAS NESTE CADERNO:\n${searchContextRaw}\n(Use este contexto para sugerir refinamentos, complementos ou novas buscas ao usuário.)\n`
-        : searchSummaryLines.length > 0
-          ? `\nHISTÓRICO DE PESQUISAS REALIZADAS NESTE CADERNO:\n${searchContextRaw.slice(0, MAX_SEARCH_CONTEXT_CHARS)}…\n`
-          : ''
+      const baseChatContextAudit = buildChatContextAudit({
+        sources: activeNotebook.sources,
+        messages: updatedMessages.slice(0, -1),
+        minSourceChars: MIN_SOURCE_CHARS,
+        maxSourceCharsPerSource: MAX_CONTEXT_TEXT_LENGTH,
+        maxConversationMessages: MAX_CONVERSATION_CONTEXT_MESSAGES,
+        maxConversationChars: MAX_STUDIO_CONTEXT_CHARS,
+        liveWebEnabled: useWebSearch,
+      })
 
       // Optional web search enrichment
       let webSnippet = ''
       if (useWebSearch) {
         try { webSnippet = await searchWebService(`${activeNotebook.topic} ${userMsg.content}`) } catch { /* non-critical */ }
       }
+
+      const effectiveChatContextAudit = buildChatContextAudit({
+        sources: activeNotebook.sources,
+        messages: updatedMessages.slice(0, -1),
+        minSourceChars: MIN_SOURCE_CHARS,
+        maxSourceCharsPerSource: MAX_CONTEXT_TEXT_LENGTH,
+        maxConversationMessages: MAX_CONVERSATION_CONTEXT_MESSAGES,
+        maxConversationChars: MAX_STUDIO_CONTEXT_CHARS,
+        liveWebEnabled: useWebSearch,
+        liveWebSnippet: webSnippet,
+      })
+      setLastChatContextAudit(effectiveChatContextAudit)
+
+      const sourceContext = effectiveChatContextAudit.sourceText || baseChatContextAudit.sourceText
+      const searchContext = effectiveChatContextAudit.searchHistoryText
+        ? `\nHISTÓRICO DE PESQUISAS REALIZADAS NESTE CADERNO:\n${effectiveChatContextAudit.searchHistoryText}${effectiveChatContextAudit.searchSummary.truncated ? '…' : ''}\n(Use este contexto para sugerir refinamentos, complementos ou novas buscas ao usuário.)\n`
+        : ''
 
       const systemPrompt = `Você é um assistente de pesquisa jurídica especializado no tema: "${activeNotebook.topic}".
 ${activeNotebook.description ? `Objetivo: ${activeNotebook.description}\n` : ''}
@@ -2014,31 +2538,54 @@ Instruções:
       topic: activeNotebook.topic,
       title: activeNotebook.title,
       description: activeNotebook.description || undefined,
-      sourceContext: buildSourceContext() || '',
-      conversationContext: activeNotebook.messages
-        .slice(-MAX_STUDIO_CONTEXT_MESSAGES)
-        .map(m => `${m.role}: ${m.content}`)
-        .join('\n')
-        .slice(0, MAX_STUDIO_CONTEXT_CHARS),
+      sourceContext: studioContextAudit.sourceText || '',
+      conversationContext: studioContextAudit.conversationText,
       customInstructions: studioCustomPrompt.trim() || undefined,
     }
 
     const taskId = startTask(
       `Estúdio: ${artifactDef?.label || artifactType}`,
       async (onTaskProgress) => {
+        let studioOperationalSummary = createEmptyOperationalSummary()
+        const studioOperationalEventKeys = new Set<string>()
+
         try {
           onTaskProgress({
             progress: 0,
             phase: 'Inicializando pipeline do estúdio...',
+            stageMeta: 'Preparando modelos e contexto',
+            operationals: studioOperationalSummary,
             currentStep: 0,
             totalSteps: STUDIO_PIPELINE_TOTAL_STEPS,
           })
 
           const apiKey = await getOpenRouterKey()
-          const onProgress: StudioProgressCallback = (step, total, phase) => {
+          const onProgress: StudioProgressCallback = (step, total, phase, meta) => {
+            const eventKey = buildOperationalEventKey({
+              phase,
+              costUsd: meta?.costUsd,
+              durationMs: meta?.durationMs,
+              retryCount: meta?.retryCount,
+              usedFallback: meta?.usedFallback,
+              fallbackFrom: meta?.fallbackFrom,
+            })
+            if (eventKey && !studioOperationalEventKeys.has(eventKey)) {
+              studioOperationalEventKeys.add(eventKey)
+              studioOperationalSummary = accumulateOperationalSummary(studioOperationalSummary, {
+                phase,
+                costUsd: meta?.costUsd,
+                durationMs: meta?.durationMs,
+                retryCount: meta?.retryCount,
+                usedFallback: meta?.usedFallback,
+                fallbackFrom: meta?.fallbackFrom,
+              })
+            }
+
             onTaskProgress({
               progress: Math.round((step / Math.max(total, 1)) * 100),
-              phase,
+              phase: buildStudioTaskPhaseMessage(step, total, phase, artifactType),
+              stageMeta: meta?.stageMeta,
+              operationals: studioOperationalSummary,
               currentStep: step,
               totalSteps: total,
             })
@@ -2073,6 +2620,8 @@ Instruções:
           onTaskProgress({
             progress: 95,
             phase: 'Salvando artefato no caderno...',
+            stageMeta: 'Persistindo conteúdo e execuções no notebook',
+            operationals: studioOperationalSummary,
             currentStep: STUDIO_PIPELINE_TOTAL_STEPS,
             totalSteps: STUDIO_PIPELINE_TOTAL_STEPS,
           })
@@ -2478,13 +3027,19 @@ Instruções:
 
     // Register as a persistent background task visible in the TaskBar
     const taskName = `Vídeo: ${activeNotebook.topic.slice(0, 40)}`
+      let reportTaskProgress: (update: { progress: number; phase: string; stageMeta?: string; operationals?: TaskOperationalSummary }) => void = () => {}
+      let videoTaskOperationalSummary = createEmptyOperationalSummary()
     startTask(taskName, (onTaskProgress) => {
-      onTaskProgress({ progress: 0, phase: 'Preparando pipeline...' })
-      return taskPromise
-    })
+        reportTaskProgress = onTaskProgress
+        onTaskProgress({ progress: 0, phase: 'Preparando pipeline...', operationals: videoTaskOperationalSummary })
+        return taskPromise
+      })
 
     try {
       setVideoGenLoading(true)
+      setVideoGenStartedAt(Date.now())
+      setVideoGenOperationalSummary(createEmptyOperationalSummary())
+      videoGenOperationalEventKeysRef.current = new Set()
       const apiKey = await getOpenRouterKey()
       if (!apiKey) {
         toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
@@ -2510,8 +3065,37 @@ Instruções:
           : prev)
       }
 
-      const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent) => {
-        setVideoGenProgress({ step, total, phase, agent })
+      const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent, meta) => {
+        const progress = buildVideoPipelineProgress(step, total, phase, agent, meta)
+        setVideoGenProgress(progress)
+
+        const eventKey = buildOperationalEventKey({
+          phase,
+          costUsd: progress.costUsd,
+          durationMs: progress.durationMs,
+          retryCount: progress.retryCount,
+          usedFallback: progress.usedFallback,
+          fallbackFrom: progress.fallbackFrom,
+        })
+        if (eventKey && !videoGenOperationalEventKeysRef.current.has(eventKey)) {
+          videoGenOperationalEventKeysRef.current.add(eventKey)
+          videoTaskOperationalSummary = accumulateOperationalSummary(videoTaskOperationalSummary, {
+            phase,
+            costUsd: progress.costUsd,
+            durationMs: progress.durationMs,
+            retryCount: progress.retryCount,
+            usedFallback: progress.usedFallback,
+            fallbackFrom: progress.fallbackFrom,
+          })
+          setVideoGenOperationalSummary(videoTaskOperationalSummary)
+        }
+
+        reportTaskProgress({
+          progress: progress.percent,
+          phase: progress.stageLabel ? `${progress.stageLabel}: ${progress.stageDescription || progress.phase}` : (agent ? `${agent}: ${phase}` : phase),
+          stageMeta: progress.stageMeta,
+          operationals: videoTaskOperationalSummary,
+        })
       }
 
       const result = await runVideoGenerationPipeline({
@@ -2584,6 +3168,7 @@ Instruções:
     } finally {
       setVideoGenLoading(false)
       setVideoGenProgress(null)
+      setVideoGenStartedAt(null)
     }
   }
 
@@ -3083,7 +3668,8 @@ Instruções:
     }
 
     const taskName = `Vídeo literal: ${production.title.slice(0, 40)}`
-    let reportTaskProgress: (update: { progress: number; phase: string }) => void = () => {}
+    let reportTaskProgress: (update: { progress: number; phase: string; stageMeta?: string; operationals?: TaskOperationalSummary }) => void = () => {}
+    let literalTaskOperationalSummary = createEmptyOperationalSummary()
     let resolveTask: (value: VideoProductionPackage) => void = () => {}
     let rejectTask: (reason?: unknown) => void = () => {}
     const taskPromise = new Promise<VideoProductionPackage>((resolve, reject) => {
@@ -3092,20 +3678,46 @@ Instruções:
     })
 
     startTask(taskName, (onTaskProgress) => {
-      reportTaskProgress = onTaskProgress
-      onTaskProgress({ progress: 0, phase: 'Preparando geração literal...' })
+        reportTaskProgress = onTaskProgress
+        onTaskProgress({ progress: 0, phase: 'Preparando geração literal...', stageMeta: 'Validando assets, checkpoints e provider de mídia', operationals: literalTaskOperationalSummary })
       return taskPromise
     })
 
     try {
       setVideoStudioLiteralLoading(true)
+      setVideoStudioLiteralStartedAt(Date.now())
       setVideoStudioApiKey(apiKey)
+      setVideoLiteralOperationalSummary(createEmptyOperationalSummary())
+      videoLiteralOperationalEventKeysRef.current = new Set()
 
-      const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent) => {
-        setVideoStudioLiteralProgress({ step, total, phase, agent })
+      const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent, meta) => {
+        const progress = buildVideoPipelineProgress(step, total, phase, agent, meta)
+        setVideoStudioLiteralProgress(progress)
+        const eventKey = buildOperationalEventKey({
+          phase,
+          costUsd: progress.costUsd,
+          durationMs: progress.durationMs,
+          retryCount: progress.retryCount,
+          usedFallback: progress.usedFallback,
+          fallbackFrom: progress.fallbackFrom,
+        })
+        if (eventKey && !videoLiteralOperationalEventKeysRef.current.has(eventKey)) {
+          videoLiteralOperationalEventKeysRef.current.add(eventKey)
+          literalTaskOperationalSummary = accumulateOperationalSummary(literalTaskOperationalSummary, {
+            phase,
+            costUsd: progress.costUsd,
+            durationMs: progress.durationMs,
+            retryCount: progress.retryCount,
+            usedFallback: progress.usedFallback,
+            fallbackFrom: progress.fallbackFrom,
+          })
+          setVideoLiteralOperationalSummary(literalTaskOperationalSummary)
+        }
         reportTaskProgress({
-          progress: total > 0 ? Math.round((step / total) * 100) : 0,
-          phase: agent ? `${agent}: ${phase}` : phase,
+          progress: progress.percent,
+          phase: progress.stageLabel ? `${progress.stageLabel}: ${progress.stageDescription || progress.phase}` : (agent ? `${agent}: ${phase}` : phase),
+          stageMeta: progress.stageMeta,
+          operationals: literalTaskOperationalSummary,
         })
       }
 
@@ -3183,6 +3795,23 @@ Instruções:
         duration_ms: Date.now() - renderStartedAt,
       }])
 
+      if (usedExternalProvider) {
+        literalTaskOperationalSummary = accumulateOperationalSummary(literalTaskOperationalSummary, {
+          phase: 'external_video_render',
+          durationMs: Date.now() - renderStartedAt,
+          usedFallback: true,
+          fallbackReason: 'Render final enviado para provedor externo',
+          fallbackFrom: 'browser-renderer',
+        })
+        setVideoLiteralOperationalSummary(literalTaskOperationalSummary)
+        reportTaskProgress({
+          progress: 100,
+          phase: 'Render finalizado por provedor externo',
+          stageMeta: renderModel,
+          operationals: literalTaskOperationalSummary,
+        })
+      }
+
       setVideoProduction(persistedFinal)
 
       if (viewingArtifact?.type === 'video_script') {
@@ -3224,6 +3853,7 @@ Instruções:
     } finally {
       setVideoStudioLiteralLoading(false)
       setVideoStudioLiteralProgress(null)
+      setVideoStudioLiteralStartedAt(null)
     }
   }, [activeNotebook?.id, getFreshNotebookOrThrow, startTask, userId, videoStudioApiKey, videoStudioLiteralLoading, viewingArtifact?.type])
 
@@ -3326,6 +3956,100 @@ Instruções:
     )
   }, [notebooks, searchQuery])
 
+  const studioContextAudit = useMemo(() => buildStudioContextAudit({
+    sources: activeNotebook?.sources || [],
+    messages: activeNotebook?.messages || [],
+    customInstructions: studioCustomPrompt,
+    minSourceChars: MIN_SOURCE_CHARS,
+    maxSourceCharsPerSource: MAX_CONTEXT_TEXT_LENGTH,
+    maxConversationMessages: MAX_STUDIO_CONTEXT_MESSAGES,
+    maxConversationChars: MAX_STUDIO_CONTEXT_CHARS,
+  }), [activeNotebook?.messages, activeNotebook?.sources, studioCustomPrompt])
+
+  const chatContextAuditPreview = useMemo(() => buildChatContextAudit({
+    sources: activeNotebook?.sources || [],
+    messages: activeNotebook?.messages || [],
+    minSourceChars: MIN_SOURCE_CHARS,
+    maxSourceCharsPerSource: MAX_CONTEXT_TEXT_LENGTH,
+    maxConversationMessages: MAX_CONVERSATION_CONTEXT_MESSAGES,
+    maxConversationChars: MAX_STUDIO_CONTEXT_CHARS,
+    liveWebEnabled: useWebSearch,
+  }), [activeNotebook?.messages, activeNotebook?.sources, useWebSearch])
+
+  const researchContextAuditPreview = useMemo(() => buildResearchContextAudit({
+    variant: 'external',
+    mode: 'preview',
+    query: externalSearchQuery,
+    tribunalCount: lastJurisprudenceTribunalAliases.length,
+    sourceKindLabel: 'Pesquisa externa',
+  }), [externalSearchQuery, lastJurisprudenceTribunalAliases.length])
+
+  const sortedSavedSearches = useMemo(() => {
+    if (!activeNotebook?.saved_searches) return [] as NotebookSavedSearchEntry[]
+    const filtered = activeNotebook.saved_searches.filter(search => {
+      if (savedSearchVariantFilter !== 'all' && search.variant !== savedSearchVariantFilter) return false
+      const needle = savedSearchFilter.trim().toLowerCase()
+      if (!needle) return true
+      return search.title.toLowerCase().includes(needle)
+        || search.query.toLowerCase().includes(needle)
+        || (search.sourceKindLabel || '').toLowerCase().includes(needle)
+        || (search.tags || []).some(tag => tag.toLowerCase().includes(needle))
+    })
+    return [...filtered].sort((left, right) => {
+      const pinDelta = Number(Boolean(right.pinned)) - Number(Boolean(left.pinned))
+      if (pinDelta !== 0) return pinDelta
+      return right.updated_at.localeCompare(left.updated_at)
+    })
+  }, [activeNotebook?.saved_searches, savedSearchFilter, savedSearchVariantFilter])
+
+  const savedSearchVariantCounts = useMemo(() => {
+    const allSearches = activeNotebook?.saved_searches || []
+    return {
+      all: allSearches.length,
+      external: allSearches.filter(search => search.variant === 'external').length,
+      deep: allSearches.filter(search => search.variant === 'deep').length,
+      jurisprudencia: allSearches.filter(search => search.variant === 'jurisprudencia').length,
+    }
+  }, [activeNotebook?.saved_searches])
+
+  const visibleResearchAudits = useMemo(() => {
+    const audits = activeNotebook?.research_audits || []
+    return showAllResearchAudits ? audits : audits.slice(0, 3)
+  }, [activeNotebook?.research_audits, showAllResearchAudits])
+
+  const visibleSavedSearches = useMemo(() => {
+    return showAllSavedSearches ? sortedSavedSearches : sortedSavedSearches.slice(0, 4)
+  }, [showAllSavedSearches, sortedSavedSearches])
+
+  const visibleSavedSearchIds = useMemo(
+    () => visibleSavedSearches.map(search => search.id),
+    [visibleSavedSearches],
+  )
+
+  const allVisibleSavedSearchesSelected = useMemo(
+    () => visibleSavedSearchIds.length > 0 && visibleSavedSearchIds.every(id => selectedSavedSearchIds.has(id)),
+    [selectedSavedSearchIds, visibleSavedSearchIds],
+  )
+
+  useEffect(() => {
+    const allowedIds = new Set(sortedSavedSearches.map(search => search.id))
+    setSelectedSavedSearchIds(current => {
+      const next = new Set(Array.from(current).filter(id => allowedIds.has(id)))
+      if (next.size === current.size) return current
+      return next
+    })
+  }, [sortedSavedSearches])
+
+  const pinnedSavedSearches = useMemo(
+    () => visibleSavedSearches.filter(search => search.pinned),
+    [visibleSavedSearches],
+  )
+
+  const regularSavedSearches = useMemo(
+    () => visibleSavedSearches.filter(search => !search.pinned),
+    [visibleSavedSearches],
+  )
+
   // ── Jurisprudence analytics (derived from results_raw in sources) ──
   const jurisprudenceAnalytics = useMemo(() => {
     if (!activeNotebook) return null
@@ -3342,72 +4066,60 @@ Instruções:
     return buildJurisprudenceAnalytics(allResults)
   }, [activeNotebook?.sources])
 
-  const acervoTrailSteps = useMemo(() => {
-    const currentIndex = ACERVO_TRAIL_STEPS.findIndex(step => step.key === acervoAnalysisPhase)
-    const isConcluded = acervoAnalysisPhase === 'concluido'
-    const errorIndex = currentIndex >= 0 ? currentIndex : 0
+  const acervoTrailSteps = useMemo(() => buildAcervoTrailSteps({
+    phase: acervoAnalysisPhase,
+    message: acervoAnalysisMessage,
+    loading: acervoAnalysisLoading,
+    stageMeta: acervoAnalysisMeta || undefined,
+    error: acervoAnalysisError || undefined,
+  }), [acervoAnalysisError, acervoAnalysisLoading, acervoAnalysisMessage, acervoAnalysisMeta, acervoAnalysisPhase])
 
-    return ACERVO_TRAIL_STEPS.map((step, index) => {
-      let status: 'pending' | 'active' | 'completed' | 'error' = 'pending'
+  const acervoProgressState = useMemo(() => buildAcervoModalProgressState({
+    phase: acervoAnalysisPhase,
+    message: acervoAnalysisMessage,
+    percent: acervoAnalysisPercent,
+    loading: acervoAnalysisLoading,
+    stageMeta: acervoAnalysisMeta || undefined,
+    error: acervoAnalysisError || undefined,
+  }), [acervoAnalysisError, acervoAnalysisLoading, acervoAnalysisMessage, acervoAnalysisMeta, acervoAnalysisPercent, acervoAnalysisPhase])
 
-      if (isConcluded) {
-        status = 'completed'
-      } else if (index < currentIndex) {
-        status = 'completed'
-      } else if (acervoAnalysisLoading && index === currentIndex) {
-        status = 'active'
-      }
+  const studioTrailSteps = useMemo(
+    () => buildStudioTrailSteps(selectedStudioTask ?? undefined, selectedStudioTaskMetadata?.artifactType ?? null),
+    [selectedStudioTask, selectedStudioTaskMetadata],
+  )
 
-      if (acervoAnalysisError && index === errorIndex) {
-        status = 'error'
-      }
+  const studioProgressState = useMemo(
+    () => buildStudioModalProgressState(selectedStudioTask ?? undefined, selectedStudioTaskMetadata?.artifactType ?? null),
+    [selectedStudioTask, selectedStudioTaskMetadata],
+  )
 
-      return {
-        key: step.key,
-        label: step.label,
-        status,
-        detail: status === 'active' ? acervoAnalysisMessage : undefined,
-      }
-    })
-  }, [acervoAnalysisError, acervoAnalysisLoading, acervoAnalysisMessage, acervoAnalysisPhase])
-
-  const studioTrailSteps = useMemo(() => {
-    const selectedArtifactType = selectedStudioTaskMetadata?.artifactType ?? null
-    const specialistLabel = selectedArtifactType ? STUDIO_SPECIALIST_LABEL[selectedArtifactType] : 'Especialista'
-    const steps = [
-      { key: 'studio_pesquisador', label: 'Pesquisador do Estúdio' },
-      { key: 'studio_specialist', label: specialistLabel },
-      { key: 'studio_revisor', label: 'Revisor de Qualidade' },
-    ]
-    const progressStep = selectedStudioTask?.currentStep ?? 0
-    const errorIndex = progressStep > 0 ? Math.min(progressStep, steps.length) - 1 : 0
-    const studioLoading = selectedStudioTask?.status === 'running'
-    const studioErrorMessage = selectedStudioTask?.status === 'error' ? (selectedStudioTask.error || 'Erro no pipeline') : ''
-
-    return steps.map((step, index) => {
-      let status: 'pending' | 'active' | 'completed' | 'error' = 'pending'
-      const oneBased = index + 1
-
-      if (progressStep >= steps.length && !studioLoading && !studioErrorMessage) {
-        status = 'completed'
-      } else if (oneBased < progressStep) {
-        status = 'completed'
-      } else if (studioLoading && oneBased === progressStep) {
-        status = 'active'
-      }
-
-      if (studioErrorMessage && index === errorIndex) {
-        status = 'error'
-      }
-
-      return {
-        key: step.key,
-        label: step.label,
-        status,
-        detail: status === 'active' ? (selectedStudioTask?.phase || undefined) : undefined,
-      }
-    })
-  }, [selectedStudioTask, selectedStudioTaskMetadata])
+  const notebookOperationalSummaries = useMemo(() => buildNotebookOperationalSummaries({
+    acervoLoading: acervoAnalysisLoading,
+    acervoState: acervoProgressState,
+    acervoStartedAt: acervoAnalysisStartedAt,
+    acervoAggregate: acervoOperationalSummary as NotebookOperationalAggregate,
+    studioTask: selectedStudioTask ?? undefined,
+    studioArtifactLabel: selectedStudioTaskMetadata?.artifactLabel ?? null,
+    videoGeneration: videoGenProgress,
+    videoGenerationStartedAt: videoGenStartedAt,
+    videoGenerationAggregate: videoGenOperationalSummary as NotebookOperationalAggregate,
+    videoLiteral: videoStudioLiteralProgress,
+    videoLiteralStartedAt: videoStudioLiteralStartedAt,
+    videoLiteralAggregate: videoLiteralOperationalSummary as NotebookOperationalAggregate,
+  }), [
+    acervoAnalysisLoading,
+    acervoAnalysisStartedAt,
+    acervoOperationalSummary,
+    acervoProgressState,
+    selectedStudioTask,
+    selectedStudioTaskMetadata,
+    videoGenProgress,
+    videoGenStartedAt,
+    videoGenOperationalSummary,
+    videoStudioLiteralProgress,
+    videoStudioLiteralStartedAt,
+    videoLiteralOperationalSummary,
+  ])
 
   // ── Render: List View ───────────────────────────────────────────────
 
@@ -3705,6 +4417,87 @@ Instruções:
         </div>
       </div>
 
+      {notebookOperationalSummaries.length > 0 && (
+        <div className="border-b bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-3 shrink-0">
+          <div className="max-w-7xl mx-auto space-y-2">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+              <Sparkles className="w-3.5 h-3.5 text-brand-600" />
+              Operações em execução
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              {notebookOperationalSummaries.map(summary => {
+                const toneClasses = summary.tone === 'amber'
+                  ? 'border-amber-200 bg-amber-50'
+                  : summary.tone === 'violet'
+                    ? 'border-violet-200 bg-violet-50'
+                    : summary.tone === 'rose'
+                      ? 'border-rose-200 bg-rose-50'
+                      : 'border-sky-200 bg-sky-50'
+                const barClasses = summary.tone === 'amber'
+                  ? 'bg-amber-500'
+                  : summary.tone === 'violet'
+                    ? 'bg-violet-500'
+                    : summary.tone === 'rose'
+                      ? 'bg-rose-500'
+                      : 'bg-sky-500'
+
+                return (
+                  <div key={summary.id} className={`rounded-xl border px-4 py-3 ${toneClasses}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-gray-900">{summary.title}</p>
+                        <p className="text-[11px] text-gray-600 truncate mt-0.5">{summary.stageLabel || summary.subtitle}</p>
+                        <p className="text-[10px] text-gray-500 truncate mt-1">{summary.stageMeta || summary.subtitle}</p>
+                        {summary.aggregateLabel && (
+                          <p className="text-[10px] text-gray-600 mt-1">{summary.aggregateLabel}</p>
+                        )}
+                        {summary.detailLabel && (
+                          <p className="text-[10px] text-gray-500 mt-1">{summary.detailLabel}</p>
+                        )}
+                        {summary.degradationLabel && (
+                          <p className="text-[10px] text-amber-700 mt-1">{summary.degradationLabel}</p>
+                        )}
+                        {summary.etaLabel && (
+                          <p className="text-[10px] text-gray-400 mt-1">ETA aprox.: {summary.etaLabel}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-[11px] font-semibold text-gray-700">{summary.progress}%</span>
+                        {summary.kind === 'acervo' && (
+                          <button
+                            onClick={() => setShowAcervoProgressModal(true)}
+                            className="px-2.5 py-1 rounded-lg bg-white/90 text-[11px] font-medium text-gray-700 hover:bg-white transition-colors border border-white/70"
+                          >
+                            Abrir trilha
+                          </button>
+                        )}
+                        {summary.kind === 'studio' && selectedStudioTask && (
+                          <button
+                            onClick={() => {
+                              setSelectedStudioTaskId(selectedStudioTask.id)
+                              setShowStudioProgressModal(true)
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-white/90 text-[11px] font-medium text-gray-700 hover:bg-white transition-colors border border-white/70"
+                          >
+                            Abrir modal
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-2.5 w-full h-2 rounded-full bg-white/70 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${barClasses}`}
+                        style={{ width: `${Math.max(2, summary.progress)}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Notebook Info Modal */}
       {showEditInfo && (
         <DraggablePanel
@@ -3833,6 +4626,73 @@ Instruções:
                         </div>
                       )
                     })}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white rounded-xl border p-5 space-y-4">
+                <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <BookMarked className="w-4 h-4 text-brand-600" />
+                  Memória Auditável do Estúdio
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Fontes elegíveis</p>
+                    <p className="text-sm text-gray-800 mt-0.5">
+                      {studioContextAudit.sourceSummary.includedSources}/{studioContextAudit.sourceSummary.totalSources}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Fontes truncadas</p>
+                    <p className="text-sm text-gray-800 mt-0.5">{studioContextAudit.sourceSummary.truncatedSources}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Janela de conversa</p>
+                    <p className="text-sm text-gray-800 mt-0.5">
+                      {studioContextAudit.conversationSummary.includedMessages}/{studioContextAudit.conversationSummary.totalMessages}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Contexto previsto</p>
+                    <p className="text-sm text-gray-800 mt-0.5">{formatContextChars(studioContextAudit.totalContextChars)}</p>
+                  </div>
+                </div>
+                <div className="space-y-2 text-[11px] text-gray-500">
+                  <p>
+                    Fontes incluídas: {formatContextChars(studioContextAudit.sourceSummary.includedChars)}
+                    {studioContextAudit.sourceSummary.droppedSources > 0 ? ` · ${studioContextAudit.sourceSummary.droppedSources} fora da janela útil` : ''}
+                  </p>
+                  <p>
+                    Conversa incluída: {formatContextChars(studioContextAudit.conversationSummary.includedChars)}
+                    {studioContextAudit.conversationSummary.droppedMessages > 0 ? ` · ${studioContextAudit.conversationSummary.droppedMessages} mensagem(ns) antigas descartadas` : ''}
+                    {studioContextAudit.conversationSummary.truncatedByChars ? ' · truncada por limite de caracteres' : ''}
+                  </p>
+                  <p>
+                    Instruções adicionais: {studioContextAudit.customInstructionsChars > 0
+                      ? formatContextChars(studioContextAudit.customInstructionsChars)
+                      : 'nenhuma'}
+                  </p>
+                </div>
+                {studioContextAudit.sourceEntries.some(entry => entry.included) && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Fontes atualmente promovidas ao estúdio</p>
+                    <div className="space-y-2">
+                      {studioContextAudit.sourceEntries.filter(entry => entry.included).slice(0, 4).map(entry => (
+                        <div key={entry.id} className="flex items-center justify-between gap-3 bg-gray-50 rounded-lg px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-sm text-gray-800 truncate">{entry.name}</p>
+                            <p className="text-[11px] text-gray-400">
+                              {SOURCE_TYPE_LABELS[entry.type]?.label || entry.type} · {formatContextChars(entry.includedChars)}
+                            </p>
+                          </div>
+                          {entry.truncated && (
+                            <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-2 py-1 rounded-full whitespace-nowrap">
+                              truncada
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -4025,6 +4885,67 @@ Instruções:
           <div className="flex flex-col h-full">
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="bg-white border rounded-xl p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                      <BookMarked className="w-4 h-4 text-brand-600" />
+                      Janela Auditável da Próxima Resposta
+                    </h4>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      O chat usa fontes úteis do caderno, uma janela recente da conversa, histórico de buscas e, opcionalmente, busca web ao vivo.
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                    {formatContextChars((lastChatContextAudit || chatContextAuditPreview).totalContextChars)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Fontes</p>
+                    <p className="text-sm text-gray-800 mt-0.5">
+                      {(lastChatContextAudit || chatContextAuditPreview).sourceSummary.includedSources}/{(lastChatContextAudit || chatContextAuditPreview).sourceSummary.totalSources}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Conversa</p>
+                    <p className="text-sm text-gray-800 mt-0.5">
+                      {(lastChatContextAudit || chatContextAuditPreview).conversationSummary.includedMessages}/{(lastChatContextAudit || chatContextAuditPreview).conversationSummary.totalMessages}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Histórico de busca</p>
+                    <p className="text-sm text-gray-800 mt-0.5">{(lastChatContextAudit || chatContextAuditPreview).searchSummary.totalEntries}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Busca web ao vivo</p>
+                    <p className="text-sm text-gray-800 mt-0.5">
+                      {(lastChatContextAudit || chatContextAuditPreview).liveWebEnabled ? 'Ativa' : 'Desligada'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-[11px] text-gray-500">
+                  <p>
+                    Fontes incluídas: {formatContextChars((lastChatContextAudit || chatContextAuditPreview).sourceSummary.includedChars)}
+                    {(lastChatContextAudit || chatContextAuditPreview).sourceSummary.truncatedSources > 0 ? ` · ${(lastChatContextAudit || chatContextAuditPreview).sourceSummary.truncatedSources} truncada(s)` : ''}
+                  </p>
+                  <p>
+                    Conversa incluída: {formatContextChars((lastChatContextAudit || chatContextAuditPreview).conversationSummary.includedChars)}
+                    {(lastChatContextAudit || chatContextAuditPreview).conversationSummary.droppedMessages > 0 ? ` · ${(lastChatContextAudit || chatContextAuditPreview).conversationSummary.droppedMessages} mensagem(ns) antigas fora da janela` : ''}
+                    {(lastChatContextAudit || chatContextAuditPreview).conversationSummary.truncatedByChars ? ' · truncada por caracteres' : ''}
+                  </p>
+                  <p>
+                    Histórico de busca: {formatContextChars((lastChatContextAudit || chatContextAuditPreview).searchSummary.includedChars)}
+                    {(lastChatContextAudit || chatContextAuditPreview).searchSummary.truncated ? ' · truncado por limite' : ''}
+                    {(lastChatContextAudit || chatContextAuditPreview).liveWebEnabled
+                      ? ` · web ao vivo ${((lastChatContextAudit || chatContextAuditPreview).liveWebChars > 0 ? `incluída (${formatContextChars((lastChatContextAudit || chatContextAuditPreview).liveWebChars)})` : 'aguardando execução da consulta')}`
+                      : ''}
+                  </p>
+                </div>
+              </div>
+
               {activeNotebook.messages.length === 0 && (
                 <div className="text-center py-16">
                   <Brain className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -4244,7 +5165,7 @@ Instruções:
                     onChange={e => setExternalSearchQuery(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && externalSearchQuery.trim() && !isAnyResearchLoading) {
-                        handleAddExternalSearchSource()
+                        triggerExternalSearch()
                       }
                     }}
                     disabled={isAnyResearchLoading}
@@ -4253,7 +5174,7 @@ Instruções:
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={handleAddExternalSearchSource}
+                    onClick={triggerExternalSearch}
                     disabled={!externalSearchQuery.trim() || isAnyResearchLoading}
                     title="Busca rápida na web com síntese via IA"
                     className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium transition-colors inline-flex items-center gap-1.5"
@@ -4262,7 +5183,7 @@ Instruções:
                     Pesquisa Externa
                   </button>
                   <button
-                    onClick={handleAddDeepExternalSearchSource}
+                    onClick={triggerDeepExternalSearch}
                     disabled={!externalSearchQuery.trim() || isAnyResearchLoading}
                     title="Busca profunda: extrai conteúdo completo das páginas encontradas"
                     className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium transition-colors inline-flex items-center gap-1.5"
@@ -4271,7 +5192,7 @@ Instruções:
                     Pesquisa Profunda
                   </button>
                   <button
-                    onClick={handleAddJurisprudenceSource}
+                    onClick={triggerJurisprudenceSearch}
                     disabled={!externalSearchQuery.trim() || isAnyResearchLoading}
                     title="Pesquisa jurisprudência em 21 tribunais brasileiros via DataJud (CNJ)"
                     className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium transition-colors inline-flex items-center gap-1.5"
@@ -4279,6 +5200,461 @@ Instruções:
                     {jurisprudenceLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Library className="w-3.5 h-3.5" />}
                     Jurisprudência (DataJud)
                   </button>
+                </div>
+                <div className="bg-white border rounded-xl p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                        <BookMarked className="w-4 h-4 text-brand-600" />
+                        Janela Auditável da Próxima Busca
+                      </h4>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Resume a consulta atual e, quando houver, a última busca realmente sintetizada para o caderno.
+                      </p>
+                    </div>
+                    <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                      {formatContextChars((lastResearchContextAudit || researchContextAuditPreview).totalContextChars)}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Consulta</p>
+                      <p className="text-sm text-gray-800 mt-0.5">{(lastResearchContextAudit || researchContextAuditPreview).queryChars} chars</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Resultados</p>
+                      <p className="text-sm text-gray-800 mt-0.5">{(lastResearchContextAudit || researchContextAuditPreview).resultCount ?? 0}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Selecionados</p>
+                      <p className="text-sm text-gray-800 mt-0.5">{(lastResearchContextAudit || researchContextAuditPreview).selectedCount ?? 0}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Tribunais</p>
+                      <p className="text-sm text-gray-800 mt-0.5">{(lastResearchContextAudit || researchContextAuditPreview).tribunalCount ?? lastJurisprudenceTribunalAliases.length}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-[11px] text-gray-500">
+                    <p>
+                      Modo atual: {(lastResearchContextAudit || researchContextAuditPreview).sourceKindLabel || 'Pesquisa externa'}
+                      {(lastResearchContextAudit || researchContextAuditPreview).mode === 'executed' ? ' · última execução sintetizada' : ' · preview da próxima consulta'}
+                    </p>
+                    {(lastResearchContextAudit || researchContextAuditPreview).compiledChars != null && (
+                      <p>
+                        Conteúdo promovido para síntese: {formatContextChars((lastResearchContextAudit || researchContextAuditPreview).compiledChars || 0)}
+                        {(lastResearchContextAudit || researchContextAuditPreview).usedSnippetFallback ? ' · usando snippets/fallback de conteúdo' : ''}
+                      </p>
+                    )}
+                    {(lastResearchContextAudit || researchContextAuditPreview).dateRangeLabel && (
+                      <p>Recorte temporal: {(lastResearchContextAudit || researchContextAuditPreview).dateRangeLabel}</p>
+                    )}
+                    {(lastResearchContextAudit || researchContextAuditPreview).legalArea && (
+                      <p>Área jurídica: {AREA_LABELS[(lastResearchContextAudit || researchContextAuditPreview).legalArea || ''] || (lastResearchContextAudit || researchContextAuditPreview).legalArea}</p>
+                    )}
+                  </div>
+
+                  {activeNotebook.research_audits && activeNotebook.research_audits.length > 0 && (
+                    <div className="pt-2 border-t border-gray-100 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">
+                          Últimas buscas auditadas · {activeNotebook.research_audits.length}
+                        </p>
+                        {activeNotebook.research_audits.length > 3 && (
+                          <button
+                            onClick={() => setShowAllResearchAudits(value => !value)}
+                            className="text-[10px] font-medium text-brand-700 hover:text-brand-800"
+                          >
+                            {showAllResearchAudits ? 'Mostrar menos' : 'Mostrar todas'}
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        {visibleResearchAudits.map(audit => (
+                          <div key={`${audit.created_at}-${audit.query}`} className="bg-gray-50 rounded-lg px-3 py-2 text-[11px] text-gray-600">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="font-medium text-gray-800">
+                                {audit.sourceKindLabel || 'Busca'} · {formatDate(audit.created_at)}
+                              </p>
+                              <button
+                                onClick={() => handleReplayResearchAudit(audit)}
+                                disabled={isAnyResearchLoading}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-gray-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                {audit.variant === 'jurisprudencia' ? 'Reabrir' : 'Reaplicar'}
+                              </button>
+                            </div>
+                            <p className="mt-0.5 line-clamp-2">{audit.query || 'Consulta vazia'}</p>
+                            <p className="mt-1 text-gray-500">
+                              {audit.selectedCount ?? 0} selecionado(s)
+                              {audit.resultCount != null ? ` · ${audit.resultCount} resultado(s)` : ''}
+                              {audit.tribunalCount != null ? ` · ${audit.tribunalCount} tribunal(is)` : ''}
+                              {audit.compiledChars != null ? ` · ${formatContextChars(audit.compiledChars)} em síntese` : ''}
+                            </p>
+                            <div className="mt-2 flex items-center justify-end">
+                              <button
+                                onClick={() => void saveResearchAuditPreset(audit)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-brand-700 bg-brand-50 hover:bg-brand-100"
+                              >
+                                <Save className="w-3 h-3" />
+                                Salvar busca
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {sortedSavedSearches.length > 0 && (
+                    <div className="pt-2 border-t border-gray-100 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">
+                          Buscas salvas · {sortedSavedSearches.length}
+                        </p>
+                        {sortedSavedSearches.length > 4 && (
+                          <button
+                            onClick={() => setShowAllSavedSearches(value => !value)}
+                            className="text-[10px] font-medium text-brand-700 hover:text-brand-800"
+                          >
+                            {showAllSavedSearches ? 'Mostrar menos' : 'Mostrar todas'}
+                          </button>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                        <input
+                          type="text"
+                          value={savedSearchFilter}
+                          onChange={e => setSavedSearchFilter(e.target.value)}
+                          placeholder="Filtrar buscas salvas..."
+                          className="w-full pl-7 pr-3 py-2 rounded-lg border border-amber-200 bg-amber-50/40 text-[11px] text-gray-700 focus:ring-1 focus:ring-brand-500 outline-none"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { key: 'all', label: 'Todas', count: savedSearchVariantCounts.all },
+                          { key: 'external', label: 'Externa', count: savedSearchVariantCounts.external },
+                          { key: 'deep', label: 'Profunda', count: savedSearchVariantCounts.deep },
+                          { key: 'jurisprudencia', label: 'Jurisprudência', count: savedSearchVariantCounts.jurisprudencia },
+                        ].map(option => (
+                          <button
+                            key={option.key}
+                            onClick={() => setSavedSearchVariantFilter(option.key as typeof savedSearchVariantFilter)}
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-medium border transition-colors ${
+                              savedSearchVariantFilter === option.key
+                                ? 'bg-amber-100 border-amber-300 text-amber-900'
+                                : 'bg-white border-amber-200 text-gray-600 hover:bg-amber-50'
+                            }`}
+                          >
+                            {option.label} · {option.count}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-2.5 py-2">
+                        <label className="inline-flex items-center gap-1.5 text-[10px] text-gray-600 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={allVisibleSavedSearchesSelected}
+                            onChange={toggleSelectAllVisibleSavedSearches}
+                            className="rounded border-amber-300 text-brand-600 focus:ring-brand-500"
+                          />
+                          Selecionar visíveis ({visibleSavedSearchIds.length})
+                        </label>
+                        <span className="text-[10px] text-gray-500">Selecionadas: {selectedSavedSearchIds.size}</span>
+                        <button
+                          onClick={() => void bulkSetPinnedSavedSearches(true)}
+                          disabled={selectedSavedSearchIds.size === 0}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <BookMarked className="w-3 h-3" />
+                          Fixar
+                        </button>
+                        <button
+                          onClick={() => void bulkSetPinnedSavedSearches(false)}
+                          disabled={selectedSavedSearchIds.size === 0}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <BookMarked className="w-3 h-3" />
+                          Desafixar
+                        </button>
+                        <button
+                          onClick={clearSelectedSavedSearches}
+                          disabled={selectedSavedSearchIds.size === 0}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <X className="w-3 h-3" />
+                          Limpar seleção
+                        </button>
+                        <input
+                          type="text"
+                          value={bulkSavedSearchTagInput}
+                          onChange={e => setBulkSavedSearchTagInput(e.target.value)}
+                          placeholder="Tag em lote"
+                          className="px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] text-gray-700 focus:ring-1 focus:ring-brand-500 outline-none"
+                          maxLength={50}
+                        />
+                        <button
+                          onClick={() => void bulkUpdateTagSavedSearches('add')}
+                          disabled={selectedSavedSearchIds.size === 0}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Save className="w-3 h-3" />
+                          Adicionar tag
+                        </button>
+                        <button
+                          onClick={() => void bulkUpdateTagSavedSearches('remove')}
+                          disabled={selectedSavedSearchIds.size === 0}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <X className="w-3 h-3" />
+                          Remover tag
+                        </button>
+                        <button
+                          onClick={() => setPendingSavedSearchBulkDeleteIds(Array.from(selectedSavedSearchIds))}
+                          disabled={selectedSavedSearchIds.size === 0}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-red-200 bg-white text-[10px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Excluir selecionadas
+                        </button>
+                      </div>
+                      {savedSearchFilter.trim() && sortedSavedSearches.length === 0 && (
+                        <p className="text-[11px] text-gray-500">Nenhuma busca salva corresponde ao filtro atual.</p>
+                      )}
+                      {!savedSearchFilter.trim() && sortedSavedSearches.length === 0 && savedSearchVariantFilter !== 'all' && (
+                        <p className="text-[11px] text-gray-500">Nenhuma busca salva nesse tipo de pesquisa.</p>
+                      )}
+                      {pinnedSavedSearches.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-amber-700">Fixadas</p>
+                          {pinnedSavedSearches.map(search => (
+                            <div key={search.id} className="bg-amber-50 rounded-lg px-3 py-2 text-[11px] text-gray-600 border border-amber-100">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  {editingSavedSearchId === search.id ? (
+                                    <div className="space-y-2">
+                                      <input
+                                        value={editingSavedSearchTitle}
+                                        onChange={e => setEditingSavedSearchTitle(e.target.value)}
+                                        className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-brand-500 outline-none"
+                                        maxLength={120}
+                                      />
+                                      <input
+                                        value={editingSavedSearchTags}
+                                        onChange={e => setEditingSavedSearchTags(e.target.value)}
+                                        className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-brand-500 outline-none"
+                                        placeholder="Tags separadas por vírgula"
+                                        maxLength={160}
+                                      />
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() => void confirmRenameSavedSearch()}
+                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-amber-200 text-[10px] font-medium text-brand-700 hover:bg-amber-100"
+                                        >
+                                          <Save className="w-3 h-3" />
+                                          Salvar
+                                        </button>
+                                        <button
+                                          onClick={cancelEditingSavedSearch}
+                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-gray-200 text-[10px] font-medium text-gray-600 hover:bg-gray-100"
+                                        >
+                                          <X className="w-3 h-3" />
+                                          Cancelar
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-medium text-gray-800">{search.title}</p>
+                                      <span className="px-1.5 py-0.5 rounded bg-amber-200 text-[10px] font-medium text-amber-900">Fixada</span>
+                                    </div>
+                                  )}
+                                  <p className="text-gray-500 mt-0.5">{search.sourceKindLabel || 'Busca'} · atualizada em {formatDate(search.updated_at)}</p>
+                                  {search.tags && search.tags.length > 0 && (
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                      {search.tags.map(tag => (
+                                        <button
+                                          key={tag}
+                                          onClick={() => setSavedSearchFilter(tag)}
+                                          className="px-1.5 py-0.5 rounded bg-white border border-amber-200 text-[10px] text-gray-600 hover:bg-amber-100"
+                                        >
+                                          {tag}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <label className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedSavedSearchIds.has(search.id)}
+                                      onChange={() => toggleSavedSearchSelection(search.id)}
+                                      className="rounded border-amber-300 text-brand-600 focus:ring-brand-500"
+                                    />
+                                    Selecionar
+                                  </label>
+                                  <button
+                                    onClick={() => void togglePinSavedSearch(search.id)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100"
+                                  >
+                                    <BookMarked className="w-3 h-3" />
+                                    Desafixar
+                                  </button>
+                                  <button
+                                    onClick={() => startEditingSavedSearch(search)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100"
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                    Renomear
+                                  </button>
+                                  <button
+                                    onClick={() => handleReplayResearchAudit(search)}
+                                    disabled={isAnyResearchLoading}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <RotateCcw className="w-3 h-3" />
+                                    {search.variant === 'jurisprudencia' ? 'Abrir' : 'Usar'}
+                                  </button>
+                                  <button
+                                    onClick={() => setPendingSavedSearchDelete({ id: search.id, title: search.title })}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-red-200 bg-white text-[10px] font-medium text-red-600 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    Excluir
+                                  </button>
+                                </div>
+                              </div>
+                              <p className="mt-1 line-clamp-2">{search.query || 'Consulta vazia'}</p>
+                              <p className="mt-1 text-gray-500">
+                                {search.selectedCount ?? 0} selecionado(s)
+                                {search.resultCount != null ? ` · ${search.resultCount} resultado(s)` : ''}
+                                {search.tribunalCount != null ? ` · ${search.tribunalCount} tribunal(is)` : ''}
+                                {search.dateRangeLabel ? ` · ${search.dateRangeLabel}` : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {regularSavedSearches.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500">Demais buscas salvas</p>
+                          {regularSavedSearches.map(search => (
+                          <div key={search.id} className="bg-amber-50 rounded-lg px-3 py-2 text-[11px] text-gray-600 border border-amber-100">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                {editingSavedSearchId === search.id ? (
+                                  <div className="space-y-2">
+                                    <input
+                                      value={editingSavedSearchTitle}
+                                      onChange={e => setEditingSavedSearchTitle(e.target.value)}
+                                      className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-brand-500 outline-none"
+                                      maxLength={120}
+                                    />
+                                    <input
+                                      value={editingSavedSearchTags}
+                                      onChange={e => setEditingSavedSearchTags(e.target.value)}
+                                      className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-brand-500 outline-none"
+                                      placeholder="Tags separadas por vírgula"
+                                      maxLength={160}
+                                    />
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => void confirmRenameSavedSearch()}
+                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-amber-200 text-[10px] font-medium text-brand-700 hover:bg-amber-100"
+                                      >
+                                        <Save className="w-3 h-3" />
+                                        Salvar
+                                      </button>
+                                      <button
+                                        onClick={cancelEditingSavedSearch}
+                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-gray-200 text-[10px] font-medium text-gray-600 hover:bg-gray-100"
+                                      >
+                                        <X className="w-3 h-3" />
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-medium text-gray-800">{search.title}</p>
+                                    {search.pinned && (
+                                      <span className="px-1.5 py-0.5 rounded bg-amber-200 text-[10px] font-medium text-amber-900">Fixada</span>
+                                    )}
+                                  </div>
+                                )}
+                                <p className="text-gray-500 mt-0.5">{search.sourceKindLabel || 'Busca'} · atualizada em {formatDate(search.updated_at)}</p>
+                                {search.tags && search.tags.length > 0 && (
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {search.tags.map(tag => (
+                                      <button
+                                        key={tag}
+                                        onClick={() => setSavedSearchFilter(tag)}
+                                        className="px-1.5 py-0.5 rounded bg-white border border-amber-200 text-[10px] text-gray-600 hover:bg-amber-100"
+                                      >
+                                        {tag}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <label className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedSavedSearchIds.has(search.id)}
+                                    onChange={() => toggleSavedSearchSelection(search.id)}
+                                    className="rounded border-amber-300 text-brand-600 focus:ring-brand-500"
+                                  />
+                                  Selecionar
+                                </label>
+                                <button
+                                  onClick={() => void togglePinSavedSearch(search.id)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100"
+                                >
+                                  <BookMarked className="w-3 h-3" />
+                                  {search.pinned ? 'Desafixar' : 'Fixar'}
+                                </button>
+                                <button
+                                  onClick={() => startEditingSavedSearch(search)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100"
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                  Renomear
+                                </button>
+                                <button
+                                  onClick={() => handleReplayResearchAudit(search)}
+                                  disabled={isAnyResearchLoading}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] font-medium text-gray-600 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  {search.variant === 'jurisprudencia' ? 'Abrir' : 'Usar'}
+                                </button>
+                                <button
+                                  onClick={() => setPendingSavedSearchDelete({ id: search.id, title: search.title })}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-red-200 bg-white text-[10px] font-medium text-red-600 hover:bg-red-50"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  Excluir
+                                </button>
+                              </div>
+                            </div>
+                            <p className="mt-1 line-clamp-2">{search.query || 'Consulta vazia'}</p>
+                            <p className="mt-1 text-gray-500">
+                              {search.selectedCount ?? 0} selecionado(s)
+                              {search.resultCount != null ? ` · ${search.resultCount} resultado(s)` : ''}
+                              {search.tribunalCount != null ? ` · ${search.tribunalCount} tribunal(is)` : ''}
+                              {search.dateRangeLabel ? ` · ${search.dateRangeLabel}` : ''}
+                            </p>
+                          </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -4383,6 +5759,9 @@ Instruções:
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-500" />
                     <span className="text-xs text-brand-700">{acervoAnalysisMessage}</span>
                   </div>
+                  {acervoAnalysisMeta && (
+                    <p className="pl-5 text-[11px] text-brand-500">{acervoAnalysisMeta}</p>
+                  )}
                   {/* Agent progress steps */}
                   <div className="flex items-center gap-1 mt-1">
                     {(['nb_acervo_triagem', 'nb_acervo_buscador', 'nb_acervo_analista', 'nb_acervo_curador'] as const).map((step) => {
@@ -4593,6 +5972,97 @@ Instruções:
                 rows={2}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
               />
+            </div>
+
+            <div className="mb-5 bg-white rounded-xl border p-4 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                    <BookMarked className="w-4 h-4 text-brand-600" />
+                    Contexto Auditável do Estúdio
+                  </h4>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Esta é a janela de memória que o pipeline do estúdio usará nesta execução.
+                  </p>
+                </div>
+                <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                  {formatContextChars(studioContextAudit.totalContextChars)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Fontes</p>
+                  <p className="text-sm text-gray-800 mt-0.5">
+                    {studioContextAudit.sourceSummary.includedSources} incluídas
+                    {studioContextAudit.sourceSummary.truncatedSources > 0 ? ` · ${studioContextAudit.sourceSummary.truncatedSources} truncadas` : ''}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-1">{formatContextChars(studioContextAudit.sourceSummary.includedChars)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Conversa</p>
+                  <p className="text-sm text-gray-800 mt-0.5">
+                    {studioContextAudit.conversationSummary.includedMessages} msg
+                    {studioContextAudit.conversationSummary.droppedMessages > 0 ? ` · ${studioContextAudit.conversationSummary.droppedMessages} fora da janela` : ''}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {formatContextChars(studioContextAudit.conversationSummary.includedChars)}
+                    {studioContextAudit.conversationSummary.truncatedByChars ? ' · truncada por caracteres' : ''}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Instruções extras</p>
+                  <p className="text-sm text-gray-800 mt-0.5">
+                    {studioContextAudit.customInstructionsChars > 0 ? 'Incluídas' : 'Ausentes'}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {studioContextAudit.customInstructionsChars > 0
+                      ? formatContextChars(studioContextAudit.customInstructionsChars)
+                      : 'Sem prompt adicional'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Fontes promovidas</p>
+                  {studioContextAudit.sourceEntries.filter(entry => entry.included).length === 0 ? (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      Nenhuma fonte textual suficiente entrou na memória do estúdio. O pipeline dependerá mais do tema, da descrição e das instruções adicionais.
+                    </p>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {studioContextAudit.sourceEntries.filter(entry => entry.included).map(entry => (
+                        <div key={entry.id} className="bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm text-gray-800 truncate">{entry.name}</p>
+                              <p className="text-[11px] text-gray-500 mt-0.5">
+                                {SOURCE_TYPE_LABELS[entry.type]?.label || entry.type} · {formatContextChars(entry.includedChars)}
+                              </p>
+                            </div>
+                            {entry.truncated && (
+                              <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-2 py-1 rounded-full whitespace-nowrap">
+                                truncada
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Regras da janela atual</p>
+                  <div className="space-y-2 text-xs text-gray-600 bg-gray-50 rounded-lg border border-gray-100 p-3">
+                    <p>Somente fontes com pelo menos {MIN_SOURCE_CHARS} caracteres entram automaticamente.</p>
+                    <p>Cada fonte textual e limitada a {formatContextChars(MAX_CONTEXT_TEXT_LENGTH)} por execucao.</p>
+                    <p>A conversa do estúdio considera no maximo {MAX_STUDIO_CONTEXT_MESSAGES} mensagens recentes e ate {formatContextChars(MAX_STUDIO_CONTEXT_CHARS)}.</p>
+                    <p>O prompt adicional entra inteiro apenas se voce o preencher neste painel.</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Pipeline progress indicator */}
@@ -4903,11 +6373,13 @@ Instruções:
         isOpen={showAcervoProgressModal}
         title="Trilha de Análise Inteligente do Acervo"
         subtitle={activeNotebook?.topic}
-        currentMessage={acervoAnalysisError || acervoAnalysisMessage || 'Preparando análise do acervo...'}
-        percent={acervoAnalysisPercent}
+        currentMessage={acervoProgressState.currentMessage}
+        percent={acervoProgressState.percent}
         steps={acervoTrailSteps}
-        isComplete={acervoAnalysisPhase === 'concluido' && !acervoAnalysisError}
-        hasError={Boolean(acervoAnalysisError)}
+        isComplete={acervoProgressState.isComplete}
+        hasError={acervoProgressState.hasError}
+        activeStageLabel={acervoProgressState.stageLabel}
+        activeStageMeta={acervoProgressState.stageMeta}
         canClose
         onClose={() => setShowAcervoProgressModal(false)}
       />
@@ -4916,13 +6388,13 @@ Instruções:
         isOpen={showStudioProgressModal && Boolean(selectedStudioTask)}
         title="Trilha Multiagente do Estúdio"
         subtitle={selectedStudioTaskMetadata?.artifactLabel}
-        currentMessage={selectedStudioTask?.status === 'error'
-          ? (selectedStudioTask.error || 'Erro no pipeline do estúdio')
-          : selectedStudioTask?.phase || 'Inicializando pipeline do estúdio...'}
-        percent={selectedStudioTask?.progress || 0}
+        currentMessage={studioProgressState.currentMessage}
+        percent={studioProgressState.percent}
         steps={studioTrailSteps}
-        isComplete={selectedStudioTask?.status === 'completed'}
-        hasError={selectedStudioTask?.status === 'error'}
+        isComplete={studioProgressState.isComplete}
+        hasError={studioProgressState.hasError}
+        activeStageLabel={studioProgressState.stageLabel}
+        activeStageMeta={studioProgressState.stageMeta}
         canClose
         onClose={() => setShowStudioProgressModal(false)}
       />
@@ -4942,8 +6414,12 @@ Instruções:
         isOpen={jurisprudenceConfigOpen}
         query={externalSearchQuery.trim()}
         initialSelectedAliases={lastJurisprudenceTribunalAliases}
+        initialConfig={jurisprudenceConfigPreset}
         onSearch={handleJurisprudenceSearch}
-        onClose={() => setJurisprudenceConfigOpen(false)}
+        onClose={() => {
+          setJurisprudenceConfigOpen(false)
+          setJurisprudenceConfigPreset(null)
+        }}
       />
 
       <SearchResultsModal
@@ -4983,6 +6459,28 @@ Instruções:
         danger
         onCancel={() => setPendingArtifactDelete(null)}
         onConfirm={confirmDeleteArtifact}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingSavedSearchDelete)}
+        title="Excluir busca salva"
+        description={pendingSavedSearchDelete ? `A busca salva "${pendingSavedSearchDelete.title}" será removida do caderno.` : ''}
+        confirmText="Excluir busca"
+        cancelText="Cancelar"
+        danger
+        onCancel={() => setPendingSavedSearchDelete(null)}
+        onConfirm={confirmDeleteSavedSearch}
+      />
+
+      <ConfirmDialog
+        open={pendingSavedSearchBulkDeleteIds.length > 0}
+        title="Excluir buscas selecionadas"
+        description={`As ${pendingSavedSearchBulkDeleteIds.length} buscas selecionadas serão removidas do caderno.`}
+        confirmText="Excluir selecionadas"
+        cancelText="Cancelar"
+        danger
+        onCancel={() => setPendingSavedSearchBulkDeleteIds([])}
+        onConfirm={confirmDeleteSelectedSavedSearches}
       />
 
       {/* ── Source content viewer (floating, draggable panel) ───────────── */}

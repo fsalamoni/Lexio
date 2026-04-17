@@ -23,6 +23,12 @@ export interface AcervoAnalysisProgress {
   phase: string
   message: string
   percent: number
+  stageMeta?: string
+  costUsd?: number
+  durationMs?: number
+  retryCount?: number
+  usedFallback?: boolean
+  fallbackReason?: string
 }
 
 export interface AnalyzedDocument {
@@ -49,6 +55,34 @@ function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
   }
+}
+
+function formatUsd(costUsd: number): string {
+  if (costUsd < 0.0001) return '<$0.0001'
+  return `$${costUsd.toFixed(4)}`
+}
+
+function buildAcervoStageMeta(options: {
+  model?: string
+  costUsd?: number
+  durationMs?: number
+  retryCount?: number
+  fallbackReason?: string
+}): string | undefined {
+  const parts: string[] = []
+  if (options.model) parts.push(options.model.split('/').pop() || options.model)
+  if (options.fallbackReason) parts.push(options.fallbackReason)
+  if ((options.retryCount ?? 0) > 0) {
+    const retries = options.retryCount ?? 0
+    parts.push(`${retries} ${retries === 1 ? 'retry' : 'retries'}`)
+  }
+  if ((options.durationMs ?? 0) > 0) {
+    parts.push(`${Math.max(1, Math.round((options.durationMs ?? 0) / 1000))}s`)
+  }
+  if ((options.costUsd ?? 0) > 0) {
+    parts.push(formatUsd(options.costUsd ?? 0))
+  }
+  return parts.length > 0 ? parts.join(' • ') : undefined
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -656,6 +690,20 @@ export async function analyzeNotebookAcervo(
   }))
 
   console.log(`[Notebook Acervo Triagem] Result:`, triageResult.content.slice(0, 200))
+  onProgress?.({
+    phase: 'nb_acervo_triagem',
+    message: 'Triagem do tema concluída.',
+    percent: 18,
+    stageMeta: buildAcervoStageMeta({
+      model: triageResult.model,
+      costUsd: triageResult.cost_usd,
+      durationMs: triageResult.duration_ms,
+      retryCount: triageResult.operational?.totalRetryCount,
+    }),
+    costUsd: triageResult.cost_usd,
+    durationMs: triageResult.duration_ms,
+    retryCount: triageResult.operational?.totalRetryCount,
+  })
 
   // ── 3. Pre-filter (zero-cost) + Buscador (LLM ranking) ──
   onProgress?.({ phase: 'nb_acervo_buscador', message: 'Buscando documentos relevantes no acervo...', percent: 25 })
@@ -730,6 +778,20 @@ export async function analyzeNotebookAcervo(
     cost_usd: buscadorResult.cost_usd,
     duration_ms: buscadorResult.duration_ms,
   }))
+  onProgress?.({
+    phase: 'nb_acervo_buscador',
+    message: 'Buscador concluiu a seleção inicial do acervo.',
+    percent: 40,
+    stageMeta: buildAcervoStageMeta({
+      model: buscadorResult.model,
+      costUsd: buscadorResult.cost_usd,
+      durationMs: buscadorResult.duration_ms,
+      retryCount: buscadorResult.operational?.totalRetryCount,
+    }),
+    costUsd: buscadorResult.cost_usd,
+    durationMs: buscadorResult.duration_ms,
+    retryCount: buscadorResult.operational?.totalRetryCount,
+  })
 
   // Parse buscador result
   let selectedIds: Array<{ id: string; score: number; reason: string }> = []
@@ -797,6 +859,20 @@ export async function analyzeNotebookAcervo(
         cost_usd: analistaResult.cost_usd,
         duration_ms: analistaResult.duration_ms,
       }))
+      onProgress?.({
+        phase: 'nb_acervo_analista',
+        message: `Analista concluiu o lote ${batchIndex + 1}/${analistaBatches.length}.`,
+        percent,
+        stageMeta: buildAcervoStageMeta({
+          model: analistaResult.model,
+          costUsd: analistaResult.cost_usd,
+          durationMs: analistaResult.duration_ms,
+          retryCount: analistaResult.operational?.totalRetryCount,
+        }),
+        costUsd: analistaResult.cost_usd,
+        durationMs: analistaResult.duration_ms,
+        retryCount: analistaResult.operational?.totalRetryCount,
+      })
 
       const parsedBatch = parseAnalistaAnalyses(analistaResult.content, batch)
       if (parsedBatch.length === 0) {
@@ -830,6 +906,9 @@ export async function analyzeNotebookAcervo(
       phase: 'nb_acervo_analista',
       message: 'Analista parcialmente indisponível; concluído com fallback seguro.',
       percent: 65,
+      stageMeta: buildAcervoStageMeta({ fallbackReason: 'Fallback seguro ativado' }),
+      usedFallback: true,
+      fallbackReason: 'Fallback seguro ativado',
     })
   }
 
@@ -861,6 +940,20 @@ export async function analyzeNotebookAcervo(
     }))
 
     curadorContent = curadorResult.content
+    onProgress?.({
+      phase: 'nb_acervo_curador',
+      message: 'Curadoria final concluída.',
+      percent: 88,
+      stageMeta: buildAcervoStageMeta({
+        model: curadorResult.model,
+        costUsd: curadorResult.cost_usd,
+        durationMs: curadorResult.duration_ms,
+        retryCount: curadorResult.operational?.totalRetryCount,
+      }),
+      costUsd: curadorResult.cost_usd,
+      durationMs: curadorResult.duration_ms,
+      retryCount: curadorResult.operational?.totalRetryCount,
+    })
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     if (!isRecoverableAgentError(err)) throw err
@@ -873,6 +966,9 @@ export async function analyzeNotebookAcervo(
       phase: 'nb_acervo_curador',
       message: 'Curador indisponível no momento; usando ranking do Buscador.',
       percent: 85,
+      stageMeta: buildAcervoStageMeta({ fallbackReason: 'Fallback para ranking do Buscador' }),
+      usedFallback: true,
+      fallbackReason: 'Fallback para ranking do Buscador',
     })
   }
 

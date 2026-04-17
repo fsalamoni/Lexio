@@ -48,7 +48,12 @@ function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
  * Retries on both network errors (TypeError) and timeouts (AbortError).
  * A per-request AbortController enforces REQUEST_TIMEOUT_MS.
  */
-async function fetchWithRetry(url: string, options: RequestInit, externalSignal?: AbortSignal): Promise<Response> {
+interface FetchWithRetryResult {
+  response: Response
+  retryCount: number
+}
+
+async function fetchWithRetry(url: string, options: RequestInit, externalSignal?: AbortSignal): Promise<FetchWithRetryResult> {
   let lastError: Error | undefined
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -73,7 +78,10 @@ async function fetchWithRetry(url: string, options: RequestInit, externalSignal?
       const resp = await fetch(url, { ...options, signal: controller.signal })
       clearTimeout(timer)
       externalSignal?.removeEventListener('abort', onAbort)
-      return resp
+      return {
+        response: resp,
+        retryCount: attempt,
+      }
     } catch (err) {
       clearTimeout(timer)
       externalSignal?.removeEventListener('abort', onAbort)
@@ -158,6 +166,18 @@ export interface LLMResult {
   tokens_out: number
   cost_usd: number
   duration_ms: number
+  operational?: LLMOperationalMeta
+}
+
+export interface LLMOperationalMeta {
+  requestedModel: string
+  resolvedModel: string
+  fallbackUsed: boolean
+  fallbackFrom?: string
+  fallbackReason?: 'model_unavailable' | 'transient_error'
+  networkRetryCount: number
+  emptyRetryCount: number
+  totalRetryCount: number
 }
 
 /**
@@ -209,7 +229,7 @@ export async function callLLM(
       await sleepWithSignal(delayMs, options?.signal)
     }
 
-    const resp = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body }, options?.signal)
+    const { response: resp, retryCount: networkRetryCount } = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body }, options?.signal)
 
     if (!resp.ok) {
       const errorBody = await resp.text().catch(() => '')
@@ -268,6 +288,14 @@ export async function callLLM(
       tokens_out: tokensOut,
       cost_usd,
       duration_ms: durationMs,
+      operational: {
+        requestedModel: model,
+        resolvedModel: model,
+        fallbackUsed: false,
+        networkRetryCount,
+        emptyRetryCount: emptyAttempt,
+        totalRetryCount: networkRetryCount + emptyAttempt,
+      },
     }
   }
 
@@ -314,7 +342,7 @@ export async function callLLMWithMessages(
       await sleepWithSignal(delayMs, options?.signal)
     }
 
-    const resp = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body }, options?.signal)
+    const { response: resp, retryCount: networkRetryCount } = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body }, options?.signal)
 
     if (!resp.ok) {
       const errorBody = await resp.text().catch(() => '')
@@ -371,6 +399,14 @@ export async function callLLMWithMessages(
       tokens_out: tokensOut,
       cost_usd,
       duration_ms: durationMs,
+      operational: {
+        requestedModel: model,
+        resolvedModel: model,
+        fallbackUsed: false,
+        networkRetryCount,
+        emptyRetryCount: emptyAttempt,
+        totalRetryCount: networkRetryCount + emptyAttempt,
+      },
     }
   }
 
@@ -421,7 +457,20 @@ export async function callLLMWithFallback(
         `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
         ` Usando fallback: "${effectiveFallback}".`,
       )
-      return callLLM(apiKey, system, user, effectiveFallback, maxTokens, temperature, options)
+      const fallbackResult = await callLLM(apiKey, system, user, effectiveFallback, maxTokens, temperature, options)
+      return {
+        ...fallbackResult,
+        operational: {
+          requestedModel: model,
+          resolvedModel: fallbackResult.model,
+          fallbackUsed: true,
+          fallbackFrom: model,
+          fallbackReason: err instanceof ModelUnavailableError ? 'model_unavailable' : 'transient_error',
+          networkRetryCount: fallbackResult.operational?.networkRetryCount ?? 0,
+          emptyRetryCount: fallbackResult.operational?.emptyRetryCount ?? 0,
+          totalRetryCount: fallbackResult.operational?.totalRetryCount ?? 0,
+        },
+      }
     }
     throw err
   }
@@ -455,7 +504,20 @@ export async function callLLMWithMessagesFallback(
         `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
         ` Usando fallback: "${effectiveFallback}".`,
       )
-      return callLLMWithMessages(apiKey, messages, effectiveFallback, maxTokens, temperature, options)
+      const fallbackResult = await callLLMWithMessages(apiKey, messages, effectiveFallback, maxTokens, temperature, options)
+      return {
+        ...fallbackResult,
+        operational: {
+          requestedModel: model,
+          resolvedModel: fallbackResult.model,
+          fallbackUsed: true,
+          fallbackFrom: model,
+          fallbackReason: err instanceof ModelUnavailableError ? 'model_unavailable' : 'transient_error',
+          networkRetryCount: fallbackResult.operational?.networkRetryCount ?? 0,
+          emptyRetryCount: fallbackResult.operational?.emptyRetryCount ?? 0,
+          totalRetryCount: fallbackResult.operational?.totalRetryCount ?? 0,
+        },
+      }
     }
     throw err
   }

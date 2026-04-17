@@ -28,6 +28,7 @@ import { loadVideoPipelineModels, validateScopedAgentModels, VIDEO_PIPELINE_AGEN
 import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
 import { generateTTSViaOpenRouter } from './tts-client'
+import type { VideoPipelineProgressMeta } from './video-pipeline-progress'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -307,6 +308,7 @@ export type VideoGenerationProgressCallback = (
   totalSteps: number,
   phase: string,
   agentLabel: string,
+  meta?: VideoPipelineProgressMeta,
 ) => void
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -458,7 +460,7 @@ async function safeCallAgent(
   executions: VideoGenerationStepExecution[],
   maxRetries = 2,
   signal?: AbortSignal,
-): Promise<{ data: Record<string, unknown>; failed: boolean }> {
+): Promise<{ data: Record<string, unknown>; failed: boolean; result?: LLMResult }> {
   let lastError: unknown
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     throwIfAborted(signal)
@@ -473,9 +475,9 @@ async function safeCallAgent(
       if (!data) {
         console.warn(`[Video Pipeline] Agent ${phase} returned invalid JSON (attempt ${attempt + 1})`)
         if (attempt < maxRetries) continue
-        return { data: {}, failed: true }
+        return { data: {}, failed: true, result }
       }
-      return { data, failed: false }
+      return { data, failed: false, result }
     } catch (err) {
       lastError = err
       if (err instanceof DOMException && err.name === 'AbortError') throw err
@@ -504,6 +506,54 @@ async function safeCallAgent(
   return { data: {}, failed: true }
 }
 
+function formatUsd(costUsd: number): string {
+  if (costUsd < 0.0001) return '<$0.0001'
+  return `$${costUsd.toFixed(4)}`
+}
+
+function buildVideoProgressMetaFromResult(result: LLMResult): VideoPipelineProgressMeta {
+  const parts = [result.model.split('/').pop() || result.model]
+  if (result.operational?.fallbackUsed && result.operational.fallbackFrom) {
+    parts.push(`Fallback de ${result.operational.fallbackFrom.split('/').pop() || result.operational.fallbackFrom}`)
+  }
+  if ((result.operational?.totalRetryCount ?? 0) > 0) {
+    const retries = result.operational?.totalRetryCount ?? 0
+    parts.push(`${retries} ${retries === 1 ? 'retry' : 'retries'}`)
+  }
+  if (result.duration_ms > 0) {
+    parts.push(`${Math.max(1, Math.round(result.duration_ms / 1000))}s`)
+  }
+  if (result.cost_usd > 0) {
+    parts.push(formatUsd(result.cost_usd))
+  }
+  return {
+    stageMeta: parts.join(' • '),
+    costUsd: result.cost_usd,
+    durationMs: result.duration_ms,
+    retryCount: result.operational?.totalRetryCount,
+    usedFallback: result.operational?.fallbackUsed,
+    fallbackFrom: result.operational?.fallbackFrom,
+  }
+}
+
+function buildVideoProgressMetaFromBatch(options: {
+  stageMeta: string
+  costUsd?: number
+  durationMs?: number
+  retryCount?: number
+  usedFallback?: boolean
+  fallbackFrom?: string
+}): VideoPipelineProgressMeta {
+  return {
+    stageMeta: options.stageMeta,
+    costUsd: options.costUsd,
+    durationMs: options.durationMs,
+    retryCount: options.retryCount,
+    usedFallback: options.usedFallback,
+    fallbackFrom: options.fallbackFrom,
+  }
+}
+
 function generateSegmentId(): string {
   return `seg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
@@ -528,7 +578,7 @@ export async function runVideoGenerationPipeline(
   // ── Step 1: Planejador de Produção ────────────────────────────────────────
   onProgress?.(1, totalSteps, 'video_planejador', 'Planejador de Produção')
 
-  const { data: planData } = await safeCallAgent(input.apiKey, models.video_planejador, `
+  const { data: planData, result: planResult } = await safeCallAgent(input.apiKey, models.video_planejador, `
 Você é um Planejador de Produção de vídeo profissional.
 
 Analise o roteiro abaixo e crie um plano de produção detalhado.
@@ -571,11 +621,12 @@ Requisitos:
 - Planeje a duração de cada segmento em segundos
 - Total deve somar a duração indicada no roteiro
 - O Guia de Design será usado como REFERÊNCIA OBRIGATÓRIA por todos os demais agentes — seja o mais específico possível`, 'video_planejador', executions, 2, signal)
+  if (planResult) onProgress?.(1, totalSteps, 'video_planejador', 'Planejador de Produção', buildVideoProgressMetaFromResult(planResult))
 
   // ── Step 2: Roteirista (refinar roteiro) ──────────────────────────────────
   onProgress?.(2, totalSteps, 'video_roteirista', 'Roteirista')
 
-  const { data: scriptData } = await safeCallAgent(input.apiKey, models.video_roteirista, `
+  const { data: scriptData, result: scriptResult } = await safeCallAgent(input.apiKey, models.video_roteirista, `
 Você é um Roteirista profissional de vídeo. Refine e expanda o roteiro abaixo para produção.
 
 ROTEIRO ORIGINAL:
@@ -618,12 +669,13 @@ Requisitos adicionais:
 - Narração detalhada com marcações de tom e ênfase
 - Cada cena deve ter indicação precisa de início e fim
 - Cronologia e encadeamento lógico de ideias`, 'video_roteirista', executions, 2, signal)
+  if (scriptResult) onProgress?.(2, totalSteps, 'video_roteirista', 'Roteirista', buildVideoProgressMetaFromResult(scriptResult))
   if (!scriptData.scenes) scriptData.scenes = []
 
   // ── Step 3: Diretor de Cenas ──────────────────────────────────────────────
   onProgress?.(3, totalSteps, 'video_diretor_cena', 'Diretor de Cenas')
 
-  const { data: directedScenes } = await safeCallAgent(input.apiKey, models.video_diretor_cena, `
+  const { data: directedScenes, result: directorResult } = await safeCallAgent(input.apiKey, models.video_diretor_cena, `
 Você é um Diretor de Cenas profissional. Refine as cenas com instruções técnicas detalhadas.
 
 CENAS DO ROTEIRO:
@@ -664,12 +716,13 @@ Requisitos adicionais:
 - Adicione instruções de câmera para cada cena
 - Refine os timings para encadeamento suave
 - Garanta continuidade visual entre cenas consecutivas`, 'video_diretor_cena', executions, 2, signal)
+  if (directorResult) onProgress?.(3, totalSteps, 'video_diretor_cena', 'Diretor de Cenas', buildVideoProgressMetaFromResult(directorResult))
   if (!directedScenes.scenes) directedScenes.scenes = scriptData.scenes || []
 
   // ── Step 4: Storyboarder ──────────────────────────────────────────────────
   onProgress?.(4, totalSteps, 'video_storyboarder', 'Storyboarder')
 
-  const { data: storyboardData } = await safeCallAgent(input.apiKey, models.video_storyboarder, `
+  const { data: storyboardData, result: storyboardResult } = await safeCallAgent(input.apiKey, models.video_storyboarder, `
 Você é um Storyboarder profissional. Crie descrições visuais frame-a-frame para cada cena.
 
 CENAS DIRIGIDAS:
@@ -707,11 +760,12 @@ Requisitos adicionais:
 - 2-4 frames chave por cena (keyframes)
 - Descrições visuais detalhadas e precisas
 - Indique posição e tamanho dos elementos na composição`, 'video_storyboarder', executions, 2, signal)
+  if (storyboardResult) onProgress?.(4, totalSteps, 'video_storyboarder', 'Storyboarder', buildVideoProgressMetaFromResult(storyboardResult))
 
   // ── Step 5: Designer Visual ───────────────────────────────────────────────
   onProgress?.(5, totalSteps, 'video_designer', 'Designer Visual')
 
-  const { data: designData } = await safeCallAgent(input.apiKey, models.video_designer, `
+  const { data: designData, result: designResult } = await safeCallAgent(input.apiKey, models.video_designer, `
 Você é um Designer Visual de produção de vídeo. Gere prompts detalhados de geração de imagem para cada cena.
 
 STORYBOARD:
@@ -761,11 +815,12 @@ Requisitos adicionais:
 - Um prompt de imagem principal por cena (thumbnail/keyframe)
 - Um prompt de vídeo curto por cena (para composição)
 - Prompts em inglês para melhor compatibilidade com modelos de geração`, 'video_designer', executions, 2, signal)
+  if (designResult) onProgress?.(5, totalSteps, 'video_designer', 'Designer Visual', buildVideoProgressMetaFromResult(designResult))
 
   // ── Step 6: Compositor de Vídeo ───────────────────────────────────────────
   onProgress?.(6, totalSteps, 'video_compositor', 'Compositor de Vídeo')
 
-  const { data: compositorData } = await safeCallAgent(input.apiKey, models.video_compositor, `
+  const { data: compositorData, result: compositorResult } = await safeCallAgent(input.apiKey, models.video_compositor, `
 Você é um Compositor de Vídeo profissional. Monte a timeline final do vídeo com todas as faixas.
 
 CENAS DIRIGIDAS:
@@ -860,11 +915,12 @@ REGRA DE HARMONIA (OBRIGATÓRIA):
 - Transições entre cenas devem seguir um PADRÃO UNIFORME — não misture tipos
 - Trilha sonora deve ter continuidade — NÃO mude de gênero entre segmentos
 - Lower thirds e overlays devem seguir o MESMO estilo de design em todo o vídeo`, 'video_compositor', executions, 2, signal)
+  if (compositorResult) onProgress?.(6, totalSteps, 'video_compositor', 'Compositor de Vídeo', buildVideoProgressMetaFromResult(compositorResult))
 
   // ── Step 7: Narrador ──────────────────────────────────────────────────────
   onProgress?.(7, totalSteps, 'video_narrador', 'Narrador')
 
-  const { data: narratorData } = await safeCallAgent(input.apiKey, models.video_narrador, `
+  const { data: narratorData, result: narratorResult } = await safeCallAgent(input.apiKey, models.video_narrador, `
 Você é um Narrador profissional e diretor de locução. Prepare o script final de narração com marcações de timing.
 
 CENAS:
@@ -910,11 +966,12 @@ Requisitos adicionais:
 - Marcações de ênfase com *asteriscos*
 - Indicações de [pausa] onde necessário
 - Timing sincronizado com a timeline do compositor`, 'video_narrador', executions, 2, signal)
+  if (narratorResult) onProgress?.(7, totalSteps, 'video_narrador', 'Narrador', buildVideoProgressMetaFromResult(narratorResult))
 
   // ── Step 8: Revisor Final ─────────────────────────────────────────────────
   onProgress?.(8, totalSteps, 'video_revisor', 'Revisor Final de Vídeo')
 
-  const { data: reviewData } = await safeCallAgent(input.apiKey, models.video_revisor, `
+  const { data: reviewData, result: reviewResult } = await safeCallAgent(input.apiKey, models.video_revisor, `
 Você é o Revisor Final de Vídeo. Sua missão PRINCIPAL é garantir a HARMONIA e CONSISTÊNCIA VISUAL ABSOLUTA de todo o pacote de produção.
 
 PLANO:
@@ -979,6 +1036,7 @@ Requisitos adicionais:
 - Valide sincronização entre narração e visual
 - Avalie encadeamento lógico de ideias
 - Identifique possíveis problemas e sugira melhorias`, 'video_revisor', executions, 2, signal)
+  if (reviewResult) onProgress?.(8, totalSteps, 'video_revisor', 'Revisor Final de Vídeo', buildVideoProgressMetaFromResult(reviewResult))
 
   // ── Assemble final package ────────────────────────────────────────────────
 
@@ -1125,6 +1183,13 @@ REQUISITOS OBRIGATÓRIOS:
 8. Transições suaves entre clips (crossfade, dissolve, cut)`, signal)
 
         executions.push(makeExecution('clip_subdivision', clipPlannerModel, clipResult))
+        onProgress?.(
+          9,
+          totalSteps,
+          'clip_subdivision',
+          `Planejador de Clips · cena ${scene.number}`,
+          buildVideoProgressMetaFromResult(clipResult),
+        )
 
         const clipData = safeParseJSON(clipResult.content) || { clips: [] }
         const rawClips = (clipData.clips as Array<Record<string, unknown>>) || []
@@ -1267,6 +1332,24 @@ REQUISITOS OBRIGATÓRIOS:
           mediaErrors.push(errMsg)
         }
       }
+
+      const fulfilled = results.filter((item): item is PromiseFulfilledResult<{ sceneNumber: number; clipNumber: number; durationMs: number; imageDataUrl: string; model: string; cost_usd: number }> => item.status === 'fulfilled' && Boolean(item.value))
+      if (fulfilled.length > 0) {
+        const batchCost = fulfilled.reduce((sum, item) => sum + (item.value.cost_usd || 0), 0)
+        const batchDuration = fulfilled.reduce((sum, item) => sum + (item.value.durationMs || 0), 0)
+        const modelLabel = fulfilled[0].value.model.split('/').pop() || fulfilled[0].value.model
+        onProgress?.(
+          10,
+          totalSteps,
+          'media_image_generation',
+          'Gerador de Imagens',
+          buildVideoProgressMetaFromBatch({
+            stageMeta: `${modelLabel} • ${fulfilled.length} imagens no lote • ${Math.max(1, Math.round(batchDuration / 1000))}s • ${formatUsd(batchCost)}`,
+            costUsd: batchCost,
+            durationMs: batchDuration,
+          }),
+        )
+      }
     }
 
     // Rebuild video track segments from clips (one segment per clip)
@@ -1354,6 +1437,17 @@ REQUISITOS OBRIGATÓRIOS:
           cost_usd: 0.015 * (cleanText.length / 1000),
           duration_ms: Date.now() - startMs,
         })
+        onProgress?.(
+          11,
+          totalSteps,
+          'media_tts_generation',
+          'Narrador TTS',
+          buildVideoProgressMetaFromBatch({
+            stageMeta: `${ttsModel.split('/').pop() || ttsModel} • cena ${segment.sceneNumber} • ${Math.max(1, Math.round((Date.now() - startMs) / 1000))}s • ${formatUsd(0.015 * (cleanText.length / 1000))}`,
+            costUsd: 0.015 * (cleanText.length / 1000),
+            durationMs: Date.now() - startMs,
+          }),
+        )
       } catch (err) {
         const errMsg = `Falha ao gerar narração TTS da cena ${segment.sceneNumber}: ${(err as Error).message}`
         console.error(`[Video] ${errMsg}`)

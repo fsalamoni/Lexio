@@ -14,6 +14,106 @@
 
 ---
 
+## Andamento Atual (ciclo 2026-04-17)
+
+**Status:** ⚠️ parcial em execucao com fechamento de refatoracao de handlers no notebook
+
+## Plano Mestre Executável (Atualizado)
+
+### Faixa A — Consolidado em produção (já implementado)
+- Telemetria operacional unificada dos pipelines principais (documento, acervo, estúdio e vídeo) com ETA, retries, fallback, custo e duração
+- Memória auditável do notebook para estúdio, chat e buscas, incluindo histórico persistido e reaplicação de consultas
+- Governança de buscas salvas com edição inline, tags, filtros semânticos e ações em lote
+- Migração incremental para `memory/search_memory` com dual-read/dual-write, fallback, backfill oportunístico e cleanup
+- Retenção/TTL, observabilidade agregada e série diária para memória dedicada
+- Alertas operacionais no admin + backfill administrativo com chunking/paginação
+- Thresholds configuráveis, presets operacionais e recomendação assistida por porte/telemetria com política de rollout persistida
+
+### Faixa B — Próxima onda lógica (alta prioridade)
+- Consolidar validação de impacto da recomendação assistida com métricas históricas, alertas de desvio e fechamento de limiares por perfil operacional (comparar ruído/perda de sensibilidade por janela, porte e modo de rollout)
+- Evoluir previsões do pipeline de vídeo por lote/renderização e explicitar checkpoints retomáveis
+- Fechar lacunas de reranking jurídico (estado atual parcial) com critérios mais determinísticos por hierarquia/atualidade
+
+### Faixa C — Lacunas funcionais declaradas
+- Implementar busca híbrida semântica + lexical para jurisprudência (feature ainda marcada como ausente)
+
+### Faixa D — Melhorias estruturais de UX (roadmap contínuo)
+- Compactação progressiva de contexto por jornada e orçamento de tokens por fluxo
+- Reorganização orientada a intenção de uso na navegação e no onboarding
+- Fortalecimento de acessibilidade e consistência operacional transversal (estados vazios, falhas recuperáveis, ações críticas)
+- Mensuração de UX operacional por funil (tempo até valor, abandono, recuperação de falhas, reaproveitamento de memória)
+
+**Concluido neste ciclo:**
+- Contrato compartilhado de progresso para pipeline documental em `frontend/src/lib/document-pipeline.ts`
+- Contrato compartilhado de progresso para video em `frontend/src/lib/video-pipeline-progress.ts`
+- Contrato compartilhado de progresso do notebook para acervo e estudio em `frontend/src/lib/notebook-pipeline-progress.ts`
+- `ResearchNotebook.tsx` deixou de montar manualmente as trilhas de acervo e estudio; agora consome estado compartilhado para passos, metadados e mensagem ativa
+- `AgentTrailProgressModal.tsx` passou a exibir metadados da etapa ativa, reforcando a narrativa operacional com base em eventos reais
+- Telemetria operacional do pipeline documental agora sobe do cliente LLM ate a UI: retries, fallback, custo por etapa e duracao passam a alimentar o progresso em `generation-service.ts`, `PipelineProgressPanel.tsx`, `NewDocument.tsx` e `DocumentDetail.tsx`
+- O pipeline de análise de acervo do notebook agora também expõe metadados operacionais por etapa, incluindo custo, duração, retries e fallback seguro, refletidos em `notebook-acervo-analyzer.ts`, `notebook-pipeline-progress.ts` e `ResearchNotebook.tsx`
+- O pipeline do estudio agora publica `stageMeta` real por etapa via `TaskManagerContext.tsx`, `notebook-studio-pipeline.ts`, `audio-generation-pipeline.ts`, `presentation-generation-pipeline.ts` e `ResearchNotebook.tsx`, permitindo ao modal mostrar modelo efetivo, fallback, retries, custo e duracao sem concatenacoes artificiais
+- O pipeline de video agora recebeu a mesma primeira camada de telemetria operacional: `video-generation-pipeline.ts` e `literal-video-production.ts` passaram a publicar `stageMeta` com modelo, fallback, retries, custo e duracao, consumidos por `video-pipeline-progress.ts`, `ResearchNotebook.tsx`, `VideoGenerationCostModal.tsx` e `VideoStudioEditor.tsx`
+- O workbench do notebook agora consolida execucoes ativas de acervo, estudio e video em um resumo operacional unico no topo de `ResearchNotebook.tsx`, enquanto `TaskBar.tsx` tambem passou a exibir `stageMeta` em tarefas em andamento
+- O resumo operacional consolidado do notebook agora calcula ETA aproximado para acervo, estudio e pipelines de video a partir do progresso real e do tempo decorrido da execucao
+- O cockpit operacional do notebook agora agrega custo acumulado, duracao processada, retries, fallbacks e degradacoes por execucao ativa; o `TaskManagerContext.tsx` tambem passou a transportar esse resumo para tarefas do estudio executadas em background
+- O cockpit do notebook agora tambem discrimina melhor a saida operacional do video por tipo de execucao, incluindo lotes de imagem, narracoes, lotes de clipe e distincao entre render local e render externo; `TaskBar.tsx` passou a exibir uma linha compacta com agregados operacionais das tarefas em andamento
+- A trilha de memoria auditavel do notebook foi iniciada no estúdio: `notebook-context-audit.ts` agora calcula a janela real de fontes, conversa e instrucoes adicionais, e `ResearchNotebook.tsx` passou a exibir esse recorte auditavel na visao geral e na aba Estudio
+- A memoria auditavel agora tambem cobre o chat do notebook: a resposta conversacional passou a usar um snapshot auditavel de fontes, janela de conversa, historico de buscas do caderno e busca web ao vivo, com painel explicito na aba de chat
+- A memoria auditavel agora tambem cobre os fluxos de busca do notebook: pesquisa externa, pesquisa profunda e jurisprudencia/DataJud passaram a registrar o que foi efetivamente promovido para sintese, incluindo quantidade de resultados, selecionados, tribunais e volume de contexto compilado, com historico curto persistido, reaplicavel e promovivel a buscas salvas governaveis no proprio notebook
+- A governanca das buscas salvas do notebook avancou mais um passo: os presets agora aceitam edicao manual inline de tags, com normalizacao/deduplicacao simples e reaproveitamento das tags como atalho de filtro local na aba Fontes
+- A governanca das buscas salvas do notebook avancou para operacao em escala leve: a aba Fontes agora suporta selecao multipla e acoes em lote (fixar, desafixar, limpar selecao, adicionar/remover tags e excluir selecionadas com confirmacao)
+- A camada de persistencia do notebook para memoria de busca iniciou migracao incremental para estrutura dedicada: `firestore-service.ts` agora faz dual-write e dual-read de `research_audits`/`saved_searches` em `research_notebooks/{id}/memory/search_memory`, com fallback seguro para campos legados no documento principal
+- A migracao dedicada tambem recebeu hardening de consistencia: o `updateResearchNotebook` passou a reduzir duplicacao no documento raiz quando sincroniza memoria dedicada, e o deep-link do notebook agora sempre abre via `getResearchNotebook` para carregar a versao completa ja mesclada com a memoria dedicada
+- A estrutura dedicada `memory/search_memory` agora tem politica de retencao aplicada no write-path: auditorias com TTL de 45 dias e limite de 60 entradas, buscas salvas limitadas a 120 entradas, com metadados de retencao persistidos para observabilidade basica
+- A observabilidade agregada da memoria dedicada foi iniciada no admin: o overview da plataforma agora contabiliza cobertura de notebooks com `search_memory`, volume total de auditorias/presets dedicados e descartes aplicados pela retencao
+- A base de monitoramento historico tambem foi iniciada: `getPlatformDailyUsage` passou a agregar atualizacoes diarias e descartes diarios da memoria dedicada de busca, preparando trilha para alertas e leitura temporal
+- Alertas operacionais iniciais foram adicionados ao painel admin com base nessas métricas: cobertura de memória dedicada, picos/tendência de descartes por retenção e ausência de atualizações recentes
+- A trilha administrativa de escala também entrou em produção inicial: o painel admin agora executa diagnóstico/backfill em lote para migrar cadernos legados para `memory/search_memory`, com relatório de escopo, migração e falhas
+- O backfill administrativo agora também foi endurecido para escala: a rotina passou a operar em chunks paginados com cursor e limites configuráveis, e o relatório do painel passou a mostrar chunks processados, tamanho de lote e status de limite
+- A calibração de alertas também evoluiu: thresholds da memória dedicada agora são configuráveis no painel admin e persistidos em `UserSettings`, permitindo ajuste operacional sem alteração de código
+- A governança de thresholds avançou para presets operacionais: o painel admin agora oferece perfis `conservative`, `balanced` e `aggressive`, com detecção automática de estado `custom` e persistência do perfil ativo
+- A calibração operacional avançou mais uma camada: o painel admin agora calcula recomendação assistida de thresholds com base em porte da base (small/medium/large), cobertura atual e descarte recente, com aplicação em um clique
+- A recomendação assistida agora também possui política de governança persistida: janela configurável (14/30/60/90 dias) e modo de rollout (manual/assistido), com opção de auto-persistir recomendações em modo assistido
+- A recomendação assistida foi refinada com ponderação temporal por recência na heurística e o painel agora exibe impacto estimado dos alertas (atual vs recomendado) antes da aplicação
+- A calibragem agora também tem trilha histórica persistida de recomendado/aplicado no admin, com contexto de rollout, janela, porte e impacto por severidade para auditoria longitudinal
+- O painel admin agora também agrega métricas da trilha de calibração (ações manuais, aplicações assistidas e delta médio por severidade), acelerando leitura de tendência operacional
+- A trilha de calibração agora também gera alertas automáticos de desvio (drift) e status de saúde da governança de rollout com base em override manual
+- Refatoração dos handlers de pesquisa de fonte no notebook concluída: entrada unificada para externa/profunda/jurisprudência, replay auditável de jurisprudência no mesmo entrypoint e remoção de wrappers inline legados de clique/Enter em `ResearchNotebook.tsx`
+
+**Em validacao ou proxima onda imediata:**
+- A telemetria operacional rica ja cobre documento, acervo, estudio e video com ETA, agregados e detalhamento principal de saida no notebook; a memoria auditavel agora cobre estudio, chat e buscas do notebook
+- O pipeline de video ainda pode evoluir em uma camada adicional de previsao por lote/renderizacao e resumir melhor checkpoints retomaveis
+- A trilha de memoria/contexto auditavel do notebook ainda nao esta completa: migracao dedicada, retencao/TTL, observabilidade agregada, base historica diaria, alertas operacionais, backfill administrativo com chunking, presets operacionais e recomendacao assistida com politica de rollout/aceitacao, preview de impacto, historico auditavel, metricas agregadas e alertas de desvio ja estao implantados; falta agora consolidar validacao continuada em producao e fechar ajustes finos por perfil de operacao
+
+**Arquivos foco deste ciclo:**
+- `frontend/src/lib/notebook-pipeline-progress.ts`
+- `frontend/src/lib/document-pipeline.ts`
+- `frontend/src/lib/generation-service.ts`
+- `frontend/src/components/PipelineProgressPanel.tsx`
+- `frontend/src/lib/llm-client.ts`
+- `frontend/src/lib/notebook-acervo-analyzer.ts`
+- `frontend/src/lib/notebook-studio-pipeline.ts`
+- `frontend/src/lib/audio-generation-pipeline.ts`
+- `frontend/src/lib/presentation-generation-pipeline.ts`
+- `frontend/src/lib/video-generation-pipeline.ts`
+- `frontend/src/lib/literal-video-production.ts`
+- `frontend/src/lib/video-pipeline-progress.ts`
+- `frontend/src/lib/notebook-context-audit.ts`
+- `frontend/src/lib/firestore-types.ts`
+- `frontend/src/components/JurisprudenceConfigModal.tsx`
+- `frontend/src/contexts/TaskManagerContext.tsx`
+- `frontend/src/pages/ResearchNotebook.tsx`
+- `frontend/src/components/AgentTrailProgressModal.tsx`
+- `frontend/src/components/VideoGenerationCostModal.tsx`
+- `frontend/src/components/artifacts/VideoStudioEditor.tsx`
+- `frontend/src/components/TaskBar.tsx`
+
+**Validacao deste ciclo:**
+- `npm run typecheck` executado em `frontend/` com saida final limpa (`tsc --noEmit`, exit code 0)
+- Refatoração dos handlers de fonte em `ResearchNotebook.tsx` validada com novo `npm run typecheck` limpo após ajustes de referências e triggers
+
+---
+
 ## Estado geral do produto (snapshot atual)
 
 | Área | Estado | Observações |

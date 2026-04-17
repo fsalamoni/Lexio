@@ -9,6 +9,7 @@ import type {
   StudioPipelineInput,
   StudioProgressCallback,
   StudioStepExecution,
+  StudioProgressMeta,
 } from './notebook-studio-pipeline'
 
 export interface AudioGenerationPipelineResult {
@@ -128,6 +129,31 @@ function toExecution(
   }
 }
 
+function buildAudioProgressMeta(result: LLMResult): StudioProgressMeta {
+  const parts = [result.model.split('/').pop() || result.model]
+  if (result.operational?.fallbackUsed && result.operational.fallbackFrom) {
+    parts.push(`Fallback de ${result.operational.fallbackFrom.split('/').pop() || result.operational.fallbackFrom}`)
+  }
+  if ((result.operational?.totalRetryCount ?? 0) > 0) {
+    const retries = result.operational?.totalRetryCount ?? 0
+    parts.push(`${retries} ${retries === 1 ? 'retry' : 'retries'}`)
+  }
+  if (result.duration_ms > 0) {
+    parts.push(`${Math.max(1, Math.round(result.duration_ms / 1000))}s`)
+  }
+  if (result.cost_usd > 0) {
+    parts.push(result.cost_usd < 0.0001 ? '<$0.0001' : `$${result.cost_usd.toFixed(4)}`)
+  }
+  return {
+    stageMeta: parts.join(' • '),
+    costUsd: result.cost_usd,
+    durationMs: result.duration_ms,
+    retryCount: result.operational?.totalRetryCount,
+    usedFallback: result.operational?.fallbackUsed,
+    fallbackFrom: result.operational?.fallbackFrom,
+  }
+}
+
 export async function runAudioGenerationPipeline(
   input: StudioPipelineInput,
   onProgress?: StudioProgressCallback,
@@ -156,6 +182,7 @@ export async function runAudioGenerationPipeline(
   const planPrompt = buildPlanPrompt(input)
   const planResult = await callLLMWithFallback(input.apiKey, planPrompt.system, planPrompt.user, models.audio_planejador, models.audio_planejador, 2500, 0.2, { signal })
   executions.push(toExecution('audio_planejador', 'Planejador de Áudio', planResult))
+  onProgress?.(1, 5, 'Estrutura do áudio planejada.', buildAudioProgressMeta(planResult))
 
   throwIfAborted(signal)
   onProgress?.(2, 5, 'Escrevendo o roteiro-base do áudio…')
@@ -163,6 +190,7 @@ export async function runAudioGenerationPipeline(
   const writerResult = await callLLMWithFallback(input.apiKey, writerPrompt.system, writerPrompt.user, models.audio_roteirista, models.audio_roteirista, 7000, 0.35, { signal })
   const writerDraft = normalizeAudioScriptOrThrow(writerResult.content, 'O roteirista de áudio')
   executions.push(toExecution('audio_roteirista', 'Roteirista de Áudio', writerResult))
+  onProgress?.(2, 5, 'Roteiro-base de áudio concluído.', buildAudioProgressMeta(writerResult))
 
   throwIfAborted(signal)
   onProgress?.(3, 5, 'Estruturando timing e transições…')
@@ -170,6 +198,7 @@ export async function runAudioGenerationPipeline(
   const directorResult = await callLLMWithFallback(input.apiKey, directorPrompt.system, directorPrompt.user, models.audio_diretor, models.audio_diretor, 7000, 0.25, { signal })
   const directedDraft = normalizeAudioScriptOrThrow(directorResult.content, 'O diretor de áudio')
   executions.push(toExecution('audio_diretor', 'Diretor de Áudio', directorResult))
+  onProgress?.(3, 5, 'Timing e transições estruturados.', buildAudioProgressMeta(directorResult))
 
   throwIfAborted(signal)
   onProgress?.(4, 5, 'Aplicando direção sonora e cues…')
@@ -177,6 +206,7 @@ export async function runAudioGenerationPipeline(
   const producerResult = await callLLMWithFallback(input.apiKey, producerPrompt.system, producerPrompt.user, models.audio_produtor_sonoro, models.audio_produtor_sonoro, 7000, 0.25, { signal })
   const producedDraft = normalizeAudioScriptOrThrow(producerResult.content, 'O produtor sonoro')
   executions.push(toExecution('audio_produtor_sonoro', 'Produtor Sonoro', producerResult))
+  onProgress?.(4, 5, 'Direção sonora aplicada.', buildAudioProgressMeta(producerResult))
 
   throwIfAborted(signal)
   onProgress?.(5, 5, 'Revisando o resumo em áudio…')
@@ -184,6 +214,7 @@ export async function runAudioGenerationPipeline(
   const reviewResult = await callLLMWithFallback(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.audio_revisor, models.audio_revisor, 7000, 0.15, { signal })
   const finalContent = normalizeAudioScriptOrThrow(reviewResult.content, 'O revisor final de áudio')
   executions.push(toExecution('audio_revisor', 'Revisor Final de Áudio', reviewResult))
+  onProgress?.(5, 5, 'Revisão final do áudio concluída.', buildAudioProgressMeta(reviewResult))
 
   return {
     content: finalContent,

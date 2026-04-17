@@ -19,22 +19,9 @@ import {
   Layers,
   ScanSearch,
 } from 'lucide-react'
+import { DOCUMENT_PIPELINE_COMPLETED_PHASE, createDocumentPipelineSteps, type DocumentPipelineStep } from '../lib/document-pipeline'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-export type AgentStatus = 'pending' | 'active' | 'completed' | 'error'
-
-export interface AgentStep {
-  key: string
-  label: string
-  description: string
-  model: string
-  status: AgentStatus
-  startedAt?: number
-  completedAt?: number
-}
-
-// ── Pipeline stage definitions ────────────────────────────────────────────────
 
 const AGENT_ICONS: Record<string, React.ElementType> = {
   config:           Settings,
@@ -57,23 +44,11 @@ const AGENT_ICONS: Record<string, React.ElementType> = {
 }
 
 /** Phase key emitted by generation-service when the pipeline finishes. */
-export const PHASE_COMPLETED = 'concluido'
-
-export const PIPELINE_AGENTS: Omit<AgentStep, 'status'>[] = [
-  { key: 'config',            label: 'Configuração',          description: 'Carregando chaves de API',               model: '—' },
-  { key: 'triagem',           label: 'Triagem',               description: 'Extração de tema e palavras-chave',     model: 'Haiku' },
-  { key: 'acervo_buscador',   label: 'Buscador de Acervo',    description: 'Buscando documentos similares no acervo', model: 'Haiku' },
-  { key: 'acervo_compilador', label: 'Compilador de Base',    description: 'Compilando base a partir do acervo',     model: 'Sonnet' },
-  { key: 'acervo_revisor',    label: 'Revisor de Base',       description: 'Revisando documento base compilado',     model: 'Sonnet' },
-  { key: 'pesquisador',       label: 'Pesquisador',           description: 'Pesquisa de legislação e jurisprudência', model: 'Sonnet' },
-  { key: 'jurista',           label: 'Jurista',               description: 'Desenvolvimento de teses jurídicas',    model: 'Sonnet' },
-  { key: 'advogado_diabo',    label: 'Advogado do Diabo',     description: 'Crítica e contra-argumentação',          model: 'Sonnet' },
-  { key: 'jurista_v2',        label: 'Jurista (revisão)',      description: 'Refinamento de teses após crítica',     model: 'Sonnet' },
-  { key: 'fact_checker',      label: 'Fact-Checker',          description: 'Verificação de citações legais',         model: 'Haiku' },
-  { key: 'moderador',         label: 'Moderador',             description: 'Planejamento da estrutura do documento', model: 'Sonnet' },
-  { key: 'redacao',           label: 'Redator',               description: 'Redação completa do documento',          model: 'Sonnet' },
-  { key: 'salvando',          label: 'Salvando',              description: 'Persistindo resultado no banco',         model: '—' },
-]
+export const PHASE_COMPLETED = DOCUMENT_PIPELINE_COMPLETED_PHASE
+export const PIPELINE_AGENTS = createDocumentPipelineSteps().map(({ status: _status, startedAt: _startedAt, completedAt: _completedAt, runtimeMessage: _runtimeMessage, runtimeModel, runtimeMeta: _runtimeMeta, runtimeCostUsd: _runtimeCostUsd, runtimeDurationMs: _runtimeDurationMs, runtimeRetryCount: _runtimeRetryCount, runtimeFallbackFrom: _runtimeFallbackFrom, ...stage }) => ({
+  ...stage,
+  model: runtimeModel ?? '—',
+}))
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -90,10 +65,32 @@ function elapsedSince(startedAt: number): string {
   return formatDuration(Date.now() - startedAt)
 }
 
+function formatUsd(costUsd: number): string {
+  if (costUsd < 0.0001) return '<$0.0001'
+  return `$${costUsd.toFixed(4)}`
+}
+
+function estimateRemainingMs(agents: DocumentPipelineStep[]): number | null {
+  const completedDurations = agents
+    .filter(agent => agent.startedAt && agent.completedAt)
+    .map(agent => (agent.completedAt as number) - (agent.startedAt as number))
+
+  if (completedDurations.length === 0) return null
+
+  const averageDuration = completedDurations.reduce((sum, duration) => sum + duration, 0) / completedDurations.length
+  const activeAgent = agents.find(agent => agent.status === 'active' && agent.startedAt)
+  const pendingCount = agents.filter(agent => agent.status === 'pending').length
+  const activeRemaining = activeAgent
+    ? Math.max(0, averageDuration - (Date.now() - (activeAgent.startedAt as number)))
+    : 0
+
+  return Math.round(activeRemaining + pendingCount * averageDuration)
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface Props {
-  agents: AgentStep[]
+  agents: DocumentPipelineStep[]
   percent: number
   currentMessage: string
   isComplete: boolean
@@ -115,6 +112,16 @@ export default function PipelineProgressPanel({
 
   const completedCount = agents.filter(a => a.status === 'completed').length
   const totalSteps = agents.length
+  const totalCost = agents.reduce((sum, agent) => sum + (agent.runtimeCostUsd ?? 0), 0)
+  const retryCount = agents.reduce((sum, agent) => sum + (agent.runtimeRetryCount ?? 0), 0)
+  const fallbackCount = agents.filter(agent => Boolean(agent.runtimeFallbackFrom)).length
+  const remainingMs = estimateRemainingMs(agents)
+  const operationalSummary = [
+    remainingMs ? `ETA ${formatDuration(remainingMs)}` : null,
+    totalCost > 0 ? `Custo ${formatUsd(totalCost)}` : null,
+    retryCount > 0 ? `${retryCount} ${retryCount === 1 ? 'retry' : 'retries'}` : null,
+    fallbackCount > 0 ? `${fallbackCount} ${fallbackCount === 1 ? 'fallback' : 'fallbacks'}` : null,
+  ].filter(Boolean).join(' • ')
 
   return (
     <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
@@ -143,6 +150,11 @@ export default function PipelineProgressPanel({
             <span className="text-xs text-gray-500 block truncate">
               {currentMessage} — {completedCount}/{totalSteps} etapas
             </span>
+            {operationalSummary && (
+              <span className="text-[11px] text-gray-400 block truncate mt-0.5">
+                {operationalSummary}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
@@ -234,17 +246,32 @@ export default function PipelineProgressPanel({
                       >
                         {agent.label}
                       </span>
-                      {agent.model !== '—' && (
+                      {agent.runtimeModel && agent.runtimeModel !== '—' && (
                         <span
                           className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                             agent.status === 'pending'
                               ? 'bg-gray-100 text-gray-400'
-                              : agent.model === 'Haiku'
+                              : agent.runtimeModel === 'Haiku'
                                 ? 'bg-emerald-50 text-emerald-600'
                                 : 'bg-purple-50 text-purple-600'
                           }`}
                         >
-                          {agent.model}
+                          {agent.runtimeModel}
+                        </span>
+                      )}
+                      {agent.runtimeFallbackFrom && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700">
+                          Fallback
+                        </span>
+                      )}
+                      {(agent.runtimeRetryCount ?? 0) > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-sky-50 text-sky-700">
+                          {agent.runtimeRetryCount} retry{agent.runtimeRetryCount === 1 ? '' : 's'}
+                        </span>
+                      )}
+                      {agent.runtimeCostUsd != null && agent.runtimeCostUsd > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600">
+                          {formatUsd(agent.runtimeCostUsd)}
                         </span>
                       )}
                       {duration && (
@@ -258,8 +285,13 @@ export default function PipelineProgressPanel({
                         agent.status === 'pending' ? 'text-gray-300' : 'text-gray-500'
                       }`}
                     >
-                      {agent.description}
+                      {agent.runtimeMessage || agent.description}
                     </p>
+                    {agent.runtimeMeta && agent.runtimeMeta !== agent.runtimeMessage && (
+                      <p className="text-[11px] mt-1 text-gray-400">
+                        {agent.runtimeMeta}
+                      </p>
+                    )}
                   </div>
                 </div>
               )

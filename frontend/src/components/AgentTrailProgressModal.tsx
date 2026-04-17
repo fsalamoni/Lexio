@@ -9,6 +9,7 @@ export interface TrailStep {
   label: string
   status: TrailStepStatus
   detail?: string
+  meta?: string
 }
 
 interface AgentTrailProgressModalProps {
@@ -24,6 +25,8 @@ interface AgentTrailProgressModalProps {
   onClose: () => void
   warning?: string
   settingsHint?: string
+  activeStageLabel?: string
+  activeStageMeta?: string
   children?: ReactNode
 }
 
@@ -53,11 +56,21 @@ export default function AgentTrailProgressModal({
   onClose,
   warning,
   settingsHint,
+  activeStageLabel,
+  activeStageMeta,
   children,
 }: AgentTrailProgressModalProps) {
   if (!isOpen) return null
 
   const effectivePercent = Math.max(0, Math.min(100, isComplete ? 100 : percent))
+  const activeStep = steps.find(step => step.status === 'active')
+  const nextStep = activeStep
+    ? steps[steps.findIndex(step => step.key === activeStep.key) + 1]
+    : steps.find(step => step.status === 'pending')
+  const completedCount = steps.filter(step => step.status === 'completed').length
+  const totalCount = steps.length || 1
+  const normalizedProgress = effectivePercent / 100
+  const stackCount = isComplete ? 0 : Math.max(1, Math.round((1 - normalizedProgress) * 6))
   const traversedPath = steps
     .filter(step => step.status === 'completed' || step.status === 'active')
     .map(step => step.label)
@@ -115,6 +128,61 @@ export default function AgentTrailProgressModal({
         </div>
 
         <div className="p-6 flex-1 overflow-y-auto space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-brand-50/40 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Agente em foco</p>
+                <p className="mt-1 text-base font-semibold text-slate-900">
+                  {activeStageLabel || (isComplete ? 'Entrega concluida' : hasError ? 'Execucao interrompida' : activeStep?.label || 'Preparando trilha')}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {isComplete
+                    ? 'O pipeline terminou e o resultado ja pode ser aberto.'
+                    : hasError
+                      ? 'A trilha encontrou um erro e requer sua atencao.'
+                      : activeStep?.detail || currentMessage}
+                </p>
+                {(activeStageMeta || activeStep?.meta) && (
+                  <p className="mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                    {activeStageMeta || activeStep?.meta}
+                  </p>
+                )}
+                {nextStep && !isComplete && !hasError && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Em seguida: <span className="font-medium text-slate-700">{nextStep.label}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className="flex-shrink-0 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm min-w-[210px]">
+                <div className="flex items-end justify-center gap-1 h-20">
+                  {Array.from({ length: stackCount }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="w-6 rounded-sm border border-brand-100 bg-gradient-to-b from-white to-brand-100/70 shadow-[0_1px_0_rgba(15,23,42,0.06)] transition-all duration-500"
+                      style={{
+                        height: `${28 + (stackCount - index) * 7}px`,
+                        transform: `translateY(${index * 2}px) rotate(${index % 2 === 0 ? -2 : 2}deg)`,
+                      }}
+                    />
+                  ))}
+                  {!isComplete && !hasError && (
+                    <div className="ml-2 flex h-20 w-14 items-end justify-center">
+                      <div className="relative flex h-16 w-12 items-end justify-center rounded-t-[16px] rounded-b-md bg-slate-900/90">
+                        <div className="absolute -top-3 h-6 w-6 rounded-full bg-brand-100 border border-brand-200" />
+                        <div className="mb-2 h-7 w-8 rounded-md bg-brand-500/90" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+                  <span>{completedCount}/{totalCount} etapas</span>
+                  <span>{effectivePercent}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-2">
             {steps.map(step => (
               <div key={step.key} className="flex items-start gap-2.5 p-2 rounded-lg border border-gray-100 bg-gray-50/70">
@@ -134,6 +202,11 @@ export default function AgentTrailProgressModal({
                   {step.detail && (
                     <p className={`text-xs mt-0.5 ${step.status === 'error' ? 'text-red-500' : 'text-gray-500'}`}>
                       {step.detail}
+                    </p>
+                  )}
+                  {step.meta && (
+                    <p className="text-[11px] mt-1 text-gray-400">
+                      {step.meta}
                     </p>
                   )}
                 </div>

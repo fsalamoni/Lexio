@@ -27,12 +27,23 @@ export type TaskStatus = 'running' | 'completed' | 'error'
 
 export type TaskMetadata = Record<string, unknown>
 
+export interface TaskOperationalSummary {
+  totalCostUsd: number
+  totalDurationMs: number
+  totalRetryCount: number
+  fallbackCount: number
+  degradationReasons?: string[]
+  phaseCounts?: Record<string, number>
+}
+
 export interface TaskInfo {
   id: string
   name: string
   status: TaskStatus
   progress: number
   phase: string
+  stageMeta?: string
+  operationals?: TaskOperationalSummary
   startedAt: number
   currentStep?: number
   totalSteps?: number
@@ -45,6 +56,8 @@ export interface TaskInfo {
 export interface TaskProgress {
   progress: number
   phase: string
+  stageMeta?: string
+  operationals?: TaskOperationalSummary
   currentStep?: number
   totalSteps?: number
 }
@@ -104,6 +117,8 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
       updateTask(id, {
         progress: Math.min(100, Math.max(0, p.progress)),
         phase: p.phase,
+        stageMeta: p.stageMeta,
+        operationals: p.operationals,
         currentStep: p.currentStep,
         totalSteps: p.totalSteps,
       })

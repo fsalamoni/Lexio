@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Activity, BarChart3, BookOpen, Brain, Database, DollarSign, FileText,
+  Activity, AlertTriangle, BarChart3, BookOpen, Brain, Database, DollarSign, FileText,
   FolderArchive, Settings2, Shield, Sparkles, Users,
 } from 'lucide-react'
 import {
@@ -11,10 +11,15 @@ import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
+  backfillNotebookSearchMemoryAcrossPlatform,
+  getCurrentUserId,
   getPlatformDailyUsage,
   getPlatformOverview,
+  getUserSettings,
+  saveUserSettings,
   type PlatformAggregateRow,
   type PlatformDailyUsagePoint,
+  type NotebookSearchMemoryBackfillReport,
   type PlatformUsageRow,
 } from '../lib/firestore-service'
 
@@ -26,6 +31,121 @@ function fmtUsd(value: number) {
 
 function fmtInt(value: number) {
   return value.toLocaleString('pt-BR')
+}
+
+function fmtSignedNumber(value: number) {
+  const rounded = Number(value.toFixed(2))
+  if (rounded > 0) return `+${rounded}`
+  return `${rounded}`
+}
+
+function fmtPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`
+}
+
+type OperationalAlert = {
+  id: string
+  level: 'critical' | 'warning' | 'info'
+  title: string
+  description: string
+}
+
+type AlertImpactSummary = {
+  critical: number
+  warning: number
+  info: number
+}
+
+type CalibrationDriftAlert = {
+  id: string
+  level: 'critical' | 'warning' | 'info'
+  message: string
+}
+
+type AlertThresholds = {
+  discardTotalCritical7d: number
+  discardTrendMultiplierWarning: number
+  coverageWarningMin: number
+  noUpdatesInfoDays: number
+}
+
+type AlertProfile = 'conservative' | 'balanced' | 'aggressive' | 'custom'
+type ScaleProfile = 'small' | 'medium' | 'large'
+type RecommendationRolloutMode = 'manual' | 'assisted'
+
+type RecommendationPolicy = {
+  recommendationWindowDays: number
+  rolloutMode: RecommendationRolloutMode
+}
+
+type RecommendationHistoryEntry = {
+  id: string
+  createdAt: string
+  action: 'recommendation_applied' | 'thresholds_saved'
+  rolloutMode: RecommendationRolloutMode
+  recommendationWindowDays: number
+  scaleProfile: ScaleProfile
+  recommendedThresholds?: AlertThresholds
+  appliedThresholds: AlertThresholds
+  impactCurrent?: AlertImpactSummary
+  impactProjected?: AlertImpactSummary
+}
+
+const DEFAULT_ALERT_THRESHOLDS: AlertThresholds = {
+  discardTotalCritical7d: 25,
+  discardTrendMultiplierWarning: 2,
+  coverageWarningMin: 0.6,
+  noUpdatesInfoDays: 7,
+}
+
+const DEFAULT_RECOMMENDATION_POLICY: RecommendationPolicy = {
+  recommendationWindowDays: 30,
+  rolloutMode: 'manual',
+}
+
+const MAX_RECOMMENDATION_HISTORY_ENTRIES = 30
+
+const ALERT_THRESHOLD_PRESETS: Record<Exclude<AlertProfile, 'custom'>, AlertThresholds> = {
+  conservative: {
+    discardTotalCritical7d: 15,
+    discardTrendMultiplierWarning: 1.5,
+    coverageWarningMin: 0.8,
+    noUpdatesInfoDays: 5,
+  },
+  balanced: DEFAULT_ALERT_THRESHOLDS,
+  aggressive: {
+    discardTotalCritical7d: 40,
+    discardTrendMultiplierWarning: 2.5,
+    coverageWarningMin: 0.45,
+    noUpdatesInfoDays: 10,
+  },
+}
+
+function areThresholdsEqual(left: AlertThresholds, right: AlertThresholds): boolean {
+  return left.discardTotalCritical7d === right.discardTotalCritical7d
+    && left.discardTrendMultiplierWarning === right.discardTrendMultiplierWarning
+    && left.coverageWarningMin === right.coverageWarningMin
+    && left.noUpdatesInfoDays === right.noUpdatesInfoDays
+}
+
+function detectProfileFromThresholds(thresholds: AlertThresholds): AlertProfile {
+  if (areThresholdsEqual(thresholds, ALERT_THRESHOLD_PRESETS.conservative)) return 'conservative'
+  if (areThresholdsEqual(thresholds, ALERT_THRESHOLD_PRESETS.balanced)) return 'balanced'
+  if (areThresholdsEqual(thresholds, ALERT_THRESHOLD_PRESETS.aggressive)) return 'aggressive'
+  return 'custom'
+}
+
+function parseAlertThresholds(raw: unknown): AlertThresholds {
+  const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const numberOrDefault = (value: unknown, fallback: number) =>
+    typeof value === 'number' && Number.isFinite(value) ? value : fallback
+
+  return {
+    discardTotalCritical7d: Math.max(1, Math.floor(numberOrDefault(data.memory_discard_total_7d_critical, DEFAULT_ALERT_THRESHOLDS.discardTotalCritical7d))),
+    discardTrendMultiplierWarning: Math.max(1, numberOrDefault(data.memory_discard_trend_multiplier_warning, DEFAULT_ALERT_THRESHOLDS.discardTrendMultiplierWarning)),
+    coverageWarningMin: Math.min(1, Math.max(0, numberOrDefault(data.memory_coverage_warning_min, DEFAULT_ALERT_THRESHOLDS.coverageWarningMin))),
+    noUpdatesInfoDays: Math.max(1, Math.floor(numberOrDefault(data.memory_no_updates_days_info, DEFAULT_ALERT_THRESHOLDS.noUpdatesInfoDays))),
+  }
 }
 
 function StatCard({ icon: Icon, label, value, tone }: { icon: React.ElementType; label: string; value: string; tone?: string }) {
@@ -81,6 +201,14 @@ export default function PlatformAdminPanel() {
   const [overview, setOverview] = useState<Awaited<ReturnType<typeof getPlatformOverview>> | null>(null)
   const [daily, setDaily] = useState<PlatformDailyUsagePoint[]>([])
   const [loading, setLoading] = useState(true)
+  const [backfillLoading, setBackfillLoading] = useState(false)
+  const [backfillReport, setBackfillReport] = useState<NotebookSearchMemoryBackfillReport | null>(null)
+  const [alertThresholds, setAlertThresholds] = useState<AlertThresholds>(DEFAULT_ALERT_THRESHOLDS)
+  const [alertProfile, setAlertProfile] = useState<AlertProfile>('balanced')
+  const [scaleProfile, setScaleProfile] = useState<ScaleProfile>('medium')
+  const [recommendationPolicy, setRecommendationPolicy] = useState<RecommendationPolicy>(DEFAULT_RECOMMENDATION_POLICY)
+  const [recommendationHistory, setRecommendationHistory] = useState<RecommendationHistoryEntry[]>([])
+  const [savingThresholds, setSavingThresholds] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -96,6 +224,22 @@ export default function PlatformAdminPanel() {
         ])
         setOverview(overviewData)
         setDaily(dailyData)
+        setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
+
+        const uid = getCurrentUserId()
+        if (uid) {
+          const settings = await getUserSettings(uid)
+          const parsed = parseAlertThresholds(settings.platform_admin_alert_thresholds)
+          setAlertThresholds(parsed)
+          setRecommendationPolicy(parseRecommendationPolicy(settings.platform_admin_alert_recommendation_policy))
+          setRecommendationHistory(parseRecommendationHistory(settings.platform_admin_alert_recommendation_history))
+          const profileFromSettings = settings.platform_admin_alert_profile
+          if (profileFromSettings === 'conservative' || profileFromSettings === 'balanced' || profileFromSettings === 'aggressive' || profileFromSettings === 'custom') {
+            setAlertProfile(profileFromSettings)
+          } else {
+            setAlertProfile(detectProfileFromThresholds(parsed))
+          }
+        }
       } catch (err) {
         console.error(err)
         toast.error('Erro ao carregar painel administrativo da plataforma')
@@ -115,6 +259,334 @@ export default function PlatformAdminPanel() {
 
   const documentStatusChart = useMemo(() => overview?.documents_by_status.slice(0, 6) ?? [], [overview])
   const artifactChart = useMemo(() => overview?.artifacts_by_type.slice(0, 6) ?? [], [overview])
+  const memoryAlerts = useMemo(() => {
+    if (!overview) return [] as OperationalAlert[]
+    return buildMemoryAlerts(overview, daily, alertThresholds)
+  }, [alertThresholds, daily, overview])
+
+  const telemetryRecommendation = useMemo(() => {
+    if (!overview) return null
+    return buildTelemetryRecommendedThresholds(overview, daily, recommendationPolicy.recommendationWindowDays)
+  }, [daily, overview, recommendationPolicy.recommendationWindowDays])
+
+  const projectedAlertImpact = useMemo(() => {
+    if (!overview || !telemetryRecommendation) return null
+
+    const current = summarizeAlertImpact(buildMemoryAlerts(overview, daily, alertThresholds))
+    const projected = summarizeAlertImpact(buildMemoryAlerts(overview, daily, telemetryRecommendation.thresholds))
+    return {
+      current,
+      projected,
+    }
+  }, [alertThresholds, daily, overview, telemetryRecommendation])
+
+  const calibrationHistoryMetrics = useMemo(() => {
+    if (recommendationHistory.length === 0) {
+      return {
+        total: 0,
+        manualSaves: 0,
+        assistedApplies: 0,
+        avgDeltaCritical: 0,
+        avgDeltaWarning: 0,
+        avgDeltaInfo: 0,
+      }
+    }
+
+    let manualSaves = 0
+    let assistedApplies = 0
+    let totalDeltaCritical = 0
+    let totalDeltaWarning = 0
+    let totalDeltaInfo = 0
+
+    recommendationHistory.forEach(entry => {
+      if (entry.action === 'thresholds_saved' && entry.rolloutMode === 'manual') {
+        manualSaves += 1
+      }
+      if (entry.action === 'recommendation_applied' && entry.rolloutMode === 'assisted') {
+        assistedApplies += 1
+      }
+
+      const currentCritical = entry.impactCurrent?.critical ?? 0
+      const projectedCritical = entry.impactProjected?.critical ?? currentCritical
+      totalDeltaCritical += projectedCritical - currentCritical
+
+      const currentWarning = entry.impactCurrent?.warning ?? 0
+      const projectedWarning = entry.impactProjected?.warning ?? currentWarning
+      totalDeltaWarning += projectedWarning - currentWarning
+
+      const currentInfo = entry.impactCurrent?.info ?? 0
+      const projectedInfo = entry.impactProjected?.info ?? currentInfo
+      totalDeltaInfo += projectedInfo - currentInfo
+    })
+
+    return {
+      total: recommendationHistory.length,
+      manualSaves,
+      assistedApplies,
+      avgDeltaCritical: totalDeltaCritical / recommendationHistory.length,
+      avgDeltaWarning: totalDeltaWarning / recommendationHistory.length,
+      avgDeltaInfo: totalDeltaInfo / recommendationHistory.length,
+    }
+  }, [recommendationHistory])
+
+  const calibrationDriftAlerts = useMemo(() => {
+    const alerts: CalibrationDriftAlert[] = []
+    if (recommendationHistory.length < 4) return alerts
+
+    const recent = recommendationHistory.slice(0, 8)
+    const avg = (values: number[]) => values.length > 0 ? values.reduce((acc, value) => acc + value, 0) / values.length : 0
+    const recentDeltaCritical = avg(recent.map(item => {
+      const current = item.impactCurrent?.critical ?? 0
+      const projected = item.impactProjected?.critical ?? current
+      return projected - current
+    }))
+    const recentDeltaWarning = avg(recent.map(item => {
+      const current = item.impactCurrent?.warning ?? 0
+      const projected = item.impactProjected?.warning ?? current
+      return projected - current
+    }))
+
+    const manualOverrideRate = calibrationHistoryMetrics.total > 0
+      ? calibrationHistoryMetrics.manualSaves / calibrationHistoryMetrics.total
+      : 0
+
+    if (recentDeltaCritical >= 1) {
+      alerts.push({
+        id: 'critical-delta-up',
+        level: 'critical',
+        message: `Delta crítico médio recente elevado (${recentDeltaCritical.toFixed(2)}). Avaliar thresholds para reduzir escalonamento de ruído.`,
+      })
+    }
+
+    if (recentDeltaWarning >= 1.2) {
+      alerts.push({
+        id: 'warning-delta-up',
+        level: 'warning',
+        message: `Delta de atenção em alta (${recentDeltaWarning.toFixed(2)}). Recomendado revisar janela de recomendação e cobertura mínima.`,
+      })
+    }
+
+    if (manualOverrideRate >= 0.6 && calibrationHistoryMetrics.total >= 6) {
+      alerts.push({
+        id: 'manual-override-rate',
+        level: 'warning',
+        message: `Override manual alto (${fmtPercent(manualOverrideRate)}). Investigar desalinhamento entre recomendação assistida e operação real.`,
+      })
+    }
+
+    if (alerts.length === 0) {
+      alerts.push({
+        id: 'drift-stable',
+        level: 'info',
+        message: 'Sem desvios relevantes na trilha de calibração recente.',
+      })
+    }
+
+    return alerts
+  }, [calibrationHistoryMetrics, recommendationHistory])
+
+  const rolloutGovernanceHealth = useMemo(() => {
+    const total = calibrationHistoryMetrics.total
+    if (total === 0) {
+      return {
+        label: 'Sem histórico suficiente',
+        tone: 'bg-slate-100 border-slate-200 text-slate-700',
+      }
+    }
+
+    const manualOverrideRate = calibrationHistoryMetrics.manualSaves / total
+    if (manualOverrideRate >= 0.6) {
+      return {
+        label: `Atenção: override manual ${fmtPercent(manualOverrideRate)}`,
+        tone: 'bg-amber-100 border-amber-300 text-amber-800',
+      }
+    }
+    if (manualOverrideRate <= 0.25) {
+      return {
+        label: `Saudável: override manual ${fmtPercent(manualOverrideRate)}`,
+        tone: 'bg-emerald-100 border-emerald-300 text-emerald-800',
+      }
+    }
+
+    return {
+      label: `Neutro: override manual ${fmtPercent(manualOverrideRate)}`,
+      tone: 'bg-sky-100 border-sky-300 text-sky-800',
+    }
+  }, [calibrationHistoryMetrics])
+
+  const appendRecommendationHistory = (entry: RecommendationHistoryEntry): RecommendationHistoryEntry[] => {
+    return [entry, ...recommendationHistory].slice(0, MAX_RECOMMENDATION_HISTORY_ENTRIES)
+  }
+
+  const persistAlertConfiguration = async (
+    thresholds: AlertThresholds,
+    profile: AlertProfile,
+    policy: RecommendationPolicy,
+    successMessage: string,
+    historyEntries?: RecommendationHistoryEntry[],
+  ) => {
+    const uid = getCurrentUserId()
+    if (!uid) {
+      toast.error('Usuário não autenticado para salvar configurações')
+      return false
+    }
+
+    setSavingThresholds(true)
+    try {
+      await saveUserSettings(uid, {
+        platform_admin_alert_thresholds: {
+          memory_discard_total_7d_critical: thresholds.discardTotalCritical7d,
+          memory_discard_trend_multiplier_warning: thresholds.discardTrendMultiplierWarning,
+          memory_coverage_warning_min: thresholds.coverageWarningMin,
+          memory_no_updates_days_info: thresholds.noUpdatesInfoDays,
+        },
+        platform_admin_alert_profile: profile,
+        platform_admin_alert_recommendation_policy: {
+          recommendation_window_days: policy.recommendationWindowDays,
+          rollout_mode: policy.rolloutMode,
+        },
+        platform_admin_alert_recommendation_history: historyEntries?.map(entry => ({
+          id: entry.id,
+          created_at: entry.createdAt,
+          action: entry.action,
+          rollout_mode: entry.rolloutMode,
+          recommendation_window_days: entry.recommendationWindowDays,
+          scale_profile: entry.scaleProfile,
+          recommended_thresholds: entry.recommendedThresholds
+            ? {
+                memory_discard_total_7d_critical: entry.recommendedThresholds.discardTotalCritical7d,
+                memory_discard_trend_multiplier_warning: entry.recommendedThresholds.discardTrendMultiplierWarning,
+                memory_coverage_warning_min: entry.recommendedThresholds.coverageWarningMin,
+                memory_no_updates_days_info: entry.recommendedThresholds.noUpdatesInfoDays,
+              }
+            : undefined,
+          applied_thresholds: {
+            memory_discard_total_7d_critical: entry.appliedThresholds.discardTotalCritical7d,
+            memory_discard_trend_multiplier_warning: entry.appliedThresholds.discardTrendMultiplierWarning,
+            memory_coverage_warning_min: entry.appliedThresholds.coverageWarningMin,
+            memory_no_updates_days_info: entry.appliedThresholds.noUpdatesInfoDays,
+          },
+          impact_current: entry.impactCurrent,
+          impact_projected: entry.impactProjected,
+        })),
+      })
+      if (historyEntries) {
+        setRecommendationHistory(historyEntries)
+      }
+      toast.success(successMessage)
+      return true
+    } catch (error) {
+      console.error(error)
+      toast.error('Erro ao salvar configuração de alertas')
+      return false
+    } finally {
+      setSavingThresholds(false)
+    }
+  }
+
+  const saveAlertThresholds = async () => {
+    const historyEntry = telemetryRecommendation
+      ? buildRecommendationHistoryEntry({
+          action: 'thresholds_saved',
+          rolloutMode: recommendationPolicy.rolloutMode,
+          recommendationWindowDays: recommendationPolicy.recommendationWindowDays,
+          scaleProfile,
+          recommendedThresholds: telemetryRecommendation.thresholds,
+          appliedThresholds: alertThresholds,
+          impactCurrent: projectedAlertImpact?.current,
+          impactProjected: projectedAlertImpact?.projected,
+        })
+      : null
+
+    await persistAlertConfiguration(
+      alertThresholds,
+      alertProfile,
+      recommendationPolicy,
+      'Thresholds e política de recomendação salvos',
+      historyEntry ? appendRecommendationHistory(historyEntry) : undefined,
+    )
+  }
+
+  const resetAlertThresholds = () => {
+    setAlertThresholds(DEFAULT_ALERT_THRESHOLDS)
+    setAlertProfile('balanced')
+  }
+
+  const applyThresholdPreset = (profile: Exclude<AlertProfile, 'custom'>) => {
+    setAlertThresholds(ALERT_THRESHOLD_PRESETS[profile])
+    setAlertProfile(profile)
+  }
+
+  const updateThresholds = (updater: (current: AlertThresholds) => AlertThresholds) => {
+    setAlertThresholds(current => {
+      const next = updater(current)
+      setAlertProfile(detectProfileFromThresholds(next))
+      return next
+    })
+  }
+
+  const applyTelemetryRecommendation = async () => {
+    if (!telemetryRecommendation) return
+
+    const nextThresholds = telemetryRecommendation.thresholds
+    const nextProfile = detectProfileFromThresholds(nextThresholds)
+
+    setAlertThresholds(nextThresholds)
+    setScaleProfile(telemetryRecommendation.scaleProfile)
+    setAlertProfile(nextProfile)
+
+    if (recommendationPolicy.rolloutMode === 'assisted') {
+      const historyEntry = buildRecommendationHistoryEntry({
+        action: 'recommendation_applied',
+        rolloutMode: recommendationPolicy.rolloutMode,
+        recommendationWindowDays: recommendationPolicy.recommendationWindowDays,
+        scaleProfile: telemetryRecommendation.scaleProfile,
+        recommendedThresholds: telemetryRecommendation.thresholds,
+        appliedThresholds: nextThresholds,
+        impactCurrent: projectedAlertImpact?.current,
+        impactProjected: projectedAlertImpact?.projected,
+      })
+
+      await persistAlertConfiguration(
+        nextThresholds,
+        nextProfile,
+        recommendationPolicy,
+        'Recomendação aplicada e salva em modo assistido',
+        appendRecommendationHistory(historyEntry),
+      )
+      return
+    }
+
+    toast.success('Recomendação aplicada. Revise e salve para persistir.')
+  }
+
+  const runSearchMemoryBackfill = async (dryRun: boolean) => {
+    setBackfillLoading(true)
+    try {
+      const report = await backfillNotebookSearchMemoryAcrossPlatform({
+        dryRun,
+        maxNotebooks: 1200,
+        chunkSize: 200,
+      })
+      setBackfillReport(report)
+      toast.success(dryRun ? 'Diagnóstico de backfill concluído' : 'Backfill de memória dedicada concluído')
+
+      if (!dryRun) {
+        const [overviewData, dailyData] = await Promise.all([
+          getPlatformOverview(true),
+          getPlatformDailyUsage(30, true),
+        ])
+        setOverview(overviewData)
+        setDaily(dailyData)
+        setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
+      }
+    } catch (error) {
+      console.error(error)
+      toast.error('Erro ao executar rotina de backfill da memória dedicada')
+    } finally {
+      setBackfillLoading(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -152,6 +624,383 @@ export default function PlatformAdminPanel() {
         <StatCard icon={BarChart3} label="Tokens totais" value={fmtInt(overview.total_tokens)} tone="text-indigo-600" />
         <StatCard icon={FileText} label="Documentos" value={fmtInt(overview.total_documents)} tone="text-brand-600" />
         <StatCard icon={Database} label="Qualidade média" value={overview.average_quality_score != null ? `${overview.average_quality_score}/100` : 'N/D'} tone="text-rose-600" />
+        <StatCard
+          icon={Database}
+          label="Memória dedicada"
+          value={`${fmtInt(overview.notebooks_with_dedicated_search_memory)} / ${fmtInt(overview.total_notebooks)}`}
+          tone="text-cyan-600"
+        />
+        <StatCard
+          icon={Activity}
+          label="Descartes retenção"
+          value={fmtInt(overview.total_search_memory_audits_dropped + overview.total_search_memory_saved_searches_dropped)}
+          tone="text-orange-600"
+        />
+      </div>
+
+      {memoryAlerts.length > 0 && (
+        <div className="bg-white rounded-xl border p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600" />
+            <h2 className="text-sm font-semibold text-gray-900">Alertas operacionais da memória dedicada</h2>
+          </div>
+          <div className="space-y-2">
+            {memoryAlerts.map(alert => (
+              <div
+                key={alert.id}
+                className={`rounded-lg border px-3 py-2 ${
+                  alert.level === 'critical'
+                    ? 'bg-red-50 border-red-200'
+                    : alert.level === 'warning'
+                      ? 'bg-amber-50 border-amber-200'
+                      : 'bg-sky-50 border-sky-200'
+                }`}
+              >
+                <p
+                  className={`text-[11px] font-semibold uppercase tracking-wide ${
+                    alert.level === 'critical'
+                      ? 'text-red-700'
+                      : alert.level === 'warning'
+                        ? 'text-amber-700'
+                        : 'text-sky-700'
+                  }`}
+                >
+                  {alert.level === 'critical' ? 'Crítico' : alert.level === 'warning' ? 'Atenção' : 'Informativo'}
+                </p>
+                <p className="text-sm font-medium text-gray-900 mt-0.5">{alert.title}</p>
+                <p className="text-xs text-gray-600 mt-0.5">{alert.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Configuração de Thresholds dos Alertas</h2>
+            <p className="text-xs text-gray-500 mt-1">Calibra sensibilidade dos alertas da memória dedicada conforme comportamento real da plataforma.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={resetAlertThresholds}
+              disabled={savingThresholds}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Restaurar defaults
+            </button>
+            <button
+              onClick={() => { void saveAlertThresholds() }}
+              disabled={savingThresholds}
+              className="px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Salvar configuração
+            </button>
+            <button
+              onClick={() => { void applyTelemetryRecommendation() }}
+              disabled={!telemetryRecommendation || savingThresholds}
+              className="px-3 py-1.5 rounded-lg border border-brand-200 bg-brand-50 text-brand-700 text-xs font-medium hover:bg-brand-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Aplicar recomendado
+            </button>
+          </div>
+        </div>
+        {telemetryRecommendation && (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-sky-700 font-semibold">Recomendação assistida</p>
+            <p className="text-xs text-sky-800 mt-1">
+              Porte detectado: <span className="font-semibold">{telemetryRecommendation.scaleProfile}</span>. Sugestão baseada em cobertura e descarte recente na janela de <span className="font-semibold">{recommendationPolicy.recommendationWindowDays} dias</span>.
+            </p>
+          </div>
+        )}
+        {projectedAlertImpact && (
+          <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-violet-700 font-semibold">Impacto estimado dos alertas</p>
+            <div className="mt-1 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-violet-900">
+              <p>
+                Críticos: <span className="font-semibold">{projectedAlertImpact.current.critical}</span> → <span className="font-semibold">{projectedAlertImpact.projected.critical}</span>
+              </p>
+              <p>
+                Atenção: <span className="font-semibold">{projectedAlertImpact.current.warning}</span> → <span className="font-semibold">{projectedAlertImpact.projected.warning}</span>
+              </p>
+              <p>
+                Informativos: <span className="font-semibold">{projectedAlertImpact.current.info}</span> → <span className="font-semibold">{projectedAlertImpact.projected.info}</span>
+              </p>
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <label className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Janela da recomendação</p>
+            <select
+              value={recommendationPolicy.recommendationWindowDays}
+              onChange={e => {
+                const next = Number(e.target.value)
+                setRecommendationPolicy(prev => ({ ...prev, recommendationWindowDays: [14, 30, 60, 90].includes(next) ? next : 30 }))
+              }}
+              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-sm bg-white"
+            >
+              <option value={14}>14 dias</option>
+              <option value={30}>30 dias</option>
+              <option value={60}>60 dias</option>
+              <option value={90}>90 dias</option>
+            </select>
+          </label>
+          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Modo de rollout</p>
+            <div className="mt-1 flex items-center gap-2">
+              <button
+                onClick={() => setRecommendationPolicy(prev => ({ ...prev, rolloutMode: 'manual' }))}
+                className={`px-2.5 py-1 rounded-full border text-[10px] font-medium transition-colors ${
+                  recommendationPolicy.rolloutMode === 'manual'
+                    ? 'bg-slate-100 border-slate-300 text-slate-800'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Manual
+              </button>
+              <button
+                onClick={() => setRecommendationPolicy(prev => ({ ...prev, rolloutMode: 'assisted' }))}
+                className={`px-2.5 py-1 rounded-full border text-[10px] font-medium transition-colors ${
+                  recommendationPolicy.rolloutMode === 'assisted'
+                    ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Assistido
+              </button>
+            </div>
+            <p className="mt-1 text-[10px] text-gray-500">
+              {recommendationPolicy.rolloutMode === 'assisted'
+                ? 'Assistido: aplicar recomendado também salva automaticamente.'
+                : 'Manual: aplicar recomendado apenas prepara os valores para revisão.'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {[
+            { key: 'conservative', label: 'Conservador' },
+            { key: 'balanced', label: 'Equilibrado' },
+            { key: 'aggressive', label: 'Agressivo' },
+          ].map(option => (
+            <button
+              key={option.key}
+              onClick={() => applyThresholdPreset(option.key as Exclude<AlertProfile, 'custom'>)}
+              className={`px-2.5 py-1 rounded-full border text-[10px] font-medium transition-colors ${
+                alertProfile === option.key
+                  ? 'bg-brand-100 border-brand-300 text-brand-800'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+          <span className="text-[10px] text-gray-500">Perfil atual: {alertProfile === 'custom' ? 'Customizado' : alertProfile}</span>
+          <span className="text-[10px] text-gray-500">Porte: {scaleProfile}</span>
+          <span className="text-[10px] text-gray-500">Rollout: {recommendationPolicy.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'}</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
+          <label className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Crítico: descartes/janela</p>
+            <input
+              type="number"
+              min={1}
+              value={alertThresholds.discardTotalCritical7d}
+              onChange={e => updateThresholds(prev => ({ ...prev, discardTotalCritical7d: Math.max(1, Number(e.target.value) || 1) }))}
+              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-sm"
+            />
+          </label>
+          <label className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Atenção: multiplicador tendência</p>
+            <input
+              type="number"
+              min={1}
+              step={0.1}
+              value={alertThresholds.discardTrendMultiplierWarning}
+              onChange={e => updateThresholds(prev => ({ ...prev, discardTrendMultiplierWarning: Math.max(1, Number(e.target.value) || 1) }))}
+              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-sm"
+            />
+          </label>
+          <label className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Atenção: cobertura mínima</p>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={alertThresholds.coverageWarningMin}
+              onChange={e => updateThresholds(prev => ({ ...prev, coverageWarningMin: Math.min(1, Math.max(0, Number(e.target.value) || 0)) }))}
+              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-sm"
+            />
+          </label>
+          <label className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Informativo: dias sem update</p>
+            <input
+              type="number"
+              min={1}
+              value={alertThresholds.noUpdatesInfoDays}
+              onChange={e => updateThresholds(prev => ({ ...prev, noUpdatesInfoDays: Math.max(1, Number(e.target.value) || 1) }))}
+              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-sm"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border p-5 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Histórico de Calibração</h2>
+            <p className="text-xs text-gray-500 mt-1">Últimas decisões de recomendado vs aplicado para auditoria de rollout.</p>
+          </div>
+          <span className="text-[10px] text-gray-500">{fmtInt(recommendationHistory.length)} registros</span>
+        </div>
+
+        <div className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium w-fit ${rolloutGovernanceHealth.tone}`}>
+          {rolloutGovernanceHealth.label}
+        </div>
+
+        <div className="space-y-2">
+          {calibrationDriftAlerts.map(alert => (
+            <div
+              key={alert.id}
+              className={`rounded-lg border px-3 py-2 text-xs ${
+                alert.level === 'critical'
+                  ? 'bg-red-50 border-red-200 text-red-800'
+                  : alert.level === 'warning'
+                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                    : 'bg-sky-50 border-sky-200 text-sky-800'
+              }`}
+            >
+              {alert.message}
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Ações manuais</p>
+            <p className="text-sm font-semibold text-gray-800">{fmtInt(calibrationHistoryMetrics.manualSaves)}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Aplicações assistidas</p>
+            <p className="text-sm font-semibold text-gray-800">{fmtInt(calibrationHistoryMetrics.assistedApplies)}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Delta médio crítico</p>
+            <p className="text-sm font-semibold text-gray-800">{fmtSignedNumber(calibrationHistoryMetrics.avgDeltaCritical)}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Delta médio atenção</p>
+            <p className="text-sm font-semibold text-gray-800">{fmtSignedNumber(calibrationHistoryMetrics.avgDeltaWarning)}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Delta médio info</p>
+            <p className="text-sm font-semibold text-gray-800">{fmtSignedNumber(calibrationHistoryMetrics.avgDeltaInfo)}</p>
+          </div>
+        </div>
+
+        {recommendationHistory.length === 0 ? (
+          <p className="text-xs text-gray-500">Nenhuma calibração registrada ainda.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-xs">
+              <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+                <tr>
+                  <th className="px-2 py-2 text-left">Quando</th>
+                  <th className="px-2 py-2 text-left">Ação</th>
+                  <th className="px-2 py-2 text-left">Rollout</th>
+                  <th className="px-2 py-2 text-left">Janela</th>
+                  <th className="px-2 py-2 text-left">Porte</th>
+                  <th className="px-2 py-2 text-right">Crítico</th>
+                  <th className="px-2 py-2 text-right">Atenção</th>
+                  <th className="px-2 py-2 text-right">Info</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {recommendationHistory.slice(0, 12).map(entry => (
+                  <tr key={entry.id} className="hover:bg-gray-50">
+                    <td className="px-2 py-2 text-gray-700">{formatAuditTimestamp(entry.createdAt)}</td>
+                    <td className="px-2 py-2 text-gray-700">{entry.action === 'recommendation_applied' ? 'Aplicou recomendado' : 'Salvou configuração'}</td>
+                    <td className="px-2 py-2 text-gray-700">{entry.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'}</td>
+                    <td className="px-2 py-2 text-gray-700">{entry.recommendationWindowDays}d</td>
+                    <td className="px-2 py-2 text-gray-700">{entry.scaleProfile}</td>
+                    <td className="px-2 py-2 text-right text-gray-700">{fmtImpactDelta(entry.impactCurrent?.critical, entry.impactProjected?.critical)}</td>
+                    <td className="px-2 py-2 text-right text-gray-700">{fmtImpactDelta(entry.impactCurrent?.warning, entry.impactProjected?.warning)}</td>
+                    <td className="px-2 py-2 text-right text-gray-700">{fmtImpactDelta(entry.impactCurrent?.info, entry.impactProjected?.info)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl border p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Backfill da Memória Dedicada</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Executa diagnóstico ou migração em lote de cadernos legados para `memory/search_memory`.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { void runSearchMemoryBackfill(true) }}
+              disabled={backfillLoading}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Diagnóstico
+            </button>
+            <button
+              onClick={() => { void runSearchMemoryBackfill(false) }}
+              disabled={backfillLoading}
+              className="px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Executar backfill
+            </button>
+          </div>
+        </div>
+
+        {backfillReport && (
+          <div className="grid grid-cols-2 lg:grid-cols-8 gap-2">
+            <div className="rounded-lg border border-gray-200 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-gray-500">Modo</p>
+              <p className="text-sm font-semibold text-gray-800">{backfillReport.dry_run ? 'Dry-run' : 'Write'}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-gray-500">Chunks</p>
+              <p className="text-sm font-semibold text-gray-800">{fmtInt(backfillReport.chunks_processed)}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-gray-500">Tam. chunk</p>
+              <p className="text-sm font-semibold text-gray-800">{fmtInt(backfillReport.chunk_size)}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-gray-500">Escaneados</p>
+              <p className="text-sm font-semibold text-gray-800">{fmtInt(backfillReport.scanned)}</p>
+            </div>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-emerald-700">Migrados</p>
+              <p className="text-sm font-semibold text-emerald-800">{fmtInt(backfillReport.migrated)}</p>
+            </div>
+            <div className="rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-sky-700">Já dedicado</p>
+              <p className="text-sm font-semibold text-sky-800">{fmtInt(backfillReport.already_dedicated)}</p>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-amber-700">Sem legado</p>
+              <p className="text-sm font-semibold text-amber-800">{fmtInt(backfillReport.empty_legacy)}</p>
+            </div>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-red-700">Falhas</p>
+              <p className="text-sm font-semibold text-red-800">{fmtInt(backfillReport.failed)}</p>
+            </div>
+            <div className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-violet-700">Limite</p>
+              <p className="text-sm font-semibold text-violet-800">{backfillReport.reached_limit ? 'atingido' : 'não'}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border p-5">
@@ -267,4 +1116,277 @@ export default function PlatformAdminPanel() {
       </div>
     </div>
   )
+}
+
+function detectScaleProfile(totalNotebooks: number): ScaleProfile {
+  if (totalNotebooks < 100) return 'small'
+  if (totalNotebooks < 1000) return 'medium'
+  return 'large'
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function buildTelemetryRecommendedThresholds(
+  overview: Awaited<ReturnType<typeof getPlatformOverview>>,
+  daily: PlatformDailyUsagePoint[],
+  windowDays: number,
+): { scaleProfile: ScaleProfile; thresholds: AlertThresholds } {
+  const scaleProfile = detectScaleProfile(overview.total_notebooks)
+
+  const basePreset = scaleProfile === 'small'
+    ? ALERT_THRESHOLD_PRESETS.conservative
+    : scaleProfile === 'medium'
+      ? ALERT_THRESHOLD_PRESETS.balanced
+      : ALERT_THRESHOLD_PRESETS.aggressive
+
+  const safeWindow = clamp(windowDays, 14, 90)
+  const recent = daily.slice(-safeWindow)
+  const previous = daily.slice(-safeWindow * 2, -safeWindow)
+  const sum = (values: number[]) => values.reduce((acc, value) => acc + value, 0)
+  const weightedMean = (values: number[]) => {
+    if (values.length === 0) return 0
+    const weighted = values.reduce((acc, value, index) => acc + value * (index + 1), 0)
+    const totalWeight = values.reduce((acc, _value, index) => acc + (index + 1), 0)
+    return totalWeight > 0 ? weighted / totalWeight : 0
+  }
+
+  const recentDiscardTotal = sum(recent.map(item => item.memoria_busca_descartes || 0))
+  const recentDiscardAvg = weightedMean(recent.map(item => item.memoria_busca_descartes || 0))
+  const previousDiscardAvg = previous.length > 0
+    ? weightedMean(previous.map(item => item.memoria_busca_descartes || 0))
+    : 0
+
+  const recentUpdates = sum(recent.map(item => item.memoria_busca_atualizacoes || 0))
+  const updateDensity = recent.length > 0 ? recentUpdates / recent.length : 0
+
+  const criticalByRecentRate = recentDiscardAvg > 0
+    ? Math.ceil(recentDiscardAvg * 7 * 1.8)
+    : basePreset.discardTotalCritical7d
+
+  const trendMultiplier = previousDiscardAvg > 0 && recentDiscardAvg > 0
+    ? clamp((recentDiscardAvg / previousDiscardAvg) * 1.2, 1.3, 3)
+    : basePreset.discardTrendMultiplierWarning
+
+  const currentCoverage = overview.total_notebooks > 0
+    ? overview.notebooks_with_dedicated_search_memory / overview.total_notebooks
+    : basePreset.coverageWarningMin
+  const coverageWarningMin = clamp(currentCoverage - 0.1, 0.35, 0.9)
+
+  const noUpdatesInfoDays = updateDensity > 3
+    ? Math.max(3, basePreset.noUpdatesInfoDays - 1)
+    : updateDensity < 0.5
+      ? Math.min(14, basePreset.noUpdatesInfoDays + 2)
+      : basePreset.noUpdatesInfoDays
+
+  return {
+    scaleProfile,
+    thresholds: {
+      discardTotalCritical7d: Math.max(basePreset.discardTotalCritical7d, criticalByRecentRate),
+      discardTrendMultiplierWarning: Number(trendMultiplier.toFixed(2)),
+      coverageWarningMin: Number(coverageWarningMin.toFixed(2)),
+      noUpdatesInfoDays,
+    },
+  }
+}
+
+function buildMemoryAlerts(
+  overview: Awaited<ReturnType<typeof getPlatformOverview>>,
+  daily: PlatformDailyUsagePoint[],
+  thresholds: AlertThresholds,
+): OperationalAlert[] {
+  const alerts: OperationalAlert[] = []
+  const recentWindow = daily.slice(-thresholds.noUpdatesInfoDays)
+  const previousWindow = daily.slice(-thresholds.noUpdatesInfoDays * 2, -thresholds.noUpdatesInfoDays)
+
+  const sum = (values: number[]) => values.reduce((acc, value) => acc + value, 0)
+  const recentDiscardTotal = sum(recentWindow.map(item => item.memoria_busca_descartes || 0))
+  const previousDiscardAvg = previousWindow.length > 0
+    ? sum(previousWindow.map(item => item.memoria_busca_descartes || 0)) / previousWindow.length
+    : 0
+  const recentDiscardAvg = recentWindow.length > 0
+    ? recentDiscardTotal / recentWindow.length
+    : 0
+  const recentUpdates = sum(recentWindow.map(item => item.memoria_busca_atualizacoes || 0))
+
+  if (recentDiscardTotal >= thresholds.discardTotalCritical7d) {
+    alerts.push({
+      id: 'memory-discard-spike',
+      level: 'critical',
+      title: 'Descartes elevados na memória dedicada',
+      description: `Na janela recente houve ${fmtInt(recentDiscardTotal)} descartes por retenção na memória de busca.`,
+    })
+  } else if (
+    recentDiscardAvg > 0
+    && previousDiscardAvg > 0
+    && recentDiscardAvg >= previousDiscardAvg * thresholds.discardTrendMultiplierWarning
+  ) {
+    alerts.push({
+      id: 'memory-discard-trend',
+      level: 'warning',
+      title: 'Crescimento acelerado de descartes',
+      description: `A média diária de descartes superou ${thresholds.discardTrendMultiplierWarning.toFixed(1)}x da janela anterior (${recentDiscardAvg.toFixed(1)} vs ${previousDiscardAvg.toFixed(1)}).`,
+    })
+  }
+
+  if (overview.total_notebooks > 0) {
+    const coverage = overview.notebooks_with_dedicated_search_memory / overview.total_notebooks
+    if (coverage < thresholds.coverageWarningMin) {
+      alerts.push({
+        id: 'memory-coverage-low',
+        level: 'warning',
+        title: 'Cobertura parcial da memória dedicada',
+        description: `Apenas ${fmtInt(overview.notebooks_with_dedicated_search_memory)} de ${fmtInt(overview.total_notebooks)} cadernos usam armazenamento dedicado de busca.`,
+      })
+    }
+  }
+
+  if (overview.total_notebook_search_memory_docs > 0 && recentUpdates === 0) {
+    alerts.push({
+      id: 'memory-no-updates',
+      level: 'info',
+      title: 'Sem atualizações recentes da memória dedicada',
+      description: `Nenhuma atualização de search_memory foi observada nos últimos ${thresholds.noUpdatesInfoDays} dias.`,
+    })
+  }
+
+  return alerts
+}
+
+function summarizeAlertImpact(alerts: OperationalAlert[]): AlertImpactSummary {
+  return alerts.reduce<AlertImpactSummary>((acc, alert) => {
+    if (alert.level === 'critical') acc.critical += 1
+    else if (alert.level === 'warning') acc.warning += 1
+    else acc.info += 1
+    return acc
+  }, {
+    critical: 0,
+    warning: 0,
+    info: 0,
+  })
+}
+
+function parseRecommendationPolicy(raw: unknown): RecommendationPolicy {
+  const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const rawWindow = typeof data.recommendation_window_days === 'number'
+    ? data.recommendation_window_days
+    : DEFAULT_RECOMMENDATION_POLICY.recommendationWindowDays
+  const recommendationWindowDays = [14, 30, 60, 90].includes(rawWindow)
+    ? rawWindow
+    : DEFAULT_RECOMMENDATION_POLICY.recommendationWindowDays
+
+  const rolloutMode = data.rollout_mode === 'assisted' || data.rollout_mode === 'manual'
+    ? data.rollout_mode
+    : DEFAULT_RECOMMENDATION_POLICY.rolloutMode
+
+  return {
+    recommendationWindowDays,
+    rolloutMode,
+  }
+}
+
+function parseRecommendationHistory(raw: unknown): RecommendationHistoryEntry[] {
+  if (!Array.isArray(raw)) return []
+
+  const asThresholds = (value: unknown): AlertThresholds | undefined => {
+    const parsed = parseAlertThresholds(value)
+    if (!value || typeof value !== 'object') return undefined
+    return parsed
+  }
+
+  const asImpact = (value: unknown): AlertImpactSummary | undefined => {
+    if (!value || typeof value !== 'object') return undefined
+    const data = value as Record<string, unknown>
+    return {
+      critical: typeof data.critical === 'number' ? data.critical : 0,
+      warning: typeof data.warning === 'number' ? data.warning : 0,
+      info: typeof data.info === 'number' ? data.info : 0,
+    }
+  }
+
+  return raw
+    .map(item => {
+      if (!item || typeof item !== 'object') return null
+      const data = item as Record<string, unknown>
+      const createdAt = typeof data.created_at === 'string' ? data.created_at : ''
+      if (!createdAt) return null
+
+      const action = data.action === 'recommendation_applied' || data.action === 'thresholds_saved'
+        ? data.action
+        : 'thresholds_saved'
+
+      const rolloutMode = data.rollout_mode === 'assisted' || data.rollout_mode === 'manual'
+        ? data.rollout_mode
+        : 'manual'
+
+      const scaleProfile = data.scale_profile === 'small' || data.scale_profile === 'medium' || data.scale_profile === 'large'
+        ? data.scale_profile
+        : 'medium'
+
+      const recommendationWindowDays = typeof data.recommendation_window_days === 'number'
+        ? data.recommendation_window_days
+        : 30
+
+      const appliedThresholds = asThresholds(data.applied_thresholds) || DEFAULT_ALERT_THRESHOLDS
+
+      return {
+        id: typeof data.id === 'string' && data.id.trim() ? data.id : `${Date.parse(createdAt) || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        createdAt,
+        action,
+        rolloutMode,
+        recommendationWindowDays,
+        scaleProfile,
+        recommendedThresholds: asThresholds(data.recommended_thresholds),
+        appliedThresholds,
+        impactCurrent: asImpact(data.impact_current),
+        impactProjected: asImpact(data.impact_projected),
+      } as RecommendationHistoryEntry
+    })
+    .filter((item): item is RecommendationHistoryEntry => Boolean(item))
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, MAX_RECOMMENDATION_HISTORY_ENTRIES)
+}
+
+function buildRecommendationHistoryEntry(input: {
+  action: RecommendationHistoryEntry['action']
+  rolloutMode: RecommendationHistoryEntry['rolloutMode']
+  recommendationWindowDays: number
+  scaleProfile: RecommendationHistoryEntry['scaleProfile']
+  recommendedThresholds?: AlertThresholds
+  appliedThresholds: AlertThresholds
+  impactCurrent?: AlertImpactSummary
+  impactProjected?: AlertImpactSummary
+}): RecommendationHistoryEntry {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    action: input.action,
+    rolloutMode: input.rolloutMode,
+    recommendationWindowDays: input.recommendationWindowDays,
+    scaleProfile: input.scaleProfile,
+    recommendedThresholds: input.recommendedThresholds,
+    appliedThresholds: input.appliedThresholds,
+    impactCurrent: input.impactCurrent,
+    impactProjected: input.impactProjected,
+  }
+}
+
+function formatAuditTimestamp(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function fmtImpactDelta(current?: number, projected?: number): string {
+  const currentSafe = typeof current === 'number' ? current : 0
+  const projectedSafe = typeof projected === 'number' ? projected : currentSafe
+  const delta = projectedSafe - currentSafe
+  const signal = delta > 0 ? '+' : ''
+  return `${currentSafe}→${projectedSafe} (${signal}${delta})`
 }

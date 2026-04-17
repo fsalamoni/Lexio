@@ -62,7 +62,46 @@ export interface StudioStepExecution {
   duration_ms: number
 }
 
-export type StudioProgressCallback = (step: number, totalSteps: number, phase: string) => void
+export interface StudioProgressMeta {
+  stageMeta?: string
+  costUsd?: number
+  durationMs?: number
+  retryCount?: number
+  usedFallback?: boolean
+  fallbackFrom?: string
+}
+
+export type StudioProgressCallback = (step: number, totalSteps: number, phase: string, meta?: StudioProgressMeta) => void
+
+function formatUsd(costUsd: number): string {
+  if (costUsd < 0.0001) return '<$0.0001'
+  return `$${costUsd.toFixed(4)}`
+}
+
+function buildStudioProgressMeta(result: LLMResult): StudioProgressMeta {
+  const parts: string[] = [result.model.split('/').pop() || result.model]
+  if (result.operational?.fallbackUsed && result.operational.fallbackFrom) {
+    parts.push(`Fallback de ${result.operational.fallbackFrom.split('/').pop() || result.operational.fallbackFrom}`)
+  }
+  if ((result.operational?.totalRetryCount ?? 0) > 0) {
+    const retries = result.operational?.totalRetryCount ?? 0
+    parts.push(`${retries} ${retries === 1 ? 'retry' : 'retries'}`)
+  }
+  if (result.duration_ms > 0) {
+    parts.push(`${Math.max(1, Math.round(result.duration_ms / 1000))}s`)
+  }
+  if (result.cost_usd > 0) {
+    parts.push(formatUsd(result.cost_usd))
+  }
+  return {
+    stageMeta: parts.join(' • '),
+    costUsd: result.cost_usd,
+    durationMs: result.duration_ms,
+    retryCount: result.operational?.totalRetryCount,
+    usedFallback: result.operational?.fallbackUsed,
+    fallbackFrom: result.operational?.fallbackFrom,
+  }
+}
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
@@ -898,6 +937,7 @@ export async function runStudioPipeline(
     cost_usd: researchResult.cost_usd,
     duration_ms: researchResult.duration_ms,
   })
+  onProgress?.(1, 3, 'Pesquisa de fontes concluída.', buildStudioProgressMeta(researchResult))
 
   // Brief pause to avoid hitting rate limits on consecutive calls
   await sleep(1000, signal)
@@ -926,6 +966,7 @@ export async function runStudioPipeline(
     cost_usd: specialistResult.cost_usd,
     duration_ms: specialistResult.duration_ms,
   })
+  onProgress?.(2, 3, `${SPECIALIST_LABELS[specialistRole]} concluiu a primeira versão.`, buildStudioProgressMeta(specialistResult))
   // Brief pause to avoid hitting rate limits on consecutive calls
   await sleep(1000, signal)
   // ── Step 3: Quality review ──────────────────────────────────────────
@@ -952,6 +993,7 @@ export async function runStudioPipeline(
     cost_usd: reviewResult.cost_usd,
     duration_ms: reviewResult.duration_ms,
   })
+  onProgress?.(3, 3, 'Revisão de qualidade concluída.', buildStudioProgressMeta(reviewResult))
 
   return {
     content: reviewResult.content,

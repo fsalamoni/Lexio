@@ -10,6 +10,7 @@ import type {
   StudioPipelineInput,
   StudioProgressCallback,
   StudioStepExecution,
+  StudioProgressMeta,
 } from './notebook-studio-pipeline'
 import type { ParsedPresentation, ParsedSlide } from './artifact-parsers'
 
@@ -130,6 +131,31 @@ function toExecution(
     tokens_out: result.tokens_out,
     cost_usd: result.cost_usd,
     duration_ms: result.duration_ms,
+  }
+}
+
+function buildPresentationProgressMeta(result: LLMResult): StudioProgressMeta {
+  const parts = [result.model.split('/').pop() || result.model]
+  if (result.operational?.fallbackUsed && result.operational.fallbackFrom) {
+    parts.push(`Fallback de ${result.operational.fallbackFrom.split('/').pop() || result.operational.fallbackFrom}`)
+  }
+  if ((result.operational?.totalRetryCount ?? 0) > 0) {
+    const retries = result.operational?.totalRetryCount ?? 0
+    parts.push(`${retries} ${retries === 1 ? 'retry' : 'retries'}`)
+  }
+  if (result.duration_ms > 0) {
+    parts.push(`${Math.max(1, Math.round(result.duration_ms / 1000))}s`)
+  }
+  if (result.cost_usd > 0) {
+    parts.push(result.cost_usd < 0.0001 ? '<$0.0001' : `$${result.cost_usd.toFixed(4)}`)
+  }
+  return {
+    stageMeta: parts.join(' • '),
+    costUsd: result.cost_usd,
+    durationMs: result.duration_ms,
+    retryCount: result.operational?.totalRetryCount,
+    usedFallback: result.operational?.fallbackUsed,
+    fallbackFrom: result.operational?.fallbackFrom,
   }
 }
 
@@ -303,12 +329,14 @@ export async function runPresentationGenerationPipeline(
   const planPrompt = buildPlanPrompt(input)
   const planResult = await callLLMWithFallback(input.apiKey, planPrompt.system, planPrompt.user, models.pres_planejador, models.pres_planejador, 3000, 0.2, { signal })
   executions.push(toExecution('pres_planejador', 'Planejador de Apresentação', planResult))
+  onProgress?.(1, 5, 'Estrutura da apresentação planejada.', buildPresentationProgressMeta(planResult))
 
   throwIfAborted(signal)
   onProgress?.(2, 5, 'Pesquisando evidências e mensagens-chave…')
   const researchPrompt = buildResearchPrompt(input, planResult.content)
   const researchResult = await callLLMWithFallback(input.apiKey, researchPrompt.system, researchPrompt.user, models.pres_pesquisador, models.pres_pesquisador, 3500, 0.2, { signal })
   executions.push(toExecution('pres_pesquisador', 'Pesquisador de Conteúdo', researchResult))
+  onProgress?.(2, 5, 'Pesquisa e mensagens-chave consolidadas.', buildPresentationProgressMeta(researchResult))
 
   throwIfAborted(signal)
   onProgress?.(3, 5, 'Escrevendo os slides…')
@@ -316,6 +344,7 @@ export async function runPresentationGenerationPipeline(
   const writerResult = await callLLMWithFallback(input.apiKey, writerPrompt.system, writerPrompt.user, models.pres_redator, models.pres_redator, 9000, 0.3, { signal })
   const writtenSlides = normalizePresentation(writerResult.content)
   executions.push(toExecution('pres_redator', 'Redator de Slides', writerResult))
+  onProgress?.(3, 5, 'Slides escritos.', buildPresentationProgressMeta(writerResult))
 
   throwIfAborted(signal)
   onProgress?.(4, 5, 'Refinando direção visual dos slides…')
@@ -323,6 +352,7 @@ export async function runPresentationGenerationPipeline(
   const designerResult = await callLLMWithFallback(input.apiKey, designerPrompt.system, designerPrompt.user, models.pres_designer, models.pres_designer, 9000, 0.25, { signal })
   const designedSlides = normalizePresentation(designerResult.content)
   executions.push(toExecution('pres_designer', 'Designer de Apresentação', designerResult))
+  onProgress?.(4, 5, 'Direção visual dos slides concluída.', buildPresentationProgressMeta(designerResult))
 
   throwIfAborted(signal)
   onProgress?.(5, 5, 'Revisando a apresentação…')
@@ -330,6 +360,7 @@ export async function runPresentationGenerationPipeline(
   const reviewResult = await callLLMWithFallback(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.pres_revisor, models.pres_revisor, 9000, 0.15, { signal })
   const finalContent = normalizePresentation(reviewResult.content)
   executions.push(toExecution('pres_revisor', 'Revisor de Apresentação', reviewResult))
+  onProgress?.(5, 5, 'Revisão final da apresentação concluída.', buildPresentationProgressMeta(reviewResult))
 
   return {
     content: finalContent,

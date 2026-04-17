@@ -29,14 +29,11 @@ import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecor
 import { evaluateQuality } from './quality-evaluator'
 import { loadApiKeyValues } from './settings-store'
 import { firestore } from './firebase'
+import { buildDocumentPipelineProgress, buildDocumentStageMeta, type DocumentPipelineProgress } from './document-pipeline'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export interface GenerationProgress {
-  phase: string
-  message: string
-  percent: number
-}
+export type GenerationProgress = DocumentPipelineProgress
 
 /** Subset of user profile relevant to document generation. */
 export interface UserProfileForGeneration {
@@ -1331,8 +1328,34 @@ export async function generateDocument(
   })
 
   try {
+    const reportProgress = (
+      phase: string,
+      message: string,
+      percent: number,
+      modelId?: string,
+    ) => {
+      onProgress?.(buildDocumentPipelineProgress(phase, message, percent, { modelId }))
+    }
+
+    const reportStageResult = (
+      phase: string,
+      message: string,
+      percent: number,
+      result: Awaited<ReturnType<typeof callLLMWithFallback>>,
+    ) => {
+      onProgress?.(buildDocumentPipelineProgress(phase, message, percent, {
+        modelId: result.model,
+        stageMeta: buildDocumentStageMeta(result),
+        costUsd: result.cost_usd,
+        durationMs: result.duration_ms,
+        retryCount: result.operational?.totalRetryCount,
+        usedFallback: result.operational?.fallbackUsed,
+        fallbackFrom: result.operational?.fallbackFrom,
+      }))
+    }
+
     // 1. Get API key and model configuration
-    onProgress?.({ phase: 'config', message: 'Carregando configurações...', percent: 2 })
+    reportProgress('config', 'Carregando configurações...', 2)
     const apiKey = await getOpenRouterKey()
     const agentModels: AgentModelMap = await loadAgentModels()
 
@@ -1366,13 +1389,14 @@ export async function generateDocument(
     }
 
     // 2. Triage — extract structured info from the request
-    onProgress?.({ phase: 'triagem', message: 'Analisando solicitação...', percent: 5 })
+    reportProgress('triagem', 'Analisando solicitação...', 5, modelTriagem)
     const triageResult = await callLLMWithFallback(
       apiKey,
       buildTriageSystem(docType),
       buildTriageUser(request, areas, context, contextDetail),
       modelTriagem, modelTriagem, 800, 0.1,
     )
+    reportStageResult('triagem', 'Triagem concluída.', 7, triageResult)
 
     // Extract tema from triage JSON
     let tema = ''
@@ -1400,7 +1424,7 @@ export async function generateDocument(
       console.log(`[Acervo Pipeline] Found ${allAcervoDocs.length} indexed documents in acervo`)
 
       if (allAcervoDocs.length > 0) {
-        onProgress?.({ phase: 'acervo_buscador', message: 'Buscando documentos similares no acervo...', percent: 8 })
+        reportProgress('acervo_buscador', 'Buscando documentos similares no acervo...', 8, modelAcervoBuscador)
 
         // ── Layer 1: Zero-cost keyword pre-filter ──
         const searchKeywords = extractSearchKeywords(triageResult.content, request)
@@ -1451,6 +1475,7 @@ export async function generateDocument(
             buildAcervoBuscadorUser(triageResult.content, request, docType, docSummaries),
             modelAcervoBuscador, modelAcervoBuscador, 2000, 0.1,
           )
+          reportStageResult('acervo_buscador', 'Busca no acervo concluída.', 10, buscadorResult)
 
           // Parse buscador response
           let selectedIds: string[] = []
@@ -1490,22 +1515,24 @@ export async function generateDocument(
 
             if (selectedDocs.length > 0) {
               // ── Agent 2: Compilador ──
-              onProgress?.({ phase: 'acervo_compilador', message: `Compilando base a partir de ${selectedDocs.length} documento(s)...`, percent: 12 })
+              reportProgress('acervo_compilador', `Compilando base a partir de ${selectedDocs.length} documento(s)...`, 12, modelAcervoCompilador)
               compiladorResult = await callLLMWithFallback(
                 apiKey,
                 buildAcervoCompiladorSystem(docType, tema, profile),
                 buildAcervoCompiladorUser(request, triageResult.content, docType, selectedDocs),
                 modelAcervoCompilador, modelAcervoCompilador, 12000, 0.2,
               )
+              reportStageResult('acervo_compilador', 'Base compilada a partir do acervo.', 14, compiladorResult)
 
               // ── Agent 3: Revisor ──
-              onProgress?.({ phase: 'acervo_revisor', message: 'Revisando documento base compilado...', percent: 16 })
+              reportProgress('acervo_revisor', 'Revisando documento base compilado...', 16, modelAcervoRevisor)
               revisorBaseResult = await callLLMWithFallback(
                 apiKey,
                 buildAcervoRevisorSystem(docType, tema, profile),
                 buildAcervoRevisorUser(request, triageResult.content, docType, compiladorResult.content),
                 modelAcervoRevisor, modelAcervoRevisor, 12000, 0.2,
               )
+              reportStageResult('acervo_revisor', 'Base do acervo revisada e consolidada.', 17, revisorBaseResult)
 
               acervoBase = revisorBaseResult.content
               console.log(`[Acervo Revisor] Base document compiled: ${acervoBase.length} chars`)
@@ -1522,7 +1549,7 @@ export async function generateDocument(
     }
 
     // ── 2c. Load knowledge base — theses + acervo excerpts ──────────────────
-    onProgress?.({ phase: 'pesquisador', message: 'Carregando base de conhecimento...', percent: 18 })
+  reportProgress('pesquisador', 'Carregando base de conhecimento...', 18, modelPesquisador)
     let knowledgeBase = ''
 
     // Load relevant theses from thesis bank
@@ -1565,7 +1592,7 @@ export async function generateDocument(
     }
 
     // 3. Pesquisador — legal research synthesis
-    onProgress?.({ phase: 'pesquisador', message: 'Pesquisando legislação e jurisprudência...', percent: 22 })
+  reportProgress('pesquisador', 'Pesquisando legislação e jurisprudência...', 22, modelPesquisador)
     const pesquisadorUserParts = [
       `<triagem>${triageResult.content}</triagem>`,
       `<solicitacao>${request}</solicitacao>`,
@@ -1601,54 +1628,60 @@ export async function generateDocument(
       pesquisadorUserParts.join('\n'),
       modelPesquisador, modelPesquisador, 6000, 0.3,
     )
+    reportStageResult('pesquisador', 'Pesquisa jurídica concluída.', 26, pesquisaResult)
 
     // 4. Jurista — initial thesis development
-    onProgress?.({ phase: 'jurista', message: 'Desenvolvendo teses jurídicas...', percent: 28 })
+  reportProgress('jurista', 'Desenvolvendo teses jurídicas...', 28, modelJurista)
     const juristaResult = await callLLMWithFallback(
       apiKey,
       buildJuristaSystem(docType, tema, profile),
       `<triagem>${triageResult.content}</triagem>\n<pesquisa>${pesquisaResult.content}</pesquisa>\nDesenvolva teses jurídicas ROBUSTAS e BEM FUNDAMENTADAS. Para cada tese: TRANSCREVA os artigos de lei citados entre aspas, cite súmulas com enunciado completo, mencione doutrina com autor e obra, e faça subsunção detalhada dos fatos à norma.`,
       modelJurista, modelJurista, 6000, 0.3,
     )
+    reportStageResult('jurista', 'Teses jurídicas iniciais estruturadas.', 34, juristaResult)
 
     // 5. Advogado do Diabo — critique
-    onProgress?.({ phase: 'advogado_diabo', message: 'Analisando contra-argumentos...', percent: 40 })
+  reportProgress('advogado_diabo', 'Analisando contra-argumentos...', 40, modelAdvDiabo)
     const criticaResult = await callLLMWithFallback(
       apiKey,
       buildAdvogadoDiaboSystem(tema, profile),
       `<teses>${juristaResult.content}</teses>\nCritique estas teses rigorosamente. Verifique se os artigos foram transcritos corretamente, se as súmulas existem, se a doutrina é pertinente. Identifique fraquezas e sugira melhorias específicas com referências legais concretas.`,
       modelAdvDiabo, modelAdvDiabo, 3000, 0.4,
     )
+    reportStageResult('advogado_diabo', 'Contra-argumentos consolidados.', 46, criticaResult)
 
     // 6. Jurista v2 — refined theses
-    onProgress?.({ phase: 'jurista_v2', message: 'Refinando teses após crítica...', percent: 52 })
+  reportProgress('jurista_v2', 'Refinando teses após crítica...', 52, modelJuristaV2)
     const juristaV2Result = await callLLMWithFallback(
       apiKey,
       buildJuristaV2System(docType, tema, profile),
       `<teses_originais>${juristaResult.content}</teses_originais>\n<criticas>${criticaResult.content}</criticas>\nRefine as teses incorporando as críticas válidas. Fortaleça a fundamentação: TRANSCREVA artigos de lei, cite enunciados completos de súmulas, inclua referências doutrinárias com autor e obra.`,
       modelJuristaV2, modelJuristaV2, 6000, 0.3,
     )
+    reportStageResult('jurista_v2', 'Teses refinadas após a crítica.', 58, juristaV2Result)
 
     // 7. Fact-checker — verify legal citations
-    onProgress?.({ phase: 'fact_checker', message: 'Verificando citações legais...', percent: 62 })
+  reportProgress('fact_checker', 'Verificando citações legais...', 62, modelFactChecker)
     const factCheckResult = await callLLMWithFallback(
       apiKey,
       buildFactCheckerSystem(),
       `<teses>${juristaV2Result.content}</teses>\nVerifique TODAS as citações legais. Corrija imprecisões. ADICIONE transcrições de artigos que foram citados sem texto. ADICIONE enunciados de súmulas que foram citadas sem texto completo. Enriqueça a fundamentação.`,
       modelFactChecker, modelFactChecker, 6000, 0.1,
     )
+    reportStageResult('fact_checker', 'Citações e referências verificadas.', 68, factCheckResult)
 
     // 8. Moderador — document plan
-    onProgress?.({ phase: 'moderador', message: 'Planejando estrutura do documento...', percent: 72 })
+  reportProgress('moderador', 'Planejando estrutura do documento...', 72, modelModerador)
     const planoResult = await callLLMWithFallback(
       apiKey,
       buildModeradorSystem(docType, tema, profile, customStructure),
       `<pesquisa>${pesquisaResult.content}</pesquisa>\n<teses_verificadas>${factCheckResult.content}</teses_verificadas>\nElabore plano DETALHADO. Para cada seção, especifique: artigos de lei a TRANSCREVER, súmulas com ENUNCIADO COMPLETO, doutrina com AUTOR e OBRA, princípios com ARTIGO DA CF.`,
       modelModerador, modelModerador, 3000, 0.2,
     )
+    reportStageResult('moderador', 'Estrutura final do documento definida.', 78, planoResult)
 
     // 9. Redator — write the full document
-    onProgress?.({ phase: 'redacao', message: 'Redigindo documento completo...', percent: 82 })
+  reportProgress('redacao', 'Redigindo documento completo...', 82, modelRedator)
     const docResult = await callLLMWithFallback(
       apiKey,
       buildRedatorSystem(docType, tema, profile, customStructure),
@@ -1659,6 +1692,7 @@ export async function generateDocument(
       ),
       modelRedator, modelRedator, 12000, 0.3,
     )
+    reportStageResult('redacao', 'Redação principal concluída.', 90, docResult)
 
     // Accumulate LLM usage across all pipeline agents for Dashboard metrics
     const llmExecutions = [
@@ -1817,12 +1851,12 @@ export async function generateDocument(
     const usage_summary = buildUsageSummary(llmExecutions)
 
     // 10. Quality evaluation — run document-type-specific rules
-    onProgress?.({ phase: 'qualidade', message: 'Avaliando qualidade do documento...', percent: 93 })
+  reportProgress('qualidade', 'Avaliando qualidade do documento...', 93)
     const qualityResult = evaluateQuality(docResult.content, docType, { tema })
     const quality_score = qualityResult.score
 
     // 11. Save the generated text
-    onProgress?.({ phase: 'salvando', message: 'Salvando documento...', percent: 95 })
+    reportProgress('salvando', 'Salvando documento...', 95)
     await updateDoc(docRef, {
       texto_completo: docResult.content,
       status: 'concluido',
@@ -1835,7 +1869,7 @@ export async function generateDocument(
       updated_at: new Date().toISOString(),
     })
 
-    onProgress?.({ phase: 'concluido', message: 'Documento gerado com sucesso!', percent: 100 })
+    reportProgress('concluido', 'Documento gerado com sucesso!', 100)
   } catch (err) {
     // Update status to error
     await updateDoc(docRef, {

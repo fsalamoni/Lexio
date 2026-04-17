@@ -13,6 +13,7 @@ import {
   Film, AlertCircle, CheckCircle2, RefreshCw, ImagePlus,
   Volume2, Loader2,
 } from 'lucide-react'
+import type { VideoPipelineProgressState } from '../../lib/video-pipeline-progress'
 import type {
   VideoProductionPackage,
   VideoTrack,
@@ -51,7 +52,7 @@ interface VideoStudioEditorProps {
   onGenerateLiteralMedia?: (production: VideoProductionPackage) => void | Promise<void>
   onGenerateClipVideo?: (production: VideoProductionPackage, sceneNumber: number, clipNumber: number) => Promise<VideoProductionPackage | null>
   isLiteralGenerating?: boolean
-  literalProgress?: { step: number; total: number; phase: string; agent: string }
+  literalProgress?: VideoPipelineProgressState
   /** Callback to regenerate image for a specific scene */
   onRegenerateImage?: (sceneNumber: number) => Promise<string | null>
   /** Callback to regenerate TTS for a specific narration segment */
@@ -840,10 +841,13 @@ export default function VideoStudioEditor({
             <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5">
               <div className="flex items-center gap-2 text-xs font-semibold text-rose-700">
                 {isLiteralGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Film className="w-3.5 h-3.5" />}
-                {literalProgress.agent}
+                {literalProgress.stageLabel || literalProgress.agent}
               </div>
-              <p className="mt-1 text-[11px] text-rose-800">{literalProgress.phase}</p>
-              <p className="mt-1 text-[10px] text-rose-500">Etapa {literalProgress.step} de {literalProgress.total}</p>
+              <p className="mt-1 text-[11px] text-rose-800">{literalProgress.stageDescription || literalProgress.phase}</p>
+              {literalProgress.stageMeta && (
+                <p className="mt-1 text-[10px] text-rose-500 truncate">{literalProgress.stageMeta}</p>
+              )}
+              <p className="mt-1 text-[10px] text-rose-500">Etapa {literalProgress.step} de {literalProgress.total} · {literalProgress.percent}%</p>
             </div>
           )}
 

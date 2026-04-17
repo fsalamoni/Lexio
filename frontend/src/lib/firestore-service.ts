@@ -12,8 +12,9 @@
 
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc,
-  collection, collectionGroup, getDocs, addDoc, query, orderBy, limit, where,
+  collection, collectionGroup, getDocs, addDoc, query, orderBy, limit, where, startAfter,
   serverTimestamp,
+  type DocumentSnapshot,
   type QueryConstraint,
 } from 'firebase/firestore'
 import { firestore, IS_FIREBASE } from './firebase'
@@ -49,6 +50,8 @@ export type {
   NotebookSourceType,
   NotebookSource,
   NotebookMessage,
+  NotebookResearchAuditEntry,
+  NotebookSavedSearchEntry,
   StudioArtifactType,
   StudioArtifact,
   ResearchNotebookData,
@@ -73,6 +76,8 @@ import type {
   AcervoDocumentData,
   NotebookSource,
   ResearchNotebookData,
+  NotebookResearchAuditEntry,
+  NotebookSavedSearchEntry,
   ThesisAnalysisSessionData,
   WizardData,
   WizardStep,
@@ -171,6 +176,18 @@ type PlatformUserRecord = {
   created_at?: string
 }
 
+type PlatformNotebookSearchMemoryRecord = {
+  id: string
+  notebook_id: string
+  updated_at?: string
+  research_audits?: unknown[]
+  saved_searches?: unknown[]
+  retention?: {
+    audits_dropped?: number
+    saved_searches_dropped?: number
+  }
+}
+
 type PlatformCollectionsSnapshot = {
   fetchedAt: number
   users: PlatformUserRecord[]
@@ -179,6 +196,7 @@ type PlatformCollectionsSnapshot = {
   sessions: Array<ThesisAnalysisSessionData & { _owner_user_id?: string }>
   acervo: Array<AcervoDocumentData & { _owner_user_id?: string }>
   notebooks: Array<ResearchNotebookData & { _owner_user_id?: string }>
+  notebook_search_memory: PlatformNotebookSearchMemoryRecord[]
 }
 
 let platformCollectionsCache: PlatformCollectionsSnapshot | null = null
@@ -217,6 +235,13 @@ function getRefUserId(refPath: string): string | null {
   const parts = refPath.split('/')
   if (parts.length >= 2 && parts[0] === 'users') return parts[1]
   return null
+}
+
+function getRefNotebookIdFromSearchMemoryPath(refPath: string): string | null {
+  const parts = refPath.split('/').filter(Boolean)
+  const notebookIndex = parts.findIndex((part, index) => part === 'research_notebooks' && index < parts.length - 1)
+  if (notebookIndex === -1) return null
+  return parts[notebookIndex + 1] || null
 }
 
 function getIsoDateKey(value: unknown): string | null {
@@ -333,14 +358,41 @@ async function loadPlatformCollections(force = false): Promise<PlatformCollectio
   }
 
   const db = ensureFirestore()
-  const [usersSnap, documentsSnap, thesesSnap, sessionsSnap, acervoSnap, notebooksSnap] = await Promise.all([
+  const [usersSnap, documentsSnap, thesesSnap, sessionsSnap, acervoSnap, notebooksSnap, notebookSearchMemorySnap] = await Promise.all([
     getDocs(collection(db, 'users')),
     getDocs(collectionGroup(db, 'documents')),
     getDocs(collectionGroup(db, 'theses')),
     getDocs(collectionGroup(db, 'thesis_analysis_sessions')),
     getDocs(collectionGroup(db, 'acervo')),
     getDocs(collectionGroup(db, 'research_notebooks')),
+    getDocs(collectionGroup(db, 'memory')),
   ])
+
+  const notebookSearchMemory = notebookSearchMemorySnap.docs
+    .filter(d => d.id === NOTEBOOK_SEARCH_MEMORY_DOC_ID)
+    .map(d => {
+      const notebookId = getRefNotebookIdFromSearchMemoryPath(d.ref.path)
+      if (!notebookId) return null
+      const data = d.data() as Record<string, unknown>
+      return {
+        id: d.id,
+        notebook_id: notebookId,
+        updated_at: typeof data.updated_at === 'string' ? data.updated_at : undefined,
+        research_audits: Array.isArray(data.research_audits) ? data.research_audits : [],
+        saved_searches: Array.isArray(data.saved_searches) ? data.saved_searches : [],
+        retention: data.retention && typeof data.retention === 'object'
+          ? {
+              audits_dropped: typeof (data.retention as Record<string, unknown>).audits_dropped === 'number'
+                ? (data.retention as Record<string, unknown>).audits_dropped as number
+                : 0,
+              saved_searches_dropped: typeof (data.retention as Record<string, unknown>).saved_searches_dropped === 'number'
+                ? (data.retention as Record<string, unknown>).saved_searches_dropped as number
+                : 0,
+            }
+          : undefined,
+      } as PlatformNotebookSearchMemoryRecord
+    })
+    .filter((item): item is PlatformNotebookSearchMemoryRecord => Boolean(item))
 
   const snapshot: PlatformCollectionsSnapshot = {
     fetchedAt: Date.now(),
@@ -350,6 +402,7 @@ async function loadPlatformCollections(force = false): Promise<PlatformCollectio
     sessions: sessionsSnap.docs.map(d => ({ ...(d.data() as ThesisAnalysisSessionData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ThesisAnalysisSessionData & { _owner_user_id?: string })),
     acervo: acervoSnap.docs.map(d => ({ ...(d.data() as AcervoDocumentData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as AcervoDocumentData & { _owner_user_id?: string })),
     notebooks: notebooksSnap.docs.map(d => ({ ...(d.data() as ResearchNotebookData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ResearchNotebookData & { _owner_user_id?: string })),
+    notebook_search_memory: notebookSearchMemory,
   }
 
   platformCollectionsCache = snapshot
@@ -836,6 +889,23 @@ export async function getPlatformOverview(force = false): Promise<PlatformOvervi
   const artifactTypeMap = new Map<string, number>()
   const activeUsers = new Set<string>()
   const scores = snapshot.documents.map(doc => doc.quality_score).filter((score): score is number => score != null)
+  const notebookMemoryNotebookIds = new Set(snapshot.notebook_search_memory.map(item => item.notebook_id))
+  const totalSearchMemoryAudits = snapshot.notebook_search_memory.reduce(
+    (sum, item) => sum + (Array.isArray(item.research_audits) ? item.research_audits.length : 0),
+    0,
+  )
+  const totalSearchMemorySavedSearches = snapshot.notebook_search_memory.reduce(
+    (sum, item) => sum + (Array.isArray(item.saved_searches) ? item.saved_searches.length : 0),
+    0,
+  )
+  const totalSearchMemoryAuditsDropped = snapshot.notebook_search_memory.reduce(
+    (sum, item) => sum + (item.retention?.audits_dropped || 0),
+    0,
+  )
+  const totalSearchMemorySavedSearchesDropped = snapshot.notebook_search_memory.reduce(
+    (sum, item) => sum + (item.retention?.saved_searches_dropped || 0),
+    0,
+  )
 
   for (const user of snapshot.users) {
     if (isWithinLastDays(user.created_at, 30)) activeUsers.add(user.id)
@@ -889,6 +959,12 @@ export async function getPlatformOverview(force = false): Promise<PlatformOvervi
     total_theses: snapshot.theses.length,
     total_acervo_documents: snapshot.acervo.length,
     total_notebooks: snapshot.notebooks.length,
+    notebooks_with_dedicated_search_memory: notebookMemoryNotebookIds.size,
+    total_notebook_search_memory_docs: snapshot.notebook_search_memory.length,
+    total_search_memory_audits: totalSearchMemoryAudits,
+    total_search_memory_saved_searches: totalSearchMemorySavedSearches,
+    total_search_memory_audits_dropped: totalSearchMemoryAuditsDropped,
+    total_search_memory_saved_searches_dropped: totalSearchMemorySavedSearchesDropped,
     total_artifacts: snapshot.notebooks.reduce((sum, notebook) => sum + (notebook.artifacts?.length ?? 0), 0),
     total_sources: snapshot.notebooks.reduce((sum, notebook) => sum + (notebook.sources?.length ?? 0), 0),
     total_thesis_sessions: snapshot.sessions.length,
@@ -922,6 +998,8 @@ export async function getPlatformDailyUsage(days = 30, force = false): Promise<P
       cadernos: 0,
       uploads_acervo: 0,
       sessoes_teses: 0,
+      memoria_busca_atualizacoes: 0,
+      memoria_busca_descartes: 0,
       chamadas_llm: 0,
       tokens: 0,
       custo_usd: 0,
@@ -971,6 +1049,15 @@ export async function getPlatformDailyUsage(days = 30, force = false): Promise<P
     if (entry) entry.sessoes_teses += 1
   }
 
+  for (const memory of snapshot.notebook_search_memory) {
+    const day = getIsoDateKey(memory.updated_at)
+    if (!day || day < cutoff) continue
+    const entry = dayMap.get(day)
+    if (!entry) continue
+    entry.memoria_busca_atualizacoes += 1
+    entry.memoria_busca_descartes += (memory.retention?.audits_dropped || 0) + (memory.retention?.saved_searches_dropped || 0)
+  }
+
   const executionGroups = [
     ...snapshot.documents.flatMap(doc => extractDocumentUsageExecutions(doc)),
     ...snapshot.sessions.flatMap(session => extractThesisSessionExecutions(session)),
@@ -1003,6 +1090,115 @@ export async function getPlatformDailyUsage(days = 30, force = false): Promise<P
     ...entry,
     usuarios_ativos: users.size,
   }))
+}
+
+export type NotebookSearchMemoryBackfillReport = {
+  scanned: number
+  migrated: number
+  already_dedicated: number
+  empty_legacy: number
+  failed: number
+  chunks_processed: number
+  chunk_size: number
+  max_notebooks?: number
+  reached_limit: boolean
+  dry_run: boolean
+}
+
+export async function backfillNotebookSearchMemoryAcrossPlatform(opts?: {
+  dryRun?: boolean
+  maxNotebooks?: number
+  chunkSize?: number
+}): Promise<NotebookSearchMemoryBackfillReport> {
+  const db = ensureFirestore()
+  const dryRun = Boolean(opts?.dryRun)
+  const maxNotebooks = opts?.maxNotebooks && opts.maxNotebooks > 0 ? Math.floor(opts.maxNotebooks) : undefined
+  const chunkSize = Math.max(50, Math.min(500, Math.floor(opts?.chunkSize ?? 200)))
+
+  const report: NotebookSearchMemoryBackfillReport = {
+    scanned: 0,
+    migrated: 0,
+    already_dedicated: 0,
+    empty_legacy: 0,
+    failed: 0,
+    chunks_processed: 0,
+    chunk_size: chunkSize,
+    max_notebooks: maxNotebooks,
+    reached_limit: false,
+    dry_run: dryRun,
+  }
+
+  let cursor: DocumentSnapshot | null = null
+
+  while (true) {
+    const remaining = maxNotebooks ? maxNotebooks - report.scanned : chunkSize
+    if (maxNotebooks && remaining <= 0) {
+      report.reached_limit = true
+      break
+    }
+
+    const pageLimit = Math.max(1, Math.min(chunkSize, remaining))
+    const constraints: QueryConstraint[] = [orderBy('created_at', 'desc'), limit(pageLimit)]
+    if (cursor) constraints.push(startAfter(cursor))
+
+    const notebooksSnap = await getDocs(query(collectionGroup(db, 'research_notebooks'), ...constraints))
+    if (notebooksSnap.empty) break
+
+    report.chunks_processed += 1
+    cursor = notebooksSnap.docs[notebooksSnap.docs.length - 1]
+
+    for (const notebookDoc of notebooksSnap.docs) {
+      if (maxNotebooks && report.scanned >= maxNotebooks) {
+        report.reached_limit = true
+        break
+      }
+
+      report.scanned += 1
+
+      try {
+        const uid = getRefUserId(notebookDoc.ref.path)
+        if (!uid) {
+          report.failed += 1
+          continue
+        }
+
+        const memorySnap = await getDoc(getNotebookSearchMemoryDocRef(uid, notebookDoc.id))
+        if (memorySnap.exists()) {
+          report.already_dedicated += 1
+          continue
+        }
+
+        const notebook = notebookDoc.data() as ResearchNotebookData
+        const legacyAudits = Array.isArray(notebook.research_audits) ? notebook.research_audits : []
+        const legacySavedSearches = Array.isArray(notebook.saved_searches) ? notebook.saved_searches : []
+
+        if (legacyAudits.length === 0 && legacySavedSearches.length === 0) {
+          report.empty_legacy += 1
+          continue
+        }
+
+        if (!dryRun) {
+          await saveNotebookSearchMemory(uid, notebookDoc.id, {
+            research_audits: legacyAudits,
+            saved_searches: legacySavedSearches,
+            migrated_from_notebook_doc_at: new Date().toISOString(),
+          })
+        }
+
+        report.migrated += 1
+      } catch (error) {
+        report.failed += 1
+        console.warn('[Lexio] backfillNotebookSearchMemoryAcrossPlatform: failed for notebook', notebookDoc.id, error)
+      }
+    }
+
+    if (maxNotebooks && report.scanned >= maxNotebooks) {
+      report.reached_limit = true
+      break
+    }
+  }
+
+  return report
 }
 
 // ── Document types & legal areas (static definitions for Firebase mode) ──────
@@ -1873,6 +2069,31 @@ export async function listResearchNotebooks(uid: string): Promise<{ items: Resea
 const NOTEBOOK_MAX_DOC_BYTES = 950_000
 /** Minimum chars preserved per source when trimming to fit Firestore limits */
 const MIN_SOURCE_TEXT_CHARS = 100
+const NOTEBOOK_SEARCH_MEMORY_DOC_ID = 'search_memory'
+const NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS = 45
+const NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS = 60
+const NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES = 120
+
+type NotebookSearchMemoryRetentionMeta = {
+  audits_before?: number
+  audits_after?: number
+  audits_dropped?: number
+  saved_searches_before?: number
+  saved_searches_after?: number
+  saved_searches_dropped?: number
+  audit_ttl_days: number
+  max_audits: number
+  max_saved_searches: number
+  applied_at: string
+}
+
+type NotebookSearchMemoryData = {
+  research_audits?: NotebookResearchAuditEntry[]
+  saved_searches?: NotebookSavedSearchEntry[]
+  retention?: NotebookSearchMemoryRetentionMeta
+  updated_at?: string
+  migrated_from_notebook_doc_at?: string
+}
 
 /**
  * Estimate the byte size of a value when serialised to JSON.
@@ -1942,6 +2163,112 @@ function fitSourcesToFirestoreLimit(
   return { sources: trimmed, truncated: true }
 }
 
+function getNotebookSearchMemoryDocRef(uid: string, notebookId: string) {
+  const db = ensureFirestore()
+  const normalizedNotebookId = normalizeFirestoreDocumentId(notebookId)
+  return doc(db, 'users', uid, 'research_notebooks', normalizedNotebookId, 'memory', NOTEBOOK_SEARCH_MEMORY_DOC_ID)
+}
+
+function parseIsoMs(value: unknown): number | null {
+  if (typeof value !== 'string') return null
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+function getSavedSearchSortMs(item: NotebookSavedSearchEntry): number {
+  return parseIsoMs(item.updated_at) ?? parseIsoMs(item.created_at) ?? 0
+}
+
+function applyNotebookSearchMemoryRetention(
+  payload: Partial<NotebookSearchMemoryData>,
+): { sanitized: Partial<NotebookSearchMemoryData>; droppedAudits: number; droppedSavedSearches: number } {
+  const nowIso = new Date().toISOString()
+  const next: Partial<NotebookSearchMemoryData> = { ...payload }
+  let droppedAudits = 0
+  let droppedSavedSearches = 0
+
+  if (payload.research_audits !== undefined) {
+    const cutoffMs = Date.now() - NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS * 86_400_000
+    const sortedAudits = [...payload.research_audits].sort((a, b) =>
+      (parseIsoMs(b.created_at) ?? 0) - (parseIsoMs(a.created_at) ?? 0),
+    )
+    const ttlFiltered = sortedAudits.filter(audit => {
+      const ts = parseIsoMs(audit.created_at)
+      return ts !== null && ts >= cutoffMs
+    })
+
+    // Preserve at least one latest audit for continuity, even if all are expired.
+    const continuityBase = ttlFiltered.length > 0 ? ttlFiltered : sortedAudits.slice(0, 1)
+    const retainedAudits = continuityBase.slice(0, NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS)
+    droppedAudits = Math.max(sortedAudits.length - retainedAudits.length, 0)
+    next.research_audits = retainedAudits
+
+    next.retention = {
+      ...(next.retention || {
+        audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
+        max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
+        max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
+        applied_at: nowIso,
+      }),
+      audits_before: sortedAudits.length,
+      audits_after: retainedAudits.length,
+      audits_dropped: droppedAudits,
+      audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
+      max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
+      max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
+      applied_at: nowIso,
+    }
+  }
+
+  if (payload.saved_searches !== undefined) {
+    const sortedSaved = [...payload.saved_searches].sort((a, b) => getSavedSearchSortMs(b) - getSavedSearchSortMs(a))
+    const retainedSaved = sortedSaved.slice(0, NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES)
+    droppedSavedSearches = Math.max(sortedSaved.length - retainedSaved.length, 0)
+    next.saved_searches = retainedSaved
+
+    next.retention = {
+      ...(next.retention || {
+        audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
+        max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
+        max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
+        applied_at: nowIso,
+      }),
+      saved_searches_before: sortedSaved.length,
+      saved_searches_after: retainedSaved.length,
+      saved_searches_dropped: droppedSavedSearches,
+      audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
+      max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
+      max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
+      applied_at: nowIso,
+    }
+  }
+
+  return { sanitized: next, droppedAudits, droppedSavedSearches }
+}
+
+async function getNotebookSearchMemory(uid: string, notebookId: string): Promise<NotebookSearchMemoryData | null> {
+  const ref = getNotebookSearchMemoryDocRef(uid, notebookId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return null
+  return snap.data() as NotebookSearchMemoryData
+}
+
+async function saveNotebookSearchMemory(
+  uid: string,
+  notebookId: string,
+  payload: Partial<NotebookSearchMemoryData>,
+): Promise<void> {
+  const ref = getNotebookSearchMemoryDocRef(uid, notebookId)
+  const { sanitized, droppedAudits, droppedSavedSearches } = applyNotebookSearchMemoryRetention(payload)
+  await setDoc(ref, stripUndefined({ ...sanitized, updated_at: new Date().toISOString() }), { merge: true })
+  if (droppedAudits > 0 || droppedSavedSearches > 0) {
+    console.info(
+      `[Lexio] saveNotebookSearchMemory: retention applied for notebook ${normalizeFirestoreDocumentId(notebookId)} ` +
+      `(audits dropped: ${droppedAudits}, saved searches dropped: ${droppedSavedSearches}).`,
+    )
+  }
+}
+
 /**
  * Get a single research notebook by ID.
  */
@@ -1950,7 +2277,33 @@ export async function getResearchNotebook(uid: string, notebookId: string): Prom
   const ref = doc(db, 'users', uid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
   const snap = await getDoc(ref)
   if (!snap.exists()) return null
-  return { id: snap.id, ...snap.data() } as ResearchNotebookData
+  const notebook = { id: snap.id, ...snap.data() } as ResearchNotebookData
+
+  try {
+    const memory = await getNotebookSearchMemory(uid, snap.id)
+    if (memory) {
+      return {
+        ...notebook,
+        research_audits: memory.research_audits ?? notebook.research_audits,
+        saved_searches: memory.saved_searches ?? notebook.saved_searches,
+      }
+    }
+
+    // Opportunistic backfill: first read migrates existing in-doc arrays into
+    // dedicated notebook memory storage without changing current API contracts.
+    if ((notebook.research_audits && notebook.research_audits.length > 0)
+      || (notebook.saved_searches && notebook.saved_searches.length > 0)) {
+      await saveNotebookSearchMemory(uid, snap.id, {
+        research_audits: notebook.research_audits ?? [],
+        saved_searches: notebook.saved_searches ?? [],
+        migrated_from_notebook_doc_at: new Date().toISOString(),
+      })
+    }
+  } catch (error) {
+    console.warn('[Lexio] getResearchNotebook: dedicated search memory unavailable, using notebook document fields.', error)
+  }
+
+  return notebook
 }
 
 /**
@@ -1968,6 +2321,8 @@ export async function createResearchNotebook(uid: string, data: Omit<ResearchNot
     sources: [] as NotebookSource[],
     messages: data.messages ?? [],
     artifacts: data.artifacts ?? [],
+    research_audits: data.research_audits ?? [],
+    saved_searches: data.saved_searches ?? [],
     status: data.status ?? 'active',
     llm_executions: data.llm_executions ?? [],
     created_at: now,
@@ -1978,6 +2333,17 @@ export async function createResearchNotebook(uid: string, data: Omit<ResearchNot
 
   const sanitized = { ...baseMeta, sources }
   const docRef = await addDoc(collection(db, 'users', uid, 'research_notebooks'), sanitized)
+
+  try {
+    await saveNotebookSearchMemory(uid, docRef.id, {
+      research_audits: sanitized.research_audits,
+      saved_searches: sanitized.saved_searches,
+      migrated_from_notebook_doc_at: now,
+    })
+  } catch (error) {
+    console.warn('[Lexio] createResearchNotebook: failed to seed dedicated search memory store.', error)
+  }
+
   return docRef.id
 }
 
@@ -1989,22 +2355,41 @@ export async function updateResearchNotebook(uid: string, notebookId: string, da
   const ref = doc(db, 'users', uid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id, ...rest } = data
+  const shouldSyncSearchMemory = rest.research_audits !== undefined || rest.saved_searches !== undefined
+  const rootPayload = shouldSyncSearchMemory
+    ? {
+        ...rest,
+        ...(rest.research_audits !== undefined ? { research_audits: [] as NotebookResearchAuditEntry[] } : {}),
+        ...(rest.saved_searches !== undefined ? { saved_searches: [] as NotebookSavedSearchEntry[] } : {}),
+      }
+    : rest
 
   // When the update includes sources, ensure total estimated size is safe.
   // We fetch the current document so we can account for existing fields.
-  if (rest.sources) {
+  if (rootPayload.sources) {
     const snap = await getDoc(ref)
     const existing = snap.exists() ? snap.data() : {}
-    const merged = { ...existing, ...stripUndefined(rest), updated_at: new Date().toISOString() }
+    const merged = { ...existing, ...stripUndefined(rootPayload), updated_at: new Date().toISOString() }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { sources: _src, ...mergedMeta } = merged
     const otherBytes = estimateJsonBytes(mergedMeta)
-    const { sources } = fitSourcesToFirestoreLimit(rest.sources, otherBytes)
-    const sanitized = stripUndefined({ ...rest, sources, updated_at: new Date().toISOString() })
+    const { sources } = fitSourcesToFirestoreLimit(rootPayload.sources, otherBytes)
+    const sanitized = stripUndefined({ ...rootPayload, sources, updated_at: new Date().toISOString() })
     await updateDoc(ref, sanitized)
   } else {
-    const sanitized = stripUndefined({ ...rest, updated_at: new Date().toISOString() })
+    const sanitized = stripUndefined({ ...rootPayload, updated_at: new Date().toISOString() })
     await updateDoc(ref, sanitized)
+  }
+
+  if (shouldSyncSearchMemory) {
+    try {
+      await saveNotebookSearchMemory(uid, normalizeFirestoreDocumentId(notebookId), {
+        ...(rest.research_audits !== undefined ? { research_audits: rest.research_audits } : {}),
+        ...(rest.saved_searches !== undefined ? { saved_searches: rest.saved_searches } : {}),
+      })
+    } catch (error) {
+      console.warn('[Lexio] updateResearchNotebook: failed to sync dedicated search memory store.', error)
+    }
   }
 }
 
@@ -2013,7 +2398,13 @@ export async function updateResearchNotebook(uid: string, notebookId: string, da
  */
 export async function deleteResearchNotebook(uid: string, notebookId: string): Promise<void> {
   const db = ensureFirestore()
-  await deleteDoc(doc(db, 'users', uid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId)))
+  const normalizedNotebookId = normalizeFirestoreDocumentId(notebookId)
+  await deleteDoc(doc(db, 'users', uid, 'research_notebooks', normalizedNotebookId))
+  try {
+    await deleteDoc(getNotebookSearchMemoryDocRef(uid, normalizedNotebookId))
+  } catch {
+    // Ignore missing/forbidden dedicated memory doc; notebook deletion is the source of truth.
+  }
 }
 
 // ── Password change via Firebase Auth ────────────────────────────────────────

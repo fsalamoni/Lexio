@@ -4,6 +4,7 @@ import { loadVideoPipelineModels } from './model-config'
 import { formatSecondsToMMSS } from './time-format'
 import { generateTTSViaOpenRouter } from './tts-client'
 import { createVideoRenderScopeLabel } from './video-generation-pipeline'
+import type { VideoPipelineProgressMeta } from './video-pipeline-progress'
 import type {
   LiteralGenerationEvent,
   LiteralGenerationState,
@@ -25,6 +26,7 @@ export type LiteralVideoProgressCallback = (
   totalSteps: number,
   phase: string,
   agentLabel: string,
+  meta?: VideoPipelineProgressMeta,
 ) => void
 
 export interface LiteralVideoProductionResult {
@@ -138,6 +140,29 @@ function makeExecution(
     tokens_out: 0,
     cost_usd: Math.max(0, costUsd),
     duration_ms: Math.max(0, Math.round(durationMs)),
+  }
+}
+
+function formatUsd(costUsd: number): string {
+  if (costUsd < 0.0001) return '<$0.0001'
+  return `$${costUsd.toFixed(4)}`
+}
+
+function buildLiteralProgressMeta(options: {
+  stageMeta: string
+  costUsd?: number
+  durationMs?: number
+  retryCount?: number
+  usedFallback?: boolean
+  fallbackFrom?: string
+}): VideoPipelineProgressMeta {
+  return {
+    stageMeta: options.stageMeta,
+    costUsd: options.costUsd,
+    durationMs: options.durationMs,
+    retryCount: options.retryCount,
+    usedFallback: options.usedFallback,
+    fallbackFrom: options.fallbackFrom,
   }
 }
 
@@ -810,7 +835,13 @@ export async function renderLiteralVideo(
 
     if (performance.now() - lastProgressStamp > 500) {
       const percent = Math.round((Math.min(elapsed, totalDuration) / totalDuration) * 100)
-      onProgress?.(4, 4, 'media_video_render', `Renderizando vídeo final (${percent}%)`)
+      onProgress?.(
+        4,
+        4,
+        'media_video_render',
+        `Renderizando vídeo final (${percent}%)`,
+        buildLiteralProgressMeta({ stageMeta: `Renderer local • ${percent}% concluído` }),
+      )
       lastProgressStamp = performance.now()
     }
 
@@ -1149,6 +1180,18 @@ export async function generateLiteralMediaAssets(
             performance.now() - startedAt,
             result.cost_usd,
           ))
+          onProgress?.(
+            1,
+            4,
+            'media_image_generation',
+            'Gerador de Imagens',
+            buildLiteralProgressMeta({
+              stageMeta: `${(chooseImageModel(models.video_image_generator) || 'openai/dall-e-3').split('/').pop() || chooseImageModel(models.video_image_generator) || 'openai/dall-e-3'} • cena ${scene.number} • ${Math.max(1, Math.round((performance.now() - startedAt) / 1000))}s • ${formatUsd(result.cost_usd)}`,
+              costUsd: result.cost_usd,
+              durationMs: performance.now() - startedAt,
+              retryCount: attempt > 1 ? attempt - 1 : 0,
+            }),
+          )
           updateSceneCheckpoint(literalState, scene.number, { imageStatus: 'completed', lastError: undefined })
           pushLiteralEvent(literalState, {
             type: 'step_success',
@@ -1238,6 +1281,18 @@ export async function generateLiteralMediaAssets(
             performance.now() - startedAt,
             0.015 * (scene.narration.length / 1000),
           ))
+          onProgress?.(
+            2,
+            4,
+            'media_tts_generation',
+            'Narrador TTS',
+            buildLiteralProgressMeta({
+              stageMeta: `${(chooseAudioModel(models.video_tts) || 'openai/gpt-4o-audio-preview').split('/').pop() || chooseAudioModel(models.video_tts) || 'openai/gpt-4o-audio-preview'} • cena ${scene.number} • ${Math.max(1, Math.round((performance.now() - startedAt) / 1000))}s • ${formatUsd(0.015 * (scene.narration.length / 1000))}`,
+              costUsd: 0.015 * (scene.narration.length / 1000),
+              durationMs: performance.now() - startedAt,
+              retryCount: attempt > 1 ? attempt - 1 : 0,
+            }),
+          )
           updateSceneCheckpoint(literalState, scene.number, { narrationStatus: 'completed', lastError: undefined })
           pushLiteralEvent(literalState, {
             type: 'step_success',
@@ -1385,6 +1440,19 @@ export async function generateLiteralMediaAssets(
             existingClips.push(clip)
             sceneAsset.videoClips = [...existingClips].sort((a, b) => a.partNumber - b.partNumber)
             executions.push(makeExecution('media_video_clip_generation', `browser/${clip.mimeType}`, performance.now() - startedAt))
+            onProgress?.(
+              3,
+              4,
+              'media_video_clip_generation',
+              'Gerador de Clipes',
+              buildLiteralProgressMeta({
+                stageMeta: `${clip.generationEngine === 'external-provider' ? (clip.providerName || 'provedor-externo') : 'renderer-local'} • cena ${scene.number} parte ${part.partNumber} • ${Math.max(1, Math.round((performance.now() - startedAt) / 1000))}s${clip.generationEngine === 'external-provider' ? ' • fallback externo' : ''}`,
+                durationMs: performance.now() - startedAt,
+                retryCount: attempt > 1 ? attempt - 1 : 0,
+                usedFallback: clip.generationEngine === 'external-provider',
+                fallbackFrom: clip.generationEngine === 'external-provider' ? 'browser-renderer' : undefined,
+              }),
+            )
             updateSceneCheckpoint(literalState, scene.number, {
               clipPartsCompleted: existingClips.length,
               clipsStatus: existingClips.length >= parts.length ? 'completed' : 'running',
@@ -1477,6 +1545,16 @@ export async function generateLiteralMediaAssets(
         blob: soundtrackBlob,
       }
       executions.push(makeExecution('media_soundtrack_generation', 'browser/procedural-audio', performance.now() - soundtrackStartedAt))
+      onProgress?.(
+        4,
+        4,
+        'media_soundtrack_generation',
+        'Trilha Sonora',
+        buildLiteralProgressMeta({
+          stageMeta: `browser/procedural-audio • ${Math.max(1, Math.round((performance.now() - soundtrackStartedAt) / 1000))}s`,
+          durationMs: performance.now() - soundtrackStartedAt,
+        }),
+      )
     } catch (error) {
       const message = `Trilha sonora: falha na geração (${error instanceof Error ? error.message : String(error)})`
       errors.push(message)

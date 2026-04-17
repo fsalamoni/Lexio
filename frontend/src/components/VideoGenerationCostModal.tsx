@@ -12,6 +12,7 @@ import {
   Image, Mic, Film, FileText, ImagePlus, Volume2,
 } from 'lucide-react'
 import { estimateVideoGenerationCost } from '../lib/video-generation-pipeline'
+import { VIDEO_PIPELINE_STAGES, type VideoPipelineProgressState } from '../lib/video-pipeline-progress'
 import DraggablePanel from './DraggablePanel'
 
 /** Model type recommendation per agent — pipeline textual + geração real de mídia */
@@ -33,7 +34,7 @@ interface VideoGenerationCostModalProps {
   onGenerate: (editedContent: string) => void
   onSkip: () => void
   isGenerating: boolean
-  generationProgress?: { step: number; total: number; phase: string; agent: string }
+  generationProgress?: VideoPipelineProgressState
 }
 
 export default function VideoGenerationCostModal({
@@ -103,11 +104,21 @@ export default function VideoGenerationCostModal({
                 <Loader2 className="w-5 h-5 text-rose-600 animate-spin flex-shrink-0" />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-gray-900">
-                    Etapa {generationProgress?.step || 1} de {generationProgress?.total || 8}
+                    Etapa {generationProgress?.step || 1} de {generationProgress?.total || VIDEO_PIPELINE_STAGES.length}
                   </p>
                   <p className="text-xs text-gray-600 truncate">
-                    {generationProgress?.agent || 'Iniciando pipeline...'}
+                    {generationProgress?.stageLabel || generationProgress?.agent || 'Iniciando pipeline...'}
                   </p>
+                  {generationProgress?.stageDescription && (
+                    <p className="text-[11px] text-rose-700 mt-1 line-clamp-2">
+                      {generationProgress.stageDescription}
+                    </p>
+                  )}
+                  {generationProgress?.stageMeta && (
+                    <p className="text-[10px] text-rose-500 mt-1 truncate">
+                      {generationProgress.stageMeta}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -116,38 +127,34 @@ export default function VideoGenerationCostModal({
                 <div className="w-full bg-gray-200 rounded-full h-2.5">
                   <div
                     className="bg-gradient-to-r from-rose-500 to-orange-500 h-2.5 rounded-full transition-all duration-500"
-                    style={{ width: `${((generationProgress?.step || 0) / (generationProgress?.total || 8)) * 100}%` }}
+                    style={{ width: `${generationProgress?.percent || 0}%` }}
                   />
                 </div>
                 <p className="text-xs text-gray-500 text-center">
-                  {Math.round(((generationProgress?.step || 0) / (generationProgress?.total || 8)) * 100)}% concluído
+                  {generationProgress?.percent || 0}% concluído
                 </p>
               </div>
 
               {/* Pipeline steps — 8 LLM agents + 3 media generation steps */}
               <div className="space-y-1.5">
-                {[
-                  { label: 'Planejador de Produção', icon: FileText },
-                  { label: 'Roteirista', icon: FileText },
-                  { label: 'Diretor de Cenas', icon: Film },
-                  { label: 'Storyboarder', icon: Image },
-                  { label: 'Designer Visual', icon: Image },
-                  { label: 'Compositor de Vídeo', icon: Film },
-                  { label: 'Narrador', icon: Mic },
-                  { label: 'Revisor Final', icon: FileText },
-                  { label: 'Planejando Clips por Cena', icon: Film },
-                  { label: 'Gerando Imagens dos Clips', icon: ImagePlus },
-                  { label: 'Gerando Narração TTS', icon: Volume2 },
-                ].map((agent, i) => {
+                {VIDEO_PIPELINE_STAGES.map((agent, i) => {
                   const step = i + 1
                   const current = generationProgress?.step || 0
                   const isDone = step < current
                   const isActive = step === current
-                  const isMedia = step >= 9
-                  const AgentIcon = agent.icon
+                  const isMedia = agent.category === 'media'
+                  const AgentIcon = step <= 2
+                    ? FileText
+                    : step === 3 || step === 6 || step === 9
+                      ? Film
+                      : step === 4 || step === 5 || step === 10
+                        ? Image
+                        : step === 7 || step === 11
+                          ? Mic
+                          : FileText
                   return (
                     <div
-                      key={agent.label}
+                      key={agent.key}
                       className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs ${
                         isDone
                           ? 'bg-green-50 text-green-700'
@@ -167,6 +174,11 @@ export default function VideoGenerationCostModal({
                       {isActive && generationProgress?.agent && step >= 9 && (
                         <span className="text-[10px] text-gray-500 ml-auto truncate max-w-[200px]">
                           {generationProgress.agent}
+                        </span>
+                      )}
+                      {isActive && generationProgress?.stageMeta && (
+                        <span className="text-[10px] text-gray-500 ml-auto truncate max-w-[220px]">
+                          {generationProgress.stageMeta}
                         </span>
                       )}
                     </div>

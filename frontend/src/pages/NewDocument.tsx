@@ -19,11 +19,15 @@ import { ModelUnavailableError, TransientLLMError } from '../lib/llm-client'
 import { ModelsNotConfiguredError } from '../lib/model-config'
 import type { UserProfileForGeneration } from '../lib/generation-service'
 import PipelineProgressPanel, {
-  PIPELINE_AGENTS,
-  PHASE_COMPLETED,
-  type AgentStep,
 } from '../components/PipelineProgressPanel'
 import AgentTrailProgressModal from '../components/AgentTrailProgressModal'
+import {
+  applyDocumentPipelineProgress,
+  createDocumentPipelineSteps,
+  DOCUMENT_PIPELINE_COMPLETED_PHASE,
+  getDocumentStepMeta,
+  type DocumentPipelineStep,
+} from '../lib/document-pipeline'
 
 interface DocType {
   id: string
@@ -49,7 +53,7 @@ export default function NewDocument() {
   const [loadingTypes, setLoadingTypes] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [generatedDocId, setGeneratedDocId] = useState<string | null>(null)
-  const [pipelineAgents, setPipelineAgents] = useState<AgentStep[]>([])
+  const [pipelineAgents, setPipelineAgents] = useState<DocumentPipelineStep[]>([])
   const [pipelinePercent, setPipelinePercent] = useState(0)
   const [pipelineMessage, setPipelineMessage] = useState('')
   const [pipelineComplete, setPipelineComplete] = useState(false)
@@ -76,9 +80,7 @@ export default function NewDocument() {
 
   // Initialise pipeline agents state from template
   const initPipeline = useCallback(() => {
-    setPipelineAgents(
-      PIPELINE_AGENTS.map(a => ({ ...a, status: 'pending' as const })),
-    )
+    setPipelineAgents(createDocumentPipelineSteps())
     setPipelinePercent(0)
     setPipelineMessage('')
     setPipelineComplete(false)
@@ -90,35 +92,12 @@ export default function NewDocument() {
   const handleProgress = useCallback((p: GenerationProgress) => {
     const now = Date.now()
 
-    setPipelineAgents(prev => {
-      const phaseKey = p.phase
-      // Find the index of the current phase in the pipeline
-      const phaseIdx = prev.findIndex(a => a.key === phaseKey)
-      return prev.map((agent, idx) => {
-        if (agent.key === phaseKey && agent.status !== 'completed') {
-          // Mark this agent as active and record start time
-          if (!agentTimers.current[phaseKey]) {
-            agentTimers.current[phaseKey] = now
-          }
-          return { ...agent, status: 'active' as const, startedAt: agentTimers.current[phaseKey] }
-        }
-        // Mark all agents before the current phase as completed
-        if (idx < phaseIdx && agent.status === 'active') {
-          return {
-            ...agent,
-            status: 'completed' as const,
-            completedAt: now,
-          }
-        }
-        return agent
-      })
-    })
+    setPipelineAgents(prev => applyDocumentPipelineProgress(prev, p, agentTimers.current, now))
 
     setPipelinePercent(p.percent)
     setPipelineMessage(p.message)
 
-    if (p.phase === PHASE_COMPLETED) {
-      // Mark all agents as completed
+    if (p.phase === DOCUMENT_PIPELINE_COMPLETED_PHASE) {
       setPipelineAgents(prev =>
         prev.map(a =>
           a.status === 'active'
@@ -258,7 +237,9 @@ export default function NewDocument() {
               null,
               (p) => {
                 handleProgress(p)
-                const pct = p.phase === PHASE_COMPLETED ? 100 : Math.min(95, (PIPELINE_AGENTS.findIndex(a => a.key === p.phase) + 1) / PIPELINE_AGENTS.length * 100)
+                const pct = p.phase === DOCUMENT_PIPELINE_COMPLETED_PHASE
+                  ? 100
+                  : Math.min(95, (p.step / p.totalSteps) * 100)
                 onTaskProgress({ progress: pct, phase: p.message || p.phase })
               },
               userProfile,
@@ -516,7 +497,8 @@ export default function NewDocument() {
           key: agent.key,
           label: agent.label,
           status: agent.status,
-          detail: agent.description,
+          detail: agent.runtimeMessage || agent.description,
+          meta: getDocumentStepMeta(agent),
         }))}
         isComplete={pipelineComplete}
         hasError={pipelineError}

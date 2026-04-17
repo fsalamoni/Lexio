@@ -8,6 +8,27 @@ import { useState } from 'react'
 import { Loader2, CheckCircle2, AlertCircle, X, ChevronUp, ChevronDown, Activity } from 'lucide-react'
 import { useTaskManager, type TaskInfo } from '../contexts/TaskManagerContext'
 
+function formatUsd(costUsd: number): string {
+  if (costUsd < 0.0001) return '<$0.0001'
+  return `$${costUsd.toFixed(4)}`
+}
+
+function buildTaskOperationalLabel(task: TaskInfo): string | undefined {
+  const operationals = task.operationals
+  if (!operationals) return undefined
+  const parts: string[] = []
+  if (operationals.totalCostUsd > 0) parts.push(formatUsd(operationals.totalCostUsd))
+  if (operationals.totalRetryCount > 0) {
+    parts.push(`${operationals.totalRetryCount} ${operationals.totalRetryCount === 1 ? 'retry' : 'retries'}`)
+  }
+  if (operationals.fallbackCount > 0) {
+    parts.push(`${operationals.fallbackCount} ${operationals.fallbackCount === 1 ? 'fallback' : 'fallbacks'}`)
+  }
+  const phaseCount = Object.keys(operationals.phaseCounts || {}).length
+  if (phaseCount > 0) parts.push(`${phaseCount} etapas`) 
+  return parts.length > 0 ? parts.join(' • ') : undefined
+}
+
 function formatElapsed(ms: number): string {
   const secs = Math.floor(ms / 1000)
   if (secs < 60) return `${secs}s`
@@ -20,6 +41,7 @@ function TaskRow({ task, onDismiss }: { task: TaskInfo; onDismiss: () => void })
   const elapsed = (task.completedAt ?? Date.now()) - task.startedAt
   const isRunning = task.status === 'running'
   const isError = task.status === 'error'
+  const operationalLabel = buildTaskOperationalLabel(task)
 
   return (
     <div className="px-3 py-2 border-b border-gray-100 last:border-b-0">
@@ -41,6 +63,12 @@ function TaskRow({ task, onDismiss }: { task: TaskInfo; onDismiss: () => void })
             <span className="text-[10px] text-gray-500 truncate">{task.phase}</span>
             <span className="text-[10px] text-indigo-600 font-medium">{Math.round(task.progress)}%</span>
           </div>
+          {task.stageMeta && (
+            <p className="text-[10px] text-gray-400 truncate mb-1">{task.stageMeta}</p>
+          )}
+          {operationalLabel && (
+            <p className="text-[10px] text-gray-500 truncate mb-1">{operationalLabel}</p>
+          )}
           <div className="w-full bg-gray-200 rounded-full h-1.5">
             <div
               className="bg-indigo-500 rounded-full h-1.5 transition-all duration-300"

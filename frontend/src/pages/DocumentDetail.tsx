@@ -5,9 +5,6 @@ import api, { invalidateApiCache } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import ProgressTracker from '../components/ProgressTracker'
 import PipelineProgressPanel, {
-  PIPELINE_AGENTS,
-  PHASE_COMPLETED,
-  type AgentStep,
 } from '../components/PipelineProgressPanel'
 import AgentTrailProgressModal from '../components/AgentTrailProgressModal'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -16,6 +13,13 @@ import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc, type ContextDetailData } from '../lib/firestore-service'
 import { generateDocument, type GenerationProgress } from '../lib/generation-service'
+import {
+  applyDocumentPipelineProgress,
+  createDocumentPipelineSteps,
+  DOCUMENT_PIPELINE_COMPLETED_PHASE,
+  getDocumentStepMeta,
+  type DocumentPipelineStep,
+} from '../lib/document-pipeline'
 import { TransientLLMError } from '../lib/llm-client'
 import { ModelsNotConfiguredError } from '../lib/model-config'
 import { generateAndDownloadDocx } from '../lib/docx-generator'
@@ -106,7 +110,7 @@ export default function DocumentDetail() {
 
   // Pipeline progress state for retry flow (Firebase mode)
   const [retryPipeline, setRetryPipeline] = useState(false)
-  const [pipelineAgents, setPipelineAgents] = useState<AgentStep[]>([])
+  const [pipelineAgents, setPipelineAgents] = useState<DocumentPipelineStep[]>([])
   const [pipelinePercent, setPipelinePercent] = useState(0)
   const [pipelineMessage, setPipelineMessage] = useState('')
   const [pipelineComplete, setPipelineComplete] = useState(false)
@@ -114,7 +118,7 @@ export default function DocumentDetail() {
   const agentTimers = useRef<Record<string, number>>({})
 
   const initPipeline = useCallback(() => {
-    setPipelineAgents(PIPELINE_AGENTS.map(a => ({ ...a, status: 'pending' as const })))
+    setPipelineAgents(createDocumentPipelineSteps())
     setPipelinePercent(0)
     setPipelineMessage('')
     setPipelineComplete(false)
@@ -124,22 +128,10 @@ export default function DocumentDetail() {
 
   const handleRetryProgress = useCallback((p: GenerationProgress) => {
     const now = Date.now()
-    setPipelineAgents(prev => {
-      const phaseIdx = prev.findIndex(a => a.key === p.phase)
-      return prev.map((agent, idx) => {
-        if (agent.key === p.phase && agent.status !== 'completed') {
-          if (!agentTimers.current[p.phase]) agentTimers.current[p.phase] = now
-          return { ...agent, status: 'active' as const, startedAt: agentTimers.current[p.phase] }
-        }
-        if (idx < phaseIdx && agent.status === 'active') {
-          return { ...agent, status: 'completed' as const, completedAt: now }
-        }
-        return agent
-      })
-    })
+    setPipelineAgents(prev => applyDocumentPipelineProgress(prev, p, agentTimers.current, now))
     setPipelinePercent(p.percent)
     setPipelineMessage(p.message)
-    if (p.phase === PHASE_COMPLETED) {
+    if (p.phase === DOCUMENT_PIPELINE_COMPLETED_PHASE) {
       setPipelineAgents(prev =>
         prev.map(a => a.status === 'active' ? { ...a, status: 'completed' as const, completedAt: now } : a),
       )
@@ -441,7 +433,8 @@ export default function DocumentDetail() {
           key: agent.key,
           label: agent.label,
           status: agent.status,
-          detail: agent.description,
+          detail: agent.runtimeMessage || agent.description,
+          meta: getDocumentStepMeta(agent),
         }))}
         isComplete={pipelineComplete}
         hasError={pipelineError}
