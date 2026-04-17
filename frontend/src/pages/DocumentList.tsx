@@ -383,13 +383,21 @@ export default function DocumentList() {
             <FileText className="w-8 h-8 text-gray-300" />
           </div>
           <p className="font-medium text-gray-700 mb-1">Nenhum documento encontrado</p>
-          <p className="text-sm text-gray-400">
-            {hasActiveFilters ? 'Nenhum documento corresponde aos filtros ativos.' : 'Crie seu primeiro documento usando o botão acima.'}
+          <p className="text-sm text-gray-400 mb-4">
+            {hasActiveFilters ? 'Nenhum documento corresponde aos filtros ativos.' : 'Comece gerando seu primeiro documento jurídico com IA.'}
           </p>
-          {hasActiveFilters && (
-            <button onClick={clearAll} className="mt-3 text-sm text-brand-600 hover:underline">
+          {hasActiveFilters ? (
+            <button onClick={clearAll} className="text-sm text-brand-600 hover:underline">
               Limpar filtros
             </button>
+          ) : (
+            <Link
+              to="/documents/new"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+            >
+              <Sparkles className="w-4 h-4" />
+              Gerar primeiro documento
+            </Link>
           )}
         </div>
       ) : (

@@ -12,6 +12,7 @@ import {
   createDocument,
   getDocumentTypesForProfile, getLegalAreasForProfile,
   getProfile, type ProfileData,
+  getUserSettings,
   type ContextDetailData, type ContextDetailQuestion,
 } from '../lib/firestore-service'
 import { generateDocument, generateContextQuestions, estimateDocumentGenerationCost, type GenerationProgress } from '../lib/generation-service'
@@ -212,6 +213,34 @@ export default function NewDocument() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedType || !request.trim()) return
+
+    // Budget warning check (non-blocking unless hard_block is set)
+    if (IS_FIREBASE && userId && costEstimate) {
+      try {
+        const settings = await getUserSettings(userId)
+        const budget = settings?.token_budget
+        if (budget) {
+          const monthlyLimit = budget.monthly_limit_usd ?? 0
+          const warningPct = budget.warning_threshold_pct ?? 80
+          if (monthlyLimit > 0) {
+            // Approximate: use total_cost_usd from settings if available
+            const totalSpend = (settings as Record<string, unknown>).total_cost_usd as number | undefined
+            if (totalSpend && totalSpend >= monthlyLimit) {
+              if (budget.hard_block) {
+                toast.error('Orçamento excedido', 'O limite mensal de tokens foi atingido. Ajuste em Custos & Tokens.')
+                return
+              }
+              toast.warning('Orçamento excedido', `Gasto atual: $${totalSpend.toFixed(2)} / $${monthlyLimit.toFixed(2)}. A geração prosseguirá.`)
+            } else if (totalSpend && (totalSpend / monthlyLimit) * 100 >= warningPct) {
+              toast.warning('Orçamento em alerta', `Gasto atual: $${totalSpend.toFixed(2)} / $${monthlyLimit.toFixed(2)} (${Math.round((totalSpend / monthlyLimit) * 100)}%)`)
+            }
+          }
+        }
+      } catch {
+        // Non-critical — proceed with generation
+      }
+    }
+
     setLoading(true)
     try {
       if (IS_FIREBASE && userId) {

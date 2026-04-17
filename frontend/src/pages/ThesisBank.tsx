@@ -609,12 +609,23 @@ export default function ThesisBank() {
             <BookOpen className="w-8 h-8 text-gray-300" />
           </div>
           <p className="font-medium text-gray-700 mb-1">Nenhuma tese encontrada</p>
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-gray-400 mb-4">
             {search
               ? `Nenhum resultado para "${search}". Tente outros termos.`
-              : 'As teses são extraídas automaticamente dos documentos gerados.'
+              : 'As teses são extraídas automaticamente dos documentos gerados. Gere um documento para começar.'
             }
           </p>
+          {!search && (
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => { setEditingThesis(null); setModalOpen(true) }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Criar tese manualmente
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-3">

@@ -5,7 +5,20 @@
 
 ---
 
-## Status Geral: Etapas 1-47 IMPLEMENTADAS
+## Status Geral: Etapas 1-51 IMPLEMENTADAS
+
+### Etapa 51 — Empty States, Budget Warning e Context Compactor ✅
+- **Arquivos**: `pages/DocumentList.tsx`, `pages/ThesisBank.tsx`, `pages/NewDocument.tsx`, `lib/generation-service.ts`, `lib/context-compactor.ts`
+- Empty states de DocumentList e ThesisBank agora incluem CTAs claros (botões de ação) para guiar o usuário quando não há dados
+- NewDocument exibe estimativa de custo (agentes, tokens, USD) antes da geração e verifica orçamento (warning/block) ao submeter
+- Context compactor: `lib/context-compactor.ts` — deduplica segmentos, trunca com preservação de estrutura (headers, início/fim), compacta múltiplas fontes por prioridade
+- Integração do compactor na pipeline documental: knowledge base >40k chars é compactada automaticamente antes de ir para o pesquisador
+
+### Etapa 48-50 — Cost Preview, Context Compactor, Dashboard Hub ✅
+- **Arquivos**: `pages/NewDocument.tsx`, `pages/Dashboard.tsx`, `lib/context-compactor.ts`
+- NewDocument exibe estimativa inline com `estimateDocumentGenerationCost()` abaixo do form
+- Dashboard ganhou seção de "ações rápidas" com links diretos para Novo Documento, Upload, Caderno e Teses
+- Novo módulo `context-compactor.ts` com funções `deduplicateSegments`, `truncateWithStructure`, `compactContext`
 
 ### Etapa 47 — UI de Orçamento de Tokens ✅
 - **Arquivos**: `pages/CostTokensPage.tsx`

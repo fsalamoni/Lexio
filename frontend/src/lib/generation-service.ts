@@ -27,6 +27,7 @@ import { loadAgentModels, loadContextDetailModels, loadAcervoEmentaModels, loadA
 import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, updateAcervoEmenta, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
+import { compactContext } from './context-compactor'
 import { loadApiKeyValues } from './settings-store'
 import { firestore } from './firebase'
 import { buildDocumentPipelineProgress, buildDocumentStageMeta, type DocumentPipelineProgress } from './document-pipeline'
@@ -1589,6 +1590,15 @@ export async function generateDocument(
       } catch (e) {
         console.warn('Failed to load acervo context:', e)
       }
+    }
+
+    // Apply context compaction if knowledge base is very large (>40k chars)
+    if (knowledgeBase.length > 40000) {
+      const compacted = compactContext(
+        [{ label: 'base_conhecimento', text: knowledgeBase, priority: 0 }],
+        40000,
+      )
+      knowledgeBase = compacted.text
     }
 
     // 3. Pesquisador — legal research synthesis
