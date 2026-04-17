@@ -80,6 +80,8 @@
 - A trilha de calibração agora também gera alertas automáticos de desvio (drift) e status de saúde da governança de rollout com base em override manual
 - Refatoração dos handlers de pesquisa de fonte no notebook concluída: entrada unificada para externa/profunda/jurisprudência, replay auditável de jurisprudência no mesmo entrypoint e remoção de wrappers inline legados de clique/Enter em `ResearchNotebook.tsx`
 - Hardening de CI frontend concluído com ajuste de testes para dual-read de memória dedicada e estabilização de mock de busca web plain-text sem dependência de rede
+- Governança de drift evoluída para modo acionável no admin: alertas agora geram planos aplicáveis com persistência assistida e guardrails de thresholds
+- Validação longitudinal de calibração adicionada no admin por coortes (janela × rollout × porte), com leitura de deltas médios e taxa de override manual
 
 **Em validacao ou proxima onda imediata:**
 - A telemetria operacional rica ja cobre documento, acervo, estudio e video com ETA, agregados e detalhamento principal de saida no notebook; a memoria auditavel agora cobre estudio, chat e buscas do notebook
@@ -113,6 +115,7 @@
 - `npm run typecheck` executado em `frontend/` com saida final limpa (`tsc --noEmit`, exit code 0)
 - Refatoração dos handlers de fonte em `ResearchNotebook.tsx` validada com novo `npm run typecheck` limpo após ajustes de referências e triggers
 - Correção de quebra no workflow de Tests validada localmente com trilha completa do job frontend-quality: `npm run typecheck`, `npm run test` (188/188) e `npm run build` em `frontend/`
+- Nova etapa de governança de drift também validada localmente com `npm run typecheck`, `npm run test` (188/188) e `npm run build` em `frontend/`
 
 ---
 

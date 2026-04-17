@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-38 IMPLEMENTADAS
+## Status Geral: Etapas 1-39 IMPLEMENTADAS
+
+### Etapa 39 — Drift Acionável + Validação Longitudinal ✅
+- **Arquivos**: `pages/PlatformAdminPanel.tsx`
+- Alertas de drift deixaram de ser apenas informativos e passaram a gerar planos acionáveis com aplicação assistida de thresholds diretamente no painel admin
+- Foram adicionados guardrails de normalização/clamp dos thresholds para prevenir configuração inválida e reduzir risco de regressões operacionais
+- O painel agora exibe leitura longitudinal por coorte (janela × rollout × porte), incluindo deltas médios e taxa de override manual para apoiar calibração contínua
+- Validação executada em `frontend/`: `npm run typecheck`, `npm run test` (188/188) e `npm run build` com sucesso
 
 ### Etapa 38 — Hardening de Testes Frontend para CI ✅
 - **Arquivos**: `lib/firestore-service.test.ts`, `lib/web-search-service.test.ts`
