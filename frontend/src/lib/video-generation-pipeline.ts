@@ -301,6 +301,28 @@ export interface VideoGenerationResult {
   executions: VideoGenerationStepExecution[]
   /** Errors encountered during media generation (images/TTS). Empty if all succeeded. */
   mediaErrors: string[]
+  /** Checkpoint state for resumability — can be passed back to resume an interrupted pipeline */
+  checkpoint?: VideoCheckpoint
+}
+
+/** Checkpoint state that allows resuming the video pipeline from the last completed step */
+export interface VideoCheckpoint {
+  completedStep: number
+  totalSteps: number
+  planData?: Record<string, unknown>
+  scriptData?: Record<string, unknown>
+  directedScenes?: Record<string, unknown>
+  storyboardData?: Record<string, unknown>
+  designData?: Record<string, unknown>
+  compositorData?: Record<string, unknown>
+  narratorData?: Record<string, unknown>
+  reviewData?: Record<string, unknown>
+  assembledPackage?: VideoProductionPackage
+  executions: VideoGenerationStepExecution[]
+  mediaErrors: string[]
+  imagesGenerated: number
+  ttsGenerated: number
+  clipsDone: number
 }
 
 export type VideoGenerationProgressCallback = (
@@ -575,6 +597,19 @@ export async function runVideoGenerationPipeline(
   const wantMedia = input.generateMedia !== false // default true
   const totalSteps = wantMedia ? 11 : 8
 
+  // Checkpoint state for resumability — updated after each successful step
+  const checkpoint: VideoCheckpoint = {
+    completedStep: 0,
+    totalSteps,
+    executions,
+    mediaErrors: [],
+    imagesGenerated: 0,
+    ttsGenerated: 0,
+    clipsDone: 0,
+  }
+
+  try {
+
   // ── Step 1: Planejador de Produção ────────────────────────────────────────
   onProgress?.(1, totalSteps, 'video_planejador', 'Planejador de Produção')
 
@@ -622,6 +657,7 @@ Requisitos:
 - Total deve somar a duração indicada no roteiro
 - O Guia de Design será usado como REFERÊNCIA OBRIGATÓRIA por todos os demais agentes — seja o mais específico possível`, 'video_planejador', executions, 2, signal)
   if (planResult) onProgress?.(1, totalSteps, 'video_planejador', 'Planejador de Produção', buildVideoProgressMetaFromResult(planResult))
+  checkpoint.completedStep = 1; checkpoint.planData = planData
 
   // ── Step 2: Roteirista (refinar roteiro) ──────────────────────────────────
   onProgress?.(2, totalSteps, 'video_roteirista', 'Roteirista')
@@ -671,6 +707,7 @@ Requisitos adicionais:
 - Cronologia e encadeamento lógico de ideias`, 'video_roteirista', executions, 2, signal)
   if (scriptResult) onProgress?.(2, totalSteps, 'video_roteirista', 'Roteirista', buildVideoProgressMetaFromResult(scriptResult))
   if (!scriptData.scenes) scriptData.scenes = []
+  checkpoint.completedStep = 2; checkpoint.scriptData = scriptData
 
   // ── Step 3: Diretor de Cenas ──────────────────────────────────────────────
   onProgress?.(3, totalSteps, 'video_diretor_cena', 'Diretor de Cenas')
@@ -718,6 +755,7 @@ Requisitos adicionais:
 - Garanta continuidade visual entre cenas consecutivas`, 'video_diretor_cena', executions, 2, signal)
   if (directorResult) onProgress?.(3, totalSteps, 'video_diretor_cena', 'Diretor de Cenas', buildVideoProgressMetaFromResult(directorResult))
   if (!directedScenes.scenes) directedScenes.scenes = scriptData.scenes || []
+  checkpoint.completedStep = 3; checkpoint.directedScenes = directedScenes
 
   // ── Step 4: Storyboarder ──────────────────────────────────────────────────
   onProgress?.(4, totalSteps, 'video_storyboarder', 'Storyboarder')
@@ -761,6 +799,7 @@ Requisitos adicionais:
 - Descrições visuais detalhadas e precisas
 - Indique posição e tamanho dos elementos na composição`, 'video_storyboarder', executions, 2, signal)
   if (storyboardResult) onProgress?.(4, totalSteps, 'video_storyboarder', 'Storyboarder', buildVideoProgressMetaFromResult(storyboardResult))
+  checkpoint.completedStep = 4; checkpoint.storyboardData = storyboardData
 
   // ── Step 5: Designer Visual ───────────────────────────────────────────────
   onProgress?.(5, totalSteps, 'video_designer', 'Designer Visual')
@@ -816,6 +855,7 @@ Requisitos adicionais:
 - Um prompt de vídeo curto por cena (para composição)
 - Prompts em inglês para melhor compatibilidade com modelos de geração`, 'video_designer', executions, 2, signal)
   if (designResult) onProgress?.(5, totalSteps, 'video_designer', 'Designer Visual', buildVideoProgressMetaFromResult(designResult))
+  checkpoint.completedStep = 5; checkpoint.designData = designData
 
   // ── Step 6: Compositor de Vídeo ───────────────────────────────────────────
   onProgress?.(6, totalSteps, 'video_compositor', 'Compositor de Vídeo')
@@ -916,6 +956,7 @@ REGRA DE HARMONIA (OBRIGATÓRIA):
 - Trilha sonora deve ter continuidade — NÃO mude de gênero entre segmentos
 - Lower thirds e overlays devem seguir o MESMO estilo de design em todo o vídeo`, 'video_compositor', executions, 2, signal)
   if (compositorResult) onProgress?.(6, totalSteps, 'video_compositor', 'Compositor de Vídeo', buildVideoProgressMetaFromResult(compositorResult))
+  checkpoint.completedStep = 6; checkpoint.compositorData = compositorData
 
   // ── Step 7: Narrador ──────────────────────────────────────────────────────
   onProgress?.(7, totalSteps, 'video_narrador', 'Narrador')
@@ -967,6 +1008,7 @@ Requisitos adicionais:
 - Indicações de [pausa] onde necessário
 - Timing sincronizado com a timeline do compositor`, 'video_narrador', executions, 2, signal)
   if (narratorResult) onProgress?.(7, totalSteps, 'video_narrador', 'Narrador', buildVideoProgressMetaFromResult(narratorResult))
+  checkpoint.completedStep = 7; checkpoint.narratorData = narratorData
 
   // ── Step 8: Revisor Final ─────────────────────────────────────────────────
   onProgress?.(8, totalSteps, 'video_revisor', 'Revisor Final de Vídeo')
@@ -1037,6 +1079,7 @@ Requisitos adicionais:
 - Avalie encadeamento lógico de ideias
 - Identifique possíveis problemas e sugira melhorias`, 'video_revisor', executions, 2, signal)
   if (reviewResult) onProgress?.(8, totalSteps, 'video_revisor', 'Revisor Final de Vídeo', buildVideoProgressMetaFromResult(reviewResult))
+  checkpoint.completedStep = 8; checkpoint.reviewData = reviewData
 
   // ── Assemble final package ────────────────────────────────────────────────
 
@@ -1485,7 +1528,15 @@ REQUISITOS OBRIGATÓRIOS:
     }
   }
 
-  return { package: videoPackage, executions, mediaErrors }
+  return { package: videoPackage, executions, mediaErrors, checkpoint: { ...checkpoint, completedStep: totalSteps, assembledPackage: videoPackage } }
+
+  } catch (err) {
+    // Attach checkpoint to the error so the caller can offer resumption
+    if (err instanceof Error) {
+      (err as Error & { videoCheckpoint?: VideoCheckpoint }).videoCheckpoint = { ...checkpoint }
+    }
+    throw err
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -5,7 +5,29 @@
 
 ---
 
-## Status Geral: Etapas 1-39 IMPLEMENTADAS
+## Status Geral: Etapas 1-43 IMPLEMENTADAS
+
+### Etapa 43 — Reranking Jurídico Determinístico Aprimorado ✅
+- **Arquivos**: `lib/datajud-service.ts`
+- O scoring de jurisprudência evoluiu de bônus binário de recência (5 anos) para decaimento temporal gradual com 6 faixas (1a, 3a, 5a, 10a, >20a), discriminando melhor decisões recentes de históricas
+- Adicionado bônus de proximidade de frase: termos consecutivos da query encontrados adjacentes na ementa recebem pontuação adicional, privilegiando correspondência semântica mais precisa
+- O tie-breaking do ranking agora usa hierarquia do tribunal antes da data: em caso de empate de score, tribunais superiores (STF/STJ) prevalecem sobre tribunais regionais e estaduais
+- Validação executada em `frontend/`: `npm run typecheck`, `npm run test` (188/188) e `npm run build` com sucesso
+
+### Etapa 42 — Checkpoints Retomáveis do Pipeline de Vídeo ✅
+- **Arquivos**: `lib/video-generation-pipeline.ts`
+- Adicionado contrato `VideoCheckpoint` que captura o estado completo após cada um dos 11 passos do pipeline (planData, scriptData, directedScenes, etc.)
+- O checkpoint é atualizado incrementalmente após cada etapa concluída e incluído no resultado final para persistência pela UI
+- Em caso de erro/interrupção, o checkpoint é anexado à exceção (`videoCheckpoint`), permitindo que o frontend ofereça retomada do último passo completado
+- Validação executada em `frontend/`: `npm run typecheck`, `npm run test` (188/188) e `npm run build` com sucesso
+
+### Etapa 40+41 — Effectiveness Scoring e Auto-Recomendação de Política ✅
+- **Arquivos**: `pages/PlatformAdminPanel.tsx`
+- O painel de validação longitudinal agora calcula um score de efetividade (0-100) para cada coorte, combinando penalidades de delta, aderência, amostras e proporção de ações assistidas
+- A tabela de coortes ganhou coluna de efetividade com código de cor (verde ≥70, amarelo ≥40, vermelho <40) para leitura rápida
+- Adicionada recomendação automática da melhor política por cenário: o sistema identifica a coorte com maior efetividade (≥3 amostras, score ≥40) e oferece botão de adoção com 1 clique
+- Se a política atual já é a mais efetiva, um badge verde confirma a aderência operacional
+- Validação executada em `frontend/`: `npm run typecheck`, `npm run test` (188/188) e `npm run build` com sucesso
 
 ### Etapa 39 — Drift Acionável + Validação Longitudinal ✅
 - **Arquivos**: `pages/PlatformAdminPanel.tsx`

@@ -14,9 +14,9 @@
 
 ---
 
-## Andamento Atual (ciclo 2026-04-17)
+## Andamento Atual (ciclo 2026-04-18)
 
-**Status:** ⚠️ parcial em execucao com fechamento de refatoracao de handlers no notebook
+**Status:** ⚠️ avançando Faixa B — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos
 
 ## Plano Mestre Executável (Atualizado)
 
@@ -30,9 +30,11 @@
 - Thresholds configuráveis, presets operacionais e recomendação assistida por porte/telemetria com política de rollout persistida
 
 ### Faixa B — Próxima onda lógica (alta prioridade)
-- Consolidar validação de impacto da recomendação assistida com métricas históricas, alertas de desvio e fechamento de limiares por perfil operacional (comparar ruído/perda de sensibilidade por janela, porte e modo de rollout)
-- Evoluir previsões do pipeline de vídeo por lote/renderização e explicitar checkpoints retomáveis
-- Fechar lacunas de reranking jurídico (estado atual parcial) com critérios mais determinísticos por hierarquia/atualidade
+- ✅ Effectiveness scoring por coorte + auto-recomendação de política no admin (Etapas 40-41)
+- ✅ Checkpoints retomáveis do pipeline de vídeo com `VideoCheckpoint` exportável (Etapa 42)
+- ✅ Reranking jurídico determinístico aprimorado: decaimento temporal gradual, proximidade de frase e hierarquia de tribunal (Etapa 43)
+- Consolidar validação de impacto da recomendação assistida com métricas históricas de longo prazo, alertas de desvio e fechamento de limiares por perfil operacional
+- Expor checkpoints do vídeo na UI para retomada assistida pelo usuário
 
 ### Faixa C — Lacunas funcionais declaradas
 - Implementar busca híbrida semântica + lexical para jurisprudência (feature ainda marcada como ausente)
@@ -82,6 +84,9 @@
 - Hardening de CI frontend concluído com ajuste de testes para dual-read de memória dedicada e estabilização de mock de busca web plain-text sem dependência de rede
 - Governança de drift evoluída para modo acionável no admin: alertas agora geram planos aplicáveis com persistência assistida e guardrails de thresholds
 - Validação longitudinal de calibração adicionada no admin por coortes (janela × rollout × porte), com leitura de deltas médios e taxa de override manual
+- Effectiveness scoring (0-100) por coorte longitudinal com coluna visual color-coded e auto-recomendação da melhor política com botão de adoção (Etapas 40-41)
+- Pipeline de vídeo agora exporta `VideoCheckpoint` com estado completo após cada passo; em caso de erro, o checkpoint é anexado à exceção para retomada (Etapa 42)
+- Reranking de jurisprudência aprimorado com decaimento temporal gradual (6 faixas), bônus de proximidade de frase e tie-breaking por hierarquia de tribunal (Etapa 43)
 
 **Em validacao ou proxima onda imediata:**
 - A telemetria operacional rica ja cobre documento, acervo, estudio e video com ETA, agregados e detalhamento principal de saida no notebook; a memoria auditavel agora cobre estudio, chat e buscas do notebook

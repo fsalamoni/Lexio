@@ -1390,6 +1390,11 @@ function rankAndFilterDataJudResults(query: string, results: DataJudResult[], ma
     .sort((left, right) => {
       const scoreDiff = (right.relevanceScore ?? 0) - (left.relevanceScore ?? 0)
       if (scoreDiff !== 0) return scoreDiff
+      // Tie-break by tribunal hierarchy (higher courts first)
+      const leftWeight = tribunalCategoryWeight(left.tribunalName, left.tribunal)
+      const rightWeight = tribunalCategoryWeight(right.tribunalName, right.tribunal)
+      if (rightWeight !== leftWeight) return rightWeight - leftWeight
+      // Then by date (most recent first)
       return right.dataAjuizamento.localeCompare(left.dataAjuizamento)
     })
 
@@ -1468,11 +1473,29 @@ export function scoreDataJudResult(query: string, result: DataJudResult, legalAr
     if (CRIMINAL_CLASS_RE.test(normalizedClasse)) score -= 20
   }
 
+  // Temporal decay — gradual recency bonus based on year distance
   if (result.dataAjuizamento) {
     const year = Number(result.dataAjuizamento.slice(0, 4))
-    if (!Number.isNaN(year) && year >= new Date().getFullYear() - 5) {
-      score += 4
+    if (!Number.isNaN(year)) {
+      const currentYear = new Date().getFullYear()
+      const age = currentYear - year
+      if (age <= 1) score += 8
+      else if (age <= 3) score += 6
+      else if (age <= 5) score += 4
+      else if (age <= 10) score += 1
+      else if (age > 20) score -= 3
     }
+  }
+
+  // Phrase proximity bonus — consecutive query terms found adjacently in ementa
+  if (terms.length >= 2 && result.ementa) {
+    const normalizedEmenta = normalizeForSearch(result.ementa)
+    let consecutivePairs = 0
+    for (let i = 0; i < terms.length - 1; i++) {
+      const phrase = `${terms[i]} ${terms[i + 1]}`
+      if (normalizedEmenta.includes(phrase)) consecutivePairs++
+    }
+    score += Math.min(12, consecutivePairs * 4)
   }
 
   // Legal area relevance: penalize results from clearly wrong area, bonus for matching

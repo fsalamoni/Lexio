@@ -557,9 +557,30 @@ export default function PlatformAdminPanel() {
               : 'neutro',
         }
       })
+      .map(group => ({
+        ...group,
+        effectivenessScore: computeEffectivenessScore(group),
+      }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 8)
   }, [recommendationHistory])
+
+  const bestPolicyRecommendation = useMemo(() => {
+    if (longitudinalCalibrationInsights.length < 2) return null
+    const eligible = longitudinalCalibrationInsights.filter(i => i.count >= 3)
+    if (eligible.length === 0) return null
+    const best = eligible.reduce((prev, curr) =>
+      curr.effectivenessScore > prev.effectivenessScore ? curr : prev
+    )
+    if (best.effectivenessScore < 40) return null
+    const isCurrent = best.recommendationWindowDays === recommendationPolicy.recommendationWindowDays
+      && best.rolloutMode === recommendationPolicy.rolloutMode
+    return {
+      ...best,
+      isCurrent,
+      label: `${best.recommendationWindowDays}d / ${best.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'} / ${best.scaleProfile}`,
+    }
+  }, [longitudinalCalibrationInsights, recommendationPolicy])
 
   const appendRecommendationHistory = (entry: RecommendationHistoryEntry): RecommendationHistoryEntry[] => {
     return [entry, ...recommendationHistory].slice(0, MAX_RECOMMENDATION_HISTORY_ENTRIES)
@@ -1113,6 +1134,7 @@ export default function PlatformAdminPanel() {
                     <th className="px-2 py-1.5 text-right">Delta crítico</th>
                     <th className="px-2 py-1.5 text-right">Delta atenção</th>
                     <th className="px-2 py-1.5 text-right">Override manual</th>
+                    <th className="px-2 py-1.5 text-right">Efetividade</th>
                     <th className="px-2 py-1.5 text-left">Saúde</th>
                   </tr>
                 </thead>
@@ -1126,6 +1148,9 @@ export default function PlatformAdminPanel() {
                       <td className="px-2 py-1.5 text-right text-gray-700">{fmtSignedNumber(item.avgDeltaCritical)}</td>
                       <td className="px-2 py-1.5 text-right text-gray-700">{fmtSignedNumber(item.avgDeltaWarning)}</td>
                       <td className="px-2 py-1.5 text-right text-gray-700">{fmtPercent(item.manualRate)}</td>
+                      <td className={`px-2 py-1.5 text-right font-medium ${
+                        item.effectivenessScore >= 70 ? 'text-emerald-700' : item.effectivenessScore >= 40 ? 'text-amber-700' : 'text-red-700'
+                      }`}>{item.effectivenessScore}</td>
                       <td className="px-2 py-1.5 text-gray-700">{item.healthLabel}</td>
                     </tr>
                   ))}
@@ -1134,6 +1159,42 @@ export default function PlatformAdminPanel() {
             </div>
           )}
         </div>
+
+        {bestPolicyRecommendation && (
+          <div className={`rounded-lg border px-3 py-2 text-xs ${
+            bestPolicyRecommendation.isCurrent
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-indigo-50 border-indigo-200 text-indigo-800'
+          }`}>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="font-semibold">
+                  {bestPolicyRecommendation.isCurrent
+                    ? 'Política atual é a mais efetiva'
+                    : 'Política mais efetiva identificada'}
+                </p>
+                <p className="mt-0.5 text-[11px] opacity-90">
+                  {bestPolicyRecommendation.label} — score {bestPolicyRecommendation.effectivenessScore}/100 com {bestPolicyRecommendation.count} amostras
+                </p>
+              </div>
+              {!bestPolicyRecommendation.isCurrent && (
+                <button
+                  onClick={() => {
+                    setRecommendationPolicy(prev => ({
+                      ...prev,
+                      recommendationWindowDays: bestPolicyRecommendation.recommendationWindowDays,
+                      rolloutMode: bestPolicyRecommendation.rolloutMode,
+                    }))
+                    toast.success(`Política atualizada para ${bestPolicyRecommendation.label}`)
+                  }}
+                  className="shrink-0 px-2 py-1 rounded-md border border-current/25 bg-white/70 text-[10px] font-semibold hover:bg-white"
+                >
+                  Adotar política
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
           <div className="rounded-lg border border-gray-200 px-2.5 py-2">
@@ -1381,6 +1442,30 @@ function detectScaleProfile(totalNotebooks: number): ScaleProfile {
   if (totalNotebooks < 100) return 'small'
   if (totalNotebooks < 1000) return 'medium'
   return 'large'
+}
+
+function computeEffectivenessScore(group: {
+  count: number
+  manualActions: number
+  assistedActions: number
+  avgDeltaCritical: number
+  avgDeltaWarning: number
+  avgDeltaInfo: number
+  manualRate: number
+}): number {
+  if (group.count === 0) return 0
+  // Lower delta = better (less noise introduced by calibration)
+  const criticalPenalty = Math.min(30, Math.abs(group.avgDeltaCritical) * 15)
+  const warningPenalty = Math.min(20, Math.abs(group.avgDeltaWarning) * 8)
+  // Low manual override rate = better adherence to recommendations
+  const adherenceBonus = (1 - group.manualRate) * 25
+  // More samples = more confidence
+  const sampleBonus = Math.min(15, group.count * 2.5)
+  // Assisted actions being high is a good signal
+  const assistedRatio = group.count > 0 ? group.assistedActions / group.count : 0
+  const assistedBonus = assistedRatio * 10
+  const raw = 100 - criticalPenalty - warningPenalty + adherenceBonus + sampleBonus + assistedBonus
+  return Math.max(0, Math.min(100, Math.round(raw)))
 }
 
 function clamp(value: number, min: number, max: number): number {
