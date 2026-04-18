@@ -4,6 +4,7 @@ import { Save, ArrowLeft, FileText, Check, Download, Bot, Copy } from 'lucide-re
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import RichTextEditor from '../components/RichTextEditor'
+import Breadcrumb from '../components/Breadcrumb'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getDocument, updateDocument } from '../lib/firestore-service'
@@ -102,6 +103,18 @@ export default function DocumentEditor() {
     setCharCount(chars)
   }, [])
 
+  // Ctrl+S keyboard shortcut to save
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault()
+        if (hasChanges && !saving) handleSave()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  })
+
   const handleSave = async () => {
     if (!id) return
     setSaving(true)
@@ -143,6 +156,11 @@ export default function DocumentEditor() {
 
   return (
     <div className="max-w-4xl">
+      <Breadcrumb items={[
+        { label: 'Documentos', to: '/documents' },
+        { label: docLabel, to: `/documents/${id}` },
+        { label: 'Editar' },
+      ]} />
       {/* Header */}
       <div className="flex items-start justify-between mb-6 gap-4">
         <div className="flex items-center gap-3 min-w-0">
@@ -230,10 +248,18 @@ export default function DocumentEditor() {
           <button
             onClick={handleSave}
             disabled={saving || !hasChanges}
+            title="Salvar (Ctrl+S)"
             className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors text-sm font-medium disabled:cursor-not-allowed"
           >
             <Save className="w-4 h-4" />
-            {saving ? 'Salvando...' : 'Salvar'}
+            {saving ? 'Salvando...' : saved ? (
+              <><Check className="w-4 h-4" /> Salvo</>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                Salvar
+                <kbd className="hidden sm:inline-block text-[10px] bg-brand-500/30 px-1 py-0.5 rounded">⌃S</kbd>
+              </span>
+            )}
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, ReactNode } from 'react'
-import { Menu } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback, ReactNode } from 'react'
+import { Menu, ArrowUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -109,11 +109,20 @@ export default function Layout({ children }: { children: ReactNode }) {
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Scroll-to-top button
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  const mainRef = useRef<HTMLDivElement>(null)
+
+  const handleScroll = useCallback(() => {
+    const el = mainRef.current
+    if (el) setShowScrollTop(el.scrollTop > 400)
+  }, [])
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
+      <div ref={mainRef} onScroll={handleScroll} className="flex-1 flex flex-col min-w-0 overflow-auto">
 
         {/* Mobile top bar */}
         <header className="md:hidden flex items-center justify-between gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0">
@@ -140,6 +149,17 @@ export default function Layout({ children }: { children: ReactNode }) {
             {children}
           </ErrorBoundary>
         </main>
+
+        {/* Scroll to top */}
+        {showScrollTop && (
+          <button
+            onClick={() => mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="fixed bottom-6 right-6 z-40 p-2.5 bg-brand-600 text-white rounded-full shadow-lg hover:bg-brand-700 transition-all opacity-80 hover:opacity-100"
+            aria-label="Voltar ao topo"
+          >
+            <ArrowUp className="w-5 h-5" />
+          </button>
+        )}
       </div>
     </div>
   )

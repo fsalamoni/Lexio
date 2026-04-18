@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, Trash2, BookOpen, Sparkles } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
+import Breadcrumb from '../components/Breadcrumb'
 import ProgressTracker from '../components/ProgressTracker'
 import PipelineProgressPanel, {
 } from '../components/PipelineProgressPanel'
@@ -380,6 +381,10 @@ export default function DocumentDetail() {
 
   return (
     <div className="max-w-4xl space-y-6">
+      <Breadcrumb items={[
+        { label: 'Documentos', to: '/documents' },
+        { label: docLabel },
+      ]} />
       {/* Header */}
       <div className="flex items-start gap-4">
         <FileText className="w-8 h-8 text-brand-600 mt-1 flex-shrink-0" />
