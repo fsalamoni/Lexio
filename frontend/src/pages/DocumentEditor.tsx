@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Save, ArrowLeft, FileText, Check, Download, Bot } from 'lucide-react'
+import { Save, ArrowLeft, FileText, Check, Download, Bot, Copy } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import RichTextEditor from '../components/RichTextEditor'
@@ -206,6 +206,23 @@ export default function DocumentEditor() {
             >
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">DOCX</span>
+            </button>
+          )}
+
+          {/* Copy to clipboard */}
+          {content && (
+            <button
+              onClick={() => {
+                const tmp = document.createElement('div')
+                tmp.innerHTML = content
+                const plain = tmp.textContent || tmp.innerText || ''
+                navigator.clipboard.writeText(plain).then(() => toast.success('Copiado para a área de transferência'))
+              }}
+              title="Copiar texto"
+              className="inline-flex items-center gap-2 px-3 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              <Copy className="w-4 h-4" />
+              <span className="hidden sm:inline">Copiar</span>
             </button>
           )}
 

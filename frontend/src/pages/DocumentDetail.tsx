@@ -530,6 +530,17 @@ export default function DocumentDetail() {
               </div>
             </>
           )}
+          {doc.texto_completo && (
+            <div>
+              <p className="text-gray-400 text-xs">Palavras</p>
+              <p className="font-medium text-gray-800">
+                {doc.texto_completo.split(/\s+/).filter(Boolean).length.toLocaleString('pt-BR')}
+                <span className="text-xs text-gray-400 font-normal ml-1">
+                  (~{Math.ceil(doc.texto_completo.split(/\s+/).filter(Boolean).length / 200)} min leitura)
+                </span>
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Actions */}

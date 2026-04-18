@@ -169,6 +169,19 @@ export default function NewDocument() {
     setSearchParams({}, { replace: true })
   }, [searchParams, docTypes, loadingTypes, setSearchParams])
 
+  // Ctrl+Enter keyboard shortcut to submit form
+  const formRef = useRef<HTMLFormElement>(null)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'Enter' && formReady && !loading && !generating) {
+        e.preventDefault()
+        formRef.current?.requestSubmit()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [formReady, loading, generating])
+
   const currentType = docTypes.find((t) => t.id === selectedType)
 
   // Handle "Detalhar contexto" — AI generates clarifying questions
@@ -239,6 +252,14 @@ export default function NewDocument() {
       } catch {
         // Non-critical — proceed with generation
       }
+    }
+
+    // Confirm for estimated costly operations (above $0.10)
+    if (costEstimate && costEstimate.estimatedCostUsd > 0.10) {
+      const proceed = window.confirm(
+        `Esta geração está estimada em ~$${costEstimate.estimatedCostUsd.toFixed(3)} USD (${costEstimate.agentCount} agentes, ~${(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens). Deseja continuar?`
+      )
+      if (!proceed) return
     }
 
     setLoading(true)
@@ -342,7 +363,7 @@ export default function NewDocument() {
           <p className="text-sm text-gray-500">Preencha os campos abaixo para iniciar a geração</p>
         </div>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
         {/* Main form */}
         <div className="bg-white rounded-xl border shadow-sm p-6 space-y-6">
           <div>
@@ -527,7 +548,12 @@ export default function NewDocument() {
                 </svg>
                 Criando documento...
               </span>
-            ) : generating ? 'Geração em andamento...' : 'Gerar Documento com IA'}
+            ) : generating ? 'Geração em andamento...' : (
+              <span className="inline-flex items-center gap-2">
+                Gerar Documento com IA
+                <kbd className="hidden sm:inline-block text-xs bg-brand-500/30 px-1.5 py-0.5 rounded">Ctrl+Enter</kbd>
+              </span>
+            )}
           </button>
         </div>
       </form>
