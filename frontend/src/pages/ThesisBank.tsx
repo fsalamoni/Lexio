@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, Trash2, FileText } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -645,6 +646,13 @@ export default function ThesisBank() {
                 <Plus className="w-4 h-4" />
                 Criar tese manualmente
               </button>
+              <Link
+                to="/documents/new"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <FileText className="w-4 h-4" />
+                Gerar documento
+              </Link>
             </div>
           )}
         </div>

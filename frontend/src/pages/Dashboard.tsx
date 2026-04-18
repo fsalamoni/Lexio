@@ -15,7 +15,7 @@ import { useAuth } from '../contexts/AuthContext'
 import StatusBadge from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
 import { SkeletonCard } from '../components/Skeleton'
-import { IS_FIREBASE } from '../lib/firebase'
+import { IS_FIREBASE, firebaseAuth } from '../lib/firebase'
 import {
   getStats as firestoreGetStats,
   getRecentDocuments,
@@ -165,6 +165,9 @@ export default function Dashboard() {
     return acc
   }, [])
 
+  // Docs this week (last 7 days from daily data)
+  const docsThisWeek = daily.slice(-7).reduce((sum, d) => sum + (d.total || 0), 0)
+
   const formatDia = (dia: string) => {
     try { return format(parseISO(dia), 'dd/MM', { locale: ptBR }) }
     catch { return dia }
@@ -189,8 +192,8 @@ export default function Dashboard() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       </div>
     )
@@ -199,7 +202,15 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          {IS_FIREBASE && firebaseAuth?.currentUser && (
+            <p className="text-sm text-gray-500 mt-0.5">
+              {new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 18 ? 'Boa tarde' : 'Boa noite'}
+              {firebaseAuth.currentUser.displayName ? `, ${firebaseAuth.currentUser.displayName.split(' ')[0]}` : ''}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           {daily.length > 0 && (
             <button
@@ -230,9 +241,10 @@ export default function Dashboard() {
 
       {/* Stat cards */}
       {stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
           {[
             { label: 'Total de Documentos', value: stats.total_documents, icon: FileText, color: 'blue' },
+            { label: 'Esta Semana', value: docsThisWeek, icon: TrendingUp, color: 'brand' },
             { label: 'Concluídos', value: stats.completed_documents, icon: CheckCircle, color: 'green' },
             { label: 'Em Revisão', value: stats.pending_review_documents, icon: Clock, color: 'blue' },
             {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { FileText, Plus, ChevronLeft, ChevronRight, Search, X, Trash2, Download, BookOpen, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
@@ -48,10 +48,23 @@ export default function DocumentList() {
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const { userId } = useAuth()
   const toast = useToast()
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  // Ctrl+K keyboard shortcut to focus search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
 
   // Debounce search input → searchQuery
   useEffect(() => {
@@ -249,10 +262,11 @@ export default function DocumentList() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
+            ref={searchInputRef}
             type="text"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
-            placeholder="Buscar por tema ou pedido…"
+            placeholder="Buscar por tema ou pedido… (Ctrl+K)"
             className="w-full pl-9 pr-8 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
           />
           {searchInput && (
