@@ -21,7 +21,6 @@ def get_header(context: dict) -> str:
     - Parties identification
     """
     org_name = context.get("org_name", "")
-    user_title = context.get("user_title", "")
     comarca = context.get("comarca", "")
     vara = context.get("vara", "")
     processo_numero = context.get("processo_numero", "")

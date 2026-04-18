@@ -4,9 +4,7 @@ Tracks in-memory HTTP counters and latency histograms with zero external deps.
 Exposed at GET /api/v1/metrics in Prometheus text format.
 """
 
-import time
 from collections import defaultdict
-from typing import Any
 
 # ── In-memory metric stores ────────────────────────────────────────────────────
 

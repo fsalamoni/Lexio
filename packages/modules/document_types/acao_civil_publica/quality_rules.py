@@ -1,6 +1,5 @@
 """Lexio Module — Acao Civil Publica: Quality rules specific to public civil actions."""
 
-import re
 
 QUALITY_RULES = [
     {

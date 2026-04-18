@@ -1,7 +1,6 @@
 """Lexio Module — Embargos de Declaração: Integration rules (header/footer + post-processing)."""
 
 import re
-from datetime import datetime
 
 MESES = {
     1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",

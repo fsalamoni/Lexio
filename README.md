@@ -2,7 +2,7 @@
 
 > SaaS brasileiro de produção jurídica com IA. 10 pipelines multi-agente, 58 agentes configuráveis, 40+ modelos. Roda 100% no browser via OpenRouter.
 
-> Referência sincronizada com `main` em 16 de abril de 2026.
+> Referência sincronizada com `main` em 18 de abril de 2026.
 
 [![Deploy Pages](https://github.com/fsalamoni/Lexio/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/fsalamoni/Lexio/actions/workflows/deploy-pages.yml)
 [![Firebase Deploy](https://github.com/fsalamoni/Lexio/actions/workflows/firebase-deploy.yml/badge.svg)](https://github.com/fsalamoni/Lexio/actions/workflows/firebase-deploy.yml)
@@ -37,7 +37,7 @@
 | Zip | JSZip 3.10 |
 | Cloud Function | Firebase Functions 2nd Gen (Node.js 22) |
 | Deploy | GitHub Pages + Firebase Hosting (dual) |
-| CI/CD | GitHub Actions (3 workflows) |
+| CI/CD | GitHub Actions (4 workflows) |
 
 > **Não há backend Python em produção.** A pasta `packages/` contém um backend FastAPI em desenvolvimento mas não está ativo. Toda a lógica LLM roda no frontend TypeScript.
 
@@ -104,6 +104,10 @@ VITE_FIREBASE_APP_ID=1:000000000000:web:abc123
 # Opcional — fallback quando não há chave no Firestore
 VITE_OPENROUTER_API_KEY=sk-or-v1-...
 
+# Opcional — acesso direto ao DataJud apenas em desenvolvimento/local
+# Em produção, o fluxo preferencial é via proxy gerenciado (/api/datajud ou Cloud Function)
+VITE_DATAJUD_API_KEY=your_datajud_key
+
 # Modo demo offline (sem Firebase)
 VITE_DEMO_MODE=false
 ```
@@ -144,9 +148,29 @@ packages/          → Backend Python FastAPI (em desenvolvimento, NÃO em produ
   modules/         → Módulos independentes
 
 .claude/           → CLAUDE.md — contexto completo para agentes IA
-.github/workflows/ → deploy-pages.yml + firebase-deploy.yml + test.yml
+.github/workflows/ → deploy-pages.yml + firebase-deploy.yml + firebase-preview.yml + test.yml
 docs/              → Documentação técnica arquitetural
 ```
+
+---
+
+## Workflow Operacional
+
+### Fluxo recomendado de merge e release
+
+1. Atualize sua branch a partir de `main` e rode os gates locais relevantes: `npm run typecheck`, `npx vitest run`, `npm run build`, `d:/Lexio/.venv/Scripts/python.exe -m pytest tests --tb=short -q` e `d:/Lexio/.venv/Scripts/python.exe -m ruff check packages tests`.
+2. Abra PR para `main`. O workflow `.github/workflows/firebase-preview.yml` publica um preview temporário no Firebase e agora exige `typecheck`, `test` e `build` antes de comentar a URL.
+3. Faça merge em `main` somente com a prévia validada. O workflow `.github/workflows/firebase-deploy.yml` roda `typecheck`, `test`, `build`, recompila `functions/`, sincroniza o segredo `DATAJUD_API_KEY` no Secret Manager e então publica Hosting, Rules, Indexes, Storage e Functions.
+4. Se a versão espelho em GitHub Pages também precisar ser atualizada, dispare manualmente `.github/workflows/deploy-pages.yml`. Ele também executa `typecheck`, `test` e `build` antes do publish.
+
+### Segredos operacionais mínimos
+
+- `FIREBASE_TOKEN` ou `FIREBASE_SERVICE_ACCOUNT`
+- `FIREBASE_API_KEY`
+- `VITE_ADMIN_EMAIL`
+- `DATAJUD_API_KEY` para a Cloud Function `datajudProxy`
+
+O cliente web não depende mais de chave hardcoded do DataJud. Em produção, o acesso deve passar pelo proxy gerenciado; fallback direto do browser só é admitido quando o usuário configurou `datajud_api_key` nas preferências ou `VITE_DATAJUD_API_KEY` no ambiente local.
 
 ---
 

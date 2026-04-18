@@ -16,7 +16,7 @@
 
 ## Andamento Atual (ciclo 2026-04-18)
 
-**Status:** ⚠️ avançando Faixa B — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook, hardening de TTS/DocumentDetail e code splitting do ResearchNotebook validados localmente
+**Status:** ⚠️ avançando Faixa B — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook, hardening de TTS/DocumentDetail, code splitting do ResearchNotebook e hardening de DataJud/CI-CD validados localmente
 
 ## Plano Mestre Executável (Atualizado)
 
@@ -46,6 +46,11 @@
 - Mensuração de UX operacional por funil (tempo até valor, abandono, recuperação de falhas, reaproveitamento de memória)
 
 **Concluido neste ciclo:**
+- `functions/src/index.ts` passou a ler `DATAJUD_API_KEY` via Secret Manager (`defineSecret`) e o cliente `frontend/src/lib/datajud-service.ts` deixou de depender de fallback hardcoded em código versionado
+- Os workflows `test.yml`, `firebase-preview.yml`, `deploy-pages.yml` e `firebase-deploy.yml` foram endurecidos: preview/pages/deploy agora exigem `typecheck` + `test` + `build`, o job de testes também compila `functions/`, e o deploy do Firebase sincroniza o segredo `DATAJUD_API_KEY` antes de publicar Functions
+- A varredura de qualidade do backend em desenvolvimento também foi endurecida nesta rodada: `ruff` passou a ficar limpo localmente após limpeza segura de imports, variáveis mortas e ajustes mecânicos em predicates SQLAlchemy
+- Validação local expandida: `npm run build` em `functions/`; `npm run typecheck`, `npx vitest run` (**24/24 arquivos, 221/221 testes**) e `npm run build` em `frontend/`; `pytest` (**2203/2203**) e `ruff check packages tests` com sucesso
+- Índices: `firestore.indexes.json` permaneceu inalterado nesta rodada; o ganho veio de hardening operacional, secrets management e qualidade de CI/CD
 - `frontend/src/pages/ResearchNotebook.tsx` foi refatorado para carregar modais, viewers e runtimes de mídia sob demanda, reduzindo o custo inicial da rota do caderno sem alterar o comportamento funcional
 - Pipelines auxiliares de áudio, apresentação, vídeo, storage de mídia e regeneração de imagem/TTS agora são resolvidos apenas quando o usuário abre o modal/viewer ou dispara a ação correspondente, melhorando o reaproveitamento de cache entre chunks do notebook
 - O chunk de produção de `ResearchNotebook` caiu de aproximadamente `550.81 kB` (`gzip 154.25 kB`) para `320.23 kB` (`gzip 93.65 kB`) e o `npm run build` deixou de emitir warnings de chunk grande/dynamic import
@@ -142,6 +147,7 @@
 - `frontend/src/components/TaskBar.tsx`
 
 **Validacao deste ciclo:**
+- Hardening de DataJud/CI-CD validado localmente com `npm run build` em `functions/`; `npm run typecheck`, `npx vitest run` (**24/24 arquivos, 221/221 testes**) e `npm run build` em `frontend/`; `d:/Lexio/.venv/Scripts/python.exe -m pytest tests --tb=short -q` (**2203/2203**) e `d:/Lexio/.venv/Scripts/python.exe -m ruff check packages tests`
 - Code splitting do notebook validado em `frontend/` com `npm run typecheck`, `npx vitest run` (**24/24 arquivos, 221/221 testes**) e `npm run build`; build final sem warnings e com `ResearchNotebook` em `320.23 kB` (`gzip 93.65 kB`)
 - Hardening de TTS/OpenRouter e UX de `DocumentDetail.tsx` validados localmente com `npm run typecheck`, `npx vitest run` (**24/24 arquivos, 221/221 testes**) e `npm run build`
 - `npm run typecheck` executado em `frontend/` com saida final limpa (`tsc --noEmit`, exit code 0)

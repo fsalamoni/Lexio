@@ -1,6 +1,5 @@
 """Tests for all 17 legal area implementations."""
 
-import importlib
 import pytest
 
 from packages.modules.legal_areas.administrative.area import AdministrativeArea
@@ -124,7 +123,6 @@ class TestAdministrativeAreaSpecific:
     def test_has_guide_files(self):
         area = AdministrativeArea()
         guides = area.get_guides()
-        guide_ids = [g["id"] for g in guides]
         # Should have at least licitacoes and improbidade guides
         assert len(guides) >= 2
 

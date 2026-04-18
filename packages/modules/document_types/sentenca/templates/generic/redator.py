@@ -37,7 +37,6 @@ def system_prompt(context: dict) -> str:
     """
     tema = context.get("tema", "")
     org_name = context.get("org_name", "Poder Judiciário")
-    user_title = context.get("user_title", "Juiz(a) de Direito")
 
     return (
         f'Você é REDATOR JUDICIAL SÊNIOR do {org_name}.\n'

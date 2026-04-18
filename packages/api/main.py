@@ -4,10 +4,9 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, PlainTextResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -183,9 +182,6 @@ async def prometheus_metrics():
         media_type="text/plain; version=0.0.4; charset=utf-8",
     )
 
-
-# WebSocket for pipeline progress
-from fastapi import WebSocket, WebSocketDisconnect
 
 @app.websocket("/ws/document/{document_id}")
 async def ws_document_progress(ws: WebSocket, document_id: str):

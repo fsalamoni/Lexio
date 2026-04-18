@@ -2,7 +2,7 @@
 
 import logging
 
-from packages.core.module_loader.registry import module_registry, ModuleInfo
+from packages.core.module_loader.registry import module_registry
 
 logger = logging.getLogger("lexio.modules.health")
 

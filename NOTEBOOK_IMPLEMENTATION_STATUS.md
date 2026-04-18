@@ -5,7 +5,16 @@
 
 ---
 
-## Status Geral: Etapas 1-99 IMPLEMENTADAS
+## Status Geral: Etapas 1-103 IMPLEMENTADAS
+
+### Etapas 100-103 — DataJud Hardening + CI/CD Guardrails ✅
+- **Arquivos**: `functions/src/index.ts`, `frontend/src/lib/datajud-service.ts`, `.github/workflows/test.yml`, `.github/workflows/firebase-preview.yml`, `.github/workflows/deploy-pages.yml`, `.github/workflows/firebase-deploy.yml`
+- Etapa 100: `datajudProxy` deixou de versionar a chave do DataJud e passou a ler `DATAJUD_API_KEY` de Secret Manager com vínculo explícito à função
+- Etapa 101: o cliente do notebook deixou de depender de fallback hardcoded para acesso direto ao DataJud; o browser só tenta a rota direta com chave explicitamente configurada no usuário ou no ambiente local
+- Etapa 102: os workflows de preview, pages e deploy passaram a exigir `typecheck`, `test` e `build` do frontend antes de publicar, e o workflow principal de testes ganhou guardrail contra chave hardcoded e build de `functions/`
+- Etapa 103: o deploy do Firebase passou a sincronizar `DATAJUD_API_KEY` antes da publicação e a base Python foi limpa o suficiente para `ruff` ficar verde sem regressão comportamental
+- Validação desta rodada: `npm run build` em `functions/`; `npm run typecheck`, `npx vitest run` (**24/24 arquivos**, **221/221 testes**) e `npm run build` em `frontend/`; `pytest` com **2203/2203 testes** e `ruff check packages tests` limpos
+- Observação operacional: `firestore.indexes.json` não precisou de alterações nesta rodada; o endurecimento ocorreu em secrets, workflows, cache/proxy de DataJud e qualidade do código
 
 ### Etapas 96-99 — Code Splitting do ResearchNotebook + Carga Tardia de Midia ✅
 - **Arquivos**: `pages/ResearchNotebook.tsx`

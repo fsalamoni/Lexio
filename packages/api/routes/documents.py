@@ -96,7 +96,6 @@ async def list_documents(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from sqlalchemy import cast, String as SAString
     stmt = select(Document).where(Document.organization_id == user.organization_id)
     count_stmt = select(func.count(Document.id)).where(Document.organization_id == user.organization_id)
 
@@ -446,7 +445,7 @@ async def retry_document(
     """Reprocess a document that failed (status=erro)."""
     doc = await _get_doc_for_user(document_id, user, db)
     if doc.status != "erro":
-        raise HTTPException(400, f"Apenas documentos com status 'erro' podem ser reprocessados")
+        raise HTTPException(400, "Apenas documentos com status 'erro' podem ser reprocessados")
 
     doc_type_info = module_registry.get(doc.document_type_id)
     if not doc_type_info or not doc_type_info.instance:

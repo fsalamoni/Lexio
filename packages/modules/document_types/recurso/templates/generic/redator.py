@@ -9,7 +9,6 @@ todos os requisitos de admissibilidade recursal do CPC/2015.
 def system_prompt(context: dict) -> str:
     tema = context.get("tema", "")
     org_name = context.get("org_name", "escritório de advocacia")
-    user_title = context.get("user_title", "advogado")
     return (
         f'Você é REDATOR JURÍDICO SÊNIOR do {org_name}, especialista em recursos judiciais.\n'
         f'\n'

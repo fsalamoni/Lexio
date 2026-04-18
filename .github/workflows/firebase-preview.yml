@@ -68,6 +68,14 @@ jobs:
         run: npm ci
         working-directory: frontend
 
+      - name: Typecheck frontend
+        run: npm run typecheck
+        working-directory: frontend
+
+      - name: Run frontend tests
+        run: npm run test
+        working-directory: frontend
+
       - name: Build frontend (preview mode)
         run: npm run build
         working-directory: frontend
@@ -84,6 +92,22 @@ jobs:
 
       - name: SPA fallback (404 → index.html)
         run: cp frontend/dist/index.html frontend/dist/404.html
+
+      - name: Validate build output
+        run: |
+          test -s frontend/dist/index.html
+          test -d frontend/dist/assets
+          if [ "$(wc -c < frontend/dist/index.html)" -le 1024 ]; then
+            echo "frontend/dist/index.html appears unexpectedly small"
+            exit 1
+          fi
+
+      - name: Validate Firebase auth domain in bundle
+        run: |
+          if ! grep -R -q "hocapp-44760.firebaseapp.com" frontend/dist/assets; then
+            echo "::error::Expected auth domain not found in built assets: hocapp-44760.firebaseapp.com"
+            exit 1
+          fi
 
       - name: Install Firebase CLI
         run: npm install -g firebase-tools@latest

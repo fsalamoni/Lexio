@@ -1,6 +1,5 @@
 """Lexio Module — Petição Inicial: Quality rules specific to initial petitions."""
 
-import re
 
 
 QUALITY_RULES = [

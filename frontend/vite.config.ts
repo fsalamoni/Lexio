@@ -77,5 +77,13 @@ export default defineConfig({
     // pdfjs-dist requires Promise.withResolvers (Node ≥ 22); the polyfill
     // keeps tests green on older Node versions too.
     setupFiles: ['./src/test-setup.ts'],
+    // Windows + Node 24 has shown intermittent tinypool worker exits in this
+    // repo; a single fork keeps local and CI execution deterministic.
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        singleFork: true,
+      },
+    },
   },
 })

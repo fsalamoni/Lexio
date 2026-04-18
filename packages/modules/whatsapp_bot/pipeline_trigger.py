@@ -4,7 +4,6 @@ Listens to WHATSAPP_DOCUMENT_REQUESTED events and starts the document
 generation pipeline. When complete, delivers the DOCX via WhatsApp.
 """
 
-import asyncio
 import logging
 import uuid
 
@@ -14,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from packages.core.database.engine import async_session
 from packages.core.database.models.document import Document
 from packages.core.database.models.whatsapp_session import WhatsAppSession
-from packages.core.database.models.organization import Organization
 from packages.core.module_loader import module_registry
 from packages.core.whatsapp import whatsapp_client
 from packages.core.events import event_bus, EventType

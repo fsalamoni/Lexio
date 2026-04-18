@@ -1,6 +1,5 @@
 """Tests for integrator rules (header, footer, post_process) of all doc types."""
 
-import re
 import pytest
 
 import packages.modules.document_types.parecer.integrator_rules as parecer_int

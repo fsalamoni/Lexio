@@ -11,11 +11,11 @@
  */
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
+import { defineSecret } from "firebase-functions/params";
 
 // ── Constants ───────────────────────────────────────────────────────────
 
-const DATAJUD_API_KEY =
-  "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==";
+const DATAJUD_API_KEY = defineSecret("DATAJUD_API_KEY");
 const DATAJUD_BASE_URL = "https://api-publica.datajud.cnj.jus.br";
 const REQUEST_TIMEOUT_MS = 35_000;
 
@@ -58,6 +58,7 @@ export const datajudProxy = onRequest(
     region: "southamerica-east1",
     // Use the App Engine default SA — the default Compute Engine SA was deleted.
     serviceAccount: "hocapp-44760@appspot.gserviceaccount.com",
+    secrets: [DATAJUD_API_KEY],
   },
   async (req, res) => {
     // Set CORS headers on all responses
@@ -102,6 +103,13 @@ export const datajudProxy = onRequest(
       `${DATAJUD_BASE_URL}/api_publica_${alias}/_search`;
 
     try {
+      const dataJudApiKey = DATAJUD_API_KEY.value()?.trim();
+      if (!dataJudApiKey) {
+        logger.error("DATAJUD_API_KEY secret is not configured for datajudProxy.");
+        res.status(500).json({error: "DataJud proxy secret is not configured."});
+        return;
+      }
+
       const controller = new AbortController();
       const timeout = setTimeout(
         () => controller.abort(),
@@ -112,7 +120,7 @@ export const datajudProxy = onRequest(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `APIKey ${DATAJUD_API_KEY}`,
+          "Authorization": `APIKey ${dataJudApiKey}`,
         },
         body: JSON.stringify(body),
         signal: controller.signal,

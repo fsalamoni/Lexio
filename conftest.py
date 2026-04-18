@@ -136,7 +136,6 @@ _stub_package("bcrypt")
 _stub_package("pypdf")
 _stub_package("docx", "shared", "styles", "oxml", "enum", "enum.text", "text")
 _stub_package("slowapi", "util", "errors", "middleware")
-_stub_package("multipart")
 
 # ---------------------------------------------------------------------------
 # PyJWT — available in system pip on the current machine; stub only if missing

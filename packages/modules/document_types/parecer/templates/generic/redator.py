@@ -4,7 +4,6 @@
 def system_prompt(context: dict) -> str:
     tema = context.get("tema", "")
     org_name = context.get("org_name", "escritório jurídico")
-    user_title = context.get("user_title", "parecerista")
     return (
         f'Você é REDATOR JURÍDICO SÊNIOR do {org_name}.\n'
         f'\n'

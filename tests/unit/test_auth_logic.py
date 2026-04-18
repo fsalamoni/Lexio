@@ -26,8 +26,8 @@ pytestmark = pytest.mark.skipif(
     reason="bcrypt not installed (offline mode — run inside Docker)",
 )
 
-from packages.core.auth.password import hash_password, verify_password
-from packages.core.auth.jwt import create_access_token, decode_access_token
+from packages.core.auth.password import hash_password, verify_password  # noqa: E402
+from packages.core.auth.jwt import create_access_token, decode_access_token  # noqa: E402
 
 
 class TestPasswordHashing:

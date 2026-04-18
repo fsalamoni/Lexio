@@ -1,7 +1,6 @@
 """Lexio Core — RBAC permissions."""
 
 from enum import Enum
-from functools import wraps
 
 from fastapi import HTTPException, status
 

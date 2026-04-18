@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-18",
-    "cycle": "research-notebook-deferred-runtime-splitting",
+    "cycle": "datajud-secret-and-cicd-hardening",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -329,6 +329,24 @@
         "frontend/src/lib/image-generation-client.ts"
       ],
       "notes": "ResearchNotebook agora carrega viewers, modais e runtimes de mídia sob demanda; build final sem warnings de dynamic import; chunk caiu de 550.81kB (gzip 154.25kB) para 320.23kB (gzip 93.65kB), com melhor cache granular"
+    },
+    {
+      "id": "E5.F6",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Hardening de CI/CD e segredo gerenciado do DataJud",
+      "state": "implemented",
+      "files": [
+        "functions/src/index.ts",
+        "frontend/src/lib/datajud-service.ts",
+        ".github/workflows/test.yml",
+        ".github/workflows/firebase-preview.yml",
+        ".github/workflows/deploy-pages.yml",
+        ".github/workflows/firebase-deploy.yml",
+        "README.md",
+        "SETUP.md",
+        "SECURITY.md"
+      ],
+      "notes": "DataJud deixou de usar chave hardcoded em código versionado; Cloud Function consome DATAJUD_API_KEY via Secret Manager; preview/pages/deploy agora exigem typecheck+test+build; job de testes compila functions e bloqueia regressão de segredo exposto"
     }
   ],
   "regressionRisk": {

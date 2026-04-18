@@ -1,6 +1,5 @@
 """Lexio API — Authentication routes."""
 
-import uuid
 import secrets
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
@@ -68,7 +67,7 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    stmt = select(User).where(User.email == req.email, User.is_active == True)
+    stmt = select(User).where(User.email == req.email, User.is_active.is_(True))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
@@ -115,7 +114,7 @@ async def forgot_password(request: Request, req: ForgotPasswordRequest, db: Asyn
     in the response body for development/testing purposes. Set up an email
     service (e.g. Sendgrid) and remove 'dev_reset_token' from this response.
     """
-    stmt = select(User).where(User.email == req.email, User.is_active == True)
+    stmt = select(User).where(User.email == req.email, User.is_active.is_(True))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
@@ -150,7 +149,7 @@ async def reset_password(request: Request, req: ResetPasswordRequest, db: AsyncS
     if len(req.new_password) < 8:
         raise HTTPException(400, "A nova senha deve ter pelo menos 8 caracteres")
 
-    stmt = select(User).where(User.reset_token == req.token, User.is_active == True)
+    stmt = select(User).where(User.reset_token == req.token, User.is_active.is_(True))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
@@ -178,7 +177,7 @@ async def reset_password(request: Request, req: ResetPasswordRequest, db: AsyncS
 @router.get("/validate-reset-token/{token}")
 async def validate_reset_token(token: str, db: AsyncSession = Depends(get_db)):
     """Check if a reset token is valid (not expired, not used)."""
-    stmt = select(User).where(User.reset_token == token, User.is_active == True)
+    stmt = select(User).where(User.reset_token == token, User.is_active.is_(True))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 

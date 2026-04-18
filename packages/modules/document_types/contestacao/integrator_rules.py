@@ -18,8 +18,6 @@ def get_header(context: dict) -> str:
     - Directed to the presiding judge
     - References the case number and parties
     """
-    org_name = context.get("org_name", "")
-    user_title = context.get("user_title", "")
     numero_processo = context.get("numero_processo", "")
     vara = context.get("vara", "")
     comarca = context.get("comarca", "")

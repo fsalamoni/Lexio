@@ -18,8 +18,6 @@ def get_header(context: dict) -> str:
         EXCELENTÍSSIMO(A) SENHOR(A) DOUTOR(A) JUIZ(A) DE DIREITO DA ___ VARA
         [CÍVEL/CRIMINAL/etc.] DA COMARCA DE ___
     """
-    org_name = context.get("org_name", "")
-    user_title = context.get("user_title", "")
     comarca = context.get("comarca", "")
     vara = context.get("vara", "")
     tipo_vara = context.get("tipo_vara", "Cível")

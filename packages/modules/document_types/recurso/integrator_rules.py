@@ -50,7 +50,6 @@ REQUIRED_SECTIONS = [
 def get_header(context: dict) -> str:
     """Build the header for the recurso based on appeal type."""
     org_name = context.get("org_name", "")
-    user_title = context.get("user_title", "")
     template_variant = context.get("template_variant", "generic")
     numero_processo = context.get("numero_processo", "")
     recorrente = context.get("recorrente", "")

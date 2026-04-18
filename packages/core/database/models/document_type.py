@@ -1,11 +1,10 @@
 """Lexio Core — DocumentType model (registry of available document types)."""
 
-import uuid
 from datetime import datetime
 
 from sqlalchemy import String, Boolean, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 
 from packages.core.database.base import Base
 

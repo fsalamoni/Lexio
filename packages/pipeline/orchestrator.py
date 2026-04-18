@@ -27,7 +27,6 @@ from packages.core.search import search_qdrant, search_datajud, search_legislaca
 from packages.core.websocket import progress_manager
 from packages.core.llm.cost_tracker import CostTracker
 from packages.core.events import event_bus, EventType
-from packages.core.module_loader import module_registry
 
 from packages.pipeline.agent import BaseAgent
 from packages.pipeline.pipeline_config import AgentConfig, PipelineConfig

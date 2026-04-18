@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.database.models.whatsapp_session import WhatsAppSession
-from packages.core.database.models.organization import Organization
 from packages.core.whatsapp import whatsapp_client
 from packages.core.events import event_bus, EventType
 from packages.core.config import settings

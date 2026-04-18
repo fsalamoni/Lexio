@@ -1,6 +1,6 @@
 """Lexio API — Anamnesis routes (onboarding + request context)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Any
 

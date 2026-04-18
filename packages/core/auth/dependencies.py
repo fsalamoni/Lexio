@@ -29,7 +29,7 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
 
     user_id = uuid.UUID(payload["sub"])
-    stmt = select(User).where(User.id == user_id, User.is_active == True)
+    stmt = select(User).where(User.id == user_id, User.is_active.is_(True))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 

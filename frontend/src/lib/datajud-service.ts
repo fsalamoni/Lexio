@@ -14,18 +14,20 @@ import { loadApiKeyValues } from './settings-store'
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 /**
- * Public API key provided by CNJ for DataJud API access.
- * This is NOT a secret — it is a shared public key published by CNJ
- * at https://datajud-wiki.cnj.jus.br/api-publica/ for all consumers.
+ * Optional fallback API key for direct browser access in local/emergency flows.
+ * Production should use the managed Cloud Function proxy; direct browser access
+ * is only attempted on localhost after managed proxy candidates fail.
  */
-const DATAJUD_API_KEY = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=='
+const DEFAULT_DATAJUD_API_KEY = typeof import.meta !== 'undefined'
+  ? (import.meta.env.VITE_DATAJUD_API_KEY?.trim() ?? '')
+  : ''
 
 async function getDataJudApiKey(): Promise<string> {
   try {
     const apiKeys = await loadApiKeyValues()
-    return apiKeys.datajud_api_key || DATAJUD_API_KEY
+    return apiKeys.datajud_api_key?.trim() || DEFAULT_DATAJUD_API_KEY
   } catch {
-    return DATAJUD_API_KEY
+    return DEFAULT_DATAJUD_API_KEY
   }
 }
 
@@ -421,6 +423,9 @@ async function fetchFromEndpoint(
 ): Promise<Array<{ _source?: Record<string, unknown> }>> {
   const isDirect = endpoint === DIRECT_ENDPOINT
   const dataJudApiKey = isDirect ? await getDataJudApiKey() : null
+  if (isDirect && !dataJudApiKey) {
+    throw new Error('Acesso direto ao DataJud requer datajud_api_key do usuário ou VITE_DATAJUD_API_KEY configurado.')
+  }
   const url = isDirect
     ? `${DATAJUD_BASE_URL}/api_publica_${tribunalAlias}/_search`
     : endpoint

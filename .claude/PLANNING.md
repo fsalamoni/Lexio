@@ -163,6 +163,18 @@ platform_settings, notifications
 
 ---
 
+## HARDENING 2026-04-18 — DATAJUD SECRET + CI/CD QUALITY GATES
+
+- `functions/src/index.ts` deixou de versionar a chave do DataJud e passou a ler `DATAJUD_API_KEY` via `defineSecret()`, vinculando explicitamente o segredo à Cloud Function `datajudProxy`.
+- `frontend/src/lib/datajud-service.ts` deixou de embutir fallback hardcoded para acesso direto ao DataJud; o browser só usa chamada direta em ambiente local/emergencial quando há `datajud_api_key` do usuário ou `VITE_DATAJUD_API_KEY` configurado.
+- `.github/workflows/test.yml` ganhou guardrail contra chave hardcoded do DataJud nos fontes e uma etapa dedicada de build de `functions/`, impedindo regressões silenciosas na Function.
+- `.github/workflows/firebase-preview.yml`, `.github/workflows/deploy-pages.yml` e `.github/workflows/firebase-deploy.yml` foram endurecidos para rodar `typecheck` + `test` + `build` do frontend antes de publicar, e o deploy do Firebase agora sincroniza `DATAJUD_API_KEY` no Secret Manager antes de publicar Functions.
+- A dívida mecânica de lint Python também foi reduzida nesta rodada com limpeza segura de imports, variáveis mortas e predicates SQLAlchemy, deixando `ruff` verde sem alterar comportamento funcional.
+- Validação desta rodada: `npm run build` em `functions/`; `npm run typecheck`, `npx vitest run` (`24/24`, `221/221`) e `npm run build` em `frontend/`; `d:/Lexio/.venv/Scripts/python.exe -m pytest tests --tb=short -q` (`2203` testes) e `d:/Lexio/.venv/Scripts/python.exe -m ruff check packages tests` concluídos com sucesso.
+- Índices não exigiram mudança nesta rodada; `firestore.indexes.json` permaneceu inalterado.
+
+---
+
 ## ROADMAP DE IMPLEMENTAÇÃO
 
 ### ✅ ETAPAS CONCLUÍDAS

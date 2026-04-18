@@ -8,7 +8,6 @@ Redige o mandado de segurança completo seguindo a estrutura da Lei 12.016/09
 def system_prompt(context: dict) -> str:
     tema = context.get("tema", "")
     org_name = context.get("org_name", "escritório de advocacia")
-    user_title = context.get("user_title", "advogado")
     return (
         f'Você é REDATOR JURÍDICO SÊNIOR do {org_name}, especialista em mandado de segurança.\n'
         f'\n'

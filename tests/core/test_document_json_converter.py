@@ -1,7 +1,5 @@
 """Tests for the document JSON converter module."""
 
-import json
-import pytest
 from packages.core.search.document_json import (
     text_to_structured_json,
     serialize_structured_json,
