@@ -537,7 +537,11 @@ export default function DocumentDetail() {
               <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-red-800">Falha no processamento</p>
-                <p className="text-xs text-red-600 mt-0.5">O pipeline encontrou um erro. Você pode tentar reprocessar.</p>
+                <p className="text-xs text-red-600 mt-0.5">
+                  {executions.length === 0
+                    ? 'O pipeline não iniciou. Verifique sua conexão e tente novamente.'
+                    : `O pipeline parou após ${executions.length} etapa${executions.length > 1 ? 's' : ''} (${executions[executions.length - 1]?.agent_name || 'agente desconhecido'}). Reprocessar reinicia do início.`}
+                </p>
               </div>
               <button
                 onClick={handleRetry}

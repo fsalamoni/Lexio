@@ -1106,7 +1106,9 @@ export default function Upload() {
           setLocalFiles(prev =>
             prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
           )
-          toast.error(`Erro ao processar ${file.name}`, err?.message)
+          const { humanizeError } = await import('../lib/error-humanizer')
+          const humanized = humanizeError(err)
+          toast.error(`Erro: ${file.name}`, humanized.detail || err?.message)
         }
       } else {
         // Server mode: upload to backend API

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, Trash2 } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
@@ -268,6 +268,7 @@ export default function ThesisBank() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [areaFilter, setAreaFilter] = useState('')
+  const [sortBy, setSortBy] = useState<'recent' | 'quality' | 'usage'>('recent')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -395,6 +396,15 @@ export default function ThesisBank() {
   const handleAreaFilter = (area: string) => {
     setAreaFilter(prev => prev === area ? '' : area)
   }
+
+  const sortedTheses = useMemo(() => {
+    const copy = [...theses]
+    switch (sortBy) {
+      case 'quality': return copy.sort((a, b) => (b.quality_score ?? 0) - (a.quality_score ?? 0))
+      case 'usage': return copy.sort((a, b) => b.usage_count - a.usage_count)
+      default: return copy // already sorted by recency from API
+    }
+  }, [theses, sortBy])
 
   const areaColor = (area: string) =>
     AREA_COLORS[area] ?? 'bg-gray-50 text-gray-700 border-gray-200'
@@ -570,7 +580,7 @@ export default function ThesisBank() {
         </div>
       )}
 
-      {/* Search */}
+      {/* Search + sort */}
       <div className="flex gap-3 mb-4">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
@@ -582,6 +592,15 @@ export default function ThesisBank() {
             className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
           />
         </div>
+        <select
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value as 'recent' | 'quality' | 'usage')}
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="recent">Mais recente</option>
+          <option value="quality">Maior score</option>
+          <option value="usage">Mais usada</option>
+        </select>
       </div>
 
       {/* Area filter chip */}
@@ -629,7 +648,7 @@ export default function ThesisBank() {
         </div>
       ) : (
         <div className="space-y-3">
-          {theses.map(thesis => (
+          {sortedTheses.map(thesis => (
             <ThesisCard
               key={thesis.id}
               thesis={thesis}

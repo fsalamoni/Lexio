@@ -534,8 +534,12 @@ export default function CostTokensPage() {
       </div>
 
       {!breakdown ? (
-        <div className="bg-white rounded-xl border p-10 text-center text-sm text-gray-400">
-          Nenhum dado de custo/tokens disponível ainda.
+        <div className="bg-white rounded-xl border p-10 text-center">
+          <DollarSign className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+          <p className="text-sm font-medium text-gray-600 mb-1">Nenhum dado de custo disponível</p>
+          <p className="text-xs text-gray-400 max-w-sm mx-auto">
+            Os custos serão registrados automaticamente ao gerar documentos, usar o caderno de pesquisa ou executar análises de teses.
+          </p>
         </div>
       ) : (
         <>
