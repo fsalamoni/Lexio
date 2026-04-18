@@ -27,7 +27,7 @@ import { callLLMWithFallback, ModelUnavailableError, TransientLLMError, type LLM
 import { loadVideoPipelineModels, validateScopedAgentModels, VIDEO_PIPELINE_AGENT_DEFS } from './model-config'
 import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
-import { generateTTSViaOpenRouter } from './tts-client'
+import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import type { VideoPipelineProgressMeta } from './video-pipeline-progress'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ export interface VideoGenerationInput {
   imageModel?: string
   /** TTS voice for narration (e.g., 'nova', 'alloy', 'echo') */
   ttsVoice?: string
-  /** TTS model override (e.g., 'openai/gpt-4o-audio-preview') */
+  /** TTS model override (e.g., 'openai/tts-1-hd') */
   ttsModel?: string
   /** Target duration per clip in seconds (default 8) */
   clipDurationSeconds?: number
@@ -1431,7 +1431,7 @@ REQUISITOS OBRIGATÓRIOS:
   // ── Step 11: Generate Narration TTS ───────────────────────────────────────
   if (wantMedia && narration.length > 0) {
     const ttsVoice = input.ttsVoice || 'nova'
-    const ttsModel = input.ttsModel || 'openai/gpt-4o-audio-preview'
+    const ttsModel = input.ttsModel || DEFAULT_OPENROUTER_TTS_MODEL
     const validSegments = narration.filter(s => s.text && s.text.trim().length >= 5)
 
     console.log(`[Video] Step 11: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice}`)

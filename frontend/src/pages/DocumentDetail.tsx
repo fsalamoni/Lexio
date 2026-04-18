@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, Trash2, BookOpen, Sparkles } from 'lucide-react'
+import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, Trash2, BookOpen, Sparkles, Copy } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import Breadcrumb from '../components/Breadcrumb'
@@ -239,6 +239,16 @@ export default function DocumentDetail() {
   const handleDelete = async () => {
     if (!id || !doc) return
     setShowDeleteConfirm(true)
+  }
+
+  const handleCopyText = async () => {
+    if (!doc?.texto_completo) return
+    try {
+      await navigator.clipboard.writeText(doc.texto_completo)
+      toast.success('Texto copiado para a área de transferência')
+    } catch {
+      toast.error('Erro ao copiar', 'Não foi possível copiar o texto')
+    }
   }
 
   const confirmDelete = async () => {
@@ -566,6 +576,7 @@ export default function DocumentDetail() {
                 onClick={handleRetry}
                 disabled={retrying || workflowLoading || deleting}
                 className="inline-flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors text-sm font-medium"
+                aria-label="Reprocessar documento"
               >
                 <RotateCcw className={`w-4 h-4 ${retrying ? 'animate-spin' : ''}`} />
                 {retrying ? 'Reprocessando...' : 'Reprocessar'}
@@ -582,6 +593,7 @@ export default function DocumentDetail() {
                 <button
                   onClick={() => navigate(`/documents/${doc.id}/edit`)}
                   className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors text-sm"
+                  aria-label={`Editar ${docLabel}`}
                 >
                   <Edit3 className="w-4 h-4" />
                   Editar
@@ -636,6 +648,16 @@ export default function DocumentDetail() {
                   Baixar DOCX
                 </button>
               )}
+              {doc.texto_completo && (
+                <button
+                  onClick={handleCopyText}
+                  className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                  title="Copiar todo o texto do documento"
+                >
+                  <Copy className="w-4 h-4" />
+                  Copiar Texto
+                </button>
+              )}
             </div>
 
             {/* Delete button — not while processando */}
@@ -647,6 +669,17 @@ export default function DocumentDetail() {
               >
                 <Trash2 className="w-4 h-4" />
                 {deleting ? 'Excluindo…' : 'Excluir'}
+              </button>
+            )}
+
+            {doc.status !== 'processando' && (
+              <button
+                onClick={() => navigate(`/documents/new?type=${encodeURIComponent(doc.document_type_id)}&request=${encodeURIComponent(doc.original_request || doc.tema || '')}`)}
+                className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                title="Criar um novo documento com os mesmos parâmetros"
+              >
+                <Copy className="w-4 h-4" />
+                Duplicar
               </button>
             )}
 

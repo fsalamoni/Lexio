@@ -95,7 +95,7 @@ import { isExternalVideoProviderConfigured, requestExternalVideoClip } from '../
 import { generatePresentationMediaAssets, runPresentationGenerationPipeline } from '../lib/presentation-generation-pipeline'
 import { extractFileText, isSupportedTextFile, SUPPORTED_TEXT_FILE_EXTENSIONS } from '../lib/file-text-extractor'
 import { generateImageViaOpenRouter, blobToDataUrl } from '../lib/image-generation-client'
-import { generateTTSViaOpenRouter } from '../lib/tts-client'
+import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from '../lib/tts-client'
 import { loadVideoPipelineModels } from '../lib/model-config'
 import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
 import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
@@ -6369,7 +6369,7 @@ Instruções:
               const result = await generateTTSViaOpenRouter({
                 apiKey,
                 text: cleanText,
-                model: models.video_tts || 'openai/gpt-4o-audio-preview',
+                model: models.video_tts || DEFAULT_OPENROUTER_TTS_MODEL,
                 voice: 'nova',
               })
               const audioDataUrl = await blobToDataUrl(result.audioBlob)

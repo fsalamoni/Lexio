@@ -121,6 +121,7 @@ platform_settings, notifications
 | B7 | auth.py:141 | dev_reset_token exposto na API | ⚠️ Pendente (requer email service) |
 | B8 | firestore.rules + firestore-service.ts | Falta de regra explícita para `research_notebooks/{id}/memory/{docId}` causava `Missing or insufficient permissions` no admin agregado e deixava a memória dedicada suscetível a negação de acesso | ✅ Corrigido |
 | B9 | llm-client.ts | `provider returned error` com `404` escapava da classificação de modelo indisponível e chegava ao notebook como erro genérico, sem fallback nem orientação correta | ✅ Corrigido |
+| B10 | tts-client.ts + image-generation-client.ts + model-catalog.ts | Clientes OpenRouter dependiam implicitamente de `window.location.origin` e parte dos fluxos ainda divergiam no modelo TTS padrão, aumentando risco de falha fora do browser ativo e de 404 por default inconsistente | ✅ Corrigido |
 
 ---
 
@@ -136,6 +137,18 @@ platform_settings, notifications
 - Validação desta rodada: `npm run typecheck`, `npx vitest run` (23/23, 219/219) e `npm run build` concluídos com sucesso.
 - Índices não exigiram mudança nesta rodada; `firestore.indexes.json` permaneceu inalterado.
 - Fluxo recomendado de publicação mantido: PR com `.github/workflows/firebase-preview.yml` para smoke e merge em `main` para disparar `.github/workflows/firebase-deploy.yml` com hosting + rules.
+
+---
+
+## HARDENING 2026-04-17 — TTS + DOCUMENTDETAIL
+
+- `frontend/src/lib/tts-client.ts`, `frontend/src/lib/model-config.ts`, `frontend/src/lib/audio-generation-pipeline.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/lib/literal-video-production.ts` e `frontend/src/pages/ResearchNotebook.tsx` agora usam `openai/tts-1-hd` como default coerente de TTS, eliminando o desvio restante para `openai/gpt-4o-audio-preview`.
+- `normalizeTTSModel()` deixou de remapear modelos explicitamente configurados, preservando `openai/tts-1` e outros overrides válidos do usuário.
+- `frontend/src/lib/tts-client.ts`, `frontend/src/lib/image-generation-client.ts` e `frontend/src/lib/model-catalog.ts` passaram a usar fallback seguro de `HTTP-Referer`, removendo dependência rígida de `window.location.origin` fora do browser ativo.
+- `frontend/src/pages/DocumentDetail.tsx` recebeu ações rápidas de `Copiar Texto` e `Duplicar`, além de labels/atributos de acessibilidade em ações críticas.
+- Cobertura de regressão ampliada com `frontend/src/lib/tts-client.test.ts` e ajuste de `frontend/src/lib/video-generation-pipeline.test.ts` para o novo default.
+- Validação desta rodada: `npm run typecheck`, `npx vitest run` (24/24, 221/221) e `npm run build` concluídos com sucesso.
+- Índices seguiram inalterados nesta rodada; o update de indexação/documentação ocorreu em `docs/MANIFEST.json` e nos trackers operacionais.
 
 ---
 

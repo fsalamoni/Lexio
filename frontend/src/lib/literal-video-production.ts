@@ -2,7 +2,7 @@ import { generateImageViaOpenRouter } from './image-generation-client'
 import { requestExternalVideoClip } from './external-video-provider'
 import { loadVideoPipelineModels } from './model-config'
 import { formatSecondsToMMSS } from './time-format'
-import { generateTTSViaOpenRouter } from './tts-client'
+import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import { createVideoRenderScopeLabel } from './video-generation-pipeline'
 import type { VideoPipelineProgressMeta } from './video-pipeline-progress'
 import type {
@@ -1277,7 +1277,7 @@ export async function generateLiteralMediaAssets(
           asset.narrationUrl = blobToObjectUrl(result.audioBlob)
           executions.push(makeExecution(
             'media_tts_generation',
-            chooseAudioModel(models.video_tts) || 'openai/gpt-4o-audio-preview',
+            chooseAudioModel(models.video_tts) || DEFAULT_OPENROUTER_TTS_MODEL,
             performance.now() - startedAt,
             0.015 * (scene.narration.length / 1000),
           ))
@@ -1287,7 +1287,7 @@ export async function generateLiteralMediaAssets(
             'media_tts_generation',
             'Narrador TTS',
             buildLiteralProgressMeta({
-              stageMeta: `${(chooseAudioModel(models.video_tts) || 'openai/gpt-4o-audio-preview').split('/').pop() || chooseAudioModel(models.video_tts) || 'openai/gpt-4o-audio-preview'} • cena ${scene.number} • ${Math.max(1, Math.round((performance.now() - startedAt) / 1000))}s • ${formatUsd(0.015 * (scene.narration.length / 1000))}`,
+              stageMeta: `${(chooseAudioModel(models.video_tts) || DEFAULT_OPENROUTER_TTS_MODEL).split('/').pop() || chooseAudioModel(models.video_tts) || DEFAULT_OPENROUTER_TTS_MODEL} • cena ${scene.number} • ${Math.max(1, Math.round((performance.now() - startedAt) / 1000))}s • ${formatUsd(0.015 * (scene.narration.length / 1000))}`,
               costUsd: 0.015 * (scene.narration.length / 1000),
               durationMs: performance.now() - startedAt,
               retryCount: attempt > 1 ? attempt - 1 : 0,

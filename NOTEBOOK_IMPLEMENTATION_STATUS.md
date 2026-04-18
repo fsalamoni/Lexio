@@ -5,7 +5,15 @@
 
 ---
 
-## Status Geral: Etapas 1-91 IMPLEMENTADAS
+## Status Geral: Etapas 1-95 IMPLEMENTADAS
+
+### Etapas 92-95 — Hardening TTS/OpenRouter + UX DocumentDetail ✅
+- **Arquivos**: `lib/tts-client.ts`, `lib/image-generation-client.ts`, `lib/model-catalog.ts`, `lib/model-config.ts`, `lib/audio-generation-pipeline.ts`, `lib/video-generation-pipeline.ts`, `lib/literal-video-production.ts`, `pages/ResearchNotebook.tsx`, `pages/DocumentDetail.tsx`, `lib/tts-client.test.ts`, `lib/video-generation-pipeline.test.ts`
+- Etapa 92: defaults de TTS foram alinhados em áudio, vídeo, notebook e configurações para `openai/tts-1-hd`, removendo divergência residual de modelo padrão
+- Etapa 93: `tts-client.ts` deixou de sobrescrever override explícito de modelo e os clientes OpenRouter críticos ganharam fallback seguro de `HTTP-Referer` fora de contexto browser ativo
+- Etapa 94: `DocumentDetail.tsx` passou a oferecer ações rápidas de copiar o texto integral e duplicar o documento com os parâmetros atuais, reduzindo retrabalho operacional
+- Etapa 95: cobertura de regressão foi ampliada com `tts-client.test.ts`, ajuste de `video-generation-pipeline.test.ts` e revalidação completa do frontend
+- Validação desta rodada: `npm run typecheck` limpo, `npx vitest run` com **24/24 arquivos** e **221/221 testes** passando, `npm run build` concluído com sucesso
 
 ### Etapas 84-91 — UX do Editor + Estabilização Admin/Notebook ✅
 - **Arquivos**: `components/Breadcrumb.tsx`, `components/Layout.tsx`, `pages/DocumentEditor.tsx`, `pages/DocumentDetail.tsx`, `firestore.rules`, `pages/PlatformAdminPanel.tsx`, `pages/PlatformCostsPage.tsx`, `lib/firestore-service.ts`, `lib/firestore-types.ts`, `lib/llm-client.ts`, `lib/error-humanizer.ts`, `pages/ResearchNotebook.tsx`, `lib/error-humanizer.test.ts`, `lib/llm-client.test.ts`

@@ -26,6 +26,7 @@ vi.mock('./image-generation-client', () => ({
 }))
 
 vi.mock('./tts-client', () => ({
+  DEFAULT_OPENROUTER_TTS_MODEL: 'openai/tts-1-hd',
   generateTTSViaOpenRouter: (...args: unknown[]) => generateTTSViaOpenRouterMock(...args),
 }))
 
@@ -45,7 +46,7 @@ describe('runVideoGenerationPipeline', () => {
       video_revisor: 'openai/gpt-4.1-mini',
       video_clip_planner: 'openai/gpt-4.1-mini',
       video_image_generator: 'google/gemini-2.5-flash-preview:image-output',
-      video_tts: 'openai/gpt-4o-audio-preview',
+      video_tts: 'openai/tts-1-hd',
     })
     validateScopedAgentModelsMock.mockResolvedValue(undefined)
   })

@@ -14,9 +14,9 @@
 
 ---
 
-## Andamento Atual (ciclo 2026-04-18)
+## Andamento Atual (ciclo 2026-04-17)
 
-**Status:** ⚠️ avançando Faixa B — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook fechada localmente
+**Status:** ⚠️ avançando Faixa B — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook e hardening de TTS/DocumentDetail fechados localmente
 
 ## Plano Mestre Executável (Atualizado)
 
@@ -46,6 +46,11 @@
 - Mensuração de UX operacional por funil (tempo até valor, abandono, recuperação de falhas, reaproveitamento de memória)
 
 **Concluido neste ciclo:**
+- `frontend/src/lib/tts-client.ts`, `frontend/src/lib/model-config.ts`, `frontend/src/lib/audio-generation-pipeline.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/lib/literal-video-production.ts` e `frontend/src/pages/ResearchNotebook.tsx` passaram a usar `openai/tts-1-hd` como default consistente de TTS, com preservação de override explícito do usuário
+- `frontend/src/lib/tts-client.ts`, `frontend/src/lib/image-generation-client.ts` e `frontend/src/lib/model-catalog.ts` agora usam fallback seguro para `HTTP-Referer`, eliminando dependência rígida de `window.location.origin` fora de contexto browser ativo
+- `frontend/src/pages/DocumentDetail.tsx` ganhou ações rápidas de copiar texto integral e duplicar documento, além de melhorias de acessibilidade em ações críticas
+- Cobertura de regressão ampliada com `frontend/src/lib/tts-client.test.ts` e ajuste de `frontend/src/lib/video-generation-pipeline.test.ts` para o novo default TTS
+- Validação local atualizada: `npm run typecheck`, `npx vitest run` (**24/24 arquivos, 221/221 testes**) e `npm run build` com sucesso
 - Hotfix de permissão do admin concluído: `firestore.rules` agora cobre `research_notebooks/{id}/memory/{docId}` para owner/admin e elimina o `Missing or insufficient permissions` observado em `/admin` e `/admin/costs`
 - O cache agregado da plataforma foi endurecido em `frontend/src/lib/firestore-service.ts`: falha isolada na leitura de `memory/search_memory` não derruba mais o overview/cost breakdown completo; o painel agora recebe `operational_warnings` quando carregar com métricas parciais
 - `frontend/src/App.tsx`, `frontend/src/pages/PlatformAdminPanel.tsx` e `frontend/src/pages/PlatformCostsPage.tsx` passaram a respeitar `isReady` e a devolver erros humanizados/acionáveis, reduzindo redirecionamento prematuro e toasts opacos
@@ -103,6 +108,12 @@
 - A trilha de memoria/contexto auditavel do notebook ainda nao esta completa: migracao dedicada, retencao/TTL, observabilidade agregada, base historica diaria, alertas operacionais, backfill administrativo com chunking, presets operacionais e recomendacao assistida com politica de rollout/aceitacao, preview de impacto, historico auditavel, metricas agregadas e alertas de desvio ja estao implantados; falta agora consolidar validacao continuada em producao e fechar ajustes finos por perfil de operacao
 
 **Arquivos foco deste ciclo:**
+- `frontend/src/lib/tts-client.ts`
+- `frontend/src/lib/image-generation-client.ts`
+- `frontend/src/lib/model-catalog.ts`
+- `frontend/src/lib/model-config.ts`
+- `frontend/src/pages/DocumentDetail.tsx`
+- `frontend/src/lib/tts-client.test.ts`
 - `frontend/src/lib/notebook-pipeline-progress.ts`
 - `frontend/src/lib/document-pipeline.ts`
 - `frontend/src/lib/generation-service.ts`
@@ -126,6 +137,7 @@
 - `frontend/src/components/TaskBar.tsx`
 
 **Validacao deste ciclo:**
+- Hardening de TTS/OpenRouter e UX de `DocumentDetail.tsx` validados localmente com `npm run typecheck`, `npx vitest run` (**24/24 arquivos, 221/221 testes**) e `npm run build`
 - `npm run typecheck` executado em `frontend/` com saida final limpa (`tsc --noEmit`, exit code 0)
 - Refatoração dos handlers de fonte em `ResearchNotebook.tsx` validada com novo `npm run typecheck` limpo após ajustes de referências e triggers
 - Correção de quebra no workflow de Tests validada localmente com trilha completa do job frontend-quality: `npm run typecheck`, `npm run test` (188/188) e `npm run build` em `frontend/`

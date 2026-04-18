@@ -21,6 +21,9 @@ export const CATALOG_UPDATED_EVENT = 'lexio:catalog_updated'
 
 /** In-memory cache — avoids redundant Firestore reads across components */
 const catalogCache = new Map<string, ModelOption[]>()
+const OPENROUTER_REFERER = typeof window !== 'undefined' && window.location?.origin
+  ? window.location.origin
+  : 'https://lexio.web.app'
 
 function getCatalogCacheKey(uid?: string): string {
   return uid ?? getCurrentUserId() ?? 'anonymous'
@@ -164,7 +167,7 @@ export interface OpenRouterModel {
 /** Fetch all available models from the OpenRouter API. */
 export async function fetchOpenRouterModels(): Promise<OpenRouterModel[]> {
   const res = await fetch('https://openrouter.ai/api/v1/models', {
-    headers: { 'HTTP-Referer': window.location.origin, 'X-Title': 'Lexio Admin' },
+    headers: { 'HTTP-Referer': OPENROUTER_REFERER, 'X-Title': 'Lexio Admin' },
   })
   if (!res.ok) throw new Error(`Erro na API do OpenRouter (${res.status})`)
   const json = await res.json() as { data?: OpenRouterModel[] }

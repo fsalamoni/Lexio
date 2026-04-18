@@ -10,13 +10,17 @@
 
 import { withRateLimit, withRetryAfterDelay } from './media-rate-limiter'
 
+const OPENROUTER_REFERER = typeof window !== 'undefined' && window.location?.origin
+  ? window.location.origin
+  : 'https://lexio.web.app'
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface TTSOptions {
   apiKey: string
   text: string
   voice?: string        // e.g., 'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'
-  model?: string        // e.g., 'openai/gpt-4o-audio-preview'
+  model?: string        // e.g., 'openai/tts-1-hd'
   speed?: number        // 0.25 to 4.0
   signal?: AbortSignal
 }
@@ -28,12 +32,11 @@ export interface TTSResult {
 
 // ── OpenRouter TTS ──────────────────────────────────────────────────────────
 
-export const DEFAULT_OPENROUTER_TTS_MODEL = 'openai/gpt-4o-audio-preview'
+export const DEFAULT_OPENROUTER_TTS_MODEL = 'openai/tts-1-hd'
 
 function normalizeTTSModel(model?: string): string {
   const value = String(model || '').trim()
   if (!value) return DEFAULT_OPENROUTER_TTS_MODEL
-  if (/^openai\/tts-1(?:-hd)?$/i.test(value)) return DEFAULT_OPENROUTER_TTS_MODEL
   return value
 }
 
@@ -64,7 +67,7 @@ export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSRes
         headers: {
           'Authorization': `Bearer ${opts.apiKey}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': window.location.origin,
+          'HTTP-Referer': OPENROUTER_REFERER,
           'X-Title': 'Lexio Research Notebook',
         },
         body: JSON.stringify({
@@ -230,5 +233,6 @@ export const TTS_VOICES = [
 ] as const
 
 export const TTS_MODELS = [
-  { id: DEFAULT_OPENROUTER_TTS_MODEL, label: 'GPT-4o Audio Preview', description: 'Saída de áudio via chat completions streaming' },
+  { id: DEFAULT_OPENROUTER_TTS_MODEL, label: 'OpenAI TTS HD', description: 'Síntese de voz premium com saída de áudio em streaming' },
+  { id: 'openai/tts-1', label: 'OpenAI TTS Standard', description: 'Síntese de voz mais rápida e econômica' },
 ] as const

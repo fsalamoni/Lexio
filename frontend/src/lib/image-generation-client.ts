@@ -12,6 +12,9 @@
  */
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+const OPENROUTER_REFERER = typeof window !== 'undefined' && window.location?.origin
+  ? window.location.origin
+  : 'https://lexio.web.app'
 
 export const DEFAULT_IMAGE_MODEL = 'google/gemini-2.5-flash-preview:image-output'
 
@@ -91,7 +94,7 @@ export async function generateImageViaOpenRouter(opts: ImageGenerationOptions): 
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${opts.apiKey}`,
     'Content-Type': 'application/json',
-    'HTTP-Referer': window.location.origin,
+    'HTTP-Referer': OPENROUTER_REFERER,
     'X-Title': 'Lexio Video Studio',
   }
 

@@ -1,6 +1,7 @@
 import { parseArtifactContent } from './artifact-parsers'
 import { callLLMWithFallback, type LLMResult } from './llm-client'
 import { synthesizeAudioFromScript } from './notebook-audio-pipeline'
+import { DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import {
   loadAudioPipelineModels,
   validateScopedAgentModels,
@@ -232,7 +233,7 @@ export async function generateAudioLiteralMedia(
   onProgress?: StudioProgressCallback,
 ): Promise<AudioLiteralGenerationResult> {
   const models = await loadAudioPipelineModels()
-  const ttsModel = input.model || models.audio_narrador || 'openai/gpt-4o-audio-preview'
+  const ttsModel = input.model || models.audio_narrador || DEFAULT_OPENROUTER_TTS_MODEL
   const startedAt = Date.now()
   onProgress?.(1, 1, 'Gerando áudio literal…')
 
