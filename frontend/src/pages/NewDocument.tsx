@@ -307,7 +307,9 @@ export default function NewDocument() {
               toast.error('Modelo sem resposta', msg)
             } else {
               setPipelineMessage(err?.message || 'Erro na geração')
-              toast.error('Erro na geração', err?.message)
+              const { humanizeError } = await import('../lib/error-humanizer')
+              const humanized = humanizeError(err)
+              toast.error(humanized.title, humanized.detail || err?.message)
             }
             throw err
           }

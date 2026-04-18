@@ -299,7 +299,9 @@ export default function DocumentDetail() {
             setPipelineAgents(prev =>
               prev.map(a => a.status === 'active' ? { ...a, status: 'error' as const, completedAt: Date.now() } : a),
             )
-            toast.error('Erro na geração', errorMsg)
+            const { humanizeError } = await import('../lib/error-humanizer')
+            const humanized = humanizeError(err)
+            toast.error(humanized.title, humanized.detail || errorMsg)
           }
         }
       } else {

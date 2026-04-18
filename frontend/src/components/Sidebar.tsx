@@ -137,7 +137,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 p-3 overflow-y-auto">
+        {/* Work section */}
+        <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-brand-400">Trabalho</p>
+        <div className="space-y-0.5">
         {links.map(({ to, label, icon, activePatterns, inactivePatterns }) => (
           <NavItem
             key={to}
@@ -150,6 +153,11 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             inactivePatterns={inactivePatterns}
           />
         ))}
+        </div>
+
+        {/* Settings section */}
+        <p className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-brand-400">Gestão</p>
+        <div className="space-y-0.5">
         <NavItem
           to="/settings"
           label="Configurações"
@@ -179,6 +187,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             />
           </>
         )}
+        </div>
       </nav>
 
       {/* Footer */}

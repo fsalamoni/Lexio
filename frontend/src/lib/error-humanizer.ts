@@ -12,6 +12,8 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string; suggestion?: str
   // HTTP status errors
   { pattern: /401|unauthorized/i, message: 'Sessão expirada', suggestion: 'Faça login novamente para continuar.' },
   { pattern: /403|forbidden/i, message: 'Acesso negado', suggestion: 'Você não tem permissão para realizar esta ação.' },
+  // LLM model not found (must come before generic 404)
+  { pattern: /model.*not.*found|model.*unavailable/i, message: 'Modelo indisponível', suggestion: 'O modelo selecionado pode ter sido descontinuado. Escolha outro em Configurações.' },
   { pattern: /404|not\s*found/i, message: 'Recurso não encontrado', suggestion: 'O item solicitado pode ter sido removido ou movido.' },
   { pattern: /429|too\s*many\s*requests|rate\s*limit/i, message: 'Limite de requisições atingido', suggestion: 'Aguarde alguns segundos antes de tentar novamente.' },
   { pattern: /500|internal\s*server/i, message: 'Erro interno do servidor', suggestion: 'O problema é do nosso lado. Tente novamente em instantes.' },
@@ -22,7 +24,6 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string; suggestion?: str
   { pattern: /context.*length|token.*limit|max.*tokens/i, message: 'Texto muito longo para o modelo', suggestion: 'Reduza o tamanho da solicitação ou use um modelo com janela maior.' },
   { pattern: /quota|billing|insufficient.*funds/i, message: 'Créditos do provedor esgotados', suggestion: 'Verifique o saldo da sua chave de API nas configurações.' },
   { pattern: /invalid.*api.*key|authentication.*failed/i, message: 'Chave de API inválida', suggestion: 'Verifique suas chaves em Configurações > Chaves de API.' },
-  { pattern: /model.*not.*found|model.*unavailable/i, message: 'Modelo indisponível', suggestion: 'O modelo selecionado pode ter sido descontinuado. Escolha outro em Configurações.' },
   { pattern: /content.*filter|safety|moderation/i, message: 'Conteúdo bloqueado pelo provedor', suggestion: 'Reformule sua solicitação para evitar filtros de segurança.' },
 
   // Firebase specific
@@ -78,6 +79,7 @@ function extractErrorString(error: unknown): string {
       }
       if (typeof resp.status === 'number') return `HTTP ${resp.status}`
     }
+    if (typeof e.message === 'string' && typeof e.code === 'string') return `${e.code} ${e.message}`
     if (typeof e.message === 'string') return e.message
     if (typeof e.code === 'string') return e.code
   }
