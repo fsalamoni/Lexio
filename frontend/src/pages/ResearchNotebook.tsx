@@ -7,7 +7,7 @@
  * Stored permanently per-user in Firestore under /users/{uid}/research_notebooks.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
@@ -44,7 +44,7 @@ import {
 } from '../lib/firestore-service'
 import { callLLM, callLLMWithFallback, callLLMWithMessages, ModelUnavailableError, type LLMResult } from '../lib/llm-client'
 import { getOpenRouterKey } from '../lib/generation-service'
-import { loadResearchNotebookModels } from '../lib/model-config'
+import { loadResearchNotebookModels, loadVideoPipelineModels } from '../lib/model-config'
 import {
   createUsageExecutionRecord,
   type UsageFunctionKey,
@@ -56,7 +56,6 @@ import {
   type StudioProgressCallback,
 } from '../lib/notebook-studio-pipeline'
 import {
-  runVideoGenerationPipeline,
   type VideoProductionPackage,
   type VideoGenerationProgressCallback,
   type RenderedVideoAsset,
@@ -80,31 +79,10 @@ import {
   buildStudioTrailSteps,
   type NotebookOperationalAggregate,
 } from '../lib/notebook-pipeline-progress'
-import {
-  type StoredNotebookMedia,
-  uploadNotebookMediaArtifact,
-  uploadNotebookVideoArtifact,
-} from '../lib/notebook-media-storage'
-import {
-  generateLiteralVideoClipAsset,
-  generateLiteralMediaAssets,
-  renderLiteralVideo,
-} from '../lib/literal-video-production'
-import { generateAudioLiteralMedia, runAudioGenerationPipeline } from '../lib/audio-generation-pipeline'
-import { isExternalVideoProviderConfigured, requestExternalVideoClip } from '../lib/external-video-provider'
-import { generatePresentationMediaAssets, runPresentationGenerationPipeline } from '../lib/presentation-generation-pipeline'
+import type { StoredNotebookMedia } from '../lib/notebook-media-storage'
 import { extractFileText, isSupportedTextFile, SUPPORTED_TEXT_FILE_EXTENSIONS } from '../lib/file-text-extractor'
-import { generateImageViaOpenRouter, blobToDataUrl } from '../lib/image-generation-client'
-import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from '../lib/tts-client'
-import { loadVideoPipelineModels } from '../lib/model-config'
 import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
-import ArtifactViewerModal from '../components/artifacts/ArtifactViewerModal'
 import { isStructuredArtifactType, parseArtifactContent } from '../lib/artifact-parsers'
-import VideoGenerationCostModal from '../components/VideoGenerationCostModal'
-import VideoStudioEditor from '../components/artifacts/VideoStudioEditor'
-import DraggablePanel from '../components/DraggablePanel'
-import SourceContentViewer from '../components/SourceContentViewer'
-import ConfirmDialog from '../components/ConfirmDialog'
 import {
   DeepResearchModal,
   type ResearchStep,
@@ -113,9 +91,7 @@ import {
   createDeepSearchSteps,
   createJurisprudenceSteps,
 } from '../components/DeepResearchModal'
-import JurisprudenceConfigModal, { type JurisprudenceSearchConfig } from '../components/JurisprudenceConfigModal'
-import SearchResultsModal from '../components/SearchResultsModal'
-import AgentTrailProgressModal from '../components/AgentTrailProgressModal'
+import type { JurisprudenceSearchConfig } from '../components/JurisprudenceConfigModal'
 import {
   searchDataJud,
   formatDataJudResults,
@@ -166,6 +142,72 @@ import {
   getExtensionFromMimeType,
   renderMarkdownToHtml,
 } from './notebook/utils'
+
+const ArtifactViewerModal = lazy(() => import('../components/artifacts/ArtifactViewerModal'))
+const VideoGenerationCostModal = lazy(() => import('../components/VideoGenerationCostModal'))
+const VideoStudioEditor = lazy(() => import('../components/artifacts/VideoStudioEditor'))
+const DraggablePanel = lazy(() => import('../components/DraggablePanel'))
+const SourceContentViewer = lazy(() => import('../components/SourceContentViewer'))
+const ConfirmDialog = lazy(() => import('../components/ConfirmDialog'))
+const JurisprudenceConfigModal = lazy(() => import('../components/JurisprudenceConfigModal'))
+const SearchResultsModal = lazy(() => import('../components/SearchResultsModal'))
+const AgentTrailProgressModal = lazy(() => import('../components/AgentTrailProgressModal'))
+
+function NotebookDeferredOverlay({ message }: { message: string }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
+      <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm text-gray-500 shadow-lg">
+        {message}
+      </div>
+    </div>
+  )
+}
+
+function NotebookDeferredBoundary({
+  message,
+  children,
+}: {
+  message: string
+  children: React.ReactNode
+}) {
+  return (
+    <Suspense fallback={<NotebookDeferredOverlay message={message} />}>
+      {children}
+    </Suspense>
+  )
+}
+
+async function loadAudioGenerationRuntime() {
+  return import('../lib/audio-generation-pipeline')
+}
+
+async function loadPresentationGenerationRuntime() {
+  return import('../lib/presentation-generation-pipeline')
+}
+
+async function loadVideoGenerationRuntime() {
+  return import('../lib/video-generation-pipeline')
+}
+
+async function loadNotebookMediaStorageRuntime() {
+  return import('../lib/notebook-media-storage')
+}
+
+async function loadLiteralVideoRuntime() {
+  return import('../lib/literal-video-production')
+}
+
+async function loadExternalVideoProviderRuntime() {
+  return import('../lib/external-video-provider')
+}
+
+async function loadImageGenerationRuntime() {
+  return import('../lib/image-generation-client')
+}
+
+async function loadTtsRuntime() {
+  return import('../lib/tts-client')
+}
 
 /** Individual search result item for review modal */
 export interface SearchResultItem {
@@ -2605,9 +2647,9 @@ Instruções:
           }
 
           const result = artifactType === 'audio_script'
-            ? await runAudioGenerationPipeline(pipelineInput, onProgress)
+            ? await loadAudioGenerationRuntime().then(({ runAudioGenerationPipeline }) => runAudioGenerationPipeline(pipelineInput, onProgress))
             : artifactType === 'apresentacao'
-              ? await runPresentationGenerationPipeline(pipelineInput, onProgress)
+              ? await loadPresentationGenerationRuntime().then(({ runPresentationGenerationPipeline }) => runPresentationGenerationPipeline(pipelineInput, onProgress))
               : await runStudioPipeline(pipelineInput, onProgress)
 
           const artifact: StudioArtifact = {
@@ -2809,6 +2851,7 @@ Instruções:
       const freshNotebook = await getFreshNotebookOrThrow(notebookId)
       const currentArtifact = freshNotebook.artifacts.find(item => item.id === artifact.id) ?? artifact
       const parsed = parseArtifactContent(currentArtifact.type, currentArtifact.content)
+      const { uploadNotebookMediaArtifact } = await loadNotebookMediaStorageRuntime()
 
       let nextContent = currentArtifact.content
       let successMessage = 'Imagem final atualizada com sucesso.'
@@ -2824,6 +2867,7 @@ Instruções:
 
       if (currentArtifact.type === 'apresentacao' && parsed.kind === 'presentation') {
         const apiKey = await getOpenRouterKey()
+        const { generatePresentationMediaAssets } = await loadPresentationGenerationRuntime()
         const media = await generatePresentationMediaAssets({
           apiKey,
           topic: activeNotebook.topic,
@@ -3106,6 +3150,7 @@ Instruções:
         })
       }
 
+      const { runVideoGenerationPipeline } = await loadVideoGenerationRuntime()
       const result = await runVideoGenerationPipeline({
         apiKey,
         scriptContent,
@@ -3200,6 +3245,10 @@ Instruções:
         toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
         return
       }
+      const [{ generateAudioLiteralMedia }, { uploadNotebookMediaArtifact }] = await Promise.all([
+        loadAudioGenerationRuntime(),
+        loadNotebookMediaStorageRuntime(),
+      ])
 
       const synthesis = await generateAudioLiteralMedia({
         apiKey,
@@ -3413,6 +3462,7 @@ Instruções:
     const uid = userId
     const notebookId = activeNotebook.id
     try {
+      const { uploadNotebookMediaArtifact, uploadNotebookVideoArtifact } = await loadNotebookMediaStorageRuntime()
       const uploadCache = videoStudioUploadCacheRef.current
       const uploadWithRetry = async <T,>(
         label: string,
@@ -3702,6 +3752,7 @@ Instruções:
       setVideoStudioApiKey(apiKey)
       setVideoLiteralOperationalSummary(createEmptyOperationalSummary())
       videoLiteralOperationalEventKeysRef.current = new Set()
+      const { generateLiteralMediaAssets, renderLiteralVideo } = await loadLiteralVideoRuntime()
 
       const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent, meta) => {
         const progress = buildVideoPipelineProgress(step, total, phase, agent, meta)
@@ -3762,6 +3813,7 @@ Instruções:
           || renderMsg.includes('NotSupportedError')
           || renderMsg.includes('NotAllowedError')
 
+        const { isExternalVideoProviderConfigured, requestExternalVideoClip } = await loadExternalVideoProviderRuntime()
         if (isRenderInfraError && isExternalVideoProviderConfigured()) {
           onProgress(0, 1, 'Renderer local falhou. Tentando provedor externo de vídeo...', 'Provedor Externo')
           toast.info('Renderer local indisponível', 'Tentando provedor externo de vídeo como fallback...')
@@ -4234,16 +4286,17 @@ Instruções:
 
         {/* Create dialog */}
         {showCreate && (
-          <DraggablePanel
-            open={showCreate}
-            onClose={() => { setShowCreate(false); setSuggestedAcervoDocs([]); setSelectedAcervoIds(new Set()) }}
-            title="Novo Caderno de Pesquisa"
-            icon={<BookOpen size={16} />}
-            initialWidth={500}
-            initialHeight={550}
-            minWidth={380}
-            minHeight={300}
-          >
+          <NotebookDeferredBoundary message="Carregando formulário do caderno...">
+            <DraggablePanel
+              open={showCreate}
+              onClose={() => { setShowCreate(false); setSuggestedAcervoDocs([]); setSelectedAcervoIds(new Set()) }}
+              title="Novo Caderno de Pesquisa"
+              icon={<BookOpen size={16} />}
+              initialWidth={500}
+              initialHeight={550}
+              minWidth={380}
+              minHeight={300}
+            >
               <div className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Título *</label>
@@ -4337,19 +4390,24 @@ Instruções:
                   )}
                 </button>
               </div>
-          </DraggablePanel>
+            </DraggablePanel>
+          </NotebookDeferredBoundary>
         )}
 
-        <ConfirmDialog
-          open={Boolean(pendingNotebookDelete)}
-          title="Excluir caderno"
-          description={pendingNotebookDelete ? `O caderno "${pendingNotebookDelete.title}" será removido permanentemente.` : ''}
-          confirmText="Excluir permanentemente"
-          cancelText="Cancelar"
-          danger
-          onCancel={() => setPendingNotebookDelete(null)}
-          onConfirm={confirmDeleteNotebook}
-        />
+        {pendingNotebookDelete && (
+          <NotebookDeferredBoundary message="Carregando confirmação...">
+            <ConfirmDialog
+              open={Boolean(pendingNotebookDelete)}
+              title="Excluir caderno"
+              description={pendingNotebookDelete ? `O caderno "${pendingNotebookDelete.title}" será removido permanentemente.` : ''}
+              confirmText="Excluir permanentemente"
+              cancelText="Cancelar"
+              danger
+              onCancel={() => setPendingNotebookDelete(null)}
+              onConfirm={confirmDeleteNotebook}
+            />
+          </NotebookDeferredBoundary>
+        )}
       </div>
     )
   }
@@ -4513,16 +4571,17 @@ Instruções:
 
       {/* Edit Notebook Info Modal */}
       {showEditInfo && (
-        <DraggablePanel
-          open={showEditInfo}
-          onClose={() => setShowEditInfo(false)}
-          title="Editar Caderno"
-          icon={<Edit3 size={16} />}
-          initialWidth={500}
-          initialHeight={420}
-          minWidth={380}
-          minHeight={280}
-        >
+        <NotebookDeferredBoundary message="Carregando editor do caderno...">
+          <DraggablePanel
+            open={showEditInfo}
+            onClose={() => setShowEditInfo(false)}
+            title="Editar Caderno"
+            icon={<Edit3 size={16} />}
+            initialWidth={500}
+            initialHeight={420}
+            minWidth={380}
+            minHeight={280}
+          >
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Título *</label>
@@ -4565,7 +4624,8 @@ Instruções:
                 Salvar Alterações
               </button>
             </div>
-        </DraggablePanel>
+          </DraggablePanel>
+        </NotebookDeferredBoundary>
       )}
 
       {/* Tab content */}
@@ -6197,59 +6257,64 @@ Instruções:
       </div>
 
       {/* ── Artifact Viewer Modal ─────────────────────────────── */}
-      {viewingArtifact && (() => {
-        // Detect if this video_script artifact contains a full VideoProductionPackage (JSON with scenes/tracks)
-        const isVideoStudio = viewingArtifact.type === 'video_script' && viewingArtifact.format === 'json' && (() => {
-          try {
-            const parsed = JSON.parse(viewingArtifact.content)
-            return Array.isArray(parsed?.scenes) && Array.isArray(parsed?.tracks)
-          } catch { return false }
-        })()
-        return (
-          <ArtifactViewerModal
-            artifact={viewingArtifact}
-            onClose={() => setViewingArtifact(null)}
-            onDelete={() => {
-              handleDeleteArtifact(viewingArtifact.id)
-              setViewingArtifact(null)
-            }}
-            onDownload={() => handleDownloadArtifact(viewingArtifact)}
-            onGenerateVideo={viewingArtifact.type === 'video_script' && !isVideoStudio ? () => {
-              setVideoGenSavedArtifact(viewingArtifact)
-              setShowVideoGenCost(true)
-              setViewingArtifact(null)
-            } : undefined}
-            onGenerateAudio={viewingArtifact.type === 'audio_script' ? () => {
-              handleGenerateAudioFromArtifact(viewingArtifact)
-            } : undefined}
-            onGenerateImage={['apresentacao', 'mapa_mental', 'infografico', 'tabela_dados'].includes(viewingArtifact.type)
-              ? () => {
-                  if (visualGenLoading && visualGeneratingArtifactId === viewingArtifact.id) return
-                  handleGenerateVisualArtifact(viewingArtifact)
-                }
-              : undefined}
-            onOpenStudio={isVideoStudio ? () => {
+      {viewingArtifact && (
+        <NotebookDeferredBoundary message="Carregando visualizador do artefato...">
+          {(() => {
+            // Detect if this video_script artifact contains a full VideoProductionPackage (JSON with scenes/tracks)
+            const isVideoStudio = viewingArtifact.type === 'video_script' && viewingArtifact.format === 'json' && (() => {
               try {
-                const pkg = JSON.parse(viewingArtifact.content)
-                setVideoProduction(pkg)
-                setViewingArtifact(null)
-              } catch {
-                toast.error('Erro ao abrir estúdio', 'O artefato de vídeo contém dados corrompidos.')
-              }
-            } : undefined}
-          />
-        )
-      })()}
+                const parsed = JSON.parse(viewingArtifact.content)
+                return Array.isArray(parsed?.scenes) && Array.isArray(parsed?.tracks)
+              } catch { return false }
+            })()
+            return (
+              <ArtifactViewerModal
+                artifact={viewingArtifact}
+                onClose={() => setViewingArtifact(null)}
+                onDelete={() => {
+                  handleDeleteArtifact(viewingArtifact.id)
+                  setViewingArtifact(null)
+                }}
+                onDownload={() => handleDownloadArtifact(viewingArtifact)}
+                onGenerateVideo={viewingArtifact.type === 'video_script' && !isVideoStudio ? () => {
+                  setVideoGenSavedArtifact(viewingArtifact)
+                  setShowVideoGenCost(true)
+                  setViewingArtifact(null)
+                } : undefined}
+                onGenerateAudio={viewingArtifact.type === 'audio_script' ? () => {
+                  handleGenerateAudioFromArtifact(viewingArtifact)
+                } : undefined}
+                onGenerateImage={['apresentacao', 'mapa_mental', 'infografico', 'tabela_dados'].includes(viewingArtifact.type)
+                  ? () => {
+                      if (visualGenLoading && visualGeneratingArtifactId === viewingArtifact.id) return
+                      handleGenerateVisualArtifact(viewingArtifact)
+                    }
+                  : undefined}
+                onOpenStudio={isVideoStudio ? () => {
+                  try {
+                    const pkg = JSON.parse(viewingArtifact.content)
+                    setVideoProduction(pkg)
+                    setViewingArtifact(null)
+                  } catch {
+                    toast.error('Erro ao abrir estúdio', 'O artefato de vídeo contém dados corrompidos.')
+                  }
+                } : undefined}
+              />
+            )
+          })()}
+        </NotebookDeferredBoundary>
+      )}
 
       {/* ── Script Review/Edit Modal (for media artifacts) ──── */}
       {pendingArtifact && (
-        <DraggablePanel
-          title={`Revisar ${ARTIFACT_TYPES.find(a => a.type === pendingArtifact.artifact.type)?.label || 'Artefato'}`}
-          open={true}
-          onClose={handleDiscardPendingArtifact}
-          initialWidth={700}
-          initialHeight={520}
-        >
+        <NotebookDeferredBoundary message="Carregando revisão do artefato...">
+          <DraggablePanel
+            title={`Revisar ${ARTIFACT_TYPES.find(a => a.type === pendingArtifact.artifact.type)?.label || 'Artefato'}`}
+            open={true}
+            onClose={handleDiscardPendingArtifact}
+            initialWidth={700}
+            initialHeight={520}
+          >
           <div className="flex flex-col h-full gap-3 p-4">
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Revise e edite o conteúdo gerado antes de salvar no caderno.
@@ -6274,34 +6339,38 @@ Instruções:
               </button>
             </div>
           </div>
-        </DraggablePanel>
+          </DraggablePanel>
+        </NotebookDeferredBoundary>
       )}
 
       {/* ── Video Generation Cost Modal ──────────────── */}
       {showVideoGenCost && videoGenSavedArtifact && (
-        <VideoGenerationCostModal
-          scriptContent={videoGenSavedArtifact.content}
-          topic={activeNotebook?.topic || ''}
-          onGenerate={handleGenerateVideo}
-          onSkip={handleSkipVideoGeneration}
-          isGenerating={videoGenLoading}
-          generationProgress={videoGenProgress || undefined}
-          lastCheckpoint={videoGenLastCheckpoint || undefined}
-        />
+        <NotebookDeferredBoundary message="Carregando custo de geração de vídeo...">
+          <VideoGenerationCostModal
+            scriptContent={videoGenSavedArtifact.content}
+            topic={activeNotebook?.topic || ''}
+            onGenerate={handleGenerateVideo}
+            onSkip={handleSkipVideoGeneration}
+            isGenerating={videoGenLoading}
+            generationProgress={videoGenProgress || undefined}
+            lastCheckpoint={videoGenLastCheckpoint || undefined}
+          />
+        </NotebookDeferredBoundary>
       )}
 
       {/* ── Video Studio Editor ──────────────────────── */}
       {videoProduction && (
-        <VideoStudioEditor
-          production={videoProduction}
-          onClose={() => setVideoProduction(null)}
-          onSave={async (updated) => {
-            await handleSaveVideoStudioToNotebook(updated)
-          }}
-          onGenerateLiteralMedia={(updatedProduction) => {
-            void handleRunLiteralVideoStudioProduction(updatedProduction)
-          }}
-          onGenerateClipVideo={async (currentProduction, sceneNumber, clipNumber) => {
+        <NotebookDeferredBoundary message="Carregando estúdio de vídeo...">
+          <VideoStudioEditor
+            production={videoProduction}
+            onClose={() => setVideoProduction(null)}
+            onSave={async (updated) => {
+              await handleSaveVideoStudioToNotebook(updated)
+            }}
+            onGenerateLiteralMedia={(updatedProduction) => {
+              void handleRunLiteralVideoStudioProduction(updatedProduction)
+            }}
+            onGenerateClipVideo={async (currentProduction, sceneNumber, clipNumber) => {
             try {
               const notebookId = activeNotebook?.id
               if (!userId || !notebookId) return null
@@ -6312,6 +6381,7 @@ Instruções:
                 return null
               }
 
+              const { generateLiteralVideoClipAsset } = await loadLiteralVideoRuntime()
               const result = await generateLiteralVideoClipAsset(apiKey, currentProduction, sceneNumber, clipNumber)
               const persisted = await handleSaveVideoStudioToNotebook(result.production, { silent: true, syncEditorState: false })
 
@@ -6342,6 +6412,7 @@ Instruções:
               const scene = videoProduction.scenes.find(s => s.number === sceneNumber)
               if (!scene?.imagePrompt) { toast.error('Cena sem prompt de imagem.'); return null }
               const models = await loadVideoPipelineModels()
+              const { generateImageViaOpenRouter } = await loadImageGenerationRuntime()
               const result = await generateImageViaOpenRouter({
                 apiKey,
                 prompt: scene.imagePrompt,
@@ -6366,6 +6437,10 @@ Instruções:
               if (!narSeg?.text) { toast.error('Cena sem texto de narração.'); return null }
               const cleanText = narSeg.text.replace(/\*([^*]+)\*/g, '$1').replace(/\[pausa?\]/gi, '...').trim()
               const models = await loadVideoPipelineModels()
+              const [{ generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL }, { blobToDataUrl }] = await Promise.all([
+                loadTtsRuntime(),
+                loadImageGenerationRuntime(),
+              ])
               const result = await generateTTSViaOpenRouter({
                 apiKey,
                 text: cleanText,
@@ -6382,130 +6457,169 @@ Instruções:
               toast.error(`Erro ao gerar narração da cena ${sceneNumber}`, h.detail || h.title)
               return null
             }
-          }}
-        />
+            }}
+          />
+        </NotebookDeferredBoundary>
       )}
 
       {/* ── Deep Research Modal ────────────────────────── */}
-      <AgentTrailProgressModal
-        isOpen={showAcervoProgressModal}
-        title="Trilha de Análise Inteligente do Acervo"
-        subtitle={activeNotebook?.topic}
-        currentMessage={acervoProgressState.currentMessage}
-        percent={acervoProgressState.percent}
-        steps={acervoTrailSteps}
-        isComplete={acervoProgressState.isComplete}
-        hasError={acervoProgressState.hasError}
-        activeStageLabel={acervoProgressState.stageLabel}
-        activeStageMeta={acervoProgressState.stageMeta}
-        canClose
-        onClose={() => setShowAcervoProgressModal(false)}
-      />
+      {showAcervoProgressModal && (
+        <NotebookDeferredBoundary message="Carregando trilha do acervo...">
+          <AgentTrailProgressModal
+            isOpen={showAcervoProgressModal}
+            title="Trilha de Análise Inteligente do Acervo"
+            subtitle={activeNotebook?.topic}
+            currentMessage={acervoProgressState.currentMessage}
+            percent={acervoProgressState.percent}
+            steps={acervoTrailSteps}
+            isComplete={acervoProgressState.isComplete}
+            hasError={acervoProgressState.hasError}
+            activeStageLabel={acervoProgressState.stageLabel}
+            activeStageMeta={acervoProgressState.stageMeta}
+            canClose
+            onClose={() => setShowAcervoProgressModal(false)}
+          />
+        </NotebookDeferredBoundary>
+      )}
 
-      <AgentTrailProgressModal
-        isOpen={showStudioProgressModal && Boolean(selectedStudioTask)}
-        title="Trilha Multiagente do Estúdio"
-        subtitle={selectedStudioTaskMetadata?.artifactLabel}
-        currentMessage={studioProgressState.currentMessage}
-        percent={studioProgressState.percent}
-        steps={studioTrailSteps}
-        isComplete={studioProgressState.isComplete}
-        hasError={studioProgressState.hasError}
-        activeStageLabel={studioProgressState.stageLabel}
-        activeStageMeta={studioProgressState.stageMeta}
-        canClose
-        onClose={() => setShowStudioProgressModal(false)}
-      />
+      {showStudioProgressModal && selectedStudioTask && (
+        <NotebookDeferredBoundary message="Carregando trilha do estúdio...">
+          <AgentTrailProgressModal
+            isOpen={showStudioProgressModal && Boolean(selectedStudioTask)}
+            title="Trilha Multiagente do Estúdio"
+            subtitle={selectedStudioTaskMetadata?.artifactLabel}
+            currentMessage={studioProgressState.currentMessage}
+            percent={studioProgressState.percent}
+            steps={studioTrailSteps}
+            isComplete={studioProgressState.isComplete}
+            hasError={studioProgressState.hasError}
+            activeStageLabel={studioProgressState.stageLabel}
+            activeStageMeta={studioProgressState.stageMeta}
+            canClose
+            onClose={() => setShowStudioProgressModal(false)}
+          />
+        </NotebookDeferredBoundary>
+      )}
 
-      <DeepResearchModal
-        isOpen={researchModalOpen}
-        onClose={() => setResearchModalOpen(false)}
-        title={researchModalTitle}
-        subtitle={researchModalSubtitle}
-        variant={researchModalVariant}
-        steps={researchModalSteps}
-        stats={researchModalStats}
-        canClose={researchModalCanClose}
-      />
+      {researchModalOpen && (
+        <DeepResearchModal
+          isOpen={researchModalOpen}
+          onClose={() => setResearchModalOpen(false)}
+          title={researchModalTitle}
+          subtitle={researchModalSubtitle}
+          variant={researchModalVariant}
+          steps={researchModalSteps}
+          stats={researchModalStats}
+          canClose={researchModalCanClose}
+        />
+      )}
 
-      <JurisprudenceConfigModal
-        isOpen={jurisprudenceConfigOpen}
-        query={externalSearchQuery.trim()}
-        initialSelectedAliases={lastJurisprudenceTribunalAliases}
-        initialConfig={jurisprudenceConfigPreset}
-        onSearch={handleJurisprudenceSearch}
-        onClose={() => {
-          setJurisprudenceConfigOpen(false)
-          setJurisprudenceConfigPreset(null)
-        }}
-      />
+      {jurisprudenceConfigOpen && (
+        <NotebookDeferredBoundary message="Carregando configuração de jurisprudência...">
+          <JurisprudenceConfigModal
+            isOpen={jurisprudenceConfigOpen}
+            query={externalSearchQuery.trim()}
+            initialSelectedAliases={lastJurisprudenceTribunalAliases}
+            initialConfig={jurisprudenceConfigPreset}
+            onSearch={handleJurisprudenceSearch}
+            onClose={() => {
+              setJurisprudenceConfigOpen(false)
+              setJurisprudenceConfigPreset(null)
+            }}
+          />
+        </NotebookDeferredBoundary>
+      )}
 
-      <SearchResultsModal
-        isOpen={searchResultsModalOpen}
-        items={searchResultsItems}
-        variant={searchResultsVariant}
-        onConfirm={(selected) => {
-          if (searchResultsCallback) {
-            searchResultsCallback(selected).catch(err => {
-              console.error('SearchResultsModal callback error:', err)
-            })
-          }
-        }}
-        onClose={() => {
-          setSearchResultsModalOpen(false)
-        }}
-      />
+      {searchResultsModalOpen && (
+        <NotebookDeferredBoundary message="Carregando resultados da busca...">
+          <SearchResultsModal
+            isOpen={searchResultsModalOpen}
+            items={searchResultsItems}
+            variant={searchResultsVariant}
+            onConfirm={(selected) => {
+              if (searchResultsCallback) {
+                searchResultsCallback(selected).catch(err => {
+                  console.error('SearchResultsModal callback error:', err)
+                })
+              }
+            }}
+            onClose={() => {
+              setSearchResultsModalOpen(false)
+            }}
+          />
+        </NotebookDeferredBoundary>
+      )}
 
-      <ConfirmDialog
-        open={showClearChatConfirm}
-        title="Limpar histórico de conversa"
-        description="Todas as mensagens do chat serão removidas. As fontes e artefatos serão mantidos."
-        confirmText="Limpar histórico"
-        cancelText="Cancelar"
-        danger
-        loading={clearingChat}
-        onCancel={() => setShowClearChatConfirm(false)}
-        onConfirm={confirmClearChat}
-      />
+      {showClearChatConfirm && (
+        <NotebookDeferredBoundary message="Carregando confirmação...">
+          <ConfirmDialog
+            open={showClearChatConfirm}
+            title="Limpar histórico de conversa"
+            description="Todas as mensagens do chat serão removidas. As fontes e artefatos serão mantidos."
+            confirmText="Limpar histórico"
+            cancelText="Cancelar"
+            danger
+            loading={clearingChat}
+            onCancel={() => setShowClearChatConfirm(false)}
+            onConfirm={confirmClearChat}
+          />
+        </NotebookDeferredBoundary>
+      )}
 
-      <ConfirmDialog
-        open={Boolean(pendingArtifactDelete)}
-        title="Excluir artefato"
-        description={pendingArtifactDelete ? `O artefato "${pendingArtifactDelete.title}" será removido permanentemente.` : ''}
-        confirmText="Excluir artefato"
-        cancelText="Cancelar"
-        danger
-        onCancel={() => setPendingArtifactDelete(null)}
-        onConfirm={confirmDeleteArtifact}
-      />
+      {pendingArtifactDelete && (
+        <NotebookDeferredBoundary message="Carregando confirmação...">
+          <ConfirmDialog
+            open={Boolean(pendingArtifactDelete)}
+            title="Excluir artefato"
+            description={pendingArtifactDelete ? `O artefato "${pendingArtifactDelete.title}" será removido permanentemente.` : ''}
+            confirmText="Excluir artefato"
+            cancelText="Cancelar"
+            danger
+            onCancel={() => setPendingArtifactDelete(null)}
+            onConfirm={confirmDeleteArtifact}
+          />
+        </NotebookDeferredBoundary>
+      )}
 
-      <ConfirmDialog
-        open={Boolean(pendingSavedSearchDelete)}
-        title="Excluir busca salva"
-        description={pendingSavedSearchDelete ? `A busca salva "${pendingSavedSearchDelete.title}" será removida do caderno.` : ''}
-        confirmText="Excluir busca"
-        cancelText="Cancelar"
-        danger
-        onCancel={() => setPendingSavedSearchDelete(null)}
-        onConfirm={confirmDeleteSavedSearch}
-      />
+      {pendingSavedSearchDelete && (
+        <NotebookDeferredBoundary message="Carregando confirmação...">
+          <ConfirmDialog
+            open={Boolean(pendingSavedSearchDelete)}
+            title="Excluir busca salva"
+            description={pendingSavedSearchDelete ? `A busca salva "${pendingSavedSearchDelete.title}" será removida do caderno.` : ''}
+            confirmText="Excluir busca"
+            cancelText="Cancelar"
+            danger
+            onCancel={() => setPendingSavedSearchDelete(null)}
+            onConfirm={confirmDeleteSavedSearch}
+          />
+        </NotebookDeferredBoundary>
+      )}
 
-      <ConfirmDialog
-        open={pendingSavedSearchBulkDeleteIds.length > 0}
-        title="Excluir buscas selecionadas"
-        description={`As ${pendingSavedSearchBulkDeleteIds.length} buscas selecionadas serão removidas do caderno.`}
-        confirmText="Excluir selecionadas"
-        cancelText="Cancelar"
-        danger
-        onCancel={() => setPendingSavedSearchBulkDeleteIds([])}
-        onConfirm={confirmDeleteSelectedSavedSearches}
-      />
+      {pendingSavedSearchBulkDeleteIds.length > 0 && (
+        <NotebookDeferredBoundary message="Carregando confirmação...">
+          <ConfirmDialog
+            open={pendingSavedSearchBulkDeleteIds.length > 0}
+            title="Excluir buscas selecionadas"
+            description={`As ${pendingSavedSearchBulkDeleteIds.length} buscas selecionadas serão removidas do caderno.`}
+            confirmText="Excluir selecionadas"
+            cancelText="Cancelar"
+            danger
+            onCancel={() => setPendingSavedSearchBulkDeleteIds([])}
+            onConfirm={confirmDeleteSelectedSavedSearches}
+          />
+        </NotebookDeferredBoundary>
+      )}
 
       {/* ── Source content viewer (floating, draggable panel) ───────────── */}
-      <SourceContentViewer
-        source={viewerSource}
-        onClose={() => setViewerSource(null)}
-      />
+      {viewerSource && (
+        <NotebookDeferredBoundary message="Carregando visualizador da fonte...">
+          <SourceContentViewer
+            source={viewerSource}
+            onClose={() => setViewerSource(null)}
+          />
+        </NotebookDeferredBoundary>
+      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-04-17 | Branch: main
+> Atualizado: 2026-04-18 | Branch: main
 > PROPÓSITO: Fonte única da verdade — estado do sistema, roadmap e decisões técnicas.
 > REGRA: Atualizar após cada etapa concluída. IMPLEMENTATION_STATE.md foi arquivado (obsoleto).
 
@@ -149,6 +149,17 @@ platform_settings, notifications
 - Cobertura de regressão ampliada com `frontend/src/lib/tts-client.test.ts` e ajuste de `frontend/src/lib/video-generation-pipeline.test.ts` para o novo default.
 - Validação desta rodada: `npm run typecheck`, `npx vitest run` (24/24, 221/221) e `npm run build` concluídos com sucesso.
 - Índices seguiram inalterados nesta rodada; o update de indexação/documentação ocorreu em `docs/MANIFEST.json` e nos trackers operacionais.
+
+---
+
+## PERFORMANCE 2026-04-18 — RESEARCH NOTEBOOK CODE SPLITTING
+
+- `frontend/src/pages/ResearchNotebook.tsx` passou a carregar modais, viewers e runtimes pesados sob demanda, evitando custo inicial de features que só são usadas em fluxos pontuais do caderno.
+- O pipeline de vídeo saiu do carregamento inicial da rota; `audio-generation-pipeline`, `presentation-generation-pipeline`, `video-generation-pipeline`, `literal-video-production`, `notebook-media-storage`, `external-video-provider`, `tts-client` e `image-generation-client` agora entram apenas quando a ação correspondente é disparada.
+- O build passou a emitir chunks dedicados e mais cacheáveis para viewers/pipelines auxiliares, reduzindo acoplamento entre chat, fontes, estúdio e mídia no primeiro load do notebook.
+- O chunk de produção de `ResearchNotebook` caiu de `550.81 kB` (`gzip 154.25 kB`) para `320.23 kB` (`gzip 93.65 kB`), e o `npm run build` deixou de emitir warnings de chunk grande/dynamic import nesta rota.
+- Validação desta rodada: `npm run typecheck`, `npx vitest run` (`24/24` arquivos, `221/221` testes) e `npm run build` concluídos com sucesso.
+- Índices não exigiram mudança nesta rodada; `firestore.indexes.json` permaneceu inalterado.
 
 ---
 

@@ -5,7 +5,16 @@
 
 ---
 
-## Status Geral: Etapas 1-95 IMPLEMENTADAS
+## Status Geral: Etapas 1-99 IMPLEMENTADAS
+
+### Etapas 96-99 — Code Splitting do ResearchNotebook + Carga Tardia de Midia ✅
+- **Arquivos**: `pages/ResearchNotebook.tsx`
+- Etapa 96: modais e viewers pesados do notebook passaram a ser carregados sob demanda, evitando montar UI auxiliar e dependencias grandes no primeiro paint da rota
+- Etapa 97: pipelines de audio, apresentacao, video, renderizacao literal, storage de midia e regeneracao de imagem/TTS passaram a ser importados apenas quando a acao correspondente e disparada
+- Etapa 98: o pipeline principal de video saiu do carregamento inicial e o ajuste final eliminou os warnings remanescentes de dynamic import no build do frontend
+- Etapa 99: o chunk de producao de `ResearchNotebook` caiu de **550.81 kB** (**gzip 154.25 kB**) para **320.23 kB** (**gzip 93.65 kB**), com melhor reaproveitamento de cache entre chunks auxiliares e validacao completa do frontend
+- Validação desta rodada: `npm run typecheck` limpo, `npx vitest run` com **24/24 arquivos** e **221/221 testes** passando, `npm run build` concluído sem warnings
+- Observação operacional: `firestore.indexes.json` não precisou de alterações nesta rodada; o ganho veio de code splitting e caching mais granular
 
 ### Etapas 92-95 — Hardening TTS/OpenRouter + UX DocumentDetail ✅
 - **Arquivos**: `lib/tts-client.ts`, `lib/image-generation-client.ts`, `lib/model-catalog.ts`, `lib/model-config.ts`, `lib/audio-generation-pipeline.ts`, `lib/video-generation-pipeline.ts`, `lib/literal-video-production.ts`, `pages/ResearchNotebook.tsx`, `pages/DocumentDetail.tsx`, `lib/tts-client.test.ts`, `lib/video-generation-pipeline.test.ts`
@@ -293,6 +302,7 @@
 ### Cache de Implementacao Atual
 - `frontend/src/lib/notebook-pipeline-progress.ts` centraliza o estado compartilhado de progresso do notebook
 - `frontend/src/pages/ResearchNotebook.tsx` e a principal integracao atual e a referencia para as proximas unificacoes de progresso
+- `frontend/src/pages/ResearchNotebook.tsx` agora tambem controla a carga tardia de viewers, modais e runtimes de midia, permitindo que o browser reutilize chunks menores por fluxo em vez de sempre baixar o workbench completo
 - O fluxo documental agora tambem expoe retries, fallback, custo e duracao por etapa via `frontend/src/lib/document-pipeline.ts`, servindo como referencia para a proxima camada do notebook
 - O fluxo `analyzeNotebookAcervo()` agora publica metadados operacionais por etapa e fallback seguro, que ja aparecem no progresso inline e no modal do notebook
 - O estudio agora tambem propaga `stageMeta` dinamico pelo `TaskManagerContext`, incluindo modelo efetivo, retries, fallback, custo e duracao por etapa nos pipelines de texto, audio e apresentacao
@@ -304,7 +314,7 @@
 - A trilha de memoria/contexto auditavel agora cobre Estudio, Chat e Buscas; proxima camada planejada: consolidacao dos thresholds com dados reais e eventual governanca por perfil operacional
 
 ### Validacao mais recente
-- `npm run typecheck` executado em `frontend/` com sucesso apos a camada de governanca das buscas salvas do notebook
+- `npm run typecheck`, `npx vitest run` (**24/24 arquivos, 221/221 testes**) e `npm run build` executados em `frontend/` com sucesso apos a rodada de code splitting do notebook; build final sem warnings e com chunk `ResearchNotebook` em **320.23 kB** (**gzip 93.65 kB**)
 
 ### Etapa 1 — Saida JSON Estruturada + Parser ✅
 - **Arquivos**: `lib/notebook-studio-pipeline.ts`, `components/artifacts/artifact-parsers.ts`

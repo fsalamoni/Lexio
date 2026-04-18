@@ -14,9 +14,9 @@
 
 ---
 
-## Andamento Atual (ciclo 2026-04-17)
+## Andamento Atual (ciclo 2026-04-18)
 
-**Status:** ⚠️ avançando Faixa B — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook e hardening de TTS/DocumentDetail fechados localmente
+**Status:** ⚠️ avançando Faixa B — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook, hardening de TTS/DocumentDetail e code splitting do ResearchNotebook validados localmente
 
 ## Plano Mestre Executável (Atualizado)
 
@@ -46,6 +46,11 @@
 - Mensuração de UX operacional por funil (tempo até valor, abandono, recuperação de falhas, reaproveitamento de memória)
 
 **Concluido neste ciclo:**
+- `frontend/src/pages/ResearchNotebook.tsx` foi refatorado para carregar modais, viewers e runtimes de mídia sob demanda, reduzindo o custo inicial da rota do caderno sem alterar o comportamento funcional
+- Pipelines auxiliares de áudio, apresentação, vídeo, storage de mídia e regeneração de imagem/TTS agora são resolvidos apenas quando o usuário abre o modal/viewer ou dispara a ação correspondente, melhorando o reaproveitamento de cache entre chunks do notebook
+- O chunk de produção de `ResearchNotebook` caiu de aproximadamente `550.81 kB` (`gzip 154.25 kB`) para `320.23 kB` (`gzip 93.65 kB`) e o `npm run build` deixou de emitir warnings de chunk grande/dynamic import
+- Validação local atualizada: `npm run typecheck`, `npx vitest run` (**24/24 arquivos, 221/221 testes**) e `npm run build` com sucesso
+- Índices: `firestore.indexes.json` permaneceu inalterado nesta rodada; o ganho veio de code splitting/caching, não de mudança de dados
 - `frontend/src/lib/tts-client.ts`, `frontend/src/lib/model-config.ts`, `frontend/src/lib/audio-generation-pipeline.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/lib/literal-video-production.ts` e `frontend/src/pages/ResearchNotebook.tsx` passaram a usar `openai/tts-1-hd` como default consistente de TTS, com preservação de override explícito do usuário
 - `frontend/src/lib/tts-client.ts`, `frontend/src/lib/image-generation-client.ts` e `frontend/src/lib/model-catalog.ts` agora usam fallback seguro para `HTTP-Referer`, eliminando dependência rígida de `window.location.origin` fora de contexto browser ativo
 - `frontend/src/pages/DocumentDetail.tsx` ganhou ações rápidas de copiar texto integral e duplicar documento, além de melhorias de acessibilidade em ações críticas
@@ -137,6 +142,7 @@
 - `frontend/src/components/TaskBar.tsx`
 
 **Validacao deste ciclo:**
+- Code splitting do notebook validado em `frontend/` com `npm run typecheck`, `npx vitest run` (**24/24 arquivos, 221/221 testes**) e `npm run build`; build final sem warnings e com `ResearchNotebook` em `320.23 kB` (`gzip 93.65 kB`)
 - Hardening de TTS/OpenRouter e UX de `DocumentDetail.tsx` validados localmente com `npm run typecheck`, `npx vitest run` (**24/24 arquivos, 221/221 testes**) e `npm run build`
 - `npm run typecheck` executado em `frontend/` com saida final limpa (`tsc --noEmit`, exit code 0)
 - Refatoração dos handlers de fonte em `ResearchNotebook.tsx` validada com novo `npm run typecheck` limpo após ajustes de referências e triggers
