@@ -9,6 +9,7 @@ import {
 } from 'recharts'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
+import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
   backfillNotebookSearchMemoryAcrossPlatform,
@@ -208,6 +209,7 @@ function SimpleTable({ title, rows, emptyLabel }: { title: string; rows: Array<P
 
 export default function PlatformAdminPanel() {
   const toast = useToast()
+  const { isReady, role } = useAuth()
   const [overview, setOverview] = useState<Awaited<ReturnType<typeof getPlatformOverview>> | null>(null)
   const [daily, setDaily] = useState<PlatformDailyUsagePoint[]>([])
   const [loading, setLoading] = useState(true)
@@ -253,7 +255,9 @@ export default function PlatformAdminPanel() {
         }
       } catch (err) {
         console.error(err)
-        toast.error('Erro ao carregar painel administrativo da plataforma')
+        const { humanizeError } = await import('../lib/error-humanizer')
+        const h = humanizeError(err)
+        toast.error('Erro ao carregar painel administrativo da plataforma', h.detail || h.title)
       } finally {
         setLoading(false)
       }
@@ -261,6 +265,19 @@ export default function PlatformAdminPanel() {
 
     load()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!isReady) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-80" />
+        <Skeleton className="h-32 rounded-xl" />
+      </div>
+    )
+  }
+
+  if (role !== 'admin') {
+    return <div className="text-sm text-gray-500">Acesso administrativo necessário.</div>
+  }
 
   const functionChart = useMemo(() => overview?.functions_by_usage.slice(0, 8).map(row => ({
     label: row.label,
@@ -832,6 +849,12 @@ export default function PlatformAdminPanel() {
           <p className="text-gray-500">Visão agregada de uso, produção, pipelines, agentes, estúdio e custos globais.</p>
         </div>
       </div>
+
+      {overview.operational_warnings && overview.operational_warnings.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {overview.operational_warnings[0]}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Users} label="Usuários" value={fmtInt(overview.total_users)} tone="text-sky-600" />

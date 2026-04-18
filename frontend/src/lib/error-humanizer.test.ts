@@ -43,6 +43,11 @@ describe('error-humanizer', () => {
     expect(result.title).toBe('Permissão negada')
   })
 
+  it('handles Firestore insufficient permissions wording', () => {
+    const result = humanizeError(new Error('FirebaseError: Missing or insufficient permissions.'))
+    expect(result.title).toBe('Permissão negada')
+  })
+
   it('handles content filter errors', () => {
     const result = humanizeError(new Error('Content was flagged by safety filter'))
     expect(result.title).toBe('Conteúdo bloqueado pelo provedor')
@@ -75,6 +80,11 @@ describe('error-humanizer', () => {
 
   it('handles model unavailable', () => {
     const result = humanizeError(new Error('model not found: gpt-5'))
+    expect(result.title).toBe('Modelo indisponível')
+  })
+
+  it('handles provider returned 404 model errors', () => {
+    const result = humanizeError(new Error('OpenRouter API error 404: {"error":{"message":"Provider returned error","code":404,"metadata":{"raw":"This model does not exist"}}}'))
     expect(result.title).toBe('Modelo indisponível')
   })
 })

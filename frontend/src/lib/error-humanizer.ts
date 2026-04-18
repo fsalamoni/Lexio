@@ -13,7 +13,7 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string; suggestion?: str
   { pattern: /401|unauthorized/i, message: 'Sessão expirada', suggestion: 'Faça login novamente para continuar.' },
   { pattern: /403|forbidden/i, message: 'Acesso negado', suggestion: 'Você não tem permissão para realizar esta ação.' },
   // LLM model not found (must come before generic 404)
-  { pattern: /model.*not.*found|model.*unavailable/i, message: 'Modelo indisponível', suggestion: 'O modelo selecionado pode ter sido descontinuado. Escolha outro em Configurações.' },
+  { pattern: /model.*not.*found|model.*unavailable|provider returned error.*404|model does not exist|no longer available|unknown model/i, message: 'Modelo indisponível', suggestion: 'O modelo selecionado pode ter sido descontinuado. Escolha outro em Configurações.' },
   { pattern: /404|not\s*found/i, message: 'Recurso não encontrado', suggestion: 'O item solicitado pode ter sido removido ou movido.' },
   { pattern: /429|too\s*many\s*requests|rate\s*limit/i, message: 'Limite de requisições atingido', suggestion: 'Aguarde alguns segundos antes de tentar novamente.' },
   { pattern: /500|internal\s*server/i, message: 'Erro interno do servidor', suggestion: 'O problema é do nosso lado. Tente novamente em instantes.' },
@@ -27,7 +27,7 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string; suggestion?: str
   { pattern: /content.*filter|safety|moderation/i, message: 'Conteúdo bloqueado pelo provedor', suggestion: 'Reformule sua solicitação para evitar filtros de segurança.' },
 
   // Firebase specific
-  { pattern: /permission.*denied|PERMISSION_DENIED/i, message: 'Permissão negada', suggestion: 'Verifique se sua conta tem acesso a este recurso.' },
+  { pattern: /permission.*denied|missing or insufficient permissions|PERMISSION_DENIED/i, message: 'Permissão negada', suggestion: 'Verifique se sua conta tem acesso a este recurso.' },
   { pattern: /quota.*exceeded|RESOURCE_EXHAUSTED/i, message: 'Limite de uso atingido', suggestion: 'O limite de operações foi alcançado. Tente novamente mais tarde.' },
   { pattern: /unavailable|UNAVAILABLE/i, message: 'Serviço temporariamente indisponível', suggestion: 'Tente novamente em alguns instantes.' },
 

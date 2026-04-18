@@ -2654,6 +2654,11 @@ Instruções:
             )
           } else if (err instanceof Error && err.message.includes('Agente(s) sem modelo')) {
             toast.warning('Modelos não configurados', err.message)
+          } else if (err instanceof Error && err.message.includes('404')) {
+            toast.warning(
+              'Modelo ou provedor indisponível',
+              'O provedor retornou 404 para um modelo do estúdio. Revise os modelos em Configurações > Caderno de Pesquisa e tente novamente.',
+            )
           } else if (err instanceof Error && err.message.includes('429')) {
             toast.warning(
               'Limite de requisições atingido',
@@ -6347,7 +6352,9 @@ Instruções:
               return result.imageDataUrl
             } catch (err) {
               console.error('Image regeneration error:', err)
-              toast.error(`Erro ao gerar imagem da cena ${sceneNumber}`)
+              const { humanizeError } = await import('../lib/error-humanizer')
+              const h = humanizeError(err)
+              toast.error(`Erro ao gerar imagem da cena ${sceneNumber}`, h.detail || h.title)
               return null
             }
           }}
@@ -6370,7 +6377,9 @@ Instruções:
               return audioDataUrl
             } catch (err) {
               console.error('TTS regeneration error:', err)
-              toast.error(`Erro ao gerar narração da cena ${sceneNumber}`)
+              const { humanizeError } = await import('../lib/error-humanizer')
+              const h = humanizeError(err)
+              toast.error(`Erro ao gerar narração da cena ${sceneNumber}`, h.detail || h.title)
               return null
             }
           }}

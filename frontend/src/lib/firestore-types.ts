@@ -404,6 +404,7 @@ export interface PlatformOverviewData {
   top_models: PlatformUsageRow[]
   top_agents: PlatformUsageRow[]
   top_providers: PlatformUsageRow[]
+  operational_warnings?: string[]
 }
 
 export interface PlatformDailyUsagePoint {

@@ -1,5 +1,5 @@
 # LEXIO — PLANEJAMENTO CENTRAL DE IMPLEMENTAÇÃO
-> Atualizado: 2026-03-11 | Branch: claude/continue-project-work-mTkMc
+> Atualizado: 2026-04-17 | Branch: main
 > PROPÓSITO: Fonte única da verdade — estado do sistema, roadmap e decisões técnicas.
 > REGRA: Atualizar após cada etapa concluída. IMPLEMENTATION_STATE.md foi arquivado (obsoleto).
 
@@ -119,6 +119,23 @@ platform_settings, notifications
 | B5 | whatsapp_bot/__init__.py | event_bus.on() não existe | ✅ Corrigido → subscribe() |
 | B6 | whatsapp_bot/__init__.py | Handler signature errada | ✅ Corrigido |
 | B7 | auth.py:141 | dev_reset_token exposto na API | ⚠️ Pendente (requer email service) |
+| B8 | firestore.rules + firestore-service.ts | Falta de regra explícita para `research_notebooks/{id}/memory/{docId}` causava `Missing or insufficient permissions` no admin agregado e deixava a memória dedicada suscetível a negação de acesso | ✅ Corrigido |
+| B9 | llm-client.ts | `provider returned error` com `404` escapava da classificação de modelo indisponível e chegava ao notebook como erro genérico, sem fallback nem orientação correta | ✅ Corrigido |
+
+---
+
+## HOTFIX 2026-04-17 — ESTABILIZAÇÃO ADMIN + NOTEBOOK
+
+- `firestore.rules` agora cobre a subcoleção `memory/search_memory` de cadernos para o dono do notebook e para leitura agregada de admins, corrigindo o erro de permissão observado em produção.
+- `frontend/src/lib/firestore-service.ts` foi endurecido para carregar o painel agregado mesmo quando a memória dedicada estiver indisponível temporariamente, preservando cache e overview com `operational_warnings` em vez de falha total.
+- `frontend/src/App.tsx` passou a esperar `isReady` antes de avaliar `ProtectedRoute` e `AdminRoute`, reduzindo risco de redirecionamento prematuro durante hidratação do auth state.
+- `frontend/src/pages/PlatformAdminPanel.tsx` e `frontend/src/pages/PlatformCostsPage.tsx` agora usam humanização de erro e devolvem feedback acionável em vez de toast genérico.
+- `frontend/src/lib/llm-client.ts` passou a tratar `provider returned error` + `404` e padrões correlatos como `ModelUnavailableError`, permitindo fallback e UX coerente no estúdio.
+- `frontend/src/pages/ResearchNotebook.tsx` e os fluxos auxiliares de regeneração de imagem/TTS passaram a expor mensagens mais diagnósticas quando um modelo/provedor estiver indisponível.
+- Regressões cobertas em `frontend/src/lib/error-humanizer.test.ts` e no novo `frontend/src/lib/llm-client.test.ts`.
+- Validação desta rodada: `npm run typecheck`, `npx vitest run` (23/23, 219/219) e `npm run build` concluídos com sucesso.
+- Índices não exigiram mudança nesta rodada; `firestore.indexes.json` permaneceu inalterado.
+- Fluxo recomendado de publicação mantido: PR com `.github/workflows/firebase-preview.yml` para smoke e merge em `main` para disparar `.github/workflows/firebase-deploy.yml` com hosting + rules.
 
 ---
 

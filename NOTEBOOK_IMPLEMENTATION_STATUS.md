@@ -5,7 +5,20 @@
 
 ---
 
-## Status Geral: Etapas 1-62 IMPLEMENTADAS
+## Status Geral: Etapas 1-91 IMPLEMENTADAS
+
+### Etapas 84-91 — UX do Editor + Estabilização Admin/Notebook ✅
+- **Arquivos**: `components/Breadcrumb.tsx`, `components/Layout.tsx`, `pages/DocumentEditor.tsx`, `pages/DocumentDetail.tsx`, `firestore.rules`, `pages/PlatformAdminPanel.tsx`, `pages/PlatformCostsPage.tsx`, `lib/firestore-service.ts`, `lib/firestore-types.ts`, `lib/llm-client.ts`, `lib/error-humanizer.ts`, `pages/ResearchNotebook.tsx`, `lib/error-humanizer.test.ts`, `lib/llm-client.test.ts`
+- Etapa 84: `DocumentEditor.tsx` agora suporta atalho `Ctrl+S` para salvar com segurança e sem depender do mouse
+- Etapa 85: `Breadcrumb.tsx` foi adicionado e integrado em `DocumentDetail.tsx` e `DocumentEditor.tsx`, melhorando navegação contextual
+- Etapa 86: o cabeçalho do editor passou a explicitar estado de salvamento e hint visual de teclado; `Layout.tsx` ganhou ação global de voltar ao topo para páginas densas
+- Etapa 87: a UX transversal de navegação ficou mais previsível com scroll recovery manual rápido e trilha de navegação consistente
+- Etapa 88: `firestore.rules` recebeu regras explícitas para `research_notebooks/{id}/memory/{docId}` tanto para o dono do caderno quanto para leitura admin por collection group, eliminando `Missing or insufficient permissions` no admin e prevenindo bloqueio futuro da memória dedicada
+- Etapa 89: `loadPlatformCollections()` em `firestore-service.ts` passou a degradar com segurança quando a coleção dedicada `memory/search_memory` falhar, preservando o restante do painel agregado e expondo `operational_warnings` no overview
+- Etapa 90: `App.tsx`, `PlatformAdminPanel.tsx` e `PlatformCostsPage.tsx` foram endurecidos para esperar `isReady`, defender acesso admin em profundidade e exibir mensagens humanizadas em vez de toasts genéricos
+- Etapa 91: `llm-client.ts` passou a classificar `provider returned error` com `404` como `ModelUnavailableError`, `ResearchNotebook.tsx` passou a orientar troca de modelo em erros do estúdio e foram adicionados testes de regressão para humanização e classificação de erro
+- Validação desta rodada: `npm run typecheck` limpo, `npx vitest run` com **23/23 arquivos** e **219/219 testes** passando, `npm run build` concluído com sucesso
+- Observação operacional: `firestore.indexes.json` não precisou de alterações nesta rodada; o endurecimento ocorreu em regras e cache de agregação
 
 ### Etapa 62 — Dashboard Continue Working + Admin Expand/Collapse + Date Presets + Error Humanizer ✅
 - **Arquivos**: `pages/Dashboard.tsx`, `pages/AdminPanel.tsx`, `pages/DocumentList.tsx`, `pages/Upload.tsx`, `pages/DocumentEditor.tsx`, `lib/error-humanizer.ts`, `lib/context-compactor.test.ts`, `lib/generation-service.ts`

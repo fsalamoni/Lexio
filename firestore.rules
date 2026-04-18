@@ -94,6 +94,11 @@ service cloud.firestore {
         allow read: if isSelf(userId) || isAdmin();
         allow write: if isSelf(userId);
       }
+
+      match /research_notebooks/{notebookId}/memory/{docId} {
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
+      }
     }
 
     // ── Collection group access for platform analytics ──────────────────────
@@ -116,6 +121,10 @@ service cloud.firestore {
     }
 
     match /{path=**}/research_notebooks/{notebookId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/research_notebooks/{notebookId}/memory/{docId} {
       allow read: if isAdmin();
     }
 

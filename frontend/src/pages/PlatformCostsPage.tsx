@@ -5,6 +5,7 @@ import {
 import { Brain, Cpu, DollarSign, Landmark, Layers3, Scale, Wallet } from 'lucide-react'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
+import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getPlatformCostBreakdown } from '../lib/firestore-service'
 import type { CostBreakdown, CostBreakdownItem } from '../lib/cost-analytics'
@@ -77,6 +78,7 @@ function BreakdownTable({ title, rows, emptyLabel }: { title: string; rows: Cost
 
 export default function PlatformCostsPage() {
   const toast = useToast()
+  const { isReady, role } = useAuth()
   const [breakdown, setBreakdown] = useState<CostBreakdown | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -90,7 +92,9 @@ export default function PlatformCostsPage() {
         setBreakdown(await getPlatformCostBreakdown())
       } catch (err) {
         console.error(err)
-        toast.error('Erro ao carregar custos agregados da plataforma')
+        const { humanizeError } = await import('../lib/error-humanizer')
+        const h = humanizeError(err)
+        toast.error('Erro ao carregar custos agregados da plataforma', h.detail || h.title)
       } finally {
         setLoading(false)
       }
@@ -101,6 +105,19 @@ export default function PlatformCostsPage() {
 
   const functionChart = useMemo(() => breakdown?.by_function.slice(0, 8).map(row => ({ label: row.label, usd: row.cost_usd })) ?? [], [breakdown])
   const providerChart = useMemo(() => breakdown?.by_provider.slice(0, 8).map(row => ({ label: row.label, usd: row.cost_usd })) ?? [], [breakdown])
+
+  if (!isReady) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-80" />
+        <Skeleton className="h-32 rounded-xl" />
+      </div>
+    )
+  }
+
+  if (role !== 'admin') {
+    return <div className="text-sm text-gray-500">Acesso administrativo necessário.</div>
+  }
 
   if (loading) {
     return (

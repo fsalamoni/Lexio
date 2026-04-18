@@ -15,6 +15,7 @@ import {
   collection, collectionGroup, getDocs, addDoc, query, orderBy, limit, where, startAfter,
   serverTimestamp,
   type DocumentSnapshot,
+  type QueryDocumentSnapshot,
   type QueryConstraint,
 } from 'firebase/firestore'
 import { firestore, IS_FIREBASE } from './firebase'
@@ -197,6 +198,7 @@ type PlatformCollectionsSnapshot = {
   acervo: Array<AcervoDocumentData & { _owner_user_id?: string }>
   notebooks: Array<ResearchNotebookData & { _owner_user_id?: string }>
   notebook_search_memory: PlatformNotebookSearchMemoryRecord[]
+  operational_warnings: string[]
 }
 
 let platformCollectionsCache: PlatformCollectionsSnapshot | null = null
@@ -358,17 +360,30 @@ async function loadPlatformCollections(force = false): Promise<PlatformCollectio
   }
 
   const db = ensureFirestore()
-  const [usersSnap, documentsSnap, thesesSnap, sessionsSnap, acervoSnap, notebooksSnap, notebookSearchMemorySnap] = await Promise.all([
+  const [usersSnap, documentsSnap, thesesSnap, sessionsSnap, acervoSnap, notebooksSnap] = await Promise.all([
     getDocs(collection(db, 'users')),
     getDocs(collectionGroup(db, 'documents')),
     getDocs(collectionGroup(db, 'theses')),
     getDocs(collectionGroup(db, 'thesis_analysis_sessions')),
     getDocs(collectionGroup(db, 'acervo')),
     getDocs(collectionGroup(db, 'research_notebooks')),
-    getDocs(collectionGroup(db, 'memory')),
   ])
 
-  const notebookSearchMemory = notebookSearchMemorySnap.docs
+  const operationalWarnings: string[] = []
+  const notebookSearchMemoryDocs = await getDocs(collectionGroup(db, 'memory'))
+    .then(snap => snap.docs)
+    .catch(error => {
+      const message = getErrorMessage(error)
+      console.warn(`[PlatformAnalytics] Notebook search memory indisponível: ${message}`)
+      operationalWarnings.push(
+        /permission|insufficient|PERMISSION_DENIED/i.test(message)
+          ? 'A memória dedicada dos cadernos ficou temporariamente indisponível por permissão do Firestore. O painel foi carregado com métricas parciais.'
+          : 'A memória dedicada dos cadernos ficou temporariamente indisponível. O painel foi carregado com métricas parciais.',
+      )
+      return [] as QueryDocumentSnapshot[]
+    })
+
+  const notebookSearchMemory = notebookSearchMemoryDocs
     .filter(d => d.id === NOTEBOOK_SEARCH_MEMORY_DOC_ID)
     .map(d => {
       const notebookId = getRefNotebookIdFromSearchMemoryPath(d.ref.path)
@@ -403,6 +418,7 @@ async function loadPlatformCollections(force = false): Promise<PlatformCollectio
     acervo: acervoSnap.docs.map(d => ({ ...(d.data() as AcervoDocumentData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as AcervoDocumentData & { _owner_user_id?: string })),
     notebooks: notebooksSnap.docs.map(d => ({ ...(d.data() as ResearchNotebookData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ResearchNotebookData & { _owner_user_id?: string })),
     notebook_search_memory: notebookSearchMemory,
+    operational_warnings: operationalWarnings,
   }
 
   platformCollectionsCache = snapshot
@@ -979,6 +995,7 @@ export async function getPlatformOverview(force = false): Promise<PlatformOvervi
     top_models: breakdown.by_model.slice(0, 10).map(row => ({ ...row, count: row.calls })),
     top_agents: breakdown.by_agent.slice(0, 10).map(row => ({ ...row, count: row.calls })),
     top_providers: breakdown.by_provider.slice(0, 10).map(row => ({ ...row, count: row.calls })),
+    operational_warnings: snapshot.operational_warnings,
   }
 }
 

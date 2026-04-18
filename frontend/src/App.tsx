@@ -35,13 +35,15 @@ function RouteFallback() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { token } = useAuth()
+  const { token, isReady } = useAuth()
+  if (!isReady) return <RouteFallback />
   if (!token) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { role } = useAuth()
+  const { role, isReady } = useAuth()
+  if (!isReady) return <RouteFallback />
   if (role !== 'admin') return <Navigate to="/settings" replace />
   return <>{children}</>
 }

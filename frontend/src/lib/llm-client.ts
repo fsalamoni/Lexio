@@ -134,6 +134,18 @@ export class TransientLLMError extends Error {
   }
 }
 
+function isModelUnavailableResponse(status: number, errorBody: string): boolean {
+  const lower = errorBody.toLowerCase()
+  if (status === 404 && lower.includes('no endpoints')) return true
+  if (status === 400 && lower.includes('not a valid model')) return true
+  if (status === 404 && lower.includes('provider returned error')) return true
+  if (lower.includes('model not found')) return true
+  if (lower.includes('model does not exist')) return true
+  if (lower.includes('model is no longer available')) return true
+  if (lower.includes('unknown model')) return true
+  return false
+}
+
 /**
  * Reliable text fallback used when a `:free` / `:experimental` model picked by the
  * user returns `ModelUnavailableError` or `TransientLLMError`. Gemini 2.0 Flash is
@@ -233,11 +245,7 @@ export async function callLLM(
 
     if (!resp.ok) {
       const errorBody = await resp.text().catch(() => '')
-      const lower = errorBody.toLowerCase()
-      if (
-        (resp.status === 404 && lower.includes('no endpoints')) ||
-        (resp.status === 400 && lower.includes('not a valid model'))
-      ) {
+      if (isModelUnavailableResponse(resp.status, errorBody)) {
         console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
         throw new ModelUnavailableError(model)
       }
@@ -346,11 +354,7 @@ export async function callLLMWithMessages(
 
     if (!resp.ok) {
       const errorBody = await resp.text().catch(() => '')
-      const lower = errorBody.toLowerCase()
-      if (
-        (resp.status === 404 && lower.includes('no endpoints')) ||
-        (resp.status === 400 && lower.includes('not a valid model'))
-      ) {
+      if (isModelUnavailableResponse(resp.status, errorBody)) {
         console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
         throw new ModelUnavailableError(model)
       }

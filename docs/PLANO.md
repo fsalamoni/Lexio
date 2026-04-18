@@ -16,7 +16,7 @@
 
 ## Andamento Atual (ciclo 2026-04-18)
 
-**Status:** ⚠️ avançando Faixa B — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos
+**Status:** ⚠️ avançando Faixa B — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook fechada localmente
 
 ## Plano Mestre Executável (Atualizado)
 
@@ -46,6 +46,15 @@
 - Mensuração de UX operacional por funil (tempo até valor, abandono, recuperação de falhas, reaproveitamento de memória)
 
 **Concluido neste ciclo:**
+- Hotfix de permissão do admin concluído: `firestore.rules` agora cobre `research_notebooks/{id}/memory/{docId}` para owner/admin e elimina o `Missing or insufficient permissions` observado em `/admin` e `/admin/costs`
+- O cache agregado da plataforma foi endurecido em `frontend/src/lib/firestore-service.ts`: falha isolada na leitura de `memory/search_memory` não derruba mais o overview/cost breakdown completo; o painel agora recebe `operational_warnings` quando carregar com métricas parciais
+- `frontend/src/App.tsx`, `frontend/src/pages/PlatformAdminPanel.tsx` e `frontend/src/pages/PlatformCostsPage.tsx` passaram a respeitar `isReady` e a devolver erros humanizados/acionáveis, reduzindo redirecionamento prematuro e toasts opacos
+- `frontend/src/lib/llm-client.ts` agora reconhece `provider returned error` com `404` como indisponibilidade de modelo, permitindo fallback correto e orientação específica no estúdio do notebook em `frontend/src/pages/ResearchNotebook.tsx`
+- Fluxos auxiliares de regeneração de mídia no notebook passaram a usar `error-humanizer`, alinhando imagem/TTS ao novo padrão de UX operacional
+- Cobertura de regressão ampliada com `frontend/src/lib/llm-client.test.ts` e novos cenários em `frontend/src/lib/error-humanizer.test.ts`
+- Validação local reforçada: `npm run typecheck`, `npx vitest run` (**23/23 arquivos, 219/219 testes**) e `npm run build` com sucesso
+- Índices: `firestore.indexes.json` permaneceu inalterado nesta rodada; não houve necessidade de novo índice para o hotfix
+- Workflow operacional reforçado para release: usar `.github/workflows/firebase-preview.yml` para smoke em PR e `.github/workflows/firebase-deploy.yml` no merge em `main` para publicar hosting + rules
 - Contrato compartilhado de progresso para pipeline documental em `frontend/src/lib/document-pipeline.ts`
 - Contrato compartilhado de progresso para video em `frontend/src/lib/video-pipeline-progress.ts`
 - Contrato compartilhado de progresso do notebook para acervo e estudio em `frontend/src/lib/notebook-pipeline-progress.ts`
