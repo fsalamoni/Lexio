@@ -413,8 +413,11 @@ export default function DocumentDetail() {
               doc.quality_score >= 80 ? 'text-green-600'
                 : doc.quality_score >= 60 ? 'text-yellow-600'
                 : 'text-red-600'
-            }`}>
+            }`} title={doc.quality_score >= 80 ? 'Qualidade alta' : doc.quality_score >= 60 ? 'Qualidade aceitável' : 'Precisa de revisão'}>
               {doc.quality_score}/100
+              <span className="text-xs font-normal ml-1 text-gray-400">
+                {doc.quality_score >= 80 ? '✓' : doc.quality_score >= 60 ? '~' : '!'}
+              </span>
             </span>
           )}
         </div>

@@ -78,7 +78,21 @@ export default function Onboarding() {
     })
   }
 
+  const stepHasRequiredMissing = () => {
+    if (!steps[currentStep]) return false
+    return steps[currentStep].fields.some(f => {
+      if (!f.required) return false
+      const val = data[f.key]
+      if (Array.isArray(val)) return val.length === 0
+      return !val && val !== 0 && val !== false
+    })
+  }
+
   const handleNext = () => {
+    if (stepHasRequiredMissing()) {
+      toast.warning('Preencha os campos obrigatórios antes de avançar')
+      return
+    }
     if (currentStep < steps.length - 1) {
       setCurrentStep(prev => prev + 1)
     }
@@ -91,6 +105,10 @@ export default function Onboarding() {
   }
 
   const handleComplete = async () => {
+    if (stepHasRequiredMissing()) {
+      toast.warning('Preencha os campos obrigatórios antes de concluir')
+      return
+    }
     setSaving(true)
     try {
       if (IS_FIREBASE && userId) {
@@ -100,7 +118,9 @@ export default function Onboarding() {
       }
       navigate('/')
     } catch (err: any) {
-      toast.error('Erro ao salvar perfil', err?.response?.data?.detail || err?.message)
+      const { humanizeError } = await import('../lib/error-humanizer')
+      const h = humanizeError(err)
+      toast.error('Erro ao salvar perfil', h.detail)
     } finally {
       setSaving(false)
     }
@@ -120,7 +140,29 @@ export default function Onboarding() {
     }
   }
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><p className="text-gray-500">Carregando...</p></div>
+  if (loading) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl">
+        <div className="text-center mb-8">
+          <Scale className="w-10 h-10 text-brand-600 mx-auto mb-2" />
+          <h1 className="text-2xl font-bold text-brand-900">Bem-vindo ao Lexio</h1>
+          <p className="text-gray-500 mt-1">Carregando configurações...</p>
+        </div>
+        <div className="bg-white rounded-xl border shadow-sm p-8 animate-pulse">
+          <div className="h-5 w-48 bg-gray-200 rounded mb-2" />
+          <div className="h-3 w-64 bg-gray-100 rounded mb-6" />
+          <div className="space-y-4">
+            {[1, 2, 3].map(i => (
+              <div key={i}>
+                <div className="h-3 w-24 bg-gray-200 rounded mb-2" />
+                <div className="h-10 w-full bg-gray-100 rounded" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
   if (steps.length === 0) return null
 
   const step = steps[currentStep]
@@ -154,7 +196,10 @@ export default function Onboarding() {
           <div className="space-y-5">
             {step.fields.map(field => (
               <div key={field.key}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {field.label}
+                  {field.required && <span className="text-red-400 ml-0.5">*</span>}
+                </label>
                 {field.type === 'text' && (
                   <input
                     type="text"

@@ -192,7 +192,9 @@ export default function DocumentList() {
       a.click()
       URL.revokeObjectURL(url)
     } catch (err: any) {
-      toast.error('Erro ao exportar documentos', err?.response?.data?.detail || err?.message)
+      const { humanizeError } = await import('../lib/error-humanizer')
+      const h = humanizeError(err)
+      toast.error('Erro ao exportar', h.detail)
     } finally {
       setBulkExporting(false)
     }

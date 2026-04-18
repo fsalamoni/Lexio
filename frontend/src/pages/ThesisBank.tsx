@@ -144,7 +144,9 @@ function ThesisModal({
       onSaved(saved)
       onClose()
     } catch (err: any) {
-      toast.error('Erro ao salvar tese', err?.response?.data?.detail || err?.message)
+      const { humanizeError } = await import('../lib/error-humanizer')
+      const h = humanizeError(err)
+      toast.error('Erro ao salvar tese', h.detail)
     } finally {
       setSaving(false)
     }

@@ -182,7 +182,9 @@ export default function Profile() {
       invalidateApiCache('/anamnesis/profile')
       toast.success('Perfil atualizado com sucesso')
     } catch (err: any) {
-      toast.error('Erro ao salvar perfil', err?.response?.data?.detail || err?.message)
+      const { humanizeError } = await import('../lib/error-humanizer')
+      const h = humanizeError(err)
+      toast.error('Erro ao salvar perfil', h.detail)
     } finally {
       setSaving(false)
     }
@@ -216,7 +218,9 @@ export default function Profile() {
       toast.success('Senha alterada com sucesso')
       setPwForm({ current_password: '', new_password: '', confirm_password: '' })
     } catch (err: any) {
-      toast.error('Erro ao alterar senha', err?.response?.data?.detail || err?.message)
+      const { humanizeError } = await import('../lib/error-humanizer')
+      const h = humanizeError(err)
+      toast.error('Erro ao alterar senha', h.detail)
     } finally {
       setSavingPw(false)
     }
@@ -345,6 +349,16 @@ export default function Profile() {
           <p className="text-sm text-gray-500">Preferências pessoais e de redação jurídica</p>
         </div>
       </div>
+
+      {/* Account info bar */}
+      {IS_FIREBASE && firebaseAuth?.currentUser && (
+        <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 bg-gray-50 rounded-lg px-4 py-2.5 mb-4 border">
+          <span>{firebaseAuth.currentUser.email}</span>
+          {firebaseAuth.currentUser.metadata.creationTime && (
+            <span>Membro desde {new Date(firebaseAuth.currentUser.metadata.creationTime).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</span>
+          )}
+        </div>
+      )}
 
       <div className="space-y-4">
         {SECTIONS.map(section => {

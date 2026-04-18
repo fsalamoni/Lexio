@@ -116,7 +116,9 @@ export default function DocumentEditor() {
       setTimeout(() => setSaved(false), 2500)
       toast.success('Documento salvo com sucesso')
     } catch (err: any) {
-      toast.error('Erro ao salvar documento', err?.response?.data?.detail || err?.message)
+      const { humanizeError } = await import('../lib/error-humanizer')
+      const h = humanizeError(err)
+      toast.error('Erro ao salvar documento', h.detail)
     } finally {
       setSaving(false)
     }

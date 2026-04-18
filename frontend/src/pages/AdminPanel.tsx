@@ -570,7 +570,9 @@ function ReindexCard() {
       setResult(res.data)
       toast.success('Reindexação concluída', res.data.message)
     } catch (err: any) {
-      toast.error('Erro na reindexação', err?.response?.data?.detail || err?.message)
+      const { humanizeError } = await import('../lib/error-humanizer')
+      const h = humanizeError(err)
+      toast.error('Erro na reindexação', h.detail)
     } finally {
       setLoading(false)
     }
