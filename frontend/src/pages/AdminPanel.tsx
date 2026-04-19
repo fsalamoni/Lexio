@@ -77,6 +77,12 @@ const serviceIcons: Record<string, typeof Server> = {
 }
 
 const PIE_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe']
+const ADMIN_INSET_CARD = 'rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.68)]'
+const ADMIN_INPUT = 'w-full mt-1 rounded-[1rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-3 py-2 text-sm text-[var(--v2-ink-strong)] outline-none focus:border-[rgba(15,118,110,0.34)] focus:ring-4 focus:ring-[rgba(15,118,110,0.12)]'
+const ADMIN_INPUT_MONO = 'w-full mt-1 rounded-[1rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-3 py-2 font-mono text-sm text-[var(--v2-ink-strong)] outline-none focus:border-[rgba(15,118,110,0.34)] focus:ring-4 focus:ring-[rgba(15,118,110,0.12)]'
+const ADMIN_SECONDARY_BUTTON = 'rounded-lg border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-4 py-2 text-sm text-[var(--v2-ink-soft)] hover:bg-[rgba(255,255,255,0.82)]'
+const ADMIN_ICON_BUTTON = 'rounded-lg p-1.5 text-[var(--v2-ink-faint)] transition-colors hover:bg-[rgba(15,118,110,0.08)] hover:text-[var(--v2-ink-strong)]'
+const ADMIN_DASHED_BUTTON = 'w-full flex items-center justify-center gap-2 rounded-[1.1rem] border-2 border-dashed border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.48)] p-3 text-sm text-[var(--v2-ink-soft)] transition-colors hover:border-[rgba(15,118,110,0.28)] hover:text-[var(--v2-ink-strong)]'
 
 // ── Collapse state persistence ───────────────────────────────────────────────
 
@@ -201,8 +207,8 @@ function ApiKeysCard() {
   const hasPendingChanges = Object.values(edits).some(v => v !== '')
 
   if (loading) return (
-    <div>
-      <p className="text-gray-400 text-sm">Carregando configurações...</p>
+    <div className="rounded-[1.25rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.68)] px-4 py-4">
+      <p className="text-sm text-[var(--v2-ink-faint)]">Carregando configurações...</p>
     </div>
   )
 
@@ -228,14 +234,14 @@ function ApiKeysCard() {
         <button
           type="submit"
           disabled={!hasPendingChanges || saving}
-          className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="v2-btn-primary disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Save className="w-4 h-4" />
           {saving ? 'Salvando…' : 'Salvar alterações'}
         </button>
       </div>
 
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="mb-6 text-sm text-[var(--v2-ink-soft)]">
         As chaves inseridas aqui são <strong>persistidas no seu perfil</strong> e aplicadas
         imediatamente às suas execuções, sem afetar outros usuários.
       </p>
@@ -251,8 +257,10 @@ function ApiKeysCard() {
           return (
             <div
               key={def.key}
-              className={`border rounded-xl overflow-hidden transition-all ${
-                def.is_set ? 'border-gray-200' : 'border-amber-200 bg-amber-50/30'
+              className={`overflow-hidden rounded-[1.35rem] border transition-all ${
+                def.is_set
+                  ? 'border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)]'
+                  : 'border-amber-200 bg-[rgba(245,158,11,0.08)]'
               }`}
             >
               {/* Row header */}
@@ -260,7 +268,7 @@ function ApiKeysCard() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-gray-900">{def.label}</span>
+                      <span className="font-medium text-[var(--v2-ink-strong)]">{def.label}</span>
                       {def.is_auto && (
                         <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
                           <Zap className="w-3 h-3" /> pré-configurado
@@ -274,7 +282,7 @@ function ApiKeysCard() {
                         {def.is_set ? `✓ configurado · ${def.source}` : '⚠ não configurado'}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5">{def.description}</p>
+                    <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">{def.description}</p>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
@@ -291,7 +299,7 @@ function ApiKeysCard() {
                         <button
                           type="button"
                           onClick={() => setExpanded(prev => ({ ...prev, [def.key]: !prev[def.key] }))}
-                          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 border rounded px-2 py-1"
+                          className="flex items-center gap-1 rounded-lg border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-2 py-1 text-xs text-[var(--v2-ink-soft)] hover:text-[var(--v2-ink-strong)]"
                         >
                         <BookOpen className="w-3 h-3" />
                         {isExpanded ? 'Fechar guia' : 'Como configurar'}
@@ -304,7 +312,7 @@ function ApiKeysCard() {
                 {/* Masked value display */}
                 {def.is_set && !isEditing && (
                   <div className="mt-2">
-                    <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono text-gray-600">
+                    <code className="rounded bg-[rgba(15,23,42,0.06)] px-2 py-1 font-mono text-xs text-[var(--v2-ink-soft)]">
                       {def.masked_value}
                     </code>
                   </div>
@@ -319,7 +327,7 @@ function ApiKeysCard() {
                       onChange={(e) => setEdits(prev => ({ ...prev, [def.key]: e.target.value }))}
                       placeholder={def.is_set ? 'Nova chave (deixe vazio para manter a atual)' : def.placeholder}
                       autoComplete="new-password"
-                      className="w-full text-sm border rounded-lg px-3 py-2 pr-10 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                      className="w-full rounded-[1.05rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-3 py-2 pr-10 font-mono text-sm text-[var(--v2-ink-strong)] outline-none focus:border-[rgba(15,118,110,0.34)] focus:ring-4 focus:ring-[rgba(15,118,110,0.12)]"
                       onFocus={() => !isEditing && setEdits(prev => ({ ...prev, [def.key]: '' }))}
                       onBlur={() => {
                         if (isEditing && edits[def.key] === '') {
@@ -330,7 +338,7 @@ function ApiKeysCard() {
                     <button
                       type="button"
                       onClick={() => setVisible(prev => ({ ...prev, [def.key]: !prev[def.key] }))}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--v2-ink-faint)] hover:text-[var(--v2-ink-strong)]"
                     >
                       {isShown ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -339,7 +347,7 @@ function ApiKeysCard() {
                       <button
                         type="button"
                         onClick={() => setEdits(prev => { const n = { ...prev }; delete n[def.key]; return n })}
-                        className="text-xs text-gray-500 hover:text-gray-700 border rounded-lg px-3"
+                        className="rounded-lg border border-[var(--v2-line-soft)] px-3 text-xs text-[var(--v2-ink-soft)] hover:text-[var(--v2-ink-strong)]"
                       >
                       Cancelar
                     </button>
@@ -349,14 +357,14 @@ function ApiKeysCard() {
 
               {/* Step-by-step guide (expandable) */}
               {hasGuide && isExpanded && (
-                <div className="border-t bg-gray-50 p-4">
-                  <p className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1">
+                <div className="border-t border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.62)] p-4">
+                  <p className="mb-3 flex items-center gap-1 text-xs font-semibold text-[var(--v2-ink-strong)]">
                     <BookOpen className="w-3 h-3" />
                     Guia de configuração — {def.label}
                   </p>
                   <ol className="space-y-2">
                     {def.guide.map((step, i) => (
-                      <li key={i} className="flex gap-3 text-sm text-gray-700">
+                      <li key={i} className="flex gap-3 text-sm text-[var(--v2-ink-strong)]">
                         <span className="flex-shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center">
                           {i + 1}
                         </span>
@@ -395,6 +403,7 @@ function ReviewQueue() {
   const [loading, setLoading] = useState(true)
   const [actioning, setActioning] = useState<string | null>(null)
   const [rejectForm, setRejectForm] = useState<{ id: string; reason: string } | null>(null)
+  const location = useLocation()
   const navigate = useNavigate()
   const toast = useToast()
   const { userId } = useAuth()
@@ -457,21 +466,21 @@ function ReviewQueue() {
   return (
     <div>
       {docs.length === 0 ? (
-        <p className="text-sm text-gray-400 py-4 text-center">Nenhum documento aguardando revisão.</p>
+        <p className="py-4 text-center text-sm text-[var(--v2-ink-faint)]">Nenhum documento aguardando revisão.</p>
       ) : (
         <div className="space-y-3">
           {docs.map(doc => (
-            <div key={doc.id} className="border rounded-xl overflow-hidden">
+            <div key={doc.id} className="overflow-hidden rounded-[1.25rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)]">
               <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">
+                    <p className="truncate font-medium text-[var(--v2-ink-strong)]">
                       {DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id}
-                      {doc.tema && <span className="text-gray-500 font-normal"> — {doc.tema}</span>}
+                      {doc.tema && <span className="font-normal text-[var(--v2-ink-soft)]"> — {doc.tema}</span>}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{doc.original_request}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-[var(--v2-ink-faint)]">{doc.original_request}</p>
                     <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-[var(--v2-ink-faint)]">
                         {new Date(doc.created_at).toLocaleDateString('pt-BR')}
                       </span>
                       {doc.quality_score != null && (
@@ -484,7 +493,7 @@ function ReviewQueue() {
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button
                       onClick={() => navigate(buildWorkspaceDocumentDetailPath(doc.id, { preserveSearch: location.search }))}
-                      className="text-xs text-brand-600 hover:underline border rounded-lg px-3 py-1.5"
+                      className="rounded-lg border border-[var(--v2-line-soft)] px-3 py-1.5 text-xs text-[var(--v2-ink-soft)] hover:text-[var(--v2-ink-strong)]"
                     >
                       Ver
                     </button>
@@ -515,7 +524,7 @@ function ReviewQueue() {
                       onChange={e => setRejectForm(f => f ? { ...f, reason: e.target.value } : null)}
                       placeholder="Motivo da rejeição (opcional)..."
                       rows={2}
-                      className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-orange-400"
+                      className="w-full resize-none rounded-[1.05rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-3 py-2 text-sm text-[var(--v2-ink-strong)] outline-none focus:border-orange-300 focus:ring-4 focus:ring-[rgba(249,115,22,0.12)]"
                     />
                     <div className="flex gap-2">
                       <button
@@ -527,7 +536,7 @@ function ReviewQueue() {
                       </button>
                       <button
                         onClick={() => setRejectForm(null)}
-                        className="border text-gray-600 text-xs px-3 py-1.5 rounded-lg hover:bg-gray-50"
+                        className="rounded-lg border border-[var(--v2-line-soft)] px-3 py-1.5 text-xs text-[var(--v2-ink-soft)] hover:bg-[rgba(255,255,255,0.78)]"
                       >
                         Cancelar
                       </button>
@@ -581,13 +590,13 @@ function ReindexCard() {
   }
 
   return (
-    <div className="bg-white rounded-xl border p-6 mb-6">
+    <div className="v2-panel mb-6 p-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <RefreshCw className="w-5 h-5 text-brand-600" />
           <div>
-            <h2 className="text-lg font-semibold">Reindexação Vetorial</h2>
-            <p className="text-sm text-gray-500">Re-indexa documentos concluídos/aprovados no Qdrant para busca semântica</p>
+            <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">Reindexação Vetorial</h2>
+            <p className="text-sm text-[var(--v2-ink-soft)]">Re-indexa documentos concluídos/aprovados no Qdrant para busca semântica</p>
           </div>
         </div>
         <button
@@ -611,21 +620,21 @@ function ReindexCard() {
       />
       {result && (
         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-gray-50 rounded-lg p-3 text-center">
-            <p className="text-2xl font-bold text-gray-900">{result.indexed_documents}</p>
-            <p className="text-xs text-gray-500">Indexados</p>
+          <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.68)] p-3 text-center">
+            <p className="text-2xl font-bold text-[var(--v2-ink-strong)]">{result.indexed_documents}</p>
+            <p className="text-xs text-[var(--v2-ink-faint)]">Indexados</p>
           </div>
-          <div className="bg-gray-50 rounded-lg p-3 text-center">
-            <p className="text-2xl font-bold text-gray-900">{result.total_documents}</p>
-            <p className="text-xs text-gray-500">Total</p>
+          <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.68)] p-3 text-center">
+            <p className="text-2xl font-bold text-[var(--v2-ink-strong)]">{result.total_documents}</p>
+            <p className="text-xs text-[var(--v2-ink-faint)]">Total</p>
           </div>
-          <div className="bg-gray-50 rounded-lg p-3 text-center">
+          <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.68)] p-3 text-center">
             <p className="text-2xl font-bold text-brand-700">{result.total_chunks}</p>
-            <p className="text-xs text-gray-500">Chunks</p>
+            <p className="text-xs text-[var(--v2-ink-faint)]">Chunks</p>
           </div>
-          <div className={`rounded-lg p-3 text-center ${result.errors > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+          <div className={`rounded-[1.15rem] border p-3 text-center ${result.errors > 0 ? 'border-red-200 bg-[rgba(239,68,68,0.08)]' : 'border-emerald-200 bg-[rgba(16,185,129,0.08)]'}`}>
             <p className={`text-2xl font-bold ${result.errors > 0 ? 'text-red-700' : 'text-green-700'}`}>{result.errors}</p>
-            <p className="text-xs text-gray-500">Erros</p>
+            <p className="text-xs text-[var(--v2-ink-faint)]">Erros</p>
           </div>
         </div>
       )}
@@ -753,7 +762,7 @@ export default function AdminPanel() {
   ].filter(d => d.value > 0)
 
   return (
-    <div className="space-y-6 v2-bridge-surface">
+    <div className="space-y-6">
       <V2PageHero
         eyebrow={<><Key className="h-3.5 w-3.5" /> Configuracoes pessoais V2</>}
         title="Modelos, chaves e governanca pessoal no mesmo plano de controle"
@@ -876,7 +885,7 @@ export default function AdminPanel() {
 
       {IS_FIREBASE && (
         <div className="mt-8 mb-3">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--v2-ink-faint)]">
             <Key className="w-3.5 h-3.5" /> Configuração Geral
           </h2>
         </div>
@@ -905,7 +914,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <ModelCatalogCard />
+          <div className="v2-bridge-surface">
+            <ModelCatalogCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -918,7 +929,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <ModelConfigCard />
+          <div className="v2-bridge-surface">
+            <ModelConfigCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -928,7 +941,7 @@ export default function AdminPanel() {
 
       {IS_FIREBASE && (
         <div className="mt-8 mb-3">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--v2-ink-faint)]">
             <FileText className="w-3.5 h-3.5" /> Agentes de Documentos & Acervo
           </h2>
         </div>
@@ -944,7 +957,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <ThesisAnalystConfigCard />
+          <div className="v2-bridge-surface">
+            <ThesisAnalystConfigCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -958,7 +973,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <ContextDetailConfigCard />
+          <div className="v2-bridge-surface">
+            <ContextDetailConfigCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -972,7 +989,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <AcervoClassificadorConfigCard />
+          <div className="v2-bridge-surface">
+            <AcervoClassificadorConfigCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -986,7 +1005,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <AcervoEmentaConfigCard />
+          <div className="v2-bridge-surface">
+            <AcervoEmentaConfigCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -996,7 +1017,7 @@ export default function AdminPanel() {
 
       {IS_FIREBASE && (
         <div className="mt-8 mb-3">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--v2-ink-faint)]">
             <BookOpen className="w-3.5 h-3.5" /> Caderno de Pesquisa
           </h2>
         </div>
@@ -1012,7 +1033,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <ResearchNotebookConfigCard />
+          <div className="v2-bridge-surface">
+            <ResearchNotebookConfigCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -1026,7 +1049,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <NotebookAcervoConfigCard />
+          <div className="v2-bridge-surface">
+            <NotebookAcervoConfigCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -1036,7 +1061,7 @@ export default function AdminPanel() {
 
       {IS_FIREBASE && (
         <div className="mt-8 mb-3">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--v2-ink-faint)]">
             <Video className="w-3.5 h-3.5" /> Pipelines Multiagente (Vídeo · Áudio · Apresentação)
           </h2>
         </div>
@@ -1052,7 +1077,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <VideoPipelineConfigCard />
+          <div className="v2-bridge-surface">
+            <VideoPipelineConfigCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -1066,7 +1093,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <AudioPipelineConfigCard />
+          <div className="v2-bridge-surface">
+            <AudioPipelineConfigCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -1080,7 +1109,9 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <PresentationPipelineConfigCard />
+          <div className="v2-bridge-surface">
+            <PresentationPipelineConfigCard />
+          </div>
         </AdminCollapsibleSection>
       )}
 
@@ -1090,7 +1121,7 @@ export default function AdminPanel() {
 
       {showPlatformSections && (
         <div className="mt-8 mb-3">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--v2-ink-faint)]">
             <Activity className="w-3.5 h-3.5" /> Dados, Módulos & Sistema
           </h2>
         </div>
@@ -1113,10 +1144,10 @@ export default function AdminPanel() {
                   const Icon = serviceIcons[name] || Server
                   const isOk = status === 'ok'
                   return (
-                    <div key={name} className={`rounded-lg border p-4 ${isOk ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                    <div key={name} className={`rounded-[1.15rem] border p-4 ${isOk ? 'border-emerald-200 bg-[rgba(16,185,129,0.08)]' : 'border-red-200 bg-[rgba(239,68,68,0.08)]'}`}>
                       <div className="flex items-center gap-2 mb-1">
                         <Icon className={`w-4 h-4 ${isOk ? 'text-green-600' : 'text-red-600'}`} />
-                        <span className="text-sm font-medium capitalize">{name}</span>
+                        <span className="text-sm font-medium capitalize text-[var(--v2-ink-strong)]">{name}</span>
                       </div>
                       <div className="flex items-center gap-1">
                         {isOk ? <CheckCircle className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-red-500" />}
@@ -1128,7 +1159,7 @@ export default function AdminPanel() {
                   )
                 })}
               </div>
-              <div className="mt-4 flex items-center gap-4 text-sm text-gray-600">
+              <div className="mt-4 flex items-center gap-4 text-sm text-[var(--v2-ink-soft)]">
                 <span>App: <strong>{health.app} v{health.version}</strong></span>
                 <span>Módulos: <strong>{health.modules.healthy}/{health.modules.total}</strong> saudáveis</span>
               </div>
@@ -1137,7 +1168,7 @@ export default function AdminPanel() {
 
           {moduleTypePieData.length > 0 && (
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Módulos por Tipo</h3>
+              <h3 className="mb-3 text-sm font-semibold text-[var(--v2-ink-strong)]">Módulos por Tipo</h3>
               <ResponsiveContainer width="100%" height={180}>
                 <PieChart>
                   <Pie data={moduleTypePieData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={5} dataKey="value">
@@ -1150,7 +1181,7 @@ export default function AdminPanel() {
               </ResponsiveContainer>
               <div className="flex flex-wrap gap-2 mt-2 justify-center">
                 {moduleTypePieData.map((d, i) => (
-                  <span key={d.name} className="flex items-center gap-1 text-xs text-gray-600">
+                  <span key={d.name} className="flex items-center gap-1 text-xs text-[var(--v2-ink-soft)]">
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PIE_COLORS[i] }} />
                     {d.name} ({d.value})
                   </span>
@@ -1286,31 +1317,31 @@ function PipelineLogs() {
   }
 
   return (
-    <div className="bg-white rounded-xl border overflow-hidden mb-6">
+    <div className="v2-panel mb-6 overflow-hidden">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between px-6 py-4 transition-colors hover:bg-[rgba(255,255,255,0.58)]"
       >
         <div className="flex items-center gap-2">
           <Terminal className="w-5 h-5 text-brand-600" />
-          <h2 className="text-lg font-semibold">Logs de Execução do Pipeline</h2>
+          <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">Logs de Execução do Pipeline</h2>
         </div>
-        {open ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        {open ? <ChevronUp className="w-4 h-4 text-[var(--v2-ink-faint)]" /> : <ChevronDown className="w-4 h-4 text-[var(--v2-ink-faint)]" />}
       </button>
 
       {open && (
-        <div className="border-t">
+        <div className="border-t border-[var(--v2-line-soft)]">
           {loading ? (
             <div className="p-6 space-y-2">
               {[1, 2, 3].map(i => <Skeleton key={i} className="h-8 rounded" />)}
             </div>
           ) : logs.length === 0 ? (
-            <p className="p-6 text-sm text-gray-400 text-center">Nenhum log de execução encontrado.</p>
+            <p className="p-6 text-center text-sm text-[var(--v2-ink-faint)]">Nenhum log de execução encontrado.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="bg-gray-50 border-b text-gray-500 uppercase tracking-wide">
+                  <tr className="border-b border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
                     <th className="px-4 py-2 text-left">Documento</th>
                     <th className="px-4 py-2 text-left">Agente / Fase</th>
                     <th className="px-4 py-2 text-left">Modelo</th>
@@ -1320,40 +1351,40 @@ function PipelineLogs() {
                     <th className="px-4 py-2 text-left">Data</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-[var(--v2-line-soft)]">
                   {logs.map(log => (
-                    <tr key={log.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={log.id} className="transition-colors hover:bg-[rgba(255,255,255,0.58)]">
                       <td className="px-4 py-2">
                         <button
                           onClick={() => navigate(buildWorkspaceDocumentDetailPath(log.document_id, { preserveSearch: location.search }))}
-                          className="text-left hover:text-brand-600 transition-colors"
+                          className="text-left transition-colors hover:text-brand-600"
                         >
-                          <p className="font-medium text-gray-800">{log.document_type}</p>
-                          {log.tema && <p className="text-gray-400 truncate max-w-[180px]">{log.tema}</p>}
+                          <p className="font-medium text-[var(--v2-ink-strong)]">{log.document_type}</p>
+                          {log.tema && <p className="max-w-[180px] truncate text-[var(--v2-ink-faint)]">{log.tema}</p>}
                         </button>
-                        <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${statusColor[log.doc_status] || 'bg-gray-100 text-gray-600'}`}>
+                        <span className={`inline-block mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${statusColor[log.doc_status] || 'bg-[rgba(15,23,42,0.08)] text-[var(--v2-ink-soft)]'}`}>
                           {log.doc_status}
                         </span>
                       </td>
                       <td className="px-4 py-2">
-                        <p className="font-medium text-gray-800">{log.agent_name}</p>
-                        <p className="text-gray-400">{log.phase}</p>
+                        <p className="font-medium text-[var(--v2-ink-strong)]">{log.agent_name}</p>
+                        <p className="text-[var(--v2-ink-faint)]">{log.phase}</p>
                       </td>
-                      <td className="px-4 py-2 text-gray-500 font-mono">
+                      <td className="px-4 py-2 font-mono text-[var(--v2-ink-soft)]">
                         {log.model ? log.model.split('/').pop() : '—'}
                       </td>
-                      <td className="px-4 py-2 text-right text-gray-600">
+                      <td className="px-4 py-2 text-right text-[var(--v2-ink-soft)]">
                         {log.tokens_in != null && log.tokens_out != null
                           ? `${(log.tokens_in + log.tokens_out).toLocaleString()}`
                           : '—'}
                       </td>
-                      <td className="px-4 py-2 text-right text-gray-600">
+                      <td className="px-4 py-2 text-right text-[var(--v2-ink-soft)]">
                         {log.cost_usd != null ? `$${log.cost_usd.toFixed(4)}` : '—'}
                       </td>
-                      <td className="px-4 py-2 text-right text-gray-600">
+                      <td className="px-4 py-2 text-right text-[var(--v2-ink-soft)]">
                         {log.duration_ms != null ? `${(log.duration_ms / 1000).toFixed(1)}s` : '—'}
                       </td>
-                      <td className="px-4 py-2 text-gray-400 whitespace-nowrap">
+                      <td className="px-4 py-2 whitespace-nowrap text-[var(--v2-ink-faint)]">
                         {log.created_at
                           ? new Date(log.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
                           : '—'}
@@ -1413,7 +1444,7 @@ function UsersSection() {
   const ROLE_COLORS: Record<string, string> = {
     admin: 'bg-purple-100 text-purple-700',
     user: 'bg-blue-100 text-blue-700',
-    viewer: 'bg-gray-100 text-gray-600',
+    viewer: 'bg-[rgba(15,23,42,0.08)] text-[var(--v2-ink-soft)]',
   }
 
   return (
@@ -1423,14 +1454,14 @@ function UsersSection() {
           {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 rounded-lg" />)}
         </div>
       ) : users.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center">Nenhum usuário encontrado.</p>
+        <p className="text-center text-sm text-[var(--v2-ink-faint)]">Nenhum usuário encontrado.</p>
       ) : (
-        <div className="divide-y border rounded-xl overflow-hidden">
+        <div className="overflow-hidden rounded-[1.2rem] border border-[var(--v2-line-soft)] divide-y divide-[var(--v2-line-soft)]">
           {users.map(u => (
-            <div key={u.id} className={`flex items-center gap-4 px-6 py-3 ${!u.is_active ? 'opacity-50 bg-gray-50' : ''}`}>
+            <div key={u.id} className={`flex items-center gap-4 px-6 py-3 ${!u.is_active ? 'bg-[rgba(15,23,42,0.04)] opacity-60' : 'bg-[rgba(255,255,255,0.68)]'}`}>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{u.full_name}</p>
-                <p className="text-xs text-gray-500 truncate">{u.email}{u.title ? ` — ${u.title}` : ''}</p>
+                <p className="truncate text-sm font-medium text-[var(--v2-ink-strong)]">{u.full_name}</p>
+                <p className="truncate text-xs text-[var(--v2-ink-soft)]">{u.email}{u.title ? ` — ${u.title}` : ''}</p>
               </div>
 
               {/* Role selector */}
@@ -1438,7 +1469,7 @@ function UsersSection() {
                 value={u.role}
                 disabled={updating === u.id}
                 onChange={e => handleUpdate(u.id, { role: e.target.value })}
-                className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-brand-500 ${ROLE_COLORS[u.role] || 'bg-gray-100 text-gray-600'}`}
+                className={`cursor-pointer rounded-full border border-current/10 px-2 py-1 text-xs font-medium focus:ring-2 focus:ring-brand-500 ${ROLE_COLORS[u.role] || 'bg-[rgba(15,23,42,0.08)] text-[var(--v2-ink-soft)]'}`}
               >
                 <option value="admin">Admin</option>
                 <option value="user">Usuário</option>
@@ -1454,7 +1485,7 @@ function UsersSection() {
               >
                 {u.is_active
                   ? <ToggleRight className="w-6 h-6 text-green-600" />
-                  : <ToggleLeft className="w-6 h-6 text-gray-400" />
+                  : <ToggleLeft className="w-6 h-6 text-[var(--v2-ink-faint)]" />
                 }
               </button>
             </div>
@@ -1551,62 +1582,62 @@ function DocumentTypesCrud() {
     setIsCreating(false)
   }
 
-  if (loading) return <p className="text-sm text-gray-400 py-4">Carregando...</p>
+  if (loading) return <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Carregando...</p>
 
   return (
     <div className="space-y-3">
       {/* Edit/Create modal */}
       {editingItem && (
-        <div className="border rounded-xl p-5 bg-blue-50 space-y-3">
+        <div className="space-y-3 rounded-[1.2rem] border border-[rgba(59,130,246,0.18)] bg-[rgba(59,130,246,0.08)] p-5">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-700">
+            <h3 className="text-sm font-semibold text-[var(--v2-ink-strong)]">
               {isCreating ? 'Novo Tipo de Documento' : `Editar: ${editingItem.name}`}
             </h3>
-            <button onClick={() => setEditingItem(null)} className="text-gray-400 hover:text-gray-600">
+            <button onClick={() => setEditingItem(null)} className="text-[var(--v2-ink-faint)] hover:text-[var(--v2-ink-strong)]">
               <X className="w-4 h-4" />
             </button>
           </div>
           {isCreating && (
             <div>
-              <label className="text-xs text-gray-600 font-medium">ID (gerado automaticamente se vazio)</label>
+              <label className="text-xs font-medium text-[var(--v2-ink-soft)]">ID (gerado automaticamente se vazio)</label>
               <input
                 type="text"
                 value={editingItem.id}
                 onChange={e => setEditingItem({ ...editingItem, id: e.target.value })}
-                className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500"
+                className={ADMIN_INPUT}
                 placeholder="ex: recurso_especial"
               />
             </div>
           )}
           <div>
-            <label className="text-xs text-gray-600 font-medium">Nome</label>
+            <label className="text-xs font-medium text-[var(--v2-ink-soft)]">Nome</label>
             <input
               type="text"
               value={editingItem.name}
               onChange={e => setEditingItem({ ...editingItem, name: e.target.value })}
-              className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500"
+              className={ADMIN_INPUT}
               placeholder="Nome do tipo de documento"
             />
           </div>
           <div>
-            <label className="text-xs text-gray-600 font-medium">Descrição</label>
+            <label className="text-xs font-medium text-[var(--v2-ink-soft)]">Descrição</label>
             <textarea
               value={editingItem.description}
               onChange={e => setEditingItem({ ...editingItem, description: e.target.value })}
-              className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500 resize-none"
+              className={`${ADMIN_INPUT} resize-none`}
               rows={2}
               placeholder="Descrição do tipo de documento"
             />
           </div>
           <div>
-            <label className="text-xs text-gray-600 font-medium">Estrutura do Documento (Markdown)</label>
-            <p className="text-xs text-gray-400 mt-0.5 mb-1">
+            <label className="text-xs font-medium text-[var(--v2-ink-soft)]">Estrutura do Documento (Markdown)</label>
+            <p className="mb-1 mt-0.5 text-xs text-[var(--v2-ink-faint)]">
               Defina a estrutura/modelo que será utilizado para gerar este tipo de documento. Use formato Markdown.
             </p>
             <textarea
               value={editingItem.structure || ''}
               onChange={e => setEditingItem({ ...editingItem, structure: e.target.value })}
-              className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500 resize-y font-mono"
+              className={`${ADMIN_INPUT_MONO} resize-y`}
               rows={12}
               placeholder={`Exemplo de estrutura em Markdown:\n\n# TÍTULO DO DOCUMENTO\n\n## 1. QUALIFICAÇÃO DAS PARTES\n- Nome, qualificação e endereço\n\n## 2. DOS FATOS\n- Narração cronológica dos fatos\n- Contextualização com referências legais\n\n## 3. DO DIREITO\n### 3.1 Fundamentação Constitucional\n### 3.2 Fundamentação Legal\n### 3.3 Fundamentação Jurisprudencial\n\n## 4. DOS PEDIDOS\n- Pedidos claros e específicos`}
             />
@@ -1622,7 +1653,7 @@ function DocumentTypesCrud() {
             </button>
             <button
               onClick={() => { setEditingItem(null); setIsCreating(false) }}
-              className="text-sm text-gray-600 px-4 py-2 border rounded-lg hover:bg-gray-50"
+              className={ADMIN_SECONDARY_BUTTON}
             >
               Cancelar
             </button>
@@ -1634,27 +1665,27 @@ function DocumentTypesCrud() {
       {items.map(item => (
         <div
           key={item.id}
-          className={`flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors ${!item.is_enabled ? 'opacity-50 bg-gray-50' : ''}`}
+          className={`flex items-center justify-between rounded-[1.15rem] border p-4 transition-colors ${!item.is_enabled ? 'border-[var(--v2-line-soft)] bg-[rgba(15,23,42,0.04)] opacity-60' : 'border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] hover:bg-[rgba(255,255,255,0.9)]'}`}
         >
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <CheckCircle className={`w-5 h-5 flex-shrink-0 ${item.is_enabled ? 'text-green-500' : 'text-gray-300'}`} />
+            <CheckCircle className={`w-5 h-5 flex-shrink-0 ${item.is_enabled ? 'text-green-500' : 'text-[var(--v2-ink-faint)]'}`} />
             <div className="min-w-0">
-              <p className="font-medium text-gray-900">{item.name}</p>
-              <p className="text-sm text-gray-500 truncate">{item.description}</p>
-              <p className="text-xs text-gray-400 mt-0.5">ID: {item.id} · Templates: {item.templates.join(', ')}{item.structure ? ' · 📄 Estrutura definida' : ''}</p>
+              <p className="font-medium text-[var(--v2-ink-strong)]">{item.name}</p>
+              <p className="truncate text-sm text-[var(--v2-ink-soft)]">{item.description}</p>
+              <p className="mt-0.5 text-xs text-[var(--v2-ink-faint)]">ID: {item.id} · Templates: {item.templates.join(', ')}{item.structure ? ' · Estrutura definida' : ''}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 ml-3">
             <button
               onClick={() => handleEdit(item)}
-              className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+              className={ADMIN_ICON_BUTTON}
               title="Editar"
             >
               <Pencil className="w-4 h-4" />
             </button>
             <button
               onClick={() => handleDelete(item.id)}
-              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              className="rounded-lg p-1.5 text-[var(--v2-ink-faint)] transition-colors hover:bg-[rgba(239,68,68,0.08)] hover:text-red-600"
               title="Excluir"
             >
               <Trash2 className="w-4 h-4" />
@@ -1668,7 +1699,7 @@ function DocumentTypesCrud() {
               {item.is_enabled ? (
                 <ToggleRight className="w-6 h-6 text-green-600" />
               ) : (
-                <ToggleLeft className="w-6 h-6 text-gray-400" />
+                <ToggleLeft className="w-6 h-6 text-[var(--v2-ink-faint)]" />
               )}
             </button>
           </div>
@@ -1678,7 +1709,7 @@ function DocumentTypesCrud() {
       {/* Add new button */}
       <button
         onClick={handleCreate}
-        className="w-full flex items-center justify-center gap-2 p-3 border-2 border-dashed rounded-lg text-sm text-gray-500 hover:text-brand-600 hover:border-brand-300 transition-colors"
+        className={ADMIN_DASHED_BUTTON}
       >
         <Plus className="w-4 h-4" />
         Adicionar novo tipo de documento
@@ -1804,49 +1835,49 @@ function LegalAreasCrud() {
     await handleSave(updated)
   }
 
-  if (loading) return <p className="text-sm text-gray-400 py-4">Carregando...</p>
+  if (loading) return <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Carregando...</p>
 
   return (
     <div className="space-y-3">
       {/* Edit/Create form */}
       {editingItem && (
-        <div className="border rounded-xl p-5 bg-purple-50 space-y-3">
+        <div className="space-y-3 rounded-[1.2rem] border border-[rgba(147,51,234,0.18)] bg-[rgba(147,51,234,0.08)] p-5">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-700">
+            <h3 className="text-sm font-semibold text-[var(--v2-ink-strong)]">
               {isCreating ? 'Nova Área do Direito' : `Editar: ${editingItem.name}`}
             </h3>
-            <button onClick={() => setEditingItem(null)} className="text-gray-400 hover:text-gray-600">
+            <button onClick={() => setEditingItem(null)} className="text-[var(--v2-ink-faint)] hover:text-[var(--v2-ink-strong)]">
               <X className="w-4 h-4" />
             </button>
           </div>
           {isCreating && (
             <div>
-              <label className="text-xs text-gray-600 font-medium">ID (gerado automaticamente se vazio)</label>
+              <label className="text-xs font-medium text-[var(--v2-ink-soft)]">ID (gerado automaticamente se vazio)</label>
               <input
                 type="text"
                 value={editingItem.id}
                 onChange={e => setEditingItem({ ...editingItem, id: e.target.value })}
-                className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500"
+                className={ADMIN_INPUT}
                 placeholder="ex: direito_ambiental"
               />
             </div>
           )}
           <div>
-            <label className="text-xs text-gray-600 font-medium">Nome</label>
+            <label className="text-xs font-medium text-[var(--v2-ink-soft)]">Nome</label>
             <input
               type="text"
               value={editingItem.name}
               onChange={e => setEditingItem({ ...editingItem, name: e.target.value })}
-              className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500"
+              className={ADMIN_INPUT}
               placeholder="Nome da área do direito"
             />
           </div>
           <div>
-            <label className="text-xs text-gray-600 font-medium">Descrição</label>
+            <label className="text-xs font-medium text-[var(--v2-ink-soft)]">Descrição</label>
             <textarea
               value={editingItem.description}
               onChange={e => setEditingItem({ ...editingItem, description: e.target.value })}
-              className="w-full mt-1 text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500 resize-none"
+              className={`${ADMIN_INPUT} resize-none`}
               rows={2}
               placeholder="Descrição da área do direito"
             />
@@ -1862,7 +1893,7 @@ function LegalAreasCrud() {
             </button>
             <button
               onClick={() => { setEditingItem(null); setIsCreating(false) }}
-              className="text-sm text-gray-600 px-4 py-2 border rounded-lg hover:bg-gray-50"
+              className={ADMIN_SECONDARY_BUTTON}
             >
               Cancelar
             </button>
@@ -1872,17 +1903,17 @@ function LegalAreasCrud() {
 
       {/* Items list */}
       {items.map(item => (
-        <div key={item.id} className={`rounded-lg border transition-colors ${!item.is_enabled ? 'opacity-50 bg-gray-50' : ''}`}>
-          <div className="flex items-center justify-between p-4 hover:bg-gray-50">
+        <div key={item.id} className={`rounded-[1.15rem] border transition-colors ${!item.is_enabled ? 'border-[var(--v2-line-soft)] bg-[rgba(15,23,42,0.04)] opacity-60' : 'border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)]'}`}>
+          <div className="flex items-center justify-between p-4 hover:bg-[rgba(255,255,255,0.88)]">
             <div
               className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
               onClick={() => setExpandedArea(expandedArea === item.id ? null : item.id)}
             >
-              <Scale className={`w-5 h-5 flex-shrink-0 ${item.is_enabled ? 'text-purple-500' : 'text-gray-300'}`} />
+              <Scale className={`w-5 h-5 flex-shrink-0 ${item.is_enabled ? 'text-purple-500' : 'text-[var(--v2-ink-faint)]'}`} />
               <div className="min-w-0">
-                <p className="font-medium text-gray-900">{item.name}</p>
-                <p className="text-sm text-gray-500 truncate">{item.description}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="font-medium text-[var(--v2-ink-strong)]">{item.name}</p>
+                <p className="truncate text-sm text-[var(--v2-ink-soft)]">{item.description}</p>
+                <p className="mt-0.5 text-xs text-[var(--v2-ink-faint)]">
                   ID: {item.id} · {(item.assuntos || []).length} assunto{(item.assuntos || []).length !== 1 ? 's' : ''}
                 </p>
               </div>
@@ -1890,21 +1921,21 @@ function LegalAreasCrud() {
             <div className="flex items-center gap-2 flex-shrink-0 ml-3">
               <button
                 onClick={() => setExpandedArea(expandedArea === item.id ? null : item.id)}
-                className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                className="rounded-lg p-1.5 text-[var(--v2-ink-faint)] transition-colors hover:bg-[rgba(147,51,234,0.08)] hover:text-purple-600"
                 title="Ver assuntos"
               >
                 {expandedArea === item.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
               <button
                 onClick={() => handleEdit(item)}
-                className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                className={ADMIN_ICON_BUTTON}
                 title="Editar"
               >
                 <Pencil className="w-4 h-4" />
               </button>
               <button
                 onClick={() => handleDelete(item.id)}
-                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                className="rounded-lg p-1.5 text-[var(--v2-ink-faint)] transition-colors hover:bg-[rgba(239,68,68,0.08)] hover:text-red-600"
                 title="Excluir"
               >
                 <Trash2 className="w-4 h-4" />
@@ -1918,14 +1949,14 @@ function LegalAreasCrud() {
                 {item.is_enabled ? (
                   <ToggleRight className="w-6 h-6 text-green-600" />
                 ) : (
-                  <ToggleLeft className="w-6 h-6 text-gray-400" />
+                  <ToggleLeft className="w-6 h-6 text-[var(--v2-ink-faint)]" />
                 )}
               </button>
             </div>
           </div>
           {/* Assuntos panel */}
           {expandedArea === item.id && (
-            <div className="px-4 pb-4 border-t bg-purple-50/50">
+            <div className="border-t border-[rgba(147,51,234,0.14)] bg-[rgba(147,51,234,0.05)] px-4 pb-4">
               <p className="text-xs font-semibold text-purple-700 mt-3 mb-2">
                 Assuntos ({(item.assuntos || []).length})
               </p>
@@ -1946,7 +1977,7 @@ function LegalAreasCrud() {
                   </span>
                 ))}
                 {(item.assuntos || []).length === 0 && (
-                  <span className="text-xs text-gray-400 italic">Nenhum assunto cadastrado</span>
+                  <span className="text-xs italic text-[var(--v2-ink-faint)]">Nenhum assunto cadastrado</span>
                 )}
               </div>
               <div className="flex gap-2">
@@ -1955,7 +1986,7 @@ function LegalAreasCrud() {
                   value={newAssunto}
                   onChange={e => setNewAssunto(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddAssunto(item.id) } }}
-                  className="flex-1 text-xs border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-purple-300 outline-none"
+                  className="flex-1 rounded-lg border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-3 py-1.5 text-xs text-[var(--v2-ink-strong)] outline-none focus:border-purple-300 focus:ring-4 focus:ring-[rgba(147,51,234,0.12)]"
                   placeholder="Novo assunto..."
                 />
                 <button
@@ -1975,7 +2006,7 @@ function LegalAreasCrud() {
       {/* Add new button */}
       <button
         onClick={handleCreate}
-        className="w-full flex items-center justify-center gap-2 p-3 border-2 border-dashed rounded-lg text-sm text-gray-500 hover:text-brand-600 hover:border-brand-300 transition-colors"
+        className={ADMIN_DASHED_BUTTON}
       >
         <Plus className="w-4 h-4" />
         Adicionar nova área do direito
@@ -2066,13 +2097,13 @@ function ClassificationTiposCrud() {
 
   const currentTipos = tipos[selectedNatureza]?.[selectedArea] || []
 
-  if (loading) return <p className="text-sm text-gray-400 py-4">Carregando...</p>
+  if (loading) return <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Carregando...</p>
 
   const naturezaLabel = NATUREZA_OPTIONS.find(o => o.value === selectedNatureza)?.label || selectedNatureza
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-[var(--v2-ink-soft)]">
         Configure os tipos de documento disponíveis para cada combinação de natureza e área do direito.
         Os tipos definidos em "Geral (padrão)" se aplicam a todas as áreas. Tipos específicos por área complementam os gerais.
       </p>
@@ -2080,11 +2111,11 @@ function ClassificationTiposCrud() {
       {/* Natureza selector */}
       <div className="flex gap-3">
         <div className="flex-1">
-          <label className="text-xs text-gray-600 font-medium mb-1 block">Natureza</label>
+          <label className="mb-1 block text-xs font-medium text-[var(--v2-ink-soft)]">Natureza</label>
           <select
             value={selectedNatureza}
             onChange={e => { setSelectedNatureza(e.target.value); setSelectedArea('_default') }}
-            className="w-full text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-300 outline-none"
+            className={ADMIN_INPUT}
           >
             {NATUREZA_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label} — {o.description}</option>
@@ -2092,11 +2123,11 @@ function ClassificationTiposCrud() {
           </select>
         </div>
         <div className="flex-1">
-          <label className="text-xs text-gray-600 font-medium mb-1 block">Área do Direito</label>
+          <label className="mb-1 block text-xs font-medium text-[var(--v2-ink-soft)]">Área do Direito</label>
           <select
             value={selectedArea}
             onChange={e => setSelectedArea(e.target.value)}
-            className="w-full text-sm border rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-300 outline-none"
+            className={ADMIN_INPUT}
           >
             <option value="_default">Geral (padrão)</option>
             {legalAreas.filter(a => a.is_enabled).map(a => (
@@ -2107,10 +2138,10 @@ function ClassificationTiposCrud() {
       </div>
 
       {/* Current tipos */}
-      <div className="border rounded-lg p-4 bg-green-50/50">
+      <div className="rounded-[1.15rem] border border-[rgba(34,197,94,0.18)] bg-[rgba(34,197,94,0.08)] p-4">
         <p className="text-xs font-semibold text-green-700 mb-2">
           Tipos para {naturezaLabel} / {selectedArea === '_default' ? 'Geral' : legalAreas.find(a => a.id === selectedArea)?.name || selectedArea}
-          <span className="ml-1 font-normal text-gray-500">({currentTipos.length})</span>
+          <span className="ml-1 font-normal text-[var(--v2-ink-soft)]">({currentTipos.length})</span>
         </p>
         <div className="flex flex-wrap gap-1.5 mb-3">
           {currentTipos.map(tipo => (
@@ -2129,7 +2160,7 @@ function ClassificationTiposCrud() {
             </span>
           ))}
           {currentTipos.length === 0 && (
-            <span className="text-xs text-gray-400 italic">Nenhum tipo cadastrado para esta combinação</span>
+            <span className="text-xs italic text-[var(--v2-ink-faint)]">Nenhum tipo cadastrado para esta combinação</span>
           )}
         </div>
         <div className="flex gap-2">
@@ -2138,7 +2169,7 @@ function ClassificationTiposCrud() {
             value={newTipo}
             onChange={e => setNewTipo(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTipo() } }}
-            className="flex-1 text-xs border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-green-300 outline-none"
+            className="flex-1 rounded-lg border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-3 py-1.5 text-xs text-[var(--v2-ink-strong)] outline-none focus:border-green-300 focus:ring-4 focus:ring-[rgba(34,197,94,0.12)]"
             placeholder="Novo tipo de documento..."
           />
           <button
@@ -2165,7 +2196,7 @@ function ModuleRow({
   toggling: string | null
 }) {
   return (
-    <div className="flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50">
+    <div className="flex items-center justify-between rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] p-4 hover:bg-[rgba(255,255,255,0.9)]">
       <div className="flex items-center gap-3">
         {m.is_healthy ? (
           <CheckCircle className="w-5 h-5 text-green-500" />
@@ -2173,13 +2204,13 @@ function ModuleRow({
           <XCircle className="w-5 h-5 text-red-500" />
         )}
         <div>
-          <p className="font-medium text-gray-900">{m.name}</p>
-          <p className="text-sm text-gray-500">{m.description}</p>
+          <p className="font-medium text-[var(--v2-ink-strong)]">{m.name}</p>
+          <p className="text-sm text-[var(--v2-ink-soft)]">{m.description}</p>
           {m.error && <p className="text-xs text-red-500 mt-1">{m.error}</p>}
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-xs text-gray-400">v{m.version}</span>
+        <span className="text-xs text-[var(--v2-ink-faint)]">v{m.version}</span>
         <button
           onClick={() => onToggle(m.id)}
           disabled={toggling === m.id}
@@ -2189,7 +2220,7 @@ function ModuleRow({
           {m.is_enabled ? (
             <ToggleRight className="w-6 h-6 text-green-600" />
           ) : (
-            <ToggleLeft className="w-6 h-6 text-gray-400" />
+            <ToggleLeft className="w-6 h-6 text-[var(--v2-ink-faint)]" />
           )}
         </button>
       </div>

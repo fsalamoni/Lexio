@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-19",
-    "cycle": "v2-cost-surfaces-native",
+    "cycle": "v2-governance-admin-native",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -707,6 +707,18 @@
         "frontend/src/components/v2/V2WorkspaceLayout.tsx"
       ],
       "notes": "As superficies de custos pessoal e agregada deixaram de depender de `v2-bridge-surface`: loading, estados vazios, acesso admin, labels, formularios de orcamento e wrappers passaram a usar classes/primitives V2 explicitas. O shell V2 tambem teve a narrativa ajustada para refletir que custos ja estao promovidos no rail novo, enquanto configuracoes e administracao seguem em consolidacao controlada."
+    },
+    {
+      "id": "E8.F24",
+      "epic": "Redesign V2",
+      "name": "Governanca e administracao promovidas para V2 nativo",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/PlatformAdminPanel.tsx",
+        "frontend/src/pages/AdminPanel.tsx",
+        "frontend/src/components/v2/V2WorkspaceLayout.tsx"
+      ],
+      "notes": "`PlatformAdminPanel` saiu da bridge de pagina inteira e passou a usar estados, cards executivos, thresholds, historico e backfill em V2 nativo. `AdminPanel` removeu a bridge ampla do frame e promoveu os blocos locais para V2, mantendo `v2-bridge-surface` apenas ao redor dos config cards importados ainda legados. O shell V2 foi atualizado para comunicar que custos, configuracoes principais e administracao executiva ja operam no rail promovido, com contingencia classica localizada apenas nos cards especializados remanescentes."
     }
   ],
   "regressionRisk": {

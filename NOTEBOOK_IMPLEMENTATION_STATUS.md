@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-186 IMPLEMENTADAS
+## Status Geral: Etapas 1-190 IMPLEMENTADAS
+
+### Etapas 187-190 — Governanca/Admin Nativas no Rail V2 ✅
+- **Arquivos**: `frontend/src/pages/PlatformAdminPanel.tsx`, `frontend/src/pages/AdminPanel.tsx`, `frontend/src/components/v2/V2WorkspaceLayout.tsx`
+- Etapa 187: `PlatformAdminPanel.tsx` deixou de depender da `v2-bridge-surface` como frame de pagina; estados de acesso/loading/vazio, cards executivos, configuracao de thresholds, historico longitudinal, backfill e wrappers de graficos passaram a usar paines, formularios e tipografia V2 explicitos
+- Etapa 188: `AdminPanel.tsx` removeu a bridge de pagina inteira e promoveu o shell pessoal, `ApiKeysCard`, `ReviewQueue` e os blocos locais de reindexacao/CRUD/logs/usuarios para o sistema V2; os cards de configuracao ainda legados ficaram encapsulados em wrappers `v2-bridge-surface` localizados, reduzindo a ponte visual ao minimo operacional desta rodada
+- Etapa 189: `V2WorkspaceLayout.tsx` foi atualizado para refletir o novo estado real do rail promovido, comunicando que custos, configuracoes principais e administracao executiva ja operam em leitura nativa V2, enquanto a contingencia classica ficou restrita a cards especializados remanescentes
+- Etapa 190: a rodada foi validada com `npm run typecheck`, `npm run test -- --run` (**35/35 arquivos**, **266/266 testes**) e `npm run build` em `frontend/`; os chunks de producao ficaram em **50.23 kB** (**gzip 12.26 kB**) para `PlatformAdminPanel`, **129.73 kB** (**gzip 22.06 kB**) para `AdminPanel` e **8.10 kB** (**gzip 2.55 kB**) para `V2WorkspaceLayout`, preservando code splitting enquanto a governanca saiu do bridge amplo
 
 ### Etapas 184-186 — Custos Nativos no Rail V2 + Ajuste de Narrativa do Shell ✅
 - **Arquivos**: `frontend/src/pages/CostTokensPage.tsx`, `frontend/src/pages/PlatformCostsPage.tsx`, `frontend/src/components/v2/V2WorkspaceLayout.tsx`

@@ -27,6 +27,10 @@ import { V2EmptyState, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { buildWorkspaceSettingsPath } from '../lib/workspace-routes'
 
 const PIE_COLORS = ['#0f766e', '#2563eb', '#9333ea', '#d97706', '#dc2626', '#64748b']
+const EXECUTIVE_INSET_CARD = 'rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] px-2.5 py-2'
+const EXECUTIVE_PANEL_BUTTON = 'px-3 py-1.5 rounded-lg border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] text-xs font-medium text-[var(--v2-ink-soft)] hover:bg-[rgba(255,255,255,0.9)] disabled:cursor-not-allowed disabled:opacity-50'
+const EXECUTIVE_INPUT = 'mt-1 w-full rounded-[0.95rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-2.5 py-2 text-sm text-[var(--v2-ink-strong)] outline-none transition focus:border-[rgba(15,118,110,0.34)] focus:ring-4 focus:ring-[rgba(15,118,110,0.12)]'
+const EXECUTIVE_INPUT_COMPACT = 'mt-1 w-full rounded-[0.95rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-2 py-1 text-sm text-[var(--v2-ink-strong)] outline-none transition focus:border-[rgba(15,118,110,0.34)] focus:ring-4 focus:ring-[rgba(15,118,110,0.12)]'
 
 function fmtUsd(value: number) {
   return value < 0.001 ? `$${value.toFixed(5)}` : `$${value.toFixed(4)}`
@@ -272,14 +276,24 @@ export default function PlatformAdminPanel() {
   if (!isReady) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-10 w-80" />
-        <Skeleton className="h-32 rounded-xl" />
+        <div className="v2-panel p-6">
+          <Skeleton className="h-10 w-80" />
+        </div>
+        <div className="v2-panel p-6">
+          <Skeleton className="h-32 rounded-xl" />
+        </div>
       </div>
     )
   }
 
   if (role !== 'admin') {
-    return <div className="text-sm text-gray-500">Acesso administrativo necessário.</div>
+    return (
+      <V2EmptyState
+        icon={Shield}
+        title="Acesso administrativo necessário"
+        description="Esta cabine executiva consolida indicadores agregados de usuários, custos, memória dedicada e governança da plataforma inteira, por isso permanece restrita ao perfil administrativo."
+      />
+    )
   }
 
   const functionChart = useMemo(() => overview?.functions_by_usage.slice(0, 8).map(row => ({
@@ -828,31 +842,39 @@ export default function PlatformAdminPanel() {
 
   if (loading) {
     return (
-      <div className="space-y-6 v2-bridge-surface">
-        <Skeleton className="h-10 w-80" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}
+      <div className="space-y-6">
+        <div className="v2-panel p-6">
+          <Skeleton className="h-10 w-80" />
         </div>
-        <Skeleton className="h-80 rounded-xl" />
-        <Skeleton className="h-80 rounded-xl" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div key={index} className="v2-summary-card bg-[rgba(255,255,255,0.82)]">
+              <Skeleton className="h-24 rounded-xl" />
+            </div>
+          ))}
+        </div>
+        <div className="v2-panel p-6">
+          <Skeleton className="h-80 rounded-xl" />
+        </div>
+        <div className="v2-panel p-6">
+          <Skeleton className="h-80 rounded-xl" />
+        </div>
       </div>
     )
   }
 
   if (!overview) {
     return (
-      <div className="v2-bridge-surface">
-        <V2EmptyState
-          icon={Shield}
-          title="Nenhum dado agregado disponivel"
-          description="Assim que a plataforma acumular uso operacional, este painel passa a consolidar usuarios, pipelines, memoria dedicada e custos globais em tempo real."
-        />
-      </div>
+      <V2EmptyState
+        icon={Shield}
+        title="Nenhum dado agregado disponivel"
+        description="Assim que a plataforma acumular uso operacional, este painel passa a consolidar usuarios, pipelines, memoria dedicada e custos globais em tempo real."
+      />
     )
   }
 
   return (
-    <div className="space-y-6 v2-bridge-surface">
+    <div className="space-y-6">
       <V2PageHero
         eyebrow={<><Shield className="h-3.5 w-3.5" /> Governanca da plataforma V2</>}
         title="Uso agregado, calibracao de memoria e sinais de risco sob uma unica cabine executiva"
@@ -875,7 +897,7 @@ export default function PlatformAdminPanel() {
       />
 
       {overview.operational_warnings && overview.operational_warnings.length > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded-[1.35rem] border border-amber-200 bg-[rgba(217,119,6,0.08)] px-4 py-3 text-sm text-amber-900">
           {overview.operational_warnings[0]}
         </div>
       )}
@@ -904,10 +926,10 @@ export default function PlatformAdminPanel() {
       </div>
 
       {memoryAlerts.length > 0 && (
-        <div className="bg-white rounded-xl border p-5 space-y-3">
+        <div className="v2-panel p-5 space-y-3">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600" />
-            <h2 className="text-sm font-semibold text-gray-900">Alertas operacionais da memória dedicada</h2>
+            <h2 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Alertas operacionais da memória dedicada</h2>
           </div>
           <div className="space-y-2">
             {memoryAlerts.map(alert => (
@@ -932,25 +954,25 @@ export default function PlatformAdminPanel() {
                 >
                   {alert.level === 'critical' ? 'Crítico' : alert.level === 'warning' ? 'Atenção' : 'Informativo'}
                 </p>
-                <p className="text-sm font-medium text-gray-900 mt-0.5">{alert.title}</p>
-                <p className="text-xs text-gray-600 mt-0.5">{alert.description}</p>
+                <p className="mt-0.5 text-sm font-medium text-[var(--v2-ink-strong)]">{alert.title}</p>
+                <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">{alert.description}</p>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border p-5 space-y-3">
+      <div className="v2-panel p-5 space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Configuração de Thresholds dos Alertas</h2>
-            <p className="text-xs text-gray-500 mt-1">Calibra sensibilidade dos alertas da memória dedicada conforme comportamento real da plataforma.</p>
+            <h2 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Configuração de Thresholds dos Alertas</h2>
+            <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">Calibra sensibilidade dos alertas da memória dedicada conforme comportamento real da plataforma.</p>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={resetAlertThresholds}
               disabled={savingThresholds}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={EXECUTIVE_PANEL_BUTTON}
             >
               Restaurar defaults
             </button>
@@ -995,15 +1017,15 @@ export default function PlatformAdminPanel() {
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <label className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Janela da recomendação</p>
+          <label className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Janela da recomendação</p>
             <select
               value={recommendationPolicy.recommendationWindowDays}
               onChange={e => {
                 const next = Number(e.target.value)
                 setRecommendationPolicy(prev => ({ ...prev, recommendationWindowDays: [14, 30, 60, 90].includes(next) ? next : 30 }))
               }}
-              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-sm bg-white"
+              className={EXECUTIVE_INPUT_COMPACT}
             >
               <option value={14}>14 dias</option>
               <option value={30}>30 dias</option>
@@ -1011,15 +1033,15 @@ export default function PlatformAdminPanel() {
               <option value={90}>90 dias</option>
             </select>
           </label>
-          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Modo de rollout</p>
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Modo de rollout</p>
             <div className="mt-1 flex items-center gap-2">
               <button
                 onClick={() => setRecommendationPolicy(prev => ({ ...prev, rolloutMode: 'manual' }))}
                 className={`px-2.5 py-1 rounded-full border text-[10px] font-medium transition-colors ${
                   recommendationPolicy.rolloutMode === 'manual'
                     ? 'bg-slate-100 border-slate-300 text-slate-800'
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                    : 'bg-[var(--v2-panel-strong)] border-[var(--v2-line-soft)] text-[var(--v2-ink-soft)] hover:bg-[rgba(255,255,255,0.9)]'
                 }`}
               >
                 Manual
@@ -1029,13 +1051,13 @@ export default function PlatformAdminPanel() {
                 className={`px-2.5 py-1 rounded-full border text-[10px] font-medium transition-colors ${
                   recommendationPolicy.rolloutMode === 'assisted'
                     ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                    : 'bg-[var(--v2-panel-strong)] border-[var(--v2-line-soft)] text-[var(--v2-ink-soft)] hover:bg-[rgba(255,255,255,0.9)]'
                 }`}
               >
                 Assistido
               </button>
             </div>
-            <p className="mt-1 text-[10px] text-gray-500">
+            <p className="mt-1 text-[10px] text-[var(--v2-ink-faint)]">
               {recommendationPolicy.rolloutMode === 'assisted'
                 ? 'Assistido: aplicar recomendado também salva automaticamente.'
                 : 'Manual: aplicar recomendado apenas prepara os valores para revisão.'}
@@ -1054,40 +1076,40 @@ export default function PlatformAdminPanel() {
               className={`px-2.5 py-1 rounded-full border text-[10px] font-medium transition-colors ${
                 alertProfile === option.key
                   ? 'bg-brand-100 border-brand-300 text-brand-800'
-                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                  : 'bg-[var(--v2-panel-strong)] border-[var(--v2-line-soft)] text-[var(--v2-ink-soft)] hover:bg-[rgba(255,255,255,0.9)]'
               }`}
             >
               {option.label}
             </button>
           ))}
-          <span className="text-[10px] text-gray-500">Perfil atual: {alertProfile === 'custom' ? 'Customizado' : alertProfile}</span>
-          <span className="text-[10px] text-gray-500">Porte: {scaleProfile}</span>
-          <span className="text-[10px] text-gray-500">Rollout: {recommendationPolicy.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'}</span>
+          <span className="text-[10px] text-[var(--v2-ink-faint)]">Perfil atual: {alertProfile === 'custom' ? 'Customizado' : alertProfile}</span>
+          <span className="text-[10px] text-[var(--v2-ink-faint)]">Porte: {scaleProfile}</span>
+          <span className="text-[10px] text-[var(--v2-ink-faint)]">Rollout: {recommendationPolicy.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'}</span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
-          <label className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Crítico: descartes/janela</p>
+          <label className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Crítico: descartes/janela</p>
             <input
               type="number"
               min={1}
               value={alertThresholds.discardTotalCritical7d}
               onChange={e => updateThresholds(prev => ({ ...prev, discardTotalCritical7d: Math.max(1, Number(e.target.value) || 1) }))}
-              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-sm"
+              className={EXECUTIVE_INPUT_COMPACT}
             />
           </label>
-          <label className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Atenção: multiplicador tendência</p>
+          <label className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Atenção: multiplicador tendência</p>
             <input
               type="number"
               min={1}
               step={0.1}
               value={alertThresholds.discardTrendMultiplierWarning}
               onChange={e => updateThresholds(prev => ({ ...prev, discardTrendMultiplierWarning: Math.max(1, Number(e.target.value) || 1) }))}
-              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-sm"
+              className={EXECUTIVE_INPUT_COMPACT}
             />
           </label>
-          <label className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Atenção: cobertura mínima</p>
+          <label className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Atenção: cobertura mínima</p>
             <input
               type="number"
               min={0}
@@ -1095,29 +1117,29 @@ export default function PlatformAdminPanel() {
               step={0.05}
               value={alertThresholds.coverageWarningMin}
               onChange={e => updateThresholds(prev => ({ ...prev, coverageWarningMin: Math.min(1, Math.max(0, Number(e.target.value) || 0)) }))}
-              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-sm"
+              className={EXECUTIVE_INPUT_COMPACT}
             />
           </label>
-          <label className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Informativo: dias sem update</p>
+          <label className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Informativo: dias sem update</p>
             <input
               type="number"
               min={1}
               value={alertThresholds.noUpdatesInfoDays}
               onChange={e => updateThresholds(prev => ({ ...prev, noUpdatesInfoDays: Math.max(1, Number(e.target.value) || 1) }))}
-              className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-sm"
+              className={EXECUTIVE_INPUT_COMPACT}
             />
           </label>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border p-5 space-y-3">
+      <div className="v2-panel p-5 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Histórico de Calibração</h2>
-            <p className="text-xs text-gray-500 mt-1">Últimas decisões de recomendado vs aplicado para auditoria de rollout.</p>
+            <h2 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Histórico de Calibração</h2>
+            <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">Últimas decisões de recomendado vs aplicado para auditoria de rollout.</p>
           </div>
-          <span className="text-[10px] text-gray-500">{fmtInt(recommendationHistory.length)} registros</span>
+          <span className="text-[10px] text-[var(--v2-ink-faint)]">{fmtInt(recommendationHistory.length)} registros</span>
         </div>
 
         <div className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium w-fit ${rolloutGovernanceHealth.tone}`}>
@@ -1150,7 +1172,7 @@ export default function PlatformAdminPanel() {
                       }
                     }}
                     disabled={savingThresholds || Boolean(applyingDriftActionId)}
-                    className="px-2 py-1 rounded-md border border-current/25 bg-white/70 text-[10px] font-semibold hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="rounded-md border border-current/25 bg-[rgba(255,255,255,0.82)] px-2 py-1 text-[10px] font-semibold hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {applyingDriftActionId === driftActionPlans.find(plan => plan.alertId === alert.id)?.id
                       ? 'Aplicando...'
@@ -1162,17 +1184,17 @@ export default function PlatformAdminPanel() {
           ))}
         </div>
 
-        <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+        <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Validação longitudinal</p>
-            <p className="text-[10px] text-gray-500">Janela × rollout × porte</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Validação longitudinal</p>
+            <p className="text-[10px] text-[var(--v2-ink-faint)]">Janela × rollout × porte</p>
           </div>
           {longitudinalCalibrationInsights.length === 0 ? (
-            <p className="text-xs text-gray-500">Sem histórico suficiente para comparação longitudinal.</p>
+            <p className="text-xs text-[var(--v2-ink-soft)]">Sem histórico suficiente para comparação longitudinal.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-[11px]">
-                <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+                <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
                   <tr>
                     <th className="px-2 py-1.5 text-left">Janela</th>
                     <th className="px-2 py-1.5 text-left">Rollout</th>
@@ -1185,20 +1207,20 @@ export default function PlatformAdminPanel() {
                     <th className="px-2 py-1.5 text-left">Saúde</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-[var(--v2-line-soft)]">
                   {longitudinalCalibrationInsights.map(item => (
-                    <tr key={`${item.recommendationWindowDays}-${item.rolloutMode}-${item.scaleProfile}`}>
-                      <td className="px-2 py-1.5 text-gray-700">{item.recommendationWindowDays}d</td>
-                      <td className="px-2 py-1.5 text-gray-700">{item.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'}</td>
-                      <td className="px-2 py-1.5 text-gray-700">{item.scaleProfile}</td>
-                      <td className="px-2 py-1.5 text-right text-gray-700">{item.count}</td>
-                      <td className="px-2 py-1.5 text-right text-gray-700">{fmtSignedNumber(item.avgDeltaCritical)}</td>
-                      <td className="px-2 py-1.5 text-right text-gray-700">{fmtSignedNumber(item.avgDeltaWarning)}</td>
-                      <td className="px-2 py-1.5 text-right text-gray-700">{fmtPercent(item.manualRate)}</td>
+                    <tr key={`${item.recommendationWindowDays}-${item.rolloutMode}-${item.scaleProfile}`} className="hover:bg-[rgba(255,255,255,0.66)]">
+                      <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{item.recommendationWindowDays}d</td>
+                      <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{item.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'}</td>
+                      <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{item.scaleProfile}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{item.count}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtSignedNumber(item.avgDeltaCritical)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtSignedNumber(item.avgDeltaWarning)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(item.manualRate)}</td>
                       <td className={`px-2 py-1.5 text-right font-medium ${
                         item.effectivenessScore >= 70 ? 'text-emerald-700' : item.effectivenessScore >= 40 ? 'text-amber-700' : 'text-red-700'
                       }`}>{item.effectivenessScore}</td>
-                      <td className="px-2 py-1.5 text-gray-700">{item.healthLabel}</td>
+                      <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{item.healthLabel}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1234,7 +1256,7 @@ export default function PlatformAdminPanel() {
                     }))
                     toast.success(`Política atualizada para ${bestPolicyRecommendation.label}`)
                   }}
-                  className="shrink-0 px-2 py-1 rounded-md border border-current/25 bg-white/70 text-[10px] font-semibold hover:bg-white"
+                  className="shrink-0 rounded-md border border-current/25 bg-[rgba(255,255,255,0.82)] px-2 py-1 text-[10px] font-semibold hover:bg-white"
                 >
                   Adotar política
                 </button>
@@ -1244,34 +1266,34 @@ export default function PlatformAdminPanel() {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
-          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Ações manuais</p>
-            <p className="text-sm font-semibold text-gray-800">{fmtInt(calibrationHistoryMetrics.manualSaves)}</p>
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Ações manuais</p>
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(calibrationHistoryMetrics.manualSaves)}</p>
           </div>
-          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Aplicações assistidas</p>
-            <p className="text-sm font-semibold text-gray-800">{fmtInt(calibrationHistoryMetrics.assistedApplies)}</p>
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Aplicações assistidas</p>
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(calibrationHistoryMetrics.assistedApplies)}</p>
           </div>
-          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Delta médio crítico</p>
-            <p className="text-sm font-semibold text-gray-800">{fmtSignedNumber(calibrationHistoryMetrics.avgDeltaCritical)}</p>
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Delta médio crítico</p>
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtSignedNumber(calibrationHistoryMetrics.avgDeltaCritical)}</p>
           </div>
-          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Delta médio atenção</p>
-            <p className="text-sm font-semibold text-gray-800">{fmtSignedNumber(calibrationHistoryMetrics.avgDeltaWarning)}</p>
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Delta médio atenção</p>
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtSignedNumber(calibrationHistoryMetrics.avgDeltaWarning)}</p>
           </div>
-          <div className="rounded-lg border border-gray-200 px-2.5 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">Delta médio info</p>
-            <p className="text-sm font-semibold text-gray-800">{fmtSignedNumber(calibrationHistoryMetrics.avgDeltaInfo)}</p>
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Delta médio info</p>
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtSignedNumber(calibrationHistoryMetrics.avgDeltaInfo)}</p>
           </div>
         </div>
 
         {recommendationHistory.length === 0 ? (
-          <p className="text-xs text-gray-500">Nenhuma calibração registrada ainda.</p>
+          <p className="text-xs text-[var(--v2-ink-soft)]">Nenhuma calibração registrada ainda.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-xs">
-              <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+              <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
                 <tr>
                   <th className="px-2 py-2 text-left">Quando</th>
                   <th className="px-2 py-2 text-left">Ação</th>
@@ -1283,17 +1305,17 @@ export default function PlatformAdminPanel() {
                   <th className="px-2 py-2 text-right">Info</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[var(--v2-line-soft)]">
                 {recommendationHistory.slice(0, 12).map(entry => (
-                  <tr key={entry.id} className="hover:bg-gray-50">
-                    <td className="px-2 py-2 text-gray-700">{formatAuditTimestamp(entry.createdAt)}</td>
-                    <td className="px-2 py-2 text-gray-700">{entry.action === 'recommendation_applied' ? 'Aplicou recomendado' : 'Salvou configuração'}</td>
-                    <td className="px-2 py-2 text-gray-700">{entry.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'}</td>
-                    <td className="px-2 py-2 text-gray-700">{entry.recommendationWindowDays}d</td>
-                    <td className="px-2 py-2 text-gray-700">{entry.scaleProfile}</td>
-                    <td className="px-2 py-2 text-right text-gray-700">{fmtImpactDelta(entry.impactCurrent?.critical, entry.impactProjected?.critical)}</td>
-                    <td className="px-2 py-2 text-right text-gray-700">{fmtImpactDelta(entry.impactCurrent?.warning, entry.impactProjected?.warning)}</td>
-                    <td className="px-2 py-2 text-right text-gray-700">{fmtImpactDelta(entry.impactCurrent?.info, entry.impactProjected?.info)}</td>
+                  <tr key={entry.id} className="hover:bg-[rgba(255,255,255,0.66)]">
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{formatAuditTimestamp(entry.createdAt)}</td>
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{entry.action === 'recommendation_applied' ? 'Aplicou recomendado' : 'Salvou configuração'}</td>
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{entry.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'}</td>
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{entry.recommendationWindowDays}d</td>
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{entry.scaleProfile}</td>
+                    <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtImpactDelta(entry.impactCurrent?.critical, entry.impactProjected?.critical)}</td>
+                    <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtImpactDelta(entry.impactCurrent?.warning, entry.impactProjected?.warning)}</td>
+                    <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtImpactDelta(entry.impactCurrent?.info, entry.impactProjected?.info)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1302,11 +1324,11 @@ export default function PlatformAdminPanel() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border p-5 space-y-3">
+      <div className="v2-panel p-5 space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Backfill da Memória Dedicada</h2>
-            <p className="text-xs text-gray-500 mt-1">
+            <h2 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Backfill da Memória Dedicada</h2>
+            <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
               Executa diagnóstico ou migração em lote de cadernos legados para `memory/search_memory`.
             </p>
           </div>
@@ -1314,7 +1336,7 @@ export default function PlatformAdminPanel() {
             <button
               onClick={() => { void runSearchMemoryBackfill(true) }}
               disabled={backfillLoading}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={EXECUTIVE_PANEL_BUTTON}
             >
               Diagnóstico
             </button>
@@ -1330,21 +1352,21 @@ export default function PlatformAdminPanel() {
 
         {backfillReport && (
           <div className="grid grid-cols-2 lg:grid-cols-8 gap-2">
-            <div className="rounded-lg border border-gray-200 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-wide text-gray-500">Modo</p>
-              <p className="text-sm font-semibold text-gray-800">{backfillReport.dry_run ? 'Dry-run' : 'Write'}</p>
+            <div className={EXECUTIVE_INSET_CARD}>
+              <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Modo</p>
+              <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{backfillReport.dry_run ? 'Dry-run' : 'Write'}</p>
             </div>
-            <div className="rounded-lg border border-gray-200 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-wide text-gray-500">Chunks</p>
-              <p className="text-sm font-semibold text-gray-800">{fmtInt(backfillReport.chunks_processed)}</p>
+            <div className={EXECUTIVE_INSET_CARD}>
+              <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Chunks</p>
+              <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(backfillReport.chunks_processed)}</p>
             </div>
-            <div className="rounded-lg border border-gray-200 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-wide text-gray-500">Tam. chunk</p>
-              <p className="text-sm font-semibold text-gray-800">{fmtInt(backfillReport.chunk_size)}</p>
+            <div className={EXECUTIVE_INSET_CARD}>
+              <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Tam. chunk</p>
+              <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(backfillReport.chunk_size)}</p>
             </div>
-            <div className="rounded-lg border border-gray-200 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-wide text-gray-500">Escaneados</p>
-              <p className="text-sm font-semibold text-gray-800">{fmtInt(backfillReport.scanned)}</p>
+            <div className={EXECUTIVE_INSET_CARD}>
+              <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Escaneados</p>
+              <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(backfillReport.scanned)}</p>
             </div>
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2">
               <p className="text-[10px] uppercase tracking-wide text-emerald-700">Migrados</p>
@@ -1370,22 +1392,22 @@ export default function PlatformAdminPanel() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border p-5">
+      <div className="v2-panel p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-50">
               <Settings2 className="w-5 h-5 text-indigo-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Catálogo de Modelos do Usuário</h2>
-              <p className="text-sm text-gray-500">
+              <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">Catálogo de Modelos do Usuário</h2>
+              <p className="text-sm text-[var(--v2-ink-soft)]">
                 Cada usuário mantém seu próprio catálogo persistido no Firestore. Para editar o seu catálogo e definir os modelos disponíveis nos seus seletores, use o atalho abaixo.
               </p>
             </div>
           </div>
           <Link
             to={buildWorkspaceSettingsPath({ preserveSearch: location.search, hash: 'section_model_catalog' })}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+            className="v2-btn-primary"
           >
             <Brain className="w-4 h-4" />
             Abrir meu catálogo
@@ -1402,10 +1424,10 @@ export default function PlatformAdminPanel() {
         <StatCard icon={Brain} label="Cadernos / artefatos" value={`${fmtInt(overview.total_notebooks)} / ${fmtInt(overview.total_artifacts)}`} />
       </div>
 
-      <div className="bg-white rounded-xl border p-5">
+      <div className="v2-panel p-5">
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Atividade dos últimos 30 dias</h2>
-          <p className="text-sm text-gray-500">Criação de conteúdo e uso da plataforma ao longo do tempo.</p>
+          <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">Atividade dos últimos 30 dias</h2>
+          <p className="text-sm text-[var(--v2-ink-soft)]">Criação de conteúdo e uso da plataforma ao longo do tempo.</p>
         </div>
         <ResponsiveContainer width="100%" height={320}>
           <BarChart data={daily}>
@@ -1422,8 +1444,8 @@ export default function PlatformAdminPanel() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border p-5">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Uso por função</h2>
+        <div className="v2-panel p-5">
+          <h2 className="mb-4 text-lg font-semibold text-[var(--v2-ink-strong)]">Uso por função</h2>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={functionChart} layout="vertical" margin={{ left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -1435,8 +1457,8 @@ export default function PlatformAdminPanel() {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-white rounded-xl border p-5">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Status dos documentos</h2>
+        <div className="v2-panel p-5">
+          <h2 className="mb-4 text-lg font-semibold text-[var(--v2-ink-strong)]">Status dos documentos</h2>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie data={documentStatusChart} dataKey="count" nameKey="label" innerRadius={70} outerRadius={105} paddingAngle={3}>
@@ -1456,8 +1478,8 @@ export default function PlatformAdminPanel() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border p-5">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Origens dos documentos</h2>
+        <div className="v2-panel p-5">
+          <h2 className="mb-4 text-lg font-semibold text-[var(--v2-ink-strong)]">Origens dos documentos</h2>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={overview.documents_by_origin}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -1469,8 +1491,8 @@ export default function PlatformAdminPanel() {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-white rounded-xl border p-5">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Artefatos do estúdio</h2>
+        <div className="v2-panel p-5">
+          <h2 className="mb-4 text-lg font-semibold text-[var(--v2-ink-strong)]">Artefatos do estúdio</h2>
           <ResponsiveContainer width="100%" height={280}>
             <PieChart>
               <Pie data={artifactChart} dataKey="count" nameKey="label" innerRadius={65} outerRadius={100} paddingAngle={3}>

@@ -63,7 +63,7 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
     },
     {
       label: 'Governanca',
-      caption: 'Custos ja promovidos no rail V2; configuracoes e administracao seguem em consolidacao.',
+      caption: 'Custos, configuracoes principais e a administracao executiva ja rodam no rail V2; cards especializados ainda usam contingencia localizada.',
       items: [
         { label: 'Configuracoes', to: '/settings', activePatterns: ['/settings'] },
         { label: 'Uso e custos', to: '/settings/costs', activePatterns: ['/settings/costs'] },
@@ -103,7 +103,7 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
               <p className="text-sm leading-6 text-[var(--v2-ink-soft)]">
                 Segunda experiencia controlada para o redesign profundo do produto,
                 com shell desktop-first e governanca separada da operacao atual,
-                agora tambem cobrindo documentos, teses, perfil e a trilha de custos sob o mesmo gate.
+                agora tambem cobrindo documentos, teses, perfil, custos e a governanca operacional no mesmo rail, com contingencia classica localizada apenas nos blocos especializados ainda em migracao.
               </p>
             </div>
 
@@ -140,7 +140,8 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
               </div>
               <div className="rounded-[1.4rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] px-4 py-4 text-sm leading-6 text-[var(--v2-ink-soft)]">
                 O shell novo ja sustenta dashboard, workbench principal, documentos,
-                teses, perfil e custos com leitura nativa em V2, preservando um trilho classico explicito para contingencia nas areas ainda em migracao.
+                teses, perfil, custos e a governanca executiva com leitura nativa em V2,
+                preservando contingencia classica apenas onde ainda existem cards especializados legados.
               </div>
             </div>
           </div>
@@ -188,16 +189,16 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
                 <ul className="mt-4 space-y-3 text-sm leading-6 text-[var(--v2-ink-soft)]">
                   <li>1. Shell desktop-first com trilha de navegação persistente.</li>
                   <li>2. Superficie piloto conectada ao dado real do usuario.</li>
-                  <li>3. Documentos, teses e custos ja entram no mesmo rail promovido.</li>
+                  <li>3. Governanca, custos e superficies centrais ja entram no mesmo rail promovido.</li>
                 </ul>
               </div>
 
               <div className="v2-panel p-5">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--v2-ink-faint)]">Proxima entrega</p>
                 <div className="mt-4 space-y-3 text-sm leading-6 text-[var(--v2-ink-soft)]">
-                    <p>O proximo corte natural e substituir os remanescentes de configuracoes e administracao por blocos V2 realmente nativos.</p>
+                    <p>O proximo corte natural e substituir os cards especializados remanescentes de configuracoes por blocos V2 realmente nativos.</p>
                   <p className="rounded-[1.1rem] bg-[rgba(13,148,136,0.08)] px-3 py-3 text-[var(--v2-ink-strong)]">
-                      O objetivo agora e consolidar o rail promovido do workspace e reduzir o shell legado a contingencia controlada nas frentes que ainda nao migraram por completo.
+                      O objetivo agora e reduzir a bridge restante a casos pontuais ate eliminar a dependencia do trilho legado nas configuracoes avancadas.
                   </p>
                 </div>
               </div>
