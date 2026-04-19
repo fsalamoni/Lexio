@@ -248,20 +248,19 @@ export default function ProfileV2() {
           <div className="max-w-3xl space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--v2-line-strong)] bg-[rgba(255,255,255,0.74)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--v2-ink-soft)]">
               <Sparkles className="h-3.5 w-3.5" />
-              Piloto de perfil conectado ao dado real
+              Perfil profissional
             </div>
             <div className="space-y-3">
-              <h1 className="v2-display text-4xl leading-tight text-[var(--v2-ink-strong)]">Seu contexto juridico como centro do novo workspace</h1>
+              <h1 className="v2-display text-4xl leading-tight text-[var(--v2-ink-strong)]">Seu contexto juridico</h1>
               <p className="max-w-2xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
-                Esta primeira superficie valida a nova linguagem visual, a estrutura de informacao
-                em camadas e um painel de contexto persistente antes da migracao da superficie flagship.
+                Gerencie suas preferencias de redacao, areas de atuacao e estilo de argumentacao. Estas informacoes orientam a geracao de documentos pela IA.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <Link to={buildWorkspaceProfileClassicPath({ preserveSearch: location.search })} className="v2-btn-secondary">
-              Comparar com a versao atual
+              Versao simplificada
             </Link>
             <button type="button" onClick={handleSave} disabled={saving} className="v2-btn-primary disabled:cursor-not-allowed disabled:opacity-60">
               <Save className="h-4 w-4" />

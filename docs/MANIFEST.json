@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-19",
-    "cycle": "v2-specialized-config-native",
+    "cycle": "v2-wave19-skins-cleanup",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -742,6 +742,37 @@
         "frontend/src/components/v2/V2WorkspaceLayout.tsx"
       ],
       "notes": "Uma base compartilhada `AgentModelConfigCard` passou a sustentar os cards especializados de configuracao de agentes em V2 nativo, eliminando duplicacao de load/save/reset, badges, pipelines e modais. `ModelCatalogCard` tambem foi retematizado para o sistema V2, `AdminPanel` removeu o ultimo wrapper `v2-bridge-surface` e o shell passou a comunicar que configuracoes, catalogo e governanca ja operam integralmente no rail promovido."
+    },
+    {
+      "id": "E8.F26",
+      "epic": "Redesign V2",
+      "name": "Seletor de skins/temas da plataforma",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/platform-skins.ts",
+        "frontend/src/lib/platform-skins.test.ts",
+        "frontend/src/lib/firestore-types.ts",
+        "frontend/src/components/ThemeSkinSelector.tsx",
+        "frontend/src/pages/AdminPanel.tsx",
+        "frontend/src/App.tsx"
+      ],
+      "notes": "6 temas visuais (Pergaminho, Ardosia, Oceano, Floresta, Rose, Meia-noite) com override de CSS custom properties V2. Seletor visual integrado em Configuracoes, persistencia em Firestore e localStorage, aplicacao global via hook em AuthenticatedShell."
+    },
+    {
+      "id": "E8.F27",
+      "epic": "Redesign V2",
+      "name": "Limpeza de textos dev e estreitamento do trilho classico",
+      "state": "implemented",
+      "files": [
+        "frontend/src/components/v2/V2WorkspaceLayout.tsx",
+        "frontend/src/pages/Dashboard.tsx",
+        "frontend/src/pages/Profile.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/pages/labs/ProfileV2.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/lib/redesign-shell.ts"
+      ],
+      "notes": "Todos os textos de desenvolvimento, narrativas de redesign e guias internos removidos de superficies V2. Banners de preview V2 removidos das paginas classicas. Rota raiz adicionada ao V2 shell. Trilho classico restrito a contingencia estrutural."
     }
   ],
   "regressionRisk": {
@@ -846,7 +877,8 @@
       "frontend/src/lib/research-notebook-routes.test.ts",
       "frontend/src/lib/research-notebook-v2.test.ts",
       "frontend/src/lib/workspace-routes.test.ts",
-      "frontend/src/pages/labs/ResearchNotebookV2.test.tsx"
+      "frontend/src/pages/labs/ResearchNotebookV2.test.tsx",
+      "frontend/src/lib/platform-skins.test.ts"
     ],
     "missing": [
       "frontend/src/components/v2/V2WorkspaceLayout.tsx",

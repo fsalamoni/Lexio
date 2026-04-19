@@ -5,7 +5,15 @@
 
 ---
 
-## Status Geral: Etapas 1-194 IMPLEMENTADAS
+## Status Geral: Etapas 1-199 IMPLEMENTADAS
+
+### Etapas 195-199 — Limpeza de Textos, Seletor de Skins e Consolidacao da Onda 19 ✅
+- **Arquivos**: `frontend/src/components/v2/V2WorkspaceLayout.tsx`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/Profile.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ProfileV2.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.test.tsx`, `frontend/src/pages/AdminPanel.tsx`, `frontend/src/App.tsx`, `frontend/src/lib/redesign-shell.ts`, `frontend/src/lib/platform-skins.ts`, `frontend/src/lib/platform-skins.test.ts`, `frontend/src/lib/firestore-types.ts`, `frontend/src/components/ThemeSkinSelector.tsx`
+- Etapa 195: `V2WorkspaceLayout.tsx` reescrito — todos os textos dev/guia removidos, branding limpo "Lexio / Workspace", nav sem captions, header bar e right sidebar panels removidos, item "Trilho classico" eliminado do nav
+- Etapa 196: Banners de preview V2 removidos de `Dashboard.tsx`, `Profile.tsx` e `ResearchNotebook.tsx`; imports e variaveis nao utilizados limpos em cascata; textos dev removidos de `ProfileV2.tsx` e `ResearchNotebookV2.tsx` (5+ secoes)
+- Etapa 197: Sistema de skins/temas criado — `platform-skins.ts` com 6 temas (Pergaminho, Ardosia, Oceano, Floresta, Rose, Meia-noite), `ThemeSkinSelector.tsx` com UI visual de selecao e hook `useApplyPlatformSkin`, campo `platform_skin` adicionado a `UserSettingsData`, secao "Aparencia" integrada em `AdminPanel.tsx`, hook ativado em `App.tsx` via `AuthenticatedShell`
+- Etapa 198: Trilho classico estreitado — rota `/` adicionada ao V2 shell em `redesign-shell.ts`, item "Trilho classico" removido do nav V2, rotas classicas mantidas apenas como contingencia estrutural
+- Etapa 199: Testes consolidados — 9 novos testes para `platform-skins.ts`, testes de `ResearchNotebookV2.test.tsx` atualizados para refletir textos limpos; validacao final com `npx tsc --noEmit` (0 erros), `npx vitest run` (**36/36 arquivos**, **275/275 testes**) e `npm run build` em `frontend/`, com `AdminPanel` em **84.13 kB** (**gzip 21.44 kB**)
 
 ### Etapas 191-194 — Configuracoes Especializadas e Catalogo Nativos no Rail V2 ✅
 - **Arquivos**: `frontend/src/components/AgentModelConfigCard.tsx`, `frontend/src/components/ModelCatalogCard.tsx`, `frontend/src/components/ModelConfigCard.tsx`, `frontend/src/components/ThesisAnalystConfigCard.tsx`, `frontend/src/components/ContextDetailConfigCard.tsx`, `frontend/src/components/AcervoClassificadorConfigCard.tsx`, `frontend/src/components/AcervoEmentaConfigCard.tsx`, `frontend/src/components/NotebookAcervoConfigCard.tsx`, `frontend/src/components/ResearchNotebookConfigCard.tsx`, `frontend/src/components/VideoPipelineConfigCard.tsx`, `frontend/src/components/AudioPipelineConfigCard.tsx`, `frontend/src/components/PresentationPipelineConfigCard.tsx`, `frontend/src/pages/AdminPanel.tsx`, `frontend/src/components/v2/V2WorkspaceLayout.tsx`

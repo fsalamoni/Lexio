@@ -236,7 +236,7 @@ describe('ResearchNotebookV2 page', () => {
 
     expect(await screen.findByRole('heading', { name: 'Nepotismo administrativo' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /contingência clássica/i })).toBeTruthy()
-    expect(screen.getByRole('link', { name: /abrir contingência clássica/i })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /modo classico/i })).toBeTruthy()
     expect(screen.queryByRole('link', { name: /abrir notebook clássico/i })).toBeNull()
   })
 
@@ -265,7 +265,7 @@ describe('ResearchNotebookV2 page', () => {
     const contingencyChip = await screen.findByRole('button', { name: /contingência clássica/i })
     fireEvent.click(contingencyChip)
 
-    expect(await screen.findByText('Comparação e contingência clássica')).toBeTruthy()
-    expect(screen.getByText('Estúdio clássico de contingência')).toBeTruthy()
+    expect(await screen.findByText('Notebook classico')).toBeTruthy()
+    expect(screen.getByText('Estudio classico')).toBeTruthy()
   })
 })

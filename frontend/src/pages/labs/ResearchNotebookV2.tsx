@@ -4040,9 +4040,9 @@ Instruções:
               <Sparkles className="h-3.5 w-3.5" />
               Notebook V2
             </div>
-            <h1 className="v2-display text-4xl text-[var(--v2-ink-strong)]">O workbench do caderno precisa do Firebase ativo.</h1>
+            <h1 className="v2-display text-4xl text-[var(--v2-ink-strong)]">Caderno de pesquisa requer Firebase ativo</h1>
             <p className="max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
-              Esta superfície reaproveita cadernos, fontes, histórico e artefatos reais do usuário. Ative o Firebase e volte para validar o redesign sobre dados verdadeiros.
+              O caderno de pesquisa utiliza dados reais do usuario armazenados no Firebase. Ative o Firebase nas configuracoes para comecar.
             </p>
             <div className="flex flex-wrap gap-3 pt-2">
               <Link to={buildWorkspaceSettingsPath({ preserveSearch: location.search })} className="v2-btn-primary">Abrir configurações</Link>
@@ -4061,13 +4061,13 @@ Instruções:
           <div className="space-y-5">
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--v2-line-strong)] bg-[rgba(255,255,255,0.82)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--v2-ink-soft)]">
               <Sparkles className="h-3.5 w-3.5" />
-              Research Workbench V2
+              Research Workbench
             </div>
 
             <div className="space-y-3">
-              <h1 className="v2-display text-4xl leading-tight text-[var(--v2-ink-strong)]">O caderno entra no redesign como superfície flagship.</h1>
+              <h1 className="v2-display text-4xl leading-tight text-[var(--v2-ink-strong)]">Caderno de pesquisa</h1>
               <p className="max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
-                Este corte reorganiza a operação do notebook em lista persistente, deck executivo, chat contextual, pesquisa auditável, governança de buscas/fontes, análise inteligente de acervo, geração do estúdio, viewer avançado, revisão de custo, timeline persistida e produção literal no próprio shell, mantendo a superfície clássica apenas como trilha opcional de contingência e comparação.
+                Organize pesquisas, converse com a IA, gerencie fontes, crie artefatos e analise seu acervo a partir de um unico painel integrado.
               </p>
             </div>
 
@@ -4078,14 +4078,14 @@ Instruções:
               </button>
               {activeNotebook?.id && (
                 <Link to={workbenchBridgePath} className="v2-btn-secondary">
-                  Abrir contingência clássica
+                  Modo classico
                 </Link>
               )}
             </div>
           </div>
 
           <div className="rounded-[1.75rem] border border-[var(--v2-line-strong)] bg-[rgba(255,255,255,0.74)] p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Estado da superfície</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Resumo</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Cadernos ativos</p>
@@ -5709,21 +5709,20 @@ Instruções:
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">áudio, vídeo e pacotes</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
-                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Dependência legada</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Modo classico</p>
                           <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{legacyOnlyArtifactCount}</p>
-                          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">item(ns) ainda dependentes do legado</p>
+                          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">item(ns) no formato anterior</p>
                         </div>
                       </div>
                     </section>
 
                     <section className="v2-panel p-5">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">O que ainda fica fora</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Atalhos rapidos</p>
                       <div className="mt-4 space-y-3 text-sm leading-6 text-[var(--v2-ink-soft)]">
-                        <p>O inventário, o viewer, a revisão de custo do vídeo, os pacotes persistidos, o editor de timeline e a produção literal já rodam no V2 com TaskManager e persistência local do notebook.</p>
-                        <p>O legado fica disponível apenas como trilha comparativa e contingência manual, não mais como dependência operacional dos fluxos principais de mídia no workbench novo.</p>
+                        <p>Acesse o estudio de criacao ou o modo classico diretamente a partir dos atalhos abaixo.</p>
                         <div className="flex flex-wrap gap-2 pt-1">
-                          <Link to={workbenchStudioPath} className="v2-btn-secondary">Abrir estúdio V2</Link>
-                          <Link to={workbenchBridgePath} className="v2-btn-secondary">Mapa de contingência</Link>
+                          <Link to={workbenchStudioPath} className="v2-btn-secondary">Abrir estudio</Link>
+                          <Link to={workbenchBridgePath} className="v2-btn-secondary">Modo classico</Link>
                         </div>
                       </div>
                     </section>
@@ -5736,21 +5735,21 @@ Instruções:
                   <section className="v2-panel p-6">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Contingência operacional</p>
-                        <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Comparação e contingência clássica</h3>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Modo classico</p>
+                        <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Notebook classico</h3>
                         <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)]">
-                          O redesign já assume seleção persistente, deck executivo, chat contextual, pesquisas auditáveis, governança principal de buscas salvas, análise inteligente de acervo, viewer avançado de fontes, briefing do estúdio, geração base de artefatos, inventário persistido, revisão de custo de vídeo, editor de timeline e produção literal. O fluxo legado continua disponível para comparação, validação cruzada e contingência manual, sem carregar a regra de negócio principal.
+                          Acesse a versao classica do caderno de pesquisa para consultar fluxos anteriores ou como alternativa de contingencia.
                         </p>
                       </div>
-                      <Link to={buildResearchNotebookClassicPath({ notebookId: activeNotebook.id, preserveSearch: location.search })} className="v2-btn-primary">Abrir notebook clássico completo</Link>
+                      <Link to={buildResearchNotebookClassicPath({ notebookId: activeNotebook.id, preserveSearch: location.search })} className="v2-btn-primary">Abrir notebook classico</Link>
                     </div>
                   </section>
 
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {[
-                      { label: 'Chat clássico de contingência', description: 'Acesse a versão legada do chat apenas se precisar comparar comportamento ou validar algum detalhe fora do shell novo.', tab: 'chat' as const, icon: MessageSquareText },
-                      { label: 'Estúdio clássico de contingência', description: 'Use o notebook clássico para comparação funcional, validação cruzada ou contingência manual.', tab: 'studio' as const, icon: Sparkles },
-                      { label: 'Artefatos clássicos de contingência', description: 'Mantenha a versão legada por perto para verificar regressões ou abrir fluxos históricos já persistidos.', tab: 'artifacts' as const, icon: FileText },
+                      { label: 'Chat classico', description: 'Acesse o chat do notebook classico para consultar conversas anteriores.', tab: 'chat' as const, icon: MessageSquareText },
+                      { label: 'Estudio classico', description: 'Use o estudio classico para acessar fluxos de criacao anteriores.', tab: 'studio' as const, icon: Sparkles },
+                      { label: 'Artefatos classicos', description: 'Consulte artefatos gerados anteriormente no formato classico.', tab: 'artifacts' as const, icon: FileText },
                     ].map((item) => (
                       <Link key={item.tab} to={buildResearchNotebookClassicPath({ notebookId: activeNotebook.id, tab: item.tab, preserveSearch: location.search })} className="v2-panel flex h-full flex-col gap-4 px-5 py-5 hover:-translate-y-0.5">
                         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(15,118,110,0.12)] text-[var(--v2-accent-strong)]">

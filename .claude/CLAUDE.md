@@ -218,6 +218,7 @@ docs/              → Documentação técnica
 | `quality-evaluator.ts` | Scoring de qualidade de documentos (0-100) |
 | `cost-analytics.ts` | Tracking de uso, custos, métricas |
 | `time-format.ts` | Formatação de data/hora |
+| `platform-skins.ts` | Definições de skins/temas visuais (6 temas) e aplicação de CSS custom properties |
 
 ### Testes
 | Arquivo | Descrição |
@@ -266,6 +267,7 @@ docs/              → Documentação técnica
 | 30 | `Toast` | Notificação toast |
 | 31 | `VideoGenerationCostModal` | Modal de custo de geração de vídeo |
 | 32 | `VideoPipelineConfigCard` | Config do pipeline de vídeo (11 agentes) |
+| 33 | `ThemeSkinSelector` | Seletor visual de skins/temas da plataforma |
 
 ### Componentes de artefato (15 — subdir `artifacts/`)
 

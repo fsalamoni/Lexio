@@ -48,6 +48,8 @@ export interface UserSettingsData {
   presentation_pipeline_models?: Record<string, string>
   document_types?: AdminDocumentType[]
   legal_areas?: AdminLegalArea[]
+  /** Active platform skin/theme ID */
+  platform_skin?: string
   classification_tipos?: Record<string, Record<string, string[]>>
   platform_admin_alert_thresholds?: PlatformAdminAlertThresholds
   platform_admin_alert_profile?: PlatformAdminAlertProfile

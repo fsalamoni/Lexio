@@ -1,18 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Link, useLocation } from 'react-router-dom'
-import { User, Save, ChevronDown, ChevronUp, Lock, Sparkles } from 'lucide-react'
+import { User, Save, ChevronDown, ChevronUp, Lock } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { IS_FIREBASE, firebaseAuth } from '../lib/firebase'
 import { getProfile, saveProfile } from '../lib/firestore-service'
-import { isRedesignV2Enabled } from '../lib/feature-flags'
 import { PROFILE_SECTIONS, type ProfileData } from '../lib/profile-preferences'
-import { buildWorkspaceProfilePath } from '../lib/workspace-routes'
 
 export default function Profile() {
-  const location = useLocation()
   const [profile, setProfile] = useState<ProfileData>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -237,30 +233,7 @@ export default function Profile() {
         </div>
       </div>
 
-      {isRedesignV2Enabled() && (
-        <div className="mb-4 rounded-2xl border border-brand-100 bg-gradient-to-r from-brand-50 via-white to-brand-50/60 p-4 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white">
-                <Sparkles className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Workspace V2 em preview</p>
-                <p className="mt-1 text-sm text-gray-600">
-                  A primeira rota do redesign profundo ja esta ativa com novo shell e nova linguagem visual.
-                </p>
-              </div>
-            </div>
 
-            <Link
-              to={buildWorkspaceProfilePath({ preserveSearch: location.search })}
-              className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
-            >
-              Abrir perfil promovido
-            </Link>
-          </div>
-        </div>
-      )}
 
       {/* Account info bar */}
       {IS_FIREBASE && firebaseAuth?.currentUser && (

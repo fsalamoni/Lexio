@@ -150,9 +150,7 @@ import {
   renderMarkdownToHtml,
 } from './notebook/utils'
 import type { SearchResultItem } from './notebook/types'
-import { isRedesignV2Enabled } from '../lib/feature-flags'
 import {
-  buildResearchNotebookWorkbenchPath,
   parseResearchNotebookLegacyTab,
 } from '../lib/research-notebook-routes'
 
@@ -4118,24 +4116,6 @@ Instruções:
     videoLiteralOperationalSummary,
   ])
 
-  const notebookV2Target = activeNotebook?.id
-    ? buildResearchNotebookWorkbenchPath({
-        notebookId: activeNotebook.id,
-        section: activeTab === 'sources'
-          ? 'sources'
-          : activeTab === 'chat'
-            ? 'chat'
-            : activeTab === 'studio'
-              ? 'studio'
-            : activeTab === 'artifacts'
-              ? 'artifacts'
-            : activeTab === 'overview'
-              ? 'overview'
-              : 'bridge',
-        preserveSearch: location.search,
-      })
-    : buildResearchNotebookWorkbenchPath({ preserveSearch: location.search })
-
   // ── Render: List View ───────────────────────────────────────────────
 
   if (viewMode === 'list') {
@@ -4175,30 +4155,7 @@ Instruções:
           </button>
         </div>
 
-        {isRedesignV2Enabled() && (
-          <div className="rounded-2xl border border-brand-100 bg-gradient-to-r from-brand-50 via-white to-violet-50/70 p-4 shadow-sm">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white">
-                  <Sparkles className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">Research Workbench V2 disponível</p>
-                  <p className="mt-1 text-sm text-gray-600">
-                    O redesign do notebook já tem lista persistente, deck executivo e governança de fontes conectados ao mesmo backend do caderno atual.
-                  </p>
-                </div>
-              </div>
 
-              <Link
-                to={buildResearchNotebookWorkbenchPath({ preserveSearch: location.search })}
-                className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
-              >
-                Abrir workbench principal
-              </Link>
-            </div>
-          </div>
-        )}
 
         {/* Search */}
         <div className="relative">
@@ -4420,15 +4377,6 @@ Instruções:
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {isRedesignV2Enabled() && (
-            <Link
-              to={notebookV2Target}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-100"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Notebook V2
-            </Link>
-          )}
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
           {([
             { key: 'overview' as DetailTab, icon: BookMarked, label: 'Visão Geral' },

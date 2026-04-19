@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   FileText, CheckCircle, Clock, DollarSign, TrendingUp,
-  Activity, ChevronRight, Download, Plus, Upload, BookOpen, Search, Sparkles,
+  Activity, ChevronRight, Download, Plus, Upload, BookOpen, Search,
 } from 'lucide-react'
 import {
   BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -22,12 +22,10 @@ import {
   getResumableDocument,
   useDashboardData,
 } from '../lib/dashboard-data'
-import { isRedesignV2Enabled } from '../lib/feature-flags'
 import {
   buildWorkspaceDocumentDetailPath,
   buildWorkspaceDocumentsPath,
   buildWorkspaceNewDocumentPath,
-  buildWorkspaceProfilePath,
   buildWorkspaceShellPath,
   buildWorkspaceThesesPath,
   buildWorkspaceUploadPath,
@@ -138,38 +136,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {isRedesignV2Enabled() && (
-        <div className="rounded-2xl border border-brand-100 bg-gradient-to-r from-brand-50 via-white to-violet-50/70 p-4 shadow-sm">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white">
-                <Sparkles className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Dashboard V2 disponivel em preview</p>
-                <p className="mt-1 text-sm text-gray-600">
-                  O novo hub operacional do redesign ja esta ativo e compartilha o mesmo backend do dashboard atual.
-                </p>
-              </div>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <Link
-                to={buildWorkspaceShellPath('/labs/dashboard-v2', { preserveSearch: location.search })}
-                className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
-              >
-                Abrir Dashboard V2
-              </Link>
-              <Link
-                to={buildWorkspaceProfilePath({ preserveSearch: location.search })}
-                className="inline-flex items-center justify-center rounded-xl border border-brand-200 bg-white px-4 py-2.5 text-sm font-semibold text-brand-700 transition-colors hover:bg-brand-50"
-              >
-                Abrir meu perfil
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Stat cards */}
       {stats && (

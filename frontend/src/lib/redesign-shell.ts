@@ -4,7 +4,8 @@ export function shouldUseRedesignWorkspaceShell(pathname: string, redesignV2Enab
   if (!redesignV2Enabled) return false
   if (pathname === '/notebook/classic' || pathname === '/profile/classic') return false
 
-  return pathname === '/notebook'
+  return pathname === '/'
+    || pathname === '/notebook'
     || pathname === '/profile'
     || pathname === '/theses'
     || pathname === '/upload'

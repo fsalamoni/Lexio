@@ -6,6 +6,7 @@ import { ToastProvider } from './components/Toast'
 import TaskBar from './components/TaskBar'
 import Layout from './components/Layout'
 import { isRedesignV2Enabled } from './lib/feature-flags'
+import { useApplyPlatformSkin } from './components/ThemeSkinSelector'
 import { buildResearchNotebookWorkbenchPath, parseResearchNotebookV2Section } from './lib/research-notebook-routes'
 import { shouldUseRedesignWorkspaceShell } from './lib/redesign-shell'
 import {
@@ -114,6 +115,7 @@ function AuthenticatedShell() {
   const redesignV2Enabled = isRedesignV2Enabled()
   const useV2Shell = shouldUseRedesignWorkspaceShell(location.pathname, redesignV2Enabled)
   const Shell = useV2Shell ? V2WorkspaceLayout : Layout
+  useApplyPlatformSkin()
 
   return (
     <Shell>

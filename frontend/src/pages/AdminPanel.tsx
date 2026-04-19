@@ -5,7 +5,7 @@ import {
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
   ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal, RefreshCw,
-  Plus, Pencil, Trash2, X, Scale, Tags, Video, Headphones, Presentation,
+  Plus, Pencil, Trash2, X, Scale, Tags, Video, Headphones, Presentation, Palette,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -36,6 +36,7 @@ import AudioPipelineConfigCard from '../components/AudioPipelineConfigCard'
 import PresentationPipelineConfigCard from '../components/PresentationPipelineConfigCard'
 import ModelCatalogCard from '../components/ModelCatalogCard'
 import ConfirmDialog from '../components/ConfirmDialog'
+import ThemeSkinSelector from '../components/ThemeSkinSelector'
 import { V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { buildWorkspaceDocumentDetailPath } from '../lib/workspace-routes'
 
@@ -764,9 +765,9 @@ export default function AdminPanel() {
   return (
     <div className="space-y-6">
       <V2PageHero
-        eyebrow={<><Key className="h-3.5 w-3.5" /> Configuracoes pessoais V2</>}
-        title="Modelos, chaves e governanca pessoal no mesmo plano de controle"
-        description="Centralize catalogo, pipelines, preferencias e fila de revisao em uma superficie unica, preparada para operar o workspace inteiro sem alternar entre layouts antigos." 
+        eyebrow={<><Key className="h-3.5 w-3.5" /> Configuracoes</>}
+        title="Modelos, chaves e governanca pessoal"
+        description="Centralize catalogo de modelos, pipelines de IA, chaves de API e preferencias em um unico painel de controle." 
         actions={(
           <>
             <button
@@ -889,6 +890,20 @@ export default function AdminPanel() {
             <Key className="w-3.5 h-3.5" /> Configuração Geral
           </h2>
         </div>
+      )}
+
+      {/* Platform Skin Selector */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_skin_selector"
+          title="Aparência"
+          icon={Palette}
+          iconColor="text-pink-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ThemeSkinSelector />
+        </AdminCollapsibleSection>
       )}
 
       {/* API Keys */}
