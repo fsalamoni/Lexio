@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-183 IMPLEMENTADAS
+## Status Geral: Etapas 1-186 IMPLEMENTADAS
+
+### Etapas 184-186 — Custos Nativos no Rail V2 + Ajuste de Narrativa do Shell ✅
+- **Arquivos**: `frontend/src/pages/CostTokensPage.tsx`, `frontend/src/pages/PlatformCostsPage.tsx`, `frontend/src/components/v2/V2WorkspaceLayout.tsx`
+- Etapa 184: `CostTokensPage.tsx` deixou de depender de `v2-bridge-surface`; os estados de loading, labels, inputs de orçamento, avisos vazios e textos residuais passaram a usar classes e controles V2 explícitos (`v2-panel`, `v2-summary-card`, `v2-field` e tokens `--v2-*`), reduzindo a ponte visual justamente na superfície operacional de custos do usuário
+- Etapa 185: `PlatformCostsPage.tsx` também saiu da bridge; os estados de preparação, loading, vazio e acesso administrativo foram reescritos com `V2EmptyState`, `Skeleton` encapsulado em painéis V2 e wrappers nativos, eliminando dependência residual de `text-gray-*` e da retematização scoped nessa visão executiva
+- Etapa 186: `V2WorkspaceLayout.tsx` teve a cópia atualizada para refletir o novo estado real do rail promovido, deixando de descrever toda a governança como clássica e passando a comunicar que a trilha de custos já está nativa em V2 enquanto configurações e administração seguem em consolidação controlada; a rodada foi validada com `npm run typecheck`, `npm run test` (**35/35 arquivos**, **266/266 testes**) e `npm run build` em `frontend/`
+- Observacao operacional: os chunks de producao ficaram em **25.62 kB** (**gzip 6.48 kB**) para `CostTokensPage`, **8.29 kB** (**gzip 2.52 kB**) para `PlatformCostsPage` e **8.10 kB** (**gzip 2.55 kB**) para `V2WorkspaceLayout`, preservando code splitting enquanto o pacote de custos saiu da bridge visual
 
 ### Etapas 181-183 — Hotfix do Deploy Estavel + Secret Manager DataJud ✅
 - **Arquivos**: `.github/workflows/firebase-deploy.yml`, `README.md`, `SETUP.md`, `SECURITY.md`

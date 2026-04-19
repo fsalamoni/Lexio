@@ -109,44 +109,62 @@ export default function PlatformCostsPage() {
 
   if (!isReady) {
     return (
-      <div className="space-y-6 v2-bridge-surface">
-        <Skeleton className="h-10 w-80" />
-        <Skeleton className="h-32 rounded-xl" />
+      <div className="space-y-6">
+        <div className="v2-panel p-6">
+          <Skeleton className="h-10 w-80" />
+        </div>
+        <div className="v2-panel p-6">
+          <Skeleton className="h-32 rounded-xl" />
+        </div>
       </div>
     )
   }
 
   if (role !== 'admin') {
-    return <div className="text-sm text-gray-500">Acesso administrativo necessário.</div>
+    return (
+      <V2EmptyState
+        icon={Scale}
+        title="Acesso administrativo necessário"
+        description="Esta leitura executiva consolida custos agregados da plataforma inteira e permanece restrita ao perfil administrativo."
+      />
+    )
   }
 
   if (loading) {
     return (
-      <div className="space-y-6 v2-bridge-surface">
-        <Skeleton className="h-10 w-80" />
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-          {Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}
+      <div className="space-y-6">
+        <div className="v2-panel p-6">
+          <Skeleton className="h-10 w-80" />
         </div>
-        <Skeleton className="h-80 rounded-xl" />
-        <Skeleton className="h-96 rounded-xl" />
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="v2-summary-card bg-[rgba(255,255,255,0.82)]">
+              <Skeleton className="h-24 rounded-xl" />
+            </div>
+          ))}
+        </div>
+        <div className="v2-panel p-6">
+          <Skeleton className="h-80 rounded-xl" />
+        </div>
+        <div className="v2-panel p-6">
+          <Skeleton className="h-96 rounded-xl" />
+        </div>
       </div>
     )
   }
 
   if (!breakdown) {
     return (
-      <div className="v2-bridge-surface">
-        <V2EmptyState
-          icon={Wallet}
-          title="Nenhum custo agregado disponivel"
-          description="Assim que a plataforma acumular execucoes, esta superficie passa a consolidar custos, tokens, provedores e agentes em tempo real."
-        />
-      </div>
+      <V2EmptyState
+        icon={Wallet}
+        title="Nenhum custo agregado disponivel"
+        description="Assim que a plataforma acumular execucoes, esta superficie passa a consolidar custos, tokens, provedores e agentes em tempo real."
+      />
     )
   }
 
   return (
-    <div className="space-y-6 v2-bridge-surface">
+    <div className="space-y-6">
       <V2PageHero
         eyebrow={<><Scale className="h-3.5 w-3.5" /> Custos agregados V2</>}
         title="Custos, tokens e pressao operacional da plataforma em camada executiva"

@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-19",
-    "cycle": "stable-datajud-deploy-hotfix",
+    "cycle": "v2-cost-surfaces-native",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -695,6 +695,18 @@
         "frontend/src/pages/Upload.tsx"
       ],
       "notes": "O redesign deixou de atuar apenas no shell: `/` agora abre `DashboardV2` sob o gate do redesign e `/labs/dashboard-v2` virou alias tecnico, enquanto teses, custos, configuracoes, admin, documentos e acervo passaram a usar `V2PagePrimitives` + a bridge visual scoped `v2-bridge-surface` para migrar o miolo das paginas para o sistema V2 sem reimplementar seus fluxos operacionais."
+    },
+    {
+      "id": "E8.F23",
+      "epic": "Redesign V2",
+      "name": "Superficies de custos promovidas para V2 nativo",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/CostTokensPage.tsx",
+        "frontend/src/pages/PlatformCostsPage.tsx",
+        "frontend/src/components/v2/V2WorkspaceLayout.tsx"
+      ],
+      "notes": "As superficies de custos pessoal e agregada deixaram de depender de `v2-bridge-surface`: loading, estados vazios, acesso admin, labels, formularios de orcamento e wrappers passaram a usar classes/primitives V2 explicitas. O shell V2 tambem teve a narrativa ajustada para refletir que custos ja estao promovidos no rail novo, enquanto configuracoes e administracao seguem em consolidacao controlada."
     }
   ],
   "regressionRisk": {

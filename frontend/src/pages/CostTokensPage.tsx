@@ -244,7 +244,7 @@ function SectionBreakdown({
             <CollapsibleCard id={`${sectionId}_chart_model_cost`} title="Custo por modelo (USD / R$)" collapseState={collapseState} onToggle={onToggle}>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-xs text-gray-500 mb-2">USD</p>
+                  <p className="mb-2 text-xs text-[var(--v2-ink-soft)]">USD</p>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={modelCostChart} layout="vertical" margin={{ left: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -256,7 +256,7 @@ function SectionBreakdown({
                   </ResponsiveContainer>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 mb-2">BRL (cotação ref. {breakdown.exchange_rate_brl.toFixed(2)})</p>
+                  <p className="mb-2 text-xs text-[var(--v2-ink-soft)]">BRL (cotação ref. {breakdown.exchange_rate_brl.toFixed(2)})</p>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={modelCostChart} layout="vertical" margin={{ left: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -504,25 +504,25 @@ export default function CostTokensPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 v2-bridge-surface">
-        <div className="flex items-center gap-3">
-          <DollarSign className="w-8 h-8 text-amber-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Uso, Custos e Tokens</h1>
-            <p className="text-gray-500">Carregando detalhamento...</p>
+      <div className="space-y-6">
+        <div className="v2-panel px-6 py-5">
+          <div className="flex items-center gap-3">
+            <DollarSign className="h-8 w-8 text-amber-600" />
+            <div>
+              <h1 className="text-2xl font-bold text-[var(--v2-ink-strong)]">Uso, Custos e Tokens</h1>
+              <p className="text-sm text-[var(--v2-ink-soft)]">Carregando detalhamento...</p>
+            </div>
           </div>
         </div>
-        {/* Skeleton cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="bg-white rounded-xl border p-5 animate-pulse">
+            <div key={i} className="v2-summary-card bg-[rgba(255,255,255,0.82)] animate-pulse">
               <div className="h-3 w-20 bg-gray-200 rounded mb-3" />
               <div className="h-6 w-16 bg-gray-200 rounded" />
             </div>
           ))}
         </div>
-        {/* Skeleton breakdown */}
-        <div className="bg-white rounded-xl border p-6 animate-pulse">
+        <div className="v2-panel p-6 animate-pulse">
           <div className="h-4 w-40 bg-gray-200 rounded mb-4" />
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
@@ -538,7 +538,7 @@ export default function CostTokensPage() {
   }
 
   return (
-    <div className="space-y-6 v2-bridge-surface">
+    <div className="space-y-6">
       <V2PageHero
         eyebrow={<><DollarSign className="h-3.5 w-3.5" /> Custos e tokens V2</>}
         title="Consumo, orçamento e sinais de custo em uma única superficie operacional"
@@ -622,53 +622,53 @@ export default function CostTokensPage() {
                 {/* Configuration fields */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Limite mensal (USD)</label>
+                    <label className="mb-1 block text-xs font-medium text-[var(--v2-ink-soft)]">Limite mensal (USD)</label>
                     <input
                       type="number" min={0} step={0.5}
                       value={budgetConfig.monthly_limit_usd ?? ''}
                       onChange={e => updateBudgetField('monthly_limit_usd', parseFloat(e.target.value) || 0)}
                       placeholder="0 = ilimitado"
-                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                      className="v2-field"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Limite diário (USD)</label>
+                    <label className="mb-1 block text-xs font-medium text-[var(--v2-ink-soft)]">Limite diário (USD)</label>
                     <input
                       type="number" min={0} step={0.1}
                       value={budgetConfig.daily_limit_usd ?? ''}
                       onChange={e => updateBudgetField('daily_limit_usd', parseFloat(e.target.value) || 0)}
                       placeholder="0 = ilimitado"
-                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                      className="v2-field"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Limite por pipeline (USD)</label>
+                    <label className="mb-1 block text-xs font-medium text-[var(--v2-ink-soft)]">Limite por pipeline (USD)</label>
                     <input
                       type="number" min={0} step={0.5}
                       value={budgetConfig.per_pipeline_limit_usd ?? ''}
                       onChange={e => updateBudgetField('per_pipeline_limit_usd', parseFloat(e.target.value) || 0)}
                       placeholder="0 = ilimitado"
-                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                      className="v2-field"
                     />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Alerta em (% do limite)</label>
+                    <label className="mb-1 block text-xs font-medium text-[var(--v2-ink-soft)]">Alerta em (% do limite)</label>
                     <input
                       type="number" min={0} max={100} step={5}
                       value={budgetConfig.warning_threshold_pct ?? 80}
                       onChange={e => updateBudgetField('warning_threshold_pct', parseInt(e.target.value) || 80)}
-                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                      className="v2-field"
                     />
                   </div>
                   <div className="flex items-end">
-                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--v2-ink-strong)]">
                       <input
                         type="checkbox"
                         checked={budgetConfig.hard_block ?? false}
                         onChange={e => updateBudgetField('hard_block', e.target.checked)}
-                        className="rounded border-gray-300"
+                        className="h-4 w-4 rounded border-[var(--v2-line-strong)] text-[var(--v2-accent-strong)] focus:ring-[rgba(15,118,110,0.18)]"
                       />
                       Bloquear chamadas ao exceder
                     </label>
@@ -684,7 +684,7 @@ export default function CostTokensPage() {
                     </button>
                   </div>
                 </div>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-[var(--v2-ink-faint)]">
                   Limites com valor 0 são tratados como ilimitados. O alerta aparece quando o gasto atinge o percentual configurado.
                 </p>
               </div>
@@ -736,7 +736,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para geração de documentos.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para geração de documentos.</p>
             )}
           </CollapsibleSection>
 
@@ -758,7 +758,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para análise de teses.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para análise de teses.</p>
             )}
           </CollapsibleSection>
 
@@ -780,7 +780,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para detalhamento de contexto.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para detalhamento de contexto.</p>
             )}
           </CollapsibleSection>
 
@@ -802,7 +802,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para classificação de acervo.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para classificação de acervo.</p>
             )}
           </CollapsibleSection>
 
@@ -824,7 +824,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para geração de ementas.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para geração de ementas.</p>
             )}
           </CollapsibleSection>
 
@@ -846,7 +846,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o caderno de pesquisa.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o caderno de pesquisa.</p>
             )}
           </CollapsibleSection>
 
@@ -868,7 +868,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para análise de acervo do caderno.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para análise de acervo do caderno.</p>
             )}
           </CollapsibleSection>
 
@@ -890,7 +890,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o gerador de vídeo.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o gerador de vídeo.</p>
             )}
           </CollapsibleSection>
 
@@ -912,7 +912,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o pipeline de áudio.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o pipeline de áudio.</p>
             )}
           </CollapsibleSection>
 
@@ -934,7 +934,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="text-sm text-gray-400 py-4">Nenhum dado de custo para o pipeline de apresentação.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o pipeline de apresentação.</p>
             )}
           </CollapsibleSection>
         </>
