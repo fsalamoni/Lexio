@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, Trash2, FileText } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
@@ -15,6 +15,8 @@ import {
 import ThesisAnalysisCard from '../components/ThesisAnalysisCard'
 import DraggablePanel from '../components/DraggablePanel'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { V2EmptyState, V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
+import { buildWorkspaceNewDocumentPath } from '../lib/workspace-routes'
 
 interface ThesisItem {
   id: string
@@ -263,6 +265,7 @@ function ThesisModal({
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function ThesisBank() {
+  const location = useLocation()
   const [theses, setTheses] = useState<ThesisItem[]>([])
   const [stats, setStats] = useState<ThesisStats | null>(null)
   const [total, setTotal] = useState(0)
@@ -412,6 +415,13 @@ export default function ThesisBank() {
   const areaColor = (area: string) =>
     AREA_COLORS[area] ?? 'bg-gray-50 text-gray-700 border-gray-200'
 
+  const activeAreaCount = stats ? Object.keys(stats.by_area).length : 0
+  const activeFilterLabel = areaFilter
+    ? AREA_LABELS[areaFilter] || areaFilter
+    : search
+      ? 'Busca ativa'
+      : 'Sem filtros'
+
   const handleExport = () => {
     const blob = new Blob([JSON.stringify(theses, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -482,7 +492,7 @@ export default function ThesisBank() {
   }
 
   return (
-    <div>
+    <div className="space-y-6 v2-bridge-surface">
       {(modalOpen || editingThesis) && (
         <ThesisModal
           thesis={editingThesis}
@@ -516,52 +526,89 @@ export default function ThesisBank() {
         onConfirm={confirmDeleteThesis}
       />
 
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0">
-          <BookOpen className="w-5 h-5 text-brand-600" />
-        </div>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">Banco de Teses</h1>
-          <p className="text-sm text-gray-500">
-            {total} teses jurídicas
-            {stats?.average_quality_score != null && (
-              <span className="ml-2 text-amber-600">
-                · Score médio: <strong>{stats.average_quality_score.toFixed(1)}</strong>
-              </span>
+      <V2PageHero
+        eyebrow={<><BookOpen className="h-3.5 w-3.5" /> Banco de teses V2</>}
+        title="Teses, padrões e repertório prontos para reutilização estratégica"
+        description="Organize precedentes internos, compare qualidade, aplique filtros por área e mantenha um banco vivo para redação, revisão e análise crítica do acervo jurídico." 
+        actions={(
+          <>
+            <button
+              onClick={() => { setEditingThesis(null); setModalOpen(true) }}
+              className="v2-btn-primary"
+            >
+              <Plus className="h-4 w-4" />
+              Nova tese
+            </button>
+            {theses.length > 0 && (
+              <>
+                <button
+                  onClick={handleExportCSV}
+                  title="Exportar teses visíveis como CSV"
+                  className="v2-btn-secondary"
+                >
+                  <Download className="h-4 w-4" />
+                  CSV
+                </button>
+                <button
+                  onClick={handleExport}
+                  title="Exportar teses visíveis como JSON"
+                  className="v2-btn-secondary"
+                >
+                  <Download className="h-4 w-4" />
+                  JSON
+                </button>
+              </>
             )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setEditingThesis(null); setModalOpen(true) }}
-            className="inline-flex items-center gap-2 bg-brand-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Nova Tese
-          </button>
-          {theses.length > 0 && (
-            <>
-              <button
-                onClick={handleExportCSV}
-                title="Exportar teses visíveis como CSV"
-                className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-2 rounded-lg transition-colors bg-white"
-              >
-                <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">CSV</span>
-              </button>
-              <button
-                onClick={handleExport}
-                title="Exportar teses visíveis como JSON"
-                className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-2 rounded-lg transition-colors bg-white"
-              >
-                <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">JSON</span>
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+          </>
+        )}
+        aside={(
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Foco atual</p>
+            <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Filtro</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{activeFilterLabel}</p>
+            </div>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Ordenação</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                {sortBy === 'quality' ? 'Maior score' : sortBy === 'usage' ? 'Mais usada' : 'Mais recente'}
+              </p>
+            </div>
+          </div>
+        )}
+      />
+
+      <V2MetricGrid
+        className="xl:grid-cols-4"
+        items={[
+          {
+            label: 'Teses totais',
+            value: total.toLocaleString('pt-BR'),
+            helper: `${theses.length.toLocaleString('pt-BR')} carregadas nesta visao`,
+            icon: BookOpen,
+            tone: 'accent',
+          },
+          {
+            label: 'Score medio',
+            value: stats?.average_quality_score != null ? stats.average_quality_score.toFixed(1) : '—',
+            helper: 'Qualidade consolidada do banco',
+            icon: Star,
+            tone: 'warm',
+          },
+          {
+            label: 'Areas mapeadas',
+            value: activeAreaCount.toLocaleString('pt-BR'),
+            helper: 'Distribuicao atual do repertorio',
+            icon: Tag,
+          },
+          {
+            label: 'Busca e filtro',
+            value: areaFilter || search ? 'Ativos' : 'Livres',
+            helper: areaFilter ? AREA_LABELS[areaFilter] || areaFilter : search || 'Sem restricao operacional',
+            icon: Search,
+          },
+        ]}
+      />
 
       {/* Area stat cards */}
       {stats && Object.keys(stats.by_area).length > 0 && (
@@ -626,36 +673,32 @@ export default function ThesisBank() {
           {Array.from({ length: 5 }).map((_, i) => <SkeletonItem key={i} />)}
         </div>
       ) : theses.length === 0 ? (
-        <div className="bg-white rounded-xl border p-12 text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <BookOpen className="w-8 h-8 text-gray-300" />
-          </div>
-          <p className="font-medium text-gray-700 mb-1">Nenhuma tese encontrada</p>
-          <p className="text-sm text-gray-400 mb-4">
-            {search
-              ? `Nenhum resultado para "${search}". Tente outros termos.`
-              : 'As teses são extraídas automaticamente dos documentos gerados. Gere um documento para começar.'
-            }
-          </p>
-          {!search && (
-            <div className="flex items-center justify-center gap-3">
+        <V2EmptyState
+          icon={BookOpen}
+          title="Nenhuma tese encontrada"
+          description={search
+            ? `Nenhum resultado para "${search}". Ajuste os termos, remova filtros ou amplie a area de busca.`
+            : 'As teses passam a compor este banco automaticamente a partir dos documentos gerados. Voce tambem pode criar entradas manuais para consolidar seu repertorio.'
+          }
+          action={!search ? (
+            <div className="flex flex-wrap items-center justify-center gap-3">
               <button
                 onClick={() => { setEditingThesis(null); setModalOpen(true) }}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+                className="v2-btn-primary"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="h-4 w-4" />
                 Criar tese manualmente
               </button>
               <Link
-                to="/documents/new"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                to={buildWorkspaceNewDocumentPath({ preserveSearch: location.search })}
+                className="v2-btn-secondary"
               >
-                <FileText className="w-4 h-4" />
+                <FileText className="h-4 w-4" />
                 Gerar documento
               </Link>
             </div>
-          )}
-        </div>
+          ) : undefined}
+        />
       ) : (
         <div className="space-y-3">
           {sortedTheses.map(thesis => (
@@ -703,14 +746,14 @@ function ThesisCard({ thesis, expanded, onToggle, onEdit, onDelete, areaColor }:
     : 'text-red-600'
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-sm hover:border-gray-300 transition-all">
+    <div className="v2-panel overflow-hidden border border-[var(--v2-line-soft)] transition-all hover:-translate-y-0.5">
       <button
         onClick={onToggle}
-        className="w-full text-left p-4 flex items-start justify-between gap-4"
+        className="w-full text-left p-5 flex items-start justify-between gap-4"
       >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <h3 className="font-medium text-gray-900">{thesis.title}</h3>
+            <h3 className="font-medium text-[var(--v2-ink-strong)]">{thesis.title}</h3>
             {thesis.quality_score != null && (
               <span className={`flex items-center gap-0.5 text-xs font-medium whitespace-nowrap ${scoreColor}`}>
                 <Star className="w-3 h-3 fill-current" />
@@ -718,7 +761,7 @@ function ThesisCard({ thesis, expanded, onToggle, onEdit, onDelete, areaColor }:
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 line-clamp-2">
+          <p className="text-sm text-[var(--v2-ink-soft)] line-clamp-2">
             {thesis.summary || thesis.content.substring(0, 160)}
           </p>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -744,20 +787,20 @@ function ThesisCard({ thesis, expanded, onToggle, onEdit, onDelete, areaColor }:
       </button>
 
       {expanded && (
-        <div className="border-t border-gray-100 px-4 pb-4 pt-3 space-y-3 bg-gray-50/50">
+        <div className="border-t border-[var(--v2-line-soft)] px-5 pb-5 pt-4 space-y-3 bg-[rgba(255,255,255,0.55)]">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Conteúdo Completo</h4>
+            <h4 className="text-xs font-semibold text-[var(--v2-ink-faint)] uppercase tracking-wide">Conteudo completo</h4>
             <div className="flex items-center gap-3">
               <button
                 onClick={e => { e.stopPropagation(); onEdit() }}
-                className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-600 transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-[var(--v2-ink-soft)] hover:text-brand-600 transition-colors"
               >
                 <Pencil className="w-3.5 h-3.5" />
                 Editar
               </button>
               <button
                 onClick={e => { e.stopPropagation(); onDelete() }}
-                className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-600 transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-[var(--v2-ink-soft)] hover:text-red-600 transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Excluir
@@ -765,16 +808,16 @@ function ThesisCard({ thesis, expanded, onToggle, onEdit, onDelete, areaColor }:
               <CopyButton text={thesis.content} />
             </div>
           </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{thesis.content}</p>
+          <div className="rounded-[1.2rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.84)] p-4">
+            <p className="text-sm text-[var(--v2-ink-strong)] whitespace-pre-wrap leading-relaxed">{thesis.content}</p>
           </div>
 
           {thesis.tags && thesis.tags.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tags</h4>
+              <h4 className="text-xs font-semibold text-[var(--v2-ink-faint)] uppercase tracking-wide mb-2">Tags</h4>
               <div className="flex flex-wrap gap-1.5">
                 {thesis.tags.map((tag, i) => (
-                  <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg border border-gray-200">
+                  <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-[rgba(15,23,42,0.06)] text-[var(--v2-ink-soft)] text-xs rounded-lg border border-[var(--v2-line-soft)]">
                     <Tag className="w-3 h-3" />
                     {tag}
                   </span>
@@ -783,7 +826,7 @@ function ThesisCard({ thesis, expanded, onToggle, onEdit, onDelete, areaColor }:
             </div>
           )}
 
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-[var(--v2-ink-faint)]">
             Criada em {new Date(thesis.created_at).toLocaleDateString('pt-BR', {
               day: '2-digit', month: 'long', year: 'numeric',
             })}

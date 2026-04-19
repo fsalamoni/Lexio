@@ -7,12 +7,13 @@ const isDemo = process.env.VITE_DEMO_MODE === 'true'
 // VITE_BASE_PATH overrides the isDemo default.
 // GitHub Pages sets it to /Lexio/ ; Firebase Hosting sets it to /
 const basePath = process.env.VITE_BASE_PATH ?? (isDemo ? '/Lexio/' : '/')
+const buildOutDir = process.env.VITE_BUILD_OUT_DIR || 'dist'
 
 export default defineConfig({
   base: basePath,
   plugins: [react()],
   build: {
-    outDir: 'dist',
+    outDir: buildOutDir,
     sourcemap: false,
     rollupOptions: {
       output: {

@@ -39,7 +39,7 @@ Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
 3. **Modelo flexível** — Cada usuário escolhe o modelo LLM dos próprios agentes
 4. **Anamnese 2 camadas** — Perfil persistente (Layer 1) + contexto por request (Layer 2)
 5. **Catálogo dinâmico** — Modelos podem ser adicionados/removidos nas configurações pessoais; o catálogo persistido de cada usuário é a fonte de verdade para os seletores e validações dos próprios agentes
-6. **Dual deploy** — GitHub Pages + Firebase Hosting com CI/CD automático
+6. **Deploy multipista** — GitHub Pages + Firebase Hosting estável + Firebase Hosting experimental do redesign V2, cada um com trilho próprio de CI/CD
 7. **Fronteiras modulares obrigatórias** — lógica central compartilhada em módulos de `lib`; UI consome módulos, mas módulos não dependem de UI
 
 ## Política de Modularização

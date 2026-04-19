@@ -1,131 +1,18 @@
 import { useState, useEffect } from 'react'
-import { User, Save, ChevronDown, ChevronUp, Lock } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
+import { User, Save, ChevronDown, ChevronUp, Lock, Sparkles } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { IS_FIREBASE, firebaseAuth } from '../lib/firebase'
 import { getProfile, saveProfile } from '../lib/firestore-service'
-
-interface ProfileData {
-  institution?: string
-  position?: string
-  jurisdiction?: string
-  experience_years?: number | null
-  primary_areas?: string[]
-  specializations?: string[]
-  formality_level?: string
-  connective_style?: string
-  citation_style?: string
-  preferred_expressions?: string[]
-  avoided_expressions?: string[]
-  paragraph_length?: string
-  default_document_type?: string
-  default_template?: string
-  signature_block?: string
-  header_text?: string
-  preferred_model?: string
-  detail_level?: string
-  argument_depth?: string
-  include_opposing_view?: boolean
-}
-
-const SECTIONS = [
-  {
-    id: 'professional',
-    title: 'Perfil Profissional',
-    description: 'Informações sobre sua atuação profissional',
-    fields: [
-      { key: 'institution', label: 'Instituição', type: 'text', placeholder: 'Ex: Ministério Público do Estado do RS' },
-      { key: 'position', label: 'Cargo/Função', type: 'text', placeholder: 'Ex: Promotor de Justiça' },
-      { key: 'jurisdiction', label: 'Jurisdição/Comarca', type: 'text', placeholder: 'Ex: Comarca de Porto Alegre' },
-      { key: 'experience_years', label: 'Anos de experiência', type: 'number' },
-    ],
-  },
-  {
-    id: 'areas',
-    title: 'Áreas de Atuação',
-    description: 'Selecione suas áreas de atuação e especialidades',
-    fields: [
-      { key: 'primary_areas', label: 'Áreas principais', type: 'multiselect', options: [
-        { value: 'administrative', label: 'Direito Administrativo' },
-        { value: 'constitutional', label: 'Direito Constitucional' },
-        { value: 'civil', label: 'Direito Civil' },
-        { value: 'tax', label: 'Direito Tributário' },
-        { value: 'labor', label: 'Direito do Trabalho' },
-        { value: 'criminal', label: 'Direito Penal' },
-        { value: 'criminal_procedure', label: 'Processo Penal' },
-        { value: 'civil_procedure', label: 'Processo Civil' },
-        { value: 'consumer', label: 'Direito do Consumidor' },
-        { value: 'environmental', label: 'Direito Ambiental' },
-        { value: 'business', label: 'Direito Empresarial' },
-        { value: 'family', label: 'Direito de Família' },
-        { value: 'inheritance', label: 'Direito das Sucessões' },
-        { value: 'social_security', label: 'Direito Previdenciário' },
-        { value: 'electoral', label: 'Direito Eleitoral' },
-        { value: 'international', label: 'Direito Internacional' },
-        { value: 'digital', label: 'Direito Digital' },
-      ]},
-      { key: 'specializations', label: 'Especializações', type: 'tags', placeholder: 'Separe por vírgula: licitações, improbidade...' },
-    ],
-  },
-  {
-    id: 'writing',
-    title: 'Preferências de Redação',
-    description: 'Como você prefere que seus documentos sejam redigidos',
-    fields: [
-      { key: 'formality_level', label: 'Nível de formalidade', type: 'select', options: [
-        { value: 'formal', label: 'Formal (linguagem jurídica clássica)' },
-        { value: 'semiformal', label: 'Semiformal (claro e objetivo)' },
-      ]},
-      { key: 'connective_style', label: 'Estilo de conectivos', type: 'select', options: [
-        { value: 'classico', label: 'Clássico (destarte, outrossim, mormente)' },
-        { value: 'moderno', label: 'Moderno (portanto, além disso)' },
-      ]},
-      { key: 'paragraph_length', label: 'Tamanho dos parágrafos', type: 'select', options: [
-        { value: 'curto', label: 'Curto (3-5 linhas)' },
-        { value: 'medio', label: 'Médio (5-10 linhas)' },
-        { value: 'longo', label: 'Longo (10+ linhas)' },
-      ]},
-      { key: 'citation_style', label: 'Estilo de citações', type: 'select', options: [
-        { value: 'inline', label: 'Inline (no corpo do texto)' },
-        { value: 'footnote', label: 'Notas de rodapé' },
-        { value: 'abnt', label: 'ABNT' },
-      ]},
-      { key: 'preferred_expressions', label: 'Expressões preferidas', type: 'tags', placeholder: 'Separe por vírgula' },
-      { key: 'avoided_expressions', label: 'Expressões a evitar', type: 'tags', placeholder: 'Separe por vírgula' },
-    ],
-  },
-  {
-    id: 'document',
-    title: 'Preferências de Documento',
-    description: 'Configurações padrão para seus documentos',
-    fields: [
-      { key: 'signature_block', label: 'Assinatura padrão', type: 'textarea', placeholder: 'Nome\nCargo\nInstituição' },
-      { key: 'header_text', label: 'Cabeçalho padrão', type: 'textarea', placeholder: 'Texto que aparece no cabeçalho dos documentos' },
-    ],
-  },
-  {
-    id: 'ai',
-    title: 'Preferências de IA',
-    description: 'Configure como a IA deve trabalhar para você',
-    fields: [
-      { key: 'detail_level', label: 'Nível de detalhamento', type: 'select', options: [
-        { value: 'conciso', label: 'Conciso (direto ao ponto)' },
-        { value: 'detalhado', label: 'Detalhado (análise completa)' },
-        { value: 'exaustivo', label: 'Exaustivo (todas as possibilidades)' },
-      ]},
-      { key: 'argument_depth', label: 'Profundidade argumentativa', type: 'select', options: [
-        { value: 'superficial', label: 'Superficial (principais argumentos)' },
-        { value: 'moderado', label: 'Moderado (argumentos e contra-argumentos)' },
-        { value: 'profundo', label: 'Profundo (análise exaustiva)' },
-      ]},
-      { key: 'include_opposing_view', label: 'Incluir visão contrária automaticamente', type: 'boolean' },
-    ],
-  },
-]
+import { isRedesignV2Enabled } from '../lib/feature-flags'
+import { PROFILE_SECTIONS, type ProfileData } from '../lib/profile-preferences'
+import { buildWorkspaceProfilePath } from '../lib/workspace-routes'
 
 export default function Profile() {
+  const location = useLocation()
   const [profile, setProfile] = useState<ProfileData>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -350,6 +237,31 @@ export default function Profile() {
         </div>
       </div>
 
+      {isRedesignV2Enabled() && (
+        <div className="mb-4 rounded-2xl border border-brand-100 bg-gradient-to-r from-brand-50 via-white to-brand-50/60 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Workspace V2 em preview</p>
+                <p className="mt-1 text-sm text-gray-600">
+                  A primeira rota do redesign profundo ja esta ativa com novo shell e nova linguagem visual.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              to={buildWorkspaceProfilePath({ preserveSearch: location.search })}
+              className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
+            >
+              Abrir perfil promovido
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Account info bar */}
       {IS_FIREBASE && firebaseAuth?.currentUser && (
         <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 bg-gray-50 rounded-lg px-4 py-2.5 mb-4 border">
@@ -361,7 +273,7 @@ export default function Profile() {
       )}
 
       <div className="space-y-4">
-        {SECTIONS.map(section => {
+        {PROFILE_SECTIONS.map(section => {
           const isOpen = openSections.has(section.id)
           return (
             <div key={section.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">

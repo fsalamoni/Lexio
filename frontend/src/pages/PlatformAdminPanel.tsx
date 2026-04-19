@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
   Activity, AlertTriangle, BarChart3, BookOpen, Brain, Database, DollarSign, FileText,
   FolderArchive, Settings2, Shield, Sparkles, Users,
@@ -23,6 +23,8 @@ import {
   type NotebookSearchMemoryBackfillReport,
   type PlatformUsageRow,
 } from '../lib/firestore-service'
+import { V2EmptyState, V2PageHero } from '../components/v2/V2PagePrimitives'
+import { buildWorkspaceSettingsPath } from '../lib/workspace-routes'
 
 const PIE_COLORS = ['#0f766e', '#2563eb', '#9333ea', '#d97706', '#dc2626', '#64748b']
 
@@ -161,28 +163,28 @@ function parseAlertThresholds(raw: unknown): AlertThresholds {
 
 function StatCard({ icon: Icon, label, value, tone }: { icon: React.ElementType; label: string; value: string; tone?: string }) {
   return (
-    <div className="bg-white rounded-xl border p-4">
+    <div className="v2-summary-card bg-[rgba(255,255,255,0.82)]">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{label}</span>
+        <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--v2-ink-faint)]">{label}</span>
         <Icon className={`w-4 h-4 ${tone || 'text-brand-600'}`} />
       </div>
-      <p className="mt-3 text-2xl font-bold text-gray-900">{value}</p>
+      <p className="mt-3 text-2xl font-bold text-[var(--v2-ink-strong)]">{value}</p>
     </div>
   )
 }
 
 function SimpleTable({ title, rows, emptyLabel }: { title: string; rows: Array<PlatformAggregateRow | PlatformUsageRow>; emptyLabel: string }) {
   return (
-    <div className="bg-white rounded-xl border overflow-hidden">
-      <div className="px-5 py-3 border-b bg-gray-50">
-        <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
+    <div className="v2-panel overflow-hidden">
+      <div className="border-b border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.58)] px-5 py-3">
+        <h2 className="text-sm font-semibold text-[var(--v2-ink-strong)]">{title}</h2>
       </div>
       {rows.length === 0 ? (
-        <p className="px-5 py-6 text-sm text-gray-400">{emptyLabel}</p>
+        <p className="px-5 py-6 text-sm text-[var(--v2-ink-faint)]">{emptyLabel}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[620px]">
-            <thead className="text-[11px] uppercase tracking-wide text-gray-500 bg-gray-50">
+            <thead className="bg-[rgba(255,255,255,0.74)] text-[11px] uppercase tracking-wide text-[var(--v2-ink-faint)]">
               <tr>
                 <th className="px-5 py-2 text-left">Item</th>
                 <th className="px-5 py-2 text-right">Uso</th>
@@ -190,12 +192,12 @@ function SimpleTable({ title, rows, emptyLabel }: { title: string; rows: Array<P
                 <th className="px-5 py-2 text-right">USD</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-[var(--v2-line-soft)]">
               {rows.map(row => (
-                <tr key={row.key} className="hover:bg-gray-50">
-                  <td className="px-5 py-3 text-sm text-gray-800">{row.label}</td>
-                  <td className="px-5 py-3 text-sm text-right text-gray-600">{'calls' in row ? fmtInt(row.calls) : fmtInt(row.count)}</td>
-                  <td className="px-5 py-3 text-sm text-right text-gray-600">{'total_tokens' in row ? fmtInt(row.total_tokens) : '0'}</td>
+                <tr key={row.key} className="hover:bg-[rgba(255,255,255,0.66)]">
+                  <td className="px-5 py-3 text-sm text-[var(--v2-ink-strong)]">{row.label}</td>
+                  <td className="px-5 py-3 text-sm text-right text-[var(--v2-ink-soft)]">{'calls' in row ? fmtInt(row.calls) : fmtInt(row.count)}</td>
+                  <td className="px-5 py-3 text-sm text-right text-[var(--v2-ink-soft)]">{'total_tokens' in row ? fmtInt(row.total_tokens) : '0'}</td>
                   <td className="px-5 py-3 text-sm text-right font-medium text-amber-700">{'cost_usd' in row ? fmtUsd(row.cost_usd) : '$0.0000'}</td>
                 </tr>
               ))}
@@ -208,6 +210,7 @@ function SimpleTable({ title, rows, emptyLabel }: { title: string; rows: Array<P
 }
 
 export default function PlatformAdminPanel() {
+  const location = useLocation()
   const toast = useToast()
   const { isReady, role } = useAuth()
   const [overview, setOverview] = useState<Awaited<ReturnType<typeof getPlatformOverview>> | null>(null)
@@ -825,7 +828,7 @@ export default function PlatformAdminPanel() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 v2-bridge-surface">
         <Skeleton className="h-10 w-80" />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}
@@ -837,18 +840,39 @@ export default function PlatformAdminPanel() {
   }
 
   if (!overview) {
-    return <div className="text-sm text-gray-500">Nenhum dado agregado disponível.</div>
+    return (
+      <div className="v2-bridge-surface">
+        <V2EmptyState
+          icon={Shield}
+          title="Nenhum dado agregado disponivel"
+          description="Assim que a plataforma acumular uso operacional, este painel passa a consolidar usuarios, pipelines, memoria dedicada e custos globais em tempo real."
+        />
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Shield className="w-8 h-8 text-brand-600" />
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Painel Administrativo da Plataforma</h1>
-          <p className="text-gray-500">Visão agregada de uso, produção, pipelines, agentes, estúdio e custos globais.</p>
-        </div>
-      </div>
+    <div className="space-y-6 v2-bridge-surface">
+      <V2PageHero
+        eyebrow={<><Shield className="h-3.5 w-3.5" /> Governanca da plataforma V2</>}
+        title="Uso agregado, calibracao de memoria e sinais de risco sob uma unica cabine executiva"
+        description="Monitore volume operacional, alertas de memoria dedicada, trilha de calibracao e indicadores de crescimento sem perder contexto sobre custos e qualidade da plataforma."
+        aside={(
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Resumo rapido</p>
+            <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Cobertura de memoria</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                {fmtInt(overview.notebooks_with_dedicated_search_memory)} / {fmtInt(overview.total_notebooks)}
+              </p>
+            </div>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Alertas atuais</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{memoryAlerts.length.toLocaleString('pt-BR')}</p>
+            </div>
+          </div>
+        )}
+      />
 
       {overview.operational_warnings && overview.operational_warnings.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -1360,7 +1384,7 @@ export default function PlatformAdminPanel() {
             </div>
           </div>
           <Link
-            to="/settings#section_model_catalog"
+            to={buildWorkspaceSettingsPath({ preserveSearch: location.search, hash: 'section_model_catalog' })}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
           >
             <Brain className="w-4 h-4" />

@@ -36,6 +36,8 @@ import AudioPipelineConfigCard from '../components/AudioPipelineConfigCard'
 import PresentationPipelineConfigCard from '../components/PresentationPipelineConfigCard'
 import ModelCatalogCard from '../components/ModelCatalogCard'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
+import { buildWorkspaceDocumentDetailPath } from '../lib/workspace-routes'
 
 interface ModuleInfo {
   id: string
@@ -120,20 +122,20 @@ function AdminCollapsibleSection({
 }) {
   const isOpen = collapseState[id] ?? defaultOpen
   return (
-    <div className="bg-white rounded-xl border overflow-hidden mb-6">
+    <div className="v2-panel mb-6 overflow-hidden">
       <button
         type="button"
         onClick={() => onToggle(id)}
-        className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-[rgba(255,255,255,0.58)] transition-colors"
       >
         <div className="flex items-center gap-2">
           <Icon className={`w-5 h-5 ${iconColor || 'text-brand-600'}`} />
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">{title}</h2>
           {badge != null && (
-            <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{badge}</span>
+            <span className="ml-1 rounded-full bg-[rgba(15,23,42,0.06)] px-2 py-0.5 text-xs font-medium text-[var(--v2-ink-soft)]">{badge}</span>
           )}
         </div>
-        {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        {isOpen ? <ChevronUp className="w-4 h-4 text-[var(--v2-ink-faint)]" /> : <ChevronDown className="w-4 h-4 text-[var(--v2-ink-faint)]" />}
       </button>
       {isOpen && <div className="px-6 pb-6">{children}</div>}
     </div>
@@ -481,7 +483,7 @@ function ReviewQueue() {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button
-                      onClick={() => navigate(`/documents/${doc.id}`)}
+                      onClick={() => navigate(buildWorkspaceDocumentDetailPath(doc.id, { preserveSearch: location.search }))}
                       className="text-xs text-brand-600 hover:underline border rounded-lg px-3 py-1.5"
                     >
                       Ver
@@ -751,95 +753,93 @@ export default function AdminPanel() {
   ].filter(d => d.value > 0)
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Key className="w-8 h-8 text-brand-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Configurações Pessoais</h1>
-            <p className="text-gray-500">Suas APIs, modelos, revisão de documentos e preferências de execução</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              const allOpen: Record<string, boolean> = {}
-              Object.keys(collapseState).forEach(k => { allOpen[k] = true })
-              ;['section_review_queue', 'section_model_catalog', 'section_pipelines', 'section_document_types', 'section_legal_areas', 'section_advanced'].forEach(k => { allOpen[k] = true })
-              setCollapseState(allOpen)
-              saveAdminCollapseState(allOpen)
-            }}
-            className="text-xs px-3 py-1.5 rounded-lg border text-gray-500 hover:bg-gray-50 transition-colors"
-          >
-            Expandir tudo
-          </button>
-          <button
-            onClick={() => {
-              const allClosed: Record<string, boolean> = {}
-              Object.keys(collapseState).forEach(k => { allClosed[k] = false })
-              setCollapseState(allClosed)
-              saveAdminCollapseState(allClosed)
-            }}
-            className="text-xs px-3 py-1.5 rounded-lg border text-gray-500 hover:bg-gray-50 transition-colors"
-          >
-            Recolher tudo
-          </button>
-        </div>
-      </div>
-
-      {/* Quick Stats — always visible */}
-      <div className={`grid grid-cols-2 ${showPlatformSections ? 'md:grid-cols-6' : 'md:grid-cols-5'} gap-4 mb-6`}>
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <FileText className="w-4 h-4 text-brand-600" />
-            <span className="text-xs text-gray-500">Documentos</span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">{stats?.total_documents || 0}</p>
-        </div>
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span className="text-xs text-gray-500">Concluídos</span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">{stats?.completed_documents || 0}</p>
-        </div>
-        <div className={`rounded-xl border p-4 ${stats?.pending_review_documents ? 'bg-blue-50 border-blue-200' : 'bg-white'}`}>
-          <div className="flex items-center gap-2 mb-1">
-            <Clock className={`w-4 h-4 ${stats?.pending_review_documents ? 'text-blue-600' : 'text-gray-400'}`} />
-            <span className="text-xs text-gray-500">Em Revisão</span>
-          </div>
-          <p className={`text-2xl font-bold ${stats?.pending_review_documents ? 'text-blue-700' : 'text-gray-900'}`}>
-            {stats?.pending_review_documents || 0}
-          </p>
-        </div>
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="w-4 h-4 text-brand-600" />
-            <span className="text-xs text-gray-500">Score Médio</span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">
-            {stats?.average_quality_score ? `${stats.average_quality_score}` : '—'}
-          </p>
-        </div>
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <DollarSign className="w-4 h-4 text-amber-600" />
-            <span className="text-xs text-gray-500">Custo Total</span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">
-            ${stats?.total_cost_usd?.toFixed(2) || '0.00'}
-          </p>
-        </div>
-        {showPlatformSections && (
-          <div className="bg-white rounded-xl border p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <BarChart3 className="w-4 h-4 text-purple-600" />
-              <span className="text-xs text-gray-500">Módulos</span>
+    <div className="space-y-6 v2-bridge-surface">
+      <V2PageHero
+        eyebrow={<><Key className="h-3.5 w-3.5" /> Configuracoes pessoais V2</>}
+        title="Modelos, chaves e governanca pessoal no mesmo plano de controle"
+        description="Centralize catalogo, pipelines, preferencias e fila de revisao em uma superficie unica, preparada para operar o workspace inteiro sem alternar entre layouts antigos." 
+        actions={(
+          <>
+            <button
+              onClick={() => {
+                const allOpen: Record<string, boolean> = {}
+                Object.keys(collapseState).forEach(k => { allOpen[k] = true })
+                ;['section_review_queue', 'section_model_catalog', 'section_pipelines', 'section_document_types', 'section_legal_areas', 'section_advanced'].forEach(k => { allOpen[k] = true })
+                setCollapseState(allOpen)
+                saveAdminCollapseState(allOpen)
+              }}
+              className="v2-btn-secondary"
+            >
+              Expandir tudo
+            </button>
+            <button
+              onClick={() => {
+                const allClosed: Record<string, boolean> = {}
+                Object.keys(collapseState).forEach(k => { allClosed[k] = false })
+                setCollapseState(allClosed)
+                saveAdminCollapseState(allClosed)
+              }}
+              className="v2-btn-secondary"
+            >
+              Recolher tudo
+            </button>
+          </>
+        )}
+        aside={(
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Estado do painel</p>
+            <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Catalogo pessoal</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{showPersonalModelCatalog ? 'Ativo' : 'Inativo'}</p>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{healthyModules}/{modules.length}</p>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Superficies abertas</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{Object.keys(collapseState).length || 0}</p>
+            </div>
           </div>
         )}
-      </div>
+      />
+
+      {/* Quick Stats — always visible */}
+      <V2MetricGrid
+        className={showPlatformSections ? 'md:grid-cols-3 xl:grid-cols-6' : 'md:grid-cols-3 xl:grid-cols-5'}
+        items={[
+          {
+            label: 'Documentos',
+            value: (stats?.total_documents || 0).toLocaleString('pt-BR'),
+            icon: FileText,
+            tone: 'accent',
+          },
+          {
+            label: 'Concluidos',
+            value: (stats?.completed_documents || 0).toLocaleString('pt-BR'),
+            icon: CheckCircle,
+            tone: 'success',
+          },
+          {
+            label: 'Em revisao',
+            value: (stats?.pending_review_documents || 0).toLocaleString('pt-BR'),
+            icon: Clock,
+            tone: stats?.pending_review_documents ? 'accent' : 'default',
+          },
+          {
+            label: 'Score medio',
+            value: stats?.average_quality_score ? `${stats.average_quality_score}` : '—',
+            icon: TrendingUp,
+          },
+          {
+            label: 'Custo total',
+            value: `$${stats?.total_cost_usd?.toFixed(2) || '0.00'}`,
+            icon: DollarSign,
+            tone: 'warm',
+          },
+          ...(showPlatformSections ? [{
+            label: 'Modulos',
+            value: `${healthyModules}/${modules.length}`,
+            icon: BarChart3,
+          }] : []),
+        ]}
+      />
 
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {/* ── BLOCO: Operação ─────────────────────────────────────────────── */}
@@ -1325,7 +1325,7 @@ function PipelineLogs() {
                     <tr key={log.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-2">
                         <button
-                          onClick={() => navigate(`/documents/${log.document_id}`)}
+                          onClick={() => navigate(buildWorkspaceDocumentDetailPath(log.document_id, { preserveSearch: location.search }))}
                           className="text-left hover:text-brand-600 transition-colors"
                         >
                           <p className="font-medium text-gray-800">{log.document_type}</p>

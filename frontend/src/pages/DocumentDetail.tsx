@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useLocation, useParams, useNavigate } from 'react-router-dom'
 import { Download, FileText, Edit3, Clock, DollarSign, Cpu, Eye, EyeOff, Send, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, Trash2, BookOpen, Sparkles, Copy } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
@@ -11,6 +11,7 @@ import AgentTrailProgressModal from '../components/AgentTrailProgressModal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
+import { V2EmptyState, V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc, type ContextDetailData } from '../lib/firestore-service'
 import { generateDocument, type GenerationProgress } from '../lib/generation-service'
@@ -25,6 +26,13 @@ import { TransientLLMError } from '../lib/llm-client'
 import { ModelsNotConfiguredError } from '../lib/model-config'
 import { generateAndDownloadDocx } from '../lib/docx-generator'
 import { DOCTYPE_LABELS, AREA_LABELS } from '../lib/constants'
+import { buildResearchNotebookWorkbenchPath } from '../lib/research-notebook-routes'
+import {
+  buildWorkspaceDocumentEditPath,
+  buildWorkspaceDocumentsPath,
+  buildWorkspaceNewDocumentPath,
+  buildWorkspaceSettingsPath,
+} from '../lib/workspace-routes'
 
 interface QualityIssue {
   type: string
@@ -93,6 +101,7 @@ function fmtModel(model: string | null): string {
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const toast = useToast()
   const { role, userId } = useAuth()
   const [doc, setDoc] = useState<DocumentData | null>(null)
@@ -117,6 +126,7 @@ export default function DocumentDetail() {
   const [pipelineComplete, setPipelineComplete] = useState(false)
   const [pipelineError, setPipelineError] = useState(false)
   const agentTimers = useRef<Record<string, number>>({})
+  const documentsPath = buildWorkspaceDocumentsPath({ preserveSearch: location.search })
 
   const initPipeline = useCallback(() => {
     setPipelineAgents(createDocumentPipelineSteps())
@@ -263,7 +273,7 @@ export default function DocumentDetail() {
       }
       invalidateApiCache('/stats')
       toast.success('Documento excluído')
-      navigate('/documents')
+      navigate(documentsPath)
     } catch (err: any) {
       toast.error('Erro ao excluir documento', err?.response?.data?.detail || err?.message)
     } finally {
@@ -297,7 +307,7 @@ export default function DocumentDetail() {
           if (err instanceof ModelsNotConfiguredError) {
             setPipelineMessage('Modelos não configurados. Vá em Configurações.')
             toast.warning('Modelos não configurados', err.message)
-            navigate('/settings')
+            navigate(buildWorkspaceSettingsPath({ preserveSearch: location.search }))
           } else {
             const errorMsg = err instanceof TransientLLMError
               ? 'O modelo LLM não respondeu. Tente novamente ou altere o modelo em Configurações.'
@@ -373,70 +383,100 @@ export default function DocumentDetail() {
   }
 
   if (loading) return (
-    <div className="max-w-4xl space-y-6">
+    <div className="max-w-4xl space-y-6 v2-bridge-surface">
       <div className="h-8 skeleton w-48" />
       <div className="h-40 skeleton rounded-xl" />
       <div className="h-32 skeleton rounded-xl" />
     </div>
   )
   if (!doc) return (
-    <div className="text-center py-20 text-gray-500">
-      <p>Documento não encontrado.</p>
+    <div className="max-w-4xl v2-bridge-surface">
+      <V2EmptyState
+        icon={FileText}
+        title="Documento nao encontrado"
+        description="Este documento pode ter sido removido, ainda nao estar disponivel ou nao pertencer ao contexto autenticado atual."
+      />
     </div>
   )
 
   const docLabel = DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id
   const totalCost = executions.reduce((sum, e) => sum + (e.cost_usd || 0), 0)
   const totalDuration = executions.reduce((sum, e) => sum + (e.duration_ms || 0), 0)
+  const totalWords = doc.texto_completo ? doc.texto_completo.split(/\s+/).filter(Boolean).length : 0
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="max-w-4xl space-y-6 v2-bridge-surface">
       <Breadcrumb items={[
-        { label: 'Documentos', to: '/documents' },
+        { label: 'Documentos', to: documentsPath },
         { label: docLabel },
       ]} />
-      {/* Header */}
-      <div className="flex items-start gap-4">
-        <FileText className="w-8 h-8 text-brand-600 mt-1 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-gray-900 truncate">{docLabel}</h1>
-          <p className="text-gray-500 mt-0.5">{doc.tema || 'Processando...'}</p>
-          {doc.origem === 'caderno' && (
-            <div className="flex items-center gap-2 mt-1.5">
-              {doc.notebook_id ? (
-                <button
-                  onClick={() => navigate(`/notebook?open=${doc.notebook_id}`)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-violet-50 text-violet-700 border border-violet-100 hover:bg-violet-100 transition-colors"
-                  title={doc.notebook_title ? `Abrir caderno: ${doc.notebook_title}` : 'Abrir Caderno de Pesquisa'}
-                >
-                  <BookOpen className="w-3 h-3" />
-                  Caderno
-                </button>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-violet-50 text-violet-700 border border-violet-100">
-                  <BookOpen className="w-3 h-3" />
-                  Caderno
+      <V2PageHero
+        eyebrow={<><FileText className="h-3.5 w-3.5" /> Documento V2</>}
+        title={docLabel}
+        description={doc.tema || 'Documento em processamento no workspace.'}
+        actions={doc.origem === 'caderno' && doc.notebook_id ? (
+          <button
+            onClick={() => navigate(buildResearchNotebookWorkbenchPath({ notebookId: doc.notebook_id, preserveSearch: location.search }))}
+            className="v2-btn-secondary"
+            title={doc.notebook_title ? `Abrir caderno: ${doc.notebook_title}` : 'Abrir Caderno de Pesquisa'}
+          >
+            <BookOpen className="h-4 w-4" />
+            Abrir caderno
+          </button>
+        ) : undefined}
+        aside={(
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <StatusBadge status={doc.status} />
+              {doc.quality_score != null && (
+                <span className={`text-lg font-bold ${
+                  doc.quality_score >= 80 ? 'text-green-600'
+                    : doc.quality_score >= 60 ? 'text-yellow-600'
+                    : 'text-red-600'
+                }`} title={doc.quality_score >= 80 ? 'Qualidade alta' : doc.quality_score >= 60 ? 'Qualidade aceitavel' : 'Precisa de revisao'}>
+                  {doc.quality_score}/100
                 </span>
               )}
             </div>
-          )}
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <StatusBadge status={doc.status} />
-          {doc.quality_score != null && (
-            <span className={`text-lg font-bold ${
-              doc.quality_score >= 80 ? 'text-green-600'
-                : doc.quality_score >= 60 ? 'text-yellow-600'
-                : 'text-red-600'
-            }`} title={doc.quality_score >= 80 ? 'Qualidade alta' : doc.quality_score >= 60 ? 'Qualidade aceitável' : 'Precisa de revisão'}>
-              {doc.quality_score}/100
-              <span className="text-xs font-normal ml-1 text-gray-400">
-                {doc.quality_score >= 80 ? '✓' : doc.quality_score >= 60 ? '~' : '!'}
-              </span>
-            </span>
-          )}
-        </div>
-      </div>
+            <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Origem</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{doc.origem === 'caderno' ? 'Notebook' : 'Workspace'}</p>
+            </div>
+          </div>
+        )}
+      />
+
+      <V2MetricGrid
+        items={[
+          {
+            label: 'Criado em',
+            value: new Date(doc.created_at).toLocaleDateString('pt-BR', {
+              day: '2-digit', month: '2-digit', year: 'numeric',
+            }),
+            helper: new Date(doc.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            icon: Clock,
+          },
+          {
+            label: 'Agentes executados',
+            value: executions.length.toLocaleString('pt-BR'),
+            helper: 'Execucoes registradas para o documento',
+            icon: Cpu,
+            tone: executions.length ? 'accent' : 'default',
+          },
+          {
+            label: 'Tempo total',
+            value: fmtDuration(totalDuration),
+            helper: 'Soma das etapas conhecidas do pipeline',
+            icon: DollarSign,
+          },
+          {
+            label: 'Leitura estimada',
+            value: totalWords ? `~${Math.ceil(totalWords / 200)} min` : '—',
+            helper: totalWords ? `${totalWords.toLocaleString('pt-BR')} palavras` : 'Conteudo ainda indisponivel',
+            icon: Eye,
+          },
+        ]}
+      />
 
       {/* Progress tracker */}
       {doc.status === 'processando' && id && (
@@ -591,7 +631,7 @@ export default function DocumentDetail() {
             <div className="flex flex-wrap items-center gap-3">
               {doc.status !== 'aprovado' && (
                 <button
-                  onClick={() => navigate(`/documents/${doc.id}/edit`)}
+                  onClick={() => navigate(buildWorkspaceDocumentEditPath(doc.id, { preserveSearch: location.search }))}
                   className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors text-sm"
                   aria-label={`Editar ${docLabel}`}
                 >
@@ -602,10 +642,13 @@ export default function DocumentDetail() {
               {doc.origem === 'caderno' && (
                 <button
                   onClick={() => {
-                    const params = new URLSearchParams()
-                    if (doc.original_request) params.set('request', doc.original_request)
-                    if (doc.document_type_id && doc.document_type_id !== 'documento_caderno') params.set('type', doc.document_type_id)
-                    navigate(`/documents/new?${params.toString()}`)
+                    navigate(buildWorkspaceNewDocumentPath({
+                      preserveSearch: location.search,
+                      request: doc.original_request || null,
+                      type: doc.document_type_id && doc.document_type_id !== 'documento_caderno'
+                        ? doc.document_type_id
+                        : null,
+                    }))
                   }}
                   className="inline-flex items-center gap-2 border border-violet-400 text-violet-700 px-4 py-2 rounded-lg hover:bg-violet-50 transition-colors text-sm"
                   title="Recriar este documento usando o fluxo completo do Gerador"
@@ -674,7 +717,11 @@ export default function DocumentDetail() {
 
             {doc.status !== 'processando' && (
               <button
-                onClick={() => navigate(`/documents/new?type=${encodeURIComponent(doc.document_type_id)}&request=${encodeURIComponent(doc.original_request || doc.tema || '')}`)}
+                onClick={() => navigate(buildWorkspaceNewDocumentPath({
+                  preserveSearch: location.search,
+                  type: doc.document_type_id,
+                  request: doc.original_request || doc.tema || '',
+                }))}
                 className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm"
                 title="Criar um novo documento com os mesmos parâmetros"
               >
@@ -807,7 +854,7 @@ export default function DocumentDetail() {
             <h2 className="text-sm font-medium text-gray-700">Conteúdo do Documento</h2>
             {doc.texto_completo.length > 2000 && (
               <button
-                onClick={() => navigate(`/documents/${doc.id}/edit`)}
+                onClick={() => navigate(buildWorkspaceDocumentEditPath(doc.id, { preserveSearch: location.search }))}
                 className="text-xs text-brand-600 hover:underline"
               >
                 Ver completo no editor

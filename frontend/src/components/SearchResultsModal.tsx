@@ -8,7 +8,7 @@ import {
   X, CheckSquare, Square, ChevronDown, ChevronUp,
   ExternalLink, Library, Globe, Brain, Copy,
 } from 'lucide-react'
-import type { SearchResultItem } from '../pages/ResearchNotebook'
+import type { SearchResultItem } from '../pages/notebook/types'
 
 interface SearchResultsModalProps {
   isOpen: boolean

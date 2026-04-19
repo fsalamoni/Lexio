@@ -1,6 +1,8 @@
 import { Loader2, CheckCircle2, AlertCircle, AlertTriangle, Circle, Activity, Settings } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import DraggablePanel from './DraggablePanel'
+import { buildWorkspaceSettingsPath } from '../lib/workspace-routes'
 
 export type TrailStepStatus = 'pending' | 'active' | 'completed' | 'error'
 
@@ -60,6 +62,8 @@ export default function AgentTrailProgressModal({
   activeStageMeta,
   children,
 }: AgentTrailProgressModalProps) {
+  const location = useLocation()
+
   if (!isOpen) return null
 
   const effectivePercent = Math.max(0, Math.min(100, isComplete ? 100 : percent))
@@ -228,13 +232,13 @@ export default function AgentTrailProgressModal({
               <Settings className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
               <div className="min-w-0">
                 <p className="text-xs text-red-700">{settingsHint}</p>
-                <a
-                  href="/settings"
+                <Link
+                  to={buildWorkspaceSettingsPath({ preserveSearch: location.search })}
                   className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-red-600 hover:text-red-800 underline"
                 >
                   <Settings className="w-3 h-3" />
                   Abrir Configurações
-                </a>
+                </Link>
               </div>
             </div>
           )}

@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Bell, CheckCheck, FileText, X } from 'lucide-react'
 import api from '../api/client'
 import { IS_FIREBASE } from '../lib/firebase'
+import { buildWorkspaceDocumentDetailPath } from '../lib/workspace-routes'
 
 interface NotifItem {
   id: string
@@ -27,6 +28,7 @@ export default function NotificationBell() {
   const [loading, setLoading] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const location = useLocation()
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchNotifications = useCallback(async () => {
@@ -84,7 +86,7 @@ export default function NotificationBell() {
   const handleClick = (notif: NotifItem) => {
     if (!notif.is_read) handleMarkRead(notif.id)
     if (notif.document_id) {
-      navigate(`/documents/${notif.document_id}`)
+      navigate(buildWorkspaceDocumentDetailPath(notif.document_id, { preserveSearch: location.search }))
     }
     setOpen(false)
   }

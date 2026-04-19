@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useLocation, useParams, useNavigate } from 'react-router-dom'
 import { Save, ArrowLeft, FileText, Check, Download, Bot, Copy } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
@@ -11,10 +11,15 @@ import { getDocument, updateDocument } from '../lib/firestore-service'
 import { generateAndDownloadDocx } from '../lib/docx-generator'
 import { DOCTYPE_LABELS } from '../lib/constants'
 import type { UsageExecutionRecord } from '../lib/cost-analytics'
+import {
+  buildWorkspaceDocumentDetailPath,
+  buildWorkspaceDocumentsPath,
+} from '../lib/workspace-routes'
 
 export default function DocumentEditor() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const [content, setContent] = useState('')
   const [docInfo, setDocInfo] = useState<{
     document_type_id: string
@@ -30,6 +35,8 @@ export default function DocumentEditor() {
   const [executions, setExecutions] = useState<UsageExecutionRecord[]>([])
   const { userId } = useAuth()
   const toast = useToast()
+  const documentsPath = buildWorkspaceDocumentsPath({ preserveSearch: location.search })
+  const documentDetailPath = id ? buildWorkspaceDocumentDetailPath(id, { preserveSearch: location.search }) : documentsPath
 
   // Derive unique agents from llm_executions
   const agentBadges = useMemo(() => {
@@ -139,7 +146,7 @@ export default function DocumentEditor() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl space-y-4">
+      <div className="max-w-4xl space-y-4 v2-bridge-surface">
         <div className="flex items-center gap-4">
           <div className="w-9 h-9 skeleton rounded-lg" />
           <div className="space-y-2">
@@ -155,17 +162,17 @@ export default function DocumentEditor() {
   const docLabel = DOCTYPE_LABELS[docInfo?.document_type_id || ''] || docInfo?.document_type_id || 'Documento'
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-4xl space-y-6 v2-bridge-surface">
       <Breadcrumb items={[
-        { label: 'Documentos', to: '/documents' },
-        { label: docLabel, to: `/documents/${id}` },
+        { label: 'Documentos', to: documentsPath },
+        { label: docLabel, to: documentDetailPath },
         { label: 'Editar' },
       ]} />
       {/* Header */}
-      <div className="flex items-start justify-between mb-6 gap-4">
+      <div className="v2-panel flex flex-col gap-5 p-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <button
-            onClick={() => navigate(`/documents/${id}`)}
+            onClick={() => navigate(documentDetailPath)}
             title="Voltar ao documento"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
           >

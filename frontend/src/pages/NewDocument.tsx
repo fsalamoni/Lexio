@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronUp, FileText, ArrowRight, Sparkles, Loader2, MessageCircleQuestion } from 'lucide-react'
 import api, { invalidateApiCache } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import { useTaskManager } from '../contexts/TaskManagerContext'
 import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
+import { V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
   loadAdminDocumentTypes, loadAdminLegalAreas,
@@ -29,6 +30,7 @@ import {
   getDocumentStepMeta,
   type DocumentPipelineStep,
 } from '../lib/document-pipeline'
+import { buildWorkspaceDocumentDetailPath, buildWorkspaceSettingsPath } from '../lib/workspace-routes'
 
 interface DocType {
   id: string
@@ -69,6 +71,7 @@ export default function NewDocument() {
 
   const { userId } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const toast = useToast()
   const { startTask } = useTaskManager()
@@ -199,7 +202,7 @@ export default function NewDocument() {
     } catch (err: any) {
       if (err instanceof ModelsNotConfiguredError) {
         toast.warning('Modelos não configurados', 'Configure os modelos em Configurações antes de usar esta funcionalidade.')
-        navigate('/settings')
+        navigate(buildWorkspaceSettingsPath({ preserveSearch: location.search }))
       } else if (err instanceof ModelUnavailableError) {
         toast.warning(`Modelo indisponível: ${err.modelId}`, 'Vá em Configurações e substitua-o por outro.')
       } else {
@@ -315,7 +318,7 @@ export default function NewDocument() {
             if (err instanceof ModelsNotConfiguredError) {
               setPipelineMessage('Modelos não configurados. Vá em Configurações.')
               toast.warning('Modelos não configurados', err.message)
-              navigate('/settings')
+              navigate(buildWorkspaceSettingsPath({ preserveSearch: location.search }))
             } else if (err instanceof ModelUnavailableError) {
               setPipelineMessage(`Modelo "${err.modelId}" indisponível. Altere-o em Configurações.`)
               toast.warning(
@@ -343,7 +346,7 @@ export default function NewDocument() {
           legal_area_ids: selectedAreas.length > 0 ? selectedAreas : null,
         })
         invalidateApiCache('/stats')
-        navigate(`/documents/${res.data.id}`)
+        navigate(buildWorkspaceDocumentDetailPath(res.data.id, { preserveSearch: location.search }))
       }
     } catch (err: any) {
       toast.error('Erro ao criar documento', err?.response?.data?.detail || err?.message)
@@ -353,16 +356,56 @@ export default function NewDocument() {
   }
 
   return (
-    <div className="max-w-2xl">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0">
-          <FileText className="w-5 h-5 text-brand-600" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Novo Documento</h1>
-          <p className="text-sm text-gray-500">Preencha os campos abaixo para iniciar a geração</p>
-        </div>
-      </div>
+    <div className="max-w-2xl space-y-6 v2-bridge-surface">
+      <V2PageHero
+        eyebrow={<><FileText className="h-3.5 w-3.5" /> Gerador V2</>}
+        title="Configure o caso e dispare a trilha multiagente sem sair do novo workspace"
+        description="Defina tipo documental, areas, contexto e escopo da solicitacao para iniciar uma geracao guiada por pipeline, com visibilidade de custo e aprofundamento opcional de contexto." 
+        aside={(
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Preparacao atual</p>
+            <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Tipo</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{currentType?.name || 'Nao definido'}</p>
+            </div>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Solicitacao</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{request.length}/{MAX_REQUEST}</p>
+            </div>
+          </div>
+        )}
+      />
+
+      <V2MetricGrid
+        items={[
+          {
+            label: 'Tipo documental',
+            value: currentType?.name || 'Pendente',
+            helper: 'Selecione a estrutura de saida desejada',
+            icon: FileText,
+            tone: selectedType ? 'accent' : 'default',
+          },
+          {
+            label: 'Areas selecionadas',
+            value: selectedAreas.length.toLocaleString('pt-BR'),
+            helper: selectedAreas.length > 0 ? 'Filtro juridico ativo' : 'Sem restricao de area',
+            icon: ChevronDown,
+          },
+          {
+            label: 'Context detail',
+            value: contextDetail ? 'Pronto' : 'Opcional',
+            helper: contextDetail ? `${contextDetail.questions.filter(q => q.answer.trim()).length}/${contextDetail.questions.length} respostas` : 'Perguntas geradas sob demanda',
+            icon: MessageCircleQuestion,
+          },
+          {
+            label: 'Estimativa',
+            value: costEstimate ? `~$${costEstimate.estimatedCostUsd.toFixed(3)}` : 'Aguardando',
+            helper: costEstimate ? `~${(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens` : 'Preencha tipo e solicitacao',
+            icon: Sparkles,
+            tone: costEstimate ? 'warm' : 'default',
+          },
+        ]}
+      />
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
         {/* Main form */}
         <div className="bg-white rounded-xl border shadow-sm p-6 space-y-6">
@@ -589,7 +632,7 @@ export default function NewDocument() {
         {(pipelineComplete || pipelineError) && generatedDocId && (
           <button
             type="button"
-            onClick={() => navigate(`/documents/${generatedDocId}`)}
+            onClick={() => navigate(buildWorkspaceDocumentDetailPath(generatedDocId, { preserveSearch: location.search }))}
             className="w-full flex items-center justify-center gap-2 bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 font-semibold text-sm transition-colors shadow-sm"
           >
             {pipelineComplete ? 'Ver Documento Gerado' : 'Ver Documento'}

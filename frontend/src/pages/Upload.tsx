@@ -39,6 +39,7 @@ import {
   type StructuredDocumentSection,
 } from '../lib/document-json-converter'
 import DraggablePanel from '../components/DraggablePanel'
+import { V2EmptyState, V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
 
 interface UploadedFile {
   id: string
@@ -1350,7 +1351,7 @@ export default function Upload() {
   })
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-3xl space-y-6 v2-bridge-surface">
       {/* View modal */}
       {viewDoc && (
         <AcervoDocModal
@@ -1389,16 +1390,64 @@ export default function Upload() {
         onConfirm={confirmDeleteUpload}
       />
 
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Upload de Documentos</h1>
-        <button
-          onClick={fetchHistory}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          title="Atualizar"
-        >
-          <RefreshCw className="w-5 h-5" />
-        </button>
-      </div>
+      <V2PageHero
+        eyebrow={<><UploadIcon className="h-3.5 w-3.5" /> Acervo V2</>}
+        title="Upload, classificacao e enriquecimento do acervo dentro do novo workspace"
+        description="Envie arquivos, acompanhe extração e indexação, gere ementas e tags em lote e mantenha o acervo pronto para abastecer redacao, notebook e analises." 
+        actions={(
+          <button
+            onClick={fetchHistory}
+            className="v2-btn-secondary"
+            title="Atualizar"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Atualizar painel
+          </button>
+        )}
+        aside={(
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Leitura rapida</p>
+            <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Arquivos locais</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{localFiles.length.toLocaleString('pt-BR')}</p>
+            </div>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Indexados</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{(IS_FIREBASE ? firebaseHistory.length : history.length).toLocaleString('pt-BR')}</p>
+            </div>
+          </div>
+        )}
+      />
+
+      <V2MetricGrid
+        items={[
+          {
+            label: 'Acervo total',
+            value: (IS_FIREBASE ? firebaseHistory.length : history.length).toLocaleString('pt-BR'),
+            helper: 'Documentos disponiveis para busca e sintese',
+            icon: Database,
+            tone: 'accent',
+          },
+          {
+            label: 'Com ementa',
+            value: docsWithEmenta.length.toLocaleString('pt-BR'),
+            helper: `${docsWithoutEmenta.length.toLocaleString('pt-BR')} ainda sem ementa`,
+            icon: BookOpen,
+          },
+          {
+            label: 'Classificados',
+            value: docsWithTags.length.toLocaleString('pt-BR'),
+            helper: `${docsWithoutTags.length.toLocaleString('pt-BR')} pendentes de tags`,
+            icon: Tags,
+          },
+          {
+            label: 'Busca atual',
+            value: searchQuery || filterNatureza || 'Livre',
+            helper: filterNatureza ? `Natureza: ${NATUREZA_LABELS[filterNatureza] || filterNatureza}` : 'Sem filtros de acervo',
+            icon: Search,
+          },
+        ]}
+      />
 
       {/* Firebase mode: guidance on how acervo works */}
       {IS_FIREBASE && (
@@ -1794,27 +1843,24 @@ export default function Upload() {
       )}
 
       {((IS_FIREBASE ? firebaseHistory.length : history.length) === 0) && localFiles.length === 0 && !uploading && (
-        <div className="text-center py-12 bg-white rounded-xl border">
-          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Database className="w-8 h-8 text-gray-300" />
-          </div>
-          <p className="font-medium text-gray-700 mb-1">Nenhum documento no acervo</p>
-          <p className="text-sm text-gray-400 mb-4 max-w-md mx-auto">
-            Envie documentos jurídicos (PDF, DOCX) para alimentar sua base de conhecimento.
-            Eles serão usados como referência na geração de novos documentos.
-          </p>
-          <label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors cursor-pointer">
-            <UploadIcon className="w-4 h-4" />
-            Enviar primeiro documento
-            <input
-              type="file"
-              multiple
-              accept=".pdf,.docx,.doc,.txt,.odt,.rtf"
-              onChange={handleInputChange}
-              className="hidden"
-            />
-          </label>
-        </div>
+        <V2EmptyState
+          icon={Database}
+          title="Nenhum documento no acervo"
+          description="Envie documentos juridicos para alimentar sua base de conhecimento. Eles passam a sustentar geracao, notebook, classificacao e revisao com contexto real." 
+          action={(
+            <label className="v2-btn-primary cursor-pointer">
+              <UploadIcon className="h-4 w-4" />
+              Enviar primeiro documento
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.docx,.doc,.txt,.odt,.rtf"
+                onChange={handleInputChange}
+                className="hidden"
+              />
+            </label>
+          )}
+        />
       )}
     </div>
   )

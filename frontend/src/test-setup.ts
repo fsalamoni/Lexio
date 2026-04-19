@@ -19,3 +19,74 @@ if (!('withResolvers' in Promise)) {
     return { promise, resolve, reject }
   }
 }
+
+if (typeof window !== 'undefined') {
+  if (!window.matchMedia) {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: (query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: () => undefined,
+        addListener: () => undefined,
+        dispatchEvent: () => false,
+        removeEventListener: () => undefined,
+        removeListener: () => undefined,
+      }),
+    })
+  }
+
+  if (!('ResizeObserver' in globalThis)) {
+    class ResizeObserver {
+      disconnect() {
+        return undefined
+      }
+
+      observe() {
+        return undefined
+      }
+
+      unobserve() {
+        return undefined
+      }
+    }
+
+    globalThis.ResizeObserver = ResizeObserver as unknown as typeof globalThis.ResizeObserver
+  }
+
+  if (!('IntersectionObserver' in globalThis)) {
+    class IntersectionObserver {
+      root = null
+
+      rootMargin = ''
+
+      thresholds: number[] = []
+
+      disconnect() {
+        return undefined
+      }
+
+      observe() {
+        return undefined
+      }
+
+      takeRecords() {
+        return []
+      }
+
+      unobserve() {
+        return undefined
+      }
+    }
+
+    globalThis.IntersectionObserver = IntersectionObserver as unknown as typeof globalThis.IntersectionObserver
+  }
+
+  if (typeof HTMLElement !== 'undefined' && !HTMLElement.prototype.scrollIntoView) {
+    HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+      return undefined
+    }
+  }
+}
+

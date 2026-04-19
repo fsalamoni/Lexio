@@ -15,6 +15,7 @@
 |----------|-----|
 | GitHub Pages | https://fsalamoni.github.io/Lexio/ |
 | Firebase Hosting | https://lexio.web.app |
+| Firebase Hosting Redesign V2 | https://lexio-redesign-v2-44760.web.app |
 | Cloud Function | https://southamerica-east1-hocapp-44760.cloudfunctions.net/datajudProxy |
 | Dev local | http://localhost:3000 |
 
@@ -36,7 +37,7 @@
 | PDF | pdfjs-dist 4.4 |
 | Zip | JSZip 3.10 |
 | Cloud Function | Firebase Functions 2nd Gen (Node.js 22) |
-| Deploy | GitHub Pages + Firebase Hosting (dual) |
+| Deploy | GitHub Pages + Firebase Hosting producao + Firebase Hosting redesign V2 |
 | CI/CD | GitHub Actions (4 workflows) |
 
 > **Não há backend Python em produção.** A pasta `packages/` contém um backend FastAPI em desenvolvimento mas não está ativo. Toda a lógica LLM roda no frontend TypeScript.
@@ -49,6 +50,7 @@
 - **Acervo** — Upload de documentos de referência com classificação e ementa automática por IA (2 agentes dedicados)
 - **Banco de Teses** — CRUD + extração automática + análise com pipeline de 5 agentes
 - **Caderno de Pesquisa** — Chat com 7 agentes de pesquisa + Estúdio de Criação (13 tipos de artefato, pipeline de 5 agentes + renderização visual automática e geração de mídia internalizada)
+- **Workbench Redesign V2** — DashboardV2, ProfileV2 e ResearchNotebookV2 já operam sobre dados reais; o notebook V2 cobre overview, chat contextual, gestão de fontes, pesquisa externa, pesquisa profunda e jurisprudência/DataJud no novo shell
 - **Análise de acervo no caderno** — 4 agentes para análise de documentos do acervo dentro do caderno
 - **Pipeline de Vídeo** — 11 agentes configuráveis para produção completa de vídeo (planejamento, clips, imagem, TTS → renderização)
 - **Pipeline de Áudio** — 6 agentes para produção de podcasts e narrações com TTS e síntese literal internalizada
@@ -65,7 +67,7 @@
 - **Pesquisa de jurisprudência** — DataJud/CNJ via Cloud Function, busca complementar no STF e filtragem temática por área do direito
 - **Geração de imagens** — Via OpenRouter para vídeos e apresentações
 - **Modo Demo** — Offline completo com mock interceptor (sem necessidade de Firebase)
-- **Dual deploy** — GitHub Pages (base `/Lexio/`) + Firebase Hosting (base `/`)
+- **Deploy multipista** — GitHub Pages (base `/Lexio/`) + Firebase Hosting estável (`lexio.web.app`) + Firebase Hosting experimental do redesign (`lexio-redesign-v2-44760.web.app`)
 
 ---
 
@@ -95,11 +97,15 @@ VITE_BASE_PATH=/
 
 # Firebase
 VITE_FIREBASE_API_KEY=your_key
-VITE_FIREBASE_AUTH_DOMAIN=your_site.web.app
+VITE_FIREBASE_AUTH_DOMAIN=hocapp-44760.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=your_project_id
 VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=000000000000
 VITE_FIREBASE_APP_ID=1:000000000000:web:abc123
+
+# Opcional - ativar o shell V2 e fazer o site abrir direto nele
+VITE_REDESIGN_V2=true
+VITE_REDESIGN_V2_HOME=true
 
 # Opcional — fallback quando não há chave no Firestore
 VITE_OPENROUTER_API_KEY=sk-or-v1-...
@@ -162,6 +168,7 @@ docs/              → Documentação técnica arquitetural
 2. Abra PR para `main`. O workflow `.github/workflows/firebase-preview.yml` publica um preview temporário no Firebase e agora exige `typecheck`, `test` e `build` antes de comentar a URL.
 3. Faça merge em `main` somente com a prévia validada. O workflow `.github/workflows/firebase-deploy.yml` roda `typecheck`, `test`, `build`, recompila `functions/`, sincroniza o segredo `DATAJUD_API_KEY` no Secret Manager e então publica Hosting, Rules, Indexes, Storage e Functions.
 4. Se a versão espelho em GitHub Pages também precisar ser atualizada, dispare manualmente `.github/workflows/deploy-pages.yml`. Ele também executa `typecheck`, `test` e `build` antes do publish.
+6. Para publicar a experiência experimental do redesign em URL separada, use `.github/workflows/firebase-redesign-v2.yml` ou replique localmente o build com `VITE_REDESIGN_V2=true`, `VITE_REDESIGN_V2_HOME=true` e `VITE_BUILD_OUT_DIR=dist-redesign-v2` antes de rodar `firebase deploy --only hosting:lexio-redesign-v2 --project hocapp-44760`.
 
 ### Segredos operacionais mínimos
 
@@ -169,6 +176,13 @@ docs/              → Documentação técnica arquitetural
 - `FIREBASE_API_KEY`
 - `VITE_ADMIN_EMAIL`
 - `DATAJUD_API_KEY` para a Cloud Function `datajudProxy`
+
+### URL dedicada do redesign V2
+
+- Site isolado: `https://lexio-redesign-v2-44760.web.app`
+- Comportamento: o hostname dedicado liga `VITE_REDESIGN_V2` implicitamente e redireciona `/` para `/labs/dashboard-v2`, preservando acesso direto ao shell experimental sem query params manuais
+- Deploy: `.github/workflows/firebase-redesign-v2.yml`
+- Auth: se o workflow não puder sincronizar domínios autorizados automaticamente, rode `node scripts/firebase-authorized-domains.mjs --project hocapp-44760 --domain lexio-redesign-v2-44760.web.app`
 
 O cliente web não depende mais de chave hardcoded do DataJud. Em produção, o acesso deve passar pelo proxy gerenciado; fallback direto do browser só é admitido quando o usuário configurou `datajud_api_key` nas preferências ou `VITE_DATAJUD_API_KEY` no ambiente local.
 

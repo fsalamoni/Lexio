@@ -8,7 +8,7 @@
  */
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import {
   Plus, Search, BookOpen, MessageCircle, Sparkles, FileText, Trash2,
   ArrowLeft, Send, Database, Clock, Upload,
@@ -79,6 +79,13 @@ import {
   buildStudioTrailSteps,
   type NotebookOperationalAggregate,
 } from '../lib/notebook-pipeline-progress'
+import {
+  accumulateOperationalSummary,
+  buildOperationalEventKey,
+  createEmptyOperationalSummary,
+  getNotebookArtifactTaskMetadata,
+  STUDIO_PIPELINE_TOTAL_STEPS,
+} from '../lib/notebook-artifact-tasks'
 import type { StoredNotebookMedia } from '../lib/notebook-media-storage'
 import { extractFileText, isSupportedTextFile, SUPPORTED_TEXT_FILE_EXTENSIONS } from '../lib/file-text-extractor'
 import { AREA_LABELS, AREA_COLORS } from '../lib/constants'
@@ -142,6 +149,12 @@ import {
   getExtensionFromMimeType,
   renderMarkdownToHtml,
 } from './notebook/utils'
+import type { SearchResultItem } from './notebook/types'
+import { isRedesignV2Enabled } from '../lib/feature-flags'
+import {
+  buildResearchNotebookWorkbenchPath,
+  parseResearchNotebookLegacyTab,
+} from '../lib/research-notebook-routes'
 
 const ArtifactViewerModal = lazy(() => import('../components/artifacts/ArtifactViewerModal'))
 const VideoGenerationCostModal = lazy(() => import('../components/VideoGenerationCostModal'))
@@ -152,6 +165,9 @@ const ConfirmDialog = lazy(() => import('../components/ConfirmDialog'))
 const JurisprudenceConfigModal = lazy(() => import('../components/JurisprudenceConfigModal'))
 const SearchResultsModal = lazy(() => import('../components/SearchResultsModal'))
 const AgentTrailProgressModal = lazy(() => import('../components/AgentTrailProgressModal'))
+const STUDIO_LAUNCHABLE_ARTIFACT_TYPES = new Set<StudioArtifactType>(
+  ARTIFACT_CATEGORIES.flatMap((category) => category.items.map((item) => item.type)),
+)
 
 function NotebookDeferredOverlay({ message }: { message: string }) {
   return (
@@ -207,21 +223,6 @@ async function loadImageGenerationRuntime() {
 
 async function loadTtsRuntime() {
   return import('../lib/tts-client')
-}
-
-/** Individual search result item for review modal */
-export interface SearchResultItem {
-  id: string
-  title: string
-  subtitle: string
-  snippet: string
-  fullContent?: string
-  metadata: Record<string, string>
-  url?: string
-  selected: boolean
-  /** Raw data from the original search result (for synthesis) */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _raw?: any
 }
 
 // ── Citation Suffix Builder ──────────────────────────────────────────────────
@@ -299,109 +300,9 @@ const JURISPRUDENCE_SYNTHESIS_SYSTEM = [
 
 /** Delay (ms) before showing a secondary toast, to avoid overlapping with the primary toast. */
 const SECONDARY_TOAST_DELAY_MS = 600
-const STUDIO_PIPELINE_TOTAL_STEPS = 3
 
 type ViewMode = 'list' | 'detail'
 type DetailTab = 'overview' | 'chat' | 'sources' | 'studio' | 'artifacts'
-
-type NotebookArtifactTaskMetadata = {
-  taskKind: 'notebook-artifact'
-  notebookId: string
-  artifactType: StudioArtifactType
-  artifactLabel: string
-}
-
-function getNotebookArtifactTaskMetadata(metadata: Record<string, unknown> | undefined): NotebookArtifactTaskMetadata | null {
-  if (!metadata) return null
-  if (metadata.taskKind !== 'notebook-artifact') return null
-  if (typeof metadata.notebookId !== 'string') return null
-  if (typeof metadata.artifactType !== 'string') return null
-  if (typeof metadata.artifactLabel !== 'string') return null
-  return {
-    taskKind: 'notebook-artifact',
-    notebookId: metadata.notebookId,
-    artifactType: metadata.artifactType as StudioArtifactType,
-    artifactLabel: metadata.artifactLabel,
-  }
-}
-
-function createEmptyOperationalSummary(): TaskOperationalSummary {
-  return {
-    totalCostUsd: 0,
-    totalDurationMs: 0,
-    totalRetryCount: 0,
-    fallbackCount: 0,
-    degradationReasons: [],
-    phaseCounts: {},
-  }
-}
-
-function buildOperationalEventKey(update: {
-  phase?: string
-  costUsd?: number
-  durationMs?: number
-  retryCount?: number
-  usedFallback?: boolean
-  fallbackReason?: string
-  fallbackFrom?: string
-}): string | null {
-  const hasSignal =
-    (update.costUsd ?? 0) > 0 ||
-    (update.durationMs ?? 0) > 0 ||
-    (update.retryCount ?? 0) > 0 ||
-    Boolean(update.usedFallback) ||
-    Boolean(update.fallbackReason) ||
-    Boolean(update.fallbackFrom)
-
-  if (!hasSignal) return null
-
-  return [
-    update.phase ?? '',
-    update.costUsd ?? 0,
-    update.durationMs ?? 0,
-    update.retryCount ?? 0,
-    update.usedFallback ? 1 : 0,
-    update.fallbackReason ?? '',
-    update.fallbackFrom ?? '',
-  ].join('|')
-}
-
-function accumulateOperationalSummary(
-  current: TaskOperationalSummary,
-  update: {
-    phase?: string
-    costUsd?: number
-    durationMs?: number
-    retryCount?: number
-    usedFallback?: boolean
-    fallbackReason?: string
-    fallbackFrom?: string
-  },
-): TaskOperationalSummary {
-  const degradationReason = update.fallbackReason
-    || (update.fallbackFrom ? `Fallback de ${update.fallbackFrom.split('/').pop() || update.fallbackFrom}` : undefined)
-    || (update.usedFallback ? 'Fallback ativado' : undefined)
-
-  const degradationReasons = degradationReason
-    ? Array.from(new Set([...(current.degradationReasons || []), degradationReason]))
-    : (current.degradationReasons || [])
-
-  const phaseCounts = {
-    ...(current.phaseCounts || {}),
-  }
-  if (update.phase) {
-    phaseCounts[update.phase] = (phaseCounts[update.phase] || 0) + 1
-  }
-
-  return {
-    totalCostUsd: Number((current.totalCostUsd + (update.costUsd ?? 0)).toFixed(6)),
-    totalDurationMs: current.totalDurationMs + Math.max(0, update.durationMs ?? 0),
-    totalRetryCount: current.totalRetryCount + Math.max(0, update.retryCount ?? 0),
-    fallbackCount: current.fallbackCount + (update.usedFallback ? 1 : 0),
-    degradationReasons,
-    phaseCounts,
-  }
-}
 
 function formatContextChars(value: number): string {
   if (value >= 1000) return `${(value / 1000).toFixed(1)}k chars`
@@ -412,6 +313,7 @@ export default function ResearchNotebook() {
   const { userId } = useAuth()
   const toast = useToast()
   const { startTask, tasks } = useTaskManager()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const mountedRef = useRef(true)
 
@@ -608,17 +510,47 @@ export default function ResearchNotebook() {
   useEffect(() => {
     if (deepLinkHandledRef.current) return
     const openId = searchParams.get('open')
+    const initialTab = parseResearchNotebookLegacyTab(searchParams.get('tab'))
+    const initialArtifactTypeParam = searchParams.get('artifact_type')
+    const initialArtifactType = initialArtifactTypeParam && STUDIO_LAUNCHABLE_ARTIFACT_TYPES.has(initialArtifactTypeParam as StudioArtifactType)
+      ? initialArtifactTypeParam as StudioArtifactType
+      : null
+    const initialStudioPrompt = searchParams.get('studio_prompt')?.trim() || ''
     if (!openId || !userId || loading) return
     deepLinkHandledRef.current = true
     // Clear the param from the URL immediately so a page refresh is clean.
-    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('open'); return next }, { replace: true })
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('open')
+      next.delete('tab')
+      next.delete('artifact_type')
+      next.delete('studio_prompt')
+      return next
+    }, { replace: true })
     const resolve = getResearchNotebook(userId, openId)
     resolve.then(nb => {
       if (nb) {
         setActiveNotebook(nb)
         setViewMode('detail')
-        setActiveTab('overview')
+        setActiveTab(initialTab)
         setSuggestions([])
+        if (initialTab === 'studio' && initialStudioPrompt) {
+          setStudioCustomPrompt(initialStudioPrompt)
+        }
+        if (initialTab === 'studio' && (initialArtifactType || initialStudioPrompt)) {
+          const artifactDef = initialArtifactType
+            ? ARTIFACT_TYPES.find((artifact) => artifact.type === initialArtifactType)
+            : null
+
+          toast.info(
+            artifactDef
+              ? `${artifactDef.label} pronto para iniciar`
+              : 'Briefing do estúdio restaurado',
+            initialStudioPrompt
+              ? 'O briefing vindo do V2 já foi preenchido. Revise o contexto auditável e clique no card do artefato para iniciar a geração.'
+              : 'Revise o contexto auditável e clique no card do artefato para iniciar a geração.',
+          )
+        }
       }
     }).catch(() => {
       // silently ignore — notebook may have been deleted
@@ -4186,6 +4118,24 @@ Instruções:
     videoLiteralOperationalSummary,
   ])
 
+  const notebookV2Target = activeNotebook?.id
+    ? buildResearchNotebookWorkbenchPath({
+        notebookId: activeNotebook.id,
+        section: activeTab === 'sources'
+          ? 'sources'
+          : activeTab === 'chat'
+            ? 'chat'
+            : activeTab === 'studio'
+              ? 'studio'
+            : activeTab === 'artifacts'
+              ? 'artifacts'
+            : activeTab === 'overview'
+              ? 'overview'
+              : 'bridge',
+        preserveSearch: location.search,
+      })
+    : buildResearchNotebookWorkbenchPath({ preserveSearch: location.search })
+
   // ── Render: List View ───────────────────────────────────────────────
 
   if (viewMode === 'list') {
@@ -4224,6 +4174,31 @@ Instruções:
             Novo Caderno
           </button>
         </div>
+
+        {isRedesignV2Enabled() && (
+          <div className="rounded-2xl border border-brand-100 bg-gradient-to-r from-brand-50 via-white to-violet-50/70 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Research Workbench V2 disponível</p>
+                  <p className="mt-1 text-sm text-gray-600">
+                    O redesign do notebook já tem lista persistente, deck executivo e governança de fontes conectados ao mesmo backend do caderno atual.
+                  </p>
+                </div>
+              </div>
+
+              <Link
+                to={buildResearchNotebookWorkbenchPath({ preserveSearch: location.search })}
+                className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
+              >
+                Abrir workbench principal
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* Search */}
         <div className="relative">
@@ -4445,6 +4420,15 @@ Instruções:
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {isRedesignV2Enabled() && (
+            <Link
+              to={notebookV2Target}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-100"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Notebook V2
+            </Link>
+          )}
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
           {([
             { key: 'overview' as DetailTab, icon: BookMarked, label: 'Visão Geral' },

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import {
   FileText, CheckCircle, Clock, DollarSign, TrendingUp,
-  Activity, ChevronRight, Download, Plus, Upload, BookOpen, Search,
+  Activity, ChevronRight, Download, Plus, Upload, BookOpen, Search, Sparkles,
 } from 'lucide-react'
 import {
   BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -10,69 +10,28 @@ import {
 } from 'recharts'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import api from '../api/client'
-import { useAuth } from '../contexts/AuthContext'
 import StatusBadge from '../components/StatusBadge'
-import { useToast } from '../components/Toast'
 import { SkeletonCard } from '../components/Skeleton'
 import { IS_FIREBASE, firebaseAuth } from '../lib/firebase'
-import {
-  getStats as firestoreGetStats,
-  getRecentDocuments,
-  getDailyStats,
-  getByTypeStats,
-} from '../lib/firestore-service'
 import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../lib/constants'
-
-interface Stats {
-  total_documents: number
-  completed_documents: number
-  processing_documents: number
-  pending_review_documents: number
-  average_quality_score: number | null
-  total_cost_usd: number
-  average_duration_ms: number | null
-}
-
-interface DailyPoint {
-  dia: string
-  total: number
-  concluidos: number
-  custo: number
-}
-
-interface AgentStat {
-  agent_name: string
-  chamadas: number
-  custo_total: number
-  tempo_medio_ms: number
-}
-
-interface RecentDoc {
-  id: string
-  document_type_id: string
-  tema: string | null
-  status: string
-  quality_score: number | null
-  created_at: string
-}
-
-interface TypeStat {
-  document_type_id: string
-  total: number
-  avg_score: number | null
-}
-
-function fmtCost(usd: number | null | undefined) {
-  if (usd == null || isNaN(usd)) return '—'
-  return usd < 0.001 ? `$${usd.toFixed(5)}` : `$${usd.toFixed(4)}`
-}
-
-function fmtDuration(ms: number | null) {
-  if (!ms) return '—'
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
+import {
+  buildCostSeries,
+  computeDocsThisWeek,
+  formatCost as fmtCost,
+  formatDuration as fmtDuration,
+  getResumableDocument,
+  useDashboardData,
+} from '../lib/dashboard-data'
+import { isRedesignV2Enabled } from '../lib/feature-flags'
+import {
+  buildWorkspaceDocumentDetailPath,
+  buildWorkspaceDocumentsPath,
+  buildWorkspaceNewDocumentPath,
+  buildWorkspaceProfilePath,
+  buildWorkspaceShellPath,
+  buildWorkspaceThesesPath,
+  buildWorkspaceUploadPath,
+} from '../lib/workspace-routes'
 
 // Custom tooltip for charts
 function CustomTooltip({ active, payload, label }: any) {
@@ -97,76 +56,16 @@ const PERIOD_OPTIONS = [
 ]
 
 export default function Dashboard() {
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [daily, setDaily] = useState<DailyPoint[]>([])
-  const [agents, setAgents] = useState<AgentStat[]>([])
-  const [recent, setRecent] = useState<RecentDoc[]>([])
-  const [byType, setByType] = useState<TypeStat[]>([])
-  const [loading, setLoading] = useState(true)
   const [periodDays, setPeriodDays] = useState(30)
-  const [chartLoading, setChartLoading] = useState(false)
-  const { userId } = useAuth()
-  const toast = useToast()
-  const shouldWaitForFirebaseUser = IS_FIREBASE && !userId
-
-  useEffect(() => {
-    if (shouldWaitForFirebaseUser) return
-    setLoading(true)
-
-    if (IS_FIREBASE && userId) {
-      const p1 = firestoreGetStats(userId).then(s => setStats(s)).catch(() => toast.error('Erro ao carregar estatísticas'))
-      const p2 = getRecentDocuments(userId, 5).then(docs => {
-        setRecent(docs.filter(d => d.id).map(d => ({
-          id: d.id as string,
-          document_type_id: d.document_type_id,
-          tema: d.tema ?? null,
-          status: d.status,
-          quality_score: d.quality_score ?? null,
-          created_at: d.created_at,
-        })))
-      }).catch(() => toast.error('Erro ao carregar documentos recentes'))
-      const p3 = getDailyStats(userId, periodDays).then(d => setDaily(d)).catch(() => {/* non-critical */})
-      const p4 = getByTypeStats(userId).then(bt => setByType(bt)).catch(() => {/* non-critical */})
-      Promise.all([p1, p2, p3, p4]).finally(() => setLoading(false))
-    } else {
-      const toArr = (v: unknown) => (Array.isArray(v) ? v : [])
-      const p1 = api.get('/stats').then(r => { if (r.data && typeof r.data === 'object') setStats(r.data) }).catch(() => toast.error('Erro ao carregar estatísticas'))
-      const p2 = api.get('/stats/daily', { params: { days: periodDays } }).then(r => setDaily(toArr(r.data))).catch(() => toast.error('Erro ao carregar histórico diário'))
-      const p3 = api.get('/stats/agents').then(r => setAgents(toArr(r.data))).catch(() => toast.error('Erro ao carregar estatísticas de agentes'))
-      const p4 = api.get('/stats/recent').then(r => setRecent(toArr(r.data))).catch(() => toast.error('Erro ao carregar documentos recentes'))
-      const p5 = api.get('/stats/by-type').then(r => setByType(toArr(r.data))).catch(() => {/* non-critical */})
-      Promise.all([p1, p2, p3, p4, p5]).finally(() => setLoading(false))
-    }
-  }, [shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Reload chart data when period changes (after initial load)
-  useEffect(() => {
-    if (loading) return
-    if (shouldWaitForFirebaseUser) return
-    setChartLoading(true)
-    if (IS_FIREBASE && userId) {
-      getDailyStats(userId, periodDays)
-        .then(d => setDaily(d))
-        .catch(() => toast.error('Erro ao carregar histórico'))
-        .finally(() => setChartLoading(false))
-    } else {
-      api.get('/stats/daily', { params: { days: periodDays }, noCache: true } as any)
-        .then(r => setDaily(Array.isArray(r.data) ? r.data : []))
-        .catch(() => toast.error('Erro ao carregar histórico'))
-        .finally(() => setChartLoading(false))
-    }
-  }, [periodDays, shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Build cumulative cost series(guard against missing custo field)
-  const costSeries = daily.reduce<{ dia: string; custo_acumulado: number }[]>((acc, d) => {
-    const prev = acc.length > 0 ? acc[acc.length - 1].custo_acumulado : 0
-    const custo = typeof d.custo === 'number' ? d.custo : 0
-    acc.push({ dia: d.dia, custo_acumulado: +(prev + custo).toFixed(5) })
-    return acc
-  }, [])
-
-  // Docs this week (last 7 days from daily data)
-  const docsThisWeek = daily.slice(-7).reduce((sum, d) => sum + (d.total || 0), 0)
+  const location = useLocation()
+  const { stats, daily, agents, recent, byType, loading, chartLoading } = useDashboardData(periodDays)
+  const costSeries = buildCostSeries(daily)
+  const docsThisWeek = computeDocsThisWeek(daily)
+  const notebookWorkbenchPath = buildWorkspaceShellPath('/notebook', { preserveSearch: location.search })
+  const documentsPath = buildWorkspaceDocumentsPath({ preserveSearch: location.search })
+  const newDocumentPath = buildWorkspaceNewDocumentPath({ preserveSearch: location.search })
+  const uploadPath = buildWorkspaceUploadPath({ preserveSearch: location.search })
+  const thesesPath = buildWorkspaceThesesPath({ preserveSearch: location.search })
 
   const formatDia = (dia: string) => {
     try { return format(parseISO(dia), 'dd/MM', { locale: ptBR }) }
@@ -239,6 +138,39 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {isRedesignV2Enabled() && (
+        <div className="rounded-2xl border border-brand-100 bg-gradient-to-r from-brand-50 via-white to-violet-50/70 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Dashboard V2 disponivel em preview</p>
+                <p className="mt-1 text-sm text-gray-600">
+                  O novo hub operacional do redesign ja esta ativo e compartilha o mesmo backend do dashboard atual.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                to={buildWorkspaceShellPath('/labs/dashboard-v2', { preserveSearch: location.search })}
+                className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
+              >
+                Abrir Dashboard V2
+              </Link>
+              <Link
+                to={buildWorkspaceProfilePath({ preserveSearch: location.search })}
+                className="inline-flex items-center justify-center rounded-xl border border-brand-200 bg-white px-4 py-2.5 text-sm font-semibold text-brand-700 transition-colors hover:bg-brand-50"
+              >
+                Abrir meu perfil
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stat cards */}
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
@@ -289,12 +221,12 @@ export default function Dashboard() {
 
       {/* Continue working — show most recent in-progress or review document */}
       {recent.length > 0 && (() => {
-        const resumable = recent.find(d => d.status === 'processando' || d.status === 'em_revisao' || d.status === 'concluido')
+        const resumable = getResumableDocument(recent)
         if (!resumable) return null
         const statusLabel = resumable.status === 'processando' ? 'em processamento' : resumable.status === 'em_revisao' ? 'aguardando revisão' : 'concluído'
         return (
           <Link
-            to={`/documents/${resumable.id}`}
+            to={buildWorkspaceDocumentDetailPath(resumable.id, { preserveSearch: location.search })}
             className="flex items-center gap-4 rounded-xl border border-brand-100 bg-brand-50/50 px-5 py-3 hover:bg-brand-50 transition-colors group"
           >
             <Activity className="w-5 h-5 text-brand-600 flex-shrink-0" />
@@ -315,10 +247,10 @@ export default function Dashboard() {
       {/* Quick actions */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Novo Documento', icon: Plus, to: '/documents/new', color: 'bg-brand-50 text-brand-700 border-brand-100' },
-          { label: 'Upload de Acervo', icon: Upload, to: '/upload', color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
-          { label: 'Caderno de Pesquisa', icon: BookOpen, to: '/notebook', color: 'bg-violet-50 text-violet-700 border-violet-100' },
-          { label: 'Banco de Teses', icon: Search, to: '/theses', color: 'bg-amber-50 text-amber-700 border-amber-100' },
+          { label: 'Novo Documento', icon: Plus, to: newDocumentPath, color: 'bg-brand-50 text-brand-700 border-brand-100' },
+          { label: 'Upload de Acervo', icon: Upload, to: uploadPath, color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+          { label: 'Caderno de Pesquisa', icon: BookOpen, to: notebookWorkbenchPath, color: 'bg-violet-50 text-violet-700 border-violet-100' },
+          { label: 'Banco de Teses', icon: Search, to: thesesPath, color: 'bg-amber-50 text-amber-700 border-amber-100' },
         ].map(action => (
           <Link
             key={action.to}
@@ -406,7 +338,7 @@ export default function Dashboard() {
         <div className="bg-white rounded-xl border overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b">
             <h2 className="text-sm font-semibold text-gray-700">Documentos Recentes</h2>
-            <Link to="/documents" className="text-xs text-brand-600 hover:underline flex items-center gap-0.5">
+            <Link to={documentsPath} className="text-xs text-brand-600 hover:underline flex items-center gap-0.5">
               Ver todos <ChevronRight className="w-3 h-3" />
             </Link>
           </div>
@@ -415,7 +347,7 @@ export default function Dashboard() {
               <FileText className="w-10 h-10 text-gray-200 mx-auto mb-2" />
               <p className="text-sm text-gray-400">Nenhum documento ainda</p>
               <Link
-                to="/documents/new"
+                to={newDocumentPath}
                 className="mt-3 inline-block text-xs bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700"
               >
                 Criar primeiro documento
@@ -426,7 +358,7 @@ export default function Dashboard() {
               {recent.map(doc => (
                 <Link
                   key={doc.id}
-                  to={`/documents/${doc.id}`}
+                  to={buildWorkspaceDocumentDetailPath(doc.id, { preserveSearch: location.search })}
                   className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors"
                 >
                   <div className="flex-1 min-w-0">

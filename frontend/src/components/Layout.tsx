@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, ReactNode } from 'react'
 import { Menu, ArrowUp } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import { ErrorBoundary } from './ErrorBoundary'
 import NotificationBell from './NotificationBell'
@@ -8,6 +8,7 @@ import { useToast } from './Toast'
 import api from '../api/client'
 import { IS_FIREBASE } from '../lib/firebase'
 import { runModelHealthCheck, formatHealthCheckMessage } from '../lib/model-health-check'
+import { buildWorkspaceDocumentDetailPath } from '../lib/workspace-routes'
 
 const POLL_INTERVAL = 30_000 // 30 seconds
 
@@ -15,6 +16,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const toast = useToast()
   const navigate = useNavigate()
+  const location = useLocation()
   const processingRef = useRef<Set<string>>(new Set())
   const initializedRef = useRef(false)
   const lastRuntimeToastRef = useRef(0)
@@ -81,7 +83,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           if (processingRef.current.has(doc.id) && doc.status === 'concluido') {
             toast.success('Documento concluído', doc.tema || doc.document_type_id)
             const docId = doc.id
-            setTimeout(() => navigate(`/documents/${docId}`), 300)
+            setTimeout(() => navigate(buildWorkspaceDocumentDetailPath(docId, { preserveSearch: location.search })), 300)
           }
         }
 
@@ -94,7 +96,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     fetchAndCheck()
     const timer = setInterval(fetchAndCheck, POLL_INTERVAL)
     return () => clearInterval(timer)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.search]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Model health check — runs once per session, max once per 24h ──
   useEffect(() => {

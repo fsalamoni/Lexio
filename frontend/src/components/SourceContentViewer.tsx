@@ -7,7 +7,7 @@
  * - Jurisprudência sources (rich legal document rendering with Síntese+Processos tabs)
  * - Plain text fallback
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Copy, Check, FileText, Download, Scale, BookOpen, ChevronDown, ChevronUp, FileSearch, ThumbsUp, ThumbsDown, Minus, Clock, Layers, ArrowLeftRight, ExternalLink } from 'lucide-react'
 import DraggablePanel from './DraggablePanel'
 import type { NotebookSource } from '../lib/firestore-service'
@@ -99,6 +99,15 @@ export function parseJurisprudenceText(text: string): JurisprudenceSection[] {
     sections.push({ ...current, body: current.body.trim() })
   }
   return sections.filter(s => s.body || s.heading)
+}
+
+function parseJurisprudenceResults(rawResults: string | undefined): DataJudResult[] {
+  if (!rawResults) return []
+  try {
+    return JSON.parse(rawResults) as DataJudResult[]
+  } catch {
+    return []
+  }
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -260,23 +269,23 @@ function MetaBadges({ meta, charCount }: { meta: StructuredDocumentMeta | null; 
  * Rich jurisprudence document viewer.
  * Renders the LLM-synthesized jurisprudence text as a structured legal document.
  */
-function JurisprudenceViewer({ source, plain }: { source: NotebookSource; plain: string }) {
+function JurisprudenceViewer({ source, plain, results }: { source: NotebookSource; plain: string; results: DataJudResult[] }) {
   const sections = useMemo(() => parseJurisprudenceText(plain), [plain])
   const query = source.reference || ''
-
-  // Parse raw results for the Processos tab
-  const results: DataJudResult[] = useMemo(() => {
-    if (!source.results_raw) return []
-    try { return JSON.parse(source.results_raw) as DataJudResult[] } catch { return [] }
-  }, [source.results_raw])
 
   // Derived data for new tabs
   const timelineSorted = useMemo(() => sortByDate(results, true), [results])
   const areaGroups = useMemo(() => groupByArea(results), [results])
 
   type TabId = 'sintese' | 'processos' | 'timeline' | 'agrupados' | 'comparar'
-  const [activeTab, setActiveTab] = useState<TabId>('sintese')
+  const defaultTab: TabId = !plain.trim() && results.length > 0 ? 'processos' : 'sintese'
+  const [activeTab, setActiveTab] = useState<TabId>(defaultTab)
   const [compareSelection, setCompareSelection] = useState<[number, number] | null>(null)
+
+  useEffect(() => {
+    setActiveTab(defaultTab)
+    setCompareSelection(null)
+  }, [defaultTab, source.id])
 
   const comparison = useMemo(() => {
     if (!compareSelection) return null
@@ -866,8 +875,13 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
   if (!source) return null
 
   const isJurisprudencia = source.type === 'jurisprudencia'
+  const jurisprudenciaResults = useMemo(
+    () => (isJurisprudencia ? parseJurisprudenceResults(source.results_raw) : []),
+    [isJurisprudencia, source.results_raw],
+  )
   const hasSections = sections && sections.length > 0
   const charCount = plain.length
+  const hasRenderableContent = charCount > 0 || (isJurisprudencia && jurisprudenciaResults.length > 0)
 
   // Choose panel title icon based on source type
   const icon = isJurisprudencia ? <Scale size={16} /> : hasSections ? <BookOpen size={16} /> : <FileText size={16} />
@@ -903,11 +917,11 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
 
         {/* ── Body ─────────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {charCount === 0 ? (
+          {!hasRenderableContent ? (
             <p className="text-sm text-gray-400 italic">Nenhum conteúdo de texto disponível para este documento.</p>
           ) : isJurisprudencia ? (
             /* Rich jurisprudence viewer with tabs */
-            <JurisprudenceViewer source={source} plain={plain} />
+            <JurisprudenceViewer source={source} plain={plain} results={jurisprudenciaResults} />
           ) : (
             /* Page-like document viewer for acervo/uploaded docs */
             <DocumentPageViewer sections={sections} meta={meta} plain={plain} />

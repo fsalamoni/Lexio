@@ -211,4 +211,43 @@ describe('analyzeNotebookAcervo', () => {
     expect(result.documents[0].summary).toBe('Resumo final do analista')
     expect(result.documents[0].score).toBeCloseTo(0.861, 3)
   })
+
+  it('excludes acervo documents already linked to the notebook', async () => {
+    const docs = [
+      makeDoc('doc-1', 'parecer-1.docx', 'Parecer sobre contratação temporária já anexado', 'A', '2026-01-01T00:00:00.000Z'),
+      makeDoc('doc-2', 'parecer-2.docx', 'Parecer sobre contratação temporária elegível', 'B', '2026-01-02T00:00:00.000Z'),
+    ]
+    mockGetAllAcervoDocumentsForSearch.mockResolvedValue(docs)
+
+    mockCallLLM
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        tema: 'Contratação temporária',
+        palavras_chave: ['contratação temporária'],
+      }), 'triagem-model'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        selected: [{ id: 'doc-2', score: 0.81, reason: 'Documento ainda não anexado ao caderno.' }],
+      }), 'buscador-model'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        analyses: [
+          { id: 'doc-2', relevance: 'alta', score: 0.9, summary: 'Resumo do documento elegível', key_points: ['P1'] },
+        ],
+      }), 'analista-model'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        recommended: [{ id: 'doc-2', score: 0.88, summary: 'Curadoria final do documento elegível' }],
+      }), 'curador-model'))
+
+    const result = await analyzeNotebookAcervo(
+      'user-1',
+      'notebook-1',
+      'Contratação temporária',
+      'Analisar requisitos e limites.',
+      ['parecer-1.docx'],
+      new Set<string>(['doc-1']),
+    )
+
+    expect(result.documents).toHaveLength(1)
+    expect(result.documents[0].id).toBe('doc-2')
+    expect(String(mockCallLLM.mock.calls[1]?.[2])).not.toContain('ID: doc-1')
+    expect(String(mockCallLLM.mock.calls[1]?.[2])).toContain('ID: doc-2')
+  })
 })

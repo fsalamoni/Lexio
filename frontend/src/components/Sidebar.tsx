@@ -10,6 +10,7 @@ import api from '../api/client'
 import ConfirmDialog from './ConfirmDialog'
 import { IS_FIREBASE } from '../lib/firebase'
 import { listDocuments } from '../lib/firestore-service'
+import { buildWorkspaceShellPath } from '../lib/workspace-routes'
 
 const links = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -91,9 +92,11 @@ function NavItem({
 }
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
+  const location = useLocation()
   const { logout, role, fullName, userId } = useAuth()
   const [pendingReview, setPendingReview] = useState(0)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const buildSidebarPath = (to: string) => buildWorkspaceShellPath(to, { preserveSearch: location.search })
 
   // Poll the current user's pending review count every 60s.
   useEffect(() => {
@@ -141,52 +144,52 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         {/* Work section */}
         <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-brand-400">Trabalho</p>
         <div className="space-y-0.5">
-        {links.map(({ to, label, icon, activePatterns, inactivePatterns }) => (
-          <NavItem
-            key={to}
-            to={to}
-            label={label}
-            icon={icon}
-            end={to === '/'}
-            onClick={onClose}
-            activePatterns={activePatterns}
-            inactivePatterns={inactivePatterns}
-          />
-        ))}
+          {links.map(({ to, label, icon, activePatterns, inactivePatterns }) => (
+            <NavItem
+              key={to}
+              to={buildSidebarPath(to)}
+              label={label}
+              icon={icon}
+              end={to === '/'}
+              onClick={onClose}
+              activePatterns={to === '/notebook' ? ['/notebook', '/notebook/classic', '/labs/notebook-v2'] : activePatterns}
+              inactivePatterns={inactivePatterns}
+            />
+          ))}
         </div>
 
         {/* Settings section */}
         <p className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-brand-400">Gestão</p>
         <div className="space-y-0.5">
-        <NavItem
-          to="/settings"
-          label="Configurações"
-          icon={Settings}
-          onClick={onClose}
-          badge={pendingReview}
-        />
-        <NavItem
-          to="/settings/costs"
-          label="Uso e Custos"
-          icon={DollarSign}
-          onClick={onClose}
-        />
-        {role === 'admin' && (
-          <>
-            <NavItem
-              to="/admin"
-              label="Administração"
-              icon={Shield}
-              onClick={onClose}
-            />
-            <NavItem
-              to="/admin/costs"
-              label="Custos da Plataforma"
-              icon={DollarSign}
-              onClick={onClose}
-            />
-          </>
-        )}
+          <NavItem
+            to={buildSidebarPath('/settings')}
+            label="Configurações"
+            icon={Settings}
+            onClick={onClose}
+            badge={pendingReview}
+          />
+          <NavItem
+            to={buildSidebarPath('/settings/costs')}
+            label="Uso e Custos"
+            icon={DollarSign}
+            onClick={onClose}
+          />
+          {role === 'admin' && (
+            <>
+              <NavItem
+                to={buildSidebarPath('/admin')}
+                label="Administração"
+                icon={Shield}
+                onClick={onClose}
+              />
+              <NavItem
+                to={buildSidebarPath('/admin/costs')}
+                label="Custos da Plataforma"
+                icon={DollarSign}
+                onClick={onClose}
+              />
+            </>
+          )}
         </div>
       </nav>
 
@@ -194,7 +197,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       <div className="p-3 border-t border-white/10 space-y-1">
         {fullName && (
           <NavLink
-            to="/profile"
+            to={buildSidebarPath('/profile')}
             onClick={onClose}
             className={({ isActive }) =>
               clsx(
@@ -215,16 +218,15 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-brand-200 hover:bg-white/10 hover:text-white w-full transition-colors"
-          aria-label="Sair da conta"
         >
           <LogOut className="w-5 h-5 flex-shrink-0" />
-          Sair
+          <span>Sair</span>
         </button>
       </div>
 
       <ConfirmDialog
         open={showLogoutConfirm}
-        title="Sair da conta"
+        title="Sair da conta?"
         description="Sua sessão atual será encerrada neste dispositivo."
         confirmText="Sair"
         cancelText="Cancelar"

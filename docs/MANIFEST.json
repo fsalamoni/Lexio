@@ -1,8 +1,8 @@
 {
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
-    "updated": "2026-04-18",
-    "cycle": "datajud-secret-and-cicd-hardening",
+    "updated": "2026-04-19",
+    "cycle": "redesign-v2-promoted-workspace-surfaces",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -347,6 +347,354 @@
         "SECURITY.md"
       ],
       "notes": "DataJud deixou de usar chave hardcoded em código versionado; Cloud Function consome DATAJUD_API_KEY via Secret Manager; preview/pages/deploy agora exigem typecheck+test+build; job de testes compila functions e bloqueia regressão de segredo exposto"
+    },
+    {
+      "id": "E8.F1",
+      "epic": "Redesign V2",
+      "name": "Convivência controlada entre shells v1 e v2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/App.tsx",
+        "frontend/src/lib/feature-flags.ts"
+      ],
+      "notes": "O app agora despacha entre o shell clássico e o shell experimental com base na rota `/labs/*` e em preview flag, sem quebrar autenticação, toasts e TaskBar existentes"
+    },
+    {
+      "id": "E8.F2",
+      "epic": "Redesign V2",
+      "name": "Shell desktop-first experimental do Workspace V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/components/v2/V2WorkspaceLayout.tsx",
+        "frontend/src/index.css"
+      ],
+      "notes": "Primeira camada visual do redesign profundo com rail lateral, header próprio, painel contextual e tokens CSS dedicados para a linguagem V2"
+    },
+    {
+      "id": "E8.F3",
+      "epic": "Redesign V2",
+      "name": "Piloto funcional Profile V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/Profile.tsx",
+        "frontend/src/pages/labs/ProfileV2.tsx",
+        "frontend/src/lib/profile-preferences.ts"
+      ],
+      "notes": "O perfil passou a expor um launcher para o preview V2, enquanto a nova tela reutiliza o mesmo backend e valida a nova IA visual com dados reais do usuário"
+    },
+    {
+      "id": "E8.F4",
+      "epic": "Redesign V2",
+      "name": "Dashboard V2 como hub operacional do novo workspace",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/Dashboard.tsx",
+        "frontend/src/pages/labs/DashboardV2.tsx",
+        "frontend/src/lib/dashboard-data.ts",
+        "frontend/src/lib/dashboard-v2.ts"
+      ],
+      "notes": "O dashboard clássico agora compartilha a camada de dados com o V2, preserva query params de preview nos launchers e o DashboardV2 valida priorização, quick actions, analytics e retomada de fluxos no novo shell"
+    },
+    {
+      "id": "E8.F5",
+      "epic": "Redesign V2",
+      "name": "Cobertura unitária da fundação do redesign",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/feature-flags.test.ts",
+        "frontend/src/lib/dashboard-data.test.ts",
+        "frontend/src/lib/dashboard-v2.test.ts",
+        "frontend/src/lib/profile-progress.test.ts"
+      ],
+      "notes": "A base do redesign passou a ter testes unitários para flags de preview, helpers de dashboard, priorização do DashboardV2 e cálculo de progresso do ProfileV2"
+    },
+    {
+      "id": "E8.F6",
+      "epic": "Redesign V2",
+      "name": "Primeiro corte funcional do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/App.tsx",
+        "frontend/src/components/v2/V2WorkspaceLayout.tsx",
+        "frontend/src/pages/Dashboard.tsx",
+        "frontend/src/pages/Profile.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/lib/redesign-routes.ts",
+        "frontend/src/lib/research-notebook-routes.ts",
+        "frontend/src/lib/research-notebook-v2.ts"
+      ],
+      "notes": "O notebook flagship ganhou rota laboratorial com lista persistente, criação/remoção, overview, governança de fontes e bridge para o fluxo clássico; shell e launchers agora preservam preview params e deep-links por aba"
+    },
+    {
+      "id": "E8.F7",
+      "epic": "Redesign V2",
+      "name": "Chat contextual dentro do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/lib/research-notebook-routes.ts",
+        "frontend/src/lib/research-notebook-routes.test.ts"
+      ],
+      "notes": "O workbench V2 agora executa o assistente conversacional no próprio shell, com memória auditável, busca web opcional, persistência de mensagens/execuções e rollback seguro do estado otimista quando a resposta falha antes de persistir"
+    },
+    {
+      "id": "E8.F8",
+      "epic": "Redesign V2",
+      "name": "Hosting dedicado para validacao do redesign V2",
+      "state": "implemented",
+      "files": [
+        ".firebaserc",
+        "firebase.json",
+        ".github/workflows/firebase-redesign-v2.yml",
+        "frontend/src/App.tsx",
+        "frontend/src/lib/feature-flags.ts",
+        "frontend/src/lib/feature-flags.test.ts",
+        "frontend/vite.config.ts",
+        "scripts/firebase-authorized-domains.mjs",
+        "README.md",
+        "SETUP.md"
+      ],
+      "notes": "O redesign agora possui um site Firebase Hosting isolado em `lexio-redesign-v2-44760.web.app`, com build separado, entrada automática no shell V2, workflow dedicado e sincronização explícita de authorized domains do Firebase Auth"
+    },
+    {
+      "id": "E8.F9",
+      "epic": "Redesign V2",
+      "name": "Pesquisa avancada dentro do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/pages/notebook/types.ts",
+        "frontend/src/components/SearchResultsModal.tsx",
+        "frontend/src/components/DeepResearchModal.tsx",
+        "frontend/src/components/JurisprudenceConfigModal.tsx",
+        "frontend/src/lib/firestore-service.ts"
+      ],
+      "notes": "A secao de fontes do workbench V2 agora cobre pesquisa externa, pesquisa profunda e jurisprudencia/DataJud com modais reutilizados, preview e replay de auditoria, inventario de fontes geradas por busca e persistencia da ultima selecao de tribunais do usuario"
+    },
+    {
+      "id": "E8.F10",
+      "epic": "Redesign V2",
+      "name": "Governanca de buscas salvas dentro do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/lib/research-notebook-v2.ts",
+        "frontend/src/lib/research-notebook-v2.test.ts"
+      ],
+      "notes": "A secao de fontes do workbench V2 agora salva auditorias como presets persistidos e governa `saved_searches` no proprio shell, com filtro por texto/tipo, pin/unpin, edicao inline de titulo/tags, replay e acoes em lote"
+    },
+    {
+      "id": "E8.F11",
+      "epic": "Redesign V2",
+      "name": "Viewer avancado de fontes dentro do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/components/SourceContentViewer.tsx",
+        "frontend/src/lib/research-notebook-v2.ts",
+        "frontend/src/lib/research-notebook-v2.test.ts",
+        "frontend/src/components/SourceContentViewer.test.ts"
+      ],
+      "notes": "A secao de fontes do workbench V2 agora abre o SourceContentViewer no proprio shell com lazy loading, a partir do inventario, da leitura rapida e das fontes geradas por busca; jurisprudencia com apenas `results_raw` abre direto no viewer e prioriza a aba Processos quando nao ha sintese textual"
+    },
+    {
+      "id": "E8.F12",
+      "epic": "Redesign V2",
+      "name": "Analise inteligente de acervo dentro do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/lib/notebook-acervo-analyzer.ts",
+        "frontend/src/lib/notebook-acervo-analyzer.test.ts",
+        "frontend/src/lib/notebook-pipeline-progress.ts",
+        "frontend/src/components/AgentTrailProgressModal.tsx"
+      ],
+      "notes": "A secao de fontes do workbench V2 agora executa o pipeline multiagente de acervo no proprio shell, com trilha lazy-loaded, curadoria em lote, persistencia de `llm_executions` e promocao segura das recomendacoes para `sources`"
+    },
+    {
+      "id": "E8.F13",
+      "epic": "Redesign V2",
+      "name": "Inventario e viewer de artefatos dentro do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/lib/research-notebook-routes.ts",
+        "frontend/src/components/artifacts/ArtifactViewerModal.tsx"
+      ],
+      "notes": "O workbench V2 agora possui secao propria de `artifacts` com inventario persistido, quick actions e abertura lazy-loaded do `ArtifactViewerModal` para inspecao, exportacao e exclusao no proprio shell; `video_production` e estudios salvos tambem podem continuar localmente pelo `VideoStudioEditor`"
+    },
+    {
+      "id": "E8.F14",
+      "epic": "Redesign V2",
+      "name": "Studio briefing e handoff tipado dentro do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/lib/research-notebook-routes.ts",
+        "frontend/src/lib/research-notebook-routes.test.ts"
+      ],
+      "notes": "O workbench V2 agora possui secao propria de `studio` com auditoria de contexto, briefing adicional e grade categorizada de artefatos; o deep-link tipado (`artifact_type`, `studio_prompt`) continua disponivel como fallback comparativo com contexto restaurado"
+    },
+    {
+      "id": "E8.F15",
+      "epic": "Redesign V2",
+      "name": "Geracao base do estudio dentro do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/lib/notebook-artifact-tasks.ts",
+        "frontend/src/lib/notebook-artifact-tasks.test.ts"
+      ],
+      "notes": "O workbench V2 agora dispara a geracao base de artefatos com `TaskManager`, trilha multiagente, persistencia de `artifacts`/`llm_executions` e espelhamento de `documento` para a pagina Documentos; o fluxo classico permanece apenas como fallback comparativo e contingencial"
+    },
+    {
+      "id": "E8.F16",
+      "epic": "Redesign V2",
+      "name": "Pos-geracao de audio e imagem dentro do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/components/artifacts/ArtifactViewerModal.tsx",
+        "frontend/src/components/artifacts/artifact-parsers.ts",
+        "frontend/src/lib/audio-generation-pipeline.ts",
+        "frontend/src/lib/presentation-generation-pipeline.ts",
+        "frontend/src/lib/notebook-studio-pipeline.ts",
+        "frontend/src/lib/notebook-media-storage.ts"
+      ],
+      "notes": "O workbench V2 agora executa a pos-geracao de `audio_script`, `apresentacao`, `mapa_mental`, `infografico` e `tabela_dados` a partir do inventario/viewer de artefatos, persistindo URLs finais de midia no JSON do artefato e adicionando `llm_executions`; o fluxo classico fica apenas como fallback residual"
+    },
+    {
+      "id": "E8.F17",
+      "epic": "Redesign V2",
+      "name": "Fluxo completo de video dentro do ResearchNotebook V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/components/VideoGenerationCostModal.tsx",
+        "frontend/src/components/artifacts/VideoStudioEditor.tsx",
+        "frontend/src/components/artifacts/ArtifactViewerModal.tsx",
+        "frontend/src/lib/video-generation-pipeline.ts",
+        "frontend/src/lib/literal-video-production.ts",
+        "frontend/src/lib/video-pipeline-progress.ts",
+        "frontend/src/lib/notebook-media-storage.ts"
+      ],
+      "notes": "O workbench V2 agora cobre custo/revisao de `video_script`, geracao de video, reabertura de `video_production` e estudios salvos, `VideoStudioEditor`, producao literal, render final, fallback para provedor externo e persistencia compactada da timeline no proprio shell"
+    },
+    {
+      "id": "E8.F18",
+      "epic": "Redesign V2",
+      "name": "ResearchNotebook V2 consolidado como trilho principal",
+      "state": "implemented",
+      "files": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.test.tsx",
+        "frontend/src/test-setup.ts",
+        "frontend/package.json"
+      ],
+      "notes": "O workbench V2 agora expõe copy e CTAs V2-first em overview, studio e artifacts, centraliza a superficie classica apenas na secao de contingencia (`bridge`) e ganhou cobertura direta de pagina em `jsdom` para hidratacao do caderno, navegacao V2 para `sources`, empty state de `artifacts` e abertura da contingencia classica"
+    },
+    {
+      "id": "E8.F19",
+      "epic": "Redesign V2",
+      "name": "Promocao controlada de /notebook para o workbench V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/App.tsx",
+        "frontend/src/lib/research-notebook-routes.ts",
+        "frontend/src/lib/research-notebook-routes.test.ts",
+        "frontend/src/lib/redesign-shell.ts",
+        "frontend/src/lib/redesign-shell.test.ts",
+        "frontend/src/components/Sidebar.tsx",
+        "frontend/src/pages/Dashboard.tsx",
+        "frontend/src/pages/labs/DashboardV2.tsx",
+        "frontend/src/lib/dashboard-v2.ts",
+        "frontend/src/lib/dashboard-v2.test.ts",
+        "frontend/src/pages/DocumentList.tsx",
+        "frontend/src/pages/DocumentDetail.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/components/v2/V2WorkspaceLayout.tsx"
+      ],
+      "notes": "A rota principal `/notebook` agora aponta para `ResearchNotebookV2` sob o gate de redesign, `/notebook/classic` preserva a contingencia legada, o helper compartilhado separa trilho principal/fallback/labs e os links centrais do app preservam query params de preview para nao perder o acesso ao V2 fora do hostname dedicado"
+    },
+    {
+      "id": "E8.F20",
+      "epic": "Redesign V2",
+      "name": "Expansao do shell V2 para documentos e acervo",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/workspace-routes.ts",
+        "frontend/src/lib/workspace-routes.test.ts",
+        "frontend/src/lib/redesign-shell.ts",
+        "frontend/src/lib/redesign-shell.test.ts",
+        "frontend/src/components/Sidebar.tsx",
+        "frontend/src/components/Layout.tsx",
+        "frontend/src/components/NotificationBell.tsx",
+        "frontend/src/components/v2/V2WorkspaceLayout.tsx",
+        "frontend/src/pages/Dashboard.tsx",
+        "frontend/src/pages/labs/DashboardV2.tsx",
+        "frontend/src/pages/DocumentList.tsx",
+        "frontend/src/pages/DocumentDetail.tsx",
+        "frontend/src/pages/DocumentEditor.tsx",
+        "frontend/src/pages/NewDocument.tsx",
+        "frontend/src/pages/AdminPanel.tsx",
+        "frontend/src/pages/ThesisBank.tsx"
+      ],
+      "notes": "O shell V2 agora cobre `/documents*` e `/upload` sob o mesmo gate do workbench, com builders preview-safe centralizados em `workspace-routes.ts`; sidebar, dashboards, breadcrumbs, notificacoes, polling de conclusao e atalhos administrativos preservam query params do redesign para nao expulsar o usuario do rail promovido durante navegacao entre superficies classicas e V2"
+    },
+    {
+      "id": "E8.F21",
+      "epic": "Redesign V2",
+      "name": "Expansao do shell V2 para teses, configuracoes, admin e profile com aliases tecnicos",
+      "state": "implemented",
+      "files": [
+        "frontend/src/App.tsx",
+        "frontend/src/lib/workspace-routes.ts",
+        "frontend/src/lib/workspace-routes.test.ts",
+        "frontend/src/lib/redesign-shell.ts",
+        "frontend/src/lib/redesign-shell.test.ts",
+        "frontend/src/components/Sidebar.tsx",
+        "frontend/src/components/v2/V2WorkspaceLayout.tsx",
+        "frontend/src/components/AgentTrailProgressModal.tsx",
+        "frontend/src/pages/Dashboard.tsx",
+        "frontend/src/pages/DocumentDetail.tsx",
+        "frontend/src/pages/NewDocument.tsx",
+        "frontend/src/pages/PlatformAdminPanel.tsx",
+        "frontend/src/pages/Profile.tsx",
+        "frontend/src/pages/labs/DashboardV2.tsx",
+        "frontend/src/pages/labs/ProfileV2.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.test.tsx"
+      ],
+      "notes": "`workspace-routes.ts` agora centraliza builders preview-safe tambem para dashboard, teses, settings, admin e profile; `/profile` foi promovido sob o gate do redesign com fallback explicito em `/profile/classic`, enquanto `/labs/notebook-v2` e `/labs/profile-v2` ficaram reduzidos a aliases tecnicos das rotas promovidas. Sidebar, shell V2, atalhos administrativos, redirects de configuracao e a navegacao interna do workbench passaram a consumir esses builders para preservar query params e hash durante a travessia entre superficies classicas e promovidas."
+    },
+    {
+      "id": "E8.F22",
+      "epic": "Redesign V2",
+      "name": "Promocao das superficies internas do workspace para o frame V2",
+      "state": "implemented",
+      "files": [
+        "frontend/src/App.tsx",
+        "frontend/src/index.css",
+        "frontend/src/components/v2/V2PagePrimitives.tsx",
+        "frontend/src/pages/ThesisBank.tsx",
+        "frontend/src/pages/CostTokensPage.tsx",
+        "frontend/src/pages/PlatformCostsPage.tsx",
+        "frontend/src/pages/AdminPanel.tsx",
+        "frontend/src/pages/PlatformAdminPanel.tsx",
+        "frontend/src/pages/DocumentList.tsx",
+        "frontend/src/pages/NewDocument.tsx",
+        "frontend/src/pages/DocumentDetail.tsx",
+        "frontend/src/pages/DocumentEditor.tsx",
+        "frontend/src/pages/Upload.tsx"
+      ],
+      "notes": "O redesign deixou de atuar apenas no shell: `/` agora abre `DashboardV2` sob o gate do redesign e `/labs/dashboard-v2` virou alias tecnico, enquanto teses, custos, configuracoes, admin, documentos e acervo passaram a usar `V2PagePrimitives` + a bridge visual scoped `v2-bridge-surface` para migrar o miolo das paginas para o sistema V2 sem reimplementar seus fluxos operacionais."
     }
   ],
   "regressionRisk": {
@@ -356,13 +704,72 @@
       "frontend/src/pages/ResearchNotebook.tsx"
     ],
     "medium": [
-      "frontend/src/lib/notebook-studio-pipeline.ts",
-      "frontend/src/components/artifacts/ArtifactViewerModal.tsx",
+      ".github/workflows/firebase-redesign-v2.yml",
+      ".firebaserc",
+      "firebase.json",
+      "frontend/vite.config.ts",
+      "frontend/src/App.tsx",
+      "frontend/src/components/SearchResultsModal.tsx",
+      "frontend/src/components/DeepResearchModal.tsx",
+      "frontend/src/components/JurisprudenceConfigModal.tsx",
+      "frontend/src/pages/Dashboard.tsx",
+      "frontend/src/index.css",
+      "frontend/src/components/v2/V2PagePrimitives.tsx",
       "frontend/src/pages/DocumentList.tsx",
+      "frontend/src/pages/NewDocument.tsx",
+      "frontend/src/pages/DocumentDetail.tsx",
+      "frontend/src/pages/DocumentEditor.tsx",
+      "frontend/src/pages/Upload.tsx",
+      "frontend/src/pages/ThesisBank.tsx",
+      "frontend/src/pages/CostTokensPage.tsx",
+      "frontend/src/pages/PlatformAdminPanel.tsx",
+      "frontend/src/pages/PlatformCostsPage.tsx",
+      "frontend/src/pages/AdminPanel.tsx",
+      "frontend/src/pages/Profile.tsx",
+      "frontend/src/components/AgentTrailProgressModal.tsx",
+      "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+      "frontend/src/lib/notebook-artifact-tasks.ts",
+      "frontend/src/lib/notebook-acervo-analyzer.ts",
+      "frontend/src/components/SourceContentViewer.tsx",
+      "frontend/src/lib/notebook-studio-pipeline.ts",
+      "frontend/src/lib/audio-generation-pipeline.ts",
+      "frontend/src/lib/presentation-generation-pipeline.ts",
+      "frontend/src/components/VideoGenerationCostModal.tsx",
+      "frontend/src/components/artifacts/VideoStudioEditor.tsx",
+      "frontend/src/lib/video-generation-pipeline.ts",
+      "frontend/src/lib/literal-video-production.ts",
+      "frontend/src/lib/video-pipeline-progress.ts",
+      "frontend/src/lib/notebook-media-storage.ts",
+      "frontend/src/components/artifacts/artifact-parsers.ts",
+      "frontend/src/components/artifacts/ArtifactViewerModal.tsx",
+      "frontend/src/components/Layout.tsx",
+      "frontend/src/components/NotificationBell.tsx",
+      "frontend/src/components/Sidebar.tsx",
+      "frontend/src/pages/AdminPanel.tsx",
+      "frontend/src/pages/DocumentDetail.tsx",
+      "frontend/src/pages/DocumentEditor.tsx",
+      "frontend/src/pages/DocumentList.tsx",
+      "frontend/src/pages/NewDocument.tsx",
+      "frontend/src/pages/ThesisBank.tsx",
+      "frontend/src/pages/Upload.tsx",
       "frontend/src/lib/firestore-types.ts"
     ],
     "low": [
-      "frontend/src/components/SourceContentViewer.tsx",
+      "scripts/firebase-authorized-domains.mjs",
+      "frontend/src/components/v2/V2WorkspaceLayout.tsx",
+      "frontend/src/pages/labs/DashboardV2.tsx",
+      "frontend/src/pages/labs/ProfileV2.tsx",
+      "frontend/src/lib/dashboard-data.ts",
+      "frontend/src/lib/dashboard-v2.ts",
+      "frontend/src/lib/feature-flags.ts",
+      "frontend/src/lib/redesign-routes.ts",
+      "frontend/src/lib/redesign-shell.ts",
+      "frontend/src/lib/profile-preferences.ts",
+      "frontend/src/lib/profile-progress.ts",
+      "frontend/src/pages/notebook/types.ts",
+      "frontend/src/lib/research-notebook-routes.ts",
+      "frontend/src/lib/workspace-routes.ts",
+      "frontend/src/lib/research-notebook-v2.ts",
       "frontend/src/components/artifacts/ReportViewer.tsx"
     ]
   },
@@ -371,12 +778,32 @@
       "frontend/src/lib/datajud-service.test.ts",
       "frontend/src/lib/web-search-service.test.ts",
       "frontend/src/lib/external-video-provider.test.ts",
+      "frontend/src/lib/audio-generation-pipeline.test.ts",
       "frontend/src/lib/notebook-studio-pipeline.test.ts",
+      "frontend/src/lib/presentation-generation-pipeline.test.ts",
+      "frontend/src/lib/video-generation-pipeline.test.ts",
+      "frontend/src/lib/tts-client.test.ts",
+      "frontend/src/lib/notebook-acervo-analyzer.test.ts",
       "frontend/src/lib/firestore-service.test.ts",
       "frontend/src/components/SourceContentViewer.test.ts",
       "frontend/src/components/artifacts/ReportViewer.test.ts",
-      "frontend/src/pages/DocumentList.test.ts"
+      "frontend/src/pages/DocumentList.test.ts",
+      "frontend/src/lib/feature-flags.test.ts",
+      "frontend/src/lib/dashboard-data.test.ts",
+      "frontend/src/lib/dashboard-v2.test.ts",
+      "frontend/src/lib/profile-progress.test.ts",
+      "frontend/src/lib/redesign-routes.test.ts",
+      "frontend/src/lib/redesign-shell.test.ts",
+      "frontend/src/lib/notebook-artifact-tasks.test.ts",
+      "frontend/src/lib/research-notebook-routes.test.ts",
+      "frontend/src/lib/research-notebook-v2.test.ts",
+      "frontend/src/lib/workspace-routes.test.ts",
+      "frontend/src/pages/labs/ResearchNotebookV2.test.tsx"
     ],
-    "missing": []
+    "missing": [
+      "frontend/src/components/v2/V2WorkspaceLayout.tsx",
+      "frontend/src/pages/labs/DashboardV2.tsx",
+      "frontend/src/pages/labs/ProfileV2.tsx"
+    ]
   }
 }

@@ -1,11 +1,156 @@
 # Caderno de Pesquisa — Status de Implementacao (NotebookLM+)
 
 > Documento de tracking para agentes IA. Atualizado automaticamente.
-> Branch: `main`
+> Branch: `redesign/v2-pilot`
 
 ---
 
-## Status Geral: Etapas 1-103 IMPLEMENTADAS
+## Status Geral: Etapas 1-180 IMPLEMENTADAS
+
+### Etapas 177-180 — Promocao do Dashboard e Superficies Internas do Workspace V2 ✅
+- **Arquivos**: `frontend/src/App.tsx`, `frontend/src/index.css`, `frontend/src/components/v2/V2PagePrimitives.tsx`, `frontend/src/pages/ThesisBank.tsx`, `frontend/src/pages/CostTokensPage.tsx`, `frontend/src/pages/PlatformCostsPage.tsx`, `frontend/src/pages/AdminPanel.tsx`, `frontend/src/pages/PlatformAdminPanel.tsx`, `frontend/src/pages/DocumentList.tsx`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/DocumentDetail.tsx`, `frontend/src/pages/DocumentEditor.tsx`, `frontend/src/pages/Upload.tsx`
+- Etapa 177: o redesign ganhou primitives compartilhadas em `V2PagePrimitives.tsx` e uma camada `v2-bridge-surface` em `index.css`, permitindo promover superficies legadas para o novo sistema visual sem reimplementar a logica de dados, filtros, workflows e pipelines
+- Etapa 178: `ThesisBank`, `CostTokensPage`, `PlatformCostsPage`, `AdminPanel` e `PlatformAdminPanel` passaram a operar com hero V2, metricas executivas, secoes redesenhadas e bridge visual controlada, substituindo o estado anterior em que essas rotas apenas viviam dentro do shell novo com miolo majoritariamente classico
+- Etapa 179: `DocumentList`, `NewDocument`, `DocumentDetail`, `DocumentEditor` e `Upload` foram alinhados ao mesmo frame V2 com hero operacional, metricas, estados vazios reescritos e retematizacao scoped do conteudo, reduzindo a ruptura entre o rail promovido e as superfices documentais centrais do workspace
+- Etapa 180: `/` foi promovida para `DashboardV2` sob o gate do redesign e `/labs/dashboard-v2` foi reduzida a alias tecnico da rota principal; a rodada foi validada com `npm run typecheck`, `npm run test` (**35/35 arquivos**, **266/266 testes**) e `npm run build` em `frontend/`
+- Observacao operacional: os chunks de producao ficaram em **2.52 kB** (**gzip 0.91 kB**) para `V2PagePrimitives`, **15.31 kB** (**gzip 4.58 kB**) para `DashboardV2`, **17.84 kB** (**gzip 5.61 kB**) para `DocumentList`, **15.00 kB** (**gzip 5.45 kB**) para `NewDocument`, **27.48 kB** (**gzip 8.18 kB**) para `DocumentDetail`, **11.82 kB** (**gzip 3.79 kB**) para `DocumentEditor`, **45.82 kB** (**gzip 11.79 kB**) para `Upload`, **47.45 kB** (**gzip 14.40 kB**) para `ThesisBank`, **25.39 kB** (**gzip 6.49 kB**) para `CostTokensPage`, **7.98 kB** (**gzip 2.48 kB**) para `PlatformCostsPage`, **49.58 kB** (**gzip 12.15 kB**) para `PlatformAdminPanel` e **128.20 kB** (**gzip 21.92 kB**) para `AdminPanel`, preservando code splitting apos a promocao das superficies internas
+
+### Etapas 173-176 — Expansao do Shell V2 para Teses, Configuracoes, Admin e Profile ✅
+- **Arquivos**: `frontend/src/App.tsx`, `frontend/src/lib/workspace-routes.ts`, `frontend/src/lib/workspace-routes.test.ts`, `frontend/src/lib/redesign-shell.ts`, `frontend/src/lib/redesign-shell.test.ts`, `frontend/src/components/Sidebar.tsx`, `frontend/src/components/v2/V2WorkspaceLayout.tsx`, `frontend/src/components/AgentTrailProgressModal.tsx`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/DocumentDetail.tsx`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/PlatformAdminPanel.tsx`, `frontend/src/pages/Profile.tsx`, `frontend/src/pages/labs/DashboardV2.tsx`, `frontend/src/pages/labs/ProfileV2.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.test.tsx`
+- Etapa 173: `workspace-routes.ts` passou a centralizar builders preview-safe para dashboard, teses, configuracoes, admin, profile e fallback classico do profile, incluindo `buildWorkspaceShellPath()` para reduzir drift entre shell, sidebar e atalhos cruzados
+- Etapa 174: `redesign-shell.ts` e `App.tsx` foram ampliados para cobrir `/theses`, `/settings*`, `/admin*` e `/profile` no shell V2; `/profile` foi promovido sob gate com fallback explicito em `/profile/classic`, enquanto `/labs/notebook-v2` e `/labs/profile-v2` viraram aliases tecnicos das rotas promovidas
+- Etapa 175: `V2WorkspaceLayout`, sidebar, dashboards, atalhos administrativos, hints de configuracao, redirects por modelos nao configurados e a navegacao interna do `ResearchNotebookV2` passaram a usar os builders centralizados, preservando preview params e hash mesmo ao atravessar profile, teses, settings, admin e workbench
+- Etapa 176: a rodada foi validada com `npm run typecheck`, `npm run test` (**35/35 arquivos**, **266/266 testes**) e `npm run build` em `frontend/`
+- Observacao operacional: os chunks de producao ficaram em **8.04 kB** (**gzip 2.52 kB**) para `V2WorkspaceLayout`, **10.65 kB** (**gzip 3.27 kB**) para `Profile`, **13.43 kB** (**gzip 3.90 kB**) para `ProfileV2`, **15.31 kB** (**gzip 4.58 kB**) para `DashboardV2`, **46.88 kB** (**gzip 13.87 kB**) para `ThesisBank`, **48.16 kB** (**gzip 11.72 kB**) para `PlatformAdminPanel`, **128.87 kB** (**gzip 21.66 kB**) para `AdminPanel` e **170.22 kB** (**gzip 40.64 kB**) para `ResearchNotebookV2`, preservando code splitting apos a expansao do rail promovido
+
+### Etapas 169-172 — Expansão do Shell V2 para Documentos e Acervo ✅
+- **Arquivos**: `frontend/src/lib/workspace-routes.ts`, `frontend/src/lib/workspace-routes.test.ts`, `frontend/src/lib/redesign-shell.ts`, `frontend/src/lib/redesign-shell.test.ts`, `frontend/src/components/Sidebar.tsx`, `frontend/src/components/Layout.tsx`, `frontend/src/components/NotificationBell.tsx`, `frontend/src/components/v2/V2WorkspaceLayout.tsx`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/labs/DashboardV2.tsx`, `frontend/src/pages/DocumentList.tsx`, `frontend/src/pages/DocumentDetail.tsx`, `frontend/src/pages/DocumentEditor.tsx`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/AdminPanel.tsx`, `frontend/src/pages/ThesisBank.tsx`
+- Etapa 169: `workspace-routes.ts` passou a centralizar links preview-safe para listagem, criação, detalhe e edição de documentos, além do rail de acervo, evitando perda do gate do redesign ao atravessar rotas ainda clássicas
+- Etapa 170: `redesign-shell.ts` foi ampliado para tratar `/documents*` e `/upload` como superfícies do shell V2 quando o redesign estiver ativo, enquanto `V2WorkspaceLayout.tsx` ganhou navegação explícita para documentos, criação e biblioteca/acervo
+- Etapa 171: sidebar, dashboards, breadcrumbs, polling de conclusão em `Layout`, notificações, atalhos administrativos e links de teses/documentos passaram a usar os builders centralizados, preservando preview params durante navegação lateral, handoffs e retornos
+- Etapa 172: a rodada foi validada com `npm run typecheck`, `npm run test` (**35/35 arquivos**, **264/264 testes**) e `npm run build` em `frontend/`
+- Observação operacional: os chunks de produção ficaram em **7.72 kB** (**gzip 2.43 kB**) para `V2WorkspaceLayout`, **16.40 kB** (**gzip 5.00 kB**) para `DocumentList`, **11.73 kB** (**gzip 3.75 kB**) para `DocumentEditor`, **13.42 kB** (**gzip 4.90 kB**) para `NewDocument`, **26.85 kB** (**gzip 7.81 kB**) para `DocumentDetail` e **44.58 kB** (**gzip 11.29 kB**) para `Upload`, preservando code splitting após a expansão do shell
+
+### Etapas 165-168 — Promoção Controlada de `/notebook` para o Workbench V2 ✅
+- **Arquivos**: `frontend/src/App.tsx`, `frontend/src/lib/research-notebook-routes.ts`, `frontend/src/lib/research-notebook-routes.test.ts`, `frontend/src/lib/redesign-shell.ts`, `frontend/src/lib/redesign-shell.test.ts`, `frontend/src/components/Sidebar.tsx`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/labs/DashboardV2.tsx`, `frontend/src/lib/dashboard-v2.ts`, `frontend/src/lib/dashboard-v2.test.ts`, `frontend/src/pages/DocumentList.tsx`, `frontend/src/pages/DocumentDetail.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/components/v2/V2WorkspaceLayout.tsx`
+- Etapa 165: `research-notebook-routes.ts` passou a separar explicitamente o builder do workbench principal (`/notebook`), o fallback clássico (`/notebook/classic`) e a rota laboratorial V2 (`/labs/notebook-v2`), mantendo compatibilidade do helper legado por alias controlado
+- Etapa 166: `App.tsx` agora promove `/notebook` para `ResearchNotebookV2` quando o redesign estiver ativo, preserva `/notebook/classic` para contingência e usa `redesign-shell.ts` para decidir quando o shell V2 deve cobrir o rail principal
+- Etapa 167: Sidebar, dashboards, links de origem em documentos, CTAs do notebook clássico e a navegação do shell V2 passaram a usar o workbench principal com preservação de preview params; já os handoffs clássicos do `ResearchNotebookV2` foram trocados para o fallback explícito `/notebook/classic`
+- Etapa 168: a rodada foi validada com `npm run typecheck`, `npm run test` (**34/34 arquivos**, **261/261 testes**) e `npm run build` em `frontend/`
+- Observação operacional: os chunks de produção ficaram em **159.66 kB** (**gzip 40.61 kB**) para `ResearchNotebook`, **170.20 kB** (**gzip 40.65 kB**) para `ResearchNotebookV2`, **7.25 kB** (**gzip 2.36 kB**) para `V2WorkspaceLayout` e **15.36 kB** (**gzip 4.59 kB**) para `DashboardV2`, preservando code splitting após a promoção controlada da rota principal
+
+### Etapas 161-164 — Consolidação V2-first e Cobertura Direta ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.test.tsx`, `frontend/src/test-setup.ts`, `frontend/package.json`
+- Etapa 161: o `ResearchNotebookV2` teve overview, `studio`, `artifacts` e a seção `bridge` reescritos em narrativa V2-first, com o shell clássico rebaixado de launcher principal para trilha explícita de contingência e comparação
+- Etapa 162: quick actions, CTAs residuais, leitura de contexto e empty states do workbench foram ajustados para privilegiar fluxos do próprio V2, incluindo navegação interna para `sources`, `studio`, `artifacts` e mapa de contingência
+- Etapa 163: foi adicionada cobertura direta de página em `frontend/src/pages/labs/ResearchNotebookV2.test.tsx`, com `jsdom`, `@testing-library/react`, mock parcial do módulo compartilhado `../notebook` e polyfills de browser em `frontend/src/test-setup.ts`
+- Etapa 164: a rodada foi validada com `npm run typecheck`, `npm run test` (**33/33 arquivos**, **257/257 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk de produção de `ResearchNotebookV2` ficou em **170.29 kB** (**gzip 40.68 kB**), enquanto `VideoGenerationCostModal` permaneceu em **15.21 kB** (**gzip 4.33 kB**), `VideoStudioEditor` em **27.23 kB** (**gzip 7.02 kB**), `video-generation-pipeline` em **34.00 kB** (**gzip 11.77 kB**) e `literal-video-production` em **26.26 kB** (**gzip 8.88 kB**), preservando code splitting no workbench principal
+
+### Etapas 155-160 — Paridade Completa de Vídeo no ResearchNotebook V2 ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/components/VideoGenerationCostModal.tsx`, `frontend/src/components/artifacts/VideoStudioEditor.tsx`, `frontend/src/components/artifacts/ArtifactViewerModal.tsx`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/lib/literal-video-production.ts`, `frontend/src/lib/video-pipeline-progress.ts`, `frontend/src/lib/notebook-media-storage.ts`
+- Etapa 155: o `ResearchNotebookV2` ganhou estado, runtimes lazy-loaded e handlers próprios para custo/revisão de `video_script`, geração de vídeo e checkpoints `VideoCheckpoint`, reaproveitando o mesmo backbone operacional do notebook clássico sem novo acoplamento estrutural
+- Etapa 156: o `ArtifactViewerModal`, o inventário de artefatos e a geração base do estúdio no V2 passaram a expor `Gerar vídeo` e a abrir automaticamente o `VideoGenerationCostModal`, eliminando o handoff obrigatório para o shell clássico antes do pipeline de vídeo
+- Etapa 157: artefatos `video_production` e estúdios de vídeo salvos agora reabrem diretamente no `VideoStudioEditor` dentro do V2, com normalização do pacote persistido e continuidade local da timeline sem ponte compulsória para `ResearchNotebook.tsx`
+- Etapa 158: a persistência do estúdio de vídeo foi migrada para o workbench novo com upload em Firebase, compactação do JSON, fresh snapshot antes do write, append seguro de `llm_executions` e reaproveitamento do mesmo contrato de mídia literal do fluxo clássico
+- Etapa 159: o V2 agora também executa produção literal, render final, fallback para provedor externo, regeneração de clip/imagem/TTS e atualização do pacote salvo no próprio shell, enquanto a UX de bridge foi rebaixada para fallback comparativo residual
+- Etapa 160: a rodada foi validada com `npm run typecheck`, `npm run test` (**32/32 arquivos**, **253/253 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk de produção de `ResearchNotebookV2` subiu para **170.78 kB** (**gzip 40.72 kB**), enquanto `VideoGenerationCostModal` ficou em **15.21 kB** (**gzip 4.33 kB**), `VideoStudioEditor` em **27.23 kB** (**gzip 7.02 kB**), `video-generation-pipeline` em **34.00 kB** (**gzip 11.77 kB**) e `literal-video-production` em **26.26 kB** (**gzip 8.88 kB**), preservando code splitting para os fluxos pesados de vídeo
+
+### Etapas 149-154 — Pós-geração de Áudio e Imagem no ResearchNotebook V2 ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/lib/audio-generation-pipeline.ts`, `frontend/src/lib/presentation-generation-pipeline.ts`, `frontend/src/lib/notebook-studio-pipeline.ts`, `frontend/src/lib/notebook-media-storage.ts`, `frontend/src/components/artifacts/artifact-parsers.ts`
+- Etapa 149: o `ResearchNotebookV2` ganhou handlers e estados dedicados para pós-geração de mídia em artefatos persistidos, reaproveitando o viewer e o inventário já migrados sem reintroduzir dependência estrutural do notebook clássico
+- Etapa 150: o `ArtifactViewerModal` no V2 e os cards da seção `artifacts` passaram a expor ações diretas de `Gerar áudio` e `Gerar imagem/slides` para os tipos suportados (`audio_script`, `apresentacao`, `mapa_mental`, `infografico` e `tabela_dados`)
+- Etapa 151: `audio_script` agora dispara síntese literal de áudio no próprio shell via `generateAudioLiteralMedia()`, com upload em Firebase e persistência de `audioUrl`, `audioStoragePath` e `audioMimeType` no JSON do artefato
+- Etapa 152: `apresentacao` agora gera os visuais finais de cada slide no V2 via `generatePresentationMediaAssets()`, persistindo `renderedImageUrl` e `renderedImageStoragePath` por slide para viewer, exportação e regeneração
+- Etapa 153: `infografico`, `mapa_mental` e `tabela_dados` agora também geram imagem final no V2 via `generateStructuredVisualArtifactMedia()`, com fresh snapshot antes do write, append de `llm_executions` no mesmo contrato do fluxo clássico e a ponte remanescente concentrada em vídeo
+- Etapa 154: a rodada foi validada com `npm run typecheck`, `npm run test` (**32/32 arquivos**, **253/253 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk de produção de `ResearchNotebookV2` subiu para **151.82 kB** (**gzip 34.78 kB**), enquanto `ArtifactViewerModal` permaneceu em **76.33 kB** (**gzip 19.76 kB**), `audio-generation-pipeline` em **8.56 kB** (**gzip 3.56 kB**), `presentation-generation-pipeline` em **9.16 kB** (**gzip 3.78 kB**) e `notebook-media-storage` em **1.89 kB** (**gzip 1.06 kB**), preservando code splitting para a pós-geração especializada
+
+### Etapas 143-148 — Geração Base do Estúdio no ResearchNotebook V2 ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/lib/notebook-artifact-tasks.ts`, `frontend/src/lib/notebook-artifact-tasks.test.ts`
+- Etapa 143: a infraestrutura compartilhada de tarefas do estúdio foi extraída para `notebook-artifact-tasks.ts`, centralizando metadata, limites de etapas, agregação operacional e deduplicação de eventos entre os shells clássico e V2
+- Etapa 144: o `ResearchNotebookV2` passou a consumir `TaskManager` para rastrear tarefas de artefato por caderno/tipo, com seleção da execução ativa e reaproveitamento da mesma trilha multiagente do notebook clássico
+- Etapa 145: a grade do `studio` no V2 agora dispara geração direta de artefatos no próprio shell, abrindo a trilha quando já existe tarefa em andamento e mantendo o fluxo clássico apenas como fallback explícito por card
+- Etapa 146: a persistência da geração base do V2 agora salva `artifacts` e `llm_executions` no notebook com o mesmo contrato do clássico, incluindo espelhamento automático de `documento` para a página Documentos
+- Etapa 147: o notebook clássico passou a reaproveitar o helper compartilhado do estúdio, enquanto a narrativa do V2 foi atualizada para refletir que a ponte remanescente ficou restrita à produção avançada de mídia e ao editor de vídeo persistido
+- Etapa 148: a rodada foi validada com `npm run typecheck`, `npm run test` (**32/32 arquivos**, **253/253 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk de produção de `ResearchNotebookV2` subiu para **145.82 kB** (**gzip 32.96 kB**), enquanto `notebook-studio-pipeline` permaneceu isolado em **40.36 kB** (**gzip 14.60 kB**) e `VideoStudioEditor` em **27.24 kB** (**gzip 7.02 kB**), preservando code splitting e caching granular para a ponte de mídia avançada
+
+### Etapas 138-142 — Studio Briefing no ResearchNotebook V2 ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/lib/research-notebook-routes.ts`, `frontend/src/lib/research-notebook-routes.test.ts`, `frontend/src/pages/ResearchNotebook.tsx`
+- Etapa 138: o workbench V2 ganhou a seção dedicada `studio`, com roteamento próprio no helper compartilhado do notebook e mapeamento do launcher clássico para reabrir essa nova área quando a aba legada estiver no estúdio
+- Etapa 139: o shell novo passou a exibir briefing adicional, auditoria de contexto do estúdio e leitura operacional da janela ativa, sem duplicar pipelines nem acoplar o V2 ao `TaskManager`
+- Etapa 140: a nova grade categorizada de artefatos do V2 agora encaminha o usuário para o estúdio clássico com deep-link tipado (`artifact_type` + `studio_prompt`), preservando a intenção de geração e o briefing desta rodada
+- Etapa 141: o notebook clássico passou a restaurar briefing e intenção vindos do V2 ao abrir o estúdio, além de mapear a aba `studio` de volta para a seção homóloga do `ResearchNotebookV2`
+- Etapa 142: a rodada foi validada com `npm run typecheck`, `npm run test` (**31/31 arquivos**, **250/250 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk de produção de `ResearchNotebookV2` subiu para **138.58 kB** (**gzip 31.04 kB**), enquanto `VideoStudioEditor` permaneceu isolado em **27.24 kB** (**gzip 7.02 kB**), preservando code splitting e caching granular para o editor literal legado
+
+### Etapas 133-137 — Artefatos e Viewer no ResearchNotebook V2 ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/lib/research-notebook-routes.ts`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/components/artifacts/ArtifactViewerModal.tsx`
+- Etapa 133: o workbench V2 ganhou a seção dedicada `artifacts`, com roteamento próprio no helper compartilhado do notebook e alinhamento do launcher clássico para abrir a nova área quando a aba legada já estiver em artefatos
+- Etapa 134: o shell novo passou a exibir quick actions e inventário reverso de artefatos persistidos, incluindo badges de tipo/formato, métricas de volume e cards dedicados para handoff explícito de `video_production`
+- Etapa 135: `ResearchNotebookV2` agora lazy-loada o `ArtifactViewerModal` no próprio shell, permitindo abrir, inspecionar, exportar e excluir artefatos persistidos sem retornar ao notebook clássico
+- Etapa 136: a narrativa de bridge do redesign foi estreitada novamente para deixar o legado restrito à geração multiagente do estúdio e ao editor de vídeo persistido, enquanto overview e quick actions já apontam para o inventário de artefatos do V2
+- Etapa 137: a rodada foi validada com `npm run typecheck`, `npm run test` (**31/31 arquivos**, **250/250 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk de produção de `ResearchNotebookV2` subiu para **125.25 kB** (**gzip 29.11 kB**), enquanto `ArtifactViewerModal` permaneceu isolado em **76.03 kB** (**gzip 19.63 kB**), preservando code splitting e caching granular para o viewer rico
+
+### Etapas 128-132 — Análise Inteligente de Acervo no ResearchNotebook V2 ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/lib/notebook-acervo-analyzer.test.ts`, `frontend/src/lib/notebook-pipeline-progress.ts`, `frontend/src/components/AgentTrailProgressModal.tsx`
+- Etapa 128: o workbench V2 ganhou estado dedicado para a análise de acervo no shell novo, incluindo fase, mensagem, percentuais, erro, trilha operacional e curadoria temporária de recomendações
+- Etapa 129: a seção `sources` do `ResearchNotebookV2` passou a disparar `analyzeNotebookAcervo()` no próprio shell, persistindo as `llm_executions` do pipeline no caderno e reaproveitando o backend multiagente já validado do notebook clássico
+- Etapa 130: a curadoria do acervo no V2 agora permite selecionar/desmarcar recomendações, deduplicar documentos já anexados e promover em lote as fontes escolhidas para `sources`, sem sobrescrever estado concorrente do caderno
+- Etapa 131: a UX do redesign foi alinhada à nova paridade com trilha lazy-loaded via `AgentTrailProgressModal` e atualização da narrativa de bridge para deixar o legado restrito a estúdio, artefatos e vídeo
+- Etapa 132: a rodada foi validada com `npm run typecheck`, `npm run test` (**31/31 arquivos**, **250/250 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk de produção de `ResearchNotebookV2` subiu para **115.23 kB** (**gzip 27.26 kB**), enquanto `AgentTrailProgressModal` ficou isolado em **6.15 kB** (**gzip 2.16 kB**) e `SourceContentViewer` em **24.13 kB** (**gzip 6.34 kB**), preservando code splitting e caching granular
+
+### Etapas 124-127 — Viewer Avançado de Fontes no ResearchNotebook V2 ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/components/SourceContentViewer.tsx`, `frontend/src/lib/research-notebook-v2.ts`, `frontend/src/lib/research-notebook-v2.test.ts`, `frontend/src/components/SourceContentViewer.test.ts`
+- Etapa 124: a camada utilitária do workbench ganhou helpers dedicados para elegibilidade do viewer e preview rápido das fontes, removendo copy legada do JSX principal e mantendo o shell V2 mais enxuto
+- Etapa 125: a seção `sources` do `ResearchNotebookV2` passou a abrir o `SourceContentViewer` no próprio shell, via carregamento sob demanda, a partir do inventário principal, da leitura rápida da fonte selecionada e das fontes sintéticas geradas por busca
+- Etapa 126: `SourceContentViewer.tsx` foi endurecido para abrir fontes de jurisprudência mesmo quando só existe `results_raw`, resetando abas por fonte e iniciando em `Processos` quando a síntese textual estiver ausente
+- Etapa 127: a rodada foi validada com `npm run typecheck`, `npm run test` (**31/31 arquivos**, **249/249 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk de produção de `ResearchNotebookV2` subiu para **105.43 kB** (**gzip 25.11 kB**) e o viewer avançado saiu em chunk separado `SourceContentViewer` com **24.06 kB** (**gzip 6.30 kB**), preservando code splitting e caching granular
+
+### Etapas 120-123 — Governança de Buscas Salvas no ResearchNotebook V2 ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/lib/research-notebook-v2.ts`, `frontend/src/lib/research-notebook-v2.test.ts`
+- Etapa 120: a camada utilitária do workbench ganhou helpers dedicados para `saved_searches`, cobrindo título semântico, tags derivadas, normalização manual, contagem por variante e filtro/ordenação reutilizável fora do JSX principal
+- Etapa 121: a seção `sources` do `ResearchNotebookV2` passou a salvar auditorias recentes como presets persistidos, eliminando a dependência do notebook clássico para promover consultas recorrentes a `saved_searches`
+- Etapa 122: o V2 agora governa buscas salvas no próprio shell com filtro por texto/tipo, pin/unpin, edição inline de título e tags, exclusão individual e ações em lote, além de atualizar a narrativa de bridge para refletir somente viewer avançado, análise de acervo, estúdio e vídeo como pendências fora do redesign
+- Etapa 123: a rodada foi validada com `npm run typecheck`, `npm run test` (**31/31 arquivos**, **248/248 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk de produção de `ResearchNotebookV2` subiu para **104.07 kB** (**gzip 24.74 kB**) após a entrada da governança de buscas salvas, mantendo build limpo e code splitting preservado
+
+### Etapas 116-119 — Pesquisa Avançada no ResearchNotebook V2 ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/notebook/types.ts`, `frontend/src/components/SearchResultsModal.tsx`, `frontend/src/components/DeepResearchModal.tsx`, `frontend/src/components/JurisprudenceConfigModal.tsx`, `frontend/src/lib/firestore-service.ts`
+- Etapa 116: os tipos compartilhados de revisão de busca foram extraídos para `frontend/src/pages/notebook/types.ts`, permitindo que `SearchResultsModal.tsx` e o notebook V2 reutilizem o mesmo contrato sem depender estruturalmente da página clássica
+- Etapa 117: a seção `sources` do `ResearchNotebookV2` passou a operar pesquisa externa, pesquisa profunda e jurisprudência/DataJud no próprio shell, com painel de entrada unificado, preview auditável da consulta e inventário das fontes geradas por busca
+- Etapa 118: o workbench V2 passou a montar `DeepResearchModal`, `JurisprudenceConfigModal` e `SearchResultsModal`, além de reaplicar auditorias recentes e persistir/carregar a última seleção de tribunais do usuário nas preferências do Firestore
+- Etapa 119: a rodada foi validada com `npm run typecheck`, `npm run test` (**31/31 arquivos**, **245/245 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk de produção de `ResearchNotebookV2` subiu para **88.91 kB** (**gzip 21.55 kB**) após a entrada da pesquisa avançada, mas o build permaneceu limpo e com code splitting preservado
+
+### Etapas 112-115 — Hosting Dedicado do Redesign V2 ✅
+- **Arquivos**: `.firebaserc`, `firebase.json`, `.github/workflows/firebase-redesign-v2.yml`, `frontend/src/App.tsx`, `frontend/src/lib/feature-flags.ts`, `frontend/src/lib/feature-flags.test.ts`, `frontend/vite.config.ts`, `scripts/firebase-authorized-domains.mjs`
+- Etapa 112: foi criado o site Firebase Hosting isolado `lexio-redesign-v2-44760`, com URL dedicada `https://lexio-redesign-v2-44760.web.app`, para validar o redesign sem tocar em `lexio.web.app`
+- Etapa 113: o repositório passou a operar em modo multi-site com targets explícitos em `.firebaserc` e `firebase.json`, incluindo build dedicado em `frontend/dist-redesign-v2`
+- Etapa 114: o frontend passou a reconhecer o hostname do site experimental, ativar o redesign V2 sem query params e redirecionar `/` para `/labs/dashboard-v2` quando acessado pelo domínio dedicado
+- Etapa 115: foi adicionado o workflow `.github/workflows/firebase-redesign-v2.yml` e o utilitário `scripts/firebase-authorized-domains.mjs`, fechando o trilho de deploy e a sincronização dos domínios autorizados do Firebase Auth para o novo ambiente
+- Observação operacional: o novo site pode ser publicado separadamente com `firebase deploy --only hosting:lexio-redesign-v2 --project hocapp-44760`, preservando o ambiente estável em `lexio.web.app`
+
+### Etapas 108-111 — Chat Contextual no ResearchNotebook V2 ✅
+- **Arquivos**: `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/lib/research-notebook-routes.ts`, `frontend/src/lib/research-notebook-routes.test.ts`
+- Etapa 108: o `ResearchNotebookV2` passou a ter uma seção própria de chat contextual dentro do novo shell, com feed persistente, envio por Enter, sugestões rápidas e renderização markdown das respostas do assistente
+- Etapa 109: o envio do chat foi portado para o V2 com o mesmo backend do notebook atual, usando `notebook_assistente`, contexto auditável de fontes/conversa/buscas, busca web opcional e registro de `llm_executions` no caderno
+- Etapa 110: a UX do workbench foi endurecida com rollback seguro do estado otimista quando a resposta falha antes da persistência, devolvendo a pergunta ao input e evitando mensagens fantasmas no V2
+- Etapa 111: os deep-links do workbench foram ampliados para a nova seção `chat`, o notebook clássico passou a mapear a aba correspondente para o V2 e a rodada foi validada com `npm run typecheck`, `npm run test` (**31/31 arquivos**, **244/244 testes**) e `npm run build` em `frontend/`
+- Observação operacional: o chunk do `ResearchNotebookV2` subiu para **54.49 kB** (**gzip 12.37 kB**) após a entrada do chat, mas o build permaneceu limpo e sem regressão estrutural
+
+### Etapas 104-107 — ResearchNotebook V2 Slice + Navegação de Preview Segura ✅
+- **Arquivos**: `frontend/src/App.tsx`, `frontend/src/components/v2/V2WorkspaceLayout.tsx`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/Profile.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/lib/redesign-routes.ts`, `frontend/src/lib/research-notebook-routes.ts`, `frontend/src/lib/research-notebook-v2.ts`, `frontend/src/lib/redesign-routes.test.ts`, `frontend/src/lib/research-notebook-routes.test.ts`, `frontend/src/lib/research-notebook-v2.test.ts`
+- Etapa 104: o preview do redesign passou a preservar query params de ativação (`/labs/*`) por helper central em `redesign-routes.ts`, evitando perda silenciosa do acesso ao `v2` ao navegar pelo shell, dashboard e profile clássicos
+- Etapa 105: `ResearchNotebookV2.tsx` foi entregue como primeira fatia funcional do workbench flagship, com lista persistente, criação/remoção de cadernos, hidratação de detalhe, overview executivo, governança de fontes e ponte explícita para a experiência clássica nas áreas ainda não migradas
+- Etapa 106: o notebook clássico passou a aceitar deep-link `?tab=` e a expor launchers de `Notebook V2` tanto na lista quanto no detalhe, mapeando o contexto atual para `overview`, `sources` ou `bridge` no novo workbench
+- Etapa 107: a base do Notebook V2 ganhou testes dedicados para helpers de preview, rotas/deep-link e snapshot operacional; a rodada foi validada com `npm run typecheck`, `npm run test` (**31/31 arquivos**, **244/244 testes**) e `npm run build` em `frontend/`
+- Observação operacional: `firestore.indexes.json` não precisou de alterações nesta rodada; a evolução ficou concentrada em navegação, roteamento, cache/reuso de estado derivado e uma nova superfície V2 sobre o mesmo backend do caderno atual
 
 ### Etapas 100-103 — DataJud Hardening + CI/CD Guardrails ✅
 - **Arquivos**: `functions/src/index.ts`, `frontend/src/lib/datajud-service.ts`, `.github/workflows/test.yml`, `.github/workflows/firebase-preview.yml`, `.github/workflows/deploy-pages.yml`, `.github/workflows/firebase-deploy.yml`

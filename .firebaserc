@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "hocapp-44760"
+  },
+  "targets": {
+    "hocapp-44760": {
+      "hosting": {
+        "lexio": [
+          "lexio"
+        ],
+        "lexio-redesign-v2": [
+          "lexio-redesign-v2-44760"
+        ]
+      }
+    }
   }
 }

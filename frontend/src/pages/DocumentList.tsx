@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { FileText, Plus, ChevronLeft, ChevronRight, Search, X, Trash2, Download, BookOpen, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -9,10 +9,16 @@ import StatusBadge from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
 import { SkeletonRow } from '../components/Skeleton'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { V2EmptyState, V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { IS_FIREBASE } from '../lib/firebase'
 import { listDocuments, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
 import { DOCTYPE_LABELS } from '../lib/constants'
 import { applyOrigemFilter, toggleFilter } from '../lib/document-filters'
+import { buildResearchNotebookWorkbenchPath } from '../lib/research-notebook-routes'
+import {
+  buildWorkspaceDocumentDetailPath,
+  buildWorkspaceNewDocumentPath,
+} from '../lib/workspace-routes'
 
 interface Document {
   id: string
@@ -49,8 +55,10 @@ export default function DocumentList() {
   const [refreshKey, setRefreshKey] = useState(0)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const location = useLocation()
   const { userId } = useAuth()
   const toast = useToast()
+  const newDocumentPath = buildWorkspaceNewDocumentPath({ preserveSearch: location.search })
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -163,6 +171,7 @@ export default function DocumentList() {
   }
 
   const hasActiveFilters = statusFilter || typeFilter || searchQuery || dateFrom || dateTo || originFilter
+  const activeFilterCount = [statusFilter, typeFilter, searchQuery, dateFrom || dateTo, originFilter].filter(Boolean).length
 
   const clearAll = () => {
     setStatusFilter('')
@@ -244,17 +253,64 @@ export default function DocumentList() {
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Documentos</h1>
-        <Link
-          to="/documents/new"
-          className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Documento
-        </Link>
-      </div>
+    <div className="space-y-6 v2-bridge-surface">
+      <V2PageHero
+        eyebrow={<><FileText className="h-3.5 w-3.5" /> Documentos V2</>}
+        title="Fila documental, filtros operacionais e retomada rapida em um unico quadro"
+        description="Navegue por status, origem, periodo e qualidade sem sair do workspace principal, mantendo acesso direto ao gerador e aos workbenches relacionados." 
+        actions={(
+          <Link
+            to={newDocumentPath}
+            className="v2-btn-primary"
+          >
+            <Plus className="h-4 w-4" />
+            Novo documento
+          </Link>
+        )}
+        aside={(
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Pulso da fila</p>
+            <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Pagina atual</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{Math.min(page + 1, Math.max(totalPages, 1))}</p>
+            </div>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Selecao ativa</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{selected.size.toLocaleString('pt-BR')}</p>
+            </div>
+          </div>
+        )}
+      />
+
+      <V2MetricGrid
+        items={[
+          {
+            label: 'Resultados',
+            value: total.toLocaleString('pt-BR'),
+            helper: `${docs.length.toLocaleString('pt-BR')} carregados na pagina`,
+            icon: FileText,
+            tone: 'accent',
+          },
+          {
+            label: 'Filtros ativos',
+            value: activeFilterCount.toLocaleString('pt-BR'),
+            helper: hasActiveFilters ? 'Busca refinada em andamento' : 'Visao ampla da fila',
+            icon: Search,
+          },
+          {
+            label: 'Origem prioritaria',
+            value: originFilter === 'caderno' ? 'Caderno' : 'Todas',
+            helper: originFilter === 'caderno' ? 'Somente documentos do notebook' : 'Sem restricao de origem',
+            icon: BookOpen,
+          },
+          {
+            label: 'Ordenacao',
+            value: sortBy === 'quality_desc' ? 'Score alto' : sortBy === 'quality_asc' ? 'Score baixo' : sortBy === 'date_asc' ? 'Mais antigo' : 'Mais recente',
+            helper: 'Critico para retomada e revisao',
+            icon: Sparkles,
+          },
+        ]}
+      />
 
       {/* Search + type filter row */}
       <div className="flex gap-3 mb-3">
@@ -414,28 +470,25 @@ export default function DocumentList() {
           </table>
         </div>
       ) : docs.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-xl border">
-          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <FileText className="w-8 h-8 text-gray-300" />
-          </div>
-          <p className="font-medium text-gray-700 mb-1">Nenhum documento encontrado</p>
-          <p className="text-sm text-gray-400 mb-4">
-            {hasActiveFilters ? 'Nenhum documento corresponde aos filtros ativos.' : 'Comece gerando seu primeiro documento jurídico com IA.'}
-          </p>
-          {hasActiveFilters ? (
-            <button onClick={clearAll} className="text-sm text-brand-600 hover:underline">
+        <V2EmptyState
+          icon={FileText}
+          title="Nenhum documento encontrado"
+          description={hasActiveFilters ? 'Nenhum documento corresponde aos filtros ativos. Remova restricoes ou ajuste a busca para ampliar a fila visivel.' : 'Comece gerando seu primeiro documento juridico com IA para abrir a trilha operacional do workspace.'}
+          action={hasActiveFilters ? (
+            <button onClick={clearAll} className="v2-btn-secondary">
+              <X className="h-4 w-4" />
               Limpar filtros
             </button>
           ) : (
             <Link
-              to="/documents/new"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+              to={newDocumentPath}
+              className="v2-btn-primary"
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="h-4 w-4" />
               Gerar primeiro documento
             </Link>
           )}
-        </div>
+        />
       ) : (
         <>
           {/* Bulk action bar */}
@@ -503,14 +556,14 @@ export default function DocumentList() {
                         />
                       </td>
                       <td className="px-4 py-4">
-                        <Link to={`/documents/${doc.id}`} className="text-brand-600 hover:text-brand-800 hover:underline font-medium text-sm">
+                        <Link to={buildWorkspaceDocumentDetailPath(doc.id, { preserveSearch: location.search })} className="text-brand-600 hover:text-brand-800 hover:underline font-medium text-sm">
                           {DOCTYPE_LABELS[doc.document_type_id] || (doc.document_type_id === 'documento_caderno' ? 'Documento' : doc.document_type_id)}
                         </Link>
                         {doc.origem === 'caderno' ? (
                           <>
                           {doc.notebook_id ? (
                             <Link
-                              to={`/notebook?open=${doc.notebook_id}`}
+                              to={buildResearchNotebookWorkbenchPath({ notebookId: doc.notebook_id, preserveSearch: location.search })}
                               className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-50 text-violet-700 border border-violet-100 hover:bg-violet-100 transition-colors"
                               title={doc.notebook_title ? `Abrir caderno: ${doc.notebook_title}` : 'Abrir Caderno de Pesquisa'}
                             >
@@ -527,7 +580,10 @@ export default function DocumentList() {
                             </span>
                           )}
                           <Link
-                            to={`/documents/new?request=${encodeURIComponent(doc.tema || '')}`}
+                            to={buildWorkspaceNewDocumentPath({
+                              preserveSearch: location.search,
+                              request: doc.tema || '',
+                            })}
                             className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-50 text-amber-700 border border-amber-100 hover:bg-amber-100 transition-colors"
                             title="Recriar no Gerador"
                           >

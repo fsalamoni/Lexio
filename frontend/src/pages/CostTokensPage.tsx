@@ -9,6 +9,7 @@ import {
 } from 'recharts'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
+import { V2EmptyState, V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getCostBreakdown as firestoreGetCostBreakdown, getUserSettings, saveUserSettings } from '../lib/firestore-service'
 import api from '../api/client'
@@ -78,20 +79,20 @@ function CollapsibleSection({
 }) {
   const isOpen = collapseState[id] ?? defaultOpen
   return (
-    <div className="bg-white rounded-xl border overflow-hidden">
+    <div className="v2-panel overflow-hidden">
       <button
         type="button"
         onClick={() => onToggle(id)}
-        className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-[rgba(255,255,255,0.58)] transition-colors"
       >
         <div className="flex items-center gap-2">
           <Icon className={`w-5 h-5 ${iconColor || 'text-brand-600'}`} />
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">{title}</h2>
           {badge && (
-            <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{badge}</span>
+            <span className="ml-1 rounded-full bg-[rgba(15,23,42,0.06)] px-2 py-0.5 text-xs font-medium text-[var(--v2-ink-soft)]">{badge}</span>
           )}
         </div>
-        {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        {isOpen ? <ChevronUp className="w-4 h-4 text-[var(--v2-ink-faint)]" /> : <ChevronDown className="w-4 h-4 text-[var(--v2-ink-faint)]" />}
       </button>
       {isOpen && <div className="px-6 pb-6 space-y-5">{children}</div>}
     </div>
@@ -117,14 +118,14 @@ function CollapsibleCard({
 }) {
   const isOpen = collapseState[id] ?? defaultOpen
   return (
-    <div className="border rounded-xl overflow-hidden">
+    <div className="overflow-hidden rounded-[1.4rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.74)]">
       <button
         type="button"
         onClick={() => onToggle(id)}
-        className="w-full flex items-center justify-between px-5 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+        className="w-full flex items-center justify-between px-5 py-3 bg-[rgba(255,255,255,0.58)] hover:bg-[rgba(255,255,255,0.78)] transition-colors"
       >
-        <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
-        {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+        <h3 className="text-sm font-semibold text-[var(--v2-ink-strong)]">{title}</h3>
+        {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-[var(--v2-ink-faint)]" /> : <ChevronDown className="w-3.5 h-3.5 text-[var(--v2-ink-faint)]" />}
       </button>
       {isOpen && <div className="p-5">{children}</div>}
     </div>
@@ -135,10 +136,10 @@ function CollapsibleCard({
 
 function HighlightCard({ label, value, meta }: { label: string; value: string; meta: string }) {
   return (
-    <div className="bg-white rounded-xl border p-5">
-      <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{label}</span>
-      <p className="mt-2 text-base font-semibold text-gray-900">{value}</p>
-      <p className="mt-1 text-xs text-gray-500">{meta}</p>
+    <div className="v2-summary-card bg-[rgba(255,255,255,0.82)]">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--v2-ink-faint)]">{label}</span>
+      <p className="mt-2 text-base font-semibold text-[var(--v2-ink-strong)]">{value}</p>
+      <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">{meta}</p>
     </div>
   )
 }
@@ -146,11 +147,11 @@ function HighlightCard({ label, value, meta }: { label: string; value: string; m
 // ── Breakdown Table ──────────────────────────────────────────────────────────
 
 function BreakdownTable({ rows, emptyLabel, title }: { rows: CostBreakdownItem[]; emptyLabel: string; title?: string }) {
-  if (rows.length === 0) return <p className="text-sm text-gray-400 py-4">{emptyLabel}</p>
+  if (rows.length === 0) return <p className="py-4 text-sm text-[var(--v2-ink-faint)]">{emptyLabel}</p>
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[800px] table-fixed" aria-label={title ? `Tabela de ${title}` : 'Tabela de detalhamento de custos'}>
-        <thead className="sticky top-0 bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
+        <thead className="sticky top-0 bg-[rgba(255,255,255,0.78)] text-[11px] text-[var(--v2-ink-faint)] uppercase tracking-wide">
           <tr>
             <th className="w-[30%] px-4 py-2 text-left">Grupo</th>
             <th className="w-[10%] px-4 py-2 text-right">Chamadas</th>
@@ -161,16 +162,16 @@ function BreakdownTable({ rows, emptyLabel, title }: { rows: CostBreakdownItem[]
             <th className="w-[12%] px-4 py-2 text-right">R$</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-[var(--v2-line-soft)]">
           {rows.map(row => (
-            <tr key={row.key} className="hover:bg-gray-50 transition-colors">
-              <td className="px-4 py-2.5 text-sm text-gray-800">
+            <tr key={row.key} className="hover:bg-[rgba(255,255,255,0.66)] transition-colors">
+              <td className="px-4 py-2.5 text-sm text-[var(--v2-ink-strong)]">
                 <span className="block truncate" title={row.label}>{row.label}</span>
               </td>
-              <td className="px-4 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.calls)}</td>
-              <td className="px-4 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.tokens_in)}</td>
-              <td className="px-4 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.tokens_out)}</td>
-              <td className="px-4 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.total_tokens)}</td>
+              <td className="px-4 py-2.5 text-sm text-right text-[var(--v2-ink-soft)]">{fmtInt(row.calls)}</td>
+              <td className="px-4 py-2.5 text-sm text-right text-[var(--v2-ink-soft)]">{fmtInt(row.tokens_in)}</td>
+              <td className="px-4 py-2.5 text-sm text-right text-[var(--v2-ink-soft)]">{fmtInt(row.tokens_out)}</td>
+              <td className="px-4 py-2.5 text-sm text-right text-[var(--v2-ink-soft)]">{fmtInt(row.total_tokens)}</td>
               <td className="px-4 py-2.5 text-sm text-right font-medium text-amber-700">{fmtUsd(row.cost_usd)}</td>
               <td className="px-4 py-2.5 text-sm text-right font-medium text-emerald-700">{fmtBrl(row.cost_brl)}</td>
             </tr>
@@ -193,17 +194,15 @@ function SummaryCards({ breakdown }: { breakdown: CostBreakdown }) {
     { label: 'Chamadas LLM', value: fmtInt(breakdown.total_calls), icon: Cpu, color: 'text-blue-600' },
   ]
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-      {cards.map(card => (
-        <div key={card.label} className="bg-white rounded-xl border p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{card.label}</span>
-            <card.icon className={`w-4 h-4 ${card.color}`} />
-          </div>
-          <p className="text-xl font-bold text-gray-900">{card.value}</p>
-        </div>
-      ))}
-    </div>
+    <V2MetricGrid
+      className="md:grid-cols-3 xl:grid-cols-6"
+      items={cards.map((card, index) => ({
+        label: card.label,
+        value: card.value,
+        icon: card.icon,
+        tone: index === 0 ? 'warm' : index === 5 ? 'accent' : 'default',
+      }))}
+    />
   )
 }
 
@@ -505,7 +504,7 @@ export default function CostTokensPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 v2-bridge-surface">
         <div className="flex items-center gap-3">
           <DollarSign className="w-8 h-8 text-amber-600" />
           <div>
@@ -539,26 +538,36 @@ export default function CostTokensPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <DollarSign className="w-8 h-8 text-amber-600" />
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Uso, Custos e Tokens</h1>
-          <p className="text-gray-500">
-            Visão consolidada do seu uso por API, modelo, função, fase, tipo de documento e agentes.
-          </p>
-        </div>
-      </div>
+    <div className="space-y-6 v2-bridge-surface">
+      <V2PageHero
+        eyebrow={<><DollarSign className="h-3.5 w-3.5" /> Custos e tokens V2</>}
+        title="Consumo, orçamento e sinais de custo em uma única superficie operacional"
+        description="Acompanhe gasto consolidado, volume de tokens, uso por pipeline e limites preventivos sem sair do workspace principal."
+        aside={(
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Guardrails</p>
+            <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Limite mensal</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                {budgetStatus?.monthly.limit ? fmtUsd(budgetStatus.monthly.limit) : 'Nao definido'}
+              </p>
+            </div>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Status diario</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                {budgetStatus?.daily.limit ? `${Math.round(budgetStatus.daily.pct)}% do limite` : 'Sem teto diario'}
+              </p>
+            </div>
+          </div>
+        )}
+      />
 
       {!breakdown ? (
-        <div className="bg-white rounded-xl border p-10 text-center">
-          <DollarSign className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-          <p className="text-sm font-medium text-gray-600 mb-1">Nenhum dado de custo disponível</p>
-          <p className="text-xs text-gray-400 max-w-sm mx-auto">
-            Os custos serão registrados automaticamente ao gerar documentos, usar o caderno de pesquisa ou executar análises de teses.
-          </p>
-        </div>
+        <V2EmptyState
+          icon={DollarSign}
+          title="Nenhum dado de custo disponivel"
+          description="Os custos serao registrados automaticamente ao gerar documentos, usar o caderno de pesquisa ou executar analises de teses."
+        />
       ) : (
         <>
           {/* ── Section 1: General / Total Overview ─────────────────────── */}
