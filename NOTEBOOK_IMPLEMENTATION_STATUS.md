@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-190 IMPLEMENTADAS
+## Status Geral: Etapas 1-194 IMPLEMENTADAS
+
+### Etapas 191-194 — Configuracoes Especializadas e Catalogo Nativos no Rail V2 ✅
+- **Arquivos**: `frontend/src/components/AgentModelConfigCard.tsx`, `frontend/src/components/ModelCatalogCard.tsx`, `frontend/src/components/ModelConfigCard.tsx`, `frontend/src/components/ThesisAnalystConfigCard.tsx`, `frontend/src/components/ContextDetailConfigCard.tsx`, `frontend/src/components/AcervoClassificadorConfigCard.tsx`, `frontend/src/components/AcervoEmentaConfigCard.tsx`, `frontend/src/components/NotebookAcervoConfigCard.tsx`, `frontend/src/components/ResearchNotebookConfigCard.tsx`, `frontend/src/components/VideoPipelineConfigCard.tsx`, `frontend/src/components/AudioPipelineConfigCard.tsx`, `frontend/src/components/PresentationPipelineConfigCard.tsx`, `frontend/src/pages/AdminPanel.tsx`, `frontend/src/components/v2/V2WorkspaceLayout.tsx`
+- Etapa 191: `AgentModelConfigCard.tsx` introduziu uma base compartilhada V2 para cards de configuracao de agentes, centralizando secoes, wrappers de pipeline, badges de tier/capability, barra de acoes, integracao com `ModelSelectorModal` e o fluxo comum de load/save/reset sem duplicacao entre cards especializados
+- Etapa 192: `ModelConfigCard`, `ThesisAnalystConfigCard`, `ContextDetailConfigCard`, `AcervoClassificadorConfigCard`, `AcervoEmentaConfigCard`, `NotebookAcervoConfigCard`, `ResearchNotebookConfigCard`, `VideoPipelineConfigCard`, `AudioPipelineConfigCard` e `PresentationPipelineConfigCard` foram convertidos para wrappers finos sobre a base compartilhada, promovendo documentos, acervo, caderno de pesquisa e pipelines multiagente para superfices V2 nativas
+- Etapa 193: `ModelCatalogCard.tsx` foi retematizado para superficies, filtros, tabela, modais e acoes V2; em seguida `AdminPanel.tsx` removeu o ultimo wrapper `v2-bridge-surface`, zerando a bridge localizada das configuracoes e fechando o rail de settings/admin como leitura integralmente nativa no redesign
+- Etapa 194: `V2WorkspaceLayout.tsx` foi atualizado para refletir o novo estado real do shell promovido, comunicando que catalogo, configuracoes e governanca ja operam nativamente em V2 e que o trilho classico ficou restrito a contingencia estrutural; a rodada foi validada com `npm run typecheck`, `npm run test -- --run` (**35/35 arquivos**, **266/266 testes**) e `npm run build` em `frontend/`, com `AdminPanel` em **84.07 kB** (**gzip 21.46 kB**) e `V2WorkspaceLayout` em **8.27 kB** (**gzip 2.60 kB**)
 
 ### Etapas 187-190 — Governanca/Admin Nativas no Rail V2 ✅
 - **Arquivos**: `frontend/src/pages/PlatformAdminPanel.tsx`, `frontend/src/pages/AdminPanel.tsx`, `frontend/src/components/v2/V2WorkspaceLayout.tsx`

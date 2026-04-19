@@ -88,10 +88,24 @@ const PROVIDER_COLORS: Record<string, string> = {
   Microsoft: 'bg-cyan-100   text-cyan-700',
 }
 
+const V2_CATALOG_PANEL = 'rounded-[1.6rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.76)] shadow-[0_18px_48px_rgba(15,23,42,0.08)]'
+const V2_CATALOG_INSET = 'rounded-[1.2rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.82)]'
+const V2_CATALOG_FIELD = 'w-full rounded-[1rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] px-3 py-2 text-sm text-[var(--v2-ink-strong)] outline-none transition placeholder:text-[var(--v2-ink-faint)] focus:border-[rgba(99,102,241,0.35)] focus:ring-4 focus:ring-[rgba(99,102,241,0.12)]'
+const V2_CATALOG_SELECT = 'rounded-[1rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] px-3 py-2 text-sm text-[var(--v2-ink-strong)] outline-none transition focus:border-[rgba(99,102,241,0.35)] focus:ring-4 focus:ring-[rgba(99,102,241,0.12)]'
+const V2_CATALOG_FILTER_GROUP = 'flex items-center gap-0.5 rounded-full border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.82)] p-0.5'
+const V2_CATALOG_BUTTON = 'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+const V2_CATALOG_BUTTON_PRIMARY = `${V2_CATALOG_BUTTON} bg-indigo-600 text-white shadow-[0_18px_38px_rgba(79,70,229,0.18)] hover:bg-indigo-700`
+const V2_CATALOG_BUTTON_SECONDARY = `${V2_CATALOG_BUTTON} border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.84)] text-[var(--v2-ink-strong)] hover:bg-white`
+const V2_CATALOG_BUTTON_WARM = `${V2_CATALOG_BUTTON} border border-amber-200 bg-[rgba(245,158,11,0.12)] text-amber-800 hover:bg-[rgba(245,158,11,0.18)]`
+const V2_CATALOG_BUTTON_TINTED = `${V2_CATALOG_BUTTON} border border-indigo-200 bg-[rgba(99,102,241,0.1)] text-indigo-700 hover:bg-[rgba(99,102,241,0.16)]`
+const V2_CATALOG_ICON_SURFACE = 'flex h-10 w-10 items-center justify-center rounded-[1rem] bg-[rgba(99,102,241,0.12)] text-indigo-600'
+const V2_CATALOG_TABLE_HEADER = 'grid grid-cols-[minmax(180px,1.5fr)_70px_140px_minmax(130px,1fr)_70px_70px_70px_40px] items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)] overflow-x-auto min-w-[880px] border-b border-[var(--v2-line-soft)] bg-[rgba(15,23,42,0.05)]'
+const V2_CATALOG_TABLE_ROW = 'grid grid-cols-[minmax(180px,1.5fr)_70px_140px_minmax(130px,1fr)_70px_70px_70px_40px] items-center gap-2 px-3 py-3 transition-colors min-w-[880px] hover:bg-[rgba(15,23,42,0.04)]'
+
 // ── Capability badges ─────────────────────────────────────────────────────────
 
 const CAPABILITY_LABELS: Record<ModelCapability, { emoji: string; label: string; style: string }> = {
-  text:  { emoji: '📝', label: 'Texto',  style: 'bg-gray-100 text-gray-700'    },
+  text:  { emoji: '📝', label: 'Texto',  style: 'bg-[rgba(15,23,42,0.08)] text-[var(--v2-ink-soft)]' },
   image: { emoji: '🖼️', label: 'Imagem', style: 'bg-pink-100 text-pink-700'    },
   audio: { emoji: '🎵', label: 'Áudio',  style: 'bg-cyan-100 text-cyan-700'    },
   video: { emoji: '🎬', label: 'Vídeo',  style: 'bg-violet-100 text-violet-700' },
@@ -146,16 +160,16 @@ function ORModelRow({
   const tierStyle = TIER_STYLES[opt.tier]
 
   return (
-    <div className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-100 ${alreadyInCatalog ? 'opacity-40' : ''}`}>
+    <div className={`flex items-center gap-3 border-b border-[var(--v2-line-soft)] px-4 py-3 transition-colors hover:bg-[rgba(15,23,42,0.04)] ${alreadyInCatalog ? 'opacity-40' : ''}`}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold text-gray-900 truncate">{opt.label}</span>
+          <span className="text-sm font-semibold text-[var(--v2-ink-strong)] truncate">{opt.label}</span>
           {isFree && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-bold">✦ GRÁTIS</span>}
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PROVIDER_COLORS[opt.provider] ?? 'bg-gray-100 text-gray-700'}`}>{opt.provider}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PROVIDER_COLORS[opt.provider] ?? 'bg-[rgba(15,23,42,0.08)] text-[var(--v2-ink-soft)]'}`}>{opt.provider}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${tierStyle.bg} ${tierStyle.text}`}>{tierStyle.label}</span>
           <CapabilityBadges capabilities={opt.capabilities} />
         </div>
-        <div className="flex items-center gap-3 mt-0.5 text-[11px] text-gray-500">
+        <div className="mt-0.5 flex items-center gap-3 text-[11px] text-[var(--v2-ink-soft)]">
           <span className="flex items-center gap-0.5"><Cpu className="w-3 h-3" /> {fmt(opt.contextWindow)}</span>
           <span className="flex items-center gap-0.5">
             <Coins className="w-3 h-3" />
@@ -163,17 +177,17 @@ function ORModelRow({
             {' / '}
             <span className={isFree ? 'text-green-600 font-semibold' : ''}>{fmtCost(opt.outputCost)}</span>
           </span>
-          <span className="font-mono text-gray-400 truncate hidden sm:block">{model.id}</span>
+          <span className="hidden truncate font-mono text-[var(--v2-ink-faint)] sm:block">{model.id}</span>
         </div>
       </div>
       <button
         type="button"
         onClick={() => onAdd(opt)}
         disabled={alreadyInCatalog}
-        className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+        className={`flex-shrink-0 inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
           justAdded
             ? 'bg-green-600 text-white'
-            : 'text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed'
         }`}
       >
         {(() => {
@@ -282,24 +296,24 @@ function AddFromORModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col overflow-hidden">
+      <div className={`relative flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.8rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.96)] shadow-[0_28px_80px_rgba(15,23,42,0.24)] backdrop-blur-xl`}>
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-purple-50 to-indigo-50">
+        <div className="flex items-center justify-between border-b border-[var(--v2-line-soft)] bg-[linear-gradient(135deg,rgba(99,102,241,0.12),rgba(255,255,255,0.96)_60%,rgba(15,23,42,0.04))] px-6 py-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Adicionar Modelos ao Catálogo</h2>
-            <p className="text-sm text-gray-500">
+            <h2 className="text-lg font-bold text-[var(--v2-ink-strong)]">Adicionar Modelos ao Catálogo</h2>
+            <p className="text-sm text-[var(--v2-ink-soft)]">
               {orModels.length > 0
                 ? `${filtered.length} de ${orModels.length} modelos do OpenRouter`
                 : 'Buscando modelos do OpenRouter...'}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">
+          <button type="button" onClick={onClose} className="rounded-full p-2 text-[var(--v2-ink-soft)] transition-colors hover:bg-[rgba(15,23,42,0.08)]">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Manual add */}
-        <div className="px-6 py-3 border-b bg-amber-50">
+        <div className="border-b border-[var(--v2-line-soft)] bg-[rgba(245,158,11,0.08)] px-6 py-3">
           <p className="text-xs text-amber-700 font-medium mb-2">
             <Info className="w-3 h-3 inline mr-1" />
             Adicionar por ID (para modelos não listados abaixo):
@@ -311,12 +325,12 @@ function AddFromORModal({
               value={manualId}
               onChange={e => { setManualId(e.target.value); setManualError(null) }}
               onKeyDown={e => { if (e.key === 'Enter') handleManualAdd() }}
-              className="flex-1 text-sm border border-amber-200 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-amber-400 focus:border-amber-400 outline-none font-mono"
+              className={`${V2_CATALOG_FIELD} flex-1 font-mono focus:border-amber-400 focus:ring-4 focus:ring-[rgba(245,158,11,0.12)]`}
             />
             <button
               type="button"
               onClick={handleManualAdd}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors"
+              className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-amber-700"
             >
               <PlusCircle className="w-4 h-4" /> Adicionar
             </button>
@@ -325,26 +339,26 @@ function AddFromORModal({
         </div>
 
         {/* Filters */}
-        <div className="px-6 py-2 border-b bg-gray-50 flex flex-wrap gap-2 items-center">
+        <div className="flex flex-wrap items-center gap-2 border-b border-[var(--v2-line-soft)] bg-[rgba(15,23,42,0.04)] px-6 py-2">
           <div className="relative flex-1 min-w-[160px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--v2-ink-faint)]" />
             <input
               ref={searchRef}
               type="text"
               placeholder="Buscar modelo..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+              className={`${V2_CATALOG_FIELD} pl-8 py-1.5 focus:border-[rgba(99,102,241,0.35)] focus:ring-[rgba(99,102,241,0.12)]`}
             />
           </div>
-          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
+          <div className={V2_CATALOG_FILTER_GROUP}>
             {(['all', 'free', 'paid'] as const).map(f => (
               <button
                 key={f}
                 type="button"
                 onClick={() => setPriceFilter(f)}
-                className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                  priceFilter === f ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  priceFilter === f ? 'bg-indigo-600 text-white shadow-[0_10px_24px_rgba(79,70,229,0.18)]' : 'text-[var(--v2-ink-soft)] hover:bg-[rgba(15,23,42,0.06)]'
                 }`}
               >
                 {f === 'all' ? 'Todos' : f === 'free' ? '✦ Grátis' : 'Pagos'}
@@ -355,7 +369,7 @@ function AddFromORModal({
             href="https://openrouter.ai/models"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-purple-600 hover:underline"
+            className="flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline"
           >
             <ExternalLink className="w-3 h-3" /> Ver no OpenRouter
           </a>
@@ -364,7 +378,7 @@ function AddFromORModal({
         {/* Model list */}
         <div className="flex-1 overflow-y-auto">
           {loadingOR ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+            <div className="flex flex-col items-center justify-center py-16 text-[var(--v2-ink-faint)]">
               <RefreshCw className="w-8 h-8 mb-3 animate-spin" />
               <p className="text-sm">Carregando modelos do OpenRouter...</p>
             </div>
@@ -372,10 +386,10 @@ function AddFromORModal({
             <div className="flex flex-col items-center justify-center py-16">
               <AlertCircle className="w-8 h-8 mb-3 text-red-400" />
               <p className="text-sm text-red-600">{orError}</p>
-              <p className="text-xs text-gray-400 mt-1">Você pode ainda adicionar modelos manualmente pelo ID acima.</p>
+              <p className="mt-1 text-xs text-[var(--v2-ink-faint)]">Você pode ainda adicionar modelos manualmente pelo ID acima.</p>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+            <div className="flex flex-col items-center justify-center py-16 text-[var(--v2-ink-faint)]">
               <Filter className="w-8 h-8 mb-2" />
               <p className="text-sm">Nenhum modelo encontrado.</p>
             </div>
@@ -396,8 +410,8 @@ function AddFromORModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t bg-gray-50 flex items-center justify-between">
-          <span className="text-xs text-gray-500">
+        <div className="flex items-center justify-between border-t border-[var(--v2-line-soft)] bg-[rgba(15,23,42,0.04)] px-6 py-3">
+          <span className="text-xs text-[var(--v2-ink-soft)]">
             {justAddedIds.size > 0
               ? (() => { const pl = justAddedIds.size !== 1 ? 's' : ''; return `${justAddedIds.size} modelo${pl} adicionado${pl} — salve o catálogo para confirmar.` })()
               : 'Após adicionar, salve o catálogo. Os modelos adicionados ficam disponíveis em todos os seletores de agentes.'}
@@ -405,7 +419,7 @@ function AddFromORModal({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+            className={V2_CATALOG_BUTTON_SECONDARY}
           >
             Fechar
           </button>
@@ -531,28 +545,28 @@ export default function ModelCatalogCard() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border p-6 mb-6">
-        <p className="text-gray-400 text-sm">Carregando catálogo de modelos...</p>
+      <div className={`${V2_CATALOG_PANEL} mb-6 p-6`}>
+        <p className="text-sm text-[var(--v2-ink-faint)]">Carregando catálogo de modelos...</p>
       </div>
     )
   }
 
   return (
     <>
-      <div className="bg-white rounded-xl border mb-6 overflow-hidden">
+      <div className={`${V2_CATALOG_PANEL} mb-6 overflow-hidden`}>
         {/* ── Header ── */}
         <button
           type="button"
           onClick={() => setExpanded(e => !e)}
-          className="w-full flex items-center justify-between p-6 text-left hover:bg-gray-50 transition-colors"
+          className="flex w-full items-center justify-between p-6 text-left transition-colors hover:bg-[rgba(15,23,42,0.04)]"
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
-              <Library className="w-5 h-5 text-indigo-600" />
+            <div className={V2_CATALOG_ICON_SURFACE}>
+              <Library className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Catálogo de Modelos</h2>
-              <p className="text-sm text-gray-500">
+              <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">Catálogo de Modelos</h2>
+              <p className="text-sm text-[var(--v2-ink-soft)]">
                 {catalog.length} modelo{catalog.length !== 1 ? 's' : ''} disponíveis
                 {' · '}
                 {catalog.filter(m => m.isFree).length} gratuitos
@@ -563,13 +577,13 @@ export default function ModelCatalogCard() {
           </div>
           <div className="flex items-center gap-3">
             {hasChanges && (
-              <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">
+              <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">
                 Não salvo
               </span>
             )}
             {expanded
-              ? <ChevronUp className="w-5 h-5 text-gray-400" />
-              : <ChevronDown className="w-5 h-5 text-gray-400" />
+              ? <ChevronUp className="w-5 h-5 text-[var(--v2-ink-faint)]" />
+              : <ChevronDown className="w-5 h-5 text-[var(--v2-ink-faint)]" />
             }
           </div>
         </button>
@@ -578,28 +592,28 @@ export default function ModelCatalogCard() {
         {expanded && (
           <div className="px-6 pb-6">
             {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b">
+            <div className="mb-4 flex flex-wrap items-center gap-3 border-b border-[var(--v2-line-soft)] pb-4">
               {/* Search */}
               <div className="relative flex-1 min-w-[180px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--v2-ink-faint)]" />
                 <input
                   type="text"
                   placeholder="Buscar modelo..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                  className={`${V2_CATALOG_FIELD} pl-8`}
                 />
               </div>
 
               {/* Price filter */}
-              <div className="flex items-center gap-0.5 bg-white border border-gray-200 rounded-lg p-0.5">
+              <div className={V2_CATALOG_FILTER_GROUP}>
                 {(['all', 'free', 'paid'] as const).map(f => (
                   <button
                     key={f}
                     type="button"
                     onClick={() => setPriceFilter(f)}
-                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                      priceFilter === f ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+                      priceFilter === f ? 'bg-indigo-600 text-white shadow-[0_10px_24px_rgba(79,70,229,0.18)]' : 'text-[var(--v2-ink-soft)] hover:bg-[rgba(15,23,42,0.06)]'
                     }`}
                   >
                     {f === 'all' ? 'Todos' : f === 'free' ? '✦ Grátis' : 'Pagos'}
@@ -611,7 +625,7 @@ export default function ModelCatalogCard() {
               <select
                 value={tierFilter}
                 onChange={e => setTierFilter(e.target.value)}
-                className="text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white focus:ring-2 focus:ring-indigo-500"
+                className={V2_CATALOG_SELECT}
               >
                 <option value="all">Todos os tiers</option>
                 <option value="fast">Rápido</option>
@@ -623,7 +637,7 @@ export default function ModelCatalogCard() {
               <select
                 value={provFilter}
                 onChange={e => setProvFilter(e.target.value)}
-                className="text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white focus:ring-2 focus:ring-indigo-500"
+                className={V2_CATALOG_SELECT}
               >
                 <option value="all">Todos os provedores</option>
                 {allProviders.map(p => <option key={p} value={p}>{p}</option>)}
@@ -633,20 +647,20 @@ export default function ModelCatalogCard() {
               <button
                 type="button"
                 onClick={() => setAddModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors ml-auto"
+                className={`${V2_CATALOG_BUTTON_PRIMARY} ml-auto`}
               >
                 <Plus className="w-4 h-4" /> Adicionar modelo
               </button>
             </div>
 
             {/* Results summary */}
-            <p className="text-xs text-gray-500 mb-3">
+            <p className="mb-3 text-xs text-[var(--v2-ink-soft)]">
               Mostrando <strong>{filtered.length}</strong> de <strong>{catalog.length}</strong> modelos
               {(search || priceFilter !== 'all' || tierFilter !== 'all' || provFilter !== 'all') && (
                 <button
                   type="button"
                   onClick={() => { setSearch(''); setPriceFilter('all'); setTierFilter('all'); setProvFilter('all') }}
-                  className="ml-2 text-indigo-600 hover:underline"
+                  className="ml-2 font-semibold text-indigo-700 hover:underline"
                 >
                   Limpar filtros
                 </button>
@@ -654,9 +668,9 @@ export default function ModelCatalogCard() {
             </p>
 
             {/* ── Table ── */}
-            <div className="border border-gray-200 rounded-xl overflow-hidden">
+            <div className={`${V2_CATALOG_INSET} overflow-hidden`}>
               {/* Table header */}
-              <div className="grid grid-cols-[minmax(180px,1.5fr)_70px_140px_minmax(130px,1fr)_70px_70px_70px_40px] items-center gap-2 px-3 py-2 bg-gray-50 border-b text-[10px] font-semibold text-gray-500 uppercase tracking-wide overflow-x-auto min-w-[880px]">
+              <div className={V2_CATALOG_TABLE_HEADER}>
                 <span>Modelo</span>
                 <span>Perfil</span>
                 <span className="text-center">Adequação /10 (Ex/Sí/Ra/Re)</span>
@@ -668,9 +682,9 @@ export default function ModelCatalogCard() {
               </div>
 
               {/* Scrollable rows */}
-              <div className="divide-y divide-gray-100 overflow-x-auto">
+              <div className="divide-y divide-[var(--v2-line-soft)] overflow-x-auto">
                 {filtered.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                  <div className="flex flex-col items-center justify-center py-12 text-[var(--v2-ink-faint)]">
                     <Filter className="w-7 h-7 mb-2" />
                     <p className="text-sm">Nenhum modelo encontrado com esses filtros.</p>
                   </div>
@@ -684,12 +698,12 @@ export default function ModelCatalogCard() {
                     return (
                       <div
                         key={model.id}
-                        className="grid grid-cols-[minmax(180px,1.5fr)_70px_140px_minmax(130px,1fr)_70px_70px_70px_40px] items-center gap-2 px-3 py-3 hover:bg-gray-50/70 transition-colors min-w-[880px]"
+                        className={V2_CATALOG_TABLE_ROW}
                       >
                         {/* Model name + badges */}
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-sm font-semibold text-gray-900 truncate">{model.label}</span>
+                            <span className="text-sm font-semibold text-[var(--v2-ink-strong)] truncate">{model.label}</span>
                             {model.isFree && (
                               <span className="text-[9px] px-1 py-0.5 rounded-full bg-green-100 text-green-700 font-bold whitespace-nowrap">✦ GRÁTIS</span>
                             )}
@@ -697,7 +711,7 @@ export default function ModelCatalogCard() {
                           <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                             <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${provColor}`}>{model.provider}</span>
                             <CapabilityBadges capabilities={model.capabilities} />
-                            <span className="text-[9px] text-gray-400 font-mono truncate max-w-[140px]" title={model.id}>{model.id}</span>
+                            <span className="max-w-[140px] truncate font-mono text-[9px] text-[var(--v2-ink-faint)]" title={model.id}>{model.id}</span>
                           </div>
                           {/* Rate limits for free models */}
                           {model.isFree && (
@@ -731,34 +745,34 @@ export default function ModelCatalogCard() {
                             <BestIcon className="w-2.5 h-2.5 flex-shrink-0" />
                             {best.categoryLabel}
                           </div>
-                          <p className="text-[9px] text-gray-400 mt-0.5 leading-tight truncate" title={best.agents.join(', ')}>
+                          <p className="mt-0.5 truncate text-[9px] leading-tight text-[var(--v2-ink-faint)]" title={best.agents.join(', ')}>
                             {best.agents.slice(0, 3).join(', ')}
                           </p>
-                          <p className="text-[9px] text-gray-400 leading-tight truncate hidden xl:block" title={best.why}>
+                          <p className="hidden truncate text-[9px] leading-tight text-[var(--v2-ink-faint)] xl:block" title={best.why}>
                             {best.why}
                           </p>
                         </div>
 
                         {/* Context window */}
                         <div className="flex flex-col items-center">
-                          <span className="text-xs font-mono font-semibold text-gray-700">{fmt(model.contextWindow)}</span>
-                          <span className="text-[9px] text-gray-400">tokens</span>
+                          <span className="text-xs font-mono font-semibold text-[var(--v2-ink-strong)]">{fmt(model.contextWindow)}</span>
+                          <span className="text-[9px] text-[var(--v2-ink-faint)]">tokens</span>
                         </div>
 
                         {/* Input cost */}
                         <div className="flex flex-col items-center">
-                          <span className={`text-xs font-mono font-semibold ${model.isFree ? 'text-green-600' : 'text-gray-700'}`}>
+                          <span className={`text-xs font-mono font-semibold ${model.isFree ? 'text-green-600' : 'text-[var(--v2-ink-strong)]'}`}>
                             {fmtCost(model.inputCost)}
                           </span>
-                          <span className="text-[9px] text-gray-400">/1M tkn</span>
+                          <span className="text-[9px] text-[var(--v2-ink-faint)]">/1M tkn</span>
                         </div>
 
                         {/* Output cost */}
                         <div className="flex flex-col items-center">
-                          <span className={`text-xs font-mono font-semibold ${model.isFree ? 'text-green-600' : 'text-gray-700'}`}>
+                          <span className={`text-xs font-mono font-semibold ${model.isFree ? 'text-green-600' : 'text-[var(--v2-ink-strong)]'}`}>
                             {fmtCost(model.outputCost)}
                           </span>
-                          <span className="text-[9px] text-gray-400">/1M tkn</span>
+                          <span className="text-[9px] text-[var(--v2-ink-faint)]">/1M tkn</span>
                         </div>
 
                         {/* Delete */}
@@ -767,7 +781,7 @@ export default function ModelCatalogCard() {
                             type="button"
                             onClick={() => handleRemove(model.id)}
                             title={`Remover ${model.label} do catálogo`}
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            className="rounded-full p-1.5 text-[var(--v2-ink-faint)] transition-colors hover:bg-[rgba(239,68,68,0.08)] hover:text-red-500"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -779,23 +793,23 @@ export default function ModelCatalogCard() {
               </div>
             </div>
 
-            <div className="mt-3 p-3 bg-indigo-50 border border-indigo-100 rounded-lg space-y-2">
-              <p className="text-xs text-indigo-800 leading-relaxed">
+            <div className="mt-3 space-y-2 rounded-[1.15rem] border border-indigo-200 bg-[rgba(99,102,241,0.08)] p-3">
+              <p className="text-xs leading-relaxed text-indigo-900">
                 <strong>📊 Legenda de Adequação:</strong>
                 {' '}
                 <span className="font-semibold">Ex</span> = Extração (Triagem, Buscador, Fact-Checker) ·{' '}
                 <span className="font-semibold">Sí</span> = Síntese (Compilador, Revisor, Moderador) ·{' '}
                 <span className="font-semibold">Ra</span> = Raciocínio (Jurista, Pesquisador, Adv. do Diabo) ·{' '}
                 <span className="font-semibold">Re</span> = Redação (Redator).
-                {' '}Escala 1–5:
-                {' '}<span className="bg-emerald-100 text-emerald-700 px-1 rounded text-[10px] font-bold">5</span> Excelente
-                {' '}<span className="bg-green-100 text-green-700 px-1 rounded text-[10px]">4</span> Ótimo
-                {' '}<span className="bg-yellow-100 text-yellow-700 px-1 rounded text-[10px]">3</span> Bom
-                {' '}<span className="bg-orange-100 text-orange-600 px-1 rounded text-[10px]">2</span> Razoável
-                {' '}<span className="bg-red-100 text-red-500 px-1 rounded text-[10px]">1</span> Não recomendado.
+                {' '}Escala 1–10:
+                {' '}<span className="bg-emerald-100 text-emerald-700 px-1 rounded text-[10px] font-bold">9–10</span> Excelente
+                {' '}<span className="bg-green-100 text-green-700 px-1 rounded text-[10px]">7–8</span> Ótimo
+                {' '}<span className="bg-yellow-100 text-yellow-700 px-1 rounded text-[10px]">5–6</span> Bom
+                {' '}<span className="bg-orange-100 text-orange-600 px-1 rounded text-[10px]">3–4</span> Razoável
+                {' '}<span className="bg-red-100 text-red-500 px-1 rounded text-[10px]">1–2</span> Não recomendado.
                 {' '}Pontuações são estimativas — ajuste conforme sua experiência.
               </p>
-              <div className="flex items-start gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-1.5 rounded-[1rem] border border-amber-200 bg-[rgba(245,158,11,0.1)] p-2">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-amber-800">
                   <strong>Limite tier gratuito (✦ GRÁTIS):</strong>{' '}
@@ -810,19 +824,19 @@ export default function ModelCatalogCard() {
 
             {/* Error */}
             {error && (
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+              <div className="mt-3 flex items-center gap-2 rounded-[1.1rem] border border-red-200 bg-[rgba(254,226,226,0.72)] p-3">
                 <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
                 <span className="text-sm text-red-700">{error}</span>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex items-center gap-3 mt-4 pt-4 border-t">
+            <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-[var(--v2-line-soft)] pt-4">
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={!hasChanges || saving}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className={V2_CATALOG_BUTTON_PRIMARY}
               >
                 {saving ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
@@ -839,7 +853,7 @@ export default function ModelCatalogCard() {
                 onClick={handleReset}
                 disabled={saving}
                 title="Restaurar o catálogo padrão (modelos originais da plataforma)"
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className={V2_CATALOG_BUTTON_SECONDARY}
               >
                 <RotateCcw className="w-4 h-4" /> Restaurar padrão
               </button>
@@ -849,7 +863,7 @@ export default function ModelCatalogCard() {
                 onClick={handleHealthCheck}
                 disabled={checking || saving}
                 title="Verificar quais modelos do catálogo ainda existem no OpenRouter"
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className={V2_CATALOG_BUTTON_WARM}
               >
                 {checking ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
@@ -862,13 +876,13 @@ export default function ModelCatalogCard() {
               <button
                 type="button"
                 onClick={() => setAddModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors ml-auto"
+                className={`${V2_CATALOG_BUTTON_TINTED} ml-auto`}
               >
                 <Download className="w-4 h-4" /> Adicionar do OpenRouter
               </button>
 
               {hasChanges && !saved && (
-                <span className="text-xs text-amber-600">Alterações não salvas — os seletores de agentes serão atualizados ao salvar</span>
+                <span className="text-xs font-semibold text-amber-700">Alterações não salvas — os seletores de agentes serão atualizados ao salvar</span>
               )}
             </div>
           </div>

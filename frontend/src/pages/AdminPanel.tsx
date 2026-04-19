@@ -914,9 +914,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <ModelCatalogCard />
-          </div>
+          <ModelCatalogCard />
         </AdminCollapsibleSection>
       )}
 
@@ -929,9 +927,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <ModelConfigCard />
-          </div>
+          <ModelConfigCard />
         </AdminCollapsibleSection>
       )}
 
@@ -957,9 +953,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <ThesisAnalystConfigCard />
-          </div>
+          <ThesisAnalystConfigCard />
         </AdminCollapsibleSection>
       )}
 
@@ -973,9 +967,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <ContextDetailConfigCard />
-          </div>
+          <ContextDetailConfigCard />
         </AdminCollapsibleSection>
       )}
 
@@ -989,9 +981,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <AcervoClassificadorConfigCard />
-          </div>
+          <AcervoClassificadorConfigCard />
         </AdminCollapsibleSection>
       )}
 
@@ -1005,9 +995,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <AcervoEmentaConfigCard />
-          </div>
+          <AcervoEmentaConfigCard />
         </AdminCollapsibleSection>
       )}
 
@@ -1033,9 +1021,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <ResearchNotebookConfigCard />
-          </div>
+          <ResearchNotebookConfigCard />
         </AdminCollapsibleSection>
       )}
 
@@ -1049,9 +1035,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <NotebookAcervoConfigCard />
-          </div>
+          <NotebookAcervoConfigCard />
         </AdminCollapsibleSection>
       )}
 
@@ -1077,9 +1061,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <VideoPipelineConfigCard />
-          </div>
+          <VideoPipelineConfigCard />
         </AdminCollapsibleSection>
       )}
 
@@ -1093,9 +1075,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <AudioPipelineConfigCard />
-          </div>
+          <AudioPipelineConfigCard />
         </AdminCollapsibleSection>
       )}
 
@@ -1109,9 +1089,7 @@ export default function AdminPanel() {
           collapseState={collapseState}
           onToggle={toggleCollapse}
         >
-          <div className="v2-bridge-surface">
-            <PresentationPipelineConfigCard />
-          </div>
+          <PresentationPipelineConfigCard />
         </AdminCollapsibleSection>
       )}
 

@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-19",
-    "cycle": "v2-governance-admin-native",
+    "cycle": "v2-specialized-config-native",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -719,6 +719,29 @@
         "frontend/src/components/v2/V2WorkspaceLayout.tsx"
       ],
       "notes": "`PlatformAdminPanel` saiu da bridge de pagina inteira e passou a usar estados, cards executivos, thresholds, historico e backfill em V2 nativo. `AdminPanel` removeu a bridge ampla do frame e promoveu os blocos locais para V2, mantendo `v2-bridge-surface` apenas ao redor dos config cards importados ainda legados. O shell V2 foi atualizado para comunicar que custos, configuracoes principais e administracao executiva ja operam no rail promovido, com contingencia classica localizada apenas nos cards especializados remanescentes."
+    },
+    {
+      "id": "E8.F25",
+      "epic": "Redesign V2",
+      "name": "Cards especializados de configuracao e catalogo promovidos para V2 nativo",
+      "state": "implemented",
+      "files": [
+        "frontend/src/components/AgentModelConfigCard.tsx",
+        "frontend/src/components/ModelCatalogCard.tsx",
+        "frontend/src/components/ModelConfigCard.tsx",
+        "frontend/src/components/ThesisAnalystConfigCard.tsx",
+        "frontend/src/components/ContextDetailConfigCard.tsx",
+        "frontend/src/components/AcervoClassificadorConfigCard.tsx",
+        "frontend/src/components/AcervoEmentaConfigCard.tsx",
+        "frontend/src/components/NotebookAcervoConfigCard.tsx",
+        "frontend/src/components/ResearchNotebookConfigCard.tsx",
+        "frontend/src/components/VideoPipelineConfigCard.tsx",
+        "frontend/src/components/AudioPipelineConfigCard.tsx",
+        "frontend/src/components/PresentationPipelineConfigCard.tsx",
+        "frontend/src/pages/AdminPanel.tsx",
+        "frontend/src/components/v2/V2WorkspaceLayout.tsx"
+      ],
+      "notes": "Uma base compartilhada `AgentModelConfigCard` passou a sustentar os cards especializados de configuracao de agentes em V2 nativo, eliminando duplicacao de load/save/reset, badges, pipelines e modais. `ModelCatalogCard` tambem foi retematizado para o sistema V2, `AdminPanel` removeu o ultimo wrapper `v2-bridge-surface` e o shell passou a comunicar que configuracoes, catalogo e governanca ja operam integralmente no rail promovido."
     }
   ],
   "regressionRisk": {
