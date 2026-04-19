@@ -1,11 +1,17 @@
 # Caderno de Pesquisa — Status de Implementacao (NotebookLM+)
 
 > Documento de tracking para agentes IA. Atualizado automaticamente.
-> Branch: `redesign/v2-pilot`
+> Branch: `main`
 
 ---
 
-## Status Geral: Etapas 1-180 IMPLEMENTADAS
+## Status Geral: Etapas 1-183 IMPLEMENTADAS
+
+### Etapas 181-183 — Hotfix do Deploy Estavel + Secret Manager DataJud ✅
+- **Arquivos**: `.github/workflows/firebase-deploy.yml`, `README.md`, `SETUP.md`, `SECURITY.md`
+- Etapa 181: o workflow estavel `firebase-deploy.yml` deixou de falhar cedo apenas porque `DATAJUD_API_KEY` nao existe no GitHub Actions; agora ele resolve a fonte do segredo em duas camadas, priorizando o secret do GitHub para sincronizacao automatica e reutilizando o segredo ja existente em Firebase Secret Manager quando o CI nao recebe esse valor
+- Etapa 182: a chave publica validada do DataJud foi provisionada tanto em GitHub Actions quanto em Firebase Secret Manager (`DATAJUD_API_KEY`), destravando o deploy de `datajudProxy` sem reintroduzir chave hardcoded no frontend/functions versionados
+- Etapa 183: a trilha estavel foi revalidada ponta a ponta com `npm run typecheck`, `npm run test` (**35/35 arquivos**, **266/266 testes**), `npm run build` em `frontend/`, `npx tsc` em `functions/`, `firebase deploy --only hosting:lexio,firestore:rules,firestore:indexes,storage,functions --project hocapp-44760 --non-interactive` e smoke test `POST https://lexio.web.app/api/datajud` retornando `200`
 
 ### Etapas 177-180 — Promocao do Dashboard e Superficies Internas do Workspace V2 ✅
 - **Arquivos**: `frontend/src/App.tsx`, `frontend/src/index.css`, `frontend/src/components/v2/V2PagePrimitives.tsx`, `frontend/src/pages/ThesisBank.tsx`, `frontend/src/pages/CostTokensPage.tsx`, `frontend/src/pages/PlatformCostsPage.tsx`, `frontend/src/pages/AdminPanel.tsx`, `frontend/src/pages/PlatformAdminPanel.tsx`, `frontend/src/pages/DocumentList.tsx`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/DocumentDetail.tsx`, `frontend/src/pages/DocumentEditor.tsx`, `frontend/src/pages/Upload.tsx`

@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-19",
-    "cycle": "redesign-v2-promoted-workspace-surfaces",
+    "cycle": "stable-datajud-deploy-hotfix",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -346,7 +346,7 @@
         "SETUP.md",
         "SECURITY.md"
       ],
-      "notes": "DataJud deixou de usar chave hardcoded em código versionado; Cloud Function consome DATAJUD_API_KEY via Secret Manager; preview/pages/deploy agora exigem typecheck+test+build; job de testes compila functions e bloqueia regressão de segredo exposto"
+      "notes": "DataJud deixou de usar chave hardcoded em código versionado; Cloud Function consome DATAJUD_API_KEY via Secret Manager; preview/pages/deploy agora exigem typecheck+test+build; o deploy estavel resolve `DATAJUD_API_KEY` entre GitHub Actions e um segredo ja existente no Firebase Secret Manager, sincronizando o valor apenas quando o CI o recebe; lane estavel revalidada com deploy real e smoke test 200 em `/api/datajud`"
     },
     {
       "id": "E8.F1",
@@ -704,6 +704,7 @@
       "frontend/src/pages/ResearchNotebook.tsx"
     ],
     "medium": [
+      ".github/workflows/firebase-deploy.yml",
       ".github/workflows/firebase-redesign-v2.yml",
       ".firebaserc",
       "firebase.json",

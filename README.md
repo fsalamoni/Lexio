@@ -166,16 +166,16 @@ docs/              → Documentação técnica arquitetural
 
 1. Atualize sua branch a partir de `main` e rode os gates locais relevantes: `npm run typecheck`, `npx vitest run`, `npm run build`, `d:/Lexio/.venv/Scripts/python.exe -m pytest tests --tb=short -q` e `d:/Lexio/.venv/Scripts/python.exe -m ruff check packages tests`.
 2. Abra PR para `main`. O workflow `.github/workflows/firebase-preview.yml` publica um preview temporário no Firebase e agora exige `typecheck`, `test` e `build` antes de comentar a URL.
-3. Faça merge em `main` somente com a prévia validada. O workflow `.github/workflows/firebase-deploy.yml` roda `typecheck`, `test`, `build`, recompila `functions/`, sincroniza o segredo `DATAJUD_API_KEY` no Secret Manager e então publica Hosting, Rules, Indexes, Storage e Functions.
+3. Faça merge em `main` somente com a prévia validada. O workflow `.github/workflows/firebase-deploy.yml` roda `typecheck`, `test`, `build`, recompila `functions/`, resolve a fonte do `DATAJUD_API_KEY` (secret do GitHub, preferencialmente, ou segredo já existente no Firebase Secret Manager), sincroniza o segredo quando necessário e então publica Hosting, Rules, Indexes, Storage e Functions.
 4. Se a versão espelho em GitHub Pages também precisar ser atualizada, dispare manualmente `.github/workflows/deploy-pages.yml`. Ele também executa `typecheck`, `test` e `build` antes do publish.
-6. Para publicar a experiência experimental do redesign em URL separada, use `.github/workflows/firebase-redesign-v2.yml` ou replique localmente o build com `VITE_REDESIGN_V2=true`, `VITE_REDESIGN_V2_HOME=true` e `VITE_BUILD_OUT_DIR=dist-redesign-v2` antes de rodar `firebase deploy --only hosting:lexio-redesign-v2 --project hocapp-44760`.
+5. Para publicar a experiência experimental do redesign em URL separada, use `.github/workflows/firebase-redesign-v2.yml` ou replique localmente o build com `VITE_REDESIGN_V2=true`, `VITE_REDESIGN_V2_HOME=true` e `VITE_BUILD_OUT_DIR=dist-redesign-v2` antes de rodar `firebase deploy --only hosting:lexio-redesign-v2 --project hocapp-44760`.
 
 ### Segredos operacionais mínimos
 
 - `FIREBASE_TOKEN` ou `FIREBASE_SERVICE_ACCOUNT`
 - `FIREBASE_API_KEY`
 - `VITE_ADMIN_EMAIL`
-- `DATAJUD_API_KEY` para a Cloud Function `datajudProxy`
+- `DATAJUD_API_KEY` no GitHub Actions (recomendado para sincronização automática) ou já provisionado como segredo `DATAJUD_API_KEY` no Firebase Secret Manager para a Cloud Function `datajudProxy`
 
 ### URL dedicada do redesign V2
 
@@ -224,7 +224,7 @@ Toda chamada LLM usa `callLLM()`, `callLLMWithMessages()` ou `callLLMWithFallbac
 | 10 | `moderador` | Planeja estrutura do documento | synthesis |
 | 11 | `redator` | Redige documento final (12k tokens) | writing |
 
-### Agentes do Caderno de Pesquisa (11)
+### Agentes do Caderno de Pesquisa (12)
 
 **Grupo Pesquisa & Análise (6):**
 - `notebook_pesquisador` — Indexa fontes, extrai informações
@@ -233,6 +233,7 @@ Toda chamada LLM usa `callLLM()`, `callLLMWithMessages()` ou `callLLMWithFallbac
 - `notebook_pesquisador_externo` — Pesquisa externa web
 - `notebook_pesquisador_externo_profundo` — Pesquisa externa profunda
 - `notebook_pesquisador_jurisprudencia` — Pesquisa jurisprudência (DataJud/CNJ)
+- `notebook_ranqueador_jurisprudencia` — Reclassifica e prioriza resultados jurisprudenciais
 
 **Grupo Estúdio de Criação (5):**
 - `studio_pesquisador` — Extrai dados relevantes das fontes

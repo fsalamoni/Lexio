@@ -16,9 +16,9 @@ These are industry-standard trade-offs for SPAs using Vite and PDF.js. To tighte
 
 ---
 
-## Required GitHub Secrets
+## Required and Recommended GitHub Secrets
 
-Go to **GitHub → Repository → Settings → Secrets and variables → Actions → New repository secret** and add the following:
+Go to **GitHub → Repository → Settings → Secrets and variables → Actions → New repository secret** and add the following as applicable:
 
 ### Firebase Authentication (pick one)
 
@@ -42,7 +42,13 @@ These are **not** sensitive (they are embedded in the built JS), but they must b
 | Secret | Description |
 |--------|-------------|
 | `VITE_ADMIN_EMAIL` | E-mail address of the first admin user (Google account). This user gets the `admin` role automatically on first login. |
-| `DATAJUD_API_KEY` | API key used by the Cloud Function `datajudProxy`. The Firebase deploy workflow syncs this value to Firebase Secret Manager before publishing Functions. |
+| `DATAJUD_API_KEY` | Recommended GitHub Actions copy of the API key used by the Cloud Function `datajudProxy`. `firebase-deploy.yml` syncs it to Firebase Secret Manager when present; if the GitHub secret is absent, the workflow reuses an existing `DATAJUD_API_KEY` already stored in Firebase Secret Manager. A Functions deploy still requires the secret to exist in at least one of those two places. |
+
+If you choose not to keep `DATAJUD_API_KEY` in GitHub Actions, provision it once in Firebase Secret Manager before the first Functions deploy:
+
+```bash
+firebase functions:secrets:set DATAJUD_API_KEY --project hocapp-44760
+```
 
 ---
 
@@ -66,7 +72,7 @@ Copy the printed token and add it as the `FIREBASE_TOKEN` secret in GitHub.
 |----------|---------|-------------|
 | `test.yml` | Push to `main`/`claude/*`/`copilot/*`, PR to `main` | Source guardrails, TypeScript typecheck, Vitest unit tests, Python pytest, Ruff lint and Functions TypeScript build |
 | `deploy-pages.yml` | Manual (`workflow_dispatch`) | Typecheck, test, build and deploy to GitHub Pages (`/Lexio/` base path) |
-| `firebase-deploy.yml` | Push to `main`, manual | Typecheck, test, build, sync `DATAJUD_API_KEY`, compile Functions and deploy Firebase Hosting (`lexio.web.app`) + Rules + Indexes + Storage + Functions |
+| `firebase-deploy.yml` | Push to `main`, manual | Typecheck, test, build, resolve/sync `DATAJUD_API_KEY` (GitHub secret preferred, existing Firebase Secret Manager secret accepted), compile Functions and deploy Firebase Hosting (`lexio.web.app`) + Rules + Indexes + Storage + Functions |
 | `firebase-redesign-v2.yml` | Push to `redesign/v2-pilot`, manual | Typecheck, test, build with `VITE_REDESIGN_V2=true` and `VITE_REDESIGN_V2_HOME=true`, sync authorized domains when service account is available and deploy the isolated Hosting site `lexio-redesign-v2-44760.web.app` |
 | `firebase-preview.yml` | PR to `main` | Typecheck, test, build, deploy a temporary Firebase Hosting preview channel, post URL as PR comment and delete channel on PR close |
 

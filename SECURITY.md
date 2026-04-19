@@ -37,12 +37,12 @@ Before deploying Lexio in production:
 
 - Lexio roda com chamadas LLM no browser. Em produção, prefira chaves por usuário salvas em `/users/{uid}/settings/preferences` e evite depender de fallbacks globais em runtime.
 - Integrações de terceiros sujeitas a CORS devem passar por proxy controlado quando necessário; evite fallback direto do browser para endpoints que não oferecem política CORS estável.
-- A chave do DataJud não deve existir em código versionado. O proxy `datajudProxy` deve ler `DATAJUD_API_KEY` de Secret Manager/GitHub Secrets, e o fallback direto do browser só deve existir em ambiente local ou por chave explicitamente salva pelo usuário.
+- A chave do DataJud não deve existir em código versionado. O proxy `datajudProxy` deve ler `DATAJUD_API_KEY` de Firebase Secret Manager; a cópia em GitHub Actions é apenas um mecanismo de sincronização/rotação do CI, e o fallback direto do browser só deve existir em ambiente local ou por chave explicitamente salva pelo usuário.
 - Novos módulos devem respeitar fronteiras de camada para reduzir blast radius: lógica de negócio em módulos reutilizáveis, UI apenas como consumidora.
 
 ## Secrets Management
 
-All secrets must be provided via environment variables. The following are **required** in production:
+All deploy-time and runtime secrets must be provided via environment variables or platform secret stores. The following are **required** in production:
 
 | Variable | Description |
 |----------|-------------|
@@ -52,4 +52,4 @@ All secrets must be provided via environment variables. The following are **requ
 | `SECRET_KEY` | Application secret key (min 32 chars) |
 | `OPENROUTER_API_KEY` | LLM API key |
 | `FIREBASE_API_KEY` | Firebase (if using Firebase mode) |
-| `DATAJUD_API_KEY` | DataJud proxy key stored in Firebase Secret Manager / GitHub Actions secret |
+| `DATAJUD_API_KEY` | DataJud proxy key stored in Firebase Secret Manager for `datajudProxy`; keeping a GitHub Actions copy is recommended only for CI sync/rotation |

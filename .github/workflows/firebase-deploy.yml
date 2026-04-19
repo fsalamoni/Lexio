@@ -12,6 +12,11 @@ name: Deploy — Firebase Hosting (lexio.web.app) + Firestore/Storage Rules
 #                               roles: Firebase Hosting Admin + Firebase Rules Admin
 #                               no projeto hocapp-44760.
 #
+#   DATAJUD_API_KEY         ← RECOMENDADO no GitHub para sincronizacao automatica.
+#                              Se estiver ausente, o workflow reutiliza o segredo ja
+#                              existente em Firebase Secret Manager; se nao existir em
+#                              nenhum dos dois lugares, o deploy de Functions falha.
+#
 # Pelo menos um dos dois deve estar configurado para o deploy funcionar.
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -55,15 +60,6 @@ jobs:
           fi
         env:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
-
-      - name: Validate DataJud secret
-        run: |
-          if [ -z "$DATAJUD_API_KEY" ]; then
-            echo "::error::Missing DATAJUD_API_KEY secret"
-            exit 1
-          fi
-        env:
-          DATAJUD_API_KEY: ${{ secrets['DATAJUD_API_KEY'] }}
 
       - name: Typecheck
         run: npm run typecheck
@@ -216,7 +212,30 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools@latest
 
+      - name: Resolve DataJud secret source
+        id: datajud_secret
+        run: |
+          if [ -n "$DATAJUD_API_KEY" ]; then
+            echo "source=github" >> "$GITHUB_OUTPUT"
+            echo "GitHub Actions secret DATAJUD_API_KEY found; Firebase Secret Manager will be updated."
+            exit 0
+          fi
+
+          if firebase functions:secrets:get DATAJUD_API_KEY --project "$FIREBASE_PROJECT_ID" --non-interactive >/dev/null 2>&1; then
+            echo "source=firebase" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub Actions secret DATAJUD_API_KEY is absent. Reusing the existing Firebase Secret Manager secret."
+            exit 0
+          fi
+
+          echo "::error::Missing DATAJUD_API_KEY in both GitHub Actions and Firebase Secret Manager. Configure one of them before deploying functions."
+          exit 1
+        env:
+          DATAJUD_API_KEY: ${{ secrets['DATAJUD_API_KEY'] }}
+          FIREBASE_PROJECT_ID: ${{ env.FIREBASE_PROJECT_ID }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+
       - name: Sync DataJud function secret
+        if: steps.datajud_secret.outputs.source == 'github'
         run: |
           printf '%s' "$DATAJUD_API_KEY" | firebase functions:secrets:set DATAJUD_API_KEY --project "$FIREBASE_PROJECT_ID" --non-interactive
         env:
