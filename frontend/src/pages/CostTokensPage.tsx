@@ -16,6 +16,7 @@ import api from '../api/client'
 import type { CostBreakdown, CostBreakdownItem } from '../lib/cost-analytics'
 import type { BudgetStatus } from '../lib/cost-analytics'
 import type { TokenBudgetConfig } from '../lib/firestore-types'
+import { formatCost, fmtBrl, fmtUsd, fmtInt, fmtPercent, usdToBrl } from '../lib/currency-utils'
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 
@@ -34,24 +35,6 @@ function saveCollapseState(state: Record<string, boolean>) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   } catch { /* quota exceeded — non-critical */ }
-}
-
-// ── Formatters ───────────────────────────────────────────────────────────────
-
-function fmtUsd(value: number) {
-  return value < 0.001 ? `$${value.toFixed(5)}` : `$${value.toFixed(4)}`
-}
-
-function fmtBrl(value: number) {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
-
-function fmtInt(value: number) {
-  return value.toLocaleString('pt-BR')
-}
-
-function fmtPercent(value: number) {
-  return `${(value * 100).toFixed(1)}%`
 }
 
 // ── Collapsible Section ──────────────────────────────────────────────────────
