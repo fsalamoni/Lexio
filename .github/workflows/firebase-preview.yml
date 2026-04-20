@@ -6,7 +6,9 @@ name: Firebase Hosting Preview (PR)
 # is merged or closed.
 #
 # SECRETS REQUIRED (GitHub → Settings → Secrets → Actions):
-#   FIREBASE_TOKEN    — generate with: firebase login:ci
+#   FIREBASE_TOKEN    — recommended. Generate with: firebase login:ci
+#   FIREBASE_SERVICE_ACCOUNT — alternative. JSON key for a service account
+#                              with Firebase Hosting Admin permissions.
 #   FIREBASE_API_KEY  — Firebase Web API key (same as production)
 #   VITE_ADMIN_EMAIL  — admin e-mail address (optional, same as production)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -109,6 +111,53 @@ jobs:
             exit 1
           fi
 
+      - name: Validate FIREBASE_SERVICE_ACCOUNT payload
+        run: node scripts/validate-firebase-service-account.mjs --allow-empty
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Resolve Firebase auth mode
+        id: auth_mode
+        run: |
+          if [ -n "$FIREBASE_TOKEN" ]; then
+            echo "use_service_account=false" >> "$GITHUB_OUTPUT"
+          elif [ -n "$FIREBASE_SA" ]; then
+            echo "use_service_account=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_service_account=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Authenticate via Service Account
+        id: google_auth
+        if: steps.auth_mode.outputs.use_service_account == 'true'
+        continue-on-error: true
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - name: Ensure Firebase CLI auth path
+        run: |
+          if [ -n "$FIREBASE_TOKEN" ]; then
+            echo "Using FIREBASE_TOKEN authentication."
+            exit 0
+          fi
+
+          if [ "$USE_SERVICE_ACCOUNT" = "true" ] && [ "$GOOGLE_AUTH_OUTCOME" = "success" ]; then
+            echo "Using FIREBASE_SERVICE_ACCOUNT authentication via google-github-actions/auth."
+            exit 0
+          fi
+
+          echo "::error::No valid Firebase authentication method available. Check FIREBASE_TOKEN or FIREBASE_SERVICE_ACCOUNT."
+          exit 1
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          USE_SERVICE_ACCOUNT: ${{ steps.auth_mode.outputs.use_service_account }}
+          GOOGLE_AUTH_OUTCOME: ${{ steps.google_auth.outcome }}
+
       - name: Install Firebase CLI
         run: npm install -g firebase-tools@latest
 
@@ -205,10 +254,65 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.action == 'closed'
     steps:
+      - name: Resolve Firebase auth mode
+        id: teardown_auth_mode
+        run: |
+          if [ -n "$FIREBASE_TOKEN" ]; then
+            echo "has_auth=true" >> "$GITHUB_OUTPUT"
+            echo "use_service_account=false" >> "$GITHUB_OUTPUT"
+          elif [ -n "$FIREBASE_SA" ]; then
+            echo "has_auth=true" >> "$GITHUB_OUTPUT"
+            echo "use_service_account=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Skipping preview teardown because neither FIREBASE_TOKEN nor FIREBASE_SERVICE_ACCOUNT is configured."
+            echo "has_auth=false" >> "$GITHUB_OUTPUT"
+            echo "use_service_account=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Validate FIREBASE_SERVICE_ACCOUNT payload
+        if: steps.teardown_auth_mode.outputs.has_auth == 'true'
+        run: node scripts/validate-firebase-service-account.mjs --allow-empty
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Authenticate via Service Account
+        id: teardown_google_auth
+        if: steps.teardown_auth_mode.outputs.use_service_account == 'true'
+        continue-on-error: true
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - name: Ensure Firebase CLI auth path
+        if: steps.teardown_auth_mode.outputs.has_auth == 'true'
+        run: |
+          if [ -n "$FIREBASE_TOKEN" ]; then
+            echo "Using FIREBASE_TOKEN authentication."
+            exit 0
+          fi
+
+          if [ "$USE_SERVICE_ACCOUNT" = "true" ] && [ "$GOOGLE_AUTH_OUTCOME" = "success" ]; then
+            echo "Using FIREBASE_SERVICE_ACCOUNT authentication via google-github-actions/auth."
+            exit 0
+          fi
+
+          echo "::error::No valid Firebase authentication method available. Check FIREBASE_TOKEN or FIREBASE_SERVICE_ACCOUNT."
+          exit 1
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          USE_SERVICE_ACCOUNT: ${{ steps.teardown_auth_mode.outputs.use_service_account }}
+          GOOGLE_AUTH_OUTCOME: ${{ steps.teardown_google_auth.outcome }}
+
       - name: Install Firebase CLI
+        if: steps.teardown_auth_mode.outputs.has_auth == 'true'
         run: npm install -g firebase-tools@latest
 
       - name: Delete preview channel
+        if: steps.teardown_auth_mode.outputs.has_auth == 'true'
         run: |
           CHANNEL="pr-${{ github.event.pull_request.number }}"
           firebase hosting:channel:delete "$CHANNEL" \

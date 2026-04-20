@@ -24,6 +24,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -112,6 +113,11 @@ jobs:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
+      - name: Validate FIREBASE_SERVICE_ACCOUNT payload
+        run: node scripts/validate-firebase-service-account.mjs --allow-empty
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
       - name: Resolve Firebase auth mode
         id: auth_mode
         run: |
@@ -137,6 +143,25 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           token_format: access_token
+
+      - name: Ensure Firebase CLI auth path
+        run: |
+          if [ -n "$FIREBASE_TOKEN" ]; then
+            echo "Using FIREBASE_TOKEN authentication."
+            exit 0
+          fi
+
+          if [ "$USE_SERVICE_ACCOUNT" = "true" ] && [ "$GOOGLE_AUTH_OUTCOME" = "success" ]; then
+            echo "Using FIREBASE_SERVICE_ACCOUNT authentication via google-github-actions/auth."
+            exit 0
+          fi
+
+          echo "::error::No valid Firebase authentication method available. Check FIREBASE_TOKEN or FIREBASE_SERVICE_ACCOUNT."
+          exit 1
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          USE_SERVICE_ACCOUNT: ${{ steps.auth_mode.outputs.use_service_account }}
+          GOOGLE_AUTH_OUTCOME: ${{ steps.google_auth.outcome }}
 
       - name: Ensure Firebase Auth authorized domains
         if: steps.auth_mode.outputs.use_service_account == 'true' && steps.google_auth.outcome == 'success'
