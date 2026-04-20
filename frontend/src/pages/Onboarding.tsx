@@ -144,8 +144,8 @@ export default function Onboarding() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
-          <Scale className="w-10 h-10 text-brand-600 mx-auto mb-2" />
-          <h1 className="text-2xl font-bold text-brand-900">Bem-vindo ao Lexio</h1>
+          <Scale className="w-10 h-10 text-teal-600 mx-auto mb-2" />
+          <h1 className="text-2xl font-bold text-teal-900">Bem-vindo ao Lexio</h1>
           <p className="text-gray-500 mt-1">Carregando configurações...</p>
         </div>
         <div className="bg-white rounded-xl border shadow-sm p-8 animate-pulse">
@@ -172,8 +172,8 @@ export default function Onboarding() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
-          <Scale className="w-10 h-10 text-brand-600 mx-auto mb-2" />
-          <h1 className="text-2xl font-bold text-brand-900">Bem-vindo ao Lexio</h1>
+          <Scale className="w-10 h-10 text-teal-600 mx-auto mb-2" />
+          <h1 className="text-2xl font-bold text-teal-900">Bem-vindo ao Lexio</h1>
           <p className="text-gray-500 mt-1">Configure seu perfil para resultados personalizados</p>
         </div>
 
@@ -181,7 +181,7 @@ export default function Onboarding() {
         <div className="flex items-center justify-center gap-2 mb-8">
           {steps.map((_, i) => (
             <div key={i} className={`h-2 w-12 rounded-full transition-colors ${
-              i <= currentStep ? 'bg-brand-600' : 'bg-gray-200'
+              i <= currentStep ? 'bg-teal-600' : 'bg-gray-200'
             }`} />
           ))}
         </div>
@@ -206,7 +206,7 @@ export default function Onboarding() {
                     value={data[field.key] || ''}
                     onChange={e => updateField(field.key, e.target.value)}
                     placeholder={field.placeholder}
-                    className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
+                    className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-teal-500"
                   />
                 )}
                 {field.type === 'number' && (
@@ -218,7 +218,7 @@ export default function Onboarding() {
                       updateField(field.key, isNaN(num) ? null : num)
                     }}
                     placeholder={field.placeholder}
-                    className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
+                    className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-teal-500"
                   />
                 )}
                 {field.type === 'textarea' && (
@@ -227,7 +227,7 @@ export default function Onboarding() {
                     onChange={e => updateField(field.key, e.target.value)}
                     placeholder={field.placeholder}
                     rows={3}
-                    className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
+                    className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-teal-500"
                   />
                 )}
                 {field.type === 'select' && (
@@ -251,7 +251,7 @@ export default function Onboarding() {
                         onClick={() => toggleMultiSelect(field.key, opt.value)}
                         className={`px-3 py-2 rounded-lg text-sm border transition-colors ${
                           (data[field.key] || []).includes(opt.value)
-                            ? 'bg-brand-600 text-white border-brand-600'
+                            ? 'bg-teal-600 text-white border-teal-600'
                             : 'bg-white text-gray-700 hover:bg-gray-50'
                         }`}
                       >
@@ -266,7 +266,7 @@ export default function Onboarding() {
                       type="checkbox"
                       checked={data[field.key] ?? field.default ?? false}
                       onChange={e => updateField(field.key, e.target.checked)}
-                      className="w-5 h-5 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                      className="w-5 h-5 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
                     />
                     <span className="text-sm text-gray-700">Ativado</span>
                   </label>
@@ -277,7 +277,7 @@ export default function Onboarding() {
                     value={(data[field.key] || []).join(', ')}
                     onChange={e => updateField(field.key, e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean))}
                     placeholder={field.placeholder}
-                    className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500"
+                    className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-teal-500"
                   />
                 )}
               </div>
@@ -302,7 +302,7 @@ export default function Onboarding() {
                 <button
                   onClick={handleComplete}
                   disabled={saving}
-                  className="flex items-center gap-2 bg-brand-600 text-white px-6 py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50"
+                  className="flex items-center gap-2 bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 disabled:opacity-50"
                 >
                   <Check className="w-4 h-4" />
                   {saving ? 'Salvando...' : 'Concluir'}
@@ -310,7 +310,7 @@ export default function Onboarding() {
               ) : (
                 <button
                   onClick={handleNext}
-                  className="flex items-center gap-1 bg-brand-600 text-white px-6 py-2 rounded-lg hover:bg-brand-700"
+                  className="flex items-center gap-1 bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700"
                 >
                   Próximo <ChevronRight className="w-4 h-4" />
                 </button>

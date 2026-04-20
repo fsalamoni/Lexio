@@ -170,7 +170,7 @@ function StatCard({ icon: Icon, label, value, tone }: { icon: React.ElementType;
     <div className="v2-summary-card bg-[rgba(255,255,255,0.82)]">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--v2-ink-faint)]">{label}</span>
-        <Icon className={`w-4 h-4 ${tone || 'text-brand-600'}`} />
+        <Icon className={`w-4 h-4 ${tone || 'text-teal-600'}`} />
       </div>
       <p className="mt-3 text-2xl font-bold text-[var(--v2-ink-strong)]">{value}</p>
     </div>
@@ -909,7 +909,7 @@ export default function PlatformAdminPanel() {
         <StatCard icon={DollarSign} label="Custo total" value={fmtUsd(overview.total_cost_usd)} tone="text-amber-600" />
         <StatCard icon={Brain} label="Chamadas LLM" value={fmtInt(overview.total_calls)} tone="text-violet-600" />
         <StatCard icon={BarChart3} label="Tokens totais" value={fmtInt(overview.total_tokens)} tone="text-indigo-600" />
-        <StatCard icon={FileText} label="Documentos" value={fmtInt(overview.total_documents)} tone="text-brand-600" />
+        <StatCard icon={FileText} label="Documentos" value={fmtInt(overview.total_documents)} tone="text-teal-600" />
         <StatCard icon={Database} label="Qualidade média" value={overview.average_quality_score != null ? `${overview.average_quality_score}/100` : 'N/D'} tone="text-rose-600" />
         <StatCard
           icon={Database}
@@ -979,14 +979,14 @@ export default function PlatformAdminPanel() {
             <button
               onClick={() => { void saveAlertThresholds() }}
               disabled={savingThresholds}
-              className="px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 rounded-lg bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Salvar configuração
             </button>
             <button
               onClick={() => { void applyTelemetryRecommendation() }}
               disabled={!telemetryRecommendation || savingThresholds}
-              className="px-3 py-1.5 rounded-lg border border-brand-200 bg-brand-50 text-brand-700 text-xs font-medium hover:bg-brand-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 rounded-lg border border-teal-200 bg-teal-50 text-teal-700 text-xs font-medium hover:bg-teal-100 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Aplicar recomendado
             </button>
@@ -1075,7 +1075,7 @@ export default function PlatformAdminPanel() {
               onClick={() => applyThresholdPreset(option.key as Exclude<AlertProfile, 'custom'>)}
               className={`px-2.5 py-1 rounded-full border text-[10px] font-medium transition-colors ${
                 alertProfile === option.key
-                  ? 'bg-brand-100 border-brand-300 text-brand-800'
+                  ? 'bg-teal-100 border-teal-300 text-teal-800'
                   : 'bg-[var(--v2-panel-strong)] border-[var(--v2-line-soft)] text-[var(--v2-ink-soft)] hover:bg-[rgba(255,255,255,0.9)]'
               }`}
             >
@@ -1343,7 +1343,7 @@ export default function PlatformAdminPanel() {
             <button
               onClick={() => { void runSearchMemoryBackfill(false) }}
               disabled={backfillLoading}
-              className="px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 rounded-lg bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Executar backfill
             </button>

@@ -77,8 +77,8 @@ export default function Register() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Scale className="w-12 h-12 text-brand-600 mx-auto mb-3" />
-          <h1 className="text-3xl font-bold text-brand-900">Lexio</h1>
+          <Scale className="w-12 h-12 text-teal-600 mx-auto mb-3" />
+          <h1 className="text-3xl font-bold text-teal-900">Lexio</h1>
           <p className="text-gray-500 mt-1">Crie sua conta</p>
         </div>
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border p-8 space-y-4" autoComplete="on">
@@ -93,7 +93,7 @@ export default function Register() {
               inputMode="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
               required
             />
           </div>
@@ -106,7 +106,7 @@ export default function Register() {
               inputMode="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
               required
             />
             {!isEmailValid && <p className="text-xs text-red-600 mt-1">Digite um email válido.</p>}
@@ -120,7 +120,7 @@ export default function Register() {
                 autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full border rounded-lg px-4 py-2 pr-10 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                className="w-full border rounded-lg px-4 py-2 pr-10 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                 required
                 minLength={8}
               />
@@ -157,19 +157,19 @@ export default function Register() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Ex: Promotor de Justiça"
-              className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
             />
           </div>
           <button
             type="submit"
             disabled={!canSubmit}
-            className="w-full bg-brand-600 text-white py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            className="w-full bg-teal-600 text-white py-2 rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           >
             {loading ? 'Cadastrando...' : 'Cadastrar'}
           </button>
           <p className="text-center text-sm text-gray-500">
             Já tem conta?{' '}
-            <Link to="/login" className="text-brand-600 hover:underline">Entrar</Link>
+            <Link to="/login" className="text-teal-600 hover:underline">Entrar</Link>
           </p>
         </form>
       </div>

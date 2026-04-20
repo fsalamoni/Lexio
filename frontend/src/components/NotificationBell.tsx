@@ -130,7 +130,7 @@ export default function NotificationBell() {
                 <button
                   onClick={handleMarkAllRead}
                   disabled={loading}
-                  className="flex items-center gap-1 text-xs text-brand-600 hover:underline disabled:opacity-50"
+                  className="flex items-center gap-1 text-xs text-teal-600 hover:underline disabled:opacity-50"
                   title="Marcar todas como lidas"
                 >
                   <CheckCheck className="w-3.5 h-3.5" />
@@ -160,7 +160,7 @@ export default function NotificationBell() {
                     key={notif.id}
                     onClick={() => handleClick(notif)}
                     className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-start gap-3 ${
-                      !notif.is_read ? 'bg-brand-50/50' : ''
+                      !notif.is_read ? 'bg-teal-50/50' : ''
                     }`}
                   >
                     <span className="text-lg leading-none mt-0.5 flex-shrink-0">
@@ -179,13 +179,13 @@ export default function NotificationBell() {
                       </div>
                       <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{notif.message}</p>
                       {notif.document_id && (
-                        <span className="inline-flex items-center gap-1 mt-1 text-xs text-brand-600">
+                        <span className="inline-flex items-center gap-1 mt-1 text-xs text-teal-600">
                           <FileText className="w-3 h-3" /> Ver documento
                         </span>
                       )}
                     </div>
                     {!notif.is_read && (
-                      <span className="w-2 h-2 rounded-full bg-brand-500 flex-shrink-0 mt-1.5" />
+                      <span className="w-2 h-2 rounded-full bg-teal-500 flex-shrink-0 mt-1.5" />
                     )}
                   </button>
                 ))}

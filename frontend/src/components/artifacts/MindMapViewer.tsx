@@ -178,30 +178,36 @@ export default function MindMapViewer({ data }: MindMapViewerProps) {
   }, [data])
 
   if (data.branches.length === 0) {
-    return <div className="text-center py-12 text-gray-500">Mapa mental vazio.</div>
+    return <div className="text-center py-12" style={{ color: 'var(--v2-ink-faint)' }}>Mapa mental vazio.</div>
   }
 
   return (
     <div className="flex flex-col gap-4">
       {data.renderedImageUrl && (
-        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: 'var(--v2-line-soft)' }}>
           <img src={data.renderedImageUrl} alt={data.centralNode} className="w-full h-auto object-contain" />
         </div>
       )}
 
       {/* Controls */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold text-gray-900 truncate">{data.centralNode}</h3>
+        <h3 className="text-lg font-bold truncate" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{data.centralNode}</h3>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={expandAll}
-            className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            className="px-3 py-1 text-xs font-medium rounded-lg transition-colors"
+            style={{ color: 'var(--v2-ink-soft)', background: 'rgba(15,23,42,0.06)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.10)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.06)')}
           >
             Expandir tudo
           </button>
           <button
             onClick={collapseAll}
-            className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            className="px-3 py-1 text-xs font-medium rounded-lg transition-colors"
+            style={{ color: 'var(--v2-ink-soft)', background: 'rgba(15,23,42,0.06)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.10)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.06)')}
           >
             Recolher tudo
           </button>
@@ -209,11 +215,11 @@ export default function MindMapViewer({ data }: MindMapViewerProps) {
       </div>
 
       {/* Tree container */}
-      <div className="overflow-auto rounded-xl bg-gray-50 border border-gray-200 p-6">
+      <div className="overflow-auto rounded-xl p-6" style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid var(--v2-line-soft)' }}>
         <div className="flex items-start gap-6">
           {/* Central node */}
           <div className="flex flex-col items-center justify-center flex-shrink-0">
-            <div className="px-5 py-3 rounded-2xl bg-gradient-to-br from-brand-600 to-brand-700 text-white font-bold text-base shadow-lg whitespace-nowrap">
+            <div className="px-5 py-3 rounded-2xl font-bold text-base shadow-lg whitespace-nowrap text-white" style={{ background: 'linear-gradient(135deg, var(--v2-accent-strong), #0d9488)' }}>
               {data.centralNode}
             </div>
           </div>
@@ -245,7 +251,7 @@ export default function MindMapViewer({ data }: MindMapViewerProps) {
       </div>
 
       {/* Hint */}
-      <p className="text-[10px] text-gray-400 text-center">
+      <p className="text-[10px] text-center" style={{ color: 'var(--v2-ink-faint)' }}>
         Clique em um ramo para expandir ou recolher
       </p>
     </div>

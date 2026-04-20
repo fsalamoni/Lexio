@@ -136,7 +136,7 @@ function AdminCollapsibleSection({
         className="w-full flex items-center justify-between px-6 py-4 hover:bg-[rgba(255,255,255,0.58)] transition-colors"
       >
         <div className="flex items-center gap-2">
-          <Icon className={`w-5 h-5 ${iconColor || 'text-brand-600'}`} />
+          <Icon className={`w-5 h-5 ${iconColor || 'text-teal-600'}`} />
           <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">{title}</h2>
           {badge != null && (
             <span className="ml-1 rounded-full bg-[rgba(15,23,42,0.06)] px-2 py-0.5 text-xs font-medium text-[var(--v2-ink-soft)]">{badge}</span>
@@ -291,7 +291,7 @@ function ApiKeysCard() {
                       href={def.link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-brand-600 hover:underline flex items-center gap-1"
+                      className="text-xs text-teal-600 hover:underline flex items-center gap-1"
                     >
                       <ExternalLink className="w-3 h-3" />
                       Site
@@ -366,7 +366,7 @@ function ApiKeysCard() {
                   <ol className="space-y-2">
                     {def.guide.map((step, i) => (
                       <li key={i} className="flex gap-3 text-sm text-[var(--v2-ink-strong)]">
-                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center">
+                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-teal-100 text-teal-700 text-xs font-bold flex items-center justify-center">
                           {i + 1}
                         </span>
                         <span>{step}</span>
@@ -594,7 +594,7 @@ function ReindexCard() {
     <div className="v2-panel mb-6 p-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <RefreshCw className="w-5 h-5 text-brand-600" />
+          <RefreshCw className="w-5 h-5 text-teal-600" />
           <div>
             <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">Reindexação Vetorial</h2>
             <p className="text-sm text-[var(--v2-ink-soft)]">Re-indexa documentos concluídos/aprovados no Qdrant para busca semântica</p>
@@ -603,7 +603,7 @@ function ReindexCard() {
         <button
           onClick={handleReindex}
           disabled={loading}
-          className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+          className="inline-flex items-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           {loading ? 'Reindexando...' : 'Reindexar Documentos'}
@@ -630,7 +630,7 @@ function ReindexCard() {
             <p className="text-xs text-[var(--v2-ink-faint)]">Total</p>
           </div>
           <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.68)] p-3 text-center">
-            <p className="text-2xl font-bold text-brand-700">{result.total_chunks}</p>
+            <p className="text-2xl font-bold text-teal-700">{result.total_chunks}</p>
             <p className="text-xs text-[var(--v2-ink-faint)]">Chunks</p>
           </div>
           <div className={`rounded-[1.15rem] border p-3 text-center ${result.errors > 0 ? 'border-red-200 bg-[rgba(239,68,68,0.08)]' : 'border-emerald-200 bg-[rgba(16,185,129,0.08)]'}`}>
@@ -1316,7 +1316,7 @@ function PipelineLogs() {
         className="w-full flex items-center justify-between px-6 py-4 transition-colors hover:bg-[rgba(255,255,255,0.58)]"
       >
         <div className="flex items-center gap-2">
-          <Terminal className="w-5 h-5 text-brand-600" />
+          <Terminal className="w-5 h-5 text-teal-600" />
           <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">Logs de Execução do Pipeline</h2>
         </div>
         {open ? <ChevronUp className="w-4 h-4 text-[var(--v2-ink-faint)]" /> : <ChevronDown className="w-4 h-4 text-[var(--v2-ink-faint)]" />}
@@ -1350,7 +1350,7 @@ function PipelineLogs() {
                       <td className="px-4 py-2">
                         <button
                           onClick={() => navigate(buildWorkspaceDocumentDetailPath(log.document_id, { preserveSearch: location.search }))}
-                          className="text-left transition-colors hover:text-brand-600"
+                          className="text-left transition-colors hover:text-teal-600"
                         >
                           <p className="font-medium text-[var(--v2-ink-strong)]">{log.document_type}</p>
                           {log.tema && <p className="max-w-[180px] truncate text-[var(--v2-ink-faint)]">{log.tema}</p>}
@@ -1462,7 +1462,7 @@ function UsersSection() {
                 value={u.role}
                 disabled={updating === u.id}
                 onChange={e => handleUpdate(u.id, { role: e.target.value })}
-                className={`cursor-pointer rounded-full border border-current/10 px-2 py-1 text-xs font-medium focus:ring-2 focus:ring-brand-500 ${ROLE_COLORS[u.role] || 'bg-[rgba(15,23,42,0.08)] text-[var(--v2-ink-soft)]'}`}
+                className={`cursor-pointer rounded-full border border-current/10 px-2 py-1 text-xs font-medium focus:ring-2 focus:ring-teal-500 ${ROLE_COLORS[u.role] || 'bg-[rgba(15,23,42,0.08)] text-[var(--v2-ink-soft)]'}`}
               >
                 <option value="admin">Admin</option>
                 <option value="user">Usuário</option>
@@ -1639,7 +1639,7 @@ function DocumentTypesCrud() {
             <button
               onClick={handleEditSave}
               disabled={saving}
-              className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 bg-teal-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-teal-700 disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
               {saving ? 'Salvando...' : 'Salvar'}
@@ -1879,7 +1879,7 @@ function LegalAreasCrud() {
             <button
               onClick={handleEditSave}
               disabled={saving}
-              className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 bg-teal-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-teal-700 disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
               {saving ? 'Salvando...' : 'Salvar'}

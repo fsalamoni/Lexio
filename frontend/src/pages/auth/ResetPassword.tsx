@@ -59,8 +59,8 @@ export default function ResetPassword() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Scale className="w-12 h-12 text-brand-600 mx-auto mb-3" />
-          <h1 className="text-3xl font-bold text-brand-900">Lexio</h1>
+          <Scale className="w-12 h-12 text-teal-600 mx-auto mb-3" />
+          <h1 className="text-3xl font-bold text-teal-900">Lexio</h1>
           <p className="text-gray-500 mt-1">Produção Jurídica com IA</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border p-8 space-y-4">
@@ -87,7 +87,7 @@ export default function ResetPassword() {
               </div>
               <Link
                 to="/forgot-password"
-                className="block text-center text-sm text-brand-600 hover:underline"
+                className="block text-center text-sm text-teal-600 hover:underline"
               >
                 Solicitar novo link
               </Link>
@@ -109,7 +109,7 @@ export default function ResetPassword() {
                     type={showPw ? 'text' : 'password'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    className="w-full border rounded-lg px-4 py-2 pr-10 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                    className="w-full border rounded-lg px-4 py-2 pr-10 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                     required
                     minLength={8}
                     autoFocus
@@ -130,7 +130,7 @@ export default function ResetPassword() {
                   type={showPw ? 'text' : 'password'}
                   value={confirm}
                   onChange={e => setConfirm(e.target.value)}
-                  className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                   required
                 />
               </div>
@@ -138,7 +138,7 @@ export default function ResetPassword() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-brand-600 text-white py-2.5 rounded-lg hover:bg-brand-700 disabled:opacity-50 font-semibold text-sm transition-colors"
+                className="w-full bg-teal-600 text-white py-2.5 rounded-lg hover:bg-teal-700 disabled:opacity-50 font-semibold text-sm transition-colors"
               >
                 {loading ? 'Redefinindo...' : 'Redefinir senha'}
               </button>

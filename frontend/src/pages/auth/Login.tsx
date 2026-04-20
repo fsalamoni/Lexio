@@ -83,8 +83,8 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Scale className="w-12 h-12 text-brand-600 mx-auto mb-3" />
-          <h1 className="text-3xl font-bold text-brand-900">Lexio</h1>
+          <Scale className="w-12 h-12 text-teal-600 mx-auto mb-3" />
+          <h1 className="text-3xl font-bold text-teal-900">Lexio</h1>
           <p className="text-gray-500 mt-1">Produção Jurídica com IA</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border p-8 space-y-4">
@@ -117,7 +117,7 @@ export default function Login() {
                 inputMode="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                 required
               />
               {!isEmailValid && <p className="text-xs text-red-600 mt-1">Digite um email válido.</p>}
@@ -131,7 +131,7 @@ export default function Login() {
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full border rounded-lg px-4 py-2 pr-10 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="w-full border rounded-lg px-4 py-2 pr-10 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                   required
                 />
                 <button
@@ -147,7 +147,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={!canSubmit}
-              className="w-full bg-brand-600 text-white py-2.5 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm transition-colors"
+              className="w-full bg-teal-600 text-white py-2.5 rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm transition-colors"
             >
               {loading ? (
                 <span className="inline-flex items-center gap-2 justify-center">
@@ -164,7 +164,7 @@ export default function Login() {
           <div className="text-center space-y-1">
             <p className="text-sm text-gray-500">
               Não tem conta?{' '}
-              <Link to="/register" className="text-brand-600 hover:underline font-medium">Cadastre-se</Link>
+              <Link to="/register" className="text-teal-600 hover:underline font-medium">Cadastre-se</Link>
             </p>
             <p className="text-sm">
               <Link to="/forgot-password" className="text-gray-400 hover:text-gray-600 hover:underline text-xs">Esqueci minha senha</Link>

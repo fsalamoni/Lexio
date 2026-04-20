@@ -68,7 +68,7 @@ function NavItem({
           'group flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm transition-all duration-150',
           (resolvedActive ?? isActive)
             ? 'bg-white/15 text-white font-medium'
-            : 'text-brand-200 hover:bg-white/10 hover:text-white'
+            : 'text-teal-200 hover:bg-white/10 hover:text-white'
         )
       }
     >
@@ -127,22 +127,22 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   }
 
   const sidebar = (
-    <aside className="w-64 bg-brand-900 text-white h-full flex flex-col">
+    <aside className="w-64 bg-teal-900 text-white h-full flex flex-col">
       {/* Logo */}
       <div className="p-5 flex items-center gap-3 border-b border-white/10">
-        <div className="w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center flex-shrink-0">
+        <div className="w-9 h-9 rounded-lg bg-teal-600 flex items-center justify-center flex-shrink-0">
           <Scale className="w-5 h-5 text-white" />
         </div>
         <div>
           <h1 className="text-lg font-bold tracking-tight leading-none">Lexio</h1>
-          <p className="text-xs text-brand-300 mt-0.5">Produção Jurídica com IA</p>
+          <p className="text-xs text-teal-300 mt-0.5">Produção Jurídica com IA</p>
         </div>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 p-3 overflow-y-auto">
         {/* Work section */}
-        <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-brand-400">Trabalho</p>
+        <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-teal-400">Trabalho</p>
         <div className="space-y-0.5">
           {links.map(({ to, label, icon, activePatterns, inactivePatterns }) => (
             <NavItem
@@ -159,7 +159,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         </div>
 
         {/* Settings section */}
-        <p className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-brand-400">Gestão</p>
+        <p className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-teal-400">Gestão</p>
         <div className="space-y-0.5">
           <NavItem
             to={buildSidebarPath('/settings')}
@@ -204,20 +204,20 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 'flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm transition-all',
                 isActive
                   ? 'bg-white/15 text-white font-medium'
-                  : 'text-brand-200 hover:bg-white/10 hover:text-white'
+                  : 'text-teal-200 hover:bg-white/10 hover:text-white'
               )
             }
           >
             <UserCircle className="w-5 h-5 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-xs truncate font-medium">{fullName}</p>
-              <p className="text-xs text-brand-400 capitalize">{role || 'user'}</p>
+              <p className="text-xs text-teal-400 capitalize">{role || 'user'}</p>
             </div>
           </NavLink>
         )}
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-brand-200 hover:bg-white/10 hover:text-white w-full transition-colors"
+          className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-teal-200 hover:bg-white/10 hover:text-white w-full transition-colors"
         >
           <LogOut className="w-5 h-5 flex-shrink-0" />
           <span>Sair</span>

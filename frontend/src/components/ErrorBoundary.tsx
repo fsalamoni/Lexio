@@ -41,7 +41,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   retryCount: prev.retryCount + 1,
                 }))
               }}
-              className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg hover:bg-brand-700 transition-colors"
+              className="inline-flex items-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-lg hover:bg-teal-700 transition-colors"
             >
               <RefreshCw className="w-4 h-4" />
               Tentar novamente

@@ -86,7 +86,7 @@ function CollapsibleSection({
         className="w-full flex items-center justify-between px-6 py-4 hover:bg-[rgba(255,255,255,0.58)] transition-colors"
       >
         <div className="flex items-center gap-2">
-          <Icon className={`w-5 h-5 ${iconColor || 'text-brand-600'}`} />
+          <Icon className={`w-5 h-5 ${iconColor || 'text-teal-600'}`} />
           <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">{title}</h2>
           {badge && (
             <span className="ml-1 rounded-full bg-[rgba(15,23,42,0.06)] px-2 py-0.5 text-xs font-medium text-[var(--v2-ink-soft)]">{badge}</span>
@@ -575,7 +575,7 @@ export default function CostTokensPage() {
             id="section_general"
             title="Visão Geral — Custos e Tokens Totais"
             icon={TrendingUp}
-            iconColor="text-brand-600"
+            iconColor="text-teal-600"
             collapseState={collapseState}
             onToggle={toggleCollapse}
           >
@@ -677,7 +677,7 @@ export default function CostTokensPage() {
                     <button
                       onClick={handleSaveBudget}
                       disabled={!budgetDirty || budgetSaving}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-40 transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 disabled:opacity-40 transition-colors"
                     >
                       {budgetSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       Salvar orçamento

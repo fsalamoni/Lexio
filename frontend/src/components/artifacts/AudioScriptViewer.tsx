@@ -167,22 +167,22 @@ export default function AudioScriptViewer({ data }: AudioScriptViewerProps) {
   }, [])
 
   if (data.segments.length === 0) {
-    return <div className="text-center py-12 text-gray-500">Roteiro sem segmentos.</div>
+    return <div className="text-center py-12" style={{ color: 'var(--v2-ink-faint)' }}>Roteiro sem segmentos.</div>
   }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 pb-4 border-b border-gray-200">
+      <div className="flex items-start justify-between gap-4 pb-4 border-b" style={{ borderColor: 'var(--v2-line-soft)' }}>
         <div className="space-y-1">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{data.title}</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{data.title}</h1>
+          <p className="text-sm" style={{ color: 'var(--v2-ink-faint)' }}>
             {data.segments.length} segmento{data.segments.length !== 1 ? 's' : ''}
           </p>
         </div>
         {data.duration && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-lg text-sm font-medium text-gray-700 flex-shrink-0">
-            <Clock className="w-4 h-4 text-gray-400" />
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium flex-shrink-0" style={{ background: 'rgba(15,23,42,0.06)', color: 'var(--v2-ink-soft)' }}>
+            <Clock className="w-4 h-4" style={{ color: 'var(--v2-ink-faint)' }} />
             {data.duration}
           </div>
         )}
@@ -225,28 +225,31 @@ export default function AudioScriptViewer({ data }: AudioScriptViewerProps) {
 
       {/* Production notes (collapsible) */}
       {data.productionNotes && data.productionNotes.length > 0 && (
-        <div className="border border-gray-200 rounded-xl overflow-hidden">
+        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--v2-line-soft)' }}>
           <button
             onClick={() => setNotesOpen(o => !o)}
-            className="w-full flex items-center justify-between px-5 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors"
+            className="w-full flex items-center justify-between px-5 py-3.5 transition-colors"
+            style={{ background: 'rgba(15,23,42,0.04)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.07)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.04)')}
           >
-            <span className="text-sm font-semibold text-gray-700">
+            <span className="text-sm font-semibold" style={{ color: 'var(--v2-ink-soft)' }}>
               Notas de Producao ({data.productionNotes.length})
             </span>
             {notesOpen ? (
-              <ChevronUp className="w-4 h-4 text-gray-400" />
+              <ChevronUp className="w-4 h-4" style={{ color: 'var(--v2-ink-faint)' }} />
             ) : (
-              <ChevronDown className="w-4 h-4 text-gray-400" />
+              <ChevronDown className="w-4 h-4" style={{ color: 'var(--v2-ink-faint)' }} />
             )}
           </button>
           {notesOpen && (
             <div className="px-5 py-4 space-y-2 bg-white">
               {data.productionNotes.map((note, i) => (
                 <div key={i} className="flex items-start gap-2">
-                  <span className="text-xs text-gray-400 font-mono mt-0.5 flex-shrink-0">
+                  <span className="text-xs font-mono mt-0.5 flex-shrink-0" style={{ color: 'var(--v2-ink-faint)' }}>
                     {String(i + 1).padStart(2, '0')}.
                   </span>
-                  <p className="text-sm text-gray-600 leading-relaxed">{note}</p>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--v2-ink-soft)' }}>{note}</p>
                 </div>
               ))}
             </div>

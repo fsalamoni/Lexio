@@ -179,8 +179,8 @@ export default function DocumentEditor() {
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
-              <FileText className="w-4 h-4 text-brand-600" />
+            <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0">
+              <FileText className="w-4 h-4 text-teal-600" />
             </div>
             <div className="min-w-0">
               <h1 className="text-lg font-bold text-gray-900 leading-tight">{docLabel}</h1>
@@ -256,7 +256,7 @@ export default function DocumentEditor() {
             onClick={handleSave}
             disabled={saving || !hasChanges}
             title="Salvar (Ctrl+S)"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors text-sm font-medium disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors text-sm font-medium disabled:cursor-not-allowed"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Salvando...' : saved ? (
@@ -264,7 +264,7 @@ export default function DocumentEditor() {
             ) : (
               <span className="inline-flex items-center gap-1.5">
                 Salvar
-                <kbd className="hidden sm:inline-block text-[10px] bg-brand-500/30 px-1 py-0.5 rounded">⌃S</kbd>
+                <kbd className="hidden sm:inline-block text-[10px] bg-teal-500/30 px-1 py-0.5 rounded">⌃S</kbd>
               </span>
             )}
           </button>

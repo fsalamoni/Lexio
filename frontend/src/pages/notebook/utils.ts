@@ -95,7 +95,7 @@ export function renderMarkdownToHtml(md: string): string {
     .replace(/^---+$/gm, '<hr class="my-3 border-gray-200" />')
     // Links [text](url) — only allow http/https
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) =>
-      `<a href="${sanitizeUrl(url)}" target="_blank" rel="noopener noreferrer" class="text-brand-600 hover:underline">${text}</a>`,
+      `<a href="${sanitizeUrl(url)}" target="_blank" rel="noopener noreferrer" class="text-teal-600 hover:underline">${text}</a>`,
     )
     // Unordered list items
     .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')

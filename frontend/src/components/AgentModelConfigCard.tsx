@@ -90,7 +90,7 @@ export const V2_AGENT_CONFIG_PANEL_BASE = 'rounded-[1.15rem] border border-[var(
 
 export const V2_AGENT_CONFIG_TONES = {
   brand: {
-    headerIcon: 'text-brand-600',
+    headerIcon: 'text-teal-600',
     customCard: 'border-purple-200 bg-[rgba(147,51,234,0.08)]',
     customIconSurface: 'bg-purple-100',
     customIcon: 'text-purple-600',
@@ -99,7 +99,7 @@ export const V2_AGENT_CONFIG_TONES = {
     selectorHover: 'hover:border-purple-300 hover:bg-[rgba(147,51,234,0.08)]',
     noteText: 'text-purple-700',
     infoBox: 'border-blue-200 bg-[rgba(59,130,246,0.08)] text-blue-900',
-    primaryButton: 'bg-brand-600 hover:bg-brand-700',
+    primaryButton: 'bg-teal-600 hover:bg-teal-700',
     connector: 'text-[rgba(15,23,42,0.18)]',
   },
   teal: {

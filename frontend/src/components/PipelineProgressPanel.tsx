@@ -137,7 +137,7 @@ export default function PipelineProgressPanel({
           ) : hasError ? (
             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
           ) : (
-            <Loader2 className="w-5 h-5 text-brand-500 animate-spin flex-shrink-0" />
+            <Loader2 className="w-5 h-5 text-teal-500 animate-spin flex-shrink-0" />
           )}
           <div className="min-w-0">
             <span className="text-sm font-semibold text-gray-900 block">
@@ -158,7 +158,7 @@ export default function PipelineProgressPanel({
           </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
-          <span className="text-sm font-semibold text-brand-600 tabular-nums">{percent}%</span>
+          <span className="text-sm font-semibold text-teal-600 tabular-nums">{percent}%</span>
           {expanded
             ? <ChevronUp className="w-4 h-4 text-gray-400" />
             : <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -175,7 +175,7 @@ export default function PipelineProgressPanel({
                 ? 'bg-red-400'
                 : isComplete
                   ? 'bg-green-500'
-                  : 'bg-gradient-to-r from-brand-500 to-brand-400'
+                  : 'bg-gradient-to-r from-teal-500 to-teal-400'
             }`}
             style={{ width: `${percent}%` }}
           />
@@ -203,7 +203,7 @@ export default function PipelineProgressPanel({
                     <div
                       className={`absolute left-[15px] top-[30px] w-0.5 h-[calc(100%-14px)] ${
                         agent.status === 'completed'
-                          ? 'bg-brand-300'
+                          ? 'bg-teal-300'
                           : 'bg-gray-200'
                       }`}
                     />
@@ -212,12 +212,12 @@ export default function PipelineProgressPanel({
                   {/* Status icon */}
                   <div className="flex-shrink-0 z-10">
                     {agent.status === 'completed' ? (
-                      <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center">
-                        <CheckCircle className="w-4 h-4 text-brand-600" />
+                      <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center">
+                        <CheckCircle className="w-4 h-4 text-teal-600" />
                       </div>
                     ) : agent.status === 'active' ? (
-                      <div className="w-8 h-8 rounded-full bg-brand-50 border-2 border-brand-500 flex items-center justify-center animate-pulse">
-                        <Icon className="w-4 h-4 text-brand-600" />
+                      <div className="w-8 h-8 rounded-full bg-teal-50 border-2 border-teal-500 flex items-center justify-center animate-pulse">
+                        <Icon className="w-4 h-4 text-teal-600" />
                       </div>
                     ) : agent.status === 'error' ? (
                       <div className="w-8 h-8 rounded-full bg-red-50 border-2 border-red-400 flex items-center justify-center">
@@ -238,7 +238,7 @@ export default function PipelineProgressPanel({
                           agent.status === 'completed'
                             ? 'text-gray-900'
                             : agent.status === 'active'
-                              ? 'text-brand-700'
+                              ? 'text-teal-700'
                               : agent.status === 'error'
                                 ? 'text-red-600'
                                 : 'text-gray-400'
@@ -312,7 +312,7 @@ export default function PipelineProgressPanel({
               <button
                 type="button"
                 onClick={resumeAction.onClick}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-teal-600 hover:bg-teal-700 transition-colors"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 {resumeAction.label}

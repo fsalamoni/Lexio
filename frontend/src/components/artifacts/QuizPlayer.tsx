@@ -35,8 +35,8 @@ function MultipleChoiceQuestion({
       {question.options?.map(opt => {
         const isSelected = userAnswer === opt.label
         const isCorrectAnswer = question.answer.toUpperCase().startsWith(opt.label.toUpperCase())
-        let borderClass = 'border-gray-200 hover:border-brand-300 hover:bg-brand-50/30'
-        if (isSelected && !showFeedback) borderClass = 'border-brand-500 bg-brand-50'
+        let borderClass = 'border-gray-200 hover:border-teal-300 hover:bg-teal-50/30'
+        if (isSelected && !showFeedback) borderClass = 'border-teal-500 bg-teal-50'
         if (showFeedback && isCorrectAnswer) borderClass = 'border-green-500 bg-green-50'
         if (showFeedback && isSelected && !isCorrectAnswer) borderClass = 'border-red-500 bg-red-50'
 
@@ -48,7 +48,7 @@ function MultipleChoiceQuestion({
             className={`w-full flex items-start gap-3 p-4 rounded-xl border-2 transition-all text-left ${borderClass} disabled:cursor-default`}
           >
             <span className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-              isSelected ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'
+              isSelected ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600'
             }`}>
               {opt.label}
             </span>
@@ -80,8 +80,8 @@ function TrueFalseQuestion({
         const isSelected = userAnswer === opt.label
         const answerUpper = question.answer.toUpperCase()
         const isCorrectAnswer = answerUpper.startsWith(opt.label.toUpperCase()) || answerUpper === opt.text.toUpperCase()
-        let cls = 'border-gray-200 hover:border-brand-300'
-        if (isSelected && !showFeedback) cls = 'border-brand-500 bg-brand-50'
+        let cls = 'border-gray-200 hover:border-teal-300'
+        if (isSelected && !showFeedback) cls = 'border-teal-500 bg-teal-50'
         if (showFeedback && isCorrectAnswer) cls = 'border-green-500 bg-green-50'
         if (showFeedback && isSelected && !isCorrectAnswer) cls = 'border-red-500 bg-red-50'
 
@@ -115,7 +115,7 @@ function EssayQuestion({
       disabled={showFeedback}
       rows={5}
       placeholder="Digite sua resposta..."
-      className="w-full p-4 border-2 border-gray-200 rounded-xl text-sm resize-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none disabled:bg-gray-50"
+      className="w-full p-4 border-2 border-gray-200 rounded-xl text-sm resize-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none disabled:bg-gray-50"
     />
   )
 }
@@ -155,7 +155,7 @@ function AssociationQuestion({
                 ? userPairs[pair.left] === pair.right
                   ? 'border-green-500 bg-green-50'
                   : 'border-red-500 bg-red-50'
-                : 'border-gray-200 focus:border-brand-500'
+                : 'border-gray-200 focus:border-teal-500'
             } disabled:cursor-default`}
           >
             <option value="">Selecione...</option>
@@ -265,7 +265,7 @@ export default function QuizPlayer({ data }: QuizPlayerProps) {
         <div className="flex justify-center gap-4 pt-4">
           <button
             onClick={() => setMode('study')}
-            className="flex items-center gap-2 px-6 py-3 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition-colors font-medium"
+            className="flex items-center gap-2 px-6 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 transition-colors font-medium"
           >
             <Eye className="w-4 h-4" /> Modo Estudo
           </button>
@@ -290,7 +290,7 @@ export default function QuizPlayer({ data }: QuizPlayerProps) {
         <div className="text-center space-y-4">
           <Trophy className={`w-16 h-16 mx-auto ${score.percentage >= 70 ? 'text-yellow-500' : 'text-gray-400'}`} />
           <h2 className="text-2xl font-bold text-gray-900">Resultado</h2>
-          <div className="text-5xl font-bold text-brand-600">{score.percentage}%</div>
+          <div className="text-5xl font-bold" style={{ color: 'var(--v2-accent-strong)' }}>{score.percentage}%</div>
           <p className="text-gray-500">
             {score.correct} de {score.total} questões corretas
           </p>
@@ -333,7 +333,7 @@ export default function QuizPlayer({ data }: QuizPlayerProps) {
         </div>
 
         <div className="flex justify-center">
-          <button onClick={handleRestart} className="flex items-center gap-2 px-6 py-3 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition-colors font-medium">
+          <button onClick={handleRestart} className="flex items-center gap-2 px-6 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 transition-colors font-medium">
             <RotateCcw className="w-4 h-4" /> Recomeçar
           </button>
         </div>
@@ -354,7 +354,7 @@ export default function QuizPlayer({ data }: QuizPlayerProps) {
         </span>
       </div>
       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className="h-full bg-brand-500 transition-all duration-300" style={{ width: `${((currentIndex + 1) / totalQuestions) * 100}%` }} />
+        <div className="h-full bg-teal-500 transition-all duration-300" style={{ width: `${((currentIndex + 1) / totalQuestions) * 100}%` }} />
       </div>
 
       {/* Question */}
@@ -426,10 +426,10 @@ export default function QuizPlayer({ data }: QuizPlayerProps) {
           {questions.map((q, i) => {
             const ua = answers.get(q.number)
             let dotClass = 'bg-gray-200'
-            if (i === currentIndex) dotClass = 'bg-brand-500 ring-2 ring-brand-200'
+            if (i === currentIndex) dotClass = 'bg-teal-500 ring-2 ring-teal-200'
             else if (ua?.isCorrect === true) dotClass = 'bg-green-500'
             else if (ua?.isCorrect === false) dotClass = 'bg-red-500'
-            else if (ua) dotClass = 'bg-brand-300'
+            else if (ua) dotClass = 'bg-teal-300'
             return (
               <button
                 key={i}
@@ -443,7 +443,7 @@ export default function QuizPlayer({ data }: QuizPlayerProps) {
         {currentIndex === totalQuestions - 1 ? (
           <button
             onClick={handleFinish}
-            className="flex items-center gap-1 px-4 py-2 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition-colors text-sm font-medium"
+            className="flex items-center gap-1 px-4 py-2 bg-teal-600 text-white rounded-xl hover:bg-teal-700 transition-colors text-sm font-medium"
           >
             Finalizar <Trophy className="w-4 h-4" />
           </button>

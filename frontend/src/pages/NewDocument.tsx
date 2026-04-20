@@ -419,7 +419,7 @@ export default function NewDocument() {
               <select
                 value={selectedType}
                 onChange={(e) => { setSelectedType(e.target.value); setSelectedTemplate(''); setContextDetail(null); setShowContextDetail(false) }}
-                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-white text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-white text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                 required
               >
                 <option value="">Selecione o tipo...</option>
@@ -460,7 +460,7 @@ export default function NewDocument() {
                   )}
                   className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                     selectedAreas.includes(area.id)
-                      ? 'bg-brand-600 text-white border-brand-600'
+                      ? 'bg-teal-600 text-white border-teal-600'
                       : 'bg-white text-gray-700 hover:bg-gray-50'
                   }`}
                 >
@@ -483,7 +483,7 @@ export default function NewDocument() {
               value={request}
               onChange={(e) => setRequest(e.target.value.slice(0, MAX_REQUEST))}
               rows={6}
-              className="w-full border border-gray-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm resize-y"
+              className="w-full border border-gray-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm resize-y"
               placeholder="Descreva a questão jurídica que deseja analisar..."
               required
             />
@@ -581,7 +581,7 @@ export default function NewDocument() {
           <button
             type="submit"
             disabled={loading || loadingTypes || !selectedType || !request.trim() || generating}
-            className="flex-1 bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 font-semibold text-sm transition-colors shadow-sm disabled:cursor-not-allowed"
+            className="flex-1 bg-teal-600 text-white py-3.5 rounded-xl hover:bg-teal-700 disabled:opacity-50 font-semibold text-sm transition-colors shadow-sm disabled:cursor-not-allowed"
           >
             {loading ? (
               <span className="inline-flex items-center gap-2">
@@ -594,7 +594,7 @@ export default function NewDocument() {
             ) : generating ? 'Geração em andamento...' : (
               <span className="inline-flex items-center gap-2">
                 Gerar Documento com IA
-                <kbd className="hidden sm:inline-block text-xs bg-brand-500/30 px-1.5 py-0.5 rounded">Ctrl+Enter</kbd>
+                <kbd className="hidden sm:inline-block text-xs bg-teal-500/30 px-1.5 py-0.5 rounded">Ctrl+Enter</kbd>
               </span>
             )}
           </button>
@@ -633,7 +633,7 @@ export default function NewDocument() {
           <button
             type="button"
             onClick={() => navigate(buildWorkspaceDocumentDetailPath(generatedDocId, { preserveSearch: location.search }))}
-            className="w-full flex items-center justify-center gap-2 bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 font-semibold text-sm transition-colors shadow-sm"
+            className="w-full flex items-center justify-center gap-2 bg-teal-600 text-white py-3.5 rounded-xl hover:bg-teal-700 font-semibold text-sm transition-colors shadow-sm"
           >
             {pipelineComplete ? 'Ver Documento Gerado' : 'Ver Documento'}
             <ArrowRight className="w-4 h-4" />

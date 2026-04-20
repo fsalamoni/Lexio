@@ -100,7 +100,7 @@ function renderMarkdownToHtml(md: string): string {
   // Ordered lists
   html = html.replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
   // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-600 underline">$1</a>')
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-teal-600 underline">$1</a>')
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr class="my-4 border-gray-200" />')
   // Paragraphs
@@ -166,7 +166,7 @@ function ArtifactContent({ artifact, parsed }: { artifact: StudioArtifact; parse
       // Generic markdown fallback
       return (
         <div
-          className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs"
+          className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-teal-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs"
           dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(parsed.data) }}
         />
       )

@@ -194,9 +194,9 @@ export default function Dashboard() {
         return (
           <Link
             to={buildWorkspaceDocumentDetailPath(resumable.id, { preserveSearch: location.search })}
-            className="flex items-center gap-4 rounded-xl border border-brand-100 bg-brand-50/50 px-5 py-3 hover:bg-brand-50 transition-colors group"
+            className="flex items-center gap-4 rounded-xl border border-teal-100 bg-teal-50/50 px-5 py-3 hover:bg-teal-50 transition-colors group"
           >
-            <Activity className="w-5 h-5 text-brand-600 flex-shrink-0" />
+            <Activity className="w-5 h-5 text-teal-600 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900 truncate">
                 Continuar: {resumable.tema || DOCTYPE_LABELS[resumable.document_type_id] || 'Documento'}
@@ -206,7 +206,7 @@ export default function Dashboard() {
                 {format(new Date(resumable.created_at), "dd/MM 'às' HH:mm", { locale: ptBR })}
               </p>
             </div>
-            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-brand-600 transition-colors flex-shrink-0" />
+            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-teal-600 transition-colors flex-shrink-0" />
           </Link>
         )
       })()}
@@ -214,7 +214,7 @@ export default function Dashboard() {
       {/* Quick actions */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Novo Documento', icon: Plus, to: newDocumentPath, color: 'bg-brand-50 text-brand-700 border-brand-100' },
+          { label: 'Novo Documento', icon: Plus, to: newDocumentPath, color: 'bg-teal-50 text-teal-700 border-teal-100' },
           { label: 'Upload de Acervo', icon: Upload, to: uploadPath, color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
           { label: 'Caderno de Pesquisa', icon: BookOpen, to: notebookWorkbenchPath, color: 'bg-violet-50 text-violet-700 border-violet-100' },
           { label: 'Banco de Teses', icon: Search, to: thesesPath, color: 'bg-amber-50 text-amber-700 border-amber-100' },
@@ -236,7 +236,7 @@ export default function Dashboard() {
           {/* Docs per day */}
           <div className="bg-white rounded-xl border p-5">
             <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-brand-600" />
+              <TrendingUp className="w-4 h-4 text-teal-600" />
               Documentos por dia (últimos {periodDays} dias)
               {chartLoading && <span className="text-xs text-gray-400 font-normal ml-auto">Atualizando...</span>}
             </h2>
@@ -260,7 +260,7 @@ export default function Dashboard() {
           {/* Cumulative cost */}
           <div className="bg-white rounded-xl border p-5">
             <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-brand-600" />
+              <DollarSign className="w-4 h-4 text-teal-600" />
               Custo acumulado (USD)
             </h2>
             <ResponsiveContainer width="100%" height={200}>
@@ -305,7 +305,7 @@ export default function Dashboard() {
         <div className="bg-white rounded-xl border overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b">
             <h2 className="text-sm font-semibold text-gray-700">Documentos Recentes</h2>
-            <Link to={documentsPath} className="text-xs text-brand-600 hover:underline flex items-center gap-0.5">
+            <Link to={documentsPath} className="text-xs text-teal-600 hover:underline flex items-center gap-0.5">
               Ver todos <ChevronRight className="w-3 h-3" />
             </Link>
           </div>
@@ -315,7 +315,7 @@ export default function Dashboard() {
               <p className="text-sm text-gray-400">Nenhum documento ainda</p>
               <Link
                 to={newDocumentPath}
-                className="mt-3 inline-block text-xs bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700"
+                className="mt-3 inline-block text-xs bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700"
               >
                 Criar primeiro documento
               </Link>

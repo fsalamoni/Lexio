@@ -118,10 +118,10 @@ export default function AudioOverviewPlayer({
       {/* Header */}
       <div className="text-center space-y-2">
         <div className="flex items-center justify-center gap-2">
-          <Mic className="w-6 h-6 text-brand-600" />
-          <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+          <Mic className="w-6 h-6" style={{ color: 'var(--v2-accent-strong)' }} />
+          <h2 className="text-xl font-bold" style={{ color: 'var(--v2-ink-strong)' }}>{title}</h2>
         </div>
-        <div className="flex items-center justify-center gap-4 text-sm text-gray-500">
+        <div className="flex items-center justify-center gap-4 text-sm" style={{ color: 'var(--v2-ink-faint)' }}>
           <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {duration}</span>
           <span>{segments.length} segmentos</span>
           <span className="text-blue-600">Host A: {hostACount}</span>
@@ -131,7 +131,7 @@ export default function AudioOverviewPlayer({
 
       {/* Audio Player */}
       {audioUrl ? (
-        <div className="bg-gradient-to-r from-brand-600 to-purple-600 rounded-2xl p-5 text-white">
+        <div className="rounded-2xl p-5 text-white" style={{ background: 'linear-gradient(135deg, var(--v2-accent-strong), #0891b2)' }}>
           <audio
             ref={audioRef}
             src={audioUrl}
@@ -167,7 +167,7 @@ export default function AudioOverviewPlayer({
               <button
                 onClick={onGenerateAudio}
                 disabled={isGeneratingAudio}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition-colors font-medium text-sm disabled:opacity-60"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-600 text-white rounded-xl hover:bg-teal-700 transition-colors font-medium text-sm disabled:opacity-60"
               >
                 {isGeneratingAudio ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> Gerando áudio...</>
@@ -185,7 +185,7 @@ export default function AudioOverviewPlayer({
 
       {/* Transcript / Script */}
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-gray-900">Transcrição</h3>
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>Transcrição</h3>
         <div className="space-y-1.5 max-h-[50vh] overflow-y-auto pr-2">
           {segments.map((seg, i) => {
             const colors = SEGMENT_COLORS[seg.type] || SEGMENT_COLORS.narracao
@@ -198,7 +198,7 @@ export default function AudioOverviewPlayer({
                 ref={el => { segmentRefs.current[i] = el }}
                 onClick={() => setActiveIndex(i === activeIndex ? -1 : i)}
                 className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all ${colors.bg} ${colors.border} ${
-                  isActive ? 'ring-2 ring-brand-500 shadow-sm' : 'hover:shadow-sm'
+                  isActive ? 'ring-2 ring-teal-500 shadow-sm' : 'hover:shadow-sm'
                 }`}
               >
                 {/* Time badge */}

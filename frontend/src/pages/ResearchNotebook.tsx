@@ -4139,7 +4139,7 @@ Instruções:
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <BookOpen className="w-7 h-7 text-brand-600" />
+              <BookOpen className="w-7 h-7 text-teal-600" />
               Caderno de Pesquisa
             </h1>
             <p className="text-sm text-gray-500 mt-1">
@@ -4148,7 +4148,7 @@ Instruções:
           </div>
           <button
             onClick={() => { setShowCreate(true); loadAcervoDocs() }}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium shadow-sm"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm font-medium shadow-sm"
           >
             <Plus className="w-4 h-4" />
             Novo Caderno
@@ -4165,14 +4165,14 @@ Instruções:
             placeholder="Buscar cadernos por título, tema ou descrição..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
           />
         </div>
 
         {/* Loading */}
         {loading && (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
+            <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
             <span className="ml-2 text-sm text-gray-500">Carregando cadernos...</span>
           </div>
         )}
@@ -4188,7 +4188,7 @@ Instruções:
             </p>
             <button
               onClick={() => setShowCreate(true)}
-              className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm font-medium"
+              className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium"
             >
               <Plus className="w-4 h-4" />
               Criar Caderno
@@ -4237,7 +4237,7 @@ Instruções:
                     placeholder="Ex: Responsabilidade Civil em Contratos Digitais"
                     value={createTitle}
                     onChange={e => setCreateTitle(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
                     autoFocus
                   />
                 </div>
@@ -4248,7 +4248,7 @@ Instruções:
                     placeholder="Ex: Nepotismo no serviço público federal"
                     value={createTopic}
                     onChange={e => handleTopicChange(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
                   />
                   <p className="text-[11px] text-gray-400 mt-1">
                     O tema guia o assistente e é usado para sugerir documentos do acervo
@@ -4261,7 +4261,7 @@ Instruções:
                     value={createDescription}
                     onChange={e => setCreateDescription(e.target.value)}
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none resize-none"
                   />
                 </div>
 
@@ -4269,7 +4269,7 @@ Instruções:
                 {suggestedAcervoDocs.length > 0 && (
                   <div>
                     <p className="text-xs font-medium text-gray-700 mb-2 flex items-center gap-1.5">
-                      <Database className="w-3.5 h-3.5 text-brand-600" />
+                      <Database className="w-3.5 h-3.5 text-teal-600" />
                       Documentos do acervo relacionados ao tema:
                     </p>
                     <div className="space-y-1 max-h-40 overflow-y-auto border rounded-lg p-1">
@@ -4284,7 +4284,7 @@ Instruções:
                               else next.delete(doc.id || '')
                               setSelectedAcervoIds(next)
                             }}
-                            className="rounded text-brand-600"
+                            className="rounded text-teal-600"
                           />
                           <Database className="w-3 h-3 text-gray-400 flex-shrink-0" />
                           <span className="truncate">{doc.filename}</span>
@@ -4313,7 +4313,7 @@ Instruções:
                 <button
                   onClick={handleCreate}
                   disabled={!createTitle.trim() || !createTopic.trim() || creating}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-colors"
                 >
                   {creating ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Criando...</>
@@ -4393,24 +4393,24 @@ Instruções:
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                 activeTab === tab.key
-                  ? 'bg-white text-brand-700 shadow-sm'
+                  ? 'bg-white text-teal-700 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
               <tab.icon className="w-3.5 h-3.5" />
               {tab.label}
               {tab.key === 'chat' && activeNotebook.messages.length > 0 && (
-                <span className="text-[10px] bg-brand-100 text-brand-700 rounded-full px-1.5">
+                <span className="text-[10px] bg-teal-100 text-teal-700 rounded-full px-1.5">
                   {activeNotebook.messages.length}
                 </span>
               )}
               {tab.key === 'sources' && activeNotebook.sources.length > 0 && (
-                <span className="text-[10px] bg-brand-100 text-brand-700 rounded-full px-1.5">
+                <span className="text-[10px] bg-teal-100 text-teal-700 rounded-full px-1.5">
                   {activeNotebook.sources.length}
                 </span>
               )}
               {tab.key === 'artifacts' && activeNotebook.artifacts.length > 0 && (
-                <span className="text-[10px] bg-brand-100 text-brand-700 rounded-full px-1.5">
+                <span className="text-[10px] bg-teal-100 text-teal-700 rounded-full px-1.5">
                   {activeNotebook.artifacts.length}
                 </span>
               )}
@@ -4424,7 +4424,7 @@ Instruções:
         <div className="border-b bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-3 shrink-0">
           <div className="max-w-7xl mx-auto space-y-2">
             <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-              <Sparkles className="w-3.5 h-3.5 text-brand-600" />
+              <Sparkles className="w-3.5 h-3.5 text-teal-600" />
               Operações em execução
             </div>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
@@ -4521,7 +4521,7 @@ Instruções:
                   type="text"
                   value={editTitle}
                   onChange={e => setEditTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
                   autoFocus
                 />
               </div>
@@ -4531,7 +4531,7 @@ Instruções:
                   type="text"
                   value={editTopic}
                   onChange={e => setEditTopic(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
                 />
               </div>
               <div>
@@ -4540,7 +4540,7 @@ Instruções:
                   value={editDescription}
                   onChange={e => setEditDescription(e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none resize-none"
                 />
               </div>
             </div>
@@ -4551,7 +4551,7 @@ Instruções:
               <button
                 onClick={handleSaveInfo}
                 disabled={!editTitle.trim() || !editTopic.trim()}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-colors"
               >
                 Salvar Alterações
               </button>
@@ -4578,7 +4578,7 @@ Instruções:
               {/* Notebook Info */}
               <div className="bg-white rounded-xl border p-5 space-y-4">
                 <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <Info className="w-4 h-4 text-brand-600" />
+                  <Info className="w-4 h-4 text-teal-600" />
                   Informações do Caderno
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -4606,7 +4606,7 @@ Instruções:
               {/* Sources Summary */}
               <div className="bg-white rounded-xl border p-5 space-y-4">
                 <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <Database className="w-4 h-4 text-brand-600" />
+                  <Database className="w-4 h-4 text-teal-600" />
                   Fontes ({activeNotebook.sources.length})
                 </h4>
                 {activeNotebook.sources.length === 0 ? (
@@ -4637,7 +4637,7 @@ Instruções:
 
               <div className="bg-white rounded-xl border p-5 space-y-4">
                 <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <BookMarked className="w-4 h-4 text-brand-600" />
+                  <BookMarked className="w-4 h-4 text-teal-600" />
                   Memória Auditável do Estúdio
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -4705,20 +4705,20 @@ Instruções:
               {/* Activity Summary */}
               <div className="bg-white rounded-xl border p-5 space-y-4">
                 <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-brand-600" />
+                  <Sparkles className="w-4 h-4 text-teal-600" />
                   Atividade
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-2xl font-bold text-brand-600">{activeNotebook.messages.length}</p>
+                    <p className="text-2xl font-bold text-teal-600">{activeNotebook.messages.length}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Mensagens no Chat</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-2xl font-bold text-brand-600">{activeNotebook.sources.length}</p>
+                    <p className="text-2xl font-bold text-teal-600">{activeNotebook.sources.length}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Fontes Adicionadas</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-2xl font-bold text-brand-600">{activeNotebook.artifacts.length}</p>
+                    <p className="text-2xl font-bold text-teal-600">{activeNotebook.artifacts.length}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Artefatos Gerados</p>
                   </div>
                 </div>
@@ -4824,7 +4824,7 @@ Instruções:
 
               {/* Audio Overview */}
               {activeNotebook.sources.length > 0 && (
-                <div className="bg-gradient-to-r from-brand-600 to-purple-600 rounded-xl p-5 text-white">
+                <div className="bg-gradient-to-r from-teal-600 to-purple-600 rounded-xl p-5 text-white">
                   <div className="flex items-start gap-4">
                     <div className="p-3 bg-white/20 rounded-xl">
                       <Mic className="w-6 h-6" />
@@ -4844,7 +4844,7 @@ Instruções:
                           }
                           void handleGenerateArtifact('audio_script' as StudioArtifactType)
                         }}
-                        className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-white text-brand-700 rounded-lg text-xs font-bold hover:bg-white/90 transition-colors disabled:opacity-60"
+                        className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-white text-teal-700 rounded-lg text-xs font-bold hover:bg-white/90 transition-colors disabled:opacity-60"
                       >
                         {runningArtifactTasksByType.get('audio_script') ? (
                           <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Gerando...</>
@@ -4894,7 +4894,7 @@ Instruções:
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                      <BookMarked className="w-4 h-4 text-brand-600" />
+                      <BookMarked className="w-4 h-4 text-teal-600" />
                       Janela Auditável da Próxima Resposta
                     </h4>
                     <p className="text-[11px] text-gray-500 mt-1">
@@ -4980,7 +4980,7 @@ Instruções:
                       <button
                         key={suggestion}
                         onClick={() => setChatInput(suggestion)}
-                        className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                        className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-teal-50 hover:text-teal-700 transition-colors"
                       >
                         {suggestion.length > MAX_SUGGESTION_LABEL_LENGTH ? suggestion.slice(0, MAX_SUGGESTION_LABEL_LENGTH - 3) + '...' : suggestion}
                       </button>
@@ -4997,13 +4997,13 @@ Instruções:
                   <div
                     className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
                       msg.role === 'user'
-                        ? 'bg-brand-600 text-white rounded-br-md'
+                        ? 'bg-teal-600 text-white rounded-br-md'
                         : 'bg-gray-100 text-gray-800 rounded-bl-md'
                     }`}
                   >
                     {msg.role === 'assistant' ? (
                       <div
-                        className="break-words prose-sm [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs"
+                        className="break-words prose-sm [&_strong]:font-semibold [&_a]:text-teal-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs"
                         dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(msg.content) }}
                       />
                     ) : (
@@ -5028,7 +5028,7 @@ Instruções:
                 <div className="flex justify-start">
                   <div className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-brand-600" />
+                      <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
                       <span className="text-sm text-gray-500">Pesquisando e analisando...</span>
                     </div>
                   </div>
@@ -5045,7 +5045,7 @@ Instruções:
                   <button
                     key={s}
                     onClick={() => setChatInput(s)}
-                    className="px-3 py-1 text-xs bg-gray-50 border border-gray-200 text-gray-600 rounded-full hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 transition-colors"
+                    className="px-3 py-1 text-xs bg-gray-50 border border-gray-200 text-gray-600 rounded-full hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700 transition-colors"
                   >
                     {s.length > MAX_SUGGESTION_LABEL_LENGTH ? s.slice(0, MAX_SUGGESTION_LABEL_LENGTH - 3) + '...' : s}
                   </button>
@@ -5068,12 +5068,12 @@ Instruções:
                   }}
                   placeholder="Faça uma pergunta sobre o tema..."
                   rows={1}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none resize-none"
                 />
                 <button
                   onClick={handleSendMessage}
                   disabled={!chatInput.trim() || chatLoading}
-                  className="p-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="p-2.5 bg-teal-600 text-white rounded-xl hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -5084,7 +5084,7 @@ Instruções:
                     type="checkbox"
                     checked={useWebSearch}
                     onChange={e => setUseWebSearch(e.target.checked)}
-                    className="w-3 h-3 rounded accent-brand-600"
+                    className="w-3 h-3 rounded accent-teal-600"
                   />
                   <Globe className="w-3 h-3 text-gray-400" />
                   <span className="text-[10px] text-gray-400">Busca web</span>
@@ -5112,7 +5112,7 @@ Instruções:
             {/* Add source */}
             <div className="bg-white rounded-xl border p-4 space-y-4">
               <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-brand-600" />
+                <Plus className="w-4 h-4 text-teal-600" />
                 Adicionar Fontes
               </h3>
 
@@ -5125,13 +5125,13 @@ Instruções:
                     placeholder="Cole um link (URL) para adicionar como fonte..."
                     value={sourceUrl}
                     onChange={e => setSourceUrl(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
                   />
                 </div>
                 <button
                   onClick={handleAddLinkSource}
                   disabled={!sourceUrl.trim() || sourceUrlLoading}
-                  className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 text-sm font-medium transition-colors flex items-center gap-1.5"
+                  className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40 text-sm font-medium transition-colors flex items-center gap-1.5"
                 >
                   {sourceUrlLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                   {sourceUrlLoading ? 'Carregando...' : 'Adicionar'}
@@ -5152,7 +5152,7 @@ Instruções:
                   className="w-full text-xs text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
                 />
                 {sourceUploadLoading && (
-                  <p className="text-[11px] text-brand-600 flex items-center gap-1.5">
+                  <p className="text-[11px] text-teal-600 flex items-center gap-1.5">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     Processando arquivos e indexando como fontes...
                   </p>
@@ -5174,7 +5174,7 @@ Instruções:
                       }
                     }}
                     disabled={isAnyResearchLoading}
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none disabled:opacity-50 disabled:bg-gray-50"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none disabled:opacity-50 disabled:bg-gray-50"
                   />
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -5210,7 +5210,7 @@ Instruções:
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                        <BookMarked className="w-4 h-4 text-brand-600" />
+                        <BookMarked className="w-4 h-4 text-teal-600" />
                         Janela Auditável da Próxima Busca
                       </h4>
                       <p className="text-[11px] text-gray-500 mt-1">
@@ -5269,7 +5269,7 @@ Instruções:
                         {activeNotebook.research_audits.length > 3 && (
                           <button
                             onClick={() => setShowAllResearchAudits(value => !value)}
-                            className="text-[10px] font-medium text-brand-700 hover:text-brand-800"
+                            className="text-[10px] font-medium text-teal-700 hover:text-teal-800"
                           >
                             {showAllResearchAudits ? 'Mostrar menos' : 'Mostrar todas'}
                           </button>
@@ -5301,7 +5301,7 @@ Instruções:
                             <div className="mt-2 flex items-center justify-end">
                               <button
                                 onClick={() => void saveResearchAuditPreset(audit)}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-brand-700 bg-brand-50 hover:bg-brand-100"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-teal-700 bg-teal-50 hover:bg-teal-100"
                               >
                                 <Save className="w-3 h-3" />
                                 Salvar busca
@@ -5322,7 +5322,7 @@ Instruções:
                         {sortedSavedSearches.length > 4 && (
                           <button
                             onClick={() => setShowAllSavedSearches(value => !value)}
-                            className="text-[10px] font-medium text-brand-700 hover:text-brand-800"
+                            className="text-[10px] font-medium text-teal-700 hover:text-teal-800"
                           >
                             {showAllSavedSearches ? 'Mostrar menos' : 'Mostrar todas'}
                           </button>
@@ -5335,7 +5335,7 @@ Instruções:
                           value={savedSearchFilter}
                           onChange={e => setSavedSearchFilter(e.target.value)}
                           placeholder="Filtrar buscas salvas..."
-                          className="w-full pl-7 pr-3 py-2 rounded-lg border border-amber-200 bg-amber-50/40 text-[11px] text-gray-700 focus:ring-1 focus:ring-brand-500 outline-none"
+                          className="w-full pl-7 pr-3 py-2 rounded-lg border border-amber-200 bg-amber-50/40 text-[11px] text-gray-700 focus:ring-1 focus:ring-teal-500 outline-none"
                         />
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -5364,7 +5364,7 @@ Instruções:
                             type="checkbox"
                             checked={allVisibleSavedSearchesSelected}
                             onChange={toggleSelectAllVisibleSavedSearches}
-                            className="rounded border-amber-300 text-brand-600 focus:ring-brand-500"
+                            className="rounded border-amber-300 text-teal-600 focus:ring-teal-500"
                           />
                           Selecionar visíveis ({visibleSavedSearchIds.length})
                         </label>
@@ -5398,7 +5398,7 @@ Instruções:
                           value={bulkSavedSearchTagInput}
                           onChange={e => setBulkSavedSearchTagInput(e.target.value)}
                           placeholder="Tag em lote"
-                          className="px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] text-gray-700 focus:ring-1 focus:ring-brand-500 outline-none"
+                          className="px-2 py-1 rounded-md border border-amber-200 bg-white text-[10px] text-gray-700 focus:ring-1 focus:ring-teal-500 outline-none"
                           maxLength={50}
                         />
                         <button
@@ -5444,20 +5444,20 @@ Instruções:
                                       <input
                                         value={editingSavedSearchTitle}
                                         onChange={e => setEditingSavedSearchTitle(e.target.value)}
-                                        className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-brand-500 outline-none"
+                                        className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-teal-500 outline-none"
                                         maxLength={120}
                                       />
                                       <input
                                         value={editingSavedSearchTags}
                                         onChange={e => setEditingSavedSearchTags(e.target.value)}
-                                        className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-brand-500 outline-none"
+                                        className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-teal-500 outline-none"
                                         placeholder="Tags separadas por vírgula"
                                         maxLength={160}
                                       />
                                       <div className="flex items-center gap-2">
                                         <button
                                           onClick={() => void confirmRenameSavedSearch()}
-                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-amber-200 text-[10px] font-medium text-brand-700 hover:bg-amber-100"
+                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-amber-200 text-[10px] font-medium text-teal-700 hover:bg-amber-100"
                                         >
                                           <Save className="w-3 h-3" />
                                           Salvar
@@ -5498,7 +5498,7 @@ Instruções:
                                       type="checkbox"
                                       checked={selectedSavedSearchIds.has(search.id)}
                                       onChange={() => toggleSavedSearchSelection(search.id)}
-                                      className="rounded border-amber-300 text-brand-600 focus:ring-brand-500"
+                                      className="rounded border-amber-300 text-teal-600 focus:ring-teal-500"
                                     />
                                     Selecionar
                                   </label>
@@ -5556,20 +5556,20 @@ Instruções:
                                     <input
                                       value={editingSavedSearchTitle}
                                       onChange={e => setEditingSavedSearchTitle(e.target.value)}
-                                      className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-brand-500 outline-none"
+                                      className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-teal-500 outline-none"
                                       maxLength={120}
                                     />
                                     <input
                                       value={editingSavedSearchTags}
                                       onChange={e => setEditingSavedSearchTags(e.target.value)}
-                                      className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-brand-500 outline-none"
+                                      className="w-full px-2 py-1 rounded-md border border-amber-200 bg-white text-[11px] text-gray-800 focus:ring-1 focus:ring-teal-500 outline-none"
                                       placeholder="Tags separadas por vírgula"
                                       maxLength={160}
                                     />
                                     <div className="flex items-center gap-2">
                                       <button
                                         onClick={() => void confirmRenameSavedSearch()}
-                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-amber-200 text-[10px] font-medium text-brand-700 hover:bg-amber-100"
+                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-amber-200 text-[10px] font-medium text-teal-700 hover:bg-amber-100"
                                       >
                                         <Save className="w-3 h-3" />
                                         Salvar
@@ -5612,7 +5612,7 @@ Instruções:
                                     type="checkbox"
                                     checked={selectedSavedSearchIds.has(search.id)}
                                     onChange={() => toggleSavedSearchSelection(search.id)}
-                                    className="rounded border-amber-300 text-brand-600 focus:ring-brand-500"
+                                    className="rounded border-amber-300 text-teal-600 focus:ring-teal-500"
                                   />
                                   Selecionar
                                 </label>
@@ -5675,7 +5675,7 @@ Instruções:
                         placeholder="Filtrar..."
                         value={sourceSearch}
                         onChange={e => setSourceSearch(e.target.value)}
-                        className="pl-7 pr-2 py-1 border border-gray-200 rounded text-[11px] w-36 focus:ring-1 focus:ring-brand-500 outline-none"
+                        className="pl-7 pr-2 py-1 border border-gray-200 rounded text-[11px] w-36 focus:ring-1 focus:ring-teal-500 outline-none"
                       />
                     </div>
                   )}
@@ -5718,11 +5718,11 @@ Instruções:
             </div>
 
             {/* Analisar Acervo — Multi-agent intelligent search */}
-            <div className="bg-gradient-to-r from-brand-50 to-indigo-50 rounded-xl border border-brand-200 p-4 space-y-4">
+            <div className="bg-gradient-to-r from-teal-50 to-indigo-50 rounded-xl border border-teal-200 p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                    <ScanSearch className="w-4 h-4 text-brand-600" />
+                    <ScanSearch className="w-4 h-4 text-teal-600" />
                     Análise Inteligente do Acervo
                   </h3>
                   <p className="text-[11px] text-gray-500 mt-0.5">
@@ -5732,7 +5732,7 @@ Instruções:
                 <button
                   onClick={handleAnalyzeAcervo}
                   disabled={acervoAnalysisLoading || !activeNotebook.topic}
-                  className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap"
+                  className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40 text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap"
                 >
                   {acervoAnalysisLoading ? (
                     <>
@@ -5752,20 +5752,20 @@ Instruções:
               {acervoAnalysisLoading && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-brand-100 rounded-full h-2 overflow-hidden">
+                    <div className="flex-1 bg-teal-100 rounded-full h-2 overflow-hidden">
                       <div
-                        className="bg-brand-600 h-full rounded-full transition-all duration-500"
+                        className="bg-teal-600 h-full rounded-full transition-all duration-500"
                         style={{ width: `${acervoAnalysisPercent}%` }}
                       />
                     </div>
-                    <span className="text-[11px] text-brand-600 font-medium whitespace-nowrap">{acervoAnalysisPercent}%</span>
+                    <span className="text-[11px] text-teal-600 font-medium whitespace-nowrap">{acervoAnalysisPercent}%</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-500" />
-                    <span className="text-xs text-brand-700">{acervoAnalysisMessage}</span>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-500" />
+                    <span className="text-xs text-teal-700">{acervoAnalysisMessage}</span>
                   </div>
                   {acervoAnalysisMeta && (
-                    <p className="pl-5 text-[11px] text-brand-500">{acervoAnalysisMeta}</p>
+                    <p className="pl-5 text-[11px] text-teal-500">{acervoAnalysisMeta}</p>
                   )}
                   {/* Agent progress steps */}
                   <div className="flex items-center gap-1 mt-1">
@@ -5782,7 +5782,7 @@ Instruções:
                       return (
                         <div key={step} className="flex items-center gap-1">
                           <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
-                            isActive ? 'bg-brand-600 text-white' :
+                            isActive ? 'bg-teal-600 text-white' :
                             isCompleted ? 'bg-green-100 text-green-700' :
                             'bg-gray-100 text-gray-400'
                           }`}>
@@ -5816,7 +5816,7 @@ Instruções:
                             setSelectedAnalysisIds(new Set(acervoAnalysisResults.map(d => d.id)))
                           }
                         }}
-                        className="text-[10px] text-brand-600 hover:text-brand-700 font-medium"
+                        className="text-[10px] text-teal-600 hover:text-teal-700 font-medium"
                       >
                         {selectedAnalysisIds.size === acervoAnalysisResults.length ? 'Desmarcar todos' : 'Selecionar todos'}
                       </button>
@@ -5831,8 +5831,8 @@ Instruções:
                           key={doc.id}
                           className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
                             alreadySource ? 'bg-green-50 border-green-200 opacity-60' :
-                            isSelected ? 'bg-brand-50 border-brand-300' :
-                            'bg-white border-gray-200 hover:border-brand-200'
+                            isSelected ? 'bg-teal-50 border-teal-300' :
+                            'bg-white border-gray-200 hover:border-teal-200'
                           }`}
                           onClick={() => {
                             if (alreadySource) return
@@ -5849,7 +5849,7 @@ Instruções:
                               <CheckCircle2 className="w-4 h-4 text-green-500" />
                             ) : (
                               <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
-                                isSelected ? 'bg-brand-600 border-brand-600' : 'border-gray-300'
+                                isSelected ? 'bg-teal-600 border-teal-600' : 'border-gray-300'
                               }`}>
                                 {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
                               </div>
@@ -5874,7 +5874,7 @@ Instruções:
                       )
                     })}
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-brand-100">
+                  <div className="flex items-center justify-between pt-2 border-t border-teal-100">
                     <span className="text-[11px] text-gray-500">
                       {selectedAnalysisIds.size} de {acervoAnalysisResults.length} selecionado(s)
                     </span>
@@ -5888,7 +5888,7 @@ Instruções:
                       <button
                         onClick={handleAddAnalysisResults}
                         disabled={selectedAnalysisIds.size === 0}
-                        className="px-4 py-1.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40 text-xs font-medium transition-colors flex items-center gap-1.5"
+                        className="px-4 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40 text-xs font-medium transition-colors flex items-center gap-1.5"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         Adicionar {selectedAnalysisIds.size} fonte(s)
@@ -5931,7 +5931,7 @@ Instruções:
                         {source.text_content && (source.text_content.length ?? 0) >= MIN_SOURCE_CHARS && (
                           <button
                             onClick={() => setViewerSource(source)}
-                            className="p-1 rounded hover:bg-brand-50 text-gray-400 hover:text-brand-600 transition-colors"
+                            className="p-1 rounded hover:bg-teal-50 text-gray-400 hover:text-teal-600 transition-colors"
                             title="Visualizar conteúdo"
                           >
                             <Eye className="w-4 h-4" />
@@ -5975,7 +5975,7 @@ Instruções:
                 onChange={e => setStudioCustomPrompt(e.target.value)}
                 placeholder="Ex: Foque nos aspectos práticos, use linguagem acessível, inclua exemplos de RPG..."
                 rows={2}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none resize-none"
               />
             </div>
 
@@ -5983,7 +5983,7 @@ Instruções:
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                    <BookMarked className="w-4 h-4 text-brand-600" />
+                    <BookMarked className="w-4 h-4 text-teal-600" />
                     Contexto Auditável do Estúdio
                   </h4>
                   <p className="text-[11px] text-gray-500 mt-1">
@@ -6102,7 +6102,7 @@ Instruções:
                               void handleGenerateArtifact(art.type)
                             }}
                             className={`flex items-start gap-3 p-3 rounded-xl border ${colors.border} ${colors.hoverBorder} hover:shadow-sm transition-all text-left group ${
-                              runningTask ? 'ring-1 ring-brand-200 bg-brand-50/40' : ''
+                              runningTask ? 'ring-1 ring-teal-200 bg-teal-50/40' : ''
                             }`}
                           >
                             <div className={`p-2 rounded-lg ${colors.bg} group-hover:scale-105 transition-transform`}>
@@ -6169,18 +6169,18 @@ Instruções:
                       setViewingArtifact(artifact)
                     }
                   }}
-                  className="w-full flex items-center justify-between p-4 bg-white rounded-xl border hover:border-brand-300 hover:shadow-sm transition-all text-left group"
+                  className="w-full flex items-center justify-between p-4 bg-white rounded-xl border hover:border-teal-300 hover:shadow-sm transition-all text-left group"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="p-2 bg-brand-50 rounded-lg group-hover:bg-brand-100 transition-colors">
-                      <ArtIcon className="w-5 h-5 text-brand-600" />
+                    <div className="p-2 bg-teal-50 rounded-lg group-hover:bg-teal-100 transition-colors">
+                      <ArtIcon className="w-5 h-5 text-teal-600" />
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-900 truncate">{artifact.title}</p>
                       <p className="text-[11px] text-gray-400">{artDef?.label || artifact.type} · {formatDate(artifact.created_at)}</p>
                     </div>
                   </div>
-                  <ChevronDown className="w-4 h-4 text-gray-300 group-hover:text-brand-500 -rotate-90 transition-colors" />
+                  <ChevronDown className="w-4 h-4 text-gray-300 group-hover:text-teal-500 -rotate-90 transition-colors" />
                 </button>
               )
             })}
@@ -6718,7 +6718,7 @@ function ArtifactCard({
         className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <Icon className="w-5 h-5 text-brand-600" />
+          <Icon className="w-5 h-5 text-teal-600" />
           <div>
             <p className="text-sm font-semibold text-gray-900">{artifact.title}</p>
             <p className="text-[11px] text-gray-400">{label} · {formatDate(artifact.created_at)}</p>
@@ -6745,7 +6745,7 @@ function ArtifactCard({
       {expanded && (
         <div className="px-4 pb-4 border-t">
           <div
-            className="prose prose-sm max-w-none mt-3 text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs"
+            className="prose prose-sm max-w-none mt-3 text-gray-700 [&_strong]:font-semibold [&_a]:text-teal-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs"
             dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(artifact.content) }}
           />
         </div>

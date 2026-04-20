@@ -36,14 +36,14 @@ function SceneCard({ scene }: SceneCardProps) {
       {/* Main content: visual + narration */}
       <div className="flex flex-col sm:flex-row">
         {/* Visual description (the "frame") */}
-        <div className="sm:w-2/5 bg-gray-100 p-5 border-b sm:border-b-0 sm:border-r border-gray-200">
+        <div className="sm:w-2/5 p-5 border-b sm:border-b-0 sm:border-r" style={{ background: 'rgba(15,23,42,0.04)', borderColor: 'var(--v2-line-soft)' }}>
           <div className="flex items-center gap-2 mb-2">
-            <Camera className="w-3.5 h-3.5 text-gray-400" />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+            <Camera className="w-3.5 h-3.5" style={{ color: 'var(--v2-ink-faint)' }} />
+            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--v2-ink-faint)' }}>
               Visual
             </span>
           </div>
-          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--v2-ink-soft)' }}>
             {scene.visual}
           </p>
         </div>
@@ -51,12 +51,12 @@ function SceneCard({ scene }: SceneCardProps) {
         {/* Narration */}
         <div className="sm:w-3/5 p-5">
           <div className="flex items-center gap-2 mb-2">
-            <Film className="w-3.5 h-3.5 text-brand-500" />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-500">
+            <Film className="w-3.5 h-3.5" style={{ color: 'var(--v2-accent-strong)' }} />
+            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--v2-accent-strong)' }}>
               Narracao
             </span>
           </div>
-          <p className="text-sm text-gray-900 leading-relaxed whitespace-pre-line">
+          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--v2-ink-strong)' }}>
             {scene.narration}
           </p>
         </div>
@@ -64,7 +64,7 @@ function SceneCard({ scene }: SceneCardProps) {
 
       {/* Bottom badges + notes */}
       {(scene.transition || scene.broll || scene.lowerThird || scene.notes) && (
-        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+        <div className="px-5 py-3 border-t" style={{ background: 'rgba(15,23,42,0.02)', borderColor: 'rgba(15,23,42,0.06)' }}>
           {/* Badges */}
           <div className="flex flex-wrap items-center gap-2">
             {scene.transition && (
@@ -90,8 +90,8 @@ function SceneCard({ scene }: SceneCardProps) {
           {/* Notes */}
           {scene.notes && (
             <div className="flex items-start gap-2 mt-2.5">
-              <StickyNote className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-gray-500 italic leading-relaxed">{scene.notes}</p>
+              <StickyNote className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: 'var(--v2-ink-faint)' }} />
+              <p className="text-xs italic leading-relaxed" style={{ color: 'var(--v2-ink-faint)' }}>{scene.notes}</p>
             </div>
           )}
         </div>
@@ -110,22 +110,22 @@ export default function VideoScriptViewer({ data }: VideoScriptViewerProps) {
   const [notesOpen, setNotesOpen] = useState(false)
 
   if (data.scenes.length === 0) {
-    return <div className="text-center py-12 text-gray-500">Vídeo sem cenas.</div>
+    return <div className="text-center py-12" style={{ color: 'var(--v2-ink-faint)' }}>Vídeo sem cenas.</div>
   }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 pb-4 border-b border-gray-200">
+      <div className="flex items-start justify-between gap-4 pb-4 border-b" style={{ borderColor: 'var(--v2-line-soft)' }}>
         <div className="space-y-1">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{data.title}</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{data.title}</h1>
+          <p className="text-sm" style={{ color: 'var(--v2-ink-faint)' }}>
             {data.scenes.length} cena{data.scenes.length !== 1 ? 's' : ''}
           </p>
         </div>
         {data.duration && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-lg text-sm font-medium text-gray-700 flex-shrink-0">
-            <Clock className="w-4 h-4 text-gray-400" />
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium flex-shrink-0" style={{ background: 'rgba(15,23,42,0.06)', color: 'var(--v2-ink-soft)' }}>
+            <Clock className="w-4 h-4" style={{ color: 'var(--v2-ink-faint)' }} />
             {data.duration}
           </div>
         )}

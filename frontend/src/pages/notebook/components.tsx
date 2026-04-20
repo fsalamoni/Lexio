@@ -24,7 +24,7 @@ export function CopyButton({ text, className = '' }: { text: string; className?:
       onClick={e => { e.stopPropagation(); handle() }}
       title="Copiar conteúdo"
       aria-label="Copiar conteúdo"
-      className={`inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-600 transition-colors ${className}`}
+      className={`inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-teal-600 transition-colors ${className}`}
     >
       {copied
         ? <><CheckIcon className="w-3.5 h-3.5 text-green-500" /> Copiado</>
@@ -60,7 +60,7 @@ export function NotebookListItem({
 
   return (
     <div
-      className="group bg-white rounded-xl border border-gray-200 p-4 hover:border-brand-300 hover:shadow-md transition-all cursor-pointer"
+      className="group bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-300 hover:shadow-md transition-all cursor-pointer"
       onClick={onSelect}
     >
       <div className="flex items-start justify-between gap-3">

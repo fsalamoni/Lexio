@@ -323,7 +323,7 @@ export default function DocumentList() {
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
             placeholder="Buscar por tema ou pedido… (Ctrl+K)"
-            className="w-full pl-9 pr-8 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            className="w-full pl-9 pr-8 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
           />
           {searchInput && (
             <button
@@ -339,7 +339,7 @@ export default function DocumentList() {
         <select
           value={typeFilter}
           onChange={e => { setTypeFilter(e.target.value); setPage(0) }}
-          className="text-sm border rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="text-sm border rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
         >
           <option value="">Todos os tipos</option>
           {Object.entries(DOCTYPE_LABELS).map(([k, v]) => (
@@ -351,7 +351,7 @@ export default function DocumentList() {
         <select
           value={sortBy}
           onChange={e => { setSortBy(e.target.value); setPage(0) }}
-          className="text-sm border rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="text-sm border rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
         >
           <option value="date_desc">Mais recente</option>
           <option value="date_asc">Mais antigo</option>
@@ -367,7 +367,7 @@ export default function DocumentList() {
           onClick={() => { const d = new Date(); d.setDate(d.getDate() - 7); setDateFrom(d.toISOString().slice(0, 10)); setDateTo(''); setPage(0) }}
           className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
             dateFrom && !dateTo && new Date(dateFrom).getTime() >= Date.now() - 8 * 86400000
-              ? 'bg-brand-50 text-brand-700 border-brand-200'
+              ? 'bg-teal-50 text-teal-700 border-teal-200'
               : 'bg-white text-gray-500 hover:bg-gray-50'
           }`}
         >
@@ -377,7 +377,7 @@ export default function DocumentList() {
           onClick={() => { const d = new Date(); setDateFrom(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`); setDateTo(''); setPage(0) }}
           className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
             dateFrom && dateFrom.endsWith('-01') && !dateTo
-              ? 'bg-brand-50 text-brand-700 border-brand-200'
+              ? 'bg-teal-50 text-teal-700 border-teal-200'
               : 'bg-white text-gray-500 hover:bg-gray-50'
           }`}
         >
@@ -388,7 +388,7 @@ export default function DocumentList() {
           value={dateFrom}
           max={dateTo || undefined}
           onChange={e => { setDateFrom(e.target.value); setPage(0) }}
-          className="text-sm border rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="text-sm border rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
         />
         <span className="text-xs text-gray-400">até</span>
         <input
@@ -396,7 +396,7 @@ export default function DocumentList() {
           value={dateTo}
           min={dateFrom || undefined}
           onChange={e => { setDateTo(e.target.value); setPage(0) }}
-          className="text-sm border rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="text-sm border rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
         />
         {(dateFrom || dateTo) && (
           <button
@@ -423,7 +423,7 @@ export default function DocumentList() {
             onClick={() => handleStatusFilter(key)}
             className={`px-3 py-1 rounded-full text-xs border transition-colors ${
               statusFilter === key
-                ? 'bg-brand-600 text-white border-brand-600'
+                ? 'bg-teal-600 text-white border-teal-600'
                 : 'bg-white text-gray-600 hover:bg-gray-50'
             }`}
           >
@@ -493,20 +493,20 @@ export default function DocumentList() {
         <>
           {/* Bulk action bar */}
           {selected.size > 0 && (
-            <div className="flex items-center gap-3 mb-3 px-4 py-2.5 bg-brand-50 border border-brand-200 rounded-lg">
-              <span className="text-sm text-brand-700 font-medium flex-1">
+            <div className="flex items-center gap-3 mb-3 px-4 py-2.5 bg-teal-50 border border-teal-200 rounded-lg">
+              <span className="text-sm text-teal-700 font-medium flex-1">
                 {selected.size} documento{selected.size !== 1 ? 's' : ''} selecionado{selected.size !== 1 ? 's' : ''}
               </span>
               <button
                 onClick={() => setSelected(new Set())}
-                className="text-xs text-brand-500 hover:text-brand-700"
+                className="text-xs text-teal-500 hover:text-teal-700"
               >
                 Desmarcar
               </button>
               <button
                 onClick={handleBulkExport}
                 disabled={bulkExporting}
-                className="inline-flex items-center gap-1.5 text-xs bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs bg-teal-600 text-white px-3 py-1.5 rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
               >
                 <Download className="w-3.5 h-3.5" />
                 {bulkExporting ? 'Exportando…' : 'Baixar .zip'}
@@ -534,7 +534,7 @@ export default function DocumentList() {
                         checked={selected.size === docs.length && docs.length > 0}
                         ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < docs.length }}
                         onChange={toggleSelectAll}
-                        className="rounded border-gray-300 text-brand-600"
+                        className="rounded border-gray-300 text-teal-600"
                       />
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Tipo</th>
@@ -546,17 +546,17 @@ export default function DocumentList() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {docs.map((doc) => (
-                    <tr key={doc.id} className={`hover:bg-gray-50 transition-colors ${selected.has(doc.id) ? 'bg-brand-50/50' : ''}`}>
+                    <tr key={doc.id} className={`hover:bg-gray-50 transition-colors ${selected.has(doc.id) ? 'bg-teal-50/50' : ''}`}>
                       <td className="pl-4 pr-2 py-4">
                         <input
                           type="checkbox"
                           checked={selected.has(doc.id)}
                           onChange={() => toggleSelect(doc.id)}
-                          className="rounded border-gray-300 text-brand-600"
+                          className="rounded border-gray-300 text-teal-600"
                         />
                       </td>
                       <td className="px-4 py-4">
-                        <Link to={buildWorkspaceDocumentDetailPath(doc.id, { preserveSearch: location.search })} className="text-brand-600 hover:text-brand-800 hover:underline font-medium text-sm">
+                        <Link to={buildWorkspaceDocumentDetailPath(doc.id, { preserveSearch: location.search })} className="text-teal-600 hover:text-teal-800 hover:underline font-medium text-sm">
                           {DOCTYPE_LABELS[doc.document_type_id] || (doc.document_type_id === 'documento_caderno' ? 'Documento' : doc.document_type_id)}
                         </Link>
                         {doc.origem === 'caderno' ? (

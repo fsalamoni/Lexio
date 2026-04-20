@@ -10,7 +10,7 @@ import type { ParsedInfographic, InfographicStat } from './artifact-parsers'
 // ── Section background palette ─────────────────────────────────────────────
 
 const SECTION_BG = [
-  'bg-brand-50 border-brand-200',
+  'bg-teal-50 border-teal-200',
   'bg-blue-50 border-blue-200',
   'bg-purple-50 border-purple-200',
   'bg-amber-50 border-amber-200',
@@ -21,7 +21,7 @@ const SECTION_BG = [
 ]
 
 const HIGHLIGHT_COLOR = [
-  'text-brand-700',
+  'text-teal-700',
   'text-blue-700',
   'text-purple-700',
   'text-amber-700',
@@ -32,7 +32,7 @@ const HIGHLIGHT_COLOR = [
 ]
 
 const STAT_BG = [
-  'bg-brand-100 text-brand-800',
+  'bg-teal-100 text-teal-800',
   'bg-blue-100 text-blue-800',
   'bg-purple-100 text-purple-800',
   'bg-amber-100 text-amber-800',
@@ -98,24 +98,24 @@ interface InfographicRendererProps {
 
 export default function InfographicRenderer({ data }: InfographicRendererProps) {
   if (data.sections.length === 0) {
-    return <div className="text-center py-12 text-gray-500">Infografico sem conteudo.</div>
+    return <div className="text-center py-12" style={{ color: 'var(--v2-ink-faint)' }}>Infografico sem conteudo.</div>
   }
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       {data.renderedImageUrl && (
-        <div className="rounded-3xl overflow-hidden border border-gray-200 shadow-sm bg-white">
+        <div className="rounded-3xl overflow-hidden border shadow-sm bg-white" style={{ borderColor: 'var(--v2-line-soft)' }}>
           <img src={data.renderedImageUrl} alt={data.title} className="w-full h-auto object-cover" />
         </div>
       )}
 
       {/* Title section */}
-      <div className="text-center space-y-2 pb-4 border-b border-gray-200">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight">
+      <div className="text-center space-y-2 pb-4 border-b" style={{ borderColor: 'var(--v2-line-soft)' }}>
+        <h1 className="text-2xl sm:text-3xl font-bold leading-tight" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>
           {data.title}
         </h1>
         {data.subtitle && (
-          <p className="text-base sm:text-lg text-gray-500 max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg max-w-2xl mx-auto" style={{ color: 'var(--v2-ink-faint)' }}>
             {data.subtitle}
           </p>
         )}
@@ -139,13 +139,13 @@ export default function InfographicRenderer({ data }: InfographicRendererProps) 
                     {section.icon}
                   </span>
                 )}
-                <h3 className="text-lg font-bold text-gray-900 leading-snug">
+                <h3 className="text-lg font-bold leading-snug" style={{ color: 'var(--v2-ink-strong)' }}>
                   {section.title}
                 </h3>
               </div>
 
               {/* Content */}
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+              <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--v2-ink-soft)' }}>
                 {section.content}
               </p>
 
@@ -190,10 +190,10 @@ export default function InfographicRenderer({ data }: InfographicRendererProps) 
 
       {/* Sources */}
       {data.sources && data.sources.length > 0 && (
-        <div className="pt-4 border-t border-gray-200">
+        <div className="pt-4 border-t" style={{ borderColor: 'var(--v2-line-soft)' }}>
           <div className="flex items-center gap-2 mb-2">
-            <BookOpen className="w-3.5 h-3.5 text-gray-400" />
-            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <BookOpen className="w-3.5 h-3.5" style={{ color: 'var(--v2-ink-faint)' }} />
+            <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--v2-ink-faint)' }}>
               Fontes
             </span>
           </div>

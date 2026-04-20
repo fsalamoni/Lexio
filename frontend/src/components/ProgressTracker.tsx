@@ -68,13 +68,13 @@ export default function ProgressTracker({ documentId }: { documentId: string }) 
           return (
             <div key={step.key} className="flex-1 flex flex-col items-center gap-1">
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                done   ? 'bg-brand-600 text-white' :
-                active ? 'bg-brand-100 border-2 border-brand-600 text-brand-700' :
+                done   ? 'bg-teal-600 text-white' :
+                active ? 'bg-teal-100 border-2 border-teal-600 text-teal-700' :
                          'bg-gray-100 text-gray-400'
               }`}>
                 {done ? '✓' : i + 1}
               </div>
-              <span className={`text-xs hidden sm:block ${active ? 'text-brand-700 font-medium' : 'text-gray-400'}`}>
+              <span className={`text-xs hidden sm:block ${active ? 'text-teal-700 font-medium' : 'text-gray-400'}`}>
                 {step.label}
               </span>
               {i < PHASE_STEPS.length - 1 && (
@@ -88,15 +88,15 @@ export default function ProgressTracker({ documentId }: { documentId: string }) 
       {/* Progress bar + message */}
       <div>
         <div className="flex items-center gap-2 mb-2">
-          <PhaseIcon className="w-4 h-4 text-brand-500 animate-pulse flex-shrink-0" />
+          <PhaseIcon className="w-4 h-4 text-teal-500 animate-pulse flex-shrink-0" />
           <span className="text-sm text-gray-700 truncate">{progress.message}</span>
-          <span className="ml-auto text-sm font-semibold text-brand-600 tabular-nums">
+          <span className="ml-auto text-sm font-semibold text-teal-600 tabular-nums">
             {progress.progress}%
           </span>
         </div>
         <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
           <div
-            className="bg-gradient-to-r from-brand-500 to-brand-400 h-2 rounded-full transition-all duration-500"
+            className="bg-gradient-to-r from-teal-500 to-teal-400 h-2 rounded-full transition-all duration-500"
             style={{ width: `${progress.progress}%` }}
           />
         </div>

@@ -156,7 +156,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         {showScrollTop && (
           <button
             onClick={() => mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="fixed bottom-6 right-6 z-40 p-2.5 bg-brand-600 text-white rounded-full shadow-lg hover:bg-brand-700 transition-all opacity-80 hover:opacity-100"
+            className="fixed bottom-6 right-6 z-40 p-2.5 bg-teal-600 text-white rounded-full shadow-lg hover:bg-teal-700 transition-all opacity-80 hover:opacity-100"
             aria-label="Voltar ao topo"
           >
             <ArrowUp className="w-5 h-5" />

@@ -1474,21 +1474,21 @@ export default function Upload() {
         className={[
           'bg-white rounded-xl border-2 border-dashed p-12 text-center cursor-pointer transition-all duration-200 mb-6 select-none',
           isDragging
-            ? 'border-brand-500 bg-brand-50 scale-[1.01] shadow-lg'
-            : 'border-gray-300 hover:border-brand-400 hover:bg-gray-50',
+            ? 'border-teal-500 bg-teal-50 scale-[1.01] shadow-lg'
+            : 'border-gray-300 hover:border-teal-400 hover:bg-gray-50',
         ].join(' ')}
       >
         <div className={[
           'w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 transition-colors',
-          isDragging ? 'bg-brand-100' : 'bg-gray-100',
+          isDragging ? 'bg-teal-100' : 'bg-gray-100',
         ].join(' ')}>
-          <UploadIcon className={['w-8 h-8 transition-colors', isDragging ? 'text-brand-600' : 'text-gray-400'].join(' ')} />
+          <UploadIcon className={['w-8 h-8 transition-colors', isDragging ? 'text-teal-600' : 'text-gray-400'].join(' ')} />
         </div>
 
         {isDragging ? (
           <>
-            <p className="text-brand-700 font-semibold text-lg">Solte os arquivos aqui</p>
-            <p className="text-brand-500 text-sm mt-1">Pronto para indexar</p>
+            <p className="text-teal-700 font-semibold text-lg">Solte os arquivos aqui</p>
+            <p className="text-teal-500 text-sm mt-1">Pronto para indexar</p>
           </>
         ) : (
           <>
@@ -1522,7 +1522,7 @@ export default function Upload() {
                   <p className="text-xs text-gray-400">{formatSize(f.size)}</p>
                 </div>
                 {f.status === 'uploading' && (
-                  <span className="text-xs text-brand-600 font-medium flex-shrink-0">
+                  <span className="text-xs text-teal-600 font-medium flex-shrink-0">
                     {(f.progress ?? 0) < 15 ? 'Preparando...' :
                      (f.progress ?? 0) < 60 ? 'Extraindo texto...' :
                      (f.progress ?? 0) < 90 ? 'Convertendo e salvando...' :
@@ -1545,7 +1545,7 @@ export default function Upload() {
               {f.status === 'uploading' && (
                 <div className="mt-2 w-full bg-gray-100 rounded-full h-1.5">
                   <div
-                    className="bg-brand-500 h-1.5 rounded-full transition-all duration-300"
+                    className="bg-teal-500 h-1.5 rounded-full transition-all duration-300"
                     style={{ width: `${f.progress ?? 0}%` }}
                   />
                 </div>
@@ -1636,7 +1636,7 @@ export default function Upload() {
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="Buscar por nome, ementa, área, assunto..."
-                  className="w-full pl-9 pr-3 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-brand-300 focus:border-brand-400 outline-none"
+                  className="w-full pl-9 pr-3 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
                 />
               </div>
               <select
@@ -1766,7 +1766,7 @@ export default function Upload() {
                       {acervoDoc.text_content && (
                         <button
                           onClick={() => setViewDoc(acervoDoc)}
-                          className="text-gray-300 hover:text-brand-500 transition-colors"
+                          className="text-gray-300 hover:text-teal-500 transition-colors"
                           title="Ver conteúdo"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -1791,7 +1791,7 @@ export default function Upload() {
                 <p className="text-sm">Nenhum documento encontrado com os filtros atuais.</p>
                 <button
                   onClick={() => { setSearchQuery(''); setFilterNatureza('') }}
-                  className="text-xs text-brand-500 hover:text-brand-600 mt-1"
+                  className="text-xs text-teal-500 hover:text-teal-600 mt-1"
                 >
                   Limpar filtros
                 </button>

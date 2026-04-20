@@ -18,7 +18,7 @@ export function renderMarkdownToHtml(md: string): string {
   // Code blocks
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-gray-100 rounded-lg p-3 my-2 overflow-x-auto"><code>$2</code></pre>')
   // Blockquotes — match after HTML-escaping (> becomes &gt;)
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote class="border-l-4 border-brand-300 pl-4 my-3 italic text-gray-600">$1</blockquote>')
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote class="border-l-4 border-teal-400 pl-4 my-3 italic text-gray-600">$1</blockquote>')
   // Headers with IDs for scroll-spy
   html = html.replace(/^#### (.+)$/gm, (_m, t) => `<h4 id="${slugify(t)}" class="text-sm font-bold mt-4 mb-1 scroll-mt-4">${t}</h4>`)
   html = html.replace(/^### (.+)$/gm, (_m, t) => `<h3 id="${slugify(t)}" class="text-base font-bold mt-5 mb-2 scroll-mt-4">${t}</h3>`)
@@ -34,7 +34,7 @@ export function renderMarkdownToHtml(md: string): string {
   // Ordered lists
   html = html.replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
   // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-600 underline hover:text-brand-700">$1</a>')
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-teal-700 underline hover:text-teal-800">$1</a>')
   // Tables
   html = html.replace(/^\|(.+)\|$/gm, (_m, row) => {
     const cells = row.split('|').map((c: string) => c.trim())

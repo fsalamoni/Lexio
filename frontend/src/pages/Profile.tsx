@@ -119,7 +119,7 @@ export default function Profile() {
           value={(value as string) || ''}
           onChange={e => updateField(field.key, e.target.value)}
           placeholder={field.placeholder}
-          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm"
         />
       )
     }
@@ -133,7 +133,7 @@ export default function Profile() {
             updateField(field.key, isNaN(num) ? null : num)
           }}
           placeholder={field.placeholder}
-          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm"
         />
       )
     }
@@ -144,7 +144,7 @@ export default function Profile() {
           onChange={e => updateField(field.key, e.target.value)}
           placeholder={field.placeholder}
           rows={3}
-          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm resize-y"
+          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm resize-y"
         />
       )
     }
@@ -153,7 +153,7 @@ export default function Profile() {
         <select
           value={(value as string) || ''}
           onChange={e => updateField(field.key, e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm bg-white"
+          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm bg-white"
         >
           <option value="">Selecione...</option>
           {field.options?.map((opt: any) => (
@@ -173,7 +173,7 @@ export default function Profile() {
               onClick={() => toggleMultiSelect(field.key, opt.value)}
               className={`px-3 py-2 rounded-lg text-sm border transition-colors ${
                 selected.includes(opt.value)
-                  ? 'bg-brand-600 text-white border-brand-600'
+                  ? 'bg-teal-600 text-white border-teal-600'
                   : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
               }`}
             >
@@ -191,7 +191,7 @@ export default function Profile() {
           value={tags.join(', ')}
           onChange={e => updateField(field.key, e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean))}
           placeholder={field.placeholder}
-          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm"
         />
       )
     }
@@ -202,7 +202,7 @@ export default function Profile() {
             type="checkbox"
             checked={(value as boolean) ?? false}
             onChange={e => updateField(field.key, e.target.checked)}
-            className="w-5 h-5 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            className="w-5 h-5 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
           />
           <span className="text-sm text-gray-700">Ativado</span>
         </label>
@@ -224,8 +224,8 @@ export default function Profile() {
   return (
     <div className="max-w-2xl">
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0">
-          <User className="w-5 h-5 text-brand-600" />
+        <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center flex-shrink-0">
+          <User className="w-5 h-5 text-teal-600" />
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Meu Perfil</h1>
@@ -312,7 +312,7 @@ export default function Profile() {
                     value={pwForm[key]}
                     onChange={e => setPwForm(prev => ({ ...prev, [key]: e.target.value }))}
                     placeholder={key === 'current_password' ? 'Digite sua senha atual' : 'Mínimo 8 caracteres'}
-                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm"
                   />
                 </div>
               ))}
@@ -320,7 +320,7 @@ export default function Profile() {
                 type="button"
                 onClick={handlePasswordChange}
                 disabled={savingPw || !pwForm.current_password || !pwForm.new_password || !pwForm.confirm_password}
-                className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                className="inline-flex items-center gap-2 bg-teal-600 text-white px-4 py-2.5 rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
               >
                 <Lock className="w-4 h-4" />
                 {savingPw ? 'Alterando...' : 'Alterar Senha'}
@@ -335,7 +335,7 @@ export default function Profile() {
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="w-full bg-brand-600 text-white py-3.5 rounded-xl hover:bg-brand-700 disabled:opacity-50 font-semibold text-sm transition-colors shadow-sm disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+          className="w-full bg-teal-600 text-white py-3.5 rounded-xl hover:bg-teal-700 disabled:opacity-50 font-semibold text-sm transition-colors shadow-sm disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
         >
           {saving ? (
             <>

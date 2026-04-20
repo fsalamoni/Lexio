@@ -69,7 +69,7 @@ function CopyButton({ text }: { text: string }) {
     <button
       onClick={handle}
       title="Copiar conteúdo"
-      className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-600 transition-colors"
+      className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-teal-600 transition-colors"
     >
       {copied
         ? <><CheckIcon className="w-3.5 h-3.5 text-green-500" /> Copiado</>
@@ -174,7 +174,7 @@ function ThesisModal({
               value={form.title}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               placeholder="Título da tese jurídica"
-              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
               required
             />
           </div>
@@ -184,7 +184,7 @@ function ThesisModal({
             <select
               value={form.legal_area_id}
               onChange={e => setForm(f => ({ ...f, legal_area_id: e.target.value }))}
-              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
             >
               {Object.entries(AREA_LABELS).map(([val, label]) => (
                 <option key={val} value={val}>{label}</option>
@@ -199,7 +199,7 @@ function ThesisModal({
               value={form.summary}
               onChange={e => setForm(f => ({ ...f, summary: e.target.value }))}
               placeholder="Resumo curto (opcional)"
-              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
             />
           </div>
 
@@ -210,7 +210,7 @@ function ThesisModal({
               onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
               placeholder="Texto completo da tese..."
               rows={8}
-              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm resize-y focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm resize-y focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
               required
             />
           </div>
@@ -223,7 +223,7 @@ function ThesisModal({
                 value={form.tags}
                 onChange={e => setForm(f => ({ ...f, tags: e.target.value }))}
                 placeholder="Separe por vírgula"
-                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
               />
             </div>
             <div>
@@ -235,7 +235,7 @@ function ThesisModal({
                 value={form.quality_score}
                 onChange={e => setForm(f => ({ ...f, quality_score: e.target.value }))}
                 placeholder="Ex: 85"
-                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
               />
             </div>
           </div>
@@ -253,7 +253,7 @@ function ThesisModal({
             type="submit"
             onClick={handleSubmit}
             disabled={saving}
-            className="px-4 py-2 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+            className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
           >
             {saving ? 'Salvando...' : thesis ? 'Salvar alterações' : 'Criar tese'}
           </button>
@@ -619,7 +619,7 @@ export default function ThesisBank() {
               onClick={() => handleAreaFilter(area)}
               className={`rounded-xl border-2 p-3 text-left transition-all ${
                 areaFilter === area
-                  ? 'border-brand-500 bg-brand-50 shadow-sm'
+                  ? 'border-teal-500 bg-teal-50 shadow-sm'
                   : 'border-transparent bg-white hover:border-gray-200 hover:shadow-sm'
               }`}
             >
@@ -639,13 +639,13 @@ export default function ThesisBank() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar por título, conteúdo ou resumo..."
-            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
           />
         </div>
         <select
           value={sortBy}
           onChange={e => setSortBy(e.target.value as 'recent' | 'quality' | 'usage')}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:ring-2 focus:ring-brand-500"
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:ring-2 focus:ring-teal-500"
         >
           <option value="recent">Mais recente</option>
           <option value="quality">Maior score</option>
@@ -793,7 +793,7 @@ function ThesisCard({ thesis, expanded, onToggle, onEdit, onDelete, areaColor }:
             <div className="flex items-center gap-3">
               <button
                 onClick={e => { e.stopPropagation(); onEdit() }}
-                className="inline-flex items-center gap-1.5 text-xs text-[var(--v2-ink-soft)] hover:text-brand-600 transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-[var(--v2-ink-soft)] hover:text-teal-600 transition-colors"
               >
                 <Pencil className="w-3.5 h-3.5" />
                 Editar

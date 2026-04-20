@@ -524,7 +524,7 @@ export default function DocumentDetail() {
             <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Áreas do Direito</h2>
             <div className="flex flex-wrap gap-2">
               {doc.legal_area_ids.map(area => (
-                <span key={area} className="px-2 py-0.5 bg-brand-50 text-brand-700 text-xs rounded-full">
+                <span key={area} className="px-2 py-0.5 bg-teal-50 text-teal-700 text-xs rounded-full">
                   {AREA_LABELS[area] || area}
                 </span>
               ))}
@@ -632,7 +632,7 @@ export default function DocumentDetail() {
               {doc.status !== 'aprovado' && (
                 <button
                   onClick={() => navigate(buildWorkspaceDocumentEditPath(doc.id, { preserveSearch: location.search }))}
-                  className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors text-sm"
+                  className="inline-flex items-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 transition-colors text-sm"
                   aria-label={`Editar ${docLabel}`}
                 >
                   <Edit3 className="w-4 h-4" />
@@ -661,7 +661,7 @@ export default function DocumentDetail() {
                 <>
                   <a
                     href={`/api/v1/documents/${doc.id}/download`}
-                    className="inline-flex items-center gap-2 border border-brand-600 text-brand-600 px-4 py-2 rounded-lg hover:bg-brand-50 transition-colors text-sm"
+                    className="inline-flex items-center gap-2 border border-teal-600 text-teal-600 px-4 py-2 rounded-lg hover:bg-teal-50 transition-colors text-sm"
                   >
                     <Download className="w-4 h-4" />
                     Baixar DOCX
@@ -685,7 +685,7 @@ export default function DocumentDetail() {
                     DOCTYPE_LABELS[doc.document_type_id] || doc.document_type_id,
                     doc.tema || undefined,
                   )}
-                  className="inline-flex items-center gap-2 border border-brand-600 text-brand-600 px-4 py-2 rounded-lg hover:bg-brand-50 transition-colors text-sm"
+                  className="inline-flex items-center gap-2 border border-teal-600 text-teal-600 px-4 py-2 rounded-lg hover:bg-teal-50 transition-colors text-sm"
                 >
                   <Download className="w-4 h-4" />
                   Baixar DOCX
@@ -855,7 +855,7 @@ export default function DocumentDetail() {
             {doc.texto_completo.length > 2000 && (
               <button
                 onClick={() => navigate(buildWorkspaceDocumentEditPath(doc.id, { preserveSearch: location.search }))}
-                className="text-xs text-brand-600 hover:underline"
+                className="text-xs text-teal-600 hover:underline"
               >
                 Ver completo no editor
               </button>
@@ -922,7 +922,7 @@ export default function DocumentDetail() {
         <div className="bg-white rounded-xl border overflow-hidden">
           <div className="px-6 py-4 border-b bg-gray-50">
             <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-brand-600" />
+              <Cpu className="w-4 h-4 text-teal-600" />
               Timeline de Execução — {executions.length} agentes
             </h2>
           </div>
