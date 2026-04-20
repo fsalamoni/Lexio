@@ -209,7 +209,7 @@ export default function DraggablePanel({
       role="dialog"
       aria-label={title}
       onMouseDown={handleFocus}
-      className="fixed shadow-2xl rounded-lg border border-gray-200 bg-white flex flex-col overflow-hidden select-none"
+      className="fixed flex flex-col overflow-hidden select-none"
       style={{
         zIndex,
         left: pos.x,
@@ -217,44 +217,85 @@ export default function DraggablePanel({
         width: maximized ? '100vw' : size.w,
         height: collapsed ? headerHeight : (maximized ? '100vh' : size.h),
         transition: collapsed ? 'height 0.15s ease' : undefined,
+        background: 'var(--v2-panel-strong, #fff)',
+        border: '1px solid var(--v2-line-soft, rgba(15,23,42,0.08))',
+        borderRadius: maximized ? '0' : '1.25rem',
+        boxShadow: '0 32px 80px rgba(15,23,42,0.18), 0 8px 24px rgba(15,23,42,0.10)',
+        fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)",
       }}
     >
       {/* ── Header (drag handle) ─────────────────────────────────────────── */}
       <div
         onMouseDown={handleDragStart}
         onDoubleClick={toggleMaximize}
-        className="flex items-center gap-2 px-3 h-10 bg-gradient-to-r from-indigo-600 to-purple-600 text-white cursor-move flex-shrink-0 select-none"
+        className="flex items-center gap-2 px-4 flex-shrink-0 select-none cursor-move"
+        style={{
+          height: headerHeight,
+          borderBottom: '1px solid var(--v2-line-soft, rgba(15,23,42,0.08))',
+          background: 'rgba(255,255,255,0.82)',
+          backdropFilter: 'blur(8px)',
+        }}
       >
-        {icon && <span className="flex-shrink-0 opacity-80">{icon}</span>}
-        <span className="flex-1 truncate text-sm font-medium">{title}</span>
-        <div className="flex items-center gap-1">
+        {icon && (
+          <span
+            className="flex-shrink-0 flex items-center justify-center"
+            style={{ color: 'var(--v2-ink-faint, #7d8797)' }}
+          >
+            {icon}
+          </span>
+        )}
+        <span
+          className="flex-1 truncate text-sm font-semibold"
+          style={{ color: 'var(--v2-ink-strong, #172033)' }}
+        >
+          {title}
+        </span>
+        <div className="flex items-center gap-0.5">
           <button
             onClick={(e) => { e.stopPropagation(); setCollapsed(c => !c) }}
-            className="p-1 rounded hover:bg-white/20 transition-colors"
+            className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors"
+            style={{ color: 'var(--v2-ink-faint)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.07)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             title={collapsed ? 'Expandir' : 'Minimizar'}
           >
-            <Minus size={14} />
+            <Minus size={13} />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); toggleMaximize() }}
-            className="p-1 rounded hover:bg-white/20 transition-colors"
+            className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors"
+            style={{ color: 'var(--v2-ink-faint)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.07)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             title={maximized ? 'Restaurar' : 'Maximizar'}
           >
-            {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onClose() }}
-            className="p-1 rounded hover:bg-red-400/60 transition-colors"
+            className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors"
+            style={{ color: 'var(--v2-ink-faint)' }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'rgba(239,68,68,0.12)'
+              e.currentTarget.style.color = 'rgb(220,38,38)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--v2-ink-faint)'
+            }}
             title="Fechar"
           >
-            <X size={14} />
+            <X size={13} />
           </button>
         </div>
       </div>
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
       {!collapsed && (
-        <div className={`flex-1 overflow-auto ${className}`}>
+        <div
+          className={`flex-1 overflow-auto ${className}`}
+          style={{ background: 'var(--v2-panel-strong, #fff)' }}
+        >
           {children}
         </div>
       )}

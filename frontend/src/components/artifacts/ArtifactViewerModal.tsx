@@ -123,10 +123,16 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+      className="p-2 rounded-lg transition-colors"
+      style={{ color: 'var(--v2-ink-faint)' }}
+      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.07)')}
+      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       title="Copiar conteúdo"
     >
-      {copied ? <CheckIcon className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+      {copied
+        ? <CheckIcon className="w-4 h-4" style={{ color: 'var(--v2-accent-strong)' }} />
+        : <Copy className="w-4 h-4" />
+      }
     </button>
   )
 }
@@ -311,8 +317,15 @@ export default function ArtifactViewerModal({
       minHeight={300}
     >
         {/* Toolbar */}
-        <div className="flex items-center justify-between px-6 py-3 border-b bg-gray-50/80">
-          <p className="text-xs text-gray-500">
+        <div
+          className="flex items-center justify-between px-6 py-3"
+          style={{
+            borderBottom: '1px solid var(--v2-line-soft)',
+            background: 'rgba(255,255,255,0.7)',
+            fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)",
+          }}
+        >
+          <p className="text-xs" style={{ color: 'var(--v2-ink-faint)' }}>
             {formatDate(artifact.created_at)}
           </p>
 
@@ -321,14 +334,24 @@ export default function ArtifactViewerModal({
             <div className="relative" ref={exportRef}>
               <button
                 onClick={() => setShowExportMenu(s => !s)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors text-xs font-medium"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-medium"
+                style={{ color: 'var(--v2-ink-soft)' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.07)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 title="Exportar"
               >
                 <Download className="w-4 h-4" />
                 <ChevronDown className="w-3 h-3" />
               </button>
               {showExportMenu && (
-                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-lg border py-1 z-10">
+                <div
+                  className="absolute right-0 top-full mt-1 w-52 rounded-xl py-1 z-10"
+                  style={{
+                    background: 'var(--v2-panel-strong)',
+                    border: '1px solid var(--v2-line-soft)',
+                    boxShadow: '0 8px 32px rgba(15,23,42,0.12)',
+                  }}
+                >
                   {getExportOptions().map((opt, i) => (
                     <button
                       key={i}
@@ -338,7 +361,10 @@ export default function ArtifactViewerModal({
                         })
                         setShowExportMenu(false)
                       }}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      className="w-full text-left px-4 py-2 text-sm transition-colors"
+                      style={{ color: 'var(--v2-ink-soft)' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.05)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
                       {opt.label}
                     </button>
@@ -349,7 +375,10 @@ export default function ArtifactViewerModal({
             {onRegenerate && (
               <button
                 onClick={onRegenerate}
-                className="p-2 rounded-lg hover:bg-purple-50 text-gray-500 hover:text-purple-600 transition-colors"
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: 'var(--v2-ink-faint)' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.07)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 title="Regenerar"
               >
                 <RotateCcw className="w-4 h-4" />
@@ -397,7 +426,10 @@ export default function ArtifactViewerModal({
             )}
             <button
               onClick={handleDelete}
-              className="p-2 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors"
+              className="p-2 rounded-lg transition-colors"
+              style={{ color: 'var(--v2-ink-faint)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.color = 'rgb(220,38,38)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--v2-ink-faint)' }}
               title="Excluir"
             >
               <Trash2 className="w-4 h-4" />
@@ -412,30 +444,41 @@ export default function ArtifactViewerModal({
 
         {/* Delete confirmation */}
         {showDeleteConfirm && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 rounded-lg">
-            <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+          <div
+            className="absolute inset-0 z-10 flex items-center justify-center rounded-[inherit]"
+            style={{ background: 'rgba(15,23,42,0.42)', backdropFilter: 'blur(8px)' }}
+          >
+            <div
+              className="rounded-2xl p-6 max-w-sm w-full mx-4"
+              style={{
+                background: 'var(--v2-panel-strong)',
+                border: '1px solid var(--v2-line-soft)',
+                boxShadow: '0 24px 64px rgba(15,23,42,0.20)',
+              }}
+            >
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 rounded-full">
-                  <Trash2 className="w-5 h-5 text-red-600" />
+                <div
+                  className="p-2 rounded-full"
+                  style={{ background: 'rgba(239,68,68,0.10)' }}
+                >
+                  <Trash2 className="w-5 h-5" style={{ color: 'rgb(220,38,38)' }} />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">Excluir artefato</h3>
+                <h3 className="text-base font-bold" style={{ color: 'var(--v2-ink-strong)' }}>Excluir artefato</h3>
               </div>
-              <p className="text-sm text-gray-600 mb-2">
+              <p className="text-sm mb-2" style={{ color: 'var(--v2-ink-soft)' }}>
                 Tem certeza que deseja excluir <strong>&ldquo;{artifact.title}&rdquo;</strong>?
               </p>
-              <p className="text-xs text-red-500 mb-6">
+              <p className="text-xs mb-6" style={{ color: 'rgb(239,68,68)' }}>
                 Esta ação é irreversível.
               </p>
               <div className="flex gap-3 justify-end">
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-                >
+                <button onClick={() => setShowDeleteConfirm(false)} className="v2-btn-secondary">
                   Cancelar
                 </button>
                 <button
                   onClick={confirmDelete}
-                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+                  className="v2-btn-primary"
+                  style={{ background: 'linear-gradient(135deg, rgb(220,38,38), rgb(185,28,28))' }}
                 >
                   Excluir
                 </button>

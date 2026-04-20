@@ -39,7 +39,7 @@ export default function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="v2-modal-overlay"
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -49,23 +49,33 @@ export default function ConfirmDialog({
         }
       }}
     >
-      <div className="w-full max-w-md rounded-xl bg-white border shadow-2xl">
-        <div className="px-5 py-4 border-b flex items-start gap-3">
-          <div className={`rounded-full p-2 ${danger ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+      <div className="v2-modal" style={{ maxWidth: '26rem' }}>
+        <div className="v2-modal-header">
+          <div
+            className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center"
+            style={{
+              background: danger ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)',
+              color: danger ? 'rgb(220,38,38)' : 'rgb(217,119,6)',
+            }}
+          >
             <AlertTriangle className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-            {description && <p className="text-sm text-gray-600 mt-1">{description}</p>}
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>{title}</h2>
+            {description && (
+              <p className="text-sm mt-1 leading-relaxed" style={{ color: 'var(--v2-ink-soft)' }}>
+                {description}
+              </p>
+            )}
           </div>
         </div>
 
-        <div className="px-5 py-4 flex items-center justify-end gap-2">
+        <div className="v2-modal-footer">
           <button
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="v2-btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {cancelText}
           </button>
@@ -73,9 +83,8 @@ export default function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className={`px-3 py-2 text-sm rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed ${
-              danger ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'
-            }`}
+            className="v2-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            style={danger ? { background: 'linear-gradient(135deg,#b91c1c,#991b1b)' } : undefined}
           >
             {loading ? 'Processando...' : confirmText}
           </button>

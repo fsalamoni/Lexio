@@ -209,10 +209,13 @@ export function DeepResearchModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center">
-      {/* Backdrop */}
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center"
+      style={{ background: 'rgba(15,23,42,0.42)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+    >
+      {/* Backdrop click area */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0"
         aria-hidden="true"
         onClick={canClose ? onClose : undefined}
       />
@@ -225,91 +228,117 @@ export function DeepResearchModal({
         aria-labelledby={titleId}
         aria-describedby={subtitle ? subtitleId : undefined}
         tabIndex={-1}
-        className="relative w-full max-w-2xl mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        className="relative w-full max-w-2xl mx-4 flex flex-col overflow-hidden"
+        style={{
+          background: 'var(--v2-panel-strong, rgba(255,255,255,0.97))',
+          border: '1px solid var(--v2-line-soft, rgba(15,23,42,0.08))',
+          borderRadius: '1.75rem',
+          boxShadow: '0 32px 80px rgba(15,23,42,0.22), 0 8px 24px rgba(15,23,42,0.10)',
+          fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)",
+        }}
       >
         {/* Header */}
-        <div className={`${vStyles.gradient} px-6 py-4 flex items-center justify-between`}>
+        <div
+          className="px-6 py-4 flex items-center justify-between"
+          style={{ borderBottom: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.7)' }}
+        >
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/20 rounded-lg">
-              <VariantIcon className="w-5 h-5 text-white" />
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: 'rgba(15,118,110,0.10)', color: 'var(--v2-accent-strong)' }}
+            >
+              <VariantIcon className="w-4.5 h-4.5" />
             </div>
             <div>
-              <h2 id={titleId} className="text-white font-semibold text-base">{title}</h2>
+              <h2 id={titleId} className="text-sm font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>{title}</h2>
               {subtitle && (
-                <p id={subtitleId} className="text-white/80 text-xs mt-0.5 truncate max-w-[300px]">{subtitle}</p>
+                <p id={subtitleId} className="text-xs mt-0.5 truncate max-w-[300px]" style={{ color: 'var(--v2-ink-faint)' }}>{subtitle}</p>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2">
             {!isDone && (
-              <Sparkles className="w-4 h-4 text-white/60 animate-pulse" />
+              <Sparkles className="w-4 h-4 animate-pulse" style={{ color: 'var(--v2-accent-strong)' }} />
             )}
             {canClose && (
               <button
                 ref={closeBtnRef}
                 type="button"
                 onClick={onClose}
-                className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+                className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+                style={{ color: 'var(--v2-ink-faint)' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.07)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 title={isDone ? 'Fechar' : 'Cancelar pesquisa'}
                 aria-label={isDone ? 'Fechar' : 'Cancelar pesquisa'}
               >
-                <X className="w-4 h-4 text-white" />
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
         </div>
 
         {/* Progress bar */}
-        <div className="h-1 bg-gray-100">
+        <div className="h-1" style={{ background: 'var(--v2-line-soft)' }}>
           <div
-            className={`h-full ${hasErrors ? 'bg-red-500' : vStyles.progressBar} transition-all duration-500 ease-out`}
-            style={{ width: `${isDone ? 100 : progressPercent}%` }}
+            className="h-full transition-all duration-500 ease-out"
+            style={{
+              width: `${isDone ? 100 : progressPercent}%`,
+              background: hasErrors ? 'rgb(239,68,68)' : 'var(--v2-accent-strong)',
+            }}
           />
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
+        <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto" style={{ fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)" }}>
           {/* Steps timeline */}
           <div className="space-y-0">
             {steps.map((step, idx) => (
               <div key={step.id} className="flex gap-3">
                 {/* Timeline connector */}
                 <div className="flex flex-col items-center">
-                  <StepIndicator status={step.status} styles={vStyles} />
+                  <StepIndicator status={step.status} />
                   {idx < steps.length - 1 && (
-                    <div className={`w-0.5 flex-1 min-h-[16px] transition-colors duration-300 ${
-                      step.status === 'done' ? vStyles.connectorDone : 'bg-gray-200'
-                    }`} />
+                    <div
+                      className="w-0.5 flex-1 min-h-[16px] transition-colors duration-300"
+                      style={{ background: step.status === 'done' ? 'rgba(15,118,110,0.25)' : 'var(--v2-line-soft)' }}
+                    />
                   )}
                 </div>
 
                 {/* Step content */}
                 <div className="flex-1 pb-4">
                   <div className="flex items-center gap-2">
-                    <span className={`text-sm font-medium transition-colors ${
-                      step.status === 'active' ? 'text-gray-900' :
-                      step.status === 'done' ? 'text-gray-700' :
-                      step.status === 'error' ? 'text-red-700' :
-                      'text-gray-400'
-                    }`}>
+                    <span className="text-sm font-medium transition-colors" style={{
+                      color: step.status === 'active' ? 'var(--v2-ink-strong)' :
+                             step.status === 'done' ? 'var(--v2-ink-soft)' :
+                             step.status === 'error' ? 'rgb(185,28,28)' :
+                             'var(--v2-ink-faint)',
+                    }}>
                       {step.label}
                     </span>
                     {step.status === 'active' && (
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${vStyles.badge} animate-pulse`}>
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold animate-pulse"
+                        style={{ background: 'rgba(15,118,110,0.10)', color: 'var(--v2-accent-strong)' }}
+                      >
                         em andamento
                       </span>
                     )}
                   </div>
                   {step.detail && (
-                    <p className={`text-xs mt-0.5 ${step.status === 'error' ? 'text-red-500' : 'text-gray-500'}`}>
+                    <p
+                      className="text-xs mt-0.5"
+                      style={{ color: step.status === 'error' ? 'rgb(239,68,68)' : 'var(--v2-ink-faint)' }}
+                    >
                       {step.detail}
                     </p>
                   )}
                   {step.substeps.length > 0 && (step.status === 'active' || step.status === 'done') && (
                     <div className="mt-1.5 space-y-0.5">
                       {step.substeps.slice(-4).map((sub, subIdx) => (
-                        <p key={subIdx} className="text-[11px] text-gray-400 flex items-center gap-1.5">
-                          <span className="w-1 h-1 rounded-full bg-gray-300 flex-shrink-0" />
+                        <p key={subIdx} className="text-[11px] flex items-center gap-1.5" style={{ color: 'var(--v2-ink-faint)' }}>
+                          <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'var(--v2-ink-faint)' }} />
                           {sub}
                         </p>
                       ))}
@@ -321,7 +350,10 @@ export function DeepResearchModal({
           </div>
 
           {/* Stats panel */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-gray-50 rounded-xl p-3">
+          <div
+            className="grid grid-cols-2 sm:grid-cols-3 gap-3 rounded-2xl p-4"
+            style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid var(--v2-line-soft)' }}
+          >
             {stats.sourcesFound > 0 && (
               <StatCard icon={Search} label="Fontes" value={stats.sourcesFound} />
             )}
@@ -340,23 +372,32 @@ export function DeepResearchModal({
 
           {/* Live log */}
           {allLogEntries.length > 0 && (
-            <div className="bg-gray-900 rounded-lg p-3 max-h-32 overflow-y-auto font-mono" ref={logRef} aria-live="polite" aria-atomic="false">
+            <div
+              className="rounded-xl p-3 max-h-32 overflow-y-auto font-mono"
+              style={{ background: 'rgba(15,23,42,0.88)', border: '1px solid rgba(255,255,255,0.08)' }}
+              ref={logRef}
+              aria-live="polite"
+              aria-atomic="false"
+            >
               {allLogEntries.slice(-15).map((entry, i) => (
-                <p key={i} className="text-[10px] text-gray-400 leading-relaxed">
-                  <span className="text-gray-600 select-none">{String(i + 1).padStart(2, '0')} </span>
+                <p key={i} className="text-[10px] leading-relaxed" style={{ color: 'rgba(156,163,175,1)' }}>
+                  <span className="select-none" style={{ color: 'rgba(75,85,99,1)' }}>{String(i + 1).padStart(2, '0')} </span>
                   {entry}
                 </p>
               ))}
               {!isDone && (
-                <p className="text-[10px] text-green-400 animate-pulse">▎</p>
+                <p className="text-[10px] animate-pulse" style={{ color: 'rgba(52,211,153,1)' }}>▎</p>
               )}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-between bg-gray-50">
-          <p className="text-[11px] text-gray-400">
+        <div
+          className="px-6 py-3 flex items-center justify-between"
+          style={{ borderTop: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.6)' }}
+        >
+          <p className="text-xs" style={{ color: 'var(--v2-ink-faint)' }}>
             {isDone
               ? hasErrors
                 ? `Concluído com erros em ${formatMs(displayElapsed)}`
@@ -370,13 +411,8 @@ export function DeepResearchModal({
             <button
               type="button"
               onClick={onClose}
-              className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                isDone
-                  ? hasErrors
-                    ? 'bg-gray-600 text-white hover:bg-gray-700'
-                    : vStyles.doneBtn
-                  : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-              }`}
+              className="v2-btn-secondary"
+              style={{ minHeight: '2.25rem', padding: '0.5rem 1rem', fontSize: '0.8125rem' }}
             >
               {isDone ? 'Fechar' : 'Cancelar'}
             </button>
@@ -391,30 +427,31 @@ export function DeepResearchModal({
 
 type VariantStyleMap = typeof VARIANT_STYLES[keyof typeof VARIANT_STYLES]
 
-function StepIndicator({ status, styles }: { status: ResearchStep['status']; styles: VariantStyleMap }) {
+function StepIndicator({ status }: { status: ResearchStep['status'] }) {
+  const base = 'w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0'
   switch (status) {
     case 'done':
       return (
-        <div className={`w-6 h-6 rounded-full ${styles.stepIndicatorBg} flex items-center justify-center`}>
-          <CheckCircle2 className={`w-4 h-4 ${styles.stepIndicatorIcon}`} />
+        <div className={base} style={{ background: 'rgba(15,118,110,0.12)' }}>
+          <CheckCircle2 className="w-4 h-4" style={{ color: 'var(--v2-accent-strong)' }} />
         </div>
       )
     case 'active':
       return (
-        <div className={`w-6 h-6 rounded-full ${styles.stepIndicatorBg} flex items-center justify-center`}>
-          <Loader2 className={`w-4 h-4 ${styles.stepIndicatorIcon} animate-spin`} />
+        <div className={base} style={{ background: 'rgba(15,118,110,0.12)' }}>
+          <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--v2-accent-strong)' }} />
         </div>
       )
     case 'error':
       return (
-        <div className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center">
-          <AlertCircle className="w-4 h-4 text-red-600" />
+        <div className={base} style={{ background: 'rgba(239,68,68,0.10)' }}>
+          <AlertCircle className="w-4 h-4" style={{ color: 'rgb(220,38,38)' }} />
         </div>
       )
     default:
       return (
-        <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center">
-          <div className="w-2 h-2 rounded-full bg-gray-300" />
+        <div className={base} style={{ background: 'var(--v2-line-soft)' }}>
+          <div className="w-2 h-2 rounded-full" style={{ background: 'var(--v2-ink-faint)' }} />
         </div>
       )
   }
@@ -436,10 +473,10 @@ function StatCard({
   if (hidden) return null
   return (
     <div className="flex items-center gap-2">
-      <Icon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+      <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--v2-ink-faint)' }} />
       <div>
-        <p className="text-[10px] text-gray-400 uppercase tracking-wide">{label}</p>
-        <p className="text-sm font-semibold text-gray-700">
+        <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--v2-ink-faint)' }}>{label}</p>
+        <p className="text-sm font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>
           {isText ? value : typeof value === 'number' ? value.toLocaleString('pt-BR') : value}
         </p>
       </div>

@@ -58,6 +58,15 @@ body {
 .ProseMirror mark { background-color: #fef08a; border-radius: 2px; padding: 0 2px; }
 .ProseMirror blockquote { border-left: 4px solid #e5e7eb; padding-left: 1rem; color: #6b7280; margin: 1rem 0; }
 .ProseMirror code { background: #f3f4f6; border-radius: 4px; padding: 1px 5px; font-size: 0.875em; font-family: monospace; }
+.ProseMirror a { color: #0891b2; text-decoration: underline; cursor: pointer; }
+.ProseMirror a:hover { color: #0e7490; }
+/* Table styles */
+.ProseMirror table { border-collapse: collapse; width: 100%; margin: 1rem 0; table-layout: fixed; }
+.ProseMirror th, .ProseMirror td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; min-width: 80px; vertical-align: top; position: relative; box-sizing: border-box; }
+.ProseMirror th { background: #f8fafc; font-weight: 600; font-size: 0.875rem; color: #374151; }
+.ProseMirror td { font-size: 0.875rem; }
+.ProseMirror .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgba(15,118,110,0.10); pointer-events: none; }
+.ProseMirror .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: -2px; width: 4px; background: rgba(15,118,110,0.4); cursor: col-resize; pointer-events: all; }
 .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
@@ -90,8 +99,8 @@ body {
 
 /* ─── Workspace V2 tokens & primitives ──────────────────────── */
 :root {
-  --v2-font-sans: 'IBM Plex Sans', 'Segoe UI', sans-serif;
-  --v2-font-display: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --v2-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --v2-font-display: 'Georgia', 'Palatino Linotype', 'Book Antiqua', serif;
   --v2-canvas: #f5f1e8;
   --v2-panel: rgba(255, 252, 247, 0.78);
   --v2-panel-strong: rgba(255, 255, 255, 0.92);
@@ -108,6 +117,51 @@ body {
 
 .v2-theme {
   font-family: var(--v2-font-sans);
+}
+
+/* ─── V2 Modal overlay ───────────────────────────────────────── */
+.v2-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.v2-modal {
+  background: var(--v2-panel-strong);
+  border: 1px solid var(--v2-line-soft);
+  border-radius: 1.75rem;
+  box-shadow: 0 32px 80px rgba(15, 23, 42, 0.22), 0 8px 24px rgba(15, 23, 42, 0.1);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--v2-font-sans);
+}
+
+.v2-modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--v2-line-soft);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.v2-modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--v2-line-soft);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .v2-display {
