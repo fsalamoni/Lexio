@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildResearchNotebookClassicPath,
-  buildResearchNotebookPath,
   buildResearchNotebookWorkbenchPath,
   buildResearchNotebookV2Path,
   parseResearchNotebookLegacyTab,
@@ -21,25 +19,6 @@ describe('research-notebook-routes', () => {
     expect(parseResearchNotebookV2Section('studio')).toBe('studio')
     expect(parseResearchNotebookV2Section('BRIDGE')).toBe('overview')
     expect(parseResearchNotebookV2Section(null)).toBe('overview')
-  })
-
-  it('builds classic notebook fallback links with preview params preserved', () => {
-    const path = buildResearchNotebookClassicPath({
-      notebookId: 'nb-1',
-      tab: 'studio',
-      artifactType: 'resumo',
-      studioPrompt: 'Foco pratico',
-      preserveSearch: '?labs=1',
-    })
-
-    expect(path).toBe('/notebook/classic?open=nb-1&tab=studio&artifact_type=resumo&studio_prompt=Foco+pratico')
-    expect(buildResearchNotebookPath({
-      notebookId: 'nb-1',
-      tab: 'studio',
-      artifactType: 'resumo',
-      studioPrompt: 'Foco pratico',
-      preserveSearch: '?labs=1',
-    })).toBe(path)
   })
 
   it('builds primary notebook workbench links with preview params preserved', () => {

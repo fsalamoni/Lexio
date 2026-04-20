@@ -7,7 +7,6 @@ import {
   buildWorkspaceDocumentEditPath,
   buildWorkspaceDocumentsPath,
   buildWorkspaceNewDocumentPath,
-  buildWorkspaceProfileClassicPath,
   buildWorkspaceProfilePath,
   buildWorkspaceSettingsCostsPath,
   buildWorkspaceSettingsPath,
@@ -44,7 +43,6 @@ describe('workspace-routes', () => {
     expect(buildWorkspaceAdminPath({ preserveSearch: '?labs=1' })).toBe('/admin')
     expect(buildWorkspaceAdminCostsPath({ preserveSearch: '?labs=1' })).toBe('/admin/costs')
     expect(buildWorkspaceProfilePath({ preserveSearch: '?labs=1' })).toBe('/profile')
-    expect(buildWorkspaceProfileClassicPath({ preserveSearch: '?labs=1' })).toBe('/profile/classic')
   })
 
   it('resolves common shell links through one centralized builder', () => {

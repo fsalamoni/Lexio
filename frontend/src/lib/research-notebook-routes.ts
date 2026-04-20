@@ -48,43 +48,6 @@ export function buildResearchNotebookWorkbenchPath(options?: {
   })
 }
 
-export function buildResearchNotebookClassicPath(options?: {
-  notebookId?: string | null
-  tab?: ResearchNotebookLegacyTab | null
-  artifactType?: StudioArtifactType | null
-  studioPrompt?: string | null
-  preserveSearch?: string
-}) {
-  const notebookId = options?.notebookId?.trim()
-
-  return buildRedesignPreviewPath('/notebook/classic', {
-    preserveSearch: options?.preserveSearch,
-    params: notebookId
-      ? {
-          open: notebookId,
-          tab: options?.tab && options.tab !== 'overview' ? options.tab : null,
-          artifact_type: options?.tab === 'studio' ? options?.artifactType : null,
-          studio_prompt: options?.tab === 'studio' ? options?.studioPrompt : null,
-        }
-      : {
-          open: null,
-          tab: null,
-          artifact_type: null,
-          studio_prompt: null,
-        },
-  })
-}
-
-export function buildResearchNotebookPath(options?: {
-  notebookId?: string | null
-  tab?: ResearchNotebookLegacyTab | null
-  artifactType?: StudioArtifactType | null
-  studioPrompt?: string | null
-  preserveSearch?: string
-}) {
-  return buildResearchNotebookClassicPath(options)
-}
-
 export function buildResearchNotebookV2Path(options?: {
   notebookId?: string | null
   section?: ResearchNotebookV2Section | null

@@ -91,12 +91,6 @@ export function buildWorkspaceProfilePath(options?: WorkspaceRouteOptions) {
   }), options?.hash)
 }
 
-export function buildWorkspaceProfileClassicPath(options?: WorkspaceRouteOptions) {
-  return appendHash(buildRedesignPreviewPath('/profile/classic', {
-    preserveSearch: options?.preserveSearch,
-  }), options?.hash)
-}
-
 export function buildWorkspaceShellPath(pathname: string, options?: WorkspaceRouteOptions) {
   switch (pathname) {
     case '/':
@@ -119,8 +113,6 @@ export function buildWorkspaceShellPath(pathname: string, options?: WorkspaceRou
       return buildWorkspaceAdminCostsPath(options)
     case '/profile':
       return buildWorkspaceProfilePath(options)
-    case '/profile/classic':
-      return buildWorkspaceProfileClassicPath(options)
     case '/notebook':
       return buildResearchNotebookWorkbenchPath({ preserveSearch: options?.preserveSearch })
     default:

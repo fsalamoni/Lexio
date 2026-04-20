@@ -152,7 +152,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               icon={icon}
               end={to === '/'}
               onClick={onClose}
-              activePatterns={to === '/notebook' ? ['/notebook', '/notebook/classic', '/labs/notebook-v2'] : activePatterns}
+              activePatterns={to === '/notebook' ? ['/notebook'] : activePatterns}
               inactivePatterns={inactivePatterns}
             />
           ))}
