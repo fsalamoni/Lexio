@@ -8,7 +8,7 @@ export default function NotFound() {
         <div className="w-20 h-20 bg-teal-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
           <FileQuestion className="w-10 h-10 text-teal-400" />
         </div>
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">404</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">404</h1>
         <h2 className="text-xl font-semibold text-gray-700 mb-3">Página não encontrada</h2>
         <p className="text-gray-500 mb-8">
           A página que você está procurando não existe ou foi movida.

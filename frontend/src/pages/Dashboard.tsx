@@ -88,7 +88,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="text-lg font-bold text-gray-900">Dashboard</h1>
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
           {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
@@ -100,7 +100,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <h1 className="text-lg font-bold text-gray-900">Dashboard</h1>
           {IS_FIREBASE && firebaseAuth?.currentUser && (
             <p className="text-sm text-gray-500 mt-0.5">
               {new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 18 ? 'Boa tarde' : 'Boa noite'}
@@ -167,7 +167,7 @@ export default function Dashboard() {
                 <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{card.label}</span>
                 <card.icon className={`w-4 h-4 ${card.label === 'Em Revisão' && stats.pending_review_documents > 0 ? 'text-blue-500' : 'text-gray-400'}`} />
               </div>
-              <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+              <p className="text-lg font-bold text-gray-900">{card.value}</p>
               {card.label === 'Total de Documentos' && stats.processing_documents > 0 && (
                 <p className="text-xs text-yellow-600 mt-1 flex items-center gap-1">
                   <Clock className="w-3 h-3" /> {stats.processing_documents} em processamento

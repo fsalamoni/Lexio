@@ -24,7 +24,7 @@ export function V2MetricCard({ label, value, helper, icon: Icon, tone = 'default
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">{label}</p>
-          <p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p>
+          <p className="mt-2 text-xl font-semibold tracking-tight">{value}</p>
           {helper ? <p className="mt-2 text-sm text-[var(--v2-ink-soft)]">{helper}</p> : null}
         </div>
         {Icon ? <Icon className="mt-1 h-5 w-5 flex-shrink-0 text-[var(--v2-accent-strong)]" /> : null}
@@ -35,7 +35,7 @@ export function V2MetricCard({ label, value, helper, icon: Icon, tone = 'default
 
 export function V2MetricGrid({ items, className = '' }: { items: MetricItem[]; className?: string }) {
   return (
-    <div className={`grid gap-4 md:grid-cols-2 xl:grid-cols-4 ${className}`.trim()}>
+    <div className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${className}`.trim()}>
       {items.map((item) => (
         <V2MetricCard key={item.label} {...item} />
       ))}
@@ -62,8 +62,8 @@ export function V2PageHero({
         <div className="space-y-4">
           {eyebrow ? <div className="v2-kicker">{eyebrow}</div> : null}
           <div className="space-y-3">
-            <h1 className="v2-display text-4xl leading-tight text-[var(--v2-ink-strong)]">{title}</h1>
-            <p className="max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">{description}</p>
+            <h1 className="v2-display text-2xl leading-snug text-[var(--v2-ink-strong)]">{title}</h1>
+            <p className="max-w-3xl text-sm leading-6 text-[var(--v2-ink-soft)]">{description}</p>
           </div>
           {actions ? <div className="flex flex-wrap items-center gap-3">{actions}</div> : null}
         </div>

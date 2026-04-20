@@ -60,7 +60,7 @@ export default function ResetPassword() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Scale className="w-12 h-12 text-teal-600 mx-auto mb-3" />
-          <h1 className="text-3xl font-bold text-teal-900">Lexio</h1>
+          <h1 className="text-2xl font-bold text-teal-900">Lexio</h1>
           <p className="text-gray-500 mt-1">Produção Jurídica com IA</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border p-8 space-y-4">

@@ -176,7 +176,7 @@ export default function CostBreakdownModal({
                       <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--v2-ink-faint)' }}>{card.label}</span>
                       <card.icon className={`w-4 h-4 ${card.color}`} />
                     </div>
-                    <p className="text-2xl font-bold" style={{ color: 'var(--v2-ink-strong)' }}>{card.value}</p>
+                    <p className="text-lg font-bold" style={{ color: 'var(--v2-ink-strong)' }}>{card.value}</p>
                   </div>
                 ))}
               </div>

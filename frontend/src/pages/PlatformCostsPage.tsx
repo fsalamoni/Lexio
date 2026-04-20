@@ -19,7 +19,7 @@ function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label
         <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--v2-ink-faint)]">{label}</span>
         <Icon className="w-4 h-4 text-[var(--v2-accent-strong)]" />
       </div>
-      <p className="mt-3 text-2xl font-bold text-[var(--v2-ink-strong)]">{value}</p>
+      <p className="mt-2 text-lg font-bold text-[var(--v2-ink-strong)]">{value}</p>
     </div>
   )
 }

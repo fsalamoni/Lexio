@@ -414,7 +414,7 @@ export default function ProfileV2() {
               Perfil profissional
             </div>
             <div className="space-y-3">
-              <h1 className="v2-display text-4xl leading-tight text-[var(--v2-ink-strong)]">Seu contexto juridico</h1>
+              <h1 className="v2-display text-2xl leading-snug text-[var(--v2-ink-strong)]">Seu contexto juridico</h1>
               <p className="max-w-2xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
                 Gerencie suas preferencias de redacao, areas de atuacao e estilo de argumentacao. Estas informacoes orientam a geracao de documentos pela IA.
               </p>
@@ -436,7 +436,7 @@ export default function ProfileV2() {
             <div className="flex flex-col gap-3 border-b border-[var(--v2-line-soft)] pb-5 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">plataforma</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--v2-ink-strong)]">Aparencia e formatos</h2>
+                <h2 className="mt-2 text-lg font-semibold tracking-tight text-[var(--v2-ink-strong)]">Aparencia e formatos</h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--v2-ink-soft)]">Defina o tema visual e os padroes de moeda, localizacao, datas e numeros em todo o workspace.</p>
               </div>
               <div className="inline-flex items-center gap-2 rounded-full bg-[rgba(15,23,42,0.06)] px-3 py-1.5 text-xs font-semibold text-[var(--v2-ink-soft)]">
@@ -539,7 +539,7 @@ export default function ProfileV2() {
                 <div className="flex flex-col gap-3 border-b border-[var(--v2-line-soft)] pb-5 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">perfil</p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--v2-ink-strong)]">{section.title}</h2>
+                    <h2 className="mt-2 text-lg font-semibold tracking-tight text-[var(--v2-ink-strong)]">{section.title}</h2>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--v2-ink-soft)]">{section.description}</p>
                   </div>
                   <div className="inline-flex items-center gap-2 rounded-full bg-[rgba(15,23,42,0.06)] px-3 py-1.5 text-xs font-semibold text-[var(--v2-ink-soft)]">
@@ -567,7 +567,7 @@ export default function ProfileV2() {
             <div className="flex flex-col gap-3 border-b border-[var(--v2-line-soft)] pb-5 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">security</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--v2-ink-strong)]">Seguranca de acesso</h2>
+                <h2 className="mt-2 text-lg font-semibold tracking-tight text-[var(--v2-ink-strong)]">Seguranca de acesso</h2>
                 <p className="mt-2 text-sm leading-6 text-[var(--v2-ink-soft)]">Atualize a senha sem sair da superficie de configuracao.</p>
               </div>
               <div className="inline-flex items-center gap-2 rounded-full bg-[rgba(15,23,42,0.06)] px-3 py-1.5 text-xs font-semibold text-[var(--v2-ink-soft)]">
@@ -612,7 +612,7 @@ export default function ProfileV2() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--v2-ink-faint)]">Prontidao do perfil</p>
             <div className="mt-4 flex items-end justify-between gap-4">
               <div>
-                <p className="v2-display text-5xl leading-none">{completion}%</p>
+                <p className="v2-display text-3xl leading-none">{completion}%</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--v2-ink-soft)]">Campos essenciais preenchidos para alimentar geracao, pesquisa e automacoes.</p>
               </div>
               <div className="rounded-[1.2rem] bg-[rgba(13,148,136,0.12)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-accent-strong)]">

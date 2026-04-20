@@ -174,7 +174,7 @@ export default function ReportViewer({ content, title, pageMode }: ReportViewerP
                 {showToc ? 'Ocultar índice' : 'Mostrar índice'}
               </button>
             )}
-            {title && <h1 className="text-2xl font-bold mb-6" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{title}</h1>}
+            {title && <h1 className="text-xl font-bold mb-4" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{title}</h1>}
             <div
               ref={contentRef}
               className="max-w-none [&_table]:w-full [&_table]:border-collapse"
@@ -226,7 +226,7 @@ export default function ReportViewer({ content, title, pageMode }: ReportViewerP
               </button>
             )}
 
-            {title && <h1 className="text-2xl font-bold mb-6" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{title}</h1>}
+            {title && <h1 className="text-xl font-bold mb-4" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{title}</h1>}
 
             <div
               ref={contentRef}
