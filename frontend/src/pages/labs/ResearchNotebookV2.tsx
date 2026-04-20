@@ -35,7 +35,6 @@ import {
 import type { NotebookMessage, NotebookResearchAuditEntry } from '../../lib/firestore-types'
 import { humanizeError } from '../../lib/error-humanizer'
 import {
-  buildResearchNotebookClassicPath,
   buildResearchNotebookWorkbenchPath,
   parseResearchNotebookV2Section,
   type ResearchNotebookV2Section,
@@ -1165,7 +1164,7 @@ export default function ResearchNotebookV2() {
     })
 
     const notebookId = activeNotebook.id
-    const taskName = `Vídeo V2: ${activeNotebook.topic.slice(0, 40)}`
+    const taskName = `Vídeo: ${activeNotebook.topic.slice(0, 40)}`
     let reportTaskProgress: (update: {
       progress: number
       phase: string
@@ -1617,7 +1616,7 @@ export default function ResearchNotebookV2() {
       return
     }
 
-    const taskName = `Vídeo literal V2: ${production.title.slice(0, 40)}`
+    const taskName = `Vídeo literal: ${production.title.slice(0, 40)}`
     let reportTaskProgress: (update: {
       progress: number
       phase: string
@@ -1843,7 +1842,7 @@ export default function ResearchNotebookV2() {
     }
 
     const taskId = startTask(
-      `Estúdio V2: ${artifactDef?.label || artifactType}`,
+      `Estúdio: ${artifactDef?.label || artifactType}`,
       async (onTaskProgress) => {
         let studioOperationalSummary = createEmptyOperationalSummary()
         const studioOperationalEventKeys = new Set<string>()
@@ -1945,7 +1944,7 @@ export default function ResearchNotebookV2() {
             setShowStudioProgressModal(false)
             setVideoGenSavedArtifact(artifact)
             setShowVideoGenCost(true)
-            toast.success('Roteiro de vídeo salvo. Revise o custo e confirme a produção no V2.')
+            toast.success('Roteiro de vídeo salvo. Revise o custo e confirme a produção.')
           } else {
             toast.success(
               REVIEWABLE_ARTIFACT_TYPES.includes(artifactType)
@@ -4002,21 +4001,7 @@ Instruções:
   const recentSources = activeNotebook ? [...activeNotebook.sources].slice(-4).reverse() : []
   const recentArtifacts = activeNotebook ? [...activeNotebook.artifacts].slice(-4).reverse() : []
   const trimmedStudioCustomPrompt = studioCustomPrompt.trim()
-  const studioBridgePrompt = trimmedStudioCustomPrompt.slice(0, STUDIO_BRIDGE_PROMPT_LIMIT)
   const includedStudioSources = studioAudit.sourceEntries.filter((entry) => entry.included)
-  const buildLegacyStudioPath = (artifactType?: StudioArtifactType | null) => activeNotebook?.id
-    ? buildResearchNotebookClassicPath({
-        notebookId: activeNotebook.id,
-        tab: 'studio',
-        preserveSearch: location.search,
-        artifactType: artifactType || null,
-        studioPrompt: studioBridgePrompt || null,
-      })
-    : buildResearchNotebookClassicPath({ preserveSearch: location.search })
-  const legacyStudioPath = buildLegacyStudioPath()
-  const legacyArtifactsPath = activeNotebook?.id
-    ? buildResearchNotebookClassicPath({ notebookId: activeNotebook.id, tab: 'artifacts', preserveSearch: location.search })
-    : buildResearchNotebookClassicPath({ preserveSearch: location.search })
   const buildWorkbenchPath = (section?: ResearchNotebookV2Section | null) => activeNotebook?.id
     ? buildResearchNotebookWorkbenchPath({
         notebookId: activeNotebook.id,
@@ -4026,10 +4011,9 @@ Instruções:
     : buildResearchNotebookWorkbenchPath({ preserveSearch: location.search })
   const workbenchSourcesPath = buildWorkbenchPath('sources')
   const workbenchStudioPath = buildWorkbenchPath('studio')
-  const workbenchBridgePath = buildWorkbenchPath('bridge')
   const structuredArtifactCount = activeNotebook?.artifacts.filter((artifact) => artifact.format === 'json').length || 0
   const mediaArtifactCount = activeNotebook?.artifacts.filter((artifact) => MEDIA_ARTIFACT_TYPES.has(artifact.type)).length || 0
-  const legacyOnlyArtifactCount = 0
+  const pendingSourceCount = Math.max(0, snapshot ? snapshot.sourceCount - snapshot.indexedSourceCount : 0)
 
   if (!IS_FIREBASE) {
     return (
@@ -4038,7 +4022,7 @@ Instruções:
           <div className="space-y-3">
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--v2-line-strong)] bg-[rgba(255,255,255,0.82)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--v2-ink-soft)]">
               <Sparkles className="h-3.5 w-3.5" />
-              Notebook V2
+              Notebook
             </div>
             <h1 className="v2-display text-4xl text-[var(--v2-ink-strong)]">Caderno de pesquisa requer Firebase ativo</h1>
             <p className="max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
@@ -4046,7 +4030,6 @@ Instruções:
             </p>
             <div className="flex flex-wrap gap-3 pt-2">
               <Link to={buildWorkspaceSettingsPath({ preserveSearch: location.search })} className="v2-btn-primary">Abrir configurações</Link>
-              <Link to={buildResearchNotebookClassicPath({ preserveSearch: location.search })} className="v2-btn-secondary">Abrir notebook clássico</Link>
             </div>
           </div>
         </section>
@@ -4076,11 +4059,6 @@ Instruções:
                 <Plus className="h-4 w-4" />
                 {showCreateForm ? 'Fechar criação' : 'Novo caderno'}
               </button>
-              {activeNotebook?.id && (
-                <Link to={workbenchBridgePath} className="v2-btn-secondary">
-                  Modo classico
-                </Link>
-              )}
             </div>
           </div>
 
@@ -4213,7 +4191,7 @@ Instruções:
               <BookOpen className="mx-auto h-10 w-10 text-[var(--v2-accent-strong)]" />
               <h2 className="mt-4 text-2xl font-semibold text-[var(--v2-ink-strong)]">Escolha um caderno para abrir o workbench.</h2>
               <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-[var(--v2-ink-soft)]">
-                A superfície V2 combina deck executivo, gestão de fontes, análise inteligente de acervo, estúdio completo e uma trilha opcional de contingência clássica. Assim que um item for selecionado, o contexto passa a refletir seus dados reais.
+                Deck executivo, gestão de fontes, análise inteligente de acervo e estúdio completo. Assim que um item for selecionado, o contexto passa a refletir seus dados reais.
               </p>
             </div>
           ) : (
@@ -4241,7 +4219,6 @@ Instruções:
                       <button type="button" onClick={() => handleChangeSection('sources')} className={`v2-chip ${activeSection === 'sources' ? 'v2-chip-active' : ''}`}>Fontes e ingestão</button>
                       <button type="button" onClick={() => handleChangeSection('studio')} className={`v2-chip ${activeSection === 'studio' ? 'v2-chip-active' : ''}`}>Studio briefing</button>
                       <button type="button" onClick={() => handleChangeSection('artifacts')} className={`v2-chip ${activeSection === 'artifacts' ? 'v2-chip-active' : ''}`}>Artefatos e viewer</button>
-                      <button type="button" onClick={() => handleChangeSection('bridge')} className={`v2-chip ${activeSection === 'bridge' ? 'v2-chip-active' : ''}`}>Contingência clássica</button>
                     </div>
                   </div>
 
@@ -4249,21 +4226,17 @@ Instruções:
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Ações rápidas</p>
                     <div className="mt-4 grid gap-3">
                       <button type="button" onClick={() => handleChangeSection('chat')} className="flex items-center justify-between rounded-[1.2rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] px-4 py-3 text-sm font-semibold text-[var(--v2-ink-strong)] hover:-translate-y-0.5">
-                        Abrir chat V2
+                        Abrir chat
                         <MessageSquareText className="h-4 w-4" />
                       </button>
                       <button type="button" onClick={() => handleChangeSection('studio')} className="flex items-center justify-between rounded-[1.2rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] px-4 py-3 text-sm font-semibold text-[var(--v2-ink-strong)] hover:-translate-y-0.5">
-                        Preparar estúdio V2
+                        Preparar estúdio
                         <Sparkles className="h-4 w-4" />
                       </button>
                       <button type="button" onClick={() => handleChangeSection('artifacts')} className="flex items-center justify-between rounded-[1.2rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] px-4 py-3 text-sm font-semibold text-[var(--v2-ink-strong)] hover:-translate-y-0.5">
-                        Abrir artefatos V2
+                        Abrir artefatos
                         <FileText className="h-4 w-4" />
                       </button>
-                      <Link to={workbenchBridgePath} className="flex items-center justify-between rounded-[1.2rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] px-4 py-3 text-sm font-semibold text-[var(--v2-ink-strong)] hover:-translate-y-0.5">
-                        Mapa de contingência
-                        <ExternalLink className="h-4 w-4" />
-                      </Link>
                     </div>
                   </div>
                 </div>
@@ -4299,7 +4272,7 @@ Instruções:
                           <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Janela de contexto do workbench</h3>
                         </div>
                         <Link to={workbenchSourcesPath} className="v2-btn-secondary">
-                          Abrir fontes no V2
+                          Abrir fontes
                         </Link>
                       </div>
 
@@ -4357,7 +4330,7 @@ Instruções:
                           <p>{snapshot.savedSearchCount} busca(s) salva(s) disponível(is) para replay.</p>
                           <p>{snapshot.researchAuditCount} auditoria(s) de pesquisa preservada(s).</p>
                           <button type="button" onClick={() => handleChangeSection('sources')} className="inline-flex items-center gap-2 font-semibold text-[var(--v2-accent-strong)] hover:underline">
-                            Abrir governança de busca no V2
+                            Abrir governança de busca
                             <ArrowRight className="h-3.5 w-3.5" />
                           </button>
                         </div>
@@ -4445,7 +4418,7 @@ Instruções:
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Assistente do workbench</p>
                           <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Chat contextual com memória auditável</h3>
                           <p className="mt-2 text-sm leading-6 text-[var(--v2-ink-soft)]">
-                            A conversa já opera no V2 com fontes do caderno, janela recente de mensagens, histórico de buscas e busca web opcional.
+                            A conversa opera com fontes do caderno, janela recente de mensagens, histórico de buscas e busca web opcional.
                           </p>
                         </div>
 
@@ -4650,13 +4623,10 @@ Instruções:
                     </section>
 
                     <section className="v2-panel p-5">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Contingência clássica</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Cobertura do workbench</p>
                       <div className="mt-4 space-y-3 text-sm leading-6 text-[var(--v2-ink-soft)]">
-                        <p>O workbench novo agora já cobre seleção persistente, fontes auditáveis, acervo, chat, estúdio, viewer, custo de vídeo, timeline persistida e produção literal. O clássico fica preservado como contingência assistida e trilha de comparação, não mais como passo obrigatório.</p>
-                        <Link to={workbenchBridgePath} className="inline-flex items-center gap-2 font-semibold text-[var(--v2-accent-strong)] hover:underline">
-                          Explorar rotas clássicas
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Link>
+                        <p>Esta superficie já cobre seleção persistente, fontes auditáveis, acervo, chat, estúdio, viewer, custo de vídeo, timeline e produção literal.</p>
+                        <p>Para acelerar a operação, use os atalhos internos do caderno para navegar entre chat, fontes, briefing e inventário de artefatos.</p>
                       </div>
                     </section>
                   </aside>
@@ -5301,16 +5271,10 @@ Instruções:
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Studio briefing</p>
-                          <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Prepare e execute a geração no V2</h3>
+                          <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Prepare e execute a geração</h3>
                           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)]">
-                            Auditoria de contexto, instruções adicionais, taxonomia de artefatos, trilha multiagente, revisão de custo de vídeo, timeline persistida e produção literal agora vivem no workbench novo. O clássico fica preservado apenas como contingência assistida e trilha de comparação.
+                            Auditoria de contexto, instruções adicionais, taxonomia de artefatos, trilha multiagente, revisão de custo de vídeo, timeline persistida e produção literal vivem neste fluxo nativo.
                           </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <Link to={workbenchBridgePath} className="v2-btn-secondary">
-                            Ver rotas clássicas
-                          </Link>
                         </div>
                       </div>
 
@@ -5328,8 +5292,8 @@ Instruções:
                             className="mt-3 w-full rounded-[1.3rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.88)] px-4 py-3 text-sm leading-6 text-[var(--v2-ink-strong)] outline-none transition focus:border-[var(--v2-accent-strong)] focus:ring-2 focus:ring-[rgba(15,118,110,0.12)]"
                           />
                           <p className="mt-2 text-xs text-[var(--v2-ink-soft)]">
-                            Se você optar pela contingência clássica, o briefing adicional acompanha essa trilha em até {STUDIO_BRIDGE_PROMPT_LIMIT} caracteres.
-                            {trimmedStudioCustomPrompt.length > STUDIO_BRIDGE_PROMPT_LIMIT ? ' O excedente permanece apenas nesta superfície para a execução principal no V2.' : ''}
+                            Mantenha o briefing adicional em até {STUDIO_BRIDGE_PROMPT_LIMIT} caracteres para acelerar o processamento e facilitar iterações.
+                            {trimmedStudioCustomPrompt.length > STUDIO_BRIDGE_PROMPT_LIMIT ? ' O excedente pode aumentar o tempo de geração.' : ''}
                           </p>
                         </div>
 
@@ -5474,15 +5438,15 @@ Instruções:
                                         className="v2-btn-secondary"
                                       >
                                         {runningTask ? <Eye className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
-                                        {runningTask ? 'Abrir trilha' : 'Gerar no V2'}
+                                        {runningTask ? 'Abrir trilha' : 'Gerar'}
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => navigate(buildLegacyStudioPath(artifact.type))}
+                                        onClick={() => handleChangeSection('artifacts')}
                                         className="v2-btn-secondary"
                                       >
                                         <ExternalLink className="h-4 w-4" />
-                                        Abrir no clássico
+                                        Ver no inventário
                                       </button>
                                     </div>
                                   </div>
@@ -5507,7 +5471,7 @@ Instruções:
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Artefatos</p>
                           <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{ARTIFACT_CATEGORIES.reduce((total, category) => total + category.items.length, 0)}</p>
-                          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">tipos iniciáveis a partir do V2</p>
+                          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">tipos iniciáveis a partir do estúdio</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Fontes úteis</p>
@@ -5515,21 +5479,20 @@ Instruções:
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">fontes já promovidas para o estúdio</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
-                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Contingência</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{studioBridgePrompt.length}</p>
-                          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">chars prontos para uma comparação clássica</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Briefing</p>
+                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{trimmedStudioCustomPrompt.length}</p>
+                          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">chars de instrução adicional</p>
                         </div>
                       </div>
                     </section>
 
                     <section className="v2-panel p-5">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">O que ainda fica fora</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Fluxo consolidado</p>
                       <div className="mt-4 space-y-3 text-sm leading-6 text-[var(--v2-ink-soft)]">
-                        <p>A geração base, a revisão de custo do vídeo, o editor de timeline e a produção literal já rodam aqui no V2 com persistência no próprio caderno.</p>
-                        <p>A superfície clássica continua útil para comparação funcional, validações cruzadas e contingência manual, sem carregar a operação principal do workbench novo.</p>
+                        <p>A geração base, a revisão de custo do vídeo, o editor de timeline e a produção literal já rodam com persistência no próprio caderno.</p>
+                        <p>Use a mesma superficie para pesquisar, gerar, revisar e reaproveitar artefatos sem alternar para trilhas externas.</p>
                         <div className="flex flex-wrap gap-2 pt-1">
-                          <Link to={workbenchBridgePath} className="v2-btn-secondary">Mapa de contingência</Link>
-                          <button type="button" onClick={() => handleChangeSection('artifacts')} className="v2-btn-secondary">Revisar artefatos no V2</button>
+                          <button type="button" onClick={() => handleChangeSection('artifacts')} className="v2-btn-secondary">Revisar artefatos</button>
                         </div>
                       </div>
                     </section>
@@ -5544,16 +5507,10 @@ Instruções:
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Inventário de artefatos</p>
-                          <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Viewer, estúdio e pós-geração agora vivem no V2</h3>
+                          <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Viewer, estúdio e pós-geração</h3>
                           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)]">
-                            Abra resumos, relatórios, documentos, apresentações, roteiros, pacotes de vídeo persistidos e demais saídas do estúdio diretamente nesta superfície. O V2 agora também assume a revisão de custo, a timeline e a produção literal de vídeo.
+                            Abra resumos, relatórios, documentos, apresentações, roteiros, pacotes de vídeo persistidos e demais saídas do estúdio diretamente nesta superfície. Aqui também ficam revisão de custo, timeline e produção literal de vídeo.
                           </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <Link to={workbenchBridgePath} className="v2-btn-secondary">
-                            Ver rotas clássicas
-                          </Link>
                         </div>
                       </div>
                     </section>
@@ -5571,7 +5528,7 @@ Instruções:
 
                       {activeNotebook.artifacts.length === 0 ? (
                         <div className="mt-5 rounded-[1.2rem] border border-dashed border-[var(--v2-line-strong)] px-4 py-10 text-center text-sm text-[var(--v2-ink-soft)]">
-                          Ainda não existem artefatos gerados para este caderno. Use o estúdio V2 para criar a primeira saída e depois volte para revisar o inventário aqui.
+                          Ainda não existem artefatos gerados para este caderno. Use o estúdio para criar a primeira saída e depois volte para revisar o inventário aqui.
                         </div>
                       ) : (
                         <div className="mt-5 space-y-3">
@@ -5618,10 +5575,10 @@ Instruções:
                                       </p>
                                       <p className="mt-2 text-xs leading-6 text-[var(--v2-ink-soft)] line-clamp-2">
                                         {artifact.type === 'video_production'
-                                          ? 'Abra o estúdio V2 para editar timeline, revisar mídia literal e salvar o pacote persistido.'
+                                          ? 'Abra o estúdio para editar timeline, revisar mídia literal e salvar o pacote persistido.'
                                           : savedStudio
-                                            ? 'Use o viewer V2 para inspeção textual rápida ou abra o estúdio V2 para continuar a produção de vídeo.'
-                                            : 'Abra no viewer V2 para inspecionar conteúdo, exportações suportadas e exclusão controlada.'}
+                                            ? 'Use o viewer para inspeção textual rápida ou abra o estúdio para continuar a produção de vídeo.'
+                                            : 'Abra no viewer para inspecionar conteúdo, exportações suportadas e exclusão controlada.'}
                                       </p>
                                     </div>
                                   </button>
@@ -5709,9 +5666,9 @@ Instruções:
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">áudio, vídeo e pacotes</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
-                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Modo classico</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{legacyOnlyArtifactCount}</p>
-                          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">item(ns) no formato anterior</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Pendentes</p>
+                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{pendingSourceCount}</p>
+                          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">fonte(s) ainda sem indexacao completa</p>
                         </div>
                       </div>
                     </section>
@@ -5719,10 +5676,10 @@ Instruções:
                     <section className="v2-panel p-5">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Atalhos rapidos</p>
                       <div className="mt-4 space-y-3 text-sm leading-6 text-[var(--v2-ink-soft)]">
-                        <p>Acesse o estudio de criacao ou o modo classico diretamente a partir dos atalhos abaixo.</p>
+                        <p>Acesse o estudio de criacao e o painel de fontes diretamente a partir dos atalhos abaixo.</p>
                         <div className="flex flex-wrap gap-2 pt-1">
                           <Link to={workbenchStudioPath} className="v2-btn-secondary">Abrir estudio</Link>
-                          <Link to={workbenchBridgePath} className="v2-btn-secondary">Modo classico</Link>
+                          <Link to={workbenchSourcesPath} className="v2-btn-secondary">Abrir fontes</Link>
                         </div>
                       </div>
                     </section>
@@ -5730,44 +5687,6 @@ Instruções:
                 </div>
               )}
 
-              {activeSection === 'bridge' && (
-                <div className="space-y-6">
-                  <section className="v2-panel p-6">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Modo classico</p>
-                        <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Notebook classico</h3>
-                        <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)]">
-                          Acesse a versao classica do caderno de pesquisa para consultar fluxos anteriores ou como alternativa de contingencia.
-                        </p>
-                      </div>
-                      <Link to={buildResearchNotebookClassicPath({ notebookId: activeNotebook.id, preserveSearch: location.search })} className="v2-btn-primary">Abrir notebook classico</Link>
-                    </div>
-                  </section>
-
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {[
-                      { label: 'Chat classico', description: 'Acesse o chat do notebook classico para consultar conversas anteriores.', tab: 'chat' as const, icon: MessageSquareText },
-                      { label: 'Estudio classico', description: 'Use o estudio classico para acessar fluxos de criacao anteriores.', tab: 'studio' as const, icon: Sparkles },
-                      { label: 'Artefatos classicos', description: 'Consulte artefatos gerados anteriormente no formato classico.', tab: 'artifacts' as const, icon: FileText },
-                    ].map((item) => (
-                      <Link key={item.tab} to={buildResearchNotebookClassicPath({ notebookId: activeNotebook.id, tab: item.tab, preserveSearch: location.search })} className="v2-panel flex h-full flex-col gap-4 px-5 py-5 hover:-translate-y-0.5">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(15,118,110,0.12)] text-[var(--v2-accent-strong)]">
-                          <item.icon className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{item.label}</p>
-                          <p className="mt-2 text-sm leading-6 text-[var(--v2-ink-soft)]">{item.description}</p>
-                        </div>
-                        <div className="mt-auto inline-flex items-center gap-2 text-sm font-semibold text-[var(--v2-accent-strong)]">
-                          Abrir agora
-                          <ArrowRight className="h-4 w-4" />
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </main>

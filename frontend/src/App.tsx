@@ -4,14 +4,8 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { TaskManagerProvider } from './contexts/TaskManagerContext'
 import { ToastProvider } from './components/Toast'
 import TaskBar from './components/TaskBar'
-import Layout from './components/Layout'
-import { isRedesignV2Enabled } from './lib/feature-flags'
 import { useApplyPlatformSkin } from './components/ThemeSkinSelector'
-import { buildResearchNotebookWorkbenchPath, parseResearchNotebookV2Section } from './lib/research-notebook-routes'
-import { shouldUseRedesignWorkspaceShell } from './lib/redesign-shell'
 import {
-  buildWorkspaceDashboardPath,
-  buildWorkspaceProfilePath,
   buildWorkspaceSettingsPath,
 } from './lib/workspace-routes'
 
@@ -19,7 +13,7 @@ const Login = lazy(() => import('./pages/auth/Login'))
 const Register = lazy(() => import('./pages/auth/Register'))
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'))
 const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
+const DashboardV2 = lazy(() => import('./pages/labs/DashboardV2'))
 const DocumentList = lazy(() => import('./pages/DocumentList'))
 const NewDocument = lazy(() => import('./pages/NewDocument'))
 const DocumentDetail = lazy(() => import('./pages/DocumentDetail'))
@@ -31,11 +25,8 @@ const PlatformAdminPanel = lazy(() => import('./pages/PlatformAdminPanel'))
 const PlatformCostsPage = lazy(() => import('./pages/PlatformCostsPage'))
 const Onboarding = lazy(() => import('./pages/Onboarding'))
 const ThesisBank = lazy(() => import('./pages/ThesisBank'))
-const ResearchNotebook = lazy(() => import('./pages/ResearchNotebook'))
-const Profile = lazy(() => import('./pages/Profile'))
-const ProfileV2 = lazy(() => import('./pages/labs/ProfileV2'))
-const DashboardV2 = lazy(() => import('./pages/labs/DashboardV2'))
 const ResearchNotebookV2 = lazy(() => import('./pages/labs/ResearchNotebookV2'))
+const ProfileV2 = lazy(() => import('./pages/labs/ProfileV2'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 const V2WorkspaceLayout = lazy(() => import('./components/v2/V2WorkspaceLayout'))
 
@@ -64,84 +55,29 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function buildNotebookAliasTarget(search: string) {
-  const params = new URLSearchParams(search)
-  return buildResearchNotebookWorkbenchPath({
-    notebookId: params.get('open'),
-    section: parseResearchNotebookV2Section(params.get('section')),
-    preserveSearch: search,
-  })
-}
-
-function V2LabRoute({
-  children,
-  fallbackResolver,
-}: {
-  children: React.ReactNode
-  fallbackResolver?: (search: string) => string
-}) {
-  const location = useLocation()
-  if (!isRedesignV2Enabled()) {
-    return <Navigate to={(fallbackResolver?.(location.search) || buildWorkspaceProfilePath({ preserveSearch: location.search }))} replace />
-  }
-  return <>{children}</>
-}
-
-function ResearchNotebookV2AliasRoute() {
-  const location = useLocation()
-  return <Navigate to={buildNotebookAliasTarget(location.search)} replace />
-}
-
-function ProfileRoute() {
-  return isRedesignV2Enabled() ? <ProfileV2 /> : <Profile />
-}
-
-function ProfileV2AliasRoute() {
-  const location = useLocation()
-  return <Navigate to={buildWorkspaceProfilePath({ preserveSearch: location.search })} replace />
-}
-
-function DashboardRoute() {
-  return isRedesignV2Enabled() ? <DashboardV2 /> : <Dashboard />
-}
-
-function DashboardV2AliasRoute() {
-  const location = useLocation()
-  return <Navigate to={buildWorkspaceDashboardPath({ preserveSearch: location.search })} replace />
-}
-
 function AuthenticatedShell() {
-  const location = useLocation()
-  const redesignV2Enabled = isRedesignV2Enabled()
-  const useV2Shell = shouldUseRedesignWorkspaceShell(location.pathname, redesignV2Enabled)
-  const Shell = useV2Shell ? V2WorkspaceLayout : Layout
   useApplyPlatformSkin()
 
   return (
-    <Shell>
+    <V2WorkspaceLayout>
       <Routes>
-        <Route path="/" element={<DashboardRoute />} />
+        <Route path="/" element={<DashboardV2 />} />
         <Route path="/documents" element={<DocumentList />} />
         <Route path="/documents/new" element={<NewDocument />} />
         <Route path="/documents/:id" element={<DocumentDetail />} />
         <Route path="/documents/:id/edit" element={<DocumentEditor />} />
         <Route path="/upload" element={<Upload />} />
         <Route path="/theses" element={<ThesisBank />} />
-        <Route path="/notebook" element={redesignV2Enabled ? <ResearchNotebookV2 /> : <ResearchNotebook />} />
-        <Route path="/notebook/classic" element={<ResearchNotebook />} />
+        <Route path="/notebook" element={<ResearchNotebookV2 />} />
         <Route path="/settings" element={<SettingsPanel />} />
         <Route path="/settings/costs" element={<PersonalCostTokensPage />} />
         <Route path="/admin" element={<AdminRoute><PlatformAdminPanel /></AdminRoute>} />
         <Route path="/admin/costs" element={<AdminRoute><PlatformCostsPage /></AdminRoute>} />
         <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/profile" element={<ProfileRoute />} />
-        <Route path="/profile/classic" element={<Profile />} />
-        <Route path="/labs/dashboard-v2" element={<V2LabRoute fallbackResolver={(search) => buildWorkspaceDashboardPath({ preserveSearch: search })}><DashboardV2AliasRoute /></V2LabRoute>} />
-        <Route path="/labs/notebook-v2" element={<V2LabRoute fallbackResolver={buildNotebookAliasTarget}><ResearchNotebookV2AliasRoute /></V2LabRoute>} />
-        <Route path="/labs/profile-v2" element={<V2LabRoute fallbackResolver={(search) => buildWorkspaceProfilePath({ preserveSearch: search })}><ProfileV2AliasRoute /></V2LabRoute>} />
+        <Route path="/profile" element={<ProfileV2 />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
-    </Shell>
+    </V2WorkspaceLayout>
   )
 }
 

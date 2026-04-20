@@ -411,7 +411,7 @@ export default function DocumentDetail() {
         { label: docLabel },
       ]} />
       <V2PageHero
-        eyebrow={<><FileText className="h-3.5 w-3.5" /> Documento V2</>}
+        eyebrow={<><FileText className="h-3.5 w-3.5" /> Documento</>}
         title={docLabel}
         description={doc.tema || 'Documento em processamento no workspace.'}
         actions={doc.origem === 'caderno' && doc.notebook_id ? (

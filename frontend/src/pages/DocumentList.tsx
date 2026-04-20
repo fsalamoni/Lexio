@@ -255,7 +255,7 @@ export default function DocumentList() {
   return (
     <div className="space-y-6 v2-bridge-surface">
       <V2PageHero
-        eyebrow={<><FileText className="h-3.5 w-3.5" /> Documentos V2</>}
+        eyebrow={<><FileText className="h-3.5 w-3.5" /> Documentos</>}
         title="Fila documental, filtros operacionais e retomada rapida em um unico quadro"
         description="Navegue por status, origem, periodo e qualidade sem sair do workspace principal, mantendo acesso direto ao gerador e aos workbenches relacionados." 
         actions={(

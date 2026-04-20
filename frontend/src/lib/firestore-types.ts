@@ -50,6 +50,14 @@ export interface UserSettingsData {
   legal_areas?: AdminLegalArea[]
   /** Active platform skin/theme ID */
   platform_skin?: string
+  /** Preferred currency for UI values and reports. */
+  currency_preference?: 'BRL' | 'USD' | 'EUR'
+  /** Preferred locale for date/number rendering. */
+  locale_preference?: 'pt-BR' | 'en-US' | 'es-ES'
+  /** Preferred date format shown across workspace surfaces. */
+  date_format_preference?: 'dd/MM/yyyy' | 'MM/dd/yyyy' | 'yyyy-MM-dd'
+  /** Number notation preference for large numeric values. */
+  compact_numbers?: boolean
   classification_tipos?: Record<string, Record<string, string[]>>
   platform_admin_alert_thresholds?: PlatformAdminAlertThresholds
   platform_admin_alert_profile?: PlatformAdminAlertProfile

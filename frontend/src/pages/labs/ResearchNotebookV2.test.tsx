@@ -198,12 +198,11 @@ function makeNotebook(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function renderWorkbench(route = '/labs/notebook-v2?open=nb-1&section=overview') {
+function renderWorkbench(route = '/notebook?open=nb-1&section=overview') {
   return render(
     <MemoryRouter initialEntries={[route]}>
       <Routes>
         <Route path="/notebook" element={<ResearchNotebookV2 />} />
-        <Route path="/labs/notebook-v2" element={<ResearchNotebookV2 />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -227,7 +226,7 @@ describe('ResearchNotebookV2 page', () => {
     updateResearchNotebookMock.mockResolvedValue(undefined)
   })
 
-  it('renders the workbench with V2-first actions after hydrating the notebook', async () => {
+  it('renders the workbench with canonical quick actions after hydrating the notebook', async () => {
     renderWorkbench()
 
     await waitFor(() => {
@@ -235,15 +234,14 @@ describe('ResearchNotebookV2 page', () => {
     })
 
     expect(await screen.findByRole('heading', { name: 'Nepotismo administrativo' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /contingência clássica/i })).toBeTruthy()
-    expect(screen.getByRole('link', { name: /modo classico/i })).toBeTruthy()
-    expect(screen.queryByRole('link', { name: /abrir notebook clássico/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /abrir chat/i })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /contingência clássica/i })).toBeNull()
   })
 
-  it('navigates from the overview deck to the sources section through the V2 path', async () => {
+  it('navigates from the overview deck to the sources section through the canonical path', async () => {
     renderWorkbench()
 
-    const openSourcesLink = await screen.findByRole('link', { name: /abrir fontes no v2/i })
+    const openSourcesLink = await screen.findByRole('link', { name: /abrir fontes/i })
     fireEvent.click(openSourcesLink)
 
     expect(await screen.findByText('Pesquisadores de fonte')).toBeTruthy()
@@ -252,20 +250,20 @@ describe('ResearchNotebookV2 page', () => {
     })
   })
 
-  it('shows the V2-first empty state when opening the artifacts section directly', async () => {
-    renderWorkbench('/labs/notebook-v2?open=nb-1&section=artifacts')
+  it('shows the empty state when opening the artifacts section directly', async () => {
+    renderWorkbench('/notebook?open=nb-1&section=artifacts')
 
-    expect(await screen.findByText('Viewer, estúdio e pós-geração agora vivem no V2')).toBeTruthy()
-    expect(screen.getByText(/use o estúdio v2 para criar a primeira saída/i)).toBeTruthy()
+    expect(await screen.findByText('Viewer, estúdio e pós-geração')).toBeTruthy()
+    expect(screen.getByText(/use o estúdio para criar a primeira saída/i)).toBeTruthy()
   })
 
-  it('switches to the contingency section from the workbench chip', async () => {
+  it('switches to the studio section from quick actions', async () => {
     renderWorkbench()
 
-    const contingencyChip = await screen.findByRole('button', { name: /contingência clássica/i })
-    fireEvent.click(contingencyChip)
+    const studioButton = await screen.findByRole('button', { name: /preparar estúdio/i })
+    fireEvent.click(studioButton)
 
-    expect(await screen.findByText('Notebook classico')).toBeTruthy()
-    expect(screen.getByText('Estudio classico')).toBeTruthy()
+    expect(await screen.findByText('Prepare e execute a geração')).toBeTruthy()
+    expect(screen.getAllByText('Studio briefing').length).toBeGreaterThan(0)
   })
 })

@@ -876,7 +876,7 @@ export default function PlatformAdminPanel() {
   return (
     <div className="space-y-6">
       <V2PageHero
-        eyebrow={<><Shield className="h-3.5 w-3.5" /> Governanca da plataforma V2</>}
+        eyebrow={<><Shield className="h-3.5 w-3.5" /> Governanca da plataforma</>}
         title="Uso agregado, calibracao de memoria e sinais de risco sob uma unica cabine executiva"
         description="Monitore volume operacional, alertas de memoria dedicada, trilha de calibracao e indicadores de crescimento sem perder contexto sobre custos e qualidade da plataforma."
         aside={(

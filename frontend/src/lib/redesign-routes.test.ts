@@ -17,6 +17,6 @@ describe('redesign-routes', () => {
       params: { section: 'overview' },
     })
 
-    expect(path).toBe('/labs/profile-v2?labs=1&section=overview')
+    expect(path).toBe('/labs/profile-v2?section=overview')
   })
 })

@@ -166,7 +166,7 @@ export default function PlatformCostsPage() {
   return (
     <div className="space-y-6">
       <V2PageHero
-        eyebrow={<><Scale className="h-3.5 w-3.5" /> Custos agregados V2</>}
+        eyebrow={<><Scale className="h-3.5 w-3.5" /> Custos agregados</>}
         title="Custos, tokens e pressao operacional da plataforma em camada executiva"
         description="Superficie agregada para acompanhar gasto total, distribuicao por provedor, peso de cada funcao e consumo por tipo de documento em toda a operacao."
         aside={(

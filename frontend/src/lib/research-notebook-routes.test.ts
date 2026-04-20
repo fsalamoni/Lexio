@@ -19,7 +19,7 @@ describe('research-notebook-routes', () => {
     expect(parseResearchNotebookV2Section('chat')).toBe('chat')
     expect(parseResearchNotebookV2Section('sources')).toBe('sources')
     expect(parseResearchNotebookV2Section('studio')).toBe('studio')
-    expect(parseResearchNotebookV2Section('BRIDGE')).toBe('bridge')
+    expect(parseResearchNotebookV2Section('BRIDGE')).toBe('overview')
     expect(parseResearchNotebookV2Section(null)).toBe('overview')
   })
 
@@ -32,7 +32,7 @@ describe('research-notebook-routes', () => {
       preserveSearch: '?labs=1',
     })
 
-    expect(path).toBe('/notebook/classic?labs=1&open=nb-1&tab=studio&artifact_type=resumo&studio_prompt=Foco+pratico')
+    expect(path).toBe('/notebook/classic?open=nb-1&tab=studio&artifact_type=resumo&studio_prompt=Foco+pratico')
     expect(buildResearchNotebookPath({
       notebookId: 'nb-1',
       tab: 'studio',
@@ -49,7 +49,7 @@ describe('research-notebook-routes', () => {
       preserveSearch: '?labs=1',
     })
 
-    expect(path).toBe('/notebook?labs=1&open=nb-2&section=studio')
+    expect(path).toBe('/notebook?open=nb-2&section=studio')
   })
 
   it('builds notebook V2 deep links with preview params preserved', () => {
@@ -59,6 +59,6 @@ describe('research-notebook-routes', () => {
       preserveSearch: '?redesign_v2=1',
     })
 
-    expect(path).toBe('/labs/notebook-v2?redesign_v2=1&open=nb-3&section=sources')
+    expect(path).toBe('/notebook?open=nb-3&section=sources')
   })
 })

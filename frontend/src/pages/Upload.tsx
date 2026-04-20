@@ -1391,7 +1391,7 @@ export default function Upload() {
       />
 
       <V2PageHero
-        eyebrow={<><UploadIcon className="h-3.5 w-3.5" /> Acervo V2</>}
+        eyebrow={<><UploadIcon className="h-3.5 w-3.5" /> Acervo</>}
         title="Upload, classificacao e enriquecimento do acervo dentro do novo workspace"
         description="Envie arquivos, acompanhe extração e indexação, gere ementas e tags em lote e mantenha o acervo pronto para abastecer redacao, notebook e analises." 
         actions={(

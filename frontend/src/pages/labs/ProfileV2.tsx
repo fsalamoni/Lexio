@@ -1,25 +1,138 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
 import { BadgeCheck, Lock, Save, ShieldCheck, Sparkles, User } from 'lucide-react'
 import api, { invalidateApiCache } from '../../api/client'
 import { Skeleton } from '../../components/Skeleton'
+import ThemeSkinSelector from '../../components/ThemeSkinSelector'
 import { useToast } from '../../components/Toast'
 import { useAuth } from '../../contexts/AuthContext'
 import { IS_FIREBASE, firebaseAuth } from '../../lib/firebase'
-import { getProfile, saveProfile } from '../../lib/firestore-service'
+import { getProfile, getUserSettings, saveProfile, saveUserSettings } from '../../lib/firestore-service'
 import { PROFILE_SECTIONS, type ProfileData, type ProfileField } from '../../lib/profile-preferences'
 import { calculateProfileCompletion, countSectionFields, PROFILE_CORE_FIELDS } from '../../lib/profile-progress'
-import { buildWorkspaceProfileClassicPath } from '../../lib/workspace-routes'
+
+type CurrencyPreference = 'BRL' | 'USD' | 'EUR'
+type LocalePreference = 'pt-BR' | 'en-US' | 'es-ES'
+type DateFormatPreference = 'dd/MM/yyyy' | 'MM/dd/yyyy' | 'yyyy-MM-dd'
+
+type PlatformPreferences = {
+  currency_preference: CurrencyPreference
+  locale_preference: LocalePreference
+  date_format_preference: DateFormatPreference
+  compact_numbers: boolean
+}
+
+const PLATFORM_PREFS_STORAGE_KEY = 'lexio_platform_preferences'
+
+const DEFAULT_PLATFORM_PREFERENCES: PlatformPreferences = {
+  currency_preference: 'BRL',
+  locale_preference: 'pt-BR',
+  date_format_preference: 'dd/MM/yyyy',
+  compact_numbers: false,
+}
+
+function normalizePlatformPreferences(raw: Partial<PlatformPreferences> | null | undefined): PlatformPreferences {
+  const currency = raw?.currency_preference
+  const locale = raw?.locale_preference
+  const dateFormat = raw?.date_format_preference
+
+  return {
+    currency_preference: currency === 'USD' || currency === 'EUR' || currency === 'BRL' ? currency : DEFAULT_PLATFORM_PREFERENCES.currency_preference,
+    locale_preference: locale === 'en-US' || locale === 'es-ES' || locale === 'pt-BR' ? locale : DEFAULT_PLATFORM_PREFERENCES.locale_preference,
+    date_format_preference: dateFormat === 'MM/dd/yyyy' || dateFormat === 'yyyy-MM-dd' || dateFormat === 'dd/MM/yyyy'
+      ? dateFormat
+      : DEFAULT_PLATFORM_PREFERENCES.date_format_preference,
+    compact_numbers: Boolean(raw?.compact_numbers),
+  }
+}
+
+function loadStoredPlatformPreferences(): PlatformPreferences {
+  try {
+    const raw = localStorage.getItem(PLATFORM_PREFS_STORAGE_KEY)
+    if (!raw) return DEFAULT_PLATFORM_PREFERENCES
+    return normalizePlatformPreferences(JSON.parse(raw) as Partial<PlatformPreferences>)
+  } catch {
+    return DEFAULT_PLATFORM_PREFERENCES
+  }
+}
+
+function persistPlatformPreferences(preferences: PlatformPreferences) {
+  try {
+    localStorage.setItem(PLATFORM_PREFS_STORAGE_KEY, JSON.stringify(preferences))
+  } catch {
+    // Ignore local storage quota issues.
+  }
+}
+
+function formatSampleDate(dateFormat: DateFormatPreference, locale: LocalePreference) {
+  const date = new Date('2026-04-19T00:00:00.000Z')
+  const parts = new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).formatToParts(date)
+
+  const day = parts.find((part) => part.type === 'day')?.value || '19'
+  const month = parts.find((part) => part.type === 'month')?.value || '04'
+  const year = parts.find((part) => part.type === 'year')?.value || '2026'
+
+  if (dateFormat === 'MM/dd/yyyy') return `${month}/${day}/${year}`
+  if (dateFormat === 'yyyy-MM-dd') return `${year}-${month}-${day}`
+  return `${day}/${month}/${year}`
+}
 
 export default function ProfileV2() {
-  const location = useLocation()
   const [profile, setProfile] = useState<ProfileData>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [platformPreferences, setPlatformPreferences] = useState<PlatformPreferences>(loadStoredPlatformPreferences)
+  const [platformPrefsDirty, setPlatformPrefsDirty] = useState(false)
+  const [platformPrefsSaving, setPlatformPrefsSaving] = useState(false)
   const [pwForm, setPwForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
   const [savingPw, setSavingPw] = useState(false)
   const { userId } = useAuth()
   const toast = useToast()
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadPlatformPreferences = async () => {
+      if (!IS_FIREBASE || !userId) {
+        const localPrefs = loadStoredPlatformPreferences()
+        if (!cancelled) {
+          setPlatformPreferences(localPrefs)
+          setPlatformPrefsDirty(false)
+        }
+        return
+      }
+
+      try {
+        const settings = await getUserSettings(userId)
+        const normalized = normalizePlatformPreferences({
+          currency_preference: settings.currency_preference,
+          locale_preference: settings.locale_preference,
+          date_format_preference: settings.date_format_preference,
+          compact_numbers: settings.compact_numbers,
+        })
+
+        if (!cancelled) {
+          setPlatformPreferences(normalized)
+          persistPlatformPreferences(normalized)
+          setPlatformPrefsDirty(false)
+        }
+      } catch {
+        if (!cancelled) {
+          const localPrefs = loadStoredPlatformPreferences()
+          setPlatformPreferences(localPrefs)
+        }
+      }
+    }
+
+    void loadPlatformPreferences()
+
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
 
   useEffect(() => {
     if (IS_FIREBASE && userId) {
@@ -57,6 +170,56 @@ export default function ProfileV2() {
       return { ...prev, [key]: updated }
     })
   }
+
+  const updatePlatformPreference = <T extends keyof PlatformPreferences>(
+    key: T,
+    value: PlatformPreferences[T],
+  ) => {
+    setPlatformPreferences((current) => {
+      const updated = { ...current, [key]: value }
+      persistPlatformPreferences(updated)
+      return updated
+    })
+    setPlatformPrefsDirty(true)
+  }
+
+  const handleSavePlatformPreferences = async () => {
+    setPlatformPrefsSaving(true)
+    try {
+      persistPlatformPreferences(platformPreferences)
+      if (IS_FIREBASE && userId) {
+        await saveUserSettings(userId, {
+          currency_preference: platformPreferences.currency_preference,
+          locale_preference: platformPreferences.locale_preference,
+          date_format_preference: platformPreferences.date_format_preference,
+          compact_numbers: platformPreferences.compact_numbers,
+        })
+      }
+      setPlatformPrefsDirty(false)
+      toast.success('Preferencias da plataforma atualizadas')
+    } catch (err: any) {
+      const { humanizeError } = await import('../../lib/error-humanizer')
+      const humanized = humanizeError(err)
+      toast.error('Erro ao salvar preferencias da plataforma', humanized.detail)
+    } finally {
+      setPlatformPrefsSaving(false)
+    }
+  }
+
+  const currencyPreview = useMemo(() => {
+    const value = platformPreferences.currency_preference === 'BRL'
+      ? 2840.75
+      : platformPreferences.currency_preference === 'EUR'
+        ? 510.24
+        : 560.32
+
+    return value.toLocaleString(platformPreferences.locale_preference, {
+      style: 'currency',
+      currency: platformPreferences.currency_preference,
+      notation: platformPreferences.compact_numbers ? 'compact' : 'standard',
+      maximumFractionDigits: 2,
+    })
+  }, [platformPreferences])
 
   const handleSave = async () => {
     setSaving(true)
@@ -259,9 +422,6 @@ export default function ProfileV2() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Link to={buildWorkspaceProfileClassicPath({ preserveSearch: location.search })} className="v2-btn-secondary">
-              Versao simplificada
-            </Link>
             <button type="button" onClick={handleSave} disabled={saving} className="v2-btn-primary disabled:cursor-not-allowed disabled:opacity-60">
               <Save className="h-4 w-4" />
               {saving ? 'Salvando...' : 'Salvar alteracoes'}
@@ -272,13 +432,113 @@ export default function ProfileV2() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
+          <section className="v2-panel p-6 lg:p-7">
+            <div className="flex flex-col gap-3 border-b border-[var(--v2-line-soft)] pb-5 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">plataforma</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--v2-ink-strong)]">Aparencia e formatos</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--v2-ink-soft)]">Defina o tema visual e os padroes de moeda, localizacao, datas e numeros em todo o workspace.</p>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[rgba(15,23,42,0.06)] px-3 py-1.5 text-xs font-semibold text-[var(--v2-ink-soft)]">
+                <BadgeCheck className="h-4 w-4 text-[var(--v2-accent-strong)]" />
+                Preferencias pessoais da interface
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-6">
+              <ThemeSkinSelector />
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-[var(--v2-ink-strong)]">Moeda padrao</label>
+                  <select
+                    value={platformPreferences.currency_preference}
+                    onChange={(event) => updatePlatformPreference('currency_preference', event.target.value as CurrencyPreference)}
+                    className="v2-field"
+                  >
+                    <option value="BRL">Real brasileiro (BRL)</option>
+                    <option value="USD">Dolar americano (USD)</option>
+                    <option value="EUR">Euro (EUR)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-[var(--v2-ink-strong)]">Localizacao</label>
+                  <select
+                    value={platformPreferences.locale_preference}
+                    onChange={(event) => updatePlatformPreference('locale_preference', event.target.value as LocalePreference)}
+                    className="v2-field"
+                  >
+                    <option value="pt-BR">Portugues (Brasil)</option>
+                    <option value="en-US">English (United States)</option>
+                    <option value="es-ES">Espanol (Espana)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-[var(--v2-ink-strong)]">Formato de data</label>
+                  <select
+                    value={platformPreferences.date_format_preference}
+                    onChange={(event) => updatePlatformPreference('date_format_preference', event.target.value as DateFormatPreference)}
+                    className="v2-field"
+                  >
+                    <option value="dd/MM/yyyy">dd/MM/yyyy</option>
+                    <option value="MM/dd/yyyy">MM/dd/yyyy</option>
+                    <option value="yyyy-MM-dd">yyyy-MM-dd</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-[var(--v2-ink-strong)]">Numeracao</label>
+                  <button
+                    type="button"
+                    onClick={() => updatePlatformPreference('compact_numbers', !platformPreferences.compact_numbers)}
+                    className={platformPreferences.compact_numbers ? 'v2-toggle v2-toggle-active' : 'v2-toggle'}
+                  >
+                    <span className="v2-toggle-track">
+                      <span className="v2-toggle-thumb" />
+                    </span>
+                    <span className="text-sm font-medium">
+                      {platformPreferences.compact_numbers ? 'Compacta (ex.: 1,2 mi)' : 'Completa (ex.: 1.200.000)'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-[1.2rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.78)] px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Preview de moeda</p>
+                  <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{currencyPreview}</p>
+                </div>
+                <div className="rounded-[1.2rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.78)] px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Preview de data</p>
+                  <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                    {formatSampleDate(platformPreferences.date_format_preference, platformPreferences.locale_preference)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleSavePlatformPreferences()}
+                  disabled={!platformPrefsDirty || platformPrefsSaving}
+                  className="v2-btn-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Save className="h-4 w-4" />
+                  {platformPrefsSaving ? 'Salvando...' : 'Salvar preferencias da plataforma'}
+                </button>
+              </div>
+            </div>
+          </section>
+
           {PROFILE_SECTIONS.map((section) => {
             const sectionCompletion = countSectionFields(profile, section.fields)
             return (
               <section key={section.id} className="v2-panel p-6 lg:p-7">
                 <div className="flex flex-col gap-3 border-b border-[var(--v2-line-soft)] pb-5 sm:flex-row sm:items-end sm:justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">{section.id}</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">perfil</p>
                     <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--v2-ink-strong)]">{section.title}</h2>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--v2-ink-soft)]">{section.description}</p>
                   </div>
@@ -378,6 +638,10 @@ export default function ProfileV2() {
               <div className="rounded-[1.2rem] bg-[rgba(255,255,255,0.78)] px-4 py-3">
                 <p className="font-semibold text-[var(--v2-ink-strong)]">Profundidade IA</p>
                 <p>{profile.detail_level || 'Nao definida'} · {profile.argument_depth || 'sem nivel de argumento'}</p>
+              </div>
+              <div className="rounded-[1.2rem] bg-[rgba(255,255,255,0.78)] px-4 py-3">
+                <p className="font-semibold text-[var(--v2-ink-strong)]">Padrao regional</p>
+                <p>{platformPreferences.currency_preference} · {platformPreferences.locale_preference} · {platformPreferences.date_format_preference}</p>
               </div>
             </div>
           </section>

@@ -358,7 +358,7 @@ export default function NewDocument() {
   return (
     <div className="max-w-2xl space-y-6 v2-bridge-surface">
       <V2PageHero
-        eyebrow={<><FileText className="h-3.5 w-3.5" /> Gerador V2</>}
+        eyebrow={<><FileText className="h-3.5 w-3.5" /> Gerador</>}
         title="Configure o caso e dispare a trilha multiagente sem sair do novo workspace"
         description="Defina tipo documental, areas, contexto e escopo da solicitacao para iniciar uma geracao guiada por pipeline, com visibilidade de custo e aprofundamento opcional de contexto." 
         aside={(

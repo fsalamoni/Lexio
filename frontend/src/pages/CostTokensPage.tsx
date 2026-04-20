@@ -540,7 +540,7 @@ export default function CostTokensPage() {
   return (
     <div className="space-y-6">
       <V2PageHero
-        eyebrow={<><DollarSign className="h-3.5 w-3.5" /> Custos e tokens V2</>}
+        eyebrow={<><DollarSign className="h-3.5 w-3.5" /> Custos e tokens</>}
         title="Consumo, orçamento e sinais de custo em uma única superficie operacional"
         description="Acompanhe gasto consolidado, volume de tokens, uso por pipeline e limites preventivos sem sair do workspace principal."
         aside={(

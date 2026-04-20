@@ -83,7 +83,7 @@ export function buildDashboardPriorityActions(input: {
       key: 'profile',
       title: 'Refinar contexto profissional',
       description: 'Melhore defaults de redacao e contexto institucional.',
-      to: '/labs/profile-v2',
+      to: '/profile',
       tone: 'ink',
     })
   }

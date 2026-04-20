@@ -4,7 +4,7 @@ import type { StudioArtifactType } from './firestore-service'
 export const RESEARCH_NOTEBOOK_LEGACY_TABS = ['overview', 'chat', 'sources', 'studio', 'artifacts'] as const
 export type ResearchNotebookLegacyTab = (typeof RESEARCH_NOTEBOOK_LEGACY_TABS)[number]
 
-export const RESEARCH_NOTEBOOK_V2_SECTIONS = ['overview', 'chat', 'sources', 'studio', 'artifacts', 'bridge'] as const
+export const RESEARCH_NOTEBOOK_V2_SECTIONS = ['overview', 'chat', 'sources', 'studio', 'artifacts'] as const
 export type ResearchNotebookV2Section = (typeof RESEARCH_NOTEBOOK_V2_SECTIONS)[number]
 
 function normalizeValue(value: string | null | undefined) {
@@ -92,7 +92,7 @@ export function buildResearchNotebookV2Path(options?: {
 }) {
   const notebookId = options?.notebookId?.trim()
 
-  return buildRedesignPreviewPath('/labs/notebook-v2', {
+  return buildRedesignPreviewPath('/notebook', {
     preserveSearch: options?.preserveSearch,
     params: notebookId
       ? {

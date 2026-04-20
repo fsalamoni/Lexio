@@ -36,14 +36,7 @@ export function isRedesignV2DefaultHomeEnabledFromInputs(options: {
 }
 
 export function isRedesignV2Enabled() {
-  const search = typeof window === 'undefined' ? '' : window.location.search
-  const hostname = typeof window === 'undefined' ? '' : window.location.hostname
-  return isRedesignV2EnabledFromInputs({
-    isDev: import.meta.env.DEV,
-    envValue: import.meta.env.VITE_REDESIGN_V2,
-    search,
-    hostname,
-  })
+  return true
 }
 
 export function isRedesignV2DefaultHomeEnabled() {

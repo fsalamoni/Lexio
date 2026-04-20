@@ -527,7 +527,7 @@ export default function ThesisBank() {
       />
 
       <V2PageHero
-        eyebrow={<><BookOpen className="h-3.5 w-3.5" /> Banco de teses V2</>}
+        eyebrow={<><BookOpen className="h-3.5 w-3.5" /> Banco de teses</>}
         title="Teses, padrões e repertório prontos para reutilização estratégica"
         description="Organize precedentes internos, compare qualidade, aplique filtros por área e mantenha um banco vivo para redação, revisão e análise crítica do acervo jurídico." 
         actions={(

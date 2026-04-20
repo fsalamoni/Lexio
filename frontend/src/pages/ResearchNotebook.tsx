@@ -545,7 +545,7 @@ export default function ResearchNotebook() {
               ? `${artifactDef.label} pronto para iniciar`
               : 'Briefing do estúdio restaurado',
             initialStudioPrompt
-              ? 'O briefing vindo do V2 já foi preenchido. Revise o contexto auditável e clique no card do artefato para iniciar a geração.'
+              ? 'O briefing vindo do fluxo atual já foi preenchido. Revise o contexto auditável e clique no card do artefato para iniciar a geração.'
               : 'Revise o contexto auditável e clique no card do artefato para iniciar a geração.',
           )
         }

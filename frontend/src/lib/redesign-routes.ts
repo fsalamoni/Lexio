@@ -23,13 +23,11 @@ export function buildRedesignPreviewPath(
     params?: Record<string, string | null | undefined>
   },
 ) {
-  const next = getRedesignPreviewParams(options?.preserveSearch)
+  const next = new URLSearchParams()
 
   for (const [key, value] of Object.entries(options?.params || {})) {
     if (value) {
       next.set(key, value)
-    } else {
-      next.delete(key)
     }
   }
 

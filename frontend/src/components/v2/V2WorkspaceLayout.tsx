@@ -44,24 +44,23 @@ function NavCard({
 }
 
 export default function V2WorkspaceLayout({ children }: { children: ReactNode }) {
-  const location = useLocation()
   const { fullName, role } = useAuth()
   const primaryNav: WorkspaceNavGroup[] = [
     {
-      label: 'Workspace',
+      label: 'Principal',
       items: [
-        { label: 'Dashboard', to: '/labs/dashboard-v2', activePatterns: ['/labs/dashboard-v2'] },
-        { label: 'Caderno de pesquisa', to: '/notebook', activePatterns: ['/notebook', '/labs/notebook-v2'] },
-        { label: 'Documentos', to: '/documents', activePatterns: ['/documents', '/documents/:id', '/documents/:id/edit'] },
+        { label: 'Dashboard', to: '/', activePatterns: ['/'] },
         { label: 'Novo documento', to: '/documents/new', activePatterns: ['/documents/new'] },
+        { label: 'Documentos', to: '/documents', activePatterns: ['/documents', '/documents/:id', '/documents/:id/edit'] },
+        { label: 'Caderno de pesquisa', to: '/notebook', activePatterns: ['/notebook'] },
         { label: 'Biblioteca e acervo', to: '/upload', activePatterns: ['/upload'] },
         { label: 'Banco de teses', to: '/theses', activePatterns: ['/theses'] },
-        { label: 'Meu perfil', to: '/profile', activePatterns: ['/profile'] },
       ],
     },
     {
-      label: 'Governanca',
+      label: 'Conta',
       items: [
+        { label: 'Meu perfil', to: '/profile', activePatterns: ['/profile'] },
         { label: 'Configuracoes', to: '/settings', activePatterns: ['/settings'] },
         { label: 'Uso e custos', to: '/settings/costs', activePatterns: ['/settings/costs'] },
         ...(role === 'admin'
@@ -97,7 +96,7 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
               </div>
 
               <p className="text-sm leading-6 text-[var(--v2-ink-soft)]">
-                Gerencie documentos, pesquisas, teses e configuracoes a partir de um unico painel integrado.
+                Navegue por documentos, caderno, acervo, perfil e custos em um unico painel.
               </p>
             </div>
 

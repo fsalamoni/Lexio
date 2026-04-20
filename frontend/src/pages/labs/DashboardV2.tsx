@@ -83,7 +83,7 @@ export default function DashboardV2() {
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `lexio-workspace-v2-${new Date().toISOString().slice(0, 10)}.csv`
+    anchor.download = `lexio-workspace-${new Date().toISOString().slice(0, 10)}.csv`
     anchor.click()
     URL.revokeObjectURL(url)
   }
@@ -113,13 +113,12 @@ export default function DashboardV2() {
           <div className="space-y-5">
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--v2-line-strong)] bg-[rgba(255,255,255,0.74)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--v2-ink-soft)]">
               <Sparkles className="h-3.5 w-3.5" />
-              Dashboard V2
+              Dashboard
             </div>
             <div className="space-y-3">
               <h1 className="v2-display text-4xl leading-tight text-[var(--v2-ink-strong)]">{greeting}{firstName ? `, ${firstName}` : ''}. O workspace agora nasce para agir.</h1>
               <p className="max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
-                Esta superficie transforma o dashboard em hub operacional: prioridade do dia, retomada de fluxos,
-                sinais de qualidade e acesso direto aos workbenches principais.
+                Prioridade do dia, retomada de fluxos, sinais de qualidade e acesso direto aos seus workbenches.
               </p>
             </div>
 
@@ -213,7 +212,7 @@ export default function DashboardV2() {
             </div>
             <div>
               <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{action.label}</p>
-              <p className="text-xs text-[var(--v2-ink-soft)]">Abrir superficie correspondente</p>
+              <p className="text-xs text-[var(--v2-ink-soft)]">Abrir</p>
             </div>
           </Link>
         ))}
