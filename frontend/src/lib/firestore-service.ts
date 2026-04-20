@@ -1306,7 +1306,7 @@ export function sanitizeAdminDocumentTypes(items: unknown): AdminDocumentType[] 
       description,
       templates: templates.length > 0 ? templates : (defaults?.templates ?? ['generic']),
       is_enabled: source.is_enabled !== false,
-      ...(typeof structure === 'string' ? { structure } : {}),
+      ...(structure ? { structure } : {}),
     }]
   })
 }
@@ -1337,7 +1337,7 @@ export function sanitizeAdminLegalAreas(items: unknown): AdminLegalArea[] {
       name,
       description,
       is_enabled: source.is_enabled !== false,
-      ...(assuntos?.length ? { assuntos } : {}),
+      ...(assuntos.length ? { assuntos } : {}),
     }]
   })
 }
