@@ -333,7 +333,7 @@ export default function DashboardV2() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.08)" />
                     <XAxis dataKey="dia" tickFormatter={formatDia} tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => `$${value.toFixed(3)}`} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => formatCost(value)} />
                     <Tooltip formatter={(value: number) => [formatCost(value), 'Custo acumulado']} labelFormatter={formatDia} />
                     <Area type="monotone" dataKey="custo_acumulado" stroke="#d97706" strokeWidth={2} fill="url(#v2CostGradient)" />
                   </AreaChart>

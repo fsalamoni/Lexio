@@ -55,6 +55,6 @@ describe('dashboard-v2', () => {
 
     expect(signals[0].value).toBe('91/100')
     expect(signals[1].value).toBe('2 em processamento')
-    expect(signals[2].value).toBe('$0.8765')
+    expect(signals[2].value).toBe('R$\u00a05,00')
   })
 })
