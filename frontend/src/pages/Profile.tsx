@@ -228,7 +228,7 @@ export default function Profile() {
           <User className="w-5 h-5 text-teal-600" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Meu Perfil</h1>
+          <h1 className="text-lg font-bold text-gray-900">Meu Perfil</h1>
           <p className="text-sm text-gray-500">Preferências pessoais e de redação jurídica</p>
         </div>
       </div>

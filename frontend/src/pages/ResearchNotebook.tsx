@@ -4138,7 +4138,7 @@ Instruções:
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               <BookOpen className="w-7 h-7 text-teal-600" />
               Caderno de Pesquisa
             </h1>
@@ -4710,15 +4710,15 @@ Instruções:
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-2xl font-bold text-teal-600">{activeNotebook.messages.length}</p>
+                    <p className="text-lg font-bold text-teal-600">{activeNotebook.messages.length}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Mensagens no Chat</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-2xl font-bold text-teal-600">{activeNotebook.sources.length}</p>
+                    <p className="text-lg font-bold text-teal-600">{activeNotebook.sources.length}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Fontes Adicionadas</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-2xl font-bold text-teal-600">{activeNotebook.artifacts.length}</p>
+                    <p className="text-lg font-bold text-teal-600">{activeNotebook.artifacts.length}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Artefatos Gerados</p>
                   </div>
                 </div>

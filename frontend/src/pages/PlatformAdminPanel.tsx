@@ -161,7 +161,7 @@ function StatCard({ icon: Icon, label, value, tone }: { icon: React.ElementType;
         <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--v2-ink-faint)]">{label}</span>
         <Icon className={`w-4 h-4 ${tone || 'text-teal-600'}`} />
       </div>
-      <p className="mt-3 text-2xl font-bold text-[var(--v2-ink-strong)]">{value}</p>
+      <p className="mt-2 text-lg font-bold text-[var(--v2-ink-strong)]">{value}</p>
     </div>
   )
 }

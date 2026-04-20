@@ -492,7 +492,7 @@ export default function CostTokensPage() {
           <div className="flex items-center gap-3">
             <DollarSign className="h-8 w-8 text-amber-600" />
             <div>
-              <h1 className="text-2xl font-bold text-[var(--v2-ink-strong)]">Uso, Custos e Tokens</h1>
+              <h1 className="text-lg font-bold text-[var(--v2-ink-strong)]">Uso, Custos e Tokens</h1>
               <p className="text-sm text-[var(--v2-ink-soft)]">Carregando detalhamento...</p>
             </div>
           </div>

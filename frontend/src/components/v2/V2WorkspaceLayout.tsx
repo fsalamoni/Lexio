@@ -81,30 +81,30 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
         <div className="absolute bottom-[-10rem] left-1/3 h-96 w-96 rounded-full bg-[radial-gradient(circle,_rgba(15,23,42,0.08),_transparent_72%)]" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen max-w-[1680px] gap-6 px-4 py-4 sm:px-6 lg:px-8">
-        <aside className="hidden w-[280px] shrink-0 lg:block">
-          <div className="v2-panel flex h-full flex-col gap-6 p-5">
-            <div className="space-y-4">
+      <div className="relative mx-auto flex min-h-screen max-w-[1680px] gap-5 px-4 py-4 sm:px-5 lg:px-6">
+        <aside className="hidden w-[260px] shrink-0 lg:block">
+          <div className="v2-panel sticky top-4 flex max-h-[calc(100vh-2rem)] flex-col gap-4 overflow-y-auto p-4">
+            <div className="space-y-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--v2-ink-strong)] text-[var(--v2-canvas)] shadow-[var(--v2-shadow-strong)]">
-                  <Sparkles className="h-5 w-5" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--v2-ink-strong)] text-[var(--v2-canvas)] shadow-[var(--v2-shadow-strong)]">
+                  <Sparkles className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--v2-ink-soft)]">Lexio</p>
-                  <h1 className="v2-display text-2xl">Workspace</h1>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[var(--v2-ink-soft)]">Lexio</p>
+                  <h1 className="v2-display text-lg leading-tight">Workspace</h1>
                 </div>
               </div>
 
-              <p className="text-sm leading-6 text-[var(--v2-ink-soft)]">
+              <p className="text-xs leading-5 text-[var(--v2-ink-soft)]">
                 Navegue por documentos, caderno, acervo, perfil e custos em um unico painel.
               </p>
             </div>
 
-            <div className="space-y-5">
+            <div className="space-y-3">
               {primaryNav.map((group) => (
-                <section key={group.label} className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--v2-ink-faint)]">{group.label}</p>
-                  <div className="space-y-2">
+                <section key={group.label} className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--v2-ink-faint)]">{group.label}</p>
+                  <div className="space-y-1">
                     {group.items.map((item) => (
                       <NavCard
                         key={item.label}
@@ -120,11 +120,11 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
 
             <div className="v2-divider" />
 
-            <div className="flex items-center gap-3 rounded-[1.4rem] bg-[rgba(15,23,42,0.05)] px-4 py-3">
-              <UserCircle className="h-8 w-8 text-[var(--v2-accent-strong)]" />
+            <div className="flex items-center gap-2.5 rounded-[1.2rem] bg-[rgba(15,23,42,0.05)] px-3 py-2.5">
+              <UserCircle className="h-7 w-7 text-[var(--v2-accent-strong)]" />
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-[var(--v2-ink-strong)]">{fullName || 'Usuario Lexio'}</p>
-                <p className="text-xs uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">{role || 'user'}</p>
+                <p className="truncate text-xs font-semibold text-[var(--v2-ink-strong)]">{fullName || 'Usuario Lexio'}</p>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">{role || 'user'}</p>
               </div>
             </div>
           </div>

@@ -67,6 +67,16 @@ body {
 .ProseMirror td { font-size: 0.875rem; }
 .ProseMirror .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgba(15,118,110,0.10); pointer-events: none; }
 .ProseMirror .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: -2px; width: 4px; background: rgba(15,118,110,0.4); cursor: col-resize; pointer-events: all; }
+/* Image styles */
+.ProseMirror img { max-width: 100%; height: auto; border-radius: 4px; margin: 0.75rem 0; cursor: default; }
+.ProseMirror img.ProseMirror-selectednode { outline: 2px solid rgba(15,118,110,0.5); outline-offset: 2px; }
+/* Task list styles */
+.ProseMirror ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5rem; }
+.ProseMirror ul[data-type="taskList"] li > label { flex-shrink: 0; margin-top: 0.25rem; }
+.ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: #0f766e; cursor: pointer; }
+.ProseMirror ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
+.ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div { text-decoration: line-through; color: #9ca3af; }
 .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
@@ -260,12 +270,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.875rem 1rem;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
   border: 1px solid transparent;
-  border-radius: 1.25rem;
+  border-radius: 1rem;
   color: var(--v2-ink-soft);
   background: rgba(255, 255, 255, 0.46);
+  font-size: 0.8125rem;
 }
 
 .v2-nav-card:hover,
@@ -388,9 +399,9 @@ body {
 }
 
 .v2-summary-card {
-  border-radius: 1.55rem;
+  border-radius: 1.25rem;
   border: 1px solid var(--v2-line-soft);
-  padding: 1.15rem 1.2rem;
+  padding: 1rem 1.1rem;
   box-shadow: var(--v2-shadow-soft);
 }
 

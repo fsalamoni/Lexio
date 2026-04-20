@@ -623,19 +623,19 @@ function ReindexCard() {
       {result && (
         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.68)] p-3 text-center">
-            <p className="text-2xl font-bold text-[var(--v2-ink-strong)]">{result.indexed_documents}</p>
+            <p className="text-lg font-bold text-[var(--v2-ink-strong)]">{result.indexed_documents}</p>
             <p className="text-xs text-[var(--v2-ink-faint)]">Indexados</p>
           </div>
           <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.68)] p-3 text-center">
-            <p className="text-2xl font-bold text-[var(--v2-ink-strong)]">{result.total_documents}</p>
+            <p className="text-lg font-bold text-[var(--v2-ink-strong)]">{result.total_documents}</p>
             <p className="text-xs text-[var(--v2-ink-faint)]">Total</p>
           </div>
           <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.68)] p-3 text-center">
-            <p className="text-2xl font-bold text-teal-700">{result.total_chunks}</p>
+            <p className="text-lg font-bold text-teal-700">{result.total_chunks}</p>
             <p className="text-xs text-[var(--v2-ink-faint)]">Chunks</p>
           </div>
           <div className={`rounded-[1.15rem] border p-3 text-center ${result.errors > 0 ? 'border-red-200 bg-[rgba(239,68,68,0.08)]' : 'border-emerald-200 bg-[rgba(16,185,129,0.08)]'}`}>
-            <p className={`text-2xl font-bold ${result.errors > 0 ? 'text-red-700' : 'text-green-700'}`}>{result.errors}</p>
+            <p className={`text-lg font-bold ${result.errors > 0 ? 'text-red-700' : 'text-green-700'}`}>{result.errors}</p>
             <p className="text-xs text-[var(--v2-ink-faint)]">Erros</p>
           </div>
         </div>

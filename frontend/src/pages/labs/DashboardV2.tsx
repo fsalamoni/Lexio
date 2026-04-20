@@ -116,8 +116,8 @@ export default function DashboardV2() {
               Dashboard
             </div>
             <div className="space-y-3">
-              <h1 className="v2-display text-4xl leading-tight text-[var(--v2-ink-strong)]">{greeting}{firstName ? `, ${firstName}` : ''}. O workspace agora nasce para agir.</h1>
-              <p className="max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
+              <h1 className="v2-display text-2xl leading-snug text-[var(--v2-ink-strong)]">{greeting}{firstName ? `, ${firstName}` : ''}. O workspace agora nasce para agir.</h1>
+              <p className="max-w-3xl text-sm leading-6 text-[var(--v2-ink-soft)]">
                 Prioridade do dia, retomada de fluxos, sinais de qualidade e acesso direto aos seus workbenches.
               </p>
             </div>
@@ -174,28 +174,28 @@ export default function DashboardV2() {
       </section>
 
       {stats && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
             { label: 'Documentos totais', value: stats.total_documents, helper: `${stats.completed_documents} concluidos`, icon: FileStack },
             { label: 'Esta semana', value: docsThisWeek, helper: `${stats.processing_documents} em andamento`, icon: TrendingUp },
             { label: 'Revisao pendente', value: stats.pending_review_documents, helper: 'Fila do workspace', icon: Clock3 },
             { label: 'Custo acumulado', value: formatCost(stats.total_cost_usd), helper: `Tempo medio ${formatDuration(stats.average_duration_ms)}`, icon: Target },
           ].map((card) => (
-            <div key={card.label} className="v2-panel px-5 py-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">{card.label}</p>
-                  <p className="mt-3 text-3xl font-semibold tracking-tight text-[var(--v2-ink-strong)]">{card.value}</p>
-                  <p className="mt-2 text-sm text-[var(--v2-ink-soft)]">{card.helper}</p>
+            <div key={card.label} className="v2-panel px-4 py-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">{card.label}</p>
+                  <p className="mt-1.5 text-xl font-semibold tracking-tight text-[var(--v2-ink-strong)]">{card.value}</p>
+                  <p className="mt-1.5 text-xs text-[var(--v2-ink-soft)]">{card.helper}</p>
                 </div>
-                <card.icon className="h-5 w-5 text-[var(--v2-accent-strong)]" />
+                <card.icon className="h-4 w-4 flex-shrink-0 text-[var(--v2-accent-strong)]" />
               </div>
             </div>
           ))}
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: 'Novo documento', to: '/documents/new', icon: FileStack },
           { label: 'Abrir workbench principal', to: '/notebook', icon: BookOpen },
@@ -205,10 +205,10 @@ export default function DashboardV2() {
           <Link
             key={action.to}
             to={resolveActionPath(action.to)}
-            className="v2-panel flex items-center gap-3 px-5 py-4 hover:-translate-y-0.5"
+            className="v2-panel flex items-center gap-3 px-4 py-3 hover:-translate-y-0.5"
           >
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(15,118,110,0.12)] text-[var(--v2-accent-strong)]">
-              <action.icon className="h-5 w-5" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(15,118,110,0.12)] text-[var(--v2-accent-strong)]">
+              <action.icon className="h-4 w-4" />
             </div>
             <div>
               <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{action.label}</p>
@@ -223,7 +223,7 @@ export default function DashboardV2() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Andamento</p>
-              <h2 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Fluxo recente e fila de retomada</h2>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">Fluxo recente e fila de retomada</h2>
             </div>
             <div className="flex items-center gap-1 rounded-full bg-[rgba(15,23,42,0.06)] p-1">
               {PERIOD_OPTIONS.map((option) => (
@@ -277,14 +277,14 @@ export default function DashboardV2() {
             <div className="space-y-4">
               <div className="rounded-[1.5rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.78)] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Sinal do periodo</p>
-                <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{docsThisWeek}</p>
+                <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{docsThisWeek}</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--v2-ink-soft)]">documentos iniciados ou movimentados nos ultimos 7 dias.</p>
               </div>
               {byType.slice(0, 3).map((row) => (
                 <div key={row.document_type_id} className="rounded-[1.5rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.78)] p-4">
                   <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{DOCTYPE_LABELS[row.document_type_id] || row.document_type_id}</p>
                   <div className="mt-3 flex items-end justify-between gap-3">
-                    <p className="text-2xl font-semibold text-[var(--v2-ink-strong)]">{row.total}</p>
+                    <p className="text-lg font-semibold text-[var(--v2-ink-strong)]">{row.total}</p>
                     <p className="text-xs text-[var(--v2-ink-soft)]">Score medio {row.avg_score != null ? `${row.avg_score}/100` : '—'}</p>
                   </div>
                 </div>

@@ -4024,7 +4024,7 @@ Instruções:
               <Sparkles className="h-3.5 w-3.5" />
               Notebook
             </div>
-            <h1 className="v2-display text-4xl text-[var(--v2-ink-strong)]">Caderno de pesquisa requer Firebase ativo</h1>
+            <h1 className="v2-display text-2xl text-[var(--v2-ink-strong)]">Caderno de pesquisa requer Firebase ativo</h1>
             <p className="max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
               O caderno de pesquisa utiliza dados reais do usuario armazenados no Firebase. Ative o Firebase nas configuracoes para comecar.
             </p>
@@ -4048,7 +4048,7 @@ Instruções:
             </div>
 
             <div className="space-y-3">
-              <h1 className="v2-display text-4xl leading-tight text-[var(--v2-ink-strong)]">Caderno de pesquisa</h1>
+              <h1 className="v2-display text-xl leading-snug text-[var(--v2-ink-strong)]">Caderno de pesquisa</h1>
               <p className="max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
                 Organize pesquisas, converse com a IA, gerencie fontes, crie artefatos e analise seu acervo a partir de um unico painel integrado.
               </p>
@@ -4067,7 +4067,7 @@ Instruções:
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Cadernos ativos</p>
-                <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{notebooks.length}</p>
+                <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{notebooks.length}</p>
               </div>
               <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Caderno atual</p>
@@ -4189,7 +4189,7 @@ Instruções:
           {!activeNotebook || !snapshot ? (
             <div className="v2-panel p-8 text-center">
               <BookOpen className="mx-auto h-10 w-10 text-[var(--v2-accent-strong)]" />
-              <h2 className="mt-4 text-2xl font-semibold text-[var(--v2-ink-strong)]">Escolha um caderno para abrir o workbench.</h2>
+              <h2 className="mt-4 text-lg font-semibold text-[var(--v2-ink-strong)]">Escolha um caderno para abrir o workbench.</h2>
               <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-[var(--v2-ink-soft)]">
                 Deck executivo, gestão de fontes, análise inteligente de acervo e estúdio completo. Assim que um item for selecionado, o contexto passa a refletir seus dados reais.
               </p>
@@ -4206,7 +4206,7 @@ Instruções:
 
                     <div>
                       <p className="text-sm text-[var(--v2-ink-soft)]">Tema principal</p>
-                      <h2 className="v2-display mt-2 text-4xl leading-tight text-[var(--v2-ink-strong)]">{activeNotebook.topic}</h2>
+                      <h2 className="v2-display mt-2 text-xl leading-snug text-[var(--v2-ink-strong)]">{activeNotebook.topic}</h2>
                       <p className="mt-3 text-lg font-semibold text-[var(--v2-ink-strong)]">{activeNotebook.title}</p>
                       {activeNotebook.description && (
                         <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)]">{activeNotebook.description}</p>
@@ -4255,7 +4255,7 @@ Instruções:
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">{card.label}</p>
-                            <p className="mt-3 text-3xl font-semibold tracking-tight text-[var(--v2-ink-strong)]">{card.value}</p>
+                            <p className="mt-3 text-xl font-semibold tracking-tight text-[var(--v2-ink-strong)]">{card.value}</p>
                             <p className="mt-2 text-sm text-[var(--v2-ink-soft)]">{card.helper}</p>
                           </div>
                           <card.icon className="h-5 w-5 text-[var(--v2-accent-strong)]" />
@@ -4269,7 +4269,7 @@ Instruções:
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Memória ativa</p>
-                          <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Janela de contexto do workbench</h3>
+                          <h3 className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">Janela de contexto do workbench</h3>
                         </div>
                         <Link to={workbenchSourcesPath} className="v2-btn-secondary">
                           Abrir fontes
@@ -4311,15 +4311,15 @@ Instruções:
                         <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
                           <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Acervo</p>
-                            <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{snapshot.acervoSourceCount}</p>
+                            <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{snapshot.acervoSourceCount}</p>
                           </div>
                           <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Uploads</p>
-                            <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{snapshot.uploadSourceCount}</p>
+                            <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{snapshot.uploadSourceCount}</p>
                           </div>
                           <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Web e jurisprudência</p>
-                            <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{snapshot.webSourceCount}</p>
+                            <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{snapshot.webSourceCount}</p>
                           </div>
                         </div>
                       </div>
@@ -4416,7 +4416,7 @@ Instruções:
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Assistente do workbench</p>
-                          <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Chat contextual com memória auditável</h3>
+                          <h3 className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">Chat contextual com memória auditável</h3>
                           <p className="mt-2 text-sm leading-6 text-[var(--v2-ink-soft)]">
                             A conversa opera com fontes do caderno, janela recente de mensagens, histórico de buscas e busca web opcional.
                           </p>
@@ -4563,22 +4563,22 @@ Instruções:
                       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Fontes</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{effectiveChatAudit.sourceSummary.includedSources}/{effectiveChatAudit.sourceSummary.totalSources}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{effectiveChatAudit.sourceSummary.includedSources}/{effectiveChatAudit.sourceSummary.totalSources}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">{formatCharVolume(effectiveChatAudit.sourceSummary.includedChars)} úteis</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Conversa</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{effectiveChatAudit.conversationSummary.includedMessages}/{effectiveChatAudit.conversationSummary.totalMessages}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{effectiveChatAudit.conversationSummary.includedMessages}/{effectiveChatAudit.conversationSummary.totalMessages}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">{formatCharVolume(effectiveChatAudit.conversationSummary.includedChars)} recentes</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Histórico de busca</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{effectiveChatAudit.searchSummary.totalEntries}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{effectiveChatAudit.searchSummary.totalEntries}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">{formatCharVolume(effectiveChatAudit.searchSummary.includedChars)} incluídos</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Busca web</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{effectiveChatAudit.liveWebEnabled ? 'On' : 'Off'}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{effectiveChatAudit.liveWebEnabled ? 'On' : 'Off'}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">{effectiveChatAudit.liveWebChars > 0 ? formatCharVolume(effectiveChatAudit.liveWebChars) : 'sem snippet'}</p>
                         </div>
                       </div>
@@ -4686,22 +4686,22 @@ Instruções:
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Consulta</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{(lastResearchContextAudit || researchContextAuditPreview).queryChars}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{(lastResearchContextAudit || researchContextAuditPreview).queryChars}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">caracteres</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Resultados</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{(lastResearchContextAudit || researchContextAuditPreview).resultCount ?? 0}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{(lastResearchContextAudit || researchContextAuditPreview).resultCount ?? 0}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">itens encontrados</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Selecionados</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{(lastResearchContextAudit || researchContextAuditPreview).selectedCount ?? 0}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{(lastResearchContextAudit || researchContextAuditPreview).selectedCount ?? 0}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">promovidos para síntese</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Tribunais</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{(lastResearchContextAudit || researchContextAuditPreview).tribunalCount ?? lastJurisprudenceTribunalAliases.length}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{(lastResearchContextAudit || researchContextAuditPreview).tribunalCount ?? lastJurisprudenceTribunalAliases.length}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">na consulta atual</p>
                         </div>
                       </div>
@@ -5271,7 +5271,7 @@ Instruções:
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Studio briefing</p>
-                          <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Prepare e execute a geração</h3>
+                          <h3 className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">Prepare e execute a geração</h3>
                           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)]">
                             Auditoria de contexto, instruções adicionais, taxonomia de artefatos, trilha multiagente, revisão de custo de vídeo, timeline persistida e produção literal vivem neste fluxo nativo.
                           </p>
@@ -5323,17 +5323,17 @@ Instruções:
                       <div className="mt-5 grid gap-3 sm:grid-cols-3">
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Fontes</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{studioAudit.sourceSummary.includedSources}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{studioAudit.sourceSummary.includedSources}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">{studioAudit.sourceSummary.truncatedSources > 0 ? `${studioAudit.sourceSummary.truncatedSources} truncadas na janela` : 'sem truncamentos relevantes'}</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Conversa</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{studioAudit.conversationSummary.includedMessages}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{studioAudit.conversationSummary.includedMessages}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">{studioAudit.conversationSummary.droppedMessages > 0 ? `${studioAudit.conversationSummary.droppedMessages} fora da janela` : 'histórico recente aproveitado'}</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Briefing</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{studioAudit.customInstructionsChars > 0 ? 'ON' : 'OFF'}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{studioAudit.customInstructionsChars > 0 ? 'ON' : 'OFF'}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">{studioAudit.customInstructionsChars > 0 ? formatCharVolume(studioAudit.customInstructionsChars) : 'sem instruções extras'}</p>
                         </div>
                       </div>
@@ -5465,22 +5465,22 @@ Instruções:
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Categorias</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{ARTIFACT_CATEGORIES.length}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{ARTIFACT_CATEGORIES.length}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">blocos de geração mapeados</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Artefatos</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{ARTIFACT_CATEGORIES.reduce((total, category) => total + category.items.length, 0)}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{ARTIFACT_CATEGORIES.reduce((total, category) => total + category.items.length, 0)}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">tipos iniciáveis a partir do estúdio</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Fontes úteis</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{includedStudioSources.length}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{includedStudioSources.length}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">fontes já promovidas para o estúdio</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Briefing</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{trimmedStudioCustomPrompt.length}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{trimmedStudioCustomPrompt.length}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">chars de instrução adicional</p>
                         </div>
                       </div>
@@ -5507,7 +5507,7 @@ Instruções:
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Inventário de artefatos</p>
-                          <h3 className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">Viewer, estúdio e pós-geração</h3>
+                          <h3 className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">Viewer, estúdio e pós-geração</h3>
                           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)]">
                             Abra resumos, relatórios, documentos, apresentações, roteiros, pacotes de vídeo persistidos e demais saídas do estúdio diretamente nesta superfície. Aqui também ficam revisão de custo, timeline e produção literal de vídeo.
                           </p>
@@ -5652,22 +5652,22 @@ Instruções:
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Total</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{activeNotebook.artifacts.length}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{activeNotebook.artifacts.length}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">artefato(s) persistido(s)</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Estruturados</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{structuredArtifactCount}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{structuredArtifactCount}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">JSON com viewer rico</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Mídia</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{mediaArtifactCount}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{mediaArtifactCount}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">áudio, vídeo e pacotes</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Pendentes</p>
-                          <p className="mt-2 text-2xl font-semibold text-[var(--v2-ink-strong)]">{pendingSourceCount}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{pendingSourceCount}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">fonte(s) ainda sem indexacao completa</p>
                         </div>
                       </div>

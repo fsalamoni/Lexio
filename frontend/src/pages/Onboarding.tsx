@@ -145,7 +145,7 @@ export default function Onboarding() {
       <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
           <Scale className="w-10 h-10 text-teal-600 mx-auto mb-2" />
-          <h1 className="text-2xl font-bold text-teal-900">Bem-vindo ao Lexio</h1>
+          <h1 className="text-xl font-bold text-teal-900">Bem-vindo ao Lexio</h1>
           <p className="text-gray-500 mt-1">Carregando configurações...</p>
         </div>
         <div className="bg-white rounded-xl border shadow-sm p-8 animate-pulse">
@@ -173,7 +173,7 @@ export default function Onboarding() {
       <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
           <Scale className="w-10 h-10 text-teal-600 mx-auto mb-2" />
-          <h1 className="text-2xl font-bold text-teal-900">Bem-vindo ao Lexio</h1>
+          <h1 className="text-xl font-bold text-teal-900">Bem-vindo ao Lexio</h1>
           <p className="text-gray-500 mt-1">Configure seu perfil para resultados personalizados</p>
         </div>
 
