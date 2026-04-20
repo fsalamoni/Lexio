@@ -7,17 +7,13 @@
 import { useState } from 'react'
 import { Loader2, CheckCircle2, AlertCircle, X, ChevronUp, ChevronDown, Activity } from 'lucide-react'
 import { useTaskManager, type TaskInfo } from '../contexts/TaskManagerContext'
-
-function formatUsd(costUsd: number): string {
-  if (costUsd < 0.0001) return '<$0.0001'
-  return `$${costUsd.toFixed(4)}`
-}
+import { formatCostBadge } from '../lib/currency-utils'
 
 function buildTaskOperationalLabel(task: TaskInfo): string | undefined {
   const operationals = task.operationals
   if (!operationals) return undefined
   const parts: string[] = []
-  if (operationals.totalCostUsd > 0) parts.push(formatUsd(operationals.totalCostUsd))
+  if (operationals.totalCostUsd > 0) parts.push(formatCostBadge(operationals.totalCostUsd))
   if (operationals.totalRetryCount > 0) {
     parts.push(`${operationals.totalRetryCount} ${operationals.totalRetryCount === 1 ? 'retry' : 'retries'}`)
   }

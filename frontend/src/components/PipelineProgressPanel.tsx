@@ -20,6 +20,7 @@ import {
   ScanSearch,
 } from 'lucide-react'
 import { DOCUMENT_PIPELINE_COMPLETED_PHASE, createDocumentPipelineSteps, type DocumentPipelineStep } from '../lib/document-pipeline'
+import { formatCostBadge } from '../lib/currency-utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,10 +66,7 @@ function elapsedSince(startedAt: number): string {
   return formatDuration(Date.now() - startedAt)
 }
 
-function formatUsd(costUsd: number): string {
-  if (costUsd < 0.0001) return '<$0.0001'
-  return `$${costUsd.toFixed(4)}`
-}
+
 
 function estimateRemainingMs(agents: DocumentPipelineStep[]): number | null {
   const completedDurations = agents
@@ -118,7 +116,7 @@ export default function PipelineProgressPanel({
   const remainingMs = estimateRemainingMs(agents)
   const operationalSummary = [
     remainingMs ? `ETA ${formatDuration(remainingMs)}` : null,
-    totalCost > 0 ? `Custo ${formatUsd(totalCost)}` : null,
+    totalCost > 0 ? `Custo ${formatCostBadge(totalCost)}` : null,
     retryCount > 0 ? `${retryCount} ${retryCount === 1 ? 'retry' : 'retries'}` : null,
     fallbackCount > 0 ? `${fallbackCount} ${fallbackCount === 1 ? 'fallback' : 'fallbacks'}` : null,
   ].filter(Boolean).join(' • ')
@@ -271,7 +269,7 @@ export default function PipelineProgressPanel({
                       )}
                       {agent.runtimeCostUsd != null && agent.runtimeCostUsd > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600">
-                          {formatUsd(agent.runtimeCostUsd)}
+                          {formatCostBadge(agent.runtimeCostUsd)}
                         </span>
                       )}
                       {duration && (
