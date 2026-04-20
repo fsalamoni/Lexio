@@ -18,7 +18,7 @@ Create a reliable one-shot web release flow and stabilize Firebase deploy behavi
 - [x] Phase 3 - Workflow hardening for Firebase auth
 - [x] Phase 4 - One-shot release workflow implementation
 - [x] Phase 5 - Local validation (typecheck/tests/build/functions)
-- [ ] Phase 6 - Commit and push/deploy trigger
+- [x] Phase 6 - Commit and push/deploy trigger
 
 ## Risk Prevention
 - Validate service-account JSON before auth steps

@@ -23,6 +23,15 @@ Last update: 2026-04-20
 - python lint (ruff): completed (all checks passed)
 
 ## Deployment Cache
-- Commit: in progress
-- Push to origin/main: pending
-- Release workflow dispatch: pending
+- Commit: completed (a8d7ff6, 12b3963)
+- Push to origin/main: completed
+- Release workflow dispatch: completed (release-web.yml run 24692171412 success)
+
+## Release Workflow Outcomes
+- First release-web dispatch (run 24692119664): startup_failure due caller permissions mismatch for reusable deploy workflows.
+- Mitigation: updated `.github/workflows/release-web.yml` permissions to include `contents: write` and `id-token: write`.
+- Final release-web dispatch (run 24692171412): success.
+- Quality gates: success.
+- Deploy Firebase production: success.
+- Deploy GitHub Pages: success.
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`).
