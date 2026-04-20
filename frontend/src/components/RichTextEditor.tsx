@@ -1,6 +1,6 @@
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import { Extension } from '@tiptap/core'
-import { useEffect, useCallback, useState } from 'react'
+import { useEffect, useCallback, useState, useRef } from 'react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import TextAlign from '@tiptap/extension-text-align'
@@ -13,12 +13,19 @@ import { Table } from '@tiptap/extension-table'
 import TableRow from '@tiptap/extension-table-row'
 import TableHeader from '@tiptap/extension-table-header'
 import TableCell from '@tiptap/extension-table-cell'
+import ImageExt from '@tiptap/extension-image'
+import Subscript from '@tiptap/extension-subscript'
+import Superscript from '@tiptap/extension-superscript'
+import TaskList from '@tiptap/extension-task-list'
+import TaskItem from '@tiptap/extension-task-item'
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, Heading1, Heading2, Heading3,
   Highlighter, Undo, Redo, Minus, Link as LinkIcon, Table as TableIcon,
-  Unlink, Type,
+  Unlink, ImageIcon, Subscript as SubscriptIcon, Superscript as SuperscriptIcon,
+  ListChecks, Indent, Outdent, Search, Printer, Quote,
+  Palette, RemoveFormatting,
 } from 'lucide-react'
 
 // ── Font size / family command type augmentation ────────────────────────────────
@@ -255,6 +262,214 @@ function ColorPicker({ editor, onClose }: { editor: Editor; onClose: () => void 
   )
 }
 
+// ── Highlight color picker ─────────────────────────────────────────────────────
+
+const HIGHLIGHT_COLORS = [
+  { label: 'Amarelo', value: '#fef08a' },
+  { label: 'Verde', value: '#bbf7d0' },
+  { label: 'Azul', value: '#bfdbfe' },
+  { label: 'Rosa', value: '#fecdd3' },
+  { label: 'Laranja', value: '#fed7aa' },
+  { label: 'Roxo', value: '#e9d5ff' },
+]
+
+function HighlightColorPicker({ editor, onClose }: { editor: Editor; onClose: () => void }) {
+  return (
+    <div
+      className="absolute top-full left-0 mt-1 p-3 z-20 rounded-xl"
+      style={{
+        background: 'var(--v2-panel-strong)',
+        border: '1px solid var(--v2-line-soft)',
+        boxShadow: '0 8px 32px rgba(15,23,42,0.12)',
+      }}
+      onMouseDown={e => e.stopPropagation()}
+    >
+      <p className="text-xs font-semibold mb-2" style={{ color: 'var(--v2-ink-strong)' }}>Cor de destaque</p>
+      <div className="flex gap-1.5">
+        {HIGHLIGHT_COLORS.map(c => (
+          <button
+            key={c.value}
+            type="button"
+            onClick={() => { editor.chain().focus().toggleHighlight({ color: c.value }).run(); onClose() }}
+            className="w-6 h-6 rounded-full border transition-transform hover:scale-110"
+            style={{ background: c.value, borderColor: 'var(--v2-line-soft)' }}
+            title={c.label}
+          />
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => { editor.chain().focus().unsetHighlight().run(); onClose() }}
+        className="mt-2 w-full text-center text-xs py-1 rounded-lg transition-colors"
+        style={{ color: 'var(--v2-ink-faint)' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.05)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      >
+        Remover destaque
+      </button>
+    </div>
+  )
+}
+
+// ── Image dialog ──────────────────────────────────────────────────────────────
+
+function ImageDialog({ onInsertUrl, onClose }: { onInsertUrl: (url: string) => void; onClose: () => void }) {
+  const [url, setUrl] = useState('')
+
+  return (
+    <div className="flex flex-col gap-2" onMouseDown={e => e.stopPropagation()}>
+      <p className="text-xs font-semibold" style={{ color: 'var(--v2-ink-soft)' }}>Ou cole uma URL</p>
+      <input
+        type="url"
+        value={url}
+        onChange={e => setUrl(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && url.trim()) { onInsertUrl(url); } if (e.key === 'Escape') onClose() }}
+        className="w-full rounded-lg px-3 py-1.5 text-sm outline-none transition-colors"
+        style={{
+          border: '1px solid var(--v2-line-soft)',
+          background: 'rgba(255,255,255,0.9)',
+          color: 'var(--v2-ink-strong)',
+          fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)",
+        }}
+        placeholder="https://exemplo.com/imagem.png"
+      />
+      <div className="flex gap-2 justify-end">
+        <button type="button" onClick={onClose} className="v2-btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', minHeight: 'auto' }}>
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={() => { if (url.trim()) { onInsertUrl(url); } }}
+          disabled={!url.trim()}
+          className="v2-btn-primary"
+          style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', minHeight: 'auto', opacity: url.trim() ? 1 : 0.5 }}
+        >
+          Inserir
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Find & Replace bar ────────────────────────────────────────────────────────
+
+function FindReplaceBar({ editor, onClose }: { editor: Editor; onClose: () => void }) {
+  const [findText, setFindText] = useState('')
+  const [replaceText, setReplaceText] = useState('')
+  const [matchCount, setMatchCount] = useState(0)
+
+  const doFind = useCallback(() => {
+    if (!findText.trim()) { setMatchCount(0); return }
+    const text = editor.getText()
+    const regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    const matches = text.match(regex)
+    setMatchCount(matches?.length ?? 0)
+  }, [findText, editor])
+
+  const doReplace = useCallback(() => {
+    if (!findText.trim()) return
+    const html = editor.getHTML()
+    const regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+    const newHtml = html.replace(regex, replaceText)
+    if (newHtml !== html) {
+      editor.commands.setContent(newHtml)
+      setMatchCount(prev => Math.max(0, prev - 1))
+    }
+  }, [findText, replaceText, editor])
+
+  const doReplaceAll = useCallback(() => {
+    if (!findText.trim()) return
+    const html = editor.getHTML()
+    const regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    const newHtml = html.replace(regex, replaceText)
+    if (newHtml !== html) {
+      editor.commands.setContent(newHtml)
+      setMatchCount(0)
+    }
+  }, [findText, replaceText, editor])
+
+  useEffect(() => { doFind() }, [findText, doFind])
+
+  return (
+    <div
+      className="flex items-center flex-wrap gap-2 px-3 py-2"
+      style={{ borderBottom: '1px solid var(--v2-line-soft)', background: 'rgba(255,252,247,0.92)' }}
+    >
+      <Search className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--v2-ink-faint)' }} />
+      <input
+        type="text"
+        value={findText}
+        onChange={e => setFindText(e.target.value)}
+        placeholder="Localizar..."
+        autoFocus
+        className="rounded-lg px-2 py-1 text-xs outline-none flex-1 min-w-[100px]"
+        style={{
+          border: '1px solid var(--v2-line-soft)',
+          background: 'rgba(255,255,255,0.9)',
+          color: 'var(--v2-ink-strong)',
+          fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)",
+          maxWidth: '180px',
+        }}
+        onKeyDown={e => { if (e.key === 'Escape') onClose() }}
+      />
+      <input
+        type="text"
+        value={replaceText}
+        onChange={e => setReplaceText(e.target.value)}
+        placeholder="Substituir por..."
+        className="rounded-lg px-2 py-1 text-xs outline-none flex-1 min-w-[100px]"
+        style={{
+          border: '1px solid var(--v2-line-soft)',
+          background: 'rgba(255,255,255,0.9)',
+          color: 'var(--v2-ink-strong)',
+          fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)",
+          maxWidth: '180px',
+        }}
+        onKeyDown={e => { if (e.key === 'Escape') onClose() }}
+      />
+      <span className="text-[10px] tabular-nums" style={{ color: 'var(--v2-ink-faint)' }}>
+        {matchCount} resultado{matchCount !== 1 ? 's' : ''}
+      </span>
+      <button
+        type="button"
+        onClick={doReplace}
+        disabled={matchCount === 0}
+        className="px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors"
+        style={{
+          border: '1px solid var(--v2-line-soft)',
+          color: matchCount > 0 ? 'var(--v2-ink-strong)' : 'var(--v2-ink-faint)',
+          background: 'rgba(255,255,255,0.8)',
+          cursor: matchCount > 0 ? 'pointer' : 'not-allowed',
+        }}
+      >
+        Substituir
+      </button>
+      <button
+        type="button"
+        onClick={doReplaceAll}
+        disabled={matchCount === 0}
+        className="px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors"
+        style={{
+          border: '1px solid var(--v2-line-soft)',
+          color: matchCount > 0 ? 'var(--v2-ink-strong)' : 'var(--v2-ink-faint)',
+          background: 'rgba(255,255,255,0.8)',
+          cursor: matchCount > 0 ? 'pointer' : 'not-allowed',
+        }}
+      >
+        Substituir tudo
+      </button>
+      <button
+        type="button"
+        onClick={onClose}
+        className="ml-auto text-[10px] px-1.5 py-0.5 rounded-lg"
+        style={{ color: 'var(--v2-ink-faint)' }}
+      >
+        ✕
+      </button>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function RichTextEditor({
@@ -268,6 +483,10 @@ export default function RichTextEditor({
   const [charCount, setCharCount] = useState(0)
   const [showLink, setShowLink] = useState(false)
   const [showColor, setShowColor] = useState(false)
+  const [showHighlightColor, setShowHighlightColor] = useState(false)
+  const [showFindReplace, setShowFindReplace] = useState(false)
+  const [showImageDialog, setShowImageDialog] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
   const editor = useEditor({
     extensions: [
@@ -288,6 +507,11 @@ export default function RichTextEditor({
       TableRow,
       TableHeader,
       TableCell,
+      ImageExt.configure({ inline: false, allowBase64: true }),
+      Subscript,
+      Superscript,
+      TaskList,
+      TaskItem.configure({ nested: true }),
     ],
     content,
     editable,
@@ -319,6 +543,49 @@ export default function RichTextEditor({
 
   const insertTable = useCallback(() => {
     editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+  }, [editor])
+
+  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !editor) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      editor.chain().focus().setImage({ src: result, alt: file.name }).run()
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }, [editor])
+
+  const insertImageFromUrl = useCallback((url: string) => {
+    if (!url.trim() || !editor) return
+    editor.chain().focus().setImage({ src: url.trim() }).run()
+  }, [editor])
+
+  const handlePrint = useCallback(() => {
+    const printWin = window.open('', '_blank')
+    if (!printWin || !editor) return
+    const html = editor.getHTML()
+    printWin.document.write(`<!DOCTYPE html><html><head><title>Imprimir documento</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+  body { font-family: 'Times New Roman', Times, Georgia, serif; font-size: 12pt; line-height: 1.85; color: #1a1a1a; max-width: 794px; margin: 40px auto; padding: 0 40px; }
+  h1 { font-size: 1.5rem; font-weight: 700; } h2 { font-size: 1.25rem; font-weight: 600; } h3 { font-size: 1.0625rem; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 0.5rem 0.75rem; }
+  th { background: #f5f5f5; font-weight: 600; }
+  img { max-width: 100%; height: auto; }
+  ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+  ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5rem; }
+  ul[data-type="taskList"] li input[type="checkbox"] { margin-top: 0.25rem; }
+  @media print { body { margin: 0; padding: 0; } }
+</style></head><body>${html}</body></html>`)
+    printWin.document.close()
+    printWin.focus()
+    setTimeout(() => { printWin.print(); printWin.close() }, 400)
+  }, [editor])
+
+  const clearFormatting = useCallback(() => {
+    editor?.chain().focus().clearNodes().unsetAllMarks().run()
   }, [editor])
 
   if (!editor) return null
@@ -422,24 +689,46 @@ export default function RichTextEditor({
           <Btn onClick={() => editor.chain().focus().toggleStrike().run()} isActive={editor.isActive('strike')} title="Tachado">
             <Strikethrough className="w-3.5 h-3.5" />
           </Btn>
-          <Btn onClick={() => editor.chain().focus().toggleHighlight().run()} isActive={editor.isActive('highlight')} title="Destaque">
-            <Highlighter className="w-3.5 h-3.5" />
+          <Btn onClick={() => editor.chain().focus().toggleSubscript().run()} isActive={editor.isActive('subscript')} title="Subscrito">
+            <SubscriptIcon className="w-3.5 h-3.5" />
+          </Btn>
+          <Btn onClick={() => editor.chain().focus().toggleSuperscript().run()} isActive={editor.isActive('superscript')} title="Sobrescrito">
+            <SuperscriptIcon className="w-3.5 h-3.5" />
           </Btn>
 
           <Sep />
 
+          {/* Highlight with color picker */}
+          <div className="relative">
+            <Btn
+              onClick={() => { setShowHighlightColor(v => !v); setShowColor(false); setShowLink(false); setShowImageDialog(false) }}
+              isActive={editor.isActive('highlight') || showHighlightColor}
+              title="Destaque / Marca-texto"
+            >
+              <Highlighter className="w-3.5 h-3.5" />
+            </Btn>
+            {showHighlightColor && <HighlightColorPicker editor={editor} onClose={() => setShowHighlightColor(false)} />}
+          </div>
+
           {/* Text color */}
           <div className="relative">
-            <Btn onClick={() => { setShowColor(v => !v); setShowLink(false) }} title="Cor do texto" isActive={showColor}>
-              <Type className="w-3.5 h-3.5" />
+            <Btn onClick={() => { setShowColor(v => !v); setShowLink(false); setShowHighlightColor(false); setShowImageDialog(false) }} title="Cor do texto" isActive={showColor}>
+              <Palette className="w-3.5 h-3.5" />
             </Btn>
             {showColor && <ColorPicker editor={editor} onClose={() => setShowColor(false)} />}
           </div>
 
+          {/* Clear formatting */}
+          <Btn onClick={clearFormatting} title="Limpar formatação">
+            <RemoveFormatting className="w-3.5 h-3.5" />
+          </Btn>
+
+          <Sep />
+
           {/* Link */}
           <div className="relative">
             <Btn
-              onClick={() => { setShowLink(v => !v); setShowColor(false) }}
+              onClick={() => { setShowLink(v => !v); setShowColor(false); setShowHighlightColor(false); setShowImageDialog(false) }}
               isActive={editor.isActive('link') || showLink}
               title="Inserir/editar link"
             >
@@ -452,6 +741,48 @@ export default function RichTextEditor({
               <Unlink className="w-3.5 h-3.5" />
             </Btn>
           )}
+
+          {/* Image */}
+          <div className="relative">
+            <Btn
+              onClick={() => { setShowImageDialog(v => !v); setShowColor(false); setShowLink(false); setShowHighlightColor(false) }}
+              isActive={showImageDialog}
+              title="Inserir imagem"
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+            </Btn>
+            {showImageDialog && (
+              <div
+                className="absolute top-full left-0 mt-1 p-3 z-20 flex flex-col gap-2 rounded-xl"
+                style={{
+                  background: 'var(--v2-panel-strong)',
+                  border: '1px solid var(--v2-line-soft)',
+                  boxShadow: '0 8px 32px rgba(15,23,42,0.12)',
+                  width: '18rem',
+                }}
+                onMouseDown={e => e.stopPropagation()}
+              >
+                <p className="text-xs font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>Inserir imagem</p>
+                <button
+                  type="button"
+                  onClick={() => { imageInputRef.current?.click(); setShowImageDialog(false) }}
+                  className="v2-btn-secondary w-full justify-center"
+                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', minHeight: 'auto' }}
+                >
+                  Enviar arquivo do computador
+                </button>
+                <div className="v2-divider" />
+                <ImageDialog onInsertUrl={(url) => { insertImageFromUrl(url); setShowImageDialog(false) }} onClose={() => setShowImageDialog(false)} />
+              </div>
+            )}
+          </div>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageUpload}
+          />
 
           <Sep />
 
@@ -471,6 +802,24 @@ export default function RichTextEditor({
 
           <Sep />
 
+          {/* Indent / Outdent */}
+          <Btn
+            onClick={() => editor.chain().focus().sinkListItem('listItem').run()}
+            disabled={!editor.can().sinkListItem('listItem')}
+            title="Aumentar recuo"
+          >
+            <Indent className="w-3.5 h-3.5" />
+          </Btn>
+          <Btn
+            onClick={() => editor.chain().focus().liftListItem('listItem').run()}
+            disabled={!editor.can().liftListItem('listItem')}
+            title="Diminuir recuo"
+          >
+            <Outdent className="w-3.5 h-3.5" />
+          </Btn>
+
+          <Sep />
+
           {/* Lists */}
           <Btn onClick={() => editor.chain().focus().toggleBulletList().run()} isActive={editor.isActive('bulletList')} title="Lista com marcadores">
             <List className="w-3.5 h-3.5" />
@@ -478,8 +827,16 @@ export default function RichTextEditor({
           <Btn onClick={() => editor.chain().focus().toggleOrderedList().run()} isActive={editor.isActive('orderedList')} title="Lista numerada">
             <ListOrdered className="w-3.5 h-3.5" />
           </Btn>
+          <Btn onClick={() => editor.chain().focus().toggleTaskList().run()} isActive={editor.isActive('taskList')} title="Lista de tarefas">
+            <ListChecks className="w-3.5 h-3.5" />
+          </Btn>
 
           <Sep />
+
+          {/* Block quote */}
+          <Btn onClick={() => editor.chain().focus().toggleBlockquote().run()} isActive={editor.isActive('blockquote')} title="Citação em bloco">
+            <Quote className="w-3.5 h-3.5" />
+          </Btn>
 
           {/* Table */}
           <Btn onClick={insertTable} title="Inserir tabela (3×3)">
@@ -490,14 +847,31 @@ export default function RichTextEditor({
           <Btn onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Linha horizontal">
             <Minus className="w-3.5 h-3.5" />
           </Btn>
+
+          <Sep />
+
+          {/* Find & Replace */}
+          <Btn onClick={() => setShowFindReplace(v => !v)} isActive={showFindReplace} title="Localizar e substituir (Ctrl+H)">
+            <Search className="w-3.5 h-3.5" />
+          </Btn>
+
+          {/* Print */}
+          <Btn onClick={handlePrint} title="Imprimir (Ctrl+P)">
+            <Printer className="w-3.5 h-3.5" />
+          </Btn>
         </div>
+      )}
+
+      {/* Find & Replace bar */}
+      {editable && showFindReplace && (
+        <FindReplaceBar editor={editor} onClose={() => setShowFindReplace(false)} />
       )}
 
       {/* Editor content area */}
       <div
         className={editable ? 'doc-canvas' : 'flex-1 overflow-y-auto'}
         style={editable ? undefined : { background: 'transparent' }}
-        onClick={() => { setShowLink(false); setShowColor(false) }}
+        onClick={() => { setShowLink(false); setShowColor(false); setShowHighlightColor(false); setShowImageDialog(false) }}
       >
         {editable ? (
           <div className="doc-page">
@@ -518,7 +892,7 @@ export default function RichTextEditor({
           }}
         >
           <span className="text-[11px]" style={{ color: 'var(--v2-ink-faint)' }}>
-            Ctrl+B negrito · Ctrl+I itálico · Ctrl+U sublinhado
+            Ctrl+B negrito · Ctrl+I itálico · Ctrl+U sublinhado · Ctrl+H localizar
           </span>
           <span className="text-[11px] tabular-nums" style={{ color: 'var(--v2-ink-faint)' }}>
             {wordCount} palavras · {charCount} caracteres
