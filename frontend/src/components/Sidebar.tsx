@@ -29,7 +29,7 @@ const links = [
   },
   { to: '/theses', label: 'Banco de Teses', icon: BookOpen },
   { to: '/notebook', label: 'Caderno de Pesquisa', icon: Brain },
-  { to: '/upload', label: 'Acervo', icon: Upload },
+  { to: '/upload', label: 'Biblioteca e Acervo', icon: Upload },
 ]
 
 interface SidebarProps {

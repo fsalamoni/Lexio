@@ -1351,7 +1351,7 @@ export default function Upload() {
   })
 
   return (
-    <div className="max-w-3xl space-y-6 v2-bridge-surface">
+    <div className="space-y-6 v2-bridge-surface">
       {/* View modal */}
       {viewDoc && (
         <AcervoDocModal
@@ -1391,9 +1391,9 @@ export default function Upload() {
       />
 
       <V2PageHero
-        eyebrow={<><UploadIcon className="h-3.5 w-3.5" /> Acervo</>}
-        title="Upload, classificacao e enriquecimento do acervo dentro do novo workspace"
-        description="Envie arquivos, acompanhe extração e indexação, gere ementas e tags em lote e mantenha o acervo pronto para abastecer redacao, notebook e analises." 
+        eyebrow={<><UploadIcon className="h-3.5 w-3.5" /> Biblioteca e Acervo</>}
+        title="Upload, classificação e enriquecimento do acervo em uma única superfície"
+        description="Envie arquivos, acompanhe extração e indexação, gere ementas e tags em lote e mantenha o acervo pronto para abastecer redação, notebook e análises."
         actions={(
           <button
             onClick={fetchHistory}
@@ -1406,13 +1406,13 @@ export default function Upload() {
         )}
         aside={(
           <div className="space-y-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Leitura rapida</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Leitura rápida</p>
             <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Arquivos locais</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Em processamento</p>
               <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{localFiles.length.toLocaleString('pt-BR')}</p>
             </div>
             <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Indexados</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">No acervo</p>
               <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{(IS_FIREBASE ? firebaseHistory.length : history.length).toLocaleString('pt-BR')}</p>
             </div>
           </div>
@@ -1424,7 +1424,7 @@ export default function Upload() {
           {
             label: 'Acervo total',
             value: (IS_FIREBASE ? firebaseHistory.length : history.length).toLocaleString('pt-BR'),
-            helper: 'Documentos disponiveis para busca e sintese',
+            helper: 'Documentos disponíveis para busca e síntese',
             icon: Database,
             tone: 'accent',
           },
@@ -1451,11 +1451,11 @@ export default function Upload() {
 
       {/* Firebase mode: guidance on how acervo works */}
       {IS_FIREBASE && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6 flex gap-3">
-          <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+        <div className="v2-panel flex gap-3 p-5">
+          <Info className="w-5 h-5 text-[var(--v2-accent-strong)] flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-blue-800">Acervo de documentos de referência</p>
-            <p className="text-xs text-blue-600 mt-1">
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">Acervo de documentos de referência</p>
+            <p className="text-xs text-[var(--v2-ink-soft)] mt-1 leading-relaxed">
               Envie documentos de texto (.pdf, .docx, .doc, .txt, .md, .json, .csv, .xml, .yaml, .yml, .html, .htm, .rtf, .log) que servirão como base de conhecimento
               na elaboração de novos documentos. O conteúdo textual será armazenado e utilizado pelo
               pipeline de geração junto com as teses do banco de teses.
@@ -1472,31 +1472,31 @@ export default function Upload() {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         className={[
-          'bg-white rounded-xl border-2 border-dashed p-12 text-center cursor-pointer transition-all duration-200 mb-6 select-none',
+          'v2-panel rounded-[1.4rem] border-2 border-dashed p-10 lg:p-14 text-center cursor-pointer transition-all duration-200 select-none',
           isDragging
-            ? 'border-teal-500 bg-teal-50 scale-[1.01] shadow-lg'
-            : 'border-gray-300 hover:border-teal-400 hover:bg-gray-50',
+            ? 'border-[var(--v2-accent-strong)] bg-[rgba(15,118,110,0.06)] scale-[1.01] shadow-lg'
+            : 'border-[var(--v2-line-soft)] hover:border-[var(--v2-accent-strong)] hover:bg-[rgba(15,118,110,0.03)]',
         ].join(' ')}
       >
         <div className={[
-          'w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 transition-colors',
-          isDragging ? 'bg-teal-100' : 'bg-gray-100',
+          'w-16 h-16 rounded-[1.4rem] flex items-center justify-center mx-auto mb-4 transition-colors',
+          isDragging ? 'bg-[rgba(15,118,110,0.12)]' : 'bg-[rgba(15,23,42,0.06)]',
         ].join(' ')}>
-          <UploadIcon className={['w-8 h-8 transition-colors', isDragging ? 'text-teal-600' : 'text-gray-400'].join(' ')} />
+          <UploadIcon className={['w-7 h-7 transition-colors', isDragging ? 'text-[var(--v2-accent-strong)]' : 'text-[var(--v2-ink-faint)]'].join(' ')} />
         </div>
 
         {isDragging ? (
           <>
-            <p className="text-teal-700 font-semibold text-lg">Solte os arquivos aqui</p>
-            <p className="text-teal-500 text-sm mt-1">Pronto para indexar</p>
+            <p className="text-[var(--v2-accent-strong)] font-semibold text-lg">Solte os arquivos aqui</p>
+            <p className="text-[var(--v2-ink-soft)] text-sm mt-1">Pronto para indexar</p>
           </>
         ) : (
           <>
-            <p className="text-gray-700 font-semibold">Arraste arquivos ou clique para selecionar</p>
-            <p className="text-sm text-gray-400 mt-1">
+            <p className="text-[var(--v2-ink-strong)] font-semibold">Arraste arquivos ou clique para selecionar</p>
+            <p className="text-sm text-[var(--v2-ink-faint)] mt-1">
               {ACCEPTED_TYPES.join(', ').toUpperCase()} — máx. {MAX_SIZE_MB} MB por arquivo
             </p>
-            <p className="text-xs text-gray-400 mt-1">Serão indexados automaticamente no acervo vetorial</p>
+            <p className="text-xs text-[var(--v2-ink-faint)] mt-1">Serão indexados automaticamente no acervo vetorial</p>
           </>
         )}
 
@@ -1512,11 +1512,11 @@ export default function Upload() {
 
       {/* Files uploading now */}
       {localFiles.length > 0 && (
-        <div className="space-y-2 mb-4">
+        <div className="space-y-2">
           {localFiles.map((f, i) => (
-            <div key={i} className="bg-white rounded-lg border p-3">
+            <div key={i} className="v2-panel rounded-[1rem] p-3">
               <div className="flex items-center gap-3">
-                <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                <FileText className="w-5 h-5 text-[var(--v2-ink-faint)] flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-800 truncate">{f.name}</p>
                   <p className="text-xs text-gray-400">{formatSize(f.size)}</p>
@@ -1557,20 +1557,20 @@ export default function Upload() {
 
       {/* Indexed history — Firebase mode */}
       {IS_FIREBASE && firebaseHistory.length > 0 && (
-        <div className="bg-white rounded-xl border overflow-hidden">
+        <div className="v2-panel rounded-[1.4rem] overflow-hidden">
           {/* Header with counts */}
-          <div className="px-4 py-3 border-b bg-gray-50">
-            <div className="flex items-center justify-between mb-2">
+          <div className="px-5 py-4 border-b border-[var(--v2-line-soft)]">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-sm font-semibold text-gray-700">Acervo de referência</h2>
-                <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-2 py-0.5">{firebaseHistory.length}</span>
+                <h2 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Acervo de referência</h2>
+                <span className="text-xs text-[var(--v2-ink-faint)] bg-[rgba(15,23,42,0.06)] rounded-full px-2.5 py-0.5">{firebaseHistory.length}</span>
                 {docsWithEmenta.length > 0 && (
-                  <span className="text-xs text-indigo-500 bg-indigo-50 rounded-full px-2 py-0.5" title="Documentos com ementa">
+                  <span className="text-xs text-indigo-600 bg-[rgba(99,102,241,0.1)] rounded-full px-2.5 py-0.5" title="Documentos com ementa">
                     {docsWithEmenta.length} com ementa
                   </span>
                 )}
                 {docsWithTags.length > 0 && (
-                  <span className="text-xs text-teal-500 bg-teal-50 rounded-full px-2 py-0.5" title="Documentos com tags">
+                  <span className="text-xs text-[var(--v2-accent-strong)] bg-[rgba(15,118,110,0.1)] rounded-full px-2.5 py-0.5" title="Documentos com tags">
                     {docsWithTags.length} classificados
                   </span>
                 )}
@@ -1630,19 +1630,19 @@ export default function Upload() {
             {/* Search and filter bar */}
             <div className="flex gap-2">
               <div className="flex-1 relative">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--v2-ink-faint)]" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="Buscar por nome, ementa, área, assunto..."
-                  className="w-full pl-9 pr-3 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
+                  className="w-full pl-9 pr-3 py-2 text-sm rounded-[0.8rem] outline-none"
                 />
               </div>
               <select
                 value={filterNatureza}
                 onChange={e => setFilterNatureza(e.target.value)}
-                className="text-xs border rounded-lg px-2 py-1.5 bg-white focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
+                className="text-sm rounded-[0.8rem] px-3 py-2 outline-none"
               >
                 <option value="">Todas as naturezas</option>
                 {NATUREZA_OPTIONS.map(o => (
@@ -1668,21 +1668,21 @@ export default function Upload() {
               />
             </div>
           )}
-          <div className="divide-y max-h-[32rem] overflow-y-auto">
+          <div className="divide-y divide-[var(--v2-line-soft)] max-h-[36rem] overflow-y-auto">
             {filteredHistory.map(acervoDoc => {
               const s = STATUS_LABELS[acervoDoc.status] || STATUS_LABELS.uploaded
               const StatusIcon = s.icon
               const hasEmenta = !!acervoDoc.ementa
               const hasTags = !!acervoDoc.tags_generated
               return (
-                <div key={acervoDoc.id} className="px-4 py-3 hover:bg-gray-50 transition-colors">
+                <div key={acervoDoc.id} className="px-5 py-4 hover:bg-[rgba(15,118,110,0.03)] transition-colors">
                   <div className="flex items-start gap-3">
-                    <FileText className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                    <FileText className="w-5 h-5 text-[var(--v2-ink-faint)] flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{acervoDoc.filename}</p>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span className="text-xs text-gray-400">{formatSize(acervoDoc.size_bytes)}</span>
-                        {acervoDoc.chunks_count > 0 && <span className="text-xs text-gray-400">· {acervoDoc.chunks_count} fragmentos</span>}
+                      <p className="text-sm font-medium text-[var(--v2-ink-strong)] truncate">{acervoDoc.filename}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-xs text-[var(--v2-ink-faint)]">{formatSize(acervoDoc.size_bytes)}</span>
+                        {acervoDoc.chunks_count > 0 && <span className="text-xs text-[var(--v2-ink-faint)]">· {acervoDoc.chunks_count} fragmentos</span>}
                         {acervoDoc.storage_format === 'json' && (
                           <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500" title="Armazenado em formato JSON estruturado (compacto)">
                             <Database className="w-3 h-3" />
@@ -1786,12 +1786,12 @@ export default function Upload() {
               )
             })}
             {filteredHistory.length === 0 && (searchQuery || filterNatureza) && (
-              <div className="px-4 py-8 text-center text-gray-400">
+              <div className="px-5 py-10 text-center text-[var(--v2-ink-faint)]">
                 <Filter className="w-6 h-6 mx-auto mb-2" />
                 <p className="text-sm">Nenhum documento encontrado com os filtros atuais.</p>
                 <button
                   onClick={() => { setSearchQuery(''); setFilterNatureza('') }}
-                  className="text-xs text-teal-500 hover:text-teal-600 mt-1"
+                  className="text-xs text-[var(--v2-accent-strong)] hover:underline mt-1"
                 >
                   Limpar filtros
                 </button>
@@ -1803,21 +1803,21 @@ export default function Upload() {
 
       {/* Indexed history — Server mode */}
       {!IS_FIREBASE && history.length > 0 && (
-        <div className="bg-white rounded-xl border overflow-hidden">
-          <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700">Acervo indexado</h2>
-            <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-2 py-0.5">{history.length}</span>
+        <div className="v2-panel rounded-[1.4rem] overflow-hidden">
+          <div className="px-5 py-4 border-b border-[var(--v2-line-soft)] flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Acervo indexado</h2>
+            <span className="text-xs text-[var(--v2-ink-faint)] bg-[rgba(15,23,42,0.06)] rounded-full px-2.5 py-0.5">{history.length}</span>
           </div>
-          <div className="divide-y max-h-96 overflow-y-auto">
+          <div className="divide-y divide-[var(--v2-line-soft)] max-h-[36rem] overflow-y-auto">
             {history.map(doc => {
               const s = STATUS_LABELS[doc.status] || STATUS_LABELS.uploaded
               const Icon = s.icon
               return (
-                <div key={doc.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
-                  <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                <div key={doc.id} className="flex items-center gap-3 px-5 py-4 hover:bg-[rgba(15,118,110,0.03)] transition-colors">
+                  <FileText className="w-5 h-5 text-[var(--v2-ink-faint)] flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{doc.filename}</p>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-sm font-medium text-[var(--v2-ink-strong)] truncate">{doc.filename}</p>
+                    <p className="text-xs text-[var(--v2-ink-faint)]">
                       {formatSize(doc.size_bytes)}
                       {doc.chunks_indexed > 0 && ` · ${doc.chunks_indexed} fragmentos`}
                       {doc.collection_name && ` · ${doc.collection_name}`}
@@ -1846,7 +1846,7 @@ export default function Upload() {
         <V2EmptyState
           icon={Database}
           title="Nenhum documento no acervo"
-          description="Envie documentos juridicos para alimentar sua base de conhecimento. Eles passam a sustentar geracao, notebook, classificacao e revisao com contexto real." 
+          description="Envie documentos jurídicos para alimentar sua base de conhecimento. Eles passam a sustentar geração, notebook, classificação e revisão com contexto real."
           action={(
             <label className="v2-btn-primary cursor-pointer">
               <UploadIcon className="h-4 w-4" />
