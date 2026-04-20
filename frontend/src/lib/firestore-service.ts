@@ -1269,6 +1269,15 @@ function getDefaultAdminLegalAreas(): AdminLegalArea[] {
   return LEGAL_AREAS.map(la => ({ ...la, is_enabled: true }))
 }
 
+function sanitizeStringArray(items: unknown): string[] {
+  if (!Array.isArray(items)) return []
+  return items.flatMap((item): string[] => {
+    if (typeof item !== 'string') return []
+    const normalized = item.trim()
+    return normalized ? [normalized] : []
+  })
+}
+
 export function sanitizeAdminDocumentTypes(items: unknown): AdminDocumentType[] {
   if (!Array.isArray(items)) return []
 
@@ -1288,9 +1297,7 @@ export function sanitizeAdminDocumentTypes(items: unknown): AdminDocumentType[] 
     const description = typeof source.description === 'string'
       ? source.description.trim()
       : (defaults?.description ?? '')
-    const templates = Array.isArray(source.templates)
-      ? source.templates.filter((template): template is string => typeof template === 'string' && template.trim().length > 0)
-      : []
+    const templates = sanitizeStringArray(source.templates)
     const structure = typeof source.structure === 'string' ? source.structure : undefined
 
     return [{
@@ -1323,9 +1330,7 @@ export function sanitizeAdminLegalAreas(items: unknown): AdminLegalArea[] {
     const description = typeof source.description === 'string'
       ? source.description.trim()
       : (defaults?.description ?? '')
-    const assuntos = Array.isArray(source.assuntos)
-      ? source.assuntos.filter((assunto): assunto is string => typeof assunto === 'string' && assunto.trim().length > 0)
-      : undefined
+    const assuntos = sanitizeStringArray(source.assuntos)
 
     return [{
       id,
