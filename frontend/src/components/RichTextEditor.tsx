@@ -357,38 +357,75 @@ function FindReplaceBar({ editor, onClose }: { editor: Editor; onClose: () => vo
   const [findText, setFindText] = useState('')
   const [replaceText, setReplaceText] = useState('')
   const [matchCount, setMatchCount] = useState(0)
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
 
-  const doFind = useCallback(() => {
-    if (!findText.trim()) { setMatchCount(0); return }
+  const doFind = useCallback((query: string) => {
+    if (!query.trim()) { setMatchCount(0); return }
     const text = editor.getText()
-    const regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
     const matches = text.match(regex)
     setMatchCount(matches?.length ?? 0)
-  }, [findText, editor])
+  }, [editor])
+
+  const handleFindChange = useCallback((value: string) => {
+    setFindText(value)
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => doFind(value), 200)
+  }, [doFind])
+
+  useEffect(() => () => clearTimeout(debounceRef.current), [])
 
   const doReplace = useCallback(() => {
     if (!findText.trim()) return
-    const html = editor.getHTML()
-    const regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-    const newHtml = html.replace(regex, replaceText)
-    if (newHtml !== html) {
-      editor.commands.setContent(newHtml)
-      setMatchCount(prev => Math.max(0, prev - 1))
-    }
+    // Use text-level search to find position, then replace via transaction
+    const docText = editor.getText()
+    const escapedFind = findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const match = docText.match(new RegExp(escapedFind, 'i'))
+    if (!match || match.index === undefined) return
+
+    // Walk through document nodes to find the text position
+    let pos = 0
+    let found = false
+    editor.state.doc.descendants((node, nodePos) => {
+      if (found || !node.isText) return
+      const nodeText = node.text ?? ''
+      const localMatch = nodeText.match(new RegExp(escapedFind, 'i'))
+      if (localMatch && localMatch.index !== undefined) {
+        const from = nodePos + localMatch.index
+        const to = from + localMatch[0].length
+        editor.chain().focus().insertContentAt({ from, to }, replaceText).run()
+        found = true
+        setMatchCount(prev => Math.max(0, prev - 1))
+      }
+    })
   }, [findText, replaceText, editor])
 
   const doReplaceAll = useCallback(() => {
     if (!findText.trim()) return
-    const html = editor.getHTML()
-    const regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
-    const newHtml = html.replace(regex, replaceText)
-    if (newHtml !== html) {
-      editor.commands.setContent(newHtml)
-      setMatchCount(0)
-    }
-  }, [findText, replaceText, editor])
+    const escapedFind = findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(escapedFind, 'gi')
+    let replacements = 0
 
-  useEffect(() => { doFind() }, [findText, doFind])
+    // Process replacements from end to start to preserve positions
+    const positions: Array<{ from: number; to: number }> = []
+    editor.state.doc.descendants((node, nodePos) => {
+      if (!node.isText) return
+      const nodeText = node.text ?? ''
+      let m: RegExpExecArray | null
+      const localRegex = new RegExp(escapedFind, 'gi')
+      while ((m = localRegex.exec(nodeText)) !== null) {
+        positions.push({ from: nodePos + m.index, to: nodePos + m.index + m[0].length })
+      }
+    })
+
+    // Apply from end to start
+    for (let i = positions.length - 1; i >= 0; i--) {
+      editor.chain().focus().insertContentAt(positions[i], replaceText).run()
+      replacements++
+    }
+
+    if (replacements > 0) setMatchCount(0)
+  }, [findText, replaceText, editor])
 
   return (
     <div
@@ -399,7 +436,7 @@ function FindReplaceBar({ editor, onClose }: { editor: Editor; onClose: () => vo
       <input
         type="text"
         value={findText}
-        onChange={e => setFindText(e.target.value)}
+        onChange={e => handleFindChange(e.target.value)}
         placeholder="Localizar..."
         autoFocus
         className="rounded-lg px-2 py-1 text-xs outline-none flex-1 min-w-[100px]"
@@ -487,6 +524,13 @@ export default function RichTextEditor({
   const [showFindReplace, setShowFindReplace] = useState(false)
   const [showImageDialog, setShowImageDialog] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
+
+  const closeAllPopovers = useCallback((except?: string) => {
+    if (except !== 'link') setShowLink(false)
+    if (except !== 'color') setShowColor(false)
+    if (except !== 'highlight') setShowHighlightColor(false)
+    if (except !== 'image') setShowImageDialog(false)
+  }, [])
 
   const editor = useEditor({
     extensions: [
@@ -871,7 +915,7 @@ export default function RichTextEditor({
       <div
         className={editable ? 'doc-canvas' : 'flex-1 overflow-y-auto'}
         style={editable ? undefined : { background: 'transparent' }}
-        onClick={() => { setShowLink(false); setShowColor(false); setShowHighlightColor(false); setShowImageDialog(false) }}
+        onClick={() => closeAllPopovers()}
       >
         {editable ? (
           <div className="doc-page">

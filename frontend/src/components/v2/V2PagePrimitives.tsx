@@ -35,7 +35,7 @@ export function V2MetricCard({ label, value, helper, icon: Icon, tone = 'default
 
 export function V2MetricGrid({ items, className = '' }: { items: MetricItem[]; className?: string }) {
   return (
-    <div className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${className}`.trim()}>
+    <div className={`grid gap-3 sm:grid-cols-2 xl:grid-cols-4 ${className}`.trim()}>
       {items.map((item) => (
         <V2MetricCard key={item.label} {...item} />
       ))}
