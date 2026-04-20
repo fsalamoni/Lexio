@@ -49,10 +49,7 @@ export interface TypeStat {
   avg_score: number | null
 }
 
-export function formatCost(usd: number | null | undefined) {
-  if (usd == null || Number.isNaN(usd)) return '—'
-  return usd < 0.001 ? `$${usd.toFixed(5)}` : `$${usd.toFixed(4)}`
-}
+export { formatCost } from './currency-utils'
 
 export function formatDuration(ms: number | null) {
   if (!ms) return '—'

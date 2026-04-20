@@ -32,6 +32,7 @@ import {
 import { AVAILABLE_MODELS, FREE_TIER_RATE_LIMITS, type ModelOption, type ModelCapability, type AgentCategory } from '../lib/model-config'
 import { runModelHealthCheck, formatHealthCheckMessage } from '../lib/model-health-check'
 import { useToast } from './Toast'
+import { formatCost as fmtCost } from '../lib/currency-utils'
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -39,13 +40,6 @@ function fmt(tokens: number): string {
   if (tokens >= 1_000_000) return `${tokens / 1_000_000}M`
   if (tokens >= 1_000)     return `${Math.round(tokens / 1_000)}K`
   return String(tokens)
-}
-
-function fmtCost(usd: number): string {
-  if (usd === 0) return 'Grátis'
-  if (usd < 0.01) return `$${usd.toFixed(4)}`
-  if (usd < 1)   return `$${usd.toFixed(3)}`
-  return `$${usd.toFixed(2)}`
 }
 
 const TIER_STYLES: Record<string, { bg: string; text: string; label: string }> = {

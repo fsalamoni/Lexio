@@ -13,6 +13,7 @@ import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
 import { V2EmptyState, V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { IS_FIREBASE } from '../lib/firebase'
+import { formatCost as fmtCost } from '../lib/currency-utils'
 import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc, type ContextDetailData } from '../lib/firestore-service'
 import { generateDocument, type GenerationProgress } from '../lib/generation-service'
 import {
@@ -84,11 +85,6 @@ function fmtDuration(ms: number | null): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-function fmtCost(usd: number | null): string {
-  if (usd == null) return '—'
-  if (usd < 0.0001) return '<$0.0001'
-  return `$${usd.toFixed(4)}`
-}
 
 function fmtModel(model: string | null): string {
   if (!model) return '—'

@@ -30,6 +30,7 @@ import {
   type AgentCategory,
 } from '../lib/model-config'
 import { useCatalogModels } from '../lib/model-catalog'
+import { formatCost } from '../lib/currency-utils'
 import DraggablePanel from './DraggablePanel'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -113,11 +114,7 @@ function formatContext(tokens: number): string {
   return String(tokens)
 }
 
-function formatCost(usd: number): string {
-  if (usd === 0) return 'Grátis'
-  if (usd < 1)   return `$${usd.toFixed(3)}`
-  return `$${usd.toFixed(2)}`
-}
+
 
 // ── Component ──────────────────────────────────────────────────────────────────
 

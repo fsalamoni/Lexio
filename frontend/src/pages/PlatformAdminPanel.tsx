@@ -25,6 +25,7 @@ import {
 } from '../lib/firestore-service'
 import { V2EmptyState, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { buildWorkspaceSettingsPath } from '../lib/workspace-routes'
+import { fmtUsd, fmtInt, fmtPercent } from '../lib/currency-utils'
 
 const PIE_COLORS = ['#0f766e', '#2563eb', '#9333ea', '#d97706', '#dc2626', '#64748b']
 const EXECUTIVE_INSET_CARD = 'rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] px-2.5 py-2'
@@ -32,22 +33,10 @@ const EXECUTIVE_PANEL_BUTTON = 'px-3 py-1.5 rounded-lg border border-[var(--v2-l
 const EXECUTIVE_INPUT = 'mt-1 w-full rounded-[0.95rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-2.5 py-2 text-sm text-[var(--v2-ink-strong)] outline-none transition focus:border-[rgba(15,118,110,0.34)] focus:ring-4 focus:ring-[rgba(15,118,110,0.12)]'
 const EXECUTIVE_INPUT_COMPACT = 'mt-1 w-full rounded-[0.95rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-2 py-1 text-sm text-[var(--v2-ink-strong)] outline-none transition focus:border-[rgba(15,118,110,0.34)] focus:ring-4 focus:ring-[rgba(15,118,110,0.12)]'
 
-function fmtUsd(value: number) {
-  return value < 0.001 ? `$${value.toFixed(5)}` : `$${value.toFixed(4)}`
-}
-
-function fmtInt(value: number) {
-  return value.toLocaleString('pt-BR')
-}
-
 function fmtSignedNumber(value: number) {
   const rounded = Number(value.toFixed(2))
   if (rounded > 0) return `+${rounded}`
   return `${rounded}`
-}
-
-function fmtPercent(value: number) {
-  return `${(value * 100).toFixed(1)}%`
 }
 
 type OperationalAlert = {

@@ -10,18 +10,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getPlatformCostBreakdown } from '../lib/firestore-service'
 import type { CostBreakdown, CostBreakdownItem } from '../lib/cost-analytics'
-
-function fmtUsd(value: number) {
-  return value < 0.001 ? `$${value.toFixed(5)}` : `$${value.toFixed(4)}`
-}
-
-function fmtBrl(value: number) {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
-
-function fmtInt(value: number) {
-  return value.toLocaleString('pt-BR')
-}
+import { fmtUsd, fmtBrl, fmtInt } from '../lib/currency-utils'
 
 function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
   return (

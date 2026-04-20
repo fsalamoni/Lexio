@@ -18,6 +18,7 @@ import {
 } from '../lib/firestore-service'
 import { generateDocument, generateContextQuestions, estimateDocumentGenerationCost, type GenerationProgress } from '../lib/generation-service'
 import { ModelUnavailableError, TransientLLMError } from '../lib/llm-client'
+import { formatCost } from '../lib/currency-utils'
 import { ModelsNotConfiguredError } from '../lib/model-config'
 import type { UserProfileForGeneration } from '../lib/generation-service'
 import PipelineProgressPanel, {
@@ -246,9 +247,9 @@ export default function NewDocument() {
                 toast.error('Orçamento excedido', 'O limite mensal de tokens foi atingido. Ajuste em Custos & Tokens.')
                 return
               }
-              toast.warning('Orçamento excedido', `Gasto atual: $${totalSpend.toFixed(2)} / $${monthlyLimit.toFixed(2)}. A geração prosseguirá.`)
+              toast.warning('Orçamento excedido', `Gasto atual: ${formatCost(totalSpend)} / ${formatCost(monthlyLimit)}. A geração prosseguirá.`)
             } else if (totalSpend && (totalSpend / monthlyLimit) * 100 >= warningPct) {
-              toast.warning('Orçamento em alerta', `Gasto atual: $${totalSpend.toFixed(2)} / $${monthlyLimit.toFixed(2)} (${Math.round((totalSpend / monthlyLimit) * 100)}%)`)
+              toast.warning('Orçamento em alerta', `Gasto atual: ${formatCost(totalSpend)} / ${formatCost(monthlyLimit)} (${Math.round((totalSpend / monthlyLimit) * 100)}%)`)
             }
           }
         }
@@ -260,7 +261,7 @@ export default function NewDocument() {
     // Confirm for estimated costly operations (above $0.10)
     if (costEstimate && costEstimate.estimatedCostUsd > 0.10) {
       const proceed = window.confirm(
-        `Esta geração está estimada em ~$${costEstimate.estimatedCostUsd.toFixed(3)} USD (${costEstimate.agentCount} agentes, ~${(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens). Deseja continuar?`
+        `Esta geração está estimada em ~${formatCost(costEstimate.estimatedCostUsd)} (${costEstimate.agentCount} agentes, ~${(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens). Deseja continuar?`
       )
       if (!proceed) return
     }
@@ -356,7 +357,7 @@ export default function NewDocument() {
   }
 
   return (
-    <div className="max-w-2xl space-y-6 v2-bridge-surface">
+    <div className="space-y-6 v2-bridge-surface">
       <V2PageHero
         eyebrow={<><FileText className="h-3.5 w-3.5" /> Gerador</>}
         title="Configure o caso e dispare a trilha multiagente sem sair do novo workspace"
@@ -399,7 +400,7 @@ export default function NewDocument() {
           },
           {
             label: 'Estimativa',
-            value: costEstimate ? `~$${costEstimate.estimatedCostUsd.toFixed(3)}` : 'Aguardando',
+            value: costEstimate ? `~${formatCost(costEstimate.estimatedCostUsd)}` : 'Aguardando',
             helper: costEstimate ? `~${(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens` : 'Preencha tipo e solicitacao',
             icon: Sparkles,
             tone: costEstimate ? 'warm' : 'default',
@@ -573,7 +574,7 @@ export default function NewDocument() {
           {costEstimate && !generating && (
             <div className="w-full text-xs text-gray-500 flex items-center justify-between px-1">
               <span>Estimativa: ~{costEstimate.agentCount} agentes, ~{(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens</span>
-              <span className="font-medium text-amber-600">~${costEstimate.estimatedCostUsd.toFixed(3)} USD</span>
+              <span className="font-medium text-amber-600">~{formatCost(costEstimate.estimatedCostUsd)}</span>
             </div>
           )}
 

@@ -14,10 +14,10 @@ import StatusBadge from '../components/StatusBadge'
 import { SkeletonCard } from '../components/Skeleton'
 import { IS_FIREBASE, firebaseAuth } from '../lib/firebase'
 import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../lib/constants'
+import { formatCost as fmtCost } from '../lib/currency-utils'
 import {
   buildCostSeries,
   computeDocsThisWeek,
-  formatCost as fmtCost,
   formatDuration as fmtDuration,
   getResumableDocument,
   useDashboardData,
@@ -280,7 +280,7 @@ export default function Dashboard() {
                 />
                 <YAxis
                   tick={{ fontSize: 10 }}
-                  tickFormatter={v => `$${v.toFixed(3)}`}
+                  tickFormatter={v => fmtCost(v)}
                 />
                 <Tooltip
                   formatter={(v: number) => [fmtCost(v), 'Custo acumulado']}

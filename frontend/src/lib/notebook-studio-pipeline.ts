@@ -16,6 +16,7 @@
  */
 
 import { callLLMWithFallback, type LLMResult } from './llm-client'
+import { formatCostBadge } from './currency-utils'
 import { loadResearchNotebookModels, validateScopedAgentModels, type ResearchNotebookModelMap } from './model-config'
 import type { StudioArtifactType } from './firestore-service'
 import { isStructuredArtifactType, parseArtifactContent } from './artifact-parsers'
@@ -74,8 +75,7 @@ export interface StudioProgressMeta {
 export type StudioProgressCallback = (step: number, totalSteps: number, phase: string, meta?: StudioProgressMeta) => void
 
 function formatUsd(costUsd: number): string {
-  if (costUsd < 0.0001) return '<$0.0001'
-  return `$${costUsd.toFixed(4)}`
+  return formatCostBadge(costUsd)
 }
 
 function buildStudioProgressMeta(result: LLMResult): StudioProgressMeta {

@@ -24,6 +24,7 @@
  */
 
 import { callLLMWithFallback, ModelUnavailableError, TransientLLMError, type LLMResult } from './llm-client'
+import { formatCostBadge } from './currency-utils'
 import { loadVideoPipelineModels, validateScopedAgentModels, VIDEO_PIPELINE_AGENT_DEFS } from './model-config'
 import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
@@ -529,8 +530,7 @@ async function safeCallAgent(
 }
 
 function formatUsd(costUsd: number): string {
-  if (costUsd < 0.0001) return '<$0.0001'
-  return `$${costUsd.toFixed(4)}`
+  return formatCostBadge(costUsd)
 }
 
 function buildVideoProgressMetaFromResult(result: LLMResult): VideoPipelineProgressMeta {

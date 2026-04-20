@@ -131,7 +131,7 @@ body {
 /* ─── Workspace V2 tokens & primitives ──────────────────────── */
 :root {
   --v2-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --v2-font-display: 'Georgia', 'Palatino Linotype', 'Book Antiqua', serif;
+  --v2-font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --v2-canvas: #f5f1e8;
   --v2-panel: rgba(255, 252, 247, 0.78);
   --v2-panel-strong: rgba(255, 255, 255, 0.92);

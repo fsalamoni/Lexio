@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { estimateVideoGenerationCost, type VideoCheckpoint } from '../lib/video-generation-pipeline'
 import { VIDEO_PIPELINE_STAGES, type VideoPipelineProgressState } from '../lib/video-pipeline-progress'
+import { formatCost } from '../lib/currency-utils'
 import DraggablePanel from './DraggablePanel'
 
 /** Model type recommendation per agent — pipeline textual + geração real de mídia */
@@ -222,9 +223,9 @@ export default function VideoGenerationCostModal({
                     </p>
                   </div>
                   <div className="rounded-lg p-3 border" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
-                    <p className="text-xs mb-1" style={{ color: 'var(--v2-ink-faint)' }}>Custo Estimado (USD)</p>
+                    <p className="text-xs mb-1" style={{ color: 'var(--v2-ink-faint)' }}>Custo Estimado</p>
                     <p className="text-lg font-bold text-rose-600">
-                      ${estimate.estimatedCostUsd.toFixed(4)}
+                      {formatCost(estimate.estimatedCostUsd)}
                     </p>
                   </div>
                 </div>
@@ -269,7 +270,7 @@ export default function VideoGenerationCostModal({
                               {item.estimatedTokens.toLocaleString('pt-BR')}
                             </span>
                             <span className="font-mono" style={{ color: 'var(--v2-ink-strong)' }}>
-                              ${item.estimatedCostUsd.toFixed(4)}
+                              {formatCost(item.estimatedCostUsd)}
                             </span>
                           </div>
                         </div>
@@ -291,7 +292,7 @@ export default function VideoGenerationCostModal({
                     <ImagePlus className="w-4 h-4 text-blue-600" />
                     <h3 className="text-sm font-bold text-blue-900">Geração de Mídia Real</h3>
                     <span className="text-xs text-blue-600 ml-auto font-mono">
-                      ${estimate.mediaCostUsd.toFixed(4)}
+                      {formatCost(estimate.mediaCostUsd)}
                     </span>
                   </div>
                   <div className="space-y-1.5">
@@ -302,7 +303,7 @@ export default function VideoGenerationCostModal({
                           <span className="font-medium text-gray-700">{item.label}</span>
                           <span className="text-gray-400">({item.count} itens)</span>
                         </div>
-                        <span className="font-mono text-gray-600">${item.estimatedCostUsd.toFixed(4)}</span>
+                        <span className="font-mono text-gray-600">{formatCost(item.estimatedCostUsd)}</span>
                       </div>
                     ))}
                   </div>

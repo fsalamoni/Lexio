@@ -1,3 +1,4 @@
+import { formatCost } from './currency-utils'
 import { DOCTYPE_LABELS } from './constants'
 
 export type UsageFunctionKey = 'document_generation' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline'
@@ -645,9 +646,9 @@ export function checkBudget(
       limitUsd: config.monthly_limit_usd,
       percentUsed: pct,
       message: pct >= 100
-        ? `Orçamento mensal excedido: $${monthlySpend.toFixed(2)} / $${config.monthly_limit_usd.toFixed(2)}`
+        ? `Orçamento mensal excedido: ${formatCost(monthlySpend)} / ${formatCost(config.monthly_limit_usd)}`
         : pct >= warningPct
-          ? `Orçamento mensal em alerta: $${monthlySpend.toFixed(2)} / $${config.monthly_limit_usd.toFixed(2)} (${Math.round(pct)}%)`
+          ? `Orçamento mensal em alerta: ${formatCost(monthlySpend)} / ${formatCost(config.monthly_limit_usd)} (${Math.round(pct)}%)`
           : '',
     })
   }
@@ -665,9 +666,9 @@ export function checkBudget(
       limitUsd: config.daily_limit_usd,
       percentUsed: pct,
       message: pct >= 100
-        ? `Orçamento diário excedido: $${dailySpend.toFixed(2)} / $${config.daily_limit_usd.toFixed(2)}`
+        ? `Orçamento diário excedido: ${formatCost(dailySpend)} / ${formatCost(config.daily_limit_usd)}`
         : pct >= warningPct
-          ? `Orçamento diário em alerta: $${dailySpend.toFixed(2)} / $${config.daily_limit_usd.toFixed(2)} (${Math.round(pct)}%)`
+          ? `Orçamento diário em alerta: ${formatCost(dailySpend)} / ${formatCost(config.daily_limit_usd)} (${Math.round(pct)}%)`
           : '',
     })
   }
@@ -685,9 +686,9 @@ export function checkBudget(
       limitUsd: config.per_pipeline_limit_usd,
       percentUsed: pct,
       message: pct >= 100
-        ? `Orçamento do pipeline excedido: $${pipelineSpend.toFixed(2)} / $${config.per_pipeline_limit_usd.toFixed(2)}`
+        ? `Orçamento do pipeline excedido: ${formatCost(pipelineSpend)} / ${formatCost(config.per_pipeline_limit_usd)}`
         : pct >= warningPct
-          ? `Orçamento do pipeline em alerta: $${pipelineSpend.toFixed(2)} / $${config.per_pipeline_limit_usd.toFixed(2)} (${Math.round(pct)}%)`
+          ? `Orçamento do pipeline em alerta: ${formatCost(pipelineSpend)} / ${formatCost(config.per_pipeline_limit_usd)} (${Math.round(pct)}%)`
           : '',
     })
   }

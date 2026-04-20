@@ -1,3 +1,4 @@
+import { formatCostBadge } from './currency-utils'
 import type { TaskInfo } from '../contexts/TaskManagerContext'
 import type { AcervoAnalysisProgress } from './notebook-acervo-analyzer'
 import type { StudioArtifactType } from './firestore-service'
@@ -52,8 +53,7 @@ export interface NotebookOperationalAggregate {
 }
 
 function formatUsd(costUsd: number): string {
-  if (costUsd < 0.0001) return '<$0.0001'
-  return `$${costUsd.toFixed(4)}`
+  return formatCostBadge(costUsd)
 }
 
 function formatProcessedDuration(ms: number): string | undefined {

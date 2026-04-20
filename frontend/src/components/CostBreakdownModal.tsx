@@ -5,28 +5,13 @@ import {
 } from 'recharts'
 import type { CostBreakdown, CostBreakdownItem } from '../lib/cost-analytics'
 import DraggablePanel from './DraggablePanel'
+import { fmtUsd, fmtBrl, fmtInt, fmtPercent } from '../lib/currency-utils'
 
 interface CostBreakdownModalProps {
   open: boolean
   breakdown: CostBreakdown | null
   loading?: boolean
   onClose: () => void
-}
-
-function fmtUsd(value: number) {
-  return value < 0.001 ? `$${value.toFixed(5)}` : `$${value.toFixed(4)}`
-}
-
-function fmtBrl(value: number) {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
-
-function fmtInt(value: number) {
-  return value.toLocaleString('pt-BR')
-}
-
-function fmtPercent(value: number) {
-  return `${(value * 100).toFixed(1)}%`
 }
 
 function HighlightCard({

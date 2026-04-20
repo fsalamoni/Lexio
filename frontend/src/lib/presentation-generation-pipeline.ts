@@ -1,4 +1,5 @@
 import { parseArtifactContent } from './artifact-parsers'
+import { formatCostBadge } from './currency-utils'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL } from './image-generation-client'
 import { callLLMWithFallback, type LLMResult } from './llm-client'
 import {
@@ -147,7 +148,7 @@ function buildPresentationProgressMeta(result: LLMResult): StudioProgressMeta {
     parts.push(`${Math.max(1, Math.round(result.duration_ms / 1000))}s`)
   }
   if (result.cost_usd > 0) {
-    parts.push(result.cost_usd < 0.0001 ? '<$0.0001' : `$${result.cost_usd.toFixed(4)}`)
+    parts.push(formatCostBadge(result.cost_usd))
   }
   return {
     stageMeta: parts.join(' • '),

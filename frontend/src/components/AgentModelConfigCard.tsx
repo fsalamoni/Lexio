@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import type { AgentCategory, ModelCapability, ModelOption } from '../lib/model-config'
 import { useCatalogModels } from '../lib/model-catalog'
+import { formatCost } from '../lib/currency-utils'
 import ModelSelectorModal from './ModelSelectorModal'
 
 export interface AgentModelConfigDef {
@@ -214,11 +215,7 @@ function formatContext(tokens: number): string {
   return String(tokens)
 }
 
-function formatCost(usd: number): string {
-  if (usd === 0) return 'Grátis'
-  if (usd < 1) return `$${usd.toFixed(3)}`
-  return `$${usd.toFixed(2)}`
-}
+
 
 export default function AgentModelConfigCard<T extends Record<string, string>>({
   loadingMessage,
