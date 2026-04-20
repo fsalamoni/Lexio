@@ -1258,12 +1258,91 @@ const LEGAL_AREAS = [
 export function getDocumentTypes() { return DOCUMENT_TYPES }
 export function getLegalAreas() { return LEGAL_AREAS }
 
+const DEFAULT_DOCUMENT_TYPE_MAP = new Map(DOCUMENT_TYPES.map(item => [item.id, item] as const))
+const DEFAULT_LEGAL_AREA_MAP = new Map(LEGAL_AREAS.map(item => [item.id, item] as const))
+
+function getDefaultAdminDocumentTypes(): AdminDocumentType[] {
+  return DOCUMENT_TYPES.map(dt => ({ ...dt, is_enabled: true }))
+}
+
+function getDefaultAdminLegalAreas(): AdminLegalArea[] {
+  return LEGAL_AREAS.map(la => ({ ...la, is_enabled: true }))
+}
+
+export function sanitizeAdminDocumentTypes(items: unknown): AdminDocumentType[] {
+  if (!Array.isArray(items)) return []
+
+  return items.flatMap((item): AdminDocumentType[] => {
+    if (!item || typeof item !== 'object') return []
+
+    const source = item as Partial<AdminDocumentType>
+    const id = typeof source.id === 'string' ? source.id.trim() : ''
+    if (!id) return []
+
+    const defaults = DEFAULT_DOCUMENT_TYPE_MAP.get(id)
+    const name = typeof source.name === 'string' && source.name.trim()
+      ? source.name.trim()
+      : defaults?.name
+    if (!name) return []
+
+    const description = typeof source.description === 'string'
+      ? source.description.trim()
+      : (defaults?.description ?? '')
+    const templates = Array.isArray(source.templates)
+      ? source.templates.filter((template): template is string => typeof template === 'string' && template.trim().length > 0)
+      : []
+    const structure = typeof source.structure === 'string' ? source.structure : undefined
+
+    return [{
+      id,
+      name,
+      description,
+      templates: templates.length > 0 ? templates : (defaults?.templates ?? ['generic']),
+      is_enabled: source.is_enabled !== false,
+      ...(typeof structure === 'string' ? { structure } : {}),
+    }]
+  })
+}
+
+export function sanitizeAdminLegalAreas(items: unknown): AdminLegalArea[] {
+  if (!Array.isArray(items)) return []
+
+  return items.flatMap((item): AdminLegalArea[] => {
+    if (!item || typeof item !== 'object') return []
+
+    const source = item as Partial<AdminLegalArea>
+    const id = typeof source.id === 'string' ? source.id.trim() : ''
+    if (!id) return []
+
+    const defaults = DEFAULT_LEGAL_AREA_MAP.get(id)
+    const name = typeof source.name === 'string' && source.name.trim()
+      ? source.name.trim()
+      : defaults?.name
+    if (!name) return []
+
+    const description = typeof source.description === 'string'
+      ? source.description.trim()
+      : (defaults?.description ?? '')
+    const assuntos = Array.isArray(source.assuntos)
+      ? source.assuntos.filter((assunto): assunto is string => typeof assunto === 'string' && assunto.trim().length > 0)
+      : undefined
+
+    return [{
+      id,
+      name,
+      description,
+      is_enabled: source.is_enabled !== false,
+      ...(assuntos?.length ? { assuntos } : {}),
+    }]
+  })
+}
+
 // ── Admin CRUD for Document Types (Firestore /settings/admin_document_types) ─
 
 
 /** Merge default structures into loaded document types that don't have a custom one. */
 function mergeDefaultStructures(items: AdminDocumentType[]): AdminDocumentType[] {
-  return items.map(item => {
+  return sanitizeAdminDocumentTypes(items).map(item => {
     if (!item.structure?.trim() && DEFAULT_DOC_STRUCTURES[item.id]) {
       return { ...item, structure: DEFAULT_DOC_STRUCTURES[item.id] }
     }
@@ -1272,7 +1351,7 @@ function mergeDefaultStructures(items: AdminDocumentType[]): AdminDocumentType[]
 }
 
 export async function loadAdminDocumentTypes(): Promise<AdminDocumentType[]> {
-  if (!IS_FIREBASE) return mergeDefaultStructures(DOCUMENT_TYPES.map(dt => ({ ...dt, is_enabled: true })))
+  if (!IS_FIREBASE) return mergeDefaultStructures(getDefaultAdminDocumentTypes())
   try {
     const resolvedUid = getCurrentUserId()
     if (resolvedUid) {
@@ -1282,13 +1361,13 @@ export async function loadAdminDocumentTypes(): Promise<AdminDocumentType[]> {
       }
     }
   } catch { /* fallback to defaults */ }
-  return mergeDefaultStructures(DOCUMENT_TYPES.map(dt => ({ ...dt, is_enabled: true })))
+  return mergeDefaultStructures(getDefaultAdminDocumentTypes())
 }
 
 export async function saveAdminDocumentTypes(items: AdminDocumentType[]): Promise<void> {
   const resolvedUid = getCurrentUserId()
   if (IS_FIREBASE && resolvedUid) {
-    await saveUserSettings(resolvedUid, { document_types: items })
+    await saveUserSettings(resolvedUid, { document_types: sanitizeAdminDocumentTypes(items) })
     return
   }
   throw new Error('Usuário não autenticado.')
@@ -1298,7 +1377,7 @@ export async function saveAdminDocumentTypes(items: AdminDocumentType[]): Promis
 
 /** Merge default assuntos into loaded legal areas that don't have custom ones. */
 function mergeDefaultAssuntos(items: AdminLegalArea[]): AdminLegalArea[] {
-  return items.map(item => {
+  return sanitizeAdminLegalAreas(items).map(item => {
     if (!item.assuntos?.length && DEFAULT_AREA_ASSUNTOS[item.id]) {
       return { ...item, assuntos: DEFAULT_AREA_ASSUNTOS[item.id] }
     }
@@ -1307,7 +1386,7 @@ function mergeDefaultAssuntos(items: AdminLegalArea[]): AdminLegalArea[] {
 }
 
 export async function loadAdminLegalAreas(): Promise<AdminLegalArea[]> {
-  if (!IS_FIREBASE) return mergeDefaultAssuntos(LEGAL_AREAS.map(la => ({ ...la, is_enabled: true })))
+  if (!IS_FIREBASE) return mergeDefaultAssuntos(getDefaultAdminLegalAreas())
   try {
     const resolvedUid = getCurrentUserId()
     if (resolvedUid) {
@@ -1317,13 +1396,13 @@ export async function loadAdminLegalAreas(): Promise<AdminLegalArea[]> {
       }
     }
   } catch { /* fallback to defaults */ }
-  return mergeDefaultAssuntos(LEGAL_AREAS.map(la => ({ ...la, is_enabled: true })))
+  return mergeDefaultAssuntos(getDefaultAdminLegalAreas())
 }
 
 export async function saveAdminLegalAreas(items: AdminLegalArea[]): Promise<void> {
   const resolvedUid = getCurrentUserId()
   if (IS_FIREBASE && resolvedUid) {
-    await saveUserSettings(resolvedUid, { legal_areas: items })
+    await saveUserSettings(resolvedUid, { legal_areas: sanitizeAdminLegalAreas(items) })
     return
   }
   throw new Error('Usuário não autenticado.')
