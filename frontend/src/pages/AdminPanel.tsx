@@ -14,6 +14,7 @@ import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { DOCTYPE_LABELS } from '../lib/constants'
 import { IS_FIREBASE } from '../lib/firebase'
+import { formatCost } from '../lib/currency-utils'
 import { getStats as firestoreGetStats,
   listDocuments, updateDocument,
   loadAdminDocumentTypes, saveAdminDocumentTypes,
@@ -839,7 +840,7 @@ export default function AdminPanel() {
           },
           {
             label: 'Custo total',
-            value: `$${stats?.total_cost_usd?.toFixed(2) || '0.00'}`,
+            value: formatCost(stats?.total_cost_usd),
             icon: DollarSign,
             tone: 'warm',
           },
@@ -1372,7 +1373,7 @@ function PipelineLogs() {
                           : '—'}
                       </td>
                       <td className="px-4 py-2 text-right text-[var(--v2-ink-soft)]">
-                        {log.cost_usd != null ? `$${log.cost_usd.toFixed(4)}` : '—'}
+                        {formatCost(log.cost_usd)}
                       </td>
                       <td className="px-4 py-2 text-right text-[var(--v2-ink-soft)]">
                         {log.duration_ms != null ? `${(log.duration_ms / 1000).toFixed(1)}s` : '—'}
