@@ -123,24 +123,35 @@ export default function NewDocument() {
 
   useEffect(() => {
     if (IS_FIREBASE && userId) {
-      // Load user profile first, then filter doc types/areas accordingly
-      Promise.all([
+      Promise.allSettled([
         getProfile(userId),
         loadAdminDocumentTypes(),
         loadAdminLegalAreas(),
-      ]).then(([profile, availableDocTypes, availableLegalAreas]: [ProfileData | null, DocType[], LegalAreaOption[]]) => {
-        setUserProfile(profile ?? null)
-        setDocTypes(getDocumentTypesForProfile(profile ?? null, availableDocTypes))
-        const sortedAreas = getLegalAreasForProfile(profile ?? null, availableLegalAreas)
-        setLegalAreas(sortedAreas)
-        if (profile?.primary_areas && profile.primary_areas.length > 0) {
-          setSelectedAreas(profile.primary_areas)
+      ]).then(([profileResult, docTypesResult, legalAreasResult]) => {
+        const availableDocTypes = docTypesResult.status === 'fulfilled' ? docTypesResult.value : []
+        const availableLegalAreas = legalAreasResult.status === 'fulfilled' ? legalAreasResult.value : []
+        const profile = profileResult.status === 'fulfilled' ? profileResult.value ?? null : null
+
+        setUserProfile(profile)
+        setDocTypes(getDocumentTypesForProfile(profile, availableDocTypes))
+        setLegalAreas(getLegalAreasForProfile(profile, availableLegalAreas))
+
+        if (profile?.primary_areas?.length) {
+          const availableAreaIds = new Set(availableLegalAreas.map(area => area.id))
+          setSelectedAreas(profile.primary_areas.filter(areaId => availableAreaIds.has(areaId)))
         }
-        if (profile?.default_document_type) {
+
+        if (profile?.default_document_type && availableDocTypes.some(docType => docType.id === profile.default_document_type)) {
           setSelectedType(profile.default_document_type)
         }
-      }).catch(() => {
-        toast.error('Erro ao carregar tipos de documento e áreas disponíveis')
+
+        if (docTypesResult.status === 'rejected' || legalAreasResult.status === 'rejected') {
+          toast.error('Erro ao carregar tipos de documento e áreas disponíveis')
+        }
+
+        if (profileResult.status === 'rejected') {
+          console.warn('[NewDocument] Falha ao carregar perfil; seguindo com catálogo padrão.', profileResult.reason)
+        }
       }).finally(() => setLoadingTypes(false))
     } else if (IS_FIREBASE) {
       Promise.all([

@@ -63,6 +63,8 @@ vi.mock('./document-json-converter', () => ({
 import {
   getUserSettings,
   getResearchNotebook,
+  sanitizeAdminDocumentTypes,
+  sanitizeAdminLegalAreas,
   saveUserSettings,
   saveNotebookDocumentToDocuments,
   updateResearchNotebook,
@@ -217,5 +219,55 @@ describe('saveNotebookDocumentToDocuments', () => {
       expect.objectContaining({ last_jurisprudence_tribunal_aliases: ['trf2', 'tjmg'] }),
       { merge: true },
     )
+  })
+})
+
+describe('admin catalog sanitizers', () => {
+  it('drops malformed document types and backfills safe defaults for built-ins', () => {
+    expect(sanitizeAdminDocumentTypes([
+      null,
+      { id: 'parecer', name: '', description: 42, templates: [null, '  ', 'custom'], is_enabled: undefined },
+      { id: 'customizado', name: 'Tipo próprio', description: 'Descrição', templates: [], is_enabled: false, structure: '# Modelo' },
+      { id: '', name: 'Inválido' },
+    ])).toEqual([
+      {
+        id: 'parecer',
+        name: 'Parecer Jurídico',
+        description: 'Opinião técnico-jurídica fundamentada sobre questão de direito',
+        templates: ['custom'],
+        is_enabled: true,
+      },
+      {
+        id: 'customizado',
+        name: 'Tipo próprio',
+        description: 'Descrição',
+        templates: ['generic'],
+        is_enabled: false,
+        structure: '# Modelo',
+      },
+    ])
+  })
+
+  it('drops malformed legal areas and preserves valid assuntos', () => {
+    expect(sanitizeAdminLegalAreas([
+      undefined,
+      { id: 'civil', name: '', description: null, assuntos: ['contratos', ' ', 1], is_enabled: undefined },
+      { id: 'nova_area', name: 'Nova área', description: 'Descrição', assuntos: [], is_enabled: false },
+      { id: 'sem_nome', description: 'inválido' },
+    ])).toEqual([
+      {
+        id: 'civil',
+        name: 'Direito Civil',
+        description: 'Obrigações, contratos, responsabilidade civil, direitos reais, família e sucessões',
+        assuntos: ['contratos'],
+        is_enabled: true,
+      },
+      {
+        id: 'nova_area',
+        name: 'Nova área',
+        description: 'Descrição',
+        is_enabled: false,
+      },
+    ])
   })
 })
