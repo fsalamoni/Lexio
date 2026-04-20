@@ -1518,8 +1518,8 @@ export default function Upload() {
               <div className="flex items-center gap-3">
                 <FileText className="w-5 h-5 text-[var(--v2-ink-faint)] flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">{f.name}</p>
-                  <p className="text-xs text-gray-400">{formatSize(f.size)}</p>
+                  <p className="text-sm font-medium text-[var(--v2-ink-strong)] truncate">{f.name}</p>
+                  <p className="text-xs text-[var(--v2-ink-faint)]">{formatSize(f.size)}</p>
                 </div>
                 {f.status === 'uploading' && (
                   <span className="text-xs text-teal-600 font-medium flex-shrink-0">
@@ -1684,7 +1684,7 @@ export default function Upload() {
                         <span className="text-xs text-[var(--v2-ink-faint)]">{formatSize(acervoDoc.size_bytes)}</span>
                         {acervoDoc.chunks_count > 0 && <span className="text-xs text-[var(--v2-ink-faint)]">· {acervoDoc.chunks_count} fragmentos</span>}
                         {acervoDoc.storage_format === 'json' && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500" title="Armazenado em formato JSON estruturado (compacto)">
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--v2-accent-strong)]" title="Armazenado em formato JSON estruturado (compacto)">
                             <Database className="w-3 h-3" />
                             JSON
                           </span>
