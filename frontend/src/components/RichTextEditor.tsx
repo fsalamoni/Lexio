@@ -1,4 +1,5 @@
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
+import { Extension } from '@tiptap/core'
 import { useEffect, useCallback, useState } from 'react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -19,6 +20,63 @@ import {
   Highlighter, Undo, Redo, Minus, Link as LinkIcon, Table as TableIcon,
   Unlink, Type,
 } from 'lucide-react'
+
+// ── Font size / family command type augmentation ────────────────────────────────
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    fontSize: { setFontSize: (fontSize: string) => ReturnType; unsetFontSize: () => ReturnType }
+    fontFamily: { setFontFamily: (fontFamily: string) => ReturnType; unsetFontFamily: () => ReturnType }
+  }
+}
+
+// ── Inline TipTap extensions ──────────────────────────────────────────────────
+const FontSizeExt = Extension.create<{ types: string[] }>({
+  name: 'fontSize',
+  addOptions() { return { types: ['textStyle'] } },
+  addGlobalAttributes() {
+    return [{ types: this.options.types, attributes: { fontSize: {
+      default: null,
+      parseHTML: el => el.style.fontSize || null,
+      renderHTML: attrs => attrs.fontSize ? { style: `font-size: ${attrs.fontSize}` } : {},
+    }}}]
+  },
+  addCommands() {
+    return {
+      setFontSize: (fs: string) => ({ chain }: { chain: () => { setMark: (n: string, a: object) => { run: () => boolean } } }) =>
+        chain().setMark('textStyle', { fontSize: fs }).run(),
+      unsetFontSize: () => ({ chain }: { chain: () => { setMark: (n: string, a: object) => { removeEmptyTextStyle: () => { run: () => boolean } } } }) =>
+        chain().setMark('textStyle', { fontSize: null }).removeEmptyTextStyle().run(),
+    }
+  },
+})
+
+const FontFamilyExt = Extension.create<{ types: string[] }>({
+  name: 'fontFamily',
+  addOptions() { return { types: ['textStyle'] } },
+  addGlobalAttributes() {
+    return [{ types: this.options.types, attributes: { fontFamily: {
+      default: null,
+      parseHTML: el => el.style.fontFamily || null,
+      renderHTML: attrs => attrs.fontFamily ? { style: `font-family: ${attrs.fontFamily}` } : {},
+    }}}]
+  },
+  addCommands() {
+    return {
+      setFontFamily: (ff: string) => ({ chain }: { chain: () => { setMark: (n: string, a: object) => { run: () => boolean } } }) =>
+        chain().setMark('textStyle', { fontFamily: ff }).run(),
+      unsetFontFamily: () => ({ chain }: { chain: () => { setMark: (n: string, a: object) => { removeEmptyTextStyle: () => { run: () => boolean } } } }) =>
+        chain().setMark('textStyle', { fontFamily: null }).removeEmptyTextStyle().run(),
+    }
+  },
+})
+
+const FONT_FAMILIES = [
+  { label: 'Documento',      value: '"Times New Roman", Times, serif' },
+  { label: 'Sans-serif',     value: 'Inter, -apple-system, sans-serif' },
+  { label: 'Monoespaçado',  value: 'ui-monospace, "Courier New", monospace' },
+]
+
+const FONT_SIZES = ['8','9','10','11','12','14','16','18','20','24','28','32','36','48','72']
 
 interface RichTextEditorProps {
   content: string
@@ -220,6 +278,8 @@ export default function RichTextEditor({
       Placeholder.configure({ placeholder }),
       TextStyle,
       Color,
+      FontSizeExt,
+      FontFamilyExt,
       Link.configure({
         openOnClick: false,
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
@@ -285,6 +345,42 @@ export default function RichTextEditor({
           <Btn onClick={() => editor.chain().focus().redo().run()} title="Refazer (Ctrl+Y)" disabled={!editor.can().redo()}>
             <Redo className="w-3.5 h-3.5" />
           </Btn>
+
+          <Sep />
+
+          {/* Font family */}
+          <select
+            value={editor.getAttributes('textStyle').fontFamily || '"Times New Roman", Times, serif'}
+            onChange={e => editor.chain().focus().setFontFamily(e.target.value).run()}
+            title="Fonte"
+            className="rounded px-1.5 py-1 text-xs outline-none cursor-pointer"
+            style={{
+              border: '1px solid var(--v2-line-soft)',
+              background: 'var(--v2-panel-strong)',
+              color: 'var(--v2-ink-strong)',
+              fontFamily: 'var(--v2-font-sans)',
+              maxWidth: '112px',
+            }}
+          >
+            {FONT_FAMILIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+          </select>
+
+          {/* Font size */}
+          <select
+            value={editor.getAttributes('textStyle').fontSize?.replace('pt', '') || '12'}
+            onChange={e => editor.chain().focus().setFontSize(e.target.value + 'pt').run()}
+            title="Tamanho da fonte"
+            className="rounded px-1.5 py-1 text-xs outline-none cursor-pointer"
+            style={{
+              border: '1px solid var(--v2-line-soft)',
+              background: 'var(--v2-panel-strong)',
+              color: 'var(--v2-ink-strong)',
+              fontFamily: 'var(--v2-font-sans)',
+              width: '52px',
+            }}
+          >
+            {FONT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
 
           <Sep />
 
@@ -399,11 +495,17 @@ export default function RichTextEditor({
 
       {/* Editor content area */}
       <div
-        className="flex-1 overflow-y-auto"
-        style={{ background: editable ? 'rgba(255,255,255,0.97)' : 'transparent' }}
+        className={editable ? 'doc-canvas' : 'flex-1 overflow-y-auto'}
+        style={editable ? undefined : { background: 'transparent' }}
         onClick={() => { setShowLink(false); setShowColor(false) }}
       >
-        <EditorContent editor={editor} />
+        {editable ? (
+          <div className="doc-page">
+            <EditorContent editor={editor} />
+          </div>
+        ) : (
+          <EditorContent editor={editor} />
+        )}
       </div>
 
       {/* Status bar */}

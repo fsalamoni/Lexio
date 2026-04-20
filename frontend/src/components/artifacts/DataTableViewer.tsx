@@ -167,6 +167,13 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
           {/* Header */}
           <thead>
             <tr className="border-b" style={{ background: 'rgba(15,23,42,0.03)', borderColor: 'var(--v2-line-soft)' }}>
+              {/* Row number header */}
+              <th
+                className="px-2 py-3 w-10 text-center text-xs font-semibold select-none"
+                style={{ color: 'var(--v2-ink-faint)', fontFamily: 'var(--v2-font-sans)', borderRight: '1px solid var(--v2-line-soft)' }}
+              >
+                #
+              </th>
               {data.columns.map(col => {
                 const isActive = sort?.key === col.key
                 return (
@@ -184,9 +191,9 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
                       {col.label}
                       {isActive ? (
                         sort!.dir === 'asc' ? (
-                          <ChevronUp className="w-3.5 h-3.5 text-brand-600" />
+                          <ChevronUp className="w-3.5 h-3.5" style={{ color: 'var(--v2-accent-strong)' }} />
                         ) : (
-                          <ChevronDown className="w-3.5 h-3.5 text-brand-600" />
+                          <ChevronDown className="w-3.5 h-3.5" style={{ color: 'var(--v2-accent-strong)' }} />
                         )
                       ) : (
                         <ChevronsUpDown className="w-3.5 h-3.5" style={{ color: 'var(--v2-ink-faint)' }} />
@@ -203,7 +210,7 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
             {pageRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={data.columns.length}
+                  colSpan={data.columns.length + 1}
                   className="px-4 py-8 text-center"
                   style={{ color: 'var(--v2-ink-faint)' }}
                 >
@@ -217,7 +224,14 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
                   className="border-b transition-colors"
                   style={{ borderColor: 'var(--v2-line-soft)', background: rowIdx % 2 === 0 ? 'transparent' : 'rgba(15,23,42,0.02)' }}
                 >
-                  {data.columns.map(col => (
+                  {/* Row number */}
+                  <td
+                    className="px-2 py-2.5 text-center text-xs tabular-nums w-10 select-none"
+                    style={{ color: 'var(--v2-ink-faint)', borderRight: '1px solid var(--v2-line-soft)', background: 'rgba(15,23,42,0.02)' }}
+                  >
+                    {safePage * pageSize + rowIdx + 1}
+                  </td>
+                  {data.columns.map((col, colIdx) => (
                     <td
                       key={col.key}
                       className={`px-4 py-2.5 ${alignClass(col.align)}`}
@@ -225,6 +239,7 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
                     >
                       {editMode ? (
                         <input
+                          id={`cell-r${safePage * pageSize + rowIdx}-c${colIdx}`}
                           type="text"
                           value={String(editedRows[safePage * pageSize + rowIdx]?.[col.key] ?? '')}
                           onChange={e => {
@@ -232,6 +247,25 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
                               ri === safePage * pageSize + rowIdx ? { ...r, [col.key]: e.target.value } : r
                             )
                             setEditedRows(newRows)
+                          }}
+                          onKeyDown={e => {
+                            const absRowIdx = safePage * pageSize + rowIdx
+                            if (e.key === 'Tab') {
+                              e.preventDefault()
+                              const next = e.shiftKey ? colIdx - 1 : colIdx + 1
+                              if (next >= 0 && next < data.columns.length) {
+                                document.getElementById(`cell-r${absRowIdx}-c${next}`)?.focus()
+                              } else if (!e.shiftKey && next >= data.columns.length && absRowIdx + 1 < editedRows.length) {
+                                document.getElementById(`cell-r${absRowIdx + 1}-c0`)?.focus()
+                              } else if (e.shiftKey && next < 0 && absRowIdx > 0) {
+                                document.getElementById(`cell-r${absRowIdx - 1}-c${data.columns.length - 1}`)?.focus()
+                              }
+                            } else if (e.key === 'Enter') {
+                              e.preventDefault()
+                              if (absRowIdx + 1 < editedRows.length) {
+                                document.getElementById(`cell-r${absRowIdx + 1}-c${colIdx}`)?.focus()
+                              }
+                            }
                           }}
                           className="w-full min-w-[80px] px-2 py-1 text-sm rounded outline-none"
                           style={{ border: '1px solid var(--v2-line-soft)', background: 'var(--v2-panel-strong)', color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}
@@ -250,6 +284,8 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
           {data.summary && (
             <tfoot>
               <tr className="border-t-2 font-semibold" style={{ background: 'rgba(15,23,42,0.04)', borderColor: 'var(--v2-line-soft)', color: 'var(--v2-ink-strong)' }}>
+                {/* empty row number cell */}
+                <td className="w-10" />
                 {data.columns.map((col, colIdx) => (
                   <td
                     key={col.key}
@@ -293,7 +329,10 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
             <button
               onClick={() => setCurrentPage(0)}
               disabled={safePage === 0}
-              className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="px-2 py-1 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              style={{ color: 'var(--v2-ink-soft)' }}
+              onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.background = 'rgba(15,23,42,0.07)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               title="Primeira"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -302,7 +341,10 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
             <button
               onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
               disabled={safePage === 0}
-              className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="px-2 py-1 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              style={{ color: 'var(--v2-ink-soft)' }}
+              onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.background = 'rgba(15,23,42,0.07)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               title="Anterior"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -343,7 +385,10 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
             <button
               onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={safePage >= totalPages - 1}
-              className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="px-2 py-1 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              style={{ color: 'var(--v2-ink-soft)' }}
+              onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.background = 'rgba(15,23,42,0.07)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               title="Proxima"
             >
               <ChevronRight className="w-4 h-4" />
@@ -351,7 +396,10 @@ export default function DataTableViewer({ data, onChange }: DataTableViewerProps
             <button
               onClick={() => setCurrentPage(totalPages - 1)}
               disabled={safePage >= totalPages - 1}
-              className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="px-2 py-1 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              style={{ color: 'var(--v2-ink-soft)' }}
+              onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.background = 'rgba(15,23,42,0.07)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               title="Ultima"
             >
               <ChevronRight className="w-4 h-4" />

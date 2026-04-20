@@ -41,7 +41,7 @@ body {
 
 /* ─── Tiptap rich-text editor prose styles ───────────────────── */
 /* Replaces @tailwindcss/typography (not installed) */
-.ProseMirror { outline: none; min-height: 400px; padding: 1.5rem; line-height: 1.75; font-size: 0.9375rem; color: #111827; }
+.ProseMirror { outline: none; min-height: 400px; padding: 1.5rem; line-height: 1.75; font-size: 0.9375rem; color: #111827; font-family: var(--v2-font-sans); }
 .ProseMirror > * + * { margin-top: 0.75rem; }
 .ProseMirror p { margin-bottom: 0; }
 .ProseMirror h1 { font-size: 1.5rem;  font-weight: 700; line-height: 1.3; margin-top: 1.5rem; margin-bottom: 0.5rem; color: #111827; }
@@ -74,6 +74,37 @@ body {
   pointer-events: none;
   height: 0;
 }
+
+/* ─── Document editor canvas (A4 page view) ─────────────────── */
+.doc-canvas {
+  flex: 1;
+  overflow-y: auto;
+  background: rgba(15, 23, 42, 0.06);
+  padding: 2rem 1.5rem;
+}
+
+.doc-page {
+  background: #ffffff;
+  max-width: 794px;
+  margin: 0 auto;
+  padding: 72px 80px;
+  min-height: 1040px;
+  border-radius: 2px;
+  box-shadow: 0 2px 8px rgba(15,23,42,0.10), 0 8px 32px rgba(15,23,42,0.10), 0 1px 2px rgba(15,23,42,0.06);
+}
+
+.doc-page .ProseMirror {
+  font-family: 'Times New Roman', Times, Georgia, serif;
+  font-size: 12pt;
+  line-height: 1.85;
+  color: #1a1a1a;
+  padding: 0;
+  min-height: calc(1040px - 144px);
+}
+
+.doc-page .ProseMirror h1 { font-size: 1.5rem; font-family: 'Times New Roman', Times, serif; }
+.doc-page .ProseMirror h2 { font-size: 1.25rem; font-family: 'Times New Roman', Times, serif; }
+.doc-page .ProseMirror h3 { font-size: 1.0625rem; font-family: 'Times New Roman', Times, serif; }
 
 /* ─── DOCX Preview prose ─────────────────────────────────────── */
 .docx-preview h1 { font-size:1.5rem;  font-weight:700; margin:1.25rem 0 .5rem; }
