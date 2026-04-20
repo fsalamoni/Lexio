@@ -1,3 +1,4 @@
+import { formatCostBadge } from './currency-utils'
 import { generateImageViaOpenRouter } from './image-generation-client'
 import { requestExternalVideoClip } from './external-video-provider'
 import { loadVideoPipelineModels } from './model-config'
@@ -144,8 +145,7 @@ function makeExecution(
 }
 
 function formatUsd(costUsd: number): string {
-  if (costUsd < 0.0001) return '<$0.0001'
-  return `$${costUsd.toFixed(4)}`
+  return formatCostBadge(costUsd)
 }
 
 function buildLiteralProgressMeta(options: {

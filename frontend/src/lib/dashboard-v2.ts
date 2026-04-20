@@ -1,3 +1,4 @@
+import { formatCost } from './currency-utils'
 import { type DashboardRecentDoc, type DashboardStats, getResumableDocument } from './dashboard-data'
 
 export interface DashboardPriorityAction {
@@ -105,7 +106,7 @@ export function buildDashboardSignals(stats: DashboardStats | null) {
     },
     {
       label: 'Custos',
-      value: stats ? `$${stats.total_cost_usd.toFixed(4)}` : 'Sem dados',
+      value: stats ? formatCost(stats.total_cost_usd) : 'Sem dados',
       emphasis: 'muted',
     },
   ]

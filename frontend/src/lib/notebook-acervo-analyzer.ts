@@ -12,6 +12,7 @@
  */
 
 import { callLLM, ModelUnavailableError, TransientLLMError } from './llm-client'
+import { formatCostBadge } from './currency-utils'
 import { getAllAcervoDocumentsForSearch, updateAcervoEmenta, type AcervoDocumentData } from './firestore-service'
 import { getOpenRouterKey, generateAcervoEmenta } from './generation-service'
 import { loadNotebookAcervoModels, type NotebookAcervoModelMap } from './model-config'
@@ -58,8 +59,7 @@ function throwIfAborted(signal?: AbortSignal): void {
 }
 
 function formatUsd(costUsd: number): string {
-  if (costUsd < 0.0001) return '<$0.0001'
-  return `$${costUsd.toFixed(4)}`
+  return formatCostBadge(costUsd)
 }
 
 function buildAcervoStageMeta(options: {

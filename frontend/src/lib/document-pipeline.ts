@@ -1,3 +1,4 @@
+import { formatCostBadge } from './currency-utils'
 import type { LLMResult } from './llm-client'
 
 export type DocumentPipelineStepStatus = 'pending' | 'active' | 'completed' | 'error'
@@ -126,8 +127,7 @@ export function buildDocumentPipelineProgress(
 }
 
 function formatUsd(costUsd: number): string {
-  if (costUsd < 0.0001) return '<$0.0001'
-  return `$${costUsd.toFixed(4)}`
+  return formatCostBadge(costUsd)
 }
 
 export function buildDocumentStageMeta(result: LLMResult): string | undefined {
