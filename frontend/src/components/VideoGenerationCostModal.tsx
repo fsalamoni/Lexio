@@ -68,25 +68,27 @@ export default function VideoGenerationCostModal({
       closeOnEscape={!isGenerating}
     >
         {/* Header controls */}
-        <div className="flex items-center justify-between px-6 py-3 border-b bg-gradient-to-r from-rose-50 to-orange-50 flex-shrink-0">
-          <p className="text-xs text-rose-700 truncate">{topic}</p>
+        <div className="flex items-center justify-between px-6 py-3 border-b flex-shrink-0" style={{ background: 'rgba(255,255,255,0.55)', borderColor: 'var(--v2-line-soft)' }}>
+          <p className="text-xs truncate" style={{ color: 'var(--v2-accent-strong)' }}>{topic}</p>
           <div className="flex items-center gap-2 flex-shrink-0">
             {!isGenerating && (
               <div className="flex bg-gray-100 rounded-lg p-0.5">
                 <button
                   onClick={() => setActiveTab('cost')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    activeTab === 'cost' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+                  style={activeTab === 'cost'
+                    ? { background: 'var(--v2-panel-strong)', boxShadow: '0 1px 3px rgba(15,23,42,0.10)', color: 'var(--v2-ink-strong)' }
+                    : { color: 'var(--v2-ink-faint)' }}
                 >
                   <DollarSign className="w-3.5 h-3.5" />
                   Custos
                 </button>
                 <button
                   onClick={() => setActiveTab('script')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                      activeTab === 'script' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                    }`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+                  style={activeTab === 'script'
+                    ? { background: 'var(--v2-panel-strong)', boxShadow: '0 1px 3px rgba(15,23,42,0.10)', color: 'var(--v2-ink-strong)' }
+                    : { color: 'var(--v2-ink-faint)' }}
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                     Roteiro
@@ -126,13 +128,13 @@ export default function VideoGenerationCostModal({
 
               {/* Progress bar */}
               <div className="space-y-2">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div className="w-full rounded-full h-2.5" style={{ background: 'rgba(15,23,42,0.08)' }}>
                   <div
                     className="bg-gradient-to-r from-rose-500 to-orange-500 h-2.5 rounded-full transition-all duration-500"
                     style={{ width: `${generationProgress?.percent || 0}%` }}
                   />
                 </div>
-                <p className="text-xs text-gray-500 text-center">
+                <p className="text-xs text-center" style={{ color: 'var(--v2-ink-faint)' }}>
                   {generationProgress?.percent || 0}% concluído
                 </p>
               </div>
@@ -205,22 +207,22 @@ export default function VideoGenerationCostModal({
                 </div>
               </div>
 
-              {/* Cost summary */}
-              <div className="bg-gray-50 rounded-xl p-5 border">
+                {/* Cost summary */}
+              <div className="rounded-xl p-5 border" style={{ background: 'rgba(255,255,255,0.6)', borderColor: 'var(--v2-line-soft)' }}>
                 <div className="flex items-center gap-2 mb-4">
-                  <DollarSign className="w-4 h-4 text-gray-600" />
-                  <h3 className="text-sm font-bold text-gray-900">Custo Estimado</h3>
+                  <DollarSign className="w-4 h-4" style={{ color: 'var(--v2-ink-soft)' }} />
+                  <h3 className="text-sm font-bold" style={{ color: 'var(--v2-ink-strong)' }}>Custo Estimado</h3>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="bg-white rounded-lg p-3 border">
-                    <p className="text-xs text-gray-500 mb-1">Tokens Totais</p>
-                    <p className="text-lg font-bold text-gray-900">
+                  <div className="rounded-lg p-3 border" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
+                    <p className="text-xs mb-1" style={{ color: 'var(--v2-ink-faint)' }}>Tokens Totais</p>
+                    <p className="text-lg font-bold" style={{ color: 'var(--v2-ink-strong)' }}>
                       {estimate.estimatedTokens.toLocaleString('pt-BR')}
                     </p>
                   </div>
-                  <div className="bg-white rounded-lg p-3 border">
-                    <p className="text-xs text-gray-500 mb-1">Custo Estimado (USD)</p>
+                  <div className="rounded-lg p-3 border" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
+                    <p className="text-xs mb-1" style={{ color: 'var(--v2-ink-faint)' }}>Custo Estimado (USD)</p>
                     <p className="text-lg font-bold text-rose-600">
                       ${estimate.estimatedCostUsd.toFixed(4)}
                     </p>
@@ -230,12 +232,12 @@ export default function VideoGenerationCostModal({
                 {/* Per-agent breakdown with model recommendations */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--v2-ink-faint)' }}>
                       Detalhamento por Agente
                     </p>
                     <button
                       onClick={() => setShowAgentDetails(d => !d)}
-                      className="text-[10px] text-rose-600 hover:underline flex items-center gap-1"
+                      className="text-[10px] flex items-center gap-1" style={{ color: 'var(--v2-accent-strong)' }}
                     >
                       {showAgentDetails ? 'Menos detalhes' : 'Modelos recomendados'}
                       {showAgentDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -245,11 +247,11 @@ export default function VideoGenerationCostModal({
                     const rec = AGENT_MODEL_RECOMMENDATIONS[item.agent]
                     const RecIcon = rec?.icon || FileText
                     return (
-                      <div key={item.agent} className="bg-white rounded-lg border overflow-hidden">
+                      <div key={item.agent} className="rounded-lg border overflow-hidden" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
                         <div className="flex items-center justify-between px-3 py-2 text-xs">
                           <div className="flex items-center gap-2">
-                            <RecIcon className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="font-medium text-gray-700">{item.label}</span>
+                            <RecIcon className="w-3.5 h-3.5" style={{ color: 'var(--v2-ink-faint)' }} />
+                            <span className="font-medium" style={{ color: 'var(--v2-ink-strong)' }}>{item.label}</span>
                             {rec && rec.capability !== 'Texto' && (
                               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                                 rec.capability === 'Imagem' ? 'bg-pink-100 text-pink-700' :
@@ -262,17 +264,17 @@ export default function VideoGenerationCostModal({
                             )}
                           </div>
                           <div className="flex items-center gap-4">
-                            <span className="text-gray-500">
+                            <span style={{ color: 'var(--v2-ink-soft)' }}>
                               <Zap className="w-3 h-3 inline mr-1" />
                               {item.estimatedTokens.toLocaleString('pt-BR')}
                             </span>
-                            <span className="font-mono text-gray-600">
+                            <span className="font-mono" style={{ color: 'var(--v2-ink-strong)' }}>
                               ${item.estimatedCostUsd.toFixed(4)}
                             </span>
                           </div>
                         </div>
                         {showAgentDetails && rec && (
-                          <div className="px-3 py-1.5 bg-gray-50 border-t text-[10px] text-gray-500">
+                          <div className="px-3 py-1.5 border-t text-[10px]" style={{ background: 'rgba(15,23,42,0.03)', borderColor: 'var(--v2-line-soft)', color: 'var(--v2-ink-faint)' }}>
                             💡 {rec.note}
                           </div>
                         )}
@@ -329,21 +331,23 @@ export default function VideoGenerationCostModal({
                     </span>
                   )}
                 </div>
-                <div className="flex bg-gray-100 rounded-lg p-0.5">
+                <div className="flex rounded-lg p-0.5" style={{ background: 'rgba(15,23,42,0.06)' }}>
                   <button
                     onClick={() => setScriptMode('preview')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                      scriptMode === 'preview' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                    }`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+                    style={scriptMode === 'preview'
+                      ? { background: 'var(--v2-panel-strong)', boxShadow: '0 1px 3px rgba(15,23,42,0.10)', color: 'var(--v2-ink-strong)' }
+                      : { color: 'var(--v2-ink-faint)' }}
                   >
                     <Eye className="w-3.5 h-3.5" />
                     Visualizar
                   </button>
                   <button
                     onClick={() => setScriptMode('edit')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                      scriptMode === 'edit' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                    }`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+                    style={scriptMode === 'edit'
+                      ? { background: 'var(--v2-panel-strong)', boxShadow: '0 1px 3px rgba(15,23,42,0.10)', color: 'var(--v2-ink-strong)' }
+                      : { color: 'var(--v2-ink-faint)' }}
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                     Editar
@@ -351,19 +355,20 @@ export default function VideoGenerationCostModal({
                 </div>
               </div>
 
-              <p className="text-xs text-gray-500">
+              <p className="text-xs" style={{ color: 'var(--v2-ink-soft)' }}>
                 Edite livremente o roteiro, cenas, narrações e descrições visuais antes de gerar o vídeo. As alterações serão usadas pelo pipeline de geração.
               </p>
 
               {scriptMode === 'preview' ? (
-                <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap font-mono text-xs leading-relaxed bg-gray-50 rounded-xl p-6 border min-h-[40vh]">
+                <div className="prose prose-sm max-w-none whitespace-pre-wrap font-mono text-xs leading-relaxed rounded-xl p-6 border min-h-[40vh]" style={{ background: 'rgba(15,23,42,0.03)', borderColor: 'var(--v2-line-soft)', color: 'var(--v2-ink-strong)', fontFamily: 'monospace' }}>
                   {editedContent}
                 </div>
               ) : (
                 <textarea
                   value={editedContent}
                   onChange={e => setEditedContent(e.target.value)}
-                  className="w-full min-h-[50vh] p-6 bg-gray-50 rounded-xl border font-mono text-xs leading-relaxed text-gray-800 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none resize-none"
+                  className="w-full min-h-[50vh] p-6 rounded-xl border font-mono text-xs leading-relaxed outline-none resize-none"
+                  style={{ background: 'rgba(15,23,42,0.03)', borderColor: 'var(--v2-line-soft)', color: 'var(--v2-ink-strong)', fontFamily: 'monospace' }}
                   placeholder="Edite o roteiro do vídeo aqui..."
                 />
               )}
@@ -372,7 +377,7 @@ export default function VideoGenerationCostModal({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setEditedContent(scriptContent)}
-                    className="text-xs text-gray-500 hover:text-gray-700 underline"
+                    className="text-xs underline" style={{ color: 'var(--v2-ink-faint)' }}
                   >
                     Restaurar original
                   </button>
@@ -384,7 +389,7 @@ export default function VideoGenerationCostModal({
 
         {/* Footer */}
         {!isGenerating && (
-          <div className="flex flex-col gap-2 px-6 py-4 border-t bg-gray-50/80 flex-shrink-0">
+          <div className="flex flex-col gap-2 px-6 py-4 border-t flex-shrink-0" style={{ background: 'rgba(255,255,255,0.5)', borderColor: 'var(--v2-line-soft)' }}>
             {lastCheckpoint && lastCheckpoint.completedStep > 0 && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
@@ -397,13 +402,13 @@ export default function VideoGenerationCostModal({
               </div>
             )}
             <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-500">
+              <p className="text-xs" style={{ color: 'var(--v2-ink-faint)' }}>
                 {hasEdits ? '⚠️ O roteiro foi editado. As alterações serão usadas na Fase 1.' : 'Os custos de mídia literal da Fase 2 podem variar conforme modelo e número de cenas.'}
               </p>
               <div className="flex items-center gap-3">
                 <button
                   onClick={onSkip}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                  className="v2-btn-secondary flex items-center gap-2 text-sm font-medium"
                 >
                   Apenas salvar roteiro
                 </button>

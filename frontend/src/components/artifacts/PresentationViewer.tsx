@@ -6,7 +6,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   ChevronLeft, ChevronRight, Maximize2, Minimize2,
-  StickyNote, Image,
+  StickyNote, Image, Pencil, Check,
 } from 'lucide-react'
 import type { ParsedPresentation, ParsedSlide } from './artifact-parsers'
 
@@ -14,6 +14,7 @@ import type { ParsedPresentation, ParsedSlide } from './artifact-parsers'
 
 interface PresentationViewerProps {
   data: ParsedPresentation
+  onChange?: (data: ParsedPresentation) => void
 }
 
 // ── Slide Content (reused in main view and fullscreen) ─────────────────────
@@ -125,16 +126,18 @@ function Thumbnail({
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export default function PresentationViewer({ data }: PresentationViewerProps) {
+export default function PresentationViewer({ data, onChange }: PresentationViewerProps) {
   const { slides } = data
   const [currentIndex, setCurrentIndex] = useState(0)
   const [showNotes, setShowNotes] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [fadeKey, setFadeKey] = useState(0)
+  const [editMode, setEditMode] = useState(false)
+  const [editedSlides, setEditedSlides] = useState<ParsedSlide[]>(() => slides.map(s => ({ ...s, bullets: [...s.bullets] })))
   const thumbnailRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const slide = slides[currentIndex]
+  const slide = editMode ? editedSlides[currentIndex] : slides[currentIndex]
   const total = slides.length
 
   const goTo = useCallback(
@@ -215,7 +218,7 @@ export default function PresentationViewer({ data }: PresentationViewerProps) {
 
   if (total === 0) {
     return (
-      <div className="text-center text-gray-400 py-12">
+      <div className="text-center py-12" style={{ color: 'var(--v2-ink-faint)' }}>
         Nenhum slide encontrado na apresentacao.
       </div>
     )
@@ -319,29 +322,31 @@ export default function PresentationViewer({ data }: PresentationViewerProps) {
     <div ref={containerRef} className="flex flex-col gap-3">
       {/* Title */}
       {data.title && (
-        <h3 className="text-lg font-semibold text-gray-800 px-1">{data.title}</h3>
+        <h3 className="text-lg font-semibold px-1" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{data.title}</h3>
       )}
 
       {/* Slide area */}
-      <div className="relative bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="relative rounded-xl border overflow-hidden" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)', boxShadow: '0 4px 16px rgba(15,23,42,0.08)' }}>
         {/* Controls bar */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/80">
+        <div className="flex items-center justify-between px-3 py-2 border-b" style={{ background: 'rgba(255,255,255,0.6)', borderColor: 'var(--v2-line-soft)' }}>
           <div className="flex items-center gap-1">
             <button
               onClick={goPrev}
               disabled={currentIndex === 0}
-              className="p-1.5 rounded-md hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-1.5 rounded-md disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              style={{ color: 'var(--v2-ink-soft)' }}
               aria-label="Slide anterior"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="text-xs text-gray-500 font-medium tabular-nums min-w-[4rem] text-center">
+            <span className="text-xs font-medium tabular-nums min-w-[4rem] text-center" style={{ color: 'var(--v2-ink-faint)' }}>
               {currentIndex + 1} / {total}
             </span>
             <button
               onClick={goNext}
               disabled={currentIndex === total - 1}
-              className="p-1.5 rounded-md hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-1.5 rounded-md disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              style={{ color: 'var(--v2-ink-soft)' }}
               aria-label="Proximo slide"
             >
               <ChevronRight className="h-4 w-4" />
@@ -349,13 +354,25 @@ export default function PresentationViewer({ data }: PresentationViewerProps) {
           </div>
 
           <div className="flex items-center gap-1">
+            {onChange && (
+              <button
+                onClick={() => {
+                  if (editMode && onChange) onChange({ ...data, slides: editedSlides })
+                  setEditMode(m => !m)
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
+                style={editMode
+                  ? { background: 'rgba(15,118,110,0.10)', color: 'var(--v2-accent-strong)' }
+                  : { color: 'var(--v2-ink-faint)' }}
+                aria-label={editMode ? 'Salvar edições' : 'Editar slide'}
+              >
+                {editMode ? <><Check className="h-3.5 w-3.5" /><span className="hidden sm:inline">Salvar</span></> : <><Pencil className="h-3.5 w-3.5" /><span className="hidden sm:inline">Editar</span></>}
+              </button>
+            )}
             <button
               onClick={toggleNotes}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                showNotes
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-500 hover:bg-gray-200'
-              }`}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors`}
+              style={showNotes ? { background: 'rgba(37,99,235,0.10)', color: '#2563eb' } : { color: 'var(--v2-ink-faint)' }}
               aria-label={showNotes ? 'Ocultar notas' : 'Mostrar notas'}
             >
               <StickyNote className="h-3.5 w-3.5" />
@@ -363,7 +380,8 @@ export default function PresentationViewer({ data }: PresentationViewerProps) {
             </button>
             <button
               onClick={toggleFullscreen}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-gray-500 hover:bg-gray-200 transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
+              style={{ color: 'var(--v2-ink-faint)' }}
               aria-label="Tela cheia"
             >
               <Maximize2 className="h-3.5 w-3.5" />
@@ -375,23 +393,56 @@ export default function PresentationViewer({ data }: PresentationViewerProps) {
         {/* Current slide */}
         <div
           key={fadeKey}
-          className="aspect-video bg-gradient-to-br from-gray-50 to-white"
-          style={{ animation: 'fadeIn 250ms ease-out' }}
+          className="aspect-video"
+          style={{ background: 'var(--v2-panel-strong)', animation: 'fadeIn 250ms ease-out' }}
         >
           <SlideContent slide={slide} />
         </div>
       </div>
 
+      {/* Edit panel */}
+      {editMode && onChange && (
+        <div className="rounded-xl border p-4 space-y-3" style={{ background: 'rgba(255,255,255,0.6)', borderColor: 'var(--v2-line-soft)' }}>
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--v2-ink-faint)' }}>Editar slide {currentIndex + 1}</p>
+          <div>
+            <label className="text-xs mb-1 block" style={{ color: 'var(--v2-ink-soft)' }}>Título</label>
+            <input
+              type="text"
+              value={editedSlides[currentIndex]?.title ?? ''}
+              onChange={e => {
+                const updated = editedSlides.map((s, i) => i === currentIndex ? { ...s, title: e.target.value } : s)
+                setEditedSlides(updated)
+              }}
+              className="w-full px-3 py-2 text-sm rounded-lg outline-none"
+              style={{ border: '1px solid var(--v2-line-soft)', background: 'var(--v2-panel-strong)', color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}
+            />
+          </div>
+          <div>
+            <label className="text-xs mb-1 block" style={{ color: 'var(--v2-ink-soft)' }}>Tópicos (um por linha)</label>
+            <textarea
+              value={(editedSlides[currentIndex]?.bullets ?? []).join('\n')}
+              onChange={e => {
+                const updated = editedSlides.map((s, i) => i === currentIndex ? { ...s, bullets: e.target.value.split('\n') } : s)
+                setEditedSlides(updated)
+              }}
+              rows={4}
+              className="w-full px-3 py-2 text-sm rounded-lg outline-none resize-none"
+              style={{ border: '1px solid var(--v2-line-soft)', background: 'var(--v2-panel-strong)', color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Speaker notes panel */}
       {showNotes && (
-        <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3">
-          <p className="text-xs font-medium text-blue-600 mb-1">Notas do apresentador</p>
+        <div className="rounded-lg border px-4 py-3" style={{ background: 'rgba(37,99,235,0.04)', borderColor: 'rgba(37,99,235,0.2)' }}>
+          <p className="text-xs font-medium mb-1" style={{ color: '#2563eb' }}>Notas do apresentador</p>
           {slide.speakerNotes ? (
-            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+            <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--v2-ink-strong)' }}>
               {slide.speakerNotes}
             </p>
           ) : (
-            <p className="text-sm text-gray-400 italic">Nenhuma nota para este slide.</p>
+            <p className="text-sm italic" style={{ color: 'var(--v2-ink-faint)' }}>Nenhuma nota para este slide.</p>
           )}
         </div>
       )}
@@ -414,12 +465,12 @@ export default function PresentationViewer({ data }: PresentationViewerProps) {
       )}
 
       {/* Keyboard hints */}
-      <p className="text-[10px] text-gray-400 text-center">
-        Atalhos: <kbd className="px-1 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px]">&#8592;</kbd>{' '}
-        <kbd className="px-1 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px]">&#8594;</kbd> navegar{' '}
-        <kbd className="px-1 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px]">F</kbd> tela cheia{' '}
-        <kbd className="px-1 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px]">N</kbd> notas{' '}
-        <kbd className="px-1 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px]">Esc</kbd> sair
+      <p className="text-[10px] text-center" style={{ color: 'var(--v2-ink-faint)' }}>
+        Atalhos: <kbd className="px-1 py-0.5 rounded border text-[9px]" style={{ borderColor: 'var(--v2-line-soft)', background: 'rgba(15,23,42,0.04)' }}>&#8592;</kbd>{' '}
+        <kbd className="px-1 py-0.5 rounded border text-[9px]" style={{ borderColor: 'var(--v2-line-soft)', background: 'rgba(15,23,42,0.04)' }}>&#8594;</kbd> navegar{' '}
+        <kbd className="px-1 py-0.5 rounded border text-[9px]" style={{ borderColor: 'var(--v2-line-soft)', background: 'rgba(15,23,42,0.04)' }}>F</kbd> tela cheia{' '}
+        <kbd className="px-1 py-0.5 rounded border text-[9px]" style={{ borderColor: 'var(--v2-line-soft)', background: 'rgba(15,23,42,0.04)' }}>N</kbd> notas{' '}
+        <kbd className="px-1 py-0.5 rounded border text-[9px]" style={{ borderColor: 'var(--v2-line-soft)', background: 'rgba(15,23,42,0.04)' }}>Esc</kbd> sair
       </p>
 
       {/* Inline keyframes for fade animation */}

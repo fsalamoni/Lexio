@@ -97,7 +97,7 @@ function ScoreBadge({
   return (
     <span
       className={`inline-flex flex-col items-center px-1 py-0.5 rounded text-[9px] leading-tight ${
-        highlighted ? `ring-2 ring-offset-0 ring-purple-400 ${SCORE_COLORS(score)}` : SCORE_COLORS(score)
+        highlighted ? `ring-2 ring-offset-0 ring-[var(--v2-accent-strong)] ${SCORE_COLORS(score)}` : SCORE_COLORS(score)
       }`}
       title={`${label}: ${score}/10`}
     >
@@ -221,9 +221,9 @@ export default function ModelSelectorModal({
       minHeight={400}
     >
         {/* ── Header info ── */}
-        <div className="px-6 py-3 border-b bg-gradient-to-r from-purple-50 to-indigo-50">
-            <p className="text-sm text-gray-500">
-              Categoria: <strong className="text-purple-600">{CATEGORY_LABELS[agentCategory]}</strong>
+        <div className="px-6 py-3 border-b" style={{ background: 'rgba(255,255,255,0.55)', borderColor: 'var(--v2-line-soft)' }}>
+            <p className="text-sm" style={{ color: 'var(--v2-ink-soft)' }}>
+              Categoria: <strong style={{ color: 'var(--v2-accent-strong)' }}>{CATEGORY_LABELS[agentCategory]}</strong>
               {requiredCapability && (
                 <>
                   {' · '}
@@ -233,37 +233,36 @@ export default function ModelSelectorModal({
                 </>
               )}
               {' · '}
-              <span className="text-gray-400">{filtered.length} modelo{filtered.length !== 1 ? 's' : ''}</span>
+            <span className="text-[10px]" style={{ color: 'var(--v2-ink-faint)' }}>{filtered.length} modelo{filtered.length !== 1 ? 's' : ''}</span>
             </p>
         </div>
 
         {/* ── Filters & Search ── */}
-        <div className="px-6 py-3 border-b bg-gray-50 flex flex-wrap items-center gap-3">
+        <div className="px-6 py-3 border-b flex flex-wrap items-center gap-3" style={{ background: 'rgba(255,255,255,0.45)', borderColor: 'var(--v2-line-soft)' }}>
           {/* Search */}
           <div className="relative flex-1 min-w-[180px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--v2-ink-faint)' }} />
             <input
               ref={searchRef}
               type="text"
               placeholder="Buscar modelo..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg outline-none" style={{ border: '1px solid var(--v2-line-soft)', background: 'var(--v2-panel-strong)', color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}
             />
           </div>
 
           {/* Price filter */}
-          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
+          <div className="flex items-center gap-1 rounded-lg p-1" style={{ background: 'var(--v2-panel-strong)', border: '1px solid var(--v2-line-soft)' }}>
             {(['all', 'free', 'paid'] as PriceFilter[]).map(f => (
               <button
                 key={f}
                 type="button"
                 onClick={() => setPriceFilter(f)}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  priceFilter === f
-                    ? 'bg-purple-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
+                className="px-3 py-1 text-xs font-medium rounded-md transition-colors"
+              style={priceFilter === f
+                ? { background: 'var(--v2-accent-strong)', color: '#fff' }
+                : { color: 'var(--v2-ink-soft)' }}
               >
                 {f === 'all' ? 'Todos' : f === 'free' ? '✦ Grátis' : 'Pagos'}
               </button>
@@ -274,7 +273,7 @@ export default function ModelSelectorModal({
           <select
             value={tierFilter}
             onChange={e => setTierFilter(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+            className="text-sm rounded-lg px-2 py-2 outline-none" style={{ border: '1px solid var(--v2-line-soft)', background: 'var(--v2-panel-strong)', color: 'var(--v2-ink-strong)' }}
           >
             <option value="all">Todos os tiers</option>
             <option value="fast">Rápido</option>
@@ -286,7 +285,7 @@ export default function ModelSelectorModal({
           <select
             value={provFilter}
             onChange={e => setProvFilter(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+            className="text-sm rounded-lg px-2 py-2 outline-none" style={{ border: '1px solid var(--v2-line-soft)', background: 'var(--v2-panel-strong)', color: 'var(--v2-ink-strong)' }}
           >
             <option value="all">Todos os provedores</option>
             {allProviders.map(p => <option key={p} value={p}>{p}</option>)}
@@ -294,7 +293,7 @@ export default function ModelSelectorModal({
         </div>
 
         {/* ── Column headers (sort) ── */}
-        <div className="px-6 py-2 border-b bg-white grid grid-cols-[1fr_148px_auto_auto_auto] items-center gap-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <div className="px-6 py-2 border-b grid grid-cols-[1fr_148px_auto_auto_auto] items-center gap-3 text-xs font-semibold uppercase tracking-wide" style={{ background: 'rgba(255,255,255,0.6)', borderColor: 'var(--v2-line-soft)', color: 'var(--v2-ink-faint)' }}>
           <span>Modelo</span>
           <SortButton label="Adequação /10" icon={<Cpu className="w-3 h-3" />} sortKey="fit" current={sortBy} asc={sortAsc} onClick={toggleSort} />
           <SortButton label="Contexto"  icon={<AlignLeft className="w-3 h-3" />} sortKey="context" current={sortBy} asc={sortAsc} onClick={toggleSort} />
@@ -317,7 +316,7 @@ export default function ModelSelectorModal({
             </div>
           )}
           {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+            <div className="flex flex-col items-center justify-center py-16" style={{ color: 'var(--v2-ink-faint)' }}>
               <Filter className="w-8 h-8 mb-2" />
               <p className="text-sm">Nenhum modelo encontrado com esses filtros.</p>
               {requiredCapability && (
@@ -338,21 +337,22 @@ export default function ModelSelectorModal({
                   key={model.id}
                   type="button"
                   onClick={() => { onSelect(model.id); onClose() }}
-                  className={`w-full px-6 py-3 grid grid-cols-[1fr_148px_auto_auto_auto] items-center gap-3 text-left transition-colors hover:bg-purple-50/50 ${
-                    isCurrent ? 'bg-purple-50 border-l-4 border-purple-500' : ''
-                  }`}
+                  className="w-full px-6 py-3 grid grid-cols-[1fr_148px_auto_auto_auto] items-center gap-3 text-left transition-colors"
+                  style={isCurrent
+                    ? { background: 'rgba(15,118,110,0.06)', borderLeft: '3px solid var(--v2-accent-strong)' }
+                    : undefined}
                 >
                   {/* Model info */}
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-gray-900 truncate">{model.label}</span>
+                      <span className="text-sm font-semibold truncate" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{model.label}</span>
                       {model.isFree && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-bold whitespace-nowrap">
                           ✦ GRÁTIS
                         </span>
                       )}
                       {isCurrent && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600 font-medium flex items-center gap-1">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1" style={{ background: 'rgba(15,118,110,0.10)', color: 'var(--v2-accent-strong)' }}>
                           <CheckCircle2 className="w-2.5 h-2.5" /> atual
                         </span>
                       )}
@@ -372,7 +372,7 @@ export default function ModelSelectorModal({
                           </span>
                         )
                       })}
-                      <span className="text-[10px] text-gray-400 truncate hidden sm:block">{model.description}</span>
+                      <span className="text-[10px] truncate hidden sm:block" style={{ color: 'var(--v2-ink-faint)' }}>{model.description}</span>
                     </div>
                     {/* Rate limits for free models */}
                     {model.isFree && (
@@ -398,27 +398,27 @@ export default function ModelSelectorModal({
 
                   {/* Context window */}
                   <div className="flex flex-col items-center min-w-[64px]">
-                    <span className="flex items-center gap-1 text-xs font-mono font-semibold text-gray-700">
-                      <Cpu className="w-3 h-3 text-gray-400" />
+                    <span className="flex items-center gap-1 text-xs font-mono font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>
+                      <Cpu className="w-3 h-3" style={{ color: 'var(--v2-ink-faint)' }} />
                       {formatContext(model.contextWindow)}
                     </span>
-                    <span className="text-[10px] text-gray-400">tokens</span>
+                    <span className="text-[10px]" style={{ color: 'var(--v2-ink-faint)' }}>tokens</span>
                   </div>
 
                   {/* Input cost */}
                   <div className="flex flex-col items-center min-w-[64px]">
-                    <span className={`text-xs font-mono font-semibold ${model.isFree ? 'text-green-600' : 'text-gray-700'}`}>
+                    <span className="text-xs font-mono font-semibold" style={{ color: model.isFree ? '#059669' : 'var(--v2-ink-strong)' }}>
                       {formatCost(model.inputCost)}
                     </span>
-                    <span className="text-[10px] text-gray-400">/1M entrada</span>
+                    <span className="text-[10px]" style={{ color: 'var(--v2-ink-faint)' }}>/1M entrada</span>
                   </div>
 
                   {/* Output cost */}
                   <div className="flex flex-col items-center min-w-[70px]">
-                    <span className={`text-xs font-mono font-semibold ${model.isFree ? 'text-green-600' : 'text-gray-700'}`}>
+                    <span className="text-xs font-mono font-semibold" style={{ color: model.isFree ? '#059669' : 'var(--v2-ink-strong)' }}>
                       {formatCost(model.outputCost)}
                     </span>
-                    <span className="text-[10px] text-gray-400">/1M saída</span>
+                    <span className="text-[10px]" style={{ color: 'var(--v2-ink-faint)' }}>/1M saída</span>
                   </div>
                 </button>
               )
@@ -427,19 +427,15 @@ export default function ModelSelectorModal({
         </div>
 
         {/* ── Footer ── */}
-        <div className="px-6 py-3 border-t bg-gray-50 flex items-center justify-between">
-          <p className="text-xs text-gray-500">
+        <div className="v2-modal-footer">
+          <p className="text-xs flex-1" style={{ color: 'var(--v2-ink-faint)' }}>
             <strong>Adequação /10</strong> — escala global absoluta: ≥9 excelente · 7-8 bom · 5-6 adequado · ≤4 fraco.
             Coluna destacada = categoria desta função ({CATEGORY_LABELS[agentCategory]}).
             Preços em USD/1M tokens (OpenRouter).
             {' '}<span className="text-amber-700">&#9888; Modelos ✦ Grátis: limite de {FREE_TIER_RATE_LIMITS.rpm} req/min e {FREE_TIER_RATE_LIMITS.rpd} req/dia.</span>
           </p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            Cancelar
+          <button type="button" onClick={onClose} className="v2-btn-secondary">
+            Fechar
           </button>
         </div>
     </DraggablePanel>
@@ -463,9 +459,8 @@ function SortButton({
     <button
       type="button"
       onClick={() => onClick(sortKey)}
-      className={`flex items-center gap-1 min-w-[64px] justify-center px-2 py-1 rounded-md transition-colors ${
-        active ? 'text-purple-600 bg-purple-50' : 'hover:bg-gray-100'
-      }`}
+      className="flex items-center gap-1 min-w-[64px] justify-center px-2 py-1 rounded-md transition-colors"
+      style={active ? { color: 'var(--v2-accent-strong)', background: 'rgba(15,118,110,0.08)' } : { color: 'var(--v2-ink-faint)' }}
     >
       {icon}
       <span>{label}</span>

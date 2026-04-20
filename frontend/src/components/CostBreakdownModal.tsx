@@ -39,10 +39,10 @@ function HighlightCard({
   meta: string
 }) {
   return (
-    <div className="bg-white rounded-xl border p-5">
-      <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{label}</span>
-      <p className="mt-2 text-base font-semibold text-gray-900">{value}</p>
-      <p className="mt-1 text-xs text-gray-500">{meta}</p>
+    <div className="bg-white rounded-xl border p-5" style={{ background: 'var(--v2-panel-strong)', border: '1px solid var(--v2-line-soft)', borderRadius: '0.75rem' }}>
+      <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--v2-ink-faint)' }}>{label}</span>
+      <p className="mt-2 text-base font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>{value}</p>
+      <p className="mt-1 text-xs" style={{ color: 'var(--v2-ink-faint)' }}>{meta}</p>
     </div>
   )
 }
@@ -57,16 +57,16 @@ function BreakdownTable({
   emptyLabel: string
 }) {
   return (
-    <div className="bg-white rounded-xl border overflow-hidden">
-      <div className="px-5 py-4 border-b bg-gray-50">
-        <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
+    <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
+      <div className="px-5 py-4 border-b" style={{ background: 'rgba(255,255,255,0.55)', borderColor: 'var(--v2-line-soft)' }}>
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>{title}</h3>
       </div>
       {rows.length === 0 ? (
-        <div className="px-5 py-6 text-sm text-gray-400">{emptyLabel}</div>
+        <div className="px-5 py-6 text-sm" style={{ color: 'var(--v2-ink-faint)' }}>{emptyLabel}</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[920px] table-fixed" aria-label={`Tabela de ${title}`}>
-            <thead className="sticky top-0 bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
+            <thead className="sticky top-0 text-[11px] uppercase tracking-wide" style={{ background: 'rgba(255,255,255,0.55)', color: 'var(--v2-ink-faint)' }}>
               <tr>
                 <th className="w-[34%] px-5 py-2 text-left">Grupo</th>
                 <th className="w-[11%] px-5 py-2 text-right">Chamadas</th>
@@ -77,17 +77,17 @@ function BreakdownTable({
                 <th className="w-[11%] px-5 py-2 text-right">R$</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y" style={{ borderColor: 'var(--v2-line-soft)' }}>
               {rows.map(row => (
-                <tr key={row.key} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-5 py-2.5 text-sm text-gray-800">
+                <tr key={row.key} className="transition-colors" style={{ cursor: 'default' }}>
+                  <td className="px-5 py-2.5 text-sm" style={{ color: 'var(--v2-ink-strong)' }}>
                     <span className="block truncate" aria-hidden="true" title={row.label}>{row.label}</span>
                     <span className="sr-only">{row.label}</span>
                   </td>
-                  <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.calls)}</td>
-                  <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.tokens_in)}</td>
-                  <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.tokens_out)}</td>
-                  <td className="px-5 py-2.5 text-sm text-right text-gray-600">{fmtInt(row.total_tokens)}</td>
+                  <td className="px-5 py-2.5 text-sm text-right" style={{ color: 'var(--v2-ink-soft)' }}>{fmtInt(row.calls)}</td>
+                  <td className="px-5 py-2.5 text-sm text-right" style={{ color: 'var(--v2-ink-soft)' }}>{fmtInt(row.tokens_in)}</td>
+                  <td className="px-5 py-2.5 text-sm text-right" style={{ color: 'var(--v2-ink-soft)' }}>{fmtInt(row.tokens_out)}</td>
+                  <td className="px-5 py-2.5 text-sm text-right" style={{ color: 'var(--v2-ink-soft)' }}>{fmtInt(row.total_tokens)}</td>
                   <td className="px-5 py-2.5 text-sm text-right font-medium text-amber-700">{fmtUsd(row.cost_usd)}</td>
                   <td className="px-5 py-2.5 text-sm text-right font-medium text-emerald-700">{fmtBrl(row.cost_brl)}</td>
                 </tr>
@@ -160,19 +160,19 @@ export default function CostBreakdownModal({
       minHeight={300}
       className="bg-gray-50"
     >
-      <div className="p-4 border-b bg-white">
-        <p className="text-sm text-gray-500">
+      <div className="p-4 border-b" style={{ background: 'rgba(255,255,255,0.6)', borderColor: 'var(--v2-line-soft)' }}>
+        <p className="text-sm" style={{ color: 'var(--v2-ink-soft)' }}>
           Visão consolidada por API, modelo, função, fase, tipo de documento e agentes.
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {loading && !breakdown ? (
-          <div className="bg-white rounded-xl border p-10 text-center text-sm text-gray-400">
+          <div className="rounded-xl border p-10 text-center text-sm" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)', color: 'var(--v2-ink-faint)' }}>
             Carregando detalhamento...
           </div>
         ) : !breakdown ? (
-          <div className="bg-white rounded-xl border p-10 text-center text-sm text-gray-400">
+          <div className="rounded-xl border p-10 text-center text-sm" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)', color: 'var(--v2-ink-faint)' }}>
             Nenhum dado de custo/tokens disponível ainda.
             </div>
           ) : (
@@ -186,12 +186,12 @@ export default function CostBreakdownModal({
                   { label: 'Tokens totais', value: fmtInt(breakdown.total_tokens), icon: Coins, color: 'text-violet-600' },
                   { label: 'Chamadas LLM', value: fmtInt(breakdown.total_calls), icon: Cpu, color: 'text-blue-600' },
                 ].map(card => (
-                  <div key={card.label} className="bg-white rounded-xl border p-5">
+                  <div key={card.label} className="rounded-xl border p-5" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">{card.label}</span>
+                      <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--v2-ink-faint)' }}>{card.label}</span>
                       <card.icon className={`w-4 h-4 ${card.color}`} />
                     </div>
-                    <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+                    <p className="text-2xl font-bold" style={{ color: 'var(--v2-ink-strong)' }}>{card.value}</p>
                   </div>
                 ))}
               </div>
@@ -210,8 +210,8 @@ export default function CostBreakdownModal({
               )}
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                <div className="bg-white rounded-xl border p-5">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-4">Custo por modelo (USD)</h3>
+                <div className="rounded-xl border p-5" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
+                  <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--v2-ink-strong)' }}>Custo por modelo (USD)</h3>
                   <ResponsiveContainer width="100%" height={280}>
                     <BarChart data={modelCostChart} layout="vertical" margin={{ left: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -223,9 +223,9 @@ export default function CostBreakdownModal({
                   </ResponsiveContainer>
                 </div>
 
-                <div className="bg-white rounded-xl border p-5">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-1">Custo por modelo (R$)</h3>
-                  <p className="text-xs text-gray-400 mb-4">
+                <div className="rounded-xl border p-5" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
+                  <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--v2-ink-strong)' }}>Custo por modelo (R$)</h3>
+                  <p className="text-xs mb-4" style={{ color: 'var(--v2-ink-faint)' }}>
                     Conversão com cotação referencial de {breakdown.exchange_rate_brl.toFixed(2)} BRL/USD.
                   </p>
                   <ResponsiveContainer width="100%" height={280}>
@@ -241,8 +241,8 @@ export default function CostBreakdownModal({
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                <div className="bg-white rounded-xl border p-5">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-4">Tokens por modelo</h3>
+                <div className="rounded-xl border p-5" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
+                  <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--v2-ink-strong)' }}>Tokens por modelo</h3>
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={modelTokensChart} layout="vertical" margin={{ left: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -255,8 +255,8 @@ export default function CostBreakdownModal({
                   </ResponsiveContainer>
                 </div>
 
-                <div className="bg-white rounded-xl border p-5">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-4">Custo por função / modalidade (R$)</h3>
+                <div className="rounded-xl border p-5" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
+                  <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--v2-ink-strong)' }}>Custo por função / modalidade (R$)</h3>
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={functionCostChart} layout="vertical" margin={{ left: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -270,8 +270,8 @@ export default function CostBreakdownModal({
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                <div className="bg-white rounded-xl border p-5">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-4">Tokens por tipo de documento</h3>
+                <div className="rounded-xl border p-5" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
+                  <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--v2-ink-strong)' }}>Tokens por tipo de documento</h3>
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={documentTypeTokensChart} layout="vertical" margin={{ left: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />

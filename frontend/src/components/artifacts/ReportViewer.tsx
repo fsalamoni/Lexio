@@ -129,30 +129,28 @@ export default function ReportViewer({ content, title, pageMode }: ReportViewerP
   }, [])
 
   return (
-    <div className={pageMode ? 'flex flex-col items-center min-h-full bg-gray-100 py-8 px-4' : 'flex gap-6 h-full'}>
+    <div className={pageMode ? 'flex flex-col items-center min-h-full py-8 px-4' : 'flex gap-6 h-full'} style={pageMode ? { background: 'rgba(15,23,42,0.05)' } : undefined}>
       {pageMode ? (
-        /* Page-canvas layout: white A4-like card on gray background */
+        /* Page-canvas layout: white A4-like card on warm gray background */
         <div
-          className="w-full max-w-3xl bg-white shadow-md rounded-sm px-16 py-14 flex gap-6"
-          style={{ minHeight: A4_PAGE_MIN_HEIGHT }}
+          className="w-full px-16 py-14 flex gap-6"
+          style={{ maxWidth: '794px', minHeight: A4_PAGE_MIN_HEIGHT, background: '#fff', borderRadius: '4px', boxShadow: '0 8px 40px rgba(15,23,42,0.12), 0 2px 8px rgba(15,23,42,0.07)', fontFamily: 'var(--v2-font-sans)' }}
         >
           {/* TOC sidebar (page mode) */}
           {hasToc && showToc && (
-            <nav className="w-48 flex-shrink-0 overflow-y-auto pr-3 border-r border-gray-100">
-              <div className="sticky top-0 bg-white pb-2">
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Índice</h4>
+            <nav className="w-48 flex-shrink-0 overflow-y-auto pr-3 border-r" style={{ borderColor: 'rgba(15,23,42,0.08)' }}>
+              <div className="sticky top-0 pb-2" style={{ background: '#fff' }}>
+                <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--v2-ink-faint)' }}>Índice</h4>
               </div>
               <ul className="space-y-0.5">
                 {toc.map((item, i) => (
                   <li key={i}>
                     <button
                       onClick={() => scrollTo(item.id)}
-                      className={`w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate ${
-                        activeId === item.id
-                          ? 'bg-brand-50 text-brand-700 font-medium'
-                          : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'
-                      }`}
-                      style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
+                      className="w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate"
+                      style={activeId === item.id
+                        ? { paddingLeft: `${(item.level - 1) * 12 + 8}px`, background: 'rgba(15,118,110,0.08)', color: 'var(--v2-accent-strong)', fontWeight: 600 }
+                        : { paddingLeft: `${(item.level - 1) * 12 + 8}px`, color: 'var(--v2-ink-faint)' }}
                     >
                       {item.level > 1 && <ChevronRight className="w-3 h-3 inline mr-1 opacity-40" />}
                       {item.text}
@@ -167,18 +165,20 @@ export default function ReportViewer({ content, title, pageMode }: ReportViewerP
             {hasToc && (
               <button
                 onClick={() => setShowToc(s => !s)}
-                className={`mb-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  showToc ? 'bg-brand-50 text-brand-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                }`}
+                className="mb-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={showToc
+                  ? { background: 'rgba(15,118,110,0.08)', color: 'var(--v2-accent-strong)' }
+                  : { background: 'rgba(15,23,42,0.05)', color: 'var(--v2-ink-soft)' }}
               >
                 <List className="w-3.5 h-3.5" />
                 {showToc ? 'Ocultar índice' : 'Mostrar índice'}
               </button>
             )}
-            {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
+            {title && <h1 className="text-2xl font-bold mb-6" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{title}</h1>}
             <div
               ref={contentRef}
-              className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
+              className="max-w-none [&_table]:w-full [&_table]:border-collapse"
+              style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)', fontSize: '0.95rem', lineHeight: '1.7' }}
               dangerouslySetInnerHTML={{ __html: html }}
             />
           </div>
@@ -187,21 +187,19 @@ export default function ReportViewer({ content, title, pageMode }: ReportViewerP
         <>
           {/* TOC sidebar */}
           {hasToc && showToc && (
-            <nav className="w-56 flex-shrink-0 overflow-y-auto pr-3 border-r border-gray-100">
-              <div className="sticky top-0 bg-white pb-2">
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Índice</h4>
+            <nav className="w-56 flex-shrink-0 overflow-y-auto pr-3 border-r" style={{ borderColor: 'var(--v2-line-soft)' }}>
+              <div className="sticky top-0 pb-2" style={{ background: 'var(--v2-panel-strong)' }}>
+                <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--v2-ink-faint)' }}>Índice</h4>
               </div>
               <ul className="space-y-0.5">
                 {toc.map((item, i) => (
                   <li key={i}>
                     <button
                       onClick={() => scrollTo(item.id)}
-                      className={`w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate ${
-                        activeId === item.id
-                          ? 'bg-brand-50 text-brand-700 font-medium'
-                          : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'
-                      }`}
-                      style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
+                      className="w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors truncate"
+                      style={activeId === item.id
+                        ? { paddingLeft: `${(item.level - 1) * 12 + 8}px`, background: 'rgba(15,118,110,0.08)', color: 'var(--v2-accent-strong)', fontWeight: 600 }
+                        : { paddingLeft: `${(item.level - 1) * 12 + 8}px`, color: 'var(--v2-ink-faint)' }}
                     >
                       {item.level > 1 && <ChevronRight className="w-3 h-3 inline mr-1 opacity-40" />}
                       {item.text}
@@ -218,20 +216,22 @@ export default function ReportViewer({ content, title, pageMode }: ReportViewerP
             {hasToc && (
               <button
                 onClick={() => setShowToc(s => !s)}
-                className={`mb-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  showToc ? 'bg-brand-50 text-brand-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                }`}
+                className="mb-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={showToc
+                  ? { background: 'rgba(15,118,110,0.08)', color: 'var(--v2-accent-strong)' }
+                  : { background: 'rgba(15,23,42,0.05)', color: 'var(--v2-ink-soft)' }}
               >
                 <List className="w-3.5 h-3.5" />
                 {showToc ? 'Ocultar índice' : 'Mostrar índice'}
               </button>
             )}
 
-            {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
+            {title && <h1 className="text-2xl font-bold mb-6" style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}>{title}</h1>}
 
             <div
               ref={contentRef}
-              className="prose prose-sm max-w-none text-gray-700 [&_strong]:font-semibold [&_a]:text-brand-600 [&_a]:underline [&_pre]:my-2 [&_code]:text-xs [&_table]:w-full [&_table]:border-collapse"
+              className="max-w-none [&_table]:w-full [&_table]:border-collapse"
+              style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)', fontSize: '0.95rem', lineHeight: '1.7' }}
               dangerouslySetInnerHTML={{ __html: html }}
             />
           </div>

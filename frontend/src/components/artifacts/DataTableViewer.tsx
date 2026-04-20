@@ -5,7 +5,7 @@
  */
 
 import { useState, useMemo, useCallback } from 'react'
-import { Search, ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Pencil, Check } from 'lucide-react'
 import type { ParsedDataTable } from './artifact-parsers'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -48,26 +48,31 @@ function alignClass(align?: 'left' | 'right' | 'center'): string {
 
 interface DataTableViewerProps {
   data: ParsedDataTable
+  onChange?: (data: ParsedDataTable) => void
 }
 
-export default function DataTableViewer({ data }: DataTableViewerProps) {
+export default function DataTableViewer({ data, onChange }: DataTableViewerProps) {
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortState | null>(null)
   const [pageSize, setPageSize] = useState<number>(10)
   const [currentPage, setCurrentPage] = useState(0)
+  const [editMode, setEditMode] = useState(false)
+  const [editedRows, setEditedRows] = useState<typeof data.rows>(() => data.rows.map(r => ({ ...r })))
 
-  // ── Filtering ──────────────────────────────────────────────────────────
+  const activeRows = editMode ? editedRows : data.rows
+
+  // ── Filtering ────────────────────────────────────────────────────────
 
   const filteredRows = useMemo(() => {
-    if (!search.trim()) return data.rows
+    if (!search.trim()) return activeRows
     const term = search.toLowerCase().trim()
-    return data.rows.filter(row =>
+    return activeRows.filter(row =>
       data.columns.some(col => {
         const val = row[col.key]
         return val !== undefined && String(val).toLowerCase().includes(term)
       })
     )
-  }, [data.rows, data.columns, search])
+  }, [activeRows, data.columns, search])
 
   // ── Sorting ────────────────────────────────────────────────────────────
 
@@ -111,48 +116,68 @@ export default function DataTableViewer({ data }: DataTableViewerProps) {
   // ── Render ─────────────────────────────────────────────────────────────
 
   if (data.columns.length === 0 || data.rows.length === 0) {
-    return <div className="text-center py-12 text-gray-500">Tabela vazia.</div>
+    return <div className="text-center py-12" style={{ color: 'var(--v2-ink-faint)' }}>Tabela vazia.</div>
   }
 
   return (
     <div className="flex flex-col gap-4">
       {data.renderedImageUrl && (
-        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: 'var(--v2-line-soft)' }}>
           <img src={data.renderedImageUrl} alt={data.title} className="w-full h-auto object-contain" />
         </div>
       )}
 
-      {/* Title + search */}
+      {/* Title + search + edit toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <h3 className="text-lg font-bold text-gray-900 truncate">{data.title}</h3>
-        <div className="relative flex-shrink-0 w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          <input
-            type="text"
-            value={search}
-            onChange={handleSearchChange}
-            placeholder="Buscar na tabela..."
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
-          />
+        <h3 className="text-lg font-bold truncate" style={{ color: 'var(--v2-ink-strong)' }}>{data.title}</h3>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {onChange && (
+            <button
+              onClick={() => {
+                if (editMode) {
+                  onChange({ ...data, rows: editedRows })
+                }
+                setEditMode(m => !m)
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              style={editMode
+                ? { background: 'rgba(15,118,110,0.10)', color: 'var(--v2-accent-strong)', border: '1px solid var(--v2-accent-strong)' }
+                : { background: 'rgba(15,23,42,0.05)', color: 'var(--v2-ink-soft)', border: '1px solid var(--v2-line-soft)' }}
+            >
+              {editMode ? <><Check className="w-3.5 h-3.5" /> Salvar</> : <><Pencil className="w-3.5 h-3.5" /> Editar</>}
+            </button>
+          )}
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--v2-ink-faint)' }} />
+            <input
+              type="text"
+              value={search}
+              onChange={handleSearchChange}
+              placeholder="Buscar na tabela..."
+              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg outline-none"
+              style={{ border: '1px solid var(--v2-line-soft)', background: 'var(--v2-panel-strong)', color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}
+            />
+          </div>
         </div>
       </div>
 
       {/* Table wrapper with horizontal scroll */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border" style={{ background: 'var(--v2-panel-strong)', borderColor: 'var(--v2-line-soft)' }}>
         <table className="w-full text-sm">
           {/* Header */}
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
+            <tr className="border-b" style={{ background: 'rgba(15,23,42,0.03)', borderColor: 'var(--v2-line-soft)' }}>
               {data.columns.map(col => {
                 const isActive = sort?.key === col.key
                 return (
                   <th
                     key={col.key}
                     className={`
-                      px-4 py-3 font-semibold text-gray-700 select-none cursor-pointer
-                      hover:bg-gray-100 transition-colors whitespace-nowrap
+                      px-4 py-3 font-semibold select-none cursor-pointer
+                      whitespace-nowrap transition-colors
                       ${alignClass(col.align)}
                     `}
+                    style={{ color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}
                     onClick={() => handleSort(col.key)}
                   >
                     <span className="inline-flex items-center gap-1.5">
@@ -164,7 +189,7 @@ export default function DataTableViewer({ data }: DataTableViewerProps) {
                           <ChevronDown className="w-3.5 h-3.5 text-brand-600" />
                         )
                       ) : (
-                        <ChevronsUpDown className="w-3.5 h-3.5 text-gray-300" />
+                        <ChevronsUpDown className="w-3.5 h-3.5" style={{ color: 'var(--v2-ink-faint)' }} />
                       )}
                     </span>
                   </th>
@@ -179,7 +204,8 @@ export default function DataTableViewer({ data }: DataTableViewerProps) {
               <tr>
                 <td
                   colSpan={data.columns.length}
-                  className="px-4 py-8 text-center text-gray-400"
+                  className="px-4 py-8 text-center"
+                  style={{ color: 'var(--v2-ink-faint)' }}
                 >
                   Nenhum resultado para &quot;{search}&quot;
                 </td>
@@ -188,18 +214,31 @@ export default function DataTableViewer({ data }: DataTableViewerProps) {
               pageRows.map((row, rowIdx) => (
                 <tr
                   key={rowIdx}
-                  className={`
-                    border-b border-gray-100 transition-colors
-                    hover:bg-brand-50/40
-                    ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}
-                  `}
+                  className="border-b transition-colors"
+                  style={{ borderColor: 'var(--v2-line-soft)', background: rowIdx % 2 === 0 ? 'transparent' : 'rgba(15,23,42,0.02)' }}
                 >
                   {data.columns.map(col => (
                     <td
                       key={col.key}
-                      className={`px-4 py-2.5 text-gray-700 ${alignClass(col.align)}`}
+                      className={`px-4 py-2.5 ${alignClass(col.align)}`}
+                      style={{ color: 'var(--v2-ink-strong)' }}
                     >
-                      {row[col.key] !== undefined ? String(row[col.key]) : ''}
+                      {editMode ? (
+                        <input
+                          type="text"
+                          value={String(editedRows[safePage * pageSize + rowIdx]?.[col.key] ?? '')}
+                          onChange={e => {
+                            const newRows = editedRows.map((r, ri) =>
+                              ri === safePage * pageSize + rowIdx ? { ...r, [col.key]: e.target.value } : r
+                            )
+                            setEditedRows(newRows)
+                          }}
+                          className="w-full min-w-[80px] px-2 py-1 text-sm rounded outline-none"
+                          style={{ border: '1px solid var(--v2-line-soft)', background: 'var(--v2-panel-strong)', color: 'var(--v2-ink-strong)', fontFamily: 'var(--v2-font-sans)' }}
+                        />
+                      ) : (
+                        row[col.key] !== undefined ? String(row[col.key]) : ''
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -210,7 +249,7 @@ export default function DataTableViewer({ data }: DataTableViewerProps) {
           {/* Summary row */}
           {data.summary && (
             <tfoot>
-              <tr className="bg-gray-100 border-t-2 border-gray-300 font-semibold text-gray-800">
+              <tr className="border-t-2 font-semibold" style={{ background: 'rgba(15,23,42,0.04)', borderColor: 'var(--v2-line-soft)', color: 'var(--v2-ink-strong)' }}>
                 {data.columns.map((col, colIdx) => (
                   <td
                     key={col.key}
@@ -231,13 +270,14 @@ export default function DataTableViewer({ data }: DataTableViewerProps) {
       </div>
 
       {/* Pagination controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-gray-600">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm" style={{ color: 'var(--v2-ink-soft)' }}>
         <div className="flex items-center gap-2">
           <span>Exibindo</span>
           <select
             value={pageSize}
             onChange={handlePageSizeChange}
-            className="border border-gray-300 rounded-md px-2 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="rounded-md px-2 py-1 text-sm outline-none"
+            style={{ border: '1px solid var(--v2-line-soft)', background: 'var(--v2-panel-strong)', color: 'var(--v2-ink-strong)' }}
           >
             {PAGE_SIZE_OPTIONS.map(size => (
               <option key={size} value={size}>{size}</option>
@@ -285,18 +325,15 @@ export default function DataTableViewer({ data }: DataTableViewerProps) {
               }, [])
               .map((item, idx) =>
                 item === 'ellipsis' ? (
-                  <span key={`ellipsis-${idx}`} className="px-1 text-gray-400">...</span>
+                  <span key={`ellipsis-${idx}`} className="px-1" style={{ color: 'var(--v2-ink-faint)' }}>...</span>
                 ) : (
                   <button
                     key={item}
                     onClick={() => setCurrentPage(item)}
-                    className={`
-                      min-w-[32px] px-2 py-1 rounded text-sm font-medium transition-colors
-                      ${item === safePage
-                        ? 'bg-brand-600 text-white'
-                        : 'hover:bg-gray-100 text-gray-600'
-                      }
-                    `}
+                    className="min-w-[32px] px-2 py-1 rounded text-sm font-medium transition-colors"
+                    style={item === safePage
+                      ? { background: 'var(--v2-accent-strong)', color: '#fff' }
+                      : { color: 'var(--v2-ink-soft)' }}
                   >
                     {item + 1}
                   </button>
