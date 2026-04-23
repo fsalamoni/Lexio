@@ -2,7 +2,7 @@
 
 > SaaS brasileiro de produção jurídica com IA. 10 pipelines multi-agente, 58 agentes configuráveis, 40+ modelos. Roda 100% no browser via OpenRouter.
 
-> Referência sincronizada com `main` em 18 de abril de 2026.
+> Referência sincronizada com `main` em 22 de abril de 2026.
 
 [![Deploy Pages](https://github.com/fsalamoni/Lexio/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/fsalamoni/Lexio/actions/workflows/deploy-pages.yml)
 [![Firebase Deploy](https://github.com/fsalamoni/Lexio/actions/workflows/firebase-deploy.yml/badge.svg)](https://github.com/fsalamoni/Lexio/actions/workflows/firebase-deploy.yml)
@@ -56,6 +56,7 @@
 - **Pipeline de Áudio** — 6 agentes para produção de podcasts e narrações com TTS e síntese literal internalizada
 - **Pipeline de Apresentação** — 6 agentes para criação de apresentações profissionais com imagens de slides contextuais e exportação PPTX
 - **Resiliência de mídia e LLM** — Pipelines de áudio, vídeo, apresentação e estúdio usam fallback automático de modelo em indisponibilidade/transientes, com avisos visíveis de degradação e incompatibilidade de capacidade
+- **Confiabilidade de progresso + mobile hardening** — Progresso operacional evita conclusão prematura (100% apenas no fim real), fallback do Redator mantém semântica monotônica de etapa e superfícies críticas (`TaskBar`, `Novo Documento`, `Caderno`) foram ajustadas para melhor uso em telas pequenas
 - **Persistência de mídia do estúdio** — Vídeos, áudios e imagens temporários do notebook são enviados para Cloud Storage; o artefato salvo no Firestore mantém apenas URLs persistidas e checkpoint compactado para respeitar o limite de 1 MiB por documento
 - **Anamnese 2 camadas** — Perfil profissional persistente (Layer 1) + contexto por geração (Layer 2)
 - **Configurações por usuário** — API keys, catálogo pessoal, modelos por agente, tipos e áreas ficam isolados em cada perfil, persistidos em Firestore e usados como única fonte de verdade para aquele usuário

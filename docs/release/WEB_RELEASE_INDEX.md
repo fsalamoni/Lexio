@@ -18,6 +18,8 @@ Last update: 2026-04-22
 - .firebaserc
 - functions/src/index.ts
 - frontend/src/lib/generation-service.ts
+- frontend/src/components/TaskBar.tsx
+- frontend/src/pages/NewDocument.tsx
 - frontend/src/pages/ResearchNotebook.tsx
 - frontend/src/contexts/TaskManagerContext.tsx
 
@@ -25,6 +27,8 @@ Last update: 2026-04-22
 - Document pipeline now supports Redator rollout via `VITE_DOC_REDATOR_10K_ENABLED` with optional quality rollback controls (`VITE_DOC_REDATOR_QUALITY_ROLLBACK_MIN`, `VITE_DOC_REDATOR_QUALITY_ROLLBACK_DISABLED`).
 - Running progress across notebook task wrappers is normalized to remain `<=99%` until persistence is complete.
 - `TaskManagerContext` remains the source of truth for task completion (`100%` only after promise resolve).
+- Redator rollback execution no longer pushes runtime back to a prior stage in UI; fallback and recheck now stay in `qualidade`, preserving monotonic stage semantics.
+- Mobile hardening applied to `TaskBar`, `NewDocument` and `ResearchNotebook` interaction rows to avoid overflow/compression on narrow screens.
 
 ## Required Secrets (GitHub Actions)
 - FIREBASE_API_KEY

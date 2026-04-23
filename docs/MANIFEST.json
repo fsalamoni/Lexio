@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-22",
-    "cycle": "wave20-redator-progress-trust",
+    "cycle": "wave21-mobile-progress-monotonic",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -371,6 +371,19 @@
         "frontend/src/lib/notebook-pipeline-progress.ts"
       ],
       "notes": "Tarefas em execução são limitadas a <=99% e os fluxos de acervo/estúdio/vídeo no notebook evitam fase concluída prematura; 100% fica reservado ao término real do job com persistência concluída."
+    },
+    {
+      "id": "E5.F8",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Hardening mobile e progresso monotônico no fallback do Redator",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/generation-service.ts",
+        "frontend/src/components/TaskBar.tsx",
+        "frontend/src/pages/NewDocument.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx"
+      ],
+      "notes": "Fallback de qualidade do Redator permanece na fase `qualidade` para evitar regressão visual de etapa; TaskBar/NewDocument/ResearchNotebook receberam ajustes responsivos para reduzir overflow e compressão de controles em telas pequenas."
     },
     {
       "id": "E8.F1",

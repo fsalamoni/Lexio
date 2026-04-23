@@ -1828,9 +1828,9 @@ export async function generateDocument(
     if (redatorRuntime.rollbackEnabled && redatorPrimaryQuality.score < redatorRuntime.rollbackMinQuality) {
       redatorRollbackUsed = true
       reportProgress(
-        'redacao',
+        'qualidade',
         'Qualidade abaixo do mínimo. Reexecutando Redator com janela completa...',
-        86,
+        93,
         modelRedator,
         `Fallback acionado: ${redatorPrimaryQuality.score}/100 < ${redatorRuntime.rollbackMinQuality}/100`,
       )
@@ -1848,9 +1848,9 @@ export async function generateDocument(
         REDATOR_DEFAULT_MAX_TOKENS,
         0.3,
       )
-      reportStageResult('redacao', 'Redação de fallback concluída.', 90, redatorRollbackResult)
+      reportStageResult('qualidade', 'Redação de fallback concluída.', 94, redatorRollbackResult)
 
-      reportProgress('qualidade', 'Reavaliando qualidade após fallback do Redator...', 93)
+      reportProgress('qualidade', 'Reavaliando qualidade após fallback do Redator...', 94)
       redatorRollbackQuality = evaluateQuality(redatorRollbackResult.content, docType, { tema })
 
       if (redatorRollbackQuality.score >= redatorPrimaryQuality.score) {

@@ -28,14 +28,16 @@ Last update: 2026-04-22
 - Release workflow dispatch: completed (release-web.yml run 24692171412 success)
 
 ## Current Wave Cache (2026-04-22)
-- Wave tag: wave20-redator-progress-trust
-- Scope: Redator 10k rollout flag + quality rollback, notebook progress-truth normalization, governance docs sync.
+- Wave tag: wave21-mobile-progress-monotonic
+- Scope: hardening do fallback do Redator para progresso monotônico + ajustes responsivos mobile em superfícies críticas + sincronização de governança.
 - Files touched (core runtime):
 	- frontend/src/lib/generation-service.ts
+	- frontend/src/components/TaskBar.tsx
+	- frontend/src/pages/NewDocument.tsx
 	- frontend/src/pages/ResearchNotebook.tsx
-	- frontend/src/contexts/TaskManagerContext.tsx
 - Files touched (governance/docs):
 	- docs/PLANO.md
+	- docs/release/WEB_RELEASE_CACHE.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
 	- docs/release/WEB_RELEASE_INDEX.md
 	- docs/MANIFEST.json

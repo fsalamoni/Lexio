@@ -25,6 +25,14 @@
 - ✅ Normalização de confiança de progresso no notebook: fluxos de acervo/estúdio/vídeo/literal limitam estado em execução a `<=99%` e só promovem conclusão após persistência.
 - 🔄 Próximo bloco: consolidar paralelização segura de agentes onde não houver regressão de qualidade, fechar governança final de release e executar trilha operacional completa de merge/pull/commit/deploy.
 
+**Atualização incremental (2026-04-22 — Wave 21: hardening mobile + progresso monotônico):**
+- ✅ Fallback do Redator sem regressão visual de progresso: reexecução e reavaliação passaram a permanecer na fase de `qualidade`, evitando salto regressivo de etapa no painel e preservando contrato de confiança.
+- ✅ `TaskBar` endurecido para mobile: badge com largura responsiva, painel expandido com altura adaptativa e metadados sem truncamento agressivo em telas pequenas.
+- ✅ `NewDocument` endurecido para mobile: ações finais reorganizadas em pilha responsiva (detalhar contexto + gerar + estimativa), removendo risco de overflow horizontal em larguras estreitas.
+- ✅ `ResearchNotebook` endurecido para mobile em pontos críticos de uso: input de link em fontes e barra inferior do chat agora quebram corretamente para coluna em telas pequenas.
+- ✅ Validação completa pós-hardening: `npm run typecheck` + `npm run test -- --run` com sucesso (35/35 arquivos, 273/273 testes).
+- 🔄 Próximo bloco: paralelização segura adicional de agentes (somente etapas independentes), mantendo gates de qualidade e sem regressão de UX/confiabilidade.
+
 ## Plano Mestre Executável (Atualizado)
 
 ### Faixa A — Consolidado em produção (já implementado)

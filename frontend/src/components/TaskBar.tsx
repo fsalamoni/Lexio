@@ -55,15 +55,15 @@ function TaskRow({ task, onDismiss }: { task: TaskInfo; onDismiss: () => void })
       </div>
       {isRunning && (
         <div className="mt-1.5">
-          <div className="flex items-center justify-between mb-0.5">
-            <span className="text-[10px] text-gray-500 truncate">{task.phase}</span>
+          <div className="flex items-start justify-between gap-2 mb-0.5">
+            <span className="text-[10px] text-gray-500 leading-4 break-words min-w-0 flex-1">{task.phase}</span>
             <span className="text-[10px] text-indigo-600 font-medium">{Math.round(task.progress)}%</span>
           </div>
           {task.stageMeta && (
-            <p className="text-[10px] text-gray-400 truncate mb-1">{task.stageMeta}</p>
+            <p className="text-[10px] text-gray-400 leading-4 break-words mb-1">{task.stageMeta}</p>
           )}
           {operationalLabel && (
-            <p className="text-[10px] text-gray-500 truncate mb-1">{operationalLabel}</p>
+            <p className="text-[10px] text-gray-500 leading-4 break-words mb-1">{operationalLabel}</p>
           )}
           <div className="w-full bg-gray-200 rounded-full h-1.5">
             <div
@@ -74,7 +74,7 @@ function TaskRow({ task, onDismiss }: { task: TaskInfo; onDismiss: () => void })
         </div>
       )}
       {isError && task.error && (
-        <p className="text-[10px] text-red-500 mt-1 truncate">{task.error}</p>
+        <p className="text-[10px] text-red-500 mt-1 leading-4 break-words">{task.error}</p>
       )}
     </div>
   )
@@ -87,17 +87,17 @@ export default function TaskBar() {
   if (tasks.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-[900] select-none">
+    <div className="fixed bottom-3 left-3 right-3 sm:bottom-4 sm:left-auto sm:right-4 z-[900] select-none">
       {/* Expanded list */}
       {expanded && (
-        <div className="mb-2 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden">
+        <div className="mb-2 w-full sm:w-72 max-w-[22rem] bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
             <span className="text-xs font-semibold text-gray-700">Tarefas em andamento</span>
             <button onClick={() => setExpanded(false)} className="p-0.5 rounded hover:bg-gray-200">
               <ChevronDown size={14} className="text-gray-500" />
             </button>
           </div>
-          <div className="max-h-60 overflow-y-auto">
+          <div className="max-h-[70vh] sm:max-h-60 overflow-y-auto">
             {tasks.map(t => (
               <TaskRow key={t.id} task={t} onDismiss={() => dismissTask(t.id)} />
             ))}
@@ -108,7 +108,7 @@ export default function TaskBar() {
       {/* Collapsed badge */}
       <button
         onClick={() => setExpanded(e => !e)}
-        className={`flex items-center gap-2 px-3 py-2 rounded-full shadow-lg border transition-colors ${
+        className={`w-full sm:w-auto flex items-center justify-between sm:justify-start gap-2 px-3 py-2 rounded-full shadow-lg border transition-colors ${
           activeCount > 0
             ? 'bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700'
             : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'

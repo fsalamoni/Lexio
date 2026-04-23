@@ -5,7 +5,15 @@
 
 ---
 
-## Status Geral: Etapas 1-204 IMPLEMENTADAS
+## Status Geral: Etapas 1-209 IMPLEMENTADAS
+
+### Etapas 205-209 — Hardening Mobile + Progresso Monotônico no Fallback ✅
+- **Arquivos**: `frontend/src/lib/generation-service.ts`, `frontend/src/components/TaskBar.tsx`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/ResearchNotebook.tsx`
+- Etapa 205: o fallback de qualidade do Redator em `generation-service.ts` foi ajustado para manter a narrativa de progresso na fase `qualidade`, evitando regressão de etapa/percepção (sem voltar visualmente para `redacao` durante a reexecução)
+- Etapa 206: `TaskBar.tsx` recebeu hardening mobile com badge responsivo, painel expandido com largura/altura adaptativas e metadados de etapa com quebra de linha em vez de truncamento agressivo
+- Etapa 207: `NewDocument.tsx` teve o bloco de ações finais reorganizado para layout mobile-first, com empilhamento responsivo de botões (`Detalhar contexto` + `Gerar`) e estimativa de custo quebrando por linha em telas estreitas
+- Etapa 208: `ResearchNotebook.tsx` foi ajustado em áreas de uso intenso no celular (barra inferior do chat e linha de inserção de link em Fontes), reduzindo risco de overflow horizontal e controles comprimidos
+- Etapa 209: validação regressiva pós-hardening executada com sucesso: `npm run typecheck` e `npm run test -- --run` (**35/35 arquivos**, **273/273 testes**)
 
 ### Etapas 200-204 — Redator Otimizado + Contrato de Progresso Confiável ✅
 - **Arquivos**: `frontend/src/lib/generation-service.ts`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/contexts/TaskManagerContext.tsx`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/DocumentDetail.tsx`
