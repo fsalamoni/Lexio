@@ -23,17 +23,20 @@ Last update: 2026-04-23
 - python lint (ruff): completed (all checks passed)
 
 ## Deployment Cache
-- Commit: completed (764e859)
+- Commit: completed (847c48f)
 - Push to origin/main: completed
-- Release workflow dispatch: completed (release-web.yml run 24841471763 success)
+- Release workflow dispatch: completed (release-web.yml run 24844567171 success)
 
 ## Current Wave Cache (2026-04-23)
-- Wave tag: wave23-adaptive-concurrency-global-mobile-panel
-- Scope: concorrência adaptativa em pipelines críticos (acervo/vídeo) + hardening mobile global do DraggablePanel + sincronização completa de governança.
+- Wave tag: wave24-unified-adaptive-runtime-mobile-viewport
+- Scope: heurística adaptativa unificada por runtime (CPU/memória/rede), hardening mobile viewport-real em painéis flutuantes e estabilização de chunking do workbench V2, com sincronização completa de governança.
 - Files touched (core runtime):
 	- frontend/src/components/DraggablePanel.tsx
+	- frontend/src/lib/runtime-concurrency.ts
+	- frontend/src/lib/runtime-concurrency.test.ts
 	- frontend/src/lib/notebook-acervo-analyzer.ts
 	- frontend/src/lib/video-generation-pipeline.ts
+	- frontend/src/pages/labs/ResearchNotebookV2.tsx
 - Files touched (governance/docs):
 	- docs/PLANO.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
@@ -44,13 +47,21 @@ Last update: 2026-04-23
 
 ## Current Validation Cache (2026-04-23)
 - frontend typecheck: completed (TYPECHECK_OK)
-- frontend test: completed (35 files, 273 tests passed)
+- frontend test: completed (36 files, 278 tests passed)
 - frontend build: completed (vite build succeeded)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
-- Known non-blocking output: vite reporter advisory about mixed dynamic/static import of `artifact-parsers.ts`
+- Resolved in this wave: vite advisory sobre import misto (static/dynamic) de `artifact-parsers` não aparece mais após ajuste no ResearchNotebookV2.
 
 ## Pending Operational Cache
-- None. Wave 23 closeout completed (git flow + release lane fully executed).
+- None. Wave 24 closeout completed (git flow + release lane fully executed).
+
+## Wave 24 Release Outcome
+- release-web dispatch (run 24844567171): success.
+- Quality gates: success.
+- Deploy Firebase production: success.
+- Deploy GitHub Pages: success.
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`).
+- Release summary: success.
 
 ## Wave 23 Release Outcome
 - release-web dispatch (run 24841471763): success.
