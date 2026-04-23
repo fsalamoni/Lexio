@@ -225,12 +225,19 @@ export default function DraggablePanel({
   }, [open, pos.x, initialWidth, initialHeight, startMaximized, isCompactViewport, applyCompactGeometry, viewport.w, viewport.h])
 
   useEffect(() => {
-    if (!open || maximized) return
+    if (!open || !isCompactViewport || !maximized) return
+    setMaximized(false)
+  }, [open, isCompactViewport, maximized])
+
+  useEffect(() => {
+    if (!open) return
 
     if (isCompactViewport) {
       applyCompactGeometry()
       return
     }
+
+    if (maximized) return
 
     setSize((prev) => {
       const nextW = Math.min(prev.w, viewport.w)

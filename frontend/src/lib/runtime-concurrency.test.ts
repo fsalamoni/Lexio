@@ -86,6 +86,43 @@ describe('runtime-concurrency', () => {
     expect(diagnostics.runtimeCap).toBe(2)
     expect(diagnostics.resolved).toBe(2)
     expect(diagnostics.limiters).toEqual(expect.arrayContaining(['cpu', 'memory', 'network']))
+    expect(diagnostics.preferredSource).toBe('env')
+  })
+
+  it('scales auto target up for high-end runtime profiles', () => {
+    const diagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
+      fallback: 2,
+      max: 5,
+      hints: {
+        hardwareConcurrency: 16,
+        deviceMemoryGb: 16,
+        effectiveConnectionType: '4g',
+      },
+    })
+
+    expect(diagnostics.profile).toBe('high_end')
+    expect(diagnostics.preferredSource).toBe('auto')
+    expect(diagnostics.preferred).toBe(3)
+    expect(diagnostics.resolved).toBe(3)
+    expect(diagnostics.runtimeCap).toBe(5)
+  })
+
+  it('scales auto target down for constrained runtime profiles', () => {
+    const diagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
+      fallback: 4,
+      max: 5,
+      hints: {
+        hardwareConcurrency: 4,
+        deviceMemoryGb: 4,
+        effectiveConnectionType: '4g',
+      },
+    })
+
+    expect(diagnostics.profile).toBe('constrained')
+    expect(diagnostics.preferredSource).toBe('auto')
+    expect(diagnostics.preferred).toBe(3)
+    expect(diagnostics.runtimeCap).toBe(2)
+    expect(diagnostics.resolved).toBe(2)
   })
 
   it('formats diagnostics and runtime profile keys for telemetry', () => {
@@ -106,11 +143,12 @@ describe('runtime-concurrency', () => {
     })).toBe('cpu 8 | mem 4GB | net 4g')
 
     expect(formatAdaptiveConcurrency(diagnostics)).toContain('auto 2/2 target 2')
+    expect(formatAdaptiveConcurrency(diagnostics)).toContain('profile balanced source auto')
     expect(buildRuntimeProfileKey({
       hardwareConcurrency: 8,
       deviceMemoryGb: 4,
       effectiveConnectionType: '4g',
       saveData: false,
-    }, diagnostics)).toContain('res2')
+    }, diagnostics)).toContain('profilebalanced')
   })
 })

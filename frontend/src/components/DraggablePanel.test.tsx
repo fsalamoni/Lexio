@@ -75,6 +75,35 @@ afterEach(() => {
 })
 
 describe('DraggablePanel', () => {
+  it('drops maximized state when opened in compact viewport', async () => {
+    setVisualViewport(undefined)
+    setViewport(360, 640)
+
+    render(
+      <DraggablePanel
+        open
+        onClose={() => {}}
+        title="Compact Max"
+        startMaximized
+        initialWidth={920}
+        initialHeight={840}
+      >
+        <div>Conteudo</div>
+      </DraggablePanel>,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Compact Max' }) as HTMLDivElement
+
+    await waitFor(() => {
+      expect(dialog.style.width).toBe('344px')
+      expect(dialog.style.height).toBe('624px')
+      expect(dialog.style.borderRadius).toBe('1rem')
+    })
+
+    const maximizeButton = screen.getByLabelText('Maximizar painel') as HTMLButtonElement
+    expect(maximizeButton.disabled).toBe(true)
+  })
+
   it('clamps compact geometry and disables maximize on small viewport', async () => {
     setVisualViewport(undefined)
     setViewport(360, 640)

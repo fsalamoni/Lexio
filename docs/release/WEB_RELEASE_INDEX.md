@@ -46,6 +46,10 @@ Last update: 2026-04-23
 - Wave 25 adds adaptive-concurrency diagnostics (`runtimeCap`, `limiters`, `runtime profile key`) and propagates this telemetry through acervo/video execution records (`runtime_profile`, `runtime_hints`, `runtime_concurrency`, `runtime_cap`).
 - `DraggablePanel` now also accounts for safe-area insets (`env(safe-area-inset-*)`), enlarges touch targets in compact mode, and recomputes compact geometry on orientation changes.
 - Runtime/mobile regressions are now covered by dedicated tests in `runtime-concurrency.test.ts`, `notebook-acervo-analyzer.test.ts`, `video-generation-pipeline.test.ts`, and `DraggablePanel.test.tsx`.
+- Wave 26 calibrates automatic concurrency targets by runtime profile (`unknown`, `constrained`, `balanced`, `performant`, `high_end`) while keeping explicit env overrides authoritative.
+- Adaptive diagnostics now include target source (`auto|env`) and profile metadata in formatted stage traces and runtime profile keys for downstream telemetry analysis.
+- `DraggablePanel` now force-prioritizes compact geometry on narrow viewports even when initialized with `startMaximized`, preventing maximized-state drift on mobile.
+- Regression coverage was extended in `runtime-concurrency.test.ts` (profile up/downscale and source tagging) and `DraggablePanel.test.tsx` (compact mode de-maximization).
 
 ## Required Secrets (GitHub Actions)
 - FIREBASE_API_KEY

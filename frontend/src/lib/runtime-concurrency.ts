@@ -24,12 +24,16 @@ export interface ResolveAdaptiveConcurrencyOptions {
 }
 
 export type RuntimeConcurrencyLimiter = 'cpu' | 'memory' | 'network' | 'save_data'
+export type RuntimeConcurrencyProfile = 'unknown' | 'constrained' | 'balanced' | 'performant' | 'high_end'
+export type AdaptiveConcurrencyTargetSource = 'auto' | 'env'
 
 export interface AdaptiveConcurrencyDiagnostics {
   preferred: number
   resolved: number
   runtimeCap: number
   limiters: RuntimeConcurrencyLimiter[]
+  profile: RuntimeConcurrencyProfile
+  preferredSource: AdaptiveConcurrencyTargetSource
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -70,6 +74,60 @@ export function getRuntimeConcurrencyHints(): RuntimeConcurrencyHints {
     saveData: connection?.saveData === true,
     effectiveConnectionType,
   }
+}
+
+function normalizeHint(value?: number | null): number | null {
+  if (!Number.isFinite(value) || (value ?? 0) <= 0) {
+    return null
+  }
+  return value ?? null
+}
+
+function resolveRuntimeConcurrencyProfile(hints?: RuntimeConcurrencyHints): RuntimeConcurrencyProfile {
+  const cpu = normalizeHint(hints?.hardwareConcurrency)
+  const memoryGb = normalizeHint(hints?.deviceMemoryGb)
+  const network = hints?.effectiveConnectionType?.toLowerCase() ?? null
+  const networkIsFast = !network || network === '4g' || network === '5g' || network === 'wifi' || network === 'ethernet'
+
+  if (hints?.saveData || network === 'slow-2g' || network === '2g') {
+    return 'constrained'
+  }
+
+  if ((cpu && cpu <= 4) || (memoryGb && memoryGb <= 3)) {
+    return 'constrained'
+  }
+
+  if (cpu && cpu >= 16 && memoryGb && memoryGb >= 12 && networkIsFast) {
+    return 'high_end'
+  }
+
+  if (cpu && cpu >= 10 && memoryGb && memoryGb >= 8 && networkIsFast) {
+    return 'performant'
+  }
+
+  if (!cpu && !memoryGb && !network) {
+    return 'unknown'
+  }
+
+  return 'balanced'
+}
+
+function resolveAutoPreferredConcurrency(
+  fallback: number,
+  min: number,
+  max: number,
+  profile: RuntimeConcurrencyProfile,
+): number {
+  const profileFactor: Record<RuntimeConcurrencyProfile, number> = {
+    unknown: 1,
+    constrained: 0.75,
+    balanced: 1,
+    performant: 1.25,
+    high_end: 1.5,
+  }
+
+  const scaled = Math.round(fallback * profileFactor[profile])
+  return clamp(scaled, min, max)
 }
 
 function resolveHardwareCap(max: number, min: number, hardwareConcurrency?: number | null): {
@@ -149,7 +207,10 @@ export function resolveAdaptiveConcurrencyWithDiagnostics(
 ): AdaptiveConcurrencyDiagnostics {
   const min = options.min ?? 1
   const envConcurrency = parsePositiveInt(options.envValue)
-  const preferred = clamp(envConcurrency ?? options.fallback, min, options.max)
+  const profile = resolveRuntimeConcurrencyProfile(options.hints)
+  const preferredSource: AdaptiveConcurrencyTargetSource = envConcurrency ? 'env' : 'auto'
+  const autoPreferred = resolveAutoPreferredConcurrency(options.fallback, min, options.max, profile)
+  const preferred = clamp(envConcurrency ?? autoPreferred, min, options.max)
 
   const hardware = resolveHardwareCap(options.max, min, options.hints?.hardwareConcurrency)
   const memory = resolveMemoryCap(options.max, options.hints?.deviceMemoryGb)
@@ -166,6 +227,8 @@ export function resolveAdaptiveConcurrencyWithDiagnostics(
     resolved: clamp(preferred, min, runtimeCap),
     runtimeCap,
     limiters: Array.from(limiters),
+    profile,
+    preferredSource,
   }
 }
 
@@ -198,7 +261,7 @@ export function formatAdaptiveConcurrency(diagnostics: AdaptiveConcurrencyDiagno
     ? diagnostics.limiters.join('+')
     : 'none'
 
-  return `auto ${diagnostics.resolved}/${diagnostics.runtimeCap} target ${diagnostics.preferred} | limits ${limits}`
+  return `auto ${diagnostics.resolved}/${diagnostics.runtimeCap} target ${diagnostics.preferred} profile ${diagnostics.profile} source ${diagnostics.preferredSource} | limits ${limits}`
 }
 
 export function buildRuntimeProfileKey(
@@ -220,6 +283,8 @@ export function buildRuntimeProfileKey(
     mem,
     net,
     save,
+    `profile${diagnostics.profile}`,
+    `src${diagnostics.preferredSource}`,
     `target${diagnostics.preferred}`,
     `res${diagnostics.resolved}`,
     `cap${diagnostics.runtimeCap}`,

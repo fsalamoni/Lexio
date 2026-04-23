@@ -5,7 +5,16 @@
 
 ---
 
-## Status Geral: Etapas 1-233 IMPLEMENTADAS
+## Status Geral: Etapas 1-239 IMPLEMENTADAS
+
+### Etapas 234-239 — Calibração por Perfil de Runtime + Correção Mobile de Maximizado ✅
+- **Arquivos**: `frontend/src/lib/runtime-concurrency.ts`, `frontend/src/lib/runtime-concurrency.test.ts`, `frontend/src/components/DraggablePanel.tsx`, `frontend/src/components/DraggablePanel.test.tsx`
+- Etapa 234: `runtime-concurrency.ts` passou a classificar perfis de runtime (`unknown`, `constrained`, `balanced`, `performant`, `high_end`) para orientar ajuste automático de concorrência.
+- Etapa 235: resolução adaptativa foi calibrada com escala por perfil no modo automático, mantendo precedência de override explícito por env e preservando os caps de hardware/memória/rede/save-data.
+- Etapa 236: diagnósticos de concorrência foram ampliados com `profile` e `preferredSource` (`auto`/`env`) para rastreabilidade operacional e tuning posterior por coorte.
+- Etapa 237: serialização operacional foi enriquecida para incluir perfil e origem do alvo em `formatAdaptiveConcurrency` e `buildRuntimeProfileKey`, mantendo compatibilidade dos campos já persistidos.
+- Etapa 238: `DraggablePanel.tsx` corrigido para desarmar estado maximizado em viewport compacta e priorizar geometria mobile mesmo com `startMaximized`, evitando inconsistência de layout/controle em celulares.
+- Etapa 239: validação regressiva completa executada com sucesso: `npm run typecheck`, `npm test` (**37/37 arquivos**, **286/286 testes**) e `npm run build`.
 
 ### Etapas 227-233 — Telemetria de Runtime por Execução + Hardening Safe-Area Mobile ✅
 - **Arquivos**: `frontend/src/lib/runtime-concurrency.ts`, `frontend/src/lib/runtime-concurrency.test.ts`, `frontend/src/lib/cost-analytics.ts`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/lib/notebook-acervo-analyzer.test.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/lib/video-generation-pipeline.test.ts`, `frontend/src/components/DraggablePanel.tsx`, `frontend/src/components/DraggablePanel.test.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`

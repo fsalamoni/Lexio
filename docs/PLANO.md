@@ -68,6 +68,15 @@
 - ✅ Validação completa desta wave: `npm run typecheck`, `npm test` (37/37 arquivos, 283/283 testes) e `npm run build` com sucesso.
 - 🔄 Próximo bloco: calibrar limites padrão por perfil com dados de produção (latência/custo por fase), mantendo guardrails de fallback e estabilidade mobile.
 
+**Atualização incremental (2026-04-23 — Wave 26: calibração por perfil de runtime + correção mobile de estado maximizado):**
+- ✅ `runtime-concurrency.ts` passou a classificar perfil de runtime (`unknown|constrained|balanced|performant|high_end`) e ajustar automaticamente o alvo de concorrência por perfil quando não há override por env, preservando precedência de configuração explícita.
+- ✅ Diagnósticos adaptativos foram enriquecidos com `profile` e `preferredSource` (`auto|env`) para melhorar rastreabilidade e tuning posterior por coorte de dispositivo/rede.
+- ✅ Serialização operacional (`formatAdaptiveConcurrency` e `buildRuntimeProfileKey`) foi atualizada para incluir perfil e origem do alvo, aumentando valor de observabilidade sem quebrar compatibilidade dos campos já persistidos.
+- ✅ `DraggablePanel.tsx` corrigido para priorizar modo compacto em mobile mesmo com `startMaximized`, evitando estado maximizado preso em viewport estreita e garantindo recomputação correta da geometria compacta.
+- ✅ Cobertura regressiva ampliada com novos cenários em `runtime-concurrency.test.ts` (up/downscale por perfil e origem do alvo) e `DraggablePanel.test.tsx` (desarme automático de maximizado em compacto).
+- ✅ Validação completa desta wave: `npm run typecheck`, `npm test` (37/37 arquivos, 286/286 testes) e `npm run build` com sucesso.
+- 🔄 Próximo bloco: calibrar fatores por perfil com telemetria real de produção e expor leitura agregada desses sinais no trilho administrativo/custos para tuning contínuo sem regressão.
+
 ## Plano Mestre Executável (Atualizado)
 
 ### Faixa A — Consolidado em produção (já implementado)
