@@ -23,19 +23,24 @@ Last update: 2026-04-23
 - python lint (ruff): completed (all checks passed)
 
 ## Deployment Cache
-- Commit: completed (847c48f)
+- Commit: completed (480631e)
 - Push to origin/main: completed
-- Release workflow dispatch: completed (release-web.yml run 24844567171 success)
+- Release workflow dispatch: completed (release-web.yml run 24846026963 success)
 
 ## Current Wave Cache (2026-04-23)
-- Wave tag: wave24-unified-adaptive-runtime-mobile-viewport
-- Scope: heurística adaptativa unificada por runtime (CPU/memória/rede), hardening mobile viewport-real em painéis flutuantes e estabilização de chunking do workbench V2, com sincronização completa de governança.
+- Wave tag: wave25-runtime-telemetry-safe-area-mobile-hardening
+- Scope: diagnóstico adaptativo por runtime em acervo/vídeo com persistência de telemetria por execução (`llm_executions`), hardening final de safe-area para painéis mobile e sincronização governada de documentação.
 - Files touched (core runtime):
-	- frontend/src/components/DraggablePanel.tsx
 	- frontend/src/lib/runtime-concurrency.ts
 	- frontend/src/lib/runtime-concurrency.test.ts
+	- frontend/src/lib/cost-analytics.ts
 	- frontend/src/lib/notebook-acervo-analyzer.ts
+	- frontend/src/lib/notebook-acervo-analyzer.test.ts
 	- frontend/src/lib/video-generation-pipeline.ts
+	- frontend/src/lib/video-generation-pipeline.test.ts
+	- frontend/src/components/DraggablePanel.tsx
+	- frontend/src/components/DraggablePanel.test.tsx
+	- frontend/src/pages/ResearchNotebook.tsx
 	- frontend/src/pages/labs/ResearchNotebookV2.tsx
 - Files touched (governance/docs):
 	- docs/PLANO.md
@@ -47,17 +52,24 @@ Last update: 2026-04-23
 
 ## Current Validation Cache (2026-04-23)
 - frontend typecheck: completed (TYPECHECK_OK)
-- frontend test: completed (36 files, 278 tests passed)
+- frontend test: completed (37 files, 283 tests passed)
 - frontend build: completed (vite build succeeded)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
-- Resolved in this wave: vite advisory sobre import misto (static/dynamic) de `artifact-parsers` não aparece mais após ajuste no ResearchNotebookV2.
+- Resolved in this wave: telemetria de runtime passou a ser preservada no ciclo completo (pipeline -> persistência -> extração) sem regressão de typecheck/test/build.
 
 ## Pending Operational Cache
-- None. Wave 24 closeout completed (git flow + release lane fully executed).
+- None. Wave 25 closeout completed (git flow + release lane fully executed).
+
+## Wave 25 Release Outcome
+- release-web dispatch (run 24846026963): success.
+- Quality gates: success.
+- Deploy Firebase production: success.
+- Deploy GitHub Pages: success.
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`).
+- Release summary: success.
 
 ## Wave 24 Release Outcome
 - release-web dispatch (run 24844567171): success.
-- Quality gates: success.
 - Deploy Firebase production: success.
 - Deploy GitHub Pages: success.
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`).
