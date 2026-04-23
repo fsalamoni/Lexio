@@ -27,6 +27,15 @@
 - ✅ Trilha operacional completa da wave concluída: pull/rebase (`Already up to date`), commit/push do `main` (`5bf59c4`) e execução one-shot de release (`release-web.yml` run `24853129457`) com quality gates + Firebase + Pages + summary em `success`.
 - 🔄 Próximo bloco: expandir emissão explícita de `executionState` para pipelines auxiliares ainda dependentes de inferência por fase e medir impacto de latência/custo da otimização 2A em produção.
 
+**Atualização incremental (2026-04-23 — Wave 30: executionState explícito em pipelines auxiliares):**
+- ✅ Pipelines auxiliares do estúdio passaram a emitir `executionState` explícito no metadata de progresso: `notebook-studio-pipeline.ts`, `audio-generation-pipeline.ts` e `presentation-generation-pipeline.ts` agora sinalizam estado em início de etapa e em retornos com telemetria de agente.
+- ✅ Contrato de progresso de vídeo endurecido em `video-pipeline-progress.ts`, com `executionState` explícito no estado final e resolução semântica por fase (LLM/media/retry/override explícito), reduzindo inferência frágil nos wrappers.
+- ✅ `video-generation-pipeline.ts` passou a emitir metadados explícitos de `waiting_io` nos lotes de mídia (imagem/TTS), mantendo rastreabilidade de custo/duração sem perder semântica de execução.
+- ✅ Wrappers de tarefa em `ResearchNotebook.tsx` e `ResearchNotebookV2.tsx` agora consomem `executionState` explícito vindo de meta/progresso em estúdio, vídeo e vídeo literal, eliminando dependência de heurística local por `retryCount`.
+- ✅ Cobertura de regressão ampliada com `video-pipeline-progress.test.ts` para garantir resolução correta de `running`/`waiting_io`/`retrying`/`persisting`.
+- ✅ Validação local completa desta wave: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos, 290/290 testes**) e `npm run build` com sucesso em `frontend/`.
+- 🔄 Próximo bloco: concluir trilha operacional da wave 30 (pull/rebase, commit/push, dispatch `release-web.yml`, monitoramento até `completed` e fechamento final de governança/index/cache com IDs reais da execução).
+
 **Atualização incremental (2026-04-22 — Wave 20: performance + confiança de progresso):**
 - ✅ Pipeline documental com rollout por feature flag para Redator em 10k tokens (`VITE_DOC_REDATOR_10K_ENABLED`) e fallback automático para 12k por qualidade mínima (`VITE_DOC_REDATOR_QUALITY_ROLLBACK_MIN` / `VITE_DOC_REDATOR_QUALITY_ROLLBACK_DISABLED`).
 - ✅ Seleção automática da melhor versão final (primária vs fallback), mantendo rastreabilidade em `generation_meta.redator` e contabilizando custos das tentativas extras em `llm_executions`.

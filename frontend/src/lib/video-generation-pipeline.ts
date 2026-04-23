@@ -561,6 +561,7 @@ function buildVideoProgressMetaFromResult(result: LLMResult): VideoPipelineProgr
   }
   return {
     stageMeta: parts.join(' • '),
+    executionState: (result.operational?.totalRetryCount ?? 0) > 0 ? 'retrying' : 'running',
     costUsd: result.cost_usd,
     durationMs: result.duration_ms,
     retryCount: result.operational?.totalRetryCount,
@@ -571,6 +572,7 @@ function buildVideoProgressMetaFromResult(result: LLMResult): VideoPipelineProgr
 
 function buildVideoProgressMetaFromBatch(options: {
   stageMeta: string
+  executionState?: VideoPipelineProgressMeta['executionState']
   costUsd?: number
   durationMs?: number
   retryCount?: number
@@ -579,6 +581,7 @@ function buildVideoProgressMetaFromBatch(options: {
 }): VideoPipelineProgressMeta {
   return {
     stageMeta: options.stageMeta,
+    executionState: options.executionState,
     costUsd: options.costUsd,
     durationMs: options.durationMs,
     retryCount: options.retryCount,
@@ -1343,8 +1346,16 @@ REQUISITOS OBRIGATÓRIOS:
       throwIfAborted(signal)
       const batch = allClips.slice(i, i + imageBatchConcurrency)
 
-      onProgress?.(10, totalSteps, 'media_image_generation',
-        `Gerando imagem ${i + 1}–${Math.min(i + imageBatchConcurrency, allClips.length)} de ${allClips.length} clips...`)
+      onProgress?.(
+        10,
+        totalSteps,
+        'media_image_generation',
+        `Gerando imagem ${i + 1}–${Math.min(i + imageBatchConcurrency, allClips.length)} de ${allClips.length} clips...`,
+        buildVideoProgressMetaFromBatch({
+          stageMeta: imageRuntimeMeta,
+          executionState: 'waiting_io',
+        }),
+      )
 
       const results = await Promise.allSettled(
         batch.map(async (clip) => {
@@ -1489,6 +1500,10 @@ REQUISITOS OBRIGATÓRIOS:
         totalSteps,
         'media_tts_generation',
         `Gerando narrações ${batchStart}-${batchEnd} de ${validSegments.length}...`,
+        buildVideoProgressMetaFromBatch({
+          stageMeta: ttsRuntimeMeta,
+          executionState: 'waiting_io',
+        }),
       )
 
       const results = await Promise.allSettled(batch.map(async (segment) => {

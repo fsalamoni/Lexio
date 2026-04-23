@@ -1,4 +1,4 @@
-import { buildStepProgressPercent } from './pipeline-execution-contract'
+import { buildStepProgressPercent, type PipelineExecutionState } from './pipeline-execution-contract'
 
 export interface VideoPipelineStage {
   key: string
@@ -9,6 +9,7 @@ export interface VideoPipelineStage {
 
 export interface VideoPipelineProgressMeta {
   stageMeta?: string
+  executionState?: PipelineExecutionState
   costUsd?: number
   durationMs?: number
   retryCount?: number
@@ -22,6 +23,7 @@ export interface VideoPipelineProgressState {
   phase: string
   agent: string
   percent: number
+  executionState: PipelineExecutionState
   stageLabel: string
   stageDescription?: string
   stageMeta?: string
@@ -90,6 +92,18 @@ export function getVideoPipelineStage(phase: string): VideoPipelineStage | undef
   return VIDEO_PIPELINE_STAGES.find(stage => stage.key === phase) || VIDEO_PIPELINE_STAGE_ALIASES[phase]
 }
 
+function resolveVideoExecutionState(
+  phase: string,
+  stage: VideoPipelineStage | undefined,
+  meta?: VideoPipelineProgressMeta,
+): PipelineExecutionState {
+  if (meta?.executionState) return meta.executionState
+  if ((meta?.retryCount ?? 0) > 0) return 'retrying'
+  if (stage?.category === 'media') return 'waiting_io'
+  if (phase.startsWith('media_') || phase === 'external_video_render') return 'waiting_io'
+  return 'running'
+}
+
 export function buildVideoPipelineProgress(
   step: number,
   total: number,
@@ -107,6 +121,7 @@ export function buildVideoPipelineProgress(
     phase,
     agent,
     percent: buildStepProgressPercent(safeStep, effectiveTotal),
+    executionState: resolveVideoExecutionState(phase, stage, meta),
     stageLabel: stage?.label ?? agent,
     stageDescription: stage?.description,
     stageMeta: meta?.stageMeta,

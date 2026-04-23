@@ -6,6 +6,7 @@ import {
   loadPresentationPipelineModels,
   validateScopedAgentModels,
 } from './model-config'
+import type { PipelineExecutionState } from './pipeline-execution-contract'
 import { renderPresentationSlidePoster } from './notebook-visual-artifact-renderer'
 import type {
   StudioPipelineInput,
@@ -135,6 +136,10 @@ function toExecution(
   }
 }
 
+function resolveExecutionStateFromRetryCount(retryCount?: number): PipelineExecutionState {
+  return (retryCount ?? 0) > 0 ? 'retrying' : 'running'
+}
+
 function buildPresentationProgressMeta(result: LLMResult): StudioProgressMeta {
   const parts = [result.model.split('/').pop() || result.model]
   if (result.operational?.fallbackUsed && result.operational.fallbackFrom) {
@@ -152,6 +157,7 @@ function buildPresentationProgressMeta(result: LLMResult): StudioProgressMeta {
   }
   return {
     stageMeta: parts.join(' • '),
+    executionState: resolveExecutionStateFromRetryCount(result.operational?.totalRetryCount),
     costUsd: result.cost_usd,
     durationMs: result.duration_ms,
     retryCount: result.operational?.totalRetryCount,
@@ -241,7 +247,9 @@ export async function generatePresentationMediaAssets(
     const slide = parsed.data.slides[index]
     const renderStartedAt = Date.now()
     const stepLabel = `Gerando visual do slide ${index + 1} de ${parsed.data.slides.length}…`
-    onProgress?.(index + 1, parsed.data.slides.length, stepLabel)
+    onProgress?.(index + 1, parsed.data.slides.length, stepLabel, {
+      executionState: 'waiting_io',
+    })
 
     let composed
     let execution: StudioStepExecution
@@ -326,21 +334,27 @@ export async function runPresentationGenerationPipeline(
   const executions: StudioStepExecution[] = []
 
   throwIfAborted(signal)
-  onProgress?.(1, 5, 'Planejando a apresentação…')
+  onProgress?.(1, 5, 'Planejando a apresentação…', {
+    executionState: 'running',
+  })
   const planPrompt = buildPlanPrompt(input)
   const planResult = await callLLMWithFallback(input.apiKey, planPrompt.system, planPrompt.user, models.pres_planejador, models.pres_planejador, 3000, 0.2, { signal })
   executions.push(toExecution('pres_planejador', 'Planejador de Apresentação', planResult))
   onProgress?.(1, 5, 'Estrutura da apresentação planejada.', buildPresentationProgressMeta(planResult))
 
   throwIfAborted(signal)
-  onProgress?.(2, 5, 'Pesquisando evidências e mensagens-chave…')
+  onProgress?.(2, 5, 'Pesquisando evidências e mensagens-chave…', {
+    executionState: 'running',
+  })
   const researchPrompt = buildResearchPrompt(input, planResult.content)
   const researchResult = await callLLMWithFallback(input.apiKey, researchPrompt.system, researchPrompt.user, models.pres_pesquisador, models.pres_pesquisador, 3500, 0.2, { signal })
   executions.push(toExecution('pres_pesquisador', 'Pesquisador de Conteúdo', researchResult))
   onProgress?.(2, 5, 'Pesquisa e mensagens-chave consolidadas.', buildPresentationProgressMeta(researchResult))
 
   throwIfAborted(signal)
-  onProgress?.(3, 5, 'Escrevendo os slides…')
+  onProgress?.(3, 5, 'Escrevendo os slides…', {
+    executionState: 'running',
+  })
   const writerPrompt = buildWriterPrompt(input, planResult.content, researchResult.content)
   const writerResult = await callLLMWithFallback(input.apiKey, writerPrompt.system, writerPrompt.user, models.pres_redator, models.pres_redator, 9000, 0.3, { signal })
   const writtenSlides = normalizePresentation(writerResult.content)
@@ -348,7 +362,9 @@ export async function runPresentationGenerationPipeline(
   onProgress?.(3, 5, 'Slides escritos.', buildPresentationProgressMeta(writerResult))
 
   throwIfAborted(signal)
-  onProgress?.(4, 5, 'Refinando direção visual dos slides…')
+  onProgress?.(4, 5, 'Refinando direção visual dos slides…', {
+    executionState: 'running',
+  })
   const designerPrompt = buildDesignerPrompt(writtenSlides)
   const designerResult = await callLLMWithFallback(input.apiKey, designerPrompt.system, designerPrompt.user, models.pres_designer, models.pres_designer, 9000, 0.25, { signal })
   const designedSlides = normalizePresentation(designerResult.content)
@@ -356,7 +372,9 @@ export async function runPresentationGenerationPipeline(
   onProgress?.(4, 5, 'Direção visual dos slides concluída.', buildPresentationProgressMeta(designerResult))
 
   throwIfAborted(signal)
-  onProgress?.(5, 5, 'Revisando a apresentação…')
+  onProgress?.(5, 5, 'Revisando a apresentação…', {
+    executionState: 'running',
+  })
   const reviewPrompt = buildReviewPrompt(designedSlides)
   const reviewResult = await callLLMWithFallback(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.pres_revisor, models.pres_revisor, 9000, 0.15, { signal })
   const finalContent = normalizePresentation(reviewResult.content)

@@ -20,6 +20,7 @@ import { formatCostBadge } from './currency-utils'
 import { loadResearchNotebookModels, validateScopedAgentModels, type ResearchNotebookModelMap } from './model-config'
 import type { StudioArtifactType } from './firestore-service'
 import { isStructuredArtifactType, parseArtifactContent } from './artifact-parsers'
+import type { PipelineExecutionState } from './pipeline-execution-contract'
 import {
   renderDataTableImage,
   renderInfographicImage,
@@ -65,6 +66,7 @@ export interface StudioStepExecution {
 
 export interface StudioProgressMeta {
   stageMeta?: string
+  executionState?: PipelineExecutionState
   costUsd?: number
   durationMs?: number
   retryCount?: number
@@ -76,6 +78,10 @@ export type StudioProgressCallback = (step: number, totalSteps: number, phase: s
 
 function formatUsd(costUsd: number): string {
   return formatCostBadge(costUsd)
+}
+
+function resolveExecutionStateFromRetryCount(retryCount?: number): PipelineExecutionState {
+  return (retryCount ?? 0) > 0 ? 'retrying' : 'running'
 }
 
 function buildStudioProgressMeta(result: LLMResult): StudioProgressMeta {
@@ -95,6 +101,7 @@ function buildStudioProgressMeta(result: LLMResult): StudioProgressMeta {
   }
   return {
     stageMeta: parts.join(' • '),
+    executionState: resolveExecutionStateFromRetryCount(result.operational?.totalRetryCount),
     costUsd: result.cost_usd,
     durationMs: result.duration_ms,
     retryCount: result.operational?.totalRetryCount,
@@ -915,7 +922,9 @@ export async function runStudioPipeline(
 
   // ── Step 1: Research ────────────────────────────────────────────────
   throwIfAborted(signal)
-  onProgress?.(1, 3, 'Pesquisando e organizando fontes…')
+  onProgress?.(1, 3, 'Pesquisando e organizando fontes…', {
+    executionState: 'running',
+  })
 
   const researchPrompt = buildResearchPrompt(input)
   const researchResult: LLMResult = await callLLMWithFallback(
@@ -944,7 +953,9 @@ export async function runStudioPipeline(
 
   // ── Step 2: Specialist creation ─────────────────────────────────────
   throwIfAborted(signal)
-  onProgress?.(2, 3, `${SPECIALIST_LABELS[specialistRole]} criando conteúdo…`)
+  onProgress?.(2, 3, `${SPECIALIST_LABELS[specialistRole]} criando conteúdo…`, {
+    executionState: 'running',
+  })
 
   const specialistPrompt = buildSpecialistPrompt(input, researchResult.content, specialistRole)
   const specialistResult: LLMResult = await callLLMWithFallback(
@@ -971,7 +982,9 @@ export async function runStudioPipeline(
   await sleep(1000, signal)
   // ── Step 3: Quality review ──────────────────────────────────────────
   throwIfAborted(signal)
-  onProgress?.(3, 3, 'Revisando e aprimorando…')
+  onProgress?.(3, 3, 'Revisando e aprimorando…', {
+    executionState: 'running',
+  })
 
   const reviewPrompt = buildReviewPrompt(input, specialistResult.content)
   const reviewResult: LLMResult = await callLLMWithFallback(

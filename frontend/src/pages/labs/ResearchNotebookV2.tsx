@@ -1268,7 +1268,7 @@ export default function ResearchNotebookV2() {
           phase: runningProgress.stageLabel
             ? `${runningProgress.stageLabel}: ${runningProgress.stageDescription || runningProgress.phase}`
             : (agent ? `${agent}: ${phase}` : phase),
-          executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
+          executionState: runningProgress.executionState,
           stageMeta: runningProgress.stageMeta,
           operationals: videoTaskOperationalSummary,
         })
@@ -1708,7 +1708,7 @@ export default function ResearchNotebookV2() {
           phase: runningProgress.stageLabel
             ? `${runningProgress.stageLabel}: ${runningProgress.stageDescription || runningProgress.phase}`
             : (agent ? `${agent}: ${phase}` : phase),
-          executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
+          executionState: runningProgress.executionState,
           stageMeta: runningProgress.stageMeta,
           operationals: literalTaskOperationalSummary,
         })
@@ -1893,6 +1893,7 @@ export default function ResearchNotebookV2() {
           const apiKey = await getOpenRouterKey()
           const onProgress = (step: number, total: number, phase: string, meta?: {
             stageMeta?: string
+            executionState?: PipelineExecutionState
             costUsd?: number
             durationMs?: number
             retryCount?: number
@@ -1923,7 +1924,7 @@ export default function ResearchNotebookV2() {
             onTaskProgress({
               progress: buildStepProgressPercent(step, total),
               phase: buildStudioTaskPhaseMessage(step, total, phase, artifactType),
-              executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
+              executionState: meta?.executionState ?? ((meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running'),
               stageMeta: meta?.stageMeta,
               operationals: studioOperationalSummary,
               currentStep: step,

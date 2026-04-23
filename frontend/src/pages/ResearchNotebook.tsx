@@ -2580,7 +2580,7 @@ Instruções:
             onTaskProgress({
               progress: pipelineProgress,
               phase: taskPhase,
-              executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
+              executionState: meta?.executionState ?? ((meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running'),
               stageMeta: meta?.stageMeta,
               operationals: studioOperationalSummary,
               currentStep: step,
@@ -3135,7 +3135,7 @@ Instruções:
         reportTaskProgress({
           progress: runningProgress.percent,
           phase: runningProgress.stageLabel ? `${runningProgress.stageLabel}: ${runningProgress.stageDescription || runningProgress.phase}` : (agent ? `${agent}: ${phase}` : phase),
-          executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
+          executionState: runningProgress.executionState,
           stageMeta: runningProgress.stageMeta,
           operationals: videoTaskOperationalSummary,
         })
@@ -3784,7 +3784,7 @@ Instruções:
         reportTaskProgress({
           progress: runningProgress.percent,
           phase: runningProgress.stageLabel ? `${runningProgress.stageLabel}: ${runningProgress.stageDescription || runningProgress.phase}` : (agent ? `${agent}: ${phase}` : phase),
-          executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
+          executionState: runningProgress.executionState,
           stageMeta: runningProgress.stageMeta,
           operationals: literalTaskOperationalSummary,
         })

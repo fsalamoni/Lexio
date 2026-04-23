@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-257 IMPLEMENTADAS
+## Status Geral: Etapas 1-261 IMPLEMENTADAS
+
+### Etapas 258-261 — ExecutionState Explícito em Pipelines Auxiliares (Wave 30) ✅
+- **Arquivos**: `frontend/src/lib/notebook-studio-pipeline.ts`, `frontend/src/lib/audio-generation-pipeline.ts`, `frontend/src/lib/presentation-generation-pipeline.ts`, `frontend/src/lib/video-pipeline-progress.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/lib/video-pipeline-progress.test.ts`
+- Etapa 258: `StudioProgressMeta` foi ampliado com `executionState` explícito no núcleo do estúdio (`notebook-studio-pipeline.ts`) e propagado também em `audio-generation-pipeline.ts` e `presentation-generation-pipeline.ts`, incluindo emissão explícita já no início das etapas longas.
+- Etapa 259: contrato de progresso de vídeo endurecido em `video-pipeline-progress.ts` com `executionState` obrigatório no estado agregado e resolução semântica por fase (`running`, `waiting_io`, `retrying` e override explícito quando informado).
+- Etapa 260: `video-generation-pipeline.ts` passou a publicar metadados de `executionState` para lotes de mídia (imagem/TTS), enquanto `ResearchNotebook.tsx` e `ResearchNotebookV2.tsx` migraram o TaskManager para consumir estado explícito vindo do progresso, removendo dependência local de inferência por `retryCount`.
+- Etapa 261: cobertura regressiva adicionada em `video-pipeline-progress.test.ts` e validação local completa executada com sucesso: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos**, **290/290 testes**) e `npm run build` em `frontend/`.
 
 ### Etapas 254-257 — Closeout Operacional da Wave 29 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `README.md`

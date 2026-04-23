@@ -10,6 +10,7 @@ Last update: 2026-04-23
 - Wave 28 one-shot revalidation: completed
 - Wave 29 execution-state hardening: completed (local validation)
 - Wave 29 release closeout: completed (run 24853129457 success)
+- Wave 30 aux execution-state hardening: completed (local validation)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -19,7 +20,7 @@ Last update: 2026-04-23
 ## Local Validation Cache
 - frontend npm ci: completed
 - frontend typecheck: completed
-- frontend test: completed (37 files, 286 tests passed)
+- frontend test: completed (38 files, 290 tests passed)
 - frontend build: completed (vite build succeeded)
 - functions npm ci: completed
 - functions build: completed (tsc)
@@ -35,31 +36,47 @@ Last update: 2026-04-23
 - Release workflow dispatch (wave29): completed (release-web.yml run 24853129457 success)
 
 ## Current Wave Cache (2026-04-23)
-- Wave tag: wave29-execution-state-latency2a
-- Scope: hardening do contrato de execução/progresso com `executionState` explícito em pipelines documentais e task wrappers (Classic + V2), além de otimização de latência 2A no `generation-service` via paralelização segura de etapas independentes.
-- Files touched (governance/docs):
+- Wave tag: wave30-aux-execution-state
+- Scope: expansão do contrato explícito de `executionState` para pipelines auxiliares (estúdio, áudio, apresentação e vídeo), com consumo direto desse estado nos wrappers de tarefa do notebook (Classic + V2).
+- Files touched (wave30/code+docs):
+	- frontend/src/lib/notebook-studio-pipeline.ts
+	- frontend/src/lib/audio-generation-pipeline.ts
+	- frontend/src/lib/presentation-generation-pipeline.ts
+	- frontend/src/lib/video-pipeline-progress.ts
+	- frontend/src/lib/video-generation-pipeline.ts
+	- frontend/src/pages/ResearchNotebook.tsx
+	- frontend/src/pages/labs/ResearchNotebookV2.tsx
+	- frontend/src/lib/video-pipeline-progress.test.ts
 	- docs/PLANO.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
-	- docs/MANIFEST.json
 	- docs/release/WEB_RELEASE_INDEX.md
+	- docs/MANIFEST.json
 	- docs/release/WEB_RELEASE_CACHE.md
 
 ## Current Validation Cache (2026-04-23)
-- frontend typecheck: completed (quality gates / frontend quality)
-- frontend test: completed (quality gates / frontend quality)
-- frontend build: completed (quality gates / frontend quality)
-- frontend tests result: 37 files, 286 tests passed
-- release-web dispatch (wave29): completed (run 24853129457)
-- Deploy Firebase production (wave29): completed (job 72758972612)
-- Deploy GitHub Pages / build (wave29): completed (job 72758972753)
-- Deploy GitHub Pages / deploy (wave29): completed (job 72759201251)
-- Release summary (wave29): completed (job 72759426235)
-- Deploy redesign V2 (wave29): skipped by input (job 72758972846)
+- frontend typecheck: completed
+- frontend test: completed
+- frontend build: completed
+- frontend tests result: 38 files, 290 tests passed
+- release-web dispatch (wave30): pending
+- Deploy Firebase production (wave30): pending
+- Deploy GitHub Pages / build (wave30): pending
+- Deploy GitHub Pages / deploy (wave30): pending
+- Release summary (wave30): pending
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 29 closeout completed (git flow + release lane fully executed).
+- Execute closeout Wave 30: pull/rebase, commit/push, dispatch `release-web.yml`, monitor run até `completed`, registrar run/job IDs em index/cache.
+
+## Wave 30 Release Outcome
+- release-web dispatch: pending.
+- Quality gates: pending.
+- Deploy Firebase production: pending.
+- Deploy GitHub Pages / build: pending.
+- Deploy GitHub Pages / deploy: pending.
+- Release summary: pending.
+- Key verification target: confirmar estabilidade do trilho one-shot com a expansão do contrato explícito de `executionState` para pipelines auxiliares.
 
 ## Wave 29 Release Outcome
 - release-web dispatch (run 24853129457): success.

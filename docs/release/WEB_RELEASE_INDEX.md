@@ -19,12 +19,12 @@ Last update: 2026-04-23
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72758972846`)
 - Release summary: success (`job 72759426235`)
 
-## Current Local Validation (Wave 29 — 2026-04-23)
-- Scope: contrato explícito de execução + otimização de latência 2A do pipeline documental
+## Current Local Validation (Wave 30 — 2026-04-23)
+- Scope: `executionState` explícito em pipelines auxiliares (estúdio/áudio/apresentação/vídeo) + consumo direto de estado nos wrappers de tarefa V1/V2
 - Frontend typecheck: success
-- Frontend tests: success (37 files, 286 tests)
+- Frontend tests: success (38 files, 290 tests)
 - Frontend build: success
-- Release dispatch: completed (`release-web.yml`, run `24853129457`)
+- Release dispatch: pending (next closeout step)
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs
@@ -40,7 +40,11 @@ Last update: 2026-04-23
 - frontend/src/lib/runtime-concurrency.ts
 - frontend/src/lib/cost-analytics.ts
 - frontend/src/lib/notebook-acervo-analyzer.ts
+- frontend/src/lib/notebook-studio-pipeline.ts
+- frontend/src/lib/audio-generation-pipeline.ts
+- frontend/src/lib/presentation-generation-pipeline.ts
 - frontend/src/lib/video-generation-pipeline.ts
+- frontend/src/lib/video-pipeline-progress.ts
 - frontend/src/components/DraggablePanel.tsx
 - frontend/src/components/TaskBar.tsx
 - frontend/src/components/AgentTrailProgressModal.tsx

@@ -7,6 +7,7 @@ import {
   loadAudioPipelineModels,
   validateScopedAgentModels,
 } from './model-config'
+import type { PipelineExecutionState } from './pipeline-execution-contract'
 import type {
   StudioPipelineInput,
   StudioProgressCallback,
@@ -131,6 +132,10 @@ function toExecution(
   }
 }
 
+function resolveExecutionStateFromRetryCount(retryCount?: number): PipelineExecutionState {
+  return (retryCount ?? 0) > 0 ? 'retrying' : 'running'
+}
+
 function buildAudioProgressMeta(result: LLMResult): StudioProgressMeta {
   const parts = [result.model.split('/').pop() || result.model]
   if (result.operational?.fallbackUsed && result.operational.fallbackFrom) {
@@ -148,6 +153,7 @@ function buildAudioProgressMeta(result: LLMResult): StudioProgressMeta {
   }
   return {
     stageMeta: parts.join(' • '),
+    executionState: resolveExecutionStateFromRetryCount(result.operational?.totalRetryCount),
     costUsd: result.cost_usd,
     durationMs: result.duration_ms,
     retryCount: result.operational?.totalRetryCount,
@@ -180,14 +186,18 @@ export async function runAudioGenerationPipeline(
   const executions: StudioStepExecution[] = []
 
   throwIfAborted(signal)
-  onProgress?.(1, 5, 'Planejando estrutura do áudio…')
+  onProgress?.(1, 5, 'Planejando estrutura do áudio…', {
+    executionState: 'running',
+  })
   const planPrompt = buildPlanPrompt(input)
   const planResult = await callLLMWithFallback(input.apiKey, planPrompt.system, planPrompt.user, models.audio_planejador, models.audio_planejador, 2500, 0.2, { signal })
   executions.push(toExecution('audio_planejador', 'Planejador de Áudio', planResult))
   onProgress?.(1, 5, 'Estrutura do áudio planejada.', buildAudioProgressMeta(planResult))
 
   throwIfAborted(signal)
-  onProgress?.(2, 5, 'Escrevendo o roteiro-base do áudio…')
+  onProgress?.(2, 5, 'Escrevendo o roteiro-base do áudio…', {
+    executionState: 'running',
+  })
   const writerPrompt = buildWriterPrompt(input, planResult.content, input.sourceContext || 'Sem fontes adicionais.')
   const writerResult = await callLLMWithFallback(input.apiKey, writerPrompt.system, writerPrompt.user, models.audio_roteirista, models.audio_roteirista, 7000, 0.35, { signal })
   const writerDraft = normalizeAudioScriptOrThrow(writerResult.content, 'O roteirista de áudio')
@@ -195,7 +205,9 @@ export async function runAudioGenerationPipeline(
   onProgress?.(2, 5, 'Roteiro-base de áudio concluído.', buildAudioProgressMeta(writerResult))
 
   throwIfAborted(signal)
-  onProgress?.(3, 5, 'Estruturando timing e transições…')
+  onProgress?.(3, 5, 'Estruturando timing e transições…', {
+    executionState: 'running',
+  })
   const directorPrompt = buildDirectorPrompt(writerDraft)
   const directorResult = await callLLMWithFallback(input.apiKey, directorPrompt.system, directorPrompt.user, models.audio_diretor, models.audio_diretor, 7000, 0.25, { signal })
   const directedDraft = normalizeAudioScriptOrThrow(directorResult.content, 'O diretor de áudio')
@@ -203,7 +215,9 @@ export async function runAudioGenerationPipeline(
   onProgress?.(3, 5, 'Timing e transições estruturados.', buildAudioProgressMeta(directorResult))
 
   throwIfAborted(signal)
-  onProgress?.(4, 5, 'Aplicando direção sonora e cues…')
+  onProgress?.(4, 5, 'Aplicando direção sonora e cues…', {
+    executionState: 'running',
+  })
   const producerPrompt = buildProducerPrompt(directedDraft)
   const producerResult = await callLLMWithFallback(input.apiKey, producerPrompt.system, producerPrompt.user, models.audio_produtor_sonoro, models.audio_produtor_sonoro, 7000, 0.25, { signal })
   const producedDraft = normalizeAudioScriptOrThrow(producerResult.content, 'O produtor sonoro')
@@ -211,7 +225,9 @@ export async function runAudioGenerationPipeline(
   onProgress?.(4, 5, 'Direção sonora aplicada.', buildAudioProgressMeta(producerResult))
 
   throwIfAborted(signal)
-  onProgress?.(5, 5, 'Revisando o resumo em áudio…')
+  onProgress?.(5, 5, 'Revisando o resumo em áudio…', {
+    executionState: 'running',
+  })
   const reviewPrompt = buildReviewPrompt(producedDraft)
   const reviewResult = await callLLMWithFallback(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.audio_revisor, models.audio_revisor, 7000, 0.15, { signal })
   const finalContent = normalizeAudioScriptOrThrow(reviewResult.content, 'O revisor final de áudio')
@@ -236,7 +252,9 @@ export async function generateAudioLiteralMedia(
   const models = await loadAudioPipelineModels()
   const ttsModel = input.model || models.audio_narrador || DEFAULT_OPENROUTER_TTS_MODEL
   const startedAt = Date.now()
-  onProgress?.(1, 1, 'Gerando áudio literal…')
+  onProgress?.(1, 1, 'Gerando áudio literal…', {
+    executionState: 'waiting_io',
+  })
 
   const synthesis = await synthesizeAudioFromScript({
     apiKey: input.apiKey,
