@@ -316,6 +316,7 @@ export default function NewDocument() {
                 onTaskProgress({
                   progress: pct,
                   phase: p.message || p.phase,
+                  executionState: p.executionState,
                   stageMeta: p.stageMeta,
                   currentStep: p.step,
                   totalSteps: p.totalSteps,

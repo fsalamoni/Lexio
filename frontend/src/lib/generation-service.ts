@@ -31,6 +31,7 @@ import { compactContext } from './context-compactor'
 import { loadApiKeyValues } from './settings-store'
 import { firestore } from './firebase'
 import { buildDocumentPipelineProgress, buildDocumentStageMeta, type DocumentPipelineProgress } from './document-pipeline'
+import type { PipelineExecutionState } from './pipeline-execution-contract'
 import { isTruthyFlag } from './feature-flags'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1426,8 +1427,13 @@ export async function generateDocument(
       percent: number,
       modelId?: string,
       stageMeta?: string,
+      executionState: PipelineExecutionState = 'running',
     ) => {
-      onProgress?.(buildDocumentPipelineProgress(phase, message, percent, { modelId, stageMeta }))
+      onProgress?.(buildDocumentPipelineProgress(phase, message, percent, {
+        executionState,
+        modelId,
+        stageMeta,
+      }))
     }
 
     const reportStageResult = (
@@ -1436,21 +1442,36 @@ export async function generateDocument(
       percent: number,
       result: Awaited<ReturnType<typeof callLLMWithFallback>>,
     ) => {
+      const retryCount = result.operational?.totalRetryCount ?? 0
       onProgress?.(buildDocumentPipelineProgress(phase, message, percent, {
+        executionState: retryCount > 0 ? 'retrying' : 'running',
         modelId: result.model,
         stageMeta: buildDocumentStageMeta(result),
         costUsd: result.cost_usd,
         durationMs: result.duration_ms,
-        retryCount: result.operational?.totalRetryCount,
+        retryCount,
         usedFallback: result.operational?.fallbackUsed,
         fallbackFrom: result.operational?.fallbackFrom,
       }))
     }
 
     // 1. Get API key and model configuration
-    reportProgress('config', 'Carregando configurações...', 2)
-    const apiKey = await getOpenRouterKey()
-    const agentModels: AgentModelMap = await loadDocumentAgentModels()
+    reportProgress(
+      'config',
+      'Carregando configurações...',
+      2,
+      undefined,
+      'Resolvendo chave, modelos e estrutura de documento',
+      'waiting_io',
+    )
+    const [apiKey, agentModels, adminDocTypes] = await Promise.all([
+      getOpenRouterKey(),
+      loadDocumentAgentModels(),
+      loadAdminDocumentTypes().catch((e) => {
+        console.warn('Failed to load admin document type structure:', e)
+        return []
+      }),
+    ])
 
     // Validate all agent models are configured
     validateModelMap(agentModels, PIPELINE_AGENT_DEFS, 'document_models')
@@ -1470,19 +1491,14 @@ export async function generateDocument(
 
     // Load admin-configured document type structure template (if defined)
     let customStructure: string | undefined
-    try {
-      const adminDocTypes = await loadAdminDocumentTypes()
-      const adminDocType = adminDocTypes.find(dt => dt.id === docType)
-      const trimmedStructure = adminDocType?.structure?.trim()
-      if (trimmedStructure) {
-        customStructure = trimmedStructure
-      }
-    } catch (e) {
-      console.warn('Failed to load admin document type structure:', e)
+    const adminDocType = adminDocTypes.find(dt => dt.id === docType)
+    const trimmedStructure = adminDocType?.structure?.trim()
+    if (trimmedStructure) {
+      customStructure = trimmedStructure
     }
 
     // 2. Triage — extract structured info from the request
-    reportProgress('triagem', 'Analisando solicitação...', 5, modelTriagem)
+    reportProgress('triagem', 'Analisando solicitação...', 5, modelTriagem, undefined, 'waiting_io')
     const triageResult = await callLLMWithFallback(
       apiKey,
       buildTriageSystem(docType),
@@ -1500,6 +1516,34 @@ export async function generateDocument(
       tema = request.slice(0, 100)
     }
     await updateDoc(docRef, { tema })
+
+    // Start thesis prefetch early so it runs in parallel with acervo-specific agents.
+    const thesisSectionPromise = (async (): Promise<string> => {
+      try {
+        const thesesByArea = areas.length > 0
+          ? await Promise.all(areas.map(area => listTheses(uid, { legalAreaId: area, limit: MAX_THESES_PER_AREA })))
+          : [await listTheses(uid, { limit: MAX_THESES_FALLBACK })]
+        const allTheses: ThesisData[] = []
+        const seenIds = new Set<string>()
+        for (const result of thesesByArea) {
+          for (const t of result.items) {
+            if (t.id && !seenIds.has(t.id)) {
+              seenIds.add(t.id)
+              allTheses.push(t)
+            }
+          }
+        }
+        if (allTheses.length === 0) return ''
+        const thesesText = allTheses
+          .slice(0, MAX_THESES_INJECTED)
+          .map(t => `• ${t.title}\n  ${t.content}${t.summary ? `\n  Resumo: ${t.summary}` : ''}`)
+          .join('\n\n')
+        return `<banco_de_teses>\n${thesesText}\n</banco_de_teses>\n\n`
+      } catch (e) {
+        console.warn('Failed to load thesis bank:', e)
+        return ''
+      }
+    })()
 
     // ── 2b. Acervo-based pre-generation agents ──────────────────────────────
     // Two-layer search:
@@ -1520,7 +1564,7 @@ export async function generateDocument(
         console.log(`[Acervo Pipeline] Found ${allAcervoDocs.length} indexed documents in acervo`)
 
         if (allAcervoDocs.length > 0) {
-        reportProgress('acervo_buscador', 'Buscando documentos similares no acervo...', 8, modelAcervoBuscador)
+        reportProgress('acervo_buscador', 'Buscando documentos similares no acervo...', 8, modelAcervoBuscador, undefined, 'waiting_io')
 
         // ── Layer 1: Zero-cost keyword pre-filter ──
         const searchKeywords = extractSearchKeywords(triageResult.content, request)
@@ -1611,7 +1655,7 @@ export async function generateDocument(
 
             if (selectedDocs.length > 0) {
               // ── Agent 2: Compilador ──
-              reportProgress('acervo_compilador', `Compilando base a partir de ${selectedDocs.length} documento(s)...`, 12, modelAcervoCompilador)
+              reportProgress('acervo_compilador', `Compilando base a partir de ${selectedDocs.length} documento(s)...`, 12, modelAcervoCompilador, undefined, 'waiting_io')
               compiladorResult = await callLLMWithFallback(
                 apiKey,
                 buildAcervoCompiladorSystem(docType, tema, profile),
@@ -1621,7 +1665,7 @@ export async function generateDocument(
               reportStageResult('acervo_compilador', 'Base compilada a partir do acervo.', 14, compiladorResult)
 
               // ── Agent 3: Revisor ──
-              reportProgress('acervo_revisor', 'Revisando documento base compilado...', 16, modelAcervoRevisor)
+              reportProgress('acervo_revisor', 'Revisando documento base compilado...', 16, modelAcervoRevisor, undefined, 'waiting_io')
               revisorBaseResult = await callLLMWithFallback(
                 apiKey,
                 buildAcervoRevisorSystem(docType, tema, profile),
@@ -1646,36 +1690,11 @@ export async function generateDocument(
     }
 
     // ── 2c. Load knowledge base — theses + acervo excerpts ──────────────────
-  reportProgress('pesquisador', 'Carregando base de conhecimento...', 18, modelPesquisador)
+  reportProgress('pesquisador', 'Carregando base de conhecimento...', 18, modelPesquisador, undefined, 'waiting_io')
     let knowledgeBase = ''
 
     // Load thesis references and lightweight acervo context in parallel.
-    const thesisTask = (async (): Promise<string> => {
-      try {
-        const thesesByArea = areas.length > 0
-          ? await Promise.all(areas.map(area => listTheses(uid, { legalAreaId: area, limit: MAX_THESES_PER_AREA })))
-          : [await listTheses(uid, { limit: MAX_THESES_FALLBACK })]
-        const allTheses: ThesisData[] = []
-        const seenIds = new Set<string>()
-        for (const result of thesesByArea) {
-          for (const t of result.items) {
-            if (t.id && !seenIds.has(t.id)) {
-              seenIds.add(t.id)
-              allTheses.push(t)
-            }
-          }
-        }
-        if (allTheses.length === 0) return ''
-        const thesesText = allTheses
-          .slice(0, MAX_THESES_INJECTED)
-          .map(t => `• ${t.title}\n  ${t.content}${t.summary ? `\n  Resumo: ${t.summary}` : ''}`)
-          .join('\n\n')
-        return `<banco_de_teses>\n${thesesText}\n</banco_de_teses>\n\n`
-      } catch (e) {
-        console.warn('Failed to load thesis bank:', e)
-        return ''
-      }
-    })()
+    const thesisTask = thesisSectionPromise
 
     const acervoContextTask = (async (): Promise<string> => {
       if (!includeAcervo || acervoBase) return ''
@@ -1701,11 +1720,11 @@ export async function generateDocument(
         40000,
       )
       knowledgeBase = compacted.text
-      reportProgress('acervo_compilador', `Base de conhecimento compactada: ${Math.round(originalLen / 1000)}k → ${Math.round(compacted.compactedChars / 1000)}k chars (${compacted.segmentsDropped} segmentos removidos)`, 20)
+      reportProgress('acervo_compilador', `Base de conhecimento compactada: ${Math.round(originalLen / 1000)}k → ${Math.round(compacted.compactedChars / 1000)}k chars (${compacted.segmentsDropped} segmentos removidos)`, 20, undefined, undefined, 'running')
     }
 
     // 3. Pesquisador — legal research synthesis
-  reportProgress('pesquisador', 'Pesquisando legislação e jurisprudência...', 22, modelPesquisador)
+  reportProgress('pesquisador', 'Pesquisando legislação e jurisprudência...', 22, modelPesquisador, undefined, 'waiting_io')
     const pesquisadorUserParts = [
       `<triagem>${triageResult.content}</triagem>`,
       `<solicitacao>${request}</solicitacao>`,
@@ -1744,7 +1763,7 @@ export async function generateDocument(
     reportStageResult('pesquisador', 'Pesquisa jurídica concluída.', 26, pesquisaResult)
 
     // 4. Jurista — initial thesis development
-  reportProgress('jurista', 'Desenvolvendo teses jurídicas...', 28, modelJurista)
+  reportProgress('jurista', 'Desenvolvendo teses jurídicas...', 28, modelJurista, undefined, 'waiting_io')
     const juristaResult = await callLLMWithFallback(
       apiKey,
       buildJuristaSystem(docType, tema, profile),
@@ -1754,7 +1773,7 @@ export async function generateDocument(
     reportStageResult('jurista', 'Teses jurídicas iniciais estruturadas.', 34, juristaResult)
 
     // 5. Advogado do Diabo — critique
-  reportProgress('advogado_diabo', 'Analisando contra-argumentos...', 40, modelAdvDiabo)
+  reportProgress('advogado_diabo', 'Analisando contra-argumentos...', 40, modelAdvDiabo, undefined, 'waiting_io')
     const criticaResult = await callLLMWithFallback(
       apiKey,
       buildAdvogadoDiaboSystem(tema, profile),
@@ -1764,7 +1783,7 @@ export async function generateDocument(
     reportStageResult('advogado_diabo', 'Contra-argumentos consolidados.', 46, criticaResult)
 
     // 6. Jurista v2 — refined theses
-  reportProgress('jurista_v2', 'Refinando teses após crítica...', 52, modelJuristaV2)
+  reportProgress('jurista_v2', 'Refinando teses após crítica...', 52, modelJuristaV2, undefined, 'waiting_io')
     const juristaV2Result = await callLLMWithFallback(
       apiKey,
       buildJuristaV2System(docType, tema, profile),
@@ -1774,7 +1793,7 @@ export async function generateDocument(
     reportStageResult('jurista_v2', 'Teses refinadas após a crítica.', 58, juristaV2Result)
 
     // 7. Fact-checker — verify legal citations
-  reportProgress('fact_checker', 'Verificando citações legais...', 62, modelFactChecker)
+  reportProgress('fact_checker', 'Verificando citações legais...', 62, modelFactChecker, undefined, 'waiting_io')
     const factCheckResult = await callLLMWithFallback(
       apiKey,
       buildFactCheckerSystem(),
@@ -1784,7 +1803,7 @@ export async function generateDocument(
     reportStageResult('fact_checker', 'Citações e referências verificadas.', 68, factCheckResult)
 
     // 8. Moderador — document plan
-  reportProgress('moderador', 'Planejando estrutura do documento...', 72, modelModerador)
+  reportProgress('moderador', 'Planejando estrutura do documento...', 72, modelModerador, undefined, 'waiting_io')
     const planoResult = await callLLMWithFallback(
       apiKey,
       buildModeradorSystem(docType, tema, profile, customStructure),
@@ -1807,6 +1826,7 @@ export async function generateDocument(
       redatorRuntime.cap10kEnabled
         ? `Modo rápido ativo (${redatorPrimaryMaxTokens.toLocaleString('pt-BR')} tokens)`
         : `Janela padrão (${REDATOR_DEFAULT_MAX_TOKENS.toLocaleString('pt-BR')} tokens)`,
+      'waiting_io',
     )
     const redatorPrimaryResult = await callLLMWithFallback(
       apiKey,
@@ -1821,7 +1841,7 @@ export async function generateDocument(
     reportStageResult('redacao', 'Redação principal concluída.', 90, redatorPrimaryResult)
 
     // 10. Quality evaluation — run document-type-specific rules
-    reportProgress('qualidade', 'Avaliando qualidade do documento...', 93)
+    reportProgress('qualidade', 'Avaliando qualidade do documento...', 93, undefined, undefined, 'running')
     const redatorPrimaryQuality = evaluateQuality(redatorPrimaryResult.content, docType, { tema })
 
     let redatorRollbackResult: Awaited<ReturnType<typeof callLLMWithFallback>> | null = null
@@ -1838,6 +1858,7 @@ export async function generateDocument(
         93,
         modelRedator,
         `Fallback acionado: ${redatorPrimaryQuality.score}/100 < ${redatorRuntime.rollbackMinQuality}/100`,
+        'waiting_io',
       )
 
       redatorRollbackResult = await callLLMWithFallback(
@@ -1855,7 +1876,7 @@ export async function generateDocument(
       )
       reportStageResult('qualidade', 'Redação de fallback concluída.', 94, redatorRollbackResult)
 
-      reportProgress('qualidade', 'Reavaliando qualidade após fallback do Redator...', 94)
+      reportProgress('qualidade', 'Reavaliando qualidade após fallback do Redator...', 94, undefined, undefined, 'running')
       redatorRollbackQuality = evaluateQuality(redatorRollbackResult.content, docType, { tema })
 
       if (redatorRollbackQuality.score >= redatorPrimaryQuality.score) {
@@ -1867,6 +1888,7 @@ export async function generateDocument(
           94,
           undefined,
           `Primária ${redatorPrimaryQuality.score}/100 • Fallback ${redatorRollbackQuality.score}/100`,
+          'running',
         )
       } else {
         reportProgress(
@@ -1875,6 +1897,7 @@ export async function generateDocument(
           94,
           undefined,
           `Primária ${redatorPrimaryQuality.score}/100 • Fallback ${redatorRollbackQuality.score}/100`,
+          'running',
         )
       }
     }
@@ -2051,7 +2074,7 @@ export async function generateDocument(
     const quality_score = qualityResult.score
 
     // 11. Save the generated text
-    reportProgress('salvando', 'Salvando documento...', 95)
+    reportProgress('salvando', 'Salvando documento...', 95, undefined, undefined, 'persisting')
     const saveStartedAt = Date.now()
     await updateDoc(docRef, {
       texto_completo: docResult.content,
@@ -2082,7 +2105,7 @@ export async function generateDocument(
     if (redatorRollbackUsed) {
       completionMetaParts.push(docResult === redatorPrimaryResult ? 'Fallback executado, versão primária mantida' : 'Fallback executado e aplicado')
     }
-    reportProgress('concluido', 'Documento gerado com sucesso!', 100, undefined, completionMetaParts.join(' • '))
+    reportProgress('concluido', 'Documento gerado com sucesso!', 100, undefined, completionMetaParts.join(' • '), 'completed')
   } catch (err) {
     // Update status to error
     await updateDoc(docRef, {

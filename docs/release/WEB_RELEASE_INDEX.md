@@ -18,6 +18,13 @@ Last update: 2026-04-23
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`)
 - Release summary: success
 
+## Current Local Validation (Wave 29 — 2026-04-23)
+- Scope: contrato explícito de execução + otimização de latência 2A do pipeline documental
+- Frontend typecheck: success
+- Frontend tests: success (37 files, 286 tests)
+- Frontend build: success
+- Release dispatch: pending (next closeout step)
+
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs
 - scripts/firebase-authorized-domains.mjs
@@ -27,6 +34,8 @@ Last update: 2026-04-23
 - .firebaserc
 - functions/src/index.ts
 - frontend/src/lib/generation-service.ts
+- frontend/src/lib/document-pipeline.ts
+- frontend/src/lib/pipeline-execution-contract.ts
 - frontend/src/lib/runtime-concurrency.ts
 - frontend/src/lib/cost-analytics.ts
 - frontend/src/lib/notebook-acervo-analyzer.ts
@@ -37,6 +46,7 @@ Last update: 2026-04-23
 - frontend/src/components/PipelineProgressPanel.tsx
 - frontend/src/pages/NewDocument.tsx
 - frontend/src/pages/ResearchNotebook.tsx
+- frontend/src/pages/labs/ResearchNotebookV2.tsx
 - frontend/src/contexts/TaskManagerContext.tsx
 
 ## Runtime Hardening (2026-04-22)
@@ -62,6 +72,8 @@ Last update: 2026-04-23
 - Wave 27 migrates GitHub Pages publication from legacy `gh-pages` branch pushes to the official artifact lane (`configure-pages` + `upload-pages-artifact` + `deploy-pages`) with explicit deploy timeout to reduce timeout aborts.
 - `deploy-pages.yml` and `release-web.yml` now include Pages-native permissions (`pages: write`, `id-token: write`) required by reusable workflow execution in the official lane.
 - Repository Pages was promoted to `build_type=workflow`, aligning runtime behavior with the new deploy mechanism and reducing dependency on the legacy branch-mode orchestrator.
+- Wave 29 hardens explicit execution semantics across document/notebook task wrappers (`queued`, `running`, `retrying`, `persisting`, `completed`) and keeps video literal external-render fallback at `99%` until persistence completes.
+- Document generation startup now parallelizes independent config fetches and starts thesis prefetch before acervo subpipeline, reducing idle latency without weakening quality/fallback guards.
 
 ## Required Secrets (GitHub Actions)
 - FIREBASE_API_KEY

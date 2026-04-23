@@ -20,10 +20,15 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import {
+  deriveExecutionState,
+  normalizeProgressForExecution,
+  type PipelineExecutionState,
+} from '../lib/pipeline-execution-contract'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export type TaskStatus = 'running' | 'completed' | 'error'
+export type TaskStatus = 'running' | 'completed' | 'error' | 'cancelled'
 
 export type TaskMetadata = Record<string, unknown>
 
@@ -40,6 +45,7 @@ export interface TaskInfo {
   id: string
   name: string
   status: TaskStatus
+  executionState: PipelineExecutionState
   progress: number
   phase: string
   stageMeta?: string
@@ -56,6 +62,7 @@ export interface TaskInfo {
 export interface TaskProgress {
   progress: number
   phase: string
+  executionState?: PipelineExecutionState
   stageMeta?: string
   operationals?: TaskOperationalSummary
   currentStep?: number
@@ -106,6 +113,7 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
       id,
       name,
       status: 'running',
+      executionState: 'queued',
       progress: 0,
       phase: 'Iniciando...',
       startedAt: Date.now(),
@@ -114,8 +122,17 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
     setTasks(prev => [...prev, task])
 
     const onProgress = (p: TaskProgress) => {
-      const runningProgress = Math.min(99, Math.max(0, p.progress))
+      const executionState = deriveExecutionState({
+        progress: p.progress,
+        phase: p.phase,
+        executionState: p.executionState,
+      })
+      const runningProgress = normalizeProgressForExecution({
+        progress: p.progress,
+        executionState,
+      })
       updateTask(id, {
+        executionState,
         progress: runningProgress,
         phase: p.phase,
         stageMeta: p.stageMeta,
@@ -128,11 +145,25 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
     // Execute in background — survives navigation
     executor(onProgress)
       .then(result => {
-        updateTask(id, { status: 'completed', progress: 100, phase: 'Concluído', completedAt: Date.now(), result })
+        updateTask(id, {
+          status: 'completed',
+          executionState: 'completed',
+          progress: 100,
+          phase: 'Concluído',
+          completedAt: Date.now(),
+          result,
+        })
       })
       .catch(err => {
         const msg = err instanceof Error ? err.message : String(err)
-        updateTask(id, { status: 'error', phase: 'Erro', completedAt: Date.now(), error: msg })
+        const isAbort = err instanceof DOMException && err.name === 'AbortError'
+        updateTask(id, {
+          status: isAbort ? 'cancelled' : 'error',
+          executionState: isAbort ? 'cancelled' : 'failed',
+          phase: isAbort ? 'Cancelado' : 'Erro',
+          completedAt: Date.now(),
+          error: isAbort ? undefined : msg,
+        })
       })
 
     return id

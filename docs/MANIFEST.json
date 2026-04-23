@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-23",
-    "cycle": "wave28-release-one-shot-revalidation",
+    "cycle": "wave29-execution-state-latency2a",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -482,6 +482,22 @@
         "README.md"
       ],
       "notes": "Run one-shot `24849789759` executada no HEAD pós-hardening com quality gates, deploy Firebase production, deploy GitHub Pages (build+deploy) e release summary em sucesso, confirmando estabilidade operacional recorrente do trilho de release."
+    },
+    {
+      "id": "E5.F16",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Contrato explícito de executionState e paralelizacao segura no pipeline documental",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/pipeline-execution-contract.ts",
+        "frontend/src/lib/document-pipeline.ts",
+        "frontend/src/lib/generation-service.ts",
+        "frontend/src/pages/NewDocument.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/lib/video-pipeline-progress.ts"
+      ],
+      "notes": "Fluxos documentais e de notebook passaram a emitir `executionState` semântico (`queued`, `running`, `retrying`, `persisting`, `completed`) e o `generation-service` paralelizou carregamentos independentes (chave/modelos/template admin) com prefetch antecipado de teses para reduzir latência sem perder guardrails de qualidade."
     },
     {
       "id": "E8.F1",

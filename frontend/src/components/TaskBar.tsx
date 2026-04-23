@@ -5,7 +5,7 @@
  * showing each running/completed/failed task with a progress bar.
  */
 import { useState } from 'react'
-import { Loader2, CheckCircle2, AlertCircle, X, ChevronUp, ChevronDown, Activity } from 'lucide-react'
+import { Loader2, CheckCircle2, AlertCircle, CircleSlash2, X, ChevronUp, ChevronDown, Activity } from 'lucide-react'
 import { useTaskManager, type TaskInfo } from '../contexts/TaskManagerContext'
 import { formatCostBadge } from '../lib/currency-utils'
 
@@ -37,6 +37,7 @@ function TaskRow({ task, onDismiss }: { task: TaskInfo; onDismiss: () => void })
   const elapsed = (task.completedAt ?? Date.now()) - task.startedAt
   const isRunning = task.status === 'running'
   const isError = task.status === 'error'
+  const isCancelled = task.status === 'cancelled'
   const operationalLabel = buildTaskOperationalLabel(task)
 
   return (
@@ -45,6 +46,7 @@ function TaskRow({ task, onDismiss }: { task: TaskInfo; onDismiss: () => void })
         {isRunning && <Loader2 className="w-3.5 h-3.5 text-indigo-500 animate-spin flex-shrink-0" />}
         {task.status === 'completed' && <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />}
         {isError && <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />}
+        {isCancelled && <CircleSlash2 className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
         <span className="text-xs font-medium text-gray-800 truncate flex-1">{task.name}</span>
         <span className="text-[10px] text-gray-400 flex-shrink-0">{formatElapsed(elapsed)}</span>
         {!isRunning && (
@@ -75,6 +77,9 @@ function TaskRow({ task, onDismiss }: { task: TaskInfo; onDismiss: () => void })
       )}
       {isError && task.error && (
         <p className="text-[10px] text-red-500 mt-1 leading-4 break-words">{task.error}</p>
+      )}
+      {isCancelled && (
+        <p className="text-[10px] text-amber-600 mt-1 leading-4 break-words">Execução cancelada pelo usuário.</p>
       )}
     </div>
   )

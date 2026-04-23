@@ -8,6 +8,7 @@ Last update: 2026-04-23
 - Local release hardening: completed
 - Wave 27 deploy verification: completed
 - Wave 28 one-shot revalidation: completed
+- Wave 29 execution-state hardening: completed (local validation)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -31,31 +32,39 @@ Last update: 2026-04-23
 - Release workflow revalidation dispatch: completed (release-web.yml run 24849789759 success)
 
 ## Current Wave Cache (2026-04-23)
-- Wave tag: wave28-release-one-shot-revalidation
-- Scope: revalidação operacional one-shot do trilho de release em HEAD pós-hardening, confirmando estabilidade ponta a ponta de quality gates, deploy Firebase production e deploy GitHub Pages no modo oficial por artifact.
+- Wave tag: wave29-execution-state-latency2a
+- Scope: hardening do contrato de execução/progresso com `executionState` explícito em pipelines documentais e task wrappers (Classic + V2), além de otimização de latência 2A no `generation-service` via paralelização segura de etapas independentes.
 - Files touched (governance/docs):
 	- docs/PLANO.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
 	- docs/MANIFEST.json
 	- docs/release/WEB_RELEASE_INDEX.md
 	- docs/release/WEB_RELEASE_CACHE.md
-	- README.md
 
 ## Current Validation Cache (2026-04-23)
 - frontend typecheck: completed (quality gates / frontend quality)
 - frontend test: completed (quality gates / frontend quality)
 - frontend build: completed (quality gates / frontend quality)
-- release-web run 24849789759: completed (success)
-- Deploy Firebase production: completed (success)
-- Deploy GitHub Pages / build: completed (success)
-- Deploy GitHub Pages / deploy: completed (success)
-- Release summary: completed (success)
-- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`)
+- frontend tests result: 37 files, 286 tests passed
+- release-web dispatch (wave29): pending
+- Deploy Firebase production (wave29): pending
+- Deploy GitHub Pages / build (wave29): pending
+- Deploy GitHub Pages / deploy (wave29): pending
+- Release summary (wave29): pending
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 28 closeout completed (git flow + release lane fully executed).
+- Execute closeout Wave 29: pull/rebase, commit/push, dispatch `release-web.yml`, monitor run até `completed`, registrar run/job IDs em index/cache.
+
+## Wave 29 Release Outcome
+- release-web dispatch: pending.
+- Quality gates: pending.
+- Deploy Firebase production: pending.
+- Deploy GitHub Pages / build: pending.
+- Deploy GitHub Pages / deploy: pending.
+- Release summary: pending.
+- Key verification target: confirmar estabilidade contínua do trilho com o novo contrato de executionState e otimização de latência 2A.
 
 ## Wave 28 Release Outcome
 - release-web dispatch (run 24849789759): success.

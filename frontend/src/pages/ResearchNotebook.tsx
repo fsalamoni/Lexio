@@ -62,6 +62,7 @@ import {
   type VideoCheckpoint,
 } from '../lib/video-generation-pipeline'
 import { buildVideoPipelineProgress, type VideoPipelineProgressState } from '../lib/video-pipeline-progress'
+import { buildStepProgressPercent, normalizeInFlightPercent, type PipelineExecutionState } from '../lib/pipeline-execution-contract'
 import {
   buildChatContextAudit,
   buildResearchContextAudit,
@@ -2545,6 +2546,7 @@ Instruções:
           onTaskProgress({
             progress: 0,
             phase: 'Inicializando pipeline do estúdio...',
+            executionState: 'queued',
             stageMeta: 'Preparando modelos e contexto',
             operationals: studioOperationalSummary,
             currentStep: 0,
@@ -2573,10 +2575,12 @@ Instruções:
               })
             }
 
-            const pipelineProgress = Math.min(99, Math.round((step / Math.max(total, 1)) * 100))
+            const pipelineProgress = buildStepProgressPercent(step, total)
+            const taskPhase = buildStudioTaskPhaseMessage(step, total, phase, artifactType)
             onTaskProgress({
               progress: pipelineProgress,
-              phase: buildStudioTaskPhaseMessage(step, total, phase, artifactType),
+              phase: taskPhase,
+              executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
               stageMeta: meta?.stageMeta,
               operationals: studioOperationalSummary,
               currentStep: step,
@@ -2613,6 +2617,7 @@ Instruções:
           onTaskProgress({
             progress: 95,
             phase: 'Salvando artefato no caderno...',
+            executionState: 'persisting',
             stageMeta: 'Persistindo conteúdo e execuções no notebook',
             operationals: studioOperationalSummary,
             currentStep: STUDIO_PIPELINE_TOTAL_STEPS,
@@ -3051,13 +3056,24 @@ Instruções:
 
     // Register as a persistent background task visible in the TaskBar
     const taskName = `Vídeo: ${activeNotebook.topic.slice(0, 40)}`
-      let reportTaskProgress: (update: { progress: number; phase: string; stageMeta?: string; operationals?: TaskOperationalSummary }) => void = () => {}
-      let videoTaskOperationalSummary = createEmptyOperationalSummary()
+    let reportTaskProgress: (update: {
+      progress: number
+      phase: string
+      executionState?: PipelineExecutionState
+      stageMeta?: string
+      operationals?: TaskOperationalSummary
+    }) => void = () => {}
+    let videoTaskOperationalSummary = createEmptyOperationalSummary()
     startTask(taskName, (onTaskProgress) => {
-        reportTaskProgress = onTaskProgress
-        onTaskProgress({ progress: 0, phase: 'Preparando pipeline...', operationals: videoTaskOperationalSummary })
-        return taskPromise
+      reportTaskProgress = onTaskProgress
+      onTaskProgress({
+        progress: 0,
+        phase: 'Preparando pipeline...',
+        executionState: 'queued',
+        operationals: videoTaskOperationalSummary,
       })
+      return taskPromise
+    })
 
     try {
       setVideoGenLoading(true)
@@ -3092,7 +3108,7 @@ Instruções:
 
       const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent, meta) => {
         const progress = buildVideoPipelineProgress(step, total, phase, agent, meta)
-        const runningProgress = progress.percent >= 100 ? { ...progress, percent: 99 } : progress
+        const runningProgress = { ...progress, percent: normalizeInFlightPercent(progress.percent) }
         setVideoGenProgress(runningProgress)
 
         const eventKey = buildOperationalEventKey({
@@ -3118,8 +3134,9 @@ Instruções:
 
         reportTaskProgress({
           progress: runningProgress.percent,
-          phase: progress.stageLabel ? `${progress.stageLabel}: ${progress.stageDescription || progress.phase}` : (agent ? `${agent}: ${phase}` : phase),
-          stageMeta: progress.stageMeta,
+          phase: runningProgress.stageLabel ? `${runningProgress.stageLabel}: ${runningProgress.stageDescription || runningProgress.phase}` : (agent ? `${agent}: ${phase}` : phase),
+          executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
+          stageMeta: runningProgress.stageMeta,
           operationals: videoTaskOperationalSummary,
         })
       }
@@ -3705,7 +3722,13 @@ Instruções:
     }
 
     const taskName = `Vídeo literal: ${production.title.slice(0, 40)}`
-    let reportTaskProgress: (update: { progress: number; phase: string; stageMeta?: string; operationals?: TaskOperationalSummary }) => void = () => {}
+    let reportTaskProgress: (update: {
+      progress: number
+      phase: string
+      executionState?: PipelineExecutionState
+      stageMeta?: string
+      operationals?: TaskOperationalSummary
+    }) => void = () => {}
     let literalTaskOperationalSummary = createEmptyOperationalSummary()
     let resolveTask: (value: VideoProductionPackage) => void = () => {}
     let rejectTask: (reason?: unknown) => void = () => {}
@@ -3715,8 +3738,14 @@ Instruções:
     })
 
     startTask(taskName, (onTaskProgress) => {
-        reportTaskProgress = onTaskProgress
-        onTaskProgress({ progress: 0, phase: 'Preparando geração literal...', stageMeta: 'Validando assets, checkpoints e provider de mídia', operationals: literalTaskOperationalSummary })
+      reportTaskProgress = onTaskProgress
+      onTaskProgress({
+        progress: 0,
+        phase: 'Preparando geração literal...',
+        executionState: 'queued',
+        stageMeta: 'Validando assets, checkpoints e provider de mídia',
+        operationals: literalTaskOperationalSummary,
+      })
       return taskPromise
     })
 
@@ -3730,7 +3759,7 @@ Instruções:
 
       const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent, meta) => {
         const progress = buildVideoPipelineProgress(step, total, phase, agent, meta)
-        const runningProgress = progress.percent >= 100 ? { ...progress, percent: 99 } : progress
+        const runningProgress = { ...progress, percent: normalizeInFlightPercent(progress.percent) }
         setVideoStudioLiteralProgress(runningProgress)
         const eventKey = buildOperationalEventKey({
           phase,
@@ -3754,8 +3783,9 @@ Instruções:
         }
         reportTaskProgress({
           progress: runningProgress.percent,
-          phase: progress.stageLabel ? `${progress.stageLabel}: ${progress.stageDescription || progress.phase}` : (agent ? `${agent}: ${phase}` : phase),
-          stageMeta: progress.stageMeta,
+          phase: runningProgress.stageLabel ? `${runningProgress.stageLabel}: ${runningProgress.stageDescription || runningProgress.phase}` : (agent ? `${agent}: ${phase}` : phase),
+          executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
+          stageMeta: runningProgress.stageMeta,
           operationals: literalTaskOperationalSummary,
         })
       }
@@ -3847,6 +3877,7 @@ Instruções:
         reportTaskProgress({
           progress: 99,
           phase: 'Render finalizado por provedor externo',
+          executionState: 'persisting',
           stageMeta: renderModel,
           operationals: literalTaskOperationalSummary,
         })

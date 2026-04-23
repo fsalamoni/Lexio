@@ -1,5 +1,6 @@
 import { formatCostBadge } from './currency-utils'
 import type { LLMResult } from './llm-client'
+import type { PipelineExecutionState } from './pipeline-execution-contract'
 
 export type DocumentPipelineStepStatus = 'pending' | 'active' | 'completed' | 'error'
 
@@ -16,6 +17,7 @@ export interface DocumentPipelineProgress {
   percent: number
   step: number
   totalSteps: number
+  executionState?: PipelineExecutionState
   stageLabel?: string
   stageDescription?: string
   modelId?: string
@@ -92,6 +94,7 @@ export function buildDocumentPipelineProgress(
   message: string,
   percent: number,
   options?: {
+    executionState?: PipelineExecutionState
     modelId?: string
     modelLabel?: string
     stageMeta?: string
@@ -113,6 +116,7 @@ export function buildDocumentPipelineProgress(
     percent,
     step,
     totalSteps: DOCUMENT_PIPELINE_STAGES.length,
+    executionState: options?.executionState,
     stageLabel: stage?.label,
     stageDescription: stage?.description,
     modelId: options?.modelId,

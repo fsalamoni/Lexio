@@ -232,7 +232,11 @@ export function buildStudioTrailSteps(task: TaskInfo | undefined, artifactType: 
   const progressStep = task?.currentStep ?? 0
   const errorIndex = progressStep > 0 ? Math.min(progressStep, steps.length) - 1 : 0
   const loading = task?.status === 'running'
-  const studioErrorMessage = task?.status === 'error' ? (task.error || 'Erro no pipeline') : ''
+  const studioErrorMessage = task?.status === 'error'
+    ? (task.error || 'Erro no pipeline')
+    : task?.status === 'cancelled'
+      ? 'Execução cancelada pelo usuário.'
+      : ''
 
   return steps.map((step, index) => {
     let status: NotebookTrailStep['status'] = 'pending'
@@ -276,12 +280,12 @@ export function buildStudioModalProgressState(
   const labels = ['Pesquisador do Estúdio', specialistLabel, 'Revisor de Qualidade']
   const boundedIndex = Math.max(0, Math.min(progressStep - 1, labels.length - 1))
   const stageLabel = progressStep > 0 ? labels[boundedIndex] : 'Preparando trilha'
-  const hasError = task?.status === 'error'
+  const hasError = task?.status === 'error' || task?.status === 'cancelled'
   const isComplete = task?.status === 'completed'
 
   return {
     currentMessage: hasError
-      ? (task?.error || 'Erro no pipeline do estúdio')
+      ? (task?.status === 'cancelled' ? 'Execução cancelada pelo usuário.' : (task?.error || 'Erro no pipeline do estúdio'))
       : task?.phase || 'Inicializando pipeline do estúdio...',
     percent: task?.progress || 0,
     isComplete,

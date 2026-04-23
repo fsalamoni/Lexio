@@ -26,6 +26,7 @@ import {
   type AdaptiveConcurrencyDiagnostics,
   type RuntimeConcurrencyHints,
 } from './runtime-concurrency'
+import { normalizeInFlightPercent } from './pipeline-execution-contract'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -654,6 +655,12 @@ export async function analyzeNotebookAcervo(
   throwIfAborted(signal)
   const startTime = Date.now()
   const executions: UsageExecutionRecord[] = []
+  const emitProgress = (progress: AcervoAnalysisProgress): void => {
+    onProgress?.({
+      ...progress,
+      percent: normalizeInFlightPercent(progress.percent),
+    })
+  }
 
   // Load API key and agent models
   const apiKey = await getOpenRouterKey()
@@ -746,7 +753,7 @@ export async function analyzeNotebookAcervo(
   console.log(`[Notebook Acervo Pre-filter] ${availableDocs.length} docs → ${preFiltered.length} candidates`)
 
   if (preFiltered.length === 0) {
-    onProgress?.({ phase: 'concluido', message: 'Nenhum documento relevante encontrado no acervo.', percent: 100 })
+    emitProgress({ phase: 'concluido', message: 'Nenhum documento relevante encontrado no acervo.', percent: 100 })
     return { documents: [], executions, totalDuration: Date.now() - startTime }
   }
 
@@ -841,7 +848,7 @@ export async function analyzeNotebookAcervo(
   }
 
   if (selectedIds.length === 0) {
-    onProgress?.({ phase: 'concluido', message: 'Nenhum documento relevante encontrado.', percent: 100 })
+    emitProgress({ phase: 'concluido', message: 'Nenhum documento relevante encontrado.', percent: 100 })
     return { documents: [], executions, totalDuration: Date.now() - startTime }
   }
 
@@ -1048,7 +1055,7 @@ export async function analyzeNotebookAcervo(
   }
 
   // ── 6. Build final result ──
-  onProgress?.({ phase: 'concluido', message: 'Análise do acervo concluída!', percent: 100 })
+  emitProgress({ phase: 'concluido', message: 'Análise do acervo concluída!', percent: 100 })
 
   // Parse curador result for final recommendations
   if (curadorContent) {

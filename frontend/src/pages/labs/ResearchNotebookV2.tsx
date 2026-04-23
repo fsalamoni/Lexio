@@ -71,6 +71,7 @@ import {
   buildStudioTrailSteps,
 } from '../../lib/notebook-pipeline-progress'
 import { buildVideoPipelineProgress, type VideoPipelineProgressState } from '../../lib/video-pipeline-progress'
+import { buildStepProgressPercent, normalizeInFlightPercent, type PipelineExecutionState } from '../../lib/pipeline-execution-contract'
 import {
   accumulateOperationalSummary,
   buildOperationalEventKey,
@@ -1180,6 +1181,7 @@ export default function ResearchNotebookV2() {
     let reportTaskProgress: (update: {
       progress: number
       phase: string
+      executionState?: PipelineExecutionState
       stageMeta?: string
       operationals?: TaskOperationalSummary
     }) => void = () => {}
@@ -1187,7 +1189,12 @@ export default function ResearchNotebookV2() {
 
     startTask(taskName, (onTaskProgress) => {
       reportTaskProgress = onTaskProgress
-      onTaskProgress({ progress: 0, phase: 'Preparando pipeline...', operationals: videoTaskOperationalSummary })
+      onTaskProgress({
+        progress: 0,
+        phase: 'Preparando pipeline...',
+        executionState: 'queued',
+        operationals: videoTaskOperationalSummary,
+      })
       return taskPromise
     })
 
@@ -1230,7 +1237,11 @@ export default function ResearchNotebookV2() {
 
       const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent, meta) => {
         const progress = buildVideoPipelineProgress(step, total, phase, agent, meta)
-        setVideoGenProgress(progress)
+        const runningProgress = {
+          ...progress,
+          percent: normalizeInFlightPercent(progress.percent),
+        }
+        setVideoGenProgress(runningProgress)
 
         const eventKey = buildOperationalEventKey({
           phase,
@@ -1253,11 +1264,12 @@ export default function ResearchNotebookV2() {
         }
 
         reportTaskProgress({
-          progress: progress.percent,
-          phase: progress.stageLabel
-            ? `${progress.stageLabel}: ${progress.stageDescription || progress.phase}`
+          progress: runningProgress.percent,
+          phase: runningProgress.stageLabel
+            ? `${runningProgress.stageLabel}: ${runningProgress.stageDescription || runningProgress.phase}`
             : (agent ? `${agent}: ${phase}` : phase),
-          stageMeta: progress.stageMeta,
+          executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
+          stageMeta: runningProgress.stageMeta,
           operationals: videoTaskOperationalSummary,
         })
       }
@@ -1632,6 +1644,7 @@ export default function ResearchNotebookV2() {
     let reportTaskProgress: (update: {
       progress: number
       phase: string
+      executionState?: PipelineExecutionState
       stageMeta?: string
       operationals?: TaskOperationalSummary
     }) => void = () => {}
@@ -1648,6 +1661,7 @@ export default function ResearchNotebookV2() {
       onTaskProgress({
         progress: 0,
         phase: 'Preparando geração literal...',
+        executionState: 'queued',
         stageMeta: 'Validando assets, checkpoints e provider de mídia',
         operationals: literalTaskOperationalSummary,
       })
@@ -1663,7 +1677,11 @@ export default function ResearchNotebookV2() {
 
       const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent, meta) => {
         const progress = buildVideoPipelineProgress(step, total, phase, agent, meta)
-        setVideoStudioLiteralProgress(progress)
+        const runningProgress = {
+          ...progress,
+          percent: normalizeInFlightPercent(progress.percent),
+        }
+        setVideoStudioLiteralProgress(runningProgress)
 
         const eventKey = buildOperationalEventKey({
           phase,
@@ -1686,11 +1704,12 @@ export default function ResearchNotebookV2() {
         }
 
         reportTaskProgress({
-          progress: progress.percent,
-          phase: progress.stageLabel
-            ? `${progress.stageLabel}: ${progress.stageDescription || progress.phase}`
+          progress: runningProgress.percent,
+          phase: runningProgress.stageLabel
+            ? `${runningProgress.stageLabel}: ${runningProgress.stageDescription || runningProgress.phase}`
             : (agent ? `${agent}: ${phase}` : phase),
-          stageMeta: progress.stageMeta,
+          executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
+          stageMeta: runningProgress.stageMeta,
           operationals: literalTaskOperationalSummary,
         })
       }
@@ -1778,8 +1797,9 @@ export default function ResearchNotebookV2() {
           fallbackFrom: 'browser-renderer',
         })
         reportTaskProgress({
-          progress: 100,
+          progress: 99,
           phase: 'Render finalizado por provedor externo',
+          executionState: 'persisting',
           stageMeta: renderModel,
           operationals: literalTaskOperationalSummary,
         })
@@ -1863,6 +1883,7 @@ export default function ResearchNotebookV2() {
           onTaskProgress({
             progress: 0,
             phase: 'Inicializando pipeline do estúdio...',
+            executionState: 'queued',
             stageMeta: 'Preparando modelos e contexto',
             operationals: studioOperationalSummary,
             currentStep: 0,
@@ -1900,8 +1921,9 @@ export default function ResearchNotebookV2() {
             }
 
             onTaskProgress({
-              progress: Math.round((step / Math.max(total, 1)) * 100),
+              progress: buildStepProgressPercent(step, total),
               phase: buildStudioTaskPhaseMessage(step, total, phase, artifactType),
+              executionState: (meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running',
               stageMeta: meta?.stageMeta,
               operationals: studioOperationalSummary,
               currentStep: step,
@@ -1938,6 +1960,7 @@ export default function ResearchNotebookV2() {
           onTaskProgress({
             progress: 95,
             phase: 'Salvando artefato no caderno...',
+            executionState: 'persisting',
             stageMeta: 'Persistindo conteúdo e execuções no notebook',
             operationals: studioOperationalSummary,
             currentStep: STUDIO_PIPELINE_TOTAL_STEPS,
@@ -2600,10 +2623,19 @@ Instruções:
         existingSourceNames,
         existingSourceIds,
         (progress: AcervoAnalysisProgress) => {
-          setAcervoAnalysisPhase(progress.phase)
-          setAcervoAnalysisMessage(progress.message)
-          setAcervoAnalysisPercent(progress.percent)
-          setAcervoAnalysisMeta(progress.stageMeta || '')
+          const analyzerConcluded = progress.phase === 'concluido'
+          setAcervoAnalysisPhase(analyzerConcluded ? 'nb_acervo_curador' : progress.phase)
+          setAcervoAnalysisMessage(
+            analyzerConcluded
+              ? 'Consolidando análise e persistindo resultados no caderno...'
+              : progress.message,
+          )
+          setAcervoAnalysisPercent(Math.min(progress.percent, 99))
+          setAcervoAnalysisMeta(
+            analyzerConcluded
+              ? 'Persistindo execuções e sincronizando estado'
+              : (progress.stageMeta || ''),
+          )
         },
         abortController.signal,
       )
@@ -2618,11 +2650,21 @@ Instruções:
         })
       }
 
+      const persistenceMetaParts = ['Persistência concluída']
+      if (result.executions.length > 0) {
+        persistenceMetaParts.push(`${result.executions.length} execução(ões) registradas`)
+      }
+      setAcervoAnalysisPhase('concluido')
+      setAcervoAnalysisPercent(100)
+      setAcervoAnalysisMeta(persistenceMetaParts.join(' • '))
+
       if (result.documents.length > 0) {
+        setAcervoAnalysisMessage('Análise do acervo concluída e resultados persistidos.')
         setAcervoAnalysisResults(result.documents)
         setSelectedAnalysisIds(new Set(result.documents.map((doc) => doc.id)))
         toast.success(`${result.documents.length} documento(s) relevante(s) encontrado(s) no acervo.`)
       } else {
+        setAcervoAnalysisMessage('Análise concluída. Nenhum documento relevante encontrado após persistência.')
         toast.info('Nenhum documento relevante foi encontrado no acervo para este caderno.')
       }
     } catch (error) {

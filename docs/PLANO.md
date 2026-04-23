@@ -18,6 +18,14 @@
 
 **Status:** ⚠️ avançando Faixa B com a fundação do redesign V2 em expansão controlada — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook, hardening de TTS/DocumentDetail, code splitting do ResearchNotebook, hardening de DataJud/CI-CD, `ProfileV2`, `DashboardV2`, dezoito ondas funcionais do trilho V2 validadas localmente, `/` agora promovida para `DashboardV2` sob gate, shell V2 cobrindo `/documents*`, `/upload`, `/theses`, `/settings*`, `/admin*` e `/profile`, aliases técnicos completos para os antigos labs de dashboard/notebook/profile, migração visual real das superfícies internas principais via primitives compartilhadas + base V2 compartilhada para configuracoes, custos pessoal/agregado, catalogo, configuracoes especializadas e o nucleo de governanca/admin promovidos para blocos integralmente nativos, alem de navegacao preview-safe consolidada entre sidebar/notificacoes/admin, um Hosting dedicado para o redesign em `lexio-redesign-v2-44760.web.app` e o hotfix do deploy estavel do Firebase concluido com `DATAJUD_API_KEY` provisionado e validado em producao
 
+**Atualização incremental (2026-04-23 — Wave 29: contrato explícito de execução + latência fase 2A):**
+- ✅ Contrato de progresso documental endurecido com `executionState` explícito em `document-pipeline.ts` e emissão semântica no `generation-service.ts` (`waiting_io`, `retrying`, `persisting`, `completed`).
+- ✅ Caminho crítico do gerador documental otimizado com paralelização segura: carregamento inicial de chave/modelos/template administrativo em `Promise.all` e prefetch de teses iniciado antes da trilha de acervo.
+- ✅ Trilhas de tarefa no cliente alinhadas ao contrato canônico: `NewDocument.tsx`, `ResearchNotebook.tsx` e `ResearchNotebookV2.tsx` passaram a emitir estado explícito (`queued`, `running`, `retrying`, `persisting`) para `TaskManagerContext.tsx`.
+- ✅ Fluxo de vídeo literal com provedor externo no V2 ajustado para manter execução em `99%` até persistência final, evitando conclusão prematura de progresso.
+- ✅ Validação completa desta wave: `npm run typecheck`, `npm run test -- --run` (**37/37 arquivos, 286/286 testes**) e `npm run build` com sucesso em `frontend/`.
+- 🔄 Próximo bloco: concluir trilha operacional de release (pull/rebase, commit/push, dispatch `release-web.yml`, monitoramento e fechamento final de governança/index/cache com IDs de run).
+
 **Atualização incremental (2026-04-22 — Wave 20: performance + confiança de progresso):**
 - ✅ Pipeline documental com rollout por feature flag para Redator em 10k tokens (`VITE_DOC_REDATOR_10K_ENABLED`) e fallback automático para 12k por qualidade mínima (`VITE_DOC_REDATOR_QUALITY_ROLLBACK_MIN` / `VITE_DOC_REDATOR_QUALITY_ROLLBACK_DISABLED`).
 - ✅ Seleção automática da melhor versão final (primária vs fallback), mantendo rastreabilidade em `generation_meta.redator` e contabilizando custos das tentativas extras em `llm_executions`.

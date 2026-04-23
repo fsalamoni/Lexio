@@ -1,3 +1,5 @@
+import { buildStepProgressPercent } from './pipeline-execution-contract'
+
 export interface VideoPipelineStage {
   key: string
   label: string
@@ -104,7 +106,7 @@ export function buildVideoPipelineProgress(
     total: effectiveTotal,
     phase,
     agent,
-    percent: effectiveTotal > 0 ? Math.round((safeStep / effectiveTotal) * 100) : 0,
+    percent: buildStepProgressPercent(safeStep, effectiveTotal),
     stageLabel: stage?.label ?? agent,
     stageDescription: stage?.description,
     stageMeta: meta?.stageMeta,

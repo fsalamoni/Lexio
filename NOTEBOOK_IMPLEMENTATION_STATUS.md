@@ -5,7 +5,16 @@
 
 ---
 
-## Status Geral: Etapas 1-247 IMPLEMENTADAS
+## Status Geral: Etapas 1-253 IMPLEMENTADAS
+
+### Etapas 248-253 — Contrato Explícito de Execução + Otimização de Latência 2A ✅
+- **Arquivos**: `frontend/src/lib/pipeline-execution-contract.ts`, `frontend/src/lib/document-pipeline.ts`, `frontend/src/lib/generation-service.ts`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/contexts/TaskManagerContext.tsx`, `frontend/src/lib/video-pipeline-progress.ts`
+- Etapa 248: o contrato de progresso documental foi endurecido com `executionState` explícito no payload (`document-pipeline.ts`) e emissão semântica em `generation-service.ts` para estados intermediários (`waiting_io`, `retrying`, `persisting`) e finalização (`completed`).
+- Etapa 249: o caminho crítico inicial do gerador documental foi otimizado com paralelização segura de dependências independentes (`getOpenRouterKey`, `loadDocumentAgentModels`, `loadAdminDocumentTypes`) em `Promise.all`.
+- Etapa 250: prefetch de teses passou a iniciar antes do pipeline de acervo em `generation-service.ts`, permitindo sobreposição de latência entre trilhas independentes sem alterar fallback de qualidade.
+- Etapa 251: wrappers de tarefa no cliente passaram a emitir `executionState` explícito em `NewDocument.tsx`, `ResearchNotebook.tsx` e `ResearchNotebookV2.tsx`, alinhando `TaskManagerContext.tsx` ao contrato canônico para `queued/running/retrying/persisting`.
+- Etapa 252: fluxo de vídeo literal com provedor externo no V2 foi ajustado para manter progresso em execução (`99%`) até persistência final, evitando conclusão prematura visual no TaskBar/modal.
+- Etapa 253: validação regressiva completa executada com sucesso após o hardening: `npm run typecheck`, `npm run test -- --run` (**37/37 arquivos**, **286/286 testes**) e `npm run build` em `frontend/`.
 
 ### Etapas 244-247 — Revalidação One-shot do Release Web (Firebase + Pages) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/release/WEB_RELEASE_INDEX.md`, `README.md`
