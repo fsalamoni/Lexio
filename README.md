@@ -169,7 +169,7 @@ packages/          → Backend Python FastAPI (em desenvolvimento, NÃO em produ
   modules/         → Módulos independentes
 
 .claude/           → CLAUDE.md — contexto completo para agentes IA
-.github/workflows/ → deploy-pages.yml + firebase-deploy.yml + firebase-preview.yml + test.yml
+.github/workflows/ → release-web.yml + deploy-pages.yml + firebase-deploy.yml + firebase-preview.yml + firebase-redesign-v2.yml + test.yml
 docs/              → Documentação técnica arquitetural
 ```
 
@@ -182,8 +182,9 @@ docs/              → Documentação técnica arquitetural
 1. Atualize sua branch a partir de `main` e rode os gates locais relevantes: `npm run typecheck`, `npx vitest run`, `npm run build`, `d:/Lexio/.venv/Scripts/python.exe -m pytest tests --tb=short -q` e `d:/Lexio/.venv/Scripts/python.exe -m ruff check packages tests`.
 2. Abra PR para `main`. O workflow `.github/workflows/firebase-preview.yml` publica um preview temporário no Firebase e agora exige `typecheck`, `test` e `build` antes de comentar a URL.
 3. Faça merge em `main` somente com a prévia validada. O workflow `.github/workflows/firebase-deploy.yml` roda `typecheck`, `test`, `build`, recompila `functions/`, resolve a fonte do `DATAJUD_API_KEY` (secret do GitHub, preferencialmente, ou segredo já existente no Firebase Secret Manager), sincroniza o segredo quando necessário e então publica Hosting, Rules, Indexes, Storage e Functions.
-4. Se a versão espelho em GitHub Pages também precisar ser atualizada, dispare manualmente `.github/workflows/deploy-pages.yml`. Ele também executa `typecheck`, `test` e `build` antes do publish.
-5. Para publicar a experiência experimental do redesign em URL separada, use `.github/workflows/firebase-redesign-v2.yml` ou replique localmente o build com `VITE_REDESIGN_V2=true`, `VITE_REDESIGN_V2_HOME=true` e `VITE_BUILD_OUT_DIR=dist-redesign-v2` antes de rodar `firebase deploy --only hosting:lexio-redesign-v2 --project hocapp-44760`.
+4. Para release sincronizado (recomendado), dispare `.github/workflows/release-web.yml` com `deploy_firebase=true` e `deploy_github_pages=true`; ajuste `deploy_redesign_v2` conforme a janela. Essa trilha foi validada end-to-end no run `24849029535` (quality gates + Firebase + Pages + release summary em sucesso).
+5. Se preferir operação por faixa, mantenha o deploy Firebase automático no push de `main` e dispare manualmente `.github/workflows/deploy-pages.yml` para atualizar o espelho do GitHub Pages.
+6. Para publicar a experiência experimental do redesign em URL separada, use `.github/workflows/firebase-redesign-v2.yml` ou replique localmente o build com `VITE_REDESIGN_V2=true`, `VITE_REDESIGN_V2_HOME=true` e `VITE_BUILD_OUT_DIR=dist-redesign-v2` antes de rodar `firebase deploy --only hosting:lexio-redesign-v2 --project hocapp-44760`.
 
 ### Segredos operacionais mínimos
 
@@ -287,12 +288,12 @@ Toda chamada LLM usa `callLLM()`, `callLLMWithMessages()` ou `callLLMWithFallbac
 
 ## Deploy
 
-O deploy é **totalmente automático** — qualquer push para `main` dispara as pipelines de CI/CD:
+O deploy opera em trilhas complementares de CI/CD:
 
-- **GitHub Pages** — usa `VITE_BASE_PATH=/Lexio/` (workflow `deploy-pages.yml`)
-- **Firebase Hosting** — usa `VITE_BASE_PATH=/` (workflow `firebase-deploy.yml`, inclui deploy de Firestore rules e Storage rules)
-- **Firebase Preview por PR** — publica canal temporário por pull request (workflow `firebase-preview.yml`)
-- **Testes** — executa em push/PR (workflow `test.yml`)
+- **Push para `main`** — aciona `firebase-deploy.yml` (Firebase Hosting + rules + functions) e `test.yml`
+- **Release one-shot** — `release-web.yml` orquestra quality gates + deploy Firebase + deploy Pages (e redesign V2 opcional)
+- **GitHub Pages isolado** — `deploy-pages.yml` publica o espelho com `VITE_BASE_PATH=/Lexio/` usando artifact + `actions/deploy-pages`
+- **Firebase Preview por PR** — `firebase-preview.yml` publica canal temporário por pull request
 
 ## Diretriz de Modularização
 
@@ -307,8 +308,11 @@ Para deploy manual:
 # Firebase Hosting + Firestore + Storage Rules
 firebase deploy --only "hosting,firestore:rules,storage"
 
-# GitHub Pages (via workflow)
-git push origin main
+# GitHub Pages (via workflow dedicado)
+gh workflow run deploy-pages.yml
+
+# Release one-shot (Firebase + Pages, sem redesign V2)
+gh workflow run release-web.yml -f deploy_firebase=true -f deploy_github_pages=true -f deploy_redesign_v2=false
 ```
 
 ---
