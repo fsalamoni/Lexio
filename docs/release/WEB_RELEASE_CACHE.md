@@ -23,26 +23,24 @@ Last update: 2026-04-23
 - python lint (ruff): completed (all checks passed)
 
 ## Deployment Cache
-- Commit: completed (cf98c3c)
+- Commit: completed (764e859)
 - Push to origin/main: completed
-- Release workflow dispatch: completed (release-web.yml run 24815485030 success)
+- Release workflow dispatch: completed (release-web.yml run 24841471763 success)
 
 ## Current Wave Cache (2026-04-23)
-- Wave tag: wave22-safe-parallel-mobile-residual
-- Scope: paralelização segura de etapas independentes (documento/acervo/vídeo) + hardening mobile residual de painéis de progresso + sincronização completa de governança.
+- Wave tag: wave23-adaptive-concurrency-global-mobile-panel
+- Scope: concorrência adaptativa em pipelines críticos (acervo/vídeo) + hardening mobile global do DraggablePanel + sincronização completa de governança.
 - Files touched (core runtime):
-	- frontend/src/lib/generation-service.ts
+	- frontend/src/components/DraggablePanel.tsx
 	- frontend/src/lib/notebook-acervo-analyzer.ts
 	- frontend/src/lib/video-generation-pipeline.ts
-	- frontend/src/components/AgentTrailProgressModal.tsx
-	- frontend/src/components/PipelineProgressPanel.tsx
 - Files touched (governance/docs):
 	- docs/PLANO.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
 	- docs/MANIFEST.json
 	- docs/release/WEB_RELEASE_INDEX.md
-	- docs/release/WEB_RELEASE_CACHE.md
 	- README.md
+	- docs/release/WEB_RELEASE_CACHE.md
 
 ## Current Validation Cache (2026-04-23)
 - frontend typecheck: completed (TYPECHECK_OK)
@@ -52,7 +50,15 @@ Last update: 2026-04-23
 - Known non-blocking output: vite reporter advisory about mixed dynamic/static import of `artifact-parsers.ts`
 
 ## Pending Operational Cache
-- None. Wave 22 closeout completed (git flow + release lane fully executed).
+- None. Wave 23 closeout completed (git flow + release lane fully executed).
+
+## Wave 23 Release Outcome
+- release-web dispatch (run 24841471763): success.
+- Quality gates: success.
+- Deploy Firebase production: success.
+- Deploy GitHub Pages: success.
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`).
+- Release summary: success.
 
 ## Release Workflow Outcomes
 - First release-web dispatch (run 24692119664): startup_failure due caller permissions mismatch for reusable deploy workflows.
