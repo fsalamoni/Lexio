@@ -24,7 +24,8 @@
 - ✅ Trilhas de tarefa no cliente alinhadas ao contrato canônico: `NewDocument.tsx`, `ResearchNotebook.tsx` e `ResearchNotebookV2.tsx` passaram a emitir estado explícito (`queued`, `running`, `retrying`, `persisting`) para `TaskManagerContext.tsx`.
 - ✅ Fluxo de vídeo literal com provedor externo no V2 ajustado para manter execução em `99%` até persistência final, evitando conclusão prematura de progresso.
 - ✅ Validação completa desta wave: `npm run typecheck`, `npm run test -- --run` (**37/37 arquivos, 286/286 testes**) e `npm run build` com sucesso em `frontend/`.
-- 🔄 Próximo bloco: concluir trilha operacional de release (pull/rebase, commit/push, dispatch `release-web.yml`, monitoramento e fechamento final de governança/index/cache com IDs de run).
+- ✅ Trilha operacional completa da wave concluída: pull/rebase (`Already up to date`), commit/push do `main` (`5bf59c4`) e execução one-shot de release (`release-web.yml` run `24853129457`) com quality gates + Firebase + Pages + summary em `success`.
+- 🔄 Próximo bloco: expandir emissão explícita de `executionState` para pipelines auxiliares ainda dependentes de inferência por fase e medir impacto de latência/custo da otimização 2A em produção.
 
 **Atualização incremental (2026-04-22 — Wave 20: performance + confiança de progresso):**
 - ✅ Pipeline documental com rollout por feature flag para Redator em 10k tokens (`VITE_DOC_REDATOR_10K_ENABLED`) e fallback automático para 12k por qualidade mínima (`VITE_DOC_REDATOR_QUALITY_ROLLBACK_MIN` / `VITE_DOC_REDATOR_QUALITY_ROLLBACK_DISABLED`).

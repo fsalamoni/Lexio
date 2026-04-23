@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-253 IMPLEMENTADAS
+## Status Geral: Etapas 1-257 IMPLEMENTADAS
+
+### Etapas 254-257 — Closeout Operacional da Wave 29 (Release One-shot) ✅
+- **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `README.md`
+- Etapa 254: trilha de Git da wave fechada sem divergência remota (`git pull --rebase --autostash origin main`), seguida de commit/push no `main` (`5bf59c4`) com hardening de execution-state e sincronização de governança.
+- Etapa 255: release one-shot disparado em `release-web.yml` (run `24853129457`) no HEAD `5bf59c4cc20f71f3efe268d3be2e7f185f6c5549` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
+- Etapa 256: quality gates e deploys confirmados em sucesso na mesma run: unit tests (`72758770511`), lint (`72758770554`), frontend quality (`72758770593`), functions quality (`72758770600`), source guardrails (`72758770628`), Firebase production (`72758972612`), Pages build (`72758972753`) e Pages deploy (`72759201251`); redesign V2 mantido como skip por input (`72758972846`).
+- Etapa 257: fechamento final de governança/index/cache concluído com IDs reais de execução em `WEB_RELEASE_INDEX.md`/`WEB_RELEASE_CACHE.md`, atualização de progresso no `PLANO.md` e catálogo de estado em `MANIFEST.json`, além de runbook operacional no `README.md`.
 
 ### Etapas 248-253 — Contrato Explícito de Execução + Otimização de Latência 2A ✅
 - **Arquivos**: `frontend/src/lib/pipeline-execution-contract.ts`, `frontend/src/lib/document-pipeline.ts`, `frontend/src/lib/generation-service.ts`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/contexts/TaskManagerContext.tsx`, `frontend/src/lib/video-pipeline-progress.ts`

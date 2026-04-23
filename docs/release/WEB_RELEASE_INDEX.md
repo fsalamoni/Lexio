@@ -9,21 +9,22 @@ Last update: 2026-04-23
 - .github/workflows/firebase-redesign-v2.yml
 - .github/workflows/test.yml
 
-## Latest One-shot Validation (Wave 28 — 2026-04-23)
-- release-web run `24849789759`: success
+## Latest One-shot Validation (Wave 29 — 2026-04-23)
+- release-web run `24853129457`: success
+- Head commit: `5bf59c4`
 - Quality gates: success
-- Deploy Firebase production: success
-- Deploy GitHub Pages / build: success
-- Deploy GitHub Pages / deploy: success
-- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`)
-- Release summary: success
+- Deploy Firebase production: success (`job 72758972612`)
+- Deploy GitHub Pages / build: success (`job 72758972753`)
+- Deploy GitHub Pages / deploy: success (`job 72759201251`)
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72758972846`)
+- Release summary: success (`job 72759426235`)
 
 ## Current Local Validation (Wave 29 — 2026-04-23)
 - Scope: contrato explícito de execução + otimização de latência 2A do pipeline documental
 - Frontend typecheck: success
 - Frontend tests: success (37 files, 286 tests)
 - Frontend build: success
-- Release dispatch: pending (next closeout step)
+- Release dispatch: completed (`release-web.yml`, run `24853129457`)
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs

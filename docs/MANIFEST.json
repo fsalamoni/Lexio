@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-23",
-    "cycle": "wave29-execution-state-latency2a",
+    "cycle": "wave29-execution-state-latency2a-closeout",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -498,6 +498,21 @@
         "frontend/src/lib/video-pipeline-progress.ts"
       ],
       "notes": "Fluxos documentais e de notebook passaram a emitir `executionState` semântico (`queued`, `running`, `retrying`, `persisting`, `completed`) e o `generation-service` paralelizou carregamentos independentes (chave/modelos/template admin) com prefetch antecipado de teses para reduzir latência sem perder guardrails de qualidade."
+    },
+    {
+      "id": "E5.F17",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Closeout operacional da Wave 29 com release one-shot",
+      "state": "implemented",
+      "files": [
+        ".github/workflows/release-web.yml",
+        "docs/release/WEB_RELEASE_CACHE.md",
+        "docs/release/WEB_RELEASE_INDEX.md",
+        "docs/PLANO.md",
+        "NOTEBOOK_IMPLEMENTATION_STATUS.md",
+        "README.md"
+      ],
+      "notes": "Release one-shot `24853129457` em HEAD `5bf59c4` concluída com quality gates, deploy Firebase production (`72758972612`), Pages build (`72758972753`), Pages deploy (`72759201251`) e release summary (`72759426235`) em sucesso; redesign V2 permaneceu opcional/skipped por input (`72758972846`)."
     },
     {
       "id": "E8.F1",
