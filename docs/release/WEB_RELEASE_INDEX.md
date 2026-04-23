@@ -50,6 +50,9 @@ Last update: 2026-04-23
 - Adaptive diagnostics now include target source (`auto|env`) and profile metadata in formatted stage traces and runtime profile keys for downstream telemetry analysis.
 - `DraggablePanel` now force-prioritizes compact geometry on narrow viewports even when initialized with `startMaximized`, preventing maximized-state drift on mobile.
 - Regression coverage was extended in `runtime-concurrency.test.ts` (profile up/downscale and source tagging) and `DraggablePanel.test.tsx` (compact mode de-maximization).
+- Wave 27 migrates GitHub Pages publication from legacy `gh-pages` branch pushes to the official artifact lane (`configure-pages` + `upload-pages-artifact` + `deploy-pages`) with explicit deploy timeout to reduce timeout aborts.
+- `deploy-pages.yml` and `release-web.yml` now include Pages-native permissions (`pages: write`, `id-token: write`) required by reusable workflow execution in the official lane.
+- Repository Pages was promoted to `build_type=workflow`, aligning runtime behavior with the new deploy mechanism and reducing dependency on the legacy branch-mode orchestrator.
 
 ## Required Secrets (GitHub Actions)
 - FIREBASE_API_KEY
@@ -62,7 +65,7 @@ Last update: 2026-04-23
 - Firebase Functions: datajudProxy
 - Firestore rules and indexes
 - Storage rules
-- GitHub Pages: /Lexio on gh-pages branch
+- GitHub Pages: /Lexio via GitHub Actions artifact deploy lane
 
 ## Operational Runbook (high level)
 1. Trigger release-web workflow (manual dispatch)

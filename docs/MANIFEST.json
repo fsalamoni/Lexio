@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-23",
-    "cycle": "wave26-runtime-profile-calibration-mobile-compact-max-fix",
+    "cycle": "wave27-pages-workflow-deploy-hardening",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -458,6 +458,17 @@
         "frontend/src/components/DraggablePanel.test.tsx"
       ],
       "notes": "A concorrência adaptativa passou a classificar perfis (`unknown|constrained|balanced|performant|high_end`) e escalar o alvo automático por perfil sem quebrar override por env; diagnósticos agora incluem origem do alvo (`auto|env`); e o DraggablePanel passou a priorizar geometria compacta em viewport estreita mesmo com `startMaximized`, prevenindo drift de estado maximizado no mobile."
+    },
+    {
+      "id": "E5.F14",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Hardening estrutural do deploy GitHub Pages por workflow",
+      "state": "implemented",
+      "files": [
+        ".github/workflows/deploy-pages.yml",
+        ".github/workflows/release-web.yml"
+      ],
+      "notes": "Publicação de Pages migrou do push legado em `gh-pages` para a trilha oficial por artefato (`configure-pages` + `upload-pages-artifact` + `deploy-pages`), com timeout de deploy ampliado e permissões `pages:write`/`id-token:write` alinhadas no workflow reutilizável e no orquestrador de release."
     },
     {
       "id": "E8.F1",

@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-239 IMPLEMENTADAS
+## Status Geral: Etapas 1-243 IMPLEMENTADAS
+
+### Etapas 240-243 — Hardening Estrutural do Deploy GitHub Pages ✅
+- **Arquivos**: `.github/workflows/deploy-pages.yml`, `.github/workflows/release-web.yml`
+- Etapa 240: `deploy-pages.yml` migrou do push direto em `gh-pages` para pipeline oficial por artefato (`configure-pages` + `upload-pages-artifact` + `deploy-pages`), reduzindo fragilidade da cadeia legada de publicação.
+- Etapa 241: permissões de deploy foram ajustadas para o modelo oficial de Pages (`pages: write` e `id-token: write`) no workflow de Pages e no orquestrador `release-web.yml`.
+- Etapa 242: timeout de deploy no `actions/deploy-pages@v4` foi ampliado para mitigar abortos por limite curto em janelas de publicação mais lentas.
+- Etapa 243: validação regressiva local executada com sucesso após hardening: `npm run typecheck`, `npm test` (**37/37 arquivos**, **286/286 testes**) e `npm run build`.
 
 ### Etapas 234-239 — Calibração por Perfil de Runtime + Correção Mobile de Maximizado ✅
 - **Arquivos**: `frontend/src/lib/runtime-concurrency.ts`, `frontend/src/lib/runtime-concurrency.test.ts`, `frontend/src/components/DraggablePanel.tsx`, `frontend/src/components/DraggablePanel.test.tsx`

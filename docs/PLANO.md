@@ -77,6 +77,13 @@
 - ✅ Validação completa desta wave: `npm run typecheck`, `npm test` (37/37 arquivos, 286/286 testes) e `npm run build` com sucesso.
 - 🔄 Próximo bloco: calibrar fatores por perfil com telemetria real de produção e expor leitura agregada desses sinais no trilho administrativo/custos para tuning contínuo sem regressão.
 
+**Atualização incremental (2026-04-23 — Wave 27: hardening estrutural do deploy GitHub Pages):**
+- ✅ `deploy-pages.yml` migrou do push direto em `gh-pages` (`peaceiris/actions-gh-pages`) para o trilho oficial de Pages por artefato (`actions/configure-pages`, `actions/upload-pages-artifact`, `actions/deploy-pages`) com timeout de deploy ampliado para reduzir risco de aborto prematuro.
+- ✅ Permissões de workflow foram alinhadas ao modo oficial (`pages: write` + `id-token: write`) em `deploy-pages.yml` e no orquestrador `release-web.yml`, removendo fragilidade de autorização cruzada no deploy reutilizável.
+- ✅ Configuração do repositório foi promovida para `build_type=workflow` em GitHub Pages, eliminando dependência do modo legado baseado em branch para publicação do site `/Lexio/`.
+- ✅ Revalidação local completa pós-hardening: `npm run typecheck`, `npm test` (37/37 arquivos, 286/286 testes) e `npm run build` com sucesso.
+- 🔄 Próximo bloco: acompanhar a primeira janela completa de releases no novo trilho de Pages e, se estável, consolidar a retirada operacional do legado `gh-pages` como canal primário de publicação.
+
 ## Plano Mestre Executável (Atualizado)
 
 ### Faixa A — Consolidado em produção (já implementado)
