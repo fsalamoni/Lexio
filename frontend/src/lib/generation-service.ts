@@ -1649,44 +1649,49 @@ export async function generateDocument(
   reportProgress('pesquisador', 'Carregando base de conhecimento...', 18, modelPesquisador)
     let knowledgeBase = ''
 
-    // Load relevant theses from thesis bank
-    try {
-      const thesesByArea = areas.length > 0
-        ? await Promise.all(areas.map(area => listTheses(uid, { legalAreaId: area, limit: MAX_THESES_PER_AREA })))
-        : [await listTheses(uid, { limit: MAX_THESES_FALLBACK })]
-      const allTheses: ThesisData[] = []
-      const seenIds = new Set<string>()
-      for (const result of thesesByArea) {
-        for (const t of result.items) {
-          if (t.id && !seenIds.has(t.id)) {
-            seenIds.add(t.id)
-            allTheses.push(t)
+    // Load thesis references and lightweight acervo context in parallel.
+    const thesisTask = (async (): Promise<string> => {
+      try {
+        const thesesByArea = areas.length > 0
+          ? await Promise.all(areas.map(area => listTheses(uid, { legalAreaId: area, limit: MAX_THESES_PER_AREA })))
+          : [await listTheses(uid, { limit: MAX_THESES_FALLBACK })]
+        const allTheses: ThesisData[] = []
+        const seenIds = new Set<string>()
+        for (const result of thesesByArea) {
+          for (const t of result.items) {
+            if (t.id && !seenIds.has(t.id)) {
+              seenIds.add(t.id)
+              allTheses.push(t)
+            }
           }
         }
-      }
-      if (allTheses.length > 0) {
+        if (allTheses.length === 0) return ''
         const thesesText = allTheses
           .slice(0, MAX_THESES_INJECTED)
           .map(t => `• ${t.title}\n  ${t.content}${t.summary ? `\n  Resumo: ${t.summary}` : ''}`)
           .join('\n\n')
-        knowledgeBase += `<banco_de_teses>\n${thesesText}\n</banco_de_teses>\n\n`
+        return `<banco_de_teses>\n${thesesText}\n</banco_de_teses>\n\n`
+      } catch (e) {
+        console.warn('Failed to load thesis bank:', e)
+        return ''
       }
-    } catch (e) {
-      console.warn('Failed to load thesis bank:', e)
-    }
+    })()
 
-    // Load acervo excerpts (lightweight context — separate from the full acervo base above)
-    if (includeAcervo && !acervoBase) {
-      // Only load excerpts if acervo agents didn't produce a compiled base
+    const acervoContextTask = (async (): Promise<string> => {
+      if (!includeAcervo || acervoBase) return ''
       try {
         const acervoContext = await getAcervoContext(uid, MAX_ACERVO_CONTEXT_CHARS)
-        if (acervoContext) {
-          knowledgeBase += `<acervo_referencia>\n${acervoContext}\n</acervo_referencia>\n\n`
-        }
+        if (!acervoContext) return ''
+        return `<acervo_referencia>\n${acervoContext}\n</acervo_referencia>\n\n`
       } catch (e) {
         console.warn('Failed to load acervo context:', e)
+        return ''
       }
-    }
+    })()
+
+    const [thesisSection, acervoSection] = await Promise.all([thesisTask, acervoContextTask])
+    knowledgeBase += thesisSection
+    knowledgeBase += acervoSection
 
     // Apply context compaction if knowledge base is very large (>40k chars)
     if (knowledgeBase.length > 40000) {

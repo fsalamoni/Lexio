@@ -33,6 +33,14 @@
 - ✅ Validação completa pós-hardening: `npm run typecheck` + `npm run test -- --run` com sucesso (35/35 arquivos, 273/273 testes).
 - 🔄 Próximo bloco: paralelização segura adicional de agentes (somente etapas independentes), mantendo gates de qualidade e sem regressão de UX/confiabilidade.
 
+**Atualização incremental (2026-04-23 — Wave 22: paralelização segura + hardening mobile residual):**
+- ✅ Pipeline documental (`generation-service.ts`) com carregamento paralelo da base complementar (teses + contexto leve de acervo), reduzindo latência em etapas independentes sem alterar contrato de qualidade.
+- ✅ Pipeline de análise de acervo (`notebook-acervo-analyzer.ts`) com concorrência controlada de lotes do Analista (até 2 workers), preservando fallback seguro por lote e telemetria operacional.
+- ✅ Pipeline de vídeo (`video-generation-pipeline.ts`) com geração TTS em lotes paralelos controlados (até 2 por lote), mantendo rastreabilidade de custo/duração por batch.
+- ✅ Hardening mobile residual em superfícies de progresso (`AgentTrailProgressModal.tsx` e `PipelineProgressPanel.tsx`) para evitar compressão/overflow em larguras pequenas com wraps e layout responsivo.
+- ✅ Validação completa desta wave: `npm run typecheck`, `npm run test -- --run` (35/35 arquivos, 273/273 testes) e `npm run build` com sucesso.
+- 🔄 Próximo bloco: monitoramento de impacto em produção (latência e custo por etapa) e ajustes finos de concorrência por perfil de carga.
+
 ## Plano Mestre Executável (Atualizado)
 
 ### Faixa A — Consolidado em produção (já implementado)

@@ -87,12 +87,12 @@ export default function AgentTrailProgressModal({
       icon={<Activity size={16} />}
       initialWidth={860}
       initialHeight={620}
-      minWidth={420}
-      minHeight={300}
+      minWidth={300}
+      minHeight={260}
       closeOnEscape={canClose}
     >
       <div className="h-full flex flex-col" style={{ background: 'var(--v2-panel-strong)', fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)" }}>
-        <div className="px-6 py-4" style={{ borderBottom: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.6)' }}>
+        <div className="px-4 sm:px-6 py-4" style={{ borderBottom: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.6)' }}>
           {subtitle && <p className="text-xs truncate" style={{ color: 'var(--v2-ink-faint)' }}>{subtitle}</p>}
 
           <div className="mt-3 flex items-center gap-2 text-sm mb-2">
@@ -132,12 +132,12 @@ export default function AgentTrailProgressModal({
           </div>
         </div>
 
-        <div className="p-6 flex-1 overflow-y-auto space-y-4">
+        <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-4">
           <div
             className="rounded-2xl p-4"
             style={{ border: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.7)' }}
           >
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--v2-ink-faint)' }}>Agente em foco</p>
                 <p className="mt-1 text-base font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>
@@ -163,7 +163,7 @@ export default function AgentTrailProgressModal({
               </div>
 
               <div
-                className="flex-shrink-0 rounded-2xl px-4 py-3 min-w-[210px]"
+                className="w-full xl:w-auto flex-shrink-0 rounded-2xl px-4 py-3 min-w-0 xl:min-w-[210px]"
                 style={{ border: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.9)' }}
               >
                 <div className="flex items-end justify-center gap-1 h-20">

@@ -5,7 +5,15 @@
 
 ---
 
-## Status Geral: Etapas 1-209 IMPLEMENTADAS
+## Status Geral: Etapas 1-214 IMPLEMENTADAS
+
+### Etapas 210-214 — Paralelização Segura + Hardening Mobile Residual ✅
+- **Arquivos**: `frontend/src/lib/generation-service.ts`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/components/AgentTrailProgressModal.tsx`, `frontend/src/components/PipelineProgressPanel.tsx`
+- Etapa 210: `generation-service.ts` passou a carregar teses e contexto leve de acervo em paralelo na etapa de base complementar, mantendo o mesmo comportamento funcional e os mesmos fallbacks de segurança.
+- Etapa 211: `notebook-acervo-analyzer.ts` recebeu concorrência controlada no Analista (até 2 lotes em paralelo), com preservação de fallback por lote e atualização de progresso conforme conclusão real dos batches.
+- Etapa 212: `video-generation-pipeline.ts` passou a gerar TTS em lotes paralelos (até 2 segmentos por batch) com `Promise.allSettled`, mantendo registro por execução e metadados agregados de custo/duração por lote.
+- Etapa 213: `AgentTrailProgressModal.tsx` e `PipelineProgressPanel.tsx` foram endurecidos para mobile com layout responsivo em colunas/wrap, reduzindo risco de truncamento agressivo e overflow em telas estreitas.
+- Etapa 214: validação regressiva completa executada com sucesso: `npm run typecheck`, `npm run test -- --run` (**35/35 arquivos**, **273/273 testes**) e `npm run build`.
 
 ### Etapas 205-209 — Hardening Mobile + Progresso Monotônico no Fallback ✅
 - **Arquivos**: `frontend/src/lib/generation-service.ts`, `frontend/src/components/TaskBar.tsx`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/ResearchNotebook.tsx`

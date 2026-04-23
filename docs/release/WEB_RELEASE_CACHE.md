@@ -1,6 +1,6 @@
 # Web Release Cache
 
-Last update: 2026-04-22
+Last update: 2026-04-23
 
 ## Execution Snapshot
 - Branch: main
@@ -27,26 +27,29 @@ Last update: 2026-04-22
 - Push to origin/main: completed
 - Release workflow dispatch: completed (release-web.yml run 24692171412 success)
 
-## Current Wave Cache (2026-04-22)
-- Wave tag: wave21-mobile-progress-monotonic
-- Scope: hardening do fallback do Redator para progresso monotônico + ajustes responsivos mobile em superfícies críticas + sincronização de governança.
+## Current Wave Cache (2026-04-23)
+- Wave tag: wave22-safe-parallel-mobile-residual
+- Scope: paralelização segura de etapas independentes (documento/acervo/vídeo) + hardening mobile residual de painéis de progresso + sincronização completa de governança.
 - Files touched (core runtime):
 	- frontend/src/lib/generation-service.ts
-	- frontend/src/components/TaskBar.tsx
-	- frontend/src/pages/NewDocument.tsx
-	- frontend/src/pages/ResearchNotebook.tsx
+	- frontend/src/lib/notebook-acervo-analyzer.ts
+	- frontend/src/lib/video-generation-pipeline.ts
+	- frontend/src/components/AgentTrailProgressModal.tsx
+	- frontend/src/components/PipelineProgressPanel.tsx
 - Files touched (governance/docs):
 	- docs/PLANO.md
-	- docs/release/WEB_RELEASE_CACHE.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
-	- docs/release/WEB_RELEASE_INDEX.md
 	- docs/MANIFEST.json
+	- docs/release/WEB_RELEASE_INDEX.md
+	- docs/release/WEB_RELEASE_CACHE.md
 	- README.md
 
-## Current Validation Cache (2026-04-22)
+## Current Validation Cache (2026-04-23)
 - frontend typecheck: completed (TYPECHECK_OK)
 - frontend test: completed (35 files, 273 tests passed)
+- frontend build: completed (vite build succeeded)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
+- Known non-blocking output: vite reporter advisory about mixed dynamic/static import of `artifact-parsers.ts`
 
 ## Pending Operational Cache
 - Next operational block pending in this wave: finalize git flow (status, commit, pull/merge, push) and execute deploy lane.

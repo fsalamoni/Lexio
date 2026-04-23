@@ -90,6 +90,7 @@ function buildAcervoStageMeta(options: {
 const MAX_PREFILTERED_DOCS = 30
 const MAX_SELECTED_DOCS = 8
 const MAX_ANALISTA_DOCS_PER_BATCH = 2
+const ANALISTA_BATCH_CONCURRENCY = 2
 const MAX_ANALISTA_CHARS_PER_DOC = 8_000
 const MAX_ANALISTA_INPUT_CHARS = 16_000
 const MIN_CHARS_PER_ANALISTA_DOC = 2_500
@@ -827,16 +828,30 @@ export async function analyzeNotebookAcervo(
   const analistaFallbackAnalyses = buildAnalistaFallbackAnalyses(selectedDocs)
   const analistaBatches = chunkArray(selectedDocs, MAX_ANALISTA_DOCS_PER_BATCH)
   const analistaAnalysesById = new Map(analistaFallbackAnalyses.map((analysis) => [analysis.id, analysis]))
+  const totalAnalistaBatches = Math.max(1, analistaBatches.length)
+  const analistaWorkerCount = Math.min(ANALISTA_BATCH_CONCURRENCY, analistaBatches.length)
   let usedAnalistaFallback = false
+  let completedAnalistaBatches = 0
+  let nextAnalistaBatchIndex = 0
 
-  for (let batchIndex = 0; batchIndex < analistaBatches.length; batchIndex++) {
-    const batch = analistaBatches[batchIndex]
-    const percent = 50 + Math.round(((batchIndex + 1) / Math.max(1, analistaBatches.length)) * 15)
+  onProgress?.({
+    phase: 'nb_acervo_analista',
+    message: `Analista processando ${analistaBatches.length} lote(s) com até ${analistaWorkerCount} em paralelo...`,
+    percent: 50,
+  })
+
+  const emitAnalistaBatchProgress = (message: string, options?: Partial<AcervoAnalysisProgress>) => {
+    completedAnalistaBatches += 1
+    const percent = 50 + Math.round((completedAnalistaBatches / totalAnalistaBatches) * 15)
     onProgress?.({
       phase: 'nb_acervo_analista',
-      message: `Analista: lote ${batchIndex + 1}/${analistaBatches.length} (${batch.length} documento(s))...`,
+      message,
       percent,
+      ...options,
     })
+  }
+
+  const processAnalistaBatch = async (batch: SelectedDocForAnalista[], batchIndex: number): Promise<void> => {
     throwIfAborted(signal)
 
     try {
@@ -859,10 +874,16 @@ export async function analyzeNotebookAcervo(
         cost_usd: analistaResult.cost_usd,
         duration_ms: analistaResult.duration_ms,
       }))
-      onProgress?.({
-        phase: 'nb_acervo_analista',
-        message: `Analista concluiu o lote ${batchIndex + 1}/${analistaBatches.length}.`,
-        percent,
+
+      const parsedBatch = parseAnalistaAnalyses(analistaResult.content, batch)
+      if (parsedBatch.length === 0) {
+        throw new TransientLLMError('Analista retornou JSON sem análises válidas')
+      }
+      for (const analysis of parsedBatch) {
+        analistaAnalysesById.set(analysis.id, analysis)
+      }
+
+      emitAnalistaBatchProgress(`Analista concluiu o lote ${batchIndex + 1}/${analistaBatches.length}.`, {
         stageMeta: buildAcervoStageMeta({
           model: analistaResult.model,
           costUsd: analistaResult.cost_usd,
@@ -873,14 +894,6 @@ export async function analyzeNotebookAcervo(
         durationMs: analistaResult.duration_ms,
         retryCount: analistaResult.operational?.totalRetryCount,
       })
-
-      const parsedBatch = parseAnalistaAnalyses(analistaResult.content, batch)
-      if (parsedBatch.length === 0) {
-        throw new TransientLLMError('Analista retornou JSON sem análises válidas')
-      }
-      for (const analysis of parsedBatch) {
-        analistaAnalysesById.set(analysis.id, analysis)
-      }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') throw err
       if (!isRecoverableAgentError(err)) throw err
@@ -894,7 +907,26 @@ export async function analyzeNotebookAcervo(
       for (const fallbackAnalysis of buildAnalistaFallbackAnalyses(batch)) {
         analistaAnalysesById.set(fallbackAnalysis.id, fallbackAnalysis)
       }
+
+      emitAnalistaBatchProgress(
+        `Analista em fallback no lote ${batchIndex + 1}/${analistaBatches.length}; seleção do Buscador preservada.`,
+        {
+          usedFallback: true,
+          fallbackReason: 'Fallback seguro ativado',
+          stageMeta: buildAcervoStageMeta({ fallbackReason: 'Fallback seguro ativado' }),
+        },
+      )
     }
+  }
+
+  if (analistaWorkerCount > 0) {
+    await Promise.all(Array.from({ length: analistaWorkerCount }, async () => {
+      while (true) {
+        const batchIndex = nextAnalistaBatchIndex++
+        if (batchIndex >= analistaBatches.length) return
+        await processAnalistaBatch(analistaBatches[batchIndex], batchIndex)
+      }
+    }))
   }
 
   const analistaAnalyses = selectedDocs

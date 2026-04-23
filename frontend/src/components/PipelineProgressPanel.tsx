@@ -127,7 +127,7 @@ export default function PipelineProgressPanel({
       <button
         type="button"
         onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
+        className="w-full flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-4 text-left hover:bg-gray-50 transition-colors"
       >
         <div className="flex items-center gap-3 min-w-0">
           {isComplete ? (
@@ -155,7 +155,7 @@ export default function PipelineProgressPanel({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-3 flex-shrink-0 self-end sm:self-auto">
           <span className="text-sm font-semibold text-teal-600 tabular-nums">{percent}%</span>
           {expanded
             ? <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -230,7 +230,7 @@ export default function PipelineProgressPanel({
 
                   {/* Content */}
                   <div className={`pb-4 min-w-0 flex-1 ${isLast ? 'pb-0' : ''}`}>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <span
                         className={`text-sm font-medium ${
                           agent.status === 'completed'
@@ -273,7 +273,7 @@ export default function PipelineProgressPanel({
                         </span>
                       )}
                       {duration && (
-                        <span className="text-[10px] text-gray-400 tabular-nums ml-auto">
+                        <span className="text-[10px] text-gray-400 tabular-nums sm:ml-auto">
                           {agent.status === 'active' ? '⏱ ' : '✓ '}{duration}
                         </span>
                       )}

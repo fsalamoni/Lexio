@@ -1432,18 +1432,25 @@ REQUISITOS OBRIGATÓRIOS:
   if (wantMedia && narration.length > 0) {
     const ttsVoice = input.ttsVoice || 'nova'
     const ttsModel = input.ttsModel || DEFAULT_OPENROUTER_TTS_MODEL
+    const TTS_BATCH_CONCURRENCY = 2
     const validSegments = narration.filter(s => s.text && s.text.trim().length >= 5)
 
     console.log(`[Video] Step 11: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice}`)
 
-    for (let idx = 0; idx < validSegments.length; idx++) {
+    for (let idx = 0; idx < validSegments.length; idx += TTS_BATCH_CONCURRENCY) {
       throwIfAborted(signal)
-      const segment = validSegments[idx]
+      const batch = validSegments.slice(idx, idx + TTS_BATCH_CONCURRENCY)
+      const batchStart = idx + 1
+      const batchEnd = Math.min(idx + batch.length, validSegments.length)
 
-      onProgress?.(11, totalSteps, 'media_tts_generation',
-        `Gerando narração ${idx + 1} de ${validSegments.length} (cena ${segment.sceneNumber})...`)
+      onProgress?.(
+        11,
+        totalSteps,
+        'media_tts_generation',
+        `Gerando narrações ${batchStart}-${batchEnd} de ${validSegments.length}...`,
+      )
 
-      try {
+      const results = await Promise.allSettled(batch.map(async (segment) => {
         // Clean narration text: remove *emphasis* markers and [pause] markers
         const cleanText = segment.text
           .replace(/\*([^*]+)\*/g, '$1')
@@ -1459,8 +1466,27 @@ REQUISITOS OBRIGATÓRIOS:
           signal,
         })
 
-        // Convert blob to data URL for persistence
-        const audioDataUrl = await blobToDataUrl(result.audioBlob)
+        return {
+          segment,
+          cleanText,
+          audioDataUrl: await blobToDataUrl(result.audioBlob),
+          durationMs: Date.now() - startMs,
+          costUsd: 0.015 * (cleanText.length / 1000),
+        }
+      }))
+
+      const fulfilled = results.filter(
+        (result): result is PromiseFulfilledResult<{
+          segment: NarrationSegment
+          cleanText: string
+          audioDataUrl: string
+          durationMs: number
+          costUsd: number
+        }> => result.status === 'fulfilled',
+      )
+
+      for (const result of fulfilled) {
+        const { segment, audioDataUrl, durationMs, costUsd } = result.value
         segment.generatedAudioUrl = audioDataUrl
         ttsGenerated++
 
@@ -1477,24 +1503,38 @@ REQUISITOS OBRIGATÓRIOS:
           model: ttsModel,
           tokens_in: 0,
           tokens_out: 0,
-          cost_usd: 0.015 * (cleanText.length / 1000),
-          duration_ms: Date.now() - startMs,
+          cost_usd: costUsd,
+          duration_ms: durationMs,
         })
+      }
+
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          const errMsg = `Falha ao gerar narração TTS: ${(result.reason as Error)?.message || 'erro desconhecido'}`
+          console.error(`[Video] ${errMsg}`)
+          mediaErrors.push(errMsg)
+        }
+      }
+
+      if (fulfilled.length > 0) {
+        const batchCost = fulfilled.reduce((sum, item) => sum + (item.value.costUsd || 0), 0)
+        const batchDuration = fulfilled.reduce((sum, item) => sum + (item.value.durationMs || 0), 0)
+        const scenesLabel = fulfilled
+          .map((item) => item.value.segment.sceneNumber)
+          .filter((value, index, arr) => arr.indexOf(value) === index)
+          .slice(0, 3)
+          .join(', ')
         onProgress?.(
           11,
           totalSteps,
           'media_tts_generation',
           'Narrador TTS',
           buildVideoProgressMetaFromBatch({
-            stageMeta: `${ttsModel.split('/').pop() || ttsModel} • cena ${segment.sceneNumber} • ${Math.max(1, Math.round((Date.now() - startMs) / 1000))}s • ${formatUsd(0.015 * (cleanText.length / 1000))}`,
-            costUsd: 0.015 * (cleanText.length / 1000),
-            durationMs: Date.now() - startMs,
+            stageMeta: `${ttsModel.split('/').pop() || ttsModel} • ${fulfilled.length} narração(ões) no lote${scenesLabel ? ` • cenas ${scenesLabel}` : ''} • ${Math.max(1, Math.round(batchDuration / 1000))}s • ${formatUsd(batchCost)}`,
+            costUsd: batchCost,
+            durationMs: batchDuration,
           }),
         )
-      } catch (err) {
-        const errMsg = `Falha ao gerar narração TTS da cena ${segment.sceneNumber}: ${(err as Error).message}`
-        console.error(`[Video] ${errMsg}`)
-        mediaErrors.push(errMsg)
       }
     }
 

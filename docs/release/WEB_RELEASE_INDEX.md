@@ -1,6 +1,6 @@
 # Web Release Index
 
-Last update: 2026-04-22
+Last update: 2026-04-23
 
 ## Release Entry Points
 - .github/workflows/release-web.yml
@@ -18,7 +18,11 @@ Last update: 2026-04-22
 - .firebaserc
 - functions/src/index.ts
 - frontend/src/lib/generation-service.ts
+- frontend/src/lib/notebook-acervo-analyzer.ts
+- frontend/src/lib/video-generation-pipeline.ts
 - frontend/src/components/TaskBar.tsx
+- frontend/src/components/AgentTrailProgressModal.tsx
+- frontend/src/components/PipelineProgressPanel.tsx
 - frontend/src/pages/NewDocument.tsx
 - frontend/src/pages/ResearchNotebook.tsx
 - frontend/src/contexts/TaskManagerContext.tsx
@@ -29,6 +33,8 @@ Last update: 2026-04-22
 - `TaskManagerContext` remains the source of truth for task completion (`100%` only after promise resolve).
 - Redator rollback execution no longer pushes runtime back to a prior stage in UI; fallback and recheck now stay in `qualidade`, preserving monotonic stage semantics.
 - Mobile hardening applied to `TaskBar`, `NewDocument` and `ResearchNotebook` interaction rows to avoid overflow/compression on narrow screens.
+- Wave 22 adds safe parallelization in independent steps: thesis/acervo lightweight context loading in document generation, controlled batch concurrency in notebook acervo analysis, and controlled parallel TTS batches in video generation.
+- Progress surfaces received residual mobile hardening (`AgentTrailProgressModal` and `PipelineProgressPanel`) to preserve readability under constrained widths.
 
 ## Required Secrets (GitHub Actions)
 - FIREBASE_API_KEY

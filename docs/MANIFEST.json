@@ -1,8 +1,8 @@
 {
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
-    "updated": "2026-04-22",
-    "cycle": "wave21-mobile-progress-monotonic",
+    "updated": "2026-04-23",
+    "cycle": "wave22-safe-parallel-mobile-residual",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -384,6 +384,20 @@
         "frontend/src/pages/ResearchNotebook.tsx"
       ],
       "notes": "Fallback de qualidade do Redator permanece na fase `qualidade` para evitar regressão visual de etapa; TaskBar/NewDocument/ResearchNotebook receberam ajustes responsivos para reduzir overflow e compressão de controles em telas pequenas."
+    },
+    {
+      "id": "E5.F9",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Paralelização segura e hardening mobile residual dos painéis de progresso",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/generation-service.ts",
+        "frontend/src/lib/notebook-acervo-analyzer.ts",
+        "frontend/src/lib/video-generation-pipeline.ts",
+        "frontend/src/components/AgentTrailProgressModal.tsx",
+        "frontend/src/components/PipelineProgressPanel.tsx"
+      ],
+      "notes": "Carregamento de base complementar em paralelo no pipeline documental; lotes concorrentes controlados no Analista de acervo; TTS em batches paralelos no pipeline de vídeo; e ajustes responsivos em modais/painéis de progresso para reduzir overflow e compressão em mobile sem regressão de fallback/telemetria."
     },
     {
       "id": "E8.F1",
