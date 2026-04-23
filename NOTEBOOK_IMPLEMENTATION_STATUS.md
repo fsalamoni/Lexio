@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-243 IMPLEMENTADAS
+## Status Geral: Etapas 1-247 IMPLEMENTADAS
+
+### Etapas 244-247 — Revalidação One-shot do Release Web (Firebase + Pages) ✅
+- **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/release/WEB_RELEASE_INDEX.md`, `README.md`
+- Etapa 244: dispatch manual do orquestrador `release-web.yml` na HEAD `86df6ea25ba1218b3284d74c95e8aaea517ef503` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
+- Etapa 245: quality gates revalidados com sucesso na run `24849789759` (unit tests Python, frontend quality, lint `ruff`, functions quality e source guardrails).
+- Etapa 246: deploy ponta a ponta confirmado na mesma run: Firebase production (`job 72746968115`) e GitHub Pages (`jobs 72746968306` e `72747193773`) concluídos em sucesso, com `Release summary` (`job 72747469025`) também em sucesso.
+- Etapa 247: fechamento de governança e caching sincronizado para a Wave 28 em `PLANO`, `MANIFEST`, release index/cache e runbook principal (`README`).
 
 ### Etapas 240-243 — Hardening Estrutural do Deploy GitHub Pages ✅
 - **Arquivos**: `.github/workflows/deploy-pages.yml`, `.github/workflows/release-web.yml`

@@ -84,6 +84,13 @@
 - ✅ Revalidação local completa pós-hardening: `npm run typecheck`, `npm test` (37/37 arquivos, 286/286 testes) e `npm run build` com sucesso.
 - 🔄 Próximo bloco: acompanhar a primeira janela completa de releases no novo trilho de Pages e, se estável, consolidar a retirada operacional do legado `gh-pages` como canal primário de publicação.
 
+**Atualização incremental (2026-04-23 — Wave 28: revalidação one-shot do trilho de release):**
+- ✅ Execução one-shot do orquestrador `release-web.yml` disparada no HEAD `86df6ea` (run `24849789759`), com conclusão final `success`.
+- ✅ Quality gates revalidados em verde na mesma execução: unit tests Python, frontend quality (TypeScript + Vitest + build), lint `ruff`, functions quality e source guardrails.
+- ✅ Deploy completo confirmado ponta a ponta na run: Firebase production (`job 72746968115`), GitHub Pages build (`job 72746968306`), GitHub Pages deploy (`job 72747193773`) e `Release summary` (`job 72747469025`) todos em `success`.
+- ✅ Estabilidade do trilho oficial de Pages por artifact novamente confirmada após o hardening da Wave 27, sem regressão operacional observada.
+- 🔄 Próximo bloco: manter monitoramento contínuo das próximas janelas de release e consolidar limpeza final de referências operacionais legadas de `gh-pages` quando a estabilidade recorrente estiver comprovada.
+
 ## Plano Mestre Executável (Atualizado)
 
 ### Faixa A — Consolidado em produção (já implementado)

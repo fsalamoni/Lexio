@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-23",
-    "cycle": "wave27-pages-workflow-deploy-hardening",
+    "cycle": "wave28-release-one-shot-revalidation",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -469,6 +469,19 @@
         ".github/workflows/release-web.yml"
       ],
       "notes": "Publicação de Pages migrou do push legado em `gh-pages` para a trilha oficial por artefato (`configure-pages` + `upload-pages-artifact` + `deploy-pages`), com timeout de deploy ampliado e permissões `pages:write`/`id-token:write` alinhadas no workflow reutilizável e no orquestrador de release."
+    },
+    {
+      "id": "E5.F15",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Revalidacao one-shot do trilho de release web",
+      "state": "implemented",
+      "files": [
+        ".github/workflows/release-web.yml",
+        "docs/release/WEB_RELEASE_CACHE.md",
+        "docs/release/WEB_RELEASE_INDEX.md",
+        "README.md"
+      ],
+      "notes": "Run one-shot `24849789759` executada no HEAD pós-hardening com quality gates, deploy Firebase production, deploy GitHub Pages (build+deploy) e release summary em sucesso, confirmando estabilidade operacional recorrente do trilho de release."
     },
     {
       "id": "E8.F1",

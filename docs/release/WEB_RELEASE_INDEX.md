@@ -9,6 +9,15 @@ Last update: 2026-04-23
 - .github/workflows/firebase-redesign-v2.yml
 - .github/workflows/test.yml
 
+## Latest One-shot Validation (Wave 28 — 2026-04-23)
+- release-web run `24849789759`: success
+- Quality gates: success
+- Deploy Firebase production: success
+- Deploy GitHub Pages / build: success
+- Deploy GitHub Pages / deploy: success
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`)
+- Release summary: success
+
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs
 - scripts/firebase-authorized-domains.mjs
