@@ -12,6 +12,8 @@ Last update: 2026-04-23
 - Wave 29 release closeout: completed (run 24853129457 success)
 - Wave 30 aux execution-state hardening: completed (local validation)
 - Wave 30 release closeout: completed (run 24854808367 success)
+- Wave 31 execution-state analytics hardening: completed (local validation)
+- Wave 31 release closeout: pending
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -39,17 +41,20 @@ Last update: 2026-04-23
 - Release workflow dispatch (wave30): completed (release-web.yml run 24854808367 success)
 
 ## Current Wave Cache (2026-04-23)
-- Wave tag: wave30-aux-execution-state
-- Scope: expansão do contrato explícito de `executionState` para pipelines auxiliares (estúdio, áudio, apresentação e vídeo), com consumo direto desse estado nos wrappers de tarefa do notebook (Classic + V2).
-- Files touched (wave30/code+docs):
+- Wave tag: wave31-execution-state-analytics
+- Scope: consolidação analítica de `execution_state` em custos (global/per-function), com propagação de metadados operacionais (`retry_count`, `used_fallback`, `fallback_from`) dos pipelines auxiliares até a persistência notebook e leitura em dashboards de custos pessoal/agregado.
+- Files touched (wave31/code+docs):
+	- frontend/src/lib/cost-analytics.ts
 	- frontend/src/lib/notebook-studio-pipeline.ts
 	- frontend/src/lib/audio-generation-pipeline.ts
 	- frontend/src/lib/presentation-generation-pipeline.ts
-	- frontend/src/lib/video-pipeline-progress.ts
 	- frontend/src/lib/video-generation-pipeline.ts
+	- frontend/src/lib/literal-video-production.ts
+	- frontend/src/lib/notebook-acervo-analyzer.ts
 	- frontend/src/pages/ResearchNotebook.tsx
 	- frontend/src/pages/labs/ResearchNotebookV2.tsx
-	- frontend/src/lib/video-pipeline-progress.test.ts
+	- frontend/src/pages/CostTokensPage.tsx
+	- frontend/src/pages/PlatformCostsPage.tsx
 	- docs/PLANO.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
 	- docs/release/WEB_RELEASE_INDEX.md
@@ -61,17 +66,21 @@ Last update: 2026-04-23
 - frontend test: completed
 - frontend build: completed
 - frontend tests result: 38 files, 290 tests passed
-- release-web dispatch (wave30): completed (run 24854808367)
-- Deploy Firebase production (wave30): completed (job 72764941682)
-- Deploy GitHub Pages / build (wave30): completed (job 72764941896)
-- Deploy GitHub Pages / deploy (wave30): completed (job 72765128773)
-- Release summary (wave30): completed (job 72765376017)
-- Deploy redesign V2 (wave30): skipped by input (job 72764942409)
+- release-web dispatch (wave31): pending
+- Deploy Firebase production (wave31): pending
+- Deploy GitHub Pages / build (wave31): pending
+- Deploy GitHub Pages / deploy (wave31): pending
+- Release summary (wave31): pending
+- Deploy redesign V2 (wave31): pending decision (default expected: skipped by input)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 30 closeout completed (git flow + release lane fully executed).
+- Run `git pull --rebase --autostash origin main` before closeout commit.
+- Commit/push da wave31 em `main` com código + governança sincronizados.
+- Disparar `release-web.yml` (one-shot) com `deploy_firebase=true`, `deploy_github_pages=true`, `deploy_redesign_v2=false`.
+- Monitorar quality gates e jobs de deploy até status final `completed`.
+- Sincronizar IDs reais da run/jobs em `WEB_RELEASE_INDEX.md`, `WEB_RELEASE_CACHE.md` e `NOTEBOOK_IMPLEMENTATION_STATUS.md` ao concluir o closeout.
 
 ## Wave 30 Release Outcome
 - release-web dispatch (run 24854808367): success.

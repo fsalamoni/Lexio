@@ -19,12 +19,12 @@ Last update: 2026-04-23
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72764942409`)
 - Release summary: success (`job 72765376017`)
 
-## Current Local Validation (Wave 30 — 2026-04-23)
-- Scope: `executionState` explícito em pipelines auxiliares (estúdio/áudio/apresentação/vídeo) + consumo direto de estado nos wrappers de tarefa V1/V2
+## Current Local Validation (Wave 31 — 2026-04-23)
+- Scope: analytics de custo por `execution_state` com propagação de metadados operacionais (`retry/fallback`) em pipelines auxiliares + persistência notebook V1/V2 + leitura operacional em dashboards de custo
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 290 tests)
 - Frontend build: success
-- Release dispatch: completed (`release-web.yml`, run `24854808367`)
+- Release dispatch: pending in this cycle (`release-web.yml`)
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs
@@ -44,6 +44,7 @@ Last update: 2026-04-23
 - frontend/src/lib/audio-generation-pipeline.ts
 - frontend/src/lib/presentation-generation-pipeline.ts
 - frontend/src/lib/video-generation-pipeline.ts
+- frontend/src/lib/literal-video-production.ts
 - frontend/src/lib/video-pipeline-progress.ts
 - frontend/src/components/DraggablePanel.tsx
 - frontend/src/components/TaskBar.tsx
@@ -52,6 +53,8 @@ Last update: 2026-04-23
 - frontend/src/pages/NewDocument.tsx
 - frontend/src/pages/ResearchNotebook.tsx
 - frontend/src/pages/labs/ResearchNotebookV2.tsx
+- frontend/src/pages/CostTokensPage.tsx
+- frontend/src/pages/PlatformCostsPage.tsx
 - frontend/src/contexts/TaskManagerContext.tsx
 
 ## Runtime Hardening (2026-04-22)

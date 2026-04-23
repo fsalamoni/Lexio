@@ -95,6 +95,7 @@ export default function PlatformCostsPage() {
 
   const functionChart = useMemo(() => breakdown?.by_function.slice(0, 8).map(row => ({ label: row.label, usd: row.cost_usd })) ?? [], [breakdown])
   const providerChart = useMemo(() => breakdown?.by_provider.slice(0, 8).map(row => ({ label: row.label, usd: row.cost_usd })) ?? [], [breakdown])
+  const executionStateChart = useMemo(() => breakdown?.by_execution_state?.slice(0, 8).map(row => ({ label: row.label, usd: row.cost_usd })) ?? [], [breakdown])
 
   if (!isReady) {
     return (
@@ -211,6 +212,23 @@ export default function PlatformCostsPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+
+        <div className="v2-panel p-5 xl:col-span-2">
+          <h2 className="mb-4 text-lg font-semibold text-[var(--v2-ink-strong)]">Custo por estado de execução</h2>
+          {executionStateChart.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={executionStateChart} layout="vertical" margin={{ left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis type="number" tickFormatter={value => fmtUsd(Number(value))} />
+                <YAxis type="category" dataKey="label" width={140} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(value: number) => [fmtUsd(value), 'USD']} />
+                <Bar dataKey="usd" fill="#0f766e" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-sm text-[var(--v2-ink-faint)]">Nenhum estado de execução consolidado ainda.</p>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6">
@@ -218,6 +236,7 @@ export default function PlatformCostsPage() {
         <BreakdownTable title="Por modelo" rows={breakdown.by_model} emptyLabel="Nenhum modelo com consumo registrado." />
         <BreakdownTable title="Por função" rows={breakdown.by_function} emptyLabel="Nenhuma função com consumo registrado." />
         <BreakdownTable title="Por fase" rows={breakdown.by_phase} emptyLabel="Nenhuma fase com consumo registrado." />
+        <BreakdownTable title="Por estado de execução" rows={breakdown.by_execution_state || []} emptyLabel="Nenhum estado de execução com consumo registrado." />
         <BreakdownTable title="Por agente" rows={breakdown.by_agent} emptyLabel="Nenhum agente com consumo registrado." />
         <BreakdownTable title="Por tipo de documento" rows={breakdown.by_document_type} emptyLabel="Nenhum tipo de documento com consumo registrado." />
       </div>

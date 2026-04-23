@@ -1,5 +1,6 @@
 import { formatCost } from './currency-utils'
 import { DOCTYPE_LABELS } from './constants'
+import type { PipelineExecutionState } from './pipeline-execution-contract'
 
 export type UsageFunctionKey = 'document_generation' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline'
 
@@ -19,6 +20,10 @@ export interface UsageExecutionRecord {
   total_tokens: number
   cost_usd: number
   duration_ms: number
+  execution_state?: PipelineExecutionState | null
+  retry_count?: number | null
+  used_fallback?: boolean | null
+  fallback_from?: string | null
   runtime_profile?: string | null
   runtime_hints?: string | null
   runtime_concurrency?: number | null
@@ -54,6 +59,7 @@ export interface CostBreakdown extends UsageSummary {
   by_model: CostBreakdownItem[]
   by_function: CostBreakdownItem[]
   by_phase: CostBreakdownItem[]
+  by_execution_state?: CostBreakdownItem[]
   by_agent: CostBreakdownItem[]
   by_agent_function: CostBreakdownItem[]
   by_document_type: CostBreakdownItem[]
@@ -63,6 +69,8 @@ export interface CostBreakdown extends UsageSummary {
   by_phase_per_function?: Record<string, CostBreakdownItem[]>
   /** Per-function provider breakdown — keys are UsageFunctionKey values. */
   by_provider_per_function?: Record<string, CostBreakdownItem[]>
+  /** Per-function execution-state breakdown — keys are UsageFunctionKey values. */
+  by_execution_state_per_function?: Record<string, CostBreakdownItem[]>
 }
 
 export interface UsageDocumentSummary {
@@ -197,6 +205,28 @@ const STUDIO_ARTIFACT_LABELS: Record<string, string> = {
   outro: 'Outro',
 }
 
+const EXECUTION_STATE_LABELS: Record<PipelineExecutionState, string> = {
+  queued: 'Em fila',
+  running: 'Executando',
+  waiting_io: 'Aguardando I/O',
+  retrying: 'Reprocessando',
+  persisting: 'Persistindo',
+  completed: 'Concluído',
+  failed: 'Falhou',
+  cancelled: 'Cancelado',
+}
+
+const EXECUTION_STATE_VALUES: ReadonlySet<PipelineExecutionState> = new Set([
+  'queued',
+  'running',
+  'waiting_io',
+  'retrying',
+  'persisting',
+  'completed',
+  'failed',
+  'cancelled',
+])
+
 function round6(value: number) {
   return Number(value.toFixed(6))
 }
@@ -259,6 +289,73 @@ export function getProviderLabel(model?: string | null): string {
   return providerKey.charAt(0).toUpperCase() + providerKey.slice(1)
 }
 
+function normalizeExecutionState(state?: PipelineExecutionState | string | null): PipelineExecutionState | null {
+  if (!state) return null
+  const normalized = String(state).trim().toLowerCase() as PipelineExecutionState
+  if (!EXECUTION_STATE_VALUES.has(normalized)) return null
+  return normalized
+}
+
+function inferExecutionStateFromPhase(phase: string): PipelineExecutionState {
+  const normalizedPhase = phase.toLowerCase()
+  if (!normalizedPhase) return 'running'
+
+  if (
+    normalizedPhase === 'concluido'
+    || normalizedPhase.endsWith('_total')
+    || normalizedPhase.includes('finalizado')
+  ) {
+    return 'completed'
+  }
+
+  if (
+    normalizedPhase.includes('falh')
+    || normalizedPhase.includes('erro')
+  ) {
+    return 'failed'
+  }
+
+  if (
+    normalizedPhase.includes('cancel')
+    || normalizedPhase.includes('abort')
+  ) {
+    return 'cancelled'
+  }
+
+  if (
+    normalizedPhase.includes('salvand')
+    || normalizedPhase.includes('persist')
+  ) {
+    return 'persisting'
+  }
+
+  if (
+    normalizedPhase.includes('media_')
+    || normalizedPhase.includes('literal')
+    || normalizedPhase.includes('render')
+    || normalizedPhase.includes('image_generation')
+    || normalizedPhase.includes('tts_generation')
+    || normalizedPhase.includes('soundtrack_generation')
+    || normalizedPhase.includes('video_clip_generation')
+  ) {
+    return 'waiting_io'
+  }
+
+  if (
+    normalizedPhase.includes('retry')
+    || normalizedPhase.includes('rollback')
+  ) {
+    return 'retrying'
+  }
+
+  return 'running'
+}
+
+export function getExecutionStateLabel(state?: PipelineExecutionState | string | null): string {
+  const normalized = normalizeExecutionState(state)
+  return normalized ? EXECUTION_STATE_LABELS[normalized] : 'Não informado'
+}
+
 export function createUsageExecutionRecord(input: {
   source_type: UsageFunctionKey
   source_id: string
@@ -270,6 +367,10 @@ export function createUsageExecutionRecord(input: {
   tokens_out?: number
   cost_usd?: number
   duration_ms?: number
+  execution_state?: PipelineExecutionState | string | null
+  retry_count?: number | null
+  used_fallback?: boolean | null
+  fallback_from?: string | null
   runtime_profile?: string | null
   runtime_hints?: string | null
   runtime_concurrency?: number | null
@@ -291,6 +392,18 @@ export function createUsageExecutionRecord(input: {
   const runtimeCap = Number.isFinite(input.runtime_cap)
     ? Math.max(1, Math.round(input.runtime_cap as number))
     : null
+  const retryCount = Number.isFinite(input.retry_count)
+    ? Math.max(0, Math.round(input.retry_count as number))
+    : null
+  const explicitExecutionState = normalizeExecutionState(input.execution_state)
+  const inferredExecutionState = explicitExecutionState
+    || ((retryCount ?? 0) > 0 ? 'retrying' : inferExecutionStateFromPhase(input.phase))
+  const fallbackFrom = typeof input.fallback_from === 'string' && input.fallback_from.trim().length > 0
+    ? input.fallback_from.trim()
+    : null
+  const usedFallback = input.used_fallback == null
+    ? (fallbackFrom ? true : null)
+    : Boolean(input.used_fallback)
 
   return {
     source_type: input.source_type,
@@ -308,6 +421,10 @@ export function createUsageExecutionRecord(input: {
     total_tokens: tokensIn + tokensOut,
     cost_usd: round6(input.cost_usd ?? 0),
     duration_ms: Math.max(0, input.duration_ms ?? 0),
+    execution_state: inferredExecutionState,
+    retry_count: retryCount,
+    used_fallback: usedFallback,
+    fallback_from: fallbackFrom,
     runtime_profile: runtimeProfile,
     runtime_hints: runtimeHints,
     runtime_concurrency: runtimeConcurrency,
@@ -393,11 +510,18 @@ export function buildCostBreakdown(
   const by_model_per_function: Record<string, CostBreakdownItem[]> = {}
   const by_phase_per_function: Record<string, CostBreakdownItem[]> = {}
   const by_provider_per_function: Record<string, CostBreakdownItem[]> = {}
+  const by_execution_state_per_function: Record<string, CostBreakdownItem[]> = {}
 
   for (const [funcKey, funcExecs] of execsByFunction.entries()) {
     by_model_per_function[funcKey] = aggregateBreakdown(funcExecs, e => e.model || 'unknown_model', e => e.model_label, exchangeRateBrl)
     by_phase_per_function[funcKey] = aggregateBreakdown(funcExecs, e => e.phase, e => e.phase_label, exchangeRateBrl)
     by_provider_per_function[funcKey] = aggregateBreakdown(funcExecs, e => getProviderKey(e.model), e => getProviderLabel(e.model), exchangeRateBrl)
+    by_execution_state_per_function[funcKey] = aggregateBreakdown(
+      funcExecs,
+      e => e.execution_state || 'unknown_execution_state',
+      e => getExecutionStateLabel(e.execution_state),
+      exchangeRateBrl,
+    )
   }
 
   return {
@@ -408,6 +532,12 @@ export function buildCostBreakdown(
     by_model: aggregateBreakdown(executions, execution => execution.model || 'unknown_model', execution => execution.model_label, exchangeRateBrl),
     by_function: aggregateBreakdown(executions, execution => execution.function_key, execution => execution.function_label, exchangeRateBrl),
     by_phase: aggregateBreakdown(executions, execution => execution.phase, execution => execution.phase_label, exchangeRateBrl),
+    by_execution_state: aggregateBreakdown(
+      executions,
+      execution => execution.execution_state || 'unknown_execution_state',
+      execution => getExecutionStateLabel(execution.execution_state),
+      exchangeRateBrl,
+    ),
     by_agent: aggregateBreakdown(executions, execution => execution.agent_name, execution => execution.agent_name, exchangeRateBrl),
     by_agent_function: aggregateBreakdown(
       executions,
@@ -424,6 +554,7 @@ export function buildCostBreakdown(
     by_model_per_function,
     by_phase_per_function,
     by_provider_per_function,
+    by_execution_state_per_function,
   }
 }
 
@@ -443,6 +574,10 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
         tokens_out: execution.tokens_out,
         cost_usd: execution.cost_usd,
         duration_ms: execution.duration_ms,
+        execution_state: execution.execution_state,
+        retry_count: execution.retry_count,
+        used_fallback: execution.used_fallback,
+        fallback_from: execution.fallback_from,
         runtime_profile: execution.runtime_profile,
         runtime_hints: execution.runtime_hints,
         runtime_concurrency: execution.runtime_concurrency,
@@ -469,6 +604,10 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
         tokens_out: exec.tokens_out,
         cost_usd: exec.cost_usd,
         duration_ms: exec.duration_ms,
+        execution_state: exec.execution_state,
+        retry_count: exec.retry_count,
+        used_fallback: exec.used_fallback,
+        fallback_from: exec.fallback_from,
         runtime_profile: exec.runtime_profile,
         runtime_hints: exec.runtime_hints,
         runtime_concurrency: exec.runtime_concurrency,
@@ -516,6 +655,10 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
       tokens_out: exec.tokens_out,
       cost_usd: exec.cost_usd,
       duration_ms: exec.duration_ms,
+      execution_state: exec.execution_state,
+      retry_count: exec.retry_count,
+      used_fallback: exec.used_fallback,
+      fallback_from: exec.fallback_from,
       runtime_profile: exec.runtime_profile,
       runtime_hints: exec.runtime_hints,
       runtime_concurrency: exec.runtime_concurrency,
@@ -540,6 +683,10 @@ export function extractThesisSessionExecutions(session: ThesisUsageSessionSummar
       tokens_out: execution.tokens_out,
       cost_usd: execution.cost_usd,
       duration_ms: execution.duration_ms,
+      execution_state: execution.execution_state,
+      retry_count: execution.retry_count,
+      used_fallback: execution.used_fallback,
+      fallback_from: execution.fallback_from,
       runtime_profile: execution.runtime_profile,
       runtime_hints: execution.runtime_hints,
       runtime_concurrency: execution.runtime_concurrency,
@@ -590,6 +737,10 @@ export function extractAcervoUsageExecutions(acervoDoc: AcervoUsageSummary): Usa
     tokens_out: execution.tokens_out,
     cost_usd: execution.cost_usd,
     duration_ms: execution.duration_ms,
+    execution_state: execution.execution_state,
+    retry_count: execution.retry_count,
+    used_fallback: execution.used_fallback,
+    fallback_from: execution.fallback_from,
     runtime_profile: execution.runtime_profile,
     runtime_hints: execution.runtime_hints,
     runtime_concurrency: execution.runtime_concurrency,
@@ -620,6 +771,10 @@ export function extractNotebookUsageExecutions(notebook: NotebookUsageSummary): 
       tokens_out: execution.tokens_out,
       cost_usd: execution.cost_usd,
       duration_ms: execution.duration_ms,
+      execution_state: execution.execution_state,
+      retry_count: execution.retry_count,
+      used_fallback: execution.used_fallback,
+      fallback_from: execution.fallback_from,
       runtime_profile: execution.runtime_profile,
       runtime_hints: execution.runtime_hints,
       runtime_concurrency: execution.runtime_concurrency,

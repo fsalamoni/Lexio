@@ -124,6 +124,7 @@ function makeExecution(
   model: string,
   durationMs: number,
   costUsd = 0,
+  executionState: VideoGenerationStepExecution['execution_state'] = 'waiting_io',
 ): VideoGenerationStepExecution {
   const agentName = {
     media_image_generation: 'Gerador de Imagens',
@@ -141,6 +142,7 @@ function makeExecution(
     tokens_out: 0,
     cost_usd: Math.max(0, costUsd),
     duration_ms: Math.max(0, Math.round(durationMs)),
+    execution_state: executionState,
   }
 }
 

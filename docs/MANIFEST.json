@@ -546,6 +546,26 @@
       "notes": "Release one-shot `24854808367` em HEAD `681c767` concluída com quality gates, deploy Firebase production (`72764941682`), Pages build (`72764941896`), Pages deploy (`72765128773`) e release summary (`72765376017`) em sucesso; redesign V2 permaneceu opcional/skipped por input (`72764942409`)."
     },
     {
+      "id": "E5.F20",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Analytics de custo por estado de execução e propagação operacional",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/cost-analytics.ts",
+        "frontend/src/lib/notebook-studio-pipeline.ts",
+        "frontend/src/lib/audio-generation-pipeline.ts",
+        "frontend/src/lib/presentation-generation-pipeline.ts",
+        "frontend/src/lib/video-generation-pipeline.ts",
+        "frontend/src/lib/literal-video-production.ts",
+        "frontend/src/lib/notebook-acervo-analyzer.ts",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/pages/CostTokensPage.tsx",
+        "frontend/src/pages/PlatformCostsPage.tsx"
+      ],
+      "notes": "A camada de analytics passou a consolidar custos por `execution_state` (global e por função), com inferência retrocompatível para execuções legadas; pipelines auxiliares e persistência notebook propagam estado/retry/fallback em `llm_executions`; e as páginas de custos pessoal/agregada exibem a nova dimensão operacional para análise de eficiência e falhas."
+    },
+    {
       "id": "E8.F1",
       "epic": "Redesign V2",
       "name": "Convivência controlada entre shells v1 e v2",

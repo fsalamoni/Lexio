@@ -1028,6 +1028,10 @@ export default function ResearchNotebookV2() {
       tokens_out: number
       cost_usd: number
       duration_ms: number
+      execution_state?: PipelineExecutionState
+      retry_count?: number
+      used_fallback?: boolean
+      fallback_from?: string | null
       runtime_profile?: string | null
       runtime_hints?: string | null
       runtime_concurrency?: number | null
@@ -1062,6 +1066,10 @@ export default function ResearchNotebookV2() {
         tokens_out: execution.tokens_out,
         cost_usd: execution.cost_usd,
         duration_ms: execution.duration_ms,
+        execution_state: execution.execution_state,
+        retry_count: execution.retry_count,
+        used_fallback: execution.used_fallback,
+        fallback_from: execution.fallback_from,
         runtime_profile: execution.runtime_profile,
         runtime_hints: execution.runtime_hints,
         runtime_concurrency: execution.runtime_concurrency,
@@ -1114,6 +1122,10 @@ export default function ResearchNotebookV2() {
       tokens_out: number
       cost_usd: number
       duration_ms: number
+      execution_state?: PipelineExecutionState
+      retry_count?: number
+      used_fallback?: boolean
+      fallback_from?: string | null
       runtime_profile?: string | null
       runtime_hints?: string | null
       runtime_concurrency?: number | null
@@ -1134,6 +1146,10 @@ export default function ResearchNotebookV2() {
         tokens_out: execution.tokens_out,
         cost_usd: execution.cost_usd,
         duration_ms: execution.duration_ms,
+        execution_state: execution.execution_state,
+        retry_count: execution.retry_count,
+        used_fallback: execution.used_fallback,
+        fallback_from: execution.fallback_from,
         runtime_profile: execution.runtime_profile,
         runtime_hints: execution.runtime_hints,
         runtime_concurrency: execution.runtime_concurrency,
@@ -1295,6 +1311,14 @@ export default function ResearchNotebookV2() {
           tokens_out: execution.tokens_out,
           cost_usd: execution.cost_usd,
           duration_ms: execution.duration_ms,
+          execution_state: execution.execution_state,
+          retry_count: execution.retry_count,
+          used_fallback: execution.used_fallback,
+          fallback_from: execution.fallback_from,
+          runtime_profile: execution.runtime_profile,
+          runtime_hints: execution.runtime_hints,
+          runtime_concurrency: execution.runtime_concurrency,
+          runtime_cap: execution.runtime_cap,
         }),
       )
       const freshNotebookForExecutions = await getFreshNotebookOrThrow(notebookId)

@@ -283,6 +283,10 @@ function SectionBreakdown({
         <BreakdownTable rows={breakdown.by_phase} emptyLabel="Nenhuma fase consolidada ainda." />
       </CollapsibleCard>
 
+      <CollapsibleCard id={`${sectionId}_tbl_execution_state`} title="Por estado de execução" collapseState={collapseState} onToggle={onToggle}>
+        <BreakdownTable rows={breakdown.by_execution_state || []} emptyLabel="Nenhum estado de execução consolidado ainda." />
+      </CollapsibleCard>
+
       <CollapsibleCard id={`${sectionId}_tbl_agent`} title="Por agente" collapseState={collapseState} onToggle={onToggle}>
         <BreakdownTable rows={breakdown.by_agent} emptyLabel="Nenhum agente com consumo registrado." />
       </CollapsibleCard>
@@ -383,6 +387,7 @@ export default function CostTokensPage() {
       const funcModels = (funcKey && breakdown.by_model_per_function?.[funcKey]) || breakdown.by_model
       const funcPhases = (funcKey && breakdown.by_phase_per_function?.[funcKey]) || breakdown.by_phase
       const funcProviders = (funcKey && breakdown.by_provider_per_function?.[funcKey]) || breakdown.by_provider
+      const funcExecutionStates = (funcKey && breakdown.by_execution_state_per_function?.[funcKey]) || breakdown.by_execution_state || []
       return {
         total_cost_usd: costUsd,
         total_cost_brl: costBrl,
@@ -395,6 +400,7 @@ export default function CostTokensPage() {
         by_model: funcModels,
         by_function: func ? [func] : [],
         by_phase: funcPhases,
+        by_execution_state: funcExecutionStates,
         by_agent: agentItems.map(item => ({
           ...item,
           key: item.key.replace(/^[^:]+::/, ''),
@@ -690,6 +696,10 @@ export default function CostTokensPage() {
 
             <CollapsibleCard id="general_tbl_phase" title="Por fase" collapseState={collapseState} onToggle={toggleCollapse}>
               <BreakdownTable rows={breakdown.by_phase} emptyLabel="Nenhuma fase consolidada ainda." />
+            </CollapsibleCard>
+
+            <CollapsibleCard id="general_tbl_execution_state" title="Por estado de execução" collapseState={collapseState} onToggle={toggleCollapse}>
+              <BreakdownTable rows={breakdown.by_execution_state || []} emptyLabel="Nenhum estado de execução consolidado ainda." />
             </CollapsibleCard>
 
             <CollapsibleCard id="general_tbl_agent" title="Por agente" collapseState={collapseState} onToggle={toggleCollapse}>

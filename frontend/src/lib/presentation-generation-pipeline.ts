@@ -133,6 +133,10 @@ function toExecution(
     tokens_out: result.tokens_out,
     cost_usd: result.cost_usd,
     duration_ms: result.duration_ms,
+    execution_state: resolveExecutionStateFromRetryCount(result.operational?.totalRetryCount),
+    retry_count: result.operational?.totalRetryCount,
+    used_fallback: result.operational?.fallbackUsed,
+    fallback_from: result.operational?.fallbackFrom ?? null,
   }
 }
 
@@ -276,6 +280,7 @@ export async function generatePresentationMediaAssets(
         tokens_out: 0,
         cost_usd: generated.cost_usd,
         duration_ms: Date.now() - renderStartedAt,
+        execution_state: 'waiting_io',
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -290,6 +295,7 @@ export async function generatePresentationMediaAssets(
         tokens_out: 0,
         cost_usd: 0,
         duration_ms: Date.now() - renderStartedAt,
+        execution_state: 'waiting_io',
       }
     }
 

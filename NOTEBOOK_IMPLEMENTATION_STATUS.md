@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-265 IMPLEMENTADAS
+## Status Geral: Etapas 1-269 IMPLEMENTADAS
+
+### Etapas 266-269 — Analytics por Estado de Execução em Custos (Wave 31) ✅
+- **Arquivos**: `frontend/src/lib/cost-analytics.ts`, `frontend/src/lib/notebook-studio-pipeline.ts`, `frontend/src/lib/audio-generation-pipeline.ts`, `frontend/src/lib/presentation-generation-pipeline.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/lib/literal-video-production.ts`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/pages/CostTokensPage.tsx`, `frontend/src/pages/PlatformCostsPage.tsx`
+- Etapa 266: `cost-analytics.ts` foi ampliado com `execution_state`, `retry_count`, `used_fallback` e `fallback_from` em `UsageExecutionRecord`, incluindo inferência retrocompatível por fase/retry e novos agregados `by_execution_state` e `by_execution_state_per_function`.
+- Etapa 267: pipelines auxiliares e fluxos de persistência do notebook passaram a propagar metadados operacionais completos (estado/retry/fallback) em estúdio, áudio, apresentação, vídeo literal e análise de acervo, preservando rastreabilidade ponta a ponta nas execuções salvas.
+- Etapa 268: dashboards de custos pessoal e agregado foram atualizados para consumir a nova dimensão por estado de execução, com tabela dedicada no `CostTokensPage.tsx` (global + por seção) e gráfico+tabela no `PlatformCostsPage.tsx`.
+- Etapa 269: validação local completa executada sem regressões: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos**, **290/290 testes**), `npm run build` e `get_errors` sem problemas.
 
 ### Etapas 262-265 — Closeout Operacional da Wave 30 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`

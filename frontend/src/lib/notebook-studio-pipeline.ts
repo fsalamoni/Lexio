@@ -62,6 +62,10 @@ export interface StudioStepExecution {
   tokens_out: number
   cost_usd: number
   duration_ms: number
+  execution_state?: PipelineExecutionState
+  retry_count?: number
+  used_fallback?: boolean
+  fallback_from?: string | null
 }
 
 export interface StudioProgressMeta {
@@ -107,6 +111,26 @@ function buildStudioProgressMeta(result: LLMResult): StudioProgressMeta {
     retryCount: result.operational?.totalRetryCount,
     usedFallback: result.operational?.fallbackUsed,
     fallbackFrom: result.operational?.fallbackFrom,
+  }
+}
+
+function buildStudioExecution(
+  phase: string,
+  agentName: string,
+  result: LLMResult,
+): StudioStepExecution {
+  return {
+    phase,
+    agent_name: agentName,
+    model: result.model,
+    tokens_in: result.tokens_in,
+    tokens_out: result.tokens_out,
+    cost_usd: result.cost_usd,
+    duration_ms: result.duration_ms,
+    execution_state: resolveExecutionStateFromRetryCount(result.operational?.totalRetryCount),
+    retry_count: result.operational?.totalRetryCount,
+    used_fallback: result.operational?.fallbackUsed,
+    fallback_from: result.operational?.fallbackFrom ?? null,
   }
 }
 
@@ -937,15 +961,7 @@ export async function runStudioPipeline(
     0.2,
     { signal },
   )
-  executions.push({
-    phase: `studio_pesquisador_${input.artifactType}`,
-    agent_name: 'Pesquisador do Estúdio',
-    model: researchResult.model,
-    tokens_in: researchResult.tokens_in,
-    tokens_out: researchResult.tokens_out,
-    cost_usd: researchResult.cost_usd,
-    duration_ms: researchResult.duration_ms,
-  })
+  executions.push(buildStudioExecution(`studio_pesquisador_${input.artifactType}`, 'Pesquisador do Estúdio', researchResult))
   onProgress?.(1, 3, 'Pesquisa de fontes concluída.', buildStudioProgressMeta(researchResult))
 
   // Brief pause to avoid hitting rate limits on consecutive calls
@@ -968,15 +984,7 @@ export async function runStudioPipeline(
     0.4,
     { signal },
   )
-  executions.push({
-    phase: `${specialistRole}_${input.artifactType}`,
-    agent_name: SPECIALIST_LABELS[specialistRole],
-    model: specialistResult.model,
-    tokens_in: specialistResult.tokens_in,
-    tokens_out: specialistResult.tokens_out,
-    cost_usd: specialistResult.cost_usd,
-    duration_ms: specialistResult.duration_ms,
-  })
+  executions.push(buildStudioExecution(`${specialistRole}_${input.artifactType}`, SPECIALIST_LABELS[specialistRole], specialistResult))
   onProgress?.(2, 3, `${SPECIALIST_LABELS[specialistRole]} concluiu a primeira versão.`, buildStudioProgressMeta(specialistResult))
   // Brief pause to avoid hitting rate limits on consecutive calls
   await sleep(1000, signal)
@@ -997,15 +1005,7 @@ export async function runStudioPipeline(
     0.2,
     { signal },
   )
-  executions.push({
-    phase: `studio_revisor_${input.artifactType}`,
-    agent_name: 'Revisor de Qualidade',
-    model: reviewResult.model,
-    tokens_in: reviewResult.tokens_in,
-    tokens_out: reviewResult.tokens_out,
-    cost_usd: reviewResult.cost_usd,
-    duration_ms: reviewResult.duration_ms,
-  })
+  executions.push(buildStudioExecution(`studio_revisor_${input.artifactType}`, 'Revisor de Qualidade', reviewResult))
   onProgress?.(3, 3, 'Revisão de qualidade concluída.', buildStudioProgressMeta(reviewResult))
 
   return {
@@ -1039,6 +1039,7 @@ export async function generateStructuredVisualArtifactMedia(
           tokens_out: 0,
           cost_usd: 0,
           duration_ms: Date.now() - startedAt,
+          execution_state: 'waiting_io',
         },
       }
     }
@@ -1054,6 +1055,7 @@ export async function generateStructuredVisualArtifactMedia(
           tokens_out: 0,
           cost_usd: 0,
           duration_ms: Date.now() - startedAt,
+          execution_state: 'waiting_io',
         },
       }
     }
@@ -1069,6 +1071,7 @@ export async function generateStructuredVisualArtifactMedia(
           tokens_out: 0,
           cost_usd: 0,
           duration_ms: Date.now() - startedAt,
+          execution_state: 'waiting_io',
         },
       }
     }

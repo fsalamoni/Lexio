@@ -2693,6 +2693,10 @@ Instruções:
       tokens_out: number
       cost_usd: number
       duration_ms: number
+      execution_state?: PipelineExecutionState
+      retry_count?: number
+      used_fallback?: boolean
+      fallback_from?: string | null
       runtime_profile?: string | null
       runtime_hints?: string | null
       runtime_concurrency?: number | null
@@ -2729,6 +2733,10 @@ Instruções:
         tokens_out: ex.tokens_out,
         cost_usd: ex.cost_usd,
         duration_ms: ex.duration_ms,
+        execution_state: ex.execution_state,
+        retry_count: ex.retry_count,
+        used_fallback: ex.used_fallback,
+        fallback_from: ex.fallback_from,
         runtime_profile: ex.runtime_profile,
         runtime_hints: ex.runtime_hints,
         runtime_concurrency: ex.runtime_concurrency,
@@ -2784,6 +2792,10 @@ Instruções:
       tokens_out: number
       cost_usd: number
       duration_ms: number
+      execution_state?: PipelineExecutionState
+      retry_count?: number
+      used_fallback?: boolean
+      fallback_from?: string | null
       runtime_profile?: string | null
       runtime_hints?: string | null
       runtime_concurrency?: number | null
@@ -2803,6 +2815,10 @@ Instruções:
         tokens_out: ex.tokens_out,
         cost_usd: ex.cost_usd,
         duration_ms: ex.duration_ms,
+        execution_state: ex.execution_state,
+        retry_count: ex.retry_count,
+        used_fallback: ex.used_fallback,
+        fallback_from: ex.fallback_from,
         runtime_profile: ex.runtime_profile,
         runtime_hints: ex.runtime_hints,
         runtime_concurrency: ex.runtime_concurrency,
@@ -3163,6 +3179,14 @@ Instruções:
           tokens_out: ex.tokens_out,
           cost_usd: ex.cost_usd,
           duration_ms: ex.duration_ms,
+          execution_state: ex.execution_state,
+          retry_count: ex.retry_count,
+          used_fallback: ex.used_fallback,
+          fallback_from: ex.fallback_from,
+          runtime_profile: ex.runtime_profile,
+          runtime_hints: ex.runtime_hints,
+          runtime_concurrency: ex.runtime_concurrency,
+          runtime_cap: ex.runtime_cap,
         })
       )
       const freshNotebookForExec = await getFreshNotebookOrThrow(activeNotebook.id)

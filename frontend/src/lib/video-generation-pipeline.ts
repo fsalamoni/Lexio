@@ -30,6 +30,7 @@ import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analyt
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
 import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import type { VideoPipelineProgressMeta } from './video-pipeline-progress'
+import type { PipelineExecutionState } from './pipeline-execution-contract'
 import {
   buildRuntimeProfileKey,
   formatAdaptiveConcurrency,
@@ -302,6 +303,10 @@ export interface VideoGenerationStepExecution {
   tokens_out: number
   cost_usd: number
   duration_ms: number
+  execution_state?: PipelineExecutionState
+  retry_count?: number
+  used_fallback?: boolean
+  fallback_from?: string | null
   runtime_profile?: string | null
   runtime_hints?: string | null
   runtime_concurrency?: number | null
@@ -536,6 +541,7 @@ async function safeCallAgent(
     tokens_out: 0,
     cost_usd: 0,
     duration_ms: 0,
+    execution_state: 'failed',
   })
   return { data: {}, failed: true }
 }
@@ -1406,6 +1412,7 @@ REQUISITOS OBRIGATÓRIOS:
             tokens_out: 0,
             cost_usd: r.value.cost_usd,
             duration_ms: r.value.durationMs,
+            execution_state: 'waiting_io',
             runtime_profile: imageRuntimeProfile,
             runtime_hints: imageRuntimeHintsLabel,
             runtime_concurrency: imageConcurrencyDiagnostics.resolved,
@@ -1561,6 +1568,7 @@ REQUISITOS OBRIGATÓRIOS:
           tokens_out: 0,
           cost_usd: costUsd,
           duration_ms: durationMs,
+          execution_state: 'waiting_io',
           runtime_profile: ttsRuntimeProfile,
           runtime_hints: ttsRuntimeHintsLabel,
           runtime_concurrency: ttsConcurrencyDiagnostics.resolved,
@@ -1663,6 +1671,10 @@ function makeExecution(phase: string, model: string, result: LLMResult): VideoGe
     tokens_out: result.tokens_out ?? 0,
     cost_usd: result.cost_usd ?? 0,
     duration_ms: result.duration_ms ?? 0,
+    execution_state: (result.operational?.totalRetryCount ?? 0) > 0 ? 'retrying' : 'running',
+    retry_count: result.operational?.totalRetryCount,
+    used_fallback: result.operational?.fallbackUsed,
+    fallback_from: result.operational?.fallbackFrom ?? null,
   }
 }
 

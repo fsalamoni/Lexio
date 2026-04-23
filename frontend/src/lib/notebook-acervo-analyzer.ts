@@ -26,7 +26,7 @@ import {
   type AdaptiveConcurrencyDiagnostics,
   type RuntimeConcurrencyHints,
 } from './runtime-concurrency'
-import { normalizeInFlightPercent } from './pipeline-execution-contract'
+import { normalizeInFlightPercent, type PipelineExecutionState } from './pipeline-execution-contract'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -70,6 +70,10 @@ function throwIfAborted(signal?: AbortSignal): void {
 
 function formatUsd(costUsd: number): string {
   return formatCostBadge(costUsd)
+}
+
+function resolveExecutionStateFromRetryCount(retryCount?: number): PipelineExecutionState {
+  return (retryCount ?? 0) > 0 ? 'retrying' : 'running'
 }
 
 function buildAcervoStageMeta(options: {
@@ -720,6 +724,10 @@ export async function analyzeNotebookAcervo(
     tokens_out: triageResult.tokens_out,
     cost_usd: triageResult.cost_usd,
     duration_ms: triageResult.duration_ms,
+    execution_state: resolveExecutionStateFromRetryCount(triageResult.operational?.totalRetryCount),
+    retry_count: triageResult.operational?.totalRetryCount,
+    used_fallback: triageResult.operational?.fallbackUsed,
+    fallback_from: triageResult.operational?.fallbackFrom,
   }))
 
   console.log(`[Notebook Acervo Triagem] Result:`, triageResult.content.slice(0, 200))
@@ -810,6 +818,10 @@ export async function analyzeNotebookAcervo(
     tokens_out: buscadorResult.tokens_out,
     cost_usd: buscadorResult.cost_usd,
     duration_ms: buscadorResult.duration_ms,
+    execution_state: resolveExecutionStateFromRetryCount(buscadorResult.operational?.totalRetryCount),
+    retry_count: buscadorResult.operational?.totalRetryCount,
+    used_fallback: buscadorResult.operational?.fallbackUsed,
+    fallback_from: buscadorResult.operational?.fallbackFrom,
   }))
   onProgress?.({
     phase: 'nb_acervo_buscador',
@@ -912,6 +924,10 @@ export async function analyzeNotebookAcervo(
         tokens_out: analistaResult.tokens_out,
         cost_usd: analistaResult.cost_usd,
         duration_ms: analistaResult.duration_ms,
+        execution_state: resolveExecutionStateFromRetryCount(analistaResult.operational?.totalRetryCount),
+        retry_count: analistaResult.operational?.totalRetryCount,
+        used_fallback: analistaResult.operational?.fallbackUsed,
+        fallback_from: analistaResult.operational?.fallbackFrom,
         runtime_profile: analistaRuntimeProfile,
         runtime_hints: analistaRuntimeHintsLabel,
         runtime_concurrency: analistaConcurrencyDiagnostics.resolved,
@@ -1019,6 +1035,10 @@ export async function analyzeNotebookAcervo(
       tokens_out: curadorResult.tokens_out,
       cost_usd: curadorResult.cost_usd,
       duration_ms: curadorResult.duration_ms,
+      execution_state: resolveExecutionStateFromRetryCount(curadorResult.operational?.totalRetryCount),
+      retry_count: curadorResult.operational?.totalRetryCount,
+      used_fallback: curadorResult.operational?.fallbackUsed,
+      fallback_from: curadorResult.operational?.fallbackFrom,
     }))
 
     curadorContent = curadorResult.content
