@@ -41,6 +41,14 @@
 - ✅ Validação completa desta wave: `npm run typecheck`, `npm run test -- --run` (35/35 arquivos, 273/273 testes) e `npm run build` com sucesso.
 - 🔄 Próximo bloco: monitoramento de impacto em produção (latência e custo por etapa) e ajustes finos de concorrência por perfil de carga.
 
+**Atualização incremental (2026-04-23 — Wave 23: concorrência adaptativa + hardening mobile global de painéis):**
+- ✅ `DraggablePanel.tsx` endurecido globalmente para mobile: modo compacto automático em viewport estreita, clamp de posição/tamanho, desativação de drag/resize em telas pequenas e prevenção de overflow estrutural em modais que reutilizam o componente.
+- ✅ `notebook-acervo-analyzer.ts` evoluído para concorrência adaptativa no Analista com resolução dinâmica (env + hardware cap), preservando fallback seguro por lote e sem regressão no contrato de progresso.
+- ✅ `video-generation-pipeline.ts` evoluído para concorrência adaptativa nos batches de imagem e TTS, com parâmetros dedicados e limite por capacidade local para evitar sobrecarga em dispositivos mais restritos.
+- ✅ Variáveis opcionais de tuning operacional introduzidas: `VITE_NB_ACERVO_ANALISTA_CONCURRENCY`, `VITE_VIDEO_IMAGE_BATCH_CONCURRENCY`, `VITE_VIDEO_TTS_BATCH_CONCURRENCY`.
+- ✅ Validação completa desta wave: `npm run typecheck`, `npm run test` (35/35 arquivos, 273/273 testes) e `npm run build` com sucesso.
+- 🔄 Próximo bloco: monitorar telemetria em produção e calibrar defaults por perfil de carga/dispositivo, mantendo estabilidade de UX mobile em todos os modais críticos.
+
 ## Plano Mestre Executável (Atualizado)
 
 ### Faixa A — Consolidado em produção (já implementado)

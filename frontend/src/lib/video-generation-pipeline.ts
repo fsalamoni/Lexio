@@ -580,6 +580,37 @@ function generateSegmentId(): string {
   return `seg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+const DEFAULT_IMAGE_BATCH_CONCURRENCY = 3
+const DEFAULT_TTS_BATCH_CONCURRENCY = 2
+const MIN_MEDIA_BATCH_CONCURRENCY = 1
+const MAX_IMAGE_BATCH_CONCURRENCY = 5
+const MAX_TTS_BATCH_CONCURRENCY = 3
+
+function parsePositiveInt(raw: string | undefined): number | null {
+  if (!raw) return null
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return parsed
+}
+
+function resolveMediaBatchConcurrency(options: {
+  envValue: string | undefined
+  fallback: number
+  max: number
+}): number {
+  const envConcurrency = parsePositiveInt(options.envValue)
+  const hardwareConcurrency = typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
+    ? navigator.hardwareConcurrency
+    : null
+
+  const hardwareCap = hardwareConcurrency != null
+    ? Math.max(MIN_MEDIA_BATCH_CONCURRENCY, Math.min(options.max, Math.floor(hardwareConcurrency / 2)))
+    : options.max
+
+  const preferred = envConcurrency ?? options.fallback
+  return Math.max(MIN_MEDIA_BATCH_CONCURRENCY, Math.min(hardwareCap, preferred))
+}
+
 // ── Pipeline execution ────────────────────────────────────────────────────────
 
 /**
@@ -1305,19 +1336,23 @@ REQUISITOS OBRIGATÓRIOS:
   //
   if (wantMedia && scenes.length > 0) {
     const imageModel = input.imageModel || models.video_image_generator || DEFAULT_IMAGE_MODEL
-    const CONCURRENCY = 3
+    const imageBatchConcurrency = resolveMediaBatchConcurrency({
+      envValue: import.meta.env.VITE_VIDEO_IMAGE_BATCH_CONCURRENCY as string | undefined,
+      fallback: DEFAULT_IMAGE_BATCH_CONCURRENCY,
+      max: MAX_IMAGE_BATCH_CONCURRENCY,
+    })
 
     // Collect all clips that need images
     const allClips = scenes.flatMap(s => (s.clips || []).filter(c => c.imagePrompt))
 
-    console.log(`[Video] Step 10: Generating images for ${allClips.length} clips with model ${imageModel}`)
+    console.log(`[Video] Step 10: Generating images for ${allClips.length} clips with model ${imageModel} (concurrency=${imageBatchConcurrency})`)
 
-    for (let i = 0; i < allClips.length; i += CONCURRENCY) {
+    for (let i = 0; i < allClips.length; i += imageBatchConcurrency) {
       throwIfAborted(signal)
-      const batch = allClips.slice(i, i + CONCURRENCY)
+      const batch = allClips.slice(i, i + imageBatchConcurrency)
 
       onProgress?.(10, totalSteps, 'media_image_generation',
-        `Gerando imagem ${i + 1}–${Math.min(i + CONCURRENCY, allClips.length)} de ${allClips.length} clips...`)
+        `Gerando imagem ${i + 1}–${Math.min(i + imageBatchConcurrency, allClips.length)} de ${allClips.length} clips...`)
 
       const results = await Promise.allSettled(
         batch.map(async (clip) => {
@@ -1432,14 +1467,18 @@ REQUISITOS OBRIGATÓRIOS:
   if (wantMedia && narration.length > 0) {
     const ttsVoice = input.ttsVoice || 'nova'
     const ttsModel = input.ttsModel || DEFAULT_OPENROUTER_TTS_MODEL
-    const TTS_BATCH_CONCURRENCY = 2
+    const ttsBatchConcurrency = resolveMediaBatchConcurrency({
+      envValue: import.meta.env.VITE_VIDEO_TTS_BATCH_CONCURRENCY as string | undefined,
+      fallback: DEFAULT_TTS_BATCH_CONCURRENCY,
+      max: MAX_TTS_BATCH_CONCURRENCY,
+    })
     const validSegments = narration.filter(s => s.text && s.text.trim().length >= 5)
 
-    console.log(`[Video] Step 11: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice}`)
+    console.log(`[Video] Step 11: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice} (concurrency=${ttsBatchConcurrency})`)
 
-    for (let idx = 0; idx < validSegments.length; idx += TTS_BATCH_CONCURRENCY) {
+    for (let idx = 0; idx < validSegments.length; idx += ttsBatchConcurrency) {
       throwIfAborted(signal)
-      const batch = validSegments.slice(idx, idx + TTS_BATCH_CONCURRENCY)
+      const batch = validSegments.slice(idx, idx + ttsBatchConcurrency)
       const batchStart = idx + 1
       const batchEnd = Math.min(idx + batch.length, validSegments.length)
 

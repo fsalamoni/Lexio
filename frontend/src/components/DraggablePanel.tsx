@@ -16,10 +16,19 @@ import { X, Minus, Maximize2, Minimize2 } from 'lucide-react'
 
 // ── Z-index management ──────────────────────────────────────────────────────
 let globalZCounter = 1000
+const MOBILE_BREAKPOINT_PX = 768
+const MOBILE_PANEL_MARGIN_PX = 8
+const COMPACT_PANEL_MIN_WIDTH_PX = 280
+const COMPACT_PANEL_MIN_HEIGHT_PX = 220
 
 function bringToFront(): number {
   globalZCounter += 1
   return globalZCounter
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (max < min) return min
+  return Math.min(max, Math.max(min, value))
 }
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -71,6 +80,10 @@ export default function DraggablePanel({
   const [zIndex, setZIndex] = useState(() => bringToFront())
   const [collapsed, setCollapsed] = useState(false)
   const [maximized, setMaximized] = useState(startMaximized)
+  const [viewport, setViewport] = useState(() => ({
+    w: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    h: typeof window !== 'undefined' ? window.innerHeight : 720,
+  }))
 
   // Position and size state
   const [pos, setPos] = useState({ x: -1, y: -1 })
@@ -84,21 +97,66 @@ export default function DraggablePanel({
   // Resizing state
   const resizing = useRef<string | null>(null)
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0, px: 0, py: 0 })
+  const isCompactViewport = viewport.w < MOBILE_BREAKPOINT_PX
+  const headerHeight = 40
+
+  useEffect(() => {
+    const handleResize = () => {
+      setViewport({ w: window.innerWidth, h: window.innerHeight })
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const applyCompactGeometry = useCallback(() => {
+    const compactWidth = Math.max(COMPACT_PANEL_MIN_WIDTH_PX, viewport.w - MOBILE_PANEL_MARGIN_PX * 2)
+    const compactHeight = Math.max(COMPACT_PANEL_MIN_HEIGHT_PX, viewport.h - MOBILE_PANEL_MARGIN_PX * 2)
+    setPos({ x: MOBILE_PANEL_MARGIN_PX, y: MOBILE_PANEL_MARGIN_PX })
+    setSize({ w: compactWidth, h: compactHeight })
+  }, [viewport.w, viewport.h])
 
   // Center on first open
   useEffect(() => {
     if (open && pos.x === -1) {
-      const vw = window.innerWidth
-      const vh = window.innerHeight
-      const w = startMaximized ? vw : Math.min(initialWidth, vw - 40)
-      const h = startMaximized ? vh : Math.min(initialHeight, vh - 40)
+      if (isCompactViewport) {
+        applyCompactGeometry()
+        return
+      }
+
+      const w = startMaximized ? viewport.w : Math.min(initialWidth, viewport.w - 40)
+      const h = startMaximized ? viewport.h : Math.min(initialHeight, viewport.h - 40)
       setPos({
-        x: startMaximized ? 0 : Math.max(20, (vw - w) / 2),
-        y: startMaximized ? 0 : Math.max(20, (vh - h) / 2),
+        x: startMaximized ? 0 : Math.max(20, (viewport.w - w) / 2),
+        y: startMaximized ? 0 : Math.max(20, (viewport.h - h) / 2),
       })
       setSize({ w, h })
     }
-  }, [open, pos.x, initialWidth, initialHeight, startMaximized])
+  }, [open, pos.x, initialWidth, initialHeight, startMaximized, isCompactViewport, applyCompactGeometry, viewport.w, viewport.h])
+
+  useEffect(() => {
+    if (!open || maximized) return
+
+    if (isCompactViewport) {
+      applyCompactGeometry()
+      return
+    }
+
+    setSize((prev) => {
+      const nextW = Math.min(prev.w, viewport.w)
+      const nextH = Math.min(prev.h, viewport.h)
+      if (nextW === prev.w && nextH === prev.h) return prev
+      return { w: nextW, h: nextH }
+    })
+
+    setPos((prev) => {
+      const maxX = Math.max(0, viewport.w - size.w)
+      const maxY = Math.max(0, viewport.h - (collapsed ? headerHeight : size.h))
+      const nextX = clamp(prev.x, 0, maxX)
+      const nextY = clamp(prev.y, 0, maxY)
+      if (nextX === prev.x && nextY === prev.y) return prev
+      return { x: nextX, y: nextY }
+    })
+  }, [open, maximized, isCompactViewport, applyCompactGeometry, viewport.w, viewport.h, size.w, size.h, collapsed])
 
   // Escape key handler
   useEffect(() => {
@@ -118,21 +176,23 @@ export default function DraggablePanel({
   // ── Drag handlers ───────────────────────────────────────────────────────
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
-    if (maximized) return
+    if (maximized || isCompactViewport) return
     e.preventDefault()
     dragging.current = true
     dragOffset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y }
     setZIndex(bringToFront())
-  }, [pos, maximized])
+  }, [pos, maximized, isCompactViewport])
 
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
-      if (dragging.current) {
-        const newX = Math.max(0, Math.min(window.innerWidth - 100, e.clientX - dragOffset.current.x))
-        const newY = Math.max(0, Math.min(window.innerHeight - 40, e.clientY - dragOffset.current.y))
+      if (dragging.current && !isCompactViewport) {
+        const maxX = Math.max(0, viewport.w - size.w)
+        const maxY = Math.max(0, viewport.h - (collapsed ? headerHeight : size.h))
+        const newX = clamp(e.clientX - dragOffset.current.x, 0, maxX)
+        const newY = clamp(e.clientY - dragOffset.current.y, 0, maxY)
         setPos({ x: newX, y: newY })
       }
-      if (resizing.current) {
+      if (resizing.current && !isCompactViewport) {
         const dx = e.clientX - resizeStart.current.x
         const dy = e.clientY - resizeStart.current.y
         const edge = resizing.current
@@ -154,6 +214,11 @@ export default function DraggablePanel({
           newY = resizeStart.current.py + dh
         }
 
+        newW = Math.min(newW, viewport.w)
+        newH = Math.min(newH, viewport.h)
+        newX = clamp(newX, 0, Math.max(0, viewport.w - newW))
+        newY = clamp(newY, 0, Math.max(0, viewport.h - newH))
+
         setSize({ w: newW, h: newH })
         setPos({ x: newX, y: newY })
       }
@@ -168,22 +233,23 @@ export default function DraggablePanel({
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
     }
-  }, [minWidth, minHeight])
+  }, [minWidth, minHeight, viewport.w, viewport.h, size.w, size.h, collapsed, isCompactViewport])
 
   // ── Resize edge start ─────────────────────────────────────────────────
 
   const handleResizeStart = useCallback((edge: string) => (e: React.MouseEvent) => {
-    if (maximized) return
+    if (maximized || isCompactViewport) return
     e.preventDefault()
     e.stopPropagation()
     resizing.current = edge
     resizeStart.current = { x: e.clientX, y: e.clientY, w: size.w, h: size.h, px: pos.x, py: pos.y }
     setZIndex(bringToFront())
-  }, [size, pos, maximized])
+  }, [size, pos, maximized, isCompactViewport])
 
   // ── Maximize toggle ───────────────────────────────────────────────────
 
   const toggleMaximize = useCallback(() => {
+    if (isCompactViewport) return
     if (maximized) {
       if (preMaxState) {
         setPos({ x: preMaxState.x, y: preMaxState.y })
@@ -193,14 +259,13 @@ export default function DraggablePanel({
     } else {
       setPreMaxState({ x: pos.x, y: pos.y, w: size.w, h: size.h })
       setPos({ x: 0, y: 0 })
-      setSize({ w: window.innerWidth, h: window.innerHeight })
+      setSize({ w: viewport.w, h: viewport.h })
       setMaximized(true)
     }
-  }, [maximized, pos, size, preMaxState])
+  }, [maximized, pos, size, preMaxState, isCompactViewport, viewport.w, viewport.h])
 
   if (!open) return null
 
-  const headerHeight = 40
   const resizeEdgeSize = 6
 
   return (
@@ -212,14 +277,14 @@ export default function DraggablePanel({
       className="fixed flex flex-col overflow-hidden select-none"
       style={{
         zIndex,
-        left: pos.x,
-        top: pos.y,
-        width: maximized ? '100vw' : size.w,
-        height: collapsed ? headerHeight : (maximized ? '100vh' : size.h),
+        left: isCompactViewport ? MOBILE_PANEL_MARGIN_PX : pos.x,
+        top: isCompactViewport ? MOBILE_PANEL_MARGIN_PX : pos.y,
+        width: isCompactViewport ? `calc(100vw - ${MOBILE_PANEL_MARGIN_PX * 2}px)` : (maximized ? '100vw' : size.w),
+        height: collapsed ? headerHeight : (isCompactViewport ? `calc(100vh - ${MOBILE_PANEL_MARGIN_PX * 2}px)` : (maximized ? '100vh' : size.h)),
         transition: collapsed ? 'height 0.15s ease' : undefined,
         background: 'var(--v2-panel-strong, #fff)',
         border: '1px solid var(--v2-line-soft, rgba(15,23,42,0.08))',
-        borderRadius: maximized ? '0' : '1.25rem',
+        borderRadius: maximized ? '0' : (isCompactViewport ? '1rem' : '1.25rem'),
         boxShadow: '0 32px 80px rgba(15,23,42,0.18), 0 8px 24px rgba(15,23,42,0.10)',
         fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)",
       }}
@@ -227,8 +292,8 @@ export default function DraggablePanel({
       {/* ── Header (drag handle) ─────────────────────────────────────────── */}
       <div
         onMouseDown={handleDragStart}
-        onDoubleClick={toggleMaximize}
-        className="flex items-center gap-2 px-4 flex-shrink-0 select-none cursor-move"
+        onDoubleClick={isCompactViewport ? undefined : toggleMaximize}
+        className={`flex items-center gap-2 px-4 flex-shrink-0 select-none ${isCompactViewport ? 'cursor-default' : 'cursor-move'}`}
         style={{
           height: headerHeight,
           borderBottom: '1px solid var(--v2-line-soft, rgba(15,23,42,0.08))',
@@ -263,10 +328,21 @@ export default function DraggablePanel({
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); toggleMaximize() }}
+            disabled={isCompactViewport}
             className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors"
-            style={{ color: 'var(--v2-ink-faint)' }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.07)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            style={{
+              color: 'var(--v2-ink-faint)',
+              opacity: isCompactViewport ? 0.5 : 1,
+              cursor: isCompactViewport ? 'not-allowed' : 'pointer',
+            }}
+            onMouseEnter={e => {
+              if (isCompactViewport) return
+              e.currentTarget.style.background = 'rgba(15,23,42,0.07)'
+            }}
+            onMouseLeave={e => {
+              if (isCompactViewport) return
+              e.currentTarget.style.background = 'transparent'
+            }}
             title={maximized ? 'Restaurar' : 'Maximizar'}
           >
             {maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
@@ -301,7 +377,7 @@ export default function DraggablePanel({
       )}
 
       {/* ── Resize handles (only when not maximized/collapsed) ───────────── */}
-      {!maximized && !collapsed && (
+      {!maximized && !collapsed && !isCompactViewport && (
         <>
           {/* Edges */}
           <div onMouseDown={handleResizeStart('n')} className="absolute top-0 left-2 right-2 cursor-n-resize" style={{ height: resizeEdgeSize }} />

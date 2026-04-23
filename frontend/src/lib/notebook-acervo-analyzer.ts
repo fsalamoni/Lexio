@@ -90,7 +90,9 @@ function buildAcervoStageMeta(options: {
 const MAX_PREFILTERED_DOCS = 30
 const MAX_SELECTED_DOCS = 8
 const MAX_ANALISTA_DOCS_PER_BATCH = 2
-const ANALISTA_BATCH_CONCURRENCY = 2
+const DEFAULT_ANALISTA_BATCH_CONCURRENCY = 2
+const MIN_ANALISTA_BATCH_CONCURRENCY = 1
+const MAX_ANALISTA_BATCH_CONCURRENCY = 4
 const MAX_ANALISTA_CHARS_PER_DOC = 8_000
 const MAX_ANALISTA_INPUT_CHARS = 16_000
 const MIN_CHARS_PER_ANALISTA_DOC = 2_500
@@ -108,6 +110,30 @@ const CURADOR_TEMPERATURE = 0.15
 const PREFILTER_TEXT_SAMPLE_CHARS = 20_000
 const DEFAULT_BUSCADOR_SUMMARY_TEMPLATE = 'Documento "%s" selecionado pelo Buscador como referência potencial para a pesquisa.'
 const DEFAULT_ANALISTA_SUMMARY_TEMPLATE = 'Documento "%s" potencialmente útil para a pesquisa, com base na aderência temática identificada pelo Buscador.'
+
+function parsePositiveInt(raw: string | undefined): number | null {
+  if (!raw) return null
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return parsed
+}
+
+function resolveAnalistaBatchConcurrency(): number {
+  const envValue = parsePositiveInt(import.meta.env.VITE_NB_ACERVO_ANALISTA_CONCURRENCY as string | undefined)
+  const hardwareConcurrency = typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
+    ? navigator.hardwareConcurrency
+    : null
+
+  const hardwareCap = hardwareConcurrency != null
+    ? Math.max(
+      MIN_ANALISTA_BATCH_CONCURRENCY,
+      Math.min(MAX_ANALISTA_BATCH_CONCURRENCY, Math.floor(hardwareConcurrency / 2)),
+    )
+    : MAX_ANALISTA_BATCH_CONCURRENCY
+
+  const preferred = envValue ?? DEFAULT_ANALISTA_BATCH_CONCURRENCY
+  return Math.max(MIN_ANALISTA_BATCH_CONCURRENCY, Math.min(hardwareCap, preferred))
+}
 
 function extractJsonPayload(raw: string): string {
   let jsonStr = raw.trim()
@@ -829,14 +855,15 @@ export async function analyzeNotebookAcervo(
   const analistaBatches = chunkArray(selectedDocs, MAX_ANALISTA_DOCS_PER_BATCH)
   const analistaAnalysesById = new Map(analistaFallbackAnalyses.map((analysis) => [analysis.id, analysis]))
   const totalAnalistaBatches = Math.max(1, analistaBatches.length)
-  const analistaWorkerCount = Math.min(ANALISTA_BATCH_CONCURRENCY, analistaBatches.length)
+  const resolvedAnalistaConcurrency = resolveAnalistaBatchConcurrency()
+  const analistaWorkerCount = Math.min(resolvedAnalistaConcurrency, analistaBatches.length)
   let usedAnalistaFallback = false
   let completedAnalistaBatches = 0
   let nextAnalistaBatchIndex = 0
 
   onProgress?.({
     phase: 'nb_acervo_analista',
-    message: `Analista processando ${analistaBatches.length} lote(s) com até ${analistaWorkerCount} em paralelo...`,
+    message: `Analista processando ${analistaBatches.length} lote(s) com até ${analistaWorkerCount} em paralelo (auto/adaptativo).`,
     percent: 50,
   })
 

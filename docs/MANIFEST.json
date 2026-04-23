@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-23",
-    "cycle": "wave22-safe-parallel-mobile-residual",
+    "cycle": "wave23-adaptive-concurrency-global-mobile-panel",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -398,6 +398,18 @@
         "frontend/src/components/PipelineProgressPanel.tsx"
       ],
       "notes": "Carregamento de base complementar em paralelo no pipeline documental; lotes concorrentes controlados no Analista de acervo; TTS em batches paralelos no pipeline de vídeo; e ajustes responsivos em modais/painéis de progresso para reduzir overflow e compressão em mobile sem regressão de fallback/telemetria."
+    },
+    {
+      "id": "E5.F10",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Concorrência adaptativa e hardening mobile global de painéis arrastáveis",
+      "state": "implemented",
+      "files": [
+        "frontend/src/components/DraggablePanel.tsx",
+        "frontend/src/lib/notebook-acervo-analyzer.ts",
+        "frontend/src/lib/video-generation-pipeline.ts"
+      ],
+      "notes": "DraggablePanel ganhou modo compacto global para mobile com clamp de geometria e bloqueio de drag/resize em viewport estreita; pipeline de acervo passou a resolver concorrência do Analista de forma adaptativa (env + limite por hardware); pipeline de vídeo agora ajusta batches de imagem e TTS com parâmetros opcionais e cap adaptativo para reduzir sobrecarga em dispositivos menores."
     },
     {
       "id": "E8.F1",

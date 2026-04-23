@@ -20,6 +20,7 @@ Last update: 2026-04-23
 - frontend/src/lib/generation-service.ts
 - frontend/src/lib/notebook-acervo-analyzer.ts
 - frontend/src/lib/video-generation-pipeline.ts
+- frontend/src/components/DraggablePanel.tsx
 - frontend/src/components/TaskBar.tsx
 - frontend/src/components/AgentTrailProgressModal.tsx
 - frontend/src/components/PipelineProgressPanel.tsx
@@ -35,6 +36,8 @@ Last update: 2026-04-23
 - Mobile hardening applied to `TaskBar`, `NewDocument` and `ResearchNotebook` interaction rows to avoid overflow/compression on narrow screens.
 - Wave 22 adds safe parallelization in independent steps: thesis/acervo lightweight context loading in document generation, controlled batch concurrency in notebook acervo analysis, and controlled parallel TTS batches in video generation.
 - Progress surfaces received residual mobile hardening (`AgentTrailProgressModal` and `PipelineProgressPanel`) to preserve readability under constrained widths.
+- Wave 23 introduces adaptive concurrency controls for acervo/video media steps (`VITE_NB_ACERVO_ANALISTA_CONCURRENCY`, `VITE_VIDEO_IMAGE_BATCH_CONCURRENCY`, `VITE_VIDEO_TTS_BATCH_CONCURRENCY`) with hardware-aware caps.
+- `DraggablePanel` now enforces a compact mobile geometry mode globally (clamped position/size, drag-resize guardrails in narrow viewports) to improve modal stability on small screens.
 
 ## Required Secrets (GitHub Actions)
 - FIREBASE_API_KEY

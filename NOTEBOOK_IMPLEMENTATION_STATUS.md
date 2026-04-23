@@ -5,7 +5,15 @@
 
 ---
 
-## Status Geral: Etapas 1-214 IMPLEMENTADAS
+## Status Geral: Etapas 1-219 IMPLEMENTADAS
+
+### Etapas 215-219 — Concorrência Adaptativa + Hardening Mobile Global de Painéis ✅
+- **Arquivos**: `frontend/src/components/DraggablePanel.tsx`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/lib/video-generation-pipeline.ts`
+- Etapa 215: `DraggablePanel.tsx` passou a aplicar geometria compacta automática em viewport mobile, com clamp de posição/tamanho e prevenção de overflow visual em modais reutilizados no app.
+- Etapa 216: interações de drag/resize/maximize foram endurecidas para telas estreitas no `DraggablePanel.tsx`, reduzindo regressões de usabilidade em fluxos com painéis flutuantes.
+- Etapa 217: `notebook-acervo-analyzer.ts` migrou de concorrência fixa para concorrência adaptativa no Analista (env + cap por hardware), preservando fallback seguro por lote e progresso incremental.
+- Etapa 218: `video-generation-pipeline.ts` migrou batches de imagem/TTS para concorrência adaptativa (env + cap por hardware), mantendo rastreabilidade por lote de custo/duração e sem alterar fallback existente.
+- Etapa 219: validação regressiva completa executada com sucesso: `npm run typecheck`, `npm run test` (**35/35 arquivos**, **273/273 testes**) e `npm run build`.
 
 ### Etapas 210-214 — Paralelização Segura + Hardening Mobile Residual ✅
 - **Arquivos**: `frontend/src/lib/generation-service.ts`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/components/AgentTrailProgressModal.tsx`, `frontend/src/components/PipelineProgressPanel.tsx`
