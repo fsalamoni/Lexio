@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-23",
-    "cycle": "wave30-aux-execution-state-local",
+    "cycle": "wave30-aux-execution-state-closeout",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -530,6 +530,20 @@
         "frontend/src/lib/video-pipeline-progress.test.ts"
       ],
       "notes": "Pipelines auxiliares passaram a emitir `executionState` explícito no metadata de progresso e os wrappers V1/V2 do notebook migraram para consumo direto desse estado, reduzindo inferência local por `retryCount` e fortalecendo semântica de execução em mídia (`waiting_io`) e retries (`retrying`)."
+    },
+    {
+      "id": "E5.F19",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Closeout operacional da Wave 30 com release one-shot",
+      "state": "implemented",
+      "files": [
+        ".github/workflows/release-web.yml",
+        "docs/release/WEB_RELEASE_INDEX.md",
+        "docs/release/WEB_RELEASE_CACHE.md",
+        "docs/PLANO.md",
+        "NOTEBOOK_IMPLEMENTATION_STATUS.md"
+      ],
+      "notes": "Release one-shot `24854808367` em HEAD `681c767` concluída com quality gates, deploy Firebase production (`72764941682`), Pages build (`72764941896`), Pages deploy (`72765128773`) e release summary (`72765376017`) em sucesso; redesign V2 permaneceu opcional/skipped por input (`72764942409`)."
     },
     {
       "id": "E8.F1",

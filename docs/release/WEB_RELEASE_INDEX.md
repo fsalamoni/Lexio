@@ -9,22 +9,22 @@ Last update: 2026-04-23
 - .github/workflows/firebase-redesign-v2.yml
 - .github/workflows/test.yml
 
-## Latest One-shot Validation (Wave 29 — 2026-04-23)
-- release-web run `24853129457`: success
-- Head commit: `5bf59c4`
-- Quality gates: success
-- Deploy Firebase production: success (`job 72758972612`)
-- Deploy GitHub Pages / build: success (`job 72758972753`)
-- Deploy GitHub Pages / deploy: success (`job 72759201251`)
-- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72758972846`)
-- Release summary: success (`job 72759426235`)
+## Latest One-shot Validation (Wave 30 — 2026-04-23)
+- release-web run `24854808367`: success
+- Head commit: `681c767`
+- Quality gates: success (lint `72764708923`, source guardrails `72764708940`, unit tests `72764708955`, functions quality `72764708956`, frontend quality `72764708962`)
+- Deploy Firebase production: success (`job 72764941682`)
+- Deploy GitHub Pages / build: success (`job 72764941896`)
+- Deploy GitHub Pages / deploy: success (`job 72765128773`)
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72764942409`)
+- Release summary: success (`job 72765376017`)
 
 ## Current Local Validation (Wave 30 — 2026-04-23)
 - Scope: `executionState` explícito em pipelines auxiliares (estúdio/áudio/apresentação/vídeo) + consumo direto de estado nos wrappers de tarefa V1/V2
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 290 tests)
 - Frontend build: success
-- Release dispatch: pending (next closeout step)
+- Release dispatch: completed (`release-web.yml`, run `24854808367`)
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs

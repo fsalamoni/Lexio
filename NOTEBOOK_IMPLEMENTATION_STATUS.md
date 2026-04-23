@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-261 IMPLEMENTADAS
+## Status Geral: Etapas 1-265 IMPLEMENTADAS
+
+### Etapas 262-265 — Closeout Operacional da Wave 30 (Release One-shot) ✅
+- **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`
+- Etapa 262: trilha de Git da wave fechada sem divergência remota (`git pull --rebase --autostash origin main`), seguida de commit/push no `main` (`681c767`) com propagação explícita de `executionState` em pipelines auxiliares e sincronização de governança local.
+- Etapa 263: release one-shot disparado em `release-web.yml` (run `24854808367`) no HEAD `681c767a60c410e763254af40168a0e59ef40d3a` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
+- Etapa 264: quality gates e deploys confirmados em sucesso na mesma run: unit tests (`72764708955`), lint (`72764708923`), frontend quality (`72764708962`), functions quality (`72764708956`), source guardrails (`72764708940`), Firebase production (`72764941682`), Pages build (`72764941896`), Pages deploy (`72765128773`) e release summary (`72765376017`); redesign V2 mantido como skip por input (`72764942409`).
+- Etapa 265: fechamento final de governança/index/cache concluído com IDs reais da run `24854808367` e avanço de ciclo em `PLANO`, `MANIFEST`, `WEB_RELEASE_INDEX`, `WEB_RELEASE_CACHE` e neste status de implementação.
 
 ### Etapas 258-261 — ExecutionState Explícito em Pipelines Auxiliares (Wave 30) ✅
 - **Arquivos**: `frontend/src/lib/notebook-studio-pipeline.ts`, `frontend/src/lib/audio-generation-pipeline.ts`, `frontend/src/lib/presentation-generation-pipeline.ts`, `frontend/src/lib/video-pipeline-progress.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/lib/video-pipeline-progress.test.ts`
