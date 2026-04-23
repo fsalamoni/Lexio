@@ -1,6 +1,6 @@
 # Web Release Index
 
-Last update: 2026-04-20
+Last update: 2026-04-22
 
 ## Release Entry Points
 - .github/workflows/release-web.yml
@@ -17,6 +17,14 @@ Last update: 2026-04-20
 - firebase.json
 - .firebaserc
 - functions/src/index.ts
+- frontend/src/lib/generation-service.ts
+- frontend/src/pages/ResearchNotebook.tsx
+- frontend/src/contexts/TaskManagerContext.tsx
+
+## Runtime Hardening (2026-04-22)
+- Document pipeline now supports Redator rollout via `VITE_DOC_REDATOR_10K_ENABLED` with optional quality rollback controls (`VITE_DOC_REDATOR_QUALITY_ROLLBACK_MIN`, `VITE_DOC_REDATOR_QUALITY_ROLLBACK_DISABLED`).
+- Running progress across notebook task wrappers is normalized to remain `<=99%` until persistence is complete.
+- `TaskManagerContext` remains the source of truth for task completion (`100%` only after promise resolve).
 
 ## Required Secrets (GitHub Actions)
 - FIREBASE_API_KEY

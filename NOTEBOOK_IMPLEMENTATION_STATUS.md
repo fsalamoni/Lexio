@@ -5,7 +5,15 @@
 
 ---
 
-## Status Geral: Etapas 1-199 IMPLEMENTADAS
+## Status Geral: Etapas 1-204 IMPLEMENTADAS
+
+### Etapas 200-204 — Redator Otimizado + Contrato de Progresso Confiável ✅
+- **Arquivos**: `frontend/src/lib/generation-service.ts`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/contexts/TaskManagerContext.tsx`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/DocumentDetail.tsx`
+- Etapa 200: `generation-service.ts` passou a suportar rollout do Redator em 10k tokens por feature flag (`VITE_DOC_REDATOR_10K_ENABLED`), mantendo o modo padrão em 12k quando o rollout estiver desligado
+- Etapa 201: fallback automático por qualidade foi adicionado ao Redator; se o score ficar abaixo do limiar configurável (`VITE_DOC_REDATOR_QUALITY_ROLLBACK_MIN`), o serviço reexecuta em 12k e seleciona automaticamente a melhor versão final
+- Etapa 202: rastreabilidade de execução endurecida no documento final com `generation_meta.redator` (modo ativo, limiar, tentativa de fallback, score primário/fallback e variante escolhida), preservando custo real em `llm_executions`
+- Etapa 203: trust contract de progresso reforçado no notebook para evitar conclusão prematura: acervo, estúdio, vídeo e vídeo literal agora mantêm estado em execução `<=99%` e promovem `100%` apenas após persistência concluída
+- Etapa 204: estimativa de custo no fluxo de Novo Documento foi alinhada ao modo ativo do Redator (10k/12k), mantendo coerência entre previsão e execução real
 
 ### Etapas 195-199 — Limpeza de Textos, Seletor de Skins e Consolidacao da Onda 19 ✅
 - **Arquivos**: `frontend/src/components/v2/V2WorkspaceLayout.tsx`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/Profile.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ProfileV2.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.test.tsx`, `frontend/src/pages/AdminPanel.tsx`, `frontend/src/App.tsx`, `frontend/src/lib/redesign-shell.ts`, `frontend/src/lib/platform-skins.ts`, `frontend/src/lib/platform-skins.test.ts`, `frontend/src/lib/firestore-types.ts`, `frontend/src/components/ThemeSkinSelector.tsx`

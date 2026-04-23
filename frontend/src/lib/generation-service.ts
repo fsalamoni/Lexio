@@ -15,7 +15,7 @@
  * 6.  Jurista v2         — Refined theses after critique (Sonnet)
  * 7.  Fact-checker        — Verify legal citations (Haiku, strict)
  * 8.  Moderador          — Outline/plan the final document (Sonnet)
- * 9.  Redator            — Write the full document (Sonnet, 12k tokens)
+ * 9.  Redator            — Write the full document (Sonnet, 10k/12k tokens via feature flag)
  *
  * The API key is resolved from the authenticated user's settings with
  * optional environment fallback for local/dev compatibility.
@@ -31,6 +31,7 @@ import { compactContext } from './context-compactor'
 import { loadApiKeyValues } from './settings-store'
 import { firestore } from './firebase'
 import { buildDocumentPipelineProgress, buildDocumentStageMeta, type DocumentPipelineProgress } from './document-pipeline'
+import { isTruthyFlag } from './feature-flags'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -77,6 +78,95 @@ const MAX_EMENTA_SOURCE_CHARS = 8000
 // NOTE: No default models — all models must be configured in admin panel
 /** Max pre-filtered documents sent to the buscador LLM. */
 const MAX_PREFILTERED_DOCS = 30
+/** Session cache key for document pipeline model map. */
+const DOCUMENT_AGENT_MODELS_CACHE_KEY = 'lexio:document-agent-models:v1'
+/** Keep cache short to reduce stale settings risk after admin changes. */
+const DOCUMENT_AGENT_MODELS_CACHE_TTL_MS = 5 * 60 * 1000
+/** Standard output budget for the Redator agent. */
+const REDATOR_DEFAULT_MAX_TOKENS = 12000
+/** Optimized output budget for faster Redator runs (feature-flagged). */
+const REDATOR_FAST_MAX_TOKENS = 10000
+/** Minimum quality score required to keep the fast Redator output. */
+const REDATOR_ROLLBACK_MIN_QUALITY_DEFAULT = 82
+
+interface CachedDocumentAgentModels {
+  savedAt: number
+  models: AgentModelMap
+}
+
+interface RedatorRuntimeConfig {
+  cap10kEnabled: boolean
+  rollbackEnabled: boolean
+  rollbackMinQuality: number
+}
+
+function readCachedDocumentAgentModels(): AgentModelMap | null {
+  try {
+    const storage = globalThis.sessionStorage
+    if (!storage) return null
+    const raw = storage.getItem(DOCUMENT_AGENT_MODELS_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as CachedDocumentAgentModels
+    if (!parsed?.models || !Number.isFinite(parsed.savedAt)) return null
+    if (Date.now() - parsed.savedAt > DOCUMENT_AGENT_MODELS_CACHE_TTL_MS) {
+      storage.removeItem(DOCUMENT_AGENT_MODELS_CACHE_KEY)
+      return null
+    }
+    return parsed.models
+  } catch {
+    return null
+  }
+}
+
+function writeCachedDocumentAgentModels(models: AgentModelMap): void {
+  try {
+    const storage = globalThis.sessionStorage
+    if (!storage) return
+    const payload: CachedDocumentAgentModels = {
+      savedAt: Date.now(),
+      models,
+    }
+    storage.setItem(DOCUMENT_AGENT_MODELS_CACHE_KEY, JSON.stringify(payload))
+  } catch {
+    // Ignore cache write failures and proceed with live models.
+  }
+}
+
+async function loadDocumentAgentModels(): Promise<AgentModelMap> {
+  const cached = readCachedDocumentAgentModels()
+  if (cached) return cached
+  const liveModels = await loadAgentModels()
+  writeCachedDocumentAgentModels(liveModels)
+  return liveModels
+}
+
+function parseBoundedNumber(
+  rawValue: string | null | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number(rawValue)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, Math.round(parsed)))
+}
+
+function resolveRedatorRuntimeConfig(): RedatorRuntimeConfig {
+  const cap10kEnabled = isTruthyFlag(import.meta.env.VITE_DOC_REDATOR_10K_ENABLED as string | undefined)
+  const rollbackDisabled = isTruthyFlag(import.meta.env.VITE_DOC_REDATOR_QUALITY_ROLLBACK_DISABLED as string | undefined)
+  const rollbackMinQuality = parseBoundedNumber(
+    import.meta.env.VITE_DOC_REDATOR_QUALITY_ROLLBACK_MIN as string | undefined,
+    REDATOR_ROLLBACK_MIN_QUALITY_DEFAULT,
+    0,
+    100,
+  )
+
+  return {
+    cap10kEnabled,
+    rollbackEnabled: cap10kEnabled && !rollbackDisabled,
+    rollbackMinQuality,
+  }
+}
 
 // ── API key retrieval ─────────────────────────────────────────────────────────
 
@@ -1317,6 +1407,7 @@ export async function generateDocument(
   onProgress?: ProgressCallback,
   profile?: UserProfileForGeneration | null,
   contextDetail?: ContextDetailData | null,
+  includeAcervo = true,
 ): Promise<void> {
   if (!firestore) throw new Error('Firestore não configurado')
 
@@ -1334,8 +1425,9 @@ export async function generateDocument(
       message: string,
       percent: number,
       modelId?: string,
+      stageMeta?: string,
     ) => {
-      onProgress?.(buildDocumentPipelineProgress(phase, message, percent, { modelId }))
+      onProgress?.(buildDocumentPipelineProgress(phase, message, percent, { modelId, stageMeta }))
     }
 
     const reportStageResult = (
@@ -1358,7 +1450,7 @@ export async function generateDocument(
     // 1. Get API key and model configuration
     reportProgress('config', 'Carregando configurações...', 2)
     const apiKey = await getOpenRouterKey()
-    const agentModels: AgentModelMap = await loadAgentModels()
+    const agentModels: AgentModelMap = await loadDocumentAgentModels()
 
     // Validate all agent models are configured
     validateModelMap(agentModels, PIPELINE_AGENT_DEFS, 'document_models')
@@ -1421,10 +1513,13 @@ export async function generateDocument(
     let revisorBaseResult: Awaited<ReturnType<typeof callLLM>> | null = null
 
     try {
-      const allAcervoDocs = await getAllAcervoDocumentsForSearch(uid)
-      console.log(`[Acervo Pipeline] Found ${allAcervoDocs.length} indexed documents in acervo`)
+      if (!includeAcervo) {
+        console.log('[Acervo Pipeline] Skipped by user preference for this generation')
+      } else {
+        const allAcervoDocs = await getAllAcervoDocumentsForSearch(uid)
+        console.log(`[Acervo Pipeline] Found ${allAcervoDocs.length} indexed documents in acervo`)
 
-      if (allAcervoDocs.length > 0) {
+        if (allAcervoDocs.length > 0) {
         reportProgress('acervo_buscador', 'Buscando documentos similares no acervo...', 8, modelAcervoBuscador)
 
         // ── Layer 1: Zero-cost keyword pre-filter ──
@@ -1544,6 +1639,7 @@ export async function generateDocument(
         } else {
           console.log('[Acervo Pre-filter] No documents matched keywords, skipping acervo agents')
         }
+        }
       }
     } catch (e) {
       console.warn('Acervo pre-generation agents failed (non-fatal, proceeding without base):', e)
@@ -1580,7 +1676,7 @@ export async function generateDocument(
     }
 
     // Load acervo excerpts (lightweight context — separate from the full acervo base above)
-    if (!acervoBase) {
+    if (includeAcervo && !acervoBase) {
       // Only load excerpts if acervo agents didn't produce a compiled base
       try {
         const acervoContext = await getAcervoContext(uid, MAX_ACERVO_CONTEXT_CHARS)
@@ -1692,9 +1788,22 @@ export async function generateDocument(
     )
     reportStageResult('moderador', 'Estrutura final do documento definida.', 78, planoResult)
 
-    // 9. Redator — write the full document
-  reportProgress('redacao', 'Redigindo documento completo...', 82, modelRedator)
-    const docResult = await callLLMWithFallback(
+    // 9. Redator — write the full document (feature-flagged token cap)
+    const redatorRuntime = resolveRedatorRuntimeConfig()
+    const redatorPrimaryMaxTokens = redatorRuntime.cap10kEnabled
+      ? REDATOR_FAST_MAX_TOKENS
+      : REDATOR_DEFAULT_MAX_TOKENS
+
+    reportProgress(
+      'redacao',
+      'Redigindo documento completo...',
+      82,
+      modelRedator,
+      redatorRuntime.cap10kEnabled
+        ? `Modo rápido ativo (${redatorPrimaryMaxTokens.toLocaleString('pt-BR')} tokens)`
+        : `Janela padrão (${REDATOR_DEFAULT_MAX_TOKENS.toLocaleString('pt-BR')} tokens)`,
+    )
+    const redatorPrimaryResult = await callLLMWithFallback(
       apiKey,
       buildRedatorSystem(docType, tema, profile, customStructure),
       buildRedatorUser(
@@ -1702,9 +1811,68 @@ export async function generateDocument(
         pesquisaResult.content, factCheckResult.content, planoResult.content,
         contextDetail, acervoBase || undefined,
       ),
-      modelRedator, modelRedator, 12000, 0.3,
+      modelRedator, modelRedator, redatorPrimaryMaxTokens, 0.3,
     )
-    reportStageResult('redacao', 'Redação principal concluída.', 90, docResult)
+    reportStageResult('redacao', 'Redação principal concluída.', 90, redatorPrimaryResult)
+
+    // 10. Quality evaluation — run document-type-specific rules
+    reportProgress('qualidade', 'Avaliando qualidade do documento...', 93)
+    const redatorPrimaryQuality = evaluateQuality(redatorPrimaryResult.content, docType, { tema })
+
+    let redatorRollbackResult: Awaited<ReturnType<typeof callLLMWithFallback>> | null = null
+    let redatorRollbackQuality: ReturnType<typeof evaluateQuality> | null = null
+    let docResult = redatorPrimaryResult
+    let qualityResult = redatorPrimaryQuality
+    let redatorRollbackUsed = false
+
+    if (redatorRuntime.rollbackEnabled && redatorPrimaryQuality.score < redatorRuntime.rollbackMinQuality) {
+      redatorRollbackUsed = true
+      reportProgress(
+        'redacao',
+        'Qualidade abaixo do mínimo. Reexecutando Redator com janela completa...',
+        86,
+        modelRedator,
+        `Fallback acionado: ${redatorPrimaryQuality.score}/100 < ${redatorRuntime.rollbackMinQuality}/100`,
+      )
+
+      redatorRollbackResult = await callLLMWithFallback(
+        apiKey,
+        buildRedatorSystem(docType, tema, profile, customStructure),
+        buildRedatorUser(
+          docType, request, triageResult.content, areas, context,
+          pesquisaResult.content, factCheckResult.content, planoResult.content,
+          contextDetail, acervoBase || undefined,
+        ),
+        modelRedator,
+        modelRedator,
+        REDATOR_DEFAULT_MAX_TOKENS,
+        0.3,
+      )
+      reportStageResult('redacao', 'Redação de fallback concluída.', 90, redatorRollbackResult)
+
+      reportProgress('qualidade', 'Reavaliando qualidade após fallback do Redator...', 93)
+      redatorRollbackQuality = evaluateQuality(redatorRollbackResult.content, docType, { tema })
+
+      if (redatorRollbackQuality.score >= redatorPrimaryQuality.score) {
+        docResult = redatorRollbackResult
+        qualityResult = redatorRollbackQuality
+        reportProgress(
+          'qualidade',
+          'Fallback aprovado: versão estendida selecionada.',
+          94,
+          undefined,
+          `Primária ${redatorPrimaryQuality.score}/100 • Fallback ${redatorRollbackQuality.score}/100`,
+        )
+      } else {
+        reportProgress(
+          'qualidade',
+          'Fallback descartado: versão primária mantida.',
+          94,
+          undefined,
+          `Primária ${redatorPrimaryQuality.score}/100 • Fallback ${redatorRollbackQuality.score}/100`,
+        )
+      }
+    }
 
     // Accumulate LLM usage across all pipeline agents for Dashboard metrics
     const llmExecutions = [
@@ -1841,13 +2009,25 @@ export async function generateDocument(
         source_id: docId,
         phase: 'redacao',
         agent_name: 'Redator',
-        model: docResult.model,
-        tokens_in: docResult.tokens_in,
-        tokens_out: docResult.tokens_out,
-        cost_usd: docResult.cost_usd,
-        duration_ms: docResult.duration_ms,
+        model: redatorPrimaryResult.model,
+        tokens_in: redatorPrimaryResult.tokens_in,
+        tokens_out: redatorPrimaryResult.tokens_out,
+        cost_usd: redatorPrimaryResult.cost_usd,
+        duration_ms: redatorPrimaryResult.duration_ms,
         document_type_id: docType,
       }),
+      ...(redatorRollbackResult ? [createUsageExecutionRecord({
+        source_type: 'document_generation',
+        source_id: docId,
+        phase: 'redacao_rollback',
+        agent_name: 'Redator (fallback qualidade)',
+        model: redatorRollbackResult.model,
+        tokens_in: redatorRollbackResult.tokens_in,
+        tokens_out: redatorRollbackResult.tokens_out,
+        cost_usd: redatorRollbackResult.cost_usd,
+        duration_ms: redatorRollbackResult.duration_ms,
+        document_type_id: docType,
+      })] : []),
     ]
     const allResults = [
       triageResult,
@@ -1855,24 +2035,35 @@ export async function generateDocument(
       ...(compiladorResult ? [compiladorResult] : []),
       ...(revisorBaseResult ? [revisorBaseResult] : []),
       pesquisaResult, juristaResult, criticaResult,
-      juristaV2Result, factCheckResult, planoResult, docResult,
+      juristaV2Result, factCheckResult, planoResult, redatorPrimaryResult,
+      ...(redatorRollbackResult ? [redatorRollbackResult] : []),
     ]
     const llm_tokens_in  = allResults.reduce((s, r) => s + r.tokens_in,  0)
     const llm_tokens_out = allResults.reduce((s, r) => s + r.tokens_out, 0)
     const llm_cost_usd   = parseFloat(allResults.reduce((s, r) => s + r.cost_usd, 0).toFixed(6))
     const usage_summary = buildUsageSummary(llmExecutions)
 
-    // 10. Quality evaluation — run document-type-specific rules
-  reportProgress('qualidade', 'Avaliando qualidade do documento...', 93)
-    const qualityResult = evaluateQuality(docResult.content, docType, { tema })
     const quality_score = qualityResult.score
 
     // 11. Save the generated text
     reportProgress('salvando', 'Salvando documento...', 95)
+    const saveStartedAt = Date.now()
     await updateDoc(docRef, {
       texto_completo: docResult.content,
       status: 'concluido',
       quality_score,
+      generation_meta: {
+        redator: {
+          cap_10k_enabled: redatorRuntime.cap10kEnabled,
+          primary_max_tokens: redatorPrimaryMaxTokens,
+          rollback_enabled: redatorRuntime.rollbackEnabled,
+          rollback_min_quality: redatorRuntime.rollbackMinQuality,
+          rollback_triggered: redatorRollbackUsed,
+          primary_quality_score: redatorPrimaryQuality.score,
+          rollback_quality_score: redatorRollbackQuality?.score ?? null,
+          selected_variant: docResult === redatorPrimaryResult ? 'primary' : 'rollback',
+        },
+      },
       llm_tokens_in,
       llm_tokens_out,
       llm_cost_usd,
@@ -1881,7 +2072,12 @@ export async function generateDocument(
       updated_at: new Date().toISOString(),
     })
 
-    reportProgress('concluido', 'Documento gerado com sucesso!', 100)
+    const saveDurationMs = Date.now() - saveStartedAt
+    const completionMetaParts = [`Persistido em ${Math.max(1, saveDurationMs)}ms`]
+    if (redatorRollbackUsed) {
+      completionMetaParts.push(docResult === redatorPrimaryResult ? 'Fallback executado, versão primária mantida' : 'Fallback executado e aplicado')
+    }
+    reportProgress('concluido', 'Documento gerado com sucesso!', 100, undefined, completionMetaParts.join(' • '))
   } catch (err) {
     // Update status to error
     await updateDoc(docRef, {
@@ -1907,6 +2103,10 @@ export function estimateDocumentGenerationCost(requestLength: number, hasAcervo:
   agentCount: number
 } {
   const scaleFactor = Math.max(1, requestLength / 2000)
+  const redatorRuntime = resolveRedatorRuntimeConfig()
+  const redatorBaseTokens = redatorRuntime.cap10kEnabled
+    ? REDATOR_FAST_MAX_TOKENS
+    : REDATOR_DEFAULT_MAX_TOKENS
 
   // Conservative token estimates per agent tier
   const AGENT_ESTIMATES: { key: string; label: string; baseTokens: number; costPer1kTokens: number; conditional?: boolean }[] = [
@@ -1920,7 +2120,7 @@ export function estimateDocumentGenerationCost(requestLength: number, hasAcervo:
     { key: 'jurista_v2', label: 'Jurista (revisão)', baseTokens: 7000, costPer1kTokens: 0.003 },
     { key: 'fact_checker', label: 'Fact-Checker', baseTokens: 3000, costPer1kTokens: 0.0005 },
     { key: 'moderador', label: 'Moderador', baseTokens: 5000, costPer1kTokens: 0.003 },
-    { key: 'redator', label: 'Redator', baseTokens: 12000, costPer1kTokens: 0.003 },
+    { key: 'redator', label: 'Redator', baseTokens: redatorBaseTokens, costPer1kTokens: 0.003 },
   ]
 
   // Filter out acervo agents if user has no acervo

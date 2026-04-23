@@ -114,8 +114,9 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
     setTasks(prev => [...prev, task])
 
     const onProgress = (p: TaskProgress) => {
+      const runningProgress = Math.min(99, Math.max(0, p.progress))
       updateTask(id, {
-        progress: Math.min(100, Math.max(0, p.progress)),
+        progress: runningProgress,
         phase: p.phase,
         stageMeta: p.stageMeta,
         operationals: p.operationals,

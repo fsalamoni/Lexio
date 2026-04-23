@@ -53,6 +53,7 @@ export default function NewDocument() {
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const [selectedAreas, setSelectedAreas] = useState<string[]>([])
   const [request, setRequest] = useState('')
+  const [includeAcervo, setIncludeAcervo] = useState(true)
   const [loading, setLoading] = useState(false)
   const [loadingTypes, setLoadingTypes] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -86,8 +87,8 @@ export default function NewDocument() {
   // Cost estimate based on current form state
   const costEstimate = useMemo(() => {
     if (!formReady) return null
-    return estimateDocumentGenerationCost(request.length, true, 0)
-  }, [formReady, request.length])
+    return estimateDocumentGenerationCost(request.length, includeAcervo, 0)
+  }, [formReady, request.length, includeAcervo])
 
   // Initialise pipeline agents state from template
   const initPipeline = useCallback(() => {
@@ -285,6 +286,9 @@ export default function NewDocument() {
           original_request: request,
           template_variant: selectedTemplate || null,
           legal_area_ids: selectedAreas.length > 0 ? selectedAreas : null,
+          request_context: {
+            include_acervo: includeAcervo,
+          },
           context_detail: contextDetail,
         })
         invalidateApiCache('/stats')
@@ -308,13 +312,18 @@ export default function NewDocument() {
               null,
               (p) => {
                 handleProgress(p)
-                const pct = p.phase === DOCUMENT_PIPELINE_COMPLETED_PHASE
-                  ? 100
-                  : Math.min(95, (p.step / p.totalSteps) * 100)
-                onTaskProgress({ progress: pct, phase: p.message || p.phase })
+                const pct = Math.min(99, Math.max(0, (p.step / Math.max(1, p.totalSteps)) * 100))
+                onTaskProgress({
+                  progress: pct,
+                  phase: p.message || p.phase,
+                  stageMeta: p.stageMeta,
+                  currentStep: p.step,
+                  totalSteps: p.totalSteps,
+                })
               },
               userProfile,
               contextDetail,
+              includeAcervo,
             )
             return newDoc.id
           } catch (err: any) {
@@ -412,7 +421,9 @@ export default function NewDocument() {
           {
             label: 'Estimativa',
             value: costEstimate ? `~${formatCost(costEstimate.estimatedCostUsd)}` : 'Aguardando',
-            helper: costEstimate ? `~${(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens` : 'Preencha tipo e solicitacao',
+            helper: costEstimate
+              ? `~${(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens • ${includeAcervo ? 'com acervo' : 'sem acervo'}`
+              : 'Preencha tipo e solicitacao',
             icon: Sparkles,
             tone: costEstimate ? 'warm' : 'default',
           },
@@ -480,6 +491,23 @@ export default function NewDocument() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeAcervo}
+                onChange={(e) => setIncludeAcervo(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span className="text-sm text-gray-700">
+                <span className="font-medium">Usar acervo como base</span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Recomendado para manter continuidade com documentos anteriores. Desative para priorizar velocidade nesta geração.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div>
@@ -584,7 +612,10 @@ export default function NewDocument() {
           {/* Cost estimate preview */}
           {costEstimate && !generating && (
             <div className="w-full text-xs text-gray-500 flex items-center justify-between px-1">
-              <span>Estimativa: ~{costEstimate.agentCount} agentes, ~{(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens</span>
+              <span>
+                Estimativa: ~{costEstimate.agentCount} agentes, ~{(costEstimate.estimatedTokens / 1000).toFixed(0)}k tokens
+                {includeAcervo ? ' (acervo ligado)' : ' (acervo desligado)'}
+              </span>
               <span className="font-medium text-amber-600">~{formatCost(costEstimate.estimatedCostUsd)}</span>
             </div>
           )}

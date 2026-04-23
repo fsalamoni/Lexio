@@ -875,10 +875,19 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
         existingSourceIds,
         (progress: AcervoAnalysisProgress) => {
           const enriched = buildAcervoProgressState(progress)
-          setAcervoAnalysisPhase(enriched.phase)
-          setAcervoAnalysisMessage(enriched.message)
-          setAcervoAnalysisPercent(enriched.percent)
-          setAcervoAnalysisMeta(enriched.stageMeta || '')
+          const analyzerConcluded = progress.phase === 'concluido'
+          setAcervoAnalysisPhase(analyzerConcluded ? 'nb_acervo_curador' : enriched.phase)
+          setAcervoAnalysisMessage(
+            analyzerConcluded
+              ? 'Consolidando análise e persistindo resultados no caderno...'
+              : enriched.message,
+          )
+          setAcervoAnalysisPercent(Math.min(enriched.percent, 99))
+          setAcervoAnalysisMeta(
+            analyzerConcluded
+              ? 'Persistindo execuções e sincronizando estado'
+              : (enriched.stageMeta || ''),
+          )
 
           const eventKey = buildOperationalEventKey({
             phase: progress.phase,
@@ -914,6 +923,15 @@ Resumo das fontes:\n${preview}\n\nGere exatamente 5 perguntas curtas e objetivas
           ? { ...prev, llm_executions: [...existingExecs, ...result.executions] }
           : prev)
       }
+
+      const persistenceMetaParts = ['Persistência concluída']
+      if (result.executions.length > 0) {
+        persistenceMetaParts.push(`${result.executions.length} execução(ões) registradas`)
+      }
+      setAcervoAnalysisPhase('concluido')
+      setAcervoAnalysisMessage('Análise do acervo concluída e persistida no caderno.')
+      setAcervoAnalysisPercent(100)
+      setAcervoAnalysisMeta(persistenceMetaParts.join(' • '))
 
       if (result.documents.length > 0) {
         setAcervoAnalysisResults(result.documents)
@@ -2555,8 +2573,9 @@ Instruções:
               })
             }
 
+            const pipelineProgress = Math.min(99, Math.round((step / Math.max(total, 1)) * 100))
             onTaskProgress({
-              progress: Math.round((step / Math.max(total, 1)) * 100),
+              progress: pipelineProgress,
               phase: buildStudioTaskPhaseMessage(step, total, phase, artifactType),
               stageMeta: meta?.stageMeta,
               operationals: studioOperationalSummary,
@@ -3049,7 +3068,8 @@ Instruções:
 
       const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent, meta) => {
         const progress = buildVideoPipelineProgress(step, total, phase, agent, meta)
-        setVideoGenProgress(progress)
+        const runningProgress = progress.percent >= 100 ? { ...progress, percent: 99 } : progress
+        setVideoGenProgress(runningProgress)
 
         const eventKey = buildOperationalEventKey({
           phase,
@@ -3073,7 +3093,7 @@ Instruções:
         }
 
         reportTaskProgress({
-          progress: progress.percent,
+          progress: runningProgress.percent,
           phase: progress.stageLabel ? `${progress.stageLabel}: ${progress.stageDescription || progress.phase}` : (agent ? `${agent}: ${phase}` : phase),
           stageMeta: progress.stageMeta,
           operationals: videoTaskOperationalSummary,
@@ -3686,7 +3706,8 @@ Instruções:
 
       const onProgress: VideoGenerationProgressCallback = (step, total, phase, agent, meta) => {
         const progress = buildVideoPipelineProgress(step, total, phase, agent, meta)
-        setVideoStudioLiteralProgress(progress)
+        const runningProgress = progress.percent >= 100 ? { ...progress, percent: 99 } : progress
+        setVideoStudioLiteralProgress(runningProgress)
         const eventKey = buildOperationalEventKey({
           phase,
           costUsd: progress.costUsd,
@@ -3708,7 +3729,7 @@ Instruções:
           setVideoLiteralOperationalSummary(literalTaskOperationalSummary)
         }
         reportTaskProgress({
-          progress: progress.percent,
+          progress: runningProgress.percent,
           phase: progress.stageLabel ? `${progress.stageLabel}: ${progress.stageDescription || progress.phase}` : (agent ? `${agent}: ${phase}` : phase),
           stageMeta: progress.stageMeta,
           operationals: literalTaskOperationalSummary,
@@ -3800,7 +3821,7 @@ Instruções:
         })
         setVideoLiteralOperationalSummary(literalTaskOperationalSummary)
         reportTaskProgress({
-          progress: 100,
+          progress: 99,
           phase: 'Render finalizado por provedor externo',
           stageMeta: renderModel,
           operationals: literalTaskOperationalSummary,

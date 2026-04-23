@@ -1,8 +1,8 @@
 {
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
-    "updated": "2026-04-19",
-    "cycle": "v2-wave19-skins-cleanup",
+    "updated": "2026-04-22",
+    "cycle": "wave20-redator-progress-trust",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -238,6 +238,18 @@
       ]
     },
     {
+      "id": "E4.F5",
+      "epic": "Integração Caderno→Documentos",
+      "name": "Redator otimizado com fallback por qualidade no gerador documental",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/generation-service.ts",
+        "frontend/src/pages/NewDocument.tsx",
+        "frontend/src/pages/DocumentDetail.tsx"
+      ],
+      "notes": "Rollout por feature flag para 10k tokens (`VITE_DOC_REDATOR_10K_ENABLED`) com fallback automático para 12k por limiar de qualidade e seleção automática da melhor variante final, preservando rastreabilidade em generation_meta.redator e custo real em llm_executions."
+    },
+    {
       "id": "E5.F1",
       "epic": "Infraestrutura de Qualidade",
       "name": "Testes unitários DataJud ementa/inteiro_teor",
@@ -347,6 +359,18 @@
         "SECURITY.md"
       ],
       "notes": "DataJud deixou de usar chave hardcoded em código versionado; Cloud Function consome DATAJUD_API_KEY via Secret Manager; preview/pages/deploy agora exigem typecheck+test+build; o deploy estavel resolve `DATAJUD_API_KEY` entre GitHub Actions e um segredo ja existente no Firebase Secret Manager, sincronizando o valor apenas quando o CI o recebe; lane estavel revalidada com deploy real e smoke test 200 em `/api/datajud`"
+    },
+    {
+      "id": "E5.F7",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Contrato de progresso confiável (100% apenas após persistência)",
+      "state": "implemented",
+      "files": [
+        "frontend/src/contexts/TaskManagerContext.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/lib/notebook-pipeline-progress.ts"
+      ],
+      "notes": "Tarefas em execução são limitadas a <=99% e os fluxos de acervo/estúdio/vídeo no notebook evitam fase concluída prematura; 100% fica reservado ao término real do job com persistência concluída."
     },
     {
       "id": "E8.F1",

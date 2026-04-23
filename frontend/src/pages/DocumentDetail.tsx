@@ -53,6 +53,7 @@ interface DocumentData {
   created_at: string
   docx_path: string | null
   legal_area_ids: string[]
+  request_context?: Record<string, unknown> | null
   texto_completo: string | null
   context_detail?: ContextDetailData | null
   origem?: string
@@ -164,6 +165,7 @@ export default function DocumentDetail() {
               created_at: data.created_at,
               docx_path: (data as any).docx_path ?? null,
               legal_area_ids: data.legal_area_ids ?? [],
+              request_context: data.request_context ?? null,
               texto_completo: data.texto_completo ?? null,
               context_detail: data.context_detail ?? null,
               metadata_: (data as any).metadata_ ?? undefined,
@@ -288,6 +290,9 @@ export default function DocumentDetail() {
         setRetryPipeline(true)
         toast.success('Reprocessamento iniciado')
         try {
+          const includeAcervoFromContext = doc.request_context?.include_acervo
+          const includeAcervo = typeof includeAcervoFromContext === 'boolean' ? includeAcervoFromContext : true
+
           await generateDocument(
             userId,
             id,
@@ -296,6 +301,9 @@ export default function DocumentDetail() {
             doc.legal_area_ids ?? [],
             undefined,
             handleRetryProgress,
+            undefined,
+            undefined,
+            includeAcervo,
           )
         } catch (err: any) {
           console.error('Retry generation failed:', err)

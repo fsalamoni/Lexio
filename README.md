@@ -110,6 +110,18 @@ VITE_REDESIGN_V2_HOME=true
 # Opcional — fallback quando não há chave no Firestore
 VITE_OPENROUTER_API_KEY=sk-or-v1-...
 
+# Opcional — rollout de performance do Redator (documentos)
+# true: usa 10k tokens na primeira tentativa de redação
+VITE_DOC_REDATOR_10K_ENABLED=false
+
+# Opcional — limiar mínimo de qualidade (0-100) para acionar fallback em 12k
+# padrão: 82
+VITE_DOC_REDATOR_QUALITY_ROLLBACK_MIN=82
+
+# Opcional — desativa rollback automático por qualidade quando rollout 10k estiver ativo
+VITE_DOC_REDATOR_QUALITY_ROLLBACK_DISABLED=false
+# Observação: com todas as flags acima em false/default, o pipeline segue no modo tradicional (Redator 12k sem fallback extra)
+
 # Opcional — acesso direto ao DataJud apenas em desenvolvimento/local
 # Em produção, o fluxo preferencial é via proxy gerenciado (/api/datajud ou Cloud Function)
 VITE_DATAJUD_API_KEY=your_datajud_key

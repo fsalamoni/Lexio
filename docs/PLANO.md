@@ -18,6 +18,13 @@
 
 **Status:** ⚠️ avançando Faixa B com a fundação do redesign V2 em expansão controlada — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook, hardening de TTS/DocumentDetail, code splitting do ResearchNotebook, hardening de DataJud/CI-CD, `ProfileV2`, `DashboardV2`, dezoito ondas funcionais do trilho V2 validadas localmente, `/` agora promovida para `DashboardV2` sob gate, shell V2 cobrindo `/documents*`, `/upload`, `/theses`, `/settings*`, `/admin*` e `/profile`, aliases técnicos completos para os antigos labs de dashboard/notebook/profile, migração visual real das superfícies internas principais via primitives compartilhadas + base V2 compartilhada para configuracoes, custos pessoal/agregado, catalogo, configuracoes especializadas e o nucleo de governanca/admin promovidos para blocos integralmente nativos, alem de navegacao preview-safe consolidada entre sidebar/notificacoes/admin, um Hosting dedicado para o redesign em `lexio-redesign-v2-44760.web.app` e o hotfix do deploy estavel do Firebase concluido com `DATAJUD_API_KEY` provisionado e validado em producao
 
+**Atualização incremental (2026-04-22 — Wave 20: performance + confiança de progresso):**
+- ✅ Pipeline documental com rollout por feature flag para Redator em 10k tokens (`VITE_DOC_REDATOR_10K_ENABLED`) e fallback automático para 12k por qualidade mínima (`VITE_DOC_REDATOR_QUALITY_ROLLBACK_MIN` / `VITE_DOC_REDATOR_QUALITY_ROLLBACK_DISABLED`).
+- ✅ Seleção automática da melhor versão final (primária vs fallback), mantendo rastreabilidade em `generation_meta.redator` e contabilizando custos das tentativas extras em `llm_executions`.
+- ✅ Estimador de custo do gerador documental atualizado para refletir o modo ativo do Redator (10k/12k).
+- ✅ Normalização de confiança de progresso no notebook: fluxos de acervo/estúdio/vídeo/literal limitam estado em execução a `<=99%` e só promovem conclusão após persistência.
+- 🔄 Próximo bloco: consolidar paralelização segura de agentes onde não houver regressão de qualidade, fechar governança final de release e executar trilha operacional completa de merge/pull/commit/deploy.
+
 ## Plano Mestre Executável (Atualizado)
 
 ### Faixa A — Consolidado em produção (já implementado)
