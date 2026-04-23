@@ -20,6 +20,8 @@ const MOBILE_BREAKPOINT_PX = 768
 const MOBILE_PANEL_MARGIN_PX = 8
 const COMPACT_PANEL_MIN_WIDTH_PX = 280
 const COMPACT_PANEL_MIN_HEIGHT_PX = 220
+const DEFAULT_VIEWPORT_WIDTH_PX = 1280
+const DEFAULT_VIEWPORT_HEIGHT_PX = 720
 
 function bringToFront(): number {
   globalZCounter += 1
@@ -29,6 +31,21 @@ function bringToFront(): number {
 function clamp(value: number, min: number, max: number): number {
   if (max < min) return min
   return Math.min(max, Math.max(min, value))
+}
+
+function readViewportSize(): { w: number; h: number } {
+  if (typeof window === 'undefined') {
+    return { w: DEFAULT_VIEWPORT_WIDTH_PX, h: DEFAULT_VIEWPORT_HEIGHT_PX }
+  }
+
+  const visualViewport = window.visualViewport
+  const width = visualViewport?.width ?? window.innerWidth
+  const height = visualViewport?.height ?? window.innerHeight
+
+  return {
+    w: Math.max(1, Math.round(width)),
+    h: Math.max(1, Math.round(height)),
+  }
 }
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -80,10 +97,7 @@ export default function DraggablePanel({
   const [zIndex, setZIndex] = useState(() => bringToFront())
   const [collapsed, setCollapsed] = useState(false)
   const [maximized, setMaximized] = useState(startMaximized)
-  const [viewport, setViewport] = useState(() => ({
-    w: typeof window !== 'undefined' ? window.innerWidth : 1280,
-    h: typeof window !== 'undefined' ? window.innerHeight : 720,
-  }))
+  const [viewport, setViewport] = useState(() => readViewportSize())
 
   // Position and size state
   const [pos, setPos] = useState({ x: -1, y: -1 })
@@ -99,21 +113,35 @@ export default function DraggablePanel({
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0, px: 0, py: 0 })
   const isCompactViewport = viewport.w < MOBILE_BREAKPOINT_PX
   const headerHeight = 40
+  const compactWidth = Math.max(1, viewport.w - MOBILE_PANEL_MARGIN_PX * 2)
+  const compactHeight = Math.max(1, viewport.h - MOBILE_PANEL_MARGIN_PX * 2)
 
   useEffect(() => {
-    const handleResize = () => {
-      setViewport({ w: window.innerWidth, h: window.innerHeight })
+    const handleViewportChange = () => {
+      setViewport(readViewportSize())
     }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
+    const visualViewport = window.visualViewport
+
+    window.addEventListener('resize', handleViewportChange)
+    visualViewport?.addEventListener('resize', handleViewportChange)
+    visualViewport?.addEventListener('scroll', handleViewportChange)
+
+    return () => {
+      window.removeEventListener('resize', handleViewportChange)
+      visualViewport?.removeEventListener('resize', handleViewportChange)
+      visualViewport?.removeEventListener('scroll', handleViewportChange)
+    }
   }, [])
 
   const applyCompactGeometry = useCallback(() => {
-    const compactWidth = Math.max(COMPACT_PANEL_MIN_WIDTH_PX, viewport.w - MOBILE_PANEL_MARGIN_PX * 2)
-    const compactHeight = Math.max(COMPACT_PANEL_MIN_HEIGHT_PX, viewport.h - MOBILE_PANEL_MARGIN_PX * 2)
+    const compactMinWidth = Math.min(COMPACT_PANEL_MIN_WIDTH_PX, compactWidth)
+    const compactMinHeight = Math.min(COMPACT_PANEL_MIN_HEIGHT_PX, compactHeight)
+    const nextWidth = clamp(initialWidth, compactMinWidth, compactWidth)
+    const nextHeight = clamp(initialHeight, compactMinHeight, compactHeight)
+
     setPos({ x: MOBILE_PANEL_MARGIN_PX, y: MOBILE_PANEL_MARGIN_PX })
-    setSize({ w: compactWidth, h: compactHeight })
-  }, [viewport.w, viewport.h])
+    setSize({ w: nextWidth, h: nextHeight })
+  }, [compactWidth, compactHeight, initialWidth, initialHeight])
 
   // Center on first open
   useEffect(() => {
@@ -149,8 +177,10 @@ export default function DraggablePanel({
     })
 
     setPos((prev) => {
-      const maxX = Math.max(0, viewport.w - size.w)
-      const maxY = Math.max(0, viewport.h - (collapsed ? headerHeight : size.h))
+      const boundedWidth = Math.min(size.w, viewport.w)
+      const boundedHeight = Math.min(size.h, viewport.h)
+      const maxX = Math.max(0, viewport.w - boundedWidth)
+      const maxY = Math.max(0, viewport.h - (collapsed ? headerHeight : boundedHeight))
       const nextX = clamp(prev.x, 0, maxX)
       const nextY = clamp(prev.y, 0, maxY)
       if (nextX === prev.x && nextY === prev.y) return prev
@@ -186,8 +216,10 @@ export default function DraggablePanel({
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
       if (dragging.current && !isCompactViewport) {
-        const maxX = Math.max(0, viewport.w - size.w)
-        const maxY = Math.max(0, viewport.h - (collapsed ? headerHeight : size.h))
+        const boundedWidth = Math.min(size.w, viewport.w)
+        const boundedHeight = Math.min(size.h, viewport.h)
+        const maxX = Math.max(0, viewport.w - boundedWidth)
+        const maxY = Math.max(0, viewport.h - (collapsed ? headerHeight : boundedHeight))
         const newX = clamp(e.clientX - dragOffset.current.x, 0, maxX)
         const newY = clamp(e.clientY - dragOffset.current.y, 0, maxY)
         setPos({ x: newX, y: newY })
@@ -267,6 +299,12 @@ export default function DraggablePanel({
   if (!open) return null
 
   const resizeEdgeSize = 6
+  const renderedWidth = isCompactViewport
+    ? compactWidth
+    : (maximized ? viewport.w : size.w)
+  const renderedHeight = collapsed
+    ? headerHeight
+    : (isCompactViewport ? compactHeight : (maximized ? viewport.h : size.h))
 
   return (
     <div
@@ -279,8 +317,8 @@ export default function DraggablePanel({
         zIndex,
         left: isCompactViewport ? MOBILE_PANEL_MARGIN_PX : pos.x,
         top: isCompactViewport ? MOBILE_PANEL_MARGIN_PX : pos.y,
-        width: isCompactViewport ? `calc(100vw - ${MOBILE_PANEL_MARGIN_PX * 2}px)` : (maximized ? '100vw' : size.w),
-        height: collapsed ? headerHeight : (isCompactViewport ? `calc(100vh - ${MOBILE_PANEL_MARGIN_PX * 2}px)` : (maximized ? '100vh' : size.h)),
+        width: renderedWidth,
+        height: renderedHeight,
         transition: collapsed ? 'height 0.15s ease' : undefined,
         background: 'var(--v2-panel-strong, #fff)',
         border: '1px solid var(--v2-line-soft, rgba(15,23,42,0.08))',

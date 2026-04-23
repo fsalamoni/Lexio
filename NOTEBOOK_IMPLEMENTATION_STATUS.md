@@ -5,7 +5,17 @@
 
 ---
 
-## Status Geral: Etapas 1-219 IMPLEMENTADAS
+## Status Geral: Etapas 1-226 IMPLEMENTADAS
+
+### Etapas 220-226 — Heurística Adaptativa Unificada + Hardening Mobile Viewport-Real ✅
+- **Arquivos**: `frontend/src/lib/runtime-concurrency.ts`, `frontend/src/lib/runtime-concurrency.test.ts`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/components/DraggablePanel.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`
+- Etapa 220: utilitário compartilhado `runtime-concurrency.ts` adicionado para resolver concorrência adaptativa com clamp padronizado e leitura de hints de runtime (CPU/memória/rede).
+- Etapa 221: `runtime-concurrency.test.ts` introduzido com cobertura de parsing de env, fallback seguro e limites por hardware/memória/rede/save-data.
+- Etapa 222: `notebook-acervo-analyzer.ts` migrou para a heurística unificada de concorrência, removendo lógica duplicada local sem alterar fallback/telemetria do Analista.
+- Etapa 223: `video-generation-pipeline.ts` migrou batches de imagem/TTS para a mesma heurística unificada, preservando metadados operacionais por lote.
+- Etapa 224: `DraggablePanel.tsx` endurecido com `visualViewport` e geometria compacta sempre confinada à área visível real em mobile.
+- Etapa 225: `ResearchNotebookV2.tsx` removeu import dinâmico redundante de `artifact-parsers`, eliminando advisory de chunking misto no build.
+- Etapa 226: validação regressiva completa executada com sucesso: `npm run typecheck`, `npm run test` (**36/36 arquivos**, **278/278 testes**) e `npm run build`.
 
 ### Etapas 215-219 — Concorrência Adaptativa + Hardening Mobile Global de Painéis ✅
 - **Arquivos**: `frontend/src/components/DraggablePanel.tsx`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/lib/video-generation-pipeline.ts`

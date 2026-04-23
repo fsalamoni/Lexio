@@ -81,7 +81,7 @@ import {
 import { buildWorkspaceSettingsPath } from '../../lib/workspace-routes'
 import { createUsageExecutionRecord, type UsageFunctionKey } from '../../lib/cost-analytics'
 import { AREA_LABELS } from '../../lib/constants'
-import { isStructuredArtifactType } from '../../lib/artifact-parsers'
+import { isStructuredArtifactType, parseArtifactContent } from '../../lib/artifact-parsers'
 import type { StoredNotebookMedia } from '../../lib/notebook-media-storage'
 import {
   ALL_TRIBUNALS,
@@ -169,10 +169,6 @@ async function loadImageGenerationRuntime() {
 
 async function loadTtsRuntime() {
   return import('../../lib/tts-client')
-}
-
-async function loadArtifactParsersRuntime() {
-  return import('../../components/artifacts/artifact-parsers')
 }
 
 const ARTIFACT_TYPE_MAP = new Map(ARTIFACT_TYPES.map((artifact) => [artifact.type, artifact] as const))
@@ -2051,10 +2047,7 @@ export default function ResearchNotebookV2() {
     try {
       const freshNotebook = await getFreshNotebookOrThrow(notebookId)
       const currentArtifact = freshNotebook.artifacts.find((item) => item.id === artifact.id) ?? artifact
-      const [{ parseArtifactContent }, { uploadNotebookMediaArtifact }] = await Promise.all([
-        loadArtifactParsersRuntime(),
-        loadNotebookMediaStorageRuntime(),
-      ])
+      const { uploadNotebookMediaArtifact } = await loadNotebookMediaStorageRuntime()
       const parsed = parseArtifactContent(currentArtifact.type, currentArtifact.content)
 
       let nextContent = currentArtifact.content

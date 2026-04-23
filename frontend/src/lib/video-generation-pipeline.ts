@@ -30,6 +30,7 @@ import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analyt
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
 import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import type { VideoPipelineProgressMeta } from './video-pipeline-progress'
+import { getRuntimeConcurrencyHints, resolveAdaptiveConcurrency } from './runtime-concurrency'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -582,34 +583,8 @@ function generateSegmentId(): string {
 
 const DEFAULT_IMAGE_BATCH_CONCURRENCY = 3
 const DEFAULT_TTS_BATCH_CONCURRENCY = 2
-const MIN_MEDIA_BATCH_CONCURRENCY = 1
 const MAX_IMAGE_BATCH_CONCURRENCY = 5
 const MAX_TTS_BATCH_CONCURRENCY = 3
-
-function parsePositiveInt(raw: string | undefined): number | null {
-  if (!raw) return null
-  const parsed = Number.parseInt(raw, 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) return null
-  return parsed
-}
-
-function resolveMediaBatchConcurrency(options: {
-  envValue: string | undefined
-  fallback: number
-  max: number
-}): number {
-  const envConcurrency = parsePositiveInt(options.envValue)
-  const hardwareConcurrency = typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
-    ? navigator.hardwareConcurrency
-    : null
-
-  const hardwareCap = hardwareConcurrency != null
-    ? Math.max(MIN_MEDIA_BATCH_CONCURRENCY, Math.min(options.max, Math.floor(hardwareConcurrency / 2)))
-    : options.max
-
-  const preferred = envConcurrency ?? options.fallback
-  return Math.max(MIN_MEDIA_BATCH_CONCURRENCY, Math.min(hardwareCap, preferred))
-}
 
 // ── Pipeline execution ────────────────────────────────────────────────────────
 
@@ -627,6 +602,7 @@ export async function runVideoGenerationPipeline(
   const executions: VideoGenerationStepExecution[] = []
   const wantMedia = input.generateMedia !== false // default true
   const totalSteps = wantMedia ? 11 : 8
+  const mediaRuntimeHints = getRuntimeConcurrencyHints()
 
   // Checkpoint state for resumability — updated after each successful step
   const checkpoint: VideoCheckpoint = {
@@ -1336,10 +1312,12 @@ REQUISITOS OBRIGATÓRIOS:
   //
   if (wantMedia && scenes.length > 0) {
     const imageModel = input.imageModel || models.video_image_generator || DEFAULT_IMAGE_MODEL
-    const imageBatchConcurrency = resolveMediaBatchConcurrency({
+    const imageBatchConcurrency = resolveAdaptiveConcurrency({
       envValue: import.meta.env.VITE_VIDEO_IMAGE_BATCH_CONCURRENCY as string | undefined,
       fallback: DEFAULT_IMAGE_BATCH_CONCURRENCY,
+      min: 1,
       max: MAX_IMAGE_BATCH_CONCURRENCY,
+      hints: mediaRuntimeHints,
     })
 
     // Collect all clips that need images
@@ -1467,10 +1445,12 @@ REQUISITOS OBRIGATÓRIOS:
   if (wantMedia && narration.length > 0) {
     const ttsVoice = input.ttsVoice || 'nova'
     const ttsModel = input.ttsModel || DEFAULT_OPENROUTER_TTS_MODEL
-    const ttsBatchConcurrency = resolveMediaBatchConcurrency({
+    const ttsBatchConcurrency = resolveAdaptiveConcurrency({
       envValue: import.meta.env.VITE_VIDEO_TTS_BATCH_CONCURRENCY as string | undefined,
       fallback: DEFAULT_TTS_BATCH_CONCURRENCY,
+      min: 1,
       max: MAX_TTS_BATCH_CONCURRENCY,
+      hints: mediaRuntimeHints,
     })
     const validSegments = narration.filter(s => s.text && s.text.trim().length >= 5)
 

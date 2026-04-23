@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-23",
-    "cycle": "wave23-adaptive-concurrency-global-mobile-panel",
+    "cycle": "wave24-unified-adaptive-runtime-mobile-viewport",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -410,6 +410,21 @@
         "frontend/src/lib/video-generation-pipeline.ts"
       ],
       "notes": "DraggablePanel ganhou modo compacto global para mobile com clamp de geometria e bloqueio de drag/resize em viewport estreita; pipeline de acervo passou a resolver concorrência do Analista de forma adaptativa (env + limite por hardware); pipeline de vídeo agora ajusta batches de imagem e TTS com parâmetros opcionais e cap adaptativo para reduzir sobrecarga em dispositivos menores."
+    },
+    {
+      "id": "E5.F11",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Heurística adaptativa unificada e hardening viewport-real no mobile",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/runtime-concurrency.ts",
+        "frontend/src/lib/runtime-concurrency.test.ts",
+        "frontend/src/lib/notebook-acervo-analyzer.ts",
+        "frontend/src/lib/video-generation-pipeline.ts",
+        "frontend/src/components/DraggablePanel.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx"
+      ],
+      "notes": "Concorrência adaptativa foi centralizada em utilitário compartilhado com sinais de CPU/memória/rede; acervo e vídeo migraram para a mesma política de clamp; DraggablePanel passou a usar visualViewport para estabilidade em mobile real; e o ResearchNotebookV2 removeu import dinâmico redundante de artifact-parsers para eliminar advisory de chunking misto no build."
     },
     {
       "id": "E8.F1",

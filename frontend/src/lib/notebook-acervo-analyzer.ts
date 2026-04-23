@@ -17,6 +17,7 @@ import { getAllAcervoDocumentsForSearch, updateAcervoEmenta, type AcervoDocument
 import { getOpenRouterKey, generateAcervoEmenta } from './generation-service'
 import { loadNotebookAcervoModels, type NotebookAcervoModelMap } from './model-config'
 import { createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
+import { getRuntimeConcurrencyHints, resolveAdaptiveConcurrency } from './runtime-concurrency'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -111,28 +112,14 @@ const PREFILTER_TEXT_SAMPLE_CHARS = 20_000
 const DEFAULT_BUSCADOR_SUMMARY_TEMPLATE = 'Documento "%s" selecionado pelo Buscador como referência potencial para a pesquisa.'
 const DEFAULT_ANALISTA_SUMMARY_TEMPLATE = 'Documento "%s" potencialmente útil para a pesquisa, com base na aderência temática identificada pelo Buscador.'
 
-function parsePositiveInt(raw: string | undefined): number | null {
-  if (!raw) return null
-  const parsed = Number.parseInt(raw, 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) return null
-  return parsed
-}
-
 function resolveAnalistaBatchConcurrency(): number {
-  const envValue = parsePositiveInt(import.meta.env.VITE_NB_ACERVO_ANALISTA_CONCURRENCY as string | undefined)
-  const hardwareConcurrency = typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
-    ? navigator.hardwareConcurrency
-    : null
-
-  const hardwareCap = hardwareConcurrency != null
-    ? Math.max(
-      MIN_ANALISTA_BATCH_CONCURRENCY,
-      Math.min(MAX_ANALISTA_BATCH_CONCURRENCY, Math.floor(hardwareConcurrency / 2)),
-    )
-    : MAX_ANALISTA_BATCH_CONCURRENCY
-
-  const preferred = envValue ?? DEFAULT_ANALISTA_BATCH_CONCURRENCY
-  return Math.max(MIN_ANALISTA_BATCH_CONCURRENCY, Math.min(hardwareCap, preferred))
+  return resolveAdaptiveConcurrency({
+    envValue: import.meta.env.VITE_NB_ACERVO_ANALISTA_CONCURRENCY as string | undefined,
+    fallback: DEFAULT_ANALISTA_BATCH_CONCURRENCY,
+    min: MIN_ANALISTA_BATCH_CONCURRENCY,
+    max: MAX_ANALISTA_BATCH_CONCURRENCY,
+    hints: getRuntimeConcurrencyHints(),
+  })
 }
 
 function extractJsonPayload(raw: string): string {

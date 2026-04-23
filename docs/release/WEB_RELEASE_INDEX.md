@@ -18,6 +18,7 @@ Last update: 2026-04-23
 - .firebaserc
 - functions/src/index.ts
 - frontend/src/lib/generation-service.ts
+- frontend/src/lib/runtime-concurrency.ts
 - frontend/src/lib/notebook-acervo-analyzer.ts
 - frontend/src/lib/video-generation-pipeline.ts
 - frontend/src/components/DraggablePanel.tsx
@@ -38,6 +39,9 @@ Last update: 2026-04-23
 - Progress surfaces received residual mobile hardening (`AgentTrailProgressModal` and `PipelineProgressPanel`) to preserve readability under constrained widths.
 - Wave 23 introduces adaptive concurrency controls for acervo/video media steps (`VITE_NB_ACERVO_ANALISTA_CONCURRENCY`, `VITE_VIDEO_IMAGE_BATCH_CONCURRENCY`, `VITE_VIDEO_TTS_BATCH_CONCURRENCY`) with hardware-aware caps.
 - `DraggablePanel` now enforces a compact mobile geometry mode globally (clamped position/size, drag-resize guardrails in narrow viewports) to improve modal stability on small screens.
+- Wave 24 centralizes adaptive concurrency policy in `runtime-concurrency.ts`, including runtime hints for CPU/memory/network to calibrate batch workers safely on constrained devices.
+- `DraggablePanel` now reads `visualViewport` and keeps compact geometry bounded to the real visible area (including mobile keyboard/browser chrome shifts).
+- `ResearchNotebookV2` removed a redundant dynamic import of `artifact-parsers`, eliminating mixed static/dynamic chunk advisory in frontend builds.
 
 ## Required Secrets (GitHub Actions)
 - FIREBASE_API_KEY

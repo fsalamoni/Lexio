@@ -49,6 +49,15 @@
 - ✅ Validação completa desta wave: `npm run typecheck`, `npm run test` (35/35 arquivos, 273/273 testes) e `npm run build` com sucesso.
 - 🔄 Próximo bloco: monitorar telemetria em produção e calibrar defaults por perfil de carga/dispositivo, mantendo estabilidade de UX mobile em todos os modais críticos.
 
+**Atualização incremental (2026-04-23 — Wave 24: heurística adaptativa unificada + hardening mobile viewport-real):**
+- ✅ Nova camada compartilhada `runtime-concurrency.ts` para resolução de concorrência adaptativa com sinais de ambiente/dispositivo (CPU, memória e rede), reduzindo duplicação entre pipelines e padronizando guardrails.
+- ✅ `notebook-acervo-analyzer.ts` e `video-generation-pipeline.ts` migrados para a heurística unificada de concorrência, mantendo fallback e telemetria operacional sem regressão funcional.
+- ✅ `DraggablePanel.tsx` endurecido com leitura de `visualViewport` e geometria compacta sempre confinada à área visível, melhorando estabilidade em mobile com teclado virtual e barras dinâmicas do navegador.
+- ✅ `ResearchNotebookV2.tsx` ajustado para remover import dinâmico redundante de `artifact-parsers`, eliminando advisory de chunking misto (static + dynamic) no build.
+- ✅ Cobertura de regressão ampliada com `runtime-concurrency.test.ts` para cenários de clamp por hardware/memória/rede e parsing robusto de env.
+- ✅ Validação completa desta wave: `npm run typecheck`, `npm run test` (36/36 arquivos, 278/278 testes) e `npm run build` com sucesso.
+- 🔄 Próximo bloco: observar latência/custo em produção por perfil de dispositivo e fechar tuning fino por pipeline (incluindo limites recomendados para redes degradadas).
+
 ## Plano Mestre Executável (Atualizado)
 
 ### Faixa A — Consolidado em produção (já implementado)
