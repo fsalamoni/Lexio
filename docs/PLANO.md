@@ -23,7 +23,8 @@
 - ✅ Pipelines auxiliares e fluxo de persistência do notebook passaram a propagar `execution_state`, `retry_count`, `used_fallback` e `fallback_from` em execuções de estúdio/áudio/apresentação/vídeo/acervo (`notebook-studio-pipeline.ts`, `audio-generation-pipeline.ts`, `presentation-generation-pipeline.ts`, `video-generation-pipeline.ts`, `literal-video-production.ts`, `notebook-acervo-analyzer.ts`, `ResearchNotebook.tsx`, `ResearchNotebookV2.tsx`).
 - ✅ Superfícies de custo foram ampliadas para leitura operacional por estado de execução: tabela por estado no `CostTokensPage.tsx` (global e por seção) e gráfico+tabela dedicados no `PlatformCostsPage.tsx`.
 - ✅ Validação local completa desta wave: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos, 290/290 testes**), `npm run build` e verificação de Problems (`get_errors`) sem erros.
-- 🔄 Próximo bloco: fechar trilha operacional da wave com pull/rebase, commit/push e release one-shot (`release-web.yml`) com monitoramento de jobs e sincronização final de IDs no index/cache/status.
+- ✅ Trilha operacional completa da wave concluída: pull/rebase (`Already up to date`), commit/push do `main` (`9c02d57`) e execução one-shot de release (`release-web.yml` run `24857074922`) com quality gates + Firebase + Pages + summary em `success` (redesign V2 skipped por input).
+- 🔄 Próximo bloco: medir impacto de custo/latência por `execution_state` em produção e consolidar tuning por pipeline (especialmente fases de `waiting_io` e `retrying`) sem regressão de UX.
 
 **Atualização incremental (2026-04-23 — Wave 29: contrato explícito de execução + latência fase 2A):**
 - ✅ Contrato de progresso documental endurecido com `executionState` explícito em `document-pipeline.ts` e emissão semântica no `generation-service.ts` (`waiting_io`, `retrying`, `persisting`, `completed`).

@@ -13,7 +13,7 @@ Last update: 2026-04-23
 - Wave 30 aux execution-state hardening: completed (local validation)
 - Wave 30 release closeout: completed (run 24854808367 success)
 - Wave 31 execution-state analytics hardening: completed (local validation)
-- Wave 31 release closeout: pending
+- Wave 31 release closeout: completed (run 24857074922 success)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -39,6 +39,8 @@ Last update: 2026-04-23
 - Release workflow dispatch (wave29): completed (release-web.yml run 24853129457 success)
 - Wave 30 commit + push: completed (`681c767`)
 - Release workflow dispatch (wave30): completed (release-web.yml run 24854808367 success)
+- Wave 31 commit + push: completed (`9c02d57`)
+- Release workflow dispatch (wave31): completed (release-web.yml run 24857074922 success)
 
 ## Current Wave Cache (2026-04-23)
 - Wave tag: wave31-execution-state-analytics
@@ -66,21 +68,27 @@ Last update: 2026-04-23
 - frontend test: completed
 - frontend build: completed
 - frontend tests result: 38 files, 290 tests passed
-- release-web dispatch (wave31): pending
-- Deploy Firebase production (wave31): pending
-- Deploy GitHub Pages / build (wave31): pending
-- Deploy GitHub Pages / deploy (wave31): pending
-- Release summary (wave31): pending
-- Deploy redesign V2 (wave31): pending decision (default expected: skipped by input)
+- release-web dispatch (wave31): completed (run 24857074922)
+- Deploy Firebase production (wave31): completed (job 72772882122)
+- Deploy GitHub Pages / build (wave31): completed (job 72772882211)
+- Deploy GitHub Pages / deploy (wave31): completed (job 72773090237)
+- Release summary (wave31): completed (job 72773344525)
+- Deploy redesign V2 (wave31): skipped by input (job 72772882473)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- Run `git pull --rebase --autostash origin main` before closeout commit.
-- Commit/push da wave31 em `main` com código + governança sincronizados.
-- Disparar `release-web.yml` (one-shot) com `deploy_firebase=true`, `deploy_github_pages=true`, `deploy_redesign_v2=false`.
-- Monitorar quality gates e jobs de deploy até status final `completed`.
-- Sincronizar IDs reais da run/jobs em `WEB_RELEASE_INDEX.md`, `WEB_RELEASE_CACHE.md` e `NOTEBOOK_IMPLEMENTATION_STATUS.md` ao concluir o closeout.
+- None. Wave 31 closeout completed (git flow + release lane fully executed).
+
+## Wave 31 Release Outcome
+- release-web dispatch (run 24857074922): success.
+- Quality gates: success.
+- Deploy Firebase production (job 72772882122): success.
+- Deploy GitHub Pages / build (job 72772882211): success.
+- Deploy GitHub Pages / deploy (job 72773090237): success.
+- Deploy redesign V2 (job 72772882473): skipped by input (`deploy_redesign_v2=false`).
+- Release summary (job 72773344525): success.
+- Key verification: trilho one-shot manteve estabilidade com a nova dimensão de analytics por `execution_state`, sem regressão nos quality gates e nos deploys de produção.
 
 ## Wave 30 Release Outcome
 - release-web dispatch (run 24854808367): success.

@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-269 IMPLEMENTADAS
+## Status Geral: Etapas 1-273 IMPLEMENTADAS
+
+### Etapas 270-273 — Closeout Operacional da Wave 31 (Release One-shot) ✅
+- **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`
+- Etapa 270: trilha de Git da wave fechada sem divergência remota (`git pull --rebase --autostash origin main`), seguida de commit/push no `main` (`9c02d57`) com analytics por estado de execução e governança local sincronizada.
+- Etapa 271: release one-shot disparado em `release-web.yml` (run `24857074922`) no HEAD `9c02d5771fffb70c4f4f1bcd19567a78c25809d9` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
+- Etapa 272: quality gates e deploys confirmados em sucesso na mesma run: functions quality (`72772645831`), source guardrails (`72772645844`), lint (`72772645851`), unit tests (`72772645862`), frontend quality (`72772645893`), Firebase production (`72772882122`), Pages build (`72772882211`), Pages deploy (`72773090237`) e release summary (`72773344525`); redesign V2 mantido como skip por input (`72772882473`).
+- Etapa 273: fechamento final de governança/index/cache concluído com IDs reais da run `24857074922` e atualização de ciclo em `PLANO`, `MANIFEST`, `WEB_RELEASE_INDEX`, `WEB_RELEASE_CACHE` e neste status de implementação.
 
 ### Etapas 266-269 — Analytics por Estado de Execução em Custos (Wave 31) ✅
 - **Arquivos**: `frontend/src/lib/cost-analytics.ts`, `frontend/src/lib/notebook-studio-pipeline.ts`, `frontend/src/lib/audio-generation-pipeline.ts`, `frontend/src/lib/presentation-generation-pipeline.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/lib/literal-video-production.ts`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`, `frontend/src/pages/CostTokensPage.tsx`, `frontend/src/pages/PlatformCostsPage.tsx`

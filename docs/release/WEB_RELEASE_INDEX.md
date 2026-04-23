@@ -9,22 +9,22 @@ Last update: 2026-04-23
 - .github/workflows/firebase-redesign-v2.yml
 - .github/workflows/test.yml
 
-## Latest One-shot Validation (Wave 30 — 2026-04-23)
-- release-web run `24854808367`: success
-- Head commit: `681c767`
-- Quality gates: success (lint `72764708923`, source guardrails `72764708940`, unit tests `72764708955`, functions quality `72764708956`, frontend quality `72764708962`)
-- Deploy Firebase production: success (`job 72764941682`)
-- Deploy GitHub Pages / build: success (`job 72764941896`)
-- Deploy GitHub Pages / deploy: success (`job 72765128773`)
-- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72764942409`)
-- Release summary: success (`job 72765376017`)
+## Latest One-shot Validation (Wave 31 — 2026-04-23)
+- release-web run `24857074922`: success
+- Head commit: `9c02d57`
+- Quality gates: success (lint `72772645851`, source guardrails `72772645844`, unit tests `72772645862`, functions quality `72772645831`, frontend quality `72772645893`)
+- Deploy Firebase production: success (`job 72772882122`)
+- Deploy GitHub Pages / build: success (`job 72772882211`)
+- Deploy GitHub Pages / deploy: success (`job 72773090237`)
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72772882473`)
+- Release summary: success (`job 72773344525`)
 
 ## Current Local Validation (Wave 31 — 2026-04-23)
 - Scope: analytics de custo por `execution_state` com propagação de metadados operacionais (`retry/fallback`) em pipelines auxiliares + persistência notebook V1/V2 + leitura operacional em dashboards de custo
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 290 tests)
 - Frontend build: success
-- Release dispatch: pending in this cycle (`release-web.yml`)
+- Release dispatch: completed (`release-web.yml`, run `24857074922`)
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs
