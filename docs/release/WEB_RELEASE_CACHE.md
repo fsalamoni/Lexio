@@ -15,7 +15,7 @@ Last update: 2026-04-23
 ## Local Validation Cache
 - frontend npm ci: completed
 - frontend typecheck: completed
-- frontend test: completed (35 files, 273 tests passed)
+- frontend test: completed (37 files, 286 tests passed)
 - frontend build: completed (vite build succeeded)
 - functions npm ci: completed
 - functions build: completed (tsc)
@@ -23,25 +23,18 @@ Last update: 2026-04-23
 - python lint (ruff): completed (all checks passed)
 
 ## Deployment Cache
-- Commit: completed (480631e)
+- Commit: completed (c300f37)
 - Push to origin/main: completed
-- Release workflow dispatch: completed (release-web.yml run 24846026963 success)
+- Release workflow dispatch: completed (release-web.yml run 24846848597 success)
 
 ## Current Wave Cache (2026-04-23)
-- Wave tag: wave25-runtime-telemetry-safe-area-mobile-hardening
-- Scope: diagnóstico adaptativo por runtime em acervo/vídeo com persistência de telemetria por execução (`llm_executions`), hardening final de safe-area para painéis mobile e sincronização governada de documentação.
+- Wave tag: wave26-runtime-profile-calibration-mobile-compact-max-fix
+- Scope: calibração automática de concorrência por perfil de runtime com rastreabilidade de origem (`auto|env`), ajuste de serialização operacional para tuning por coorte e correção de estado maximizado em modo compacto mobile.
 - Files touched (core runtime):
 	- frontend/src/lib/runtime-concurrency.ts
 	- frontend/src/lib/runtime-concurrency.test.ts
-	- frontend/src/lib/cost-analytics.ts
-	- frontend/src/lib/notebook-acervo-analyzer.ts
-	- frontend/src/lib/notebook-acervo-analyzer.test.ts
-	- frontend/src/lib/video-generation-pipeline.ts
-	- frontend/src/lib/video-generation-pipeline.test.ts
 	- frontend/src/components/DraggablePanel.tsx
 	- frontend/src/components/DraggablePanel.test.tsx
-	- frontend/src/pages/ResearchNotebook.tsx
-	- frontend/src/pages/labs/ResearchNotebookV2.tsx
 - Files touched (governance/docs):
 	- docs/PLANO.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
@@ -52,13 +45,21 @@ Last update: 2026-04-23
 
 ## Current Validation Cache (2026-04-23)
 - frontend typecheck: completed (TYPECHECK_OK)
-- frontend test: completed (37 files, 283 tests passed)
+- frontend test: completed (37 files, 286 tests passed)
 - frontend build: completed (vite build succeeded)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
-- Resolved in this wave: telemetria de runtime passou a ser preservada no ciclo completo (pipeline -> persistência -> extração) sem regressão de typecheck/test/build.
+- Resolved in this wave: runtime-concurrency passou a calibrar alvo automático por perfil sem quebrar overrides por env, e o DraggablePanel deixou de manter estado maximizado em viewport compacta, sem regressão de typecheck/test/build.
 
 ## Pending Operational Cache
-- None. Wave 25 closeout completed (git flow + release lane fully executed).
+- None. Wave 26 closeout completed (git flow + release lane fully executed).
+
+## Wave 26 Release Outcome
+- release-web dispatch (run 24846848597): success.
+- Quality gates: success.
+- Deploy Firebase production: success.
+- Deploy GitHub Pages: success.
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`).
+- Release summary: success.
 
 ## Wave 25 Release Outcome
 - release-web dispatch (run 24846026963): success.
