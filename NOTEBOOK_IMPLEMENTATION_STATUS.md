@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-273 IMPLEMENTADAS
+## Status Geral: Etapas 1-277 IMPLEMENTADAS
+
+### Etapas 274-277 — Demonstração Multiagente + Latência Operacional (Wave 32) ✅
+- **Arquivos**: `frontend/src/lib/firestore-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `frontend/src/pages/CostTokensPage.tsx`, `frontend/src/pages/PlatformCostsPage.tsx`
+- Etapa 274: `firestore-service.ts` recebeu helper central de extração das execuções agregadas de plataforma e nova função `getPlatformRecentAgentExecutions`, eliminando duplicação entre custo agregado e série diária.
+- Etapa 275: `PlatformAdminPanel.tsx` foi ampliado com seção de demonstração dos agentes em execução real (amostra recente com estado/fase/retry/fallback/modelo) e bloco de impacto por `execution_state` com hotspots função+estado orientados a tuning.
+- Etapa 276: `CostTokensPage.tsx` e `PlatformCostsPage.tsx` passaram a exibir `Duração média` nas tabelas de breakdown, fechando leitura operacional conjunta de custo/tokens/latência.
+- Etapa 277: validação local completa executada sem regressões: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos**, **290/290 testes**), `npm run build` e checagem de Problems (`get_errors`) limpa nos arquivos alterados.
 
 ### Etapas 270-273 — Closeout Operacional da Wave 31 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`

@@ -14,8 +14,10 @@ import { IS_FIREBASE } from '../lib/firebase'
 import {
   backfillNotebookSearchMemoryAcrossPlatform,
   getCurrentUserId,
+  getPlatformCostBreakdown,
   getPlatformDailyUsage,
   getPlatformOverview,
+  getPlatformRecentAgentExecutions,
   getUserSettings,
   saveUserSettings,
   type PlatformAggregateRow,
@@ -23,6 +25,8 @@ import {
   type NotebookSearchMemoryBackfillReport,
   type PlatformUsageRow,
 } from '../lib/firestore-service'
+import { getExecutionStateLabel } from '../lib/cost-analytics'
+import type { CostBreakdown, CostBreakdownItem, UsageExecutionRecord } from '../lib/cost-analytics'
 import { V2EmptyState, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { buildWorkspaceSettingsPath } from '../lib/workspace-routes'
 import { fmtUsd, fmtInt, fmtPercent } from '../lib/currency-utils'
@@ -37,6 +41,39 @@ function fmtSignedNumber(value: number) {
   const rounded = Number(value.toFixed(2))
   if (rounded > 0) return `+${rounded}`
   return `${rounded}`
+}
+
+function formatDurationMs(value?: number | null) {
+  if (!value || value <= 0) return 'N/D'
+  if (value < 1000) return `${Math.round(value)} ms`
+  const seconds = value / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)} s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.round(seconds % 60)
+  return `${minutes}m ${remainingSeconds}s`
+}
+
+function formatExecutionTimestamp(value?: string) {
+  if (!value) return 'N/D'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'N/D'
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+function getExecutionStateTone(state?: string | null): string {
+  if (!state) return 'bg-slate-100 border-slate-200 text-slate-700'
+  if (state === 'completed') return 'bg-emerald-100 border-emerald-200 text-emerald-700'
+  if (state === 'failed' || state === 'cancelled') return 'bg-red-100 border-red-200 text-red-700'
+  if (state === 'retrying') return 'bg-amber-100 border-amber-200 text-amber-700'
+  if (state === 'waiting_io') return 'bg-sky-100 border-sky-200 text-sky-700'
+  if (state === 'persisting') return 'bg-indigo-100 border-indigo-200 text-indigo-700'
+  return 'bg-violet-100 border-violet-200 text-violet-700'
 }
 
 type OperationalAlert = {
@@ -208,6 +245,8 @@ export default function PlatformAdminPanel() {
   const { isReady, role } = useAuth()
   const [overview, setOverview] = useState<Awaited<ReturnType<typeof getPlatformOverview>> | null>(null)
   const [daily, setDaily] = useState<PlatformDailyUsagePoint[]>([])
+  const [platformBreakdown, setPlatformBreakdown] = useState<CostBreakdown | null>(null)
+  const [recentExecutions, setRecentExecutions] = useState<UsageExecutionRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [backfillLoading, setBackfillLoading] = useState(false)
   const [backfillReport, setBackfillReport] = useState<NotebookSearchMemoryBackfillReport | null>(null)
@@ -227,12 +266,16 @@ export default function PlatformAdminPanel() {
           throw new Error('O painel admin agregado está disponível apenas no modo Firebase.')
         }
 
-        const [overviewData, dailyData] = await Promise.all([
+        const [overviewData, dailyData, costBreakdown, recentAgentExecutions] = await Promise.all([
           getPlatformOverview(),
           getPlatformDailyUsage(30),
+          getPlatformCostBreakdown(),
+          getPlatformRecentAgentExecutions(36),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
+        setPlatformBreakdown(costBreakdown)
+        setRecentExecutions(recentAgentExecutions)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
 
         const uid = getCurrentUserId()
@@ -293,6 +336,91 @@ export default function PlatformAdminPanel() {
 
   const documentStatusChart = useMemo(() => overview?.documents_by_status.slice(0, 6) ?? [], [overview])
   const artifactChart = useMemo(() => overview?.artifacts_by_type.slice(0, 6) ?? [], [overview])
+  const executionStateLatencyRows = useMemo(() => {
+    if (!platformBreakdown?.by_execution_state || platformBreakdown.by_execution_state.length === 0) {
+      return [] as Array<CostBreakdownItem & { callShare: number; costShare: number }>
+    }
+
+    return platformBreakdown.by_execution_state
+      .filter(row => row.calls > 0)
+      .map(row => ({
+        ...row,
+        callShare: platformBreakdown.total_calls > 0 ? row.calls / platformBreakdown.total_calls : 0,
+        costShare: platformBreakdown.total_cost_usd > 0 ? row.cost_usd / platformBreakdown.total_cost_usd : 0,
+      }))
+      .sort((left, right) => (right.avg_duration_ms ?? 0) - (left.avg_duration_ms ?? 0))
+  }, [platformBreakdown])
+
+  const executionStateFunctionHotspots = useMemo(() => {
+    if (!platformBreakdown?.by_execution_state_per_function) return [] as Array<{
+      id: string
+      functionLabel: string
+      stateLabel: string
+      calls: number
+      avgDurationMs: number
+      costUsd: number
+    }>
+
+    const functionLabels = new Map(platformBreakdown.by_function.map(row => [row.key, row.label]))
+    const rows: Array<{
+      id: string
+      functionLabel: string
+      stateLabel: string
+      calls: number
+      avgDurationMs: number
+      costUsd: number
+    }> = []
+
+    Object.entries(platformBreakdown.by_execution_state_per_function).forEach(([functionKey, stateRows]) => {
+      stateRows.forEach(stateRow => {
+        const avgDurationMs = stateRow.avg_duration_ms ?? 0
+        if (avgDurationMs <= 0 || stateRow.calls <= 0) return
+
+        rows.push({
+          id: `${functionKey}:${stateRow.key}`,
+          functionLabel: functionLabels.get(functionKey) ?? functionKey,
+          stateLabel: stateRow.label,
+          calls: stateRow.calls,
+          avgDurationMs,
+          costUsd: stateRow.cost_usd,
+        })
+      })
+    })
+
+    return rows
+      .sort((left, right) => right.avgDurationMs - left.avgDurationMs || right.calls - left.calls)
+      .slice(0, 10)
+  }, [platformBreakdown])
+
+  const recentExecutionMetrics = useMemo(() => {
+    if (recentExecutions.length === 0) {
+      return {
+        retries: 0,
+        fallbacks: 0,
+        waitingIo: 0,
+        inFlight: 0,
+        avgDurationMs: 0,
+      }
+    }
+
+    const retries = recentExecutions.filter(item => (item.retry_count ?? 0) > 0).length
+    const fallbacks = recentExecutions.filter(item => item.used_fallback === true).length
+    const waitingIo = recentExecutions.filter(item => item.execution_state === 'waiting_io').length
+    const inFlight = recentExecutions.filter(item => {
+      const state = item.execution_state
+      return state === 'queued' || state === 'running' || state === 'waiting_io' || state === 'retrying' || state === 'persisting'
+    }).length
+    const avgDurationMs = Math.round(recentExecutions.reduce((sum, item) => sum + item.duration_ms, 0) / recentExecutions.length)
+
+    return {
+      retries,
+      fallbacks,
+      waitingIo,
+      inFlight,
+      avgDurationMs,
+    }
+  }, [recentExecutions])
+
   const memoryAlerts = useMemo(() => {
     if (!overview) return [] as OperationalAlert[]
     return buildMemoryAlerts(overview, daily, alertThresholds)
@@ -912,6 +1040,159 @@ export default function PlatformAdminPanel() {
           value={fmtInt(overview.total_search_memory_audits_dropped + overview.total_search_memory_saved_searches_dropped)}
           tone="text-orange-600"
         />
+      </div>
+
+      <div className="v2-panel p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Demonstração dos agentes trabalhando (telemetria real)</h2>
+            <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
+              Amostra operacional das últimas execuções multiagentes com estado, duração, retries e fallback para auditoria rápida da trilha real.
+            </p>
+          </div>
+          <span className="rounded-full border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] px-2.5 py-1 text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">
+            Amostra: {fmtInt(recentExecutions.length)} execuções
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Em andamento</p>
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(recentExecutionMetrics.inFlight)}</p>
+          </div>
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Retry detectado</p>
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(recentExecutionMetrics.retries)}</p>
+          </div>
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Fallbacks</p>
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(recentExecutionMetrics.fallbacks)}</p>
+          </div>
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Waiting I/O</p>
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(recentExecutionMetrics.waitingIo)}</p>
+          </div>
+          <div className={EXECUTIVE_INSET_CARD}>
+            <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Duração média</p>
+            <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{formatDurationMs(recentExecutionMetrics.avgDurationMs)}</p>
+          </div>
+        </div>
+
+        {recentExecutions.length === 0 ? (
+          <p className="text-xs text-[var(--v2-ink-soft)]">Nenhuma execução recente disponível para demonstração ainda.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1080px] text-xs">
+              <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                <tr>
+                  <th className="px-2 py-2 text-left">Quando</th>
+                  <th className="px-2 py-2 text-left">Função</th>
+                  <th className="px-2 py-2 text-left">Agente / fase</th>
+                  <th className="px-2 py-2 text-left">Estado</th>
+                  <th className="px-2 py-2 text-right">Duração</th>
+                  <th className="px-2 py-2 text-right">Retry</th>
+                  <th className="px-2 py-2 text-left">Fallback</th>
+                  <th className="px-2 py-2 text-left">Modelo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                {recentExecutions.map((execution, index) => (
+                  <tr key={`${execution.source_id}-${execution.phase}-${index}`} className="hover:bg-[rgba(255,255,255,0.66)]">
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{formatExecutionTimestamp(execution.created_at)}</td>
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{execution.function_label}</td>
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">
+                      <p className="font-medium">{execution.agent_name || 'Não identificado'}</p>
+                      <p className="text-[11px] text-[var(--v2-ink-faint)]">{execution.phase_label}</p>
+                    </td>
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">
+                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getExecutionStateTone(execution.execution_state)}`}>
+                        {getExecutionStateLabel(execution.execution_state)}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{formatDurationMs(execution.duration_ms)}</td>
+                    <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtInt(execution.retry_count ?? 0)}</td>
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">
+                      {execution.used_fallback
+                        ? `Sim${execution.fallback_from ? ` (${execution.fallback_from})` : ''}`
+                        : 'Não'}
+                    </td>
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{execution.model_label || 'N/D'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="v2-panel p-5 space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Impacto de custo e latência por estado de execução</h2>
+          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
+            Base para tuning operacional por pipeline, com foco direto nos gargalos de `waiting_io` e `retrying`.
+          </p>
+        </div>
+
+        {executionStateLatencyRows.length === 0 ? (
+          <p className="text-xs text-[var(--v2-ink-soft)]">Ainda não há agregação por estado de execução para este período.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-xs">
+              <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                <tr>
+                  <th className="px-2 py-2 text-left">Estado</th>
+                  <th className="px-2 py-2 text-right">Chamadas</th>
+                  <th className="px-2 py-2 text-right">Latência média</th>
+                  <th className="px-2 py-2 text-right">USD</th>
+                  <th className="px-2 py-2 text-right">Share chamadas</th>
+                  <th className="px-2 py-2 text-right">Share custo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                {executionStateLatencyRows.map(row => (
+                  <tr key={row.key} className="hover:bg-[rgba(255,255,255,0.66)]">
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{row.label}</td>
+                    <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.calls)}</td>
+                    <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{formatDurationMs(row.avg_duration_ms)}</td>
+                    <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtUsd(row.cost_usd)}</td>
+                    <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.callShare)}</td>
+                    <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.costShare)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {executionStateFunctionHotspots.length > 0 && (
+          <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Top hotspots função + estado</p>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[760px] text-xs">
+                <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left">Função</th>
+                    <th className="px-2 py-1.5 text-left">Estado</th>
+                    <th className="px-2 py-1.5 text-right">Latência média</th>
+                    <th className="px-2 py-1.5 text-right">Chamadas</th>
+                    <th className="px-2 py-1.5 text-right">USD</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                  {executionStateFunctionHotspots.map(item => (
+                    <tr key={item.id} className="hover:bg-[rgba(255,255,255,0.66)]">
+                      <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{item.functionLabel}</td>
+                      <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{item.stateLabel}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{formatDurationMs(item.avgDurationMs)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(item.calls)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtUsd(item.costUsd)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {memoryAlerts.length > 0 && (

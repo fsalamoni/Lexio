@@ -24,6 +24,16 @@ function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label
   )
 }
 
+function formatDurationMs(value?: number | null) {
+  if (!value || value <= 0) return 'N/D'
+  if (value < 1000) return `${Math.round(value)} ms`
+  const seconds = value / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)} s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.round(seconds % 60)
+  return `${minutes}m ${remainingSeconds}s`
+}
+
 function BreakdownTable({ title, rows, emptyLabel }: { title: string; rows: CostBreakdownItem[]; emptyLabel: string }) {
   return (
     <div className="v2-panel overflow-hidden">
@@ -34,7 +44,7 @@ function BreakdownTable({ title, rows, emptyLabel }: { title: string; rows: Cost
         <p className="px-5 py-6 text-sm text-[var(--v2-ink-faint)]">{emptyLabel}</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px]">
+          <table className="w-full min-w-[940px]">
             <thead className="bg-[rgba(255,255,255,0.74)] text-[11px] uppercase tracking-wide text-[var(--v2-ink-faint)]">
               <tr>
                 <th className="px-5 py-2 text-left">Grupo</th>
@@ -42,6 +52,7 @@ function BreakdownTable({ title, rows, emptyLabel }: { title: string; rows: Cost
                 <th className="px-5 py-2 text-right">Entrada</th>
                 <th className="px-5 py-2 text-right">Saída</th>
                 <th className="px-5 py-2 text-right">Tokens</th>
+                <th className="px-5 py-2 text-right">Duração média</th>
                 <th className="px-5 py-2 text-right">USD</th>
                 <th className="px-5 py-2 text-right">R$</th>
               </tr>
@@ -54,6 +65,7 @@ function BreakdownTable({ title, rows, emptyLabel }: { title: string; rows: Cost
                   <td className="px-5 py-3 text-sm text-right text-[var(--v2-ink-soft)]">{fmtInt(row.tokens_in)}</td>
                   <td className="px-5 py-3 text-sm text-right text-[var(--v2-ink-soft)]">{fmtInt(row.tokens_out)}</td>
                   <td className="px-5 py-3 text-sm text-right text-[var(--v2-ink-soft)]">{fmtInt(row.total_tokens)}</td>
+                  <td className="px-5 py-3 text-sm text-right text-[var(--v2-ink-soft)]">{formatDurationMs(row.avg_duration_ms)}</td>
                   <td className="px-5 py-3 text-sm text-right font-medium text-amber-700">{fmtUsd(row.cost_usd)}</td>
                   <td className="px-5 py-3 text-sm text-right font-medium text-emerald-700">{fmtBrl(row.cost_brl)}</td>
                 </tr>

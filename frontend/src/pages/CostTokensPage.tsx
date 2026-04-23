@@ -37,6 +37,16 @@ function saveCollapseState(state: Record<string, boolean>) {
   } catch { /* quota exceeded — non-critical */ }
 }
 
+function formatDurationMs(value?: number | null) {
+  if (!value || value <= 0) return 'N/D'
+  if (value < 1000) return `${Math.round(value)} ms`
+  const seconds = value / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)} s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.round(seconds % 60)
+  return `${minutes}m ${remainingSeconds}s`
+}
+
 // ── Collapsible Section ──────────────────────────────────────────────────────
 
 function CollapsibleSection({
@@ -133,7 +143,7 @@ function BreakdownTable({ rows, emptyLabel, title }: { rows: CostBreakdownItem[]
   if (rows.length === 0) return <p className="py-4 text-sm text-[var(--v2-ink-faint)]">{emptyLabel}</p>
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[800px] table-fixed" aria-label={title ? `Tabela de ${title}` : 'Tabela de detalhamento de custos'}>
+      <table className="w-full min-w-[920px] table-fixed" aria-label={title ? `Tabela de ${title}` : 'Tabela de detalhamento de custos'}>
         <thead className="sticky top-0 bg-[rgba(255,255,255,0.78)] text-[11px] text-[var(--v2-ink-faint)] uppercase tracking-wide">
           <tr>
             <th className="w-[30%] px-4 py-2 text-left">Grupo</th>
@@ -141,6 +151,7 @@ function BreakdownTable({ rows, emptyLabel, title }: { rows: CostBreakdownItem[]
             <th className="w-[12%] px-4 py-2 text-right">Entrada</th>
             <th className="w-[12%] px-4 py-2 text-right">Saída</th>
             <th className="w-[12%] px-4 py-2 text-right">Tokens</th>
+            <th className="w-[12%] px-4 py-2 text-right">Duração média</th>
             <th className="w-[12%] px-4 py-2 text-right">USD</th>
             <th className="w-[12%] px-4 py-2 text-right">R$</th>
           </tr>
@@ -155,6 +166,7 @@ function BreakdownTable({ rows, emptyLabel, title }: { rows: CostBreakdownItem[]
               <td className="px-4 py-2.5 text-sm text-right text-[var(--v2-ink-soft)]">{fmtInt(row.tokens_in)}</td>
               <td className="px-4 py-2.5 text-sm text-right text-[var(--v2-ink-soft)]">{fmtInt(row.tokens_out)}</td>
               <td className="px-4 py-2.5 text-sm text-right text-[var(--v2-ink-soft)]">{fmtInt(row.total_tokens)}</td>
+              <td className="px-4 py-2.5 text-sm text-right text-[var(--v2-ink-soft)]">{formatDurationMs(row.avg_duration_ms)}</td>
               <td className="px-4 py-2.5 text-sm text-right font-medium text-amber-700">{fmtUsd(row.cost_usd)}</td>
               <td className="px-4 py-2.5 text-sm text-right font-medium text-emerald-700">{fmtBrl(row.cost_brl)}</td>
             </tr>

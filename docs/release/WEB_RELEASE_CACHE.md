@@ -14,6 +14,8 @@ Last update: 2026-04-23
 - Wave 30 release closeout: completed (run 24854808367 success)
 - Wave 31 execution-state analytics hardening: completed (local validation)
 - Wave 31 release closeout: completed (run 24857074922 success)
+- Wave 32 agent demonstration + latency tuning: completed (local validation)
+- Wave 32 release closeout: pending (one-shot dispatch em preparação)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -43,18 +45,11 @@ Last update: 2026-04-23
 - Release workflow dispatch (wave31): completed (release-web.yml run 24857074922 success)
 
 ## Current Wave Cache (2026-04-23)
-- Wave tag: wave31-execution-state-analytics
-- Scope: consolidação analítica de `execution_state` em custos (global/per-function), com propagação de metadados operacionais (`retry_count`, `used_fallback`, `fallback_from`) dos pipelines auxiliares até a persistência notebook e leitura em dashboards de custos pessoal/agregado.
-- Files touched (wave31/code+docs):
-	- frontend/src/lib/cost-analytics.ts
-	- frontend/src/lib/notebook-studio-pipeline.ts
-	- frontend/src/lib/audio-generation-pipeline.ts
-	- frontend/src/lib/presentation-generation-pipeline.ts
-	- frontend/src/lib/video-generation-pipeline.ts
-	- frontend/src/lib/literal-video-production.ts
-	- frontend/src/lib/notebook-acervo-analyzer.ts
-	- frontend/src/pages/ResearchNotebook.tsx
-	- frontend/src/pages/labs/ResearchNotebookV2.tsx
+- Wave tag: wave32-agent-demo-latency-tuning
+- Scope: demonstração explícita dos agentes trabalhando no `PlatformAdminPanel` com telemetria real recente, hotspot de latência/custo por `execution_state` (inclusive função+estado) e exposição de `Duração média` nas tabelas de custos pessoal/agregada.
+- Files touched (wave32/code+docs):
+	- frontend/src/lib/firestore-service.ts
+	- frontend/src/pages/PlatformAdminPanel.tsx
 	- frontend/src/pages/CostTokensPage.tsx
 	- frontend/src/pages/PlatformCostsPage.tsx
 	- docs/PLANO.md
@@ -68,17 +63,17 @@ Last update: 2026-04-23
 - frontend test: completed
 - frontend build: completed
 - frontend tests result: 38 files, 290 tests passed
-- release-web dispatch (wave31): completed (run 24857074922)
-- Deploy Firebase production (wave31): completed (job 72772882122)
-- Deploy GitHub Pages / build (wave31): completed (job 72772882211)
-- Deploy GitHub Pages / deploy (wave31): completed (job 72773090237)
-- Release summary (wave31): completed (job 72773344525)
-- Deploy redesign V2 (wave31): skipped by input (job 72772882473)
+- release-web dispatch (wave32): pending
+- Deploy Firebase production (wave32): pending
+- Deploy GitHub Pages / build (wave32): pending
+- Deploy GitHub Pages / deploy (wave32): pending
+- Release summary (wave32): pending
+- Deploy redesign V2 (wave32): pending input (`deploy_redesign_v2=false` planejado)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 31 closeout completed (git flow + release lane fully executed).
+- Wave 32 release closeout pendente (commit/push + run one-shot + sincronização final de IDs em docs).
 
 ## Wave 31 Release Outcome
 - release-web dispatch (run 24857074922): success.

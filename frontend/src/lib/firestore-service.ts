@@ -873,9 +873,8 @@ export async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
   return buildCostBreakdown(executions)
 }
 
-export async function getPlatformCostBreakdown(force = false): Promise<CostBreakdown> {
-  const snapshot = await loadPlatformCollections(force)
-  const executions = [
+function extractPlatformUsageExecutions(snapshot: PlatformCollectionsSnapshot): UsageExecutionRecord[] {
+  return [
     ...snapshot.documents.flatMap(doc => extractDocumentUsageExecutions(doc)),
     ...snapshot.sessions.flatMap(session => extractThesisSessionExecutions(session)),
     ...snapshot.acervo.flatMap(acervoDoc => extractAcervoUsageExecutions({
@@ -892,8 +891,20 @@ export async function getPlatformCostBreakdown(force = false): Promise<CostBreak
       usage_summary: nb.usage_summary,
     })),
   ]
+}
 
-  return buildCostBreakdown(executions)
+export async function getPlatformCostBreakdown(force = false): Promise<CostBreakdown> {
+  const snapshot = await loadPlatformCollections(force)
+  return buildCostBreakdown(extractPlatformUsageExecutions(snapshot))
+}
+
+export async function getPlatformRecentAgentExecutions(maxItems = 40, force = false): Promise<UsageExecutionRecord[]> {
+  const snapshot = await loadPlatformCollections(force)
+  const safeMaxItems = Math.max(1, Math.min(200, Math.floor(maxItems)))
+
+  return extractPlatformUsageExecutions(snapshot)
+    .sort((left, right) => getDocumentCreatedAtValue(right.created_at) - getDocumentCreatedAtValue(left.created_at))
+    .slice(0, safeMaxItems)
 }
 
 export async function getPlatformOverview(force = false): Promise<PlatformOverviewData> {
@@ -1075,23 +1086,7 @@ export async function getPlatformDailyUsage(days = 30, force = false): Promise<P
     entry.memoria_busca_descartes += (memory.retention?.audits_dropped || 0) + (memory.retention?.saved_searches_dropped || 0)
   }
 
-  const executionGroups = [
-    ...snapshot.documents.flatMap(doc => extractDocumentUsageExecutions(doc)),
-    ...snapshot.sessions.flatMap(session => extractThesisSessionExecutions(session)),
-    ...snapshot.acervo.flatMap(acervoDoc => extractAcervoUsageExecutions({
-      id: acervoDoc.id,
-      filename: acervoDoc.filename,
-      created_at: acervoDoc.created_at,
-      llm_executions: acervoDoc.llm_executions,
-    })),
-    ...snapshot.notebooks.flatMap(nb => extractNotebookUsageExecutions({
-      id: nb.id,
-      title: nb.title,
-      created_at: nb.created_at,
-      llm_executions: nb.llm_executions,
-      usage_summary: nb.usage_summary,
-    })),
-  ]
+  const executionGroups = extractPlatformUsageExecutions(snapshot)
 
   for (const execution of executionGroups) {
     const day = getIsoDateKey(execution.created_at)

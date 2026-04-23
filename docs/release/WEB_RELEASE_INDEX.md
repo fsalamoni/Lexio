@@ -19,12 +19,12 @@ Last update: 2026-04-23
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72772882473`)
 - Release summary: success (`job 72773344525`)
 
-## Current Local Validation (Wave 31 — 2026-04-23)
-- Scope: analytics de custo por `execution_state` com propagação de metadados operacionais (`retry/fallback`) em pipelines auxiliares + persistência notebook V1/V2 + leitura operacional em dashboards de custo
+## Current Local Validation (Wave 32 — 2026-04-23)
+- Scope: demonstração multiagente em telemetria real no `PlatformAdminPanel`, tuning de custo/latência por `execution_state` (global + função/estado hotspot), helper consolidado de execuções de plataforma e exposição de `Duração média` nas tabelas de custo pessoal/agregada
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 290 tests)
 - Frontend build: success
-- Release dispatch: completed (`release-web.yml`, run `24857074922`)
+- Release dispatch: pending (wave32 one-shot ainda não disparado)
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs

@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-23",
-    "cycle": "wave30-aux-execution-state-closeout",
+    "cycle": "wave32-agent-demo-latency-tuning",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -578,6 +578,19 @@
         "NOTEBOOK_IMPLEMENTATION_STATUS.md"
       ],
       "notes": "Release one-shot `24857074922` em HEAD `9c02d57` concluída com quality gates em sucesso (functions `72772645831`, source guardrails `72772645844`, lint `72772645851`, unit tests `72772645862`, frontend quality `72772645893`), deploy Firebase production (`72772882122`), Pages build (`72772882211`), Pages deploy (`72773090237`) e release summary (`72773344525`) em sucesso; redesign V2 permaneceu opcional/skipped por input (`72772882473`)."
+    },
+    {
+      "id": "E5.F22",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Demonstração operacional de agentes e tuning por execution_state",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/firestore-service.ts",
+        "frontend/src/pages/PlatformAdminPanel.tsx",
+        "frontend/src/pages/CostTokensPage.tsx",
+        "frontend/src/pages/PlatformCostsPage.tsx"
+      ],
+      "notes": "A plataforma passou a expor amostra temporal de execuções multiagentes para demonstração real no painel admin (estado/fase/retry/fallback/modelo), além de leitura executiva de impacto custo+latência por `execution_state` com hotspots por função; as superfícies de custo pessoal/agregada agora exibem `Duração média` em todos os breakdowns para apoiar tuning operacional contínuo."
     },
     {
       "id": "E8.F1",
