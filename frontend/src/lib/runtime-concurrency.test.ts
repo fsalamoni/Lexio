@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { parsePositiveInt, resolveAdaptiveConcurrency } from './runtime-concurrency'
+import {
+  buildRuntimeProfileKey,
+  formatAdaptiveConcurrency,
+  formatRuntimeHints,
+  parsePositiveInt,
+  resolveAdaptiveConcurrency,
+  resolveAdaptiveConcurrencyWithDiagnostics,
+} from './runtime-concurrency'
 
 describe('runtime-concurrency', () => {
   it('parses only positive integers from env-like strings', () => {
@@ -61,5 +68,49 @@ describe('runtime-concurrency', () => {
     })
 
     expect(resolved).toBe(1)
+  })
+
+  it('returns diagnostics with active limiters', () => {
+    const diagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
+      envValue: '6',
+      fallback: 3,
+      max: 6,
+      hints: {
+        hardwareConcurrency: 4,
+        deviceMemoryGb: 3,
+        effectiveConnectionType: '3g',
+      },
+    })
+
+    expect(diagnostics.preferred).toBe(6)
+    expect(diagnostics.runtimeCap).toBe(2)
+    expect(diagnostics.resolved).toBe(2)
+    expect(diagnostics.limiters).toEqual(expect.arrayContaining(['cpu', 'memory', 'network']))
+  })
+
+  it('formats diagnostics and runtime profile keys for telemetry', () => {
+    const diagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
+      fallback: 2,
+      max: 4,
+      hints: {
+        hardwareConcurrency: 8,
+        deviceMemoryGb: 4,
+        effectiveConnectionType: '4g',
+      },
+    })
+
+    expect(formatRuntimeHints({
+      hardwareConcurrency: 8,
+      deviceMemoryGb: 4,
+      effectiveConnectionType: '4g',
+    })).toBe('cpu 8 | mem 4GB | net 4g')
+
+    expect(formatAdaptiveConcurrency(diagnostics)).toContain('auto 2/2 target 2')
+    expect(buildRuntimeProfileKey({
+      hardwareConcurrency: 8,
+      deviceMemoryGb: 4,
+      effectiveConnectionType: '4g',
+      saveData: false,
+    }, diagnostics)).toContain('res2')
   })
 })

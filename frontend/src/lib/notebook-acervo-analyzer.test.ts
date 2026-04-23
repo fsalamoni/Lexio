@@ -155,6 +155,7 @@ describe('analyzeNotebookAcervo', () => {
       }), 'analista-model'))
       .mockRejectedValueOnce(new TransientLLMError('Requisição ao OpenRouter excedeu o tempo limite (120s)'))
 
+    const stageMetaTrail: string[] = []
     const result = await analyzeNotebookAcervo(
       'user-1',
       'notebook-1',
@@ -162,6 +163,11 @@ describe('analyzeNotebookAcervo', () => {
       'Analisar requisitos e limites.',
       [],
       new Set<string>(),
+      (progress) => {
+        if (progress.stageMeta) {
+          stageMetaTrail.push(progress.stageMeta)
+        }
+      },
     )
 
     expect(mockCallLLM).toHaveBeenCalledTimes(5)
@@ -175,6 +181,18 @@ describe('analyzeNotebookAcervo', () => {
       'Resumo analítico 1',
       'Resumo analítico 3',
     ])
+
+    const analistaExecutionInputs = mockCreateUsageExecutionRecord.mock.calls
+      .map((entry) => entry[0] as Record<string, unknown>)
+      .filter((entry) => entry.phase === 'nb_acervo_analista')
+    expect(analistaExecutionInputs).toHaveLength(2)
+    for (const entry of analistaExecutionInputs) {
+      expect(typeof entry.runtime_profile).toBe('string')
+      expect(typeof entry.runtime_hints).toBe('string')
+      expect(typeof entry.runtime_concurrency).toBe('number')
+      expect(typeof entry.runtime_cap).toBe('number')
+    }
+    expect(stageMetaTrail.some((meta) => meta.includes('auto'))).toBe(true)
   })
 
   it('keeps analyst recommendations when curador returns malformed content', async () => {

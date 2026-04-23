@@ -19,6 +19,7 @@ Last update: 2026-04-23
 - functions/src/index.ts
 - frontend/src/lib/generation-service.ts
 - frontend/src/lib/runtime-concurrency.ts
+- frontend/src/lib/cost-analytics.ts
 - frontend/src/lib/notebook-acervo-analyzer.ts
 - frontend/src/lib/video-generation-pipeline.ts
 - frontend/src/components/DraggablePanel.tsx
@@ -42,6 +43,9 @@ Last update: 2026-04-23
 - Wave 24 centralizes adaptive concurrency policy in `runtime-concurrency.ts`, including runtime hints for CPU/memory/network to calibrate batch workers safely on constrained devices.
 - `DraggablePanel` now reads `visualViewport` and keeps compact geometry bounded to the real visible area (including mobile keyboard/browser chrome shifts).
 - `ResearchNotebookV2` removed a redundant dynamic import of `artifact-parsers`, eliminating mixed static/dynamic chunk advisory in frontend builds.
+- Wave 25 adds adaptive-concurrency diagnostics (`runtimeCap`, `limiters`, `runtime profile key`) and propagates this telemetry through acervo/video execution records (`runtime_profile`, `runtime_hints`, `runtime_concurrency`, `runtime_cap`).
+- `DraggablePanel` now also accounts for safe-area insets (`env(safe-area-inset-*)`), enlarges touch targets in compact mode, and recomputes compact geometry on orientation changes.
+- Runtime/mobile regressions are now covered by dedicated tests in `runtime-concurrency.test.ts`, `notebook-acervo-analyzer.test.ts`, `video-generation-pipeline.test.ts`, and `DraggablePanel.test.tsx`.
 
 ## Required Secrets (GitHub Actions)
 - FIREBASE_API_KEY

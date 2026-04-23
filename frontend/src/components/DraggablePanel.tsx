@@ -23,6 +23,20 @@ const COMPACT_PANEL_MIN_HEIGHT_PX = 220
 const DEFAULT_VIEWPORT_WIDTH_PX = 1280
 const DEFAULT_VIEWPORT_HEIGHT_PX = 720
 
+type SafeAreaInsets = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+const ZERO_SAFE_AREA: SafeAreaInsets = {
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+}
+
 function bringToFront(): number {
   globalZCounter += 1
   return globalZCounter
@@ -46,6 +60,40 @@ function readViewportSize(): { w: number; h: number } {
     w: Math.max(1, Math.round(width)),
     h: Math.max(1, Math.round(height)),
   }
+}
+
+function parseInset(value: string): number {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+}
+
+function readSafeAreaInsets(): SafeAreaInsets {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return ZERO_SAFE_AREA
+  }
+
+  const probe = document.createElement('div')
+  probe.style.position = 'fixed'
+  probe.style.visibility = 'hidden'
+  probe.style.pointerEvents = 'none'
+  probe.style.top = '0'
+  probe.style.left = '0'
+  probe.style.paddingTop = 'env(safe-area-inset-top, 0px)'
+  probe.style.paddingRight = 'env(safe-area-inset-right, 0px)'
+  probe.style.paddingBottom = 'env(safe-area-inset-bottom, 0px)'
+  probe.style.paddingLeft = 'env(safe-area-inset-left, 0px)'
+
+  document.body.appendChild(probe)
+  const styles = window.getComputedStyle(probe)
+  const insets: SafeAreaInsets = {
+    top: parseInset(styles.paddingTop),
+    right: parseInset(styles.paddingRight),
+    bottom: parseInset(styles.paddingBottom),
+    left: parseInset(styles.paddingLeft),
+  }
+  probe.remove()
+
+  return insets
 }
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -98,6 +146,7 @@ export default function DraggablePanel({
   const [collapsed, setCollapsed] = useState(false)
   const [maximized, setMaximized] = useState(startMaximized)
   const [viewport, setViewport] = useState(() => readViewportSize())
+  const [safeAreaInsets, setSafeAreaInsets] = useState<SafeAreaInsets>(() => readSafeAreaInsets())
 
   // Position and size state
   const [pos, setPos] = useState({ x: -1, y: -1 })
@@ -113,21 +162,32 @@ export default function DraggablePanel({
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0, px: 0, py: 0 })
   const isCompactViewport = viewport.w < MOBILE_BREAKPOINT_PX
   const headerHeight = 40
-  const compactWidth = Math.max(1, viewport.w - MOBILE_PANEL_MARGIN_PX * 2)
-  const compactHeight = Math.max(1, viewport.h - MOBILE_PANEL_MARGIN_PX * 2)
+  const compactWidth = Math.max(
+    1,
+    viewport.w - (MOBILE_PANEL_MARGIN_PX * 2) - safeAreaInsets.left - safeAreaInsets.right,
+  )
+  const compactHeight = Math.max(
+    1,
+    viewport.h - (MOBILE_PANEL_MARGIN_PX * 2) - safeAreaInsets.top - safeAreaInsets.bottom,
+  )
+  const compactControlButtonSize = isCompactViewport ? 32 : 28
+  const compactControlIconSize = isCompactViewport ? 14 : 13
 
   useEffect(() => {
     const handleViewportChange = () => {
       setViewport(readViewportSize())
+      setSafeAreaInsets(readSafeAreaInsets())
     }
     const visualViewport = window.visualViewport
 
     window.addEventListener('resize', handleViewportChange)
+    window.addEventListener('orientationchange', handleViewportChange)
     visualViewport?.addEventListener('resize', handleViewportChange)
     visualViewport?.addEventListener('scroll', handleViewportChange)
 
     return () => {
       window.removeEventListener('resize', handleViewportChange)
+      window.removeEventListener('orientationchange', handleViewportChange)
       visualViewport?.removeEventListener('resize', handleViewportChange)
       visualViewport?.removeEventListener('scroll', handleViewportChange)
     }
@@ -139,9 +199,12 @@ export default function DraggablePanel({
     const nextWidth = clamp(initialWidth, compactMinWidth, compactWidth)
     const nextHeight = clamp(initialHeight, compactMinHeight, compactHeight)
 
-    setPos({ x: MOBILE_PANEL_MARGIN_PX, y: MOBILE_PANEL_MARGIN_PX })
+    setPos({
+      x: safeAreaInsets.left + MOBILE_PANEL_MARGIN_PX,
+      y: safeAreaInsets.top + MOBILE_PANEL_MARGIN_PX,
+    })
     setSize({ w: nextWidth, h: nextHeight })
-  }, [compactWidth, compactHeight, initialWidth, initialHeight])
+  }, [compactWidth, compactHeight, initialWidth, initialHeight, safeAreaInsets.left, safeAreaInsets.top])
 
   // Center on first open
   useEffect(() => {
@@ -315,8 +378,8 @@ export default function DraggablePanel({
       className="fixed flex flex-col overflow-hidden select-none"
       style={{
         zIndex,
-        left: isCompactViewport ? MOBILE_PANEL_MARGIN_PX : pos.x,
-        top: isCompactViewport ? MOBILE_PANEL_MARGIN_PX : pos.y,
+        left: isCompactViewport ? (safeAreaInsets.left + MOBILE_PANEL_MARGIN_PX) : pos.x,
+        top: isCompactViewport ? (safeAreaInsets.top + MOBILE_PANEL_MARGIN_PX) : pos.y,
         width: renderedWidth,
         height: renderedHeight,
         transition: collapsed ? 'height 0.15s ease' : undefined,
@@ -356,22 +419,29 @@ export default function DraggablePanel({
         <div className="flex items-center gap-0.5">
           <button
             onClick={(e) => { e.stopPropagation(); setCollapsed(c => !c) }}
-            className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors"
-            style={{ color: 'var(--v2-ink-faint)' }}
+            className="flex items-center justify-center rounded-lg transition-colors"
+            style={{
+              color: 'var(--v2-ink-faint)',
+              width: compactControlButtonSize,
+              height: compactControlButtonSize,
+            }}
             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.07)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             title={collapsed ? 'Expandir' : 'Minimizar'}
+            aria-label={collapsed ? 'Expandir painel' : 'Minimizar painel'}
           >
-            <Minus size={13} />
+            <Minus size={compactControlIconSize} />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); toggleMaximize() }}
             disabled={isCompactViewport}
-            className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors"
+            className="flex items-center justify-center rounded-lg transition-colors"
             style={{
               color: 'var(--v2-ink-faint)',
               opacity: isCompactViewport ? 0.5 : 1,
               cursor: isCompactViewport ? 'not-allowed' : 'pointer',
+              width: compactControlButtonSize,
+              height: compactControlButtonSize,
             }}
             onMouseEnter={e => {
               if (isCompactViewport) return
@@ -382,13 +452,18 @@ export default function DraggablePanel({
               e.currentTarget.style.background = 'transparent'
             }}
             title={maximized ? 'Restaurar' : 'Maximizar'}
+            aria-label={maximized ? 'Restaurar painel' : 'Maximizar painel'}
           >
-            {maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            {maximized ? <Minimize2 size={compactControlIconSize} /> : <Maximize2 size={compactControlIconSize} />}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onClose() }}
-            className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors"
-            style={{ color: 'var(--v2-ink-faint)' }}
+            className="flex items-center justify-center rounded-lg transition-colors"
+            style={{
+              color: 'var(--v2-ink-faint)',
+              width: compactControlButtonSize,
+              height: compactControlButtonSize,
+            }}
             onMouseEnter={e => {
               e.currentTarget.style.background = 'rgba(239,68,68,0.12)'
               e.currentTarget.style.color = 'rgb(220,38,38)'
@@ -398,8 +473,9 @@ export default function DraggablePanel({
               e.currentTarget.style.color = 'var(--v2-ink-faint)'
             }}
             title="Fechar"
+            aria-label="Fechar painel"
           >
-            <X size={13} />
+            <X size={compactControlIconSize} />
           </button>
         </div>
       </div>
@@ -408,7 +484,10 @@ export default function DraggablePanel({
       {!collapsed && (
         <div
           className={`flex-1 overflow-auto ${className}`}
-          style={{ background: 'var(--v2-panel-strong, #fff)' }}
+          style={{
+            background: 'var(--v2-panel-strong, #fff)',
+            paddingBottom: isCompactViewport ? safeAreaInsets.bottom : 0,
+          }}
         >
           {children}
         </div>

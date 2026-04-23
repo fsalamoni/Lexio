@@ -2680,7 +2680,19 @@ Instruções:
   // ── Save artifact to notebook (shared by direct save and review confirm) ──
   const saveArtifactToNotebook = async (
     artifact: StudioArtifact,
-    executions: { phase: string; agent_name: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number; duration_ms: number }[],
+    executions: {
+      phase: string
+      agent_name: string
+      model: string
+      tokens_in: number
+      tokens_out: number
+      cost_usd: number
+      duration_ms: number
+      runtime_profile?: string | null
+      runtime_hints?: string | null
+      runtime_concurrency?: number | null
+      runtime_cap?: number | null
+    }[],
     options?: {
       notebookId?: string
       notebookTopic?: string
@@ -2712,6 +2724,10 @@ Instruções:
         tokens_out: ex.tokens_out,
         cost_usd: ex.cost_usd,
         duration_ms: ex.duration_ms,
+        runtime_profile: ex.runtime_profile,
+        runtime_hints: ex.runtime_hints,
+        runtime_concurrency: ex.runtime_concurrency,
+        runtime_cap: ex.runtime_cap,
       })
     )
 
@@ -2763,6 +2779,10 @@ Instruções:
       tokens_out: number
       cost_usd: number
       duration_ms: number
+      runtime_profile?: string | null
+      runtime_hints?: string | null
+      runtime_concurrency?: number | null
+      runtime_cap?: number | null
     }>,
   ) => {
     if (!userId || executions.length === 0) return
@@ -2778,6 +2798,10 @@ Instruções:
         tokens_out: ex.tokens_out,
         cost_usd: ex.cost_usd,
         duration_ms: ex.duration_ms,
+        runtime_profile: ex.runtime_profile,
+        runtime_hints: ex.runtime_hints,
+        runtime_concurrency: ex.runtime_concurrency,
+        runtime_cap: ex.runtime_cap,
       }),
     )
     const updatedExecutions = [...(freshNotebook.llm_executions || []), ...newExecutions]

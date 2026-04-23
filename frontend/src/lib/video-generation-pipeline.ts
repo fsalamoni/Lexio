@@ -30,7 +30,13 @@ import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analyt
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
 import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import type { VideoPipelineProgressMeta } from './video-pipeline-progress'
-import { getRuntimeConcurrencyHints, resolveAdaptiveConcurrency } from './runtime-concurrency'
+import {
+  buildRuntimeProfileKey,
+  formatAdaptiveConcurrency,
+  formatRuntimeHints,
+  getRuntimeConcurrencyHints,
+  resolveAdaptiveConcurrencyWithDiagnostics,
+} from './runtime-concurrency'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -296,6 +302,10 @@ export interface VideoGenerationStepExecution {
   tokens_out: number
   cost_usd: number
   duration_ms: number
+  runtime_profile?: string | null
+  runtime_hints?: string | null
+  runtime_concurrency?: number | null
+  runtime_cap?: number | null
 }
 
 export interface VideoGenerationResult {
@@ -1312,13 +1322,17 @@ REQUISITOS OBRIGATÓRIOS:
   //
   if (wantMedia && scenes.length > 0) {
     const imageModel = input.imageModel || models.video_image_generator || DEFAULT_IMAGE_MODEL
-    const imageBatchConcurrency = resolveAdaptiveConcurrency({
+    const imageConcurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
       envValue: import.meta.env.VITE_VIDEO_IMAGE_BATCH_CONCURRENCY as string | undefined,
       fallback: DEFAULT_IMAGE_BATCH_CONCURRENCY,
       min: 1,
       max: MAX_IMAGE_BATCH_CONCURRENCY,
       hints: mediaRuntimeHints,
     })
+    const imageBatchConcurrency = imageConcurrencyDiagnostics.resolved
+    const imageRuntimeHintsLabel = formatRuntimeHints(mediaRuntimeHints)
+    const imageRuntimeMeta = `${formatAdaptiveConcurrency(imageConcurrencyDiagnostics)} | ${imageRuntimeHintsLabel}`
+    const imageRuntimeProfile = buildRuntimeProfileKey(mediaRuntimeHints, imageConcurrencyDiagnostics)
 
     // Collect all clips that need images
     const allClips = scenes.flatMap(s => (s.clips || []).filter(c => c.imagePrompt))
@@ -1381,6 +1395,10 @@ REQUISITOS OBRIGATÓRIOS:
             tokens_out: 0,
             cost_usd: r.value.cost_usd,
             duration_ms: r.value.durationMs,
+            runtime_profile: imageRuntimeProfile,
+            runtime_hints: imageRuntimeHintsLabel,
+            runtime_concurrency: imageConcurrencyDiagnostics.resolved,
+            runtime_cap: imageConcurrencyDiagnostics.runtimeCap,
           })
         } else if (r.status === 'rejected') {
           const errMsg = `Imagem rejeitada: ${(r.reason as Error)?.message || 'erro desconhecido'}`
@@ -1400,7 +1418,7 @@ REQUISITOS OBRIGATÓRIOS:
           'media_image_generation',
           'Gerador de Imagens',
           buildVideoProgressMetaFromBatch({
-            stageMeta: `${modelLabel} • ${fulfilled.length} imagens no lote • ${Math.max(1, Math.round(batchDuration / 1000))}s • ${formatUsd(batchCost)}`,
+            stageMeta: `${modelLabel} • ${fulfilled.length} imagens no lote • ${Math.max(1, Math.round(batchDuration / 1000))}s • ${formatUsd(batchCost)} • ${imageRuntimeMeta}`,
             costUsd: batchCost,
             durationMs: batchDuration,
           }),
@@ -1445,13 +1463,17 @@ REQUISITOS OBRIGATÓRIOS:
   if (wantMedia && narration.length > 0) {
     const ttsVoice = input.ttsVoice || 'nova'
     const ttsModel = input.ttsModel || DEFAULT_OPENROUTER_TTS_MODEL
-    const ttsBatchConcurrency = resolveAdaptiveConcurrency({
+    const ttsConcurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
       envValue: import.meta.env.VITE_VIDEO_TTS_BATCH_CONCURRENCY as string | undefined,
       fallback: DEFAULT_TTS_BATCH_CONCURRENCY,
       min: 1,
       max: MAX_TTS_BATCH_CONCURRENCY,
       hints: mediaRuntimeHints,
     })
+    const ttsBatchConcurrency = ttsConcurrencyDiagnostics.resolved
+    const ttsRuntimeHintsLabel = formatRuntimeHints(mediaRuntimeHints)
+    const ttsRuntimeMeta = `${formatAdaptiveConcurrency(ttsConcurrencyDiagnostics)} | ${ttsRuntimeHintsLabel}`
+    const ttsRuntimeProfile = buildRuntimeProfileKey(mediaRuntimeHints, ttsConcurrencyDiagnostics)
     const validSegments = narration.filter(s => s.text && s.text.trim().length >= 5)
 
     console.log(`[Video] Step 11: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice} (concurrency=${ttsBatchConcurrency})`)
@@ -1524,6 +1546,10 @@ REQUISITOS OBRIGATÓRIOS:
           tokens_out: 0,
           cost_usd: costUsd,
           duration_ms: durationMs,
+          runtime_profile: ttsRuntimeProfile,
+          runtime_hints: ttsRuntimeHintsLabel,
+          runtime_concurrency: ttsConcurrencyDiagnostics.resolved,
+          runtime_cap: ttsConcurrencyDiagnostics.runtimeCap,
         })
       }
 
@@ -1549,7 +1575,7 @@ REQUISITOS OBRIGATÓRIOS:
           'media_tts_generation',
           'Narrador TTS',
           buildVideoProgressMetaFromBatch({
-            stageMeta: `${ttsModel.split('/').pop() || ttsModel} • ${fulfilled.length} narração(ões) no lote${scenesLabel ? ` • cenas ${scenesLabel}` : ''} • ${Math.max(1, Math.round(batchDuration / 1000))}s • ${formatUsd(batchCost)}`,
+            stageMeta: `${ttsModel.split('/').pop() || ttsModel} • ${fulfilled.length} narração(ões) no lote${scenesLabel ? ` • cenas ${scenesLabel}` : ''} • ${Math.max(1, Math.round(batchDuration / 1000))}s • ${formatUsd(batchCost)} • ${ttsRuntimeMeta}`,
             costUsd: batchCost,
             durationMs: batchDuration,
           }),

@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-23",
-    "cycle": "wave24-unified-adaptive-runtime-mobile-viewport",
+    "cycle": "wave25-runtime-telemetry-safe-area-mobile-hardening",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -425,6 +425,26 @@
         "frontend/src/pages/labs/ResearchNotebookV2.tsx"
       ],
       "notes": "Concorrência adaptativa foi centralizada em utilitário compartilhado com sinais de CPU/memória/rede; acervo e vídeo migraram para a mesma política de clamp; DraggablePanel passou a usar visualViewport para estabilidade em mobile real; e o ResearchNotebookV2 removeu import dinâmico redundante de artifact-parsers para eliminar advisory de chunking misto no build."
+    },
+    {
+      "id": "E5.F12",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Telemetria adaptativa por execução e hardening safe-area mobile",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/runtime-concurrency.ts",
+        "frontend/src/lib/runtime-concurrency.test.ts",
+        "frontend/src/lib/cost-analytics.ts",
+        "frontend/src/lib/notebook-acervo-analyzer.ts",
+        "frontend/src/lib/notebook-acervo-analyzer.test.ts",
+        "frontend/src/lib/video-generation-pipeline.ts",
+        "frontend/src/lib/video-generation-pipeline.test.ts",
+        "frontend/src/components/DraggablePanel.tsx",
+        "frontend/src/components/DraggablePanel.test.tsx",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx"
+      ],
+      "notes": "A política adaptativa passou a expor diagnósticos reutilizáveis (cap/limitadores) e chave de perfil runtime; acervo e vídeo agora persistem telemetria de concorrência em `llm_executions`; cost-analytics preserva os novos campos em extração/reidratação; e o DraggablePanel ganhou suporte explícito a safe-area com controles touch ampliados e resposta a orientationchange."
     },
     {
       "id": "E8.F1",

@@ -19,6 +19,10 @@ export interface UsageExecutionRecord {
   total_tokens: number
   cost_usd: number
   duration_ms: number
+  runtime_profile?: string | null
+  runtime_hints?: string | null
+  runtime_concurrency?: number | null
+  runtime_cap?: number | null
   document_type_id?: string | null
   document_type_label?: string | null
 }
@@ -266,11 +270,27 @@ export function createUsageExecutionRecord(input: {
   tokens_out?: number
   cost_usd?: number
   duration_ms?: number
+  runtime_profile?: string | null
+  runtime_hints?: string | null
+  runtime_concurrency?: number | null
+  runtime_cap?: number | null
   document_type_id?: string | null
 }): UsageExecutionRecord {
   const tokensIn = Math.max(0, input.tokens_in ?? 0)
   const tokensOut = Math.max(0, input.tokens_out ?? 0)
   const createdAt = input.created_at ?? new Date().toISOString()
+  const runtimeProfile = typeof input.runtime_profile === 'string' && input.runtime_profile.trim().length > 0
+    ? input.runtime_profile.trim()
+    : null
+  const runtimeHints = typeof input.runtime_hints === 'string' && input.runtime_hints.trim().length > 0
+    ? input.runtime_hints.trim()
+    : null
+  const runtimeConcurrency = Number.isFinite(input.runtime_concurrency)
+    ? Math.max(1, Math.round(input.runtime_concurrency as number))
+    : null
+  const runtimeCap = Number.isFinite(input.runtime_cap)
+    ? Math.max(1, Math.round(input.runtime_cap as number))
+    : null
 
   return {
     source_type: input.source_type,
@@ -288,6 +308,10 @@ export function createUsageExecutionRecord(input: {
     total_tokens: tokensIn + tokensOut,
     cost_usd: round6(input.cost_usd ?? 0),
     duration_ms: Math.max(0, input.duration_ms ?? 0),
+    runtime_profile: runtimeProfile,
+    runtime_hints: runtimeHints,
+    runtime_concurrency: runtimeConcurrency,
+    runtime_cap: runtimeCap,
     document_type_id: input.document_type_id ?? null,
     document_type_label: input.document_type_id ? getDocumentTypeLabel(input.document_type_id) : null,
   }
@@ -419,6 +443,10 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
         tokens_out: execution.tokens_out,
         cost_usd: execution.cost_usd,
         duration_ms: execution.duration_ms,
+        runtime_profile: execution.runtime_profile,
+        runtime_hints: execution.runtime_hints,
+        runtime_concurrency: execution.runtime_concurrency,
+        runtime_cap: execution.runtime_cap,
         document_type_id: execution.document_type_id ?? document.document_type_id,
       }))
     }
@@ -441,6 +469,10 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
         tokens_out: exec.tokens_out,
         cost_usd: exec.cost_usd,
         duration_ms: exec.duration_ms,
+        runtime_profile: exec.runtime_profile,
+        runtime_hints: exec.runtime_hints,
+        runtime_concurrency: exec.runtime_concurrency,
+        runtime_cap: exec.runtime_cap,
         document_type_id: exec.document_type_id ?? document.document_type_id,
       }))
     }
@@ -484,6 +516,10 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
       tokens_out: exec.tokens_out,
       cost_usd: exec.cost_usd,
       duration_ms: exec.duration_ms,
+      runtime_profile: exec.runtime_profile,
+      runtime_hints: exec.runtime_hints,
+      runtime_concurrency: exec.runtime_concurrency,
+      runtime_cap: exec.runtime_cap,
       document_type_id: exec.document_type_id ?? document.document_type_id,
     }))
   }
@@ -504,6 +540,10 @@ export function extractThesisSessionExecutions(session: ThesisUsageSessionSummar
       tokens_out: execution.tokens_out,
       cost_usd: execution.cost_usd,
       duration_ms: execution.duration_ms,
+      runtime_profile: execution.runtime_profile,
+      runtime_hints: execution.runtime_hints,
+      runtime_concurrency: execution.runtime_concurrency,
+      runtime_cap: execution.runtime_cap,
       document_type_id: execution.document_type_id,
     }))
   }
@@ -550,6 +590,10 @@ export function extractAcervoUsageExecutions(acervoDoc: AcervoUsageSummary): Usa
     tokens_out: execution.tokens_out,
     cost_usd: execution.cost_usd,
     duration_ms: execution.duration_ms,
+    runtime_profile: execution.runtime_profile,
+    runtime_hints: execution.runtime_hints,
+    runtime_concurrency: execution.runtime_concurrency,
+    runtime_cap: execution.runtime_cap,
   }))
 }
 
@@ -576,6 +620,10 @@ export function extractNotebookUsageExecutions(notebook: NotebookUsageSummary): 
       tokens_out: execution.tokens_out,
       cost_usd: execution.cost_usd,
       duration_ms: execution.duration_ms,
+      runtime_profile: execution.runtime_profile,
+      runtime_hints: execution.runtime_hints,
+      runtime_concurrency: execution.runtime_concurrency,
+      runtime_cap: execution.runtime_cap,
     }))
   }
 

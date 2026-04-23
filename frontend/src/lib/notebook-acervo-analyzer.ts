@@ -17,7 +17,15 @@ import { getAllAcervoDocumentsForSearch, updateAcervoEmenta, type AcervoDocument
 import { getOpenRouterKey, generateAcervoEmenta } from './generation-service'
 import { loadNotebookAcervoModels, type NotebookAcervoModelMap } from './model-config'
 import { createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
-import { getRuntimeConcurrencyHints, resolveAdaptiveConcurrency } from './runtime-concurrency'
+import {
+  buildRuntimeProfileKey,
+  formatAdaptiveConcurrency,
+  formatRuntimeHints,
+  getRuntimeConcurrencyHints,
+  resolveAdaptiveConcurrencyWithDiagnostics,
+  type AdaptiveConcurrencyDiagnostics,
+  type RuntimeConcurrencyHints,
+} from './runtime-concurrency'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,6 +73,7 @@ function formatUsd(costUsd: number): string {
 
 function buildAcervoStageMeta(options: {
   model?: string
+  runtimeMeta?: string
   costUsd?: number
   durationMs?: number
   retryCount?: number
@@ -72,6 +81,7 @@ function buildAcervoStageMeta(options: {
 }): string | undefined {
   const parts: string[] = []
   if (options.model) parts.push(options.model.split('/').pop() || options.model)
+  if (options.runtimeMeta) parts.push(options.runtimeMeta)
   if (options.fallbackReason) parts.push(options.fallbackReason)
   if ((options.retryCount ?? 0) > 0) {
     const retries = options.retryCount ?? 0
@@ -112,13 +122,15 @@ const PREFILTER_TEXT_SAMPLE_CHARS = 20_000
 const DEFAULT_BUSCADOR_SUMMARY_TEMPLATE = 'Documento "%s" selecionado pelo Buscador como referência potencial para a pesquisa.'
 const DEFAULT_ANALISTA_SUMMARY_TEMPLATE = 'Documento "%s" potencialmente útil para a pesquisa, com base na aderência temática identificada pelo Buscador.'
 
-function resolveAnalistaBatchConcurrency(): number {
-  return resolveAdaptiveConcurrency({
+function resolveAnalistaBatchConcurrency(
+  hints: RuntimeConcurrencyHints,
+): AdaptiveConcurrencyDiagnostics {
+  return resolveAdaptiveConcurrencyWithDiagnostics({
     envValue: import.meta.env.VITE_NB_ACERVO_ANALISTA_CONCURRENCY as string | undefined,
     fallback: DEFAULT_ANALISTA_BATCH_CONCURRENCY,
     min: MIN_ANALISTA_BATCH_CONCURRENCY,
     max: MAX_ANALISTA_BATCH_CONCURRENCY,
-    hints: getRuntimeConcurrencyHints(),
+    hints,
   })
 }
 
@@ -842,7 +854,12 @@ export async function analyzeNotebookAcervo(
   const analistaBatches = chunkArray(selectedDocs, MAX_ANALISTA_DOCS_PER_BATCH)
   const analistaAnalysesById = new Map(analistaFallbackAnalyses.map((analysis) => [analysis.id, analysis]))
   const totalAnalistaBatches = Math.max(1, analistaBatches.length)
-  const resolvedAnalistaConcurrency = resolveAnalistaBatchConcurrency()
+  const analistaRuntimeHints = getRuntimeConcurrencyHints()
+  const analistaConcurrencyDiagnostics = resolveAnalistaBatchConcurrency(analistaRuntimeHints)
+  const resolvedAnalistaConcurrency = analistaConcurrencyDiagnostics.resolved
+  const analistaRuntimeHintsLabel = formatRuntimeHints(analistaRuntimeHints)
+  const analistaRuntimeMeta = `${formatAdaptiveConcurrency(analistaConcurrencyDiagnostics)} | ${analistaRuntimeHintsLabel}`
+  const analistaRuntimeProfile = buildRuntimeProfileKey(analistaRuntimeHints, analistaConcurrencyDiagnostics)
   const analistaWorkerCount = Math.min(resolvedAnalistaConcurrency, analistaBatches.length)
   let usedAnalistaFallback = false
   let completedAnalistaBatches = 0
@@ -852,6 +869,7 @@ export async function analyzeNotebookAcervo(
     phase: 'nb_acervo_analista',
     message: `Analista processando ${analistaBatches.length} lote(s) com até ${analistaWorkerCount} em paralelo (auto/adaptativo).`,
     percent: 50,
+    stageMeta: buildAcervoStageMeta({ runtimeMeta: analistaRuntimeMeta }),
   })
 
   const emitAnalistaBatchProgress = (message: string, options?: Partial<AcervoAnalysisProgress>) => {
@@ -887,6 +905,10 @@ export async function analyzeNotebookAcervo(
         tokens_out: analistaResult.tokens_out,
         cost_usd: analistaResult.cost_usd,
         duration_ms: analistaResult.duration_ms,
+        runtime_profile: analistaRuntimeProfile,
+        runtime_hints: analistaRuntimeHintsLabel,
+        runtime_concurrency: analistaConcurrencyDiagnostics.resolved,
+        runtime_cap: analistaConcurrencyDiagnostics.runtimeCap,
       }))
 
       const parsedBatch = parseAnalistaAnalyses(analistaResult.content, batch)
@@ -900,6 +922,7 @@ export async function analyzeNotebookAcervo(
       emitAnalistaBatchProgress(`Analista concluiu o lote ${batchIndex + 1}/${analistaBatches.length}.`, {
         stageMeta: buildAcervoStageMeta({
           model: analistaResult.model,
+          runtimeMeta: analistaRuntimeMeta,
           costUsd: analistaResult.cost_usd,
           durationMs: analistaResult.duration_ms,
           retryCount: analistaResult.operational?.totalRetryCount,
@@ -927,7 +950,10 @@ export async function analyzeNotebookAcervo(
         {
           usedFallback: true,
           fallbackReason: 'Fallback seguro ativado',
-          stageMeta: buildAcervoStageMeta({ fallbackReason: 'Fallback seguro ativado' }),
+          stageMeta: buildAcervoStageMeta({
+            runtimeMeta: analistaRuntimeMeta,
+            fallbackReason: 'Fallback seguro ativado',
+          }),
         },
       )
     }
@@ -952,7 +978,10 @@ export async function analyzeNotebookAcervo(
       phase: 'nb_acervo_analista',
       message: 'Analista parcialmente indisponível; concluído com fallback seguro.',
       percent: 65,
-      stageMeta: buildAcervoStageMeta({ fallbackReason: 'Fallback seguro ativado' }),
+      stageMeta: buildAcervoStageMeta({
+        runtimeMeta: analistaRuntimeMeta,
+        fallbackReason: 'Fallback seguro ativado',
+      }),
       usedFallback: true,
       fallbackReason: 'Fallback seguro ativado',
     })

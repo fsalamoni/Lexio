@@ -58,6 +58,16 @@
 - ✅ Validação completa desta wave: `npm run typecheck`, `npm run test` (36/36 arquivos, 278/278 testes) e `npm run build` com sucesso.
 - 🔄 Próximo bloco: observar latência/custo em produção por perfil de dispositivo e fechar tuning fino por pipeline (incluindo limites recomendados para redes degradadas).
 
+**Atualização incremental (2026-04-23 — Wave 25: telemetria de runtime por execução + hardening safe-area mobile):**
+- ✅ `runtime-concurrency.ts` evoluído com diagnósticos reutilizáveis (`resolveAdaptiveConcurrencyWithDiagnostics`), resumo formatado de hints de runtime e chave estável de perfil para rastreabilidade operacional.
+- ✅ `notebook-acervo-analyzer.ts` passou a anexar metadados de concorrência adaptativa no estágio do Analista e em `llm_executions` (`runtime_profile`, `runtime_hints`, `runtime_concurrency`, `runtime_cap`).
+- ✅ `video-generation-pipeline.ts` passou a publicar diagnóstico adaptativo por lote (imagem/TTS) no progresso e a persistir telemetria de runtime nas execuções de mídia.
+- ✅ `cost-analytics.ts` e fluxos de persistência do notebook (`ResearchNotebook.tsx` e `ResearchNotebookV2.tsx`) foram ampliados para preservar e rehidratar a telemetria de runtime sem perda em agregações históricas.
+- ✅ `DraggablePanel.tsx` endurecido para mobile com leitura de safe-area (`env(safe-area-inset-*)`), geometria compacta ajustada a notch/home-indicator, alvo de toque ampliado nos controles e listener de `orientationchange`.
+- ✅ Cobertura regressiva ampliada com `DraggablePanel.test.tsx`, reforços em `video-generation-pipeline.test.ts` e `notebook-acervo-analyzer.test.ts`, além de novos cenários em `runtime-concurrency.test.ts`.
+- ✅ Validação completa desta wave: `npm run typecheck`, `npm test` (37/37 arquivos, 283/283 testes) e `npm run build` com sucesso.
+- 🔄 Próximo bloco: calibrar limites padrão por perfil com dados de produção (latência/custo por fase), mantendo guardrails de fallback e estabilidade mobile.
+
 ## Plano Mestre Executável (Atualizado)
 
 ### Faixa A — Consolidado em produção (já implementado)

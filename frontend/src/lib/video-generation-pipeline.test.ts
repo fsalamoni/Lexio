@@ -5,6 +5,7 @@ const loadVideoPipelineModelsMock = vi.fn()
 const validateScopedAgentModelsMock = vi.fn()
 const generateImageViaOpenRouterMock = vi.fn()
 const generateTTSViaOpenRouterMock = vi.fn()
+const blobToDataUrlMock = vi.fn()
 
 vi.mock('./llm-client', () => ({
   callLLM: (...args: unknown[]) => callLLMMock(...args),
@@ -21,7 +22,7 @@ vi.mock('./model-config', () => ({
 
 vi.mock('./image-generation-client', () => ({
   DEFAULT_IMAGE_MODEL: 'google/gemini-2.5-flash-preview:image-output',
-  blobToDataUrl: vi.fn(),
+  blobToDataUrl: (...args: unknown[]) => blobToDataUrlMock(...args),
   generateImageViaOpenRouter: (...args: unknown[]) => generateImageViaOpenRouterMock(...args),
 }))
 
@@ -31,6 +32,17 @@ vi.mock('./tts-client', () => ({
 }))
 
 import { runVideoGenerationPipeline } from './video-generation-pipeline'
+
+function llmResult(content: string, model: string) {
+  return {
+    content,
+    model,
+    tokens_in: 10,
+    tokens_out: 20,
+    cost_usd: 0.001,
+    duration_ms: 100,
+  }
+}
 
 describe('runVideoGenerationPipeline', () => {
   beforeEach(() => {
@@ -49,6 +61,7 @@ describe('runVideoGenerationPipeline', () => {
       video_tts: 'openai/tts-1-hd',
     })
     validateScopedAgentModelsMock.mockResolvedValue(undefined)
+    blobToDataUrlMock.mockResolvedValue('data:audio/mpeg;base64,AAAB')
   })
 
   it('honors cancellation before starting any video agent', async () => {
@@ -65,5 +78,124 @@ describe('runVideoGenerationPipeline', () => {
     expect(callLLMMock).not.toHaveBeenCalled()
     expect(generateImageViaOpenRouterMock).not.toHaveBeenCalled()
     expect(generateTTSViaOpenRouterMock).not.toHaveBeenCalled()
+  })
+
+  it('persists runtime telemetry for media batches', async () => {
+    callLLMMock
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        title: 'Video teste',
+        totalDuration: 8,
+        designGuide: {
+          colorPalette: ['#111111', '#222222', '#333333', '#444444', '#555555'],
+          fontFamily: 'Inter',
+          style: 'flat',
+          characterDescriptions: [],
+          recurringElements: [],
+        },
+        productionNotes: [],
+      }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        scenes: [
+          {
+            number: 1,
+            timeStart: '00:00',
+            timeEnd: '00:08',
+            duration: 8,
+            narration: 'Narracao da cena',
+            visual: 'Cena inicial',
+            transition: 'corte',
+            soundtrack: 'trilha base',
+          },
+        ],
+      }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        scenes: [
+          {
+            number: 1,
+            timeStart: '00:00',
+            timeEnd: '00:08',
+            duration: 8,
+            narration: 'Narracao da cena',
+            visual: 'Cena inicial',
+            transition: 'corte',
+            soundtrack: 'trilha base',
+          },
+        ],
+      }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({ scenes: [] }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        imagePrompts: [
+          { sceneNumber: 1, prompt: 'main image prompt', style: 'flat', aspectRatio: '16:9' },
+        ],
+        videoPrompts: [
+          { sceneNumber: 1, prompt: 'main video prompt', duration: 8 },
+        ],
+      }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({ tracks: [] }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        narrationSegments: [
+          {
+            sceneNumber: 1,
+            text: 'Texto de narracao',
+            voiceStyle: 'formal',
+            timeStart: '00:00',
+            timeEnd: '00:08',
+          },
+        ],
+      }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        approved: true,
+        report: 'ok',
+        productionNotes: [],
+      }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        clips: [
+          {
+            clipNumber: 1,
+            timestamp: 0,
+            duration: 8,
+            description: 'Clip unico',
+            imagePrompt: 'clip image prompt',
+            motionDescription: 'static',
+            transition: 'crossfade',
+          },
+        ],
+      }), 'openai/gpt-4.1-mini'))
+
+    generateImageViaOpenRouterMock.mockResolvedValue({
+      imageDataUrl: 'data:image/png;base64,AAA',
+      model: 'google/gemini-2.5-flash-preview:image-output',
+      cost_usd: 0.002,
+    })
+    generateTTSViaOpenRouterMock.mockResolvedValue({
+      audioBlob: new Blob(['audio']),
+    })
+
+    const progressStageMeta: string[] = []
+    const result = await runVideoGenerationPipeline({
+      apiKey: 'key',
+      scriptContent: '{"title":"Teste"}',
+      topic: 'Tema',
+      sourceId: 'notebook-1',
+      generateMedia: true,
+      clipDurationSeconds: 8,
+    }, (_step, _total, _phase, _agent, meta) => {
+      if (meta?.stageMeta) progressStageMeta.push(meta.stageMeta)
+    })
+
+    const mediaImageExecutions = result.executions.filter((execution) => execution.phase === 'media_image_generation')
+    const mediaTtsExecutions = result.executions.filter((execution) => execution.phase === 'media_tts_generation')
+
+    expect(mediaImageExecutions.length).toBeGreaterThan(0)
+    expect(mediaTtsExecutions.length).toBeGreaterThan(0)
+
+    for (const execution of [...mediaImageExecutions, ...mediaTtsExecutions]) {
+      expect(typeof execution.runtime_profile).toBe('string')
+      expect(typeof execution.runtime_hints).toBe('string')
+      expect(typeof execution.runtime_concurrency).toBe('number')
+      expect(typeof execution.runtime_cap).toBe('number')
+    }
+
+    expect(progressStageMeta.some((meta) => meta.includes('auto'))).toBe(true)
   })
 })

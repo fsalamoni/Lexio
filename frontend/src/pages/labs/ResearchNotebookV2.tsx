@@ -1027,6 +1027,10 @@ export default function ResearchNotebookV2() {
       tokens_out: number
       cost_usd: number
       duration_ms: number
+      runtime_profile?: string | null
+      runtime_hints?: string | null
+      runtime_concurrency?: number | null
+      runtime_cap?: number | null
     }>,
     options?: {
       notebookId?: string
@@ -1057,6 +1061,10 @@ export default function ResearchNotebookV2() {
         tokens_out: execution.tokens_out,
         cost_usd: execution.cost_usd,
         duration_ms: execution.duration_ms,
+        runtime_profile: execution.runtime_profile,
+        runtime_hints: execution.runtime_hints,
+        runtime_concurrency: execution.runtime_concurrency,
+        runtime_cap: execution.runtime_cap,
       }),
     )
     const updatedExecutions = [...(freshNotebook.llm_executions || []), ...newExecutions]
@@ -1105,6 +1113,10 @@ export default function ResearchNotebookV2() {
       tokens_out: number
       cost_usd: number
       duration_ms: number
+      runtime_profile?: string | null
+      runtime_hints?: string | null
+      runtime_concurrency?: number | null
+      runtime_cap?: number | null
     }>,
   ) => {
     if (!userId || executions.length === 0) return
@@ -1121,6 +1133,10 @@ export default function ResearchNotebookV2() {
         tokens_out: execution.tokens_out,
         cost_usd: execution.cost_usd,
         duration_ms: execution.duration_ms,
+        runtime_profile: execution.runtime_profile,
+        runtime_hints: execution.runtime_hints,
+        runtime_concurrency: execution.runtime_concurrency,
+        runtime_cap: execution.runtime_cap,
       }),
     )
     const updatedExecutions = [...(freshNotebook.llm_executions || []), ...newExecutions]

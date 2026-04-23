@@ -5,7 +5,17 @@
 
 ---
 
-## Status Geral: Etapas 1-226 IMPLEMENTADAS
+## Status Geral: Etapas 1-233 IMPLEMENTADAS
+
+### Etapas 227-233 — Telemetria de Runtime por Execução + Hardening Safe-Area Mobile ✅
+- **Arquivos**: `frontend/src/lib/runtime-concurrency.ts`, `frontend/src/lib/runtime-concurrency.test.ts`, `frontend/src/lib/cost-analytics.ts`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/lib/notebook-acervo-analyzer.test.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/lib/video-generation-pipeline.test.ts`, `frontend/src/components/DraggablePanel.tsx`, `frontend/src/components/DraggablePanel.test.tsx`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`
+- Etapa 227: `runtime-concurrency.ts` evoluído com diagnósticos completos de concorrência adaptativa (preferência, cap de runtime e limitadores ativos) e helpers de serialização/descrição para telemetria operacional.
+- Etapa 228: `cost-analytics.ts` ampliado para suportar `runtime_profile`, `runtime_hints`, `runtime_concurrency` e `runtime_cap` em `UsageExecutionRecord`, com preservação desses campos em caminhos de extração/reidratação.
+- Etapa 229: `notebook-acervo-analyzer.ts` passou a anexar metadados adaptativos do Analista no `stageMeta` e nas execuções persistidas, mantendo fallback seguro por lote.
+- Etapa 230: `video-generation-pipeline.ts` passou a publicar diagnóstico adaptativo por lote de mídia (imagens/TTS) e gravar telemetria de runtime nas execuções do pipeline.
+- Etapa 231: `DraggablePanel.tsx` endurecido para mobile com leitura de safe-area (`env(safe-area-inset-*)`), geometria compacta ajustada a notch/home indicator, botões com alvo de toque maior e resposta a `orientationchange`.
+- Etapa 232: cobertura de regressão ampliada com `DraggablePanel.test.tsx`, novos asserts de telemetria em `notebook-acervo-analyzer.test.ts` e cenário de telemetria em `video-generation-pipeline.test.ts`.
+- Etapa 233: validação regressiva completa executada com sucesso: `npm run typecheck`, `npm test` (**37/37 arquivos**, **283/283 testes**) e `npm run build`.
 
 ### Etapas 220-226 — Heurística Adaptativa Unificada + Hardening Mobile Viewport-Real ✅
 - **Arquivos**: `frontend/src/lib/runtime-concurrency.ts`, `frontend/src/lib/runtime-concurrency.test.ts`, `frontend/src/lib/notebook-acervo-analyzer.ts`, `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/components/DraggablePanel.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`
