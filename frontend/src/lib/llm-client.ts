@@ -153,7 +153,7 @@ function isModelUnavailableResponse(status: number, errorBody: string): boolean 
  * for notebook pipelines (studio, audio scripting, presentation scripting, video
  * scripting agents) without forcing a config change mid-run.
  */
-export const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.0-flash-001'
+export const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.0-flash'
 
 /**
  * Given a primary model chosen by the user, pick a reliable alternative to try
