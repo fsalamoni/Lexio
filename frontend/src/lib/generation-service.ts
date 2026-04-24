@@ -76,6 +76,11 @@ const MAX_ACERVO_SELECTED_DOCS = 3
 const MAX_ACERVO_COMPILADOR_CHARS = 120000
 /** Max chars of document text used to generate an ementa. */
 const MAX_EMENTA_SOURCE_CHARS = 8000
+/**
+ * Max chars considered when extracting JSON payload from triage output.
+ * Keeps parsing bounded when models return very large markdown blocks.
+ */
+const MAX_TRIAGE_JSON_PAYLOAD_CHARS = 60_000
 // NOTE: No default models — all models must be configured in admin panel
 /** Max pre-filtered documents sent to the buscador LLM. */
 const MAX_PREFILTERED_DOCS = 30
@@ -1016,10 +1021,9 @@ function preFilterAcervoDocs(
  * get the raw JSON string regardless of formatting.
  */
 function extractJsonPayload(raw: string): string {
-  const MAX_TRIAGE_PAYLOAD_CHARS = 60_000
   let jsonStr = raw.trim()
-  if (jsonStr.length > MAX_TRIAGE_PAYLOAD_CHARS) {
-    jsonStr = jsonStr.slice(0, MAX_TRIAGE_PAYLOAD_CHARS)
+  if (jsonStr.length > MAX_TRIAGE_JSON_PAYLOAD_CHARS) {
+    jsonStr = jsonStr.slice(0, MAX_TRIAGE_JSON_PAYLOAD_CHARS)
   }
 
   const fenceStart = jsonStr.indexOf('```')
