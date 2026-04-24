@@ -45,7 +45,9 @@ function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
 /**
  * Perform a fetch with automatic retry on transient errors.
  * Retries up to MAX_RETRIES times with exponential back-off (1 s, 2 s).
- * Retries on both network errors (TypeError) and timeouts (AbortError).
+ * Retries on network errors (TypeError).
+ * Timeouts (AbortError) are surfaced immediately so the caller can switch
+ * models faster instead of waiting multiple timeout windows on the same model.
  * A per-request AbortController enforces REQUEST_TIMEOUT_MS.
  */
 interface FetchWithRetryResult {
@@ -98,8 +100,13 @@ async function fetchWithRetry(url: string, options: RequestInit, externalSignal?
         lastError = err as Error
       }
 
-      // Retry on network errors and timeouts
-      if ((isNetworkError || isTimeout) && attempt < MAX_RETRIES) {
+      // Timeout is handled immediately by the fallback layer to reduce latency.
+      if (isTimeout) {
+        throw lastError
+      }
+
+      // Retry on transport/network errors only.
+      if (isNetworkError && attempt < MAX_RETRIES) {
         continue
       }
       throw lastError
@@ -169,6 +176,27 @@ export function pickReliableFallback(primaryModel: string): string {
     return 'anthropic/claude-3.5-haiku'
   }
   return RELIABLE_TEXT_FALLBACK_MODEL
+}
+
+function isRecoverableLLMError(err: unknown): err is ModelUnavailableError | TransientLLMError {
+  return err instanceof ModelUnavailableError || err instanceof TransientLLMError
+}
+
+function buildFallbackCandidates(model: string, fallbackModel: string): string[] {
+  const candidates = [
+    fallbackModel,
+    pickReliableFallback(model),
+    pickReliableFallback(fallbackModel),
+    RELIABLE_TEXT_FALLBACK_MODEL,
+    'anthropic/claude-3.5-haiku',
+  ]
+
+  const unique: string[] = []
+  for (const candidate of candidates) {
+    if (!candidate || candidate === model || unique.includes(candidate)) continue
+    unique.push(candidate)
+  }
+  return unique
 }
 
 export interface LLMResult {
@@ -443,38 +471,40 @@ export async function callLLMWithFallback(
     return await callLLM(apiKey, system, user, model, maxTokens, temperature, options)
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
-    const isRecoverable = err instanceof ModelUnavailableError || err instanceof TransientLLMError
-    if (isRecoverable) {
-      // Resolve an effective fallback: if caller passed the same model as both
-      // primary and fallback, pick a reliable alternative so notebook pipelines
-      // configured with `:free` models can still complete.
-      let effectiveFallback = fallbackModel
-      if (model === fallbackModel) {
-        const alt = pickReliableFallback(model)
-        if (alt === model) {
-          // No alternative available — propagate error
-          throw err
+    if (isRecoverableLLMError(err)) {
+      const fallbackCandidates = buildFallbackCandidates(model, fallbackModel)
+      let lastRecoverableError: ModelUnavailableError | TransientLLMError = err
+
+      for (const fallbackCandidate of fallbackCandidates) {
+        console.warn(
+          `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
+          ` Tentando fallback: "${fallbackCandidate}".`,
+        )
+        try {
+          const fallbackResult = await callLLM(apiKey, system, user, fallbackCandidate, maxTokens, temperature, options)
+          return {
+            ...fallbackResult,
+            operational: {
+              requestedModel: model,
+              resolvedModel: fallbackResult.model,
+              fallbackUsed: true,
+              fallbackFrom: model,
+              fallbackReason: err instanceof ModelUnavailableError ? 'model_unavailable' : 'transient_error',
+              networkRetryCount: fallbackResult.operational?.networkRetryCount ?? 0,
+              emptyRetryCount: fallbackResult.operational?.emptyRetryCount ?? 0,
+              totalRetryCount: fallbackResult.operational?.totalRetryCount ?? 0,
+            },
+          }
+        } catch (fallbackErr) {
+          if (fallbackErr instanceof DOMException && fallbackErr.name === 'AbortError') throw fallbackErr
+          if (isRecoverableLLMError(fallbackErr)) {
+            lastRecoverableError = fallbackErr
+            continue
+          }
+          throw fallbackErr
         }
-        effectiveFallback = alt
       }
-      console.warn(
-        `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
-        ` Usando fallback: "${effectiveFallback}".`,
-      )
-      const fallbackResult = await callLLM(apiKey, system, user, effectiveFallback, maxTokens, temperature, options)
-      return {
-        ...fallbackResult,
-        operational: {
-          requestedModel: model,
-          resolvedModel: fallbackResult.model,
-          fallbackUsed: true,
-          fallbackFrom: model,
-          fallbackReason: err instanceof ModelUnavailableError ? 'model_unavailable' : 'transient_error',
-          networkRetryCount: fallbackResult.operational?.networkRetryCount ?? 0,
-          emptyRetryCount: fallbackResult.operational?.emptyRetryCount ?? 0,
-          totalRetryCount: fallbackResult.operational?.totalRetryCount ?? 0,
-        },
-      }
+      throw lastRecoverableError
     }
     throw err
   }
@@ -496,32 +526,40 @@ export async function callLLMWithMessagesFallback(
     return await callLLMWithMessages(apiKey, messages, model, maxTokens, temperature, options)
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
-    const isRecoverable = err instanceof ModelUnavailableError || err instanceof TransientLLMError
-    if (isRecoverable) {
-      let effectiveFallback = fallbackModel
-      if (model === fallbackModel) {
-        const alt = pickReliableFallback(model)
-        if (alt === model) throw err
-        effectiveFallback = alt
+    if (isRecoverableLLMError(err)) {
+      const fallbackCandidates = buildFallbackCandidates(model, fallbackModel)
+      let lastRecoverableError: ModelUnavailableError | TransientLLMError = err
+
+      for (const fallbackCandidate of fallbackCandidates) {
+        console.warn(
+          `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
+          ` Tentando fallback: "${fallbackCandidate}".`,
+        )
+        try {
+          const fallbackResult = await callLLMWithMessages(apiKey, messages, fallbackCandidate, maxTokens, temperature, options)
+          return {
+            ...fallbackResult,
+            operational: {
+              requestedModel: model,
+              resolvedModel: fallbackResult.model,
+              fallbackUsed: true,
+              fallbackFrom: model,
+              fallbackReason: err instanceof ModelUnavailableError ? 'model_unavailable' : 'transient_error',
+              networkRetryCount: fallbackResult.operational?.networkRetryCount ?? 0,
+              emptyRetryCount: fallbackResult.operational?.emptyRetryCount ?? 0,
+              totalRetryCount: fallbackResult.operational?.totalRetryCount ?? 0,
+            },
+          }
+        } catch (fallbackErr) {
+          if (fallbackErr instanceof DOMException && fallbackErr.name === 'AbortError') throw fallbackErr
+          if (isRecoverableLLMError(fallbackErr)) {
+            lastRecoverableError = fallbackErr
+            continue
+          }
+          throw fallbackErr
+        }
       }
-      console.warn(
-        `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
-        ` Usando fallback: "${effectiveFallback}".`,
-      )
-      const fallbackResult = await callLLMWithMessages(apiKey, messages, effectiveFallback, maxTokens, temperature, options)
-      return {
-        ...fallbackResult,
-        operational: {
-          requestedModel: model,
-          resolvedModel: fallbackResult.model,
-          fallbackUsed: true,
-          fallbackFrom: model,
-          fallbackReason: err instanceof ModelUnavailableError ? 'model_unavailable' : 'transient_error',
-          networkRetryCount: fallbackResult.operational?.networkRetryCount ?? 0,
-          emptyRetryCount: fallbackResult.operational?.emptyRetryCount ?? 0,
-          totalRetryCount: fallbackResult.operational?.totalRetryCount ?? 0,
-        },
-      }
+      throw lastRecoverableError
     }
     throw err
   }

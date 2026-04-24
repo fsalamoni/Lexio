@@ -1,5 +1,42 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { callLLM, ModelUnavailableError, RELIABLE_TEXT_FALLBACK_MODEL, pickReliableFallback } from './llm-client'
+import {
+  callLLM,
+  callLLMWithFallback,
+  callLLMWithMessagesFallback,
+  ModelUnavailableError,
+  RELIABLE_TEXT_FALLBACK_MODEL,
+  TransientLLMError,
+  pickReliableFallback,
+} from './llm-client'
+
+function unavailableModelResponse() {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: 'Provider returned error',
+        code: 404,
+        metadata: {
+          raw: 'This model does not exist or is no longer available.',
+        },
+      },
+    }),
+    { status: 404, headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
+function successResponse(content: string) {
+  return new Response(
+    JSON.stringify({
+      choices: [{ message: { content } }],
+      usage: {
+        prompt_tokens: 11,
+        completion_tokens: 22,
+        cost: 0.0001,
+      },
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  )
+}
 
 describe('llm-client', () => {
   afterEach(() => {
@@ -65,6 +102,62 @@ describe('llm-client', () => {
 
     it('returns RELIABLE_TEXT_FALLBACK_MODEL for :experimental models', () => {
       expect(pickReliableFallback('some/model:experimental')).toBe(RELIABLE_TEXT_FALLBACK_MODEL)
+    })
+  })
+
+  describe('fallback resilience', () => {
+    it('tries additional fallback candidates when configured fallback also fails', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      fetchSpy
+        .mockResolvedValueOnce(unavailableModelResponse()) // primary
+        .mockResolvedValueOnce(unavailableModelResponse()) // configured fallback
+        .mockResolvedValueOnce(successResponse('ok from reliable fallback')) // reliable fallback
+
+      const result = await callLLMWithFallback(
+        'sk-or-test',
+        'system',
+        'user',
+        'broken/model',
+        'broken/fallback',
+      )
+
+      expect(result.content).toBe('ok from reliable fallback')
+      expect(result.model).toBe(RELIABLE_TEXT_FALLBACK_MODEL)
+      expect(result.operational?.fallbackUsed).toBe(true)
+      expect(result.operational?.fallbackFrom).toBe('broken/model')
+      expect(fetchSpy).toHaveBeenCalledTimes(3)
+    })
+
+    it('applies the same cascading fallback strategy for messages-based calls', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      fetchSpy
+        .mockResolvedValueOnce(unavailableModelResponse()) // primary
+        .mockResolvedValueOnce(unavailableModelResponse()) // configured fallback
+        .mockResolvedValueOnce(successResponse('ok from messages fallback')) // reliable fallback
+
+      const result = await callLLMWithMessagesFallback(
+        'sk-or-test',
+        [{ role: 'user', content: 'hi' }],
+        'broken/messages-model',
+        'broken/messages-fallback',
+      )
+
+      expect(result.content).toBe('ok from messages fallback')
+      expect(result.model).toBe(RELIABLE_TEXT_FALLBACK_MODEL)
+      expect(result.operational?.fallbackUsed).toBe(true)
+      expect(fetchSpy).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not retry timeout on the same model, surfacing TransientLLMError immediately', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(
+        new DOMException('timed out', 'AbortError'),
+      )
+
+      await expect(
+        callLLM('sk-or-test', 'system', 'user', 'slow/model'),
+      ).rejects.toBeInstanceOf(TransientLLMError)
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
     })
   })
 })
