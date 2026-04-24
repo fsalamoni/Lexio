@@ -76,6 +76,11 @@ const MAX_ACERVO_SELECTED_DOCS = 3
 const MAX_ACERVO_COMPILADOR_CHARS = 120000
 /** Max chars of document text used to generate an ementa. */
 const MAX_EMENTA_SOURCE_CHARS = 8000
+/**
+ * Max chars considered when extracting JSON payload from triage output.
+ * Keeps parsing bounded when models return very large markdown blocks.
+ */
+const MAX_TRIAGE_JSON_PAYLOAD_CHARS = 60_000
 // NOTE: No default models — all models must be configured in admin panel
 /** Max pre-filtered documents sent to the buscador LLM. */
 const MAX_PREFILTERED_DOCS = 30
@@ -1011,28 +1016,67 @@ function preFilterAcervoDocs(
 }
 
 /**
+ * Strip markdown code fences and extract the first JSON object from an LLM response.
+ * Many models wrap their JSON output in ```json ... ``` blocks; this ensures we always
+ * get the raw JSON string regardless of formatting.
+ */
+function extractJsonPayload(raw: string): string {
+  let jsonStr = raw.trim()
+  if (jsonStr.length > MAX_TRIAGE_JSON_PAYLOAD_CHARS) {
+    jsonStr = jsonStr.slice(0, MAX_TRIAGE_JSON_PAYLOAD_CHARS)
+  }
+
+  const fenceStart = jsonStr.indexOf('```')
+  if (fenceStart >= 0) {
+    const afterFence = jsonStr.indexOf('\n', fenceStart)
+    const contentStart = afterFence >= 0 ? afterFence + 1 : fenceStart + 3
+    const fenceEnd = jsonStr.indexOf('```', contentStart)
+    if (fenceEnd > contentStart) {
+      jsonStr = jsonStr.slice(contentStart, fenceEnd).trim()
+    } else {
+      jsonStr = jsonStr.slice(contentStart).trim()
+    }
+  }
+
+  const objectStart = jsonStr.indexOf('{')
+  const objectEnd = jsonStr.lastIndexOf('}')
+  if (objectStart >= 0 && objectEnd > objectStart) {
+    jsonStr = jsonStr.slice(objectStart, objectEnd + 1)
+  }
+
+  return jsonStr
+}
+
+/**
  * Extract search keywords from triage result for pre-filtering.
  */
 function extractSearchKeywords(triageContent: string, request: string): string[] {
   const keywords: string[] = []
 
-  // Try to parse triage JSON for structured keywords
+  // Try to parse triage JSON for structured keywords.
+  // Strip markdown fences first — some models wrap JSON in ```json ... ``` blocks.
   try {
-    const triage = JSON.parse(triageContent)
-    if (triage.tema) keywords.push(...triage.tema.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3))
-    if (triage.subtemas) {
-      for (const sub of triage.subtemas) {
+    const triage = JSON.parse(extractJsonPayload(triageContent)) as Record<string, unknown>
+    if (typeof triage.tema === 'string') {
+      keywords.push(...triage.tema.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3))
+    }
+    if (Array.isArray(triage.subtemas)) {
+      for (const sub of triage.subtemas.filter((v): v is string => typeof v === 'string')) {
         keywords.push(...sub.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3))
       }
     }
-    if (triage.palavras_chave) {
-      for (const kw of triage.palavras_chave) {
+    if (Array.isArray(triage.palavras_chave)) {
+      for (const kw of triage.palavras_chave.filter((v): v is string => typeof v === 'string')) {
         keywords.push(kw.toLowerCase().trim())
       }
     }
   } catch {
-    // Not JSON, extract from raw text
-    keywords.push(...triageContent.toLowerCase().split(/\s+/).filter(w => w.length > 4))
+    // Not JSON — fall back to word extraction from the plain text portion only,
+    // filtering out structural tokens that pollute keyword matching.
+    const plainText = triageContent
+      .replace(/```[\s\S]*?```/g, ' ') // strip code fences
+      .replace(/[{}[\]",:]/g, ' ')     // strip JSON structural chars
+    keywords.push(...plainText.toLowerCase().split(/\s+/).filter(w => w.length > 4 && !/^[a-z_]+:$/.test(w)))
   }
 
   // Also extract main keywords from the request itself
@@ -1510,8 +1554,8 @@ export async function generateDocument(
     // Extract tema from triage JSON
     let tema = ''
     try {
-      const triageJson = JSON.parse(triageResult.content)
-      tema = triageJson.tema || request.slice(0, 100)
+      const triageJson = JSON.parse(extractJsonPayload(triageResult.content)) as Record<string, unknown>
+      tema = typeof triageJson.tema === 'string' ? triageJson.tema : request.slice(0, 100)
     } catch {
       tema = request.slice(0, 100)
     }
