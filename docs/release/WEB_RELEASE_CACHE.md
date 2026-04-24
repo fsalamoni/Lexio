@@ -15,7 +15,7 @@ Last update: 2026-04-23
 - Wave 31 execution-state analytics hardening: completed (local validation)
 - Wave 31 release closeout: completed (run 24857074922 success)
 - Wave 32 agent demonstration + latency tuning: completed (local validation)
-- Wave 32 release closeout: pending (one-shot dispatch em preparação)
+- Wave 32 release closeout: completed (run 24859770023 success)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -63,17 +63,27 @@ Last update: 2026-04-23
 - frontend test: completed
 - frontend build: completed
 - frontend tests result: 38 files, 290 tests passed
-- release-web dispatch (wave32): pending
-- Deploy Firebase production (wave32): pending
-- Deploy GitHub Pages / build (wave32): pending
-- Deploy GitHub Pages / deploy (wave32): pending
-- Release summary (wave32): pending
-- Deploy redesign V2 (wave32): pending input (`deploy_redesign_v2=false` planejado)
+- release-web dispatch (wave32): completed (run 24859770023)
+- Deploy Firebase production (wave32): completed (job 72782268742)
+- Deploy GitHub Pages / build (wave32): completed (job 72782268873)
+- Deploy GitHub Pages / deploy (wave32): completed (job 72782441213)
+- Release summary (wave32): completed (job 72782695792)
+- Deploy redesign V2 (wave32): skipped by input (job 72782269072)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- Wave 32 release closeout pendente (commit/push + run one-shot + sincronização final de IDs em docs).
+- None. Wave 32 closeout completed (git flow + release lane fully executed).
+
+## Wave 32 Release Outcome
+- release-web dispatch (run 24859770023): success.
+- Quality gates: success.
+- Deploy Firebase production (job 72782268742): success.
+- Deploy GitHub Pages / build (job 72782268873): success.
+- Deploy GitHub Pages / deploy (job 72782441213): success.
+- Deploy redesign V2 (job 72782269072): skipped by input (`deploy_redesign_v2=false`).
+- Release summary (job 72782695792): success.
+- Key verification: trilha one-shot confirmou a nova demonstração operacional de agentes e a leitura de latência média por estado/função sem regressão nos quality gates nem nos deploys.
 
 ## Wave 31 Release Outcome
 - release-web dispatch (run 24857074922): success.
