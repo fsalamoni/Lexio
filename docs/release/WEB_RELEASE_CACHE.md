@@ -46,10 +46,10 @@ Last update: 2026-04-23
 - Release workflow dispatch (wave31): completed (release-web.yml run 24857074922 success)
 - Wave 32 commit + push: completed (`7b2d321`)
 - Release workflow dispatch (wave32): completed (release-web.yml run 24859770023 success)
-- Wave 32 docs closeout commit + push: completed (`519835a`)
+- Wave 32 docs closeout commit + push: completed (recorded in `main` history)
 
 ## Current Wave Cache (2026-04-23)
-- Wave tag: wave32-agent-demo-latency-tuning
+- Wave tag: wave32-closeout-cross-platform-handoff
 - Scope: demonstração explícita dos agentes trabalhando no `PlatformAdminPanel` com telemetria real recente, hotspot de latência/custo por `execution_state` (inclusive função+estado) e exposição de `Duração média` nas tabelas de custos pessoal/agregada.
 - Files touched (wave32/code+docs):
 	- frontend/src/lib/firestore-service.ts

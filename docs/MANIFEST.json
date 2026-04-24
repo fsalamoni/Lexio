@@ -604,7 +604,7 @@
         "docs/PLANO.md",
         "NOTEBOOK_IMPLEMENTATION_STATUS.md"
       ],
-      "notes": "Release one-shot `24859770023` em HEAD `7b2d321` concluída com quality gates em sucesso (lint `72782091769`, source guardrails `72782091795`, unit tests `72782091782`, functions quality `72782091775`, frontend quality `72782091797`), deploy Firebase production (`72782268742`), Pages build (`72782268873`), Pages deploy (`72782441213`) e release summary (`72782695792`) em sucesso; fechamento documental de handoff sincronizado no `main` (`519835a`)."
+      "notes": "Release one-shot `24859770023` em HEAD `7b2d321` concluída com quality gates em sucesso (lint `72782091769`, source guardrails `72782091795`, unit tests `72782091782`, functions quality `72782091775`, frontend quality `72782091797`), deploy Firebase production (`72782268742`), Pages build (`72782268873`), Pages deploy (`72782441213`) e release summary (`72782695792`) em sucesso; fechamento documental de handoff sincronizado no `main`."
     },
     {
       "id": "E8.F1",

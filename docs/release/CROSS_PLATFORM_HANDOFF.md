@@ -7,7 +7,7 @@ This file is the minimum operational package to continue Lexio work from another
 
 ## Repository Snapshot
 - Branch: main
-- Current head: 519835a (docs closeout sync)
+- Current head: resolve at handoff time with `git rev-parse --short HEAD`
 - Last functional wave commit: 7b2d321
 - Working tree status at closeout: clean
 

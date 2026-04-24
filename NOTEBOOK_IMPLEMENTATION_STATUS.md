@@ -12,7 +12,7 @@
 - Etapa 278: trilha de Git da wave confirmada e publicada no `main` com commit funcional `7b2d321` (demonstração multiagente + latência por estado) sem divergência remota.
 - Etapa 279: release one-shot disparado em `release-web.yml` (run `24859770023`) no HEAD `7b2d3213baa57b2a54ea39906b7feb1f145a0c3d` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
 - Etapa 280: quality gates e deploys confirmados em sucesso na mesma run: lint (`72782091769`), source guardrails (`72782091795`), unit tests (`72782091782`), functions quality (`72782091775`), frontend quality (`72782091797`), Firebase production (`72782268742`), Pages build (`72782268873`), Pages deploy (`72782441213`) e release summary (`72782695792`); redesign V2 mantido como skip por input (`72782269072`).
-- Etapa 281: fechamento final de governança/index/cache concluído com IDs reais da run `24859770023` e commit de sincronização documental no `main` (`519835a`), deixando o repositório pronto para continuidade em outra plataforma.
+- Etapa 281: fechamento final de governança/index/cache concluído com IDs reais da run `24859770023` e sincronização documental no `main`, deixando o repositório pronto para continuidade em outra plataforma.
 
 ### Etapas 274-277 — Demonstração Multiagente + Latência Operacional (Wave 32) ✅
 - **Arquivos**: `frontend/src/lib/firestore-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `frontend/src/pages/CostTokensPage.tsx`, `frontend/src/pages/PlatformCostsPage.tsx`

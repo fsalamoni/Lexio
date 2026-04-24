@@ -23,7 +23,7 @@
 - ✅ `PlatformAdminPanel.tsx` ampliado com demonstração explícita de agentes em produção (amostra recente com estado/fase/retry/fallback/modelo) e bloco executivo de impacto por `execution_state` (share de chamadas/custo + hotspots função/estado por latência média).
 - ✅ `CostTokensPage.tsx` e `PlatformCostsPage.tsx` passaram a expor `Duração média` nas tabelas operacionais, completando leitura combinada de custo, volume e latência no mesmo painel.
 - ✅ Validação local completa desta wave: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos, 290/290 testes**), `npm run build` e verificação de Problems (`get_errors`) sem erros.
-- ✅ Trilha operacional da wave concluída: commit/push do `main` (`7b2d321`), one-shot release (`release-web.yml` run `24859770023`) em `success` com quality gates + Firebase + Pages, e sincronização final de governança/index/cache no `main` (`519835a`).
+- ✅ Trilha operacional da wave concluída: commit/push funcional do `main` (`7b2d321`), one-shot release (`release-web.yml` run `24859770023`) em `success` com quality gates + Firebase + Pages, e sincronização final de governança/index/cache com pacote de handoff cross-platform.
 - 🔄 Próximo bloco: coletar impacto real em produção por `execution_state` (especialmente `waiting_io`/`retrying`) e calibrar tuning por função sem regressão de UX.
 
 **Atualização incremental (2026-04-23 — Wave 31: analytics por estado de execução + propagação operacional):**
