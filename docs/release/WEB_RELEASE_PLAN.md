@@ -1,9 +1,9 @@
 # Web Release Plan
 
-Last update: 2026-04-20
+Last update: 2026-04-23
 
 ## Goal
-Create a reliable one-shot web release flow and stabilize Firebase deploy behavior after service-account secret changes.
+Keep the one-shot web release flow reliable and ensure every wave closeout leaves planning/index/cache/handoff docs ready for cross-platform continuation.
 
 ## Scope
 - Sync local main with GitHub main
@@ -11,6 +11,7 @@ Create a reliable one-shot web release flow and stabilize Firebase deploy behavi
 - Add one-shot orchestrator workflow for full web release
 - Validate platform quality gates locally before commit
 - Commit and attempt push/deploy trigger
+- Sync planning/index/cache/handoff references after release conclusion
 
 ## Phase Checklist
 - [x] Phase 1 - Local sync with GitHub
@@ -19,6 +20,7 @@ Create a reliable one-shot web release flow and stabilize Firebase deploy behavi
 - [x] Phase 4 - One-shot release workflow implementation
 - [x] Phase 5 - Local validation (typecheck/tests/build/functions)
 - [x] Phase 6 - Commit and push/deploy trigger
+- [x] Phase 7 - Governance and handoff docs sync
 
 ## Risk Prevention
 - Validate service-account JSON before auth steps
@@ -38,3 +40,4 @@ Create a reliable one-shot web release flow and stabilize Firebase deploy behavi
 - Operational docs:
   - docs/release/WEB_RELEASE_INDEX.md
   - docs/release/WEB_RELEASE_CACHE.md
+  - docs/release/CROSS_PLATFORM_HANDOFF.md

@@ -16,6 +16,7 @@ Last update: 2026-04-23
 - Wave 31 release closeout: completed (run 24857074922 success)
 - Wave 32 agent demonstration + latency tuning: completed (local validation)
 - Wave 32 release closeout: completed (run 24859770023 success)
+- Cross-platform handoff package: completed
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -43,6 +44,9 @@ Last update: 2026-04-23
 - Release workflow dispatch (wave30): completed (release-web.yml run 24854808367 success)
 - Wave 31 commit + push: completed (`9c02d57`)
 - Release workflow dispatch (wave31): completed (release-web.yml run 24857074922 success)
+- Wave 32 commit + push: completed (`7b2d321`)
+- Release workflow dispatch (wave32): completed (release-web.yml run 24859770023 success)
+- Wave 32 docs closeout commit + push: completed (`519835a`)
 
 ## Current Wave Cache (2026-04-23)
 - Wave tag: wave32-agent-demo-latency-tuning
@@ -57,6 +61,7 @@ Last update: 2026-04-23
 	- docs/release/WEB_RELEASE_INDEX.md
 	- docs/MANIFEST.json
 	- docs/release/WEB_RELEASE_CACHE.md
+	- docs/release/CROSS_PLATFORM_HANDOFF.md
 
 ## Current Validation Cache (2026-04-23)
 - frontend typecheck: completed

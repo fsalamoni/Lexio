@@ -35,6 +35,8 @@ Last update: 2026-04-23
 - Frontend tests: success (38 files, 290 tests)
 - Frontend build: success
 - Release dispatch: completed (`release-web.yml`, run `24859770023`)
+- Docs closeout sync: completed (`main` at `519835a`)
+- Handoff package: `docs/release/CROSS_PLATFORM_HANDOFF.md`
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs

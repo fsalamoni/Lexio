@@ -14,7 +14,7 @@
 
 ---
 
-## Andamento Atual (ciclo 2026-04-19)
+## Andamento Atual (ciclo 2026-04-23)
 
 **Status:** ⚠️ avançando Faixa B com a fundação do redesign V2 em expansão controlada — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook, hardening de TTS/DocumentDetail, code splitting do ResearchNotebook, hardening de DataJud/CI-CD, `ProfileV2`, `DashboardV2`, dezoito ondas funcionais do trilho V2 validadas localmente, `/` agora promovida para `DashboardV2` sob gate, shell V2 cobrindo `/documents*`, `/upload`, `/theses`, `/settings*`, `/admin*` e `/profile`, aliases técnicos completos para os antigos labs de dashboard/notebook/profile, migração visual real das superfícies internas principais via primitives compartilhadas + base V2 compartilhada para configuracoes, custos pessoal/agregado, catalogo, configuracoes especializadas e o nucleo de governanca/admin promovidos para blocos integralmente nativos, alem de navegacao preview-safe consolidada entre sidebar/notificacoes/admin, um Hosting dedicado para o redesign em `lexio-redesign-v2-44760.web.app` e o hotfix do deploy estavel do Firebase concluido com `DATAJUD_API_KEY` provisionado e validado em producao
 
@@ -23,7 +23,8 @@
 - ✅ `PlatformAdminPanel.tsx` ampliado com demonstração explícita de agentes em produção (amostra recente com estado/fase/retry/fallback/modelo) e bloco executivo de impacto por `execution_state` (share de chamadas/custo + hotspots função/estado por latência média).
 - ✅ `CostTokensPage.tsx` e `PlatformCostsPage.tsx` passaram a expor `Duração média` nas tabelas operacionais, completando leitura combinada de custo, volume e latência no mesmo painel.
 - ✅ Validação local completa desta wave: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos, 290/290 testes**), `npm run build` e verificação de Problems (`get_errors`) sem erros.
-- 🔄 Próximo bloco: fechar trilha operacional da wave com commit/push e one-shot release (`release-web.yml`) para confirmar impacto em produção sem regressão.
+- ✅ Trilha operacional da wave concluída: commit/push do `main` (`7b2d321`), one-shot release (`release-web.yml` run `24859770023`) em `success` com quality gates + Firebase + Pages, e sincronização final de governança/index/cache no `main` (`519835a`).
+- 🔄 Próximo bloco: coletar impacto real em produção por `execution_state` (especialmente `waiting_io`/`retrying`) e calibrar tuning por função sem regressão de UX.
 
 **Atualização incremental (2026-04-23 — Wave 31: analytics por estado de execução + propagação operacional):**
 - ✅ `cost-analytics.ts` evoluído com dimensão agregada por `execution_state` (global e por função), labels canônicos e inferência retrocompatível por fase/retry quando o estado explícito não está presente.
