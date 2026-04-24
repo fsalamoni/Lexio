@@ -1016,11 +1016,30 @@ function preFilterAcervoDocs(
  * get the raw JSON string regardless of formatting.
  */
 function extractJsonPayload(raw: string): string {
+  const MAX_TRIAGE_PAYLOAD_CHARS = 60_000
   let jsonStr = raw.trim()
-  const fencedMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fencedMatch) jsonStr = fencedMatch[1].trim()
-  const objectMatch = jsonStr.match(/\{[\s\S]*\}/)
-  if (objectMatch) jsonStr = objectMatch[0]
+  if (jsonStr.length > MAX_TRIAGE_PAYLOAD_CHARS) {
+    jsonStr = jsonStr.slice(0, MAX_TRIAGE_PAYLOAD_CHARS)
+  }
+
+  const fenceStart = jsonStr.indexOf('```')
+  if (fenceStart >= 0) {
+    const afterFence = jsonStr.indexOf('\n', fenceStart)
+    const contentStart = afterFence >= 0 ? afterFence + 1 : fenceStart + 3
+    const fenceEnd = jsonStr.indexOf('```', contentStart)
+    if (fenceEnd > contentStart) {
+      jsonStr = jsonStr.slice(contentStart, fenceEnd).trim()
+    } else {
+      jsonStr = jsonStr.slice(contentStart).trim()
+    }
+  }
+
+  const objectStart = jsonStr.indexOf('{')
+  const objectEnd = jsonStr.lastIndexOf('}')
+  if (objectStart >= 0 && objectEnd > objectStart) {
+    jsonStr = jsonStr.slice(objectStart, objectEnd + 1)
+  }
+
   return jsonStr
 }
 
