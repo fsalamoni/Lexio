@@ -2,6 +2,16 @@
 
 Last update: 2026-04-25
 
+## Latest One-shot Validation (Wave 39 — 2026-04-25)
+- release-web run `24939740593`: success
+- Head commit: `a2ed246`
+- Quality gates: success (functions quality `73031338133`, lint `73031338134`, source guardrails `73031338135`, frontend quality `73031338137`, unit tests `73031338143`)
+- Deploy Firebase production: success (`job 73031401264`)
+- Deploy GitHub Pages / build: success (`job 73031401290`)
+- Deploy GitHub Pages / deploy: success (`job 73031468718`)
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 73031401347`)
+- Release summary: success (`job 73031560811`)
+
 ## Latest One-shot Validation (Wave 38 — 2026-04-25)
 - release-web run `24933092299`: success
 - Head commit: `f5cbf57`
@@ -89,14 +99,14 @@ Last update: 2026-04-25
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72772882473`)
 - Release summary: success (`job 72773344525`)
 
-## Current Local Validation (Wave 37 — 2026-04-25)
-- Scope: aderência diária live versus alvo por função com pressão live/alvo, tendência de estabilidade/cobertura e recomendações de rollout assistido no `PlatformAdminPanel`
+## Current Local Validation (Wave 39 — 2026-04-25)
+- Scope: confiança adaptativa no rollout progressivo por função, com thresholds preditivos dinâmicos, distribuição de confiança, watchlist de baixa confiança e alinhamento explícito com a demonstração dos agentes no `PlatformAdminPanel`
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 299 tests)
 - Frontend build: success
 - Functions build: success (`npm run build`)
 - Python tests: success (2203 passed)
-- Release dispatch: completed (`release-web.yml` run `24930689755`)
+- Release dispatch: completed (`release-web.yml` run `24939740593`)
 - Docs closeout sync: completed (planning/status/index/manifest/cache/handoff synchronized with final IDs)
 
 ## Firebase Auth and Secret Validation
@@ -107,6 +117,9 @@ Last update: 2026-04-25
 - firebase.json
 - .firebaserc
 - functions/src/index.ts
+- frontend/src/lib/firestore-types.ts
+- frontend/src/lib/firestore-service.ts
+- frontend/src/pages/PlatformAdminPanel.tsx
 - frontend/src/lib/generation-service.ts
 - frontend/src/lib/document-pipeline.ts
 - frontend/src/lib/pipeline-execution-contract.ts

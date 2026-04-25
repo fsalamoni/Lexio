@@ -1,4 +1,4 @@
-# Cross-Platform Handoff - Wave 38
+# Cross-Platform Handoff - Wave 39
 
 Last update: 2026-04-25
 
@@ -8,26 +8,26 @@ This file is the minimum operational package to continue Lexio work from another
 ## Repository Snapshot
 - Branch: main
 - Current head: resolve at handoff time with `git rev-parse --short HEAD`
-- Last functional wave commit: f5cbf57
+- Last functional wave commit: a2ed246
 - Working tree status at closeout: clean
 
 ## Latest Stable Release (One-shot)
 - Workflow: .github/workflows/release-web.yml
-- Run: 24933092299
+- Run: 24939740593
 - Conclusion: success
-- Head validated by release: f5cbf57
+- Head validated by release: a2ed246
 
 Jobs:
-- Source guardrails: 73013994216 (success)
-- Frontend quality: 73013994220 (success)
-- Lint (ruff): 73013994224 (success)
-- Unit tests: 73013994226 (success)
-- Functions quality: 73013994229 (success)
-- Deploy Firebase production: 73014056225 (success)
-- Deploy GitHub Pages / build: 73014056272 (success)
-- Deploy GitHub Pages / deploy: 73014131480 (success)
-- Deploy redesign V2: 73014056331 (skipped by input)
-- Release summary: 73014216569 (success)
+- Functions quality: 73031338133 (success)
+- Lint (ruff): 73031338134 (success)
+- Source guardrails: 73031338135 (success)
+- Frontend quality: 73031338137 (success)
+- Unit tests: 73031338143 (success)
+- Deploy Firebase production: 73031401264 (success)
+- Deploy GitHub Pages / build: 73031401290 (success)
+- Deploy GitHub Pages / deploy: 73031468718 (success)
+- Deploy redesign V2: 73031401347 (skipped by input)
+- Release summary: 73031560811 (success)
 
 ## Canonical Docs to Continue Work
 Read/update in this closeout order when opening the next cycle:
@@ -38,11 +38,11 @@ Read/update in this closeout order when opening the next cycle:
 5. docs/release/WEB_RELEASE_INDEX.md
 6. docs/release/CROSS_PLATFORM_HANDOFF.md
 
-## What Was Delivered in Wave 38
-- `frontend/src/lib/firestore-types.ts` now defines progressive rollout policy contracts (`PlatformFunctionRolloutRecommendation`, `PlatformFunctionRolloutRiskLevel`, `PlatformFunctionRolloutGuardrails`, `PlatformFunctionRolloutPolicyRow`, `PlatformFunctionRolloutPolicyPlan`) for risk/recommendation monitoring by function.
-- `frontend/src/lib/firestore-service.ts` now exposes `getPlatformFunctionRolloutPolicyPlan(...)`, computing trend pressure, retry+waiting drift, adherence streaks, risk level and progressive recommendation (`tighten_now`/`tighten_guarded`/`hold`/`relax_guarded`) with guardrails by criticality.
-- `frontend/src/pages/PlatformAdminPanel.tsx` now renders the Wave 38 executive block with policy summary cards, risk/recommendation table per function, predictive drift alerts and actionable guardrail recommendations, while preserving the multiagent demonstration panel.
-- Governance/index/cache/handoff docs were synchronized for Wave 38 closeout with real one-shot release IDs.
+## What Was Delivered in Wave 39
+- `frontend/src/lib/firestore-types.ts` now defines confidence-aware rollout contracts (`PlatformFunctionRolloutConfidenceBand`) and extends policy row/plan fields with confidence and adaptive-threshold context for typed governance monitoring.
+- `frontend/src/lib/firestore-service.ts` now computes function-level confidence and adaptive predictive thresholds (`resolveFunctionPredictiveThresholds`, `computeFunctionRolloutConfidence`), refining risk/recommendation decisions to reduce false positives without suppressing critical bypass behavior.
+- `frontend/src/pages/PlatformAdminPanel.tsx` now renders the Wave 39 executive block with confidence distribution cards, predictive alert count, low-confidence watchlist and explicit alignment signals tied to the multiagent demonstration panel.
+- Governance/index/cache/handoff docs were synchronized for Wave 39 closeout with real one-shot release IDs.
 
 ## Validation Baseline
 Frontend:
@@ -55,11 +55,11 @@ Backend tests:
 - python -m pytest -q (2203 passed)
 
 Release lane:
-- release-web.yml one-shot run 24933092299 completed in success
+- release-web.yml one-shot run 24939740593 completed in success
 
 ## Next Logical Block (starting point)
-- Consolidar feedback de produção da política progressiva para recalibrar limites de guardrail por criticidade e reduzir alertas preditivos com baixa precisão.
-- Ajustar thresholds de tendência para drift combinado de retry + waiting I/O por perfil operacional (alto volume vs baixa cobertura) sem perder sensibilidade para riscos críticos.
+- Consolidar feedback de produção por banda de confiança para recalibrar thresholds adaptativos por criticidade sem perder cobertura dos riscos críticos.
+- Reduzir alertas preditivos de baixa evidência com tuning de thresholds dinâmicos por volume observado e dias de observação, mantendo rastreabilidade executiva no painel admin.
 - Manter o mesmo ordenamento de closeout documental e a verificação one-shot de release em todos os ciclos.
 
 ## Fast Resume Commands

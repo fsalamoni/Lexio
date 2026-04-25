@@ -29,6 +29,8 @@ Last update: 2026-04-25
 - Wave 37 release closeout: completed (run 24930689755 success)
 - Wave 38 política progressiva por criticidade + guardrails preditivos: completed (local validation)
 - Wave 38 release closeout: completed (run 24933092299 success)
+- Wave 39 confiança adaptativa no rollout progressivo + mitigação de falsos positivos: completed (local validation)
+- Wave 39 release closeout: completed (run 24939740593 success)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -71,12 +73,14 @@ Last update: 2026-04-25
 - Release workflow dispatch (wave37): completed (release-web.yml run 24930689755 success)
 - Wave 38 commit + push: completed (`f5cbf57`)
 - Release workflow dispatch (wave38): completed (release-web.yml run 24933092299 success)
+- Wave 39 commit + push: completed (`a2ed246`)
+- Release workflow dispatch (wave39): completed (release-web.yml run 24939740593 success)
 
 ## Current Wave Cache (2026-04-25)
 
-- Wave tag: wave38-progressive-rollout-guardrails-release-closeout
-- Scope: política progressiva por criticidade no painel de governança, com guardrails preditivos para drift combinado de retry + waiting I/O e recomendações operacionais por função, seguida de trilha one-shot concluída com IDs reais.
-- Files touched (wave38/code+docs):
+- Wave tag: wave39-confidence-adaptive-rollout-release-closeout
+- Scope: política progressiva com bandas de confiança e thresholds preditivos adaptativos no painel de governança, reduzindo falsos positivos sem perder sensibilidade para risco crítico, seguida de trilha one-shot concluída com IDs reais.
+- Files touched (wave39/code+docs):
 	- frontend/src/lib/firestore-types.ts
 	- frontend/src/lib/firestore-service.ts
 	- frontend/src/pages/PlatformAdminPanel.tsx
@@ -94,18 +98,28 @@ Last update: 2026-04-25
 - frontend tests result: 38 files, 299 tests passed
 - functions build: completed (`npm run build`)
 - python tests (pytest): completed (2203 passed)
-- release-web dispatch (wave38): completed (run 24933092299)
-- Quality gates (wave38): success (source guardrails `73013994216`, frontend `73013994220`, lint `73013994224`, unit tests `73013994226`, functions `73013994229`)
-- Deploy Firebase production (wave38): completed (job 73014056225)
-- Deploy GitHub Pages / build (wave38): completed (job 73014056272)
-- Deploy GitHub Pages / deploy (wave38): completed (job 73014131480)
-- Release summary (wave38): completed (job 73014216569)
-- Deploy redesign V2 (wave38): skipped by input (job 73014056331)
+- release-web dispatch (wave39): completed (run 24939740593)
+- Quality gates (wave39): success (functions `73031338133`, lint `73031338134`, source guardrails `73031338135`, frontend `73031338137`, unit tests `73031338143`)
+- Deploy Firebase production (wave39): completed (job 73031401264)
+- Deploy GitHub Pages / build (wave39): completed (job 73031401290)
+- Deploy GitHub Pages / deploy (wave39): completed (job 73031468718)
+- Release summary (wave39): completed (job 73031560811)
+- Deploy redesign V2 (wave39): skipped by input (job 73031401347)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 38 closeout completed (git flow + release lane fully executed).
+- None. Wave 39 closeout completed (git flow + release lane fully executed).
+
+## Wave 39 Release Outcome
+- release-web dispatch (run 24939740593): success.
+- Quality gates: success.
+- Deploy Firebase production (job 73031401264): success.
+- Deploy GitHub Pages / build (job 73031401290): success.
+- Deploy GitHub Pages / deploy (job 73031468718): success.
+- Deploy redesign V2 (job 73031401347): skipped by input (`deploy_redesign_v2=false`).
+- Release summary (job 73031560811): success.
+- Key verification: a política progressiva com confiança adaptativa por função (bandas `high_confidence`/`medium_confidence`/`low_confidence`, thresholds preditivos dinâmicos e mitigação de falsos positivos) foi promovida no painel admin sem regressões de qualidade/deploy e mantendo a demonstração multiagente explicitamente alinhada.
 
 ## Wave 38 Release Outcome
 - release-web dispatch (run 24933092299): success.

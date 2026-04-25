@@ -5,7 +5,21 @@
 
 ---
 
-## Status Geral: Etapas 1-329 IMPLEMENTADAS
+## Status Geral: Etapas 1-337 IMPLEMENTADAS
+
+### Etapas 334-337 — Closeout Operacional da Wave 39 (Release One-shot) ✅
+- **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`
+- Etapa 334: trilha de Git da wave fechada no `main` com commit/push funcional `a2ed246` (confiança adaptativa no rollout progressivo + mitigação de falsos positivos), mantendo baseline remota alinhada antes do release.
+- Etapa 335: release one-shot disparado em `release-web.yml` (run `24939740593`) no HEAD `a2ed246d9c2bbeb5bc5bdae81531e7444b7078b6` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
+- Etapa 336: quality gates e deploys confirmados em sucesso na mesma run: functions quality (`73031338133`), lint (`73031338134`), source guardrails (`73031338135`), frontend quality (`73031338137`), unit tests (`73031338143`), Firebase production (`73031401264`), Pages build (`73031401290`), Pages deploy (`73031468718`) e release summary (`73031560811`); redesign V2 mantido como skip por input (`73031401347`).
+- Etapa 337: fechamento final de governança/index/cache/handoff sincronizado com IDs reais da run `24939740593`, mantendo continuidade cross-platform pronta para a próxima wave.
+
+### Etapas 330-333 — Confiança Adaptativa no Rollout Progressivo (Wave 39) ✅
+- **Arquivos**: `frontend/src/lib/firestore-types.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `docs/PLANO.md`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/MANIFEST.json`
+- Etapa 330: `firestore-types.ts` recebeu `PlatformFunctionRolloutConfidenceBand` e novos campos de confiança/threshold adaptativo para `PlatformFunctionRolloutPolicyRow` e `PlatformFunctionRolloutPolicyPlan`, consolidando contrato tipado de evidência operacional por função.
+- Etapa 331: `firestore-service.ts` foi ampliado com cálculo de confiança e thresholds preditivos adaptativos por criticidade (`resolveFunctionPredictiveThresholds`, `computeFunctionRolloutConfidence`), refinando risco/recomendação para reduzir falsos positivos sem perder sensibilidade para eventos críticos.
+- Etapa 332: `PlatformAdminPanel.tsx` integrou o bloco executivo Wave 39 com distribuição de confiança, contagem de alertas preditivos, watchlist de baixa confiança e painel explícito de alinhamento com a demonstração multiagente em produção.
+- Etapa 333: validação local completa executada sem regressões: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos**, **299/299 testes**), `npm run build`, `functions npm run build`, `pytest` (**2203/2203**) e `get_errors` limpo nos arquivos alterados.
 
 ### Etapas 326-329 — Closeout Operacional da Wave 38 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`
