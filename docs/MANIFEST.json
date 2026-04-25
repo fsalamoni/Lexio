@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-24",
-    "cycle": "wave33-operational-tuning-by-function",
+    "cycle": "wave33-closeout-release-one-shot",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -616,6 +616,21 @@
         "frontend/src/pages/PlatformAdminPanel.tsx"
       ],
       "notes": "As execuções do pipeline documental/acervo/context detail passaram a persistir `execution_state`, `retry_count`, `used_fallback` e `fallback_from` com base no metadata operacional do `llm-client`; o painel administrativo agora expõe matriz de confiabilidade por função e plano automático de tuning por `execution_state` sobre uma amostra ampliada de execuções recentes."
+    },
+    {
+      "id": "E5.F25",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Closeout operacional da Wave 33 com release one-shot",
+      "state": "implemented",
+      "files": [
+        ".github/workflows/release-web.yml",
+        "docs/release/WEB_RELEASE_INDEX.md",
+        "docs/release/WEB_RELEASE_CACHE.md",
+        "docs/PLANO.md",
+        "NOTEBOOK_IMPLEMENTATION_STATUS.md",
+        "docs/release/CROSS_PLATFORM_HANDOFF.md"
+      ],
+      "notes": "Release one-shot `24917396554` em HEAD `80dc5c6` concluída com quality gates em sucesso (functions `72972033397`, source guardrails `72972033399`, lint `72972033400`, unit tests `72972033411`, frontend quality `72972033424`), deploy Firebase production (`72972122974`), Pages build (`72972123057`), Pages deploy (`72972206796`) e release summary (`72972336724`) em sucesso; redesign V2 permaneceu opcional/skipped por input (`72972123010`)."
     },
     {
       "id": "E8.F1",

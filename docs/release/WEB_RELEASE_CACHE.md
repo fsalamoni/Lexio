@@ -18,6 +18,7 @@ Last update: 2026-04-24
 - Wave 32 release closeout: completed (run 24859770023 success)
 - Cross-platform handoff package: completed
 - Wave 33 operational tuning by function: completed (local validation)
+- Wave 33 release closeout: completed (run 24917396554 success)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -48,6 +49,8 @@ Last update: 2026-04-24
 - Wave 32 commit + push: completed (`7b2d321`)
 - Release workflow dispatch (wave32): completed (release-web.yml run 24859770023 success)
 - Wave 32 docs closeout commit + push: completed (recorded in `main` history)
+- Wave 33 commit + push: completed (`80dc5c6`)
+- Release workflow dispatch (wave33): completed (release-web.yml run 24917396554 success)
 
 ## Current Wave Cache (2026-04-24)
 - Wave tag: wave33-operational-tuning-by-function
@@ -60,6 +63,7 @@ Last update: 2026-04-24
 	- docs/release/WEB_RELEASE_INDEX.md
 	- docs/MANIFEST.json
 	- docs/release/WEB_RELEASE_CACHE.md
+	- docs/release/CROSS_PLATFORM_HANDOFF.md
 
 ## Current Validation Cache (2026-04-24)
 - frontend typecheck: completed
@@ -67,12 +71,27 @@ Last update: 2026-04-24
 - frontend build: completed
 - frontend tests result: 38 files, 299 tests passed
 - functions build: completed (`npm run build`)
-- release-web dispatch (wave33): pending
+- release-web dispatch (wave33): completed (run 24917396554)
+- Deploy Firebase production (wave33): completed (job 72972122974)
+- Deploy GitHub Pages / build (wave33): completed (job 72972123057)
+- Deploy GitHub Pages / deploy (wave33): completed (job 72972206796)
+- Release summary (wave33): completed (job 72972336724)
+- Deploy redesign V2 (wave33): skipped by input (job 72972123010)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- Wave 33 closeout pending: commit/push + one-shot release dispatch + index/cache final sync with run/job IDs.
+- None. Wave 33 closeout completed (git flow + release lane fully executed).
+
+## Wave 33 Release Outcome
+- release-web dispatch (run 24917396554): success.
+- Quality gates: success.
+- Deploy Firebase production (job 72972122974): success.
+- Deploy GitHub Pages / build (job 72972123057): success.
+- Deploy GitHub Pages / deploy (job 72972206796): success.
+- Deploy redesign V2 (job 72972123010): skipped by input (`deploy_redesign_v2=false`).
+- Release summary (job 72972336724): success.
+- Key verification: a calibração automática por função no painel admin e a persistência enriquecida de retry/fallback no pipeline documental foram validadas em trilha one-shot sem regressão nos quality gates nem nos deploys de produção.
 
 ## Wave 32 Release Outcome
 - release-web dispatch (run 24859770023): success.

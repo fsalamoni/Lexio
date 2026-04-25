@@ -23,7 +23,8 @@
 - ✅ `PlatformAdminPanel.tsx` evoluiu de leitura passiva para tuning orientado por risco: amostra recente ampliada para 120 execuções, nova matriz de confiabilidade por função (retry/fallback/waiting I/O/latência/USD sob risco) e recomendações automáticas acionáveis por `execution_state`.
 - ✅ A seção de demonstração multiagente foi mantida e reforçada com maior cobertura amostral, preservando a visibilidade operacional dos agentes em execução real.
 - ✅ Validação local completa desta wave: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos, 299/299 testes**), `npm run build`, `functions npm run build` e `get_errors` sem erros nos arquivos alterados.
-- 🔄 Próximo bloco: fechar trilha operacional da wave com commit/push e release one-shot (`release-web.yml`) para consolidar a calibração em produção sem regressão.
+- ✅ Trilha operacional da wave concluída: commit/push do `main` (`80dc5c6`) e one-shot release (`release-web.yml` run `24917396554`) em `success`, com quality gates + Firebase + Pages e redesign V2 em skip por input.
+- 🔄 Próximo bloco: monitorar impacto em produção por `execution_state` e fechar tuning fino por função (especialmente em `waiting_io` e `retrying`) com janela comparativa diária sem regressão de UX.
 
 **Atualização incremental (2026-04-23 — Wave 32: demonstração multiagente + tuning custo/latência por estado):**
 - ✅ `firestore-service.ts` consolidado com extrator reutilizável de execuções de plataforma e novo endpoint interno `getPlatformRecentAgentExecutions`, reduzindo duplicação entre agregações e habilitando leitura temporal da trilha real.

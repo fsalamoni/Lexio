@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-285 IMPLEMENTADAS
+## Status Geral: Etapas 1-289 IMPLEMENTADAS
+
+### Etapas 286-289 — Closeout Operacional da Wave 33 (Release One-shot) ✅
+- **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`
+- Etapa 286: trilha de Git da wave fechada sem divergência remota (`git pull --rebase --autostash origin main`), seguida de commit/push no `main` (`80dc5c6`) com calibração automática por função e telemetria operacional enriquecida.
+- Etapa 287: release one-shot disparado em `release-web.yml` (run `24917396554`) no HEAD `80dc5c69177702a87201d60179dbcbdbb3826de3` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
+- Etapa 288: quality gates e deploys confirmados em sucesso na mesma run: functions quality (`72972033397`), source guardrails (`72972033399`), lint (`72972033400`), unit tests (`72972033411`), frontend quality (`72972033424`), Firebase production (`72972122974`), Pages build (`72972123057`), Pages deploy (`72972206796`) e release summary (`72972336724`); redesign V2 mantido como skip por input (`72972123010`).
+- Etapa 289: fechamento final de governança/index/cache concluído com IDs reais da run `24917396554`, mantendo pacote de handoff atualizado para continuidade operacional.
 
 ### Etapas 282-285 — Calibração Automática por Função + Telemetria Operacional (Wave 33) ✅
 - **Arquivos**: `frontend/src/lib/generation-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `docs/PLANO.md`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/MANIFEST.json`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`
