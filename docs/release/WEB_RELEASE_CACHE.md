@@ -1,6 +1,6 @@
 # Web Release Cache
 
-Last update: 2026-04-23
+Last update: 2026-04-24
 
 ## Execution Snapshot
 - Branch: main
@@ -17,6 +17,7 @@ Last update: 2026-04-23
 - Wave 32 agent demonstration + latency tuning: completed (local validation)
 - Wave 32 release closeout: completed (run 24859770023 success)
 - Cross-platform handoff package: completed
+- Wave 33 operational tuning by function: completed (local validation)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -48,37 +49,30 @@ Last update: 2026-04-23
 - Release workflow dispatch (wave32): completed (release-web.yml run 24859770023 success)
 - Wave 32 docs closeout commit + push: completed (recorded in `main` history)
 
-## Current Wave Cache (2026-04-23)
-- Wave tag: wave32-closeout-cross-platform-handoff
-- Scope: demonstração explícita dos agentes trabalhando no `PlatformAdminPanel` com telemetria real recente, hotspot de latência/custo por `execution_state` (inclusive função+estado) e exposição de `Duração média` nas tabelas de custos pessoal/agregada.
-- Files touched (wave32/code+docs):
-	- frontend/src/lib/firestore-service.ts
+## Current Wave Cache (2026-04-24)
+- Wave tag: wave33-operational-tuning-by-function
+- Scope: enriquecimento de telemetria operacional no pipeline documental/acervo/context detail (`execution_state`, `retry_count`, `used_fallback`, `fallback_from`) e calibração automática por função/estado no `PlatformAdminPanel` com recomendações acionáveis.
+- Files touched (wave33/code+docs):
+	- frontend/src/lib/generation-service.ts
 	- frontend/src/pages/PlatformAdminPanel.tsx
-	- frontend/src/pages/CostTokensPage.tsx
-	- frontend/src/pages/PlatformCostsPage.tsx
 	- docs/PLANO.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
 	- docs/release/WEB_RELEASE_INDEX.md
 	- docs/MANIFEST.json
 	- docs/release/WEB_RELEASE_CACHE.md
-	- docs/release/CROSS_PLATFORM_HANDOFF.md
 
-## Current Validation Cache (2026-04-23)
+## Current Validation Cache (2026-04-24)
 - frontend typecheck: completed
 - frontend test: completed
 - frontend build: completed
-- frontend tests result: 38 files, 290 tests passed
-- release-web dispatch (wave32): completed (run 24859770023)
-- Deploy Firebase production (wave32): completed (job 72782268742)
-- Deploy GitHub Pages / build (wave32): completed (job 72782268873)
-- Deploy GitHub Pages / deploy (wave32): completed (job 72782441213)
-- Release summary (wave32): completed (job 72782695792)
-- Deploy redesign V2 (wave32): skipped by input (job 72782269072)
+- frontend tests result: 38 files, 299 tests passed
+- functions build: completed (`npm run build`)
+- release-web dispatch (wave33): pending
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 32 closeout completed (git flow + release lane fully executed).
+- Wave 33 closeout pending: commit/push + one-shot release dispatch + index/cache final sync with run/job IDs.
 
 ## Wave 32 Release Outcome
 - release-web dispatch (run 24859770023): success.

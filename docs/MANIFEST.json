@@ -1,8 +1,8 @@
 {
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
-    "updated": "2026-04-23",
-    "cycle": "wave32-closeout-cross-platform-handoff",
+    "updated": "2026-04-24",
+    "cycle": "wave33-operational-tuning-by-function",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -605,6 +605,17 @@
         "NOTEBOOK_IMPLEMENTATION_STATUS.md"
       ],
       "notes": "Release one-shot `24859770023` em HEAD `7b2d321` concluída com quality gates em sucesso (lint `72782091769`, source guardrails `72782091795`, unit tests `72782091782`, functions quality `72782091775`, frontend quality `72782091797`), deploy Firebase production (`72782268742`), Pages build (`72782268873`), Pages deploy (`72782441213`) e release summary (`72782695792`) em sucesso; fechamento documental de handoff sincronizado no `main`."
+    },
+    {
+      "id": "E5.F24",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Calibração automática por função com telemetria operacional enriquecida",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/generation-service.ts",
+        "frontend/src/pages/PlatformAdminPanel.tsx"
+      ],
+      "notes": "As execuções do pipeline documental/acervo/context detail passaram a persistir `execution_state`, `retry_count`, `used_fallback` e `fallback_from` com base no metadata operacional do `llm-client`; o painel administrativo agora expõe matriz de confiabilidade por função e plano automático de tuning por `execution_state` sobre uma amostra ampliada de execuções recentes."
     },
     {
       "id": "E8.F1",

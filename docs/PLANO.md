@@ -14,9 +14,16 @@
 
 ---
 
-## Andamento Atual (ciclo 2026-04-23)
+## Andamento Atual (ciclo 2026-04-24)
 
 **Status:** ⚠️ avançando Faixa B com a fundação do redesign V2 em expansão controlada — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook, hardening de TTS/DocumentDetail, code splitting do ResearchNotebook, hardening de DataJud/CI-CD, `ProfileV2`, `DashboardV2`, dezoito ondas funcionais do trilho V2 validadas localmente, `/` agora promovida para `DashboardV2` sob gate, shell V2 cobrindo `/documents*`, `/upload`, `/theses`, `/settings*`, `/admin*` e `/profile`, aliases técnicos completos para os antigos labs de dashboard/notebook/profile, migração visual real das superfícies internas principais via primitives compartilhadas + base V2 compartilhada para configuracoes, custos pessoal/agregado, catalogo, configuracoes especializadas e o nucleo de governanca/admin promovidos para blocos integralmente nativos, alem de navegacao preview-safe consolidada entre sidebar/notificacoes/admin, um Hosting dedicado para o redesign em `lexio-redesign-v2-44760.web.app` e o hotfix do deploy estavel do Firebase concluido com `DATAJUD_API_KEY` provisionado e validado em producao
+
+**Atualização incremental (2026-04-24 — Wave 33: calibração automática por função + telemetria operacional enriquecida):**
+- ✅ `generation-service.ts` passou a persistir metadados operacionais de execução (`execution_state`, `retry_count`, `used_fallback`, `fallback_from`) em `llm_executions` para os fluxos de geração documental, ementa/classificação de acervo e context detail, elevando a fidelidade da trilha de retries/fallbacks no histórico.
+- ✅ `PlatformAdminPanel.tsx` evoluiu de leitura passiva para tuning orientado por risco: amostra recente ampliada para 120 execuções, nova matriz de confiabilidade por função (retry/fallback/waiting I/O/latência/USD sob risco) e recomendações automáticas acionáveis por `execution_state`.
+- ✅ A seção de demonstração multiagente foi mantida e reforçada com maior cobertura amostral, preservando a visibilidade operacional dos agentes em execução real.
+- ✅ Validação local completa desta wave: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos, 299/299 testes**), `npm run build`, `functions npm run build` e `get_errors` sem erros nos arquivos alterados.
+- 🔄 Próximo bloco: fechar trilha operacional da wave com commit/push e release one-shot (`release-web.yml`) para consolidar a calibração em produção sem regressão.
 
 **Atualização incremental (2026-04-23 — Wave 32: demonstração multiagente + tuning custo/latência por estado):**
 - ✅ `firestore-service.ts` consolidado com extrator reutilizável de execuções de plataforma e novo endpoint interno `getPlatformRecentAgentExecutions`, reduzindo duplicação entre agregações e habilitando leitura temporal da trilha real.

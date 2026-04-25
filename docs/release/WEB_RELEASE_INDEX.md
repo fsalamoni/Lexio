@@ -1,6 +1,6 @@
 # Web Release Index
 
-Last update: 2026-04-23
+Last update: 2026-04-24
 
 ## Release Entry Points
 - .github/workflows/release-web.yml
@@ -29,14 +29,13 @@ Last update: 2026-04-23
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72772882473`)
 - Release summary: success (`job 72773344525`)
 
-## Current Local Validation (Wave 32 — 2026-04-23)
-- Scope: demonstração multiagente em telemetria real no `PlatformAdminPanel`, tuning de custo/latência por `execution_state` (global + função/estado hotspot), helper consolidado de execuções de plataforma e exposição de `Duração média` nas tabelas de custo pessoal/agregada
+## Current Local Validation (Wave 33 — 2026-04-24)
+- Scope: calibração operacional por função baseada em `execution_state`, com persistência enriquecida de retry/fallback no pipeline documental/acervo/context detail e recomendações automáticas de tuning no `PlatformAdminPanel` sobre amostra ampliada de execuções
 - Frontend typecheck: success
-- Frontend tests: success (38 files, 290 tests)
+- Frontend tests: success (38 files, 299 tests)
 - Frontend build: success
-- Release dispatch: completed (`release-web.yml`, run `24859770023`)
-- Docs closeout sync: completed (`main`, planning/index/cache/handoff aligned)
-- Handoff package: `docs/release/CROSS_PLATFORM_HANDOFF.md`
+- Functions build: success (`npm run build`)
+- Release dispatch: pending (`release-web.yml` one-shot closeout)
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs

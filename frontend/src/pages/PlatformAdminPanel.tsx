@@ -89,6 +89,25 @@ type AlertImpactSummary = {
   info: number
 }
 
+type ExecutionFunctionReliabilityRow = {
+  id: string
+  functionLabel: string
+  calls: number
+  avgDurationMs: number
+  retryRate: number
+  fallbackRate: number
+  waitingIoRate: number
+  estimatedWasteUsd: number
+}
+
+type ExecutionTuningRecommendation = {
+  id: string
+  level: 'critical' | 'warning' | 'info'
+  title: string
+  description: string
+  suggestedAction: string
+}
+
 type CalibrationDriftAlert = {
   id: string
   level: 'critical' | 'warning' | 'info'
@@ -191,6 +210,65 @@ function parseAlertThresholds(raw: unknown): AlertThresholds {
   }
 }
 
+function getRecommendationTone(level: ExecutionTuningRecommendation['level']): string {
+  if (level === 'critical') return 'border-red-200 bg-red-50'
+  if (level === 'warning') return 'border-amber-200 bg-amber-50'
+  return 'border-sky-200 bg-sky-50'
+}
+
+function buildExecutionTuningRecommendations(input: {
+  stateRows: Array<CostBreakdownItem & { callShare: number; costShare: number }>
+  functionRows: ExecutionFunctionReliabilityRow[]
+  sampleSize: number
+}): ExecutionTuningRecommendation[] {
+  const recommendations: ExecutionTuningRecommendation[] = []
+  const waitingIo = input.stateRows.find(row => row.key === 'waiting_io')
+  const retrying = input.stateRows.find(row => row.key === 'retrying')
+  const noisiestFunction = input.functionRows[0]
+
+  if (waitingIo && waitingIo.calls >= 6 && waitingIo.callShare >= 0.2 && (waitingIo.avg_duration_ms ?? 0) >= 12000) {
+    recommendations.push({
+      id: 'waiting-io-pressure',
+      level: waitingIo.callShare >= 0.35 ? 'critical' : 'warning',
+      title: 'Pressão elevada em waiting_io',
+      description: `Waiting I/O responde por ${fmtPercent(waitingIo.callShare)} das chamadas com latência média de ${formatDurationMs(waitingIo.avg_duration_ms)}.`,
+      suggestedAction: 'Recalibrar concorrência de mídia/acervo (VITE_VIDEO_IMAGE_BATCH_CONCURRENCY, VITE_VIDEO_TTS_BATCH_CONCURRENCY, VITE_NB_ACERVO_ANALISTA_CONCURRENCY) reduzindo um nível por janela de 24h.',
+    })
+  }
+
+  if (retrying && retrying.calls >= 4 && retrying.callShare >= 0.08) {
+    recommendations.push({
+      id: 'retrying-pressure',
+      level: retrying.callShare >= 0.15 ? 'critical' : 'warning',
+      title: 'Volume de reprocessamento acima do alvo',
+      description: `Execuções em retrying representam ${fmtPercent(retrying.callShare)} da amostra agregada por estado.`,
+      suggestedAction: 'Priorizar auditoria dos modelos e fases com mais retry/fallback, reforçando modelos estáveis para etapas críticas de redação e síntese.',
+    })
+  }
+
+  if (noisiestFunction && noisiestFunction.calls >= 5 && (noisiestFunction.retryRate >= 0.15 || noisiestFunction.fallbackRate >= 0.12)) {
+    recommendations.push({
+      id: 'function-noise-hotspot',
+      level: noisiestFunction.retryRate >= 0.22 ? 'critical' : 'warning',
+      title: `Hotspot de confiabilidade em ${noisiestFunction.functionLabel}`,
+      description: `Retry ${fmtPercent(noisiestFunction.retryRate)} • Fallback ${fmtPercent(noisiestFunction.fallbackRate)} • Latência média ${formatDurationMs(noisiestFunction.avgDurationMs)}.`,
+      suggestedAction: 'Aplicar mitigação focada por função: reduzir paralelismo local, revisar fallback do catálogo e revalidar prompts com maior taxa de repetição.',
+    })
+  }
+
+  if (recommendations.length === 0) {
+    recommendations.push({
+      id: 'stable-telemetry',
+      level: 'info',
+      title: 'Telemetria estável para tuning incremental',
+      description: `Sem pressão crítica na janela atual (${fmtInt(input.sampleSize)} execuções recentes).`,
+      suggestedAction: 'Manter monitoramento diário de waiting_io/retrying e reavaliar tuning apenas quando o share ultrapassar os limiares operacionais.',
+    })
+  }
+
+  return recommendations
+}
+
 function StatCard({ icon: Icon, label, value, tone }: { icon: React.ElementType; label: string; value: string; tone?: string }) {
   return (
     <div className="v2-summary-card bg-[rgba(255,255,255,0.82)]">
@@ -270,7 +348,7 @@ export default function PlatformAdminPanel() {
           getPlatformOverview(),
           getPlatformDailyUsage(30),
           getPlatformCostBreakdown(),
-          getPlatformRecentAgentExecutions(36),
+          getPlatformRecentAgentExecutions(120),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
@@ -420,6 +498,74 @@ export default function PlatformAdminPanel() {
       avgDurationMs,
     }
   }, [recentExecutions])
+
+  const executionFunctionReliabilityRows = useMemo(() => {
+    if (recentExecutions.length === 0) return [] as ExecutionFunctionReliabilityRow[]
+
+    const grouped = new Map<string, {
+      functionLabel: string
+      calls: number
+      retries: number
+      fallbacks: number
+      waitingIo: number
+      totalDurationMs: number
+      totalCostUsd: number
+    }>()
+
+    recentExecutions.forEach(execution => {
+      const functionKey = execution.function_key || execution.function_label || 'unknown'
+      const current = grouped.get(functionKey) ?? {
+        functionLabel: execution.function_label || functionKey,
+        calls: 0,
+        retries: 0,
+        fallbacks: 0,
+        waitingIo: 0,
+        totalDurationMs: 0,
+        totalCostUsd: 0,
+      }
+
+      current.calls += 1
+      current.retries += (execution.retry_count ?? 0) > 0 ? 1 : 0
+      current.fallbacks += execution.used_fallback ? 1 : 0
+      current.waitingIo += execution.execution_state === 'waiting_io' ? 1 : 0
+      current.totalDurationMs += execution.duration_ms
+      current.totalCostUsd += execution.cost_usd
+
+      grouped.set(functionKey, current)
+    })
+
+    return Array.from(grouped.entries())
+      .map(([functionKey, value]) => {
+        const avgDurationMs = value.calls > 0 ? Math.round(value.totalDurationMs / value.calls) : 0
+        const retryRate = value.calls > 0 ? value.retries / value.calls : 0
+        const fallbackRate = value.calls > 0 ? value.fallbacks / value.calls : 0
+        const waitingIoRate = value.calls > 0 ? value.waitingIo / value.calls : 0
+        const estimatedWasteUsd = value.totalCostUsd * Math.min(1, retryRate + fallbackRate * 0.5)
+
+        return {
+          id: functionKey,
+          functionLabel: value.functionLabel,
+          calls: value.calls,
+          avgDurationMs,
+          retryRate,
+          fallbackRate,
+          waitingIoRate,
+          estimatedWasteUsd,
+        }
+      })
+      .sort((left, right) => {
+        const leftScore = left.retryRate * 1.5 + left.fallbackRate + left.waitingIoRate * 1.2
+        const rightScore = right.retryRate * 1.5 + right.fallbackRate + right.waitingIoRate * 1.2
+        return rightScore - leftScore || right.calls - left.calls || right.avgDurationMs - left.avgDurationMs
+      })
+      .slice(0, 8)
+  }, [recentExecutions])
+
+  const executionTuningRecommendations = useMemo(() => buildExecutionTuningRecommendations({
+    stateRows: executionStateLatencyRows,
+    functionRows: executionFunctionReliabilityRows,
+    sampleSize: recentExecutions.length,
+  }), [executionFunctionReliabilityRows, executionStateLatencyRows, recentExecutions.length])
 
   const memoryAlerts = useMemo(() => {
     if (!overview) return [] as OperationalAlert[]
@@ -1193,6 +1339,55 @@ export default function PlatformAdminPanel() {
             </div>
           </div>
         )}
+
+        {executionFunctionReliabilityRows.length > 0 && (
+          <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Confiabilidade recente por função (amostra operacional)</p>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[840px] text-xs">
+                <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left">Função</th>
+                    <th className="px-2 py-1.5 text-right">Chamadas</th>
+                    <th className="px-2 py-1.5 text-right">Retry</th>
+                    <th className="px-2 py-1.5 text-right">Fallback</th>
+                    <th className="px-2 py-1.5 text-right">Waiting I/O</th>
+                    <th className="px-2 py-1.5 text-right">Latência média</th>
+                    <th className="px-2 py-1.5 text-right">USD sob risco*</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                  {executionFunctionReliabilityRows.map(item => (
+                    <tr key={item.id} className="hover:bg-[rgba(255,255,255,0.66)]">
+                      <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{item.functionLabel}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(item.calls)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(item.retryRate)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(item.fallbackRate)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(item.waitingIoRate)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{formatDurationMs(item.avgDurationMs)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtUsd(item.estimatedWasteUsd)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-[11px] text-[var(--v2-ink-faint)]">*Estimativa heurística de custo potencialmente impactado por retries/fallbacks na amostra recente.</p>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Plano automático de tuning por execution_state</p>
+          {executionTuningRecommendations.map(recommendation => (
+            <div key={recommendation.id} className={`rounded-lg border px-3 py-2 ${getRecommendationTone(recommendation.level)}`}>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">
+                {recommendation.level === 'critical' ? 'Prioridade alta' : recommendation.level === 'warning' ? 'Atenção' : 'Informativo'}
+              </p>
+              <p className="mt-0.5 text-sm font-medium text-[var(--v2-ink-strong)]">{recommendation.title}</p>
+              <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">{recommendation.description}</p>
+              <p className="mt-1 text-xs text-[var(--v2-ink-strong)]">Ação recomendada: {recommendation.suggestedAction}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {memoryAlerts.length > 0 && (

@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-281 IMPLEMENTADAS
+## Status Geral: Etapas 1-285 IMPLEMENTADAS
+
+### Etapas 282-285 — Calibração Automática por Função + Telemetria Operacional (Wave 33) ✅
+- **Arquivos**: `frontend/src/lib/generation-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `docs/PLANO.md`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/MANIFEST.json`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`
+- Etapa 282: `generation-service.ts` passou a persistir metadados operacionais (`execution_state`, `retry_count`, `used_fallback`, `fallback_from`) para execuções de geração documental, acervo e context detail, alinhando telemetry write-path ao novo contrato de retries/fallbacks do `llm-client`.
+- Etapa 283: `PlatformAdminPanel.tsx` ampliado com tuning orientado por risco operacional: amostra recente aumentada para 120 execuções, tabela de confiabilidade por função (retry/fallback/waiting I/O/latência/USD sob risco) e plano automático de recomendação por `execution_state`.
+- Etapa 284: validação local completa sem regressões: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos**, **299/299 testes**), `npm run build`, `functions npm run build` e `get_errors` limpo nos arquivos alterados.
+- Etapa 285: governança da wave atualizada em planejamento/index/cache com registro explícito do bloco de calibração operacional e preparação para closeout one-shot de release.
 
 ### Etapas 278-281 — Closeout Operacional da Wave 32 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`

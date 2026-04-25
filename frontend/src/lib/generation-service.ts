@@ -22,7 +22,7 @@
  */
 
 import { doc, updateDoc } from 'firebase/firestore'
-import { callLLM, callLLMWithFallback } from './llm-client'
+import { callLLM, callLLMWithFallback, type LLMResult } from './llm-client'
 import { loadAgentModels, loadContextDetailModels, loadAcervoEmentaModels, loadAcervoClassificadorModels, validateModelMap, ModelsNotConfiguredError, PIPELINE_AGENT_DEFS, CONTEXT_DETAIL_AGENT_DEFS, ACERVO_EMENTA_AGENT_DEFS, ACERVO_CLASSIFICADOR_AGENT_DEFS, type AgentModelMap } from './model-config'
 import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, updateAcervoEmenta, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
@@ -104,6 +104,22 @@ interface RedatorRuntimeConfig {
   cap10kEnabled: boolean
   rollbackEnabled: boolean
   rollbackMinQuality: number
+}
+
+function getLLMOperationalUsageMeta(result: Pick<LLMResult, 'operational'>): Pick<
+  UsageExecutionRecord,
+  'execution_state' | 'retry_count' | 'used_fallback' | 'fallback_from'
+> {
+  const retryCount = Math.max(0, result.operational?.totalRetryCount ?? 0)
+  const fallbackUsed = result.operational?.fallbackUsed
+  const fallbackFrom = result.operational?.fallbackFrom
+
+  return {
+    execution_state: retryCount > 0 ? 'retrying' : 'completed',
+    retry_count: retryCount,
+    used_fallback: typeof fallbackUsed === 'boolean' ? fallbackUsed : null,
+    fallback_from: fallbackFrom ?? null,
+  }
 }
 
 function readCachedDocumentAgentModels(): AgentModelMap | null {
@@ -854,6 +870,7 @@ export async function generateAcervoEmenta(
     tokens_out: result.tokens_out,
     cost_usd: result.cost_usd,
     duration_ms: result.duration_ms,
+    ...getLLMOperationalUsageMeta(result),
   })
 
   return { ementa: ementaParts.join(' | '), keywords: allKeywords, llm_execution }
@@ -956,6 +973,7 @@ export async function generateAcervoTags(
     tokens_out: result.tokens_out,
     cost_usd: result.cost_usd,
     duration_ms: result.duration_ms,
+    ...getLLMOperationalUsageMeta(result),
   })
 
   return {
@@ -1966,6 +1984,7 @@ export async function generateDocument(
         cost_usd: triageResult.cost_usd,
         duration_ms: triageResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(triageResult),
       }),
       // Acervo agents (conditionally included)
       ...(buscadorResult ? [createUsageExecutionRecord({
@@ -1979,6 +1998,7 @@ export async function generateDocument(
         cost_usd: buscadorResult.cost_usd,
         duration_ms: buscadorResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(buscadorResult),
       })] : []),
       ...(compiladorResult ? [createUsageExecutionRecord({
         source_type: 'document_generation',
@@ -1991,6 +2011,7 @@ export async function generateDocument(
         cost_usd: compiladorResult.cost_usd,
         duration_ms: compiladorResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(compiladorResult),
       })] : []),
       ...(revisorBaseResult ? [createUsageExecutionRecord({
         source_type: 'document_generation',
@@ -2003,6 +2024,7 @@ export async function generateDocument(
         cost_usd: revisorBaseResult.cost_usd,
         duration_ms: revisorBaseResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(revisorBaseResult),
       })] : []),
       createUsageExecutionRecord({
         source_type: 'document_generation',
@@ -2015,6 +2037,7 @@ export async function generateDocument(
         cost_usd: pesquisaResult.cost_usd,
         duration_ms: pesquisaResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(pesquisaResult),
       }),
       createUsageExecutionRecord({
         source_type: 'document_generation',
@@ -2027,6 +2050,7 @@ export async function generateDocument(
         cost_usd: juristaResult.cost_usd,
         duration_ms: juristaResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(juristaResult),
       }),
       createUsageExecutionRecord({
         source_type: 'document_generation',
@@ -2039,6 +2063,7 @@ export async function generateDocument(
         cost_usd: criticaResult.cost_usd,
         duration_ms: criticaResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(criticaResult),
       }),
       createUsageExecutionRecord({
         source_type: 'document_generation',
@@ -2051,6 +2076,7 @@ export async function generateDocument(
         cost_usd: juristaV2Result.cost_usd,
         duration_ms: juristaV2Result.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(juristaV2Result),
       }),
       createUsageExecutionRecord({
         source_type: 'document_generation',
@@ -2063,6 +2089,7 @@ export async function generateDocument(
         cost_usd: factCheckResult.cost_usd,
         duration_ms: factCheckResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(factCheckResult),
       }),
       createUsageExecutionRecord({
         source_type: 'document_generation',
@@ -2075,6 +2102,7 @@ export async function generateDocument(
         cost_usd: planoResult.cost_usd,
         duration_ms: planoResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(planoResult),
       }),
       createUsageExecutionRecord({
         source_type: 'document_generation',
@@ -2087,6 +2115,7 @@ export async function generateDocument(
         cost_usd: redatorPrimaryResult.cost_usd,
         duration_ms: redatorPrimaryResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(redatorPrimaryResult),
       }),
       ...(redatorRollbackResult ? [createUsageExecutionRecord({
         source_type: 'document_generation',
@@ -2099,6 +2128,7 @@ export async function generateDocument(
         cost_usd: redatorRollbackResult.cost_usd,
         duration_ms: redatorRollbackResult.duration_ms,
         document_type_id: docType,
+        ...getLLMOperationalUsageMeta(redatorRollbackResult),
       })] : []),
     ]
     const allResults = [
@@ -2330,6 +2360,7 @@ export async function generateContextQuestions(
     tokens_out: result.tokens_out,
     cost_usd: result.cost_usd,
     duration_ms: result.duration_ms,
+    ...getLLMOperationalUsageMeta(result),
   })
 
   return { analysis_summary, questions, llm_execution }
