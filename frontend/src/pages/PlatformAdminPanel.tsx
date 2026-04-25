@@ -16,6 +16,7 @@ import {
   getCurrentUserId,
   getPlatformCostBreakdown,
   getPlatformExecutionStateDaily,
+  getPlatformFunctionCalibrationPlan,
   getPlatformFunctionWindowComparison,
   getPlatformExecutionStateWindowComparison,
   getPlatformDailyUsage,
@@ -26,6 +27,7 @@ import {
   type PlatformAggregateRow,
   type PlatformDailyUsagePoint,
   type PlatformExecutionStateDailyPoint,
+  type PlatformFunctionCalibrationRow,
   type PlatformFunctionWindowComparisonRow,
   type PlatformExecutionStateWindowComparisonRow,
   type NotebookSearchMemoryBackfillReport,
@@ -237,6 +239,30 @@ function getRecommendationTone(level: ExecutionTuningRecommendation['level']): s
   return 'border-sky-200 bg-sky-50'
 }
 
+function getCalibrationPriorityLabel(priority: PlatformFunctionCalibrationRow['priority']): string {
+  if (priority === 'critical') return 'Critico'
+  if (priority === 'warning') return 'Atencao'
+  return 'Info'
+}
+
+function getCalibrationPriorityTone(priority: PlatformFunctionCalibrationRow['priority']): string {
+  if (priority === 'critical') return 'border-red-200 bg-red-50 text-red-800'
+  if (priority === 'warning') return 'border-amber-200 bg-amber-50 text-amber-800'
+  return 'border-sky-200 bg-sky-50 text-sky-800'
+}
+
+function getCalibrationActionLabel(action: PlatformFunctionCalibrationRow['action']): string {
+  if (action === 'tighten') return 'Ajustar para baixo'
+  if (action === 'relax') return 'Ajustar para cima'
+  return 'Manter com monitoramento'
+}
+
+function getCalibrationActionTone(action: PlatformFunctionCalibrationRow['action']): string {
+  if (action === 'tighten') return 'text-red-700'
+  if (action === 'relax') return 'text-sky-700'
+  return 'text-[var(--v2-ink-soft)]'
+}
+
 function buildExecutionTuningRecommendations(input: {
   stateRows: Array<CostBreakdownItem & { callShare: number; costShare: number }>
   functionRows: ExecutionFunctionReliabilityRow[]
@@ -349,6 +375,7 @@ export default function PlatformAdminPanel() {
   const [executionStateDaily, setExecutionStateDaily] = useState<PlatformExecutionStateDailyPoint[]>([])
   const [executionStateComparison, setExecutionStateComparison] = useState<PlatformExecutionStateWindowComparisonRow[]>([])
   const [executionFunctionComparison, setExecutionFunctionComparison] = useState<PlatformFunctionWindowComparisonRow[]>([])
+  const [executionFunctionCalibrations, setExecutionFunctionCalibrations] = useState<PlatformFunctionCalibrationRow[]>([])
   const [loading, setLoading] = useState(true)
   const [backfillLoading, setBackfillLoading] = useState(false)
   const [backfillReport, setBackfillReport] = useState<NotebookSearchMemoryBackfillReport | null>(null)
@@ -376,6 +403,7 @@ export default function PlatformAdminPanel() {
           stateDailyData,
           stateComparisonData,
           functionComparisonData,
+          functionCalibrationData,
         ] = await Promise.all([
           getPlatformOverview(),
           getPlatformDailyUsage(30),
@@ -384,6 +412,7 @@ export default function PlatformAdminPanel() {
           getPlatformExecutionStateDaily(14),
           getPlatformExecutionStateWindowComparison(7),
           getPlatformFunctionWindowComparison(7),
+          getPlatformFunctionCalibrationPlan(7),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
@@ -392,6 +421,7 @@ export default function PlatformAdminPanel() {
         setExecutionStateDaily(stateDailyData)
         setExecutionStateComparison(stateComparisonData)
         setExecutionFunctionComparison(functionComparisonData)
+        setExecutionFunctionCalibrations(functionCalibrationData)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
 
         const uid = getCurrentUserId()
@@ -762,6 +792,127 @@ export default function PlatformAdminPanel() {
 
     return recommendations.slice(0, 3)
   }, [executionFunctionComparison])
+
+  const executionFunctionCalibrationRows = useMemo(() => {
+    return executionFunctionCalibrations.slice(0, 10)
+  }, [executionFunctionCalibrations])
+
+  const executionFunctionCalibrationSummary = useMemo(() => {
+    const tightenCount = executionFunctionCalibrations.filter(row => row.action === 'tighten').length
+    const relaxCount = executionFunctionCalibrations.filter(row => row.action === 'relax').length
+    const criticalCount = executionFunctionCalibrations.filter(row => row.priority === 'critical').length
+    const warningCount = executionFunctionCalibrations.filter(row => row.priority === 'warning').length
+    const avgRiskScore = executionFunctionCalibrations.length > 0
+      ? executionFunctionCalibrations.reduce((acc, row) => acc + row.risk_score, 0) / executionFunctionCalibrations.length
+      : 0
+
+    return {
+      total: executionFunctionCalibrations.length,
+      tightenCount,
+      relaxCount,
+      criticalCount,
+      warningCount,
+      avgRiskScore,
+    }
+  }, [executionFunctionCalibrations])
+
+  const executionFunctionCalibrationRecommendations = useMemo(() => {
+    if (executionFunctionCalibrations.length === 0) return [] as ExecutionTuningRecommendation[]
+
+    const recommendations: ExecutionTuningRecommendation[] = []
+    const criticalRow = executionFunctionCalibrations.find(row => row.priority === 'critical' && row.action === 'tighten')
+    const warningRow = executionFunctionCalibrations.find(row => row.priority === 'warning' && row.action === 'tighten')
+    const relaxRow = executionFunctionCalibrations.find(row => row.action === 'relax')
+
+    if (criticalRow) {
+      recommendations.push({
+        id: `function-calibration-critical-${criticalRow.key}`,
+        level: 'critical',
+        title: `Calibração crítica em ${criticalRow.label}`,
+        description: `Gap atual retry ${fmtPercent(criticalRow.retry_gap)} | fallback ${fmtPercent(criticalRow.fallback_gap)} | waiting I/O ${fmtPercent(criticalRow.waiting_io_gap)} acima do alvo planejado.`,
+        suggestedAction: 'Aplicar plano de tighten na próxima janela e validar impacto em latência/custo após 24h.',
+      })
+    }
+
+    if (warningRow) {
+      recommendations.push({
+        id: `function-calibration-warning-${warningRow.key}`,
+        level: 'warning',
+        title: `Função em observação ativa: ${warningRow.label}`,
+        description: `Risco ${warningRow.risk_score.toFixed(2)} com tendência de drift positivo em volume/latência/custo.`,
+        suggestedAction: 'Monitorar por 1 janela adicional e antecipar ajuste se os gaps permanecerem positivos.',
+      })
+    }
+
+    if (relaxRow) {
+      recommendations.push({
+        id: `function-calibration-relax-${relaxRow.key}`,
+        level: 'info',
+        title: `Janela permite relaxamento controlado em ${relaxRow.label}`,
+        description: `Função com estabilidade sustentada e queda de pressão operacional na janela atual.`,
+        suggestedAction: 'Relaxar de forma incremental e manter verificação diária para evitar regressão de confiabilidade.',
+      })
+    }
+
+    if (recommendations.length === 0) {
+      recommendations.push({
+        id: 'function-calibration-stable',
+        level: 'info',
+        title: 'Plano adaptativo sem ajustes urgentes',
+        description: 'As funções estão próximas dos alvos planejados para retry/fallback/waiting I/O nesta janela.',
+        suggestedAction: 'Manter baseline atual e revisar novamente após novo ciclo diário.',
+      })
+    }
+
+    return recommendations.slice(0, 3)
+  }, [executionFunctionCalibrations])
+
+  const executionFunctionCalibrationDemoSignals = useMemo(() => {
+    if (executionFunctionReliabilityRows.length === 0 || executionFunctionCalibrations.length === 0) return [] as Array<{
+      id: string
+      functionLabel: string
+      priority: PlatformFunctionCalibrationRow['priority']
+      action: PlatformFunctionCalibrationRow['action']
+      liveRetryRate: number
+      targetRetryRate: number
+      liveFallbackRate: number
+      targetFallbackRate: number
+      liveWaitingIoRate: number
+      targetWaitingIoRate: number
+      status: 'above_target' | 'aligned' | 'below_target'
+    }>
+
+    const byFunction = new Map(executionFunctionCalibrations.map(row => [row.key, row]))
+
+    return executionFunctionReliabilityRows
+      .slice(0, 8)
+      .map((row) => {
+        const plan = byFunction.get(row.id)
+        if (!plan) return null
+
+        const livePressure = (row.retryRate * 1.4) + (row.fallbackRate * 1.1) + (row.waitingIoRate * 1.25)
+        const targetPressure = (plan.target_retry_rate * 1.4) + (plan.target_fallback_rate * 1.1) + (plan.target_waiting_io_rate * 1.25)
+
+        let status: 'above_target' | 'aligned' | 'below_target' = 'aligned'
+        if (targetPressure > 0 && livePressure >= targetPressure * 1.15) status = 'above_target'
+        else if (targetPressure > 0 && livePressure <= targetPressure * 0.75) status = 'below_target'
+
+        return {
+          id: row.id,
+          functionLabel: row.functionLabel,
+          priority: plan.priority,
+          action: plan.action,
+          liveRetryRate: row.retryRate,
+          targetRetryRate: plan.target_retry_rate,
+          liveFallbackRate: row.fallbackRate,
+          targetFallbackRate: plan.target_fallback_rate,
+          liveWaitingIoRate: row.waitingIoRate,
+          targetWaitingIoRate: plan.target_waiting_io_rate,
+          status,
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+  }, [executionFunctionCalibrations, executionFunctionReliabilityRows])
 
   const memoryAlerts = useMemo(() => {
     if (!overview) return [] as OperationalAlert[]
@@ -1283,18 +1434,20 @@ export default function PlatformAdminPanel() {
       toast.success(dryRun ? 'Diagnóstico de backfill concluído' : 'Backfill de memória dedicada concluído')
 
       if (!dryRun) {
-        const [overviewData, dailyData, stateDailyData, stateComparisonData, functionComparisonData] = await Promise.all([
+        const [overviewData, dailyData, stateDailyData, stateComparisonData, functionComparisonData, functionCalibrationData] = await Promise.all([
           getPlatformOverview(true),
           getPlatformDailyUsage(30, true),
           getPlatformExecutionStateDaily(14, true),
           getPlatformExecutionStateWindowComparison(7, true),
           getPlatformFunctionWindowComparison(7, true),
+          getPlatformFunctionCalibrationPlan(7, true),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
         setExecutionStateDaily(stateDailyData)
         setExecutionStateComparison(stateComparisonData)
         setExecutionFunctionComparison(functionComparisonData)
+        setExecutionFunctionCalibrations(functionCalibrationData)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
       }
     } catch (error) {
@@ -1792,6 +1945,142 @@ export default function PlatformAdminPanel() {
                   <p className="mt-1 text-xs text-[var(--v2-ink-strong)]">Ação recomendada: {recommendation.suggestedAction}</p>
                 </div>
               ))}
+            </div>
+
+            <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] p-3 space-y-3">
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Plano adaptativo de calibração por função</p>
+                  <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">Alvos para próxima janela com base em risco atual, drift e estabilidade por função.</p>
+                </div>
+                <span className="rounded-full border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.78)] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">
+                  Ajuste inteligente
+                </span>
+              </div>
+
+              {executionFunctionCalibrationRows.length === 0 ? (
+                <p className="text-xs text-[var(--v2-ink-soft)]">Sem base suficiente para plano adaptativo por função nesta janela.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+                    <div className={EXECUTIVE_INSET_CARD}>
+                      <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Funções com plano</p>
+                      <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionFunctionCalibrationSummary.total)}</p>
+                    </div>
+                    <div className={EXECUTIVE_INSET_CARD}>
+                      <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Ajustar para baixo</p>
+                      <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionFunctionCalibrationSummary.tightenCount)}</p>
+                    </div>
+                    <div className={EXECUTIVE_INSET_CARD}>
+                      <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Ajustar para cima</p>
+                      <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionFunctionCalibrationSummary.relaxCount)}</p>
+                    </div>
+                    <div className={EXECUTIVE_INSET_CARD}>
+                      <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Prioridade crítica</p>
+                      <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionFunctionCalibrationSummary.criticalCount)}</p>
+                    </div>
+                    <div className={EXECUTIVE_INSET_CARD}>
+                      <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Risco médio</p>
+                      <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{executionFunctionCalibrationSummary.avgRiskScore.toFixed(2)}</p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1160px] text-xs">
+                      <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                        <tr>
+                          <th className="px-2 py-1.5 text-left">Função</th>
+                          <th className="px-2 py-1.5 text-left">Prioridade</th>
+                          <th className="px-2 py-1.5 text-left">Ação</th>
+                          <th className="px-2 py-1.5 text-right">Retry atual</th>
+                          <th className="px-2 py-1.5 text-right">Retry alvo</th>
+                          <th className="px-2 py-1.5 text-right">Fallback atual</th>
+                          <th className="px-2 py-1.5 text-right">Fallback alvo</th>
+                          <th className="px-2 py-1.5 text-right">Waiting I/O atual</th>
+                          <th className="px-2 py-1.5 text-right">Waiting I/O alvo</th>
+                          <th className="px-2 py-1.5 text-right">Risco</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                        {executionFunctionCalibrationRows.map(row => (
+                          <tr key={row.key} className="hover:bg-[rgba(255,255,255,0.66)]">
+                            <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{row.label}</td>
+                            <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getCalibrationPriorityTone(row.priority)}`}>
+                                {getCalibrationPriorityLabel(row.priority)}
+                              </span>
+                            </td>
+                            <td className={`px-2 py-1.5 font-medium ${getCalibrationActionTone(row.action)}`}>{getCalibrationActionLabel(row.action)}</td>
+                            <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.current_retry_rate)}</td>
+                            <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.target_retry_rate)}</td>
+                            <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.current_fallback_rate)}</td>
+                            <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.target_fallback_rate)}</td>
+                            <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.current_waiting_io_rate)}</td>
+                            <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.target_waiting_io_rate)}</td>
+                            <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{row.risk_score.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Recomendações do plano adaptativo</p>
+                {executionFunctionCalibrationRecommendations.map(recommendation => (
+                  <div key={recommendation.id} className={`rounded-lg border px-3 py-2 ${getRecommendationTone(recommendation.level)}`}>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">
+                      {recommendation.level === 'critical' ? 'Prioridade alta' : recommendation.level === 'warning' ? 'Atenção' : 'Informativo'}
+                    </p>
+                    <p className="mt-0.5 text-sm font-medium text-[var(--v2-ink-strong)]">{recommendation.title}</p>
+                    <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">{recommendation.description}</p>
+                    <p className="mt-1 text-xs text-[var(--v2-ink-strong)]">Ação recomendada: {recommendation.suggestedAction}</p>
+                  </div>
+                ))}
+              </div>
+
+              {executionFunctionCalibrationDemoSignals.length > 0 && (
+                <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.78)] p-3 space-y-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Demonstração dos agentes versus alvo por função</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[980px] text-xs">
+                      <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                        <tr>
+                          <th className="px-2 py-1.5 text-left">Função</th>
+                          <th className="px-2 py-1.5 text-left">Status live</th>
+                          <th className="px-2 py-1.5 text-left">Ação</th>
+                          <th className="px-2 py-1.5 text-right">Retry live/alvo</th>
+                          <th className="px-2 py-1.5 text-right">Fallback live/alvo</th>
+                          <th className="px-2 py-1.5 text-right">Waiting I/O live/alvo</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                        {executionFunctionCalibrationDemoSignals.map(signal => (
+                          <tr key={signal.id} className="hover:bg-[rgba(255,255,255,0.66)]">
+                            <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{signal.functionLabel}</td>
+                            <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                signal.status === 'above_target'
+                                  ? 'border-red-200 bg-red-50 text-red-700'
+                                  : signal.status === 'below_target'
+                                    ? 'border-sky-200 bg-sky-50 text-sky-700'
+                                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              }`}>
+                                {signal.status === 'above_target' ? 'Acima do alvo' : signal.status === 'below_target' ? 'Abaixo do alvo' : 'Alinhado ao alvo'}
+                              </span>
+                            </td>
+                            <td className={`px-2 py-1.5 font-medium ${getCalibrationActionTone(signal.action)}`}>{getCalibrationActionLabel(signal.action)}</td>
+                            <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(signal.liveRetryRate)} / {fmtPercent(signal.targetRetryRate)}</td>
+                            <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(signal.liveFallbackRate)} / {fmtPercent(signal.targetFallbackRate)}</td>
+                            <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(signal.liveWaitingIoRate)} / {fmtPercent(signal.targetWaitingIoRate)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

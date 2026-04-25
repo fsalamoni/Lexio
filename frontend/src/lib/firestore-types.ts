@@ -488,3 +488,28 @@ export interface PlatformFunctionWindowComparisonRow {
   cost_delta_pct: number
   duration_delta_pct: number
 }
+
+export type PlatformFunctionCalibrationAction = 'tighten' | 'maintain' | 'relax'
+
+export type PlatformFunctionCalibrationPriority = 'critical' | 'warning' | 'info'
+
+export interface PlatformFunctionCalibrationRow {
+  key: string
+  label: string
+  current_calls: number
+  current_retry_rate: number
+  current_fallback_rate: number
+  current_waiting_io_rate: number
+  target_retry_rate: number
+  target_fallback_rate: number
+  target_waiting_io_rate: number
+  retry_gap: number
+  fallback_gap: number
+  waiting_io_gap: number
+  calls_delta_pct: number
+  duration_delta_pct: number
+  cost_delta_pct: number
+  risk_score: number
+  action: PlatformFunctionCalibrationAction
+  priority: PlatformFunctionCalibrationPriority
+}

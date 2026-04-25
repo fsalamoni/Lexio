@@ -71,6 +71,9 @@ export type {
   PlatformExecutionStateDailyPoint,
   PlatformExecutionStateWindowComparisonRow,
   PlatformFunctionWindowComparisonRow,
+  PlatformFunctionCalibrationAction,
+  PlatformFunctionCalibrationPriority,
+  PlatformFunctionCalibrationRow,
 } from './firestore-types'
 import type {
   ProfileData,
@@ -97,6 +100,9 @@ import type {
   PlatformExecutionStateDailyPoint,
   PlatformExecutionStateWindowComparisonRow,
   PlatformFunctionWindowComparisonRow,
+  PlatformFunctionCalibrationAction,
+  PlatformFunctionCalibrationPriority,
+  PlatformFunctionCalibrationRow,
 } from './firestore-types'
 
 // Re-export DEFAULT_DOC_STRUCTURES for backward compatibility
@@ -313,6 +319,86 @@ function safeRatio(numerator: number, denominator: number): number {
 function safeDeltaPct(current: number, previous: number): number {
   if (previous <= 0) return current > 0 ? 1 : 0
   return (current - previous) / previous
+}
+
+function clampRate(value: number, min = 0.03, max = 0.45): number {
+  if (!Number.isFinite(value)) return min
+  return Math.min(max, Math.max(min, value))
+}
+
+function round4(value: number): number {
+  return Number(value.toFixed(4))
+}
+
+function percentile(values: number[], percentileValue: number): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((left, right) => left - right)
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * percentileValue)))
+  return sorted[index]
+}
+
+function resolveFunctionCalibrationPriority(input: {
+  riskScore: number
+  currentRetryRate: number
+  currentFallbackRate: number
+  currentWaitingIoRate: number
+}): PlatformFunctionCalibrationPriority {
+  if (input.riskScore >= 0.9 || input.currentRetryRate >= 0.28 || input.currentWaitingIoRate >= 0.3) {
+    return 'critical'
+  }
+
+  if (input.riskScore >= 0.55 || input.currentFallbackRate >= 0.18 || input.currentRetryRate >= 0.18) {
+    return 'warning'
+  }
+
+  return 'info'
+}
+
+function resolveFunctionCalibrationAction(input: {
+  priority: PlatformFunctionCalibrationPriority
+  currentCalls: number
+  callsDeltaPct: number
+  currentRetryRate: number
+  currentFallbackRate: number
+  currentWaitingIoRate: number
+}): PlatformFunctionCalibrationAction {
+  if (input.priority === 'critical' || input.priority === 'warning') {
+    return 'tighten'
+  }
+
+  if (
+    input.currentCalls >= 12
+    && input.callsDeltaPct <= -0.2
+    && input.currentRetryRate <= 0.08
+    && input.currentFallbackRate <= 0.08
+    && input.currentWaitingIoRate <= 0.1
+  ) {
+    return 'relax'
+  }
+
+  return 'maintain'
+}
+
+function computeTargetRate(input: {
+  currentRate: number
+  previousRate: number
+  medianRate: number
+  action: PlatformFunctionCalibrationAction
+}): number {
+  const baseline = input.previousRate > 0
+    ? (input.currentRate * 0.7) + (input.previousRate * 0.3)
+    : input.currentRate
+  const anchoredMedian = input.medianRate > 0 ? input.medianRate : baseline
+
+  if (input.action === 'tighten') {
+    return clampRate(Math.min(baseline * 0.88, anchoredMedian * 0.95, input.currentRate * 0.9))
+  }
+
+  if (input.action === 'relax') {
+    return clampRate(Math.max(input.currentRate * 1.1, anchoredMedian * 1.1, baseline * 1.05))
+  }
+
+  return clampRate(Math.min(Math.max(input.currentRate * 0.95, anchoredMedian), baseline))
 }
 
 async function getLegacySettingsDocData(documentId: string): Promise<Record<string, unknown>> {
@@ -1414,6 +1500,96 @@ export async function getPlatformFunctionWindowComparison(days = 7, force = fals
       const leftRisk = left.current_retry_rate + left.current_fallback_rate + left.current_waiting_io_rate
       const rightRisk = right.current_retry_rate + right.current_fallback_rate + right.current_waiting_io_rate
       return rightImpact - leftImpact || rightRisk - leftRisk || right.current_calls - left.current_calls
+    })
+}
+
+export async function getPlatformFunctionCalibrationPlan(days = 7, force = false): Promise<PlatformFunctionCalibrationRow[]> {
+  const comparisonRows = await getPlatformFunctionWindowComparison(days, force)
+  if (comparisonRows.length === 0) return []
+
+  const sample = comparisonRows.filter(row => row.current_calls >= 6)
+  const retryMedian = percentile(sample.map(row => row.current_retry_rate), 0.5)
+  const fallbackMedian = percentile(sample.map(row => row.current_fallback_rate), 0.5)
+  const waitingIoMedian = percentile(sample.map(row => row.current_waiting_io_rate), 0.5)
+
+  return comparisonRows
+    .map((row) => {
+      const reliabilityRisk = (row.current_retry_rate * 1.4) + (row.current_fallback_rate * 1.1) + (row.current_waiting_io_rate * 1.25)
+      const driftRisk =
+        (Math.max(0, row.calls_delta_pct) * 0.35)
+        + (Math.max(0, row.duration_delta_pct) * 0.3)
+        + (Math.max(0, row.cost_delta_pct) * 0.2)
+      const riskScore = round4(reliabilityRisk + driftRisk)
+
+      const priority = resolveFunctionCalibrationPriority({
+        riskScore,
+        currentRetryRate: row.current_retry_rate,
+        currentFallbackRate: row.current_fallback_rate,
+        currentWaitingIoRate: row.current_waiting_io_rate,
+      })
+
+      const action = resolveFunctionCalibrationAction({
+        priority,
+        currentCalls: row.current_calls,
+        callsDeltaPct: row.calls_delta_pct,
+        currentRetryRate: row.current_retry_rate,
+        currentFallbackRate: row.current_fallback_rate,
+        currentWaitingIoRate: row.current_waiting_io_rate,
+      })
+
+      const targetRetryRate = round4(computeTargetRate({
+        currentRate: row.current_retry_rate,
+        previousRate: row.previous_retry_rate,
+        medianRate: retryMedian,
+        action,
+      }))
+      const targetFallbackRate = round4(computeTargetRate({
+        currentRate: row.current_fallback_rate,
+        previousRate: row.previous_fallback_rate,
+        medianRate: fallbackMedian,
+        action,
+      }))
+      const targetWaitingIoRate = round4(computeTargetRate({
+        currentRate: row.current_waiting_io_rate,
+        previousRate: row.previous_waiting_io_rate,
+        medianRate: waitingIoMedian,
+        action,
+      }))
+
+      return {
+        key: row.key,
+        label: row.label,
+        current_calls: row.current_calls,
+        current_retry_rate: row.current_retry_rate,
+        current_fallback_rate: row.current_fallback_rate,
+        current_waiting_io_rate: row.current_waiting_io_rate,
+        target_retry_rate: targetRetryRate,
+        target_fallback_rate: targetFallbackRate,
+        target_waiting_io_rate: targetWaitingIoRate,
+        retry_gap: round4(row.current_retry_rate - targetRetryRate),
+        fallback_gap: round4(row.current_fallback_rate - targetFallbackRate),
+        waiting_io_gap: round4(row.current_waiting_io_rate - targetWaitingIoRate),
+        calls_delta_pct: row.calls_delta_pct,
+        duration_delta_pct: row.duration_delta_pct,
+        cost_delta_pct: row.cost_delta_pct,
+        risk_score: riskScore,
+        action,
+        priority,
+      }
+    })
+    .filter(row => row.current_calls > 0)
+    .sort((left, right) => {
+      const priorityScore = (value: PlatformFunctionCalibrationPriority) => {
+        if (value === 'critical') return 3
+        if (value === 'warning') return 2
+        return 1
+      }
+
+      return (
+        priorityScore(right.priority) - priorityScore(left.priority)
+        || right.risk_score - left.risk_score
+        || right.current_calls - left.current_calls
+      )
     })
 }
 
