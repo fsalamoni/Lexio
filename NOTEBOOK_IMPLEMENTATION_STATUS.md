@@ -5,7 +5,21 @@
 
 ---
 
-## Status Geral: Etapas 1-313 IMPLEMENTADAS
+## Status Geral: Etapas 1-321 IMPLEMENTADAS
+
+### Etapas 318-321 — Closeout Operacional da Wave 37 (Release One-shot) ✅
+- **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`
+- Etapa 318: trilha de Git da wave fechada no `main` com commit/push funcional `db87300` (aderência diária live vs alvo por função + recomendações de rollout assistido), mantendo baseline remota alinhada antes do release.
+- Etapa 319: release one-shot disparado em `release-web.yml` (run `24930689755`) no HEAD `db87300835afd3823f478974d9a345a68e300540` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
+- Etapa 320: quality gates e deploys confirmados em sucesso na mesma run: lint (`73007836380`), unit tests (`73007836384`), source guardrails (`73007836385`), frontend quality (`73007836396`), functions quality (`73007836430`), Firebase production (`73007901714`), Pages build (`73007901743`), Pages deploy (`73007952932`) e release summary (`73008038665`); redesign V2 mantido como skip por input (`73007901740`).
+- Etapa 321: fechamento final de governança/index/cache/handoff sincronizado com IDs reais da run `24930689755`, mantendo continuidade cross-platform pronta para a próxima wave.
+
+### Etapas 314-317 — Aderência Diária Live vs Alvo por Função (Wave 37) ✅
+- **Arquivos**: `frontend/src/lib/firestore-types.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `docs/PLANO.md`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/MANIFEST.json`
+- Etapa 314: `firestore-types.ts` recebeu contratos de aderência diária por função (`PlatformFunctionTargetAdherenceStatus`, `PlatformFunctionTargetAdherenceRow`, `PlatformFunctionTargetAdherenceDailyPoint`) para leitura tipada de status live versus alvo.
+- Etapa 315: `firestore-service.ts` foi ampliado com `getPlatformFunctionTargetAdherenceDaily(...)`, agregando por dia pressão live/alvo, cobertura de funções monitoradas e classificação (`above_target`/`aligned`/`below_target`) com base no plano adaptativo vigente.
+- Etapa 316: `PlatformAdminPanel.tsx` integrou novo bloco executivo de aderência diária (cards de estabilidade/cobertura, tabela de funções live/alvo, tendência de 7 dias e recomendações de rollout assistido), preservando a demonstração multiagente em produção.
+- Etapa 317: validação local completa executada sem regressões: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos**, **299/299 testes**), `npm run build`, `functions npm run build`, `pytest -q` (**2203/2203**) e `get_errors` limpo nos arquivos alterados.
 
 ### Etapas 310-313 — Closeout Operacional da Wave 36 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`

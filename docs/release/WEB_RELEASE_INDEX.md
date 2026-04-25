@@ -2,6 +2,16 @@
 
 Last update: 2026-04-25
 
+## Latest One-shot Validation (Wave 37 — 2026-04-25)
+- release-web run `24930689755`: success
+- Head commit: `db87300`
+- Quality gates: success (lint `73007836380`, unit tests `73007836384`, source guardrails `73007836385`, frontend quality `73007836396`, functions quality `73007836430`)
+- Deploy Firebase production: success (`job 73007901714`)
+- Deploy GitHub Pages / build: success (`job 73007901743`)
+- Deploy GitHub Pages / deploy: success (`job 73007952932`)
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 73007901740`)
+- Release summary: success (`job 73008038665`)
+
 ## Latest One-shot Validation (Wave 36 — 2026-04-25)
 - release-web run `24919950308`: success
 - Head commit: `cfdb2ac`
@@ -69,14 +79,14 @@ Last update: 2026-04-25
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72772882473`)
 - Release summary: success (`job 72773344525`)
 
-## Current Local Validation (Wave 36 — 2026-04-25)
-- Scope: calibração adaptativa por função com plano de alvos (retry/fallback/waiting I/O), score de risco e leitura live da demonstração multiagente versus alvo no `PlatformAdminPanel`
+## Current Local Validation (Wave 37 — 2026-04-25)
+- Scope: aderência diária live versus alvo por função com pressão live/alvo, tendência de estabilidade/cobertura e recomendações de rollout assistido no `PlatformAdminPanel`
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 299 tests)
 - Frontend build: success
 - Functions build: success (`npm run build`)
 - Python tests: success (2203 passed)
-- Release dispatch: completed (`release-web.yml` run `24919950308`)
+- Release dispatch: completed (`release-web.yml` run `24930689755`)
 - Docs closeout sync: completed (planning/status/index/manifest/cache/handoff synchronized with final IDs)
 
 ## Firebase Auth and Secret Validation

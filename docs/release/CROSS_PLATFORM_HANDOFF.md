@@ -1,4 +1,4 @@
-# Cross-Platform Handoff - Wave 36
+# Cross-Platform Handoff - Wave 37
 
 Last update: 2026-04-25
 
@@ -8,41 +8,41 @@ This file is the minimum operational package to continue Lexio work from another
 ## Repository Snapshot
 - Branch: main
 - Current head: resolve at handoff time with `git rev-parse --short HEAD`
-- Last functional wave commit: cfdb2ac
+- Last functional wave commit: db87300
 - Working tree status at closeout: clean
 
 ## Latest Stable Release (One-shot)
 - Workflow: .github/workflows/release-web.yml
-- Run: 24919950308
+- Run: 24930689755
 - Conclusion: success
-- Head validated by release: cfdb2ac
+- Head validated by release: db87300
 
 Jobs:
-- Unit tests: 72979425700 (success)
-- Functions quality: 72979425703 (success)
-- Source guardrails: 72979425705 (success)
-- Frontend quality: 72979425706 (success)
-- Lint (ruff): 72979425707 (success)
-- Deploy Firebase production: 72979501786 (success)
-- Deploy GitHub Pages / build: 72979501863 (success)
-- Deploy GitHub Pages / deploy: 72979567744 (success)
-- Deploy redesign V2: 72979501818 (skipped by input)
-- Release summary: 72979652973 (success)
+- Lint (ruff): 73007836380 (success)
+- Unit tests: 73007836384 (success)
+- Source guardrails: 73007836385 (success)
+- Frontend quality: 73007836396 (success)
+- Functions quality: 73007836430 (success)
+- Deploy Firebase production: 73007901714 (success)
+- Deploy GitHub Pages / build: 73007901743 (success)
+- Deploy GitHub Pages / deploy: 73007952932 (success)
+- Deploy redesign V2: 73007901740 (skipped by input)
+- Release summary: 73008038665 (success)
 
 ## Canonical Docs to Continue Work
-Read/update in this order when opening the next cycle:
+Read/update in this closeout order when opening the next cycle:
 1. docs/PLANO.md
-2. NOTEBOOK_IMPLEMENTATION_STATUS.md
-3. docs/release/WEB_RELEASE_INDEX.md
-4. docs/MANIFEST.json
-5. docs/release/WEB_RELEASE_CACHE.md
+2. docs/MANIFEST.json
+3. docs/release/WEB_RELEASE_CACHE.md
+4. NOTEBOOK_IMPLEMENTATION_STATUS.md
+5. docs/release/WEB_RELEASE_INDEX.md
 6. docs/release/CROSS_PLATFORM_HANDOFF.md
 
-## What Was Delivered in Wave 36
-- `frontend/src/lib/firestore-types.ts` now defines calibration contracts (`PlatformFunctionCalibrationRow`, `PlatformFunctionCalibrationAction`, `PlatformFunctionCalibrationPriority`) for adaptive per-function targeting.
-- `frontend/src/lib/firestore-service.ts` now exposes `getPlatformFunctionCalibrationPlan(...)`, computing function-level risk score, priority and action (`tighten`/`maintain`/`relax`) with recommended targets for retry/fallback/waiting I/O.
-- `frontend/src/pages/PlatformAdminPanel.tsx` now renders an adaptive calibration block (plan cards, target table, recommendations) and links live multiagent demonstration signals to per-function targets (above/aligned/below target).
-- Governance/index/cache/handoff docs were synchronized for Wave 36 closeout with real one-shot release IDs.
+## What Was Delivered in Wave 37
+- `frontend/src/lib/firestore-types.ts` now defines daily adherence contracts (`PlatformFunctionTargetAdherenceStatus`, `PlatformFunctionTargetAdherenceRow`, `PlatformFunctionTargetAdherenceDailyPoint`) for live-vs-target monitoring by function.
+- `frontend/src/lib/firestore-service.ts` now exposes `getPlatformFunctionTargetAdherenceDaily(...)`, computing daily live pressure, target pressure, coverage and status (`above_target`/`aligned`/`below_target`) from operational executions and calibration targets.
+- `frontend/src/pages/PlatformAdminPanel.tsx` now renders a daily adherence block with stability/coverage cards, top-function live/alvo table, 7-day trend and rollout-assisted recommendations, while preserving the existing multiagent demonstration panel.
+- Governance/index/cache/handoff docs were synchronized for Wave 37 closeout with real one-shot release IDs.
 
 ## Validation Baseline
 Frontend:
@@ -51,13 +51,16 @@ Frontend:
 - npm run build
 - functions npm run build
 
+Backend tests:
+- python -m pytest -q (2203 passed)
+
 Release lane:
-- release-web.yml one-shot run 24919950308 completed in success
+- release-web.yml one-shot run 24930689755 completed in success
 
 ## Next Logical Block (starting point)
-- Monitor produção para validar aderência dos sinais live versus alvo por função (especialmente `waiting_io` e `retrying`) com recorte diário de estabilidade.
-- Ajustar política de rollout assistido da calibração (tighten/maintain/relax) por criticidade, evitando regressão de custo e UX no painel admin.
-- Keep the same governance closeout order and one-shot release verification.
+- Consolidar política progressiva de rollout assistido por criticidade usando o histórico diário de aderência (limites por função e janela de confirmação para relax/tighten).
+- Introduzir guardrails preditivos para funções com tendência de elevação simultânea em retry + waiting I/O antes de atingir faixa crítica.
+- Manter o mesmo ordenamento de closeout documental e a verificação one-shot de release em todos os ciclos.
 
 ## Fast Resume Commands
 From repo root:

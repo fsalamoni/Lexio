@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-25",
-    "cycle": "wave36-closeout-release-one-shot",
+    "cycle": "wave37-function-target-adherence-release-closeout",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -643,6 +643,18 @@
         "frontend/src/pages/PlatformAdminPanel.tsx"
       ],
       "notes": "A governança operacional passou a gerar plano adaptativo por função (`getPlatformFunctionCalibrationPlan`) com score de risco, prioridade e ação recomendada (`tighten`/`maintain`/`relax`) para retry/fallback/waiting I/O; o painel admin agora cruza esses alvos com sinais live da demonstração de agentes para detectar pressão acima/alinhada/abaixo do alvo em tempo real, mantendo tuning fino orientado por janela sem perder rastreabilidade executiva."
+    },
+    {
+      "id": "E5.F27",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Aderência diária live versus alvo por função com recomendações de rollout assistido",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/firestore-types.ts",
+        "frontend/src/lib/firestore-service.ts",
+        "frontend/src/pages/PlatformAdminPanel.tsx"
+      ],
+      "notes": "A plataforma passou a consolidar aderência diária por função (`getPlatformFunctionTargetAdherenceDaily`) com pressão live/alvo, cobertura de funções monitoradas e status `above_target`/`aligned`/`below_target`; o painel admin agora exibe tendência diária de 7 dias e recomendações de rollout assistido para calibrar retry/fallback/waiting I/O por criticidade sem perder a demonstração operacional multiagente."
     },
     {
       "id": "E8.F1",
