@@ -33,6 +33,7 @@ import {
   extractThesisSessionExecutions,
   extractAcervoUsageExecutions,
   extractNotebookUsageExecutions,
+  getExecutionStateLabel,
   type CostBreakdown,
   type UsageExecutionRecord,
   type UsageSummary,
@@ -67,6 +68,8 @@ export type {
   PlatformUsageRow,
   PlatformOverviewData,
   PlatformDailyUsagePoint,
+  PlatformExecutionStateDailyPoint,
+  PlatformExecutionStateWindowComparisonRow,
 } from './firestore-types'
 import type {
   ProfileData,
@@ -90,6 +93,8 @@ import type {
   PlatformUsageRow,
   PlatformOverviewData,
   PlatformDailyUsagePoint,
+  PlatformExecutionStateDailyPoint,
+  PlatformExecutionStateWindowComparisonRow,
 } from './firestore-types'
 
 // Re-export DEFAULT_DOC_STRUCTURES for backward compatibility
@@ -279,6 +284,22 @@ function mapToRows(map: Map<string, number>, labeler?: (key: string) => string):
 
 function artifactTypeLabel(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function resolveExecutionStateKey(value?: string | null): string {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return 'unknown_execution_state'
+  return normalized
+}
+
+function safeRatio(numerator: number, denominator: number): number {
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return 0
+  return numerator / denominator
+}
+
+function safeDeltaPct(current: number, previous: number): number {
+  if (previous <= 0) return current > 0 ? 1 : 0
+  return (current - previous) / previous
 }
 
 async function getLegacySettingsDocData(documentId: string): Promise<Record<string, unknown>> {
@@ -1102,6 +1123,167 @@ export async function getPlatformDailyUsage(days = 30, force = false): Promise<P
     ...entry,
     usuarios_ativos: users.size,
   }))
+}
+
+type ExecutionStateAccumulator = {
+  calls: number
+  cost_usd: number
+  total_duration_ms: number
+  retries: number
+  fallbacks: number
+}
+
+function createExecutionStateAccumulator(): ExecutionStateAccumulator {
+  return {
+    calls: 0,
+    cost_usd: 0,
+    total_duration_ms: 0,
+    retries: 0,
+    fallbacks: 0,
+  }
+}
+
+function aggregateExecutionStateWindow(
+  executions: UsageExecutionRecord[],
+  startDayInclusive: string,
+  endDayExclusive: string,
+): Map<string, ExecutionStateAccumulator> {
+  const grouped = new Map<string, ExecutionStateAccumulator>()
+
+  for (const execution of executions) {
+    const day = getIsoDateKey(execution.created_at)
+    if (!day || day < startDayInclusive || day >= endDayExclusive) continue
+
+    const stateKey = resolveExecutionStateKey(execution.execution_state)
+    const current = grouped.get(stateKey) ?? createExecutionStateAccumulator()
+
+    current.calls += 1
+    current.cost_usd = round6(current.cost_usd + execution.cost_usd)
+    current.total_duration_ms += execution.duration_ms
+    current.retries += (execution.retry_count ?? 0) > 0 ? 1 : 0
+    current.fallbacks += execution.used_fallback ? 1 : 0
+
+    grouped.set(stateKey, current)
+  }
+
+  return grouped
+}
+
+export async function getPlatformExecutionStateDaily(days = 14, force = false): Promise<PlatformExecutionStateDailyPoint[]> {
+  const snapshot = await loadPlatformCollections(force)
+  const executions = extractPlatformUsageExecutions(snapshot)
+  const safeDays = Math.max(3, Math.min(90, Math.floor(days)))
+  const now = Date.now()
+  const dayMap = new Map<string, {
+    total_calls: number
+    total_cost_usd: number
+    states: Map<string, ExecutionStateAccumulator>
+  }>()
+
+  for (let i = safeDays - 1; i >= 0; i--) {
+    const day = new Date(now - i * 86_400_000).toISOString().slice(0, 10)
+    dayMap.set(day, {
+      total_calls: 0,
+      total_cost_usd: 0,
+      states: new Map<string, ExecutionStateAccumulator>(),
+    })
+  }
+
+  for (const execution of executions) {
+    const day = getIsoDateKey(execution.created_at)
+    if (!day) continue
+    const dayEntry = dayMap.get(day)
+    if (!dayEntry) continue
+
+    dayEntry.total_calls += 1
+    dayEntry.total_cost_usd = round6(dayEntry.total_cost_usd + execution.cost_usd)
+
+    const stateKey = resolveExecutionStateKey(execution.execution_state)
+    const stateEntry = dayEntry.states.get(stateKey) ?? createExecutionStateAccumulator()
+    stateEntry.calls += 1
+    stateEntry.cost_usd = round6(stateEntry.cost_usd + execution.cost_usd)
+    stateEntry.total_duration_ms += execution.duration_ms
+    stateEntry.retries += (execution.retry_count ?? 0) > 0 ? 1 : 0
+    stateEntry.fallbacks += execution.used_fallback ? 1 : 0
+    dayEntry.states.set(stateKey, stateEntry)
+  }
+
+  return Array.from(dayMap.entries()).map(([dia, entry]) => {
+    const states = Array.from(entry.states.entries())
+      .map(([key, value]) => ({
+        key,
+        label: getExecutionStateLabel(key),
+        calls: value.calls,
+        cost_usd: round6(value.cost_usd),
+        avg_duration_ms: value.calls > 0 ? Math.round(value.total_duration_ms / value.calls) : 0,
+        call_share: safeRatio(value.calls, entry.total_calls),
+        cost_share: safeRatio(value.cost_usd, entry.total_cost_usd),
+        retry_rate: safeRatio(value.retries, value.calls),
+        fallback_rate: safeRatio(value.fallbacks, value.calls),
+      }))
+      .sort((left, right) => right.calls - left.calls || right.cost_usd - left.cost_usd)
+
+    return {
+      dia,
+      total_calls: entry.total_calls,
+      total_cost_usd: round6(entry.total_cost_usd),
+      states,
+    }
+  })
+}
+
+export async function getPlatformExecutionStateWindowComparison(days = 7, force = false): Promise<PlatformExecutionStateWindowComparisonRow[]> {
+  const snapshot = await loadPlatformCollections(force)
+  const executions = extractPlatformUsageExecutions(snapshot)
+  const safeDays = Math.max(3, Math.min(30, Math.floor(days)))
+  const now = Date.now()
+
+  const currentStart = new Date(now - (safeDays - 1) * 86_400_000).toISOString().slice(0, 10)
+  const currentEndExclusive = new Date(now + 86_400_000).toISOString().slice(0, 10)
+  const previousStart = new Date(now - ((safeDays * 2) - 1) * 86_400_000).toISOString().slice(0, 10)
+  const previousEndExclusive = currentStart
+
+  const currentWindow = aggregateExecutionStateWindow(executions, currentStart, currentEndExclusive)
+  const previousWindow = aggregateExecutionStateWindow(executions, previousStart, previousEndExclusive)
+
+  const stateKeys = new Set<string>([...currentWindow.keys(), ...previousWindow.keys()])
+
+  return Array.from(stateKeys)
+    .map((stateKey) => {
+      const current = currentWindow.get(stateKey) ?? createExecutionStateAccumulator()
+      const previous = previousWindow.get(stateKey) ?? createExecutionStateAccumulator()
+
+      const currentAvgDuration = current.calls > 0 ? current.total_duration_ms / current.calls : 0
+      const previousAvgDuration = previous.calls > 0 ? previous.total_duration_ms / previous.calls : 0
+      const currentRetryRate = safeRatio(current.retries, current.calls)
+      const previousRetryRate = safeRatio(previous.retries, previous.calls)
+      const currentFallbackRate = safeRatio(current.fallbacks, current.calls)
+      const previousFallbackRate = safeRatio(previous.fallbacks, previous.calls)
+
+      return {
+        key: stateKey,
+        label: getExecutionStateLabel(stateKey),
+        current_calls: current.calls,
+        previous_calls: previous.calls,
+        current_cost_usd: round6(current.cost_usd),
+        previous_cost_usd: round6(previous.cost_usd),
+        current_avg_duration_ms: Math.round(currentAvgDuration),
+        previous_avg_duration_ms: Math.round(previousAvgDuration),
+        current_retry_rate: currentRetryRate,
+        previous_retry_rate: previousRetryRate,
+        current_fallback_rate: currentFallbackRate,
+        previous_fallback_rate: previousFallbackRate,
+        calls_delta_pct: safeDeltaPct(current.calls, previous.calls),
+        cost_delta_pct: safeDeltaPct(current.cost_usd, previous.cost_usd),
+        duration_delta_pct: safeDeltaPct(currentAvgDuration, previousAvgDuration),
+      }
+    })
+    .filter(item => item.current_calls > 0 || item.previous_calls > 0)
+    .sort((left, right) => {
+      const leftImpact = Math.abs(left.calls_delta_pct) + Math.abs(left.duration_delta_pct) + Math.abs(left.cost_delta_pct)
+      const rightImpact = Math.abs(right.calls_delta_pct) + Math.abs(right.duration_delta_pct) + Math.abs(right.cost_delta_pct)
+      return rightImpact - leftImpact || right.current_calls - left.current_calls
+    })
 }
 
 export type NotebookSearchMemoryBackfillReport = {

@@ -15,6 +15,8 @@ import {
   backfillNotebookSearchMemoryAcrossPlatform,
   getCurrentUserId,
   getPlatformCostBreakdown,
+  getPlatformExecutionStateDaily,
+  getPlatformExecutionStateWindowComparison,
   getPlatformDailyUsage,
   getPlatformOverview,
   getPlatformRecentAgentExecutions,
@@ -22,6 +24,8 @@ import {
   saveUserSettings,
   type PlatformAggregateRow,
   type PlatformDailyUsagePoint,
+  type PlatformExecutionStateDailyPoint,
+  type PlatformExecutionStateWindowComparisonRow,
   type NotebookSearchMemoryBackfillReport,
   type PlatformUsageRow,
 } from '../lib/firestore-service'
@@ -51,6 +55,21 @@ function formatDurationMs(value?: number | null) {
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = Math.round(seconds % 60)
   return `${minutes}m ${remainingSeconds}s`
+}
+
+function formatDeltaPercent(value: number) {
+  if (!Number.isFinite(value)) return 'N/D'
+  const pct = value * 100
+  const normalized = Math.abs(pct) < 0.05 ? 0 : pct
+  return `${normalized > 0 ? '+' : ''}${normalized.toFixed(1)}%`
+}
+
+function getDeltaTone(value: number): string {
+  if (value >= 0.15) return 'text-red-700'
+  if (value >= 0.05) return 'text-amber-700'
+  if (value <= -0.15) return 'text-emerald-700'
+  if (value <= -0.05) return 'text-sky-700'
+  return 'text-[var(--v2-ink-soft)]'
 }
 
 function formatExecutionTimestamp(value?: string) {
@@ -325,6 +344,8 @@ export default function PlatformAdminPanel() {
   const [daily, setDaily] = useState<PlatformDailyUsagePoint[]>([])
   const [platformBreakdown, setPlatformBreakdown] = useState<CostBreakdown | null>(null)
   const [recentExecutions, setRecentExecutions] = useState<UsageExecutionRecord[]>([])
+  const [executionStateDaily, setExecutionStateDaily] = useState<PlatformExecutionStateDailyPoint[]>([])
+  const [executionStateComparison, setExecutionStateComparison] = useState<PlatformExecutionStateWindowComparisonRow[]>([])
   const [loading, setLoading] = useState(true)
   const [backfillLoading, setBackfillLoading] = useState(false)
   const [backfillReport, setBackfillReport] = useState<NotebookSearchMemoryBackfillReport | null>(null)
@@ -344,16 +365,20 @@ export default function PlatformAdminPanel() {
           throw new Error('O painel admin agregado está disponível apenas no modo Firebase.')
         }
 
-        const [overviewData, dailyData, costBreakdown, recentAgentExecutions] = await Promise.all([
+        const [overviewData, dailyData, costBreakdown, recentAgentExecutions, stateDailyData, stateComparisonData] = await Promise.all([
           getPlatformOverview(),
           getPlatformDailyUsage(30),
           getPlatformCostBreakdown(),
           getPlatformRecentAgentExecutions(120),
+          getPlatformExecutionStateDaily(14),
+          getPlatformExecutionStateWindowComparison(7),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
         setPlatformBreakdown(costBreakdown)
         setRecentExecutions(recentAgentExecutions)
+        setExecutionStateDaily(stateDailyData)
+        setExecutionStateComparison(stateComparisonData)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
 
         const uid = getCurrentUserId()
@@ -566,6 +591,93 @@ export default function PlatformAdminPanel() {
     functionRows: executionFunctionReliabilityRows,
     sampleSize: recentExecutions.length,
   }), [executionFunctionReliabilityRows, executionStateLatencyRows, recentExecutions.length])
+
+  const executionStateDailyRows = useMemo(() => {
+    return executionStateDaily.map(point => {
+      const waitingIo = point.states.find(state => state.key === 'waiting_io')
+      const retrying = point.states.find(state => state.key === 'retrying')
+      const inFlight = point.states.find(state => state.key === 'in_flight')
+      const fallbackCalls = point.states.reduce((acc, state) => acc + Math.round(state.fallback_rate * state.calls), 0)
+      const retryCalls = point.states.reduce((acc, state) => acc + Math.round(state.retry_rate * state.calls), 0)
+
+      return {
+        dia: point.dia,
+        totalCalls: point.total_calls,
+        waitingIoCalls: waitingIo?.calls ?? 0,
+        retryingCalls: retrying?.calls ?? 0,
+        inFlightCalls: inFlight?.calls ?? 0,
+        fallbackRate: point.total_calls > 0 ? fallbackCalls / point.total_calls : 0,
+        retryRate: point.total_calls > 0 ? retryCalls / point.total_calls : 0,
+      }
+    })
+  }, [executionStateDaily])
+
+  const executionWindowTotals = useMemo(() => {
+    const currentCalls = executionStateComparison.reduce((acc, row) => acc + row.current_calls, 0)
+    const previousCalls = executionStateComparison.reduce((acc, row) => acc + row.previous_calls, 0)
+    const currentCost = executionStateComparison.reduce((acc, row) => acc + row.current_cost_usd, 0)
+    const previousCost = executionStateComparison.reduce((acc, row) => acc + row.previous_cost_usd, 0)
+
+    return {
+      currentCalls,
+      previousCalls,
+      currentCost,
+      previousCost,
+      callsDeltaPct: previousCalls > 0 ? (currentCalls - previousCalls) / previousCalls : currentCalls > 0 ? 1 : 0,
+      costDeltaPct: previousCost > 0 ? (currentCost - previousCost) / previousCost : currentCost > 0 ? 1 : 0,
+    }
+  }, [executionStateComparison])
+
+  const executionStateWindowRecommendations = useMemo(() => {
+    if (executionStateComparison.length === 0) return [] as ExecutionTuningRecommendation[]
+
+    const recommendations: ExecutionTuningRecommendation[] = []
+    const waitingIo = executionStateComparison.find(row => row.key === 'waiting_io')
+    const retrying = executionStateComparison.find(row => row.key === 'retrying')
+    const completed = executionStateComparison.find(row => row.key === 'completed')
+
+    if (waitingIo && waitingIo.current_calls >= 12 && waitingIo.calls_delta_pct >= 0.2) {
+      recommendations.push({
+        id: 'window-waiting-io-growth',
+        level: waitingIo.calls_delta_pct >= 0.35 ? 'critical' : 'warning',
+        title: 'Waiting I/O cresceu no comparativo diário',
+        description: `${waitingIo.label} subiu ${formatDeltaPercent(waitingIo.calls_delta_pct)} em volume e ${formatDeltaPercent(waitingIo.duration_delta_pct)} em latência média.`,
+        suggestedAction: 'Reavaliar timeout, concorrência e fila das funções com maior espera por I/O.',
+      })
+    }
+
+    if (retrying && retrying.current_calls >= 8 && retrying.current_retry_rate >= 0.18) {
+      recommendations.push({
+        id: 'window-retrying-risk',
+        level: retrying.current_retry_rate >= 0.3 ? 'critical' : 'warning',
+        title: 'Estado de retry em patamar elevado',
+        description: `Retry médio atual em ${fmtPercent(retrying.current_retry_rate)} (janela anterior ${fmtPercent(retrying.previous_retry_rate)}).`,
+        suggestedAction: 'Ajustar política de retries e priorizar fallback para rotas com maior taxa de repetição.',
+      })
+    }
+
+    if (completed && completed.current_calls >= 20 && completed.duration_delta_pct >= 0.15) {
+      recommendations.push({
+        id: 'window-completed-latency-up',
+        level: completed.duration_delta_pct >= 0.3 ? 'warning' : 'info',
+        title: 'Latência de execuções concluídas subiu',
+        description: `Execuções concluídas ficaram ${formatDeltaPercent(completed.duration_delta_pct)} mais lentas na janela atual.`,
+        suggestedAction: 'Inspecionar funções com maior duração média e reforçar cache para fases de pesquisa repetitiva.',
+      })
+    }
+
+    if (recommendations.length === 0) {
+      recommendations.push({
+        id: 'window-stable',
+        level: 'info',
+        title: 'Comparativo de janelas estável',
+        description: 'Sem desvio operacional crítico por execution_state no comparativo atual versus janela anterior.',
+        suggestedAction: 'Manter monitoramento diário e revisar recomendações automáticas apenas em caso de novo drift.',
+      })
+    }
+
+    return recommendations.slice(0, 3)
+  }, [executionStateComparison])
 
   const memoryAlerts = useMemo(() => {
     if (!overview) return [] as OperationalAlert[]
@@ -1087,12 +1199,16 @@ export default function PlatformAdminPanel() {
       toast.success(dryRun ? 'Diagnóstico de backfill concluído' : 'Backfill de memória dedicada concluído')
 
       if (!dryRun) {
-        const [overviewData, dailyData] = await Promise.all([
+        const [overviewData, dailyData, stateDailyData, stateComparisonData] = await Promise.all([
           getPlatformOverview(true),
           getPlatformDailyUsage(30, true),
+          getPlatformExecutionStateDaily(14, true),
+          getPlatformExecutionStateWindowComparison(7, true),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
+        setExecutionStateDaily(stateDailyData)
+        setExecutionStateComparison(stateComparisonData)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
       }
     } catch (error) {
@@ -1387,6 +1503,123 @@ export default function PlatformAdminPanel() {
               <p className="mt-1 text-xs text-[var(--v2-ink-strong)]">Ação recomendada: {recommendation.suggestedAction}</p>
             </div>
           ))}
+        </div>
+
+        <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] p-3 space-y-3">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Comparativo diário por execution_state</p>
+              <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">Janela atual de 7 dias versus janela imediatamente anterior para volume, custo e latência por estado.</p>
+            </div>
+            <span className="rounded-full border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.78)] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">
+              Atualizado em tempo real
+            </span>
+          </div>
+
+          {executionStateComparison.length === 0 ? (
+            <p className="text-xs text-[var(--v2-ink-soft)]">Ainda não há base histórica suficiente para comparação entre janelas.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                <div className={EXECUTIVE_INSET_CARD}>
+                  <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Chamadas (7d atual)</p>
+                  <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionWindowTotals.currentCalls)}</p>
+                  <p className={`text-[11px] font-medium ${getDeltaTone(executionWindowTotals.callsDeltaPct)}`}>{formatDeltaPercent(executionWindowTotals.callsDeltaPct)}</p>
+                </div>
+                <div className={EXECUTIVE_INSET_CARD}>
+                  <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Chamadas (7d anterior)</p>
+                  <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionWindowTotals.previousCalls)}</p>
+                  <p className="text-[11px] text-[var(--v2-ink-faint)]">Base de comparação</p>
+                </div>
+                <div className={EXECUTIVE_INSET_CARD}>
+                  <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Custo (7d atual)</p>
+                  <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtUsd(executionWindowTotals.currentCost)}</p>
+                  <p className={`text-[11px] font-medium ${getDeltaTone(executionWindowTotals.costDeltaPct)}`}>{formatDeltaPercent(executionWindowTotals.costDeltaPct)}</p>
+                </div>
+                <div className={EXECUTIVE_INSET_CARD}>
+                  <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Custo (7d anterior)</p>
+                  <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtUsd(executionWindowTotals.previousCost)}</p>
+                  <p className="text-[11px] text-[var(--v2-ink-faint)]">Base de comparação</p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[960px] text-xs">
+                  <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left">Estado</th>
+                      <th className="px-2 py-1.5 text-right">Chamadas atual</th>
+                      <th className="px-2 py-1.5 text-right">Chamadas anterior</th>
+                      <th className="px-2 py-1.5 text-right">Delta chamadas</th>
+                      <th className="px-2 py-1.5 text-right">Delta latência</th>
+                      <th className="px-2 py-1.5 text-right">Retry atual</th>
+                      <th className="px-2 py-1.5 text-right">Fallback atual</th>
+                      <th className="px-2 py-1.5 text-right">Delta custo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                    {executionStateComparison.map(row => (
+                      <tr key={row.key} className="hover:bg-[rgba(255,255,255,0.66)]">
+                        <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{row.label}</td>
+                        <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.current_calls)}</td>
+                        <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.previous_calls)}</td>
+                        <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.calls_delta_pct)}`}>{formatDeltaPercent(row.calls_delta_pct)}</td>
+                        <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.duration_delta_pct)}`}>{formatDeltaPercent(row.duration_delta_pct)}</td>
+                        <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.current_retry_rate)}</td>
+                        <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.current_fallback_rate)}</td>
+                        <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.cost_delta_pct)}`}>{formatDeltaPercent(row.cost_delta_pct)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {executionStateDailyRows.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-xs">
+                <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left">Dia</th>
+                    <th className="px-2 py-1.5 text-right">Chamadas</th>
+                    <th className="px-2 py-1.5 text-right">Waiting I/O</th>
+                    <th className="px-2 py-1.5 text-right">Retrying</th>
+                    <th className="px-2 py-1.5 text-right">In flight</th>
+                    <th className="px-2 py-1.5 text-right">Retry médio</th>
+                    <th className="px-2 py-1.5 text-right">Fallback médio</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                  {executionStateDailyRows.slice(-7).reverse().map(point => (
+                    <tr key={point.dia} className="hover:bg-[rgba(255,255,255,0.66)]">
+                      <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{new Date(`${point.dia}T00:00:00Z`).toLocaleDateString('pt-BR')}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(point.totalCalls)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(point.waitingIoCalls)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(point.retryingCalls)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(point.inFlightCalls)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(point.retryRate)}</td>
+                      <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(point.fallbackRate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Recomendações orientadas por janela diária</p>
+            {executionStateWindowRecommendations.map(recommendation => (
+              <div key={recommendation.id} className={`rounded-lg border px-3 py-2 ${getRecommendationTone(recommendation.level)}`}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">
+                  {recommendation.level === 'critical' ? 'Prioridade alta' : recommendation.level === 'warning' ? 'Atenção' : 'Informativo'}
+                </p>
+                <p className="mt-0.5 text-sm font-medium text-[var(--v2-ink-strong)]">{recommendation.title}</p>
+                <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">{recommendation.description}</p>
+                <p className="mt-1 text-xs text-[var(--v2-ink-strong)]">Ação recomendada: {recommendation.suggestedAction}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

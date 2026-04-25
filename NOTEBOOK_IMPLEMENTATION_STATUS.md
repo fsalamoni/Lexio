@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-289 IMPLEMENTADAS
+## Status Geral: Etapas 1-293 IMPLEMENTADAS
+
+### Etapas 290-293 — Comparativo Diário por Estado de Execução (Wave 34) ✅
+- **Arquivos**: `frontend/src/lib/firestore-types.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `docs/PLANO.md`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/MANIFEST.json`
+- Etapa 290: `firestore-types.ts` recebeu contratos tipados para análise diária por estado (`PlatformExecutionStateDailyPoint`) e comparação de janelas operacionais (`PlatformExecutionStateWindowComparisonRow`), preparando o admin para leitura temporal de drift por `execution_state`.
+- Etapa 291: `firestore-service.ts` foi ampliado com `getPlatformExecutionStateDaily(...)` e `getPlatformExecutionStateWindowComparison(...)`, agregando chamadas/custo/latência/retry/fallback por estado no recorte diário e no comparativo entre janela atual e anterior.
+- Etapa 292: `PlatformAdminPanel.tsx` integrou os novos agregados com painel executivo de comparação diária (deltas de chamadas/custo, tabela por estado, histórico dos últimos 7 dias e recomendações acionáveis orientadas ao desvio entre janelas).
+- Etapa 293: validação local completa executada sem regressões: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos**, **299/299 testes**), `npm run build`, `functions npm run build` e `get_errors` limpo nos arquivos alterados.
 
 ### Etapas 286-289 — Closeout Operacional da Wave 33 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`

@@ -431,3 +431,40 @@ export interface PlatformDailyUsagePoint {
   tokens: number
   custo_usd: number
 }
+
+export interface PlatformExecutionStateDailyRow {
+  key: string
+  label: string
+  calls: number
+  cost_usd: number
+  avg_duration_ms: number
+  call_share: number
+  cost_share: number
+  retry_rate: number
+  fallback_rate: number
+}
+
+export interface PlatformExecutionStateDailyPoint {
+  dia: string
+  total_calls: number
+  total_cost_usd: number
+  states: PlatformExecutionStateDailyRow[]
+}
+
+export interface PlatformExecutionStateWindowComparisonRow {
+  key: string
+  label: string
+  current_calls: number
+  previous_calls: number
+  current_cost_usd: number
+  previous_cost_usd: number
+  current_avg_duration_ms: number
+  previous_avg_duration_ms: number
+  current_retry_rate: number
+  previous_retry_rate: number
+  current_fallback_rate: number
+  previous_fallback_rate: number
+  calls_delta_pct: number
+  cost_delta_pct: number
+  duration_delta_pct: number
+}

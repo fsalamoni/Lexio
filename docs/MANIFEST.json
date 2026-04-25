@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-04-24",
-    "cycle": "wave33-closeout-release-one-shot",
+    "cycle": "wave34-execution-state-daily-comparison-local-validated",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
