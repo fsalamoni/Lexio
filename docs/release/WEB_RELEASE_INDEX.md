@@ -1,6 +1,16 @@
 # Web Release Index
 
-Last update: 2026-04-24
+Last update: 2026-04-25
+
+## Latest One-shot Validation (Wave 34 — 2026-04-25)
+- release-web run `24917777336`: success
+- Head commit: `4cc2432`
+- Quality gates: success (lint `72973180460`, functions quality `72973180461`, frontend quality `72973180463`, unit tests `72973180467`, source guardrails `72973180468`)
+- Deploy Firebase production: success (`job 72973266685`)
+- Deploy GitHub Pages / build: success (`job 72973266761`)
+- Deploy GitHub Pages / deploy: success (`job 72973349766`)
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72973266829`)
+- Release summary: success (`job 72973480926`)
 
 ## Release Entry Points
 - .github/workflows/release-web.yml
@@ -39,14 +49,14 @@ Last update: 2026-04-24
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72772882473`)
 - Release summary: success (`job 72773344525`)
 
-## Current Local Validation (Wave 34 — 2026-04-24)
+## Current Local Validation (Wave 34 — 2026-04-25)
 - Scope: analytics comparativa diária por `execution_state`, com novas agregações de serviço para trend diária + janela atual vs anterior e painel executivo no `PlatformAdminPanel` com deltas/recomendações acionáveis
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 299 tests)
 - Frontend build: success
 - Functions build: success (`npm run build`)
-- Release dispatch: pending Wave 34 closeout (latest stable one-shot remains run `24917396554`)
-- Docs closeout sync: in progress (planning/index/manifest updated; cache/handoff after release IDs)
+- Release dispatch: completed (`release-web.yml`, run `24917777336`)
+- Docs closeout sync: completed (`main`, planning/index/cache/handoff aligned)
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs

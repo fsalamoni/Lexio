@@ -23,7 +23,8 @@
 - ✅ `firestore-service.ts` passou a expor os novos agregados de produção `getPlatformExecutionStateDaily(...)` e `getPlatformExecutionStateWindowComparison(...)`, calculando volume/custo/latência/retry/fallback por estado no recorte diário e no comparativo entre janelas consecutivas.
 - ✅ `PlatformAdminPanel.tsx` integrou os novos datasets com seção executiva de comparativo diário: resumo de deltas (chamadas/custo), tabela por estado (delta de chamadas/latência/custo + retry/fallback atuais), recorte dos últimos 7 dias e recomendações acionáveis orientadas ao drift entre janelas.
 - ✅ Validação local completa desta wave: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos, 299/299 testes**), `npm run build`, `functions npm run build` e `get_errors` sem erros nos arquivos alterados.
-- 🔄 Próximo bloco: fechar trilha one-shot de release da Wave 34 (run IDs reais) e consolidar cache/handoff de continuidade cross-platform.
+- ✅ Trilha operacional da wave concluída: commit/push do `main` (`4cc2432`) e one-shot release (`release-web.yml` run `24917777336`) em `success`, com quality gates + Firebase + Pages e redesign V2 em skip por input.
+- 🔄 Próximo bloco: consolidar leitura de impacto em produção das novas janelas comparativas (foco em `waiting_io` e `retrying`) e calibrar thresholds por função sem regressão de UX.
 
 **Atualização incremental (2026-04-24 — Wave 33: calibração automática por função + telemetria operacional enriquecida):**
 - ✅ `generation-service.ts` passou a persistir metadados operacionais de execução (`execution_state`, `retry_count`, `used_fallback`, `fallback_from`) em `llm_executions` para os fluxos de geração documental, ementa/classificação de acervo e context detail, elevando a fidelidade da trilha de retries/fallbacks no histórico.

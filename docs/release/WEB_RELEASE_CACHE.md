@@ -1,6 +1,6 @@
 # Web Release Cache
 
-Last update: 2026-04-24
+Last update: 2026-04-25
 
 ## Execution Snapshot
 - Branch: main
@@ -19,6 +19,8 @@ Last update: 2026-04-24
 - Cross-platform handoff package: completed
 - Wave 33 operational tuning by function: completed (local validation)
 - Wave 33 release closeout: completed (run 24917396554 success)
+- Wave 34 daily execution-state comparison: completed (local validation)
+- Wave 34 release closeout: completed (run 24917777336 success)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -28,7 +30,7 @@ Last update: 2026-04-24
 ## Local Validation Cache
 - frontend npm ci: completed
 - frontend typecheck: completed
-- frontend test: completed (38 files, 290 tests passed)
+- frontend test: completed (38 files, 299 tests passed)
 - frontend build: completed (vite build succeeded)
 - functions npm ci: completed
 - functions build: completed (tsc)
@@ -51,12 +53,15 @@ Last update: 2026-04-24
 - Wave 32 docs closeout commit + push: completed (recorded in `main` history)
 - Wave 33 commit + push: completed (`80dc5c6`)
 - Release workflow dispatch (wave33): completed (release-web.yml run 24917396554 success)
+- Wave 34 commit + push: completed (`4cc2432`)
+- Release workflow dispatch (wave34): completed (release-web.yml run 24917777336 success)
 
-## Current Wave Cache (2026-04-24)
-- Wave tag: wave33-operational-tuning-by-function
-- Scope: enriquecimento de telemetria operacional no pipeline documental/acervo/context detail (`execution_state`, `retry_count`, `used_fallback`, `fallback_from`) e calibração automática por função/estado no `PlatformAdminPanel` com recomendações acionáveis.
-- Files touched (wave33/code+docs):
-	- frontend/src/lib/generation-service.ts
+## Current Wave Cache (2026-04-25)
+- Wave tag: wave34-execution-state-daily-comparison
+- Scope: comparação diária por `execution_state` na governança admin, com agregações de tendência diária + janela atual vs anterior no serviço e recomendações acionáveis orientadas por drift no `PlatformAdminPanel`.
+- Files touched (wave34/code+docs):
+	- frontend/src/lib/firestore-types.ts
+	- frontend/src/lib/firestore-service.ts
 	- frontend/src/pages/PlatformAdminPanel.tsx
 	- docs/PLANO.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
@@ -65,23 +70,34 @@ Last update: 2026-04-24
 	- docs/release/WEB_RELEASE_CACHE.md
 	- docs/release/CROSS_PLATFORM_HANDOFF.md
 
-## Current Validation Cache (2026-04-24)
+## Current Validation Cache (2026-04-25)
 - frontend typecheck: completed
 - frontend test: completed
 - frontend build: completed
 - frontend tests result: 38 files, 299 tests passed
 - functions build: completed (`npm run build`)
-- release-web dispatch (wave33): completed (run 24917396554)
-- Deploy Firebase production (wave33): completed (job 72972122974)
-- Deploy GitHub Pages / build (wave33): completed (job 72972123057)
-- Deploy GitHub Pages / deploy (wave33): completed (job 72972206796)
-- Release summary (wave33): completed (job 72972336724)
-- Deploy redesign V2 (wave33): skipped by input (job 72972123010)
+- release-web dispatch (wave34): completed (run 24917777336)
+- Quality gates (wave34): success (lint `72973180460`, functions `72973180461`, frontend `72973180463`, unit tests `72973180467`, source guardrails `72973180468`)
+- Deploy Firebase production (wave34): completed (job 72973266685)
+- Deploy GitHub Pages / build (wave34): completed (job 72973266761)
+- Deploy GitHub Pages / deploy (wave34): completed (job 72973349766)
+- Release summary (wave34): completed (job 72973480926)
+- Deploy redesign V2 (wave34): skipped by input (job 72973266829)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 33 closeout completed (git flow + release lane fully executed).
+- None. Wave 34 closeout completed (git flow + release lane fully executed).
+
+## Wave 34 Release Outcome
+- release-web dispatch (run 24917777336): success.
+- Quality gates: success.
+- Deploy Firebase production (job 72973266685): success.
+- Deploy GitHub Pages / build (job 72973266761): success.
+- Deploy GitHub Pages / deploy (job 72973349766): success.
+- Deploy redesign V2 (job 72973266829): skipped by input (`deploy_redesign_v2=false`).
+- Release summary (job 72973480926): success.
+- Key verification: comparativo diário por `execution_state` (trend + janela atual/anterior) foi promovido em produção com demonstração operacional no painel admin, sem regressão nos quality gates e deploys.
 
 ## Wave 33 Release Outcome
 - release-web dispatch (run 24917396554): success.
