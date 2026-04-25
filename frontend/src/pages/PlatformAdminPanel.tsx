@@ -291,6 +291,18 @@ function getRolloutRiskTone(level: 'critical' | 'warning' | 'stable'): string {
   return 'border-emerald-200 bg-emerald-50 text-emerald-800'
 }
 
+function getRolloutConfidenceLabel(band: 'low' | 'medium' | 'high'): string {
+  if (band === 'low') return 'Baixa'
+  if (band === 'medium') return 'Média'
+  return 'Alta'
+}
+
+function getRolloutConfidenceTone(band: 'low' | 'medium' | 'high'): string {
+  if (band === 'low') return 'border-amber-200 bg-amber-50 text-amber-800'
+  if (band === 'medium') return 'border-sky-200 bg-sky-50 text-sky-800'
+  return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+}
+
 function getRolloutRecommendationLabel(value: 'tighten_now' | 'tighten_guarded' | 'hold' | 'relax_guarded'): string {
   if (value === 'tighten_now') return 'Tighten imediato'
   if (value === 'tighten_guarded') return 'Tighten com guardrail'
@@ -1069,9 +1081,34 @@ export default function PlatformAdminPanel() {
   const executionFunctionPredictiveGuardrailRows = useMemo(() => {
     if (!executionFunctionRolloutPolicyPlan) return []
     return executionFunctionRolloutPolicyPlan.rows
-      .filter(row => row.trend_pressure_gap >= 0.006 && row.trend_retry_waiting_sum >= 0.004)
+      .filter(row => row.is_predictive_alert)
       .slice(0, 6)
   }, [executionFunctionRolloutPolicyPlan])
+
+  const executionFunctionLowConfidenceRows = useMemo(() => {
+    if (!executionFunctionRolloutPolicyPlan) return []
+    return executionFunctionRolloutPolicyPlan.rows
+      .filter(row => row.confidence_band === 'low')
+      .sort((left, right) => left.confidence_score - right.confidence_score || left.recent_calls - right.recent_calls)
+      .slice(0, 4)
+  }, [executionFunctionRolloutPolicyPlan])
+
+  const executionFunctionRolloutDemoAlignment = useMemo(() => {
+    if (executionFunctionCalibrationDemoSignals.length === 0) return null
+
+    const aboveTarget = executionFunctionCalibrationDemoSignals.filter(signal => signal.status === 'above_target').length
+    const aligned = executionFunctionCalibrationDemoSignals.filter(signal => signal.status === 'aligned').length
+    const belowTarget = executionFunctionCalibrationDemoSignals.filter(signal => signal.status === 'below_target').length
+    const total = executionFunctionCalibrationDemoSignals.length
+
+    return {
+      total,
+      aboveTarget,
+      aligned,
+      belowTarget,
+      alignedShare: total > 0 ? (aligned + belowTarget) / total : 0,
+    }
+  }, [executionFunctionCalibrationDemoSignals])
 
   const executionFunctionRolloutRecommendations = useMemo(() => {
     if (!executionFunctionRolloutPolicyPlan) return [] as ExecutionTuningRecommendation[]
@@ -1088,14 +1125,30 @@ export default function PlatformAdminPanel() {
       })
     }
 
-    if (executionFunctionPredictiveGuardrailRows.length > 0) {
+    if (executionFunctionRolloutPolicyPlan.predictive_alert_count > 0) {
       const top = executionFunctionPredictiveGuardrailRows[0]
+      if (top) {
+        recommendations.push({
+          id: `rollout-predictive-${top.key}`,
+          level: executionFunctionRolloutPolicyPlan.predictive_alert_count >= 3 || top.risk_level === 'critical' ? 'critical' : 'warning',
+          title: 'Guardrail preditivo acionado por drift simultâneo',
+          description: `${top.label} apresenta drift de pressão ${fmtPercent(top.trend_pressure_gap)} ao dia e drift retry+waiting ${fmtPercent(top.trend_retry_waiting_sum)} ao dia, acima dos limiares adaptativos da função.`,
+          suggestedAction: 'Reduzir concorrência/retry em etapas, respeitando max_tighten_delta diário definido por criticidade.',
+        })
+      }
+    }
+
+    const lowConfidenceShare = executionFunctionRolloutPolicyPlan.total_functions_with_target > 0
+      ? executionFunctionRolloutPolicyPlan.low_confidence_count / executionFunctionRolloutPolicyPlan.total_functions_with_target
+      : 0
+
+    if (executionFunctionRolloutPolicyPlan.low_confidence_count > 0 && lowConfidenceShare >= 0.25) {
       recommendations.push({
-        id: `rollout-predictive-${top.key}`,
-        level: top.risk_level === 'critical' ? 'critical' : 'warning',
-        title: 'Guardrail preditivo acionado por drift simultâneo',
-        description: `${top.label} apresenta drift de pressão ${fmtPercent(top.trend_pressure_gap)} ao dia e drift retry+waiting ${fmtPercent(top.trend_retry_waiting_sum)} ao dia.`,
-        suggestedAction: 'Reduzir concorrência/retry em etapas, respeitando max_tighten_delta diário definido por criticidade.',
+        id: 'rollout-low-confidence-watch',
+        level: lowConfidenceShare >= 0.4 ? 'warning' : 'info',
+        title: 'Cobertura operacional baixa em parte da política',
+        description: `${fmtInt(executionFunctionRolloutPolicyPlan.low_confidence_count)} funções estão com confiança baixa para decisão automática de rollout.`,
+        suggestedAction: 'Aumentar cobertura diária das funções com baixa amostragem antes de apertar guardrails em modo agressivo.',
       })
     }
 
@@ -2444,6 +2497,16 @@ export default function PlatformAdminPanel() {
                         </div>
                       </div>
 
+                      {executionFunctionRolloutDemoAlignment && (
+                        <div className="rounded-lg border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Sincronia com demonstração dos agentes</p>
+                          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
+                            {fmtInt(executionFunctionRolloutDemoAlignment.total)} sinais live monitorados: {fmtInt(executionFunctionRolloutDemoAlignment.aboveTarget)} acima do alvo, {fmtInt(executionFunctionRolloutDemoAlignment.aligned)} alinhados, {fmtInt(executionFunctionRolloutDemoAlignment.belowTarget)} abaixo do alvo.
+                            Estabilidade live da demonstração: {fmtPercent(executionFunctionRolloutDemoAlignment.alignedShare)}.
+                          </p>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wide text-red-700">Tighten imediato</p>
@@ -2463,25 +2526,51 @@ export default function PlatformAdminPanel() {
                         </div>
                       </div>
 
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Confiança baixa</p>
+                          <p className="mt-1 text-sm font-semibold text-amber-800">{fmtInt(executionFunctionRolloutPolicyPlan.low_confidence_count)}</p>
+                        </div>
+                        <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Confiança média</p>
+                          <p className="mt-1 text-sm font-semibold text-sky-800">{fmtInt(executionFunctionRolloutPolicyPlan.medium_confidence_count)}</p>
+                        </div>
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Confiança alta</p>
+                          <p className="mt-1 text-sm font-semibold text-emerald-800">{fmtInt(executionFunctionRolloutPolicyPlan.high_confidence_count)}</p>
+                        </div>
+                        <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-fuchsia-700">Alertas preditivos</p>
+                          <p className="mt-1 text-sm font-semibold text-fuchsia-800">{fmtInt(executionFunctionRolloutPolicyPlan.predictive_alert_count)}</p>
+                        </div>
+                      </div>
+
                       {executionFunctionRolloutRows.length > 0 && (
                         <div className="overflow-x-auto">
-                          <table className="w-full min-w-[860px] text-xs">
+                          <table className="w-full min-w-[1060px] text-xs">
                             <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
                               <tr>
                                 <th className="px-2 py-1.5 text-left">Função</th>
+                                <th className="px-2 py-1.5 text-left">Confiança</th>
                                 <th className="px-2 py-1.5 text-left">Risco</th>
                                 <th className="px-2 py-1.5 text-left">Recomendação</th>
                                 <th className="px-2 py-1.5 text-right">Gap atual</th>
                                 <th className="px-2 py-1.5 text-right">Tendência gap/dia</th>
                                 <th className="px-2 py-1.5 text-right">Tendência retry+waiting/dia</th>
+                                <th className="px-2 py-1.5 text-right">Chamadas recentes</th>
+                                <th className="px-2 py-1.5 text-right">Dias observados</th>
                                 <th className="px-2 py-1.5 text-right">Streak acima</th>
-                                <th className="px-2 py-1.5 text-right">Streak estável</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-[var(--v2-line-soft)]">
                               {executionFunctionRolloutRows.map(row => (
                                 <tr key={`rollout-${row.key}`} className="hover:bg-[rgba(255,255,255,0.66)]">
                                   <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{row.label}</td>
+                                  <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">
+                                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getRolloutConfidenceTone(row.confidence_band)}`}>
+                                      {getRolloutConfidenceLabel(row.confidence_band)} · {fmtPercent(row.confidence_score)}
+                                    </span>
+                                  </td>
                                   <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">
                                     <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getRolloutRiskTone(row.risk_level)}`}>
                                       {getRolloutRiskLabel(row.risk_level)}
@@ -2493,8 +2582,9 @@ export default function PlatformAdminPanel() {
                                   <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.latest_pressure_gap)}`}>{fmtPercent(row.latest_pressure_gap)}</td>
                                   <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.trend_pressure_gap)}`}>{fmtPercent(row.trend_pressure_gap)}</td>
                                   <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.trend_retry_waiting_sum)}`}>{fmtPercent(row.trend_retry_waiting_sum)}</td>
+                                  <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.recent_calls)}</td>
+                                  <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.observed_days)} / {fmtInt(row.expected_days)}</td>
                                   <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.above_target_streak)}</td>
-                                  <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.stable_streak)}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -2510,7 +2600,21 @@ export default function PlatformAdminPanel() {
                               <p className="text-xs font-semibold text-amber-800">{row.label}</p>
                               <p className="mt-0.5 text-xs text-amber-900">{row.rationale}</p>
                               <p className="mt-1 text-[11px] text-amber-900">
-                                Guardrail: tighten max {fmtPercent(row.guardrails.max_tighten_delta)} por ciclo e exigir {fmtInt(row.guardrails.require_above_days_for_tighten)} dia(s) acima do alvo.
+                                Guardrail: tighten max {fmtPercent(row.guardrails.max_tighten_delta)} por ciclo e exigir {fmtInt(row.guardrails.require_above_days_for_tighten)} dia(s) acima do alvo. Limiar preditivo atual: pressão {fmtPercent(row.predictive_pressure_threshold)} e retry+waiting {fmtPercent(row.predictive_retry_waiting_threshold)} ao dia.
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {executionFunctionLowConfidenceRows.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Funções em baixa confiança operacional</p>
+                          {executionFunctionLowConfidenceRows.map(row => (
+                            <div key={`low-confidence-${row.key}`} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
+                              <p className="text-xs font-semibold text-sky-800">{row.label}</p>
+                              <p className="mt-0.5 text-xs text-sky-900">
+                                Confiança {fmtPercent(row.confidence_score)} com {fmtInt(row.recent_calls)} chamadas recentes e {fmtInt(row.observed_days)} de {fmtInt(row.expected_days)} dias observados.
                               </p>
                             </div>
                           ))}

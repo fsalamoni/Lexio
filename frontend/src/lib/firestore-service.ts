@@ -79,6 +79,7 @@ export type {
   PlatformFunctionTargetAdherenceDailyPoint,
   PlatformFunctionRolloutRecommendation,
   PlatformFunctionRolloutRiskLevel,
+  PlatformFunctionRolloutConfidenceBand,
   PlatformFunctionRolloutGuardrails,
   PlatformFunctionRolloutPolicyRow,
   PlatformFunctionRolloutPolicyPlan,
@@ -116,6 +117,7 @@ import type {
   PlatformFunctionTargetAdherenceDailyPoint,
   PlatformFunctionRolloutRecommendation,
   PlatformFunctionRolloutRiskLevel,
+  PlatformFunctionRolloutConfidenceBand,
   PlatformFunctionRolloutGuardrails,
   PlatformFunctionRolloutPolicyRow,
   PlatformFunctionRolloutPolicyPlan,
@@ -446,31 +448,114 @@ function computeStreakFromEnd<T>(values: T[], predicate: (value: T) => boolean):
   return streak
 }
 
-function resolveFunctionRolloutGuardrails(priority: PlatformFunctionCalibrationPriority): PlatformFunctionRolloutGuardrails {
-  if (priority === 'critical') {
-    return {
-      max_tighten_delta: 0.03,
-      max_relax_delta: 0.008,
-      require_stable_days_for_relax: 4,
-      require_above_days_for_tighten: 2,
-    }
-  }
+function clampUnit(value: number): number {
+  return Math.max(0, Math.min(1, value))
+}
 
-  if (priority === 'warning') {
-    return {
-      max_tighten_delta: 0.022,
-      max_relax_delta: 0.01,
-      require_stable_days_for_relax: 3,
-      require_above_days_for_tighten: 2,
-    }
+function resolveFunctionRolloutConfidenceBand(score: number): PlatformFunctionRolloutConfidenceBand {
+  if (score >= 0.72) return 'high'
+  if (score >= 0.45) return 'medium'
+  return 'low'
+}
+
+function computeFunctionRolloutConfidence(input: {
+  recentCalls: number
+  observedDays: number
+  expectedDays: number
+  priority: PlatformFunctionCalibrationPriority
+}): {
+  score: number
+  band: PlatformFunctionRolloutConfidenceBand
+} {
+  const callTarget = input.priority === 'critical'
+    ? 16
+    : input.priority === 'warning'
+      ? 10
+      : 6
+  const callScore = clampUnit(safeRatio(input.recentCalls, callTarget))
+  const coverageScore = clampUnit(safeRatio(input.observedDays, Math.max(1, input.expectedDays)))
+  const historyScore = input.observedDays >= 5
+    ? 1
+    : input.observedDays >= 3
+      ? 0.72
+      : input.observedDays >= 2
+        ? 0.5
+        : 0.3
+  const score = round4((callScore * 0.45) + (coverageScore * 0.35) + (historyScore * 0.2))
+  return {
+    score,
+    band: resolveFunctionRolloutConfidenceBand(score),
   }
+}
+
+function resolveFunctionPredictiveThresholds(input: {
+  priority: PlatformFunctionCalibrationPriority
+  confidenceBand: PlatformFunctionRolloutConfidenceBand
+}): {
+  pressureGap: number
+  retryWaiting: number
+} {
+  const base = input.priority === 'critical'
+    ? { pressureGap: 0.005, retryWaiting: 0.0035 }
+    : input.priority === 'warning'
+      ? { pressureGap: 0.006, retryWaiting: 0.0045 }
+      : { pressureGap: 0.007, retryWaiting: 0.0055 }
+  const multiplier = input.confidenceBand === 'low'
+    ? 1.35
+    : input.confidenceBand === 'medium'
+      ? 1.15
+      : 1
 
   return {
-    max_tighten_delta: 0.016,
-    max_relax_delta: 0.012,
-    require_stable_days_for_relax: 2,
-    require_above_days_for_tighten: 3,
+    pressureGap: round4(base.pressureGap * multiplier),
+    retryWaiting: round4(base.retryWaiting * multiplier),
   }
+}
+
+function resolveFunctionRolloutGuardrails(
+  priority: PlatformFunctionCalibrationPriority,
+  confidenceBand: PlatformFunctionRolloutConfidenceBand,
+): PlatformFunctionRolloutGuardrails {
+  const base = priority === 'critical'
+    ? {
+        max_tighten_delta: 0.03,
+        max_relax_delta: 0.008,
+        require_stable_days_for_relax: 4,
+        require_above_days_for_tighten: 2,
+      }
+    : priority === 'warning'
+      ? {
+          max_tighten_delta: 0.022,
+          max_relax_delta: 0.01,
+          require_stable_days_for_relax: 3,
+          require_above_days_for_tighten: 2,
+        }
+      : {
+          max_tighten_delta: 0.016,
+          max_relax_delta: 0.012,
+          require_stable_days_for_relax: 2,
+          require_above_days_for_tighten: 3,
+        }
+
+  if (confidenceBand === 'low') {
+    return {
+      max_tighten_delta: round4(base.max_tighten_delta * 0.82),
+      max_relax_delta: round4(base.max_relax_delta * 0.9),
+      require_stable_days_for_relax: base.require_stable_days_for_relax + 1,
+      require_above_days_for_tighten: base.require_above_days_for_tighten + 1,
+    }
+  }
+
+  if (confidenceBand === 'medium') {
+    return {
+      max_tighten_delta: round4(base.max_tighten_delta * 0.92),
+      max_relax_delta: base.max_relax_delta,
+      require_stable_days_for_relax: base.require_stable_days_for_relax,
+      require_above_days_for_tighten: base.require_above_days_for_tighten,
+    }
+  }
+
+  return base
 }
 
 function resolveFunctionRolloutRiskLevel(input: {
@@ -479,14 +564,40 @@ function resolveFunctionRolloutRiskLevel(input: {
   trendPressureGap: number
   trendRetryWaitingSum: number
   aboveTargetStreak: number
+  priority: PlatformFunctionCalibrationPriority
+  confidenceScore: number
+  confidenceBand: PlatformFunctionRolloutConfidenceBand
 }): PlatformFunctionRolloutRiskLevel {
   if (
     input.latestStatus === 'above_target'
     && (
-      input.latestPressureGap >= 0.12
-      || input.aboveTargetStreak >= 3
-      || input.trendPressureGap >= 0.015
-      || input.trendRetryWaitingSum >= 0.01
+      input.latestPressureGap >= 0.2
+      || input.aboveTargetStreak >= 5
+    )
+  ) {
+    return 'critical'
+  }
+
+  const confidenceMultiplier = input.confidenceBand === 'low'
+    ? 1.28
+    : input.confidenceBand === 'medium'
+      ? 1.12
+      : 1
+  const criticalGapThreshold = (input.priority === 'critical' ? 0.105 : 0.12) * confidenceMultiplier
+  const criticalTrendPressureThreshold = 0.014 * confidenceMultiplier
+  const criticalTrendRetryWaitingThreshold = 0.009 * confidenceMultiplier
+  const warningGapThreshold = 0.055 * confidenceMultiplier
+  const warningTrendPressureThreshold = 0.007 * confidenceMultiplier
+  const warningTrendRetryWaitingThreshold = 0.0045 * confidenceMultiplier
+  const requiredCriticalStreak = input.confidenceBand === 'low' ? 4 : 3
+
+  if (
+    input.latestStatus === 'above_target'
+    && (
+      input.latestPressureGap >= criticalGapThreshold
+      || input.aboveTargetStreak >= requiredCriticalStreak
+      || input.trendPressureGap >= criticalTrendPressureThreshold
+      || input.trendRetryWaitingSum >= criticalTrendRetryWaitingThreshold
     )
   ) {
     return 'critical'
@@ -494,9 +605,10 @@ function resolveFunctionRolloutRiskLevel(input: {
 
   if (
     input.latestStatus === 'above_target'
-    || input.latestPressureGap >= 0.06
-    || input.trendPressureGap >= 0.008
-    || input.trendRetryWaitingSum >= 0.005
+    || input.latestPressureGap >= warningGapThreshold
+    || input.trendPressureGap >= warningTrendPressureThreshold
+    || input.trendRetryWaitingSum >= warningTrendRetryWaitingThreshold
+    || input.confidenceScore < 0.36
   ) {
     return 'warning'
   }
@@ -510,11 +622,16 @@ function resolveFunctionRolloutRecommendation(input: {
   aboveTargetStreak: number
   stableStreak: number
   trendPressureGap: number
+  confidenceBand: PlatformFunctionRolloutConfidenceBand
   guardrails: PlatformFunctionRolloutGuardrails
 }): PlatformFunctionRolloutRecommendation {
   if (
     input.riskLevel === 'critical'
     && input.aboveTargetStreak >= input.guardrails.require_above_days_for_tighten
+    && (
+      input.confidenceBand !== 'low'
+      || input.trendPressureGap >= 0.012
+    )
   ) {
     return 'tighten_now'
   }
@@ -527,6 +644,7 @@ function resolveFunctionRolloutRecommendation(input: {
     input.latestStatus === 'below_target'
     && input.stableStreak >= input.guardrails.require_stable_days_for_relax
     && input.trendPressureGap <= -0.008
+    && input.confidenceBand !== 'low'
   ) {
     return 'relax_guarded'
   }
@@ -542,24 +660,36 @@ function buildFunctionRolloutRationale(input: {
   latestPressureGap: number
   trendPressureGap: number
   trendRetryWaitingSum: number
+  confidenceScore: number
+  confidenceBand: PlatformFunctionRolloutConfidenceBand
+  observedDays: number
+  expectedDays: number
+  isPredictiveAlert: boolean
 }): string {
   const gapLabel = `${(input.latestPressureGap * 100).toFixed(1)}%`
   const trendLabel = `${(input.trendPressureGap * 100).toFixed(2)}%/dia`
   const retryWaitingTrendLabel = `${(input.trendRetryWaitingSum * 100).toFixed(2)}%/dia`
+  const confidenceLabel = input.confidenceBand === 'high'
+    ? 'alta'
+    : input.confidenceBand === 'medium'
+      ? 'média'
+      : 'baixa'
+  const confidenceSummary = `Confiança ${confidenceLabel} (${(input.confidenceScore * 100).toFixed(0)}%, ${input.observedDays}/${input.expectedDays} dias).`
 
   if (input.riskLevel === 'critical') {
-    return `Pressão acima do alvo por ${input.aboveTargetStreak} dia(s), gap ${gapLabel} e tendência ${trendLabel}; aplicar contenção imediata.`
+    return `${confidenceSummary} Pressão acima do alvo por ${input.aboveTargetStreak} dia(s), gap ${gapLabel} e tendência ${trendLabel}; aplicar contenção imediata.`
   }
 
   if (input.riskLevel === 'warning') {
-    return `Sinal de atenção em ${input.latestStatus} com gap ${gapLabel}, tendência ${trendLabel} e drift retry+waiting ${retryWaitingTrendLabel}; ajustar com guardrail.`
+    const predictiveLabel = input.isPredictiveAlert ? ' Alerta preditivo ativo.' : ''
+    return `${confidenceSummary} Sinal de atenção em ${input.latestStatus} com gap ${gapLabel}, tendência ${trendLabel} e drift retry+waiting ${retryWaitingTrendLabel}; ajustar com guardrail.${predictiveLabel}`
   }
 
   if (input.latestStatus === 'below_target' && input.stableStreak > 0) {
-    return `Estabilidade sustentada por ${input.stableStreak} dia(s) com pressão abaixo do alvo; elegível para relaxamento controlado.`
+    return `${confidenceSummary} Estabilidade sustentada por ${input.stableStreak} dia(s) com pressão abaixo do alvo; elegível para relaxamento controlado.`
   }
 
-  return 'Função estável na faixa de alvo; manter rollout atual e monitorar tendência diária.'
+  return `${confidenceSummary} Função estável na faixa de alvo; manter rollout atual e monitorar tendência diária.`
 }
 
 async function getLegacySettingsDocData(documentId: string): Promise<Record<string, unknown>> {
@@ -1915,6 +2045,9 @@ export async function getPlatformFunctionRolloutPolicyPlan(
   const rows = latestPoint.rows
     .map((latestRow) => {
       const history = historyByFunction.get(latestRow.key) ?? [latestRow]
+      const observedDays = history.length
+      const expectedDays = adherenceDaily.length
+      const recentCalls = latestRow.calls
       const statusHistory = history.map(item => item.status)
       const pressureGapHistory = history.map(item => item.pressure_gap)
       const retryWaitingHistory = history.map(item => item.live_retry_rate + item.live_waiting_io_rate)
@@ -1922,7 +2055,20 @@ export async function getPlatformFunctionRolloutPolicyPlan(
       const stableStreak = computeStreakFromEnd(statusHistory, status => status === 'aligned' || status === 'below_target')
       const trendPressureGap = round4(computeLinearTrend(pressureGapHistory))
       const trendRetryWaitingSum = round4(computeLinearTrend(retryWaitingHistory))
-      const guardrails = resolveFunctionRolloutGuardrails(latestRow.priority)
+      const confidence = computeFunctionRolloutConfidence({
+        recentCalls,
+        observedDays,
+        expectedDays,
+        priority: latestRow.priority,
+      })
+      const predictiveThresholds = resolveFunctionPredictiveThresholds({
+        priority: latestRow.priority,
+        confidenceBand: confidence.band,
+      })
+      const isPredictiveAlert = trendPressureGap >= predictiveThresholds.pressureGap
+        && trendRetryWaitingSum >= predictiveThresholds.retryWaiting
+        && (latestRow.status === 'above_target' || latestRow.status === 'aligned')
+      const guardrails = resolveFunctionRolloutGuardrails(latestRow.priority, confidence.band)
 
       const riskLevel = resolveFunctionRolloutRiskLevel({
         latestStatus: latestRow.status,
@@ -1930,6 +2076,9 @@ export async function getPlatformFunctionRolloutPolicyPlan(
         trendPressureGap,
         trendRetryWaitingSum,
         aboveTargetStreak,
+        priority: latestRow.priority,
+        confidenceScore: confidence.score,
+        confidenceBand: confidence.band,
       })
 
       const recommendation = resolveFunctionRolloutRecommendation({
@@ -1938,6 +2087,7 @@ export async function getPlatformFunctionRolloutPolicyPlan(
         aboveTargetStreak,
         stableStreak,
         trendPressureGap,
+        confidenceBand: confidence.band,
         guardrails,
       })
 
@@ -1946,10 +2096,18 @@ export async function getPlatformFunctionRolloutPolicyPlan(
         label: latestRow.label,
         priority: latestRow.priority,
         latest_status: latestRow.status,
+        observed_days: observedDays,
+        expected_days: expectedDays,
+        recent_calls: recentCalls,
+        confidence_score: confidence.score,
+        confidence_band: confidence.band,
         latest_pressure_gap: latestRow.pressure_gap,
         trend_pressure_gap: trendPressureGap,
         latest_retry_waiting_sum: round4(latestRow.live_retry_rate + latestRow.live_waiting_io_rate),
         trend_retry_waiting_sum: trendRetryWaitingSum,
+        predictive_pressure_threshold: predictiveThresholds.pressureGap,
+        predictive_retry_waiting_threshold: predictiveThresholds.retryWaiting,
+        is_predictive_alert: isPredictiveAlert,
         above_target_streak: aboveTargetStreak,
         stable_streak: stableStreak,
         risk_level: riskLevel,
@@ -1963,6 +2121,11 @@ export async function getPlatformFunctionRolloutPolicyPlan(
           latestPressureGap: latestRow.pressure_gap,
           trendPressureGap,
           trendRetryWaitingSum,
+          confidenceScore: confidence.score,
+          confidenceBand: confidence.band,
+          observedDays,
+          expectedDays,
+          isPredictiveAlert,
         }),
       } satisfies PlatformFunctionRolloutPolicyRow
     })
@@ -1982,6 +2145,7 @@ export async function getPlatformFunctionRolloutPolicyPlan(
       return (
         riskScore(right.risk_level) - riskScore(left.risk_level)
         || recommendationScore(right.recommendation) - recommendationScore(left.recommendation)
+        || right.confidence_score - left.confidence_score
         || right.latest_pressure_gap - left.latest_pressure_gap
       )
     })
@@ -1989,6 +2153,10 @@ export async function getPlatformFunctionRolloutPolicyPlan(
   const criticalCount = rows.filter(row => row.risk_level === 'critical').length
   const warningCount = rows.filter(row => row.risk_level === 'warning').length
   const stableCount = rows.filter(row => row.risk_level === 'stable').length
+  const lowConfidenceCount = rows.filter(row => row.confidence_band === 'low').length
+  const mediumConfidenceCount = rows.filter(row => row.confidence_band === 'medium').length
+  const highConfidenceCount = rows.filter(row => row.confidence_band === 'high').length
+  const predictiveAlertCount = rows.filter(row => row.is_predictive_alert).length
   const tightenNowCount = rows.filter(row => row.recommendation === 'tighten_now').length
   const tightenGuardedCount = rows.filter(row => row.recommendation === 'tighten_guarded').length
   const holdCount = rows.filter(row => row.recommendation === 'hold').length
@@ -2003,6 +2171,10 @@ export async function getPlatformFunctionRolloutPolicyPlan(
     critical_count: criticalCount,
     warning_count: warningCount,
     stable_count: stableCount,
+    low_confidence_count: lowConfidenceCount,
+    medium_confidence_count: mediumConfidenceCount,
+    high_confidence_count: highConfidenceCount,
+    predictive_alert_count: predictiveAlertCount,
     tighten_now_count: tightenNowCount,
     tighten_guarded_count: tightenGuardedCount,
     hold_count: holdCount,

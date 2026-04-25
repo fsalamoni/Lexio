@@ -499,6 +499,8 @@ export type PlatformFunctionRolloutRecommendation = 'tighten_now' | 'tighten_gua
 
 export type PlatformFunctionRolloutRiskLevel = 'critical' | 'warning' | 'stable'
 
+export type PlatformFunctionRolloutConfidenceBand = 'low' | 'medium' | 'high'
+
 export interface PlatformFunctionCalibrationRow {
   key: string
   label: string
@@ -561,10 +563,18 @@ export interface PlatformFunctionRolloutPolicyRow {
   label: string
   priority: PlatformFunctionCalibrationPriority
   latest_status: PlatformFunctionTargetAdherenceStatus
+  observed_days: number
+  expected_days: number
+  recent_calls: number
+  confidence_score: number
+  confidence_band: PlatformFunctionRolloutConfidenceBand
   latest_pressure_gap: number
   trend_pressure_gap: number
   latest_retry_waiting_sum: number
   trend_retry_waiting_sum: number
+  predictive_pressure_threshold: number
+  predictive_retry_waiting_threshold: number
+  is_predictive_alert: boolean
   above_target_streak: number
   stable_streak: number
   risk_level: PlatformFunctionRolloutRiskLevel
@@ -582,6 +592,10 @@ export interface PlatformFunctionRolloutPolicyPlan {
   critical_count: number
   warning_count: number
   stable_count: number
+  low_confidence_count: number
+  medium_confidence_count: number
+  high_confidence_count: number
+  predictive_alert_count: number
   tighten_now_count: number
   tighten_guarded_count: number
   hold_count: number
