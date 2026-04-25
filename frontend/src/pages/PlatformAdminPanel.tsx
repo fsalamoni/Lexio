@@ -17,6 +17,7 @@ import {
   getPlatformCostBreakdown,
   getPlatformExecutionStateDaily,
   getPlatformFunctionCalibrationPlan,
+  getPlatformFunctionRolloutPolicyPlan,
   getPlatformFunctionTargetAdherenceDaily,
   getPlatformFunctionWindowComparison,
   getPlatformExecutionStateWindowComparison,
@@ -29,6 +30,7 @@ import {
   type PlatformDailyUsagePoint,
   type PlatformExecutionStateDailyPoint,
   type PlatformFunctionCalibrationRow,
+  type PlatformFunctionRolloutPolicyPlan,
   type PlatformFunctionTargetAdherenceDailyPoint,
   type PlatformFunctionWindowComparisonRow,
   type PlatformExecutionStateWindowComparisonRow,
@@ -277,6 +279,32 @@ function getFunctionTargetAdherenceStatusTone(status: 'above_target' | 'aligned'
   return 'border-emerald-200 bg-emerald-50 text-emerald-700'
 }
 
+function getRolloutRiskLabel(level: 'critical' | 'warning' | 'stable'): string {
+  if (level === 'critical') return 'Critico'
+  if (level === 'warning') return 'Atencao'
+  return 'Estavel'
+}
+
+function getRolloutRiskTone(level: 'critical' | 'warning' | 'stable'): string {
+  if (level === 'critical') return 'border-red-200 bg-red-50 text-red-800'
+  if (level === 'warning') return 'border-amber-200 bg-amber-50 text-amber-800'
+  return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+}
+
+function getRolloutRecommendationLabel(value: 'tighten_now' | 'tighten_guarded' | 'hold' | 'relax_guarded'): string {
+  if (value === 'tighten_now') return 'Tighten imediato'
+  if (value === 'tighten_guarded') return 'Tighten com guardrail'
+  if (value === 'relax_guarded') return 'Relaxar com guardrail'
+  return 'Manter janela atual'
+}
+
+function getRolloutRecommendationTone(value: 'tighten_now' | 'tighten_guarded' | 'hold' | 'relax_guarded'): string {
+  if (value === 'tighten_now') return 'text-red-700'
+  if (value === 'tighten_guarded') return 'text-amber-700'
+  if (value === 'relax_guarded') return 'text-sky-700'
+  return 'text-[var(--v2-ink-soft)]'
+}
+
 function buildExecutionTuningRecommendations(input: {
   stateRows: Array<CostBreakdownItem & { callShare: number; costShare: number }>
   functionRows: ExecutionFunctionReliabilityRow[]
@@ -391,6 +419,7 @@ export default function PlatformAdminPanel() {
   const [executionFunctionComparison, setExecutionFunctionComparison] = useState<PlatformFunctionWindowComparisonRow[]>([])
   const [executionFunctionCalibrations, setExecutionFunctionCalibrations] = useState<PlatformFunctionCalibrationRow[]>([])
   const [executionFunctionTargetAdherenceDaily, setExecutionFunctionTargetAdherenceDaily] = useState<PlatformFunctionTargetAdherenceDailyPoint[]>([])
+  const [executionFunctionRolloutPolicyPlan, setExecutionFunctionRolloutPolicyPlan] = useState<PlatformFunctionRolloutPolicyPlan | null>(null)
   const [loading, setLoading] = useState(true)
   const [backfillLoading, setBackfillLoading] = useState(false)
   const [backfillReport, setBackfillReport] = useState<NotebookSearchMemoryBackfillReport | null>(null)
@@ -420,6 +449,7 @@ export default function PlatformAdminPanel() {
           functionComparisonData,
           functionCalibrationData,
           functionTargetAdherenceDailyData,
+          functionRolloutPolicyPlanData,
         ] = await Promise.all([
           getPlatformOverview(),
           getPlatformDailyUsage(30),
@@ -430,6 +460,7 @@ export default function PlatformAdminPanel() {
           getPlatformFunctionWindowComparison(7),
           getPlatformFunctionCalibrationPlan(7),
           getPlatformFunctionTargetAdherenceDaily(14, 7),
+          getPlatformFunctionRolloutPolicyPlan(14, 7),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
@@ -440,6 +471,7 @@ export default function PlatformAdminPanel() {
         setExecutionFunctionComparison(functionComparisonData)
         setExecutionFunctionCalibrations(functionCalibrationData)
         setExecutionFunctionTargetAdherenceDaily(functionTargetAdherenceDailyData)
+        setExecutionFunctionRolloutPolicyPlan(functionRolloutPolicyPlanData)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
 
         const uid = getCurrentUserId()
@@ -1030,6 +1062,69 @@ export default function PlatformAdminPanel() {
     executionFunctionTargetAdherenceSummary.coverageRate,
   ])
 
+  const executionFunctionRolloutRows = useMemo(() => {
+    return executionFunctionRolloutPolicyPlan?.rows.slice(0, 10) ?? []
+  }, [executionFunctionRolloutPolicyPlan])
+
+  const executionFunctionPredictiveGuardrailRows = useMemo(() => {
+    if (!executionFunctionRolloutPolicyPlan) return []
+    return executionFunctionRolloutPolicyPlan.rows
+      .filter(row => row.trend_pressure_gap >= 0.006 && row.trend_retry_waiting_sum >= 0.004)
+      .slice(0, 6)
+  }, [executionFunctionRolloutPolicyPlan])
+
+  const executionFunctionRolloutRecommendations = useMemo(() => {
+    if (!executionFunctionRolloutPolicyPlan) return [] as ExecutionTuningRecommendation[]
+
+    const recommendations: ExecutionTuningRecommendation[] = []
+
+    if (executionFunctionRolloutPolicyPlan.tighten_now_count > 0) {
+      recommendations.push({
+        id: 'rollout-tighten-now',
+        level: executionFunctionRolloutPolicyPlan.tighten_now_count >= 3 ? 'critical' : 'warning',
+        title: 'Escalonar contenção em funções críticas',
+        description: `${fmtInt(executionFunctionRolloutPolicyPlan.tighten_now_count)} funções entraram em "tighten imediato" na política progressiva da janela ${fmtInt(executionFunctionRolloutPolicyPlan.days)}d.`,
+        suggestedAction: 'Aplicar limite de tighten por guardrail e revalidar tendência de retry + waiting I/O no próximo ciclo diário.',
+      })
+    }
+
+    if (executionFunctionPredictiveGuardrailRows.length > 0) {
+      const top = executionFunctionPredictiveGuardrailRows[0]
+      recommendations.push({
+        id: `rollout-predictive-${top.key}`,
+        level: top.risk_level === 'critical' ? 'critical' : 'warning',
+        title: 'Guardrail preditivo acionado por drift simultâneo',
+        description: `${top.label} apresenta drift de pressão ${fmtPercent(top.trend_pressure_gap)} ao dia e drift retry+waiting ${fmtPercent(top.trend_retry_waiting_sum)} ao dia.`,
+        suggestedAction: 'Reduzir concorrência/retry em etapas, respeitando max_tighten_delta diário definido por criticidade.',
+      })
+    }
+
+    if (
+      executionFunctionRolloutPolicyPlan.relax_guarded_count > 0
+      && executionFunctionRolloutPolicyPlan.stable_count >= Math.max(2, Math.floor(executionFunctionRolloutPolicyPlan.total_functions_with_target * 0.5))
+    ) {
+      recommendations.push({
+        id: 'rollout-relax-window',
+        level: 'info',
+        title: 'Janela de relaxamento controlado disponível',
+        description: `${fmtInt(executionFunctionRolloutPolicyPlan.relax_guarded_count)} funções estão elegíveis para relaxamento com estabilidade sustentada.`,
+        suggestedAction: 'Executar relaxamento gradual somente após cumprir os dias mínimos de estabilidade por função.',
+      })
+    }
+
+    if (recommendations.length === 0) {
+      recommendations.push({
+        id: 'rollout-hold',
+        level: 'info',
+        title: 'Política progressiva sem desvios relevantes',
+        description: 'As funções monitoradas permaneceram na zona de manutenção com baixo risco de regressão operacional.',
+        suggestedAction: 'Manter rollout atual e seguir monitoramento preditivo diário.',
+      })
+    }
+
+    return recommendations.slice(0, 3)
+  }, [executionFunctionPredictiveGuardrailRows, executionFunctionRolloutPolicyPlan])
+
   const memoryAlerts = useMemo(() => {
     if (!overview) return [] as OperationalAlert[]
     return buildMemoryAlerts(overview, daily, alertThresholds)
@@ -1558,6 +1653,7 @@ export default function PlatformAdminPanel() {
           functionComparisonData,
           functionCalibrationData,
           functionTargetAdherenceDailyData,
+          functionRolloutPolicyPlanData,
         ] = await Promise.all([
           getPlatformOverview(true),
           getPlatformDailyUsage(30, true),
@@ -1566,6 +1662,7 @@ export default function PlatformAdminPanel() {
           getPlatformFunctionWindowComparison(7, true),
           getPlatformFunctionCalibrationPlan(7, true),
           getPlatformFunctionTargetAdherenceDaily(14, 7, true),
+          getPlatformFunctionRolloutPolicyPlan(14, 7, true),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
@@ -1574,6 +1671,7 @@ export default function PlatformAdminPanel() {
         setExecutionFunctionComparison(functionComparisonData)
         setExecutionFunctionCalibrations(functionCalibrationData)
         setExecutionFunctionTargetAdherenceDaily(functionTargetAdherenceDailyData)
+        setExecutionFunctionRolloutPolicyPlan(functionRolloutPolicyPlanData)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
       }
     } catch (error) {
@@ -2331,6 +2429,109 @@ export default function PlatformAdminPanel() {
                       </div>
                     ))}
                   </div>
+
+                  {executionFunctionRolloutPolicyPlan && (
+                    <div className="space-y-3 rounded-xl border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.82)] p-3">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Wave 38 · Política progressiva por criticidade</p>
+                          <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
+                            Cobertura {fmtPercent(executionFunctionRolloutPolicyPlan.coverage_rate)} com {fmtInt(executionFunctionRolloutPolicyPlan.total_functions_with_target)} funções monitoradas em {fmtInt(executionFunctionRolloutPolicyPlan.days)} dias.
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.74)] px-3 py-2 text-xs text-[var(--v2-ink-soft)]">
+                          Janela de calibração: {fmtInt(executionFunctionRolloutPolicyPlan.calibration_window_days)}d
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-red-700">Tighten imediato</p>
+                          <p className="mt-1 text-sm font-semibold text-red-800">{fmtInt(executionFunctionRolloutPolicyPlan.tighten_now_count)}</p>
+                        </div>
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Tighten guardrail</p>
+                          <p className="mt-1 text-sm font-semibold text-amber-800">{fmtInt(executionFunctionRolloutPolicyPlan.tighten_guarded_count)}</p>
+                        </div>
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Hold</p>
+                          <p className="mt-1 text-sm font-semibold text-emerald-800">{fmtInt(executionFunctionRolloutPolicyPlan.hold_count)}</p>
+                        </div>
+                        <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Relax guardrail</p>
+                          <p className="mt-1 text-sm font-semibold text-sky-800">{fmtInt(executionFunctionRolloutPolicyPlan.relax_guarded_count)}</p>
+                        </div>
+                      </div>
+
+                      {executionFunctionRolloutRows.length > 0 && (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[860px] text-xs">
+                            <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                              <tr>
+                                <th className="px-2 py-1.5 text-left">Função</th>
+                                <th className="px-2 py-1.5 text-left">Risco</th>
+                                <th className="px-2 py-1.5 text-left">Recomendação</th>
+                                <th className="px-2 py-1.5 text-right">Gap atual</th>
+                                <th className="px-2 py-1.5 text-right">Tendência gap/dia</th>
+                                <th className="px-2 py-1.5 text-right">Tendência retry+waiting/dia</th>
+                                <th className="px-2 py-1.5 text-right">Streak acima</th>
+                                <th className="px-2 py-1.5 text-right">Streak estável</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                              {executionFunctionRolloutRows.map(row => (
+                                <tr key={`rollout-${row.key}`} className="hover:bg-[rgba(255,255,255,0.66)]">
+                                  <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{row.label}</td>
+                                  <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">
+                                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getRolloutRiskTone(row.risk_level)}`}>
+                                      {getRolloutRiskLabel(row.risk_level)}
+                                    </span>
+                                  </td>
+                                  <td className={`px-2 py-1.5 font-medium ${getRolloutRecommendationTone(row.recommendation)}`}>
+                                    {getRolloutRecommendationLabel(row.recommendation)}
+                                  </td>
+                                  <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.latest_pressure_gap)}`}>{fmtPercent(row.latest_pressure_gap)}</td>
+                                  <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.trend_pressure_gap)}`}>{fmtPercent(row.trend_pressure_gap)}</td>
+                                  <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.trend_retry_waiting_sum)}`}>{fmtPercent(row.trend_retry_waiting_sum)}</td>
+                                  <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.above_target_streak)}</td>
+                                  <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.stable_streak)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {executionFunctionPredictiveGuardrailRows.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Alertas preditivos de drift combinado</p>
+                          {executionFunctionPredictiveGuardrailRows.map(row => (
+                            <div key={`predictive-${row.key}`} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                              <p className="text-xs font-semibold text-amber-800">{row.label}</p>
+                              <p className="mt-0.5 text-xs text-amber-900">{row.rationale}</p>
+                              <p className="mt-1 text-[11px] text-amber-900">
+                                Guardrail: tighten max {fmtPercent(row.guardrails.max_tighten_delta)} por ciclo e exigir {fmtInt(row.guardrails.require_above_days_for_tighten)} dia(s) acima do alvo.
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Recomendações da política progressiva</p>
+                        {executionFunctionRolloutRecommendations.map(recommendation => (
+                          <div key={recommendation.id} className={`rounded-lg border px-3 py-2 ${getRecommendationTone(recommendation.level)}`}>
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">
+                              {recommendation.level === 'critical' ? 'Prioridade alta' : recommendation.level === 'warning' ? 'Atenção' : 'Informativo'}
+                            </p>
+                            <p className="mt-0.5 text-sm font-medium text-[var(--v2-ink-strong)]">{recommendation.title}</p>
+                            <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">{recommendation.description}</p>
+                            <p className="mt-1 text-xs text-[var(--v2-ink-strong)]">Ação recomendada: {recommendation.suggestedAction}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

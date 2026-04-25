@@ -495,6 +495,10 @@ export type PlatformFunctionCalibrationPriority = 'critical' | 'warning' | 'info
 
 export type PlatformFunctionTargetAdherenceStatus = 'above_target' | 'aligned' | 'below_target'
 
+export type PlatformFunctionRolloutRecommendation = 'tighten_now' | 'tighten_guarded' | 'hold' | 'relax_guarded'
+
+export type PlatformFunctionRolloutRiskLevel = 'critical' | 'warning' | 'stable'
+
 export interface PlatformFunctionCalibrationRow {
   key: string
   label: string
@@ -543,4 +547,44 @@ export interface PlatformFunctionTargetAdherenceDailyPoint {
   aligned: number
   below_target: number
   rows: PlatformFunctionTargetAdherenceRow[]
+}
+
+export interface PlatformFunctionRolloutGuardrails {
+  max_tighten_delta: number
+  max_relax_delta: number
+  require_stable_days_for_relax: number
+  require_above_days_for_tighten: number
+}
+
+export interface PlatformFunctionRolloutPolicyRow {
+  key: string
+  label: string
+  priority: PlatformFunctionCalibrationPriority
+  latest_status: PlatformFunctionTargetAdherenceStatus
+  latest_pressure_gap: number
+  trend_pressure_gap: number
+  latest_retry_waiting_sum: number
+  trend_retry_waiting_sum: number
+  above_target_streak: number
+  stable_streak: number
+  risk_level: PlatformFunctionRolloutRiskLevel
+  recommendation: PlatformFunctionRolloutRecommendation
+  guardrails: PlatformFunctionRolloutGuardrails
+  rationale: string
+}
+
+export interface PlatformFunctionRolloutPolicyPlan {
+  days: number
+  calibration_window_days: number
+  total_functions_observed: number
+  total_functions_with_target: number
+  coverage_rate: number
+  critical_count: number
+  warning_count: number
+  stable_count: number
+  tighten_now_count: number
+  tighten_guarded_count: number
+  hold_count: number
+  relax_guarded_count: number
+  rows: PlatformFunctionRolloutPolicyRow[]
 }

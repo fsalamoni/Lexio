@@ -77,6 +77,11 @@ export type {
   PlatformFunctionTargetAdherenceStatus,
   PlatformFunctionTargetAdherenceRow,
   PlatformFunctionTargetAdherenceDailyPoint,
+  PlatformFunctionRolloutRecommendation,
+  PlatformFunctionRolloutRiskLevel,
+  PlatformFunctionRolloutGuardrails,
+  PlatformFunctionRolloutPolicyRow,
+  PlatformFunctionRolloutPolicyPlan,
 } from './firestore-types'
 import type {
   ProfileData,
@@ -109,6 +114,11 @@ import type {
   PlatformFunctionTargetAdherenceStatus,
   PlatformFunctionTargetAdherenceRow,
   PlatformFunctionTargetAdherenceDailyPoint,
+  PlatformFunctionRolloutRecommendation,
+  PlatformFunctionRolloutRiskLevel,
+  PlatformFunctionRolloutGuardrails,
+  PlatformFunctionRolloutPolicyRow,
+  PlatformFunctionRolloutPolicyPlan,
 } from './firestore-types'
 
 // Re-export DEFAULT_DOC_STRUCTURES for backward compatibility
@@ -418,6 +428,138 @@ function resolveFunctionTargetAdherenceStatus(input: {
   if (input.livePressure >= input.targetPressure * 1.15) return 'above_target'
   if (input.livePressure <= input.targetPressure * 0.75) return 'below_target'
   return 'aligned'
+}
+
+function computeLinearTrend(values: number[]): number {
+  if (values.length < 2) return 0
+  const first = values[0]
+  const last = values[values.length - 1]
+  return (last - first) / (values.length - 1)
+}
+
+function computeStreakFromEnd<T>(values: T[], predicate: (value: T) => boolean): number {
+  let streak = 0
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (!predicate(values[index])) break
+    streak += 1
+  }
+  return streak
+}
+
+function resolveFunctionRolloutGuardrails(priority: PlatformFunctionCalibrationPriority): PlatformFunctionRolloutGuardrails {
+  if (priority === 'critical') {
+    return {
+      max_tighten_delta: 0.03,
+      max_relax_delta: 0.008,
+      require_stable_days_for_relax: 4,
+      require_above_days_for_tighten: 2,
+    }
+  }
+
+  if (priority === 'warning') {
+    return {
+      max_tighten_delta: 0.022,
+      max_relax_delta: 0.01,
+      require_stable_days_for_relax: 3,
+      require_above_days_for_tighten: 2,
+    }
+  }
+
+  return {
+    max_tighten_delta: 0.016,
+    max_relax_delta: 0.012,
+    require_stable_days_for_relax: 2,
+    require_above_days_for_tighten: 3,
+  }
+}
+
+function resolveFunctionRolloutRiskLevel(input: {
+  latestStatus: PlatformFunctionTargetAdherenceStatus
+  latestPressureGap: number
+  trendPressureGap: number
+  trendRetryWaitingSum: number
+  aboveTargetStreak: number
+}): PlatformFunctionRolloutRiskLevel {
+  if (
+    input.latestStatus === 'above_target'
+    && (
+      input.latestPressureGap >= 0.12
+      || input.aboveTargetStreak >= 3
+      || input.trendPressureGap >= 0.015
+      || input.trendRetryWaitingSum >= 0.01
+    )
+  ) {
+    return 'critical'
+  }
+
+  if (
+    input.latestStatus === 'above_target'
+    || input.latestPressureGap >= 0.06
+    || input.trendPressureGap >= 0.008
+    || input.trendRetryWaitingSum >= 0.005
+  ) {
+    return 'warning'
+  }
+
+  return 'stable'
+}
+
+function resolveFunctionRolloutRecommendation(input: {
+  latestStatus: PlatformFunctionTargetAdherenceStatus
+  riskLevel: PlatformFunctionRolloutRiskLevel
+  aboveTargetStreak: number
+  stableStreak: number
+  trendPressureGap: number
+  guardrails: PlatformFunctionRolloutGuardrails
+}): PlatformFunctionRolloutRecommendation {
+  if (
+    input.riskLevel === 'critical'
+    && input.aboveTargetStreak >= input.guardrails.require_above_days_for_tighten
+  ) {
+    return 'tighten_now'
+  }
+
+  if (input.riskLevel === 'warning' || input.latestStatus === 'above_target') {
+    return 'tighten_guarded'
+  }
+
+  if (
+    input.latestStatus === 'below_target'
+    && input.stableStreak >= input.guardrails.require_stable_days_for_relax
+    && input.trendPressureGap <= -0.008
+  ) {
+    return 'relax_guarded'
+  }
+
+  return 'hold'
+}
+
+function buildFunctionRolloutRationale(input: {
+  riskLevel: PlatformFunctionRolloutRiskLevel
+  latestStatus: PlatformFunctionTargetAdherenceStatus
+  aboveTargetStreak: number
+  stableStreak: number
+  latestPressureGap: number
+  trendPressureGap: number
+  trendRetryWaitingSum: number
+}): string {
+  const gapLabel = `${(input.latestPressureGap * 100).toFixed(1)}%`
+  const trendLabel = `${(input.trendPressureGap * 100).toFixed(2)}%/dia`
+  const retryWaitingTrendLabel = `${(input.trendRetryWaitingSum * 100).toFixed(2)}%/dia`
+
+  if (input.riskLevel === 'critical') {
+    return `Pressão acima do alvo por ${input.aboveTargetStreak} dia(s), gap ${gapLabel} e tendência ${trendLabel}; aplicar contenção imediata.`
+  }
+
+  if (input.riskLevel === 'warning') {
+    return `Sinal de atenção em ${input.latestStatus} com gap ${gapLabel}, tendência ${trendLabel} e drift retry+waiting ${retryWaitingTrendLabel}; ajustar com guardrail.`
+  }
+
+  if (input.latestStatus === 'below_target' && input.stableStreak > 0) {
+    return `Estabilidade sustentada por ${input.stableStreak} dia(s) com pressão abaixo do alvo; elegível para relaxamento controlado.`
+  }
+
+  return 'Função estável na faixa de alvo; manter rollout atual e monitorar tendência diária.'
 }
 
 async function getLegacySettingsDocData(documentId: string): Promise<Record<string, unknown>> {
@@ -1749,6 +1891,124 @@ export async function getPlatformFunctionTargetAdherenceDaily(
       rows,
     }
   })
+}
+
+export async function getPlatformFunctionRolloutPolicyPlan(
+  days = 14,
+  calibrationWindowDays = 7,
+  force = false,
+): Promise<PlatformFunctionRolloutPolicyPlan | null> {
+  const adherenceDaily = await getPlatformFunctionTargetAdherenceDaily(days, calibrationWindowDays, force)
+  if (adherenceDaily.length === 0) return null
+
+  const latestPoint = adherenceDaily[adherenceDaily.length - 1]
+  const historyByFunction = new Map<string, PlatformFunctionTargetAdherenceRow[]>()
+
+  for (const point of adherenceDaily) {
+    for (const row of point.rows) {
+      const history = historyByFunction.get(row.key) ?? []
+      history.push(row)
+      historyByFunction.set(row.key, history)
+    }
+  }
+
+  const rows = latestPoint.rows
+    .map((latestRow) => {
+      const history = historyByFunction.get(latestRow.key) ?? [latestRow]
+      const statusHistory = history.map(item => item.status)
+      const pressureGapHistory = history.map(item => item.pressure_gap)
+      const retryWaitingHistory = history.map(item => item.live_retry_rate + item.live_waiting_io_rate)
+      const aboveTargetStreak = computeStreakFromEnd(statusHistory, status => status === 'above_target')
+      const stableStreak = computeStreakFromEnd(statusHistory, status => status === 'aligned' || status === 'below_target')
+      const trendPressureGap = round4(computeLinearTrend(pressureGapHistory))
+      const trendRetryWaitingSum = round4(computeLinearTrend(retryWaitingHistory))
+      const guardrails = resolveFunctionRolloutGuardrails(latestRow.priority)
+
+      const riskLevel = resolveFunctionRolloutRiskLevel({
+        latestStatus: latestRow.status,
+        latestPressureGap: latestRow.pressure_gap,
+        trendPressureGap,
+        trendRetryWaitingSum,
+        aboveTargetStreak,
+      })
+
+      const recommendation = resolveFunctionRolloutRecommendation({
+        latestStatus: latestRow.status,
+        riskLevel,
+        aboveTargetStreak,
+        stableStreak,
+        trendPressureGap,
+        guardrails,
+      })
+
+      return {
+        key: latestRow.key,
+        label: latestRow.label,
+        priority: latestRow.priority,
+        latest_status: latestRow.status,
+        latest_pressure_gap: latestRow.pressure_gap,
+        trend_pressure_gap: trendPressureGap,
+        latest_retry_waiting_sum: round4(latestRow.live_retry_rate + latestRow.live_waiting_io_rate),
+        trend_retry_waiting_sum: trendRetryWaitingSum,
+        above_target_streak: aboveTargetStreak,
+        stable_streak: stableStreak,
+        risk_level: riskLevel,
+        recommendation,
+        guardrails,
+        rationale: buildFunctionRolloutRationale({
+          riskLevel,
+          latestStatus: latestRow.status,
+          aboveTargetStreak,
+          stableStreak,
+          latestPressureGap: latestRow.pressure_gap,
+          trendPressureGap,
+          trendRetryWaitingSum,
+        }),
+      } satisfies PlatformFunctionRolloutPolicyRow
+    })
+    .sort((left, right) => {
+      const riskScore = (value: PlatformFunctionRolloutRiskLevel) => {
+        if (value === 'critical') return 3
+        if (value === 'warning') return 2
+        return 1
+      }
+      const recommendationScore = (value: PlatformFunctionRolloutRecommendation) => {
+        if (value === 'tighten_now') return 4
+        if (value === 'tighten_guarded') return 3
+        if (value === 'hold') return 2
+        return 1
+      }
+
+      return (
+        riskScore(right.risk_level) - riskScore(left.risk_level)
+        || recommendationScore(right.recommendation) - recommendationScore(left.recommendation)
+        || right.latest_pressure_gap - left.latest_pressure_gap
+      )
+    })
+
+  const criticalCount = rows.filter(row => row.risk_level === 'critical').length
+  const warningCount = rows.filter(row => row.risk_level === 'warning').length
+  const stableCount = rows.filter(row => row.risk_level === 'stable').length
+  const tightenNowCount = rows.filter(row => row.recommendation === 'tighten_now').length
+  const tightenGuardedCount = rows.filter(row => row.recommendation === 'tighten_guarded').length
+  const holdCount = rows.filter(row => row.recommendation === 'hold').length
+  const relaxGuardedCount = rows.filter(row => row.recommendation === 'relax_guarded').length
+
+  return {
+    days: adherenceDaily.length,
+    calibration_window_days: Math.max(3, Math.min(30, Math.floor(calibrationWindowDays))),
+    total_functions_observed: latestPoint.total_functions_observed,
+    total_functions_with_target: latestPoint.total_functions_with_target,
+    coverage_rate: latestPoint.coverage_rate,
+    critical_count: criticalCount,
+    warning_count: warningCount,
+    stable_count: stableCount,
+    tighten_now_count: tightenNowCount,
+    tighten_guarded_count: tightenGuardedCount,
+    hold_count: holdCount,
+    relax_guarded_count: relaxGuardedCount,
+    rows,
+  }
 }
 
 export type NotebookSearchMemoryBackfillReport = {
