@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-301 IMPLEMENTADAS
+## Status Geral: Etapas 1-305 IMPLEMENTADAS
+
+### Etapas 302-305 — Closeout Operacional da Wave 35 (Release One-shot) ✅
+- **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`
+- Etapa 302: trilha de Git da wave confirmada no `main` com commit/push funcional `cf5b673` (comparativo diário por função), mantendo base remota alinhada antes do fechamento de release.
+- Etapa 303: release one-shot disparado em `release-web.yml` (run `24919036006`) no HEAD `cf5b6736331bce1b57f162cda2cb6d8a388723c0` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
+- Etapa 304: quality gates e deploys confirmados em sucesso na mesma run: frontend quality (`72976871261`), functions quality (`72976871264`), unit tests (`72976871272`), lint (`72976871275`), source guardrails (`72976871279`), Firebase production (`72976938644`), Pages build (`72976938671`), Pages deploy (`72977011670`) e release summary (`72977113533`); redesign V2 mantido como skip por input (`72976938808`).
+- Etapa 305: fechamento final de governança/index/cache/handoff sincronizado com IDs reais da run `24919036006`, preservando o pacote de continuidade cross-platform para o próximo ciclo.
 
 ### Etapas 298-301 — Comparativo Diário por Função (Wave 35) ✅
 - **Arquivos**: `frontend/src/lib/firestore-types.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `docs/PLANO.md`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/MANIFEST.json`

@@ -2,6 +2,23 @@
 
 Last update: 2026-04-25
 
+## Latest One-shot Validation (Wave 35 — 2026-04-25)
+- release-web run `24919036006`: success
+- Head commit: `cf5b673`
+- Quality gates: success (frontend quality `72976871261`, functions quality `72976871264`, unit tests `72976871272`, lint `72976871275`, source guardrails `72976871279`)
+- Deploy Firebase production: success (`job 72976938644`)
+- Deploy GitHub Pages / build: success (`job 72976938671`)
+- Deploy GitHub Pages / deploy: success (`job 72977011670`)
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72976938808`)
+- Release summary: success (`job 72977113533`)
+
+## Release Entry Points
+- .github/workflows/release-web.yml
+- .github/workflows/firebase-deploy.yml
+- .github/workflows/deploy-pages.yml
+- .github/workflows/firebase-redesign-v2.yml
+- .github/workflows/test.yml
+
 ## Latest One-shot Validation (Wave 34 — 2026-04-25)
 - release-web run `24917777336`: success
 - Head commit: `4cc2432`
@@ -11,13 +28,6 @@ Last update: 2026-04-25
 - Deploy GitHub Pages / deploy: success (`job 72973349766`)
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72973266829`)
 - Release summary: success (`job 72973480926`)
-
-## Release Entry Points
-- .github/workflows/release-web.yml
-- .github/workflows/firebase-deploy.yml
-- .github/workflows/deploy-pages.yml
-- .github/workflows/firebase-redesign-v2.yml
-- .github/workflows/test.yml
 
 ## Latest One-shot Validation (Wave 33 — 2026-04-24)
 - release-web run `24917396554`: success
@@ -49,14 +59,14 @@ Last update: 2026-04-25
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72772882473`)
 - Release summary: success (`job 72773344525`)
 
-## Current Local Validation (Wave 35 — 2026-04-24)
+## Current Local Validation (Wave 35 — 2026-04-25)
 - Scope: analytics comparativa diária por função, adicionando janela atual vs anterior por função no serviço e painel executivo no `PlatformAdminPanel` com deltas/recomendações de tuning fino
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 299 tests)
 - Frontend build: success
 - Functions build: success (`npm run build`)
-- Release dispatch: pending Wave 35 closeout (latest stable one-shot remains run `24917777336`)
-- Docs closeout sync: in progress (planning/status/index/manifest updated; cache/handoff after release IDs)
+- Release dispatch: completed (`release-web.yml` run `24919036006`)
+- Docs closeout sync: completed (planning/status/index/manifest/cache/handoff synchronized with final IDs)
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs

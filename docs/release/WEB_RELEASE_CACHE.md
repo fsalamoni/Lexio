@@ -21,6 +21,8 @@ Last update: 2026-04-25
 - Wave 33 release closeout: completed (run 24917396554 success)
 - Wave 34 daily execution-state comparison: completed (local validation)
 - Wave 34 release closeout: completed (run 24917777336 success)
+- Wave 35 daily function-window comparison: completed (local validation)
+- Wave 35 release closeout: completed (run 24919036006 success)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -55,11 +57,13 @@ Last update: 2026-04-25
 - Release workflow dispatch (wave33): completed (release-web.yml run 24917396554 success)
 - Wave 34 commit + push: completed (`4cc2432`)
 - Release workflow dispatch (wave34): completed (release-web.yml run 24917777336 success)
+- Wave 35 commit + push: completed (`cf5b673`)
+- Release workflow dispatch (wave35): completed (release-web.yml run 24919036006 success)
 
 ## Current Wave Cache (2026-04-25)
-- Wave tag: wave34-execution-state-daily-comparison
-- Scope: comparação diária por `execution_state` na governança admin, com agregações de tendência diária + janela atual vs anterior no serviço e recomendações acionáveis orientadas por drift no `PlatformAdminPanel`.
-- Files touched (wave34/code+docs):
+- Wave tag: wave35-function-window-comparison-release-closeout
+- Scope: comparação diária por função na governança admin, com janela atual vs anterior por função no serviço, tuning fino por hotspots no `PlatformAdminPanel` e trilha one-shot concluída com IDs reais.
+- Files touched (wave35/code+docs):
 	- frontend/src/lib/firestore-types.ts
 	- frontend/src/lib/firestore-service.ts
 	- frontend/src/pages/PlatformAdminPanel.tsx
@@ -76,18 +80,28 @@ Last update: 2026-04-25
 - frontend build: completed
 - frontend tests result: 38 files, 299 tests passed
 - functions build: completed (`npm run build`)
-- release-web dispatch (wave34): completed (run 24917777336)
-- Quality gates (wave34): success (lint `72973180460`, functions `72973180461`, frontend `72973180463`, unit tests `72973180467`, source guardrails `72973180468`)
-- Deploy Firebase production (wave34): completed (job 72973266685)
-- Deploy GitHub Pages / build (wave34): completed (job 72973266761)
-- Deploy GitHub Pages / deploy (wave34): completed (job 72973349766)
-- Release summary (wave34): completed (job 72973480926)
-- Deploy redesign V2 (wave34): skipped by input (job 72973266829)
+- release-web dispatch (wave35): completed (run 24919036006)
+- Quality gates (wave35): success (frontend `72976871261`, functions `72976871264`, unit tests `72976871272`, lint `72976871275`, source guardrails `72976871279`)
+- Deploy Firebase production (wave35): completed (job 72976938644)
+- Deploy GitHub Pages / build (wave35): completed (job 72976938671)
+- Deploy GitHub Pages / deploy (wave35): completed (job 72977011670)
+- Release summary (wave35): completed (job 72977113533)
+- Deploy redesign V2 (wave35): skipped by input (job 72976938808)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 34 closeout completed (git flow + release lane fully executed).
+- None. Wave 35 closeout completed (git flow + release lane fully executed).
+
+## Wave 35 Release Outcome
+- release-web dispatch (run 24919036006): success.
+- Quality gates: success.
+- Deploy Firebase production (job 72976938644): success.
+- Deploy GitHub Pages / build (job 72976938671): success.
+- Deploy GitHub Pages / deploy (job 72977011670): success.
+- Deploy redesign V2 (job 72976938808): skipped by input (`deploy_redesign_v2=false`).
+- Release summary (job 72977113533): success.
+- Key verification: comparativo diário por função (janela atual/anterior, deltas de custo/latência/retry/fallback/waiting I/O e recomendações por hotspot) foi promovido com sucesso no painel admin, mantendo a demonstração operacional dos agentes sem regressões de qualidade/deploy.
 
 ## Wave 34 Release Outcome
 - release-web dispatch (run 24917777336): success.
