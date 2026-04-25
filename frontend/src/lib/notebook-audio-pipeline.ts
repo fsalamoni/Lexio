@@ -13,6 +13,10 @@ import { callLLMWithFallback, type LLMResult } from './llm-client'
 import { loadResearchNotebookModels, validateScopedAgentModels } from './model-config'
 import type { AudioSegment } from './artifact-parsers'
 import { generateTTSViaOpenRouter, type TTSResult } from './tts-client'
+import {
+  getRuntimeConcurrencyHints,
+  resolveAdaptiveConcurrencyWithDiagnostics,
+} from './runtime-concurrency'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -56,6 +60,9 @@ export interface SynthesizeAudioFromScriptResult {
   chunkCount: number
   segmentCount: number
 }
+
+const DEFAULT_AUDIO_TTS_BATCH_CONCURRENCY = 2
+const MAX_AUDIO_TTS_BATCH_CONCURRENCY = 3
 
 // ── Script generation ───────────────────────────────────────────────────────
 
@@ -213,20 +220,48 @@ export async function synthesizeAudioFromScript(
     throw new Error('Não foi possível gerar blocos de áudio para TTS.')
   }
 
-  const audioBlobs: Blob[] = []
-  for (let i = 0; i < chunks.length; i++) {
-    onProgress?.('Gerando áudio literal...', `Parte ${i + 1} de ${chunks.length}`)
-    const ttsResult: TTSResult = await generateTTSViaOpenRouter({
-      apiKey: input.apiKey,
-      text: chunks[i],
-      voice: input.voice || 'nova',
-      model: input.model || 'openai/tts-1-hd',
-    })
-    audioBlobs.push(ttsResult.audioBlob)
+  const runtimeHints = getRuntimeConcurrencyHints()
+  const concurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
+    envValue: import.meta.env.VITE_AUDIO_TTS_BATCH_CONCURRENCY as string | undefined,
+    fallback: DEFAULT_AUDIO_TTS_BATCH_CONCURRENCY,
+    min: 1,
+    max: MAX_AUDIO_TTS_BATCH_CONCURRENCY,
+    hints: runtimeHints,
+  })
+  const workerCount = Math.max(1, Math.min(concurrencyDiagnostics.resolved, chunks.length))
+  const audioBlobsByIndex: Array<Blob | null> = new Array(chunks.length).fill(null)
 
-    if (i < chunks.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 500))
+  let nextChunkIndex = 0
+  let firstChunkError: unknown = null
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const chunkIndex = nextChunkIndex++
+      if (chunkIndex >= chunks.length) return
+      if (firstChunkError) return
+
+      try {
+        onProgress?.('Gerando áudio...', `Parte ${chunkIndex + 1} de ${chunks.length}`)
+        const ttsResult: TTSResult = await generateTTSViaOpenRouter({
+          apiKey: input.apiKey,
+          text: chunks[chunkIndex],
+          voice: input.voice || 'nova',
+          model: input.model || 'openai/tts-1-hd',
+        })
+        audioBlobsByIndex[chunkIndex] = ttsResult.audioBlob
+      } catch (err) {
+        if (!firstChunkError) firstChunkError = err
+      }
     }
+  }))
+
+  if (firstChunkError) {
+    throw firstChunkError
+  }
+
+  const audioBlobs = audioBlobsByIndex.filter((blob): blob is Blob => Boolean(blob))
+  if (audioBlobs.length !== chunks.length) {
+    throw new Error('Falha ao sintetizar todas as partes de áudio.')
   }
 
   const mimeType = audioBlobs[0]?.type || 'audio/mpeg'
@@ -297,51 +332,18 @@ export async function generateAudioOverview(
     onProgress?.('Gerando áudio...', 'Convertendo texto em fala via TTS')
 
     try {
-      // Combine all narration segments into one text for TTS
-      const narrationText = script.segments
-        .filter(s => s.type === 'narracao' && s.text.trim())
-        .map(s => {
-          const prefix = s.speaker ? `${s.speaker}: ` : ''
-          return `${prefix}${s.text}`
-        })
-        .join('\n\n')
+      const synthesis = await synthesizeAudioFromScript(
+        {
+          apiKey: input.apiKey,
+          rawScriptContent: JSON.stringify(script),
+          voice: 'nova',
+          model: 'openai/tts-1-hd',
+        },
+        onProgress,
+      )
 
-      if (narrationText.length > 50) {
-        // For long texts, split into chunks (TTS APIs have limits)
-        const maxChunkSize = 4000
-        const chunks: string[] = []
-        let current = ''
-
-        for (const sentence of narrationText.split(/(?<=[.!?])\s+/)) {
-          if (current.length + sentence.length > maxChunkSize && current.length > 0) {
-            chunks.push(current)
-            current = sentence
-          } else {
-            current += (current ? ' ' : '') + sentence
-          }
-        }
-        if (current) chunks.push(current)
-
-        const audioBlobs: Blob[] = []
-        for (let i = 0; i < chunks.length; i++) {
-          onProgress?.('Gerando áudio...', `Parte ${i + 1} de ${chunks.length}`)
-          const ttsResult: TTSResult = await generateTTSViaOpenRouter({
-            apiKey: input.apiKey,
-            text: chunks[i],
-            voice: 'nova',
-            model: 'openai/tts-1-hd',
-          })
-          audioBlobs.push(ttsResult.audioBlob)
-          // Brief pause between TTS calls
-          if (i < chunks.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500))
-          }
-        }
-
-        // Combine audio blobs
-        result.audioBlob = new Blob(audioBlobs, { type: 'audio/mpeg' })
-        onProgress?.('Áudio gerado!', `${chunks.length} partes combinadas`)
-      }
+      result.audioBlob = synthesis.audioBlob
+      onProgress?.('Áudio gerado!', `${synthesis.chunkCount} partes combinadas`)
     } catch (err) {
       // TTS failure is non-fatal — user still gets the script
       console.warn('TTS generation failed:', err)

@@ -7,6 +7,12 @@ import {
   validateScopedAgentModels,
 } from './model-config'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
+import {
+  formatAdaptiveConcurrency,
+  formatRuntimeHints,
+  getRuntimeConcurrencyHints,
+  resolveAdaptiveConcurrencyWithDiagnostics,
+} from './runtime-concurrency'
 import { renderPresentationSlidePoster } from './notebook-visual-artifact-renderer'
 import type {
   StudioPipelineInput,
@@ -34,6 +40,9 @@ export interface PresentationMediaGenerationResult {
   slideVisuals: GeneratedPresentationSlideVisual[]
   executions: StudioStepExecution[]
 }
+
+const DEFAULT_PRESENTATION_IMAGE_BATCH_CONCURRENCY = 2
+const MAX_PRESENTATION_IMAGE_BATCH_CONCURRENCY = 4
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
@@ -242,17 +251,32 @@ export async function generatePresentationMediaAssets(
   const models = await loadPresentationPipelineModels()
   await validateScopedAgentModels('presentation_pipeline_models', models)
   const imageModel = models.pres_image_generator || DEFAULT_IMAGE_MODEL
+  const runtimeHints = getRuntimeConcurrencyHints()
+  const imageConcurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
+    envValue: import.meta.env.VITE_PRESENTATION_IMAGE_BATCH_CONCURRENCY as string | undefined,
+    fallback: DEFAULT_PRESENTATION_IMAGE_BATCH_CONCURRENCY,
+    min: 1,
+    max: MAX_PRESENTATION_IMAGE_BATCH_CONCURRENCY,
+    hints: runtimeHints,
+  })
+  const imageRuntimeMeta = `${formatAdaptiveConcurrency(imageConcurrencyDiagnostics)} | ${formatRuntimeHints(runtimeHints)}`
+  const resolvedImageConcurrency = Math.max(1, Math.min(imageConcurrencyDiagnostics.resolved, parsed.data.slides.length || 1))
 
   const slideVisuals: GeneratedPresentationSlideVisual[] = []
   const executions: StudioStepExecution[] = []
+  const slideVisualsByIndex: Array<GeneratedPresentationSlideVisual | null> = new Array(parsed.data.slides.length).fill(null)
+  const executionsByIndex: Array<StudioStepExecution | null> = new Array(parsed.data.slides.length).fill(null)
 
-  for (let index = 0; index < parsed.data.slides.length; index++) {
+  let nextSlideIndex = 0
+
+  const processSlide = async (index: number): Promise<void> => {
     throwIfAborted(signal)
     const slide = parsed.data.slides[index]
     const renderStartedAt = Date.now()
     const stepLabel = `Gerando visual do slide ${index + 1} de ${parsed.data.slides.length}…`
     onProgress?.(index + 1, parsed.data.slides.length, stepLabel, {
       executionState: 'waiting_io',
+      stageMeta: imageRuntimeMeta,
     })
 
     let composed
@@ -299,15 +323,47 @@ export async function generatePresentationMediaAssets(
       }
     }
 
-    slideVisuals.push({
+    slideVisualsByIndex[index] = {
       slideNumber: slide.number,
       blob: composed.blob,
       mimeType: composed.mimeType,
       extension: composed.extension,
       model: execution.model,
       costUsd: execution.cost_usd,
+    }
+    executionsByIndex[index] = execution
+
+    const modelLabel = execution.model.split('/').pop() || execution.model
+    const completionMetaParts = [
+      modelLabel,
+      `${Math.max(1, Math.round(execution.duration_ms / 1000))}s`,
+      imageRuntimeMeta,
+    ]
+    if (execution.cost_usd > 0) completionMetaParts.splice(2, 0, formatCostBadge(execution.cost_usd))
+
+    onProgress?.(index + 1, parsed.data.slides.length, `Visual do slide ${index + 1} concluído.`, {
+      executionState: 'running',
+      stageMeta: completionMetaParts.join(' • '),
+      costUsd: execution.cost_usd,
+      durationMs: execution.duration_ms,
     })
-    executions.push(execution)
+  }
+
+  const workers = Array.from({ length: resolvedImageConcurrency }, async () => {
+    while (true) {
+      const index = nextSlideIndex++
+      if (index >= parsed.data.slides.length) return
+      await processSlide(index)
+    }
+  })
+
+  await Promise.all(workers)
+
+  for (const visual of slideVisualsByIndex) {
+    if (visual) slideVisuals.push(visual)
+  }
+  for (const execution of executionsByIndex) {
+    if (execution) executions.push(execution)
   }
 
   return {

@@ -18,7 +18,7 @@ import {
   type QueryDocumentSnapshot,
   type QueryConstraint,
 } from 'firebase/firestore'
-import { firestore, IS_FIREBASE } from './firebase'
+import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import { DEFAULT_DOC_STRUCTURES } from './document-structures'
 import {
@@ -133,6 +133,18 @@ function ensureFirestore() {
     throw new Error('Firestore não está configurado')
   }
   return firestore
+}
+
+function resolveEffectiveUid(uid: string): string {
+  const requestedUid = String(uid || '').trim()
+  const authUid = firebaseAuth?.currentUser?.uid?.trim() || ''
+
+  if (authUid && requestedUid && authUid !== requestedUid) {
+    console.warn(`[Firestore UID Sync] Using authenticated uid (${authUid}) instead of stale requested uid (${requestedUid}).`)
+    return authUid
+  }
+
+  return requestedUid || authUid || uid
 }
 
 function normalizeFirestoreDocumentId(value: string): string {
@@ -262,6 +274,56 @@ function getErrorMessage(error: unknown) {
     return error.message
   }
   return 'Erro desconhecido'
+}
+
+const RETRYABLE_FIRESTORE_CODES = new Set([
+  'unauthenticated',
+  'permission-denied',
+  'unavailable',
+  'deadline-exceeded',
+  'aborted',
+  'resource-exhausted',
+  'failed-precondition',
+])
+
+function getFirebaseErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null
+  if ('code' in error && typeof error.code === 'string') {
+    return error.code.replace(/^firestore\//, '')
+  }
+  return null
+}
+
+function isRetryableFirestoreError(error: unknown): boolean {
+  const code = getFirebaseErrorCode(error)
+  return code ? RETRYABLE_FIRESTORE_CODES.has(code) : false
+}
+
+async function refreshCurrentUserToken(): Promise<void> {
+  const currentUser = firebaseAuth?.currentUser
+  if (!currentUser) return
+  try {
+    await currentUser.getIdToken(true)
+  } catch (error) {
+    console.warn('Firestore token refresh failed:', getErrorMessage(error))
+  }
+}
+
+async function withFirestoreRetry<T>(
+  operation: () => Promise<T>,
+  contextLabel: string,
+): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (!isRetryableFirestoreError(error)) {
+      throw error
+    }
+
+    console.warn(`[Firestore Retry] ${contextLabel}: first attempt failed, retrying after token refresh (${getErrorMessage(error)})`)
+    await refreshCurrentUserToken()
+    return operation()
+  }
 }
 
 function getRefUserId(refPath: string): string | null {
@@ -851,8 +913,9 @@ function sortDocuments(items: DocumentData[], sortDir?: string) {
 
 export async function getProfile(uid: string): Promise<ProfileData> {
   const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'profile', 'data')
-  const snap = await getDoc(ref)
+  const effectiveUid = resolveEffectiveUid(uid)
+  const ref = doc(db, 'users', effectiveUid, 'profile', 'data')
+  const snap = await withFirestoreRetry(() => getDoc(ref), 'getProfile')
   if (!snap.exists()) return {}
   return snap.data() as ProfileData
 }
@@ -1037,7 +1100,8 @@ export async function listDocuments(uid: string, opts?: {
   sortDir?: string
 }): Promise<{ items: DocumentData[]; total: number }> {
   const db = ensureFirestore()
-  const colRef = collection(db, 'users', uid, 'documents')
+  const effectiveUid = resolveEffectiveUid(uid)
+  const colRef = collection(db, 'users', effectiveUid, 'documents')
 
   // Build query constraints
   const constraints: QueryConstraint[] = []
@@ -1057,16 +1121,13 @@ export async function listDocuments(uid: string, opts?: {
 
   const q = query(colRef, ...constraints)
   try {
-    const snap = await getDocs(q)
+    const snap = await withFirestoreRetry(() => getDocs(q), 'listDocuments.query')
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentData))
     return { items, total: items.length }
   } catch (error) {
-    if (!(opts?.status || opts?.document_type_id)) {
-      throw error
-    }
     try {
-      console.warn('Filtered Firestore document query failed; using client-side fallback:', getErrorMessage(error))
-      const fallbackSnap = await getDocs(colRef)
+      console.warn('Firestore document query failed; using client-side fallback:', getErrorMessage(error))
+      const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listDocuments.fallback')
       const filteredItems = sortDocuments(
         fallbackSnap.docs
           .map(d => ({ id: d.id, ...d.data() } as DocumentData))
@@ -2815,19 +2876,40 @@ export async function listAcervoDocuments(
   opts: { limit?: number } = {},
 ): Promise<{ items: AcervoDocumentData[]; total: number }> {
   const db = ensureFirestore()
+  const effectiveUid = resolveEffectiveUid(uid)
   const constraints: QueryConstraint[] = [orderBy('created_at', 'desc')]
   if (opts.limit) constraints.push(limit(opts.limit))
-  const snap = await getDocs(query(collection(db, 'users', uid, 'acervo'), ...constraints))
-  const items = snap.docs.map(d => {
-    const raw = d.data() as AcervoDocumentData
-    return {
-      ...raw,
-      id: d.id,
-      // Resolve structured JSON to plain text for consumers that expect plain text
-      text_content: resolveTextContent(raw.text_content || ''),
-    }
-  })
-  return { items, total: items.length }
+  const colRef = collection(db, 'users', effectiveUid, 'acervo')
+  try {
+    const snap = await withFirestoreRetry(
+      () => getDocs(query(colRef, ...constraints)),
+      'listAcervoDocuments.query',
+    )
+    const items = snap.docs.map(d => {
+      const raw = d.data() as AcervoDocumentData
+      return {
+        ...raw,
+        id: d.id,
+        // Resolve structured JSON to plain text for consumers that expect plain text
+        text_content: resolveTextContent(raw.text_content || ''),
+      }
+    })
+    return { items, total: items.length }
+  } catch (error) {
+    console.warn('Firestore acervo query failed; using client-side fallback:', getErrorMessage(error))
+    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listAcervoDocuments.fallback')
+    let items = fallbackSnap.docs.map(d => {
+      const raw = d.data() as AcervoDocumentData
+      return {
+        ...raw,
+        id: d.id,
+        text_content: resolveTextContent(raw.text_content || ''),
+      }
+    })
+    items = items.sort((a, b) => getDocumentCreatedAtValue(b.created_at) - getDocumentCreatedAtValue(a.created_at))
+    if (opts.limit) items = items.slice(0, opts.limit)
+    return { items, total: items.length }
+  }
 }
 
 /**
@@ -3116,8 +3198,9 @@ export async function getSettings(): Promise<Record<string, unknown>> {
 
 export async function getUserSettings(uid: string): Promise<UserSettingsData> {
   const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'settings', 'preferences')
-  const snap = await getDoc(ref)
+  const effectiveUid = resolveEffectiveUid(uid)
+  const ref = doc(db, 'users', effectiveUid, 'settings', 'preferences')
+  const snap = await withFirestoreRetry(() => getDoc(ref), 'getUserSettings')
   if (!snap.exists()) return {}
   return snap.data() as UserSettingsData
 }
@@ -3229,10 +3312,22 @@ export async function getLastThesisAnalysisSession(
  */
 export async function listResearchNotebooks(uid: string): Promise<{ items: ResearchNotebookData[] }> {
   const db = ensureFirestore()
-  const snap = await getDocs(
-    query(collection(db, 'users', uid, 'research_notebooks'), orderBy('created_at', 'desc')),
-  )
-  return { items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ResearchNotebookData)) }
+  const effectiveUid = resolveEffectiveUid(uid)
+  const colRef = collection(db, 'users', effectiveUid, 'research_notebooks')
+  try {
+    const snap = await withFirestoreRetry(
+      () => getDocs(query(colRef, orderBy('created_at', 'desc'))),
+      'listResearchNotebooks.query',
+    )
+    return { items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ResearchNotebookData)) }
+  } catch (error) {
+    console.warn('Firestore notebook query failed; using client-side fallback:', getErrorMessage(error))
+    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listResearchNotebooks.fallback')
+    const items = fallbackSnap.docs
+      .map(d => ({ id: d.id, ...d.data() } as ResearchNotebookData))
+      .sort((a, b) => getDocumentCreatedAtValue(b.created_at) - getDocumentCreatedAtValue(a.created_at))
+    return { items }
+  }
 }
 
 // ── Firestore notebook size safety ────────────────────────────────────────────
@@ -3449,13 +3544,14 @@ async function saveNotebookSearchMemory(
  */
 export async function getResearchNotebook(uid: string, notebookId: string): Promise<ResearchNotebookData | null> {
   const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
-  const snap = await getDoc(ref)
+  const effectiveUid = resolveEffectiveUid(uid)
+  const ref = doc(db, 'users', effectiveUid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
+  const snap = await withFirestoreRetry(() => getDoc(ref), 'getResearchNotebook')
   if (!snap.exists()) return null
   const notebook = { id: snap.id, ...snap.data() } as ResearchNotebookData
 
   try {
-    const memory = await getNotebookSearchMemory(uid, snap.id)
+    const memory = await getNotebookSearchMemory(effectiveUid, snap.id)
     if (memory) {
       return {
         ...notebook,
@@ -3468,7 +3564,7 @@ export async function getResearchNotebook(uid: string, notebookId: string): Prom
     // dedicated notebook memory storage without changing current API contracts.
     if ((notebook.research_audits && notebook.research_audits.length > 0)
       || (notebook.saved_searches && notebook.saved_searches.length > 0)) {
-      await saveNotebookSearchMemory(uid, snap.id, {
+      await saveNotebookSearchMemory(effectiveUid, snap.id, {
         research_audits: notebook.research_audits ?? [],
         saved_searches: notebook.saved_searches ?? [],
         migrated_from_notebook_doc_at: new Date().toISOString(),

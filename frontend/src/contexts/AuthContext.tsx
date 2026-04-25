@@ -59,7 +59,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (fbUser) {
         const newToken = await fbUser.getIdToken()
         localStorage.setItem('lexio_token', newToken)
+        localStorage.setItem('lexio_user_id', fbUser.uid)
         setToken(newToken)
+        setUserId(fbUser.uid)
 
         if (firestore) {
           try {
@@ -68,16 +70,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               const userData = userSnap.data() as { role?: string; full_name?: string }
               const nextRole = userData.role ?? 'user'
               const nextName = userData.full_name ?? fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
-              localStorage.setItem('lexio_user_id', fbUser.uid)
               localStorage.setItem('lexio_role', nextRole)
               localStorage.setItem('lexio_full_name', nextName)
-              setUserId(fbUser.uid)
               setRole(nextRole)
+              setFullName(nextName)
+            } else {
+              const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
+              localStorage.setItem('lexio_role', 'user')
+              localStorage.setItem('lexio_full_name', nextName)
+              setRole('user')
               setFullName(nextName)
             }
           } catch {
-            localStorage.setItem('lexio_user_id', fbUser.uid)
-            setUserId(fbUser.uid)
+            const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
+            if (!localStorage.getItem('lexio_role')) {
+              localStorage.setItem('lexio_role', 'user')
+            }
+            localStorage.setItem('lexio_full_name', nextName)
+            setRole((prev) => prev ?? 'user')
+            setFullName(nextName)
           }
         }
       } else {

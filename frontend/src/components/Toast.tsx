@@ -7,7 +7,7 @@
  *   toast.error('Erro ao carregar')
  *   toast.info('Indexando...')
  */
-import { createContext, useCallback, useContext, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { CheckCircle, XCircle, Info, AlertTriangle, X } from 'lucide-react'
 
 type ToastType = 'success' | 'error' | 'info' | 'warning'
@@ -68,12 +68,28 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     timers.current.set(id, t)
   }, [dismiss])
 
-  const ctx: ToastContextType = {
-    success: (t, d) => add('success', t, d),
-    error:   (t, d) => add('error',   t, d),
-    info:    (t, d) => add('info',    t, d),
-    warning: (t, d) => add('warning', t, d),
-  }
+  const success = useCallback((title: string, description?: string) => {
+    add('success', title, description)
+  }, [add])
+
+  const error = useCallback((title: string, description?: string) => {
+    add('error', title, description)
+  }, [add])
+
+  const info = useCallback((title: string, description?: string) => {
+    add('info', title, description)
+  }, [add])
+
+  const warning = useCallback((title: string, description?: string) => {
+    add('warning', title, description)
+  }, [add])
+
+  const ctx = useMemo<ToastContextType>(() => ({
+    success,
+    error,
+    info,
+    warning,
+  }), [success, error, info, warning])
 
   return (
     <ToastContext.Provider value={ctx}>

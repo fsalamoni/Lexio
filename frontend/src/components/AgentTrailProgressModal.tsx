@@ -1,4 +1,4 @@
-import { Loader2, CheckCircle2, AlertCircle, AlertTriangle, Circle, Activity, Settings } from 'lucide-react'
+import { Loader2, CheckCircle2, AlertCircle, AlertTriangle, Circle, Activity, Settings, UserRound, MoveRight } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import DraggablePanel from './DraggablePanel'
@@ -45,6 +45,11 @@ function StepStatusIcon({ status }: { status: TrailStepStatus }) {
   return <Circle className="w-4 h-4" style={{ color: 'var(--v2-line-soft)' }} />
 }
 
+function getEffectivePercent(percent: number, isComplete: boolean): number {
+  const safePercent = Math.max(0, Math.min(100, percent))
+  return isComplete ? 100 : Math.min(99, safePercent)
+}
+
 export default function AgentTrailProgressModal({
   isOpen,
   title,
@@ -66,15 +71,21 @@ export default function AgentTrailProgressModal({
 
   if (!isOpen) return null
 
-  const effectivePercent = Math.max(0, Math.min(100, isComplete ? 100 : percent))
+  const effectivePercent = getEffectivePercent(percent, isComplete)
   const activeStep = steps.find(step => step.status === 'active')
+  const activeStepIndex = steps.findIndex(step => step.status === 'active')
+  const fallbackActiveIndex = steps.findIndex(step => step.status === 'pending')
+  const resolvedActiveIndex = activeStepIndex >= 0 ? activeStepIndex : fallbackActiveIndex
+  const previousDesk = resolvedActiveIndex > 0 ? steps[resolvedActiveIndex - 1] : undefined
+  const activeDesk = resolvedActiveIndex >= 0 ? steps[resolvedActiveIndex] : undefined
+  const incomingDesk = resolvedActiveIndex >= 0 && resolvedActiveIndex < steps.length - 1
+    ? steps[resolvedActiveIndex + 1]
+    : undefined
   const nextStep = activeStep
     ? steps[steps.findIndex(step => step.key === activeStep.key) + 1]
     : steps.find(step => step.status === 'pending')
   const completedCount = steps.filter(step => step.status === 'completed').length
   const totalCount = steps.length || 1
-  const normalizedProgress = effectivePercent / 100
-  const stackCount = isComplete ? 0 : Math.max(1, Math.round((1 - normalizedProgress) * 6))
   const traversedPath = steps
     .filter(step => step.status === 'completed' || step.status === 'active')
     .map(step => step.label)
@@ -92,6 +103,22 @@ export default function AgentTrailProgressModal({
       closeOnEscape={canClose}
     >
       <div className="h-full flex flex-col" style={{ background: 'var(--v2-panel-strong)', fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)" }}>
+        <style>
+          {`@keyframes lexioDeskPulse {
+              0%, 100% { transform: translateY(0px); }
+              50% { transform: translateY(-4px); }
+            }
+            @keyframes lexioCourierMove {
+              0% { transform: translateX(0); opacity: 0.25; }
+              15% { opacity: 1; }
+              100% { transform: translateX(100%); opacity: 0.15; }
+            }
+            @keyframes lexioDeskGlow {
+              0%, 100% { box-shadow: 0 0 0 0 rgba(15,118,110,0.18); }
+              50% { box-shadow: 0 0 0 8px rgba(15,118,110,0); }
+            }`}
+        </style>
+
         <div className="px-4 sm:px-6 py-4" style={{ borderBottom: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.6)' }}>
           {subtitle && <p className="text-xs truncate" style={{ color: 'var(--v2-ink-faint)' }}>{subtitle}</p>}
 
@@ -106,16 +133,13 @@ export default function AgentTrailProgressModal({
             <span className="flex-1 truncate" style={{ color: 'var(--v2-ink-soft)' }}>{currentMessage}</span>
             <span className="font-semibold tabular-nums" style={{ color: 'var(--v2-accent-strong)' }}>{effectivePercent}%</span>
           </div>
+
           <div className="w-full rounded-full h-2 overflow-hidden" style={{ background: 'var(--v2-line-soft)' }}>
             <div
               className="h-2 rounded-full transition-all duration-500"
               style={{
                 width: `${effectivePercent}%`,
-                background: hasError
-                  ? 'rgb(239,68,68)'
-                  : isComplete
-                    ? 'var(--v2-accent-strong)'
-                    : 'var(--v2-accent-strong)',
+                background: hasError ? 'rgb(239,68,68)' : 'var(--v2-accent-strong)',
               }}
             />
           </div>
@@ -163,37 +187,102 @@ export default function AgentTrailProgressModal({
               </div>
 
               <div
-                className="w-full xl:w-auto flex-shrink-0 rounded-2xl px-4 py-3 min-w-0 xl:min-w-[210px]"
+                className="w-full xl:w-auto flex-shrink-0 rounded-2xl px-4 py-3 min-w-0 xl:min-w-[260px]"
                 style={{ border: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.9)' }}
               >
-                <div className="flex items-end justify-center gap-1 h-20">
-                  {Array.from({ length: stackCount }).map((_, index) => (
-                    <div
-                      key={index}
-                      className="w-6 rounded-sm transition-all duration-500"
-                      style={{
-                        height: `${28 + (stackCount - index) * 7}px`,
-                        transform: `translateY(${index * 2}px) rotate(${index % 2 === 0 ? -2 : 2}deg)`,
-                        border: '1px solid rgba(15,118,110,0.15)',
-                        background: 'linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(15,118,110,0.08))',
-                      }}
-                    />
-                  ))}
-                  {!isComplete && !hasError && (
-                    <div className="ml-2 flex h-20 w-14 items-end justify-center">
-                      <div
-                        className="relative flex h-16 w-12 items-end justify-center rounded-t-[16px] rounded-b-md"
-                        style={{ background: 'rgba(15,23,42,0.85)' }}
-                      >
-                        <div
-                          className="absolute -top-3 h-6 w-6 rounded-full"
-                          style={{ background: 'rgba(15,118,110,0.15)', border: '1px solid rgba(15,118,110,0.25)' }}
-                        />
-                        <div className="mb-2 h-7 w-8 rounded-md" style={{ background: 'var(--v2-accent-strong)' }} />
-                      </div>
+                <div className="relative rounded-xl border px-2.5 py-3" style={{ borderColor: 'rgba(15,118,110,0.2)', background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(240,253,250,0.9) 100%)' }}>
+                  {!isComplete && !hasError && activeDesk && incomingDesk && (
+                    <div className="pointer-events-none absolute left-[50%] top-[49%] h-px w-[28%]" style={{ background: 'linear-gradient(90deg, rgba(15,118,110,0.4), rgba(15,118,110,0.1))' }}>
+                      <span
+                        className="absolute -top-[3px] h-2 w-2 rounded-full"
+                        style={{
+                          background: 'var(--v2-accent-strong)',
+                          animation: 'lexioCourierMove 1.2s linear infinite',
+                        }}
+                      />
                     </div>
                   )}
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { key: 'previous', title: 'Mesa anterior', step: previousDesk, role: 'previous' as const },
+                      { key: 'active', title: 'Mesa atual', step: activeDesk, role: 'active' as const },
+                      { key: 'incoming', title: 'Próxima mesa', step: incomingDesk, role: 'incoming' as const },
+                    ].map(slot => {
+                      const isActiveDesk = slot.role === 'active' && !isComplete && !hasError
+                      const isIncomingDesk = slot.role === 'incoming' && !isComplete && !hasError && Boolean(slot.step)
+                      const isPreviousDesk = slot.role === 'previous' && Boolean(slot.step)
+
+                      return (
+                        <div key={slot.key} className="relative rounded-lg border px-2 py-2 min-h-[92px]" style={{
+                          borderColor: isActiveDesk ? 'rgba(15,118,110,0.55)' : 'rgba(148,163,184,0.28)',
+                          background: isActiveDesk
+                            ? 'linear-gradient(180deg, rgba(15,118,110,0.12), rgba(15,118,110,0.04))'
+                            : 'rgba(255,255,255,0.82)',
+                          animation: isActiveDesk ? 'lexioDeskGlow 1.8s ease-in-out infinite' : undefined,
+                        }}>
+                          <p className="text-[10px] uppercase tracking-wide font-semibold truncate" style={{ color: 'var(--v2-ink-faint)' }}>
+                            {slot.title}
+                          </p>
+                          <p className="mt-1 text-[11px] leading-tight min-h-[28px]" style={{ color: slot.step ? 'var(--v2-ink-soft)' : 'var(--v2-ink-faint)' }}>
+                            {slot.step?.label || 'Aguardando'}
+                          </p>
+
+                          <div className="mt-2 flex items-end justify-center h-9">
+                            <div
+                              className="relative h-9 w-10 rounded-t-lg rounded-b-sm border"
+                              style={{
+                                borderColor: 'rgba(15,23,42,0.2)',
+                                background: 'linear-gradient(180deg, rgba(15,23,42,0.78), rgba(30,41,59,0.88))',
+                              }}
+                            >
+                              <div className="absolute inset-x-1 bottom-1 h-1.5 rounded-sm" style={{ background: 'rgba(255,255,255,0.22)' }} />
+                            </div>
+                          </div>
+
+                          {isActiveDesk && (
+                            <div className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border p-1" style={{
+                              borderColor: 'rgba(15,118,110,0.35)',
+                              background: 'rgba(15,118,110,0.14)',
+                              animation: 'lexioDeskPulse 1.3s ease-in-out infinite',
+                            }}>
+                              <UserRound className="w-3.5 h-3.5" style={{ color: 'var(--v2-accent-strong)' }} />
+                            </div>
+                          )}
+
+                          {isIncomingDesk && (
+                            <div className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border p-1" style={{
+                              borderColor: 'rgba(14,116,144,0.3)',
+                              background: 'rgba(224,242,254,0.85)',
+                            }}>
+                              <MoveRight className="w-3.5 h-3.5" style={{ color: 'rgb(14,116,144)' }} />
+                            </div>
+                          )}
+
+                          {isPreviousDesk && !isActiveDesk && (
+                            <div className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border p-1" style={{
+                              borderColor: 'rgba(16,185,129,0.35)',
+                              background: 'rgba(209,250,229,0.8)',
+                            }}>
+                              <CheckCircle2 className="w-3.5 h-3.5" style={{ color: 'rgb(16,185,129)' }} />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <p className="mt-2 text-[11px] text-center" style={{ color: 'var(--v2-ink-faint)' }}>
+                    {isComplete
+                      ? 'Todos os agentes concluíram suas mesas.'
+                      : hasError
+                        ? 'Fluxo interrompido antes da próxima mesa.'
+                        : incomingDesk
+                          ? 'O agente atual está passando a vez para a próxima mesa.'
+                          : 'Agente atual finalizando a última mesa.'}
+                  </p>
                 </div>
+
                 <div className="mt-3 flex items-center justify-between text-[11px]" style={{ color: 'var(--v2-ink-faint)' }}>
                   <span>{completedCount}/{totalCount} etapas</span>
                   <span>{effectivePercent}%</span>
@@ -243,7 +332,6 @@ export default function AgentTrailProgressModal({
             ))}
           </div>
 
-          {/* Warning banner */}
           {warning && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
               <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
@@ -251,7 +339,6 @@ export default function AgentTrailProgressModal({
             </div>
           )}
 
-          {/* Settings hint for capability errors */}
           {settingsHint && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200">
               <Settings className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />

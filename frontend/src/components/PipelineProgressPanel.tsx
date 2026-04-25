@@ -107,6 +107,8 @@ export default function PipelineProgressPanel({
   resumeAction,
 }: Props) {
   const [expanded, setExpanded] = useState(true)
+  const safePercent = Math.max(0, Math.min(100, percent))
+  const displayPercent = isComplete ? 100 : Math.min(99, safePercent)
 
   const completedCount = agents.filter(a => a.status === 'completed').length
   const totalSteps = agents.length
@@ -156,7 +158,7 @@ export default function PipelineProgressPanel({
           </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0 self-end sm:self-auto">
-          <span className="text-sm font-semibold text-teal-600 tabular-nums">{percent}%</span>
+          <span className="text-sm font-semibold text-teal-600 tabular-nums">{displayPercent}%</span>
           {expanded
             ? <ChevronUp className="w-4 h-4 text-gray-400" />
             : <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -175,7 +177,7 @@ export default function PipelineProgressPanel({
                   ? 'bg-green-500'
                   : 'bg-gradient-to-r from-teal-500 to-teal-400'
             }`}
-            style={{ width: `${percent}%` }}
+            style={{ width: `${displayPercent}%` }}
           />
         </div>
       </div>

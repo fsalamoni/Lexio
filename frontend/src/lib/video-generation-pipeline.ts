@@ -1189,6 +1189,16 @@ Requisitos adicionais:
   if (wantMedia && scenes.length > 0) {
     const clipDuration = input.clipDurationSeconds || 8
     const clipPlannerModel = models.video_clip_planner || models.video_designer
+    const clipInterSceneDelayEnv = Number(import.meta.env.VITE_VIDEO_CLIP_INTER_SCENE_DELAY_MS as string | undefined)
+    const connectionType = mediaRuntimeHints.effectiveConnectionType ?? null
+    const defaultClipInterSceneDelayMs = mediaRuntimeHints.saveData || connectionType === 'slow-2g' || connectionType === '2g'
+      ? 450
+      : connectionType === '3g'
+        ? 250
+        : 120
+    const clipInterSceneDelayMs = Number.isFinite(clipInterSceneDelayEnv)
+      ? Math.max(0, Math.min(1000, Math.round(clipInterSceneDelayEnv)))
+      : defaultClipInterSceneDelayMs
     let previousClipContext = ''
 
     console.log(`[Video] Step 9: Subdividing ${scenes.length} scenes into clips (~${clipDuration}s each)`)
@@ -1314,9 +1324,9 @@ REQUISITOS OBRIGATÓRIOS:
         totalClipsPlanned += 1
       }
 
-      // Small delay between scene planning calls to respect rate limits
-      if (sceneIdx < scenes.length - 1) {
-        await sleep(500, signal)
+      // Keep a small adaptive gap between scene planning calls to avoid burst throttling.
+      if (sceneIdx < scenes.length - 1 && clipInterSceneDelayMs > 0) {
+        await sleep(clipInterSceneDelayMs, signal)
       }
     }
 

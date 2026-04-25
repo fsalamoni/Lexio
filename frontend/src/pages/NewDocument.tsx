@@ -103,13 +103,14 @@ export default function NewDocument() {
   // Handle progress updates from the generation service
   const handleProgress = useCallback((p: GenerationProgress) => {
     const now = Date.now()
+    const completed = p.phase === DOCUMENT_PIPELINE_COMPLETED_PHASE || p.executionState === 'completed'
 
     setPipelineAgents(prev => applyDocumentPipelineProgress(prev, p, agentTimers.current, now))
 
-    setPipelinePercent(p.percent)
+    setPipelinePercent(completed ? 100 : Math.min(99, Math.max(0, p.percent)))
     setPipelineMessage(p.message)
 
-    if (p.phase === DOCUMENT_PIPELINE_COMPLETED_PHASE) {
+    if (completed) {
       setPipelineAgents(prev =>
         prev.map(a =>
           a.status === 'active'

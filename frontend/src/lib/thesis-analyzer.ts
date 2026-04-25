@@ -16,6 +16,7 @@ import { callLLMWithFallback, TransientLLMError } from './llm-client'
 import { type ThesisData, type AcervoDocumentData } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord, type UsageSummary } from './cost-analytics'
 import { type ThesisAnalystModelMap, validateModelMap, THESIS_ANALYST_AGENT_DEFS } from './model-config'
+import { getRuntimeConcurrencyHints, resolveAdaptiveConcurrencyWithDiagnostics } from './runtime-concurrency'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -75,6 +76,9 @@ export interface ThesisAnalysisResult {
 }
 
 export type ProgressCallback = (agents: AgentProgress[]) => void
+
+const DEFAULT_THESIS_COMPILADOR_BATCH_CONCURRENCY = 2
+const MAX_THESIS_COMPILADOR_BATCH_CONCURRENCY = 4
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -435,58 +439,103 @@ export async function analyzeThesisBank(
 
   notify('thesis_compilador', 'running', `Compilando ${analysisMergeGroups.length} grupos...`)
 
-  const compiledGroups: Array<{
+  const compiledGroupsByIndex: Array<{
     source_ids: string[]
     source_titles: string[]
     compiled: {
       title: string; content: string; summary: string
       legal_area_id: string; tags?: string[]; quality_score?: number
     }
-  }> = []
+  } | null> = new Array(analysisMergeGroups.length).fill(null)
 
-  for (const group of analysisMergeGroups) {
-    const groupTheses = group.group_ids.map(id => thesisById.get(id)).filter((t): t is ThesisData => !!t)
-    if (groupTheses.length < 2) continue
+  const compiladorHints = getRuntimeConcurrencyHints()
+  const compiladorConcurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
+    envValue: import.meta.env.VITE_THESIS_COMPILADOR_BATCH_CONCURRENCY as string | undefined,
+    fallback: DEFAULT_THESIS_COMPILADOR_BATCH_CONCURRENCY,
+    min: 1,
+    max: MAX_THESIS_COMPILADOR_BATCH_CONCURRENCY,
+    hints: compiladorHints,
+  })
+  const compiladorWorkerCount = Math.max(1, Math.min(compiladorConcurrencyDiagnostics.resolved, analysisMergeGroups.length || 1))
 
-    try {
-      const versionsText = groupTheses.map((t, i) =>
-        `VERSÃO ${i + 1} — "${t.title}":\n${t.content.slice(0, 1200)}`
-      ).join('\n\n---\n\n')
+  let nextMergeIndex = 0
+  let completedMergeCalls = 0
+  let failedMergeCalls = 0
 
-      const res = await callLLMWithFallback(
-        apiKey,
-        COMPILADOR_SYSTEM,
-        `Compile as seguintes ${groupTheses.length} teses jurídicas em uma única tese superior:\n\n${versionsText}`,
-        modelMap['thesis_compilador'],
-        modelMap['thesis_compilador'],
-        2500,
-        0.15,
-      )
-      llmExecutions.push(createUsageExecutionRecord({
-        source_type: 'thesis_analysis',
-        source_id: sessionId,
-        created_at: now,
-        phase: 'thesis_compilador',
-        agent_name: 'Compilador',
-        model: res.model,
-        tokens_in: res.tokens_in,
-        tokens_out: res.tokens_out,
-        cost_usd: res.cost_usd,
-        duration_ms: res.duration_ms,
-      }))
-      const compiled = parseJsonObject(res.content) as typeof compiledGroups[0]['compiled']
-      compiledGroups.push({
-        source_ids: group.group_ids,
-        source_titles: groupTheses.map(t => t.title),
-        compiled,
-      })
-    } catch (err) {
-      console.warn(`Compilador failed for group ${group.group_ids}:`, err)
-      notify('thesis_compilador', 'running', `Erro em 1 grupo: ${agentErrorMessage(err)}`)
+  await Promise.all(Array.from({ length: compiladorWorkerCount }, async () => {
+    while (true) {
+      const groupIndex = nextMergeIndex++
+      if (groupIndex >= analysisMergeGroups.length) return
+
+      const group = analysisMergeGroups[groupIndex]
+      const groupTheses = group.group_ids.map(id => thesisById.get(id)).filter((t): t is ThesisData => !!t)
+
+      if (groupTheses.length < 2) {
+        completedMergeCalls += 1
+        continue
+      }
+
+      try {
+        const versionsText = groupTheses.map((t, i) =>
+          `VERSÃO ${i + 1} — "${t.title}":\n${t.content.slice(0, 1200)}`
+        ).join('\n\n---\n\n')
+
+        const res = await callLLMWithFallback(
+          apiKey,
+          COMPILADOR_SYSTEM,
+          `Compile as seguintes ${groupTheses.length} teses jurídicas em uma única tese superior:\n\n${versionsText}`,
+          modelMap['thesis_compilador'],
+          modelMap['thesis_compilador'],
+          2500,
+          0.15,
+        )
+        llmExecutions.push(createUsageExecutionRecord({
+          source_type: 'thesis_analysis',
+          source_id: sessionId,
+          created_at: now,
+          phase: 'thesis_compilador',
+          agent_name: 'Compilador',
+          model: res.model,
+          tokens_in: res.tokens_in,
+          tokens_out: res.tokens_out,
+          cost_usd: res.cost_usd,
+          duration_ms: res.duration_ms,
+        }))
+        const compiled = parseJsonObject(res.content) as {
+          title: string
+          content: string
+          summary: string
+          legal_area_id: string
+          tags?: string[]
+          quality_score?: number
+        }
+        compiledGroupsByIndex[groupIndex] = {
+          source_ids: group.group_ids,
+          source_titles: groupTheses.map(t => t.title),
+          compiled,
+        }
+      } catch (err) {
+        failedMergeCalls += 1
+        console.warn(`Compilador failed for group ${group.group_ids}:`, err)
+      } finally {
+        completedMergeCalls += 1
+        const successfulCalls = completedMergeCalls - failedMergeCalls
+        notify(
+          'thesis_compilador',
+          'running',
+          `Compilações prontas: ${successfulCalls}/${analysisMergeGroups.length}${failedMergeCalls > 0 ? ` (falhas: ${failedMergeCalls})` : ''}`,
+        )
+      }
     }
-  }
+  }))
 
-  notify('thesis_compilador', 'done', `${compiledGroups.length} compilações prontas`)
+  const compiledGroups = compiledGroupsByIndex.filter((group): group is NonNullable<typeof group> => group !== null)
+
+  notify(
+    'thesis_compilador',
+    'done',
+    `${compiledGroups.length} compilações prontas${failedMergeCalls > 0 ? ` (${failedMergeCalls} falhas)` : ''}`,
+  )
 
   // ── Agent 4: Curador de Lacunas ───────────────────────────────────────────────
 
