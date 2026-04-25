@@ -27,6 +27,8 @@ Last update: 2026-04-25
 - Wave 36 release closeout: completed (run 24919950308 success)
 - Wave 37 aderência diária live vs alvo por função: completed (local validation)
 - Wave 37 release closeout: completed (run 24930689755 success)
+- Wave 38 política progressiva por criticidade + guardrails preditivos: completed (local validation)
+- Wave 38 release closeout: completed (run 24933092299 success)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -67,12 +69,14 @@ Last update: 2026-04-25
 - Release workflow dispatch (wave36): completed (release-web.yml run 24919950308 success)
 - Wave 37 commit + push: completed (`db87300`)
 - Release workflow dispatch (wave37): completed (release-web.yml run 24930689755 success)
+- Wave 38 commit + push: completed (`f5cbf57`)
+- Release workflow dispatch (wave38): completed (release-web.yml run 24933092299 success)
 
 ## Current Wave Cache (2026-04-25)
 
-- Wave tag: wave37-function-target-adherence-release-closeout
-- Scope: monitoramento diário de aderência live versus alvo por função na governança admin, com tendência de estabilidade/cobertura e recomendações de rollout assistido no `PlatformAdminPanel`, seguido de trilha one-shot concluída com IDs reais.
-- Files touched (wave37/code+docs):
+- Wave tag: wave38-progressive-rollout-guardrails-release-closeout
+- Scope: política progressiva por criticidade no painel de governança, com guardrails preditivos para drift combinado de retry + waiting I/O e recomendações operacionais por função, seguida de trilha one-shot concluída com IDs reais.
+- Files touched (wave38/code+docs):
 	- frontend/src/lib/firestore-types.ts
 	- frontend/src/lib/firestore-service.ts
 	- frontend/src/pages/PlatformAdminPanel.tsx
@@ -90,18 +94,28 @@ Last update: 2026-04-25
 - frontend tests result: 38 files, 299 tests passed
 - functions build: completed (`npm run build`)
 - python tests (pytest): completed (2203 passed)
-- release-web dispatch (wave37): completed (run 24930689755)
-- Quality gates (wave37): success (lint `73007836380`, unit tests `73007836384`, source guardrails `73007836385`, frontend `73007836396`, functions `73007836430`)
-- Deploy Firebase production (wave37): completed (job 73007901714)
-- Deploy GitHub Pages / build (wave37): completed (job 73007901743)
-- Deploy GitHub Pages / deploy (wave37): completed (job 73007952932)
-- Release summary (wave37): completed (job 73008038665)
-- Deploy redesign V2 (wave37): skipped by input (job 73007901740)
+- release-web dispatch (wave38): completed (run 24933092299)
+- Quality gates (wave38): success (source guardrails `73013994216`, frontend `73013994220`, lint `73013994224`, unit tests `73013994226`, functions `73013994229`)
+- Deploy Firebase production (wave38): completed (job 73014056225)
+- Deploy GitHub Pages / build (wave38): completed (job 73014056272)
+- Deploy GitHub Pages / deploy (wave38): completed (job 73014131480)
+- Release summary (wave38): completed (job 73014216569)
+- Deploy redesign V2 (wave38): skipped by input (job 73014056331)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 37 closeout completed (git flow + release lane fully executed).
+- None. Wave 38 closeout completed (git flow + release lane fully executed).
+
+## Wave 38 Release Outcome
+- release-web dispatch (run 24933092299): success.
+- Quality gates: success.
+- Deploy Firebase production (job 73014056225): success.
+- Deploy GitHub Pages / build (job 73014056272): success.
+- Deploy GitHub Pages / deploy (job 73014131480): success.
+- Deploy redesign V2 (job 73014056331): skipped by input (`deploy_redesign_v2=false`).
+- Release summary (job 73014216569): success.
+- Key verification: a política progressiva por criticidade com guardrails preditivos (drift combinado retry + waiting I/O, streaks de aderência e recomendações `tighten_now`/`tighten_guarded`/`hold`/`relax_guarded`) foi promovida no painel admin sem regressões de qualidade/deploy e mantendo a demonstração multiagente.
 
 ## Wave 37 Release Outcome
 - release-web dispatch (run 24930689755): success.

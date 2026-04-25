@@ -657,6 +657,23 @@
       "notes": "A plataforma passou a consolidar aderência diária por função (`getPlatformFunctionTargetAdherenceDaily`) com pressão live/alvo, cobertura de funções monitoradas e status `above_target`/`aligned`/`below_target`; o painel admin agora exibe tendência diária de 7 dias e recomendações de rollout assistido para calibrar retry/fallback/waiting I/O por criticidade sem perder a demonstração operacional multiagente."
     },
     {
+      "id": "E5.F28",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Política progressiva por criticidade com guardrails preditivos de drift",
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/firestore-types.ts",
+        "frontend/src/lib/firestore-service.ts",
+        "frontend/src/pages/PlatformAdminPanel.tsx",
+        "docs/PLANO.md",
+        "docs/release/WEB_RELEASE_INDEX.md",
+        "docs/release/WEB_RELEASE_CACHE.md",
+        "NOTEBOOK_IMPLEMENTATION_STATUS.md",
+        "docs/release/CROSS_PLATFORM_HANDOFF.md"
+      ],
+      "notes": "A governança operacional evoluiu para política progressiva por função (`getPlatformFunctionRolloutPolicyPlan`) com tendência de pressão/gargalo, streaks de aderência e recomendação (`tighten_now`, `tighten_guarded`, `hold`, `relax_guarded`) por criticidade; o painel admin recebeu bloco executivo Wave 38 com alertas preditivos para drift combinado de retry + waiting I/O e guardrails de ajuste por função. Fechamento operacional validado em release one-shot `24933092299` com quality gates, deploy Firebase/Pages e release summary em sucesso (redesign V2 skipped por input)."
+    },
+    {
       "id": "E8.F1",
       "epic": "Redesign V2",
       "name": "Convivência controlada entre shells v1 e v2",

@@ -2,6 +2,16 @@
 
 Last update: 2026-04-25
 
+## Latest One-shot Validation (Wave 38 — 2026-04-25)
+- release-web run `24933092299`: success
+- Head commit: `f5cbf57`
+- Quality gates: success (source guardrails `73013994216`, frontend quality `73013994220`, lint `73013994224`, unit tests `73013994226`, functions quality `73013994229`)
+- Deploy Firebase production: success (`job 73014056225`)
+- Deploy GitHub Pages / build: success (`job 73014056272`)
+- Deploy GitHub Pages / deploy: success (`job 73014131480`)
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 73014056331`)
+- Release summary: success (`job 73014216569`)
+
 ## Latest One-shot Validation (Wave 37 — 2026-04-25)
 - release-web run `24930689755`: success
 - Head commit: `db87300`

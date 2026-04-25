@@ -5,7 +5,21 @@
 
 ---
 
-## Status Geral: Etapas 1-321 IMPLEMENTADAS
+## Status Geral: Etapas 1-329 IMPLEMENTADAS
+
+### Etapas 326-329 — Closeout Operacional da Wave 38 (Release One-shot) ✅
+- **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`
+- Etapa 326: trilha de Git da wave fechada no `main` com commit/push funcional `f5cbf57` (política progressiva por criticidade + guardrails preditivos), mantendo baseline remota alinhada antes do release.
+- Etapa 327: release one-shot disparado em `release-web.yml` (run `24933092299`) no HEAD `f5cbf57f47f9640f3f071ea59f520afe081eab26` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
+- Etapa 328: quality gates e deploys confirmados em sucesso na mesma run: source guardrails (`73013994216`), frontend quality (`73013994220`), lint (`73013994224`), unit tests (`73013994226`), functions quality (`73013994229`), Firebase production (`73014056225`), Pages build (`73014056272`), Pages deploy (`73014131480`) e release summary (`73014216569`); redesign V2 mantido como skip por input (`73014056331`).
+- Etapa 329: fechamento final de governança/index/cache/handoff sincronizado com IDs reais da run `24933092299`, mantendo continuidade cross-platform pronta para a próxima wave.
+
+### Etapas 322-325 — Política Progressiva por Criticidade + Guardrails Preditivos (Wave 38) ✅
+- **Arquivos**: `frontend/src/lib/firestore-types.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `docs/PLANO.md`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/MANIFEST.json`
+- Etapa 322: `firestore-types.ts` recebeu os contratos da política progressiva por função (`PlatformFunctionRolloutRecommendation`, `PlatformFunctionRolloutRiskLevel`, `PlatformFunctionRolloutGuardrails`, `PlatformFunctionRolloutPolicyRow`, `PlatformFunctionRolloutPolicyPlan`) para leitura tipada de risco e recomendação.
+- Etapa 323: `firestore-service.ts` foi ampliado com `getPlatformFunctionRolloutPolicyPlan(...)`, computando tendência de pressão por função, streaks de aderência, risco por criticidade e recomendação progressiva (`tighten_now`/`tighten_guarded`/`hold`/`relax_guarded`) com guardrails operacionais.
+- Etapa 324: `PlatformAdminPanel.tsx` integrou o bloco executivo Wave 38 (resumo por recomendação, tabela de risco/recomendação por função, alertas preditivos de drift combinado retry+waiting I/O e recomendações acionáveis), preservando a demonstração multiagente em produção.
+- Etapa 325: validação local completa executada sem regressões: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos**, **299/299 testes**), `npm run build`, `functions npm run build`, `pytest` (**2203/2203**) e `get_errors` limpo nos arquivos alterados.
 
 ### Etapas 318-321 — Closeout Operacional da Wave 37 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`
