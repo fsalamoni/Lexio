@@ -5,7 +5,21 @@
 
 ---
 
-## Status Geral: Etapas 1-305 IMPLEMENTADAS
+## Status Geral: Etapas 1-313 IMPLEMENTADAS
+
+### Etapas 310-313 — Closeout Operacional da Wave 36 (Release One-shot) ✅
+- **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`
+- Etapa 310: trilha de Git da wave fechada no `main` com commit/push funcional `cfdb2ac` (calibração adaptativa por função + sinais live da demonstração), mantendo baseline remota alinhada antes do release.
+- Etapa 311: release one-shot disparado em `release-web.yml` (run `24919950308`) no HEAD `cfdb2acdfbce1eceb8a4aaf7417db1b5d9da7abf` com `deploy_firebase=true`, `deploy_github_pages=true` e `deploy_redesign_v2=false`.
+- Etapa 312: quality gates e deploys confirmados em sucesso na mesma run: unit tests (`72979425700`), functions quality (`72979425703`), source guardrails (`72979425705`), frontend quality (`72979425706`), lint (`72979425707`), Firebase production (`72979501786`), Pages build (`72979501863`), Pages deploy (`72979567744`) e release summary (`72979652973`); redesign V2 mantido como skip por input (`72979501818`).
+- Etapa 313: fechamento final de governança/index/cache/handoff sincronizado com IDs reais da run `24919950308`, mantendo continuidade cross-platform pronta para a próxima wave.
+
+### Etapas 306-309 — Calibração Adaptativa por Função + Demonstração Live (Wave 36) ✅
+- **Arquivos**: `frontend/src/lib/firestore-types.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `docs/PLANO.md`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/MANIFEST.json`
+- Etapa 306: `firestore-types.ts` recebeu os contratos de calibração por função (`PlatformFunctionCalibrationRow`, `PlatformFunctionCalibrationAction`, `PlatformFunctionCalibrationPriority`) para leitura tipada de plano adaptativo.
+- Etapa 307: `firestore-service.ts` foi ampliado com `getPlatformFunctionCalibrationPlan(...)`, gerando score de risco por função, prioridade, ação recomendada (`tighten`/`maintain`/`relax`) e alvos para retry/fallback/waiting I/O a partir da janela atual versus anterior.
+- Etapa 308: `PlatformAdminPanel.tsx` integrou o novo bloco executivo de calibração por função (cards, tabela de alvos, recomendações automáticas) e conectou sinais live da demonstração multiagente com status por função (acima/alinhado/abaixo do alvo).
+- Etapa 309: validação local completa executada sem regressões: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos**, **299/299 testes**), `npm run build`, `functions npm run build`, `pytest -q` (**2203/2203**) e `get_errors` limpo nos arquivos alterados.
 
 ### Etapas 302-305 — Closeout Operacional da Wave 35 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`

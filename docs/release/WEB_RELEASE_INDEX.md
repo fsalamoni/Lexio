@@ -2,6 +2,23 @@
 
 Last update: 2026-04-25
 
+## Latest One-shot Validation (Wave 36 — 2026-04-25)
+- release-web run `24919950308`: success
+- Head commit: `cfdb2ac`
+- Quality gates: success (unit tests `72979425700`, functions quality `72979425703`, source guardrails `72979425705`, frontend quality `72979425706`, lint `72979425707`)
+- Deploy Firebase production: success (`job 72979501786`)
+- Deploy GitHub Pages / build: success (`job 72979501863`)
+- Deploy GitHub Pages / deploy: success (`job 72979567744`)
+- Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72979501818`)
+- Release summary: success (`job 72979652973`)
+
+## Release Entry Points
+- .github/workflows/release-web.yml
+- .github/workflows/firebase-deploy.yml
+- .github/workflows/deploy-pages.yml
+- .github/workflows/firebase-redesign-v2.yml
+- .github/workflows/test.yml
+
 ## Latest One-shot Validation (Wave 35 — 2026-04-25)
 - release-web run `24919036006`: success
 - Head commit: `cf5b673`
@@ -11,13 +28,6 @@ Last update: 2026-04-25
 - Deploy GitHub Pages / deploy: success (`job 72977011670`)
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72976938808`)
 - Release summary: success (`job 72977113533`)
-
-## Release Entry Points
-- .github/workflows/release-web.yml
-- .github/workflows/firebase-deploy.yml
-- .github/workflows/deploy-pages.yml
-- .github/workflows/firebase-redesign-v2.yml
-- .github/workflows/test.yml
 
 ## Latest One-shot Validation (Wave 34 — 2026-04-25)
 - release-web run `24917777336`: success
@@ -59,13 +69,14 @@ Last update: 2026-04-25
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72772882473`)
 - Release summary: success (`job 72773344525`)
 
-## Current Local Validation (Wave 35 — 2026-04-25)
-- Scope: analytics comparativa diária por função, adicionando janela atual vs anterior por função no serviço e painel executivo no `PlatformAdminPanel` com deltas/recomendações de tuning fino
+## Current Local Validation (Wave 36 — 2026-04-25)
+- Scope: calibração adaptativa por função com plano de alvos (retry/fallback/waiting I/O), score de risco e leitura live da demonstração multiagente versus alvo no `PlatformAdminPanel`
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 299 tests)
 - Frontend build: success
 - Functions build: success (`npm run build`)
-- Release dispatch: completed (`release-web.yml` run `24919036006`)
+- Python tests: success (2203 passed)
+- Release dispatch: completed (`release-web.yml` run `24919950308`)
 - Docs closeout sync: completed (planning/status/index/manifest/cache/handoff synchronized with final IDs)
 
 ## Firebase Auth and Secret Validation

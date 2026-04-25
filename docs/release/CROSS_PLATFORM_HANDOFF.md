@@ -1,4 +1,4 @@
-# Cross-Platform Handoff - Wave 35
+# Cross-Platform Handoff - Wave 36
 
 Last update: 2026-04-25
 
@@ -8,26 +8,26 @@ This file is the minimum operational package to continue Lexio work from another
 ## Repository Snapshot
 - Branch: main
 - Current head: resolve at handoff time with `git rev-parse --short HEAD`
-- Last functional wave commit: cf5b673
+- Last functional wave commit: cfdb2ac
 - Working tree status at closeout: clean
 
 ## Latest Stable Release (One-shot)
 - Workflow: .github/workflows/release-web.yml
-- Run: 24919036006
+- Run: 24919950308
 - Conclusion: success
-- Head validated by release: cf5b673
+- Head validated by release: cfdb2ac
 
 Jobs:
-- Frontend quality: 72976871261 (success)
-- Functions quality: 72976871264 (success)
-- Unit tests: 72976871272 (success)
-- Lint (ruff): 72976871275 (success)
-- Source guardrails: 72976871279 (success)
-- Deploy Firebase production: 72976938644 (success)
-- Deploy GitHub Pages / build: 72976938671 (success)
-- Deploy GitHub Pages / deploy: 72977011670 (success)
-- Deploy redesign V2: 72976938808 (skipped by input)
-- Release summary: 72977113533 (success)
+- Unit tests: 72979425700 (success)
+- Functions quality: 72979425703 (success)
+- Source guardrails: 72979425705 (success)
+- Frontend quality: 72979425706 (success)
+- Lint (ruff): 72979425707 (success)
+- Deploy Firebase production: 72979501786 (success)
+- Deploy GitHub Pages / build: 72979501863 (success)
+- Deploy GitHub Pages / deploy: 72979567744 (success)
+- Deploy redesign V2: 72979501818 (skipped by input)
+- Release summary: 72979652973 (success)
 
 ## Canonical Docs to Continue Work
 Read/update in this order when opening the next cycle:
@@ -38,11 +38,11 @@ Read/update in this order when opening the next cycle:
 5. docs/release/WEB_RELEASE_CACHE.md
 6. docs/release/CROSS_PLATFORM_HANDOFF.md
 
-## What Was Delivered in Wave 35
-- `frontend/src/lib/firestore-types.ts` now defines `PlatformFunctionWindowComparisonRow` to represent current-vs-previous function windows (calls/cost/latency/retry/fallback/waiting I/O + deltas).
-- `frontend/src/lib/firestore-service.ts` now exposes `getPlatformFunctionWindowComparison(...)`, aggregating reliability/cost drift per function on rolling windows with percent deltas for executive tuning.
-- `frontend/src/pages/PlatformAdminPanel.tsx` now renders a dedicated function-level comparative block (delta cards, per-function table and hotspot recommendations), preserving and complementing the multiagent live demonstration section.
-- Governance/index/cache/handoff docs were synchronized for Wave 35 closeout with real one-shot release IDs.
+## What Was Delivered in Wave 36
+- `frontend/src/lib/firestore-types.ts` now defines calibration contracts (`PlatformFunctionCalibrationRow`, `PlatformFunctionCalibrationAction`, `PlatformFunctionCalibrationPriority`) for adaptive per-function targeting.
+- `frontend/src/lib/firestore-service.ts` now exposes `getPlatformFunctionCalibrationPlan(...)`, computing function-level risk score, priority and action (`tighten`/`maintain`/`relax`) with recommended targets for retry/fallback/waiting I/O.
+- `frontend/src/pages/PlatformAdminPanel.tsx` now renders an adaptive calibration block (plan cards, target table, recommendations) and links live multiagent demonstration signals to per-function targets (above/aligned/below target).
+- Governance/index/cache/handoff docs were synchronized for Wave 36 closeout with real one-shot release IDs.
 
 ## Validation Baseline
 Frontend:
@@ -52,11 +52,11 @@ Frontend:
 - functions npm run build
 
 Release lane:
-- release-web.yml one-shot run 24919036006 completed in success
+- release-web.yml one-shot run 24919950308 completed in success
 
 ## Next Logical Block (starting point)
-- Monitor production impact from the new function-window comparison panel, prioritizing sustained drifts in `waiting_io`, `retrying` and cost-per-call by function.
-- Calibrate per-function thresholds combining reliability matrix + window deltas while keeping the agent demonstration surface stable.
+- Monitor produção para validar aderência dos sinais live versus alvo por função (especialmente `waiting_io` e `retrying`) com recorte diário de estabilidade.
+- Ajustar política de rollout assistido da calibração (tighten/maintain/relax) por criticidade, evitando regressão de custo e UX no painel admin.
 - Keep the same governance closeout order and one-shot release verification.
 
 ## Fast Resume Commands

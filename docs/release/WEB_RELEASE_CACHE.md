@@ -23,6 +23,8 @@ Last update: 2026-04-25
 - Wave 34 release closeout: completed (run 24917777336 success)
 - Wave 35 daily function-window comparison: completed (local validation)
 - Wave 35 release closeout: completed (run 24919036006 success)
+- Wave 36 calibração adaptativa por função: completed (local validation)
+- Wave 36 release closeout: completed (run 24919950308 success)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -59,11 +61,13 @@ Last update: 2026-04-25
 - Release workflow dispatch (wave34): completed (release-web.yml run 24917777336 success)
 - Wave 35 commit + push: completed (`cf5b673`)
 - Release workflow dispatch (wave35): completed (release-web.yml run 24919036006 success)
+- Wave 36 commit + push: completed (`cfdb2ac`)
+- Release workflow dispatch (wave36): completed (release-web.yml run 24919950308 success)
 
 ## Current Wave Cache (2026-04-25)
-- Wave tag: wave35-function-window-comparison-release-closeout
-- Scope: comparação diária por função na governança admin, com janela atual vs anterior por função no serviço, tuning fino por hotspots no `PlatformAdminPanel` e trilha one-shot concluída com IDs reais.
-- Files touched (wave35/code+docs):
+- Wave tag: wave36-function-adaptive-calibration-release-closeout
+- Scope: calibração adaptativa por função na governança admin, com plano de alvos para retry/fallback/waiting I/O e leitura live da demonstração multiagente versus alvo no `PlatformAdminPanel`, seguida de trilha one-shot concluída com IDs reais.
+- Files touched (wave36/code+docs):
 	- frontend/src/lib/firestore-types.ts
 	- frontend/src/lib/firestore-service.ts
 	- frontend/src/pages/PlatformAdminPanel.tsx
@@ -80,18 +84,29 @@ Last update: 2026-04-25
 - frontend build: completed
 - frontend tests result: 38 files, 299 tests passed
 - functions build: completed (`npm run build`)
-- release-web dispatch (wave35): completed (run 24919036006)
-- Quality gates (wave35): success (frontend `72976871261`, functions `72976871264`, unit tests `72976871272`, lint `72976871275`, source guardrails `72976871279`)
-- Deploy Firebase production (wave35): completed (job 72976938644)
-- Deploy GitHub Pages / build (wave35): completed (job 72976938671)
-- Deploy GitHub Pages / deploy (wave35): completed (job 72977011670)
-- Release summary (wave35): completed (job 72977113533)
-- Deploy redesign V2 (wave35): skipped by input (job 72976938808)
+- python tests (pytest): completed (2203 passed)
+- release-web dispatch (wave36): completed (run 24919950308)
+- Quality gates (wave36): success (unit tests `72979425700`, functions `72979425703`, source guardrails `72979425705`, frontend `72979425706`, lint `72979425707`)
+- Deploy Firebase production (wave36): completed (job 72979501786)
+- Deploy GitHub Pages / build (wave36): completed (job 72979501863)
+- Deploy GitHub Pages / deploy (wave36): completed (job 72979567744)
+- Release summary (wave36): completed (job 72979652973)
+- Deploy redesign V2 (wave36): skipped by input (job 72979501818)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 35 closeout completed (git flow + release lane fully executed).
+- None. Wave 36 closeout completed (git flow + release lane fully executed).
+
+## Wave 36 Release Outcome
+- release-web dispatch (run 24919950308): success.
+- Quality gates: success.
+- Deploy Firebase production (job 72979501786): success.
+- Deploy GitHub Pages / build (job 72979501863): success.
+- Deploy GitHub Pages / deploy (job 72979567744): success.
+- Deploy redesign V2 (job 72979501818): skipped by input (`deploy_redesign_v2=false`).
+- Release summary (job 72979652973): success.
+- Key verification: plano adaptativo por função (alvos + prioridade + ação) e leitura live da demonstração de agentes versus alvo foram promovidos com sucesso no painel admin, sem regressões de qualidade e deploy.
 
 ## Wave 35 Release Outcome
 - release-web dispatch (run 24919036006): success.
