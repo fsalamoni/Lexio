@@ -468,3 +468,23 @@ export interface PlatformExecutionStateWindowComparisonRow {
   cost_delta_pct: number
   duration_delta_pct: number
 }
+
+export interface PlatformFunctionWindowComparisonRow {
+  key: string
+  label: string
+  current_calls: number
+  previous_calls: number
+  current_cost_usd: number
+  previous_cost_usd: number
+  current_avg_duration_ms: number
+  previous_avg_duration_ms: number
+  current_retry_rate: number
+  previous_retry_rate: number
+  current_fallback_rate: number
+  previous_fallback_rate: number
+  current_waiting_io_rate: number
+  previous_waiting_io_rate: number
+  calls_delta_pct: number
+  cost_delta_pct: number
+  duration_delta_pct: number
+}

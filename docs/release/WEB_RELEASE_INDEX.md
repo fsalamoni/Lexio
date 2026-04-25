@@ -49,14 +49,14 @@ Last update: 2026-04-25
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72772882473`)
 - Release summary: success (`job 72773344525`)
 
-## Current Local Validation (Wave 34 — 2026-04-25)
-- Scope: analytics comparativa diária por `execution_state`, com novas agregações de serviço para trend diária + janela atual vs anterior e painel executivo no `PlatformAdminPanel` com deltas/recomendações acionáveis
+## Current Local Validation (Wave 35 — 2026-04-24)
+- Scope: analytics comparativa diária por função, adicionando janela atual vs anterior por função no serviço e painel executivo no `PlatformAdminPanel` com deltas/recomendações de tuning fino
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 299 tests)
 - Frontend build: success
 - Functions build: success (`npm run build`)
-- Release dispatch: completed (`release-web.yml`, run `24917777336`)
-- Docs closeout sync: completed (`main`, planning/index/cache/handoff aligned)
+- Release dispatch: pending Wave 35 closeout (latest stable one-shot remains run `24917777336`)
+- Docs closeout sync: in progress (planning/status/index/manifest updated; cache/handoff after release IDs)
 
 ## Firebase Auth and Secret Validation
 - scripts/validate-firebase-service-account.mjs

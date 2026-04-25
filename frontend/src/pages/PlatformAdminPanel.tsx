@@ -16,6 +16,7 @@ import {
   getCurrentUserId,
   getPlatformCostBreakdown,
   getPlatformExecutionStateDaily,
+  getPlatformFunctionWindowComparison,
   getPlatformExecutionStateWindowComparison,
   getPlatformDailyUsage,
   getPlatformOverview,
@@ -25,6 +26,7 @@ import {
   type PlatformAggregateRow,
   type PlatformDailyUsagePoint,
   type PlatformExecutionStateDailyPoint,
+  type PlatformFunctionWindowComparisonRow,
   type PlatformExecutionStateWindowComparisonRow,
   type NotebookSearchMemoryBackfillReport,
   type PlatformUsageRow,
@@ -346,6 +348,7 @@ export default function PlatformAdminPanel() {
   const [recentExecutions, setRecentExecutions] = useState<UsageExecutionRecord[]>([])
   const [executionStateDaily, setExecutionStateDaily] = useState<PlatformExecutionStateDailyPoint[]>([])
   const [executionStateComparison, setExecutionStateComparison] = useState<PlatformExecutionStateWindowComparisonRow[]>([])
+  const [executionFunctionComparison, setExecutionFunctionComparison] = useState<PlatformFunctionWindowComparisonRow[]>([])
   const [loading, setLoading] = useState(true)
   const [backfillLoading, setBackfillLoading] = useState(false)
   const [backfillReport, setBackfillReport] = useState<NotebookSearchMemoryBackfillReport | null>(null)
@@ -365,13 +368,22 @@ export default function PlatformAdminPanel() {
           throw new Error('O painel admin agregado está disponível apenas no modo Firebase.')
         }
 
-        const [overviewData, dailyData, costBreakdown, recentAgentExecutions, stateDailyData, stateComparisonData] = await Promise.all([
+        const [
+          overviewData,
+          dailyData,
+          costBreakdown,
+          recentAgentExecutions,
+          stateDailyData,
+          stateComparisonData,
+          functionComparisonData,
+        ] = await Promise.all([
           getPlatformOverview(),
           getPlatformDailyUsage(30),
           getPlatformCostBreakdown(),
           getPlatformRecentAgentExecutions(120),
           getPlatformExecutionStateDaily(14),
           getPlatformExecutionStateWindowComparison(7),
+          getPlatformFunctionWindowComparison(7),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
@@ -379,6 +391,7 @@ export default function PlatformAdminPanel() {
         setRecentExecutions(recentAgentExecutions)
         setExecutionStateDaily(stateDailyData)
         setExecutionStateComparison(stateComparisonData)
+        setExecutionFunctionComparison(functionComparisonData)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
 
         const uid = getCurrentUserId()
@@ -678,6 +691,77 @@ export default function PlatformAdminPanel() {
 
     return recommendations.slice(0, 3)
   }, [executionStateComparison])
+
+  const executionFunctionWindowRows = useMemo(() => {
+    return executionFunctionComparison.slice(0, 10)
+  }, [executionFunctionComparison])
+
+  const executionFunctionWindowTotals = useMemo(() => {
+    const currentCalls = executionFunctionComparison.reduce((acc, row) => acc + row.current_calls, 0)
+    const previousCalls = executionFunctionComparison.reduce((acc, row) => acc + row.previous_calls, 0)
+    const currentCost = executionFunctionComparison.reduce((acc, row) => acc + row.current_cost_usd, 0)
+    const previousCost = executionFunctionComparison.reduce((acc, row) => acc + row.previous_cost_usd, 0)
+
+    return {
+      currentCalls,
+      previousCalls,
+      currentCost,
+      previousCost,
+      callsDeltaPct: previousCalls > 0 ? (currentCalls - previousCalls) / previousCalls : currentCalls > 0 ? 1 : 0,
+      costDeltaPct: previousCost > 0 ? (currentCost - previousCost) / previousCost : currentCost > 0 ? 1 : 0,
+    }
+  }, [executionFunctionComparison])
+
+  const executionFunctionWindowRecommendations = useMemo(() => {
+    if (executionFunctionComparison.length === 0) return [] as ExecutionTuningRecommendation[]
+
+    const recommendations: ExecutionTuningRecommendation[] = []
+    const waitingIoHotspot = executionFunctionComparison.find(row => row.current_calls >= 8 && row.current_waiting_io_rate >= 0.2)
+    const retryHotspot = executionFunctionComparison.find(row => row.current_calls >= 8 && row.current_retry_rate >= 0.18)
+    const fallbackHotspot = executionFunctionComparison.find(row => row.current_calls >= 8 && row.current_fallback_rate >= 0.16)
+
+    if (waitingIoHotspot) {
+      recommendations.push({
+        id: `function-window-waiting-io-${waitingIoHotspot.key}`,
+        level: waitingIoHotspot.current_waiting_io_rate >= 0.3 ? 'critical' : 'warning',
+        title: `Waiting I/O concentrado em ${waitingIoHotspot.label}`,
+        description: `${waitingIoHotspot.label} apresenta waiting I/O em ${fmtPercent(waitingIoHotspot.current_waiting_io_rate)} com delta de chamadas ${formatDeltaPercent(waitingIoHotspot.calls_delta_pct)}.`,
+        suggestedAction: 'Revisar timeout e concorrência desta função, além de reforçar cache de insumos repetitivos no estágio mais lento.',
+      })
+    }
+
+    if (retryHotspot) {
+      recommendations.push({
+        id: `function-window-retry-${retryHotspot.key}`,
+        level: retryHotspot.current_retry_rate >= 0.28 ? 'critical' : 'warning',
+        title: `Retry acima do alvo em ${retryHotspot.label}`,
+        description: `Retry atual ${fmtPercent(retryHotspot.current_retry_rate)} (janela anterior ${fmtPercent(retryHotspot.previous_retry_rate)}).`,
+        suggestedAction: 'Ajustar política de reprocessamento e priorizar modelo fallback mais estável para esta função.',
+      })
+    }
+
+    if (fallbackHotspot) {
+      recommendations.push({
+        id: `function-window-fallback-${fallbackHotspot.key}`,
+        level: fallbackHotspot.current_fallback_rate >= 0.24 ? 'warning' : 'info',
+        title: `Fallback elevado em ${fallbackHotspot.label}`,
+        description: `Fallback atual ${fmtPercent(fallbackHotspot.current_fallback_rate)} com variação de custo ${formatDeltaPercent(fallbackHotspot.cost_delta_pct)}.`,
+        suggestedAction: 'Revalidar catálogo/modelo primário desta função para reduzir swaps de fallback na janela seguinte.',
+      })
+    }
+
+    if (recommendations.length === 0) {
+      recommendations.push({
+        id: 'function-window-stable',
+        level: 'info',
+        title: 'Comparativo por função sem hotspots críticos',
+        description: 'Nenhuma função ultrapassou limiares de retry/fallback/waiting I/O no comparativo atual versus janela anterior.',
+        suggestedAction: 'Manter acompanhamento diário e atuar apenas em funções que ultrapassarem os limiares operacionais.',
+      })
+    }
+
+    return recommendations.slice(0, 3)
+  }, [executionFunctionComparison])
 
   const memoryAlerts = useMemo(() => {
     if (!overview) return [] as OperationalAlert[]
@@ -1199,16 +1283,18 @@ export default function PlatformAdminPanel() {
       toast.success(dryRun ? 'Diagnóstico de backfill concluído' : 'Backfill de memória dedicada concluído')
 
       if (!dryRun) {
-        const [overviewData, dailyData, stateDailyData, stateComparisonData] = await Promise.all([
+        const [overviewData, dailyData, stateDailyData, stateComparisonData, functionComparisonData] = await Promise.all([
           getPlatformOverview(true),
           getPlatformDailyUsage(30, true),
           getPlatformExecutionStateDaily(14, true),
           getPlatformExecutionStateWindowComparison(7, true),
+          getPlatformFunctionWindowComparison(7, true),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
         setExecutionStateDaily(stateDailyData)
         setExecutionStateComparison(stateComparisonData)
+        setExecutionFunctionComparison(functionComparisonData)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
       }
     } catch (error) {
@@ -1619,6 +1705,94 @@ export default function PlatformAdminPanel() {
                 <p className="mt-1 text-xs text-[var(--v2-ink-strong)]">Ação recomendada: {recommendation.suggestedAction}</p>
               </div>
             ))}
+          </div>
+
+          <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] p-3 space-y-3">
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Comparativo diário por função</p>
+                <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">Leitura de risco por função na janela atual versus anterior para orientar tuning fino sem regressão.</p>
+              </div>
+              <span className="rounded-full border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.78)] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">
+                Janela 7d
+              </span>
+            </div>
+
+            {executionFunctionWindowRows.length === 0 ? (
+              <p className="text-xs text-[var(--v2-ink-soft)]">Sem dados suficientes para comparativo por função nesta janela.</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                  <div className={EXECUTIVE_INSET_CARD}>
+                    <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Chamadas (funções atual)</p>
+                    <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionFunctionWindowTotals.currentCalls)}</p>
+                    <p className={`text-[11px] font-medium ${getDeltaTone(executionFunctionWindowTotals.callsDeltaPct)}`}>{formatDeltaPercent(executionFunctionWindowTotals.callsDeltaPct)}</p>
+                  </div>
+                  <div className={EXECUTIVE_INSET_CARD}>
+                    <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Chamadas (funções anterior)</p>
+                    <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionFunctionWindowTotals.previousCalls)}</p>
+                    <p className="text-[11px] text-[var(--v2-ink-faint)]">Base comparativa</p>
+                  </div>
+                  <div className={EXECUTIVE_INSET_CARD}>
+                    <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Custo (funções atual)</p>
+                    <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtUsd(executionFunctionWindowTotals.currentCost)}</p>
+                    <p className={`text-[11px] font-medium ${getDeltaTone(executionFunctionWindowTotals.costDeltaPct)}`}>{formatDeltaPercent(executionFunctionWindowTotals.costDeltaPct)}</p>
+                  </div>
+                  <div className={EXECUTIVE_INSET_CARD}>
+                    <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Custo (funções anterior)</p>
+                    <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtUsd(executionFunctionWindowTotals.previousCost)}</p>
+                    <p className="text-[11px] text-[var(--v2-ink-faint)]">Base comparativa</p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1060px] text-xs">
+                    <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left">Função</th>
+                        <th className="px-2 py-1.5 text-right">Chamadas atual</th>
+                        <th className="px-2 py-1.5 text-right">Chamadas anterior</th>
+                        <th className="px-2 py-1.5 text-right">Delta chamadas</th>
+                        <th className="px-2 py-1.5 text-right">Retry atual</th>
+                        <th className="px-2 py-1.5 text-right">Fallback atual</th>
+                        <th className="px-2 py-1.5 text-right">Waiting I/O atual</th>
+                        <th className="px-2 py-1.5 text-right">Delta latência</th>
+                        <th className="px-2 py-1.5 text-right">Delta custo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                      {executionFunctionWindowRows.map(row => (
+                        <tr key={row.key} className="hover:bg-[rgba(255,255,255,0.66)]">
+                          <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{row.label}</td>
+                          <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.current_calls)}</td>
+                          <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.previous_calls)}</td>
+                          <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.calls_delta_pct)}`}>{formatDeltaPercent(row.calls_delta_pct)}</td>
+                          <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.current_retry_rate)}</td>
+                          <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.current_fallback_rate)}</td>
+                          <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.current_waiting_io_rate)}</td>
+                          <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.duration_delta_pct)}`}>{formatDeltaPercent(row.duration_delta_pct)}</td>
+                          <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.cost_delta_pct)}`}>{formatDeltaPercent(row.cost_delta_pct)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Recomendações orientadas por função</p>
+              {executionFunctionWindowRecommendations.map(recommendation => (
+                <div key={recommendation.id} className={`rounded-lg border px-3 py-2 ${getRecommendationTone(recommendation.level)}`}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">
+                    {recommendation.level === 'critical' ? 'Prioridade alta' : recommendation.level === 'warning' ? 'Atenção' : 'Informativo'}
+                  </p>
+                  <p className="mt-0.5 text-sm font-medium text-[var(--v2-ink-strong)]">{recommendation.title}</p>
+                  <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">{recommendation.description}</p>
+                  <p className="mt-1 text-xs text-[var(--v2-ink-strong)]">Ação recomendada: {recommendation.suggestedAction}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

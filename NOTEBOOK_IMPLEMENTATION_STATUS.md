@@ -5,7 +5,14 @@
 
 ---
 
-## Status Geral: Etapas 1-297 IMPLEMENTADAS
+## Status Geral: Etapas 1-301 IMPLEMENTADAS
+
+### Etapas 298-301 — Comparativo Diário por Função (Wave 35) ✅
+- **Arquivos**: `frontend/src/lib/firestore-types.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/pages/PlatformAdminPanel.tsx`, `docs/PLANO.md`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/MANIFEST.json`
+- Etapa 298: `firestore-types.ts` recebeu o contrato `PlatformFunctionWindowComparisonRow` para leitura tipada da comparação de funções entre janela atual e anterior.
+- Etapa 299: `firestore-service.ts` foi ampliado com `getPlatformFunctionWindowComparison(...)`, agregando por função chamadas/custo/latência/retry/fallback/waiting I/O com deltas percentuais entre janelas consecutivas.
+- Etapa 300: `PlatformAdminPanel.tsx` integrou o comparativo por função com nova seção executiva (cards de deltas, tabela por função e recomendações acionáveis de tuning fino), preservando a demonstração operacional multiagente já existente.
+- Etapa 301: validação local completa executada sem regressões: `npm run typecheck`, `npm run test -- --run` (**38/38 arquivos**, **299/299 testes**), `npm run build`, `functions npm run build` e `get_errors` limpo nos arquivos alterados.
 
 ### Etapas 294-297 — Closeout Operacional da Wave 34 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`

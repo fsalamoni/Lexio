@@ -70,6 +70,7 @@ export type {
   PlatformDailyUsagePoint,
   PlatformExecutionStateDailyPoint,
   PlatformExecutionStateWindowComparisonRow,
+  PlatformFunctionWindowComparisonRow,
 } from './firestore-types'
 import type {
   ProfileData,
@@ -95,6 +96,7 @@ import type {
   PlatformDailyUsagePoint,
   PlatformExecutionStateDailyPoint,
   PlatformExecutionStateWindowComparisonRow,
+  PlatformFunctionWindowComparisonRow,
 } from './firestore-types'
 
 // Re-export DEFAULT_DOC_STRUCTURES for backward compatibility
@@ -290,6 +292,17 @@ function resolveExecutionStateKey(value?: string | null): string {
   const normalized = String(value || '').trim().toLowerCase()
   if (!normalized) return 'unknown_execution_state'
   return normalized
+}
+
+function resolveFunctionKey(execution: UsageExecutionRecord): string {
+  const raw = execution.function_key || execution.function_label || 'unknown_function'
+  const normalized = String(raw || '').trim().toLowerCase()
+  return normalized || 'unknown_function'
+}
+
+function resolveFunctionLabel(execution: UsageExecutionRecord): string {
+  const label = String(execution.function_label || execution.function_key || '').trim()
+  return label || 'Função não identificada'
 }
 
 function safeRatio(numerator: number, denominator: number): number {
@@ -1143,6 +1156,28 @@ function createExecutionStateAccumulator(): ExecutionStateAccumulator {
   }
 }
 
+type FunctionExecutionAccumulator = {
+  label: string
+  calls: number
+  cost_usd: number
+  total_duration_ms: number
+  retries: number
+  fallbacks: number
+  waiting_io: number
+}
+
+function createFunctionExecutionAccumulator(label: string): FunctionExecutionAccumulator {
+  return {
+    label,
+    calls: 0,
+    cost_usd: 0,
+    total_duration_ms: 0,
+    retries: 0,
+    fallbacks: 0,
+    waiting_io: 0,
+  }
+}
+
 function aggregateExecutionStateWindow(
   executions: UsageExecutionRecord[],
   startDayInclusive: string,
@@ -1164,6 +1199,38 @@ function aggregateExecutionStateWindow(
     current.fallbacks += execution.used_fallback ? 1 : 0
 
     grouped.set(stateKey, current)
+  }
+
+  return grouped
+}
+
+function aggregateFunctionWindow(
+  executions: UsageExecutionRecord[],
+  startDayInclusive: string,
+  endDayExclusive: string,
+): Map<string, FunctionExecutionAccumulator> {
+  const grouped = new Map<string, FunctionExecutionAccumulator>()
+
+  for (const execution of executions) {
+    const day = getIsoDateKey(execution.created_at)
+    if (!day || day < startDayInclusive || day >= endDayExclusive) continue
+
+    const functionKey = resolveFunctionKey(execution)
+    const current = grouped.get(functionKey) ?? createFunctionExecutionAccumulator(resolveFunctionLabel(execution))
+
+    // Preserve the most informative label if this key appears with different variants.
+    if (!current.label || current.label === 'Função não identificada') {
+      current.label = resolveFunctionLabel(execution)
+    }
+
+    current.calls += 1
+    current.cost_usd = round6(current.cost_usd + execution.cost_usd)
+    current.total_duration_ms += execution.duration_ms
+    current.retries += (execution.retry_count ?? 0) > 0 ? 1 : 0
+    current.fallbacks += execution.used_fallback ? 1 : 0
+    current.waiting_io += execution.execution_state === 'waiting_io' ? 1 : 0
+
+    grouped.set(functionKey, current)
   }
 
   return grouped
@@ -1283,6 +1350,70 @@ export async function getPlatformExecutionStateWindowComparison(days = 7, force 
       const leftImpact = Math.abs(left.calls_delta_pct) + Math.abs(left.duration_delta_pct) + Math.abs(left.cost_delta_pct)
       const rightImpact = Math.abs(right.calls_delta_pct) + Math.abs(right.duration_delta_pct) + Math.abs(right.cost_delta_pct)
       return rightImpact - leftImpact || right.current_calls - left.current_calls
+    })
+}
+
+export async function getPlatformFunctionWindowComparison(days = 7, force = false): Promise<PlatformFunctionWindowComparisonRow[]> {
+  const snapshot = await loadPlatformCollections(force)
+  const executions = extractPlatformUsageExecutions(snapshot)
+  const safeDays = Math.max(3, Math.min(30, Math.floor(days)))
+  const now = Date.now()
+
+  const currentStart = new Date(now - (safeDays - 1) * 86_400_000).toISOString().slice(0, 10)
+  const currentEndExclusive = new Date(now + 86_400_000).toISOString().slice(0, 10)
+  const previousStart = new Date(now - ((safeDays * 2) - 1) * 86_400_000).toISOString().slice(0, 10)
+  const previousEndExclusive = currentStart
+
+  const currentWindow = aggregateFunctionWindow(executions, currentStart, currentEndExclusive)
+  const previousWindow = aggregateFunctionWindow(executions, previousStart, previousEndExclusive)
+
+  const functionKeys = new Set<string>([...currentWindow.keys(), ...previousWindow.keys()])
+
+  return Array.from(functionKeys)
+    .map((functionKey) => {
+      const current = currentWindow.get(functionKey)
+      const previous = previousWindow.get(functionKey)
+
+      const currentCalls = current?.calls ?? 0
+      const previousCalls = previous?.calls ?? 0
+      const currentCost = current?.cost_usd ?? 0
+      const previousCost = previous?.cost_usd ?? 0
+      const currentAvgDuration = currentCalls > 0 ? (current?.total_duration_ms ?? 0) / currentCalls : 0
+      const previousAvgDuration = previousCalls > 0 ? (previous?.total_duration_ms ?? 0) / previousCalls : 0
+      const currentRetryRate = safeRatio(current?.retries ?? 0, currentCalls)
+      const previousRetryRate = safeRatio(previous?.retries ?? 0, previousCalls)
+      const currentFallbackRate = safeRatio(current?.fallbacks ?? 0, currentCalls)
+      const previousFallbackRate = safeRatio(previous?.fallbacks ?? 0, previousCalls)
+      const currentWaitingIoRate = safeRatio(current?.waiting_io ?? 0, currentCalls)
+      const previousWaitingIoRate = safeRatio(previous?.waiting_io ?? 0, previousCalls)
+
+      return {
+        key: functionKey,
+        label: current?.label || previous?.label || functionKey,
+        current_calls: currentCalls,
+        previous_calls: previousCalls,
+        current_cost_usd: round6(currentCost),
+        previous_cost_usd: round6(previousCost),
+        current_avg_duration_ms: Math.round(currentAvgDuration),
+        previous_avg_duration_ms: Math.round(previousAvgDuration),
+        current_retry_rate: currentRetryRate,
+        previous_retry_rate: previousRetryRate,
+        current_fallback_rate: currentFallbackRate,
+        previous_fallback_rate: previousFallbackRate,
+        current_waiting_io_rate: currentWaitingIoRate,
+        previous_waiting_io_rate: previousWaitingIoRate,
+        calls_delta_pct: safeDeltaPct(currentCalls, previousCalls),
+        cost_delta_pct: safeDeltaPct(currentCost, previousCost),
+        duration_delta_pct: safeDeltaPct(currentAvgDuration, previousAvgDuration),
+      }
+    })
+    .filter(item => item.current_calls > 0 || item.previous_calls > 0)
+    .sort((left, right) => {
+      const leftImpact = Math.abs(left.calls_delta_pct) + Math.abs(left.duration_delta_pct) + Math.abs(left.cost_delta_pct)
+      const rightImpact = Math.abs(right.calls_delta_pct) + Math.abs(right.duration_delta_pct) + Math.abs(right.cost_delta_pct)
+      const leftRisk = left.current_retry_rate + left.current_fallback_rate + left.current_waiting_io_rate
+      const rightRisk = right.current_retry_rate + right.current_fallback_rate + right.current_waiting_io_rate
+      return rightImpact - leftImpact || rightRisk - leftRisk || right.current_calls - left.current_calls
     })
 }
 
