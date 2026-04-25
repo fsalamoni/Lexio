@@ -493,6 +493,8 @@ export type PlatformFunctionCalibrationAction = 'tighten' | 'maintain' | 'relax'
 
 export type PlatformFunctionCalibrationPriority = 'critical' | 'warning' | 'info'
 
+export type PlatformFunctionTargetAdherenceStatus = 'above_target' | 'aligned' | 'below_target'
+
 export interface PlatformFunctionCalibrationRow {
   key: string
   label: string
@@ -512,4 +514,33 @@ export interface PlatformFunctionCalibrationRow {
   risk_score: number
   action: PlatformFunctionCalibrationAction
   priority: PlatformFunctionCalibrationPriority
+}
+
+export interface PlatformFunctionTargetAdherenceRow {
+  key: string
+  label: string
+  calls: number
+  live_retry_rate: number
+  target_retry_rate: number
+  live_fallback_rate: number
+  target_fallback_rate: number
+  live_waiting_io_rate: number
+  target_waiting_io_rate: number
+  live_pressure: number
+  target_pressure: number
+  pressure_gap: number
+  action: PlatformFunctionCalibrationAction
+  priority: PlatformFunctionCalibrationPriority
+  status: PlatformFunctionTargetAdherenceStatus
+}
+
+export interface PlatformFunctionTargetAdherenceDailyPoint {
+  dia: string
+  total_functions_observed: number
+  total_functions_with_target: number
+  coverage_rate: number
+  above_target: number
+  aligned: number
+  below_target: number
+  rows: PlatformFunctionTargetAdherenceRow[]
 }

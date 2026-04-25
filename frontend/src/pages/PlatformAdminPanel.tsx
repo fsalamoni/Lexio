@@ -17,6 +17,7 @@ import {
   getPlatformCostBreakdown,
   getPlatformExecutionStateDaily,
   getPlatformFunctionCalibrationPlan,
+  getPlatformFunctionTargetAdherenceDaily,
   getPlatformFunctionWindowComparison,
   getPlatformExecutionStateWindowComparison,
   getPlatformDailyUsage,
@@ -28,6 +29,7 @@ import {
   type PlatformDailyUsagePoint,
   type PlatformExecutionStateDailyPoint,
   type PlatformFunctionCalibrationRow,
+  type PlatformFunctionTargetAdherenceDailyPoint,
   type PlatformFunctionWindowComparisonRow,
   type PlatformExecutionStateWindowComparisonRow,
   type NotebookSearchMemoryBackfillReport,
@@ -263,6 +265,18 @@ function getCalibrationActionTone(action: PlatformFunctionCalibrationRow['action
   return 'text-[var(--v2-ink-soft)]'
 }
 
+function getFunctionTargetAdherenceStatusLabel(status: 'above_target' | 'aligned' | 'below_target'): string {
+  if (status === 'above_target') return 'Acima do alvo'
+  if (status === 'below_target') return 'Abaixo do alvo'
+  return 'Alinhado ao alvo'
+}
+
+function getFunctionTargetAdherenceStatusTone(status: 'above_target' | 'aligned' | 'below_target'): string {
+  if (status === 'above_target') return 'border-red-200 bg-red-50 text-red-700'
+  if (status === 'below_target') return 'border-sky-200 bg-sky-50 text-sky-700'
+  return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+}
+
 function buildExecutionTuningRecommendations(input: {
   stateRows: Array<CostBreakdownItem & { callShare: number; costShare: number }>
   functionRows: ExecutionFunctionReliabilityRow[]
@@ -376,6 +390,7 @@ export default function PlatformAdminPanel() {
   const [executionStateComparison, setExecutionStateComparison] = useState<PlatformExecutionStateWindowComparisonRow[]>([])
   const [executionFunctionComparison, setExecutionFunctionComparison] = useState<PlatformFunctionWindowComparisonRow[]>([])
   const [executionFunctionCalibrations, setExecutionFunctionCalibrations] = useState<PlatformFunctionCalibrationRow[]>([])
+  const [executionFunctionTargetAdherenceDaily, setExecutionFunctionTargetAdherenceDaily] = useState<PlatformFunctionTargetAdherenceDailyPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [backfillLoading, setBackfillLoading] = useState(false)
   const [backfillReport, setBackfillReport] = useState<NotebookSearchMemoryBackfillReport | null>(null)
@@ -404,6 +419,7 @@ export default function PlatformAdminPanel() {
           stateComparisonData,
           functionComparisonData,
           functionCalibrationData,
+          functionTargetAdherenceDailyData,
         ] = await Promise.all([
           getPlatformOverview(),
           getPlatformDailyUsage(30),
@@ -413,6 +429,7 @@ export default function PlatformAdminPanel() {
           getPlatformExecutionStateWindowComparison(7),
           getPlatformFunctionWindowComparison(7),
           getPlatformFunctionCalibrationPlan(7),
+          getPlatformFunctionTargetAdherenceDaily(14, 7),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
@@ -422,6 +439,7 @@ export default function PlatformAdminPanel() {
         setExecutionStateComparison(stateComparisonData)
         setExecutionFunctionComparison(functionComparisonData)
         setExecutionFunctionCalibrations(functionCalibrationData)
+        setExecutionFunctionTargetAdherenceDaily(functionTargetAdherenceDailyData)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
 
         const uid = getCurrentUserId()
@@ -913,6 +931,104 @@ export default function PlatformAdminPanel() {
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
   }, [executionFunctionCalibrations, executionFunctionReliabilityRows])
+
+  const executionFunctionTargetAdherenceLatest = useMemo(() => {
+    if (executionFunctionTargetAdherenceDaily.length === 0) return null
+    return executionFunctionTargetAdherenceDaily[executionFunctionTargetAdherenceDaily.length - 1]
+  }, [executionFunctionTargetAdherenceDaily])
+
+  const executionFunctionTargetAdherenceRows = useMemo(() => {
+    return executionFunctionTargetAdherenceLatest?.rows.slice(0, 10) ?? []
+  }, [executionFunctionTargetAdherenceLatest])
+
+  const executionFunctionTargetAdherenceTrendRows = useMemo(() => {
+    return executionFunctionTargetAdherenceDaily.slice(-7).reverse()
+  }, [executionFunctionTargetAdherenceDaily])
+
+  const executionFunctionTargetAdherenceSummary = useMemo(() => {
+    if (!executionFunctionTargetAdherenceLatest) {
+      return {
+        totalTracked: 0,
+        coverageRate: 0,
+        aboveTarget: 0,
+        aligned: 0,
+        belowTarget: 0,
+        aboveDelta: 0,
+        stabilityRate: 0,
+      }
+    }
+
+    const previous = executionFunctionTargetAdherenceDaily.length > 1
+      ? executionFunctionTargetAdherenceDaily[executionFunctionTargetAdherenceDaily.length - 2]
+      : null
+
+    const totalTracked = executionFunctionTargetAdherenceLatest.total_functions_with_target
+    const stableCount = executionFunctionTargetAdherenceLatest.aligned + executionFunctionTargetAdherenceLatest.below_target
+
+    return {
+      totalTracked,
+      coverageRate: executionFunctionTargetAdherenceLatest.coverage_rate,
+      aboveTarget: executionFunctionTargetAdherenceLatest.above_target,
+      aligned: executionFunctionTargetAdherenceLatest.aligned,
+      belowTarget: executionFunctionTargetAdherenceLatest.below_target,
+      aboveDelta: executionFunctionTargetAdherenceLatest.above_target - (previous?.above_target ?? executionFunctionTargetAdherenceLatest.above_target),
+      stabilityRate: totalTracked > 0 ? stableCount / totalTracked : 0,
+    }
+  }, [executionFunctionTargetAdherenceDaily, executionFunctionTargetAdherenceLatest])
+
+  const executionFunctionTargetAdherenceRecommendations = useMemo(() => {
+    if (!executionFunctionTargetAdherenceLatest) return [] as ExecutionTuningRecommendation[]
+
+    const recommendations: ExecutionTuningRecommendation[] = []
+    const topAboveTarget = executionFunctionTargetAdherenceRows.find(row => row.status === 'above_target')
+
+    if (executionFunctionTargetAdherenceSummary.aboveTarget >= 3) {
+      recommendations.push({
+        id: 'adherence-above-target-pressure',
+        level: executionFunctionTargetAdherenceSummary.aboveTarget >= 5 ? 'critical' : 'warning',
+        title: 'Funções acima do alvo em crescimento',
+        description: `${fmtInt(executionFunctionTargetAdherenceSummary.aboveTarget)} funções ficaram acima do alvo no dia ${new Date(`${executionFunctionTargetAdherenceLatest.dia}T00:00:00Z`).toLocaleDateString('pt-BR')}.`,
+        suggestedAction: 'Aplicar rollout assistido priorizando funções críticas com status acima do alvo e revalidar após 24h.',
+      })
+    }
+
+    if (executionFunctionTargetAdherenceSummary.coverageRate < 0.6) {
+      recommendations.push({
+        id: 'adherence-low-coverage',
+        level: 'warning',
+        title: 'Cobertura de plano adaptativo baixa',
+        description: `Somente ${fmtPercent(executionFunctionTargetAdherenceSummary.coverageRate)} das funções observadas possuem alvo ativo para comparação live.`,
+        suggestedAction: 'Expandir cobertura de funções no plano adaptativo para reduzir áreas cegas no monitoramento diário.',
+      })
+    }
+
+    if (topAboveTarget && topAboveTarget.pressure_gap >= 0.08) {
+      recommendations.push({
+        id: `adherence-top-function-${topAboveTarget.key}`,
+        level: topAboveTarget.priority === 'critical' ? 'critical' : 'warning',
+        title: `Maior gap live/alvo em ${topAboveTarget.label}`,
+        description: `Pressão live ${fmtPercent(topAboveTarget.live_pressure)} contra alvo ${fmtPercent(topAboveTarget.target_pressure)} (gap ${fmtPercent(topAboveTarget.pressure_gap)}).`,
+        suggestedAction: 'Executar plano de ação da função com foco em retry/fallback/waiting I/O até voltar para faixa alinhada.',
+      })
+    }
+
+    if (recommendations.length === 0) {
+      recommendations.push({
+        id: 'adherence-stable',
+        level: 'info',
+        title: 'Aderência diária estável ao plano',
+        description: 'Sinais live dos agentes permanecem alinhados aos alvos por função na janela diária mais recente.',
+        suggestedAction: 'Manter monitoramento diário e promover apenas ajustes incrementais de baixo risco.',
+      })
+    }
+
+    return recommendations.slice(0, 3)
+  }, [
+    executionFunctionTargetAdherenceLatest,
+    executionFunctionTargetAdherenceRows,
+    executionFunctionTargetAdherenceSummary.aboveTarget,
+    executionFunctionTargetAdherenceSummary.coverageRate,
+  ])
 
   const memoryAlerts = useMemo(() => {
     if (!overview) return [] as OperationalAlert[]
@@ -1434,13 +1550,22 @@ export default function PlatformAdminPanel() {
       toast.success(dryRun ? 'Diagnóstico de backfill concluído' : 'Backfill de memória dedicada concluído')
 
       if (!dryRun) {
-        const [overviewData, dailyData, stateDailyData, stateComparisonData, functionComparisonData, functionCalibrationData] = await Promise.all([
+        const [
+          overviewData,
+          dailyData,
+          stateDailyData,
+          stateComparisonData,
+          functionComparisonData,
+          functionCalibrationData,
+          functionTargetAdherenceDailyData,
+        ] = await Promise.all([
           getPlatformOverview(true),
           getPlatformDailyUsage(30, true),
           getPlatformExecutionStateDaily(14, true),
           getPlatformExecutionStateWindowComparison(7, true),
           getPlatformFunctionWindowComparison(7, true),
           getPlatformFunctionCalibrationPlan(7, true),
+          getPlatformFunctionTargetAdherenceDaily(14, 7, true),
         ])
         setOverview(overviewData)
         setDaily(dailyData)
@@ -1448,6 +1573,7 @@ export default function PlatformAdminPanel() {
         setExecutionStateComparison(stateComparisonData)
         setExecutionFunctionComparison(functionComparisonData)
         setExecutionFunctionCalibrations(functionCalibrationData)
+        setExecutionFunctionTargetAdherenceDaily(functionTargetAdherenceDailyData)
         setScaleProfile(detectScaleProfile(overviewData.total_notebooks))
       }
     } catch (error) {
@@ -2078,6 +2204,132 @@ export default function PlatformAdminPanel() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              )}
+
+              {executionFunctionTargetAdherenceLatest && (
+                <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.78)] p-3 space-y-3">
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Aderência diária live versus alvo por função</p>
+                      <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">Monitoramento operacional para rollout assistido da calibração com foco em estabilidade de retry/fallback/waiting I/O.</p>
+                    </div>
+                    <span className="rounded-full border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.78)] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">
+                      Dia {new Date(`${executionFunctionTargetAdherenceLatest.dia}T00:00:00Z`).toLocaleDateString('pt-BR')}
+                    </span>
+                  </div>
+
+                  {executionFunctionTargetAdherenceRows.length === 0 ? (
+                    <p className="text-xs text-[var(--v2-ink-soft)]">Ainda não há amostra diária suficiente para comparar sinais live com alvos por função.</p>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+                        <div className={EXECUTIVE_INSET_CARD}>
+                          <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Funções monitoradas</p>
+                          <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionFunctionTargetAdherenceSummary.totalTracked)}</p>
+                        </div>
+                        <div className={EXECUTIVE_INSET_CARD}>
+                          <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Acima do alvo</p>
+                          <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionFunctionTargetAdherenceSummary.aboveTarget)}</p>
+                          <p className={`text-[11px] font-medium ${getDeltaTone(executionFunctionTargetAdherenceSummary.aboveDelta / 10)}`}>
+                            {executionFunctionTargetAdherenceSummary.aboveDelta > 0 ? '+' : ''}{fmtInt(executionFunctionTargetAdherenceSummary.aboveDelta)} vs dia anterior
+                          </p>
+                        </div>
+                        <div className={EXECUTIVE_INSET_CARD}>
+                          <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Alinhadas</p>
+                          <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(executionFunctionTargetAdherenceSummary.aligned)}</p>
+                        </div>
+                        <div className={EXECUTIVE_INSET_CARD}>
+                          <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Cobertura do plano</p>
+                          <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtPercent(executionFunctionTargetAdherenceSummary.coverageRate)}</p>
+                        </div>
+                        <div className={EXECUTIVE_INSET_CARD}>
+                          <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Taxa de estabilidade</p>
+                          <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtPercent(executionFunctionTargetAdherenceSummary.stabilityRate)}</p>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1180px] text-xs">
+                          <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                            <tr>
+                              <th className="px-2 py-1.5 text-left">Função</th>
+                              <th className="px-2 py-1.5 text-left">Status diário</th>
+                              <th className="px-2 py-1.5 text-left">Ação</th>
+                              <th className="px-2 py-1.5 text-right">Chamadas</th>
+                              <th className="px-2 py-1.5 text-right">Retry live/alvo</th>
+                              <th className="px-2 py-1.5 text-right">Fallback live/alvo</th>
+                              <th className="px-2 py-1.5 text-right">Waiting I/O live/alvo</th>
+                              <th className="px-2 py-1.5 text-right">Pressão live/alvo</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                            {executionFunctionTargetAdherenceRows.map(row => (
+                              <tr key={`${executionFunctionTargetAdherenceLatest.dia}:${row.key}`} className="hover:bg-[rgba(255,255,255,0.66)]">
+                                <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{row.label}</td>
+                                <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">
+                                  <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getFunctionTargetAdherenceStatusTone(row.status)}`}>
+                                    {getFunctionTargetAdherenceStatusLabel(row.status)}
+                                  </span>
+                                </td>
+                                <td className={`px-2 py-1.5 font-medium ${getCalibrationActionTone(row.action)}`}>{getCalibrationActionLabel(row.action)}</td>
+                                <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(row.calls)}</td>
+                                <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.live_retry_rate)} / {fmtPercent(row.target_retry_rate)}</td>
+                                <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.live_fallback_rate)} / {fmtPercent(row.target_fallback_rate)}</td>
+                                <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(row.live_waiting_io_rate)} / {fmtPercent(row.target_waiting_io_rate)}</td>
+                                <td className={`px-2 py-1.5 text-right font-medium ${getDeltaTone(row.pressure_gap)}`}>
+                                  {fmtPercent(row.live_pressure)} / {fmtPercent(row.target_pressure)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+
+                  {executionFunctionTargetAdherenceTrendRows.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[760px] text-xs">
+                        <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
+                          <tr>
+                            <th className="px-2 py-1.5 text-left">Dia</th>
+                            <th className="px-2 py-1.5 text-right">Funções com alvo</th>
+                            <th className="px-2 py-1.5 text-right">Acima do alvo</th>
+                            <th className="px-2 py-1.5 text-right">Alinhadas</th>
+                            <th className="px-2 py-1.5 text-right">Abaixo do alvo</th>
+                            <th className="px-2 py-1.5 text-right">Cobertura</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--v2-line-soft)]">
+                          {executionFunctionTargetAdherenceTrendRows.map(point => (
+                            <tr key={`trend-${point.dia}`} className="hover:bg-[rgba(255,255,255,0.66)]">
+                              <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{new Date(`${point.dia}T00:00:00Z`).toLocaleDateString('pt-BR')}</td>
+                              <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(point.total_functions_with_target)}</td>
+                              <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(point.above_target)}</td>
+                              <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(point.aligned)}</td>
+                              <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtInt(point.below_target)}</td>
+                              <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtPercent(point.coverage_rate)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Recomendações de rollout assistido (aderência diária)</p>
+                    {executionFunctionTargetAdherenceRecommendations.map(recommendation => (
+                      <div key={recommendation.id} className={`rounded-lg border px-3 py-2 ${getRecommendationTone(recommendation.level)}`}>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">
+                          {recommendation.level === 'critical' ? 'Prioridade alta' : recommendation.level === 'warning' ? 'Atenção' : 'Informativo'}
+                        </p>
+                        <p className="mt-0.5 text-sm font-medium text-[var(--v2-ink-strong)]">{recommendation.title}</p>
+                        <p className="mt-0.5 text-xs text-[var(--v2-ink-soft)]">{recommendation.description}</p>
+                        <p className="mt-1 text-xs text-[var(--v2-ink-strong)]">Ação recomendada: {recommendation.suggestedAction}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

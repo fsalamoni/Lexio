@@ -74,6 +74,9 @@ export type {
   PlatformFunctionCalibrationAction,
   PlatformFunctionCalibrationPriority,
   PlatformFunctionCalibrationRow,
+  PlatformFunctionTargetAdherenceStatus,
+  PlatformFunctionTargetAdherenceRow,
+  PlatformFunctionTargetAdherenceDailyPoint,
 } from './firestore-types'
 import type {
   ProfileData,
@@ -103,6 +106,9 @@ import type {
   PlatformFunctionCalibrationAction,
   PlatformFunctionCalibrationPriority,
   PlatformFunctionCalibrationRow,
+  PlatformFunctionTargetAdherenceStatus,
+  PlatformFunctionTargetAdherenceRow,
+  PlatformFunctionTargetAdherenceDailyPoint,
 } from './firestore-types'
 
 // Re-export DEFAULT_DOC_STRUCTURES for backward compatibility
@@ -399,6 +405,19 @@ function computeTargetRate(input: {
   }
 
   return clampRate(Math.min(Math.max(input.currentRate * 0.95, anchoredMedian), baseline))
+}
+
+function resolveFunctionTargetAdherenceStatus(input: {
+  livePressure: number
+  targetPressure: number
+}): PlatformFunctionTargetAdherenceStatus {
+  if (input.targetPressure <= 0) {
+    return input.livePressure >= 0.05 ? 'above_target' : 'aligned'
+  }
+
+  if (input.livePressure >= input.targetPressure * 1.15) return 'above_target'
+  if (input.livePressure <= input.targetPressure * 0.75) return 'below_target'
+  return 'aligned'
 }
 
 async function getLegacySettingsDocData(documentId: string): Promise<Record<string, unknown>> {
@@ -1264,6 +1283,24 @@ function createFunctionExecutionAccumulator(label: string): FunctionExecutionAcc
   }
 }
 
+type FunctionDailyAdherenceAccumulator = {
+  label: string
+  calls: number
+  retries: number
+  fallbacks: number
+  waiting_io: number
+}
+
+function createFunctionDailyAdherenceAccumulator(label: string): FunctionDailyAdherenceAccumulator {
+  return {
+    label,
+    calls: 0,
+    retries: 0,
+    fallbacks: 0,
+    waiting_io: 0,
+  }
+}
+
 function aggregateExecutionStateWindow(
   executions: UsageExecutionRecord[],
   startDayInclusive: string,
@@ -1591,6 +1628,127 @@ export async function getPlatformFunctionCalibrationPlan(days = 7, force = false
         || right.current_calls - left.current_calls
       )
     })
+}
+
+export async function getPlatformFunctionTargetAdherenceDaily(
+  days = 14,
+  calibrationWindowDays = 7,
+  force = false,
+): Promise<PlatformFunctionTargetAdherenceDailyPoint[]> {
+  const snapshot = await loadPlatformCollections(force)
+  const executions = extractPlatformUsageExecutions(snapshot)
+  const calibrationRows = await getPlatformFunctionCalibrationPlan(calibrationWindowDays, force)
+  if (calibrationRows.length === 0) return []
+
+  const safeDays = Math.max(3, Math.min(30, Math.floor(days)))
+  const now = Date.now()
+  const planByFunction = new Map(calibrationRows.map(row => [row.key, row]))
+  const dayMap = new Map<string, {
+    observed: Set<string>
+    withTarget: Map<string, FunctionDailyAdherenceAccumulator>
+  }>()
+
+  for (let i = safeDays - 1; i >= 0; i--) {
+    const day = new Date(now - i * 86_400_000).toISOString().slice(0, 10)
+    dayMap.set(day, {
+      observed: new Set<string>(),
+      withTarget: new Map<string, FunctionDailyAdherenceAccumulator>(),
+    })
+  }
+
+  for (const execution of executions) {
+    const day = getIsoDateKey(execution.created_at)
+    if (!day) continue
+
+    const dayEntry = dayMap.get(day)
+    if (!dayEntry) continue
+
+    const functionKey = resolveFunctionKey(execution)
+    dayEntry.observed.add(functionKey)
+
+    const calibration = planByFunction.get(functionKey)
+    if (!calibration) continue
+
+    const functionEntry = dayEntry.withTarget.get(functionKey)
+      ?? createFunctionDailyAdherenceAccumulator(calibration.label || resolveFunctionLabel(execution))
+
+    functionEntry.calls += 1
+    functionEntry.retries += (execution.retry_count ?? 0) > 0 ? 1 : 0
+    functionEntry.fallbacks += execution.used_fallback ? 1 : 0
+    functionEntry.waiting_io += execution.execution_state === 'waiting_io' ? 1 : 0
+
+    dayEntry.withTarget.set(functionKey, functionEntry)
+  }
+
+  return Array.from(dayMap.entries()).map(([dia, entry]) => {
+    const rows = Array.from(entry.withTarget.entries())
+      .map(([functionKey, value]) => {
+        const calibration = planByFunction.get(functionKey)
+        if (!calibration || value.calls <= 0) return null
+
+        const liveRetryRate = safeRatio(value.retries, value.calls)
+        const liveFallbackRate = safeRatio(value.fallbacks, value.calls)
+        const liveWaitingIoRate = safeRatio(value.waiting_io, value.calls)
+        const livePressure = round4((liveRetryRate * 1.4) + (liveFallbackRate * 1.1) + (liveWaitingIoRate * 1.25))
+        const targetPressure = round4((calibration.target_retry_rate * 1.4) + (calibration.target_fallback_rate * 1.1) + (calibration.target_waiting_io_rate * 1.25))
+
+        return {
+          key: functionKey,
+          label: value.label || calibration.label,
+          calls: value.calls,
+          live_retry_rate: liveRetryRate,
+          target_retry_rate: calibration.target_retry_rate,
+          live_fallback_rate: liveFallbackRate,
+          target_fallback_rate: calibration.target_fallback_rate,
+          live_waiting_io_rate: liveWaitingIoRate,
+          target_waiting_io_rate: calibration.target_waiting_io_rate,
+          live_pressure: livePressure,
+          target_pressure: targetPressure,
+          pressure_gap: round4(livePressure - targetPressure),
+          action: calibration.action,
+          priority: calibration.priority,
+          status: resolveFunctionTargetAdherenceStatus({
+            livePressure,
+            targetPressure,
+          }),
+        } satisfies PlatformFunctionTargetAdherenceRow
+      })
+      .filter((item): item is PlatformFunctionTargetAdherenceRow => Boolean(item))
+      .sort((left, right) => {
+        const statusScore = (status: PlatformFunctionTargetAdherenceStatus) => {
+          if (status === 'above_target') return 3
+          if (status === 'aligned') return 2
+          return 1
+        }
+        const priorityScore = (priority: PlatformFunctionCalibrationPriority) => {
+          if (priority === 'critical') return 3
+          if (priority === 'warning') return 2
+          return 1
+        }
+
+        return (
+          statusScore(right.status) - statusScore(left.status)
+          || priorityScore(right.priority) - priorityScore(left.priority)
+          || right.pressure_gap - left.pressure_gap
+          || right.calls - left.calls
+        )
+      })
+
+    const aboveTarget = rows.filter(row => row.status === 'above_target').length
+    const aligned = rows.filter(row => row.status === 'aligned').length
+    const belowTarget = rows.filter(row => row.status === 'below_target').length
+
+    return {
+      dia,
+      total_functions_observed: entry.observed.size,
+      total_functions_with_target: rows.length,
+      coverage_rate: safeRatio(rows.length, entry.observed.size),
+      above_target: aboveTarget,
+      aligned,
+      below_target: belowTarget,
+      rows,
+    }
+  })
 }
 
 export type NotebookSearchMemoryBackfillReport = {
