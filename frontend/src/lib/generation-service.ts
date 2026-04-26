@@ -1639,8 +1639,10 @@ export async function generateDocument(
         const docsNeedingEmenta = preFiltered.filter(d => !d.ementa)
         if (docsNeedingEmenta.length > 0) {
           console.log(`[Acervo Ementa] ${docsNeedingEmenta.length} of ${preFiltered.length} pre-filtered docs need ementa generation`)
-          // Generate ementas in background for up to 10 docs (don't block generation)
-          const ementaPromises = docsNeedingEmenta.slice(0, 10).map(async d => {
+          // Generate ementas in background for up to 10 docs.
+          // We only wait a short warm-up window to avoid delaying the full document pipeline.
+          const ementaCandidates = docsNeedingEmenta.slice(0, 10)
+          const ementaPromises = ementaCandidates.map(async d => {
             try {
               const fullDoc = allAcervoDocs.find(ad => ad.id === d.id)
               if (!fullDoc) return
@@ -1654,7 +1656,20 @@ export async function generateDocument(
               console.warn(`[Acervo Ementa] Failed for "${d.filename}":`, err)
             }
           })
-          await Promise.all(ementaPromises)
+
+          const ementaWarmupBudgetMs = 3500
+          await Promise.race([
+            Promise.allSettled(ementaPromises),
+            new Promise<void>(resolve => {
+              setTimeout(() => resolve(), ementaWarmupBudgetMs)
+            }),
+          ])
+
+          const readyCount = ementaCandidates.filter(d => Boolean(d.ementa)).length
+          const pendingCount = Math.max(0, ementaCandidates.length - readyCount)
+          if (pendingCount > 0) {
+            console.log(`[Acervo Ementa] Warm-up budget reached (${ementaWarmupBudgetMs}ms): ${readyCount} ready, ${pendingCount} still generating in background`)
+          }
         }
 
         if (preFiltered.length > 0) {

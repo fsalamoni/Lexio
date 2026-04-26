@@ -62,7 +62,7 @@ export interface SynthesizeAudioFromScriptResult {
 }
 
 const DEFAULT_AUDIO_TTS_BATCH_CONCURRENCY = 2
-const MAX_AUDIO_TTS_BATCH_CONCURRENCY = 3
+const MAX_AUDIO_TTS_BATCH_CONCURRENCY = 5
 
 // ── Script generation ───────────────────────────────────────────────────────
 
@@ -230,6 +230,11 @@ export async function synthesizeAudioFromScript(
   })
   const workerCount = Math.max(1, Math.min(concurrencyDiagnostics.resolved, chunks.length))
   const audioBlobsByIndex: Array<Blob | null> = new Array(chunks.length).fill(null)
+
+  onProgress?.(
+    'Preparando síntese de áudio...',
+    `${chunks.length} bloco(s) • lote ${workerCount} • perfil ${concurrencyDiagnostics.profile}`,
+  )
 
   let nextChunkIndex = 0
   let firstChunkError: unknown = null

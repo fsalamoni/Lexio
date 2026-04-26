@@ -31,6 +31,7 @@ import {
   getDocumentStepMeta,
   type DocumentPipelineStep,
 } from '../lib/document-pipeline'
+import { deriveExecutionState, normalizeProgressForExecution } from '../lib/pipeline-execution-contract'
 import { buildWorkspaceDocumentDetailPath, buildWorkspaceSettingsPath } from '../lib/workspace-routes'
 
 interface DocType {
@@ -104,10 +105,21 @@ export default function NewDocument() {
   const handleProgress = useCallback((p: GenerationProgress) => {
     const now = Date.now()
     const completed = p.phase === DOCUMENT_PIPELINE_COMPLETED_PHASE || p.executionState === 'completed'
+    const executionState = completed
+      ? 'completed'
+      : deriveExecutionState({
+        progress: p.percent,
+        phase: p.phase,
+        executionState: p.executionState,
+      })
+    const normalizedPercent = normalizeProgressForExecution({
+      progress: p.percent,
+      executionState,
+    })
 
     setPipelineAgents(prev => applyDocumentPipelineProgress(prev, p, agentTimers.current, now))
 
-    setPipelinePercent(completed ? 100 : Math.min(99, Math.max(0, p.percent)))
+    setPipelinePercent(normalizedPercent)
     setPipelineMessage(p.message)
 
     if (completed) {
@@ -313,11 +325,19 @@ export default function NewDocument() {
               null,
               (p) => {
                 handleProgress(p)
-                const pct = Math.min(99, Math.max(0, (p.step / Math.max(1, p.totalSteps)) * 100))
+                const executionState = deriveExecutionState({
+                  progress: p.percent,
+                  phase: p.phase,
+                  executionState: p.executionState,
+                })
+                const pct = normalizeProgressForExecution({
+                  progress: p.percent,
+                  executionState,
+                })
                 onTaskProgress({
                   progress: pct,
                   phase: p.message || p.phase,
-                  executionState: p.executionState,
+                  executionState,
                   stageMeta: p.stageMeta,
                   currentStep: p.step,
                   totalSteps: p.totalSteps,

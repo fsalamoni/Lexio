@@ -23,6 +23,7 @@ import {
   getDocumentStepMeta,
   type DocumentPipelineStep,
 } from '../lib/document-pipeline'
+import { deriveExecutionState, normalizeProgressForExecution } from '../lib/pipeline-execution-contract'
 import { TransientLLMError } from '../lib/llm-client'
 import { ModelsNotConfiguredError } from '../lib/model-config'
 import { generateAndDownloadDocx } from '../lib/docx-generator'
@@ -137,8 +138,19 @@ export default function DocumentDetail() {
   const handleRetryProgress = useCallback((p: GenerationProgress) => {
     const now = Date.now()
     const completed = p.phase === DOCUMENT_PIPELINE_COMPLETED_PHASE || p.executionState === 'completed'
+    const executionState = completed
+      ? 'completed'
+      : deriveExecutionState({
+        progress: p.percent,
+        phase: p.phase,
+        executionState: p.executionState,
+      })
+    const normalizedPercent = normalizeProgressForExecution({
+      progress: p.percent,
+      executionState,
+    })
     setPipelineAgents(prev => applyDocumentPipelineProgress(prev, p, agentTimers.current, now))
-    setPipelinePercent(completed ? 100 : Math.min(99, Math.max(0, p.percent)))
+    setPipelinePercent(normalizedPercent)
     setPipelineMessage(p.message)
     if (completed) {
       setPipelineAgents(prev =>

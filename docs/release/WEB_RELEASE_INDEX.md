@@ -1,6 +1,18 @@
 # Web Release Index
 
-Last update: 2026-04-25
+Last update: 2026-04-26
+
+## Current Local Validation (Wave 40 — 2026-04-26, branch feature/w40-latency-progress-contract)
+- Scope: subonda 1 de latência documental e contrato de progresso confiável com demonstração lúdica de handoff multiagente
+- Frontend typecheck: success
+- Frontend tests: success (38 files, 299 tests)
+- Branch status: in progress (sem release one-shot disparado nesta subonda)
+- Key deltas:
+	- `document-pipeline.ts` normaliza percentuais por `executionState`
+	- `NewDocument.tsx` e `DocumentDetail.tsx` migrados para normalização canônica de progresso
+	- `generation-service.ts` com warm-up de ementas por orçamento de tempo (redução de bloqueio)
+	- `notebook-audio-pipeline.ts` com teto de concorrência TTS adaptativa ampliado
+	- `AgentTrailProgressModal.tsx` com handoff explícito entre mesas e fallback `prefers-reduced-motion`
 
 ## Latest One-shot Validation (Wave 39 — 2026-04-25)
 - release-web run `24939740593`: success
@@ -99,7 +111,7 @@ Last update: 2026-04-25
 - Deploy redesign V2: skipped by input (`deploy_redesign_v2=false`, `job 72772882473`)
 - Release summary: success (`job 72773344525`)
 
-## Current Local Validation (Wave 39 — 2026-04-25)
+## Previous Local Validation (Wave 39 — 2026-04-25)
 - Scope: confiança adaptativa no rollout progressivo por função, com thresholds preditivos dinâmicos, distribuição de confiança, watchlist de baixa confiança e alinhamento explícito com a demonstração dos agentes no `PlatformAdminPanel`
 - Frontend typecheck: success
 - Frontend tests: success (38 files, 299 tests)
