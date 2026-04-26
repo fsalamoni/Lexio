@@ -218,7 +218,7 @@ export default function NewDocument() {
     if (!formReady) return
     setLoadingContextDetail(true)
     try {
-      const result = await generateContextQuestions(selectedType, request, selectedAreas)
+      const result = await generateContextQuestions(selectedType, request, selectedAreas, userId || undefined)
       setContextDetail({
         analysis_summary: result.analysis_summary,
         questions: result.questions,

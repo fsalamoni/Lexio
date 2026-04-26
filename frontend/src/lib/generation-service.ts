@@ -122,16 +122,21 @@ function getLLMOperationalUsageMeta(result: Pick<LLMResult, 'operational'>): Pic
   }
 }
 
-function readCachedDocumentAgentModels(): AgentModelMap | null {
+function getDocumentAgentModelsCacheKey(uid?: string): string {
+  return `${DOCUMENT_AGENT_MODELS_CACHE_KEY}:${uid || 'anonymous'}`
+}
+
+function readCachedDocumentAgentModels(uid?: string): AgentModelMap | null {
   try {
     const storage = globalThis.sessionStorage
     if (!storage) return null
-    const raw = storage.getItem(DOCUMENT_AGENT_MODELS_CACHE_KEY)
+    const cacheKey = getDocumentAgentModelsCacheKey(uid)
+    const raw = storage.getItem(cacheKey)
     if (!raw) return null
     const parsed = JSON.parse(raw) as CachedDocumentAgentModels
     if (!parsed?.models || !Number.isFinite(parsed.savedAt)) return null
     if (Date.now() - parsed.savedAt > DOCUMENT_AGENT_MODELS_CACHE_TTL_MS) {
-      storage.removeItem(DOCUMENT_AGENT_MODELS_CACHE_KEY)
+      storage.removeItem(cacheKey)
       return null
     }
     return parsed.models
@@ -140,7 +145,7 @@ function readCachedDocumentAgentModels(): AgentModelMap | null {
   }
 }
 
-function writeCachedDocumentAgentModels(models: AgentModelMap): void {
+function writeCachedDocumentAgentModels(models: AgentModelMap, uid?: string): void {
   try {
     const storage = globalThis.sessionStorage
     if (!storage) return
@@ -148,17 +153,17 @@ function writeCachedDocumentAgentModels(models: AgentModelMap): void {
       savedAt: Date.now(),
       models,
     }
-    storage.setItem(DOCUMENT_AGENT_MODELS_CACHE_KEY, JSON.stringify(payload))
+    storage.setItem(getDocumentAgentModelsCacheKey(uid), JSON.stringify(payload))
   } catch {
     // Ignore cache write failures and proceed with live models.
   }
 }
 
-async function loadDocumentAgentModels(): Promise<AgentModelMap> {
-  const cached = readCachedDocumentAgentModels()
+async function loadDocumentAgentModels(uid?: string): Promise<AgentModelMap> {
+  const cached = readCachedDocumentAgentModels(uid)
   if (cached) return cached
-  const liveModels = await loadAgentModels()
-  writeCachedDocumentAgentModels(liveModels)
+  const liveModels = await loadAgentModels(uid)
+  writeCachedDocumentAgentModels(liveModels, uid)
   return liveModels
 }
 
@@ -192,12 +197,12 @@ function resolveRedatorRuntimeConfig(): RedatorRuntimeConfig {
 
 // ── API key retrieval ─────────────────────────────────────────────────────────
 
-export async function getOpenRouterKey(): Promise<string> {
+export async function getOpenRouterKey(uid?: string): Promise<string> {
   // Try environment variable first (works without Firestore setup)
   const envKey = import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined
   if (envKey && envKey.startsWith('sk-')) return envKey
 
-  const apiKeys = await loadApiKeyValues()
+  const apiKeys = await loadApiKeyValues(uid)
   const key = apiKeys.openrouter_api_key
   if (!key || !key.startsWith('sk-')) {
     throw new Error(
@@ -798,10 +803,11 @@ export async function generateAcervoEmenta(
   filename: string,
   textContent: string,
   model?: string,
+  uid?: string,
 ): Promise<{ ementa: string; keywords: string[]; llm_execution: UsageExecutionRecord }> {
   // Load model from admin config if not explicitly provided
   if (!model) {
-    const ementaModels = await loadAcervoEmentaModels()
+    const ementaModels = await loadAcervoEmentaModels(uid)
     validateModelMap(ementaModels, ACERVO_EMENTA_AGENT_DEFS, 'acervo_ementa_models')
     model = ementaModels.acervo_ementa
   }
@@ -899,6 +905,7 @@ export async function generateAcervoTags(
   filename: string,
   textContent: string,
   model?: string,
+  uid?: string,
 ): Promise<{
   natureza: NaturezaValue
   area_direito: string[]
@@ -909,7 +916,7 @@ export async function generateAcervoTags(
 }> {
   // Load model from admin config if not explicitly provided
   if (!model) {
-    const classificadorModels = await loadAcervoClassificadorModels()
+    const classificadorModels = await loadAcervoClassificadorModels(uid)
     validateModelMap(classificadorModels, ACERVO_CLASSIFICADOR_AGENT_DEFS, 'acervo_classificador_models')
     model = classificadorModels.acervo_classificador
   }
@@ -1527,8 +1534,8 @@ export async function generateDocument(
       'waiting_io',
     )
     const [apiKey, agentModels, adminDocTypes] = await Promise.all([
-      getOpenRouterKey(),
-      loadDocumentAgentModels(),
+      getOpenRouterKey(uid),
+      loadDocumentAgentModels(uid),
       loadAdminDocumentTypes().catch((e) => {
         console.warn('Failed to load admin document type structure:', e)
         return []
@@ -1646,7 +1653,13 @@ export async function generateDocument(
             try {
               const fullDoc = allAcervoDocs.find(ad => ad.id === d.id)
               if (!fullDoc) return
-              const { ementa, keywords, llm_execution: ementaExec } = await generateAcervoEmenta(apiKey, d.filename, fullDoc.text_content)
+              const { ementa, keywords, llm_execution: ementaExec } = await generateAcervoEmenta(
+                apiKey,
+                d.filename,
+                fullDoc.text_content,
+                undefined,
+                uid,
+              )
               await updateAcervoEmenta(uid, d.id, ementa, keywords, [ementaExec])
               // Update in-memory reference
               d.ementa = ementa
@@ -2275,9 +2288,10 @@ export async function generateContextQuestions(
   docType: string,
   request: string,
   areas: string[],
+  uid?: string,
 ): Promise<{ analysis_summary: string; questions: ContextDetailQuestion[]; llm_execution: UsageExecutionRecord }> {
-  const apiKey = await getOpenRouterKey()
-  const contextDetailModels = await loadContextDetailModels()
+  const apiKey = await getOpenRouterKey(uid)
+  const contextDetailModels = await loadContextDetailModels(uid)
   validateModelMap(contextDetailModels, CONTEXT_DETAIL_AGENT_DEFS, 'context_detail_models')
   const model = contextDetailModels.context_detail
 

@@ -292,11 +292,13 @@ function AcervoDocModal({ doc, onClose, onTextSaved }: { doc: AcervoDocumentData
 function EmentaModal({
   doc,
   apiKey,
+  uid,
   onClose,
   onSaved,
 }: {
   doc: AcervoDocumentData
   apiKey: string
+  uid?: string
   onClose: () => void
   onSaved: (ementa: string, keywords: string[], executions?: UsageExecutionRecord[]) => void
 }) {
@@ -312,7 +314,7 @@ function EmentaModal({
     if (!doc.text_content) return
     setGenerating(true)
     try {
-      const result = await generateAcervoEmenta(apiKey, doc.filename, doc.text_content)
+      const result = await generateAcervoEmenta(apiKey, doc.filename, doc.text_content, undefined, uid)
       setEmenta(result.ementa)
       setKeywords(result.keywords.join(', '))
       setPendingExecution(result.llm_execution)
@@ -662,11 +664,13 @@ function SingleSelectDropdown({
 function TagsModal({
   doc,
   apiKey,
+  uid,
   onClose,
   onSaved,
 }: {
   doc: AcervoDocumentData
   apiKey: string
+  uid?: string
   onClose: () => void
   onSaved: (tags: { natureza?: NaturezaValue; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }, executions?: UsageExecutionRecord[]) => void
 }) {
@@ -773,7 +777,7 @@ function TagsModal({
     if (!doc.text_content) return
     setGenerating(true)
     try {
-      const result = await generateAcervoTags(apiKey, doc.filename, doc.text_content)
+      const result = await generateAcervoTags(apiKey, doc.filename, doc.text_content, undefined, uid)
       setNatureza(result.natureza)
       // Match generated area names to available admin areas
       const generatedAreas = result.area_direito.filter(a => areaOptions.includes(a))
@@ -1227,7 +1231,7 @@ export default function Upload() {
       const batch = docsWithoutEmenta.slice(i, i + 5)
       await Promise.all(batch.map(async d => {
         try {
-          const result = await generateAcervoEmenta(apiKey, d.filename, d.text_content)
+          const result = await generateAcervoEmenta(apiKey, d.filename, d.text_content, undefined, userId)
           await updateAcervoEmenta(userId, d.id!, result.ementa, result.keywords, [result.llm_execution])
           successCount++
           // Update local state
@@ -1308,7 +1312,7 @@ export default function Upload() {
       const batch = docsWithoutTags.slice(i, i + 5)
       await Promise.all(batch.map(async d => {
         try {
-          const { llm_execution, ...tagsResult } = await generateAcervoTags(apiKey, d.filename, d.text_content)
+          const { llm_execution, ...tagsResult } = await generateAcervoTags(apiKey, d.filename, d.text_content, undefined, userId)
           await updateAcervoTags(userId, d.id!, tagsResult, [llm_execution])
           setFirebaseHistory(prev => prev.map(fd =>
             fd.id === d.id ? { ...fd, ...tagsResult, tags_generated: true } : fd,
@@ -1365,6 +1369,7 @@ export default function Upload() {
         <EmentaModal
           doc={ementaDoc}
           apiKey={apiKey}
+          uid={userId || undefined}
           onClose={() => setEmentaDoc(null)}
           onSaved={(ementa, kws, executions) => handleSaveEmenta(ementaDoc.id!, ementa, kws, executions)}
         />
@@ -1374,6 +1379,7 @@ export default function Upload() {
         <TagsModal
           doc={tagsDoc}
           apiKey={apiKey}
+          uid={userId || undefined}
           onClose={() => setTagsDoc(null)}
           onSaved={(tags, executions) => handleSaveTags(tagsDoc.id!, tags, executions)}
         />

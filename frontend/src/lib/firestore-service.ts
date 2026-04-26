@@ -18,6 +18,7 @@ import {
   type QueryDocumentSnapshot,
   type QueryConstraint,
 } from 'firebase/firestore'
+import { onAuthStateChanged } from 'firebase/auth'
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import { DEFAULT_DOC_STRUCTURES } from './document-structures'
@@ -135,7 +136,66 @@ function ensureFirestore() {
   return firestore
 }
 
-function resolveEffectiveUid(uid: string): string {
+const FIREBASE_AUTH_SYNC_TIMEOUT_MS = 4_000
+
+let authStateSyncPromise: Promise<void> | null = null
+
+async function waitForFirebaseAuthSync(timeoutMs = FIREBASE_AUTH_SYNC_TIMEOUT_MS): Promise<void> {
+  const auth = firebaseAuth
+  if (!auth || auth.currentUser) return
+
+  const authWithReady = auth as typeof auth & { authStateReady?: () => Promise<void> }
+  if (typeof authWithReady.authStateReady === 'function') {
+    await Promise.race([
+      authWithReady.authStateReady().catch(() => undefined),
+      new Promise<void>(resolve => {
+        setTimeout(resolve, timeoutMs)
+      }),
+    ])
+    return
+  }
+
+  if (!authStateSyncPromise) {
+    authStateSyncPromise = new Promise<void>((resolve) => {
+      let settled = false
+      let unsub: (() => void) | null = null
+
+      const finish = () => {
+        if (settled) return
+        settled = true
+        if (unsub) {
+          unsub()
+          unsub = null
+        }
+        resolve()
+      }
+
+      const timeout = setTimeout(() => {
+        clearTimeout(timeout)
+        finish()
+      }, timeoutMs)
+
+      unsub = onAuthStateChanged(auth, () => {
+        clearTimeout(timeout)
+        finish()
+      })
+    }).finally(() => {
+      authStateSyncPromise = null
+    })
+  }
+
+  await authStateSyncPromise
+}
+
+function createUnauthenticatedFirestoreError(contextLabel: string): Error {
+  const error = new Error('Sessão do Firebase não sincronizada. Faça login novamente.') as Error & { code?: string }
+  error.code = 'firestore/unauthenticated'
+  console.warn(`[Firestore Auth Sync] ${contextLabel}: no authenticated Firebase user found after sync wait.`)
+  return error
+}
+
+async function resolveEffectiveUid(uid: string, contextLabel: string): Promise<string> {
+  await waitForFirebaseAuthSync()
   const requestedUid = String(uid || '').trim()
   const authUid = firebaseAuth?.currentUser?.uid?.trim() || ''
 
@@ -144,7 +204,11 @@ function resolveEffectiveUid(uid: string): string {
     return authUid
   }
 
-  return requestedUid || authUid || uid
+  if (!authUid) {
+    throw createUnauthenticatedFirestoreError(contextLabel)
+  }
+
+  return authUid || requestedUid || uid
 }
 
 function normalizeFirestoreDocumentId(value: string): string {
@@ -278,7 +342,6 @@ function getErrorMessage(error: unknown) {
 
 const RETRYABLE_FIRESTORE_CODES = new Set([
   'unauthenticated',
-  'permission-denied',
   'unavailable',
   'deadline-exceeded',
   'aborted',
@@ -296,6 +359,10 @@ function getFirebaseErrorCode(error: unknown): string | null {
 
 function isRetryableFirestoreError(error: unknown): boolean {
   const code = getFirebaseErrorCode(error)
+  if (code === 'permission-denied') {
+    // Retry permission errors only when auth is not hydrated yet.
+    return !firebaseAuth?.currentUser
+  }
   return code ? RETRYABLE_FIRESTORE_CODES.has(code) : false
 }
 
@@ -321,7 +388,14 @@ async function withFirestoreRetry<T>(
     }
 
     console.warn(`[Firestore Retry] ${contextLabel}: first attempt failed, retrying after token refresh (${getErrorMessage(error)})`)
-    await refreshCurrentUserToken()
+    const code = getFirebaseErrorCode(error)
+    if (code === 'unauthenticated' || code === 'permission-denied') {
+      await waitForFirebaseAuthSync()
+      if (!firebaseAuth?.currentUser) {
+        throw createUnauthenticatedFirestoreError(contextLabel)
+      }
+      await refreshCurrentUserToken()
+    }
     return operation()
   }
 }
@@ -913,7 +987,7 @@ function sortDocuments(items: DocumentData[], sortDir?: string) {
 
 export async function getProfile(uid: string): Promise<ProfileData> {
   const db = ensureFirestore()
-  const effectiveUid = resolveEffectiveUid(uid)
+  const effectiveUid = await resolveEffectiveUid(uid, 'getProfile')
   const ref = doc(db, 'users', effectiveUid, 'profile', 'data')
   const snap = await withFirestoreRetry(() => getDoc(ref), 'getProfile')
   if (!snap.exists()) return {}
@@ -1100,7 +1174,7 @@ export async function listDocuments(uid: string, opts?: {
   sortDir?: string
 }): Promise<{ items: DocumentData[]; total: number }> {
   const db = ensureFirestore()
-  const effectiveUid = resolveEffectiveUid(uid)
+  const effectiveUid = await resolveEffectiveUid(uid, 'listDocuments')
   const colRef = collection(db, 'users', effectiveUid, 'documents')
 
   // Build query constraints
@@ -2875,7 +2949,7 @@ export async function listAcervoDocuments(
   opts: { limit?: number } = {},
 ): Promise<{ items: AcervoDocumentData[]; total: number }> {
   const db = ensureFirestore()
-  const effectiveUid = resolveEffectiveUid(uid)
+  const effectiveUid = await resolveEffectiveUid(uid, 'listAcervoDocuments')
   const constraints: QueryConstraint[] = [orderBy('created_at', 'desc')]
   if (opts.limit) constraints.push(limit(opts.limit))
   const colRef = collection(db, 'users', effectiveUid, 'acervo')
@@ -3197,7 +3271,7 @@ export async function getSettings(): Promise<Record<string, unknown>> {
 
 export async function getUserSettings(uid: string): Promise<UserSettingsData> {
   const db = ensureFirestore()
-  const effectiveUid = resolveEffectiveUid(uid)
+  const effectiveUid = await resolveEffectiveUid(uid, 'getUserSettings')
   const ref = doc(db, 'users', effectiveUid, 'settings', 'preferences')
   const snap = await withFirestoreRetry(() => getDoc(ref), 'getUserSettings')
   if (!snap.exists()) return {}
@@ -3311,7 +3385,7 @@ export async function getLastThesisAnalysisSession(
  */
 export async function listResearchNotebooks(uid: string): Promise<{ items: ResearchNotebookData[] }> {
   const db = ensureFirestore()
-  const effectiveUid = resolveEffectiveUid(uid)
+  const effectiveUid = await resolveEffectiveUid(uid, 'listResearchNotebooks')
   const colRef = collection(db, 'users', effectiveUid, 'research_notebooks')
   try {
     const snap = await withFirestoreRetry(
@@ -3543,7 +3617,7 @@ async function saveNotebookSearchMemory(
  */
 export async function getResearchNotebook(uid: string, notebookId: string): Promise<ResearchNotebookData | null> {
   const db = ensureFirestore()
-  const effectiveUid = resolveEffectiveUid(uid)
+  const effectiveUid = await resolveEffectiveUid(uid, 'getResearchNotebook')
   const ref = doc(db, 'users', effectiveUid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
   const snap = await withFirestoreRetry(() => getDoc(ref), 'getResearchNotebook')
   if (!snap.exists()) return null

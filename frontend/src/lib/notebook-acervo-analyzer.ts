@@ -667,8 +667,8 @@ export async function analyzeNotebookAcervo(
   }
 
   // Load API key and agent models
-  const apiKey = await getOpenRouterKey()
-  const agentModels: NotebookAcervoModelMap = await loadNotebookAcervoModels()
+  const apiKey = await getOpenRouterKey(uid)
+  const agentModels: NotebookAcervoModelMap = await loadNotebookAcervoModels(uid)
 
   const modelTriagem   = agentModels.nb_acervo_triagem
   const modelBuscador  = agentModels.nb_acervo_buscador
@@ -775,7 +775,11 @@ export async function analyzeNotebookAcervo(
         const fullDoc = availableDocs.find(ad => ad.id === d.id)
         if (!fullDoc) return
         const { ementa, keywords, llm_execution: ementaExec } = await generateAcervoEmenta(
-          apiKey, d.filename, fullDoc.text_content, modelBuscador,
+          apiKey,
+          d.filename,
+          fullDoc.text_content,
+          modelBuscador,
+          uid,
         )
         await updateAcervoEmenta(uid, d.id, ementa, keywords, [ementaExec])
         d.ementa = ementa
