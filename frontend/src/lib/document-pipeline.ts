@@ -1,6 +1,6 @@
 import { formatCostBadge } from './currency-utils'
 import type { LLMResult } from './llm-client'
-import type { PipelineExecutionState } from './pipeline-execution-contract'
+import { normalizeProgressForExecution, type PipelineExecutionState } from './pipeline-execution-contract'
 
 export type DocumentPipelineStepStatus = 'pending' | 'active' | 'completed' | 'error'
 
@@ -105,6 +105,14 @@ export function buildDocumentPipelineProgress(
     fallbackFrom?: string
   },
 ): DocumentPipelineProgress {
+  const clampedPercent = Math.max(0, Math.min(100, percent))
+  const normalizedPercent = options?.executionState
+    ? normalizeProgressForExecution({
+      progress: clampedPercent,
+      executionState: options.executionState,
+    })
+    : clampedPercent
+
   const stage = getDocumentPipelineStage(phase)
   const step = phase === DOCUMENT_PIPELINE_COMPLETED_PHASE
     ? DOCUMENT_PIPELINE_STAGES.length
@@ -113,7 +121,7 @@ export function buildDocumentPipelineProgress(
   return {
     phase,
     message,
-    percent,
+    percent: normalizedPercent,
     step,
     totalSteps: DOCUMENT_PIPELINE_STAGES.length,
     executionState: options?.executionState,

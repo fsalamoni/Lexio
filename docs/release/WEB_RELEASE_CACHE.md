@@ -1,9 +1,9 @@
 # Web Release Cache
 
-Last update: 2026-04-25
+Last update: 2026-04-26
 
 ## Execution Snapshot
-- Branch: main
+- Branch: feature/w40-latency-progress-contract
 - Sync status: up-to-date with origin/main after fast-forward
 - Local release hardening: completed
 - Wave 27 deploy verification: completed
@@ -31,6 +31,7 @@ Last update: 2026-04-25
 - Wave 38 release closeout: completed (run 24933092299 success)
 - Wave 39 confiança adaptativa no rollout progressivo + mitigação de falsos positivos: completed (local validation)
 - Wave 39 release closeout: completed (run 24939740593 success)
+- Wave 40 subonda 1 latência documental + progresso confiável + handoff lúdico: completed (local validation em branch)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -76,40 +77,37 @@ Last update: 2026-04-25
 - Wave 39 commit + push: completed (`a2ed246`)
 - Release workflow dispatch (wave39): completed (release-web.yml run 24939740593 success)
 
-## Current Wave Cache (2026-04-25)
+## Current Wave Cache (2026-04-26)
 
-- Wave tag: wave39-confidence-adaptive-rollout-release-closeout
-- Scope: política progressiva com bandas de confiança e thresholds preditivos adaptativos no painel de governança, reduzindo falsos positivos sem perder sensibilidade para risco crítico, seguida de trilha one-shot concluída com IDs reais.
-- Files touched (wave39/code+docs):
-	- frontend/src/lib/firestore-types.ts
-	- frontend/src/lib/firestore-service.ts
-	- frontend/src/pages/PlatformAdminPanel.tsx
+- Wave tag: wave40-latency-progress-contract-subwave1
+- Scope: primeira subonda de implementação focada em latência de documentos e demonstração confiável do trabalho dos agentes, com contrato de progresso canônico (`running <= 99`, `completed = 100`) e otimizações seguras sem impacto no vínculo com banco.
+- Files touched (wave40/code+docs):
+	- frontend/src/lib/document-pipeline.ts
+	- frontend/src/pages/NewDocument.tsx
+	- frontend/src/pages/DocumentDetail.tsx
+	- frontend/src/lib/notebook-audio-pipeline.ts
+	- frontend/src/lib/generation-service.ts
+	- frontend/src/components/AgentTrailProgressModal.tsx
 	- docs/PLANO.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
 	- docs/release/WEB_RELEASE_INDEX.md
 	- docs/MANIFEST.json
 	- docs/release/WEB_RELEASE_CACHE.md
-	- docs/release/CROSS_PLATFORM_HANDOFF.md
 
-## Current Validation Cache (2026-04-25)
+## Current Validation Cache (2026-04-26)
 - frontend typecheck: completed
 - frontend test: completed
-- frontend build: completed
 - frontend tests result: 38 files, 299 tests passed
-- functions build: completed (`npm run build`)
-- python tests (pytest): completed (2203 passed)
-- release-web dispatch (wave39): completed (run 24939740593)
-- Quality gates (wave39): success (functions `73031338133`, lint `73031338134`, source guardrails `73031338135`, frontend `73031338137`, unit tests `73031338143`)
-- Deploy Firebase production (wave39): completed (job 73031401264)
-- Deploy GitHub Pages / build (wave39): completed (job 73031401290)
-- Deploy GitHub Pages / deploy (wave39): completed (job 73031468718)
-- Release summary (wave39): completed (job 73031560811)
-- Deploy redesign V2 (wave39): skipped by input (job 73031401347)
+- release-web dispatch (wave40): not started (subonda em branch)
+- Quality gates (wave40): local-only validation complete (typecheck + tests)
+- Deploy Firebase production (wave40): pending closeout da wave
+- Deploy GitHub Pages (wave40): pending closeout da wave
+- Release summary (wave40): pending closeout da wave
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- None. Wave 39 closeout completed (git flow + release lane fully executed).
+- Wave 40 closeout pendente: commit final da subonda 1, push da branch, eventual PR/merge e dispatch one-shot de release somente após concluir subonda 2.
 
 ## Wave 39 Release Outcome
 - release-web dispatch (run 24939740593): success.

@@ -1219,7 +1219,7 @@ export default function ResearchNotebookV2() {
       setVideoGenLastCheckpoint(null)
       videoGenOperationalEventKeysRef.current = new Set()
 
-      const apiKey = await getOpenRouterKey()
+      const apiKey = await getOpenRouterKey(userId || undefined)
       if (!apiKey) {
         const error = new Error('Chave da API não configurada.')
         rejectTask(error)
@@ -1658,7 +1658,7 @@ export default function ResearchNotebookV2() {
     if (!userId || !activeNotebook?.id || videoStudioLiteralLoading) return
 
     const notebookId = activeNotebook.id
-    const apiKey = videoStudioApiKey || await getOpenRouterKey()
+    const apiKey = videoStudioApiKey || await getOpenRouterKey(userId || undefined)
     if (!apiKey) {
       toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
       return
@@ -1914,7 +1914,7 @@ export default function ResearchNotebookV2() {
             totalSteps: STUDIO_PIPELINE_TOTAL_STEPS,
           })
 
-          const apiKey = await getOpenRouterKey()
+          const apiKey = await getOpenRouterKey(userId || undefined)
           const onProgress = (step: number, total: number, phase: string, meta?: {
             stageMeta?: string
             executionState?: PipelineExecutionState
@@ -2127,7 +2127,7 @@ export default function ResearchNotebookV2() {
       }> = []
 
       if (currentArtifact.type === 'apresentacao' && parsed.kind === 'presentation') {
-        const apiKey = await getOpenRouterKey()
+        const apiKey = await getOpenRouterKey(userId || undefined)
         const { generatePresentationMediaAssets } = await loadPresentationGenerationRuntime()
         const media = await generatePresentationMediaAssets({
           apiKey,
@@ -2262,7 +2262,7 @@ export default function ResearchNotebookV2() {
     setAudioGeneratingArtifactId(artifact.id)
 
     try {
-      const apiKey = await getOpenRouterKey()
+      const apiKey = await getOpenRouterKey(userId || undefined)
       if (!apiKey) {
         toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
         return
@@ -2365,7 +2365,7 @@ export default function ResearchNotebookV2() {
     setChatLoading(true)
 
     try {
-      const apiKey = await getOpenRouterKey()
+      const apiKey = await getOpenRouterKey(userId || undefined)
       const models = await loadResearchNotebookModels(userId)
       const model = models.notebook_assistente
       if (!model) {
@@ -3271,7 +3271,7 @@ Instruções:
 
           updateModalStep('synthesize', { status: 'active' })
           addModalSubstep('synthesize', 'Solicitando síntese ao LLM...')
-          const apiKey = await getOpenRouterKey()
+          const apiKey = await getOpenRouterKey(userId || undefined)
           const externalResult = await callLLMWithFallback(
             apiKey,
             'Você é um pesquisador jurídico externo. Sintetize resultados de busca web em texto objetivo para uso no caderno de pesquisa. Responda em português com seções: panorama, pontos-chave, fundamentos normativos/jurisprudenciais citados e lista de URLs.',
@@ -3494,7 +3494,7 @@ Instruções:
 
           updateModalStep('synthesize', { status: 'active' })
           addModalSubstep('synthesize', 'Sintetizando conhecimento profundo...')
-          const apiKey = await getOpenRouterKey()
+          const apiKey = await getOpenRouterKey(userId || undefined)
 
           const hasFullContent = selected.some((item) => item.fullContent && item.fullContent.length > 100)
           const compiled = hasFullContent
@@ -3762,7 +3762,7 @@ Instruções:
 
         try {
           const models = await loadResearchNotebookModels()
-          const openRouterApiKey = await getOpenRouterKey()
+          const openRouterApiKey = await getOpenRouterKey(userId || undefined)
           const llmExecutions: Array<ReturnType<typeof createUsageExecutionRecord>> = []
 
           updateModalStep('rank', { status: 'active' })
@@ -5907,7 +5907,7 @@ Instruções:
               try {
                 if (!userId || !activeNotebook?.id) return null
 
-                const apiKey = videoStudioApiKey || await getOpenRouterKey()
+                const apiKey = videoStudioApiKey || await getOpenRouterKey(userId || undefined)
                 if (!apiKey) {
                   toast.error('Chave da API não configurada.')
                   return null
@@ -5941,7 +5941,7 @@ Instruções:
               try {
                 if (!videoProduction) return null
 
-                const apiKey = videoStudioApiKey || await getOpenRouterKey()
+                const apiKey = videoStudioApiKey || await getOpenRouterKey(userId || undefined)
                 if (!apiKey) {
                   toast.error('Chave da API não configurada.')
                   return null
@@ -5974,7 +5974,7 @@ Instruções:
               try {
                 if (!videoProduction) return null
 
-                const apiKey = videoStudioApiKey || await getOpenRouterKey()
+                const apiKey = videoStudioApiKey || await getOpenRouterKey(userId || undefined)
                 if (!apiKey) {
                   toast.error('Chave da API não configurada.')
                   return null

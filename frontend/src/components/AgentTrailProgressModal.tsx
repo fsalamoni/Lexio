@@ -89,6 +89,15 @@ export default function AgentTrailProgressModal({
   const traversedPath = steps
     .filter(step => step.status === 'completed' || step.status === 'active')
     .map(step => step.label)
+  const handoffMessage = isComplete
+    ? 'Todos os agentes concluíram suas mesas.'
+    : hasError
+      ? 'Fluxo interrompido antes da próxima mesa.'
+      : previousDesk && activeDesk
+        ? `${previousDesk.label} concluiu e passou o dossiê para ${activeDesk.label}.`
+        : incomingDesk
+          ? `${activeDesk?.label || 'Agente atual'} está preparando a transição para ${incomingDesk.label}.`
+          : 'Agente atual finalizando a última mesa.'
 
   return (
     <DraggablePanel
@@ -116,6 +125,20 @@ export default function AgentTrailProgressModal({
             @keyframes lexioDeskGlow {
               0%, 100% { box-shadow: 0 0 0 0 rgba(15,118,110,0.18); }
               50% { box-shadow: 0 0 0 8px rgba(15,118,110,0); }
+            }
+            @keyframes lexioCourierBob {
+              0%, 100% { margin-top: 0; }
+              50% { margin-top: -2px; }
+            }
+            @keyframes lexioDeskArrive {
+              0% { transform: translateX(10px); opacity: 0.45; }
+              100% { transform: translateX(0); opacity: 1; }
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .lexio-animated {
+                animation: none !important;
+                transition: none !important;
+              }
             }`}
         </style>
 
@@ -194,10 +217,10 @@ export default function AgentTrailProgressModal({
                   {!isComplete && !hasError && activeDesk && incomingDesk && (
                     <div className="pointer-events-none absolute left-[50%] top-[49%] h-px w-[28%]" style={{ background: 'linear-gradient(90deg, rgba(15,118,110,0.4), rgba(15,118,110,0.1))' }}>
                       <span
-                        className="absolute -top-[3px] h-2 w-2 rounded-full"
+                        className="lexio-animated absolute -top-[3px] h-2 w-2 rounded-full"
                         style={{
                           background: 'var(--v2-accent-strong)',
-                          animation: 'lexioCourierMove 1.2s linear infinite',
+                          animation: 'lexioCourierMove 1.2s linear infinite, lexioCourierBob 1.2s ease-in-out infinite',
                         }}
                       />
                     </div>
@@ -219,7 +242,11 @@ export default function AgentTrailProgressModal({
                           background: isActiveDesk
                             ? 'linear-gradient(180deg, rgba(15,118,110,0.12), rgba(15,118,110,0.04))'
                             : 'rgba(255,255,255,0.82)',
-                          animation: isActiveDesk ? 'lexioDeskGlow 1.8s ease-in-out infinite' : undefined,
+                          animation: isActiveDesk
+                            ? 'lexioDeskGlow 1.8s ease-in-out infinite'
+                            : isIncomingDesk
+                              ? 'lexioDeskArrive 0.5s ease-out'
+                              : undefined,
                         }}>
                           <p className="text-[10px] uppercase tracking-wide font-semibold truncate" style={{ color: 'var(--v2-ink-faint)' }}>
                             {slot.title}
@@ -241,7 +268,7 @@ export default function AgentTrailProgressModal({
                           </div>
 
                           {isActiveDesk && (
-                            <div className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border p-1" style={{
+                            <div className="lexio-animated absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border p-1" style={{
                               borderColor: 'rgba(15,118,110,0.35)',
                               background: 'rgba(15,118,110,0.14)',
                               animation: 'lexioDeskPulse 1.3s ease-in-out infinite',
@@ -251,9 +278,10 @@ export default function AgentTrailProgressModal({
                           )}
 
                           {isIncomingDesk && (
-                            <div className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border p-1" style={{
+                            <div className="lexio-animated absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border p-1" style={{
                               borderColor: 'rgba(14,116,144,0.3)',
                               background: 'rgba(224,242,254,0.85)',
+                              animation: 'lexioDeskArrive 0.5s ease-out',
                             }}>
                               <MoveRight className="w-3.5 h-3.5" style={{ color: 'rgb(14,116,144)' }} />
                             </div>
@@ -273,13 +301,7 @@ export default function AgentTrailProgressModal({
                   </div>
 
                   <p className="mt-2 text-[11px] text-center" style={{ color: 'var(--v2-ink-faint)' }}>
-                    {isComplete
-                      ? 'Todos os agentes concluíram suas mesas.'
-                      : hasError
-                        ? 'Fluxo interrompido antes da próxima mesa.'
-                        : incomingDesk
-                          ? 'O agente atual está passando a vez para a próxima mesa.'
-                          : 'Agente atual finalizando a última mesa.'}
+                    {handoffMessage}
                   </p>
                 </div>
 

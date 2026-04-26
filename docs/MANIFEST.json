@@ -1,8 +1,8 @@
 {
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
-    "updated": "2026-04-25",
-    "cycle": "wave39-confidence-adaptive-rollout-release-closeout",
+    "updated": "2026-04-26",
+    "cycle": "wave40-latency-progress-contract-subwave1",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [

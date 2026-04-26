@@ -1,11 +1,18 @@
 # Caderno de Pesquisa — Status de Implementacao (NotebookLM+)
 
 > Documento de tracking para agentes IA. Atualizado automaticamente.
-> Branch: `main`
+> Branch: `feature/w40-latency-progress-contract`
 
 ---
 
-## Status Geral: Etapas 1-337 IMPLEMENTADAS
+## Status Geral: Etapas 1-341 IMPLEMENTADAS
+
+### Etapas 338-341 — Wave 40 Subonda 1 (Latência + Progresso + Handoff Lúdico) ✅
+- **Arquivos**: `frontend/src/lib/document-pipeline.ts`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/DocumentDetail.tsx`, `frontend/src/lib/notebook-audio-pipeline.ts`, `frontend/src/lib/generation-service.ts`, `frontend/src/components/AgentTrailProgressModal.tsx`, `docs/PLANO.md`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`
+- Etapa 338: contrato de progresso documental endurecido no núcleo e nas telas de documento com normalização por `executionState`, garantindo `running <= 99` e `completed = 100` somente na conclusão real.
+- Etapa 339: quick wins de latência aplicados nesta subonda com aumento de concorrência adaptativa em TTS do notebook e warm-up de ementas por orçamento de tempo no pipeline de documentos para reduzir bloqueios desnecessários.
+- Etapa 340: demonstração lúdica da trilha multiagente refinada no modal de progresso com handoff explícito entre mesas/agentes e fallback de acessibilidade via `prefers-reduced-motion`.
+- Etapa 341: validação local concluída sem regressões (`npm run typecheck`; `npm run test -- --run` com **38/38 arquivos** e **299/299 testes**) e documentação operacional sincronizada para continuidade da Wave 40 em branch dedicada.
 
 ### Etapas 334-337 — Closeout Operacional da Wave 39 (Release One-shot) ✅
 - **Arquivos**: `.github/workflows/release-web.yml`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`, `docs/release/CROSS_PLATFORM_HANDOFF.md`

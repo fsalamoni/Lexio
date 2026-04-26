@@ -16,6 +16,32 @@ const mockSetDoc = vi.fn()
 const mockServerTimestamp = vi.fn()
 const mockUpdateDoc = vi.fn()
 
+const {
+  mockGetIdToken,
+  mockOnAuthStateChanged,
+  mockFirebaseAuth,
+} = vi.hoisted(() => {
+  const hoistedGetIdToken = vi.fn()
+  const hoistedOnAuthStateChanged = vi.fn()
+  const hoistedFirebaseAuth: {
+    currentUser: {
+      uid: string
+      getIdToken: (...args: unknown[]) => unknown
+    } | null
+  } = {
+    currentUser: {
+      uid: 'user-123',
+      getIdToken: (...args: unknown[]) => hoistedGetIdToken(...args),
+    },
+  }
+
+  return {
+    mockGetIdToken: hoistedGetIdToken,
+    mockOnAuthStateChanged: hoistedOnAuthStateChanged,
+    mockFirebaseAuth: hoistedFirebaseAuth,
+  }
+})
+
 vi.mock('firebase/firestore', () => ({
   addDoc: (...args: unknown[]) => mockAddDoc(...args),
   collection: (...args: unknown[]) => mockCollection(...args),
@@ -32,11 +58,15 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: (...args: unknown[]) => mockServerTimestamp(...args),
 }))
 
+vi.mock('firebase/auth', () => ({
+  onAuthStateChanged: (...args: unknown[]) => mockOnAuthStateChanged(...args),
+}))
+
 // ── Mock local firebase module ──────────────────────────────────────────────
 
 vi.mock('./firebase', () => ({
   firestore: { _fake: true },   // truthy object to pass ensureFirestore()
-  firebaseAuth: null,            // resolveEffectiveUid reads currentUser from this
+  firebaseAuth: mockFirebaseAuth,
   IS_FIREBASE: true,
 }))
 
@@ -84,6 +114,15 @@ describe('saveNotebookDocumentToDocuments', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetIdToken.mockResolvedValue('token')
+    mockFirebaseAuth.currentUser = {
+      uid,
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+    mockOnAuthStateChanged.mockImplementation((_auth: unknown, callback: (user: unknown) => void) => {
+      callback(mockFirebaseAuth.currentUser)
+      return () => undefined
+    })
     mockCollection.mockReturnValue('col-ref')
     mockAddDoc.mockResolvedValue({ id: 'new-doc-id' })
     mockDoc.mockImplementation((...segments: unknown[]) => {
@@ -206,6 +245,37 @@ describe('saveNotebookDocumentToDocuments', () => {
       'users', uid, 'settings', 'preferences',
     )
     expect(result.last_jurisprudence_tribunal_aliases).toEqual(['trf1', 'tjrs'])
+  })
+
+  it('prefers authenticated uid when requested uid is stale', async () => {
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-456',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ platform_skin: 'teal' }),
+    })
+
+    await getUserSettings(uid)
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', 'auth-456', 'settings', 'preferences',
+    )
+  })
+
+  it('fails fast with unauthenticated code when firebase session is missing', async () => {
+    mockFirebaseAuth.currentUser = null
+    mockOnAuthStateChanged.mockImplementation((_auth: unknown, callback: (user: unknown) => void) => {
+      callback(null)
+      return () => undefined
+    })
+
+    await expect(getUserSettings(uid)).rejects.toMatchObject({
+      message: 'Sessão do Firebase não sincronizada. Faça login novamente.',
+      code: 'firestore/unauthenticated',
+    })
   })
 
   it('persists user settings to the preferences document with merge', async () => {
