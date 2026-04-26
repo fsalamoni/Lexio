@@ -18,7 +18,7 @@ import {
   type QueryDocumentSnapshot,
   type QueryConstraint,
 } from 'firebase/firestore'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import { DEFAULT_DOC_STRUCTURES } from './document-structures'
@@ -137,8 +137,10 @@ function ensureFirestore() {
 }
 
 const FIREBASE_AUTH_SYNC_TIMEOUT_MS = 8_000
+const FIRESTORE_SESSION_INVALID_CODE = 'firestore/auth-session-invalid'
 
 let authStateSyncPromise: Promise<void> | null = null
+let firebaseSessionInvalidationPromise: Promise<void> | null = null
 
 function hasStoredLexioSession(): boolean {
   if (typeof window === 'undefined') return false
@@ -208,6 +210,47 @@ function createUnauthenticatedFirestoreError(contextLabel: string): Error {
   error.code = 'firestore/unauthenticated'
   console.warn(`[Firestore Auth Sync] ${contextLabel}: no authenticated Firebase user found after sync wait.`)
   return error
+}
+
+function createInvalidFirebaseSessionError(contextLabel: string, reason?: unknown): Error {
+  const reasonMessage = reason ? ` (${getErrorMessage(reason)})` : ''
+  const error = new Error('Sessão do Firebase inválida. Faça login novamente.') as Error & { code?: string }
+  error.code = FIRESTORE_SESSION_INVALID_CODE
+  console.warn(`[Firestore Auth Sync] ${contextLabel}: persistent auth access error after retry${reasonMessage}.`)
+  return error
+}
+
+function clearStoredLexioSession() {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem('lexio_token')
+    window.localStorage.removeItem('lexio_user_id')
+    window.localStorage.removeItem('lexio_role')
+    window.localStorage.removeItem('lexio_full_name')
+  } catch {
+    // Ignore storage cleanup errors during forced session invalidation.
+  }
+}
+
+async function invalidateFirebaseSession(contextLabel: string, reason?: unknown): Promise<void> {
+  const auth = firebaseAuth
+  if (!auth) return
+
+  const reasonMessage = reason ? getErrorMessage(reason) : 'unknown reason'
+  console.warn(`[Firestore Auth Sync] ${contextLabel}: invalidating Firebase session (${reasonMessage}).`)
+  clearStoredLexioSession()
+
+  if (!firebaseSessionInvalidationPromise) {
+    firebaseSessionInvalidationPromise = signOut(auth)
+      .catch((signOutError) => {
+        console.warn('[Firestore Auth Sync] Forced Firebase sign out failed:', getErrorMessage(signOutError))
+      })
+      .finally(() => {
+        firebaseSessionInvalidationPromise = null
+      })
+  }
+
+  await firebaseSessionInvalidationPromise
 }
 
 async function resolveEffectiveUid(uid: string, contextLabel: string): Promise<string> {
@@ -370,6 +413,12 @@ const AUTH_RETRYABLE_FIRESTORE_CODES = new Set([
   'permission-denied',
 ])
 
+const AUTH_ACCESS_FIRESTORE_CODES = new Set([
+  'unauthenticated',
+  'permission-denied',
+  'auth-session-invalid',
+])
+
 const FIRESTORE_AUTH_RETRY_DELAY_MS = 350
 
 function getFirebaseErrorCode(error: unknown): string | null {
@@ -391,16 +440,19 @@ function isRetryableFirestoreError(error: unknown): boolean {
 }
 
 function isAuthAccessFirestoreError(error: unknown): boolean {
-  return isAuthRetryableFirestoreCode(getFirebaseErrorCode(error))
+  const code = getFirebaseErrorCode(error)
+  return Boolean(code && AUTH_ACCESS_FIRESTORE_CODES.has(code))
 }
 
-async function refreshCurrentUserToken(): Promise<void> {
+async function refreshCurrentUserToken(): Promise<boolean> {
   const currentUser = firebaseAuth?.currentUser
-  if (!currentUser) return
+  if (!currentUser) return false
   try {
     await currentUser.getIdToken(true)
+    return true
   } catch (error) {
     console.warn('Firestore token refresh failed:', getErrorMessage(error))
+    return false
   }
 }
 
@@ -422,12 +474,25 @@ async function withFirestoreRetry<T>(
       if (!firebaseAuth?.currentUser) {
         throw createUnauthenticatedFirestoreError(contextLabel)
       }
-      await refreshCurrentUserToken()
+      const tokenRefreshSucceeded = await refreshCurrentUserToken()
+      if (!tokenRefreshSucceeded) {
+        await invalidateFirebaseSession(`${contextLabel}.tokenRefresh`, error)
+        throw createInvalidFirebaseSessionError(contextLabel, error)
+      }
       await new Promise<void>((resolve) => {
         setTimeout(resolve, FIRESTORE_AUTH_RETRY_DELAY_MS)
       })
     }
-    return operation()
+
+    try {
+      return await operation()
+    } catch (retryError) {
+      if (isAuthAccessFirestoreError(retryError)) {
+        await invalidateFirebaseSession(`${contextLabel}.retry`, retryError)
+        throw createInvalidFirebaseSessionError(contextLabel, retryError)
+      }
+      throw retryError
+    }
   }
 }
 
