@@ -1147,7 +1147,6 @@ export async function updateDocument(uid: string, docId: string, data: Partial<D
   const db = ensureFirestore()
   const ref = doc(db, 'users', uid, 'documents', docId)
   await updateDoc(ref, { ...data, updated_at: new Date().toISOString() })
-  await updateDoc(ref, { ...data, updated_at: serverTimestamp() })
 }
 
 export async function deleteDocument(uid: string, docId: string): Promise<void> {

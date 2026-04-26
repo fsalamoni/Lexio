@@ -85,6 +85,11 @@ export default function DocumentList() {
   }, [searchInput])
 
   useEffect(() => {
+    // Wait for Firebase auth before attempting Firestore reads.
+    // Without this guard, a null userId causes the else branch to call the
+    // non-existent API server, showing a spurious error toast.
+    if (IS_FIREBASE && !userId) return
+
     setLoading(true)
 
     if (IS_FIREBASE && userId) {
@@ -156,7 +161,7 @@ export default function DocumentList() {
         .catch(() => toast.error('Erro ao carregar documentos'))
         .finally(() => setLoading(false))
     }
-  }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo, originFilter, refreshKey]) // eslint-disable-line
+  }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo, originFilter, refreshKey, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStatusFilter = (s: string) => {
     setStatusFilter(prev => prev === s ? '' : s)

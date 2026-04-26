@@ -349,6 +349,8 @@ export default function ThesisBank() {
   }
 
   useEffect(() => {
+    if (IS_FIREBASE && !userId) return // Wait for Firebase auth before any fetch
+
     fetchTheses('', '')
     if (IS_FIREBASE && userId) {
       getThesisStats(userId)
@@ -359,7 +361,6 @@ export default function ThesisBank() {
         .then(res => setStats(res.data))
         .catch(() => toast.error('Erro ao carregar estatísticas do banco de teses'))
     }
-    if (IS_FIREBASE && !userId) return // Wait for auth
 
     // Auto-seed thesis bank on first load if empty (Firebase mode only)
     const initAndFetch = async () => {
