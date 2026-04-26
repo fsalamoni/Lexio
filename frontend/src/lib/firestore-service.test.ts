@@ -23,12 +23,10 @@ const mockUpdateDoc = vi.fn()
 const {
   mockGetIdToken,
   mockOnAuthStateChanged,
-  mockSignOut,
   mockFirebaseAuth,
 } = vi.hoisted(() => {
   const hoistedGetIdToken = vi.fn()
   const hoistedOnAuthStateChanged = vi.fn()
-  const hoistedSignOut = vi.fn().mockResolvedValue(undefined)
   const hoistedFirebaseAuth: {
     currentUser: {
       uid: string
@@ -44,7 +42,6 @@ const {
   return {
     mockGetIdToken: hoistedGetIdToken,
     mockOnAuthStateChanged: hoistedOnAuthStateChanged,
-    mockSignOut: hoistedSignOut,
     mockFirebaseAuth: hoistedFirebaseAuth,
   }
 })
@@ -67,7 +64,6 @@ vi.mock('firebase/firestore', () => ({
 
 vi.mock('firebase/auth', () => ({
   onAuthStateChanged: (...args: unknown[]) => mockOnAuthStateChanged(...args),
-  signOut: (...args: unknown[]) => mockSignOut(...args),
 }))
 
 // ── Mock local firebase module ──────────────────────────────────────────────
@@ -427,7 +423,6 @@ describe('saveNotebookDocumentToDocuments', () => {
 
     // Two attempts only (initial + retry). No fallback query should be issued for auth errors.
     expect(mockGetDocs).toHaveBeenCalledTimes(2)
-    expect(mockSignOut).toHaveBeenCalledTimes(1)
   })
 
   it('persists user settings to the preferences document with merge', async () => {

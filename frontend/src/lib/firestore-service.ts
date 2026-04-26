@@ -18,7 +18,7 @@ import {
   type QueryDocumentSnapshot,
   type QueryConstraint,
 } from 'firebase/firestore'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { onAuthStateChanged } from 'firebase/auth'
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import { DEFAULT_DOC_STRUCTURES } from './document-structures'
@@ -140,7 +140,6 @@ const FIREBASE_AUTH_SYNC_TIMEOUT_MS = 8_000
 const FIRESTORE_SESSION_INVALID_CODE = 'firestore/auth-session-invalid'
 
 let authStateSyncPromise: Promise<void> | null = null
-let firebaseSessionInvalidationPromise: Promise<void> | null = null
 
 function hasStoredLexioSession(): boolean {
   if (typeof window === 'undefined') return false
@@ -218,39 +217,6 @@ function createInvalidFirebaseSessionError(contextLabel: string, reason?: unknow
   error.code = FIRESTORE_SESSION_INVALID_CODE
   console.warn(`[Firestore Auth Sync] ${contextLabel}: persistent auth access error after retry${reasonMessage}.`)
   return error
-}
-
-function clearStoredLexioSession() {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.removeItem('lexio_token')
-    window.localStorage.removeItem('lexio_user_id')
-    window.localStorage.removeItem('lexio_role')
-    window.localStorage.removeItem('lexio_full_name')
-  } catch {
-    // Ignore storage cleanup errors during forced session invalidation.
-  }
-}
-
-async function invalidateFirebaseSession(contextLabel: string, reason?: unknown): Promise<void> {
-  const auth = firebaseAuth
-  if (!auth) return
-
-  const reasonMessage = reason ? getErrorMessage(reason) : 'unknown reason'
-  console.warn(`[Firestore Auth Sync] ${contextLabel}: invalidating Firebase session (${reasonMessage}).`)
-  clearStoredLexioSession()
-
-  if (!firebaseSessionInvalidationPromise) {
-    firebaseSessionInvalidationPromise = signOut(auth)
-      .catch((signOutError) => {
-        console.warn('[Firestore Auth Sync] Forced Firebase sign out failed:', getErrorMessage(signOutError))
-      })
-      .finally(() => {
-        firebaseSessionInvalidationPromise = null
-      })
-  }
-
-  await firebaseSessionInvalidationPromise
 }
 
 async function resolveEffectiveUid(uid: string, contextLabel: string): Promise<string> {
@@ -476,7 +442,6 @@ async function withFirestoreRetry<T>(
       }
       const tokenRefreshSucceeded = await refreshCurrentUserToken()
       if (!tokenRefreshSucceeded) {
-        await invalidateFirebaseSession(`${contextLabel}.tokenRefresh`, error)
         throw createInvalidFirebaseSessionError(contextLabel, error)
       }
       await new Promise<void>((resolve) => {
@@ -488,7 +453,6 @@ async function withFirestoreRetry<T>(
       return await operation()
     } catch (retryError) {
       if (isAuthAccessFirestoreError(retryError)) {
-        await invalidateFirebaseSession(`${contextLabel}.retry`, retryError)
         throw createInvalidFirebaseSessionError(contextLabel, retryError)
       }
       throw retryError
