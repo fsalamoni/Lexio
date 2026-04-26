@@ -1176,8 +1176,9 @@ export async function createDocument(uid: string, input: {
 
 export async function getDocument(uid: string, docId: string): Promise<DocumentData | null> {
   const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'documents', docId)
-  const snap = await getDoc(ref)
+  const effectiveUid = await resolveEffectiveUid(uid, 'getDocument')
+  const ref = doc(db, 'users', effectiveUid, 'documents', docId)
+  const snap = await withFirestoreRetry(() => getDoc(ref), 'getDocument')
   if (!snap.exists()) return null
   return { id: snap.id, ...snap.data() } as DocumentData
 }
@@ -2850,6 +2851,7 @@ export async function listTheses(
   opts: { q?: string; legalAreaId?: string; limit?: number; skip?: number } = {},
 ): Promise<{ items: ThesisData[]; total: number }> {
   const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'listTheses')
   // Combining where() on one field with orderBy() on a different field requires a composite
   // Firestore index that may not exist. When filtering by area we skip the server-side orderBy
   // and sort client-side instead.
@@ -2857,8 +2859,21 @@ export async function listTheses(
     ? [where('legal_area_id', '==', opts.legalAreaId)]
     : [orderBy('created_at', 'desc')]
   if (!opts.legalAreaId && opts.limit) constraints.push(limit(opts.limit + (opts.skip ?? 0)))
-  const snap = await getDocs(query(collection(db, 'users', uid, 'theses'), ...constraints))
-  let items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
+  const colRef = collection(db, 'users', effectiveUid, 'theses')
+
+  let items: ThesisData[]
+  try {
+    const snap = await withFirestoreRetry(
+      () => getDocs(query(colRef, ...constraints)),
+      'listTheses.query',
+    )
+    items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
+  } catch (error) {
+    console.warn('Firestore thesis query failed; using client-side fallback:', getErrorMessage(error))
+    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listTheses.fallback')
+    items = fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
+  }
+
   // When area filter is active, sort client-side (avoids composite index requirement)
   if (opts.legalAreaId) {
     items.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
@@ -2901,11 +2916,12 @@ export async function createThesis(uid: string, data: Partial<ThesisData>): Prom
 
 export async function updateThesis(uid: string, thesisId: string, data: Partial<ThesisData>): Promise<ThesisData> {
   const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'theses', thesisId)
+  const effectiveUid = await resolveEffectiveUid(uid, 'updateThesis')
+  const ref = doc(db, 'users', effectiveUid, 'theses', thesisId)
   const updates = { ...data, updated_at: serverTimestamp() }
   delete updates.id
   await updateDoc(ref, updates)
-  const snap = await getDoc(ref)
+  const snap = await withFirestoreRetry(() => getDoc(ref), 'updateThesis.read')
   return { id: snap.id, ...snap.data() } as ThesisData
 }
 
@@ -2921,8 +2937,23 @@ export async function getThesisStats(uid: string): Promise<{
   most_used: { id: string; title: string; usage_count: number }[]
 }> {
   const db = ensureFirestore()
-  const snap = await getDocs(query(collection(db, 'users', uid, 'theses'), orderBy('created_at', 'desc')))
-  const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
+  const effectiveUid = await resolveEffectiveUid(uid, 'getThesisStats')
+  const colRef = collection(db, 'users', effectiveUid, 'theses')
+
+  let items: ThesisData[]
+  try {
+    const snap = await withFirestoreRetry(
+      () => getDocs(query(colRef, orderBy('created_at', 'desc'))),
+      'getThesisStats.query',
+    )
+    items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
+  } catch (error) {
+    console.warn('Firestore thesis stats query failed; using client-side fallback:', getErrorMessage(error))
+    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'getThesisStats.fallback')
+    items = fallbackSnap.docs
+      .map(d => ({ id: d.id, ...d.data() } as ThesisData))
+      .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+  }
 
   const by_area: Record<string, number> = {}
   let scoreSum = 0
@@ -2969,6 +3000,30 @@ const ACERVO_MAX_EXCERPT_LENGTH = 2000
  * and multi-byte UTF-8 characters that expand beyond their char count.
  */
 const ACERVO_MAX_TEXT_LENGTH = 900_000
+
+async function getIndexedAcervoDocs(
+  uid: string,
+  contextLabel: string,
+): Promise<Array<{ id: string; data: AcervoDocumentData }>> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, contextLabel)
+  const colRef = collection(db, 'users', effectiveUid, 'acervo')
+
+  try {
+    const snap = await withFirestoreRetry(
+      () => getDocs(query(colRef, where('status', '==', 'indexed'), orderBy('created_at', 'desc'))),
+      `${contextLabel}.query`,
+    )
+    return snap.docs.map(d => ({ id: d.id, data: d.data() as AcervoDocumentData }))
+  } catch (error) {
+    console.warn('Firestore indexed acervo query failed; using client-side fallback:', getErrorMessage(error))
+    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), `${contextLabel}.fallback`)
+    return fallbackSnap.docs
+      .map(d => ({ id: d.id, data: d.data() as AcervoDocumentData }))
+      .filter(entry => entry.data.status === 'indexed')
+      .sort((a, b) => getDocumentCreatedAtValue(b.data.created_at) - getDocumentCreatedAtValue(a.data.created_at))
+  }
+}
 
 /**
  * List acervo (reference) documents for a user.
@@ -3030,15 +3085,14 @@ export async function createAcervoDocument(
   data: { filename: string; content_type: string; size_bytes: number; text_content: string; pageCount?: number },
 ): Promise<AcervoDocumentData & { truncated?: boolean }> {
   const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'createAcervoDocument')
   const now = new Date().toISOString()
 
   // Remove previous versions with the same filename (last upload wins)
   try {
-    const existing = await getDocs(
-      query(
-        collection(db, 'users', uid, 'acervo'),
-        where('filename', '==', data.filename),
-      ),
+    const existing = await withFirestoreRetry(
+      () => getDocs(query(collection(db, 'users', effectiveUid, 'acervo'), where('filename', '==', data.filename))),
+      'createAcervoDocument.dedup',
     )
     for (const snap of existing.docs) {
       await deleteDoc(snap.ref)
@@ -3077,7 +3131,7 @@ export async function createAcervoDocument(
     storage_format: 'json',
     created_at: now,
   }
-  const ref = await addDoc(collection(db, 'users', uid, 'acervo'), acervoDoc)
+  const ref = await addDoc(collection(db, 'users', effectiveUid, 'acervo'), acervoDoc)
   return { id: ref.id, ...acervoDoc, truncated }
 }
 
@@ -3097,15 +3151,11 @@ export async function deleteAcervoDocument(uid: string, docId: string): Promise<
 export async function getAllAcervoDocumentsForSearch(
   uid: string,
 ): Promise<Array<{ id: string; filename: string; text_content: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: AcervoDocumentData['natureza']; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }>> {
-  const db = ensureFirestore()
-  const snap = await getDocs(
-    query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
-  )
-  return snap.docs
-    .map(d => {
-      const data = d.data() as AcervoDocumentData
+  const docs = await getIndexedAcervoDocs(uid, 'getAllAcervoDocumentsForSearch')
+  return docs
+    .map(({ id, data }) => {
       return {
-        id: d.id,
+        id,
         filename: data.filename,
         text_content: resolveTextContent(data.text_content || ''),
         created_at: data.created_at,
@@ -3130,8 +3180,12 @@ async function mergeAcervoExecutions(
   executions: UsageExecutionRecord[],
 ): Promise<UsageExecutionRecord[]> {
   const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'mergeAcervoExecutions')
   try {
-    const existing = await getDoc(doc(db, 'users', uid, 'acervo', docId))
+    const existing = await withFirestoreRetry(
+      () => getDoc(doc(db, 'users', effectiveUid, 'acervo', docId)),
+      'mergeAcervoExecutions',
+    )
     const existingExecs = (existing.data()?.llm_executions ?? []) as UsageExecutionRecord[]
     return [...existingExecs, ...executions]
   } catch {
@@ -3234,14 +3288,10 @@ export async function convertAcervoToJson(
 export async function getAcervoDocsWithoutTags(
   uid: string,
 ): Promise<Array<{ id: string; filename: string; text_content: string }>> {
-  const db = ensureFirestore()
-  const snap = await getDocs(
-    query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
-  )
-  return snap.docs
-    .map(d => {
-      const data = d.data() as AcervoDocumentData
-      return { id: d.id, filename: data.filename, text_content: resolveTextContent(data.text_content || ''), tags_generated: data.tags_generated }
+  const docs = await getIndexedAcervoDocs(uid, 'getAcervoDocsWithoutTags')
+  return docs
+    .map(({ id, data }) => {
+      return { id, filename: data.filename, text_content: resolveTextContent(data.text_content || ''), tags_generated: data.tags_generated }
     })
     .filter(d => d.text_content.length > 0 && !d.tags_generated)
     .map(({ tags_generated: _, ...rest }) => rest)
@@ -3253,14 +3303,10 @@ export async function getAcervoDocsWithoutTags(
 export async function getAcervoDocsWithoutEmenta(
   uid: string,
 ): Promise<Array<{ id: string; filename: string; text_content: string }>> {
-  const db = ensureFirestore()
-  const snap = await getDocs(
-    query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
-  )
-  return snap.docs
-    .map(d => {
-      const data = d.data() as AcervoDocumentData
-      return { id: d.id, filename: data.filename, text_content: resolveTextContent(data.text_content || ''), ementa: data.ementa }
+  const docs = await getIndexedAcervoDocs(uid, 'getAcervoDocsWithoutEmenta')
+  return docs
+    .map(({ id, data }) => {
+      return { id, filename: data.filename, text_content: resolveTextContent(data.text_content || ''), ementa: data.ementa }
     })
     .filter(d => d.text_content.length > 0 && !d.ementa)
     .map(({ ementa: _, ...rest }) => rest)
@@ -3271,14 +3317,10 @@ export async function getAcervoDocsWithoutEmenta(
  * Returns concatenated text excerpts up to `maxChars` total characters.
  */
 export async function getAcervoContext(uid: string, maxChars = 8000): Promise<string> {
-  const db = ensureFirestore()
-  const snap = await getDocs(
-    query(collection(db, 'users', uid, 'acervo'), where('status', '==', 'indexed'), orderBy('created_at', 'desc')),
-  )
+  const docs = await getIndexedAcervoDocs(uid, 'getAcervoContext')
   const parts: string[] = []
   let total = 0
-  for (const d of snap.docs) {
-    const data = d.data() as AcervoDocumentData
+  for (const { data } of docs) {
     if (!data.text_content) continue
     const text = resolveTextContent(data.text_content)
     const excerpt = text.slice(0, ACERVO_MAX_EXCERPT_LENGTH)
@@ -3352,17 +3394,38 @@ export async function getAcervoAnalysisStatus(uid: string): Promise<{
   unanalyzed_docs: AcervoDocumentData[]
 }> {
   const db = ensureFirestore()
-  const snap = await getDocs(
-    query(collection(db, 'users', uid, 'acervo'), orderBy('created_at', 'desc')),
-  )
-  const all = snap.docs.map(d => {
-    const raw = d.data() as AcervoDocumentData
-    return {
-      ...raw,
-      id: d.id,
-      text_content: resolveTextContent(raw.text_content || ''),
-    }
-  })
+  const effectiveUid = await resolveEffectiveUid(uid, 'getAcervoAnalysisStatus')
+  const colRef = collection(db, 'users', effectiveUid, 'acervo')
+
+  let all: AcervoDocumentData[]
+  try {
+    const snap = await withFirestoreRetry(
+      () => getDocs(query(colRef, orderBy('created_at', 'desc'))),
+      'getAcervoAnalysisStatus.query',
+    )
+    all = snap.docs.map(d => {
+      const raw = d.data() as AcervoDocumentData
+      return {
+        ...raw,
+        id: d.id,
+        text_content: resolveTextContent(raw.text_content || ''),
+      }
+    })
+  } catch (error) {
+    console.warn('Firestore acervo analysis query failed; using client-side fallback:', getErrorMessage(error))
+    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'getAcervoAnalysisStatus.fallback')
+    all = fallbackSnap.docs
+      .map(d => {
+        const raw = d.data() as AcervoDocumentData
+        return {
+          ...raw,
+          id: d.id,
+          text_content: resolveTextContent(raw.text_content || ''),
+        }
+      })
+      .sort((a, b) => getDocumentCreatedAtValue(b.created_at) - getDocumentCreatedAtValue(a.created_at))
+  }
+
   const analyzed = all.filter(d => d.analyzed_for_theses === true)
   const unanalyzed = all.filter(d => d.analyzed_for_theses !== true && d.status === 'indexed' && d.text_content?.length > 0)
   return {
@@ -3633,7 +3696,7 @@ function applyNotebookSearchMemoryRetention(
 
 async function getNotebookSearchMemory(uid: string, notebookId: string): Promise<NotebookSearchMemoryData | null> {
   const ref = getNotebookSearchMemoryDocRef(uid, notebookId)
-  const snap = await getDoc(ref)
+  const snap = await withFirestoreRetry(() => getDoc(ref), 'getNotebookSearchMemory')
   if (!snap.exists()) return null
   return snap.data() as NotebookSearchMemoryData
 }
@@ -3697,6 +3760,7 @@ export async function getResearchNotebook(uid: string, notebookId: string): Prom
  */
 export async function createResearchNotebook(uid: string, data: Omit<ResearchNotebookData, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
   const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'createResearchNotebook')
   const now = new Date().toISOString()
 
   // Build preliminary payload WITHOUT sources to estimate non-source overhead
@@ -3718,10 +3782,10 @@ export async function createResearchNotebook(uid: string, data: Omit<ResearchNot
   const { sources } = fitSourcesToFirestoreLimit(data.sources ?? [], otherBytes)
 
   const sanitized = { ...baseMeta, sources }
-  const docRef = await addDoc(collection(db, 'users', uid, 'research_notebooks'), sanitized)
+  const docRef = await addDoc(collection(db, 'users', effectiveUid, 'research_notebooks'), sanitized)
 
   try {
-    await saveNotebookSearchMemory(uid, docRef.id, {
+    await saveNotebookSearchMemory(effectiveUid, docRef.id, {
       research_audits: sanitized.research_audits,
       saved_searches: sanitized.saved_searches,
       migrated_from_notebook_doc_at: now,
@@ -3738,7 +3802,8 @@ export async function createResearchNotebook(uid: string, data: Omit<ResearchNot
  */
 export async function updateResearchNotebook(uid: string, notebookId: string, data: Partial<ResearchNotebookData>): Promise<void> {
   const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
+  const effectiveUid = await resolveEffectiveUid(uid, 'updateResearchNotebook')
+  const ref = doc(db, 'users', effectiveUid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id, ...rest } = data
   const shouldSyncSearchMemory = rest.research_audits !== undefined || rest.saved_searches !== undefined
@@ -3753,7 +3818,7 @@ export async function updateResearchNotebook(uid: string, notebookId: string, da
   // When the update includes sources, ensure total estimated size is safe.
   // We fetch the current document so we can account for existing fields.
   if (rootPayload.sources) {
-    const snap = await getDoc(ref)
+    const snap = await withFirestoreRetry(() => getDoc(ref), 'updateResearchNotebook.read')
     const existing = snap.exists() ? snap.data() : {}
     const merged = { ...existing, ...stripUndefined(rootPayload), updated_at: new Date().toISOString() }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -3761,15 +3826,15 @@ export async function updateResearchNotebook(uid: string, notebookId: string, da
     const otherBytes = estimateJsonBytes(mergedMeta)
     const { sources } = fitSourcesToFirestoreLimit(rootPayload.sources, otherBytes)
     const sanitized = stripUndefined({ ...rootPayload, sources, updated_at: new Date().toISOString() })
-    await updateDoc(ref, sanitized)
+    await withFirestoreRetry(() => updateDoc(ref, sanitized), 'updateResearchNotebook.updateWithSources')
   } else {
     const sanitized = stripUndefined({ ...rootPayload, updated_at: new Date().toISOString() })
-    await updateDoc(ref, sanitized)
+    await withFirestoreRetry(() => updateDoc(ref, sanitized), 'updateResearchNotebook.update')
   }
 
   if (shouldSyncSearchMemory) {
     try {
-      await saveNotebookSearchMemory(uid, normalizeFirestoreDocumentId(notebookId), {
+      await saveNotebookSearchMemory(effectiveUid, normalizeFirestoreDocumentId(notebookId), {
         ...(rest.research_audits !== undefined ? { research_audits: rest.research_audits } : {}),
         ...(rest.saved_searches !== undefined ? { saved_searches: rest.saved_searches } : {}),
       })
@@ -3784,10 +3849,11 @@ export async function updateResearchNotebook(uid: string, notebookId: string, da
  */
 export async function deleteResearchNotebook(uid: string, notebookId: string): Promise<void> {
   const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'deleteResearchNotebook')
   const normalizedNotebookId = normalizeFirestoreDocumentId(notebookId)
-  await deleteDoc(doc(db, 'users', uid, 'research_notebooks', normalizedNotebookId))
+  await deleteDoc(doc(db, 'users', effectiveUid, 'research_notebooks', normalizedNotebookId))
   try {
-    await deleteDoc(getNotebookSearchMemoryDocRef(uid, normalizedNotebookId))
+    await deleteDoc(getNotebookSearchMemoryDocRef(effectiveUid, normalizedNotebookId))
   } catch {
     // Ignore missing/forbidden dedicated memory doc; notebook deletion is the source of truth.
   }

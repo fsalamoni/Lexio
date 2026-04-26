@@ -438,7 +438,7 @@ function compactVideoProductionForPersistence(production: VideoProductionPackage
 }
 
 export default function ResearchNotebookV2() {
-  const { userId } = useAuth()
+  const { userId, isReady } = useAuth()
   const { startTask, tasks } = useTaskManager()
   const toast = useToast()
   const navigate = useNavigate()
@@ -536,6 +536,40 @@ export default function ResearchNotebookV2() {
   const videoStudioUploadCacheRef = useRef<globalThis.Map<string, StoredNotebookMedia>>(new globalThis.Map<string, StoredNotebookMedia>())
   const videoGenOperationalEventKeysRef = useRef<Set<string>>(new Set())
   const videoLiteralOperationalEventKeysRef = useRef<Set<string>>(new Set())
+  const shouldWaitForFirebaseUser = IS_FIREBASE && (!isReady || !userId)
+
+  const withTransientAuthRetry = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
+    try {
+      return await operation()
+    } catch (error) {
+      const code = (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        typeof error.code === 'string'
+      )
+        ? error.code.replace(/^firestore\//, '')
+        : ''
+
+      const message = error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : ''
+
+      const isTransientAuthError =
+        code === 'unauthenticated' ||
+        code === 'permission-denied' ||
+        /sessão do firebase não sincronizada|missing or insufficient permissions/i.test(message)
+
+      if (!isTransientAuthError) throw error
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 700)
+      })
+      return operation()
+    }
+  }, [])
 
   const syncRoute = useCallback((notebookId?: string | null, section: ResearchNotebookV2Section = 'overview', replace = false) => {
     const next = getRedesignPreviewParams(location.search)
@@ -557,10 +591,10 @@ export default function ResearchNotebookV2() {
 
   const getFreshNotebookOrThrow = useCallback(async (notebookId: string) => {
     if (!userId) throw new Error('Usuário não autenticado')
-    const notebook = await getResearchNotebook(userId, notebookId)
+    const notebook = await withTransientAuthRetry(() => getResearchNotebook(userId, notebookId))
     if (!notebook) throw new Error('Caderno não encontrado')
     return notebook
-  }, [userId])
+  }, [userId, withTransientAuthRetry])
 
   const notebookArtifactTasks = useMemo(() => {
     if (!activeNotebook?.id) return []
@@ -597,10 +631,10 @@ export default function ResearchNotebookV2() {
     section: ResearchNotebookV2Section,
     syncSelection = true,
   ) => {
-    if (!userId) return
+    if (shouldWaitForFirebaseUser || !userId) return
     setSelectingNotebook(true)
     try {
-      const notebook = await getResearchNotebook(userId, notebookId)
+      const notebook = await withTransientAuthRetry(() => getResearchNotebook(userId, notebookId))
       if (!notebook) {
         toast.warning('Caderno não encontrado', 'A seleção solicitada não está mais disponível.')
         return
@@ -615,48 +649,48 @@ export default function ResearchNotebookV2() {
     } finally {
       setSelectingNotebook(false)
     }
-  }, [syncRoute, toast, userId])
+  }, [shouldWaitForFirebaseUser, syncRoute, toast, userId, withTransientAuthRetry])
 
   const loadNotebooks = useCallback(async () => {
-    if (!userId || !IS_FIREBASE) {
+    if (shouldWaitForFirebaseUser || !userId || !IS_FIREBASE) {
       setLoading(false)
       return
     }
 
     setLoading(true)
     try {
-      const result = await listResearchNotebooks(userId)
+      const result = await withTransientAuthRetry(() => listResearchNotebooks(userId))
       setNotebooks(result.items)
     } catch {
       toast.error('Erro ao carregar cadernos de pesquisa')
     } finally {
       setLoading(false)
     }
-  }, [toast, userId])
+  }, [shouldWaitForFirebaseUser, toast, userId, withTransientAuthRetry])
 
   const loadAcervo = useCallback(async () => {
-    if (!userId || !IS_FIREBASE) return
+    if (shouldWaitForFirebaseUser || !userId || !IS_FIREBASE) return
     setAcervoLoading(true)
     try {
-      const result = await listAcervoDocuments(userId)
+      const result = await withTransientAuthRetry(() => listAcervoDocuments(userId))
       setAcervoDocs(result.items)
     } catch {
       toast.warning('Não foi possível carregar o acervo neste momento.')
     } finally {
       setAcervoLoading(false)
     }
-  }, [toast, userId])
+  }, [shouldWaitForFirebaseUser, toast, userId, withTransientAuthRetry])
 
   useEffect(() => {
     void loadNotebooks()
   }, [loadNotebooks])
 
   useEffect(() => {
-    if (!userId || !IS_FIREBASE) return
+    if (shouldWaitForFirebaseUser || !userId || !IS_FIREBASE) return
 
     let cancelled = false
 
-    getUserSettings(userId)
+    withTransientAuthRetry(() => getUserSettings(userId))
       .then((settings) => {
         if (cancelled) return
 
@@ -675,7 +709,7 @@ export default function ResearchNotebookV2() {
     return () => {
       cancelled = true
     }
-  }, [userId])
+  }, [shouldWaitForFirebaseUser, userId, withTransientAuthRetry])
 
   useEffect(() => {
     if (activeSection === 'sources' && acervoDocs.length === 0 && !acervoLoading) {

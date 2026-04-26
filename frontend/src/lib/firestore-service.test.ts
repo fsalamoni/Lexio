@@ -102,7 +102,9 @@ import {
   sanitizeAdminLegalAreas,
   saveUserSettings,
   saveNotebookDocumentToDocuments,
+  listTheses,
   listThesisAnalysisSessions,
+  getAcervoDocsWithoutTags,
   updateResearchNotebook,
 } from './firestore-service'
 
@@ -320,6 +322,57 @@ describe('saveNotebookDocumentToDocuments', () => {
       message: 'Sessão do Firebase não sincronizada. Faça login novamente.',
       code: 'firestore/unauthenticated',
     })
+  })
+
+  it('uses authenticated uid when listing theses', async () => {
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-456',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        { id: 'thesis-1', data: () => ({ title: 'Tese', content: 'Conteudo', legal_area_id: 'civil', usage_count: 0, created_at: '2026-01-01T00:00:00.000Z' }) },
+      ],
+      empty: false,
+    })
+
+    await listTheses(uid)
+
+    expect(mockCollection).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', 'auth-456', 'theses',
+    )
+  })
+
+  it('uses authenticated uid when loading indexed acervo docs without tags', async () => {
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-456',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        {
+          id: 'acervo-1',
+          data: () => ({
+            filename: 'doc.pdf',
+            status: 'indexed',
+            text_content: 'texto',
+            created_at: '2026-01-01T00:00:00.000Z',
+            tags_generated: false,
+          }),
+        },
+      ],
+      empty: false,
+    })
+
+    const docs = await getAcervoDocsWithoutTags(uid)
+
+    expect(mockCollection).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', 'auth-456', 'acervo',
+    )
+    expect(docs).toHaveLength(1)
+    expect(docs[0].id).toBe('acervo-1')
   })
 
   it('persists user settings to the preferences document with merge', async () => {

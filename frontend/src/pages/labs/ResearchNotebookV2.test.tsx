@@ -59,7 +59,7 @@ vi.mock('../../components/Toast', () => ({
 }))
 
 vi.mock('../../contexts/AuthContext', () => ({
-  useAuth: () => ({ userId: 'user-1' }),
+  useAuth: () => ({ userId: 'user-1', isReady: true }),
 }))
 
 vi.mock('../../contexts/TaskManagerContext', () => ({
