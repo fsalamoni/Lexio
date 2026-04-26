@@ -36,6 +36,7 @@ vi.mock('firebase/firestore', () => ({
 
 vi.mock('./firebase', () => ({
   firestore: { _fake: true },   // truthy object to pass ensureFirestore()
+  firebaseAuth: null,            // resolveEffectiveUid reads currentUser from this
   IS_FIREBASE: true,
 }))
 
