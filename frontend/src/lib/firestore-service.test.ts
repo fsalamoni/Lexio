@@ -98,6 +98,7 @@ vi.mock('./document-json-converter', () => ({
 import {
   getUserSettings,
   getResearchNotebook,
+  listDocuments,
   sanitizeAdminDocumentTypes,
   sanitizeAdminLegalAreas,
   saveUserSettings,
@@ -373,6 +374,55 @@ describe('saveNotebookDocumentToDocuments', () => {
     )
     expect(docs).toHaveLength(1)
     expect(docs[0].id).toBe('acervo-1')
+  })
+
+  it('retries listDocuments once after permission-denied and token refresh', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDocs
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'doc-1',
+            data: () => ({
+              document_type_id: 'parecer',
+              tema: 'Tema',
+              status: 'concluido',
+              quality_score: 90,
+              created_at: '2026-01-01T00:00:00.000Z',
+              origem: 'web',
+            }),
+          },
+        ],
+        empty: false,
+      })
+
+    const result = await listDocuments(uid)
+
+    expect(mockGetDocs).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0].id).toBe('doc-1')
+  })
+
+  it('does not run fallback query when listDocuments auth permission-denied persists', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDocs
+      .mockRejectedValueOnce(permissionError)
+      .mockRejectedValueOnce(permissionError)
+
+    await expect(listDocuments(uid)).rejects.toMatchObject({
+      code: 'firestore/permission-denied',
+    })
+
+    // Two attempts only (initial + retry). No fallback query should be issued for auth errors.
+    expect(mockGetDocs).toHaveBeenCalledTimes(2)
   })
 
   it('persists user settings to the preferences document with merge', async () => {

@@ -56,9 +56,43 @@ export default function DocumentList() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const location = useLocation()
-  const { userId } = useAuth()
+  const { userId, isReady } = useAuth()
   const toast = useToast()
   const newDocumentPath = buildWorkspaceNewDocumentPath({ preserveSearch: location.search })
+  const shouldWaitForFirebaseUser = IS_FIREBASE && (!isReady || !userId)
+
+  const withTransientAuthRetry = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
+    try {
+      return await operation()
+    } catch (error) {
+      const code = (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        typeof error.code === 'string'
+      )
+        ? error.code.replace(/^firestore\//, '')
+        : ''
+
+      const message = error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : ''
+
+      const isTransientAuthError =
+        code === 'unauthenticated' ||
+        code === 'permission-denied' ||
+        /sessão do firebase não sincronizada|missing or insufficient permissions/i.test(message)
+
+      if (!isTransientAuthError) throw error
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 700)
+      })
+      return operation()
+    }
+  }, [])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -85,21 +119,18 @@ export default function DocumentList() {
   }, [searchInput])
 
   useEffect(() => {
-    // Wait for Firebase auth before attempting Firestore reads.
-    // Without this guard, a null userId causes the else branch to call the
-    // non-existent API server, showing a spurious error toast.
-    if (IS_FIREBASE && !userId) return
+    if (shouldWaitForFirebaseUser) return
 
     setLoading(true)
 
     if (IS_FIREBASE && userId) {
       const [sbField, sbDir] = sortBy.split('_')
-      listDocuments(userId, {
+      withTransientAuthRetry(() => listDocuments(userId, {
         status: statusFilter || undefined,
         document_type_id: typeFilter || undefined,
         sortBy: sbField === 'date' ? 'created_at' : 'quality_score',
         sortDir: sbDir,
-      })
+      }))
         .then(result => {
           let items = result.items.map(d => ({
             ...d,
@@ -161,7 +192,7 @@ export default function DocumentList() {
         .catch(() => toast.error('Erro ao carregar documentos'))
         .finally(() => setLoading(false))
     }
-  }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo, originFilter, refreshKey, userId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo, originFilter, refreshKey, shouldWaitForFirebaseUser, userId, withTransientAuthRetry]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStatusFilter = (s: string) => {
     setStatusFilter(prev => prev === s ? '' : s)

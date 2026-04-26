@@ -19,10 +19,12 @@ describe('firestore-service auth guardrails', () => {
   it('keeps auth-hardened read entrypoints wired to effective uid resolution', () => {
     const requiredGuards = [
       /resolveEffectiveUid\(uid,\s*'getDocument'\)/,
+      /resolveEffectiveUid\(uid,\s*'listDocuments'\)/,
       /resolveEffectiveUid\(uid,\s*'listTheses'\)/,
       /resolveEffectiveUid\(uid,\s*'getThesisStats'\)/,
       /resolveEffectiveUid\(uid,\s*'getAcervoAnalysisStatus'\)/,
       /resolveEffectiveUid\(uid,\s*'getResearchNotebook'\)/,
+      /resolveEffectiveUid\(uid,\s*'listResearchNotebooks'\)/,
     ]
 
     for (const pattern of requiredGuards) {

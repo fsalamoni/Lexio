@@ -365,6 +365,13 @@ const RETRYABLE_FIRESTORE_CODES = new Set([
   'failed-precondition',
 ])
 
+const AUTH_RETRYABLE_FIRESTORE_CODES = new Set([
+  'unauthenticated',
+  'permission-denied',
+])
+
+const FIRESTORE_AUTH_RETRY_DELAY_MS = 350
+
 function getFirebaseErrorCode(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null
   if ('code' in error && typeof error.code === 'string') {
@@ -373,13 +380,18 @@ function getFirebaseErrorCode(error: unknown): string | null {
   return null
 }
 
+function isAuthRetryableFirestoreCode(code: string | null): boolean {
+  return Boolean(code && AUTH_RETRYABLE_FIRESTORE_CODES.has(code))
+}
+
 function isRetryableFirestoreError(error: unknown): boolean {
   const code = getFirebaseErrorCode(error)
-  if (code === 'permission-denied') {
-    // Retry permission errors only when auth is not hydrated yet.
-    return !firebaseAuth?.currentUser
-  }
-  return code ? RETRYABLE_FIRESTORE_CODES.has(code) : false
+  if (!code) return false
+  return RETRYABLE_FIRESTORE_CODES.has(code) || AUTH_RETRYABLE_FIRESTORE_CODES.has(code)
+}
+
+function isAuthAccessFirestoreError(error: unknown): boolean {
+  return isAuthRetryableFirestoreCode(getFirebaseErrorCode(error))
 }
 
 async function refreshCurrentUserToken(): Promise<void> {
@@ -403,14 +415,17 @@ async function withFirestoreRetry<T>(
       throw error
     }
 
-    console.warn(`[Firestore Retry] ${contextLabel}: first attempt failed, retrying after token refresh (${getErrorMessage(error)})`)
     const code = getFirebaseErrorCode(error)
-    if (code === 'unauthenticated' || code === 'permission-denied') {
+    console.warn(`[Firestore Retry] ${contextLabel}: first attempt failed, retrying (${getErrorMessage(error)})`)
+    if (isAuthRetryableFirestoreCode(code)) {
       await waitForFirebaseAuthSync()
       if (!firebaseAuth?.currentUser) {
         throw createUnauthenticatedFirestoreError(contextLabel)
       }
       await refreshCurrentUserToken()
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, FIRESTORE_AUTH_RETRY_DELAY_MS)
+      })
     }
     return operation()
   }
@@ -1216,6 +1231,9 @@ export async function listDocuments(uid: string, opts?: {
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentData))
     return { items, total: items.length }
   } catch (error) {
+    if (isAuthAccessFirestoreError(error)) {
+      throw error
+    }
     try {
       console.warn('Firestore document query failed; using client-side fallback:', getErrorMessage(error))
       const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listDocuments.fallback')
@@ -1409,6 +1427,9 @@ export async function listThesisAnalysisSessions(uid: string): Promise<ThesisAna
     )
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisAnalysisSessionData))
   } catch (error) {
+    if (isAuthAccessFirestoreError(error)) {
+      throw error
+    }
     console.warn('Firestore thesis analysis query failed; using client-side fallback:', getErrorMessage(error))
     const fallbackSnap = await withFirestoreRetry(
       () => getDocs(colRef),
@@ -2869,6 +2890,9 @@ export async function listTheses(
     )
     items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
   } catch (error) {
+    if (isAuthAccessFirestoreError(error)) {
+      throw error
+    }
     console.warn('Firestore thesis query failed; using client-side fallback:', getErrorMessage(error))
     const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listTheses.fallback')
     items = fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
@@ -2948,6 +2972,9 @@ export async function getThesisStats(uid: string): Promise<{
     )
     items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
   } catch (error) {
+    if (isAuthAccessFirestoreError(error)) {
+      throw error
+    }
     console.warn('Firestore thesis stats query failed; using client-side fallback:', getErrorMessage(error))
     const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'getThesisStats.fallback')
     items = fallbackSnap.docs
@@ -3016,6 +3043,9 @@ async function getIndexedAcervoDocs(
     )
     return snap.docs.map(d => ({ id: d.id, data: d.data() as AcervoDocumentData }))
   } catch (error) {
+    if (isAuthAccessFirestoreError(error)) {
+      throw error
+    }
     console.warn('Firestore indexed acervo query failed; using client-side fallback:', getErrorMessage(error))
     const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), `${contextLabel}.fallback`)
     return fallbackSnap.docs
@@ -3054,6 +3084,9 @@ export async function listAcervoDocuments(
     })
     return { items, total: items.length }
   } catch (error) {
+    if (isAuthAccessFirestoreError(error)) {
+      throw error
+    }
     console.warn('Firestore acervo query failed; using client-side fallback:', getErrorMessage(error))
     const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listAcervoDocuments.fallback')
     let items = fallbackSnap.docs.map(d => {
@@ -3412,6 +3445,9 @@ export async function getAcervoAnalysisStatus(uid: string): Promise<{
       }
     })
   } catch (error) {
+    if (isAuthAccessFirestoreError(error)) {
+      throw error
+    }
     console.warn('Firestore acervo analysis query failed; using client-side fallback:', getErrorMessage(error))
     const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'getAcervoAnalysisStatus.fallback')
     all = fallbackSnap.docs
@@ -3470,6 +3506,9 @@ export async function getLastThesisAnalysisSession(
     const d = snap.docs[0]
     return { id: d.id, ...d.data() } as ThesisAnalysisSessionData
   } catch (error) {
+    if (isAuthAccessFirestoreError(error)) {
+      throw error
+    }
     console.warn('Firestore last thesis analysis query failed; using client-side fallback:', getErrorMessage(error))
     const fallbackSnap = await withFirestoreRetry(
       () => getDocs(colRef),
@@ -3499,6 +3538,9 @@ export async function listResearchNotebooks(uid: string): Promise<{ items: Resea
     )
     return { items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ResearchNotebookData)) }
   } catch (error) {
+    if (isAuthAccessFirestoreError(error)) {
+      throw error
+    }
     console.warn('Firestore notebook query failed; using client-side fallback:', getErrorMessage(error))
     const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listResearchNotebooks.fallback')
     const items = fallbackSnap.docs
