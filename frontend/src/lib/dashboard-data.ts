@@ -74,6 +74,48 @@ export function getResumableDocument(recent: DashboardRecentDoc[]) {
   return recent.find((doc) => doc.status === 'processando' || doc.status === 'em_revisao' || doc.status === 'concluido') || null
 }
 
+const TRANSIENT_AUTH_ERROR_CODES = new Set(['unauthenticated', 'permission-denied'])
+
+function getFirebaseErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null
+  if ('code' in error && typeof error.code === 'string') {
+    return error.code.replace(/^firestore\//, '')
+  }
+  return null
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return ''
+}
+
+function isTransientAuthError(error: unknown): boolean {
+  const code = getFirebaseErrorCode(error)
+  if (code && TRANSIENT_AUTH_ERROR_CODES.has(code)) return true
+  const message = getErrorMessage(error)
+  return /sessão do firebase não sincronizada|missing or insufficient permissions/i.test(message)
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+async function withTransientAuthRetry<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (!isTransientAuthError(error)) throw error
+    await wait(700)
+    return operation()
+  }
+}
+
 export function useDashboardData(periodDays: number) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [daily, setDaily] = useState<DailyPoint[]>([])
@@ -82,19 +124,19 @@ export function useDashboardData(periodDays: number) {
   const [byType, setByType] = useState<TypeStat[]>([])
   const [loading, setLoading] = useState(true)
   const [chartLoading, setChartLoading] = useState(false)
-  const { userId } = useAuth()
+  const { userId, isReady } = useAuth()
   const toast = useToast()
-  const shouldWaitForFirebaseUser = IS_FIREBASE && !userId
+  const shouldWaitForFirebaseUser = IS_FIREBASE && (!isReady || !userId)
 
   useEffect(() => {
     if (shouldWaitForFirebaseUser) return
     setLoading(true)
 
     if (IS_FIREBASE && userId) {
-      const statsPromise = firestoreGetStats(userId)
+      const statsPromise = withTransientAuthRetry(() => firestoreGetStats(userId))
         .then((value) => setStats(value))
         .catch(() => toast.error('Erro ao carregar estatisticas'))
-      const recentPromise = getRecentDocuments(userId, 5)
+      const recentPromise = withTransientAuthRetry(() => getRecentDocuments(userId, 5))
         .then((docs) => {
           setRecent(docs.filter((doc) => doc.id).map((doc) => ({
             id: doc.id as string,
@@ -106,10 +148,10 @@ export function useDashboardData(periodDays: number) {
           })))
         })
         .catch(() => toast.error('Erro ao carregar documentos recentes'))
-      const dailyPromise = getDailyStats(userId, periodDays)
+      const dailyPromise = withTransientAuthRetry(() => getDailyStats(userId, periodDays))
         .then((value) => setDaily(value))
         .catch(() => {})
-      const byTypePromise = getByTypeStats(userId)
+      const byTypePromise = withTransientAuthRetry(() => getByTypeStats(userId))
         .then((value) => setByType(value))
         .catch(() => {})
       Promise.all([statsPromise, recentPromise, dailyPromise, byTypePromise]).finally(() => setLoading(false))
@@ -143,7 +185,7 @@ export function useDashboardData(periodDays: number) {
     setChartLoading(true)
 
     if (IS_FIREBASE && userId) {
-      getDailyStats(userId, periodDays)
+      withTransientAuthRetry(() => getDailyStats(userId, periodDays))
         .then((value) => setDaily(value))
         .catch(() => toast.error('Erro ao carregar historico'))
         .finally(() => setChartLoading(false))

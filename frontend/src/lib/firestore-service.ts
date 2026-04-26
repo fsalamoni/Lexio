@@ -136,13 +136,26 @@ function ensureFirestore() {
   return firestore
 }
 
-const FIREBASE_AUTH_SYNC_TIMEOUT_MS = 4_000
+const FIREBASE_AUTH_SYNC_TIMEOUT_MS = 8_000
 
 let authStateSyncPromise: Promise<void> | null = null
+
+function hasStoredLexioSession(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return Boolean(
+      window.localStorage.getItem('lexio_token') ||
+      window.localStorage.getItem('lexio_user_id'),
+    )
+  } catch {
+    return false
+  }
+}
 
 async function waitForFirebaseAuthSync(timeoutMs = FIREBASE_AUTH_SYNC_TIMEOUT_MS): Promise<void> {
   const auth = firebaseAuth
   if (!auth || auth.currentUser) return
+  const expectHydratedUser = hasStoredLexioSession()
 
   const authWithReady = auth as typeof auth & { authStateReady?: () => Promise<void> }
   if (typeof authWithReady.authStateReady === 'function') {
@@ -152,7 +165,7 @@ async function waitForFirebaseAuthSync(timeoutMs = FIREBASE_AUTH_SYNC_TIMEOUT_MS
         setTimeout(resolve, timeoutMs)
       }),
     ])
-    return
+    if (auth.currentUser || !expectHydratedUser) return
   }
 
   if (!authStateSyncPromise) {
@@ -171,11 +184,14 @@ async function waitForFirebaseAuthSync(timeoutMs = FIREBASE_AUTH_SYNC_TIMEOUT_MS
       }
 
       const timeout = setTimeout(() => {
-        clearTimeout(timeout)
         finish()
       }, timeoutMs)
 
-      unsub = onAuthStateChanged(auth, () => {
+      unsub = onAuthStateChanged(auth, (user) => {
+        // Keep waiting while a persisted local session is still hydrating.
+        if (!user && expectHydratedUser) {
+          return
+        }
         clearTimeout(timeout)
         finish()
       })
@@ -1383,10 +1399,24 @@ export async function getRecentDocuments(uid: string, count = 5): Promise<Docume
 
 export async function listThesisAnalysisSessions(uid: string): Promise<ThesisAnalysisSessionData[]> {
   const db = ensureFirestore()
-  const snap = await getDocs(
-    query(collection(db, 'users', uid, 'thesis_analysis_sessions'), orderBy('created_at', 'desc')),
-  )
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisAnalysisSessionData))
+  const effectiveUid = await resolveEffectiveUid(uid, 'listThesisAnalysisSessions')
+  const colRef = collection(db, 'users', effectiveUid, 'thesis_analysis_sessions')
+  try {
+    const snap = await withFirestoreRetry(
+      () => getDocs(query(colRef, orderBy('created_at', 'desc'))),
+      'listThesisAnalysisSessions.query',
+    )
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisAnalysisSessionData))
+  } catch (error) {
+    console.warn('Firestore thesis analysis query failed; using client-side fallback:', getErrorMessage(error))
+    const fallbackSnap = await withFirestoreRetry(
+      () => getDocs(colRef),
+      'listThesisAnalysisSessions.fallback',
+    )
+    return fallbackSnap.docs
+      .map(d => ({ id: d.id, ...d.data() } as ThesisAnalysisSessionData))
+      .sort((a, b) => getDocumentCreatedAtValue(b.created_at) - getDocumentCreatedAtValue(a.created_at))
+  }
 }
 
 export async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
@@ -3366,16 +3396,28 @@ export async function getLastThesisAnalysisSession(
   uid: string,
 ): Promise<ThesisAnalysisSessionData | null> {
   const db = ensureFirestore()
-  const snap = await getDocs(
-    query(
-      collection(db, 'users', uid, 'thesis_analysis_sessions'),
-      orderBy('created_at', 'desc'),
-      limit(1),
-    ),
-  )
-  if (snap.empty) return null
-  const d = snap.docs[0]
-  return { id: d.id, ...d.data() } as ThesisAnalysisSessionData
+  const effectiveUid = await resolveEffectiveUid(uid, 'getLastThesisAnalysisSession')
+  const colRef = collection(db, 'users', effectiveUid, 'thesis_analysis_sessions')
+  try {
+    const snap = await withFirestoreRetry(
+      () => getDocs(query(colRef, orderBy('created_at', 'desc'), limit(1))),
+      'getLastThesisAnalysisSession.query',
+    )
+    if (snap.empty) return null
+    const d = snap.docs[0]
+    return { id: d.id, ...d.data() } as ThesisAnalysisSessionData
+  } catch (error) {
+    console.warn('Firestore last thesis analysis query failed; using client-side fallback:', getErrorMessage(error))
+    const fallbackSnap = await withFirestoreRetry(
+      () => getDocs(colRef),
+      'getLastThesisAnalysisSession.fallback',
+    )
+    if (fallbackSnap.empty) return null
+    const [latest] = fallbackSnap.docs.sort((a, b) => {
+      return getDocumentCreatedAtValue(b.data()?.created_at) - getDocumentCreatedAtValue(a.data()?.created_at)
+    })
+    return latest ? ({ id: latest.id, ...latest.data() } as ThesisAnalysisSessionData) : null
+  }
 }
 
 // ── Research Notebook (Caderno de Pesquisa) CRUD ──────────────────────────────

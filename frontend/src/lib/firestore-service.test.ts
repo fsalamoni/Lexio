@@ -12,6 +12,10 @@ const mockAddDoc = vi.fn()
 const mockCollection = vi.fn()
 const mockDoc = vi.fn()
 const mockGetDoc = vi.fn()
+const mockGetDocs = vi.fn()
+const mockQuery = vi.fn()
+const mockOrderBy = vi.fn()
+const mockLimit = vi.fn()
 const mockSetDoc = vi.fn()
 const mockServerTimestamp = vi.fn()
 const mockUpdateDoc = vi.fn()
@@ -50,10 +54,10 @@ vi.mock('firebase/firestore', () => ({
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
   deleteDoc: vi.fn(),
-  getDocs: vi.fn(),
-  query: vi.fn(),
-  orderBy: vi.fn(),
-  limit: vi.fn(),
+  getDocs: (...args: unknown[]) => mockGetDocs(...args),
+  query: (...args: unknown[]) => mockQuery(...args),
+  orderBy: (...args: unknown[]) => mockOrderBy(...args),
+  limit: (...args: unknown[]) => mockLimit(...args),
   where: vi.fn(),
   serverTimestamp: (...args: unknown[]) => mockServerTimestamp(...args),
 }))
@@ -98,6 +102,7 @@ import {
   sanitizeAdminLegalAreas,
   saveUserSettings,
   saveNotebookDocumentToDocuments,
+  listThesisAnalysisSessions,
   updateResearchNotebook,
 } from './firestore-service'
 
@@ -130,6 +135,10 @@ describe('saveNotebookDocumentToDocuments', () => {
       return { path: pathSegments.join('/') }
     })
     mockGetDoc.mockResolvedValue({ exists: () => true, id: 'nb-abc', data: () => ({ title: 'Notebook' }) })
+    mockGetDocs.mockResolvedValue({ docs: [], empty: true })
+    mockOrderBy.mockImplementation((...args: unknown[]) => ({ orderBy: args }))
+    mockLimit.mockImplementation((value: unknown) => ({ limit: value }))
+    mockQuery.mockImplementation((...args: unknown[]) => ({ query: args }))
     mockSetDoc.mockResolvedValue(undefined)
     mockServerTimestamp.mockReturnValue('__server_timestamp__')
     mockUpdateDoc.mockResolvedValue(undefined)
@@ -273,6 +282,41 @@ describe('saveNotebookDocumentToDocuments', () => {
     })
 
     await expect(getUserSettings(uid)).rejects.toMatchObject({
+      message: 'Sessão do Firebase não sincronizada. Faça login novamente.',
+      code: 'firestore/unauthenticated',
+    })
+  })
+
+  it('uses authenticated uid when listing thesis analysis sessions', async () => {
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-456',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        { id: 'sess-1', data: () => ({ created_at: '2026-01-01T00:00:00.000Z', summary: 'ok' }) },
+      ],
+      empty: false,
+    })
+
+    const sessions = await listThesisAnalysisSessions(uid)
+
+    expect(mockCollection).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', 'auth-456', 'thesis_analysis_sessions',
+    )
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].id).toBe('sess-1')
+  })
+
+  it('fails fast for thesis sessions when firebase session is missing', async () => {
+    mockFirebaseAuth.currentUser = null
+    mockOnAuthStateChanged.mockImplementation((_auth: unknown, callback: (user: unknown) => void) => {
+      callback(null)
+      return () => undefined
+    })
+
+    await expect(listThesisAnalysisSessions(uid)).rejects.toMatchObject({
       message: 'Sessão do Firebase não sincronizada. Faça login novamente.',
       code: 'firestore/unauthenticated',
     })
