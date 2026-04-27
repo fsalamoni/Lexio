@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useState, useEffect, useRef, ReactNode } from 'react'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged, type User } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { firebaseAuth, IS_FIREBASE } from '../lib/firebase'
 import { firestore } from '../lib/firebase'
@@ -62,6 +62,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setFullName(null)
   }, [])
 
+  const syncAuthFromFirebaseUser = useCallback(async (
+    fbUser: User,
+    options?: { forceRefreshToken?: boolean },
+  ) => {
+    const newToken = await fbUser.getIdToken(Boolean(options?.forceRefreshToken))
+    localStorage.setItem('lexio_token', newToken)
+    localStorage.setItem('lexio_user_id', fbUser.uid)
+    setToken(newToken)
+    setUserId(fbUser.uid)
+
+    if (!firestore) return
+
+    try {
+      const userSnap = await getDoc(doc(firestore, 'users', fbUser.uid))
+      if (userSnap.exists()) {
+        const userData = userSnap.data() as { role?: string; full_name?: string }
+        const nextRole = userData.role ?? 'user'
+        const nextName = userData.full_name ?? fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
+        localStorage.setItem('lexio_role', nextRole)
+        localStorage.setItem('lexio_full_name', nextName)
+        setRole(nextRole)
+        setFullName(nextName)
+      } else {
+        const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
+        localStorage.setItem('lexio_role', 'user')
+        localStorage.setItem('lexio_full_name', nextName)
+        setRole('user')
+        setFullName(nextName)
+      }
+    } catch {
+      const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
+      if (!localStorage.getItem('lexio_role')) {
+        localStorage.setItem('lexio_role', 'user')
+      }
+      localStorage.setItem('lexio_full_name', nextName)
+      setRole((prev) => prev ?? 'user')
+      setFullName(nextName)
+    }
+  }, [])
+
   const currentSessionFingerprint = useCallback(() => {
     return getSessionFingerprint(firebaseAuth?.currentUser?.uid ?? userId)
   }, [userId])
@@ -95,16 +135,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionRecoveryRef.current.lastAt = now
     sessionRecoveryRef.current.lastFingerprint = liveFingerprint
 
+    let recovered = false
     try {
       if (firebaseAuth?.currentUser) {
+        try {
+          await syncAuthFromFirebaseUser(firebaseAuth.currentUser, { forceRefreshToken: true })
+          recovered = true
+        } catch (error) {
+          console.warn('[AuthContext] Failed to re-sync Firebase session after auth-session-invalid signal:', error)
+        }
+      }
+
+      if (!recovered && firebaseAuth?.currentUser) {
         await firebaseLogout().catch(() => undefined)
       }
+
+      if (!recovered) {
+        clearAuthState()
+      }
     } finally {
-      clearAuthState()
       setIsReady(true)
       sessionRecoveryRef.current.inProgress = false
     }
-  }, [clearAuthState, currentSessionFingerprint])
+  }, [clearAuthState, currentSessionFingerprint, syncAuthFromFirebaseUser])
 
   useEffect(() => {
     if (!IS_FIREBASE || typeof window === 'undefined') return
@@ -137,40 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const callbackUid = fbUser?.uid ?? null
       try {
         if (fbUser) {
-          const newToken = await fbUser.getIdToken()
-          localStorage.setItem('lexio_token', newToken)
-          localStorage.setItem('lexio_user_id', fbUser.uid)
-          setToken(newToken)
-          setUserId(fbUser.uid)
-
-          if (firestore) {
-            try {
-              const userSnap = await getDoc(doc(firestore, 'users', fbUser.uid))
-              if (userSnap.exists()) {
-                const userData = userSnap.data() as { role?: string; full_name?: string }
-                const nextRole = userData.role ?? 'user'
-                const nextName = userData.full_name ?? fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
-                localStorage.setItem('lexio_role', nextRole)
-                localStorage.setItem('lexio_full_name', nextName)
-                setRole(nextRole)
-                setFullName(nextName)
-              } else {
-                const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
-                localStorage.setItem('lexio_role', 'user')
-                localStorage.setItem('lexio_full_name', nextName)
-                setRole('user')
-                setFullName(nextName)
-              }
-            } catch {
-              const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
-              if (!localStorage.getItem('lexio_role')) {
-                localStorage.setItem('lexio_role', 'user')
-              }
-              localStorage.setItem('lexio_full_name', nextName)
-              setRole((prev) => prev ?? 'user')
-              setFullName(nextName)
-            }
-          }
+          await syncAuthFromFirebaseUser(fbUser)
         } else {
           clearAuthState()
         }
@@ -187,7 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     return unsub
-  }, [clearAuthState])
+  }, [clearAuthState, syncAuthFromFirebaseUser])
 
   const login = async (email: string, password: string) => {
     if (IS_FIREBASE) {
