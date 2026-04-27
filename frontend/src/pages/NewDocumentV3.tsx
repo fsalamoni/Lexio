@@ -49,6 +49,7 @@ export default function NewDocumentV3() {
   const [pipelineError, setPipelineError] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfileForGeneration | null>(null)
   const agentTimers = useRef<Record<string, number>>({})
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const { userId } = useAuth()
   const navigate = useNavigate()
@@ -145,6 +146,10 @@ export default function NewDocumentV3() {
       setGeneratedDocId(newDoc.id)
       setLoading(false)
 
+      // Per-execution AbortController so the user can cancel the v3 pipeline.
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
       const docTypeName = docTypes.find(d => d.id === selectedType)?.name || selectedType
       startTask(`Gerando v3: ${docTypeName}`, async (onTaskProgress) => {
         try {
@@ -174,9 +179,15 @@ export default function NewDocumentV3() {
             },
             userProfile,
             null,
+            { signal: controller.signal },
           )
           return newDoc.id
         } catch (err: any) {
+          abortControllerRef.current = null
+          // Aborted by user — handled by onCancel UI; suppress noisy error toasts.
+          if (err?.name === 'AbortError') {
+            return newDoc.id
+          }
           console.error('V3 generation failed:', err)
           setPipelineError(true)
           setPipelineAgents(prev => prev.map(a =>
@@ -331,6 +342,18 @@ export default function NewDocumentV3() {
         canClose={pipelineComplete || pipelineError}
         onClose={() => {
           if (pipelineComplete || pipelineError) setGenerating(false)
+        }}
+        onCancel={() => {
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+            abortControllerRef.current = null
+            setPipelineError(true)
+            setPipelineMessage('Geração cancelada pelo usuário.')
+            setPipelineAgents(prev => prev.map(a =>
+              a.status === 'active' ? { ...a, status: 'error' as const, completedAt: Date.now() } : a,
+            ))
+            toast.info('Geração cancelada', 'A pipeline v3 foi interrompida.')
+          }
         }}
       >
         <PipelineProgressPanelV3

@@ -152,3 +152,61 @@ describe('runtime-concurrency', () => {
     }, diagnostics)).toContain('profilebalanced')
   })
 })
+
+import { runWithConcurrency, DOCUMENT_V3_DEFAULT_PARALLEL_LIMIT } from './runtime-concurrency'
+
+describe('runWithConcurrency', () => {
+  it('preserves the order of results regardless of completion order', async () => {
+    const tasks = [
+      () => new Promise<number>(r => setTimeout(() => r(1), 30)),
+      () => new Promise<number>(r => setTimeout(() => r(2), 5)),
+      () => new Promise<number>(r => setTimeout(() => r(3), 15)),
+    ]
+    const results = await runWithConcurrency(tasks, 3)
+    expect(results).toEqual([1, 2, 3])
+  })
+
+  it('serialises tasks when limit=1 (no overlapping intervals)', async () => {
+    const intervals: Array<{ started: number; ended: number }> = []
+    const makeTask = () => async () => {
+      const started = Date.now()
+      await new Promise(r => setTimeout(r, 25))
+      intervals.push({ started, ended: Date.now() })
+    }
+    await runWithConcurrency([makeTask(), makeTask(), makeTask()], 1)
+    expect(intervals).toHaveLength(3)
+    for (let i = 1; i < intervals.length; i++) {
+      // Allow a 2ms timer slack
+      expect(intervals[i].started + 2).toBeGreaterThanOrEqual(intervals[i - 1].ended)
+    }
+  })
+
+  it('runs concurrently when limit >= number of tasks', async () => {
+    const startedAt: number[] = []
+    const tasks = [0, 0, 0].map(() => async () => {
+      startedAt.push(Date.now())
+      await new Promise(r => setTimeout(r, 25))
+    })
+    await runWithConcurrency(tasks, 3)
+    const minStart = Math.min(...startedAt)
+    const maxStart = Math.max(...startedAt)
+    expect(maxStart - minStart).toBeLessThan(15)
+  })
+
+  it('returns [] for empty input', async () => {
+    expect(await runWithConcurrency([], 3)).toEqual([])
+  })
+
+  it('propagates the first rejection', async () => {
+    const tasks = [
+      () => new Promise<number>(r => setTimeout(() => r(1), 5)),
+      () => Promise.reject(new Error('boom')),
+      () => new Promise<number>(r => setTimeout(() => r(3), 5)),
+    ]
+    await expect(runWithConcurrency(tasks, 2)).rejects.toThrow('boom')
+  })
+
+  it('exposes the default v3 parallel limit', () => {
+    expect(DOCUMENT_V3_DEFAULT_PARALLEL_LIMIT).toBeGreaterThanOrEqual(2)
+  })
+})

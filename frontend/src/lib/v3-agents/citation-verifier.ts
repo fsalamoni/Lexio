@@ -56,10 +56,10 @@ export async function runCitationVerifier(ctx: AgentRunContext): Promise<AgentRu
  * draft are flagged for revision.
  */
 const CITATION_PATTERNS: RegExp[] = [
-  /\b(REsp|HC|RHC|AREsp|AgRg|RE|ARE|MS|MI|HCC|EREsp|RMS)\s+n[º°]?\s*[\d.\\/-]+/gi,
-  /\bSúmula(?:\s+vinculante)?\s+n[º°]?\s*\d+/gi,
-  /\bLei\s+(?:Complementar\s+)?n[º°]?\s*[\d.\\/-]+(?:\/\d{2,4})?/gi,
-  /\bDecreto(?:-Lei)?\s+n[º°]?\s*[\d.\\/-]+(?:\/\d{2,4})?/gi,
+  /\b(REsp|HC|RHC|AREsp|AgRg|RE|ARE|MS|MI|HCC|EREsp|RMS)\s+(?:n[º°]?\s*)?[\d.\\/-]*\d+(?:\/[A-Z]{2})?/gi,
+  /\bSúmula(?:\s+vinculante)?\s+(?:n[º°]?\s*)?\d+/gi,
+  /\bLei\s+(?:Complementar\s+)?(?:n[º°]?\s*)?[\d.\\/-]*\d+(?:\/\d{2,4})?/gi,
+  /\bDecreto(?:-Lei)?\s+(?:n[º°]?\s*)?[\d.\\/-]*\d+(?:\/\d{2,4})?/gi,
 ]
 
 function extractCitations(text: string): string[] {

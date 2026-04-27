@@ -19,6 +19,8 @@ interface Props {
   hasError: boolean
   canClose?: boolean
   onClose: () => void
+  /** When provided, shows a "Cancelar geração" action while the pipeline is still running. */
+  onCancel?: () => void
   children?: ReactNode
 }
 
@@ -33,6 +35,7 @@ export default function AgentTrailProgressModalV3({
   hasError,
   canClose,
   onClose,
+  onCancel,
   children,
 }: Props) {
   const phaseLabelByKey = Object.fromEntries(
@@ -47,6 +50,8 @@ export default function AgentTrailProgressModalV3({
     meta: getDocumentV3StepMeta(agent),
   }))
 
+  const showCancel = !!onCancel && !isComplete && !hasError
+
   return (
     <AgentTrailProgressModal
       isOpen={isOpen}
@@ -60,6 +65,18 @@ export default function AgentTrailProgressModalV3({
       canClose={canClose}
       onClose={onClose}
     >
+      {showCancel && (
+        <div className="flex justify-end pt-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50"
+            data-testid="cancel-generation-button"
+          >
+            Cancelar geração
+          </button>
+        </div>
+      )}
       {children}
     </AgentTrailProgressModal>
   )

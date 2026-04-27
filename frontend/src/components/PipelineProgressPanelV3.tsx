@@ -62,6 +62,8 @@ export default function PipelineProgressPanelV3({ agents, percent, currentMessag
           const allDone = items.every(i => i.status === 'completed')
           const anyActive = items.some(i => i.status === 'active')
           const phaseStatus = allDone ? 'completed' : anyActive ? 'active' : 'pending'
+          const phaseTotalCost = items.reduce((sum, i) => sum + (i.runtimeCostUsd ?? 0), 0)
+          const phaseTotalDurationMs = items.reduce((sum, i) => sum + (i.runtimeDurationMs ?? 0), 0)
           return (
             <section key={phase.key} className="rounded-xl border border-gray-200 bg-white">
               <header className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
@@ -72,9 +74,19 @@ export default function PipelineProgressPanelV3({ agents, percent, currentMessag
                     <p className="text-[11px] text-gray-500">{phase.description}</p>
                   </div>
                 </div>
-                <span className="text-[11px] text-gray-400 tabular-nums">
-                  {items.filter(i => i.status === 'completed').length}/{items.length}
-                </span>
+                <div className="flex items-center gap-3">
+                  {(phaseTotalCost > 0 || phaseTotalDurationMs > 0) && (
+                    <span className="text-[10px] text-gray-500 tabular-nums" data-testid={`phase-summary-${phase.key}`}>
+                      {[
+                        phaseTotalCost > 0 ? formatCostBadge(phaseTotalCost) : null,
+                        formatDuration(phaseTotalDurationMs),
+                      ].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                  <span className="text-[11px] text-gray-400 tabular-nums">
+                    {items.filter(i => i.status === 'completed').length}/{items.length}
+                  </span>
+                </div>
               </header>
               <ul className="divide-y divide-gray-50">
                 {items.map(agent => {
@@ -83,6 +95,8 @@ export default function PipelineProgressPanelV3({ agents, percent, currentMessag
                   const cost = agent.runtimeCostUsd && agent.runtimeCostUsd > 0
                     ? formatCostBadge(agent.runtimeCostUsd)
                     : null
+                  const retryCount = agent.runtimeRetryCount ?? 0
+                  const escalated = agent.runtimeUsedFallback === true || Boolean(agent.runtimeFallbackFrom)
                   return (
                     <li key={agent.key} className="flex items-start gap-3 px-4 py-2.5">
                       <div className="mt-0.5"><StatusIcon status={agent.status} /></div>
@@ -92,6 +106,24 @@ export default function PipelineProgressPanelV3({ agents, percent, currentMessag
                             {agent.label}
                             {agent.parallel && (
                               <span className="ml-2 inline-flex items-center rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-700">paralelo</span>
+                            )}
+                            {retryCount > 0 && (
+                              <span
+                                data-testid={`retry-badge-${agent.key}`}
+                                className="ml-2 inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-700"
+                                title={`${retryCount} ${retryCount === 1 ? 'tentativa adicional' : 'tentativas adicionais'}`}
+                              >
+                                ↻ retry {retryCount}
+                              </span>
+                            )}
+                            {escalated && (
+                              <span
+                                data-testid={`escalated-badge-${agent.key}`}
+                                className="ml-2 inline-flex items-center rounded-full bg-purple-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-purple-700"
+                                title={agent.runtimeFallbackFrom ? `Escalado a partir de ${agent.runtimeFallbackFrom}` : 'Escalado para modelo de supervisor'}
+                              >
+                                ⇧ escalado
+                              </span>
                             )}
                           </p>
                           <span className="text-[11px] text-gray-400 truncate max-w-[40%]">{agent.runtimeModel}</span>

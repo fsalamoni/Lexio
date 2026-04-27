@@ -41,6 +41,7 @@ vi.mock('./model-config', () => ({
     v3_citation_verifier: 'anthropic/claude-3.5-haiku',
     v3_outline_planner: 'anthropic/claude-sonnet-4',
     v3_writer: 'anthropic/claude-sonnet-4',
+    v3_writer_reviser: 'anthropic/claude-sonnet-4',
     v3_supervisor: 'anthropic/claude-opus-4.5',
   }),
 }))
@@ -245,6 +246,207 @@ describe('generateDocumentV3 orchestrator', () => {
 
     await generateDocumentV3('uid1', 'doc1', 'parecer', 'Req', [], null, () => {})
     expect(architectAttempts).toBe(2)
+  })
+
+  // ── New cases (complementary plan) ─────────────────────────────────────────
+
+  function buildHeadRouter(responses: { content: string }[], overrides: Record<string, () => string> = {}) {
+    return (system: string): string => {
+      const head = (system || '').slice(0, 60)
+      const findOverride = Object.entries(overrides).find(([k]) => head.startsWith(k))
+      if (findOverride) return findOverride[1]()
+      if (head.startsWith('Você é o CLASSIFICADOR')) return responses[0].content
+      if (head.startsWith('Você é o PARSER')) return responses[1].content
+      if (head.startsWith('Você é o IDENTIFICADOR')) return responses[2].content
+      if (head.startsWith('Você é o ARQUITETO')) return responses[3].content
+      if (head.startsWith('Você é o BUSCADOR DE ACERVO')) return '1. doc.pdf — relevante'
+      if (head.startsWith('Você é o CONSTRUTOR DE TESES')) return responses[4].content
+      if (head.startsWith('Você é o ADVOGADO DO DIABO')) return responses[5].content
+      if (head.startsWith('Você é o REFINADOR DE TESES')) return responses[6].content
+      if (head.startsWith('Você é o PESQUISADOR DE LEGISLAÇÃO')) return responses[7].content
+      if (head.startsWith('Você é o PESQUISADOR DE JURISPRUDÊNCIA')) return responses[8].content
+      if (head.startsWith('Você é o PESQUISADOR DE DOUTRINA')) return responses[9].content
+      if (head.startsWith('Você é o VERIFICADOR DE CITAÇÕES')) return responses[10].content
+      if (head.startsWith('Você é o PLANEJADOR DA ESTRUTURA')) return responses[11].content
+      if (head.startsWith('Você é o REDATOR jurídico')) return responses[12].content
+      if (head.startsWith('Você é o REVISOR DE REDAÇÃO')) return 'PARECER REVISADO\n\n' + 'Texto revisto e completo. '.repeat(60)
+      return '{}'
+    }
+  }
+
+  function defaultLLMResponse(content: string) {
+    return {
+      content,
+      model: 'anthropic/claude-sonnet-4',
+      tokens_in: 1, tokens_out: 1, cost_usd: 0, duration_ms: 1,
+      operational: { totalRetryCount: 0 },
+    }
+  }
+
+  it('F: preserves arbitrary caller `context` in the parser/architect prompts', async () => {
+    const responses = buildLLMResponses()
+    const router = buildHeadRouter(responses)
+    const userPromptsByAgent: Record<string, string[]> = {}
+    callLLMMock.mockImplementation(async (_apiKey, system: string, userPrompt: string) => {
+      const head = (system || '').slice(0, 40)
+      ;(userPromptsByAgent[head] = userPromptsByAgent[head] || []).push(userPrompt)
+      return defaultLLMResponse(router(system))
+    })
+
+    await generateDocumentV3(
+      'uid1', 'doc1', 'parecer', 'Req',
+      [],
+      { processo: '0001234-56.2024.8.26.0100', tribunal: 'TJSP' },
+      () => {},
+    )
+
+    const parserPrompts = Object.entries(userPromptsByAgent).find(([k]) => k.startsWith('Você é o PARSER'))?.[1] ?? []
+    expect(parserPrompts.length).toBeGreaterThan(0)
+    expect(parserPrompts[0]).toContain('processo')
+    expect(parserPrompts[0]).toContain('0001234-56.2024.8.26.0100')
+    expect(parserPrompts[0]).toContain('TJSP')
+
+    const architectPrompts = Object.entries(userPromptsByAgent).find(([k]) => k.startsWith('Você é o ARQUITETO'))?.[1] ?? []
+    expect(architectPrompts[0]).toContain('TJSP')
+  })
+
+  it('B: respects parallelLimit=1 — Phase-1 calls run sequentially', async () => {
+    const responses = buildLLMResponses()
+    const router = buildHeadRouter(responses)
+    const intervals: Array<{ agent: string; started: number; ended: number }> = []
+    callLLMMock.mockImplementation(async (_apiKey, system: string) => {
+      const head = (system || '').slice(0, 40)
+      if (head.startsWith('Você é o CLASSIFICADOR') || head.startsWith('Você é o PARSER') || head.startsWith('Você é o IDENTIFICADOR')) {
+        const started = Date.now()
+        await new Promise(r => setTimeout(r, 30))
+        intervals.push({ agent: head, started, ended: Date.now() })
+      }
+      return defaultLLMResponse(router(system))
+    })
+
+    await generateDocumentV3(
+      'uid1', 'doc1', 'parecer', 'Req', [], null, () => {},
+      undefined, undefined,
+      { parallelLimit: 1 },
+    )
+
+    const phase1 = intervals.filter(i =>
+      i.agent.startsWith('Você é o CLASSIFICADOR')
+      || i.agent.startsWith('Você é o PARSER')
+      || i.agent.startsWith('Você é o IDENTIFICADOR'),
+    )
+    expect(phase1).toHaveLength(3)
+    phase1.sort((a, b) => a.started - b.started)
+    // No overlapping intervals — strict serialization
+    for (let i = 1; i < phase1.length; i++) {
+      expect(phase1[i].started + 5).toBeGreaterThanOrEqual(phase1[i - 1].ended)
+    }
+  })
+
+  it('C: triggers writer-reviser when the writer introduces unsupported citations', async () => {
+    const responses = buildLLMResponses()
+    // Writer output mentions a REsp number that is NOT in the research material.
+    const fakeWriterText = 'PARECER JURÍDICO\n\nConforme REsp 9.876.543/SP, o caso aplica-se. ' + 'Texto extenso. '.repeat(80)
+    const router = buildHeadRouter(responses, {
+      'Você é o REDATOR jurídico': () => fakeWriterText,
+    })
+    let reviserCalled = false
+    callLLMMock.mockImplementation(async (_apiKey, system: string) => {
+      const head = (system || '').slice(0, 40)
+      if (head.startsWith('Você é o REVISOR DE REDAÇÃO')) {
+        reviserCalled = true
+        return defaultLLMResponse('PARECER REVISADO\n\n' + 'Texto revisto sem citações fictícias. '.repeat(60))
+      }
+      return defaultLLMResponse(router(system))
+    })
+
+    await generateDocumentV3('uid1', 'doc1', 'parecer', 'Req', [], null, () => {})
+
+    expect(reviserCalled).toBe(true)
+    const updateCalls = updateDocMock.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>
+    const finalUpdate = updateCalls.find(c => c[1].status === 'concluido')!
+    const meta = finalUpdate[1].generation_meta as { supervisor_actions: Array<{ agent: string; action: string }> }
+    expect(meta.supervisor_actions.some(a => a.agent === 'v3_writer_reviser' && a.action === 'revise_citations')).toBe(true)
+  })
+
+  it('I: outline-planner runs in parallel with Phase-3 research agents', async () => {
+    const responses = buildLLMResponses()
+    const router = buildHeadRouter(responses)
+    const startedAt: Record<string, number> = {}
+    callLLMMock.mockImplementation(async (_apiKey, system: string) => {
+      const head = (system || '').slice(0, 40)
+      if (
+        head.startsWith('Você é o PESQUISADOR DE LEGISLAÇÃO')
+        || head.startsWith('Você é o PESQUISADOR DE JURISPRUDÊNCIA')
+        || head.startsWith('Você é o PESQUISADOR DE DOUTRINA')
+        || head.startsWith('Você é o PLANEJADOR DA ESTRUTURA')
+      ) {
+        startedAt[head] = Date.now()
+        await new Promise(r => setTimeout(r, 25))
+      }
+      return defaultLLMResponse(router(system))
+    })
+
+    await generateDocumentV3('uid1', 'doc1', 'parecer', 'Req', [], null, () => {},
+      undefined, undefined,
+      { parallelLimit: 4 },
+    )
+
+    const heads = Object.keys(startedAt)
+    expect(heads.some(h => h.startsWith('Você é o PLANEJADOR'))).toBe(true)
+    expect(heads.some(h => h.startsWith('Você é o PESQUISADOR DE LEGISLAÇÃO'))).toBe(true)
+    const times = Object.values(startedAt)
+    const span = Math.max(...times) - Math.min(...times)
+    // All four started within a small window — i.e. concurrently.
+    expect(span).toBeLessThan(20)
+  })
+
+  it('J: persists phase_durations_ms, parallel_savings_ms and supervisor_actions in generation_meta', async () => {
+    const responses = buildLLMResponses()
+    const router = buildHeadRouter(responses)
+    callLLMMock.mockImplementation(async (_apiKey, system: string) => {
+      return { ...defaultLLMResponse(router(system)), duration_ms: 50 }
+    })
+    await generateDocumentV3('uid1', 'doc1', 'parecer', 'Req', [], null, () => {})
+
+    const updateCalls = updateDocMock.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>
+    const finalUpdate = updateCalls.find(c => c[1].status === 'concluido')!
+    const meta = finalUpdate[1].generation_meta as Record<string, unknown>
+    expect(meta.pipeline_version).toBe('v3')
+    expect(meta.phase_durations_ms).toBeTypeOf('object')
+    const phases = meta.phase_durations_ms as Record<string, number>
+    expect(typeof phases.compreensao).toBe('number')
+    expect(typeof phases.analise).toBe('number')
+    expect(typeof phases.pesquisa).toBe('number')
+    expect(typeof phases.redacao).toBe('number')
+    expect(typeof meta.parallel_savings_ms).toBe('number')
+    expect(Array.isArray(meta.supervisor_actions)).toBe(true)
+  })
+
+  it('E: aborts when the AbortSignal fires before completion', async () => {
+    const responses = buildLLMResponses()
+    const router = buildHeadRouter(responses)
+    const controller = new AbortController()
+    callLLMMock.mockImplementation(async (_apiKey, system: string) => {
+      // Simulate a slow first call; abort during it.
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, 50)
+        controller.signal.addEventListener('abort', () => {
+          clearTimeout(t)
+          const err = new DOMException('Aborted', 'AbortError')
+          reject(err)
+        })
+      })
+      return defaultLLMResponse(router(system))
+    })
+    setTimeout(() => controller.abort(), 5)
+    await expect(
+      generateDocumentV3(
+        'uid1', 'doc1', 'parecer', 'Req', [], null, () => {},
+        undefined, undefined,
+        { signal: controller.signal },
+      ),
+    ).rejects.toThrow()
   })
 })
 
