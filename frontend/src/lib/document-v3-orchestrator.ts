@@ -57,6 +57,14 @@ import type {
 
 const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.0-flash'
 
+/**
+ * Threshold of weaknesses (raised by the Devil's Advocate) above which the
+ * Supervisor triggers an extra critique+refinement round. Empirically chosen
+ * so that minor critiques (1–3 fraquezas) do not double the latency, while
+ * heavy critiques (≥4) get a second pass to stabilize the theses.
+ */
+const SUPERVISOR_DEVIL_ROUND2_THRESHOLD = 4
+
 export type GenerationProgressV3 = DocumentV3PipelineProgress
 export type ProgressCallbackV3 = (p: GenerationProgressV3) => void
 
@@ -352,7 +360,7 @@ export async function generateDocumentV3(
     reportProgress('v3_thesis_refiner', 'Teses refinadas.', 48, { result: refinerRes.llmResult, executionState: 'completed' })
 
     // Optional second round if the critique pointed many weaknesses
-    if (devilRes.output.weaknesses >= 4) {
+    if (devilRes.output.weaknesses >= SUPERVISOR_DEVIL_ROUND2_THRESHOLD) {
       const devilRound2 = await runDevilAdvocate(buildAgentCtx('v3_devil_advocate'))
       recordExecution('v3_devil_advocate', 'Advogado do Diabo (rodada 2)', devilRound2.llmResult)
       if (devilRound2.output.weaknesses < devilRes.output.weaknesses) {
