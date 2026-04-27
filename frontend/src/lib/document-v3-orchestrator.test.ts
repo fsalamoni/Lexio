@@ -46,6 +46,7 @@ vi.mock('./model-config', () => ({
   ],
   loadFallbackPriorityConfig: async () => ({}),
   resolveFallbackModelsForCategory: () => [],
+  loadResearchNotebookModels: async () => ({}),
   loadDocumentV3Models: async () => ({
     v3_intent_classifier: 'anthropic/claude-3.5-haiku',
     v3_request_parser: 'anthropic/claude-3.5-haiku',
@@ -84,6 +85,16 @@ vi.mock('./firestore-service', () => ({
   loadAdminDocumentTypes: async () => [],
   getAllAcervoDocumentsForSearch: async () => [],
   listTheses: async () => ({ items: [] }),
+}))
+
+// Force the v3 jurisprudence agent down its LLM-only fallback path during tests
+// (no real DataJud network access). The agent catches non-abort errors from
+// searchDataJud and falls back to the legacy LLM-only researcher prompt that
+// the test router knows how to answer.
+vi.mock('./datajud-service', () => ({
+  DEFAULT_TRIBUNALS: [{ alias: 'stj', name: 'STJ' }],
+  searchDataJud: async () => { throw new Error('datajud-disabled-in-tests') },
+  formatDataJudResults: () => '',
 }))
 
 // ── System under test ────────────────────────────────────────────────────────

@@ -16,9 +16,19 @@ const SYSTEM = [
   '- Objetivo',
   '- Conteúdos a abordar (bullet points)',
   '- Teses/Pesquisa a citar',
+  '- LINHA DE RACIOCÍNIO esperada — descreva, em uma frase para cada etapa, a',
+  '  sequência argumentativa: (a) PREMISSA NORMATIVA que abre a seção,',
+  '  (b) DESENVOLVIMENTO LÓGICO-JURÍDICO (sentido, alcance, princípios),',
+  '  (c) APLICAÇÃO ao caso concreto, e (d) FECHAMENTO / conclusão parcial.',
+  '- PONTOS DE APROFUNDAMENTO — marque expressamente onde o redator deve',
+  '  alongar a explicação (mínimo de 3 parágrafos densos), citando os',
+  '  fundamentos centrais que exigem desenvolvimento mais detalhado em vez de',
+  '  meras citações.',
   '',
   'Quando uma estrutura específica for fornecida (custom_structure), respeite-a',
-  'integralmente. Saída em markdown.',
+  'integralmente, mas continue indicando linha de raciocínio e pontos de',
+  'aprofundamento dentro de cada seção exigida pela estrutura.',
+  'Saída em markdown.',
 ].join('\n')
 
 export async function runOutlinePlanner(
