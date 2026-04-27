@@ -112,7 +112,7 @@ jobs:
           fi
 
       - name: Validate FIREBASE_SERVICE_ACCOUNT payload
-        run: node scripts/validate-firebase-service-account.mjs --allow-empty
+        run: node "${{ github.workspace }}/scripts/validate-firebase-service-account.mjs" --allow-empty
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
@@ -272,9 +272,11 @@ jobs:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
+      - uses: actions/checkout@v4
+
       - name: Validate FIREBASE_SERVICE_ACCOUNT payload
         if: steps.teardown_auth_mode.outputs.has_auth == 'true'
-        run: node scripts/validate-firebase-service-account.mjs --allow-empty
+        run: node "${{ github.workspace }}/scripts/validate-firebase-service-account.mjs" --allow-empty
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
