@@ -106,7 +106,7 @@ interface RedatorRuntimeConfig {
   rollbackMinQuality: number
 }
 
-function getLLMOperationalUsageMeta(result: Pick<LLMResult, 'operational'>): Pick<
+export function getLLMOperationalUsageMeta(result: Pick<LLMResult, 'operational'>): Pick<
   UsageExecutionRecord,
   'execution_state' | 'retry_count' | 'used_fallback' | 'fallback_from'
 > {
@@ -214,7 +214,7 @@ export async function getOpenRouterKey(uid?: string): Promise<string> {
 
 // ── Document type metadata ────────────────────────────────────────────────────
 
-const DOC_TYPE_NAMES: Record<string, string> = {
+export const DOC_TYPE_NAMES: Record<string, string> = {
   parecer: 'Parecer Jurídico',
   peticao_inicial: 'Petição Inicial',
   contestacao: 'Contestação',
@@ -227,7 +227,7 @@ const DOC_TYPE_NAMES: Record<string, string> = {
   embargos_declaracao: 'Embargos de Declaração',
 }
 
-const AREA_NAMES: Record<string, string> = {
+export const AREA_NAMES: Record<string, string> = {
   administrative: 'Direito Administrativo',
   constitutional: 'Direito Constitucional',
   civil: 'Direito Civil',
@@ -253,7 +253,7 @@ const AREA_NAMES: Record<string, string> = {
  * Build a contextual block that injects user profile preferences into prompts,
  * so agents adapt style, depth and citations to the user's professional role.
  */
-function buildProfileBlock(profile?: UserProfileForGeneration | null): string {
+export function buildProfileBlock(profile?: UserProfileForGeneration | null): string {
   if (!profile) return ''
   const parts: string[] = []
 

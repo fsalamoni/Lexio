@@ -51,6 +51,7 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
       items: [
         { label: 'Dashboard', to: '/', activePatterns: ['/'] },
         { label: 'Novo documento', to: '/documents/new', activePatterns: ['/documents/new'] },
+        { label: 'Novo documento v3', to: '/documents/new-v3', activePatterns: ['/documents/new-v3'] },
         { label: 'Documentos', to: '/documents', activePatterns: ['/documents', '/documents/:id', '/documents/:id/edit'] },
         { label: 'Caderno de pesquisa', to: '/notebook', activePatterns: ['/notebook'] },
         { label: 'Biblioteca e acervo', to: '/upload', activePatterns: ['/upload'] },

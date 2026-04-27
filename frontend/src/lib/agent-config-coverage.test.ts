@@ -10,6 +10,7 @@ describe('user-scoped agent configuration coverage', () => {
       'agent_models',
       'audio_pipeline_models',
       'context_detail_models',
+      'document_v3_models',
       'notebook_acervo_models',
       'presentation_pipeline_models',
       'research_notebook_models',
@@ -55,6 +56,26 @@ describe('user-scoped agent configuration coverage', () => {
       'pres_designer',
       'pres_image_generator',
       'pres_revisor',
+    ]))
+
+    expect(AGENT_CONFIG_DEFS.document_v3_models.map(agent => agent.key)).toEqual(expect.arrayContaining([
+      'v3_intent_classifier',
+      'v3_request_parser',
+      'v3_legal_issue_spotter',
+      'v3_prompt_architect',
+      'v3_acervo_retriever',
+      'v3_thesis_retriever',
+      'v3_thesis_builder',
+      'v3_devil_advocate',
+      'v3_thesis_refiner',
+      'v3_legislation_researcher',
+      'v3_jurisprudence_researcher',
+      'v3_doctrine_researcher',
+      'v3_citation_verifier',
+      'v3_outline_planner',
+      'v3_writer',
+      'v3_writer_reviser',
+      'v3_supervisor',
     ]))
   })
 })

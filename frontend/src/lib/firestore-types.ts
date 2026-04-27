@@ -46,6 +46,7 @@ export interface UserSettingsData {
   video_pipeline_models?: Record<string, string>
   audio_pipeline_models?: Record<string, string>
   presentation_pipeline_models?: Record<string, string>
+  document_v3_models?: Record<string, string>
   document_types?: AdminDocumentType[]
   legal_areas?: AdminLegalArea[]
   /** Active platform skin/theme ID */
