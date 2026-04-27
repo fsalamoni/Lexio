@@ -138,8 +138,17 @@ function ensureFirestore() {
 
 const FIREBASE_AUTH_SYNC_TIMEOUT_MS = 8_000
 const FIRESTORE_SESSION_INVALID_CODE = 'firestore/auth-session-invalid'
+const FIRESTORE_AUTH_CIRCUIT_COOLDOWN_MS = 6_000
+
+type FirestoreAuthCircuitState = {
+  openedAt: number
+  openUntil: number
+  lastContext: string
+}
 
 let authStateSyncPromise: Promise<void> | null = null
+const firestoreAuthCircuitByUid = new Map<string, FirestoreAuthCircuitState>()
+let lastObservedAuthUid: string | null = null
 
 function hasStoredLexioSession(): boolean {
   if (typeof window === 'undefined') return false
@@ -153,7 +162,87 @@ function hasStoredLexioSession(): boolean {
   }
 }
 
+function getCurrentFirebaseAuthUid(): string | null {
+  const rawUid = firebaseAuth?.currentUser?.uid
+  if (!rawUid) return null
+  const uid = rawUid.trim()
+  return uid || null
+}
+
+function syncAuthCircuitUserBoundary(): void {
+  const currentUid = getCurrentFirebaseAuthUid()
+  if (currentUid === lastObservedAuthUid) return
+
+  if (!currentUid) {
+    firestoreAuthCircuitByUid.clear()
+  } else {
+    // New session/user boundary: never carry a stale open circuit into the new session.
+    firestoreAuthCircuitByUid.delete(currentUid)
+  }
+
+  lastObservedAuthUid = currentUid
+}
+
+function getAuthCircuitState(uid: string): FirestoreAuthCircuitState | null {
+  const state = firestoreAuthCircuitByUid.get(uid)
+  if (!state) return null
+  if (state.openUntil <= Date.now()) {
+    firestoreAuthCircuitByUid.delete(uid)
+    return null
+  }
+  return state
+}
+
+function openAuthAccessCircuit(contextLabel: string, reason?: unknown): void {
+  const uid = getCurrentFirebaseAuthUid()
+  if (!uid) return
+
+  const state = getAuthCircuitState(uid)
+  if (state) return
+
+  const now = Date.now()
+  const reasonMessage = reason ? ` (${getErrorMessage(reason)})` : ''
+  firestoreAuthCircuitByUid.set(uid, {
+    openedAt: now,
+    openUntil: now + FIRESTORE_AUTH_CIRCUIT_COOLDOWN_MS,
+    lastContext: contextLabel,
+  })
+  console.warn(
+    `[Firestore Auth Circuit] ${contextLabel}: opened for uid ${uid} during ${FIRESTORE_AUTH_CIRCUIT_COOLDOWN_MS}ms${reasonMessage}.`,
+  )
+}
+
+function closeAuthAccessCircuitForCurrentUser(): void {
+  const uid = getCurrentFirebaseAuthUid()
+  if (!uid) return
+  firestoreAuthCircuitByUid.delete(uid)
+}
+
+function throwIfAuthAccessCircuitOpen(contextLabel: string): void {
+  const uid = getCurrentFirebaseAuthUid()
+  if (!uid) return
+
+  const state = getAuthCircuitState(uid)
+  if (!state) return
+
+  const waitMs = Math.max(0, state.openUntil - Date.now())
+  const waitSecs = Math.max(1, Math.ceil(waitMs / 1000))
+  const error = new Error(`Sessão do Firebase inválida. Aguarde ${waitSecs}s e faça login novamente.`) as Error & { code?: string }
+  error.code = FIRESTORE_SESSION_INVALID_CODE
+
+  console.warn(
+    `[Firestore Auth Circuit] ${contextLabel}: fast-fail while circuit is open (${waitMs}ms remaining from ${state.lastContext}).`,
+  )
+  throw error
+}
+
+export function __resetFirestoreAuthCircuitForTests(): void {
+  firestoreAuthCircuitByUid.clear()
+  lastObservedAuthUid = getCurrentFirebaseAuthUid()
+}
+
 async function waitForFirebaseAuthSync(timeoutMs = FIREBASE_AUTH_SYNC_TIMEOUT_MS): Promise<void> {
+  syncAuthCircuitUserBoundary()
   const auth = firebaseAuth
   if (!auth || auth.currentUser) return
   const expectHydratedUser = hasStoredLexioSession()
@@ -220,6 +309,7 @@ function createInvalidFirebaseSessionError(contextLabel: string, reason?: unknow
 }
 
 async function resolveEffectiveUid(uid: string, contextLabel: string): Promise<string> {
+  syncAuthCircuitUserBoundary()
   await waitForFirebaseAuthSync()
   const requestedUid = String(uid || '').trim()
   const authUid = firebaseAuth?.currentUser?.uid?.trim() || ''
@@ -395,6 +485,10 @@ function getFirebaseErrorCode(error: unknown): string | null {
   return null
 }
 
+export function isFirestoreSessionInvalidError(error: unknown): boolean {
+  return getFirebaseErrorCode(error) === 'auth-session-invalid'
+}
+
 function isAuthRetryableFirestoreCode(code: string | null): boolean {
   return Boolean(code && AUTH_RETRYABLE_FIRESTORE_CODES.has(code))
 }
@@ -426,10 +520,18 @@ async function withFirestoreRetry<T>(
   operation: () => Promise<T>,
   contextLabel: string,
 ): Promise<T> {
+  syncAuthCircuitUserBoundary()
+  throwIfAuthAccessCircuitOpen(contextLabel)
+
   try {
-    return await operation()
+    const result = await operation()
+    closeAuthAccessCircuitForCurrentUser()
+    return result
   } catch (error) {
     if (!isRetryableFirestoreError(error)) {
+      if (isAuthAccessFirestoreError(error)) {
+        openAuthAccessCircuit(contextLabel, error)
+      }
       throw error
     }
 
@@ -442,6 +544,7 @@ async function withFirestoreRetry<T>(
       }
       const tokenRefreshSucceeded = await refreshCurrentUserToken()
       if (!tokenRefreshSucceeded) {
+        openAuthAccessCircuit(contextLabel, error)
         throw createInvalidFirebaseSessionError(contextLabel, error)
       }
       await new Promise<void>((resolve) => {
@@ -450,9 +553,12 @@ async function withFirestoreRetry<T>(
     }
 
     try {
-      return await operation()
+      const retryResult = await operation()
+      closeAuthAccessCircuitForCurrentUser()
+      return retryResult
     } catch (retryError) {
       if (isAuthAccessFirestoreError(retryError)) {
+        openAuthAccessCircuit(contextLabel, retryError)
         throw createInvalidFirebaseSessionError(contextLabel, retryError)
       }
       throw retryError

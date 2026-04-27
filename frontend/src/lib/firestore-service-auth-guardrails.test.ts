@@ -31,4 +31,15 @@ describe('firestore-service auth guardrails', () => {
       expect(source).toMatch(pattern)
     }
   })
+
+  it('does not allow sign-out side effects inside Firestore retry layer', () => {
+    const retryLayerStart = source.indexOf('async function withFirestoreRetry')
+    const retryLayerEnd = source.indexOf('function getRefUserId')
+    const retryLayer = retryLayerStart >= 0 && retryLayerEnd > retryLayerStart
+      ? source.slice(retryLayerStart, retryLayerEnd)
+      : source
+
+    expect(retryLayer).not.toMatch(/signOut\s*\(/)
+    expect(retryLayer).not.toMatch(/firebaseLogout\s*\(/)
+  })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import api from '../api/client'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
@@ -8,6 +8,7 @@ import {
   getRecentDocuments,
   getDailyStats,
   getByTypeStats,
+  isFirestoreSessionInvalidError,
 } from './firestore-service'
 
 export interface DashboardStats {
@@ -75,6 +76,7 @@ export function getResumableDocument(recent: DashboardRecentDoc[]) {
 }
 
 const TRANSIENT_AUTH_ERROR_CODES = new Set(['unauthenticated', 'permission-denied'])
+const AUTH_ERROR_TOAST_COOLDOWN_MS = 6_000
 
 function getFirebaseErrorCode(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null
@@ -126,7 +128,15 @@ export function useDashboardData(periodDays: number) {
   const [chartLoading, setChartLoading] = useState(false)
   const { userId, isReady } = useAuth()
   const toast = useToast()
+  const lastAuthErrorToastAtRef = useRef(0)
   const shouldWaitForFirebaseUser = IS_FIREBASE && (!isReady || !userId)
+
+  const notifySessionInvalidOnce = () => {
+    const now = Date.now()
+    if (now - lastAuthErrorToastAtRef.current < AUTH_ERROR_TOAST_COOLDOWN_MS) return
+    lastAuthErrorToastAtRef.current = now
+    toast.error('Sessão inválida', 'Faça login novamente para continuar.')
+  }
 
   useEffect(() => {
     if (shouldWaitForFirebaseUser) return
@@ -135,7 +145,13 @@ export function useDashboardData(periodDays: number) {
     if (IS_FIREBASE && userId) {
       const statsPromise = withTransientAuthRetry(() => firestoreGetStats(userId))
         .then((value) => setStats(value))
-        .catch(() => toast.error('Erro ao carregar estatisticas'))
+        .catch((error) => {
+          if (isFirestoreSessionInvalidError(error)) {
+            notifySessionInvalidOnce()
+            return
+          }
+          toast.error('Erro ao carregar estatisticas')
+        })
       const recentPromise = withTransientAuthRetry(() => getRecentDocuments(userId, 5))
         .then((docs) => {
           setRecent(docs.filter((doc) => doc.id).map((doc) => ({
@@ -147,13 +163,27 @@ export function useDashboardData(periodDays: number) {
             created_at: doc.created_at,
           })))
         })
-        .catch(() => toast.error('Erro ao carregar documentos recentes'))
+        .catch((error) => {
+          if (isFirestoreSessionInvalidError(error)) {
+            notifySessionInvalidOnce()
+            return
+          }
+          toast.error('Erro ao carregar documentos recentes')
+        })
       const dailyPromise = withTransientAuthRetry(() => getDailyStats(userId, periodDays))
         .then((value) => setDaily(value))
-        .catch(() => {})
+        .catch((error) => {
+          if (isFirestoreSessionInvalidError(error)) {
+            notifySessionInvalidOnce()
+          }
+        })
       const byTypePromise = withTransientAuthRetry(() => getByTypeStats(userId))
         .then((value) => setByType(value))
-        .catch(() => {})
+        .catch((error) => {
+          if (isFirestoreSessionInvalidError(error)) {
+            notifySessionInvalidOnce()
+          }
+        })
       Promise.all([statsPromise, recentPromise, dailyPromise, byTypePromise]).finally(() => setLoading(false))
       return
     }
@@ -187,7 +217,13 @@ export function useDashboardData(periodDays: number) {
     if (IS_FIREBASE && userId) {
       withTransientAuthRetry(() => getDailyStats(userId, periodDays))
         .then((value) => setDaily(value))
-        .catch(() => toast.error('Erro ao carregar historico'))
+        .catch((error) => {
+          if (isFirestoreSessionInvalidError(error)) {
+            notifySessionInvalidOnce()
+            return
+          }
+          toast.error('Erro ao carregar historico')
+        })
         .finally(() => setChartLoading(false))
       return
     }

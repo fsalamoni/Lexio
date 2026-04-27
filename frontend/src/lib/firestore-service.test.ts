@@ -96,6 +96,7 @@ vi.mock('./document-json-converter', () => ({
 // ── Import under test (AFTER mocks are registered) ──────────────────────────
 
 import {
+  __resetFirestoreAuthCircuitForTests,
   getUserSettings,
   getResearchNotebook,
   listDocuments,
@@ -122,6 +123,7 @@ describe('saveNotebookDocumentToDocuments', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    __resetFirestoreAuthCircuitForTests()
     mockGetIdToken.mockResolvedValue('token')
     mockFirebaseAuth.currentUser = {
       uid,
@@ -423,6 +425,61 @@ describe('saveNotebookDocumentToDocuments', () => {
 
     // Two attempts only (initial + retry). No fallback query should be issued for auth errors.
     expect(mockGetDocs).toHaveBeenCalledTimes(2)
+  })
+
+  it('fails fast without network while auth circuit is open', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDocs
+      .mockRejectedValueOnce(permissionError)
+      .mockRejectedValueOnce(permissionError)
+
+    await expect(listDocuments(uid)).rejects.toMatchObject({
+      code: 'firestore/auth-session-invalid',
+    })
+
+    expect(mockGetDocs).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+
+    mockGetDocs.mockClear()
+    await expect(listDocuments(uid)).rejects.toMatchObject({
+      code: 'firestore/auth-session-invalid',
+    })
+
+    expect(mockGetDocs).not.toHaveBeenCalled()
+  })
+
+  it('keeps auth circuit scoped to the active authenticated uid', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-1',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+
+    mockGetDocs
+      .mockRejectedValueOnce(permissionError)
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce({ docs: [], empty: true })
+
+    await expect(listDocuments(uid)).rejects.toMatchObject({
+      code: 'firestore/auth-session-invalid',
+    })
+
+    // New auth session/user should not inherit an old open circuit.
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-2',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+
+    const result = await listDocuments(uid)
+
+    expect(result.items).toEqual([])
+    expect(mockGetDocs).toHaveBeenCalledTimes(3)
   })
 
   it('persists user settings to the preferences document with merge', async () => {
