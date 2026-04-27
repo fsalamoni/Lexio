@@ -1886,6 +1886,16 @@ export const DOCUMENT_V3_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     agentCategory: 'writing',
     requiredCapability: 'text',
   },
+  {
+    key: 'v3_writer_reviser',
+    label: 'Revisor de Redação',
+    description: 'Revisa o documento quando o verificador de citações encontra referências não fundamentadas',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'pen-tool',
+    agentCategory: 'writing',
+    requiredCapability: 'text',
+  },
   // Transversal
   {
     key: 'v3_supervisor',

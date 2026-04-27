@@ -75,6 +75,7 @@ export interface DocumentV3PipelineStep extends DocumentV3PipelineStage {
   runtimeDurationMs?: number
   runtimeRetryCount?: number
   runtimeFallbackFrom?: string
+  runtimeUsedFallback?: boolean
 }
 
 /** Phase emitted when the v3 pipeline finishes successfully. */
@@ -199,12 +200,16 @@ export const DOCUMENT_V3_PIPELINE_STAGES: DocumentV3PipelineStage[] = [
   },
 
   // ── Fase 4: Redação ───────────────────────────────────────────────────────
+  // outline-planner é disparado em paralelo com a Fase 3 (Pesquisa) para reduzir
+  // o caminho crítico — depende apenas dos briefings + teses refinadas e não
+  // precisa do material de pesquisa.
   {
     key: 'v3_outline_planner',
     label: 'Planejador da Estrutura',
-    description: 'Planeja a arquitetura do documento final',
+    description: 'Planeja a arquitetura do documento final (em paralelo com a pesquisa)',
     phase: 'redacao',
     modelKey: 'v3_outline_planner',
+    parallel: true,
   },
   {
     key: 'v3_writer',
@@ -212,6 +217,13 @@ export const DOCUMENT_V3_PIPELINE_STAGES: DocumentV3PipelineStage[] = [
     description: 'Redige o documento completo seguindo o plano',
     phase: 'redacao',
     modelKey: 'v3_writer',
+  },
+  {
+    key: 'v3_writer_reviser',
+    label: 'Revisor de Redação',
+    description: 'Revisa citações suspeitas detectadas após a redação',
+    phase: 'redacao',
+    modelKey: 'v3_writer_reviser',
   },
 
   // ── Operacionais ──────────────────────────────────────────────────────────
@@ -393,6 +405,7 @@ export function applyDocumentV3PipelineProgress(
         runtimeDurationMs: progress.durationMs ?? step.runtimeDurationMs,
         runtimeRetryCount: progress.retryCount ?? step.runtimeRetryCount,
         runtimeFallbackFrom: progress.fallbackFrom ?? step.runtimeFallbackFrom,
+        runtimeUsedFallback: progress.usedFallback ?? step.runtimeUsedFallback,
       }
     }
 

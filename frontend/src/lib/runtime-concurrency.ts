@@ -291,3 +291,57 @@ export function buildRuntimeProfileKey(
     `lim${limits}`,
   ].join('|')
 }
+
+/**
+ * Run an array of async tasks with at most `limit` running concurrently. The
+ * results array preserves the input order. The first rejection aborts the
+ * remaining queued tasks (already-running ones still finish to avoid orphaned
+ * promises) and the error is propagated.
+ *
+ * Used by the v3 document orchestrator to throttle parallel `Promise.all`
+ * fan-outs (Fase 1 / Fase 2 retrievers / Fase 3 / Fase 3+outline) so that we
+ * respect provider rate-limits even when the user configured cheap free-tier
+ * models.
+ */
+export async function runWithConcurrency<T>(
+  tasks: ReadonlyArray<() => Promise<T>>,
+  limit: number,
+): Promise<T[]> {
+  const safeLimit = Math.max(1, Math.floor(limit))
+  if (tasks.length === 0) return []
+  if (safeLimit >= tasks.length) {
+    return Promise.all(tasks.map(t => t()))
+  }
+
+  const results: T[] = new Array(tasks.length)
+  let nextIndex = 0
+  let firstError: unknown
+  let aborted = false
+
+  const worker = async (): Promise<void> => {
+    while (!aborted) {
+      const current = nextIndex++
+      if (current >= tasks.length) return
+      try {
+        results[current] = await tasks[current]()
+      } catch (err) {
+        if (!aborted) {
+          firstError = err
+          aborted = true
+        }
+        return
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(safeLimit, tasks.length) }, () => worker())
+  await Promise.all(workers)
+
+  if (aborted && firstError !== undefined) {
+    throw firstError
+  }
+  return results
+}
+
+/** Default concurrency cap for v3 parallel phases (aligned with OpenRouter free tier). */
+export const DOCUMENT_V3_DEFAULT_PARALLEL_LIMIT = 3

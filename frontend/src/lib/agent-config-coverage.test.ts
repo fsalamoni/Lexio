@@ -74,6 +74,7 @@ describe('user-scoped agent configuration coverage', () => {
       'v3_citation_verifier',
       'v3_outline_planner',
       'v3_writer',
+      'v3_writer_reviser',
       'v3_supervisor',
     ]))
   })

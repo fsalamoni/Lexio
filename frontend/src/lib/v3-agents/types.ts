@@ -20,6 +20,8 @@ export interface SharedCaseContext {
   docTypeLabel: string
   areas: string[]
   areaLabels: string[]
+  /** Arbitrary context dictionary supplied by the caller (e.g. `{ processo: '0001234-…', tribunal: 'TJSP' }`). */
+  requestContext?: Record<string, unknown>
   // Filled by Fase 1
   intent?: IntentSummary
   parsedFacts?: ParsedRequest
@@ -38,6 +40,17 @@ export interface SharedCaseContext {
   citationCheck?: CitationVerification
   // Filled by Fase 4
   outline?: DocumentOutline
+  /**
+   * Compacted summaries produced between phases. Agents may opt-in to receive
+   * the compacted form (cheaper, anti-bloat) via `buildCaseContextBlock`'s
+   * `useCompacted` flag. The writer and the quality evaluator continue to read
+   * the full structured fields above.
+   */
+  compacted?: {
+    compreensao?: string
+    analise?: string
+    pesquisa?: string
+  }
 }
 
 export interface IntentSummary {
@@ -114,7 +127,18 @@ export interface AgentRunResult<T> {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Build the context block that every v3 agent prompt carries. */
-export function buildCaseContextBlock(ctx: SharedCaseContext, opts?: { include?: Array<keyof SharedCaseContext> }): string {
+export function buildCaseContextBlock(
+  ctx: SharedCaseContext,
+  opts?: {
+    include?: Array<keyof SharedCaseContext>
+    /**
+     * When true and the requested phase has a compacted summary, use it instead
+     * of expanding the raw structured fields for that phase. Falls back to the
+     * raw fields when no compacted form is available.
+     */
+    useCompacted?: boolean
+  },
+): string {
   const parts: string[] = []
   parts.push('<contexto_caso>')
   parts.push(`Solicitação original: ${ctx.request}`)
@@ -122,54 +146,88 @@ export function buildCaseContextBlock(ctx: SharedCaseContext, opts?: { include?:
   if (ctx.areaLabels.length > 0) {
     parts.push(`Áreas: ${ctx.areaLabels.join(', ')}`)
   }
-  const include = opts?.include
-  const want = (key: keyof SharedCaseContext): boolean => !include || include.includes(key)
-
-  if (want('intent') && ctx.intent) {
-    parts.push(`Classificação: ${ctx.intent.classification} · complexidade ${ctx.intent.complexity}/5 · urgência ${ctx.intent.urgency}/5`)
-    if (ctx.intent.notes) parts.push(`Notas de intenção: ${ctx.intent.notes}`)
-  }
-  if (want('parsedFacts') && ctx.parsedFacts) {
-    if (ctx.parsedFacts.partes.length) parts.push(`Partes: ${ctx.parsedFacts.partes.join('; ')}`)
-    if (ctx.parsedFacts.fatos.length) parts.push(`Fatos: ${ctx.parsedFacts.fatos.join('; ')}`)
-    if (ctx.parsedFacts.pedidos.length) parts.push(`Pedidos: ${ctx.parsedFacts.pedidos.join('; ')}`)
-    if (ctx.parsedFacts.prazos.length) parts.push(`Prazos: ${ctx.parsedFacts.prazos.join('; ')}`)
-    if (ctx.parsedFacts.jurisdicao) parts.push(`Jurisdição: ${ctx.parsedFacts.jurisdicao}`)
-  }
-  if (want('legalIssues') && ctx.legalIssues?.length) {
-    parts.push('Questões jurídicas identificadas:')
-    for (const issue of ctx.legalIssues) {
-      parts.push(`- (${issue.id}) ${issue.titulo}: ${issue.resumo}`)
+  if (ctx.requestContext && Object.keys(ctx.requestContext).length > 0) {
+    parts.push('Contexto adicional fornecido:')
+    for (const [key, value] of Object.entries(ctx.requestContext)) {
+      if (value === null || value === undefined) continue
+      const rendered = typeof value === 'string' ? value : JSON.stringify(value)
+      if (!rendered) continue
+      parts.push(`- ${key}: ${rendered}`)
     }
   }
-  if (want('briefings') && ctx.briefings) {
-    parts.push(`Tema consolidado: ${ctx.briefings.tema}`)
-    if (ctx.briefings.subtemas.length) parts.push(`Subtemas: ${ctx.briefings.subtemas.join(', ')}`)
-    if (ctx.briefings.palavrasChave.length) parts.push(`Palavras-chave: ${ctx.briefings.palavrasChave.join(', ')}`)
+  const include = opts?.include
+  const want = (key: keyof SharedCaseContext): boolean => !include || include.includes(key)
+  const useCompacted = opts?.useCompacted === true
+
+  // Compacted compreensão (Fase 1) replaces intent/parsedFacts/legalIssues/briefings when requested.
+  const compreensaoKeys: Array<keyof SharedCaseContext> = ['intent', 'parsedFacts', 'legalIssues', 'briefings']
+  if (useCompacted && ctx.compacted?.compreensao && compreensaoKeys.some(k => want(k))) {
+    parts.push('Resumo compactado da compreensão:')
+    parts.push(ctx.compacted.compreensao)
+  } else {
+    if (want('intent') && ctx.intent) {
+      parts.push(`Classificação: ${ctx.intent.classification} · complexidade ${ctx.intent.complexity}/5 · urgência ${ctx.intent.urgency}/5`)
+      if (ctx.intent.notes) parts.push(`Notas de intenção: ${ctx.intent.notes}`)
+    }
+    if (want('parsedFacts') && ctx.parsedFacts) {
+      if (ctx.parsedFacts.partes.length) parts.push(`Partes: ${ctx.parsedFacts.partes.join('; ')}`)
+      if (ctx.parsedFacts.fatos.length) parts.push(`Fatos: ${ctx.parsedFacts.fatos.join('; ')}`)
+      if (ctx.parsedFacts.pedidos.length) parts.push(`Pedidos: ${ctx.parsedFacts.pedidos.join('; ')}`)
+      if (ctx.parsedFacts.prazos.length) parts.push(`Prazos: ${ctx.parsedFacts.prazos.join('; ')}`)
+      if (ctx.parsedFacts.jurisdicao) parts.push(`Jurisdição: ${ctx.parsedFacts.jurisdicao}`)
+    }
+    if (want('legalIssues') && ctx.legalIssues?.length) {
+      parts.push('Questões jurídicas identificadas:')
+      for (const issue of ctx.legalIssues) {
+        parts.push(`- (${issue.id}) ${issue.titulo}: ${issue.resumo}`)
+      }
+    }
+    if (want('briefings') && ctx.briefings) {
+      parts.push(`Tema consolidado: ${ctx.briefings.tema}`)
+      if (ctx.briefings.subtemas.length) parts.push(`Subtemas: ${ctx.briefings.subtemas.join(', ')}`)
+      if (ctx.briefings.palavrasChave.length) parts.push(`Palavras-chave: ${ctx.briefings.palavrasChave.join(', ')}`)
+    }
   }
-  if (want('refinedTheses') && ctx.refinedTheses?.text) {
-    parts.push('Teses refinadas:')
-    parts.push(ctx.refinedTheses.text)
-  } else if (want('theses') && ctx.theses?.text) {
-    parts.push('Teses:')
-    parts.push(ctx.theses.text)
+
+  // Compacted análise (Fase 2) replaces theses/refinedTheses when requested.
+  const analiseKeys: Array<keyof SharedCaseContext> = ['theses', 'refinedTheses']
+  if (useCompacted && ctx.compacted?.analise && analiseKeys.some(k => want(k))) {
+    parts.push('Resumo compactado da análise:')
+    parts.push(ctx.compacted.analise)
+  } else {
+    if (want('refinedTheses') && ctx.refinedTheses?.text) {
+      parts.push('Teses refinadas:')
+      parts.push(ctx.refinedTheses.text)
+    } else if (want('theses') && ctx.theses?.text) {
+      parts.push('Teses:')
+      parts.push(ctx.theses.text)
+    }
   }
-  if (want('legislation') && ctx.legislation?.text) {
-    parts.push('Pesquisa de legislação:')
-    parts.push(ctx.legislation.text)
+
+  // Compacted pesquisa (Fase 3) replaces legislation/jurisprudence/doctrine/citationCheck when requested.
+  const pesquisaKeys: Array<keyof SharedCaseContext> = ['legislation', 'jurisprudence', 'doctrine', 'citationCheck']
+  if (useCompacted && ctx.compacted?.pesquisa && pesquisaKeys.some(k => want(k))) {
+    parts.push('Resumo compactado da pesquisa:')
+    parts.push(ctx.compacted.pesquisa)
+  } else {
+    if (want('legislation') && ctx.legislation?.text) {
+      parts.push('Pesquisa de legislação:')
+      parts.push(ctx.legislation.text)
+    }
+    if (want('jurisprudence') && ctx.jurisprudence?.text) {
+      parts.push('Pesquisa de jurisprudência:')
+      parts.push(ctx.jurisprudence.text)
+    }
+    if (want('doctrine') && ctx.doctrine?.text) {
+      parts.push('Pesquisa de doutrina:')
+      parts.push(ctx.doctrine.text)
+    }
+    if (want('citationCheck') && ctx.citationCheck?.text) {
+      parts.push('Verificação de citações:')
+      parts.push(ctx.citationCheck.text)
+    }
   }
-  if (want('jurisprudence') && ctx.jurisprudence?.text) {
-    parts.push('Pesquisa de jurisprudência:')
-    parts.push(ctx.jurisprudence.text)
-  }
-  if (want('doctrine') && ctx.doctrine?.text) {
-    parts.push('Pesquisa de doutrina:')
-    parts.push(ctx.doctrine.text)
-  }
-  if (want('citationCheck') && ctx.citationCheck?.text) {
-    parts.push('Verificação de citações:')
-    parts.push(ctx.citationCheck.text)
-  }
+
   if (want('outline') && ctx.outline?.text) {
     parts.push('Plano do documento:')
     parts.push(ctx.outline.text)
