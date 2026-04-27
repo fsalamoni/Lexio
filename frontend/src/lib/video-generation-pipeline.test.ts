@@ -18,6 +18,8 @@ vi.mock('./model-config', () => ({
   loadVideoPipelineModels: (...args: unknown[]) => loadVideoPipelineModelsMock(...args),
   validateScopedAgentModels: (...args: unknown[]) => validateScopedAgentModelsMock(...args),
   VIDEO_PIPELINE_AGENT_DEFS: [],
+  loadFallbackPriorityConfig: async () => ({}),
+  buildPipelineFallbackResolver: () => () => [],
 }))
 
 vi.mock('./image-generation-client', () => ({

@@ -113,7 +113,13 @@ export interface DocumentOutline {
 export interface AgentRunContext {
   apiKey: string
   model: string
-  fallbackModel: string
+  /**
+   * User-chosen fallback model(s) to try when the primary fails. May be a
+   * single model ID (legacy callers) or an ordered priority list resolved
+   * from the user's category-specific fallback configuration. The platform
+   * never injects a fallback the user did not explicitly pick.
+   */
+  fallbackModel: string | readonly string[]
   caseContext: SharedCaseContext
   profileBlock: string
   signal?: AbortSignal

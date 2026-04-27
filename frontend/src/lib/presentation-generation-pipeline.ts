@@ -3,7 +3,10 @@ import { formatCostBadge } from './currency-utils'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL } from './image-generation-client'
 import { callLLMWithFallback, type LLMResult } from './llm-client'
 import {
+  buildPipelineFallbackResolver,
+  loadFallbackPriorityConfig,
   loadPresentationPipelineModels,
+  PRESENTATION_PIPELINE_AGENT_DEFS,
   validateScopedAgentModels,
 } from './model-config'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
@@ -379,6 +382,8 @@ export async function runPresentationGenerationPipeline(
 ): Promise<PresentationGenerationPipelineResult> {
   const models = await loadPresentationPipelineModels()
   await validateScopedAgentModels('presentation_pipeline_models', models)
+  const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
+  const resolveFb = buildPipelineFallbackResolver(PRESENTATION_PIPELINE_AGENT_DEFS, fallbackConfig)
 
   const requiredKeys = [
     'pres_planejador',
@@ -400,7 +405,7 @@ export async function runPresentationGenerationPipeline(
     executionState: 'running',
   })
   const planPrompt = buildPlanPrompt(input)
-  const planResult = await callLLMWithFallback(input.apiKey, planPrompt.system, planPrompt.user, models.pres_planejador, models.pres_planejador, 3000, 0.2, { signal })
+  const planResult = await callLLMWithFallback(input.apiKey, planPrompt.system, planPrompt.user, models.pres_planejador, resolveFb('pres_planejador', models.pres_planejador), 3000, 0.2, { signal })
   executions.push(toExecution('pres_planejador', 'Planejador de Apresentação', planResult))
   onProgress?.(1, 5, 'Estrutura da apresentação planejada.', buildPresentationProgressMeta(planResult))
 
@@ -409,7 +414,7 @@ export async function runPresentationGenerationPipeline(
     executionState: 'running',
   })
   const researchPrompt = buildResearchPrompt(input, planResult.content)
-  const researchResult = await callLLMWithFallback(input.apiKey, researchPrompt.system, researchPrompt.user, models.pres_pesquisador, models.pres_pesquisador, 3500, 0.2, { signal })
+  const researchResult = await callLLMWithFallback(input.apiKey, researchPrompt.system, researchPrompt.user, models.pres_pesquisador, resolveFb('pres_pesquisador', models.pres_pesquisador), 3500, 0.2, { signal })
   executions.push(toExecution('pres_pesquisador', 'Pesquisador de Conteúdo', researchResult))
   onProgress?.(2, 5, 'Pesquisa e mensagens-chave consolidadas.', buildPresentationProgressMeta(researchResult))
 
@@ -418,7 +423,7 @@ export async function runPresentationGenerationPipeline(
     executionState: 'running',
   })
   const writerPrompt = buildWriterPrompt(input, planResult.content, researchResult.content)
-  const writerResult = await callLLMWithFallback(input.apiKey, writerPrompt.system, writerPrompt.user, models.pres_redator, models.pres_redator, 9000, 0.3, { signal })
+  const writerResult = await callLLMWithFallback(input.apiKey, writerPrompt.system, writerPrompt.user, models.pres_redator, resolveFb('pres_redator', models.pres_redator), 9000, 0.3, { signal })
   const writtenSlides = normalizePresentation(writerResult.content)
   executions.push(toExecution('pres_redator', 'Redator de Slides', writerResult))
   onProgress?.(3, 5, 'Slides escritos.', buildPresentationProgressMeta(writerResult))
@@ -428,7 +433,7 @@ export async function runPresentationGenerationPipeline(
     executionState: 'running',
   })
   const designerPrompt = buildDesignerPrompt(writtenSlides)
-  const designerResult = await callLLMWithFallback(input.apiKey, designerPrompt.system, designerPrompt.user, models.pres_designer, models.pres_designer, 9000, 0.25, { signal })
+  const designerResult = await callLLMWithFallback(input.apiKey, designerPrompt.system, designerPrompt.user, models.pres_designer, resolveFb('pres_designer', models.pres_designer), 9000, 0.25, { signal })
   const designedSlides = normalizePresentation(designerResult.content)
   executions.push(toExecution('pres_designer', 'Designer de Apresentação', designerResult))
   onProgress?.(4, 5, 'Direção visual dos slides concluída.', buildPresentationProgressMeta(designerResult))
@@ -438,7 +443,7 @@ export async function runPresentationGenerationPipeline(
     executionState: 'running',
   })
   const reviewPrompt = buildReviewPrompt(designedSlides)
-  const reviewResult = await callLLMWithFallback(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.pres_revisor, models.pres_revisor, 9000, 0.15, { signal })
+  const reviewResult = await callLLMWithFallback(input.apiKey, reviewPrompt.system, reviewPrompt.user, models.pres_revisor, resolveFb('pres_revisor', models.pres_revisor), 9000, 0.15, { signal })
   const finalContent = normalizePresentation(reviewResult.content)
   executions.push(toExecution('pres_revisor', 'Revisor de Apresentação', reviewResult))
   onProgress?.(5, 5, 'Revisão final da apresentação concluída.', buildPresentationProgressMeta(reviewResult))

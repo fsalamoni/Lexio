@@ -12,6 +12,7 @@
  *  - Escape to close
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Minus, Maximize2, Minimize2 } from 'lucide-react'
 
 // ── Z-index management ──────────────────────────────────────────────────────
@@ -376,7 +377,13 @@ export default function DraggablePanel({
     ? headerHeight
     : (isCompactViewport ? compactHeight : (maximized ? viewport.h : size.h))
 
-  return (
+  // Render via React portal so the panel escapes any parent stacking context
+  // / containing block created by ancestors with `transform`, `filter` or
+  // `backdrop-filter` (e.g. the `.v2-panel` admin cards). Without the portal
+  // a `position: fixed` panel would be clipped/positioned relative to the
+  // ancestor with the containing block, which is why the model selector
+  // previously appeared "trapped inside the trail card".
+  const panel = (
     <div
       ref={panelRef}
       role="dialog"
@@ -517,4 +524,10 @@ export default function DraggablePanel({
       )}
     </div>
   )
+
+  // SSR safety: if document is not available (e.g. server-side render), fall
+  // back to inline rendering. In the browser, render into <body> so the
+  // panel is never trapped inside an ancestor stacking context.
+  if (typeof document === 'undefined') return panel
+  return createPortal(panel, document.body)
 }

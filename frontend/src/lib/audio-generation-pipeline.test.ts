@@ -13,6 +13,9 @@ vi.mock('./llm-client', () => ({
 vi.mock('./model-config', () => ({
   loadAudioPipelineModels: (...args: unknown[]) => loadAudioPipelineModelsMock(...args),
   validateScopedAgentModels: (...args: unknown[]) => validateScopedAgentModelsMock(...args),
+  loadFallbackPriorityConfig: async () => ({}),
+  buildPipelineFallbackResolver: () => () => [],
+  AUDIO_PIPELINE_AGENT_DEFS: [],
 }))
 
 vi.mock('./notebook-audio-pipeline', () => ({

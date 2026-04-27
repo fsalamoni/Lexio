@@ -10,7 +10,13 @@
  */
 
 import { callLLMWithFallback, type LLMResult } from './llm-client'
-import { loadResearchNotebookModels, validateScopedAgentModels } from './model-config'
+import {
+  buildPipelineFallbackResolver,
+  loadFallbackPriorityConfig,
+  loadResearchNotebookModels,
+  RESEARCH_NOTEBOOK_AGENT_DEFS,
+  validateScopedAgentModels,
+} from './model-config'
 import type { AudioSegment } from './artifact-parsers'
 import { generateTTSViaOpenRouter, type TTSResult } from './tts-client'
 import {
@@ -295,6 +301,8 @@ export async function generateAudioOverview(
   const models = await loadResearchNotebookModels()
   await validateScopedAgentModels('research_notebook_models', { studio_roteirista: models.studio_roteirista })
   const scriptModel = models.studio_roteirista
+  const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
+  const resolveFb = buildPipelineFallbackResolver(RESEARCH_NOTEBOOK_AGENT_DEFS, fallbackConfig)
 
   if (!scriptModel) {
     throw new Error('Modelo do Roteirista não configurado. Vá em Configurações > Caderno de Pesquisa e configure o agente "Roteirista".')
@@ -309,7 +317,7 @@ export async function generateAudioOverview(
     prompt.system,
     prompt.user,
     scriptModel,
-    scriptModel,
+    resolveFb('studio_roteirista', scriptModel),
     10000,
     0.6, // Higher temperature for more natural conversation
   )

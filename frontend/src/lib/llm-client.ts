@@ -154,47 +154,67 @@ function isModelUnavailableResponse(status: number, errorBody: string): boolean 
 }
 
 /**
- * Reliable text fallback used when a `:free` / `:experimental` model picked by the
- * user returns `ModelUnavailableError` or `TransientLLMError`. Gemini 2.0 Flash is
- * cheap, fast, and supports JSON-structured outputs — making it a safe pinch-hitter
- * for notebook pipelines (studio, audio scripting, presentation scripting, video
- * scripting agents) without forcing a config change mid-run.
+ * Detects transient OpenRouter / upstream-provider errors that should NOT crash
+ * the agent and should instead trigger the user-configured fallback chain.
+ *
+ * Includes:
+ *  - 408 Request Timeout
+ *  - 425 Too Early
+ *  - 429 Too Many Requests / rate-limit
+ *  - 500/502/503/504 upstream errors (e.g. "The operation was aborted" 504)
+ *  - 524 (Cloudflare timeout)
+ *  - Bodies containing "operation was aborted" / "timed out" / "overloaded"
  */
-export const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.0-flash'
+function isTransientUpstreamResponse(status: number, errorBody: string): boolean {
+  if (status === 408 || status === 425 || status === 429) return true
+  if (status === 500 || status === 502 || status === 503 || status === 504) return true
+  if (status === 520 || status === 521 || status === 522 || status === 523 || status === 524) return true
+  const lower = errorBody.toLowerCase()
+  if (lower.includes('operation was aborted')) return true
+  if (lower.includes('timed out') || lower.includes('timeout')) return true
+  if (lower.includes('overloaded') || lower.includes('temporarily unavailable')) return true
+  if (lower.includes('rate limit') || lower.includes('rate-limit')) return true
+  return false
+}
 
 /**
- * Given a primary model chosen by the user, pick a reliable alternative to try
- * when the primary fails. If the primary is already reliable (paid, non-experimental),
- * returns the primary unchanged.
+ * Historically used as a "safe pinch-hitter" when the user picked a `:free` /
+ * `:experimental` model that started returning errors. Per product policy we
+ * NO LONGER fall back to a model the user did not explicitly choose; this
+ * constant is kept for backward compatibility with callers that explicitly
+ * pass it as a fallback candidate.
+ *
+ * @deprecated Pass an explicit user-chosen fallback list to
+ *   `callLLMWithFallback` / `callLLMWithMessagesFallback` instead of relying
+ *   on hardcoded fallbacks.
  */
-export function pickReliableFallback(primaryModel: string): string {
-  const lower = primaryModel.toLowerCase()
-  const isUnreliable = lower.endsWith(':free') || lower.includes(':experimental')
-  if (!isUnreliable) return primaryModel
-  if (lower.startsWith('google/gemini-2.0-flash')) {
-    // Avoid returning the same family; use Haiku as secondary fallback
-    return 'anthropic/claude-3.5-haiku'
-  }
-  return RELIABLE_TEXT_FALLBACK_MODEL
-}
+export const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.0-flash'
 
 function isRecoverableLLMError(err: unknown): err is ModelUnavailableError | TransientLLMError {
   return err instanceof ModelUnavailableError || err instanceof TransientLLMError
 }
 
-function buildFallbackCandidates(model: string, fallbackModel: string): string[] {
-  const candidates = [
-    fallbackModel,
-    pickReliableFallback(model),
-    pickReliableFallback(fallbackModel),
-    RELIABLE_TEXT_FALLBACK_MODEL,
-    'anthropic/claude-3.5-haiku',
-  ]
+/**
+ * Build the ordered list of fallback models to try when the primary call fails.
+ *
+ * Strict policy: only models explicitly provided by the caller (i.e. chosen by
+ * the user in their settings) are eligible. The failed primary model and any
+ * empty / duplicate entries are removed from the chain. We never silently
+ * inject a model the user did not pick.
+ */
+function buildFallbackCandidates(model: string, fallbackModel: string | readonly string[]): string[] {
+  const raw = Array.isArray(fallbackModel)
+    ? fallbackModel
+    : (typeof fallbackModel === 'string' ? [fallbackModel] : [])
 
   const unique: string[] = []
-  for (const candidate of candidates) {
-    if (!candidate || candidate === model || unique.includes(candidate)) continue
-    unique.push(candidate)
+  for (const candidate of raw) {
+    if (typeof candidate !== 'string') continue
+    const trimmed = candidate.trim()
+    if (!trimmed) continue
+    if (trimmed === model) continue
+    if (unique.includes(trimmed)) continue
+    unique.push(trimmed)
   }
   return unique
 }
@@ -276,6 +296,10 @@ export async function callLLM(
       if (isModelUnavailableResponse(resp.status, errorBody)) {
         console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
         throw new ModelUnavailableError(model)
+      }
+      if (isTransientUpstreamResponse(resp.status, errorBody)) {
+        console.warn(`[LLM] Erro transitório (${resp.status}) no modelo "${model}": ${errorBody.slice(0, 200)}`)
+        throw new TransientLLMError(`OpenRouter API error ${resp.status}: ${errorBody.slice(0, 300)}`)
       }
       throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
     }
@@ -386,6 +410,10 @@ export async function callLLMWithMessages(
         console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
         throw new ModelUnavailableError(model)
       }
+      if (isTransientUpstreamResponse(resp.status, errorBody)) {
+        console.warn(`[LLM] Erro transitório (${resp.status}) no modelo "${model}": ${errorBody.slice(0, 200)}`)
+        throw new TransientLLMError(`OpenRouter API error ${resp.status}: ${errorBody.slice(0, 300)}`)
+      }
       throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
     }
 
@@ -448,21 +476,20 @@ export async function callLLMWithMessages(
 
 /**
  * Call OpenRouter with automatic fallback when a model is unavailable or
- * encounters transient errors (empty response, timeout).
+ * encounters transient errors (empty response, timeout, upstream 5xx/429).
  *
- * Free / experimental models on OpenRouter can return "No endpoints found" (404)
- * or empty responses when they are temporarily unavailable or overloaded.
- * This wrapper transparently retries with the specified fallback model so the
- * pipeline keeps working.
- *
- * @param fallbackModel - Reliable model to use when `model` fails
+ * @param fallbackModel - User-chosen fallback model(s) to try in order when
+ *   `model` fails. Pass an array to provide a priority list (e.g. from the
+ *   user's "Fallback de Modelos" settings card). The failed primary model
+ *   and any duplicate / empty entries are automatically skipped. Per product
+ *   policy we never inject a fallback the user did not explicitly choose.
  */
 export async function callLLMWithFallback(
   apiKey: string,
   system: string,
   user: string,
   model: string,
-  fallbackModel: string,
+  fallbackModel: string | readonly string[],
   maxTokens = 4000,
   temperature = 0.3,
   options?: LLMCallOptions,
@@ -517,7 +544,7 @@ export async function callLLMWithMessagesFallback(
   apiKey: string,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   model: string,
-  fallbackModel: string,
+  fallbackModel: string | readonly string[],
   maxTokens = 4000,
   temperature = 0.3,
   options?: LLMCallOptions,

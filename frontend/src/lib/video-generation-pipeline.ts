@@ -25,7 +25,13 @@
 
 import { callLLMWithFallback, ModelUnavailableError, TransientLLMError, type LLMResult } from './llm-client'
 import { formatCostBadge } from './currency-utils'
-import { loadVideoPipelineModels, validateScopedAgentModels, VIDEO_PIPELINE_AGENT_DEFS } from './model-config'
+import {
+  buildPipelineFallbackResolver,
+  loadFallbackPriorityConfig,
+  loadVideoPipelineModels,
+  validateScopedAgentModels,
+  VIDEO_PIPELINE_AGENT_DEFS,
+} from './model-config'
 import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
 import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
@@ -499,6 +505,7 @@ async function safeCallAgent(
   executions: VideoGenerationStepExecution[],
   maxRetries = 2,
   signal?: AbortSignal,
+  fallbackList?: string[],
 ): Promise<{ data: Record<string, unknown>; failed: boolean; result?: LLMResult }> {
   let lastError: unknown
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -508,7 +515,7 @@ async function safeCallAgent(
         const delay = Math.min(1000 * Math.pow(2, attempt), 8000)
         await sleep(delay, signal)
       }
-      const result = await callAgent(apiKey, model, prompt, signal)
+      const result = await callAgent(apiKey, model, prompt, signal, fallbackList)
       executions.push(makeExecution(phase, model, result))
       const data = safeParseJSON(result.content)
       if (!data) {
@@ -618,6 +625,8 @@ export async function runVideoGenerationPipeline(
   throwIfAborted(signal)
   const models = await loadVideoPipelineModels()
   await validateScopedAgentModels('video_pipeline_models', models)
+  const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
+  const resolveFb = buildPipelineFallbackResolver(VIDEO_PIPELINE_AGENT_DEFS, fallbackConfig)
   const executions: VideoGenerationStepExecution[] = []
   const wantMedia = input.generateMedia !== false // default true
   const totalSteps = wantMedia ? 11 : 8
@@ -681,7 +690,7 @@ Requisitos:
 - Liste elementos visuais recorrentes (logo, lower thirds, bordas, transições padrão) com posição e estilo exatos
 - Planeje a duração de cada segmento em segundos
 - Total deve somar a duração indicada no roteiro
-- O Guia de Design será usado como REFERÊNCIA OBRIGATÓRIA por todos os demais agentes — seja o mais específico possível`, 'video_planejador', executions, 2, signal)
+- O Guia de Design será usado como REFERÊNCIA OBRIGATÓRIA por todos os demais agentes — seja o mais específico possível`, 'video_planejador', executions, 2, signal, resolveFb('video_planejador', models.video_planejador))
   if (planResult) onProgress?.(1, totalSteps, 'video_planejador', 'Planejador de Produção', buildVideoProgressMetaFromResult(planResult))
   checkpoint.completedStep = 1; checkpoint.planData = planData
 
@@ -730,7 +739,7 @@ O vídeo DEVE ser um produto visual HARMONIOSO e UNIFORME do início ao fim.
 Requisitos adicionais:
 - Narração detalhada com marcações de tom e ênfase
 - Cada cena deve ter indicação precisa de início e fim
-- Cronologia e encadeamento lógico de ideias`, 'video_roteirista', executions, 2, signal)
+- Cronologia e encadeamento lógico de ideias`, 'video_roteirista', executions, 2, signal, resolveFb('video_roteirista', models.video_roteirista))
   if (scriptResult) onProgress?.(2, totalSteps, 'video_roteirista', 'Roteirista', buildVideoProgressMetaFromResult(scriptResult))
   if (!scriptData.scenes) scriptData.scenes = []
   checkpoint.completedStep = 2; checkpoint.scriptData = scriptData
@@ -778,7 +787,7 @@ O vídeo DEVE manter UNIFORMIDADE VISUAL ABSOLUTA entre todas as cenas:
 Requisitos adicionais:
 - Adicione instruções de câmera para cada cena
 - Refine os timings para encadeamento suave
-- Garanta continuidade visual entre cenas consecutivas`, 'video_diretor_cena', executions, 2, signal)
+- Garanta continuidade visual entre cenas consecutivas`, 'video_diretor_cena', executions, 2, signal, resolveFb('video_diretor_cena', models.video_diretor_cena))
   if (directorResult) onProgress?.(3, totalSteps, 'video_diretor_cena', 'Diretor de Cenas', buildVideoProgressMetaFromResult(directorResult))
   if (!directedScenes.scenes) directedScenes.scenes = scriptData.scenes || []
   checkpoint.completedStep = 3; checkpoint.directedScenes = directedScenes
@@ -823,7 +832,7 @@ REGRA DE HARMONIA VISUAL (OBRIGATÓRIA):
 Requisitos adicionais:
 - 2-4 frames chave por cena (keyframes)
 - Descrições visuais detalhadas e precisas
-- Indique posição e tamanho dos elementos na composição`, 'video_storyboarder', executions, 2, signal)
+- Indique posição e tamanho dos elementos na composição`, 'video_storyboarder', executions, 2, signal, resolveFb('video_storyboarder', models.video_storyboarder))
   if (storyboardResult) onProgress?.(4, totalSteps, 'video_storyboarder', 'Storyboarder', buildVideoProgressMetaFromResult(storyboardResult))
   checkpoint.completedStep = 4; checkpoint.storyboardData = storyboardData
 
@@ -879,7 +888,7 @@ PROIBIDO:
 Requisitos adicionais:
 - Um prompt de imagem principal por cena (thumbnail/keyframe)
 - Um prompt de vídeo curto por cena (para composição)
-- Prompts em inglês para melhor compatibilidade com modelos de geração`, 'video_designer', executions, 2, signal)
+- Prompts em inglês para melhor compatibilidade com modelos de geração`, 'video_designer', executions, 2, signal, resolveFb('video_designer', models.video_designer))
   if (designResult) onProgress?.(5, totalSteps, 'video_designer', 'Designer Visual', buildVideoProgressMetaFromResult(designResult))
   checkpoint.completedStep = 5; checkpoint.designData = designData
 
@@ -980,7 +989,7 @@ REGRA DE HARMONIA (OBRIGATÓRIA):
 - Color grading DEVE ser o MESMO em todas as cenas (use o mesmo efeito/filtro)
 - Transições entre cenas devem seguir um PADRÃO UNIFORME — não misture tipos
 - Trilha sonora deve ter continuidade — NÃO mude de gênero entre segmentos
-- Lower thirds e overlays devem seguir o MESMO estilo de design em todo o vídeo`, 'video_compositor', executions, 2, signal)
+- Lower thirds e overlays devem seguir o MESMO estilo de design em todo o vídeo`, 'video_compositor', executions, 2, signal, resolveFb('video_compositor', models.video_compositor))
   if (compositorResult) onProgress?.(6, totalSteps, 'video_compositor', 'Compositor de Vídeo', buildVideoProgressMetaFromResult(compositorResult))
   checkpoint.completedStep = 6; checkpoint.compositorData = compositorData
 
@@ -1032,7 +1041,7 @@ Requisitos adicionais:
 - Texto exato e completo para cada segmento de narração
 - Marcações de ênfase com *asteriscos*
 - Indicações de [pausa] onde necessário
-- Timing sincronizado com a timeline do compositor`, 'video_narrador', executions, 2, signal)
+- Timing sincronizado com a timeline do compositor`, 'video_narrador', executions, 2, signal, resolveFb('video_narrador', models.video_narrador))
   if (narratorResult) onProgress?.(7, totalSteps, 'video_narrador', 'Narrador', buildVideoProgressMetaFromResult(narratorResult))
   checkpoint.completedStep = 7; checkpoint.narratorData = narratorData
 
@@ -1103,7 +1112,7 @@ Se QUALQUER item falhar, defina approved=false e qualityScore < 6.
 Requisitos adicionais:
 - Valide sincronização entre narração e visual
 - Avalie encadeamento lógico de ideias
-- Identifique possíveis problemas e sugira melhorias`, 'video_revisor', executions, 2, signal)
+- Identifique possíveis problemas e sugira melhorias`, 'video_revisor', executions, 2, signal, resolveFb('video_revisor', models.video_revisor))
   if (reviewResult) onProgress?.(8, totalSteps, 'video_revisor', 'Revisor Final de Vídeo', buildVideoProgressMetaFromResult(reviewResult))
   checkpoint.completedStep = 8; checkpoint.reviewData = reviewData
 
@@ -1259,7 +1268,7 @@ REQUISITOS OBRIGATÓRIOS:
 5. Timestamps absolutos: o primeiro clip começa em ${sceneStartSeconds}s
 6. Cada clip subsequente começa onde o anterior termina
 7. Descreva movimentos de câmera para guiar a progressão visual
-8. Transições suaves entre clips (crossfade, dissolve, cut)`, signal)
+8. Transições suaves entre clips (crossfade, dissolve, cut)`, signal, resolveFb('video_clip_planner', clipPlannerModel))
 
         executions.push(makeExecution('clip_subdivision', clipPlannerModel, clipResult))
         onProgress?.(
@@ -1659,13 +1668,13 @@ REQUISITOS OBRIGATÓRIOS:
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function callAgent(apiKey: string, model: string, prompt: string, signal?: AbortSignal): Promise<LLMResult> {
+async function callAgent(apiKey: string, model: string, prompt: string, signal?: AbortSignal, fallbackList?: string[]): Promise<LLMResult> {
   return callLLMWithFallback(
     apiKey,
     'Você é um agente especialista em produção de vídeo profissional. Responda SEMPRE com JSON puro e válido, sem markdown, sem explicações adicionais.',
     prompt,
     model,
-    model,
+    fallbackList ?? [],
     undefined,
     undefined,
     { signal },

@@ -6,7 +6,6 @@ import {
   ModelUnavailableError,
   RELIABLE_TEXT_FALLBACK_MODEL,
   TransientLLMError,
-  pickReliableFallback,
 } from './llm-client'
 
 function unavailableModelResponse() {
@@ -21,6 +20,19 @@ function unavailableModelResponse() {
       },
     }),
     { status: 404, headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
+function gatewayTimeoutResponse() {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: 'The operation was aborted',
+        code: 504,
+        metadata: { provider_name: 'upstream' },
+      },
+    }),
+    { status: 504, headers: { 'Content-Type': 'application/json' } },
   )
 }
 
@@ -74,78 +86,140 @@ describe('llm-client', () => {
     ).rejects.toBeInstanceOf(ModelUnavailableError)
   })
 
-  describe('RELIABLE_TEXT_FALLBACK_MODEL', () => {
-    it('is not the deprecated google/gemini-2.0-flash-001 model', () => {
-      expect(RELIABLE_TEXT_FALLBACK_MODEL).not.toBe('google/gemini-2.0-flash-001')
-    })
+  it('classifies upstream 504 gateway timeouts as TransientLLMError so the user-chosen fallback can take over', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(gatewayTimeoutResponse())
 
-    it('uses google/gemini-2.0-flash (without version suffix)', () => {
+    await expect(
+      callLLM('sk-or-test', 'system', 'user', 'slow/model'),
+    ).rejects.toBeInstanceOf(TransientLLMError)
+  })
+
+  it('classifies upstream 502/503/429 responses as TransientLLMError', async () => {
+    for (const status of [429, 502, 503]) {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response('Service unavailable', { status }),
+      )
+      await expect(
+        callLLM('sk-or-test', 'system', 'user', 'flaky/model'),
+      ).rejects.toBeInstanceOf(TransientLLMError)
+      vi.restoreAllMocks()
+    }
+  })
+
+  describe('RELIABLE_TEXT_FALLBACK_MODEL', () => {
+    it('uses google/gemini-2.0-flash (kept exported for backward compatibility)', () => {
+      // Policy: never auto-fallback to non-user models. Constant is kept so
+      // legacy callers that explicitly opt-in by passing it as a fallback
+      // candidate still work, but it is not injected silently anymore.
       expect(RELIABLE_TEXT_FALLBACK_MODEL).toBe('google/gemini-2.0-flash')
     })
   })
 
-  describe('pickReliableFallback', () => {
-    it('returns the primary model unchanged when it is a paid/reliable model', () => {
-      expect(pickReliableFallback('anthropic/claude-3.5-haiku')).toBe('anthropic/claude-3.5-haiku')
-      expect(pickReliableFallback('openai/gpt-4o')).toBe('openai/gpt-4o')
-      expect(pickReliableFallback('google/gemini-2.0-flash')).toBe('google/gemini-2.0-flash')
-    })
-
-    it('returns RELIABLE_TEXT_FALLBACK_MODEL for :free models', () => {
-      expect(pickReliableFallback('some/model:free')).toBe(RELIABLE_TEXT_FALLBACK_MODEL)
-    })
-
-    it('returns anthropic/claude-3.5-haiku when primary is in the gemini-2.0-flash family to avoid circular fallback', () => {
-      expect(pickReliableFallback('google/gemini-2.0-flash:free')).toBe('anthropic/claude-3.5-haiku')
-      expect(pickReliableFallback('google/gemini-2.0-flash-lite:free')).toBe('anthropic/claude-3.5-haiku')
-    })
-
-    it('returns RELIABLE_TEXT_FALLBACK_MODEL for :experimental models', () => {
-      expect(pickReliableFallback('some/model:experimental')).toBe(RELIABLE_TEXT_FALLBACK_MODEL)
-    })
-  })
-
-  describe('fallback resilience', () => {
-    it('tries additional fallback candidates when configured fallback also fails', async () => {
+  describe('user-controlled fallback', () => {
+    it('falls back to the user-supplied model when the primary is unavailable', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch')
       fetchSpy
-        .mockResolvedValueOnce(unavailableModelResponse()) // primary
-        .mockResolvedValueOnce(unavailableModelResponse()) // configured fallback
-        .mockResolvedValueOnce(successResponse('ok from reliable fallback')) // reliable fallback
+        .mockResolvedValueOnce(unavailableModelResponse())            // primary fails
+        .mockResolvedValueOnce(successResponse('ok from user fallback')) // user fallback succeeds
 
       const result = await callLLMWithFallback(
         'sk-or-test',
         'system',
         'user',
         'broken/model',
-        'broken/fallback',
+        'user/chosen-fallback',
       )
 
-      expect(result.content).toBe('ok from reliable fallback')
-      expect(result.model).toBe(RELIABLE_TEXT_FALLBACK_MODEL)
+      expect(result.content).toBe('ok from user fallback')
+      expect(result.model).toBe('user/chosen-fallback')
       expect(result.operational?.fallbackUsed).toBe(true)
       expect(result.operational?.fallbackFrom).toBe('broken/model')
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+    })
+
+    it('walks an ordered priority list of user-chosen fallbacks, skipping the failed model', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      fetchSpy
+        .mockResolvedValueOnce(unavailableModelResponse())        // primary fails
+        .mockResolvedValueOnce(unavailableModelResponse())        // priority #1 fails too
+        .mockResolvedValueOnce(successResponse('priority #2 ok')) // priority #2 succeeds
+
+      const result = await callLLMWithFallback(
+        'sk-or-test',
+        'system',
+        'user',
+        'broken/primary',
+        // The failed primary is also listed → must be skipped automatically
+        ['broken/primary', 'user/priority-1', 'user/priority-2'],
+      )
+
+      expect(result.content).toBe('priority #2 ok')
+      expect(result.model).toBe('user/priority-2')
+      expect(result.operational?.fallbackUsed).toBe(true)
+      expect(result.operational?.fallbackFrom).toBe('broken/primary')
       expect(fetchSpy).toHaveBeenCalledTimes(3)
     })
 
-    it('applies the same cascading fallback strategy for messages-based calls', async () => {
+    it('triggers the user-chosen fallback on upstream 504 gateway timeouts', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch')
       fetchSpy
-        .mockResolvedValueOnce(unavailableModelResponse()) // primary
-        .mockResolvedValueOnce(unavailableModelResponse()) // configured fallback
-        .mockResolvedValueOnce(successResponse('ok from messages fallback')) // reliable fallback
+        .mockResolvedValueOnce(gatewayTimeoutResponse())              // primary 504
+        .mockResolvedValueOnce(successResponse('ok from fallback'))   // fallback ok
+
+      const result = await callLLMWithFallback(
+        'sk-or-test',
+        'system',
+        'user',
+        'broken/primary',
+        ['user/priority-1'],
+      )
+
+      expect(result.content).toBe('ok from fallback')
+      expect(result.operational?.fallbackUsed).toBe(true)
+      expect(result.operational?.fallbackReason).toBe('transient_error')
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+    })
+
+    it('does NOT inject a non-user-chosen fallback when the user list is empty', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      fetchSpy.mockResolvedValueOnce(unavailableModelResponse())
+
+      await expect(
+        callLLMWithFallback('sk-or-test', 'system', 'user', 'broken/model', []),
+      ).rejects.toBeInstanceOf(ModelUnavailableError)
+
+      // Strict policy: only the primary attempt happens — no silent fallback.
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('does NOT inject a non-user-chosen fallback when the only fallback equals the failed primary', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      fetchSpy.mockResolvedValueOnce(unavailableModelResponse())
+
+      await expect(
+        callLLMWithFallback('sk-or-test', 'system', 'user', 'broken/model', 'broken/model'),
+      ).rejects.toBeInstanceOf(ModelUnavailableError)
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('applies the same user-controlled fallback strategy for messages-based calls', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      fetchSpy
+        .mockResolvedValueOnce(unavailableModelResponse())
+        .mockResolvedValueOnce(successResponse('ok from messages fallback'))
 
       const result = await callLLMWithMessagesFallback(
         'sk-or-test',
         [{ role: 'user', content: 'hi' }],
         'broken/messages-model',
-        'broken/messages-fallback',
+        ['user/messages-fallback'],
       )
 
       expect(result.content).toBe('ok from messages fallback')
-      expect(result.model).toBe(RELIABLE_TEXT_FALLBACK_MODEL)
+      expect(result.model).toBe('user/messages-fallback')
       expect(result.operational?.fallbackUsed).toBe(true)
-      expect(fetchSpy).toHaveBeenCalledTimes(3)
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
     })
 
     it('does not retry timeout on the same model, surfacing TransientLLMError immediately', async () => {

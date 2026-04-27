@@ -36,6 +36,7 @@ import VideoPipelineConfigCard from '../components/VideoPipelineConfigCard'
 import AudioPipelineConfigCard from '../components/AudioPipelineConfigCard'
 import PresentationPipelineConfigCard from '../components/PresentationPipelineConfigCard'
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
+import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
 import ModelCatalogCard from '../components/ModelCatalogCard'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ThemeSkinSelector from '../components/ThemeSkinSelector'
@@ -959,6 +960,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <DocumentV3PipelineConfigSection />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Fallback Priorities — applies to ALL agents in the platform */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_fallback_priorities"
+          title="Fallback de Modelos (todas as trilhas)"
+          icon={Shield}
+          iconColor="text-emerald-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <FallbackPriorityConfigCard />
         </AdminCollapsibleSection>
       )}
 
