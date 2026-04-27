@@ -1,5 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+// @vitest-environment jsdom
+
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { useEffect } from 'react'
 
 const {
@@ -77,6 +79,10 @@ function Probe({ emitInvalidSession }: { emitInvalidSession?: boolean }) {
 }
 
 describe('AuthContext session recovery', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
@@ -99,7 +105,7 @@ describe('AuthContext session recovery', () => {
     })
   })
 
-  it('re-syncs token/profile on session-invalid signal without forcing logout when refresh succeeds', async () => {
+  it('resyncs token/profile on session-invalid signal without forcing logout when refresh succeeds', async () => {
     render(
       <AuthProvider>
         <Probe emitInvalidSession />

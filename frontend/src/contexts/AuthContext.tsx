@@ -142,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await syncAuthFromFirebaseUser(firebaseAuth.currentUser, { forceRefreshToken: true })
           recovered = true
         } catch (error) {
-          console.warn('[AuthContext] Failed to re-sync Firebase session after auth-session-invalid signal:', error)
+          console.warn('[AuthContext] Failed to refresh Firebase session token and profile data after auth-session-invalid signal:', error)
         }
       }
 
