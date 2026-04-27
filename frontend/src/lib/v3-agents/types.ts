@@ -128,6 +128,17 @@ export interface AgentRunContext {
 export interface AgentRunResult<T> {
   output: T
   llmResult: LLMResult
+  /**
+   * Optional additional LLM executions performed by the agent (e.g. when an
+   * agent internally orchestrates multiple LLM calls — ranking + synthesis).
+   * The orchestrator records these in `llm_executions` and includes their
+   * durations in the parallel-savings telemetry.
+   */
+  extraExecutions?: ReadonlyArray<{
+    phase: string
+    agentName: string
+    llmResult: LLMResult
+  }>
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

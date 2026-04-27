@@ -95,6 +95,7 @@ import {
   type DataJudErrorType,
   type DataJudResult,
 } from '../../lib/datajud-service'
+import { JURISPRUDENCE_RANKING_SYSTEM, JURISPRUDENCE_SYNTHESIS_SYSTEM } from '../../lib/jurisprudence-prompts'
 import {
   deepWebSearch,
   fetchUrlContent as fetchUrlContentService,
@@ -208,42 +209,6 @@ const STUDIO_CATEGORY_COLORS = {
 const VALID_STANCES = ['favoravel', 'desfavoravel', 'neutro'] as const
 const MAX_PERSISTED_RESEARCH_AUDITS = 12
 const MAX_PERSISTED_SAVED_SEARCHES = 12
-
-const JURISPRUDENCE_RANKING_SYSTEM = [
-  'Você é um especialista em relevância jurisprudencial.',
-  'Avalie cada processo quanto à relevância para a consulta do usuário.',
-  'Retorne APENAS um JSON com um array "ranking" onde cada item tem:',
-  '"index" (número do processo na lista, começando em 1),',
-  '"score" (0 a 100, sendo 100 = máxima relevância),',
-  '"stance" (classificação da posição do resultado em relação à tese/consulta do usuário:',
-  '"favoravel" se o julgado apoia a tese, "desfavoravel" se contraria, "neutro" se inconclusivo).',
-  'Ordene do mais relevante para o menos relevante.',
-  'Considere prioritariamente: (1) aderência jurídica da EMENTA e do INTEIRO TEOR à consulta,',
-  '(2) coincidência concreta entre a matéria pesquisada e os fundamentos do julgado,',
-  '(3) grau hierárquico do tribunal, sem permitir que isso supere a aderência temática,',
-  '(4) recência como critério secundário, nunca principal.',
-  'Penalize fortemente resultados genéricos, tangenciais, com assuntos amplos demais ou sem texto decisório suficiente.',
-  'Se faltar ementa ou inteiro teor, reduza a nota de forma agressiva; se ambos faltarem, trate como baixa confiança e evite score alto.',
-  'Resultados apoiados apenas por metadados não podem superar julgados com texto decisório aderente à consulta.',
-  'Quando o texto estiver incompleto, reflita isso também na stance e na pontuação final.',
-  'Exemplo de resposta: {"ranking":[{"index":1,"score":85,"stance":"favoravel"}]}',
-].join(' ')
-
-const JURISPRUDENCE_SYNTHESIS_SYSTEM = [
-  'Você é um pesquisador jurídico especializado em jurisprudência brasileira.',
-  'Organize e sintetize os resultados do DataJud em português, produzindo as seguintes seções:',
-  '',
-  '1. **Panorama Jurisprudencial**: Visão geral das tendências identificadas,',
-  'incluindo a evolução temporal dos processos com base nas movimentações processuais.',
-  '2. **Precedentes-Chave**: Processos mais relevantes como precedentes,',
-  'priorizando tribunais superiores e decisões recentes.',
-  '3. **Fundamentos Jurídicos**: Principais teses e argumentos jurídicos',
-  'identificados nos assuntos e classes processuais.',
-  '4. **Análise Temporal**: Evolução processual baseada nas movimentações',
-  '(andamentos) dos processos, identificando padrões e status atual.',
-  '5. **Lista de Processos**: Relação completa com número, tribunal, classe,',
-  'órgão julgador e status mais recente.',
-].join('\n')
 
 function formatCharVolume(value: number) {
   if (value >= 1000) return `${(value / 1000).toFixed(1)}k chars`

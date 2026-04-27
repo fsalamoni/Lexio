@@ -25,9 +25,11 @@ import {
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
   loadDocumentV3Models,
   loadFallbackPriorityConfig,
+  loadResearchNotebookModels,
   resolveFallbackModelsForCategory,
   type AgentCategory,
   type FallbackPriorityConfig,
+  type ResearchNotebookModelMap,
 } from './model-config'
 import { loadAdminDocumentTypes } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
@@ -256,12 +258,14 @@ export async function generateDocumentV3(
       }
     }
 
-    const [apiKey, agentModels, adminDocTypes, fallbackPriorities] = await Promise.all([
+    const [apiKey, agentModels, adminDocTypes, fallbackPriorities, notebookModelsLoaded] = await Promise.all([
       getOpenRouterKey(uid),
       loadDocumentV3Models(uid),
       loadAdminDocumentTypes().catch(() => []),
       loadFallbackPriorityConfig(uid).catch(() => ({} as FallbackPriorityConfig)),
+      loadResearchNotebookModels(uid).catch(() => ({} as ResearchNotebookModelMap)),
     ])
+    const notebookModels: ResearchNotebookModelMap = notebookModelsLoaded
 
     const adminDocType = adminDocTypes.find(dt => dt.id === docType)
     const customStructure = adminDocType?.structure?.trim() || undefined
@@ -320,46 +324,42 @@ export async function generateDocumentV3(
 
     // ── Phase 1: Compreensão (parallel) ─────────────────────────────────────
     await trackPhase('compreensao', async () => {
-      reportProgress('v3_intent_classifier', 'Compreendendo a solicitação...', 5, {
-        modelId: agentModels.v3_intent_classifier,
-        executionState: 'waiting_io',
-      })
-      reportProgress('v3_request_parser', 'Extraindo fatos e partes...', 6, {
-        modelId: agentModels.v3_request_parser,
-        executionState: 'waiting_io',
-      })
-      reportProgress('v3_legal_issue_spotter', 'Identificando questões jurídicas...', 7, {
-        modelId: agentModels.v3_legal_issue_spotter,
-        executionState: 'waiting_io',
-      })
-
-      // Wrap each parallel task so that completion progress is reported
-       // *as soon as that individual agent finishes*, rather than waiting for
-       // the slowest sibling to complete the whole `Promise.all`. This keeps
-       // perceived latency between consecutive activities short — the UI
-       // advances the moment an agent is done instead of jumping all states
-       // at the end of the phase.
+      // Wrap each parallel task so that progress is reported the instant the
+      // agent actually starts (and again when it finishes). This avoids the
+      // "waiting_io" pre-emission gap that previously sat between phases.
       const [intentRes, parserRes, issuesRes] = await runWithConcurrency<unknown>(
         [
           async () => {
+            reportProgress('v3_intent_classifier', 'Compreendendo a solicitação...', 5, {
+              modelId: agentModels.v3_intent_classifier,
+              executionState: 'running',
+            })
             const res = await runIntentClassifier(buildAgentCtx('v3_intent_classifier'))
             recordExecution('v3_intent_classifier', 'Classificador de Intenção', res.llmResult)
             recordAgentDuration(res.llmResult)
-            reportProgress('v3_intent_classifier', 'Classificação concluída.', 9, { result: res.llmResult, executionState: 'completed' })
+            reportProgress('v3_intent_classifier', 'Classificação concluída.', 9, { result: res.llmResult, executionState: 'running' })
             return res
           },
           async () => {
+            reportProgress('v3_request_parser', 'Extraindo fatos e partes...', 6, {
+              modelId: agentModels.v3_request_parser,
+              executionState: 'running',
+            })
             const res = await runRequestParser(buildAgentCtx('v3_request_parser'))
             recordExecution('v3_request_parser', 'Parser da Solicitação', res.llmResult)
             recordAgentDuration(res.llmResult)
-            reportProgress('v3_request_parser', 'Parser concluído.', 10, { result: res.llmResult, executionState: 'completed' })
+            reportProgress('v3_request_parser', 'Parser concluído.', 10, { result: res.llmResult, executionState: 'running' })
             return res
           },
           async () => {
+            reportProgress('v3_legal_issue_spotter', 'Identificando questões jurídicas...', 7, {
+              modelId: agentModels.v3_legal_issue_spotter,
+              executionState: 'running',
+            })
             const res = await runLegalIssueSpotter(buildAgentCtx('v3_legal_issue_spotter'))
             recordExecution('v3_legal_issue_spotter', 'Identificador de Questões', res.llmResult)
             recordAgentDuration(res.llmResult)
-            reportProgress('v3_legal_issue_spotter', 'Questões identificadas.', 11, { result: res.llmResult, executionState: 'completed' })
+            reportProgress('v3_legal_issue_spotter', 'Questões identificadas.', 11, { result: res.llmResult, executionState: 'running' })
             return res
           },
         ],
@@ -393,7 +393,7 @@ export async function generateDocumentV3(
           const result = await runPromptArchitect({ ...buildAgentCtx('v3_prompt_architect'), model })
           recordExecution('v3_prompt_architect', 'Arquiteto de Prompts', result.llmResult)
           recordAgentDuration(result.llmResult)
-          reportProgress('v3_prompt_architect', 'Briefings prontos.', 16, { result: result.llmResult, executionState: 'completed' })
+          reportProgress('v3_prompt_architect', 'Briefings prontos.', 16, { result: result.llmResult, executionState: 'running' })
           return result
         },
         validate: (res) => (
@@ -479,30 +479,30 @@ export async function generateDocumentV3(
 
     // ── Phase 2: Análise jurídica ───────────────────────────────────────────
     await trackPhase('analise', async () => {
-      reportProgress('v3_acervo_retriever', 'Buscando acervo relevante...', 18, {
-        modelId: agentModels.v3_acervo_retriever,
-        executionState: 'waiting_io',
-      })
-      reportProgress('v3_thesis_retriever', 'Buscando teses do banco...', 19, {
-        modelId: agentModels.v3_thesis_retriever,
-        executionState: 'waiting_io',
-      })
       const [acervoRes, thesisIORes] = await runWithConcurrency<unknown>(
         [
           async () => {
+            reportProgress('v3_acervo_retriever', 'Buscando acervo relevante...', 18, {
+              modelId: agentModels.v3_acervo_retriever,
+              executionState: 'running',
+            })
             const res = await runAcervoRetriever(buildAgentCtx('v3_acervo_retriever'), uid)
             if (res.llmResult) {
               recordExecution('v3_acervo_retriever', 'Buscador de Acervo', res.llmResult)
               recordAgentDuration(res.llmResult)
-              reportProgress('v3_acervo_retriever', `Acervo (${res.output.selectedFilenames.length} docs).`, 22, { result: res.llmResult, executionState: 'completed' })
+              reportProgress('v3_acervo_retriever', `Acervo (${res.output.selectedFilenames.length} docs).`, 22, { result: res.llmResult, executionState: 'running' })
             } else {
-              reportProgress('v3_acervo_retriever', 'Sem acervo aplicável.', 22, { executionState: 'completed' })
+              reportProgress('v3_acervo_retriever', 'Sem acervo aplicável.', 22, { executionState: 'running' })
             }
             return res
           },
           async () => {
+            reportProgress('v3_thesis_retriever', 'Buscando teses do banco...', 19, {
+              modelId: agentModels.v3_thesis_retriever,
+              executionState: 'running',
+            })
             const res = await runThesisRetriever(buildAgentCtx('v3_thesis_retriever'), uid)
-            reportProgress('v3_thesis_retriever', `Teses (${res.output.count}).`, 24, { executionState: 'completed' })
+            reportProgress('v3_thesis_retriever', `Teses (${res.output.count}).`, 24, { executionState: 'running' })
             return res
           },
         ],
@@ -527,7 +527,7 @@ export async function generateDocumentV3(
           const result = await runThesisBuilder({ ...buildAgentCtx('v3_thesis_builder'), model })
           recordExecution('v3_thesis_builder', 'Construtor de Teses', result.llmResult)
           recordAgentDuration(result.llmResult)
-          reportProgress('v3_thesis_builder', 'Teses construídas.', 35, { result: result.llmResult, executionState: 'completed' })
+          reportProgress('v3_thesis_builder', 'Teses construídas.', 35, { result: result.llmResult, executionState: 'running' })
           return result
         },
         validate: (res) => (res.output.text.length > 200 ? null : 'tese_curta'),
@@ -545,14 +545,14 @@ export async function generateDocumentV3(
       caseContext.critique = devilRes.output
       recordExecution('v3_devil_advocate', 'Advogado do Diabo', devilRes.llmResult)
       recordAgentDuration(devilRes.llmResult)
-      reportProgress('v3_devil_advocate', `Crítica concluída (${devilRes.output.weaknesses} pontos).`, 42, { result: devilRes.llmResult, executionState: 'completed' })
+      reportProgress('v3_devil_advocate', `Crítica concluída (${devilRes.output.weaknesses} pontos).`, 42, { result: devilRes.llmResult, executionState: 'running' })
 
       // Refiner — may loop with devil advocate based on supervisor decision (max 1 extra round)
       let refinerRes = await runThesisRefiner(buildAgentCtx('v3_thesis_refiner'), devilRes.output)
       caseContext.refinedTheses = refinerRes.output
       recordExecution('v3_thesis_refiner', 'Refinador de Teses', refinerRes.llmResult)
       recordAgentDuration(refinerRes.llmResult)
-      reportProgress('v3_thesis_refiner', 'Teses refinadas.', 48, { result: refinerRes.llmResult, executionState: 'completed' })
+      reportProgress('v3_thesis_refiner', 'Teses refinadas.', 48, { result: refinerRes.llmResult, executionState: 'running' })
 
       // Optional second round if the critique pointed many weaknesses
       if (devilRes.output.weaknesses >= SUPERVISOR_DEVIL_ROUND2_THRESHOLD) {
@@ -595,30 +595,71 @@ export async function generateDocumentV3(
 
     // ── Phase 3: Pesquisa (parallel) + outline em paralelo (otimização I) ───
     await trackPhase('pesquisa', async () => {
-      reportProgress('v3_legislation_researcher', 'Pesquisando legislação...', 52, {
-        modelId: agentModels.v3_legislation_researcher,
-        executionState: 'waiting_io',
-      })
-      reportProgress('v3_jurisprudence_researcher', 'Pesquisando jurisprudência...', 53, {
-        modelId: agentModels.v3_jurisprudence_researcher,
-        executionState: 'waiting_io',
-      })
-      reportProgress('v3_doctrine_researcher', 'Pesquisando doutrina...', 54, {
-        modelId: agentModels.v3_doctrine_researcher,
-        executionState: 'waiting_io',
-      })
-      // I. outline-planner é disparado em paralelo com a pesquisa: depende
-      // apenas dos briefings + teses refinadas (já disponíveis).
-      reportProgress('v3_outline_planner', 'Planejando estrutura (em paralelo)...', 55, {
-        modelId: agentModels.v3_outline_planner,
-        executionState: 'waiting_io',
-      })
       const [legisRes, juriRes, doctRes, outlineRes] = await runWithConcurrency<unknown>(
         [
-          () => runLegislationResearcher(buildAgentCtx('v3_legislation_researcher')),
-          () => runJurisprudenceResearcher(buildAgentCtx('v3_jurisprudence_researcher')),
-          () => runDoctrineResearcher(buildAgentCtx('v3_doctrine_researcher')),
-          () => runOutlinePlanner(buildAgentCtx('v3_outline_planner'), customStructure),
+          async () => {
+            reportProgress('v3_legislation_researcher', 'Pesquisando legislação...', 52, {
+              modelId: agentModels.v3_legislation_researcher,
+              executionState: 'running',
+            })
+            const res = await runLegislationResearcher(buildAgentCtx('v3_legislation_researcher'))
+            recordExecution('v3_legislation_researcher', 'Pesquisador de Legislação', res.llmResult)
+            recordAgentDuration(res.llmResult)
+            reportProgress('v3_legislation_researcher', 'Legislação concluída.', 60, { result: res.llmResult, executionState: 'running' })
+            return res
+          },
+          async () => {
+            reportProgress('v3_jurisprudence_researcher', 'Consultando DataJud (jurisprudência real)...', 53, {
+              modelId: agentModels.v3_jurisprudence_researcher,
+              executionState: 'running',
+            })
+            const res = await runJurisprudenceResearcher(
+              buildAgentCtx('v3_jurisprudence_researcher'),
+              {
+                rankerModel: notebookModels.notebook_ranqueador_jurisprudencia || undefined,
+                synthesisModel: notebookModels.notebook_pesquisador_jurisprudencia || undefined,
+                onSubstep: (msg) => {
+                  reportProgress('v3_jurisprudence_researcher', msg, 56, {
+                    modelId: agentModels.v3_jurisprudence_researcher,
+                    executionState: 'running',
+                  })
+                },
+              },
+            )
+            // Primary execution (synthesis or fallback) plus any extras (DataJud rank).
+            recordExecution('v3_jurisprudence_researcher', 'Pesquisador de Jurisprudência', res.llmResult)
+            recordAgentDuration(res.llmResult)
+            for (const extra of res.extraExecutions ?? []) {
+              recordExecution(extra.phase, extra.agentName, extra.llmResult)
+              recordAgentDuration(extra.llmResult)
+            }
+            reportProgress('v3_jurisprudence_researcher', 'Jurisprudência concluída.', 62, { result: res.llmResult, executionState: 'running' })
+            return res
+          },
+          async () => {
+            reportProgress('v3_doctrine_researcher', 'Pesquisando doutrina...', 54, {
+              modelId: agentModels.v3_doctrine_researcher,
+              executionState: 'running',
+            })
+            const res = await runDoctrineResearcher(buildAgentCtx('v3_doctrine_researcher'))
+            recordExecution('v3_doctrine_researcher', 'Pesquisador de Doutrina', res.llmResult)
+            recordAgentDuration(res.llmResult)
+            reportProgress('v3_doctrine_researcher', 'Doutrina concluída.', 64, { result: res.llmResult, executionState: 'running' })
+            return res
+          },
+          async () => {
+            // I. outline-planner é disparado em paralelo com a pesquisa: depende
+            // apenas dos briefings + teses refinadas (já disponíveis).
+            reportProgress('v3_outline_planner', 'Planejando estrutura (em paralelo)...', 55, {
+              modelId: agentModels.v3_outline_planner,
+              executionState: 'running',
+            })
+            const res = await runOutlinePlanner(buildAgentCtx('v3_outline_planner'), customStructure)
+            recordExecution('v3_outline_planner', 'Planejador da Estrutura', res.llmResult)
+            recordAgentDuration(res.llmResult)
+            reportProgress('v3_outline_planner', 'Plano definido.', 66, { result: res.llmResult, executionState: 'running' })
+            return res
+          },
         ],
         parallelLimit,
       ) as [
@@ -631,18 +672,6 @@ export async function generateDocumentV3(
       caseContext.jurisprudence = juriRes.output
       caseContext.doctrine = doctRes.output
       caseContext.outline = outlineRes.output
-      recordExecution('v3_legislation_researcher', 'Pesquisador de Legislação', legisRes.llmResult)
-      recordExecution('v3_jurisprudence_researcher', 'Pesquisador de Jurisprudência', juriRes.llmResult)
-      recordExecution('v3_doctrine_researcher', 'Pesquisador de Doutrina', doctRes.llmResult)
-      recordExecution('v3_outline_planner', 'Planejador da Estrutura', outlineRes.llmResult)
-      recordAgentDuration(legisRes.llmResult)
-      recordAgentDuration(juriRes.llmResult)
-      recordAgentDuration(doctRes.llmResult)
-      recordAgentDuration(outlineRes.llmResult)
-      reportProgress('v3_legislation_researcher', 'Legislação concluída.', 60, { result: legisRes.llmResult, executionState: 'completed' })
-      reportProgress('v3_jurisprudence_researcher', 'Jurisprudência concluída.', 62, { result: juriRes.llmResult, executionState: 'completed' })
-      reportProgress('v3_doctrine_researcher', 'Doutrina concluída.', 64, { result: doctRes.llmResult, executionState: 'completed' })
-      reportProgress('v3_outline_planner', 'Plano definido.', 66, { result: outlineRes.llmResult, executionState: 'completed' })
 
       // Citation verifier (sequential — depends on the research material)
       reportProgress('v3_citation_verifier', 'Verificando citações...', 68, {
@@ -652,7 +681,7 @@ export async function generateDocumentV3(
       caseContext.citationCheck = citationRes.output
       recordExecution('v3_citation_verifier', 'Verificador de Citações', citationRes.llmResult)
       recordAgentDuration(citationRes.llmResult)
-      reportProgress('v3_citation_verifier', `Citações verificadas (${citationRes.output.corrections} correções).`, 72, { result: citationRes.llmResult, executionState: 'completed' })
+      reportProgress('v3_citation_verifier', `Citações verificadas (${citationRes.output.corrections} correções).`, 72, { result: citationRes.llmResult, executionState: 'running' })
     })
 
     // A. Compactar a pesquisa (Fase 3) para o writer-reviser (writer
@@ -684,7 +713,7 @@ export async function generateDocumentV3(
           const result = await runWriter({ ...buildAgentCtx('v3_writer'), model })
           recordExecution('v3_writer', 'Redator', result.llmResult)
           recordAgentDuration(result.llmResult)
-          reportProgress('v3_writer', 'Redação concluída.', 90, { result: result.llmResult, executionState: 'completed' })
+          reportProgress('v3_writer', 'Redação concluída.', 90, { result: result.llmResult, executionState: 'running' })
           return result
         },
         validate: (res) => (res.output.length > 800 ? null : 'documento_curto'),
@@ -724,12 +753,12 @@ export async function generateDocumentV3(
         })
         reportProgress('v3_writer_reviser', 'Revisão de citações concluída.', 92, {
           result: reviserResult.llmResult,
-          executionState: 'completed',
+          executionState: 'running',
         })
       } else {
         // Mark the reviser step as completed without firing an LLM call so the
         // pipeline UI doesn't get stuck on a "pending" reviser badge.
-        reportProgress('v3_writer_reviser', 'Sem revisão necessária.', 92, { executionState: 'completed' })
+        reportProgress('v3_writer_reviser', 'Sem revisão necessária.', 92, { executionState: 'running' })
       }
     })
 
@@ -767,7 +796,7 @@ export async function generateDocumentV3(
           })
           reportProgress('v3_writer', 'Redação reescrita (modelo escalado).', 95, {
             result: retryResult.llmResult,
-            executionState: 'completed',
+            executionState: 'running',
           })
         }
       } catch (err) {

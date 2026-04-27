@@ -20,6 +20,16 @@ const SYSTEM = [
   '- Não invente novas citações.',
   '- Texto puro, sem markdown.',
   '- Devolva o documento INTEIRO já revisado.',
+  '',
+  'PRESERVAÇÃO DA PROFUNDIDADE ARGUMENTATIVA:',
+  '- NÃO encurte passagens argumentativas. A revisão NÃO pode reduzir o',
+  '  tamanho dos parágrafos de fundamentação nem eliminar etapas do',
+  '  raciocínio (premissa → desenvolvimento → aplicação → conclusão).',
+  '- Ao remover uma citação suspeita, REESCREVA a explicação em torno dela',
+  '  para manter (ou reforçar) o desenvolvimento lógico-jurídico, com a mesma',
+  '  densidade do parágrafo original.',
+  '- Se a passagem original explicava POR QUE e COMO a citação se aplicava,',
+  '  preserve essa explicação integralmente, apenas trocando o referente.',
 ].join('\n')
 
 export interface WriterReviserInput {
@@ -57,7 +67,7 @@ export async function runWriterReviser(
   ].filter(Boolean).join('\n')
 
   const llmResult = await runLLMAgent(ctx, SYSTEM, userPrompt, {
-    maxTokens: 6500,
+    maxTokens: 9000,
     temperature: 0.2,
   })
   return { output: llmResult.content.trim(), llmResult }
