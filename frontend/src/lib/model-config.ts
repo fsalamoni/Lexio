@@ -2118,3 +2118,27 @@ export function resolveFallbackModelsForCategory(
   }
   return out
 }
+
+/**
+ * Build a per-agent fallback resolver from a list of `AgentModelDef`s. Each
+ * call to the returned function takes the agent key and the currently
+ * selected primary model (which may be a user override of `defaultModel`)
+ * and returns the ordered fallback list to pass to `callLLMWithFallback`.
+ *
+ * Pipelines should call `loadFallbackPriorityConfig(uid)` once and then call
+ * this helper to wire every agent invocation. Per product policy, this never
+ * returns a model the user has not explicitly selected in the settings card.
+ */
+export function buildPipelineFallbackResolver(
+  defs: ReadonlyArray<AgentModelDef>,
+  config: FallbackPriorityConfig | undefined | null,
+): (agentKey: string, primaryModel: string) => string[] {
+  const categoryByKey = new Map<string, AgentCategory>()
+  for (const def of defs) {
+    if (def.agentCategory) categoryByKey.set(def.key, def.agentCategory)
+  }
+  return (agentKey: string, primaryModel: string): string[] => {
+    const category = categoryByKey.get(agentKey)
+    return resolveFallbackModelsForCategory(primaryModel, category, config ?? undefined)
+  }
+}

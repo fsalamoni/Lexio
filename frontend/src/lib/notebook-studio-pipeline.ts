@@ -17,7 +17,14 @@
 
 import { callLLMWithFallback, type LLMResult } from './llm-client'
 import { formatCostBadge } from './currency-utils'
-import { loadResearchNotebookModels, validateScopedAgentModels, type ResearchNotebookModelMap } from './model-config'
+import {
+  buildPipelineFallbackResolver,
+  loadFallbackPriorityConfig,
+  loadResearchNotebookModels,
+  RESEARCH_NOTEBOOK_AGENT_DEFS,
+  validateScopedAgentModels,
+  type ResearchNotebookModelMap,
+} from './model-config'
 import type { StudioArtifactType } from './firestore-service'
 import { isStructuredArtifactType, parseArtifactContent } from './artifact-parsers'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
@@ -921,6 +928,8 @@ export async function runStudioPipeline(
 ): Promise<StudioPipelineResult> {
   throwIfAborted(signal)
   const models: ResearchNotebookModelMap = await loadResearchNotebookModels()
+  const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
+  const resolveFb = buildPipelineFallbackResolver(RESEARCH_NOTEBOOK_AGENT_DEFS, fallbackConfig)
   const specialistRole = ARTIFACT_AGENT_MAP[input.artifactType] ?? 'studio_escritor'
   const executions: StudioStepExecution[] = []
 
@@ -956,7 +965,7 @@ export async function runStudioPipeline(
     researchPrompt.system,
     researchPrompt.user,
     models.studio_pesquisador,
-    models.studio_pesquisador,
+    resolveFb('studio_pesquisador', models.studio_pesquisador),
     4000,
     0.2,
     { signal },
@@ -979,7 +988,7 @@ export async function runStudioPipeline(
     specialistPrompt.system,
     specialistPrompt.user,
     models[specialistRole],
-    models[specialistRole],
+    resolveFb(specialistRole, models[specialistRole]),
     8000,
     0.4,
     { signal },
@@ -1000,7 +1009,7 @@ export async function runStudioPipeline(
     reviewPrompt.system,
     reviewPrompt.user,
     models.studio_revisor,
-    models.studio_revisor,
+    resolveFb('studio_revisor', models.studio_revisor),
     10000,
     0.2,
     { signal },

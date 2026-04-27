@@ -15,7 +15,7 @@
 import { callLLMWithFallback, TransientLLMError } from './llm-client'
 import { type ThesisData, type AcervoDocumentData } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord, type UsageSummary } from './cost-analytics'
-import { type ThesisAnalystModelMap, validateModelMap, THESIS_ANALYST_AGENT_DEFS } from './model-config'
+import { type ThesisAnalystModelMap, validateModelMap, THESIS_ANALYST_AGENT_DEFS, buildPipelineFallbackResolver, loadFallbackPriorityConfig } from './model-config'
 import { getRuntimeConcurrencyHints, resolveAdaptiveConcurrencyWithDiagnostics } from './runtime-concurrency'
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -305,6 +305,9 @@ export async function analyzeThesisBank(
   // Validate all agent models are configured
   validateModelMap(modelMap, THESIS_ANALYST_AGENT_DEFS, 'thesis_analyst_models')
 
+  const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
+  const resolveFb = buildPipelineFallbackResolver(THESIS_ANALYST_AGENT_DEFS, fallbackConfig)
+
   const sessionId = uid4()
   const now = new Date().toISOString()
   const llmExecutions: UsageExecutionRecord[] = []
@@ -346,7 +349,7 @@ export async function analyzeThesisBank(
       CATALOGADOR_SYSTEM,
       `Inventário de ${catalogue.length} teses jurídicas:\n${JSON.stringify(catalogue, null, 2)}`,
       modelMap['thesis_catalogador'],
-      modelMap['thesis_catalogador'],
+      resolveFb('thesis_catalogador', modelMap['thesis_catalogador']),
       3000,
       0.1,
     )
@@ -404,7 +407,7 @@ export async function analyzeThesisBank(
         ANALISTA_SYSTEM,
         `Grupos de teses para análise profunda:\n${JSON.stringify(groupsWithContent, null, 2)}`,
         modelMap['thesis_analista'],
-        modelMap['thesis_analista'],
+        resolveFb('thesis_analista', modelMap['thesis_analista']),
         4000,
         0.1,
       )
@@ -485,7 +488,7 @@ export async function analyzeThesisBank(
           COMPILADOR_SYSTEM,
           `Compile as seguintes ${groupTheses.length} teses jurídicas em uma única tese superior:\n\n${versionsText}`,
           modelMap['thesis_compilador'],
-          modelMap['thesis_compilador'],
+          resolveFb('thesis_compilador', modelMap['thesis_compilador']),
           2500,
           0.15,
         )
@@ -562,7 +565,7 @@ export async function analyzeThesisBank(
         CURADOR_SYSTEM,
         `Documentos do acervo não analisados:\n\n${docsText}${gapsText}`,
         modelMap['thesis_curador'],
-        modelMap['thesis_curador'],
+        resolveFb('thesis_curador', modelMap['thesis_curador']),
         3500,
         0.2,
       )
@@ -650,7 +653,7 @@ export async function analyzeThesisBank(
         REVISOR_SYSTEM,
         `Banco atual: ${theses.length} teses.\n\nSugestões para revisão:\n${JSON.stringify(revisorPayload, null, 2)}`,
         modelMap['thesis_revisor'],
-        modelMap['thesis_revisor'],
+        resolveFb('thesis_revisor', modelMap['thesis_revisor']),
         4000,
         0.1,
       )

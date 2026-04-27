@@ -14,6 +14,9 @@ vi.mock('./llm-client', () => ({
 vi.mock('./model-config', () => ({
   loadPresentationPipelineModels: (...args: unknown[]) => loadPresentationPipelineModelsMock(...args),
   validateScopedAgentModels: (...args: unknown[]) => validateScopedAgentModelsMock(...args),
+  loadFallbackPriorityConfig: async () => ({}),
+  buildPipelineFallbackResolver: () => () => [],
+  PRESENTATION_PIPELINE_AGENT_DEFS: [],
 }))
 
 vi.mock('./image-generation-client', () => ({

@@ -23,7 +23,7 @@
 
 import { doc, updateDoc } from 'firebase/firestore'
 import { callLLM, callLLMWithFallback, type LLMResult } from './llm-client'
-import { loadAgentModels, loadContextDetailModels, loadAcervoEmentaModels, loadAcervoClassificadorModels, validateModelMap, ModelsNotConfiguredError, PIPELINE_AGENT_DEFS, CONTEXT_DETAIL_AGENT_DEFS, ACERVO_EMENTA_AGENT_DEFS, ACERVO_CLASSIFICADOR_AGENT_DEFS, type AgentModelMap } from './model-config'
+import { loadAgentModels, loadContextDetailModels, loadAcervoEmentaModels, loadAcervoClassificadorModels, validateModelMap, ModelsNotConfiguredError, PIPELINE_AGENT_DEFS, CONTEXT_DETAIL_AGENT_DEFS, ACERVO_EMENTA_AGENT_DEFS, ACERVO_CLASSIFICADOR_AGENT_DEFS, buildPipelineFallbackResolver, loadFallbackPriorityConfig, type AgentModelMap } from './model-config'
 import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, updateAcervoEmenta, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
@@ -806,10 +806,14 @@ export async function generateAcervoEmenta(
   uid?: string,
 ): Promise<{ ementa: string; keywords: string[]; llm_execution: UsageExecutionRecord }> {
   // Load model from admin config if not explicitly provided
+  let fallbackList: string[] = []
   if (!model) {
     const ementaModels = await loadAcervoEmentaModels(uid)
     validateModelMap(ementaModels, ACERVO_EMENTA_AGENT_DEFS, 'acervo_ementa_models')
     model = ementaModels.acervo_ementa
+    const fallbackConfig = await loadFallbackPriorityConfig(uid).catch(() => ({}))
+    const resolveFb = buildPipelineFallbackResolver(ACERVO_EMENTA_AGENT_DEFS, fallbackConfig)
+    fallbackList = resolveFb('acervo_ementa', model)
   }
 
   const systemPrompt = [
@@ -836,7 +840,7 @@ export async function generateAcervoEmenta(
   const sourceText = textContent.slice(0, MAX_EMENTA_SOURCE_CHARS)
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere a ementa e keywords para este documento.`
 
-  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, model, 1000, 0.1)
+  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, fallbackList, 1000, 0.1)
 
   let jsonStr = result.content.trim()
   const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -915,10 +919,14 @@ export async function generateAcervoTags(
   llm_execution: UsageExecutionRecord
 }> {
   // Load model from admin config if not explicitly provided
+  let fallbackList: string[] = []
   if (!model) {
     const classificadorModels = await loadAcervoClassificadorModels(uid)
     validateModelMap(classificadorModels, ACERVO_CLASSIFICADOR_AGENT_DEFS, 'acervo_classificador_models')
     model = classificadorModels.acervo_classificador
+    const fallbackConfig = await loadFallbackPriorityConfig(uid).catch(() => ({}))
+    const resolveFb = buildPipelineFallbackResolver(ACERVO_CLASSIFICADOR_AGENT_DEFS, fallbackConfig)
+    fallbackList = resolveFb('acervo_classificador', model)
   }
 
   const systemPrompt = [
@@ -957,7 +965,7 @@ export async function generateAcervoTags(
   const sourceText = textContent.slice(0, MAX_EMENTA_SOURCE_CHARS)
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere as tags de classificação para este documento.`
 
-  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, model, 800, 0.1)
+  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, fallbackList, 800, 0.1)
 
   let jsonStr = result.content.trim()
   const jsonMatch = jsonStr.match(/\`\`\`(?:json)?\s*([\s\S]*?)\`\`\`/)
@@ -1545,6 +1553,9 @@ export async function generateDocument(
     // Validate all agent models are configured
     validateModelMap(agentModels, PIPELINE_AGENT_DEFS, 'document_models')
 
+    const fallbackConfig = await loadFallbackPriorityConfig(uid).catch(() => ({}))
+    const resolveFb = buildPipelineFallbackResolver(PIPELINE_AGENT_DEFS, fallbackConfig)
+
     // Model shortcuts
     const modelTriagem      = agentModels.triagem
     const modelPesquisador  = agentModels.pesquisador
@@ -1572,7 +1583,7 @@ export async function generateDocument(
       apiKey,
       buildTriageSystem(docType),
       buildTriageUser(request, areas, context, contextDetail),
-      modelTriagem, modelTriagem, 800, 0.1,
+      modelTriagem, resolveFb('triagem', modelTriagem), 800, 0.1,
     )
     reportStageResult('triagem', 'Triagem concluída.', 7, triageResult)
 
@@ -1703,7 +1714,7 @@ export async function generateDocument(
             apiKey,
             buildAcervoBuscadorSystem(),
             buildAcervoBuscadorUser(triageResult.content, request, docType, docSummaries),
-            modelAcervoBuscador, modelAcervoBuscador, 2000, 0.1,
+            modelAcervoBuscador, resolveFb('acervo_buscador', modelAcervoBuscador), 2000, 0.1,
           )
           reportStageResult('acervo_buscador', 'Busca no acervo concluída.', 10, buscadorResult)
 
@@ -1750,7 +1761,7 @@ export async function generateDocument(
                 apiKey,
                 buildAcervoCompiladorSystem(docType, tema, profile),
                 buildAcervoCompiladorUser(request, triageResult.content, docType, selectedDocs),
-                modelAcervoCompilador, modelAcervoCompilador, 12000, 0.2,
+                modelAcervoCompilador, resolveFb('acervo_compilador', modelAcervoCompilador), 12000, 0.2,
               )
               reportStageResult('acervo_compilador', 'Base compilada a partir do acervo.', 14, compiladorResult)
 
@@ -1760,7 +1771,7 @@ export async function generateDocument(
                 apiKey,
                 buildAcervoRevisorSystem(docType, tema, profile),
                 buildAcervoRevisorUser(request, triageResult.content, docType, compiladorResult.content),
-                modelAcervoRevisor, modelAcervoRevisor, 12000, 0.2,
+                modelAcervoRevisor, resolveFb('acervo_revisor', modelAcervoRevisor), 12000, 0.2,
               )
               reportStageResult('acervo_revisor', 'Base do acervo revisada e consolidada.', 17, revisorBaseResult)
 
@@ -1848,7 +1859,7 @@ export async function generateDocument(
       apiKey,
       buildPesquisadorSystem(docType, tema, profile),
       pesquisadorUserParts.join('\n'),
-      modelPesquisador, modelPesquisador, 6000, 0.3,
+      modelPesquisador, resolveFb('pesquisador', modelPesquisador), 6000, 0.3,
     )
     reportStageResult('pesquisador', 'Pesquisa jurídica concluída.', 26, pesquisaResult)
 
@@ -1858,7 +1869,7 @@ export async function generateDocument(
       apiKey,
       buildJuristaSystem(docType, tema, profile),
       `<triagem>${triageResult.content}</triagem>\n<pesquisa>${pesquisaResult.content}</pesquisa>\nDesenvolva teses jurídicas ROBUSTAS e BEM FUNDAMENTADAS. Para cada tese: TRANSCREVA os artigos de lei citados entre aspas, cite súmulas com enunciado completo, mencione doutrina com autor e obra, e faça subsunção detalhada dos fatos à norma.`,
-      modelJurista, modelJurista, 6000, 0.3,
+      modelJurista, resolveFb('jurista', modelJurista), 6000, 0.3,
     )
     reportStageResult('jurista', 'Teses jurídicas iniciais estruturadas.', 34, juristaResult)
 
@@ -1868,7 +1879,7 @@ export async function generateDocument(
       apiKey,
       buildAdvogadoDiaboSystem(tema, profile),
       `<teses>${juristaResult.content}</teses>\nCritique estas teses rigorosamente. Verifique se os artigos foram transcritos corretamente, se as súmulas existem, se a doutrina é pertinente. Identifique fraquezas e sugira melhorias específicas com referências legais concretas.`,
-      modelAdvDiabo, modelAdvDiabo, 3000, 0.4,
+      modelAdvDiabo, resolveFb('advogado_diabo', modelAdvDiabo), 3000, 0.4,
     )
     reportStageResult('advogado_diabo', 'Contra-argumentos consolidados.', 46, criticaResult)
 
@@ -1878,7 +1889,7 @@ export async function generateDocument(
       apiKey,
       buildJuristaV2System(docType, tema, profile),
       `<teses_originais>${juristaResult.content}</teses_originais>\n<criticas>${criticaResult.content}</criticas>\nRefine as teses incorporando as críticas válidas. Fortaleça a fundamentação: TRANSCREVA artigos de lei, cite enunciados completos de súmulas, inclua referências doutrinárias com autor e obra.`,
-      modelJuristaV2, modelJuristaV2, 6000, 0.3,
+      modelJuristaV2, resolveFb('jurista_v2', modelJuristaV2), 6000, 0.3,
     )
     reportStageResult('jurista_v2', 'Teses refinadas após a crítica.', 58, juristaV2Result)
 
@@ -1888,7 +1899,7 @@ export async function generateDocument(
       apiKey,
       buildFactCheckerSystem(),
       `<teses>${juristaV2Result.content}</teses>\nVerifique TODAS as citações legais. Corrija imprecisões. ADICIONE transcrições de artigos que foram citados sem texto. ADICIONE enunciados de súmulas que foram citadas sem texto completo. Enriqueça a fundamentação.`,
-      modelFactChecker, modelFactChecker, 6000, 0.1,
+      modelFactChecker, resolveFb('fact_checker', modelFactChecker), 6000, 0.1,
     )
     reportStageResult('fact_checker', 'Citações e referências verificadas.', 68, factCheckResult)
 
@@ -1898,7 +1909,7 @@ export async function generateDocument(
       apiKey,
       buildModeradorSystem(docType, tema, profile, customStructure),
       `<pesquisa>${pesquisaResult.content}</pesquisa>\n<teses_verificadas>${factCheckResult.content}</teses_verificadas>\nElabore plano DETALHADO. Para cada seção, especifique: artigos de lei a TRANSCREVER, súmulas com ENUNCIADO COMPLETO, doutrina com AUTOR e OBRA, princípios com ARTIGO DA CF.`,
-      modelModerador, modelModerador, 3000, 0.2,
+      modelModerador, resolveFb('moderador', modelModerador), 3000, 0.2,
     )
     reportStageResult('moderador', 'Estrutura final do documento definida.', 78, planoResult)
 
@@ -1926,7 +1937,7 @@ export async function generateDocument(
         pesquisaResult.content, factCheckResult.content, planoResult.content,
         contextDetail, acervoBase || undefined,
       ),
-      modelRedator, modelRedator, redatorPrimaryMaxTokens, 0.3,
+      modelRedator, resolveFb('redator', modelRedator), redatorPrimaryMaxTokens, 0.3,
     )
     reportStageResult('redacao', 'Redação principal concluída.', 90, redatorPrimaryResult)
 
@@ -1960,7 +1971,7 @@ export async function generateDocument(
           contextDetail, acervoBase || undefined,
         ),
         modelRedator,
-        modelRedator,
+        resolveFb('redator', modelRedator),
         REDATOR_DEFAULT_MAX_TOKENS,
         0.3,
       )
@@ -2294,6 +2305,8 @@ export async function generateContextQuestions(
   const contextDetailModels = await loadContextDetailModels(uid)
   validateModelMap(contextDetailModels, CONTEXT_DETAIL_AGENT_DEFS, 'context_detail_models')
   const model = contextDetailModels.context_detail
+  const fallbackConfig = await loadFallbackPriorityConfig(uid).catch(() => ({}))
+  const resolveFb = buildPipelineFallbackResolver(CONTEXT_DETAIL_AGENT_DEFS, fallbackConfig)
 
   const typeName = DOC_TYPE_NAMES[docType] ?? docType
   const areaNames = areas.map(a => AREA_NAMES[a] ?? a).filter(Boolean).join(', ')
@@ -2337,7 +2350,7 @@ export async function generateContextQuestions(
     'Responda APENAS em JSON válido.',
   ].filter(Boolean).join('\n')
 
-  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, model, 3000, 0.3)
+  const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, resolveFb('context_detail', model), 3000, 0.3)
 
   // Parse the JSON response
   let analysis_summary = ''
