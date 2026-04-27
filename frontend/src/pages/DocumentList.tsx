@@ -11,7 +11,11 @@ import { SkeletonRow } from '../components/Skeleton'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { V2EmptyState, V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { IS_FIREBASE } from '../lib/firebase'
-import { listDocuments, deleteDocument as firestoreDeleteDoc } from '../lib/firestore-service'
+import {
+  isFirestoreSessionInvalidError,
+  listDocuments,
+  deleteDocument as firestoreDeleteDoc,
+} from '../lib/firestore-service'
 import { DOCTYPE_LABELS } from '../lib/constants'
 import { applyOrigemFilter, toggleFilter } from '../lib/document-filters'
 import { buildResearchNotebookWorkbenchPath } from '../lib/research-notebook-routes'
@@ -167,7 +171,10 @@ export default function DocumentList() {
           setDocs(items)
           setTotal(totalFiltered)
         })
-        .catch(() => toast.error('Erro ao carregar documentos'))
+        .catch((error) => {
+          if (isFirestoreSessionInvalidError(error)) return
+          toast.error('Erro ao carregar documentos')
+        })
         .finally(() => setLoading(false))
     } else {
       const params = new URLSearchParams({

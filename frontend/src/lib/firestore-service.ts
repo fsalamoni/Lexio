@@ -20,6 +20,7 @@ import {
 } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
+import { emitFirestoreAuthSessionInvalid } from './auth-session-events'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import { DEFAULT_DOC_STRUCTURES } from './document-structures'
 import {
@@ -230,6 +231,11 @@ function throwIfAuthAccessCircuitOpen(contextLabel: string): void {
   const error = new Error(`Sessão do Firebase inválida. Aguarde ${waitSecs}s e faça login novamente.`) as Error & { code?: string }
   error.code = FIRESTORE_SESSION_INVALID_CODE
 
+  emitFirestoreAuthSessionInvalid({
+    contextLabel,
+    authUid: uid,
+  })
+
   console.warn(
     `[Firestore Auth Circuit] ${contextLabel}: fast-fail while circuit is open (${waitMs}ms remaining from ${state.lastContext}).`,
   )
@@ -302,6 +308,10 @@ function createUnauthenticatedFirestoreError(contextLabel: string): Error {
 
 function createInvalidFirebaseSessionError(contextLabel: string, reason?: unknown): Error {
   const reasonMessage = reason ? ` (${getErrorMessage(reason)})` : ''
+  emitFirestoreAuthSessionInvalid({
+    contextLabel,
+    authUid: getCurrentFirebaseAuthUid(),
+  })
   const error = new Error('Sessão do Firebase inválida. Faça login novamente.') as Error & { code?: string }
   error.code = FIRESTORE_SESSION_INVALID_CODE
   console.warn(`[Firestore Auth Sync] ${contextLabel}: persistent auth access error after retry${reasonMessage}.`)

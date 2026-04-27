@@ -20,6 +20,7 @@ import {
   deleteResearchNotebook,
   getResearchNotebook,
   getUserSettings,
+  isFirestoreSessionInvalidError,
   listAcervoDocuments,
   listResearchNotebooks,
   saveNotebookDocumentToDocuments,
@@ -644,7 +645,8 @@ export default function ResearchNotebookV2() {
       setActiveSection(section)
       setSelectedSourceId((current) => current && notebook.sources.some((source) => source.id === current) ? current : (notebook.sources[0]?.id || null))
       if (syncSelection) syncRoute(notebook.id, section)
-    } catch {
+    } catch (error) {
+      if (isFirestoreSessionInvalidError(error)) return
       toast.error('Erro ao abrir caderno')
     } finally {
       setSelectingNotebook(false)
@@ -661,7 +663,8 @@ export default function ResearchNotebookV2() {
     try {
       const result = await withTransientAuthRetry(() => listResearchNotebooks(userId))
       setNotebooks(result.items)
-    } catch {
+    } catch (error) {
+      if (isFirestoreSessionInvalidError(error)) return
       toast.error('Erro ao carregar cadernos de pesquisa')
     } finally {
       setLoading(false)
@@ -674,7 +677,8 @@ export default function ResearchNotebookV2() {
     try {
       const result = await withTransientAuthRetry(() => listAcervoDocuments(userId))
       setAcervoDocs(result.items)
-    } catch {
+    } catch (error) {
+      if (isFirestoreSessionInvalidError(error)) return
       toast.warning('Não foi possível carregar o acervo neste momento.')
     } finally {
       setAcervoLoading(false)
