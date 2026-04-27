@@ -184,7 +184,7 @@ export default function AgentTrailProgressModal({
             className="rounded-2xl p-4"
             style={{ border: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.7)' }}
           >
-            <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+            <div className="flex flex-col gap-4">
               <div className="min-w-0">
                 <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--v2-ink-faint)' }}>Agente em foco</p>
                 <p className="mt-1 text-base font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>
@@ -210,7 +210,7 @@ export default function AgentTrailProgressModal({
               </div>
 
               <div
-                className="w-full xl:w-auto flex-shrink-0 rounded-2xl px-4 py-3 min-w-0 xl:min-w-[260px]"
+                className="w-full flex-shrink-0 rounded-2xl px-4 py-3 min-w-0"
                 style={{ border: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.9)' }}
               >
                 <div className="relative rounded-xl border px-2.5 py-3" style={{ borderColor: 'rgba(15,118,110,0.2)', background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(240,253,250,0.9) 100%)' }}>

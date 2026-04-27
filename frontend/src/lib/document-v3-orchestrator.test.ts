@@ -25,6 +25,27 @@ vi.mock('./llm-client', () => ({
 }))
 
 vi.mock('./model-config', () => ({
+  DOCUMENT_V3_PIPELINE_AGENT_DEFS: [
+    { key: 'v3_intent_classifier', agentCategory: 'extraction' },
+    { key: 'v3_request_parser', agentCategory: 'extraction' },
+    { key: 'v3_legal_issue_spotter', agentCategory: 'reasoning' },
+    { key: 'v3_prompt_architect', agentCategory: 'synthesis' },
+    { key: 'v3_acervo_retriever', agentCategory: 'extraction' },
+    { key: 'v3_thesis_retriever', agentCategory: 'extraction' },
+    { key: 'v3_thesis_builder', agentCategory: 'reasoning' },
+    { key: 'v3_devil_advocate', agentCategory: 'reasoning' },
+    { key: 'v3_thesis_refiner', agentCategory: 'reasoning' },
+    { key: 'v3_legislation_researcher', agentCategory: 'reasoning' },
+    { key: 'v3_jurisprudence_researcher', agentCategory: 'reasoning' },
+    { key: 'v3_doctrine_researcher', agentCategory: 'reasoning' },
+    { key: 'v3_citation_verifier', agentCategory: 'extraction' },
+    { key: 'v3_outline_planner', agentCategory: 'synthesis' },
+    { key: 'v3_writer', agentCategory: 'writing' },
+    { key: 'v3_writer_reviser', agentCategory: 'writing' },
+    { key: 'v3_supervisor', agentCategory: 'reasoning' },
+  ],
+  loadFallbackPriorityConfig: async () => ({}),
+  resolveFallbackModelsForCategory: () => [],
   loadDocumentV3Models: async () => ({
     v3_intent_classifier: 'anthropic/claude-3.5-haiku',
     v3_request_parser: 'anthropic/claude-3.5-haiku',

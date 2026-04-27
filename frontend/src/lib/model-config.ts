@@ -11,7 +11,7 @@
 
 import { IS_FIREBASE } from './firebase'
 import { ensureUserSettingsMigrated, getCurrentUserId, saveUserSettings } from './firestore-service'
-import type { UserSettingsData } from './firestore-types'
+import type { FallbackPriorityConfig, FallbackPriorityList, UserSettingsData } from './firestore-types'
 
 // ── Available OpenRouter models (curated) ─────────────────────────────────────
 
@@ -1962,4 +1962,159 @@ export async function validateScopedAgentModels(
   const catalogIds = buildCatalogIdSet(settingsRecord)
   validateModelIdsAgainstCatalog(AGENT_CONFIG_DEFS[key], models, catalogIds)
   validateModelCapabilitiesAgainstDefs(AGENT_CONFIG_DEFS[key], models, catalogEntries)
+}
+
+// ── Fallback Priorities (per agent category) ──────────────────────────────────
+
+/**
+ * Re-export so consumers can import from a single module.
+ */
+export type { FallbackPriorityConfig, FallbackPriorityList } from './firestore-types'
+
+/** All four agent categories that get an independent fallback priority list. */
+export const FALLBACK_AGENT_CATEGORIES: ReadonlyArray<AgentCategory> = [
+  'extraction',
+  'synthesis',
+  'reasoning',
+  'writing',
+]
+
+/**
+ * Number of priority slots a user can configure per category. The platform
+ * walks them in order (slot 0 → 1 → 2) when a primary model fails.
+ */
+export const FALLBACK_PRIORITY_SLOTS = 3
+
+/**
+ * Empty-priority sentinel: a fallback list with three blank slots. Saved
+ * settings are sparse — missing categories effectively mean "no fallback
+ * configured". The platform never silently injects a non-user-chosen model.
+ */
+export function getEmptyFallbackPriorityList(): FallbackPriorityList {
+  return ['', '', '']
+}
+
+/** Default config: every category empty (no fallbacks configured). */
+export function getDefaultFallbackPriorityConfig(): FallbackPriorityConfig {
+  return {
+    extraction: getEmptyFallbackPriorityList(),
+    synthesis: getEmptyFallbackPriorityList(),
+    reasoning: getEmptyFallbackPriorityList(),
+    writing: getEmptyFallbackPriorityList(),
+  }
+}
+
+/**
+ * Normalize a stored priority list, ensuring it always has exactly
+ * `FALLBACK_PRIORITY_SLOTS` entries (padding with blanks if shorter and
+ * truncating if longer). Non-string entries are coerced to ''.
+ */
+function normalizePriorityList(raw: unknown): FallbackPriorityList {
+  const list = Array.isArray(raw) ? raw : []
+  const out: string[] = []
+  for (let i = 0; i < FALLBACK_PRIORITY_SLOTS; i++) {
+    const value = list[i]
+    out.push(typeof value === 'string' ? value : '')
+  }
+  return out as FallbackPriorityList
+}
+
+/**
+ * Load the user's fallback-priority config, merged with defaults so every
+ * category always has a (possibly empty) list. Returns blanks when running
+ * outside Firebase mode or when the document does not exist.
+ */
+export async function loadFallbackPriorityConfig(uid?: string): Promise<FallbackPriorityConfig> {
+  const defaults = getDefaultFallbackPriorityConfig()
+  if (!IS_FIREBASE) return defaults
+
+  try {
+    const resolvedUid = resolveScopedUid(uid)
+    const userSettings = resolvedUid ? await ensureUserSettingsMigrated(resolvedUid) : {} as UserSettingsData
+    const saved = userSettings.fallback_priorities ?? {}
+    const result: FallbackPriorityConfig = {}
+    for (const category of FALLBACK_AGENT_CATEGORIES) {
+      result[category] = normalizePriorityList(saved[category])
+    }
+    return result
+  } catch {
+    return defaults
+  }
+}
+
+/**
+ * Persist the user's fallback-priority config. Validates every non-empty
+ * model ID against the user's personal catalog so the user cannot save a
+ * model that no longer exists.
+ */
+export async function saveFallbackPriorityConfig(
+  config: FallbackPriorityConfig,
+  uid?: string,
+): Promise<void> {
+  if (!IS_FIREBASE) return
+
+  const resolvedUid = resolveScopedUid(uid)
+  if (!resolvedUid) throw new Error('Usuário não autenticado.')
+
+  const userSettings = await ensureUserSettingsMigrated(resolvedUid)
+  const settingsRecord = userSettings as unknown as Record<string, unknown>
+  const catalogIds = buildCatalogIdSet(settingsRecord)
+
+  const sanitized: FallbackPriorityConfig = {}
+  for (const category of FALLBACK_AGENT_CATEGORIES) {
+    const list = normalizePriorityList(config[category])
+    for (const modelId of list) {
+      if (!modelId) continue
+      if (!catalogIds.has(modelId)) {
+        throw new Error(
+          `O modelo "${modelId}" não está no catálogo pessoal do usuário e não pode ser usado como fallback de ${category}.`,
+        )
+      }
+    }
+    sanitized[category] = list
+  }
+
+  await saveUserSettings(
+    resolvedUid,
+    { fallback_priorities: sanitized } as Partial<UserSettingsData>,
+  )
+}
+
+/** Clear all fallback priorities for the current user. */
+export async function resetFallbackPriorityConfig(uid?: string): Promise<void> {
+  if (!IS_FIREBASE) return
+  const resolvedUid = resolveScopedUid(uid)
+  if (!resolvedUid) throw new Error('Usuário não autenticado.')
+  await saveUserSettings(
+    resolvedUid,
+    { fallback_priorities: getDefaultFallbackPriorityConfig() } as Partial<UserSettingsData>,
+  )
+}
+
+/**
+ * Resolve the ordered fallback model list to pass to `callLLMWithFallback`
+ * for a given agent. The list is built from the user's category-specific
+ * priorities, with the currently failing primary model removed (so the
+ * platform never silently re-tries the same model that just failed and
+ * never injects a model the user did not pick).
+ */
+export function resolveFallbackModelsForCategory(
+  primaryModel: string,
+  category: AgentCategory | undefined,
+  config: FallbackPriorityConfig | undefined | null,
+): string[] {
+  if (!category || !config) return []
+  const list = config[category]
+  if (!list) return []
+
+  const out: string[] = []
+  for (const candidate of list) {
+    if (typeof candidate !== 'string') continue
+    const trimmed = candidate.trim()
+    if (!trimmed) continue
+    if (trimmed === primaryModel) continue
+    if (out.includes(trimmed)) continue
+    out.push(trimmed)
+  }
+  return out
 }

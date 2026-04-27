@@ -21,7 +21,14 @@ import {
   getOpenRouterKey,
   type UserProfileForGeneration,
 } from './generation-service'
-import { loadDocumentV3Models } from './model-config'
+import {
+  DOCUMENT_V3_PIPELINE_AGENT_DEFS,
+  loadDocumentV3Models,
+  loadFallbackPriorityConfig,
+  resolveFallbackModelsForCategory,
+  type AgentCategory,
+  type FallbackPriorityConfig,
+} from './model-config'
 import { loadAdminDocumentTypes } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import {
@@ -58,7 +65,20 @@ import type {
   SharedCaseContext,
 } from './v3-agents/types'
 
-const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.0-flash'
+/**
+ * Map every v3 agent key to the agent category that drives its fallback
+ * priority list. Built once from `DOCUMENT_V3_PIPELINE_AGENT_DEFS` so the
+ * orchestrator stays in sync if defs are reordered or renamed.
+ */
+const V3_AGENT_CATEGORY_BY_KEY: Record<string, AgentCategory> = (() => {
+  const map: Record<string, AgentCategory> = {}
+  for (const def of DOCUMENT_V3_PIPELINE_AGENT_DEFS) {
+    if (def.agentCategory) {
+      map[def.key] = def.agentCategory
+    }
+  }
+  return map
+})()
 
 /**
  * Threshold of weaknesses (raised by the Devil's Advocate) above which the
@@ -236,10 +256,11 @@ export async function generateDocumentV3(
       }
     }
 
-    const [apiKey, agentModels, adminDocTypes] = await Promise.all([
+    const [apiKey, agentModels, adminDocTypes, fallbackPriorities] = await Promise.all([
       getOpenRouterKey(uid),
       loadDocumentV3Models(uid),
       loadAdminDocumentTypes().catch(() => []),
+      loadFallbackPriorityConfig(uid).catch(() => ({} as FallbackPriorityConfig)),
     ])
 
     const adminDocType = adminDocTypes.find(dt => dt.id === docType)
@@ -274,14 +295,25 @@ export async function generateDocumentV3(
 
     const profileBlock = buildProfileBlock(profile)
 
-    const buildAgentCtx = (agentKey: string): AgentRunContext => ({
-      apiKey,
-      model: agentModels[agentKey] || agentModels.v3_writer,
-      fallbackModel: RELIABLE_TEXT_FALLBACK_MODEL,
-      caseContext,
-      profileBlock,
-      signal,
-    })
+    /**
+     * Build the per-agent run context. The fallback list is sourced strictly
+     * from the user's category-specific fallback configuration (settings
+     * page → "Fallback de Modelos") with the failed primary model removed.
+     * The platform never injects a model the user did not explicitly pick.
+     */
+    const buildAgentCtx = (agentKey: string): AgentRunContext => {
+      const primary = agentModels[agentKey] || agentModels.v3_writer
+      const category = V3_AGENT_CATEGORY_BY_KEY[agentKey]
+      const fallbackList = resolveFallbackModelsForCategory(primary, category, fallbackPriorities)
+      return {
+        apiKey,
+        model: primary,
+        fallbackModel: fallbackList,
+        caseContext,
+        profileBlock,
+        signal,
+      }
+    }
 
     const supervisorModel = agentModels.v3_supervisor || undefined
     const parallelLimit = Math.max(1, options?.parallelLimit ?? DOCUMENT_V3_DEFAULT_PARALLEL_LIMIT)
@@ -301,11 +333,35 @@ export async function generateDocumentV3(
         executionState: 'waiting_io',
       })
 
+      // Wrap each parallel task so that completion progress is reported
+       // *as soon as that individual agent finishes*, rather than waiting for
+       // the slowest sibling to complete the whole `Promise.all`. This keeps
+       // perceived latency between consecutive activities short — the UI
+       // advances the moment an agent is done instead of jumping all states
+       // at the end of the phase.
       const [intentRes, parserRes, issuesRes] = await runWithConcurrency<unknown>(
         [
-          () => runIntentClassifier(buildAgentCtx('v3_intent_classifier')),
-          () => runRequestParser(buildAgentCtx('v3_request_parser')),
-          () => runLegalIssueSpotter(buildAgentCtx('v3_legal_issue_spotter')),
+          async () => {
+            const res = await runIntentClassifier(buildAgentCtx('v3_intent_classifier'))
+            recordExecution('v3_intent_classifier', 'Classificador de Intenção', res.llmResult)
+            recordAgentDuration(res.llmResult)
+            reportProgress('v3_intent_classifier', 'Classificação concluída.', 9, { result: res.llmResult, executionState: 'completed' })
+            return res
+          },
+          async () => {
+            const res = await runRequestParser(buildAgentCtx('v3_request_parser'))
+            recordExecution('v3_request_parser', 'Parser da Solicitação', res.llmResult)
+            recordAgentDuration(res.llmResult)
+            reportProgress('v3_request_parser', 'Parser concluído.', 10, { result: res.llmResult, executionState: 'completed' })
+            return res
+          },
+          async () => {
+            const res = await runLegalIssueSpotter(buildAgentCtx('v3_legal_issue_spotter'))
+            recordExecution('v3_legal_issue_spotter', 'Identificador de Questões', res.llmResult)
+            recordAgentDuration(res.llmResult)
+            reportProgress('v3_legal_issue_spotter', 'Questões identificadas.', 11, { result: res.llmResult, executionState: 'completed' })
+            return res
+          },
         ],
         parallelLimit,
       ) as [
@@ -319,20 +375,15 @@ export async function generateDocumentV3(
       if (!caseContext.parsedFacts) caseContext.parsedFacts = parserRes.output
       caseContext.legalIssues = issuesRes.output
 
-      recordExecution('v3_intent_classifier', 'Classificador de Intenção', intentRes.llmResult)
-      recordExecution('v3_request_parser', 'Parser da Solicitação', parserRes.llmResult)
-      recordExecution('v3_legal_issue_spotter', 'Identificador de Questões', issuesRes.llmResult)
-      recordAgentDuration(intentRes.llmResult)
-      recordAgentDuration(parserRes.llmResult)
-      recordAgentDuration(issuesRes.llmResult)
-
-      reportProgress('v3_intent_classifier', 'Classificação concluída.', 9, { result: intentRes.llmResult, executionState: 'completed' })
-      reportProgress('v3_request_parser', 'Parser concluído.', 10, { result: parserRes.llmResult, executionState: 'completed' })
-      reportProgress('v3_legal_issue_spotter', 'Questões identificadas.', 11, { result: issuesRes.llmResult, executionState: 'completed' })
+      // Per-agent completion progress is already emitted inside each wrapped
+      // task above (see runWithConcurrency callbacks), so the UI advances
+      // immediately when each individual agent finishes — no redundant
+      // emission here.
 
       // Architect consolidates the comprehension phase
       reportProgress('v3_prompt_architect', 'Arquiteto consolidando briefings...', 13, {
         modelId: agentModels.v3_prompt_architect,
+        executionState: 'running',
       })
       const architectRes = await superviseAgent({
         agentLabel: 'Arquiteto de Prompts',
@@ -438,8 +489,22 @@ export async function generateDocumentV3(
       })
       const [acervoRes, thesisIORes] = await runWithConcurrency<unknown>(
         [
-          () => runAcervoRetriever(buildAgentCtx('v3_acervo_retriever'), uid),
-          () => runThesisRetriever(buildAgentCtx('v3_thesis_retriever'), uid),
+          async () => {
+            const res = await runAcervoRetriever(buildAgentCtx('v3_acervo_retriever'), uid)
+            if (res.llmResult) {
+              recordExecution('v3_acervo_retriever', 'Buscador de Acervo', res.llmResult)
+              recordAgentDuration(res.llmResult)
+              reportProgress('v3_acervo_retriever', `Acervo (${res.output.selectedFilenames.length} docs).`, 22, { result: res.llmResult, executionState: 'completed' })
+            } else {
+              reportProgress('v3_acervo_retriever', 'Sem acervo aplicável.', 22, { executionState: 'completed' })
+            }
+            return res
+          },
+          async () => {
+            const res = await runThesisRetriever(buildAgentCtx('v3_thesis_retriever'), uid)
+            reportProgress('v3_thesis_retriever', `Teses (${res.output.count}).`, 24, { executionState: 'completed' })
+            return res
+          },
         ],
         parallelLimit,
       ) as [
@@ -448,18 +513,11 @@ export async function generateDocumentV3(
       ]
       caseContext.acervoSnippets = acervoRes.output.snippets
       caseContext.thesisSnippets = thesisIORes.output.snippets
-      if (acervoRes.llmResult) {
-        recordExecution('v3_acervo_retriever', 'Buscador de Acervo', acervoRes.llmResult)
-        recordAgentDuration(acervoRes.llmResult)
-        reportProgress('v3_acervo_retriever', `Acervo (${acervoRes.output.selectedFilenames.length} docs).`, 22, { result: acervoRes.llmResult, executionState: 'completed' })
-      } else {
-        reportProgress('v3_acervo_retriever', 'Sem acervo aplicável.', 22, { executionState: 'completed' })
-      }
-      reportProgress('v3_thesis_retriever', `Teses (${thesisIORes.output.count}).`, 24, { executionState: 'completed' })
 
       // Thesis builder
       reportProgress('v3_thesis_builder', 'Construindo teses...', 27, {
         modelId: agentModels.v3_thesis_builder,
+        executionState: 'running',
       })
       const builderRes = await superviseAgent({
         agentLabel: 'Construtor de Teses',

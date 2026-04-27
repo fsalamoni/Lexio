@@ -31,6 +31,30 @@ export interface ProfileData {
   onboarding_completed?: boolean
 }
 
+// ── Fallback Priorities ──────────────────────────────────────────────────────
+
+/**
+ * Ordered list of user-chosen fallback models for a given agent category.
+ * Each slot is an optional model ID (empty string means "no model picked at
+ * this priority"). The list is consulted in order: priority 0 first, then
+ * priority 1, then priority 2. The currently failing model is automatically
+ * skipped, so the user can safely list it among the priorities without losing
+ * a slot.
+ */
+export type FallbackPriorityList = [string, string, string]
+
+/**
+ * User-defined fallback priorities for every agent category. Categories match
+ * `AgentCategory` from `model-config`: extraction, synthesis, reasoning,
+ * writing.
+ */
+export interface FallbackPriorityConfig {
+  extraction?: FallbackPriorityList
+  synthesis?: FallbackPriorityList
+  reasoning?: FallbackPriorityList
+  writing?: FallbackPriorityList
+}
+
 export interface UserSettingsData {
   legacy_migrated_at?: string
   api_keys?: Record<string, string>
@@ -47,6 +71,14 @@ export interface UserSettingsData {
   audio_pipeline_models?: Record<string, string>
   presentation_pipeline_models?: Record<string, string>
   document_v3_models?: Record<string, string>
+  /**
+   * User-defined fallback model priorities per agent category.
+   * When a primary model fails (transient/upstream error or unavailable),
+   * the system walks this list in order and tries the next user-chosen
+   * model. The platform never falls back to a model the user did not
+   * explicitly select.
+   */
+  fallback_priorities?: FallbackPriorityConfig
   document_types?: AdminDocumentType[]
   legal_areas?: AdminLegalArea[]
   /** Active platform skin/theme ID */
