@@ -35,6 +35,7 @@ import NotebookAcervoConfigCard from '../components/NotebookAcervoConfigCard'
 import VideoPipelineConfigCard from '../components/VideoPipelineConfigCard'
 import AudioPipelineConfigCard from '../components/AudioPipelineConfigCard'
 import PresentationPipelineConfigCard from '../components/PresentationPipelineConfigCard'
+import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
 import ModelCatalogCard from '../components/ModelCatalogCard'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ThemeSkinSelector from '../components/ThemeSkinSelector'
@@ -775,7 +776,7 @@ export default function AdminPanel() {
               onClick={() => {
                 const allOpen: Record<string, boolean> = {}
                 Object.keys(collapseState).forEach(k => { allOpen[k] = true })
-                ;['section_review_queue', 'section_model_catalog', 'section_pipelines', 'section_document_types', 'section_legal_areas', 'section_advanced'].forEach(k => { allOpen[k] = true })
+                ;['section_review_queue', 'section_model_catalog', 'section_pipelines', 'section_document_types', 'section_legal_areas', 'section_advanced', 'section_document_v3_pipeline_config'].forEach(k => { allOpen[k] = true })
                 setCollapseState(allOpen)
                 saveAdminCollapseState(allOpen)
               }}
@@ -944,6 +945,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <ModelConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Document V3 Pipeline Config — Firebase mode (preview) */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_document_v3_pipeline_config"
+          title="Pipeline de Documentos v3 (preview)"
+          icon={Brain}
+          iconColor="text-teal-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <DocumentV3PipelineConfigSection />
         </AdminCollapsibleSection>
       )}
 

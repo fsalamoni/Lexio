@@ -16,6 +16,7 @@ const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'))
 const DashboardV2 = lazy(() => import('./pages/labs/DashboardV2'))
 const DocumentList = lazy(() => import('./pages/DocumentList'))
 const NewDocument = lazy(() => import('./pages/NewDocument'))
+const NewDocumentV3 = lazy(() => import('./pages/NewDocumentV3'))
 const DocumentDetail = lazy(() => import('./pages/DocumentDetail'))
 const DocumentEditor = lazy(() => import('./pages/DocumentEditor'))
 const Upload = lazy(() => import('./pages/Upload'))
@@ -64,6 +65,7 @@ function AuthenticatedShell() {
         <Route path="/" element={<DashboardV2 />} />
         <Route path="/documents" element={<DocumentList />} />
         <Route path="/documents/new" element={<NewDocument />} />
+        <Route path="/documents/new-v3" element={<NewDocumentV3 />} />
         <Route path="/documents/:id" element={<DocumentDetail />} />
         <Route path="/documents/:id/edit" element={<DocumentEditor />} />
         <Route path="/upload" element={<Upload />} />

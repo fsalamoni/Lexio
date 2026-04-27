@@ -3,15 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
 const callLLMMock = vi.fn()
-const updateDocMock = vi.fn(async () => undefined)
-const addDocMock = vi.fn(async () => ({ id: 'docX' }))
-const collectionMock = vi.fn((_db: unknown, ..._segments: string[]) => ({ __col: _segments.join('/') }))
-const docMock = vi.fn((_db: unknown, ..._segments: string[]) => ({ __ref: _segments.join('/') }))
+const updateDocMock = vi.fn(async (..._args: unknown[]) => undefined)
+const addDocMock = vi.fn(async (..._args: unknown[]) => ({ id: 'docX' }))
+const collectionMock = vi.fn((..._args: unknown[]) => ({ __col: true }))
+const docMock = vi.fn((..._args: unknown[]) => ({ __ref: true }))
 
 vi.mock('firebase/firestore', () => ({
   getFirestore: () => ({}),
-  collection: (...args: unknown[]) => collectionMock(...(args as [unknown, ...string[]])),
-  doc: (...args: unknown[]) => docMock(...(args as [unknown, ...string[]])),
+  collection: (...args: unknown[]) => collectionMock(...args),
+  doc: (...args: unknown[]) => docMock(...args),
   addDoc: (...args: unknown[]) => addDocMock(...args),
   updateDoc: (...args: unknown[]) => updateDocMock(...args),
 }))
@@ -163,15 +163,15 @@ describe('generateDocumentV3 orchestrator', () => {
     ]))
 
     // Persistence: status started as processando, ended as concluido
-    const updateCalls = updateDocMock.mock.calls
-    const statuses = updateCalls.map(c => (c[1] as { status?: string }).status).filter(Boolean)
+    const updateCalls = updateDocMock.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>
+    const statuses = updateCalls.map(c => c[1].status as string | undefined).filter(Boolean) as string[]
     expect(statuses[0]).toBe('processando')
     expect(statuses).toContain('concluido')
 
     // Final update has texto_completo + quality_score + llm_executions
-    const finalUpdate = updateCalls.find(c => (c[1] as { status?: string }).status === 'concluido')
+    const finalUpdate = updateCalls.find(c => c[1].status === 'concluido')
     expect(finalUpdate).toBeDefined()
-    const finalPayload = finalUpdate![1] as Record<string, unknown>
+    const finalPayload = finalUpdate![1]
     expect(finalPayload.texto_completo).toContain('PARECER JURÍDICO')
     expect(typeof finalPayload.quality_score).toBe('number')
     expect(Array.isArray(finalPayload.llm_executions)).toBe(true)
@@ -256,7 +256,8 @@ describe('createDocumentV3', () => {
   it('persists pipeline_version=v3 in request_context', async () => {
     await createDocumentV3('u', { document_type_id: 'parecer', original_request: 'Req' })
     expect(addDocMock).toHaveBeenCalled()
-    const payload = addDocMock.mock.calls[0][1] as { request_context: Record<string, unknown> }
+    const calls = addDocMock.mock.calls as unknown as Array<[unknown, { request_context: Record<string, unknown> }]>
+    const payload = calls[0][1]
     expect(payload.request_context.pipeline_version).toBe('v3')
   })
 })
