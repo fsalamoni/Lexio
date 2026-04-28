@@ -107,11 +107,11 @@ describe('llm-client', () => {
   })
 
   describe('RELIABLE_TEXT_FALLBACK_MODEL', () => {
-    it('uses google/gemini-2.0-flash (kept exported for backward compatibility)', () => {
+    it('uses google/gemini-2.5-flash (kept exported for backward compatibility)', () => {
       // Policy: never auto-fallback to non-user models. Constant is kept so
       // legacy callers that explicitly opt-in by passing it as a fallback
       // candidate still work, but it is not injected silently anymore.
-      expect(RELIABLE_TEXT_FALLBACK_MODEL).toBe('google/gemini-2.0-flash')
+      expect(RELIABLE_TEXT_FALLBACK_MODEL).toBe('google/gemini-2.5-flash')
     })
   })
 

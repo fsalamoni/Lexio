@@ -15,9 +15,12 @@ vi.mock('./firestore-service', () => ({
 }))
 
 import {
+  DEPRECATED_MODEL_REWRITES,
   loadAgentModels,
   ModelCapabilityMismatchError,
   ModelNotInUserCatalogError,
+  resolveFallbackModelsForCategory,
+  rewriteDeprecatedModelId,
   saveAgentModels,
   validateScopedAgentModels,
 } from './model-config'
@@ -209,5 +212,68 @@ describe('media agent capability validation', () => {
         video_tts: 'allowed/audio-model',
       }, 'user-1'),
     ).resolves.toBeUndefined()
+  })
+})
+
+describe('deprecated model ID rewrites', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getCurrentUserIdMock.mockReturnValue('user-1')
+    saveUserSettingsMock.mockResolvedValue(undefined)
+  })
+
+  it('exposes the gemini 2.0 → 2.5 deprecation map', () => {
+    // Sanity check on the rewrite map so a future refactor doesn't silently
+    // drop the migration that keeps users with stale settings working.
+    expect(DEPRECATED_MODEL_REWRITES['google/gemini-2.0-flash-001']).toBe('google/gemini-2.5-flash')
+    expect(DEPRECATED_MODEL_REWRITES['google/gemini-2.0-flash-lite-001']).toBe('google/gemini-2.5-flash-lite')
+    expect(rewriteDeprecatedModelId('google/gemini-2.0-flash-001')).toBe('google/gemini-2.5-flash')
+    expect(rewriteDeprecatedModelId('anthropic/claude-sonnet-4')).toBe('anthropic/claude-sonnet-4')
+    expect(rewriteDeprecatedModelId(undefined)).toBe('')
+  })
+
+  it('auto-promotes deprecated agent model overrides to their replacement at load time', async () => {
+    // User saved the legacy gemini-2.0-flash-001 ID before Google deprecated
+    // it. The catalog now only contains the 2.5 replacement, so the load
+    // helper should rewrite the saved ID and apply it as the active model.
+    const replacementCatalog = [{
+      id: 'google/gemini-2.5-flash',
+      label: 'Gemini 2.5 Flash',
+      provider: 'Google',
+      tier: 'fast' as const,
+      description: 'replacement',
+      contextWindow: 1_000_000,
+      inputCost: 0.30,
+      outputCost: 2.50,
+      isFree: false,
+      agentFit: { extraction: 9, synthesis: 6, reasoning: 6, writing: 6 },
+      capabilities: ['text'] as const,
+    }]
+    ensureUserSettingsMigratedMock.mockResolvedValue({
+      model_catalog: replacementCatalog,
+      agent_models: {
+        triagem: 'google/gemini-2.0-flash-001',
+      },
+    })
+
+    const result = await loadAgentModels('user-1')
+
+    expect(result.triagem).toBe('google/gemini-2.5-flash')
+  })
+
+  it('rewrites deprecated IDs and de-duplicates them in the fallback priority chain', () => {
+    const fallback = resolveFallbackModelsForCategory(
+      'google/gemini-2.5-flash',
+      'extraction',
+      {
+        extraction: [
+          'google/gemini-2.0-flash-001', // → google/gemini-2.5-flash (== primary, dropped)
+          'google/gemini-2.0-flash-lite-001', // → google/gemini-2.5-flash-lite
+          'google/gemini-2.5-flash-lite', // duplicate after rewrite, dropped
+        ],
+      },
+    )
+
+    expect(fallback).toEqual(['google/gemini-2.5-flash-lite'])
   })
 })

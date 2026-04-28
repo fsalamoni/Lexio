@@ -184,11 +184,15 @@ function isTransientUpstreamResponse(status: number, errorBody: string): boolean
  * constant is kept for backward compatibility with callers that explicitly
  * pass it as a fallback candidate.
  *
+ * Updated to the current stable Google Gemini text model after the 2.0-Flash
+ * family was deprecated upstream (returning 404 "model is no longer
+ * available" on OpenRouter).
+ *
  * @deprecated Pass an explicit user-chosen fallback list to
  *   `callLLMWithFallback` / `callLLMWithMessagesFallback` instead of relying
  *   on hardcoded fallbacks.
  */
-export const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.0-flash'
+export const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.5-flash'
 
 function isRecoverableLLMError(err: unknown): err is ModelUnavailableError | TransientLLMError {
   return err instanceof ModelUnavailableError || err instanceof TransientLLMError
@@ -609,6 +613,8 @@ function estimateCost(model: string, tokensIn: number, tokensOut: number): numbe
     'anthropic/claude-opus-4':            [15.00, 75.00],
     'openai/gpt-4o':                      [2.50, 10.00],
     'openai/gpt-4o-mini':                 [0.15,  0.60],
+    'google/gemini-2.5-flash':            [0.30,  2.50],
+    'google/gemini-2.5-flash-lite':       [0.10,  0.40],
     'google/gemini-2.0-flash':            [0.075, 0.30],
     'google/gemini-2.0-flash-lite':       [0.038, 0.15],
     'meta-llama/llama-3.1-8b-instruct':   [0.06,  0.06],

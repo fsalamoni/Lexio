@@ -110,17 +110,17 @@ export const AVAILABLE_MODELS: ModelOption[] = [
 
   // ── Google ────────────────────────────────────────────────────────────────────
   {
-    id: 'google/gemini-2.0-flash-001',
-    label: 'Gemini 2.0 Flash', provider: 'Google', tier: 'fast',
-    description: 'Rápido e econômico — boa alternativa para tarefas simples',
-    contextWindow: 1_000_000, inputCost: 0.10, outputCost: 0.40, isFree: false,
-    agentFit: { extraction: 9, synthesis: 5, reasoning: 5, writing: 5 },
+    id: 'google/gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash', provider: 'Google', tier: 'fast',
+    description: 'Rápido e econômico — substitui o legado Gemini 2.0 Flash (descontinuado)',
+    contextWindow: 1_000_000, inputCost: 0.30, outputCost: 2.50, isFree: false,
+    agentFit: { extraction: 9, synthesis: 6, reasoning: 6, writing: 6 },
   },
   {
-    id: 'google/gemini-2.0-flash-lite-001',
-    label: 'Gemini 2.0 Flash Lite', provider: 'Google', tier: 'fast',
-    description: 'Ultra econômico — para tarefas de extração de baixa complexidade',
-    contextWindow: 1_000_000, inputCost: 0.075, outputCost: 0.30, isFree: false,
+    id: 'google/gemini-2.5-flash-lite',
+    label: 'Gemini 2.5 Flash Lite', provider: 'Google', tier: 'fast',
+    description: 'Ultra econômico — substitui o legado Gemini 2.0 Flash Lite (descontinuado)',
+    contextWindow: 1_000_000, inputCost: 0.10, outputCost: 0.40, isFree: false,
     agentFit: { extraction: 8, synthesis: 4, reasoning: 3, writing: 4 },
   },
   {
@@ -297,9 +297,9 @@ export const AVAILABLE_MODELS: ModelOption[] = [
 
   // ── MODELOS GRATUITOS (Free tier OpenRouter) ──────────────────────────────────
   {
-    id: 'google/gemini-2.0-flash:free',
-    label: 'Gemini 2.0 Flash', provider: 'Google', tier: 'fast',
-    description: '✦ GRÁTIS — Gemini 2.0 Flash free tier, contexto 1M, sem custo',
+    id: 'google/gemini-2.5-flash-lite:free',
+    label: 'Gemini 2.5 Flash Lite', provider: 'Google', tier: 'fast',
+    description: '✦ GRÁTIS — Gemini 2.5 Flash Lite free tier, contexto 1M, sem custo',
     contextWindow: 1_000_000, inputCost: 0, outputCost: 0, isFree: true,
     agentFit: { extraction: 8, synthesis: 5, reasoning: 5, writing: 5 },
   },
@@ -556,6 +556,38 @@ export type AgentModelMap = Record<string, string>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Map of model IDs that providers (notably OpenRouter / Google) have
+ * deprecated or renamed, with their current canonical replacement. Whenever
+ * we read a model ID from user-saved settings (agent overrides, fallback
+ * priority lists, personal catalogs) we transparently rewrite the deprecated
+ * ID to its replacement so existing users keep working without manually
+ * updating their settings after a provider deprecation.
+ *
+ * Add new entries here whenever a model is shut down upstream. Calls that
+ * still reach the deprecated ID will return 404 from OpenRouter and break
+ * pipelines (e.g. Construtor de Teses) until the user reconfigures.
+ */
+export const DEPRECATED_MODEL_REWRITES: Readonly<Record<string, string>> = Object.freeze({
+  // Google deprecated the Gemini 2.0 Flash family in 2026; the canonical
+  // stable replacements on OpenRouter are gemini-2.5-flash / -lite.
+  'google/gemini-2.0-flash-001': 'google/gemini-2.5-flash',
+  'google/gemini-2.0-flash': 'google/gemini-2.5-flash',
+  'google/gemini-2.0-flash-lite-001': 'google/gemini-2.5-flash-lite',
+  'google/gemini-2.0-flash-lite': 'google/gemini-2.5-flash-lite',
+  'google/gemini-2.0-flash:free': 'google/gemini-2.5-flash-lite:free',
+})
+
+/**
+ * Return the current canonical ID for a model, rewriting deprecated IDs to
+ * their replacement (see `DEPRECATED_MODEL_REWRITES`). Unknown / non-string
+ * inputs are returned unchanged.
+ */
+export function rewriteDeprecatedModelId(modelId: string | undefined | null): string {
+  if (typeof modelId !== 'string') return ''
+  return DEPRECATED_MODEL_REWRITES[modelId] ?? modelId
+}
+
 function inferCapabilitiesFromModelId(modelId: string): ModelCapability[] {
   const haystack = modelId.toLowerCase()
   const capabilities: ModelCapability[] = []
@@ -569,13 +601,24 @@ function inferCapabilitiesFromModelId(modelId: string): ModelCapability[] {
 
 function buildCatalogEntries(settings: Record<string, unknown>): ModelOption[] {
   const dynamicCatalog = settings.model_catalog
-  if (Array.isArray(dynamicCatalog) && dynamicCatalog.length > 0) {
-    return dynamicCatalog
-      .filter((model): model is ModelOption =>
+  const entries = Array.isArray(dynamicCatalog) && dynamicCatalog.length > 0
+    ? dynamicCatalog.filter((model): model is ModelOption =>
         Boolean(model) && typeof model === 'object' && typeof (model as { id?: string }).id === 'string',
       )
+    : AVAILABLE_MODELS
+
+  // Rewrite any persisted catalog entries that still reference deprecated
+  // upstream IDs so the rest of the resolution pipeline (capability check,
+  // override application, fallback priorities) sees only current IDs.
+  const rewritten: ModelOption[] = []
+  const seen = new Set<string>()
+  for (const entry of entries) {
+    const rewrittenId = rewriteDeprecatedModelId(entry.id)
+    if (seen.has(rewrittenId)) continue
+    seen.add(rewrittenId)
+    rewritten.push(rewrittenId === entry.id ? entry : { ...entry, id: rewrittenId })
   }
-  return AVAILABLE_MODELS
+  return rewritten
 }
 
 function getModelCapabilities(modelId: string, catalogEntries: ModelOption[]): ModelCapability[] {
@@ -687,11 +730,16 @@ function applySavedModelOverrides<T extends Record<string, string>>(
 ): T {
   const mutableTarget = target as Record<string, string>
   for (const def of defs) {
-    if (saved[def.key] && typeof saved[def.key] === 'string' && catalogIds.has(saved[def.key])) {
-      const capabilities = getModelCapabilities(saved[def.key], catalogEntries)
-      if (!def.requiredCapability || capabilities.includes(def.requiredCapability)) {
-        mutableTarget[def.key] = saved[def.key]
-      }
+    const rawSaved = saved[def.key]
+    if (typeof rawSaved !== 'string' || !rawSaved) continue
+    // Auto-promote deprecated provider IDs (e.g. google/gemini-2.0-flash-001
+    // → google/gemini-2.5-flash) so users with stale saved settings don't
+    // hit 404s on every call.
+    const savedId = rewriteDeprecatedModelId(rawSaved)
+    if (!catalogIds.has(savedId)) continue
+    const capabilities = getModelCapabilities(savedId, catalogEntries)
+    if (!def.requiredCapability || capabilities.includes(def.requiredCapability)) {
+      mutableTarget[def.key] = savedId
     }
   }
   return target
@@ -2107,14 +2155,19 @@ export function resolveFallbackModelsForCategory(
   const list = config[category]
   if (!list) return []
 
+  const rewrittenPrimary = rewriteDeprecatedModelId(primaryModel)
   const out: string[] = []
   for (const candidate of list) {
     if (typeof candidate !== 'string') continue
     const trimmed = candidate.trim()
     if (!trimmed) continue
-    if (trimmed === primaryModel) continue
-    if (out.includes(trimmed)) continue
-    out.push(trimmed)
+    // Auto-promote deprecated provider IDs persisted in the user's fallback
+    // priority list (see DEPRECATED_MODEL_REWRITES) so a stale fallback chain
+    // doesn't keep cycling through dead 404 model IDs.
+    const rewritten = rewriteDeprecatedModelId(trimmed)
+    if (rewritten === rewrittenPrimary) continue
+    if (out.includes(rewritten)) continue
+    out.push(rewritten)
   }
   return out
 }
