@@ -35,7 +35,7 @@ describe('runPresentationGenerationPipeline', () => {
     vi.clearAllMocks()
     loadPresentationPipelineModelsMock.mockResolvedValue({
       pres_planejador: 'openai/gpt-4.1-mini',
-      pres_pesquisador: 'google/gemini-2.0-flash-001',
+      pres_pesquisador: 'google/gemini-2.5-flash',
       pres_redator: 'anthropic/claude-sonnet-4',
       pres_designer: 'deepseek/deepseek-chat-v3-0324',
       pres_image_generator: 'google/gemini-2.5-flash-preview:image-output',
@@ -63,7 +63,7 @@ describe('runPresentationGenerationPipeline', () => {
 
     callLLMMock
       .mockResolvedValueOnce({ content: '{"title":"Plano"}', model: 'openai/gpt-4.1-mini', tokens_in: 100, tokens_out: 50, cost_usd: 0.001, duration_ms: 100 })
-      .mockResolvedValueOnce({ content: '{"claims":["A"]}', model: 'google/gemini-2.0-flash-001', tokens_in: 100, tokens_out: 50, cost_usd: 0.001, duration_ms: 90 })
+      .mockResolvedValueOnce({ content: '{"claims":["A"]}', model: 'google/gemini-2.5-flash', tokens_in: 100, tokens_out: 50, cost_usd: 0.001, duration_ms: 90 })
       .mockResolvedValueOnce({ content: presentationJson, model: 'anthropic/claude-sonnet-4', tokens_in: 150, tokens_out: 260, cost_usd: 0.003, duration_ms: 130 })
       .mockResolvedValueOnce({ content: presentationJson, model: 'deepseek/deepseek-chat-v3-0324', tokens_in: 120, tokens_out: 200, cost_usd: 0.0015, duration_ms: 110 })
       .mockResolvedValueOnce({ content: presentationJson, model: 'openai/gpt-4o', tokens_in: 90, tokens_out: 160, cost_usd: 0.002, duration_ms: 105 })

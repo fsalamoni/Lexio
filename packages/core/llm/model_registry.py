@@ -33,20 +33,24 @@ MODEL_REGISTRY = {
         "context_window": 200_000,
     },
     # ── Google ───────────────────────────────────────────────────────────────
-    "google/gemini-2.0-flash-001": {
-        "name": "Gemini 2.0 Flash",
+    # Note: google/gemini-2.0-flash-001 and -lite-001 were deprecated upstream
+    # in 2026 (OpenRouter returns 404 "model is no longer available"). The
+    # frontend rewrites stale persisted IDs to these stable replacements via
+    # DEPRECATED_MODEL_REWRITES in frontend/src/lib/model-config.ts.
+    "google/gemini-2.5-flash": {
+        "name": "Gemini 2.5 Flash",
+        "input_cost": 0.30,
+        "output_cost": 2.50,
+        "context_window": 1_000_000,
+    },
+    "google/gemini-2.5-flash-lite": {
+        "name": "Gemini 2.5 Flash Lite",
         "input_cost": 0.10,
         "output_cost": 0.40,
         "context_window": 1_000_000,
     },
-    "google/gemini-2.0-flash-lite-001": {
-        "name": "Gemini 2.0 Flash Lite",
-        "input_cost": 0.075,
-        "output_cost": 0.30,
-        "context_window": 1_000_000,
-    },
     "google/gemini-2.5-flash-preview": {
-        "name": "Gemini 2.5 Flash",
+        "name": "Gemini 2.5 Flash (Preview)",
         "input_cost": 0.15,
         "output_cost": 0.60,
         "context_window": 1_000_000,

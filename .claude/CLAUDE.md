@@ -597,7 +597,7 @@ Cada tipo tem template markdown em `document-structures.ts` com hierarquia de se
 ### Catálogo — Modelos Pagos (26+)
 
 **Anthropic (5):** claude-3.5-haiku, claude-sonnet-4, claude-3.5-sonnet, claude-3.7-sonnet, claude-opus-4
-**Google (4):** gemini-2.0-flash-001, gemini-2.0-flash-lite-001, gemini-2.5-flash-preview, gemini-2.5-pro-preview
+**Google (4):** gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-preview, gemini-2.5-pro-preview
 **OpenAI (8):** gpt-4o-mini, gpt-4.1-nano, gpt-4.1-mini, gpt-4o, gpt-4.1, o3-mini, o4-mini, o3
 **DeepSeek (2):** deepseek-chat-v3-0324, deepseek-r1
 **Meta (3):** llama-4-scout, llama-4-maverick, llama-3.3-70b-instruct
@@ -608,7 +608,7 @@ Cada tipo tem template markdown em `document-structures.ts` com hierarquia de se
 
 ### Catálogo — Modelos Gratuitos (10)
 
-gemini-2.0-flash:free, gemma-3-27b-it:free, llama-4-scout:free, llama-3.3-70b-instruct:free, deepseek-r1:free, qwen3-8b:free, qwen3-30b-a3b:free, mistral-small-3.1-24b-instruct:free, phi-4-multimodal-instruct:free
+gemini-2.5-flash-lite:free, gemma-3-27b-it:free, llama-4-scout:free, llama-3.3-70b-instruct:free, deepseek-r1:free, qwen3-8b:free, qwen3-30b-a3b:free, mistral-small-3.1-24b-instruct:free, phi-4-multimodal-instruct:free
 
 ### Fit Scores
 
