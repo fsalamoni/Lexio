@@ -1,9 +1,10 @@
-import { ReactNode } from 'react'
+import { ReactNode, useState } from 'react'
 import { Link, matchPath, useLocation } from 'react-router-dom'
 import clsx from 'clsx'
-import { ExternalLink, Sparkles, UserCircle } from 'lucide-react'
+import { ExternalLink, LogOut, Sparkles, UserCircle } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { buildWorkspaceShellPath } from '../../lib/workspace-routes'
+import ConfirmDialog from '../ConfirmDialog'
 
 interface WorkspaceNavItem {
   label: string
@@ -44,7 +45,8 @@ function NavCard({
 }
 
 export default function V2WorkspaceLayout({ children }: { children: ReactNode }) {
-  const { fullName, role } = useAuth()
+  const { fullName, role, logout } = useAuth()
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const primaryNav: WorkspaceNavGroup[] = [
     {
       label: 'Principal',
@@ -128,11 +130,33 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
                 <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">{role || 'user'}</p>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowLogoutConfirm(true)}
+              className="flex w-full items-center gap-2.5 rounded-[1.2rem] border border-[var(--v2-border)] bg-white/70 px-3 py-2.5 text-xs font-semibold text-[var(--v2-ink-strong)] transition hover:bg-white"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Logoff</span>
+            </button>
           </div>
         </aside>
 
         <main className="min-w-0 flex-1">{children}</main>
       </div>
+
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title="Sair da conta?"
+        description="Voce sera desconectado deste dispositivo."
+        confirmText="Sair"
+        cancelText="Cancelar"
+        onCancel={() => setShowLogoutConfirm(false)}
+        onConfirm={() => {
+          setShowLogoutConfirm(false)
+          void logout()
+        }}
+      />
     </div>
   )
 }

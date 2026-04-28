@@ -39,6 +39,30 @@ function clearStorage() {
   localStorage.removeItem('lexio_full_name')
 }
 
+function readStoredAuthState(): {
+  token: string
+  userId: string
+  role: string
+  fullName: string
+} | null {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const storedToken = localStorage.getItem('lexio_token')
+    const storedUserId = localStorage.getItem('lexio_user_id')
+    if (!storedToken || !storedUserId) return null
+
+    return {
+      token: storedToken,
+      userId: storedUserId,
+      role: localStorage.getItem('lexio_role') || 'user',
+      fullName: localStorage.getItem('lexio_full_name') || '',
+    }
+  } catch {
+    return null
+  }
+}
+
 const SESSION_INVALID_RECOVERY_COOLDOWN_MS = 12_000
 
 const AUTH_ACCESS_ERROR_CODES = new Set([
@@ -73,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     lastAt: 0,
     lastFingerprint: '',
   })
+  const manualLogoutRef = useRef(false)
 
   const clearAuthState = useCallback(() => {
     clearStorage()
@@ -80,6 +105,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserId(null)
     setRole(null)
     setFullName(null)
+  }, [])
+
+  const restoreAuthStateFromStorage = useCallback((): boolean => {
+    const snapshot = readStoredAuthState()
+    if (!snapshot) return false
+
+    setToken(snapshot.token)
+    setUserId(snapshot.userId)
+    setRole(snapshot.role)
+    setFullName(snapshot.fullName)
+    return true
   }, [])
 
   const syncAuthFromFirebaseUser = useCallback(async (
@@ -177,18 +213,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      if (!recovered && firebaseAuth?.currentUser) {
-        await firebaseLogout().catch(() => undefined)
-      }
-
       if (!recovered) {
-        clearAuthState()
+        // Keep the user active unless they explicitly request logout.
+        restoreAuthStateFromStorage()
       }
     } finally {
       setIsReady(true)
       sessionRecoveryRef.current.inProgress = false
     }
-  }, [clearAuthState, currentSessionFingerprint, syncAuthFromFirebaseUser])
+  }, [currentSessionFingerprint, restoreAuthStateFromStorage, syncAuthFromFirebaseUser])
 
   useEffect(() => {
     if (!IS_FIREBASE || typeof window === 'undefined') return
@@ -221,24 +254,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const callbackUid = fbUser?.uid ?? null
       try {
         if (fbUser) {
+          manualLogoutRef.current = false
           await syncAuthFromFirebaseUser(fbUser)
         } else {
-          clearAuthState()
+          if (manualLogoutRef.current) {
+            manualLogoutRef.current = false
+            clearAuthState()
+          } else if (!restoreAuthStateFromStorage()) {
+            clearAuthState()
+          }
         }
       } catch (error) {
         console.warn('[AuthContext] Failed to hydrate Firebase auth session:', error)
-        const liveUid = firebaseAuth?.currentUser?.uid ?? null
-        if (liveUid && (!callbackUid || liveUid === callbackUid)) {
-          await firebaseLogout().catch(() => undefined)
+        if (manualLogoutRef.current) {
+          manualLogoutRef.current = false
+          clearAuthState()
+        } else if (!restoreAuthStateFromStorage()) {
+          if (callbackUid) {
+            localStorage.setItem('lexio_user_id', callbackUid)
+            setUserId(callbackUid)
+          }
+          setRole((prev) => prev ?? localStorage.getItem('lexio_role') ?? 'user')
+          setFullName((prev) => prev ?? localStorage.getItem('lexio_full_name') ?? '')
         }
-        clearAuthState()
       } finally {
         setIsReady(true)
       }
     })
 
     return unsub
-  }, [clearAuthState, syncAuthFromFirebaseUser])
+  }, [clearAuthState, restoreAuthStateFromStorage, syncAuthFromFirebaseUser])
 
   const login = async (email: string, password: string) => {
     if (IS_FIREBASE) {
@@ -287,6 +332,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
+    manualLogoutRef.current = true
     if (IS_FIREBASE) await firebaseLogout().catch(() => undefined)
     clearAuthState()
   }

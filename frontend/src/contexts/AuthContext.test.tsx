@@ -55,8 +55,11 @@ vi.mock('../lib/auth-service', () => ({
 import { AuthProvider, useAuth } from './AuthContext'
 import { FIRESTORE_AUTH_SESSION_INVALID_EVENT, getSessionFingerprint } from '../lib/auth-session-events'
 
-function Probe({ emitInvalidSession }: { emitInvalidSession?: boolean }) {
-  const { isReady, userId } = useAuth()
+function Probe({ emitInvalidSession, triggerManualLogout }: {
+  emitInvalidSession?: boolean
+  triggerManualLogout?: boolean
+}) {
+  const { isReady, userId, logout } = useAuth()
 
   useEffect(() => {
     if (!emitInvalidSession) return
@@ -69,6 +72,11 @@ function Probe({ emitInvalidSession }: { emitInvalidSession?: boolean }) {
       },
     }))
   }, [emitInvalidSession])
+
+  useEffect(() => {
+    if (!triggerManualLogout) return
+    void logout()
+  }, [logout, triggerManualLogout])
 
   return (
     <>
@@ -125,7 +133,7 @@ describe('AuthContext session recovery', () => {
     expect(localStorage.getItem('lexio_user_id')).toBe('user-1')
   })
 
-  it('falls back to logout and clears local session when forced refresh fails', async () => {
+  it('keeps session active when forced refresh fails after invalid-session signal', async () => {
     currentUser.getIdToken
       .mockResolvedValueOnce('token-first-hydration')
       .mockRejectedValueOnce(new Error('token refresh failed'))
@@ -137,22 +145,18 @@ describe('AuthContext session recovery', () => {
     )
 
     await waitFor(() => {
-      expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
-    })
-
-    await waitFor(() => {
       expect(screen.getByTestId('ready').textContent).toBe('true')
-      expect(screen.getByTestId('user-id').textContent).toBe('null')
+      expect(screen.getByTestId('user-id').textContent).toBe('user-1')
     })
 
-    expect(localStorage.getItem('lexio_user_id')).toBeNull()
+    expect(mockFirebaseLogout).not.toHaveBeenCalled()
+    expect(localStorage.getItem('lexio_user_id')).toBe('user-1')
   })
 
-  it('logs the user out when forced token refresh succeeds but Firestore still rejects the session', async () => {
+  it('keeps session active when Firestore still rejects access after forced refresh', async () => {
     // Simulates the production loop where Firebase Auth keeps issuing fresh
     // tokens but Firestore continues to return permission-denied — the user
-    // must be cleanly logged out instead of being stuck with a recurring
-    // "Sessão inválida" toast on an empty dashboard.
+    // should remain active until explicit logoff.
     currentUser.getIdToken.mockResolvedValue('token-refreshed')
     mockGetDoc
       .mockResolvedValueOnce({
@@ -166,6 +170,23 @@ describe('AuthContext session recovery', () => {
     render(
       <AuthProvider>
         <Probe emitInvalidSession />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('user-id').textContent).toBe('user-1')
+    })
+
+    expect(mockFirebaseLogout).not.toHaveBeenCalled()
+    expect(localStorage.getItem('lexio_user_id')).toBe('user-1')
+    expect(localStorage.getItem('lexio_token')).toBeTruthy()
+  })
+
+  it('only logs out when user explicitly requests logoff', async () => {
+    render(
+      <AuthProvider>
+        <Probe triggerManualLogout />
       </AuthProvider>,
     )
 
