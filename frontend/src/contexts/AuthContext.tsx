@@ -41,6 +41,26 @@ function clearStorage() {
 
 const SESSION_INVALID_RECOVERY_COOLDOWN_MS = 12_000
 
+const AUTH_ACCESS_ERROR_CODES = new Set([
+  'permission-denied',
+  'unauthenticated',
+  'firestore/permission-denied',
+  'firestore/unauthenticated',
+  'auth-session-invalid',
+  'firestore/auth-session-invalid',
+])
+
+function isAuthAccessError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const code = (error as { code?: unknown }).code
+  if (typeof code === 'string' && AUTH_ACCESS_ERROR_CODES.has(code)) return true
+  const message = (error as { message?: unknown }).message
+  if (typeof message === 'string' && /missing or insufficient permissions/i.test(message)) {
+    return true
+  }
+  return false
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token,    setToken]    = useState<string | null>(localStorage.getItem('lexio_token'))
   const [userId,   setUserId]   = useState<string | null>(localStorage.getItem('lexio_user_id'))
@@ -91,7 +111,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRole('user')
         setFullName(nextName)
       }
-    } catch {
+    } catch (error) {
+      // If reading the user's own profile fails with an auth/permission error,
+      // the freshly-issued token is still being rejected by Firestore — meaning
+      // the session is not actually recoverable. Propagate so the caller can
+      // clear the dead session instead of silently leaving the user "logged in"
+      // with an unusable session (which causes an infinite "Sessão inválida"
+      // loop on the dashboard).
+      if (isAuthAccessError(error)) {
+        throw error
+      }
+      // Non-auth errors (transient network, offline, etc.) keep the soft
+      // fallback so we don't log users out on flaky connectivity.
       const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
       if (!localStorage.getItem('lexio_role')) {
         localStorage.setItem('lexio_role', 'user')

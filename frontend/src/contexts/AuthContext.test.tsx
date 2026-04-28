@@ -147,4 +147,38 @@ describe('AuthContext session recovery', () => {
 
     expect(localStorage.getItem('lexio_user_id')).toBeNull()
   })
+
+  it('logs the user out when forced token refresh succeeds but Firestore still rejects the session', async () => {
+    // Simulates the production loop where Firebase Auth keeps issuing fresh
+    // tokens but Firestore continues to return permission-denied — the user
+    // must be cleanly logged out instead of being stuck with a recurring
+    // "Sessão inválida" toast on an empty dashboard.
+    currentUser.getIdToken.mockResolvedValue('token-refreshed')
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ role: 'user', full_name: 'Test User' }),
+      })
+      .mockRejectedValue(Object.assign(new Error('Missing or insufficient permissions.'), {
+        code: 'permission-denied',
+      }))
+
+    render(
+      <AuthProvider>
+        <Probe emitInvalidSession />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('user-id').textContent).toBe('null')
+    })
+
+    expect(localStorage.getItem('lexio_user_id')).toBeNull()
+    expect(localStorage.getItem('lexio_token')).toBeNull()
+  })
 })
