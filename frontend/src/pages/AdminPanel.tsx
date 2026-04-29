@@ -38,6 +38,8 @@ import PresentationPipelineConfigCard from '../components/PresentationPipelineCo
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
 import ModelCatalogCard from '../components/ModelCatalogCard'
+import ProviderApiKeysCard from '../components/ProviderApiKeysCard'
+import ProviderCatalogsSection from '../components/ProviderCatalogsSection'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ThemeSkinSelector from '../components/ThemeSkinSelector'
 import { V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
@@ -909,8 +911,22 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* API Keys */}
-      {(IS_FIREBASE || showPlatformSections) && (
+      {/* Provedores de IA — multi-provider API keys + enable/disable toggles */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_providers"
+          title="Provedores de IA"
+          icon={Key}
+          iconColor="text-indigo-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ProviderApiKeysCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* API Keys (modo legado / backend) */}
+      {!IS_FIREBASE && showPlatformSections && (
         <AdminCollapsibleSection
           id="section_api_keys"
           title="Chaves de API"
@@ -922,11 +938,25 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* Model Catalog — user-scoped catalog for each authenticated profile */}
+      {/* Catálogos por provedor — uma seção por provedor habilitado */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_provider_catalogs"
+          title="Catálogos por Provedor"
+          icon={Brain}
+          iconColor="text-purple-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ProviderCatalogsSection />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Catálogo Pessoal — agrega modelos de todos os provedores habilitados */}
       {showPersonalModelCatalog && (
         <AdminCollapsibleSection
           id="section_model_catalog"
-          title="Catálogo de Modelos"
+          title="Catálogo Pessoal"
           icon={Brain}
           iconColor="text-indigo-600"
           collapseState={collapseState}

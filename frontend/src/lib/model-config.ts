@@ -38,6 +38,12 @@ export interface ModelOption {
   id: string
   label: string
   provider: string
+  /**
+   * Provider id used to dispatch the call (multi-provider support).
+   * Defaults to `'openrouter'` to preserve legacy behaviour for catalogs
+   * persisted before the multi-provider feature shipped.
+   */
+  providerId?: string
   tier: 'fast' | 'balanced' | 'premium'
   description: string
   /** Maximum context window in tokens */
