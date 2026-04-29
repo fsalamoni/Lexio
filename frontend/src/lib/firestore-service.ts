@@ -518,7 +518,7 @@ const AUTH_RETRYABLE_FIRESTORE_CODES = new Set([
   'permission-denied',
 ])
 
-const AUTH_ACCESS_FIRESTORE_CODES = new Set([
+const AUTH_RELATED_FIRESTORE_CODES = new Set([
   'permission-denied',
   'unauthenticated',
   'auth-session-invalid',
@@ -561,7 +561,7 @@ function isRetryableFirestoreError(error: unknown): boolean {
 
 function isAuthAccessFirestoreError(error: unknown): boolean {
   const code = getFirebaseErrorCode(error)
-  return Boolean(code && AUTH_ACCESS_FIRESTORE_CODES.has(code))
+  return Boolean(code && AUTH_RELATED_FIRESTORE_CODES.has(code))
 }
 
 function isSessionInvalidatingFirestoreError(error: unknown): boolean {

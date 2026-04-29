@@ -94,18 +94,25 @@ export function buildDashboardStats(snapshot: DashboardSnapshot): DashboardStats
     ...snapshot.thesisSessions.flatMap((session) => extractThesisSessionExecutions(session)),
   ]
   const usageSummary = buildUsageSummary(executions)
-  const completedDocuments = snapshot.documents.filter((doc) => doc.status === 'concluido' || doc.status === 'aprovado')
-  const processingDocuments = snapshot.documents.filter((doc) => doc.status === 'processando')
-  const pendingReviewDocuments = snapshot.documents.filter((doc) => doc.status === 'em_revisao' || doc.status === 'rascunho')
   const scores = snapshot.documents
     .map((doc) => doc.quality_score)
     .filter((score): score is number => score != null)
+  const counts = snapshot.documents.reduce((acc, doc) => {
+    if (doc.status === 'concluido' || doc.status === 'aprovado') acc.completed += 1
+    if (doc.status === 'processando') acc.processing += 1
+    if (doc.status === 'em_revisao' || doc.status === 'rascunho') acc.pendingReview += 1
+    return acc
+  }, {
+    completed: 0,
+    processing: 0,
+    pendingReview: 0,
+  })
 
   return {
     total_documents: snapshot.documents.length,
-    completed_documents: completedDocuments.length,
-    processing_documents: processingDocuments.length,
-    pending_review_documents: pendingReviewDocuments.length,
+    completed_documents: counts.completed,
+    processing_documents: counts.processing,
+    pending_review_documents: counts.pendingReview,
     average_quality_score: scores.length > 0 ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : null,
     total_cost_usd: usageSummary.total_cost_usd,
     average_duration_ms: null,
@@ -266,6 +273,7 @@ export function useDashboardData(periodDays: number) {
 
     if (IS_FIREBASE && userId) {
       if (!firebaseSnapshot) {
+        setDaily([])
         setChartLoading(false)
         return
       }
