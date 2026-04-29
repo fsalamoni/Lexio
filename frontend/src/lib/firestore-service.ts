@@ -519,8 +519,13 @@ const AUTH_RETRYABLE_FIRESTORE_CODES = new Set([
 ])
 
 const AUTH_ACCESS_FIRESTORE_CODES = new Set([
-  'unauthenticated',
   'permission-denied',
+  'unauthenticated',
+  'auth-session-invalid',
+])
+
+const SESSION_INVALIDATING_FIRESTORE_CODES = new Set([
+  'unauthenticated',
   'auth-session-invalid',
 ])
 
@@ -557,6 +562,11 @@ function isRetryableFirestoreError(error: unknown): boolean {
 function isAuthAccessFirestoreError(error: unknown): boolean {
   const code = getFirebaseErrorCode(error)
   return Boolean(code && AUTH_ACCESS_FIRESTORE_CODES.has(code))
+}
+
+function isSessionInvalidatingFirestoreError(error: unknown): boolean {
+  const code = getFirebaseErrorCode(error)
+  return Boolean(code && SESSION_INVALIDATING_FIRESTORE_CODES.has(code))
 }
 
 async function refreshCurrentUserToken(): Promise<boolean> {
@@ -640,7 +650,7 @@ async function withFirestoreRetry<T>(
   }
 
   // All attempts exhausted.
-  if (isAuthAccessFirestoreError(lastError)) {
+  if (isSessionInvalidatingFirestoreError(lastError)) {
     const shouldOpenCircuit = registerAuthAccessFailure()
     if (shouldOpenCircuit) {
       openAuthAccessCircuit(contextLabel, lastError)
@@ -649,6 +659,10 @@ async function withFirestoreRetry<T>(
     // Below the circuit threshold: bubble up the original error so the caller
     // can decide whether to retry, fall back, or surface a soft-toast — the
     // session itself is still considered live.
+    throw lastError
+  }
+
+  if (isAuthAccessFirestoreError(lastError)) {
     throw lastError
   }
 

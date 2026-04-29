@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, Palette } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
-import { getUserSettings, saveUserSettings } from '../lib/firestore-service'
+import { saveUserSettings } from '../lib/firestore-service'
 import {
   PLATFORM_SKINS,
   DEFAULT_SKIN_ID,
@@ -29,37 +29,14 @@ function storeSkinId(id: string): void {
 }
 
 export function useApplyPlatformSkin() {
-  const { userId } = useAuth()
-
   useEffect(() => {
-    let cancelled = false
-
-    async function resolve() {
-      let skinId = getStoredSkinId()
-
-      if (IS_FIREBASE && userId) {
-        try {
-          const settings = await getUserSettings(userId)
-          if (!cancelled && settings.platform_skin) {
-            skinId = settings.platform_skin
-            storeSkinId(skinId)
-          }
-        } catch { /* offline — use local cache */ }
-      }
-
-      if (!cancelled) {
-        const skin = findSkin(skinId)
-        if (skin.id === DEFAULT_SKIN_ID) {
-          clearSkinFromDocument()
-        } else {
-          applySkinToDocument(skin)
-        }
-      }
+    const skin = findSkin(getStoredSkinId())
+    if (skin.id === DEFAULT_SKIN_ID) {
+      clearSkinFromDocument()
+      return
     }
-
-    void resolve()
-    return () => { cancelled = true }
-  }, [userId])
+    applySkinToDocument(skin)
+  }, [])
 }
 
 function SkinSwatch({ skin, selected, onSelect }: { skin: PlatformSkin; selected: boolean; onSelect: () => void }) {
