@@ -30,6 +30,7 @@ const {
 
 vi.mock('firebase/auth', () => ({
   onAuthStateChanged: (...args: unknown[]) => mockOnAuthStateChanged(...args),
+  onIdTokenChanged: () => () => undefined,
 }))
 
 vi.mock('firebase/firestore', () => ({
