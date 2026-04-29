@@ -1640,6 +1640,21 @@ export async function getRecentDocuments(uid: string, count = 5): Promise<Docume
   return items
 }
 
+export async function getDashboardSnapshot(uid: string): Promise<{
+  documents: DocumentData[]
+  thesisSessions: ThesisAnalysisSessionData[]
+}> {
+  const [{ items }, thesisSessions] = await Promise.all([
+    listDocuments(uid),
+    listThesisAnalysisSessions(uid).catch(() => []),
+  ])
+
+  return {
+    documents: items,
+    thesisSessions,
+  }
+}
+
 export async function listThesisAnalysisSessions(uid: string): Promise<ThesisAnalysisSessionData[]> {
   const db = ensureFirestore()
   const effectiveUid = await resolveEffectiveUid(uid, 'listThesisAnalysisSessions')
