@@ -1,22 +1,27 @@
 /**
- * Client-side OpenRouter LLM client.
+ * Multi-provider LLM client.
  *
- * Calls the OpenRouter chat completions API directly from the browser.
- * OpenRouter supports CORS, so this works without a proxy/backend.
+ * Dispatches chat completion requests to the appropriate AI provider based on
+ * the model's owner (resolved via `provider-credentials`):
+ *  - `openrouter`        → POST openrouter chat/completions
+ *  - `openai-compatible` → POST {baseUrl}/chat/completions
+ *  - `anthropic`         → POST {baseUrl}/v1/messages (Anthropic dialect)
+ *  - `ollama`            → POST localhost OpenAI-compat endpoint
  *
- * The API key is resolved from the authenticated user's saved settings
- * (with environment fallback when configured).
+ * Public API (`callLLM`, `callLLMWithMessages`, `callLLMWithFallback`,
+ * `callLLMWithMessagesFallback`) preserves its historical signature so the
+ * dozens of pipelines keep working unchanged. The `apiKey` argument from
+ * legacy callers is now treated as an "OpenRouter override key" — if it
+ * matches the resolved provider it is used as-is; otherwise the resolver
+ * loads the proper key from the user's settings.
  */
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+import { resolveProviderCall, type ResolvedProviderCall } from './provider-credentials'
+import { PROVIDERS, type ProviderDefinition } from './providers'
+import { getCurrentUserId } from './firestore-service'
 
-/** Timeout in milliseconds for each OpenRouter request. */
 const REQUEST_TIMEOUT_MS = 120_000
-
-/** Maximum number of automatic retries on transient failures. */
 const MAX_RETRIES = 2
-
-/** Maximum number of retries specifically for empty LLM responses. */
 const MAX_EMPTY_RESPONSE_RETRIES = 2
 
 export interface LLMCallOptions {
@@ -42,14 +47,6 @@ function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
-/**
- * Perform a fetch with automatic retry on transient errors.
- * Retries up to MAX_RETRIES times with exponential back-off (1 s, 2 s).
- * Retries on network errors (TypeError).
- * Timeouts (AbortError) are surfaced immediately so the caller can switch
- * models faster instead of waiting multiple timeout windows on the same model.
- * A per-request AbortController enforces REQUEST_TIMEOUT_MS.
- */
 interface FetchWithRetryResult {
   response: Response
   retryCount: number
@@ -80,10 +77,7 @@ async function fetchWithRetry(url: string, options: RequestInit, externalSignal?
       const resp = await fetch(url, { ...options, signal: controller.signal })
       clearTimeout(timer)
       externalSignal?.removeEventListener('abort', onAbort)
-      return {
-        response: resp,
-        retryCount: attempt,
-      }
+      return { response: resp, retryCount: attempt }
     } catch (err) {
       clearTimeout(timer)
       externalSignal?.removeEventListener('abort', onAbort)
@@ -95,45 +89,26 @@ async function fetchWithRetry(url: string, options: RequestInit, externalSignal?
       }
 
       if (isTimeout) {
-        lastError = new TransientLLMError(`Requisição ao OpenRouter excedeu o tempo limite (${REQUEST_TIMEOUT_MS / 1000}s)`)
-      } else {
-        lastError = err as Error
-      }
-
-      // Timeout is handled immediately by the fallback layer to reduce latency.
-      if (isTimeout) {
+        lastError = new TransientLLMError(`Requisição excedeu o tempo limite (${REQUEST_TIMEOUT_MS / 1000}s)`)
         throw lastError
       }
-
-      // Retry on transport/network errors only.
-      if (isNetworkError && attempt < MAX_RETRIES) {
-        continue
-      }
+      lastError = err as Error
+      if (isNetworkError && attempt < MAX_RETRIES) continue
       throw lastError
     }
   }
   throw lastError ?? new Error('Falha de rede desconhecida')
 }
 
-/**
- * Custom error thrown when a model is unavailable on OpenRouter
- * (404 / "no endpoints found"). Callers should catch this to display
- * a specific warning to the user with the affected model name.
- */
 export class ModelUnavailableError extends Error {
   public readonly modelId: string
   constructor(modelId: string) {
-    super(`Modelo "${modelId}" indisponível no OpenRouter (sem endpoints). Altere este modelo nas configurações.`)
+    super(`Modelo "${modelId}" indisponível no provedor (sem endpoints). Altere este modelo nas configurações.`)
     this.name = 'ModelUnavailableError'
     this.modelId = modelId
   }
 }
 
-/**
- * Custom error thrown on transient LLM failures (empty response, timeout).
- * Callers like callLLMWithFallback can catch this to transparently retry
- * with a fallback model.
- */
 export class TransientLLMError extends Error {
   constructor(message: string) {
     super(message)
@@ -153,18 +128,6 @@ function isModelUnavailableResponse(status: number, errorBody: string): boolean 
   return false
 }
 
-/**
- * Detects transient OpenRouter / upstream-provider errors that should NOT crash
- * the agent and should instead trigger the user-configured fallback chain.
- *
- * Includes:
- *  - 408 Request Timeout
- *  - 425 Too Early
- *  - 429 Too Many Requests / rate-limit
- *  - 500/502/503/504 upstream errors (e.g. "The operation was aborted" 504)
- *  - 524 (Cloudflare timeout)
- *  - Bodies containing "operation was aborted" / "timed out" / "overloaded"
- */
 function isTransientUpstreamResponse(status: number, errorBody: string): boolean {
   if (status === 408 || status === 425 || status === 429) return true
   if (status === 500 || status === 502 || status === 503 || status === 504) return true
@@ -177,40 +140,15 @@ function isTransientUpstreamResponse(status: number, errorBody: string): boolean
   return false
 }
 
-/**
- * Historically used as a "safe pinch-hitter" when the user picked a `:free` /
- * `:experimental` model that started returning errors. Per product policy we
- * NO LONGER fall back to a model the user did not explicitly choose; this
- * constant is kept for backward compatibility with callers that explicitly
- * pass it as a fallback candidate.
- *
- * Updated to the current stable Google Gemini text model after the 2.0-Flash
- * family was deprecated upstream (returning 404 "model is no longer
- * available" on OpenRouter).
- *
- * @deprecated Pass an explicit user-chosen fallback list to
- *   `callLLMWithFallback` / `callLLMWithMessagesFallback` instead of relying
- *   on hardcoded fallbacks.
- */
 export const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.5-flash'
 
 function isRecoverableLLMError(err: unknown): err is ModelUnavailableError | TransientLLMError {
   return err instanceof ModelUnavailableError || err instanceof TransientLLMError
 }
 
-/**
- * Build the ordered list of fallback models to try when the primary call fails.
- *
- * Strict policy: only models explicitly provided by the caller (i.e. chosen by
- * the user in their settings) are eligible. The failed primary model and any
- * empty / duplicate entries are removed from the chain. We never silently
- * inject a model the user did not pick.
- */
 function buildFallbackCandidates(model: string, fallbackModel: string | readonly string[]): string[] {
-  const raw = Array.isArray(fallbackModel)
-    ? fallbackModel
+  const raw = Array.isArray(fallbackModel) ? fallbackModel
     : (typeof fallbackModel === 'string' ? [fallbackModel] : [])
-
   const unique: string[] = []
   for (const candidate of raw) {
     if (typeof candidate !== 'string') continue
@@ -244,17 +182,283 @@ export interface LLMOperationalMeta {
   totalRetryCount: number
 }
 
-/**
- * Call OpenRouter chat completion.
- *
- * @param apiKey   - OpenRouter API key (sk-or-v1-…)
- * @param system   - System prompt
- * @param user     - User prompt
- * @param model    - Model identifier (default: anthropic/claude-3.5-haiku)
- * @param maxTokens - Max output tokens
- * @param temperature - Sampling temperature
- * @returns Structured result with content and usage metadata
- */
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+// ── Provider dispatch ─────────────────────────────────────────────────────────
+
+interface ProviderRequestPlan {
+  url: string
+  headers: Record<string, string>
+  body: string
+  parseResponse: (raw: string) => { content: string; tokensIn: number; tokensOut: number; cost?: number }
+}
+
+function buildOpenRouterPlan(
+  resolved: ResolvedProviderCall,
+  messages: ChatMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number,
+): ProviderRequestPlan {
+  const url = `${resolved.baseUrl.replace(/\/+$/, '')}/api/v1/chat/completions`
+  return {
+    url,
+    headers: {
+      'Authorization': `Bearer ${resolved.apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://lexio.web.app',
+      'X-Title': 'Lexio',
+    },
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+    parseResponse: parseOpenAIChatResponse,
+  }
+}
+
+function buildOpenAICompatiblePlan(
+  resolved: ResolvedProviderCall,
+  messages: ChatMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number,
+): ProviderRequestPlan {
+  const url = `${resolved.baseUrl.replace(/\/+$/, '')}/chat/completions`
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  if (resolved.provider.authHeader) {
+    headers[resolved.provider.authHeader] = `${resolved.provider.authPrefix ?? ''}${resolved.apiKey}`
+  }
+  if (resolved.provider.requiresDangerousBrowserHeader && resolved.provider.id === 'openai') {
+    // OpenAI flags browser usage with this header (read by their JS SDK):
+    headers['OpenAI-Beta'] = 'browser=dangerously-allow'
+  }
+  return {
+    url,
+    headers,
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+    parseResponse: parseOpenAIChatResponse,
+  }
+}
+
+function buildAnthropicPlan(
+  resolved: ResolvedProviderCall,
+  messages: ChatMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number,
+): ProviderRequestPlan {
+  const url = `${resolved.baseUrl.replace(/\/+$/, '')}/v1/messages`
+  // Anthropic separates the system prompt from the messages list.
+  const systemMessages = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
+  const conversation = messages.filter(m => m.role !== 'system').map(m => ({
+    role: m.role === 'assistant' ? 'assistant' : 'user',
+    content: m.content,
+  }))
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'x-api-key': resolved.apiKey,
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true',
+  }
+  return {
+    url,
+    headers,
+    body: JSON.stringify({
+      model,
+      messages: conversation,
+      system: systemMessages || undefined,
+      max_tokens: maxTokens,
+      temperature,
+    }),
+    parseResponse: parseAnthropicMessagesResponse,
+  }
+}
+
+function parseOpenAIChatResponse(raw: string): { content: string; tokensIn: number; tokensOut: number; cost?: number } {
+  const data = JSON.parse(raw) as Record<string, unknown>
+  const choices = data.choices as Array<{ message?: { content?: string } }> | undefined
+  const content = choices?.[0]?.message?.content ?? ''
+  const usage = (data.usage ?? {}) as Record<string, number>
+  return {
+    content,
+    tokensIn: usage.prompt_tokens ?? usage.input_tokens ?? 0,
+    tokensOut: usage.completion_tokens ?? usage.output_tokens ?? 0,
+    cost: typeof usage.cost === 'number' ? usage.cost : undefined,
+  }
+}
+
+function parseAnthropicMessagesResponse(raw: string): { content: string; tokensIn: number; tokensOut: number; cost?: number } {
+  const data = JSON.parse(raw) as Record<string, unknown>
+  const blocks = (data.content ?? []) as Array<{ type?: string; text?: string }>
+  const text = blocks.filter(b => b.type === 'text').map(b => b.text ?? '').join('')
+  const usage = (data.usage ?? {}) as Record<string, number>
+  return {
+    content: text,
+    tokensIn: usage.input_tokens ?? 0,
+    tokensOut: usage.output_tokens ?? 0,
+  }
+}
+
+function buildPlan(
+  resolved: ResolvedProviderCall,
+  messages: ChatMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number,
+): ProviderRequestPlan {
+  switch (resolved.provider.dialect) {
+    case 'openrouter':
+      return buildOpenRouterPlan(resolved, messages, model, maxTokens, temperature)
+    case 'anthropic':
+      return buildAnthropicPlan(resolved, messages, model, maxTokens, temperature)
+    case 'ollama':
+    case 'openai-compatible':
+      return buildOpenAICompatiblePlan(resolved, messages, model, maxTokens, temperature)
+    case 'audio-only':
+      throw new Error(`Provedor "${resolved.provider.label}" não suporta chamadas de texto.`)
+  }
+}
+
+function estimateCost(model: string, providerId: string, tokensIn: number, tokensOut: number): number {
+  const PRICING: Record<string, [number, number]> = {
+    'anthropic/claude-3.5-haiku':         [0.80,  4.00],
+    'anthropic/claude-3-haiku':           [0.25,  1.25],
+    'anthropic/claude-haiku-4-5':         [0.80,  4.00],
+    'anthropic/claude-sonnet-4':          [3.00, 15.00],
+    'anthropic/claude-sonnet-4-5':        [3.00, 15.00],
+    'anthropic/claude-3.5-sonnet':        [3.00, 15.00],
+    'anthropic/claude-3-opus':            [15.00, 75.00],
+    'anthropic/claude-opus-4':            [15.00, 75.00],
+    'openai/gpt-4o':                      [2.50, 10.00],
+    'openai/gpt-4o-mini':                 [0.15,  0.60],
+    'google/gemini-2.5-flash':            [0.30,  2.50],
+    'google/gemini-2.5-flash-lite':       [0.10,  0.40],
+    'google/gemini-2.0-flash':            [0.075, 0.30],
+    'google/gemini-2.0-flash-lite':       [0.038, 0.15],
+    'meta-llama/llama-3.1-8b-instruct':   [0.06,  0.06],
+  }
+  const compositeKey = `${providerId}/${model}`
+  let rates = PRICING[model] ?? PRICING[compositeKey]
+  if (!rates) {
+    const knownKey = Object.keys(PRICING).find(k => model.startsWith(k.split('/')[0]))
+    rates = knownKey ? PRICING[knownKey] : [1.00, 5.00]
+  }
+  return parseFloat(((tokensIn * rates[0] + tokensOut * rates[1]) / 1_000_000).toFixed(6))
+}
+
+async function resolveCallContext(
+  legacyApiKey: string | undefined,
+  model: string,
+): Promise<ResolvedProviderCall> {
+  const uid = getCurrentUserId() ?? undefined
+  try {
+    const resolved = await resolveProviderCall(model, uid)
+    if (legacyApiKey && resolved.provider.id === 'openrouter') {
+      // Honour explicit override when the call still points at OpenRouter.
+      return { ...resolved, apiKey: legacyApiKey }
+    }
+    return resolved
+  } catch (err) {
+    // Fallback when the user has no settings yet: assume OpenRouter with the
+    // legacy key. This preserves the historical behaviour for fresh installs.
+    if (!legacyApiKey) throw err
+    return {
+      provider: PROVIDERS.openrouter as ProviderDefinition,
+      apiKey: legacyApiKey,
+      baseUrl: PROVIDERS.openrouter.baseUrl,
+    }
+  }
+}
+
+async function executeChatCompletion(
+  legacyApiKey: string | undefined,
+  messages: ChatMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number,
+  options?: LLMCallOptions,
+): Promise<LLMResult> {
+  const t0 = performance.now()
+  const resolved = await resolveCallContext(legacyApiKey, model)
+  const plan = buildPlan(resolved, messages, model, maxTokens, temperature)
+
+  for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_RESPONSE_RETRIES; emptyAttempt++) {
+    if (options?.signal?.aborted) {
+      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    }
+    if (emptyAttempt > 0) {
+      const delayMs = 1500 * emptyAttempt
+      console.warn(`[LLM] Resposta vazia, tentativa ${emptyAttempt + 1}/${MAX_EMPTY_RESPONSE_RETRIES + 1} após ${delayMs}ms...`)
+      await sleepWithSignal(delayMs, options?.signal)
+    }
+
+    const { response, retryCount } = await fetchWithRetry(
+      plan.url,
+      { method: 'POST', headers: plan.headers, body: plan.body },
+      options?.signal,
+    )
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => '')
+      if (isModelUnavailableResponse(response.status, errorBody)) {
+        throw new ModelUnavailableError(model)
+      }
+      if (isTransientUpstreamResponse(response.status, errorBody)) {
+        throw new TransientLLMError(`${resolved.provider.label} API error ${response.status}: ${errorBody.slice(0, 300)}`)
+      }
+      throw new Error(`${resolved.provider.label} API error ${response.status}: ${errorBody}`)
+    }
+
+    const rawText = await response.text()
+    if (options?.signal?.aborted) {
+      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    }
+    if (!rawText || rawText.trim().length === 0) {
+      if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
+      throw new TransientLLMError(`${resolved.provider.label} retornou resposta vazia`)
+    }
+
+    let parsed
+    try {
+      parsed = plan.parseResponse(rawText)
+    } catch (parseErr) {
+      throw new Error(
+        `${resolved.provider.label} retornou JSON inválido (${(parseErr as Error).message}). ` +
+        `Resposta inicia com: ${rawText.slice(0, 200)}`,
+      )
+    }
+
+    if (!parsed.content) {
+      if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
+      throw new TransientLLMError(`${resolved.provider.label} retornou conteúdo vazio`)
+    }
+
+    const durationMs = Math.round(performance.now() - t0)
+    const cost_usd = parsed.cost ?? estimateCost(model, resolved.provider.id, parsed.tokensIn, parsed.tokensOut)
+    return {
+      content: parsed.content,
+      model,
+      tokens_in: parsed.tokensIn,
+      tokens_out: parsed.tokensOut,
+      cost_usd,
+      duration_ms: durationMs,
+      operational: {
+        requestedModel: model,
+        resolvedModel: model,
+        fallbackUsed: false,
+        networkRetryCount: retryCount,
+        emptyRetryCount: emptyAttempt,
+        totalRetryCount: retryCount + emptyAttempt,
+      },
+    }
+  }
+
+  throw new TransientLLMError(`${resolved.provider.label} retornou resposta vazia`)
+}
+
 export async function callLLM(
   apiKey: string,
   system: string,
@@ -264,230 +468,30 @@ export async function callLLM(
   temperature = 0.3,
   options?: LLMCallOptions,
 ): Promise<LLMResult> {
-  const t0 = performance.now()
-
-  const body = JSON.stringify({
-    model,
-    messages: [
+  return executeChatCompletion(
+    apiKey,
+    [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
-    max_tokens: maxTokens,
+    model,
+    maxTokens,
     temperature,
-  })
-  const headers = {
-    'Authorization': `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-    'HTTP-Referer': 'https://lexio.app',
-    'X-Title': 'Lexio',
-  }
-
-  // Retry loop for empty responses (separate from fetchWithRetry network retries)
-  for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_RESPONSE_RETRIES; emptyAttempt++) {
-    if (options?.signal?.aborted) {
-      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
-    }
-    if (emptyAttempt > 0) {
-      const delayMs = 1500 * emptyAttempt
-      console.warn(`[LLM] Resposta vazia, tentativa ${emptyAttempt + 1}/${MAX_EMPTY_RESPONSE_RETRIES + 1} após ${delayMs}ms...`)
-      await sleepWithSignal(delayMs, options?.signal)
-    }
-
-    const { response: resp, retryCount: networkRetryCount } = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body }, options?.signal)
-
-    if (!resp.ok) {
-      const errorBody = await resp.text().catch(() => '')
-      if (isModelUnavailableResponse(resp.status, errorBody)) {
-        console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
-        throw new ModelUnavailableError(model)
-      }
-      if (isTransientUpstreamResponse(resp.status, errorBody)) {
-        console.warn(`[LLM] Erro transitório (${resp.status}) no modelo "${model}": ${errorBody.slice(0, 200)}`)
-        throw new TransientLLMError(`OpenRouter API error ${resp.status}: ${errorBody.slice(0, 300)}`)
-      }
-      throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
-    }
-
-    const rawText = await resp.text()
-    if (options?.signal?.aborted) {
-      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
-    }
-    if (!rawText || rawText.trim().length === 0) {
-      if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
-      throw new TransientLLMError('OpenRouter returned empty response body')
-    }
-
-    let data: Record<string, unknown>
-    try {
-      data = JSON.parse(rawText)
-    } catch (parseErr) {
-      throw new Error(
-        `OpenRouter returned invalid JSON (${(parseErr as Error).message}). ` +
-        `Response starts with: ${rawText.slice(0, 200)}`,
-      )
-    }
-
-    const choice = (data as Record<string, unknown[]>).choices?.[0] as
-      | { message?: { content?: string } }
-      | undefined
-    if (!choice?.message?.content) {
-      if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
-      throw new TransientLLMError('OpenRouter returned empty response')
-    }
-
-    const usage = (data.usage ?? {}) as Record<string, number>
-    const durationMs = Math.round(performance.now() - t0)
-
-    const tokensIn  = usage.prompt_tokens ?? 0
-    const tokensOut = usage.completion_tokens ?? 0
-
-    const cost_usd: number = typeof usage.cost === 'number'
-      ? usage.cost
-      : estimateCost(model, tokensIn, tokensOut)
-
-    return {
-      content: choice.message.content,
-      model,
-      tokens_in: tokensIn,
-      tokens_out: tokensOut,
-      cost_usd,
-      duration_ms: durationMs,
-      operational: {
-        requestedModel: model,
-        resolvedModel: model,
-        fallbackUsed: false,
-        networkRetryCount,
-        emptyRetryCount: emptyAttempt,
-        totalRetryCount: networkRetryCount + emptyAttempt,
-      },
-    }
-  }
-
-  // Unreachable — the loop always returns or throws. Required for TypeScript control-flow.
-  throw new TransientLLMError('OpenRouter returned empty response')
+    options,
+  )
 }
 
-/**
- * Call OpenRouter chat completion with a full messages array.
- * Use this for multi-turn conversations where you need to pass prior messages.
- *
- * @param apiKey  - OpenRouter API key
- * @param messages - Array of {role, content} messages (system, user, assistant)
- * @param model   - Model identifier
- * @param maxTokens - Max output tokens
- * @param temperature - Sampling temperature
- */
 export async function callLLMWithMessages(
   apiKey: string,
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  messages: Array<ChatMessage>,
   model: string,
   maxTokens = 4000,
   temperature = 0.3,
   options?: LLMCallOptions,
 ): Promise<LLMResult> {
-  const t0 = performance.now()
-
-  const body = JSON.stringify({ model, messages, max_tokens: maxTokens, temperature })
-  const headers = {
-    'Authorization': `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-    'HTTP-Referer': 'https://lexio.app',
-    'X-Title': 'Lexio',
-  }
-
-  // Retry loop for empty responses (separate from fetchWithRetry network retries)
-  for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_RESPONSE_RETRIES; emptyAttempt++) {
-    if (options?.signal?.aborted) {
-      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
-    }
-    if (emptyAttempt > 0) {
-      const delayMs = 1500 * emptyAttempt
-      console.warn(`[LLM] Resposta vazia, tentativa ${emptyAttempt + 1}/${MAX_EMPTY_RESPONSE_RETRIES + 1} após ${delayMs}ms...`)
-      await sleepWithSignal(delayMs, options?.signal)
-    }
-
-    const { response: resp, retryCount: networkRetryCount } = await fetchWithRetry(OPENROUTER_URL, { method: 'POST', headers, body }, options?.signal)
-
-    if (!resp.ok) {
-      const errorBody = await resp.text().catch(() => '')
-      if (isModelUnavailableResponse(resp.status, errorBody)) {
-        console.warn(`[LLM] Modelo "${model}" indisponível no OpenRouter: ${errorBody.slice(0, 200)}`)
-        throw new ModelUnavailableError(model)
-      }
-      if (isTransientUpstreamResponse(resp.status, errorBody)) {
-        console.warn(`[LLM] Erro transitório (${resp.status}) no modelo "${model}": ${errorBody.slice(0, 200)}`)
-        throw new TransientLLMError(`OpenRouter API error ${resp.status}: ${errorBody.slice(0, 300)}`)
-      }
-      throw new Error(`OpenRouter API error ${resp.status}: ${errorBody}`)
-    }
-
-    const rawText = await resp.text()
-    if (options?.signal?.aborted) {
-      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
-    }
-    if (!rawText || rawText.trim().length === 0) {
-      if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
-      throw new TransientLLMError('OpenRouter returned empty response body')
-    }
-
-    let data: Record<string, unknown>
-    try {
-      data = JSON.parse(rawText)
-    } catch (parseErr) {
-      throw new Error(
-        `OpenRouter returned invalid JSON (${(parseErr as Error).message}). ` +
-        `Response starts with: ${rawText.slice(0, 200)}`,
-      )
-    }
-
-    const choice = (data as Record<string, unknown[]>).choices?.[0] as
-      | { message?: { content?: string } }
-      | undefined
-    if (!choice?.message?.content) {
-      if (emptyAttempt < MAX_EMPTY_RESPONSE_RETRIES) continue
-      throw new TransientLLMError('OpenRouter returned empty response')
-    }
-
-    const usage = (data.usage ?? {}) as Record<string, number>
-    const durationMs = Math.round(performance.now() - t0)
-    const tokensIn  = usage.prompt_tokens ?? 0
-    const tokensOut = usage.completion_tokens ?? 0
-    const cost_usd: number = typeof usage.cost === 'number'
-      ? usage.cost
-      : estimateCost(model, tokensIn, tokensOut)
-
-    return {
-      content: choice.message.content,
-      model,
-      tokens_in: tokensIn,
-      tokens_out: tokensOut,
-      cost_usd,
-      duration_ms: durationMs,
-      operational: {
-        requestedModel: model,
-        resolvedModel: model,
-        fallbackUsed: false,
-        networkRetryCount,
-        emptyRetryCount: emptyAttempt,
-        totalRetryCount: networkRetryCount + emptyAttempt,
-      },
-    }
-  }
-
-  // Unreachable — the loop always returns or throws. Required for TypeScript control-flow.
-  throw new TransientLLMError('OpenRouter returned empty response')
+  return executeChatCompletion(apiKey, messages, model, maxTokens, temperature, options)
 }
 
-/**
- * Call OpenRouter with automatic fallback when a model is unavailable or
- * encounters transient errors (empty response, timeout, upstream 5xx/429).
- *
- * @param fallbackModel - User-chosen fallback model(s) to try in order when
- *   `model` fails. Pass an array to provide a priority list (e.g. from the
- *   user's "Fallback de Modelos" settings card). The failed primary model
- *   and any duplicate / empty entries are automatically skipped. Per product
- *   policy we never inject a fallback the user did not explicitly choose.
- */
 export async function callLLMWithFallback(
   apiKey: string,
   system: string,
@@ -505,12 +509,7 @@ export async function callLLMWithFallback(
     if (isRecoverableLLMError(err)) {
       const fallbackCandidates = buildFallbackCandidates(model, fallbackModel)
       let lastRecoverableError: ModelUnavailableError | TransientLLMError = err
-
       for (const fallbackCandidate of fallbackCandidates) {
-        console.warn(
-          `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
-          ` Tentando fallback: "${fallbackCandidate}".`,
-        )
         try {
           const fallbackResult = await callLLM(apiKey, system, user, fallbackCandidate, maxTokens, temperature, options)
           return {
@@ -541,12 +540,9 @@ export async function callLLMWithFallback(
   }
 }
 
-/**
- * Like callLLMWithFallback but for multi-turn conversations (wraps callLLMWithMessages).
- */
 export async function callLLMWithMessagesFallback(
   apiKey: string,
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  messages: Array<ChatMessage>,
   model: string,
   fallbackModel: string | readonly string[],
   maxTokens = 4000,
@@ -560,12 +556,7 @@ export async function callLLMWithMessagesFallback(
     if (isRecoverableLLMError(err)) {
       const fallbackCandidates = buildFallbackCandidates(model, fallbackModel)
       let lastRecoverableError: ModelUnavailableError | TransientLLMError = err
-
       for (const fallbackCandidate of fallbackCandidates) {
-        console.warn(
-          `[LLM] Modelo "${model}" falhou (${err instanceof ModelUnavailableError ? 'indisponível' : 'erro transitório'}).` +
-          ` Tentando fallback: "${fallbackCandidate}".`,
-        )
         try {
           const fallbackResult = await callLLMWithMessages(apiKey, messages, fallbackCandidate, maxTokens, temperature, options)
           return {
@@ -594,37 +585,4 @@ export async function callLLMWithMessagesFallback(
     }
     throw err
   }
-}
-
-/**
- * Estimate LLM cost from token counts using a model pricing table (USD per 1M tokens).
- * Values sourced from OpenRouter pricing page (approximate).
- */
-function estimateCost(model: string, tokensIn: number, tokensOut: number): number {
-  const PRICING: Record<string, [number, number]> = {
-    // [input $/1M, output $/1M]
-    'anthropic/claude-3.5-haiku':         [0.80,  4.00],
-    'anthropic/claude-3-haiku':           [0.25,  1.25],
-    'anthropic/claude-haiku-4-5':         [0.80,  4.00],
-    'anthropic/claude-sonnet-4':          [3.00, 15.00],
-    'anthropic/claude-sonnet-4-5':        [3.00, 15.00],
-    'anthropic/claude-3.5-sonnet':        [3.00, 15.00],
-    'anthropic/claude-3-opus':            [15.00, 75.00],
-    'anthropic/claude-opus-4':            [15.00, 75.00],
-    'openai/gpt-4o':                      [2.50, 10.00],
-    'openai/gpt-4o-mini':                 [0.15,  0.60],
-    'google/gemini-2.5-flash':            [0.30,  2.50],
-    'google/gemini-2.5-flash-lite':       [0.10,  0.40],
-    'google/gemini-2.0-flash':            [0.075, 0.30],
-    'google/gemini-2.0-flash-lite':       [0.038, 0.15],
-    'meta-llama/llama-3.1-8b-instruct':   [0.06,  0.06],
-  }
-
-  // Exact match first, then prefix match
-  let rates = PRICING[model]
-  if (!rates) {
-    const key = Object.keys(PRICING).find(k => model.startsWith(k.split('/')[0]))
-    rates = key ? PRICING[key] : [1.00, 5.00] // conservative fallback
-  }
-  return parseFloat(((tokensIn * rates[0] + tokensOut * rates[1]) / 1_000_000).toFixed(6))
 }

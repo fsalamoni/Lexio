@@ -291,6 +291,7 @@ export function openRouterToModelOption(or: OpenRouterModel): ModelOption {
     id,
     label,
     provider,
+    providerId: 'openrouter',
     tier,
     description: desc || `Modelo ${provider} via OpenRouter`,
     contextWindow: or.context_length ?? or.top_provider?.context_length ?? 128_000,
@@ -299,6 +300,124 @@ export function openRouterToModelOption(or: OpenRouterModel): ModelOption {
     isFree,
     agentFit,
     capabilities: inferCapabilities(or.architecture?.modality),
+  }
+}
+
+// ── Per-provider catalog fetcher ──────────────────────────────────────────────
+
+import { PROVIDERS, type ProviderId, type ProviderDefinition } from './providers'
+
+interface RawProviderModel {
+  id: string
+  name?: string
+  display_name?: string
+  description?: string
+  context_length?: number
+  context_window?: number
+  pricing?: { prompt?: string; completion?: string; input?: string; output?: string }
+  capabilities?: string[]
+}
+
+/** Convert a static or fetched provider entry into a normalized ModelOption. */
+export function providerEntryToModelOption(
+  provider: ProviderDefinition,
+  raw: RawProviderModel | { id: string; label?: string; description?: string; contextWindow?: number; inputCost?: number; outputCost?: number; isFree?: boolean; tier?: 'fast' | 'balanced' | 'premium'; capabilities?: ModelCapability[] },
+): ModelOption {
+  const id = raw.id
+  const labelSource = (raw as RawProviderModel).display_name
+    ?? (raw as RawProviderModel).name
+    ?? (raw as { label?: string }).label
+    ?? id
+  const label = labelSource.replace(/^[^:]+:\s*/, '').trim() || id
+  const tier = (raw as { tier?: 'fast' | 'balanced' | 'premium' }).tier ?? inferTier(id, label)
+  const inputCostRaw = (raw as RawProviderModel).pricing?.prompt
+    ?? (raw as RawProviderModel).pricing?.input
+  const outputCostRaw = (raw as RawProviderModel).pricing?.completion
+    ?? (raw as RawProviderModel).pricing?.output
+  const inputCost = (raw as { inputCost?: number }).inputCost ?? (inputCostRaw ? parseFloat(inputCostRaw) * 1_000_000 : 0)
+  const outputCost = (raw as { outputCost?: number }).outputCost ?? (outputCostRaw ? parseFloat(outputCostRaw) * 1_000_000 : 0)
+  const isFree = (raw as { isFree?: boolean }).isFree ?? (inputCost === 0 && outputCost === 0)
+  const contextWindow = (raw as { contextWindow?: number }).contextWindow
+    ?? (raw as RawProviderModel).context_length
+    ?? (raw as RawProviderModel).context_window
+    ?? 128_000
+  const explicitCaps = (raw as { capabilities?: ModelCapability[] }).capabilities
+  const capabilities: ModelCapability[] = explicitCaps && explicitCaps.length > 0
+    ? explicitCaps
+    : provider.capabilities.includes('text') ? ['text'] : (provider.capabilities as ModelCapability[])
+
+  return {
+    id,
+    label,
+    provider: provider.label,
+    providerId: provider.id,
+    tier,
+    description: (raw as RawProviderModel).description ?? `Modelo ${provider.label}`,
+    contextWindow,
+    inputCost,
+    outputCost,
+    isFree,
+    agentFit: inferFitScores(tier, id),
+    capabilities,
+  }
+}
+
+/**
+ * Fetch the available model list for a given provider. Falls back to the
+ * provider's static catalog when:
+ *  - the provider has no remote endpoint (Cohere compat / Qwen / Perplexity)
+ *  - the request fails (typical with local Ollama not running)
+ *  - the response shape isn't recognised
+ */
+export async function fetchProviderModels(
+  providerId: ProviderId,
+  apiKey: string,
+  baseUrlOverride?: string,
+): Promise<ModelOption[]> {
+  const provider = PROVIDERS[providerId]
+  if (!provider) return []
+
+  if (provider.id === 'openrouter') {
+    const orModels = await fetchOpenRouterModels()
+    return orModels.map(openRouterToModelOption)
+  }
+
+  const useStatic = !provider.modelsListUrl || provider.modelsListShape === 'static'
+  if (useStatic) {
+    return provider.staticModels.map(m => providerEntryToModelOption(provider, m))
+  }
+
+  const url = baseUrlOverride && provider.id === 'ollama'
+    ? `${baseUrlOverride.replace(/\/+$/, '')}/api/tags`
+    : provider.modelsListUrl
+
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (provider.authHeader && apiKey) {
+      headers[provider.authHeader] = `${provider.authPrefix ?? ''}${apiKey}`
+    }
+    const res = await fetch(url, { headers })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const json = await res.json() as Record<string, unknown>
+
+    // Normalize across the three known response shapes.
+    if (provider.modelsListShape === 'anthropic') {
+      const data = (json.data ?? []) as RawProviderModel[]
+      return data.map(m => providerEntryToModelOption(provider, m))
+    }
+    if (provider.modelsListShape === 'ollama') {
+      const data = (json.models ?? []) as Array<{ name: string; details?: { parameter_size?: string } }>
+      return data.map(m => providerEntryToModelOption(provider, { id: m.name, label: m.name }))
+    }
+    // openai-shape
+    const data = (json.data ?? []) as RawProviderModel[]
+    if (!Array.isArray(data) || data.length === 0) {
+      return provider.staticModels.map(m => providerEntryToModelOption(provider, m))
+    }
+    return data.map(m => providerEntryToModelOption(provider, m))
+  } catch (err) {
+    console.warn(`[provider-catalog] Falha ao buscar modelos de ${provider.label}:`, err)
+    return provider.staticModels.map(m => providerEntryToModelOption(provider, m))
   }
 }
 

@@ -55,9 +55,35 @@ export interface FallbackPriorityConfig {
   writing?: FallbackPriorityList
 }
 
+/**
+ * Per-provider settings (multi-provider support).
+ *
+ * Each entry describes whether the user has enabled a provider, plus optional
+ * provider-specific overrides like custom base URLs (Ollama / self-hosted) and
+ * the persisted catalog of models the user added from that provider.
+ */
+export interface ProviderSettingEntry {
+  enabled: boolean
+  /** Override base URL for self-hosted gateways (Ollama, OpenAI-compatible proxies). */
+  base_url?: string
+  /** Persisted models the user picked from the provider's own catalog. */
+  saved_models?: ModelOption[]
+  /** Last time the model list was refreshed from the provider. */
+  last_synced_at?: string
+}
+
+export type ProviderSettingsMap = Record<string, ProviderSettingEntry>
+
 export interface UserSettingsData {
   legacy_migrated_at?: string
   api_keys?: Record<string, string>
+  /**
+   * Multi-provider configuration. Holds enabled state + per-provider catalog
+   * for Anthropic, OpenAI, DeepSeek, Kimi, Qwen, ElevenLabs, Groq, Ollama and
+   * any other provider declared in `lib/providers.ts`. Absent means the user
+   * has only OpenRouter configured (legacy default).
+   */
+  provider_settings?: ProviderSettingsMap
   last_jurisprudence_tribunal_aliases?: string[]
   model_catalog?: ModelOption[]
   agent_models?: Record<string, string>

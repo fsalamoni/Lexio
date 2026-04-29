@@ -559,13 +559,13 @@ export default function ModelCatalogCard() {
               <Library className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">Catálogo de Modelos</h2>
+              <h2 className="text-lg font-semibold text-[var(--v2-ink-strong)]">Catálogo Pessoal</h2>
               <p className="text-sm text-[var(--v2-ink-soft)]">
-                {catalog.length} modelo{catalog.length !== 1 ? 's' : ''} disponíveis
+                {catalog.length} modelo{catalog.length !== 1 ? 's' : ''} no seu catálogo
                 {' · '}
                 {catalog.filter(m => m.isFree).length} gratuitos
                 {' · '}
-                Lista pessoal persistida para os seus seletores de agentes
+                Agrega modelos de todos os provedores que você habilitou
               </p>
             </div>
           </div>
