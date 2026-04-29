@@ -81,6 +81,9 @@ api.interceptors.request.use(async (config) => {
     console.warn('[api] Failed to resolve auth token for request:', error)
     token = readStoredAuthToken()
   }
+  if (!token && IS_FIREBASE && firebaseAuth?.currentUser) {
+    console.warn('[api] Proceeding without bearer token even though a Firebase user is present.')
+  }
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })

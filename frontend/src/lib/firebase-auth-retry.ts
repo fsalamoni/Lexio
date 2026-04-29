@@ -19,6 +19,10 @@ export function shouldRetryTransientFirebaseAuthError(error: unknown): boolean {
   const code = getFirebaseErrorCode(error)
   if (code === 'unauthenticated') return true
 
+  // Intentionally do not retry permission-denied here. Firestore service
+  // already exhausts its own permission/token refresh loop before surfacing the
+  // error, so repeating the whole page-level operation only multiplies failed
+  // calls and can trip the auth circuit for an otherwise still-live session.
   const message = getErrorMessage(error)
   return /sessão do firebase não sincronizada/i.test(message)
 }
