@@ -518,9 +518,14 @@ const AUTH_RETRYABLE_FIRESTORE_CODES = new Set([
   'permission-denied',
 ])
 
-const AUTH_ACCESS_FIRESTORE_CODES = new Set([
-  'unauthenticated',
+const AUTH_RELATED_FIRESTORE_CODES = new Set([
   'permission-denied',
+  'unauthenticated',
+  'auth-session-invalid',
+])
+
+const SESSION_INVALIDATING_FIRESTORE_CODES = new Set([
+  'unauthenticated',
   'auth-session-invalid',
 ])
 
@@ -556,7 +561,12 @@ function isRetryableFirestoreError(error: unknown): boolean {
 
 function isAuthAccessFirestoreError(error: unknown): boolean {
   const code = getFirebaseErrorCode(error)
-  return Boolean(code && AUTH_ACCESS_FIRESTORE_CODES.has(code))
+  return Boolean(code && AUTH_RELATED_FIRESTORE_CODES.has(code))
+}
+
+function isSessionInvalidatingFirestoreError(error: unknown): boolean {
+  const code = getFirebaseErrorCode(error)
+  return Boolean(code && SESSION_INVALIDATING_FIRESTORE_CODES.has(code))
 }
 
 async function refreshCurrentUserToken(): Promise<boolean> {
@@ -640,7 +650,7 @@ async function withFirestoreRetry<T>(
   }
 
   // All attempts exhausted.
-  if (isAuthAccessFirestoreError(lastError)) {
+  if (isSessionInvalidatingFirestoreError(lastError)) {
     const shouldOpenCircuit = registerAuthAccessFailure()
     if (shouldOpenCircuit) {
       openAuthAccessCircuit(contextLabel, lastError)
@@ -649,6 +659,10 @@ async function withFirestoreRetry<T>(
     // Below the circuit threshold: bubble up the original error so the caller
     // can decide whether to retry, fall back, or surface a soft-toast — the
     // session itself is still considered live.
+    throw lastError
+  }
+
+  if (isAuthAccessFirestoreError(lastError)) {
     throw lastError
   }
 
@@ -1638,6 +1652,21 @@ export async function getByTypeStats(uid: string) {
 export async function getRecentDocuments(uid: string, count = 5): Promise<DocumentData[]> {
   const { items } = await listDocuments(uid, { limit: count })
   return items
+}
+
+export async function getDashboardSnapshot(uid: string): Promise<{
+  documents: DocumentData[]
+  thesisSessions: ThesisAnalysisSessionData[]
+}> {
+  const [{ items }, thesisSessions] = await Promise.all([
+    listDocuments(uid),
+    listThesisAnalysisSessions(uid).catch(() => []),
+  ])
+
+  return {
+    documents: items,
+    thesisSessions,
+  }
 }
 
 export async function listThesisAnalysisSessions(uid: string): Promise<ThesisAnalysisSessionData[]> {

@@ -5,11 +5,15 @@ import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from './firebase'
 import { withTransientFirebaseAuthRetry } from './firebase-auth-retry'
 import {
-  getStats as firestoreGetStats,
-  getRecentDocuments,
-  getDailyStats,
-  getByTypeStats,
+  buildUsageSummary,
+  extractDocumentUsageExecutions,
+  extractThesisSessionExecutions,
+} from './cost-analytics'
+import {
+  getDashboardSnapshot,
   isFirestoreSessionInvalidError,
+  type DocumentData,
+  type ThesisAnalysisSessionData,
 } from './firestore-service'
 
 export interface DashboardStats {
@@ -77,6 +81,122 @@ export function getResumableDocument(recent: DashboardRecentDoc[]) {
 }
 
 const AUTH_ERROR_TOAST_COOLDOWN_MS = 6_000
+const DEFAULT_RECENT_DOCUMENTS_LIMIT = 5
+
+type DashboardSnapshot = {
+  documents: DocumentData[]
+  thesisSessions: ThesisAnalysisSessionData[]
+}
+
+export function buildDashboardStats(snapshot: DashboardSnapshot): DashboardStats {
+  const executions = [
+    ...snapshot.documents.flatMap((doc) => extractDocumentUsageExecutions(doc)),
+    ...snapshot.thesisSessions.flatMap((session) => extractThesisSessionExecutions(session)),
+  ]
+  const usageSummary = buildUsageSummary(executions)
+  const scores = snapshot.documents
+    .map((doc) => doc.quality_score)
+    .filter((score): score is number => score != null)
+  const counts = snapshot.documents.reduce((acc, doc) => {
+    if (doc.status === 'concluido' || doc.status === 'aprovado') acc.completed += 1
+    if (doc.status === 'processando') acc.processing += 1
+    if (doc.status === 'em_revisao' || doc.status === 'rascunho') acc.pendingReview += 1
+    return acc
+  }, {
+    completed: 0,
+    processing: 0,
+    pendingReview: 0,
+  })
+
+  return {
+    total_documents: snapshot.documents.length,
+    completed_documents: counts.completed,
+    processing_documents: counts.processing,
+    pending_review_documents: counts.pendingReview,
+    average_quality_score: scores.length > 0 ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : null,
+    total_cost_usd: usageSummary.total_cost_usd,
+    average_duration_ms: null,
+  }
+}
+
+export function buildDashboardDailyPoints(snapshot: DashboardSnapshot, days: number): DailyPoint[] {
+  const executions = [
+    ...snapshot.documents.flatMap((doc) => extractDocumentUsageExecutions(doc)),
+    ...snapshot.thesisSessions.flatMap((session) => extractThesisSessionExecutions(session)),
+  ]
+  const now = Date.now()
+  const msPerDay = 86_400_000
+  const cutoff = new Date(now - days * msPerDay).toISOString().slice(0, 10)
+  const dayMap = new Map<string, { total: number; concluidos: number; custo: number }>()
+
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const dia = new Date(now - i * msPerDay).toISOString().slice(0, 10)
+    dayMap.set(dia, { total: 0, concluidos: 0, custo: 0 })
+  }
+
+  for (const doc of snapshot.documents) {
+    if (!doc.created_at) continue
+    const dia = doc.created_at.slice(0, 10)
+    if (dia < cutoff) continue
+    const entry = dayMap.get(dia)
+    if (!entry) continue
+    entry.total += 1
+    if (doc.status === 'concluido' || doc.status === 'aprovado') entry.concluidos += 1
+    if (typeof doc.llm_cost_usd === 'number') entry.custo += doc.llm_cost_usd
+  }
+
+  for (const execution of executions) {
+    if (!execution.created_at) continue
+    const dia = execution.created_at.slice(0, 10)
+    if (dia < cutoff) continue
+    const entry = dayMap.get(dia)
+    if (entry) entry.custo += execution.cost_usd
+  }
+
+  return Array.from(dayMap.entries()).map(([dia, value]) => ({
+    dia,
+    total: value.total,
+    concluidos: value.concluidos,
+    custo: +value.custo.toFixed(6),
+  }))
+}
+
+export function buildDashboardRecentDocuments(
+  snapshot: DashboardSnapshot,
+  limit = DEFAULT_RECENT_DOCUMENTS_LIMIT,
+): DashboardRecentDoc[] {
+  return snapshot.documents
+    .filter((doc): doc is DocumentData & { id: string } => typeof doc.id === 'string' && doc.id.length > 0)
+    .slice(0, limit)
+    .map((doc) => ({
+      id: doc.id,
+      document_type_id: doc.document_type_id,
+      tema: doc.tema ?? null,
+      status: doc.status,
+      quality_score: doc.quality_score ?? null,
+      created_at: doc.created_at,
+    }))
+}
+
+export function buildDashboardTypeStats(snapshot: DashboardSnapshot): TypeStat[] {
+  const typeMap = new Map<string, { total: number; scores: number[] }>()
+
+  for (const doc of snapshot.documents) {
+    if (!doc.document_type_id) continue
+    const entry = typeMap.get(doc.document_type_id) ?? { total: 0, scores: [] }
+    entry.total += 1
+    if (doc.quality_score != null) entry.scores.push(doc.quality_score)
+    typeMap.set(doc.document_type_id, entry)
+  }
+
+  return Array.from(typeMap.entries()).map(([document_type_id, value]) => ({
+    document_type_id,
+    total: value.total,
+    avg_score: value.scores.length > 0
+      ? Math.round(value.scores.reduce((sum, score) => sum + score, 0) / value.scores.length)
+      : null,
+  }))
+}
 
 export function useDashboardData(periodDays: number) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -86,6 +206,7 @@ export function useDashboardData(periodDays: number) {
   const [byType, setByType] = useState<TypeStat[]>([])
   const [loading, setLoading] = useState(true)
   const [chartLoading, setChartLoading] = useState(false)
+  const [firebaseSnapshot, setFirebaseSnapshot] = useState<DashboardSnapshot | null>(null)
   const { userId, isReady } = useAuth()
   const toast = useToast()
   const lastAuthErrorToastAtRef = useRef(0)
@@ -103,51 +224,27 @@ export function useDashboardData(periodDays: number) {
     setLoading(true)
 
     if (IS_FIREBASE && userId) {
-      const statsPromise = withTransientFirebaseAuthRetry(() => firestoreGetStats(userId))
-        .then((value) => setStats(value))
+      withTransientFirebaseAuthRetry(() => getDashboardSnapshot(userId))
+        .then((snapshot) => {
+          setFirebaseSnapshot(snapshot)
+          setStats(buildDashboardStats(snapshot))
+          setRecent(buildDashboardRecentDocuments(snapshot))
+          setByType(buildDashboardTypeStats(snapshot))
+          setDaily(buildDashboardDailyPoints(snapshot, periodDays))
+        })
         .catch((error) => {
+          setFirebaseSnapshot(null)
           if (isFirestoreSessionInvalidError(error)) {
             notifySessionInvalidOnce()
             return
           }
-          toast.error('Erro ao carregar estatisticas')
+          toast.error('Erro ao carregar dashboard')
         })
-      const recentPromise = withTransientFirebaseAuthRetry(() => getRecentDocuments(userId, 5))
-        .then((docs) => {
-          setRecent(docs.filter((doc) => doc.id).map((doc) => ({
-            id: doc.id as string,
-            document_type_id: doc.document_type_id,
-            tema: doc.tema ?? null,
-            status: doc.status,
-            quality_score: doc.quality_score ?? null,
-            created_at: doc.created_at,
-          })))
-        })
-        .catch((error) => {
-          if (isFirestoreSessionInvalidError(error)) {
-            notifySessionInvalidOnce()
-            return
-          }
-          toast.error('Erro ao carregar documentos recentes')
-        })
-      const dailyPromise = withTransientFirebaseAuthRetry(() => getDailyStats(userId, periodDays))
-        .then((value) => setDaily(value))
-        .catch((error) => {
-          if (isFirestoreSessionInvalidError(error)) {
-            notifySessionInvalidOnce()
-          }
-        })
-      const byTypePromise = withTransientFirebaseAuthRetry(() => getByTypeStats(userId))
-        .then((value) => setByType(value))
-        .catch((error) => {
-          if (isFirestoreSessionInvalidError(error)) {
-            notifySessionInvalidOnce()
-          }
-        })
-      Promise.all([statsPromise, recentPromise, dailyPromise, byTypePromise]).finally(() => setLoading(false))
+        .finally(() => setLoading(false))
       return
     }
 
+    setFirebaseSnapshot(null)
     const toArray = (value: unknown) => (Array.isArray(value) ? value : [])
     const statsPromise = api.get('/stats')
       .then((response) => {
@@ -175,16 +272,13 @@ export function useDashboardData(periodDays: number) {
     setChartLoading(true)
 
     if (IS_FIREBASE && userId) {
-      withTransientFirebaseAuthRetry(() => getDailyStats(userId, periodDays))
-        .then((value) => setDaily(value))
-        .catch((error) => {
-          if (isFirestoreSessionInvalidError(error)) {
-            notifySessionInvalidOnce()
-            return
-          }
-          toast.error('Erro ao carregar historico')
-        })
-        .finally(() => setChartLoading(false))
+      if (!firebaseSnapshot) {
+        setDaily([])
+        setChartLoading(false)
+        return
+      }
+      setDaily(buildDashboardDailyPoints(firebaseSnapshot, periodDays))
+      setChartLoading(false)
       return
     }
 
@@ -192,7 +286,7 @@ export function useDashboardData(periodDays: number) {
       .then((response) => setDaily(Array.isArray(response.data) ? response.data : []))
       .catch(() => toast.error('Erro ao carregar historico'))
       .finally(() => setChartLoading(false))
-  }, [periodDays, shouldWaitForFirebaseUser, userId, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [periodDays, shouldWaitForFirebaseUser, userId, loading, firebaseSnapshot]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     stats,

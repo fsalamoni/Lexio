@@ -449,17 +449,17 @@ describe('saveNotebookDocumentToDocuments', () => {
   }, 10_000)
 
   it('opens auth circuit only after consecutive permission-denied bursts across calls', async () => {
-    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
-      code: 'firestore/permission-denied',
+    const unauthenticatedError = Object.assign(new Error('Auth token expired.'), {
+      code: 'firestore/unauthenticated',
     })
 
     // Each call exhausts its 4 retries without success. The circuit should open
     // only after multiple consecutive call-level failures within the window.
-    mockGetDocs.mockRejectedValue(permissionError)
+    mockGetDocs.mockRejectedValue(unauthenticatedError)
 
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
     // Fourth consecutive failure across calls trips the circuit.
     await expect(listDocuments(uid)).rejects.toMatchObject({
       code: 'firestore/auth-session-invalid',
@@ -475,8 +475,8 @@ describe('saveNotebookDocumentToDocuments', () => {
   }, 30_000)
 
   it('keeps auth circuit scoped to the active authenticated uid', async () => {
-    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
-      code: 'firestore/permission-denied',
+    const unauthenticatedError = Object.assign(new Error('Auth token expired.'), {
+      code: 'firestore/unauthenticated',
     })
 
     mockFirebaseAuth.currentUser = {
@@ -485,10 +485,10 @@ describe('saveNotebookDocumentToDocuments', () => {
     }
 
     // Trip the circuit on auth-1 with 4 consecutive call-level failures.
-    mockGetDocs.mockRejectedValue(permissionError)
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    mockGetDocs.mockRejectedValue(unauthenticatedError)
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
     await expect(listDocuments(uid)).rejects.toMatchObject({
       code: 'firestore/auth-session-invalid',
     })
@@ -499,6 +499,27 @@ describe('saveNotebookDocumentToDocuments', () => {
       getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
     }
     mockGetDocs.mockReset()
+    mockGetDocs.mockResolvedValueOnce({ docs: [], empty: true })
+
+    const result = await listDocuments(uid)
+
+    expect(result.items).toEqual([])
+    expect(mockGetDocs).toHaveBeenCalledTimes(1)
+  }, 30_000)
+
+  it('does not open auth circuit for persistent permission-denied responses', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDocs.mockRejectedValue(permissionError)
+
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+
+    mockGetDocs.mockClear()
     mockGetDocs.mockResolvedValueOnce({ docs: [], empty: true })
 
     const result = await listDocuments(uid)
