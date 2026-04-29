@@ -6,6 +6,13 @@ import {
 } from './firebase-auth-retry'
 
 describe('firebase-auth-retry', () => {
+  it('recognizes bare unauthenticated codes as hydration-retry candidates', () => {
+    expect(shouldRetryTransientFirebaseAuthError({
+      code: 'unauthenticated',
+      message: 'temporary auth sync',
+    })).toBe(true)
+  })
+
   it('retries once when firebase auth is still hydrating', async () => {
     const operation = vi.fn()
       .mockRejectedValueOnce(Object.assign(new Error('Sessão do Firebase não sincronizada. Faça login novamente.'), {

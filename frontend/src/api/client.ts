@@ -51,6 +51,14 @@ const api = axios.create({
   baseURL: '/api/v1',
 })
 
+function readStoredAuthToken(): string | null {
+  try {
+    return localStorage.getItem('lexio_token')
+  } catch {
+    return null
+  }
+}
+
 async function resolveAuthToken(forceRefresh = false): Promise<string | null> {
   if (IS_FIREBASE && firebaseAuth?.currentUser) {
     try {
@@ -62,11 +70,17 @@ async function resolveAuthToken(forceRefresh = false): Promise<string | null> {
     }
   }
 
-  return localStorage.getItem('lexio_token')
+  return readStoredAuthToken()
 }
 
 api.interceptors.request.use(async (config) => {
-  const token = await resolveAuthToken(false)
+  let token: string | null = null
+  try {
+    token = await resolveAuthToken(false)
+  } catch (error) {
+    console.warn('[api] Failed to resolve auth token for request:', error)
+    token = readStoredAuthToken()
+  }
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
