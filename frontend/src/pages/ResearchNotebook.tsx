@@ -23,6 +23,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useTaskManager, type TaskOperationalSummary } from '../contexts/TaskManagerContext'
 import { useToast } from '../components/Toast'
 import { IS_FIREBASE } from '../lib/firebase'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
 import {
   listResearchNotebooks,
   createResearchNotebook,
@@ -282,39 +283,6 @@ export default function ResearchNotebook() {
   const mountedRef = useRef(true)
   const shouldWaitForFirebaseUser = IS_FIREBASE && (!isReady || !userId)
 
-  const withTransientAuthRetry = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
-    try {
-      return await operation()
-    } catch (error) {
-      const code = (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        typeof error.code === 'string'
-      )
-        ? error.code.replace(/^firestore\//, '')
-        : ''
-
-      const message = error instanceof Error
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : ''
-
-      const isTransientAuthError =
-        code === 'unauthenticated' ||
-        code === 'permission-denied' ||
-        /sessão do firebase não sincronizada|missing or insufficient permissions/i.test(message)
-
-      if (!isTransientAuthError) throw error
-
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 700)
-      })
-      return operation()
-    }
-  }, [])
-
   // List state
   const [notebooks, setNotebooks] = useState<ResearchNotebookData[]>([])
   const [loading, setLoading] = useState(true)
@@ -467,14 +435,14 @@ export default function ResearchNotebook() {
     if (!IS_FIREBASE) { setLoading(false); return }
     setLoading(true)
     try {
-      const result = await withTransientAuthRetry(() => listResearchNotebooks(userId))
+      const result = await withTransientFirebaseAuthRetry(() => listResearchNotebooks(userId))
       setNotebooks(result.items)
     } catch {
       toast.error('Erro ao carregar cadernos de pesquisa')
     } finally {
       setLoading(false)
     }
-  }, [shouldWaitForFirebaseUser, userId, withTransientAuthRetry]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
 
@@ -482,7 +450,7 @@ export default function ResearchNotebook() {
     if (shouldWaitForFirebaseUser || !userId || !IS_FIREBASE) return
     let cancelled = false
 
-    withTransientAuthRetry(() => getUserSettings(userId))
+    withTransientFirebaseAuthRetry(() => getUserSettings(userId))
       .then(settings => {
         if (cancelled) return
         const aliases = settings.last_jurisprudence_tribunal_aliases
@@ -499,7 +467,7 @@ export default function ResearchNotebook() {
     return () => {
       cancelled = true
     }
-  }, [shouldWaitForFirebaseUser, userId, withTransientAuthRetry])
+  }, [shouldWaitForFirebaseUser, userId])
 
   // ── Deep-link: ?open=<notebook_id> ─────────────────────────────────
   // Runs once after the notebook list is loaded. If the URL has ?open=<id>,
@@ -624,7 +592,7 @@ export default function ResearchNotebook() {
     setAcervoLoading(true)
     try {
       if (IS_FIREBASE) {
-        const result = await withTransientAuthRetry(() => listAcervoDocuments(userId))
+        const result = await withTransientFirebaseAuthRetry(() => listAcervoDocuments(userId))
         setAcervoDocs(result.items)
       }
     } catch {
@@ -632,7 +600,7 @@ export default function ResearchNotebook() {
     } finally {
       setAcervoLoading(false)
     }
-  }, [shouldWaitForFirebaseUser, userId, withTransientAuthRetry])
+  }, [shouldWaitForFirebaseUser, userId])
 
   // ── buildSourceContext (needed by guide and suggestions) ───────────────
   const buildSourceContext = useCallback((): string => {

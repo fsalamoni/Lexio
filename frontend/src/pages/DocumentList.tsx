@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { FileText, Plus, ChevronLeft, ChevronRight, Search, X, Trash2, Download, BookOpen, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
@@ -16,6 +16,7 @@ import {
   listDocuments,
   deleteDocument as firestoreDeleteDoc,
 } from '../lib/firestore-service'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
 import { DOCTYPE_LABELS } from '../lib/constants'
 import { applyOrigemFilter, toggleFilter } from '../lib/document-filters'
 import { buildResearchNotebookWorkbenchPath } from '../lib/research-notebook-routes'
@@ -65,39 +66,6 @@ export default function DocumentList() {
   const newDocumentPath = buildWorkspaceNewDocumentPath({ preserveSearch: location.search })
   const shouldWaitForFirebaseUser = IS_FIREBASE && (!isReady || !userId)
 
-  const withTransientAuthRetry = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
-    try {
-      return await operation()
-    } catch (error) {
-      const code = (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        typeof error.code === 'string'
-      )
-        ? error.code.replace(/^firestore\//, '')
-        : ''
-
-      const message = error instanceof Error
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : ''
-
-      const isTransientAuthError =
-        code === 'unauthenticated' ||
-        code === 'permission-denied' ||
-        /sessão do firebase não sincronizada|missing or insufficient permissions/i.test(message)
-
-      if (!isTransientAuthError) throw error
-
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 700)
-      })
-      return operation()
-    }
-  }, [])
-
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   // Ctrl+K keyboard shortcut to focus search
@@ -129,7 +97,7 @@ export default function DocumentList() {
 
     if (IS_FIREBASE && userId) {
       const [sbField, sbDir] = sortBy.split('_')
-      withTransientAuthRetry(() => listDocuments(userId, {
+      withTransientFirebaseAuthRetry(() => listDocuments(userId, {
         status: statusFilter || undefined,
         document_type_id: typeFilter || undefined,
         sortBy: sbField === 'date' ? 'created_at' : 'quality_score',
@@ -199,7 +167,7 @@ export default function DocumentList() {
         .catch(() => toast.error('Erro ao carregar documentos'))
         .finally(() => setLoading(false))
     }
-  }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo, originFilter, refreshKey, shouldWaitForFirebaseUser, userId, withTransientAuthRetry]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, statusFilter, typeFilter, searchQuery, sortBy, dateFrom, dateTo, originFilter, refreshKey, shouldWaitForFirebaseUser, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStatusFilter = (s: string) => {
     setStatusFilter(prev => prev === s ? '' : s)
