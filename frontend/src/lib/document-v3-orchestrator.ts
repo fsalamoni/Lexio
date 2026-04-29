@@ -184,7 +184,7 @@ export async function generateDocumentV3(
   ) => {
     if (!result) return
     llmExecutions.push(createUsageExecutionRecord({
-      source_type: 'document_generation',
+      source_type: 'document_generation_v3',
       source_id: docId,
       phase,
       agent_name: agentName,

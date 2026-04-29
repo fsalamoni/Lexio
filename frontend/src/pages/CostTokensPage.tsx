@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DollarSign, Coins, Cpu, BrainCircuit, ChevronDown, ChevronUp,
   FileText, BookOpen, TrendingUp, Loader2, MessageCircleQuestion, Tags, Brain,
-  Video, Headphones, Presentation, Database, Shield, AlertTriangle, Save,
+  Video, Headphones, Presentation, Database, Shield, AlertTriangle, Save, Sparkles,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -21,6 +21,66 @@ import { formatCost, fmtBrl, fmtUsd, fmtInt, fmtPercent, usdToBrl } from '../lib
 // ── Persistence ──────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = 'lexio_cost_tokens_collapse_state'
+
+const COST_SECTION_IDS = [
+  'section_general',
+  'section_documents',
+  'section_document_v3',
+  'section_thesis',
+  'section_context_detail',
+  'section_acervo_classificador',
+  'section_acervo_ementa',
+  'section_caderno_pesquisa',
+  'section_notebook_acervo',
+  'section_video_pipeline',
+  'section_audio_pipeline',
+  'section_presentation_pipeline',
+] as const
+
+const COST_GENERAL_CARD_IDS = [
+  'general_highlights',
+  'general_budget',
+  'general_tbl_provider',
+  'general_tbl_model',
+  'general_tbl_function',
+  'general_tbl_doctype',
+  'general_tbl_phase',
+  'general_tbl_execution_state',
+  'general_tbl_agent',
+  'general_tbl_agent_function',
+] as const
+
+const COST_BREAKDOWN_SECTION_IDS = [
+  'doc',
+  'doc_v3',
+  'thesis',
+  'context_detail',
+  'acervo_classificador',
+  'acervo_ementa',
+  'caderno_pesquisa',
+  'notebook_acervo',
+  'video_pipeline',
+  'audio_pipeline',
+  'presentation_pipeline',
+] as const
+
+function buildBreakdownCardIds(sectionId: string): string[] {
+  return [
+    `${sectionId}_chart_model_cost`,
+    `${sectionId}_chart_model_tokens`,
+    `${sectionId}_tbl_provider`,
+    `${sectionId}_tbl_model`,
+    `${sectionId}_tbl_phase`,
+    `${sectionId}_tbl_execution_state`,
+    `${sectionId}_tbl_agent`,
+  ]
+}
+
+const COST_COLLAPSIBLE_IDS = [
+  ...COST_SECTION_IDS,
+  ...COST_GENERAL_CARD_IDS,
+  ...COST_BREAKDOWN_SECTION_IDS.flatMap(id => buildBreakdownCardIds(id)),
+]
 
 function loadCollapseState(): Record<string, boolean> {
   try {
@@ -326,6 +386,16 @@ export default function CostTokensPage() {
     })
   }, [])
 
+  const setAllCollapseState = useCallback((isOpen: boolean) => {
+    setCollapseState(prev => {
+      const next: Record<string, boolean> = {}
+      Object.keys(prev).forEach(key => { next[key] = isOpen })
+      COST_COLLAPSIBLE_IDS.forEach(key => { next[key] = isOpen })
+      saveCollapseState(next)
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     if (IS_FIREBASE && !userId) {
       setLoading(false)
@@ -356,15 +426,16 @@ export default function CostTokensPage() {
     load()
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split executions into all 10 function keys
-  const { docBreakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, highlights: [] }
+  // Split executions into all 11 function keys
+  const { docBreakdown, docV3Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
     // doesn't carry raw executions, we build sub-breakdowns from the available data.
     // The by_agent_function data contains function-keyed agent entries.
     const docItems = breakdown.by_agent_function.filter(item => item.key.startsWith('document_generation::'))
+    const docV3Items = breakdown.by_agent_function.filter(item => item.key.startsWith('document_generation_v3::'))
     const thesisItems = breakdown.by_agent_function.filter(item => item.key.startsWith('thesis_analysis::'))
     const contextDetailItems = breakdown.by_agent_function.filter(item => item.key.startsWith('context_detail::'))
     const acervoClassificadorItems = breakdown.by_agent_function.filter(item => item.key.startsWith('acervo_classificador::'))
@@ -377,6 +448,7 @@ export default function CostTokensPage() {
 
     // Build approximate sub-breakdowns using available summary data
     const docFunc = breakdown.by_function.find(f => f.key === 'document_generation')
+    const docV3Func = breakdown.by_function.find(f => f.key === 'document_generation_v3')
     const thesisFunc = breakdown.by_function.find(f => f.key === 'thesis_analysis')
     const contextDetailFunc = breakdown.by_function.find(f => f.key === 'context_detail')
     const acervoClassificadorFunc = breakdown.by_function.find(f => f.key === 'acervo_classificador')
@@ -424,6 +496,7 @@ export default function CostTokensPage() {
     }
 
     const docBd = makeSub(docFunc, docItems, 'document_generation')
+    const docV3Bd = makeSub(docV3Func, docV3Items, 'document_generation_v3')
     const thesisBd = makeSub(thesisFunc, thesisItems, 'thesis_analysis')
     const contextDetailBd = makeSub(contextDetailFunc, contextDetailItems, 'context_detail')
     const acervoClassificadorBd = makeSub(acervoClassificadorFunc, acervoClassificadorItems, 'acervo_classificador')
@@ -454,7 +527,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, highlights: hl }
+    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, highlights: hl }
   }, [breakdown])
 
   // ── Budget status ──────────────────────────────────────────────────────
@@ -544,6 +617,22 @@ export default function CostTokensPage() {
         eyebrow={<><DollarSign className="h-3.5 w-3.5" /> Custos e tokens</>}
         title="Consumo, orçamento e sinais de custo em uma única superficie operacional"
         description="Acompanhe gasto consolidado, volume de tokens, uso por pipeline e limites preventivos sem sair do workspace principal."
+        actions={(
+          <>
+            <button
+              onClick={() => setAllCollapseState(true)}
+              className="v2-btn-secondary"
+            >
+              Expandir tudo
+            </button>
+            <button
+              onClick={() => setAllCollapseState(false)}
+              className="v2-btn-secondary"
+            >
+              Recolher tudo
+            </button>
+          </>
+        )}
         aside={(
           <div className="space-y-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Guardrails</p>
@@ -742,6 +831,27 @@ export default function CostTokensPage() {
               />
             ) : (
               <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para geração de documentos.</p>
+            )}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            id="section_document_v3"
+            title="Novo Documento v3"
+            icon={Sparkles}
+            iconColor="text-fuchsia-600"
+            badge={docV3Breakdown ? fmtUsd(docV3Breakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {docV3Breakdown ? (
+              <SectionBreakdown
+                sectionId="doc_v3"
+                breakdown={docV3Breakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o Novo Documento v3.</p>
             )}
           </CollapsibleSection>
 

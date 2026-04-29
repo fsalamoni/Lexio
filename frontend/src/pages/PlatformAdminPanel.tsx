@@ -48,6 +48,25 @@ const EXECUTIVE_INSET_CARD = 'rounded-[1.15rem] border border-[var(--v2-line-sof
 const EXECUTIVE_PANEL_BUTTON = 'px-3 py-1.5 rounded-lg border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] text-xs font-medium text-[var(--v2-ink-soft)] hover:bg-[rgba(255,255,255,0.9)] disabled:cursor-not-allowed disabled:opacity-50'
 const EXECUTIVE_INPUT = 'mt-1 w-full rounded-[0.95rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-2.5 py-2 text-sm text-[var(--v2-ink-strong)] outline-none transition focus:border-[rgba(15,118,110,0.34)] focus:ring-4 focus:ring-[rgba(15,118,110,0.12)]'
 const EXECUTIVE_INPUT_COMPACT = 'mt-1 w-full rounded-[0.95rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-2 py-1 text-sm text-[var(--v2-ink-strong)] outline-none transition focus:border-[rgba(15,118,110,0.34)] focus:ring-4 focus:ring-[rgba(15,118,110,0.12)]'
+const PLATFORM_ADMIN_CARDS_KEY = 'lexio_platform_admin_cards_expanded'
+
+function loadPlatformAdminCardsExpandedState(): boolean {
+  try {
+    const raw = localStorage.getItem(PLATFORM_ADMIN_CARDS_KEY)
+    if (raw == null) return true
+    return raw === '1'
+  } catch {
+    return true
+  }
+}
+
+function savePlatformAdminCardsExpandedState(isExpanded: boolean) {
+  try {
+    localStorage.setItem(PLATFORM_ADMIN_CARDS_KEY, isExpanded ? '1' : '0')
+  } catch {
+    // Ignore storage quota failures.
+  }
+}
 
 function fmtSignedNumber(value: number) {
   const rounded = Number(value.toFixed(2))
@@ -442,6 +461,12 @@ export default function PlatformAdminPanel() {
   const [recommendationHistory, setRecommendationHistory] = useState<RecommendationHistoryEntry[]>([])
   const [savingThresholds, setSavingThresholds] = useState(false)
   const [applyingDriftActionId, setApplyingDriftActionId] = useState<string | null>(null)
+  const [cardsExpanded, setCardsExpanded] = useState<boolean>(loadPlatformAdminCardsExpandedState)
+
+  const setCardsExpandedState = (isExpanded: boolean) => {
+    setCardsExpanded(isExpanded)
+    savePlatformAdminCardsExpandedState(isExpanded)
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -541,6 +566,10 @@ export default function PlatformAdminPanel() {
     calls: row.calls,
     usd: row.cost_usd,
   })) ?? [], [overview])
+  const documentV3Usage = useMemo(
+    () => overview?.functions_by_usage.find(row => row.key === 'document_generation_v3') ?? null,
+    [overview],
+  )
 
   const documentStatusChart = useMemo(() => overview?.documents_by_status.slice(0, 6) ?? [], [overview])
   const artifactChart = useMemo(() => overview?.artifacts_by_type.slice(0, 6) ?? [], [overview])
@@ -1774,6 +1803,12 @@ export default function PlatformAdminPanel() {
         eyebrow={<><Shield className="h-3.5 w-3.5" /> Governanca da plataforma</>}
         title="Uso agregado, calibracao de memoria e sinais de risco sob uma unica cabine executiva"
         description="Monitore volume operacional, alertas de memoria dedicada, trilha de calibracao e indicadores de crescimento sem perder contexto sobre custos e qualidade da plataforma."
+        actions={(
+          <>
+            <button onClick={() => setCardsExpandedState(true)} className="v2-btn-secondary">Expandir tudo</button>
+            <button onClick={() => setCardsExpandedState(false)} className="v2-btn-secondary">Recolher tudo</button>
+          </>
+        )}
         aside={(
           <div className="space-y-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Resumo rapido</p>
@@ -1787,9 +1822,21 @@ export default function PlatformAdminPanel() {
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Alertas atuais</p>
               <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{memoryAlerts.length.toLocaleString('pt-BR')}</p>
             </div>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Novo Documento v3</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                {documentV3Usage ? fmtUsd(documentV3Usage.cost_usd) : 'Sem consumo'}
+              </p>
+              <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
+                {documentV3Usage ? `${fmtInt(documentV3Usage.calls)} chamadas` : 'Nenhuma execução registrada'}
+              </p>
+            </div>
           </div>
         )}
       />
+
+      {cardsExpanded ? (
+        <>
 
       {overview.operational_warnings && overview.operational_warnings.length > 0 && (
         <div className="rounded-[1.35rem] border border-amber-200 bg-[rgba(217,119,6,0.08)] px-4 py-3 text-sm text-amber-900">
@@ -3221,6 +3268,15 @@ export default function PlatformAdminPanel() {
           </ResponsiveContainer>
         </div>
       </div>
+
+        </>
+      ) : (
+        <div className="v2-panel px-5 py-4">
+          <p className="text-sm text-[var(--v2-ink-soft)]">
+            Cards administrativos recolhidos. Use "Expandir tudo" para restaurar a visualização completa.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
