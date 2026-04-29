@@ -20,7 +20,10 @@ import {
 } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
-import { emitFirestoreAuthSessionInvalid } from './auth-session-events'
+import {
+  emitFirestoreAuthAccessDegraded,
+  emitFirestoreAuthSessionInvalid,
+} from './auth-session-events'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import { DEFAULT_DOC_STRUCTURES } from './document-structures'
 import {
@@ -146,6 +149,9 @@ const FIRESTORE_AUTH_CIRCUIT_COOLDOWN_MS = 1_500
 // transient token desync between Firebase Auth and Firestore.
 const FIRESTORE_AUTH_CIRCUIT_FAILURE_THRESHOLD = 4
 const FIRESTORE_AUTH_CIRCUIT_FAILURE_WINDOW_MS = 4_000
+const FIRESTORE_PERMISSION_DENIED_BURST_THRESHOLD = 6
+const FIRESTORE_PERMISSION_DENIED_BURST_WINDOW_MS = 12_000
+const FIRESTORE_PERMISSION_DENIED_MIN_CONTEXTS = 3
 
 type FirestoreAuthCircuitState = {
   openedAt: number
@@ -159,9 +165,17 @@ type FirestoreAuthFailureCounter = {
   lastAt: number
 }
 
+type FirestorePermissionDeniedBurstState = {
+  count: number
+  firstAt: number
+  lastAt: number
+  contexts: Set<string>
+}
+
 let authStateSyncPromise: Promise<void> | null = null
 const firestoreAuthCircuitByUid = new Map<string, FirestoreAuthCircuitState>()
 const firestoreAuthFailureCounterByUid = new Map<string, FirestoreAuthFailureCounter>()
+const firestorePermissionDeniedBurstByUid = new Map<string, FirestorePermissionDeniedBurstState>()
 let lastObservedAuthUid: string | null = null
 
 function hasStoredLexioSession(): boolean {
@@ -190,10 +204,12 @@ function syncAuthCircuitUserBoundary(): void {
   if (!currentUid) {
     firestoreAuthCircuitByUid.clear()
     firestoreAuthFailureCounterByUid.clear()
+    firestorePermissionDeniedBurstByUid.clear()
   } else {
     // New session/user boundary: never carry a stale open circuit into the new session.
     firestoreAuthCircuitByUid.delete(currentUid)
     firestoreAuthFailureCounterByUid.delete(currentUid)
+    firestorePermissionDeniedBurstByUid.delete(currentUid)
   }
 
   lastObservedAuthUid = currentUid
@@ -219,6 +235,57 @@ function clearAuthAccessFailureCounterForCurrentUser(): void {
   const uid = getCurrentFirebaseAuthUid()
   if (!uid) return
   firestoreAuthFailureCounterByUid.delete(uid)
+}
+
+function clearPermissionDeniedBurstForCurrentUser(): void {
+  const uid = getCurrentFirebaseAuthUid()
+  if (!uid) return
+  firestorePermissionDeniedBurstByUid.delete(uid)
+}
+
+function registerPermissionDeniedBurst(contextLabel: string): {
+  shouldTriggerKillSwitch: boolean
+  burstCount: number
+  uniqueContexts: number
+} {
+  const uid = getCurrentFirebaseAuthUid()
+  if (!uid) {
+    return {
+      shouldTriggerKillSwitch: false,
+      burstCount: 0,
+      uniqueContexts: 0,
+    }
+  }
+
+  const now = Date.now()
+  const existing = firestorePermissionDeniedBurstByUid.get(uid)
+  if (!existing || now - existing.lastAt > FIRESTORE_PERMISSION_DENIED_BURST_WINDOW_MS) {
+    const initialState: FirestorePermissionDeniedBurstState = {
+      count: 1,
+      firstAt: now,
+      lastAt: now,
+      contexts: new Set([contextLabel]),
+    }
+    firestorePermissionDeniedBurstByUid.set(uid, initialState)
+    return {
+      shouldTriggerKillSwitch: false,
+      burstCount: 1,
+      uniqueContexts: 1,
+    }
+  }
+
+  existing.count += 1
+  existing.lastAt = now
+  existing.contexts.add(contextLabel)
+
+  const shouldTriggerKillSwitch = existing.count >= FIRESTORE_PERMISSION_DENIED_BURST_THRESHOLD
+    && existing.contexts.size >= FIRESTORE_PERMISSION_DENIED_MIN_CONTEXTS
+
+  return {
+    shouldTriggerKillSwitch,
+    burstCount: existing.count,
+    uniqueContexts: existing.contexts.size,
+  }
 }
 
 function getAuthCircuitState(uid: string): FirestoreAuthCircuitState | null {
@@ -255,6 +322,7 @@ function closeAuthAccessCircuitForCurrentUser(): void {
   if (!uid) return
   firestoreAuthCircuitByUid.delete(uid)
   firestoreAuthFailureCounterByUid.delete(uid)
+  firestorePermissionDeniedBurstByUid.delete(uid)
 }
 
 function throwIfAuthAccessCircuitOpen(contextLabel: string): void {
@@ -283,6 +351,7 @@ function throwIfAuthAccessCircuitOpen(contextLabel: string): void {
 export function __resetFirestoreAuthCircuitForTests(): void {
   firestoreAuthCircuitByUid.clear()
   firestoreAuthFailureCounterByUid.clear()
+  firestorePermissionDeniedBurstByUid.clear()
   lastObservedAuthUid = getCurrentFirebaseAuthUid()
 }
 
@@ -663,6 +732,21 @@ async function withFirestoreRetry<T>(
   }
 
   if (isAuthAccessFirestoreError(lastError)) {
+    if (getFirebaseErrorCode(lastError) === 'permission-denied') {
+      const burst = registerPermissionDeniedBurst(contextLabel)
+      if (burst.shouldTriggerKillSwitch) {
+        emitFirestoreAuthAccessDegraded({
+          contextLabel,
+          authUid: getCurrentFirebaseAuthUid(),
+          errorCode: 'permission-denied',
+          burstCount: burst.burstCount,
+          uniqueContexts: burst.uniqueContexts,
+        })
+        clearPermissionDeniedBurstForCurrentUser()
+      }
+    } else {
+      clearPermissionDeniedBurstForCurrentUser()
+    }
     throw lastError
   }
 

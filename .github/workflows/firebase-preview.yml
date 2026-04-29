@@ -70,6 +70,14 @@ jobs:
         run: npm ci
         working-directory: frontend
 
+      - name: Validate Firebase web config consistency
+        run: node scripts/validate-firebase-web-config.mjs --expected-project hocapp-44760
+        env:
+          VITE_FIREBASE_PROJECT_ID: hocapp-44760
+          VITE_FIREBASE_AUTH_DOMAIN: hocapp-44760.firebaseapp.com
+          VITE_FIREBASE_STORAGE_BUCKET: hocapp-44760.firebasestorage.app
+          VITE_FIREBASE_APP_ID: '1:143237037612:web:85bd9ddaf81973d5031b89'
+
       - name: Typecheck frontend
         run: npm run typecheck
         working-directory: frontend

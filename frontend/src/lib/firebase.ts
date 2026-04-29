@@ -8,7 +8,7 @@ import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
 import { getAuth, type Auth } from 'firebase/auth'
 import { getFirestore, type Firestore } from 'firebase/firestore'
 import { getStorage, type FirebaseStorage } from 'firebase/storage'
-import { resolveFirebaseAuthDomain } from './firebase-config'
+import { resolveFirebaseAuthDomain, validateFirebaseWebConfig } from './firebase-config'
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -19,7 +19,18 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-export const IS_FIREBASE = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId)
+const firebaseConfigIssues = validateFirebaseWebConfig({
+  projectId: firebaseConfig.projectId,
+  authDomain: firebaseConfig.authDomain,
+  storageBucket: firebaseConfig.storageBucket,
+  appId: firebaseConfig.appId,
+})
+
+if (firebaseConfigIssues.length > 0) {
+  console.error('[Firebase Config] Invalid production configuration:', firebaseConfigIssues.join(' | '))
+}
+
+export const IS_FIREBASE = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfigIssues.length === 0)
 
 let _app: FirebaseApp | null = null
 let _auth: Auth | null = null

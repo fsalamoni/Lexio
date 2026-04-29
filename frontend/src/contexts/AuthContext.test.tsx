@@ -54,10 +54,15 @@ vi.mock('../lib/auth-service', () => ({
 }))
 
 import { AuthProvider, useAuth } from './AuthContext'
-import { FIRESTORE_AUTH_SESSION_INVALID_EVENT, getSessionFingerprint } from '../lib/auth-session-events'
+import {
+  FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT,
+  FIRESTORE_AUTH_SESSION_INVALID_EVENT,
+  getSessionFingerprint,
+} from '../lib/auth-session-events'
 
-function Probe({ emitInvalidSession, triggerManualLogout }: {
+function Probe({ emitInvalidSession, emitAuthAccessDegraded, triggerManualLogout }: {
   emitInvalidSession?: boolean
+  emitAuthAccessDegraded?: boolean
   triggerManualLogout?: boolean
 }) {
   const { isReady, userId, logout } = useAuth()
@@ -78,6 +83,23 @@ function Probe({ emitInvalidSession, triggerManualLogout }: {
     if (!triggerManualLogout) return
     void logout()
   }, [logout, triggerManualLogout])
+
+  useEffect(() => {
+    if (!emitAuthAccessDegraded) return
+    window.dispatchEvent(new CustomEvent(FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT, {
+      detail: {
+        contextLabel: 'listDocuments.query',
+        authUid: 'user-1',
+        sessionFingerprint: getSessionFingerprint('user-1'),
+        occurredAt: Date.now(),
+        routePath: '/documents',
+        appVersion: 'test',
+        errorCode: 'permission-denied',
+        burstCount: 6,
+        uniqueContexts: 3,
+      },
+    }))
+  }, [emitAuthAccessDegraded])
 
   return (
     <>
@@ -188,6 +210,26 @@ describe('AuthContext session recovery', () => {
     render(
       <AuthProvider>
         <Probe triggerManualLogout />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('user-id').textContent).toBe('null')
+    })
+
+    expect(localStorage.getItem('lexio_user_id')).toBeNull()
+    expect(localStorage.getItem('lexio_token')).toBeNull()
+  })
+
+  it('triggers kill switch and clears session on auth-access degraded event', async () => {
+    render(
+      <AuthProvider>
+        <Probe emitAuthAccessDegraded />
       </AuthProvider>,
     )
 
