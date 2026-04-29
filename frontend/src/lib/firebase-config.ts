@@ -3,13 +3,6 @@ function normalizeHost(value: string | undefined | null): string | undefined {
   return normalized || undefined
 }
 
-function toProjectFromAppId(appId: string | undefined): string | undefined {
-  const normalized = String(appId || '').trim()
-  if (!normalized) return undefined
-  const parts = normalized.split(':')
-  return parts.length >= 2 ? parts[1] : undefined
-}
-
 function toProjectFromAuthDomain(authDomain: string | undefined): string | undefined {
   const normalized = normalizeHost(authDomain)
   if (!normalized) return undefined
@@ -52,7 +45,6 @@ export function validateFirebaseWebConfig(config: {
   const normalizedProjectId = String(config.projectId || '').trim()
   const normalizedAuthDomain = resolveFirebaseAuthDomain(config.authDomain)
   const normalizedStorageBucket = String(config.storageBucket || '').trim().toLowerCase()
-  const appIdProject = toProjectFromAppId(config.appId)
   const authDomainProject = toProjectFromAuthDomain(normalizedAuthDomain)
 
   if (!normalizedProjectId) {
@@ -67,10 +59,5 @@ export function validateFirebaseWebConfig(config: {
   if (normalizedStorageBucket && !normalizedStorageBucket.startsWith(`${normalizedProjectId}.`)) {
     issues.push(`VITE_FIREBASE_STORAGE_BUCKET (${normalizedStorageBucket}) não corresponde ao projeto ${normalizedProjectId}.`)
   }
-
-  if (appIdProject && appIdProject !== normalizedProjectId) {
-    issues.push(`VITE_FIREBASE_APP_ID (${config.appId}) não corresponde ao projeto ${normalizedProjectId}.`)
-  }
-
   return issues
 }

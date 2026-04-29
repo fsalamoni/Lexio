@@ -138,13 +138,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserId(fbUser.uid)
 
     if (!firestore) return
+    const db = firestore
 
     try {
       // Mandatory bootstrap session-integrity check: if the authenticated user
       // cannot read their own `/users/{uid}` document, the session cannot be
       // considered healthy for workspace operations.
       const userSnap = await withTransientFirebaseAuthRetry(
-        () => getDoc(doc(firestore, 'users', fbUser.uid)),
+        () => getDoc(doc(db, 'users', fbUser.uid)),
       )
       if (userSnap.exists()) {
         const userData = userSnap.data() as { role?: string; full_name?: string }

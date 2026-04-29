@@ -62,6 +62,8 @@ describe('auth-session-events', () => {
       authUid: string | null
       sessionFingerprint: string
       occurredAt: number
+      routePath: string
+      appVersion: string
     }>
 
     expect(event.type).toBe(FIRESTORE_AUTH_SESSION_INVALID_EVENT)

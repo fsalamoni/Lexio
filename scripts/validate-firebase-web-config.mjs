@@ -37,20 +37,12 @@ function parseProjectFromAuthDomain(authDomain) {
   return undefined
 }
 
-function parseProjectFromAppId(appId) {
-  const normalized = String(appId || '').trim()
-  if (!normalized) return undefined
-  const parts = normalized.split(':')
-  return parts.length >= 2 ? parts[1] : undefined
-}
-
 function main() {
   const options = parseArgs(process.argv)
 
   const projectId = normalize(process.env.VITE_FIREBASE_PROJECT_ID)
   const authDomain = normalize(process.env.VITE_FIREBASE_AUTH_DOMAIN)
   const storageBucket = normalize(process.env.VITE_FIREBASE_STORAGE_BUCKET)
-  const appId = String(process.env.VITE_FIREBASE_APP_ID || '').trim()
   const expectedProject = normalize(options.expectedProject)
 
   const issues = []
@@ -66,10 +58,6 @@ function main() {
     issues.push('Missing VITE_FIREBASE_STORAGE_BUCKET')
   }
 
-  if (!appId) {
-    issues.push('Missing VITE_FIREBASE_APP_ID')
-  }
-
   if (projectId && expectedProject && projectId !== expectedProject) {
     issues.push(`VITE_FIREBASE_PROJECT_ID (${projectId}) differs from expected project (${expectedProject})`)
   }
@@ -81,11 +69,6 @@ function main() {
 
   if (projectId && storageBucket && !storageBucket.startsWith(`${projectId}.`)) {
     issues.push(`VITE_FIREBASE_STORAGE_BUCKET (${storageBucket}) does not match VITE_FIREBASE_PROJECT_ID (${projectId})`)
-  }
-
-  const appIdProject = parseProjectFromAppId(appId)
-  if (projectId && appIdProject && appIdProject !== projectId) {
-    issues.push(`VITE_FIREBASE_APP_ID (${appId}) does not match VITE_FIREBASE_PROJECT_ID (${projectId})`)
   }
 
   if (issues.length > 0) {

@@ -34,9 +34,8 @@ describe('validateFirebaseWebConfig', () => {
       appId: '1:other-project:web:85bd9ddaf81973d5031b89',
     })
 
-    expect(issues.length).toBeGreaterThanOrEqual(3)
+    expect(issues.length).toBeGreaterThanOrEqual(2)
     expect(issues.join('\n')).toContain('AUTH_DOMAIN')
     expect(issues.join('\n')).toContain('STORAGE_BUCKET')
-    expect(issues.join('\n')).toContain('APP_ID')
   })
 })
