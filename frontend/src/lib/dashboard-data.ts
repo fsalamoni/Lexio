@@ -3,6 +3,7 @@ import api from '../api/client'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from './firebase'
+import { withTransientFirebaseAuthRetry } from './firebase-auth-retry'
 import {
   getStats as firestoreGetStats,
   getRecentDocuments,
@@ -75,48 +76,7 @@ export function getResumableDocument(recent: DashboardRecentDoc[]) {
   return recent.find((doc) => doc.status === 'processando' || doc.status === 'em_revisao' || doc.status === 'concluido') || null
 }
 
-const TRANSIENT_AUTH_ERROR_CODES = new Set(['unauthenticated', 'permission-denied'])
 const AUTH_ERROR_TOAST_COOLDOWN_MS = 6_000
-
-function getFirebaseErrorCode(error: unknown): string | null {
-  if (!error || typeof error !== 'object') return null
-  if ('code' in error && typeof error.code === 'string') {
-    return error.code.replace(/^firestore\//, '')
-  }
-  return null
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (typeof error === 'string') return error
-  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-    return error.message
-  }
-  return ''
-}
-
-function isTransientAuthError(error: unknown): boolean {
-  const code = getFirebaseErrorCode(error)
-  if (code && TRANSIENT_AUTH_ERROR_CODES.has(code)) return true
-  const message = getErrorMessage(error)
-  return /sessão do firebase não sincronizada|missing or insufficient permissions/i.test(message)
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
-}
-
-async function withTransientAuthRetry<T>(operation: () => Promise<T>): Promise<T> {
-  try {
-    return await operation()
-  } catch (error) {
-    if (!isTransientAuthError(error)) throw error
-    await wait(700)
-    return operation()
-  }
-}
 
 export function useDashboardData(periodDays: number) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -143,7 +103,7 @@ export function useDashboardData(periodDays: number) {
     setLoading(true)
 
     if (IS_FIREBASE && userId) {
-      const statsPromise = withTransientAuthRetry(() => firestoreGetStats(userId))
+      const statsPromise = withTransientFirebaseAuthRetry(() => firestoreGetStats(userId))
         .then((value) => setStats(value))
         .catch((error) => {
           if (isFirestoreSessionInvalidError(error)) {
@@ -152,7 +112,7 @@ export function useDashboardData(periodDays: number) {
           }
           toast.error('Erro ao carregar estatisticas')
         })
-      const recentPromise = withTransientAuthRetry(() => getRecentDocuments(userId, 5))
+      const recentPromise = withTransientFirebaseAuthRetry(() => getRecentDocuments(userId, 5))
         .then((docs) => {
           setRecent(docs.filter((doc) => doc.id).map((doc) => ({
             id: doc.id as string,
@@ -170,14 +130,14 @@ export function useDashboardData(periodDays: number) {
           }
           toast.error('Erro ao carregar documentos recentes')
         })
-      const dailyPromise = withTransientAuthRetry(() => getDailyStats(userId, periodDays))
+      const dailyPromise = withTransientFirebaseAuthRetry(() => getDailyStats(userId, periodDays))
         .then((value) => setDaily(value))
         .catch((error) => {
           if (isFirestoreSessionInvalidError(error)) {
             notifySessionInvalidOnce()
           }
         })
-      const byTypePromise = withTransientAuthRetry(() => getByTypeStats(userId))
+      const byTypePromise = withTransientFirebaseAuthRetry(() => getByTypeStats(userId))
         .then((value) => setByType(value))
         .catch((error) => {
           if (isFirestoreSessionInvalidError(error)) {
@@ -215,7 +175,7 @@ export function useDashboardData(periodDays: number) {
     setChartLoading(true)
 
     if (IS_FIREBASE && userId) {
-      withTransientAuthRetry(() => getDailyStats(userId, periodDays))
+      withTransientFirebaseAuthRetry(() => getDailyStats(userId, periodDays))
         .then((value) => setDaily(value))
         .catch((error) => {
           if (isFirestoreSessionInvalidError(error)) {

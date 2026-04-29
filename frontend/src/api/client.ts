@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { installDemoInterceptor } from './demo-interceptor'
+import { firebaseAuth, IS_FIREBASE } from '../lib/firebase'
 
 // ── In-memory GET cache with TTL + inflight deduplication ────────────────────
 
@@ -50,19 +51,64 @@ const api = axios.create({
   baseURL: '/api/v1',
 })
 
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('lexio_token')
+function readStoredAuthToken(): string | null {
+  try {
+    return localStorage.getItem('lexio_token')
+  } catch {
+    return null
+  }
+}
+
+async function resolveAuthToken(forceRefresh = false): Promise<string | null> {
+  if (IS_FIREBASE && firebaseAuth?.currentUser) {
+    try {
+      const token = await firebaseAuth.currentUser.getIdToken(forceRefresh)
+      localStorage.setItem('lexio_token', token)
+      return token
+    } catch (error) {
+      console.warn('[api] Firebase token refresh failed:', error)
+    }
+  }
+
+  return readStoredAuthToken()
+}
+
+api.interceptors.request.use(async (config) => {
+  let token: string | null = null
+  try {
+    token = await resolveAuthToken(false)
+  } catch (error) {
+    console.warn('[api] Failed to resolve auth token for request:', error)
+    token = readStoredAuthToken()
+  }
+  if (!token && IS_FIREBASE && firebaseAuth?.currentUser) {
+    console.warn('[api] Proceeding without bearer token even though a Firebase user is present.')
+  }
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('lexio_token')
-      const base = (import.meta.env.VITE_BASE_PATH as string | undefined)?.replace(/\/$/, '') || ''
-      window.location.href = `${base}/login`
+      const originalConfig = error.config as (typeof error.config & { _lexioAuthRetry?: boolean }) | undefined
+
+      if (IS_FIREBASE) {
+        if (firebaseAuth?.currentUser && originalConfig && !originalConfig._lexioAuthRetry) {
+          originalConfig._lexioAuthRetry = true
+          const freshToken = await resolveAuthToken(true)
+          if (freshToken) {
+            originalConfig.headers = originalConfig.headers ?? {}
+            originalConfig.headers.Authorization = `Bearer ${freshToken}`
+            return api(originalConfig)
+          }
+        }
+      } else {
+        localStorage.removeItem('lexio_token')
+        const base = (import.meta.env.VITE_BASE_PATH as string | undefined)?.replace(/\/$/, '') || ''
+        window.location.href = `${base}/login`
+      }
     }
     if (error.response?.status === 429) {
       window.dispatchEvent(new CustomEvent('lexio:rate-limit'))
@@ -70,13 +116,6 @@ api.interceptors.response.use(
     return Promise.reject(error)
   },
 )
-
-// ── Demo mode: return mock data when backend is unavailable ──────────────────
-// Only activate demo interceptor when there is NO Firebase config (pure demo).
-// When IS_FIREBASE=true, pages use Firestore directly — demo mock data must
-// never mask real errors from residual API calls.
-
-import { IS_FIREBASE } from '../lib/firebase'
 
 if (import.meta.env.VITE_DEMO_MODE === 'true' && !IS_FIREBASE) {
   installDemoInterceptor(api)
