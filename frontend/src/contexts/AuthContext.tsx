@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useState, useEffect, useRef, ReactNode } from 'react'
-import { onAuthStateChanged, type User } from 'firebase/auth'
+import { onAuthStateChanged, onIdTokenChanged, type User } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { firebaseAuth, IS_FIREBASE } from '../lib/firebase'
 import { firestore } from '../lib/firebase'
@@ -284,6 +284,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return unsub
   }, [clearAuthState, restoreAuthStateFromStorage, syncAuthFromFirebaseUser])
+
+  // Keep the locally-persisted ID token in sync with whatever Firebase Auth
+  // currently considers valid. The Firebase SDK rotates tokens automatically
+  // (~hourly, plus when Firestore reports auth issues); listening here means
+  // the rest of the app — and any reload that hydrates from localStorage —
+  // always has the freshest token, eliminating the silent "zombie session"
+  // class of bugs where the UI looked logged in but Firestore rejected
+  // queries with `permission-denied`.
+  useEffect(() => {
+    if (!IS_FIREBASE || !firebaseAuth) return
+
+    const unsub = onIdTokenChanged(firebaseAuth, async (fbUser) => {
+      if (!fbUser) return
+      try {
+        const freshToken = await fbUser.getIdToken()
+        localStorage.setItem('lexio_token', freshToken)
+        setToken(freshToken)
+      } catch (error) {
+        console.warn('[AuthContext] Failed to capture rotated ID token:', error)
+      }
+    })
+
+    return unsub
+  }, [])
+
+  // Proactively refresh the ID token on a regular cadence so the SDK never
+  // serves Firestore a stale credential. Firebase Auth itself refreshes tokens
+  // ~every 55 minutes, but doing it explicitly here also covers cases where
+  // the tab was backgrounded for a long time and the next user action would
+  // have raced against the lazy refresh.
+  useEffect(() => {
+    if (!IS_FIREBASE || !firebaseAuth) return
+    if (!userId) return
+
+    const intervalMs = 25 * 60 * 1000 // 25 minutes
+    const intervalId = setInterval(() => {
+      const current = firebaseAuth?.currentUser
+      if (!current) return
+      current.getIdToken(true).catch((error) => {
+        console.warn('[AuthContext] Proactive token refresh failed:', error)
+      })
+    }, intervalMs)
+
+    // Also refresh as soon as a tab regains focus after being backgrounded —
+    // long idle periods are a common trigger for "Missing or insufficient
+    // permissions" the moment the user returns and the page issues queries
+    // before the SDK has had a chance to renew its credentials.
+    const handleVisibility = () => {
+      if (typeof document === 'undefined') return
+      if (document.visibilityState !== 'visible') return
+      const current = firebaseAuth?.currentUser
+      if (!current) return
+      current.getIdToken(true).catch(() => undefined)
+    }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
+    }
+
+    return () => {
+      clearInterval(intervalId)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
+    }
+  }, [userId])
 
   const login = async (email: string, password: string) => {
     if (IS_FIREBASE) {
