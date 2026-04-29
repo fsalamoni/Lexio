@@ -27,7 +27,9 @@ function NavCard({
   activePatterns?: string[]
 }) {
   const location = useLocation()
-  const isActive = activePatterns?.some((pattern) => matchPath(pattern, location.pathname)) ?? false
+  const isActive = activePatterns?.some((pattern) =>
+    !!matchPath({ path: pattern, end: true }, location.pathname),
+  ) ?? false
   const resolvedPath = buildWorkspaceShellPath(to, { preserveSearch: location.search })
 
   return (
