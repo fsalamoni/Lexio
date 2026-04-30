@@ -275,15 +275,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     degradedKillSwitchRef.current.lastAt = now
     degradedKillSwitchRef.current.lastFingerprint = liveFingerprint
 
+    // NON-DESTRUCTIVE recovery. A burst of `permission-denied` errors is
+    // almost always a transient token desync between Firebase Auth and
+    // Firestore (token rotation, tab regaining focus, first navigation after
+    // login). Forcing a logout here was destroying live sessions and
+    // bouncing users to /login mid-flow. Instead we proactively refresh the
+    // ID token and let the next query succeed naturally. If the token is
+    // genuinely invalid, the next withFirestoreRetry call will surface
+    // `auth-session-invalid`, which routes through `recoverInvalidSession`
+    // and performs a clean logout there — that path remains intact.
     try {
-      manualLogoutRef.current = true
-      await firebaseLogout().catch(() => undefined)
-      clearAuthState()
+      const current = firebaseAuth?.currentUser
+      if (current) {
+        await current.getIdToken(true).catch((error) => {
+          console.warn('[AuthContext] Proactive token refresh after permission-denied burst failed:', error)
+        })
+      }
+      console.warn(
+        `[AuthContext] permission-denied burst observed (context=${detail?.contextLabel ?? 'unknown'}, count=${detail?.burstCount ?? 0}, contexts=${detail?.uniqueContexts ?? 0}). Session preserved; token refreshed.`,
+      )
     } finally {
       setIsReady(true)
       degradedKillSwitchRef.current.inProgress = false
     }
-  }, [clearAuthState, currentSessionFingerprint])
+  }, [currentSessionFingerprint])
 
   useEffect(() => {
     if (!IS_FIREBASE || typeof window === 'undefined') return

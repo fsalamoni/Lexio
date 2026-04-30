@@ -21,7 +21,6 @@ import {
 import { onAuthStateChanged } from 'firebase/auth'
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import {
-  emitFirestoreAuthAccessDegraded,
   emitFirestoreAuthSessionInvalid,
 } from './auth-session-events'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
@@ -733,15 +732,21 @@ async function withFirestoreRetry<T>(
 
   if (isAuthAccessFirestoreError(lastError)) {
     if (getFirebaseErrorCode(lastError) === 'permission-denied') {
+      // Track bursts for telemetry only. We deliberately do NOT emit
+      // FIRESTORE_AUTH_ACCESS_DEGRADED here: a burst of `permission-denied`
+      // during a page load is almost always a transient token desync between
+      // Firebase Auth and Firestore (token rotation, tab regaining focus,
+      // first navigation after login, etc.) and is fully recoverable by the
+      // SDK on the next call. Reacting to it by destroying the user's session
+      // — as the previous kill-switch did — caused legitimate users to be
+      // silently logged out and bounced to /login mid-flow. Only persistent
+      // session-invalidation errors (`unauthenticated`, `auth-session-invalid`)
+      // are routed through the destructive recovery path above.
       const burst = registerPermissionDeniedBurst(contextLabel)
       if (burst.shouldTriggerKillSwitch) {
-        emitFirestoreAuthAccessDegraded({
-          contextLabel,
-          authUid: getCurrentFirebaseAuthUid(),
-          errorCode: 'permission-denied',
-          burstCount: burst.burstCount,
-          uniqueContexts: burst.uniqueContexts,
-        })
+        console.warn(
+          `[Firestore Auth] permission-denied burst observed (count=${burst.burstCount}, contexts=${burst.uniqueContexts}, latest=${contextLabel}). Session preserved; relying on retry+token refresh to recover.`,
+        )
         clearPermissionDeniedBurstForCurrentUser()
       }
     } else {
