@@ -176,10 +176,14 @@ describe('AuthContext session recovery', () => {
     expect(localStorage.getItem('lexio_user_id')).toBe('user-1')
   })
 
-  it('keeps session active when Firestore still rejects access after forced refresh', async () => {
-    // Simulates the production loop where Firebase Auth keeps issuing fresh
-    // tokens but Firestore continues to return permission-denied — the user
-    // should remain active until explicit logoff.
+  it('forces clean logout when Firestore keeps rejecting access after forced refresh', async () => {
+    // CRITICAL regression test: when Firebase Auth issues a fresh token but
+    // Firestore continues to return permission-denied on the bootstrap read,
+    // the persisted token is structurally invalid for this account. Restoring
+    // it from localStorage would re-trigger the same denial on every query
+    // and produce the dashboard "Erro ao carregar dashboard" loop observed in
+    // production (Apr 2026). The recovery handler MUST escalate to a clean
+    // logout so the user re-authenticates from scratch instead of looping.
     currentUser.getIdToken.mockResolvedValue('token-refreshed')
     mockGetDoc
       .mockResolvedValueOnce({
@@ -197,13 +201,46 @@ describe('AuthContext session recovery', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId('ready').textContent).toBe('true')
-      expect(screen.getByTestId('user-id').textContent).toBe('user-1')
+      expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
     })
 
-    expect(mockFirebaseLogout).not.toHaveBeenCalled()
-    expect(localStorage.getItem('lexio_user_id')).toBe('user-1')
-    expect(localStorage.getItem('lexio_token')).toBeTruthy()
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('user-id').textContent).toBe('null')
+    })
+
+    expect(localStorage.getItem('lexio_user_id')).toBeNull()
+    expect(localStorage.getItem('lexio_token')).toBeNull()
+  })
+
+  it('forces clean logout when initial hydration is rejected by Firestore', async () => {
+    // Boot-time variant: the very first /users/{uid} read after
+    // onAuthStateChanged returns permission-denied. The previous code path
+    // restored the dead token from localStorage, leaving the dashboard in a
+    // permanent "logged in but every read fails" state. The fix must clear
+    // the session cleanly so the route guard redirects to /login.
+    currentUser.getIdToken.mockResolvedValue('token-refreshed')
+    mockGetDoc.mockRejectedValue(Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'permission-denied',
+    }))
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('user-id').textContent).toBe('null')
+    })
+
+    expect(localStorage.getItem('lexio_user_id')).toBeNull()
+    expect(localStorage.getItem('lexio_token')).toBeNull()
   })
 
   it('only logs out when user explicitly requests logoff', async () => {

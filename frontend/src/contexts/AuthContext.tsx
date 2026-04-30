@@ -218,25 +218,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionRecoveryRef.current.lastFingerprint = liveFingerprint
 
     let recovered = false
+    let recoveryError: unknown = null
     try {
       if (firebaseAuth?.currentUser) {
         try {
           await syncAuthFromFirebaseUser(firebaseAuth.currentUser, { forceRefreshToken: true })
           recovered = true
         } catch (error) {
+          recoveryError = error
           console.warn('[AuthContext] Failed to refresh Firebase session token and profile data after auth-session-invalid signal:', error)
         }
       }
 
       if (!recovered) {
-        // Keep the user active unless they explicitly request logout.
-        restoreAuthStateFromStorage()
+        // CRITICAL: if recovery failed because Firestore is rejecting the
+        // freshly-refreshed token (auth-access error), the token persisted in
+        // localStorage is exactly the one being rejected. Restoring it would
+        // re-trigger the same permission-denied loop indefinitely. Force a
+        // clean logout instead so the user can re-authenticate from scratch.
+        if (isAuthAccessError(recoveryError)) {
+          manualLogoutRef.current = true
+          await firebaseLogout().catch(() => undefined)
+          clearAuthState()
+        } else {
+          // Transient failure (network/offline). Keep the user active and let
+          // the next attempt (or visibility refresh) recover.
+          restoreAuthStateFromStorage()
+        }
       }
     } finally {
       setIsReady(true)
       sessionRecoveryRef.current.inProgress = false
     }
-  }, [currentSessionFingerprint, restoreAuthStateFromStorage, syncAuthFromFirebaseUser])
+  }, [clearAuthState, currentSessionFingerprint, restoreAuthStateFromStorage, syncAuthFromFirebaseUser])
 
   const recoverDegradedFirestoreAccess = useCallback(async (detail?: FirestoreAuthAccessDegradedEventDetail) => {
     if (!IS_FIREBASE) return
@@ -330,6 +344,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('[AuthContext] Failed to hydrate Firebase auth session:', error)
         if (manualLogoutRef.current) {
           manualLogoutRef.current = false
+          clearAuthState()
+        } else if (isAuthAccessError(error)) {
+          // CRITICAL: hydration failed because Firestore is rejecting this
+          // user's token (own /users/{uid} read denied). Restoring the same
+          // token from localStorage would cause every subsequent query to
+          // fail with permission-denied. Clear the dead session and force a
+          // clean re-login via ProtectedRoute redirect.
+          manualLogoutRef.current = true
+          await firebaseLogout().catch(() => undefined)
           clearAuthState()
         } else if (!restoreAuthStateFromStorage()) {
           if (callbackUid) {
