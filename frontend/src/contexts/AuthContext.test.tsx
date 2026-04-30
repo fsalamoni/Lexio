@@ -263,7 +263,16 @@ describe('AuthContext session recovery', () => {
     expect(localStorage.getItem('lexio_token')).toBeNull()
   })
 
-  it('triggers kill switch and clears session on auth-access degraded event', async () => {
+  it('preserves the session and refreshes the token on permission-denied bursts', async () => {
+    // CRITICAL regression test: a burst of `permission-denied` errors during
+    // a page load (5+ parallel queries racing against Firebase token sync)
+    // must NOT destroy the user's session. The previous kill-switch behavior
+    // called firebaseLogout() + clearAuthState() and bounced the user to
+    // /login mid-flow — this is the exact symptom the user reported as
+    // "the site keeps losing the database". Recovery must be non-destructive:
+    // proactively refresh the ID token and let the next withFirestoreRetry
+    // attempt succeed. Only `auth-session-invalid` (a confirmed dead token)
+    // is allowed to escalate to logout, via recoverInvalidSession.
     render(
       <AuthProvider>
         <Probe emitAuthAccessDegraded />
@@ -271,15 +280,16 @@ describe('AuthContext session recovery', () => {
     )
 
     await waitFor(() => {
-      expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('user-id').textContent).toBe('user-1')
     })
 
     await waitFor(() => {
-      expect(screen.getByTestId('ready').textContent).toBe('true')
-      expect(screen.getByTestId('user-id').textContent).toBe('null')
+      expect(currentUser.getIdToken).toHaveBeenCalledWith(true)
     })
 
-    expect(localStorage.getItem('lexio_user_id')).toBeNull()
-    expect(localStorage.getItem('lexio_token')).toBeNull()
+    expect(mockFirebaseLogout).not.toHaveBeenCalled()
+    expect(localStorage.getItem('lexio_user_id')).toBe('user-1')
+    expect(localStorage.getItem('lexio_token')).not.toBeNull()
   })
 })
