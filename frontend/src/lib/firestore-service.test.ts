@@ -19,6 +19,8 @@ const mockLimit = vi.fn()
 const mockSetDoc = vi.fn()
 const mockServerTimestamp = vi.fn()
 const mockUpdateDoc = vi.fn()
+const mockEmitFirestoreAuthSessionInvalid = vi.fn()
+const mockEmitFirestoreAuthAccessDegraded = vi.fn()
 
 const {
   mockGetIdToken,
@@ -93,6 +95,11 @@ vi.mock('./document-json-converter', () => ({
   getStructuredMeta: vi.fn(() => null),
 }))
 
+vi.mock('./auth-session-events', () => ({
+  emitFirestoreAuthSessionInvalid: (...args: unknown[]) => mockEmitFirestoreAuthSessionInvalid(...args),
+  emitFirestoreAuthAccessDegraded: (...args: unknown[]) => mockEmitFirestoreAuthAccessDegraded(...args),
+}))
+
 // ── Import under test (AFTER mocks are registered) ──────────────────────────
 
 import {
@@ -147,6 +154,8 @@ describe('saveNotebookDocumentToDocuments', () => {
     mockSetDoc.mockResolvedValue(undefined)
     mockServerTimestamp.mockReturnValue('__server_timestamp__')
     mockUpdateDoc.mockResolvedValue(undefined)
+    mockEmitFirestoreAuthSessionInvalid.mockReset()
+    mockEmitFirestoreAuthAccessDegraded.mockReset()
   })
 
   it('creates a document in the correct Firestore collection path', async () => {
@@ -526,6 +535,29 @@ describe('saveNotebookDocumentToDocuments', () => {
 
     expect(result.items).toEqual([])
     expect(mockGetDocs).toHaveBeenCalledTimes(1)
+  }, 30_000)
+
+  it('emits degraded-auth signal when permission-denied bursts across contexts', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDocs.mockRejectedValue(permissionError)
+    mockGetDoc.mockRejectedValue(permissionError)
+
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getResearchNotebook(uid, 'nb-1')).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+
+    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledTimes(1)
+    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledWith(expect.objectContaining({
+      errorCode: 'permission-denied',
+      burstCount: expect.any(Number),
+      uniqueContexts: expect.any(Number),
+    }))
   }, 30_000)
 
   it('persists user settings to the preferences document with merge', async () => {

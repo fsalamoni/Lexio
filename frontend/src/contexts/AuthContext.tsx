@@ -6,10 +6,13 @@ import { firestore } from '../lib/firebase'
 import { firebaseLogin, firebaseRegister, firebaseLogout, firebaseGoogleLogin, handleGoogleRedirectResult, translateFirebaseError } from '../lib/auth-service'
 import api from '../api/client'
 import {
+  FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT,
   FIRESTORE_AUTH_SESSION_INVALID_EVENT,
+  type FirestoreAuthAccessDegradedEventDetail,
   getSessionFingerprint,
   type FirestoreAuthSessionInvalidEventDetail,
 } from '../lib/auth-session-events'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
 
 interface AuthContextType {
   token: string | null
@@ -64,6 +67,7 @@ function readStoredAuthState(): {
 }
 
 const SESSION_INVALID_RECOVERY_COOLDOWN_MS = 12_000
+const AUTH_DEGRADED_KILL_SWITCH_COOLDOWN_MS = 30_000
 
 const AUTH_ACCESS_ERROR_CODES = new Set([
   'permission-denied',
@@ -93,6 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Demo mode is immediately ready; Firebase mode waits for onAuthStateChanged
   const [isReady,  setIsReady]  = useState(!IS_FIREBASE)
   const sessionRecoveryRef = useRef({
+    inProgress: false,
+    lastAt: 0,
+    lastFingerprint: '',
+  })
+  const degradedKillSwitchRef = useRef({
     inProgress: false,
     lastAt: 0,
     lastFingerprint: '',
@@ -129,9 +138,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserId(fbUser.uid)
 
     if (!firestore) return
+    const db = firestore
 
     try {
-      const userSnap = await getDoc(doc(firestore, 'users', fbUser.uid))
+      // Mandatory bootstrap session-integrity check: if the authenticated user
+      // cannot read their own `/users/{uid}` document, the session cannot be
+      // considered healthy for workspace operations.
+      const userSnap = await withTransientFirebaseAuthRetry(
+        () => getDoc(doc(db, 'users', fbUser.uid)),
+      )
       if (userSnap.exists()) {
         const userData = userSnap.data() as { role?: string; full_name?: string }
         const nextRole = userData.role ?? 'user'
@@ -223,6 +238,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [currentSessionFingerprint, restoreAuthStateFromStorage, syncAuthFromFirebaseUser])
 
+  const recoverDegradedFirestoreAccess = useCallback(async (detail?: FirestoreAuthAccessDegradedEventDetail) => {
+    if (!IS_FIREBASE) return
+
+    const signalFingerprint = detail?.sessionFingerprint || ''
+    const liveFingerprint = currentSessionFingerprint()
+
+    if (signalFingerprint && signalFingerprint !== liveFingerprint) {
+      return
+    }
+
+    const now = Date.now()
+    if (degradedKillSwitchRef.current.inProgress) return
+    if (
+      degradedKillSwitchRef.current.lastFingerprint === liveFingerprint
+      && now - degradedKillSwitchRef.current.lastAt < AUTH_DEGRADED_KILL_SWITCH_COOLDOWN_MS
+    ) {
+      return
+    }
+
+    degradedKillSwitchRef.current.inProgress = true
+    degradedKillSwitchRef.current.lastAt = now
+    degradedKillSwitchRef.current.lastFingerprint = liveFingerprint
+
+    try {
+      manualLogoutRef.current = true
+      await firebaseLogout().catch(() => undefined)
+      clearAuthState()
+    } finally {
+      setIsReady(true)
+      degradedKillSwitchRef.current.inProgress = false
+    }
+  }, [clearAuthState, currentSessionFingerprint])
+
   useEffect(() => {
     if (!IS_FIREBASE || typeof window === 'undefined') return
 
@@ -236,6 +284,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener(FIRESTORE_AUTH_SESSION_INVALID_EVENT, handler as EventListener)
     }
   }, [recoverInvalidSession])
+
+  useEffect(() => {
+    if (!IS_FIREBASE || typeof window === 'undefined') return
+
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<FirestoreAuthAccessDegradedEventDetail>).detail
+      void recoverDegradedFirestoreAccess(detail)
+    }
+
+    window.addEventListener(FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT, handler as EventListener)
+    return () => {
+      window.removeEventListener(FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT, handler as EventListener)
+    }
+  }, [recoverDegradedFirestoreAccess])
 
   // Listen to Firebase auth state (token refresh, logout from another tab, etc.)
   useEffect(() => {
