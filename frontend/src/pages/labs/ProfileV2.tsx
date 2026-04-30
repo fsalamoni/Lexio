@@ -7,6 +7,7 @@ import { useToast } from '../../components/Toast'
 import { useAuth } from '../../contexts/AuthContext'
 import { IS_FIREBASE, firebaseAuth } from '../../lib/firebase'
 import { getProfile, getUserSettings, saveProfile, saveUserSettings } from '../../lib/firestore-service'
+import { withTransientFirebaseAuthRetry } from '../../lib/firebase-auth-retry'
 import { PROFILE_SECTIONS, type ProfileData, type ProfileField } from '../../lib/profile-preferences'
 import { calculateProfileCompletion, countSectionFields, PROFILE_CORE_FIELDS } from '../../lib/profile-progress'
 
@@ -106,7 +107,7 @@ export default function ProfileV2() {
       }
 
       try {
-        const settings = await getUserSettings(userId)
+        const settings = await withTransientFirebaseAuthRetry(() => getUserSettings(userId))
         const normalized = normalizePlatformPreferences({
           currency_preference: settings.currency_preference,
           locale_preference: settings.locale_preference,

@@ -12,6 +12,7 @@ import {
   seedThesesIfEmpty,
   type ThesisData,
 } from '../lib/firestore-service'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
 import ThesisAnalysisCard from '../components/ThesisAnalysisCard'
 import DraggablePanel from '../components/DraggablePanel'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -279,23 +280,30 @@ export default function ThesisBank() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingThesis, setEditingThesis] = useState<ThesisItem | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadTick, setReloadTick] = useState(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const seededRef = useRef(false)
   const toast = useToast()
-  const { userId } = useAuth()
+  const { userId, isReady } = useAuth()
 
   const PAGE = 50
 
   const fetchTheses = useCallback((q: string, area: string) => {
     setLoading(true)
     setOffset(0)
+    setLoadError(null)
 
     if (IS_FIREBASE && userId) {
-      listTheses(userId, { q: q || undefined, legalAreaId: area || undefined, limit: PAGE })
+      withTransientFirebaseAuthRetry(
+        () => listTheses(userId, { q: q || undefined, legalAreaId: area || undefined, limit: PAGE }),
+      )
         .then(result => {
           setTheses(result.items.map(t => ({ ...t, id: t.id! } as ThesisItem)))
           setTotal(result.total)
+          setLoadError(null)
         })
-        .catch(() => toast.error('Erro ao carregar teses'))
+        .catch(() => setLoadError('Não foi possível carregar suas teses agora. Verifique sua conexão e tente novamente.'))
         .finally(() => setLoading(false))
     } else {
       const params = new URLSearchParams()
@@ -307,8 +315,9 @@ export default function ThesisBank() {
         .then(res => {
           setTheses(Array.isArray(res.data?.items) ? res.data.items : [])
           setTotal(typeof res.data?.total === 'number' ? res.data.total : 0)
+          setLoadError(null)
         })
-        .catch(() => toast.error('Erro ao carregar teses'))
+        .catch(() => setLoadError('Não foi possível carregar suas teses agora. Verifique sua conexão e tente novamente.'))
         .finally(() => setLoading(false))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -349,46 +358,47 @@ export default function ThesisBank() {
   }
 
   useEffect(() => {
-    if (IS_FIREBASE && !userId) return // Wait for Firebase auth before any fetch
+    // CRITICAL: wait for Firebase auth bootstrap (`isReady`) before any
+    // Firestore read. `userId` alone is hydrated from localStorage and can
+    // race ahead of `onAuthStateChanged` syncing the ID token into the SDK,
+    // producing intermittent permission-denied bursts on page load.
+    if (IS_FIREBASE && (!isReady || !userId)) return
 
-    fetchTheses('', '')
-    if (IS_FIREBASE && userId) {
-      getThesisStats(userId)
-        .then(s => setStats(s))
-        .catch(() => toast.warning('Não foi possível atualizar estatísticas do banco de teses no momento'))
-    } else {
-      api.get('/theses/stats')
-        .then(res => setStats(res.data))
-        .catch(() => toast.error('Erro ao carregar estatísticas do banco de teses'))
+    let cancelled = false
+
+    const loadStats = () => {
+      if (IS_FIREBASE && userId) {
+        withTransientFirebaseAuthRetry(() => getThesisStats(userId))
+          .then((s) => { if (!cancelled) setStats(s) })
+          .catch(() => { /* stats are non-critical; surfaced via inline retry on the stats card */ })
+      } else {
+        api.get('/theses/stats')
+          .then((res) => { if (!cancelled) setStats(res.data) })
+          .catch(() => { /* swallowed: stats card will show retry */ })
+      }
     }
 
-    // Auto-seed thesis bank on first load if empty (Firebase mode only)
     const initAndFetch = async () => {
-      if (IS_FIREBASE && userId) {
+      if (IS_FIREBASE && userId && !seededRef.current) {
+        seededRef.current = true
         try {
-          const seeded = await seedThesesIfEmpty(userId)
-          if (seeded > 0) {
+          const seeded = await withTransientFirebaseAuthRetry(() => seedThesesIfEmpty(userId))
+          if (!cancelled && seeded > 0) {
             toast.success(`Banco de teses populado com ${seeded} teses do acervo jurídico`)
           }
         } catch (e) {
           console.warn('Thesis seed check failed:', e)
         }
       }
+      if (cancelled) return
       fetchTheses('', '')
-      if (IS_FIREBASE && userId) {
-        getThesisStats(userId)
-          .then(s => setStats(s))
-          .catch(() => toast.warning('Não foi possível atualizar estatísticas do banco de teses no momento'))
-      } else {
-        api.get('/theses/stats')
-          .then(res => setStats(res.data))
-          .catch(() => toast.error('Erro ao carregar estatísticas do banco de teses'))
-      }
+      loadStats()
     }
 
     initAndFetch()
+    return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId])
+  }, [isReady, userId, reloadTick])
 
   // Debounced search (400ms)
   useEffect(() => {
@@ -508,9 +518,9 @@ export default function ThesisBank() {
           onThesesChanged={() => {
             fetchTheses(search, areaFilter)
             if (userId) {
-              getThesisStats(userId)
+              withTransientFirebaseAuthRetry(() => getThesisStats(userId))
                 .then(s => setStats(s))
-                .catch(() => toast.warning('Não foi possível atualizar estatísticas do banco de teses no momento'))
+                .catch(() => { /* stats card retry will recover */ })
             }
           }}
         />
@@ -669,7 +679,21 @@ export default function ThesisBank() {
       )}
 
       {/* Thesis list */}
-      {loading ? (
+      {loadError ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-6 text-sm text-rose-800 flex flex-col items-start gap-3">
+          <div>
+            <p className="font-medium">{loadError}</p>
+            <p className="text-rose-700/80 text-xs mt-1">Sua sessão continua ativa. Isso costuma ser uma dessincronização temporária entre o Firebase Auth e o Firestore.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReloadTick(t => t + 1)}
+            className="px-3 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : loading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => <SkeletonItem key={i} />)}
         </div>

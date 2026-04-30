@@ -37,6 +37,7 @@ import {
   type NotebookSearchMemoryBackfillReport,
   type PlatformUsageRow,
 } from '../lib/firestore-service'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
 import { getExecutionStateLabel } from '../lib/cost-analytics'
 import type { CostBreakdown, CostBreakdownItem, UsageExecutionRecord } from '../lib/cost-analytics'
 import { V2EmptyState, V2PageHero } from '../components/v2/V2PagePrimitives'
@@ -513,7 +514,7 @@ export default function PlatformAdminPanel() {
 
         const uid = getCurrentUserId()
         if (uid) {
-          const settings = await getUserSettings(uid)
+          const settings = await withTransientFirebaseAuthRetry(() => getUserSettings(uid))
           const parsed = parseAlertThresholds(settings.platform_admin_alert_thresholds)
           setAlertThresholds(parsed)
           setRecommendationPolicy(parseRecommendationPolicy(settings.platform_admin_alert_recommendation_policy))

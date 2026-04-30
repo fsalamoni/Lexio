@@ -18,7 +18,7 @@ import {
   type QueryDocumentSnapshot,
   type QueryConstraint,
 } from 'firebase/firestore'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged, onIdTokenChanged } from 'firebase/auth'
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import {
   emitFirestoreAuthSessionInvalid,
@@ -141,7 +141,7 @@ function ensureFirestore() {
 
 const FIREBASE_AUTH_SYNC_TIMEOUT_MS = 8_000
 const FIRESTORE_SESSION_INVALID_CODE = 'firestore/auth-session-invalid'
-const FIRESTORE_AUTH_CIRCUIT_COOLDOWN_MS = 1_500
+const FIRESTORE_AUTH_CIRCUIT_COOLDOWN_MS = 800
 // Number of consecutive auth-access failures across calls (within the
 // recent-failure window) before the circuit opens. Keeping this higher than 1
 // avoids fast-failing healthy requests just because a single call hit a
@@ -352,6 +352,55 @@ export function __resetFirestoreAuthCircuitForTests(): void {
   firestoreAuthFailureCounterByUid.clear()
   firestorePermissionDeniedBurstByUid.clear()
   lastObservedAuthUid = getCurrentFirebaseAuthUid()
+}
+
+/**
+ * Proactively close any open auth-access circuit for the current uid. Called
+ * on browser-level signals that strongly indicate the prior token desync is
+ * resolved (tab regaining focus after being backgrounded, or Firebase Auth
+ * rotating the ID token). Without this, a circuit opened during a burst at
+ * mount time would keep page-level retries fast-failing for the full cooldown
+ * window even after the SDK already has a fresh, valid credential.
+ */
+function resetAuthCircuitProactively(reason: string): void {
+  const uid = getCurrentFirebaseAuthUid()
+  if (!uid) return
+  const hadCircuit = firestoreAuthCircuitByUid.has(uid)
+  firestoreAuthCircuitByUid.delete(uid)
+  firestoreAuthFailureCounterByUid.delete(uid)
+  firestorePermissionDeniedBurstByUid.delete(uid)
+  if (hadCircuit) {
+    console.warn(`[Firestore Auth Circuit] proactively closed for uid ${uid} (${reason}).`)
+  }
+}
+
+let circuitResettersInstalled = false
+
+function installCircuitResettersOnce(): void {
+  if (circuitResettersInstalled) return
+  circuitResettersInstalled = true
+
+  if (firebaseAuth) {
+    try {
+      onIdTokenChanged(firebaseAuth, (user) => {
+        if (user) resetAuthCircuitProactively('id-token-rotated')
+      })
+    } catch {
+      // Listener wiring must never break Firestore reads.
+    }
+  }
+
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        resetAuthCircuitProactively('tab-visible')
+      }
+    })
+  }
+}
+
+if (IS_FIREBASE) {
+  installCircuitResettersOnce()
 }
 
 async function waitForFirebaseAuthSync(timeoutMs = FIREBASE_AUTH_SYNC_TIMEOUT_MS): Promise<void> {

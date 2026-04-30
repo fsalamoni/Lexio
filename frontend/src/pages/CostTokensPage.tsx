@@ -12,6 +12,7 @@ import { useToast } from '../components/Toast'
 import { V2EmptyState, V2MetricGrid, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getCostBreakdown as firestoreGetCostBreakdown, getUserSettings, saveUserSettings } from '../lib/firestore-service'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
 import api from '../api/client'
 import type { CostBreakdown, CostBreakdownItem } from '../lib/cost-analytics'
 import type { BudgetStatus } from '../lib/cost-analytics'
@@ -407,8 +408,8 @@ export default function CostTokensPage() {
       try {
         if (IS_FIREBASE && userId) {
           const [bd, settings] = await Promise.all([
-            firestoreGetCostBreakdown(userId),
-            getUserSettings(userId),
+            withTransientFirebaseAuthRetry(() => firestoreGetCostBreakdown(userId)),
+            withTransientFirebaseAuthRetry(() => getUserSettings(userId)),
           ])
           setBreakdown(bd)
           if (settings?.token_budget) setBudgetConfig(settings.token_budget)

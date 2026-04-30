@@ -17,6 +17,7 @@ import {
   type ContextDetailData, type ContextDetailQuestion,
 } from '../lib/firestore-service'
 import { generateDocument, generateContextQuestions, estimateDocumentGenerationCost, type GenerationProgress } from '../lib/generation-service'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
 import { ModelUnavailableError, TransientLLMError } from '../lib/llm-client'
 import { formatCost } from '../lib/currency-utils'
 import { ModelsNotConfiguredError } from '../lib/model-config'
@@ -259,7 +260,7 @@ export default function NewDocument() {
     // Budget warning check (non-blocking unless hard_block is set)
     if (IS_FIREBASE && userId && costEstimate) {
       try {
-        const settings = await getUserSettings(userId)
+        const settings = await withTransientFirebaseAuthRetry(() => getUserSettings(userId))
         const budget = settings?.token_budget
         if (budget) {
           const monthlyLimit = budget.monthly_limit_usd ?? 0

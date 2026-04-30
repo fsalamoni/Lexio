@@ -1,3 +1,5 @@
+import { firebaseAuth } from './firebase'
+
 function getFirebaseErrorCode(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null
   if ('code' in error && typeof error.code === 'string') {
@@ -27,10 +29,35 @@ export function shouldRetryTransientFirebaseAuthError(error: unknown): boolean {
   return /sessão do firebase não sincronizada/i.test(message)
 }
 
+/**
+ * `permission-denied` is treated separately from other transient codes:
+ * the inner `withFirestoreRetry` already attempts up to 3 token refreshes
+ * before surfacing it. At the page level we still give it ONE more chance
+ * after forcing a fresh ID token and waiting for the SDK to propagate it,
+ * which covers the common case where the auth circuit briefly opened
+ * during a burst of concurrent reads at mount time. We never retry more
+ * than once at this layer to avoid amplifying load against an account that
+ * truly cannot read its own data.
+ */
+function shouldRetryPermissionDeniedAfterRefresh(error: unknown): boolean {
+  return getFirebaseErrorCode(error) === 'permission-denied'
+}
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms)
   })
+}
+
+async function refreshIdTokenSafely(): Promise<boolean> {
+  const current = firebaseAuth?.currentUser
+  if (!current) return false
+  try {
+    await current.getIdToken(true)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export async function withTransientFirebaseAuthRetry<T>(
@@ -40,8 +67,22 @@ export async function withTransientFirebaseAuthRetry<T>(
   try {
     return await operation()
   } catch (error) {
-    if (!shouldRetryTransientFirebaseAuthError(error)) throw error
-    await wait(delayMs)
-    return operation()
+    if (shouldRetryTransientFirebaseAuthError(error)) {
+      await wait(delayMs)
+      return operation()
+    }
+
+    if (shouldRetryPermissionDeniedAfterRefresh(error)) {
+      // Force-refresh the ID token, give the Firestore SDK a moment to
+      // pick up the new credential, and try once more. If it still fails
+      // we let the original error propagate so the caller can show a
+      // proper retry UI instead of looping.
+      const refreshed = await refreshIdTokenSafely()
+      if (!refreshed) throw error
+      await wait(600)
+      return operation()
+    }
+
+    throw error
   }
 }
