@@ -537,7 +537,16 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(mockGetDocs).toHaveBeenCalledTimes(1)
   }, 30_000)
 
-  it('emits degraded-auth signal when permission-denied bursts across contexts', async () => {
+  it('does NOT emit a degraded-auth signal when permission-denied bursts across contexts', async () => {
+    // CRITICAL regression test: a burst of permission-denied errors across
+    // page-load queries (Dashboard, DocumentList, etc.) is almost always a
+    // transient token desync between Firebase Auth and Firestore. Reacting
+    // to it by emitting FIRESTORE_AUTH_ACCESS_DEGRADED — which the previous
+    // implementation did — caused AuthContext to firebaseLogout() and bounce
+    // legitimate users to /login mid-flow. This is the exact symptom the
+    // user reported in production (Apr 2026). The retry+token-refresh logic
+    // in withFirestoreRetry already absorbs the desync; the kill switch must
+    // stay disarmed and let the original error bubble up to the caller.
     const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
       code: 'firestore/permission-denied',
     })
@@ -552,12 +561,7 @@ describe('saveNotebookDocumentToDocuments', () => {
     await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
     await expect(getResearchNotebook(uid, 'nb-1')).rejects.toMatchObject({ code: 'firestore/permission-denied' })
 
-    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledTimes(1)
-    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledWith(expect.objectContaining({
-      errorCode: 'permission-denied',
-      burstCount: expect.any(Number),
-      uniqueContexts: expect.any(Number),
-    }))
+    expect(mockEmitFirestoreAuthAccessDegraded).not.toHaveBeenCalled()
   }, 30_000)
 
   it('persists user settings to the preferences document with merge', async () => {
