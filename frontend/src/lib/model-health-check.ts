@@ -1,13 +1,10 @@
 /**
- * Model Health Check — validates catalog models against OpenRouter API.
+ * Model Health Check — validates catalog models against each model provider.
  *
  * Runs on app load (once per session) and can be triggered manually.
- * Compares the local model catalog against the live OpenRouter models list.
- * Removes unavailable models from:
- *   1. The current user's catalog in Firestore settings
- *   2. All agent configs that reference them (agent_models, thesis_analyst_models, etc.)
- *
- * Users are notified of removed models so they can select replacements.
+ * Every model is verified against the provider responsible for dispatching it
+ * (OpenRouter, Groq, OpenAI, etc.), preventing false removals caused by
+ * checking non-OpenRouter models only against OpenRouter.
  */
 
 import { IS_FIREBASE } from './firebase'
@@ -15,10 +12,13 @@ import { ensureUserSettingsMigrated, getCurrentUserId, saveUserSettings } from '
 import {
   loadModelCatalog,
   saveModelCatalog,
-  fetchOpenRouterModels,
+  fetchProviderModels,
   emitCatalogUpdated,
 } from './model-catalog'
 import { AGENT_CONFIG_DEFS, sanitizeModelCapabilitiesAgainstDefs } from './model-config'
+import type { ProviderSettingsMap } from './firestore-types'
+import { PROVIDERS, apiKeyFieldForProvider, type ProviderId } from './providers'
+import { resolveProviderForModel } from './provider-credentials'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -45,7 +45,7 @@ const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface HealthCheckResult {
-  /** Models removed from catalog (no longer on OpenRouter) */
+  /** Models removed from catalog (no longer available in their provider) */
   removedModels: Array<{ id: string; label: string }>
   /** Agent configs that had models cleared (with agent key and model id) */
   clearedAgents: Array<{ configKey: string; agentKey: string; modelId: string }>
@@ -53,6 +53,10 @@ export interface HealthCheckResult {
   catalogSize: number
   /** Whether the check actually ran (false if skipped due to interval) */
   didRun: boolean
+  /** Providers that were successfully checked in this run. */
+  checkedProviders: ProviderId[]
+  /** Providers skipped because live model listing could not be fetched. */
+  skippedProviders: ProviderId[]
 }
 
 // ── Session guard ─────────────────────────────────────────────────────────────
@@ -69,7 +73,12 @@ let sessionCheckDone = false
  */
 export async function runModelHealthCheck(force = false): Promise<HealthCheckResult> {
   const noopResult: HealthCheckResult = {
-    removedModels: [], clearedAgents: [], catalogSize: 0, didRun: false,
+    removedModels: [],
+    clearedAgents: [],
+    catalogSize: 0,
+    didRun: false,
+    checkedProviders: [],
+    skippedProviders: [],
   }
 
   if (!IS_FIREBASE) return noopResult
@@ -96,47 +105,101 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
   sessionCheckDone = true
 
   try {
-    // 1. Fetch live models from OpenRouter
-    const liveModels = await fetchOpenRouterModels()
-    if (!Array.isArray(liveModels) || liveModels.length === 0) {
-      throw new Error('Não foi possível obter a lista de modelos do OpenRouter.')
-    }
-    const liveModelIds = new Set(liveModels.map(m => m.id))
+    const resolvedUid = getCurrentUserId()
+    if (!resolvedUid) return noopResult
 
-    // 2. Load current catalog
+    const settings = await ensureUserSettingsMigrated(resolvedUid)
+    const providerSettings = (settings.provider_settings ?? {}) as ProviderSettingsMap
+    const apiKeys = (settings.api_keys ?? {}) as Record<string, string>
+
+    // 1. Load current catalog
     const catalog = await loadModelCatalog()
     if (!Array.isArray(catalog) || catalog.length === 0) {
-      return { removedModels: [], clearedAgents: [], catalogSize: 0, didRun: true }
+      return {
+        removedModels: [],
+        clearedAgents: [],
+        catalogSize: 0,
+        didRun: true,
+        checkedProviders: [],
+        skippedProviders: [],
+      }
     }
 
-    // 3. Find models in catalog that don't exist on OpenRouter
-    const invalidModels = catalog.filter(m => !liveModelIds.has(m.id))
+    // 2. Resolve the provider of every catalog model using the same routing
+    // semantics used by runtime dispatch.
+    const modelsByProvider = new Map<ProviderId, typeof catalog>()
+    for (const model of catalog) {
+      const providerId = resolveProviderForModel(model.id, catalog, providerSettings)
+      const current = modelsByProvider.get(providerId) ?? []
+      current.push(model)
+      modelsByProvider.set(providerId, current)
+    }
+
+    // 3. Fetch live model ids per provider.
+    const checkedProviders: ProviderId[] = []
+    const skippedProviders: ProviderId[] = []
+    const liveModelIdsByProvider = new Map<ProviderId, Set<string>>()
+
+    for (const [providerId] of modelsByProvider) {
+      const provider = PROVIDERS[providerId]
+      if (!provider) {
+        skippedProviders.push(providerId)
+        continue
+      }
+
+      try {
+        const apiKey = apiKeys[apiKeyFieldForProvider(providerId)] ?? ''
+        const baseUrl = providerSettings[providerId]?.base_url
+        const liveModels = await fetchProviderModels(providerId, apiKey, baseUrl)
+        if (!Array.isArray(liveModels) || liveModels.length === 0) {
+          skippedProviders.push(providerId)
+          continue
+        }
+
+        liveModelIdsByProvider.set(providerId, new Set(liveModels.map(model => model.id)))
+        checkedProviders.push(providerId)
+      } catch (error) {
+        console.warn(`[HealthCheck] Falha ao verificar provedor ${provider.label}:`, error)
+        skippedProviders.push(providerId)
+      }
+    }
+
+    // 4. Find models that do not exist in their own provider catalog.
+    const invalidModels: typeof catalog = []
+    for (const [providerId, models] of modelsByProvider) {
+      const liveIds = liveModelIdsByProvider.get(providerId)
+      // Never remove models from providers that could not be checked.
+      if (!liveIds) continue
+
+      for (const model of models) {
+        if (!liveIds.has(model.id)) {
+          invalidModels.push(model)
+        }
+      }
+    }
 
     if (invalidModels.length === 0) {
       // All good — just update timestamp
-      const resolvedUid = getCurrentUserId()
-      if (!resolvedUid) return { removedModels: [], clearedAgents: [], catalogSize: catalog.length, didRun: true }
       await saveUserSettings(resolvedUid, { [HEALTH_CHECK_KEY]: Date.now() } as Partial<Record<string, unknown>>)
       return {
         removedModels: [],
         clearedAgents: [],
         catalogSize: catalog.length,
         didRun: true,
+        checkedProviders,
+        skippedProviders,
       }
     }
 
     const invalidIds = new Set(invalidModels.map(m => m.id))
 
-    // 4. Remove invalid models from catalog
+    // 5. Remove invalid models from catalog
     const cleanCatalog = catalog.filter(m => !invalidIds.has(m.id))
     await saveModelCatalog(cleanCatalog)
     emitCatalogUpdated(cleanCatalog)
 
-    // 5. Clear invalid models from all agent configs
+    // 6. Clear invalid models from all agent configs
     const clearedAgents: HealthCheckResult['clearedAgents'] = []
-    const resolvedUid = getCurrentUserId()
-    if (!resolvedUid) return noopResult
-    const settings = await ensureUserSettingsMigrated(resolvedUid)
     const catalogForValidation = cleanCatalog
     const updates: Record<string, unknown> = {
       [HEALTH_CHECK_KEY]: Date.now(),
@@ -182,6 +245,8 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
       clearedAgents,
       catalogSize: cleanCatalog.length,
       didRun: true,
+      checkedProviders,
+      skippedProviders,
     }
   } catch (err) {
     console.error('[HealthCheck] Erro na verificação de modelos:', err)
@@ -205,19 +270,28 @@ export function formatHealthCheckMessage(result: HealthCheckResult): {
   }
 
   if (result.removedModels.length === 0) {
+    const skipped = result.skippedProviders.length > 0
+      ? ` Não foi possível verificar: ${result.skippedProviders.map(providerId => PROVIDERS[providerId]?.label ?? providerId).join(', ')}.`
+      : ''
     return {
       title: 'Todos os modelos estão válidos',
-      message: `Nenhum modelo indisponível encontrado. ${result.catalogSize} modelo(s) no catálogo.`,
+      message: `Nenhum modelo indisponível encontrado. ${result.catalogSize} modelo(s) no catálogo.${skipped}`,
     }
   }
 
   const modelNames = result.removedModels.map(m => m.label).join(', ')
   const agentCount = result.clearedAgents.length
+  const checkedProviders = result.checkedProviders.length > 0
+    ? result.checkedProviders.map(providerId => PROVIDERS[providerId]?.label ?? providerId).join(', ')
+    : 'nenhum provedor'
+  const skippedProviders = result.skippedProviders.length > 0
+    ? ` Não foi possível verificar: ${result.skippedProviders.map(providerId => PROVIDERS[providerId]?.label ?? providerId).join(', ')}.`
+    : ''
 
   return {
     title: `${result.removedModels.length} modelo(s) removido(s) do catálogo`,
     message: agentCount > 0
-      ? `Os seguintes modelos não estão mais disponíveis no OpenRouter e foram removidos: ${modelNames}. ${agentCount} agente(s) foram desconfigurados e precisam de um novo modelo. Vá em Configurações para selecionar substitutos.`
-      : `Os seguintes modelos não estão mais disponíveis no OpenRouter e foram removidos: ${modelNames}. Nenhum agente foi afetado.`,
+      ? `Os seguintes modelos não estão mais disponíveis em seus provedores (${checkedProviders}) e foram removidos: ${modelNames}. ${agentCount} agente(s) foram desconfigurados e precisam de um novo modelo. Vá em Configurações para selecionar substitutos.${skippedProviders}`
+      : `Os seguintes modelos não estão mais disponíveis em seus provedores (${checkedProviders}) e foram removidos: ${modelNames}. Nenhum agente foi afetado.${skippedProviders}`,
   }
 }

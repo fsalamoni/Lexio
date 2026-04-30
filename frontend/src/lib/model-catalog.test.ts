@@ -15,7 +15,8 @@ vi.mock('./firestore-service', () => ({
 }))
 
 import { AVAILABLE_MODELS } from './model-config'
-import { invalidateCatalogCache, loadModelCatalog, saveModelCatalog } from './model-catalog'
+import { invalidateCatalogCache, loadModelCatalog, providerEntryToModelOption, saveModelCatalog } from './model-catalog'
+import { PROVIDERS } from './providers'
 
 describe('model-catalog user persistence', () => {
   beforeEach(() => {
@@ -68,5 +69,31 @@ describe('model-catalog user persistence', () => {
 
   it('rejects saving an empty personal catalog', async () => {
     await expect(saveModelCatalog([], 'user-1')).rejects.toThrow('O catálogo pessoal deve conter pelo menos um modelo.')
+  })
+
+  it('does not mark provider models as free when pricing metadata is missing', () => {
+    const option = providerEntryToModelOption(PROVIDERS.groq, {
+      id: 'llama-3.3-70b-versatile',
+      label: 'Llama 3.3 70B Versatile',
+    })
+
+    expect(option.isFree).toBe(false)
+    expect(option.inputCost).toBe(0)
+    expect(option.outputCost).toBe(0)
+    expect(option.rateLimits).toBeUndefined()
+  })
+
+  it('adds free-tier rate limit metadata for free OpenRouter models', () => {
+    const option = providerEntryToModelOption(PROVIDERS.openrouter, {
+      id: 'google/gemini-2.5-flash-lite:free',
+      label: 'Gemini 2.5 Flash Lite Free',
+      pricing: {
+        prompt: '0',
+        completion: '0',
+      },
+    })
+
+    expect(option.isFree).toBe(true)
+    expect(option.rateLimits).toMatchObject({ rpm: 20, rpd: 200 })
   })
 })

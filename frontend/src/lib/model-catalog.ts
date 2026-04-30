@@ -12,7 +12,7 @@
 import { useState, useEffect } from 'react'
 import { IS_FIREBASE } from './firebase'
 import { ensureUserSettingsMigrated, getCurrentUserId, saveUserSettings } from './firestore-service'
-import { AVAILABLE_MODELS, type ModelOption, type ModelCapability, type AgentFitScores, type AgentCategory } from './model-config'
+import { AVAILABLE_MODELS, FREE_TIER_RATE_LIMITS, type ModelOption, type ModelCapability, type AgentFitScores, type AgentCategory } from './model-config'
 import type { UserSettingsData } from './firestore-types'
 
 // ── Event bus ─────────────────────────────────────────────────────────────────
@@ -283,6 +283,9 @@ export function openRouterToModelOption(or: OpenRouterModel): ModelOption {
   const inputCost = parseFloat(or.pricing?.prompt ?? '0') * 1_000_000
   const outputCost = parseFloat(or.pricing?.completion ?? '0') * 1_000_000
   const isFree = inputCost === 0 && outputCost === 0
+  const rateLimits = isFree
+    ? { ...FREE_TIER_RATE_LIMITS, note: 'Limite oficial do plano gratuito OpenRouter.' }
+    : undefined
   const tier = inferTier(id, label)
   const agentFit = inferFitScores(tier, id)
   const desc = (or.description ?? '').replace(/<[^>]+>/g, '').slice(0, 120)
@@ -298,6 +301,7 @@ export function openRouterToModelOption(or: OpenRouterModel): ModelOption {
     inputCost,
     outputCost,
     isFree,
+    rateLimits,
     agentFit,
     capabilities: inferCapabilities(or.architecture?.modality),
   }
@@ -334,13 +338,21 @@ export function providerEntryToModelOption(
     ?? (raw as RawProviderModel).pricing?.input
   const outputCostRaw = (raw as RawProviderModel).pricing?.completion
     ?? (raw as RawProviderModel).pricing?.output
+  const hasInputCostNumber = typeof (raw as { inputCost?: number }).inputCost === 'number'
+  const hasOutputCostNumber = typeof (raw as { outputCost?: number }).outputCost === 'number'
+  const hasInputCostRaw = typeof inputCostRaw === 'string' && inputCostRaw.trim().length > 0
+  const hasOutputCostRaw = typeof outputCostRaw === 'string' && outputCostRaw.trim().length > 0
+  const hasPricingData = hasInputCostNumber || hasOutputCostNumber || hasInputCostRaw || hasOutputCostRaw
   const inputCost = (raw as { inputCost?: number }).inputCost ?? (inputCostRaw ? parseFloat(inputCostRaw) * 1_000_000 : 0)
   const outputCost = (raw as { outputCost?: number }).outputCost ?? (outputCostRaw ? parseFloat(outputCostRaw) * 1_000_000 : 0)
-  const isFree = (raw as { isFree?: boolean }).isFree ?? (inputCost === 0 && outputCost === 0)
+  const isFree = (raw as { isFree?: boolean }).isFree ?? (hasPricingData ? (inputCost === 0 && outputCost === 0) : false)
   const contextWindow = (raw as { contextWindow?: number }).contextWindow
     ?? (raw as RawProviderModel).context_length
     ?? (raw as RawProviderModel).context_window
     ?? 128_000
+  const rateLimits = isFree && provider.id === 'openrouter'
+    ? { ...FREE_TIER_RATE_LIMITS, note: 'Limite oficial do plano gratuito OpenRouter.' }
+    : undefined
   const explicitCaps = (raw as { capabilities?: ModelCapability[] }).capabilities
   const capabilities: ModelCapability[] = explicitCaps && explicitCaps.length > 0
     ? explicitCaps
@@ -357,6 +369,7 @@ export function providerEntryToModelOption(
     inputCost,
     outputCost,
     isFree,
+    rateLimits,
     agentFit: inferFitScores(tier, id),
     capabilities,
   }

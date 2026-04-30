@@ -31,6 +31,9 @@ import {
 } from '../lib/model-catalog'
 import { AVAILABLE_MODELS, FREE_TIER_RATE_LIMITS, type ModelOption, type ModelCapability, type AgentCategory } from '../lib/model-config'
 import { runModelHealthCheck, formatHealthCheckMessage } from '../lib/model-health-check'
+import { PROVIDER_ORDER, PROVIDERS, type ProviderId } from '../lib/providers'
+import { loadProviderSettings, saveProviderSettings } from '../lib/settings-store'
+import type { ProviderSettingsMap } from '../lib/firestore-types'
 import { useToast } from './Toast'
 import { formatCost as fmtCost } from '../lib/currency-utils'
 
@@ -133,6 +136,24 @@ function ScoreCell({ score, label, title }: { score: number; label: string; titl
       <span className="opacity-70">{label}</span>
     </span>
   )
+}
+
+function resolveCatalogProviderId(model: ModelOption): ProviderId {
+  if (model.providerId && model.providerId in PROVIDERS) {
+    return model.providerId as ProviderId
+  }
+  return 'openrouter'
+}
+
+function haveSameModelIds(a: ModelOption[], b: ModelOption[]): boolean {
+  if (a.length !== b.length) return false
+  const idsA = [...new Set(a.map(model => model.id))].sort()
+  const idsB = [...new Set(b.map(model => model.id))].sort()
+  if (idsA.length !== idsB.length) return false
+  for (let i = 0; i < idsA.length; i += 1) {
+    if (idsA[i] !== idsB[i]) return false
+  }
+  return true
 }
 
 // ── OR model row in the "Add" modal ───────────────────────────────────────────
@@ -525,6 +546,36 @@ export default function ModelCatalogCard() {
     setError(null)
     try {
       await saveModelCatalog(catalog)
+
+      const providerSettings = await loadProviderSettings()
+      const nextSavedModelsByProvider = new Map<ProviderId, ModelOption[]>()
+      for (const model of catalog) {
+        const providerId = resolveCatalogProviderId(model)
+        const current = nextSavedModelsByProvider.get(providerId) ?? []
+        current.push({ ...model, providerId })
+        nextSavedModelsByProvider.set(providerId, current)
+      }
+
+      const providerUpdates: ProviderSettingsMap = {}
+      for (const providerId of PROVIDER_ORDER) {
+        const currentEntry = providerSettings[providerId]
+        const currentSaved = currentEntry?.saved_models ?? []
+        const nextSaved = nextSavedModelsByProvider.get(providerId) ?? []
+
+        if (!currentEntry && nextSaved.length === 0) continue
+        if (haveSameModelIds(currentSaved, nextSaved)) continue
+
+        providerUpdates[providerId] = {
+          ...(currentEntry ?? { enabled: providerId === 'openrouter' }),
+          saved_models: nextSaved,
+          last_synced_at: new Date().toISOString(),
+        }
+      }
+
+      if (Object.keys(providerUpdates).length > 0) {
+        await saveProviderSettings(providerUpdates)
+      }
+
       setOriginal([...catalog])
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -856,7 +907,7 @@ export default function ModelCatalogCard() {
                 type="button"
                 onClick={handleHealthCheck}
                 disabled={checking || saving}
-                title="Verificar quais modelos do catálogo ainda existem no OpenRouter"
+                title="Verificar quais modelos do catálogo ainda existem em seus respectivos provedores"
                 className={V2_CATALOG_BUTTON_WARM}
               >
                 {checking ? (

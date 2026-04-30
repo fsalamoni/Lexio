@@ -21,13 +21,14 @@ import {
   AlertCircle, CheckCircle2, ExternalLink, Cpu, Coins,
 } from 'lucide-react'
 import {
+  CATALOG_UPDATED_EVENT,
   fetchProviderModels,
   loadModelCatalog,
   saveModelCatalog,
 } from '../lib/model-catalog'
 import { PROVIDERS, apiKeyFieldForProvider, type ProviderId } from '../lib/providers'
 import { loadApiKeyValues, loadProviderSettings, saveProviderSettings } from '../lib/settings-store'
-import type { ModelOption, ModelCapability } from '../lib/model-config'
+import { FREE_TIER_RATE_LIMITS, type ModelOption, type ModelCapability } from '../lib/model-config'
 import { useToast } from './Toast'
 import { formatCost as fmtCost } from '../lib/currency-utils'
 
@@ -110,7 +111,29 @@ export default function ProviderCatalogCard({ providerId, defaultOpen = false }:
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    const handleCatalogUpdated = () => {
+      void loadModelCatalog().then((currentCatalog) => {
+        setCatalog(currentCatalog)
+        setJustAdded(prev => {
+          const next = new Set<string>()
+          for (const model of currentCatalog) {
+            if (prev.has(model.id)) next.add(model.id)
+          }
+          return next
+        })
+      }).catch(() => {
+        // Keep current UI state if refresh fails.
+      })
+    }
+
+    window.addEventListener(CATALOG_UPDATED_EVENT, handleCatalogUpdated)
+    return () => window.removeEventListener(CATALOG_UPDATED_EVENT, handleCatalogUpdated)
+  }, [])
+
   const existingIds = useMemo(() => new Set(catalog.map(m => m.id)), [catalog])
+  const paidCount = useMemo(() => models.filter(model => !model.isFree).length, [models])
+  const freeCount = useMemo(() => models.filter(model => model.isFree).length, [models])
 
   const filtered = useMemo(() => {
     const list = search.trim()
@@ -196,6 +219,25 @@ export default function ProviderCatalogCard({ providerId, defaultOpen = false }:
 
       {open && (
         <div className="px-5 pb-5">
+          <div className="mb-3 rounded-[1rem] border border-blue-200 bg-[rgba(59,130,246,0.08)] p-3">
+            <p className="text-xs text-blue-900 leading-relaxed">
+              <strong>Para liberar modelos pagos no {provider.label}:</strong>{' '}
+              1) abra o Console do provedor; 2) ative faturamento/créditos; 3) gere uma nova chave vinculada ao plano pago; 4) volte aqui e clique em <strong>Atualizar lista</strong>.
+              {models.length > 0 && paidCount === 0 && (
+                <>
+                  {' '}No momento esta conta retornou somente modelos gratuitos/experimentais.
+                </>
+              )}
+            </p>
+            {freeCount > 0 && (
+              <p className="mt-1 text-[11px] text-blue-800">
+                {provider.id === 'openrouter'
+                  ? `No OpenRouter Free Tier, o limite padrao e ${FREE_TIER_RATE_LIMITS.rpm} req/min e ${FREE_TIER_RATE_LIMITS.rpd} req/dia.`
+                  : `No ${provider.label}, os limites de modelos gratuitos dependem do plano e devem ser conferidos no Console.`}
+              </p>
+            )}
+          </div>
+
           <div className="flex items-center gap-2 mb-3 border-b border-[var(--v2-line-soft)] pb-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--v2-ink-faint)]" />
@@ -240,7 +282,13 @@ export default function ProviderCatalogCard({ providerId, defaultOpen = false }:
               {filtered.map(model => {
                 const tierStyle = TIER_STYLES[model.tier]
                 const inCatalog = existingIds.has(model.id)
-                const wasJustAdded = justAdded.has(model.id)
+                const wasJustAdded = justAdded.has(model.id) && inCatalog
+                const hasUnknownPricing = !model.isFree && model.inputCost === 0 && model.outputCost === 0
+                const freeTierLimitText = model.rateLimits
+                  ? `${model.rateLimits.rpm} req/min · ${model.rateLimits.rpd} req/dia${model.rateLimits.note ? ` · ${model.rateLimits.note}` : ''}`
+                  : (provider.id === 'openrouter'
+                      ? `${FREE_TIER_RATE_LIMITS.rpm} req/min · ${FREE_TIER_RATE_LIMITS.rpd} req/dia`
+                      : 'Limite de uso definido no painel do provedor')
                 return (
                   <div key={model.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[rgba(15,23,42,0.04)]">
                     <div className="flex-1 min-w-0">
@@ -264,12 +312,26 @@ export default function ProviderCatalogCard({ providerId, defaultOpen = false }:
                         <span className="flex items-center gap-0.5"><Cpu className="w-3 h-3" /> {fmt(model.contextWindow)}</span>
                         <span className="flex items-center gap-0.5">
                           <Coins className="w-3 h-3" />
-                          <span className={model.isFree ? 'text-green-600 font-semibold' : ''}>{fmtCost(model.inputCost)}</span>
+                          <span className={model.isFree ? 'text-green-600 font-semibold' : (hasUnknownPricing ? 'text-amber-700 font-semibold' : '')}>
+                            {hasUnknownPricing ? 'N/D' : fmtCost(model.inputCost)}
+                          </span>
                           {' / '}
-                          <span className={model.isFree ? 'text-green-600 font-semibold' : ''}>{fmtCost(model.outputCost)}</span>
+                          <span className={model.isFree ? 'text-green-600 font-semibold' : (hasUnknownPricing ? 'text-amber-700 font-semibold' : '')}>
+                            {hasUnknownPricing ? 'N/D' : fmtCost(model.outputCost)}
+                          </span>
                         </span>
                         <span className="hidden truncate font-mono text-[var(--v2-ink-faint)] sm:block">{model.id}</span>
                       </div>
+                      {model.isFree && (
+                        <p className="mt-0.5 text-[10px] font-medium text-amber-700">
+                          Limite gratuito: {freeTierLimitText}
+                        </p>
+                      )}
+                      {hasUnknownPricing && (
+                        <p className="mt-0.5 text-[10px] text-[var(--v2-ink-faint)]">
+                          Preco nao informado pelo endpoint deste provedor. Consulte o Console para tabela completa.
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"
