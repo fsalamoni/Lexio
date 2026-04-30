@@ -19,6 +19,7 @@ import { IS_FIREBASE } from './firebase'
 import { ensureUserSettingsMigrated, getCurrentUserId } from './firestore-service'
 import {
   PROVIDERS,
+  providerIdFromLabel,
   type ProviderDefinition,
   type ProviderId,
   apiKeyFieldForProvider,
@@ -64,9 +65,23 @@ export function resolveProviderForModel(
   providerSettings: ProviderSettingsMap = {},
 ): ProviderId {
   const fromCatalog = catalog.find(m => m.id === modelId)
-  if (fromCatalog?.providerId) {
-    return fromCatalog.providerId as ProviderId
+  if (fromCatalog) {
+    if (fromCatalog.providerId) {
+      return fromCatalog.providerId as ProviderId
+    }
+
+    // Some transitional catalogs persisted only the provider label/id in the
+    // human-readable `provider` field.
+    if (fromCatalog.provider) {
+      const byLabel = providerIdFromLabel(String(fromCatalog.provider))
+      if (byLabel) return byLabel
+    }
+
+    // Legacy personal catalogs (seeded from AVAILABLE_MODELS) did not store a
+    // dispatch provider; those entries historically route through OpenRouter.
+    return 'openrouter'
   }
+
   // Then check provider-specific saved catalogs.
   for (const [pid, entry] of Object.entries(providerSettings)) {
     if (!entry?.saved_models) continue
@@ -74,6 +89,13 @@ export function resolveProviderForModel(
       return pid as ProviderId
     }
   }
+
+  // Last-resort heuristic for uncatalogued/direct model ids.
+  const firstSegment = modelId.split('/')[0]?.trim().toLowerCase()
+  if (firstSegment && firstSegment in PROVIDERS) {
+    return firstSegment as ProviderId
+  }
+
   return 'openrouter'
 }
 
@@ -109,7 +131,10 @@ export async function resolveProviderCall(
 
   // Provider explicitly disabled — only enforce when settings exist.
   const setting = bundle.providerSettings[provider.id]
-  if (setting && setting.enabled === false) {
+
+  // Guard against stale disabled flags when the user already configured a key.
+  // Contract: configured key means provider is operational.
+  if (setting && setting.enabled === false && !apiKey) {
     throw new Error(`O provedor "${provider.label}" está desativado. Acesse Configurações → Provedores de IA.`)
   }
 

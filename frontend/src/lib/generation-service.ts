@@ -29,6 +29,7 @@ import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecor
 import { evaluateQuality } from './quality-evaluator'
 import { compactContext } from './context-compactor'
 import { loadApiKeyValues } from './settings-store'
+import { PROVIDER_ORDER, apiKeyFieldForProvider } from './providers'
 import { firestore } from './firebase'
 import { buildDocumentPipelineProgress, buildDocumentStageMeta, type DocumentPipelineProgress } from './document-pipeline'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
@@ -106,9 +107,16 @@ interface RedatorRuntimeConfig {
   rollbackMinQuality: number
 }
 
-export function getLLMOperationalUsageMeta(result: Pick<LLMResult, 'operational'>): Pick<
+export function getLLMOperationalUsageMeta(result: Pick<LLMResult, 'operational' | 'provider_id' | 'provider_label'>): Pick<
   UsageExecutionRecord,
-  'execution_state' | 'retry_count' | 'used_fallback' | 'fallback_from'
+  | 'execution_state'
+  | 'retry_count'
+  | 'used_fallback'
+  | 'fallback_from'
+  | 'provider_id'
+  | 'provider_label'
+  | 'requested_model'
+  | 'resolved_model'
 > {
   const retryCount = Math.max(0, result.operational?.totalRetryCount ?? 0)
   const fallbackUsed = result.operational?.fallbackUsed
@@ -119,6 +127,10 @@ export function getLLMOperationalUsageMeta(result: Pick<LLMResult, 'operational'
     retry_count: retryCount,
     used_fallback: typeof fallbackUsed === 'boolean' ? fallbackUsed : null,
     fallback_from: fallbackFrom ?? null,
+    provider_id: result.provider_id ?? result.operational?.providerId ?? null,
+    provider_label: result.provider_label ?? result.operational?.providerLabel ?? null,
+    requested_model: result.operational?.requestedModel ?? null,
+    resolved_model: result.operational?.resolvedModel ?? null,
   }
 }
 
@@ -204,12 +216,23 @@ export async function getOpenRouterKey(uid?: string): Promise<string> {
 
   const apiKeys = await loadApiKeyValues(uid)
   const key = apiKeys.openrouter_api_key
-  if (!key || !key.startsWith('sk-')) {
-    throw new Error(
-      'API key do OpenRouter não configurada. Acesse Configurações → Chaves de API.',
-    )
+  if (key && key.trim().length > 0) return key
+
+  // Multi-provider compatibility: legacy call-sites still request an
+  // "OpenRouter key" as a readiness check. If the user configured any other
+  // provider key, return it so the flow can proceed and provider routing in
+  // `llm-client` can choose the correct endpoint.
+  for (const providerId of PROVIDER_ORDER) {
+    const field = apiKeyFieldForProvider(providerId)
+    const providerKey = apiKeys[field]
+    if (providerKey && providerKey.trim().length > 0) {
+      return providerKey
+    }
   }
-  return key
+
+  throw new Error(
+    'Nenhuma chave de provedor de IA configurada. Acesse Configurações → Provedores de IA.',
+  )
 }
 
 // ── Document type metadata ────────────────────────────────────────────────────

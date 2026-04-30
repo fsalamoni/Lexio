@@ -26,7 +26,7 @@ import {
   saveModelCatalog,
 } from '../lib/model-catalog'
 import { PROVIDERS, apiKeyFieldForProvider, type ProviderId } from '../lib/providers'
-import { loadApiKeyValues, loadProviderSettings } from '../lib/settings-store'
+import { loadApiKeyValues, loadProviderSettings, saveProviderSettings } from '../lib/settings-store'
 import type { ModelOption, ModelCapability } from '../lib/model-config'
 import { useToast } from './Toast'
 import { formatCost as fmtCost } from '../lib/currency-utils'
@@ -81,6 +81,19 @@ export default function ProviderCatalogCard({ providerId, defaultOpen = false }:
       const apiKey = keys[apiKeyFieldForProvider(providerId)] ?? ''
       const baseUrl = providerSettings[providerId]?.base_url
       const list = await fetchProviderModels(providerId, apiKey, baseUrl)
+
+      // Keep provider metadata fresh for governance/admin surfaces without
+      // waiting for the user to add/remove a model.
+      void saveProviderSettings({
+        [providerId]: {
+          ...(providerSettings[providerId] ?? { enabled: true }),
+          enabled: true,
+          last_synced_at: new Date().toISOString(),
+        },
+      }).catch(() => {
+        // Non-critical metadata write; ignore to avoid breaking catalog UX.
+      })
+
       setModels(list)
       setCatalog(currentCatalog)
     } catch (err) {
@@ -114,7 +127,25 @@ export default function ProviderCatalogCard({ providerId, defaultOpen = false }:
     setSaving(true)
     try {
       const next = [...catalog, { ...model, providerId }]
-      await saveModelCatalog(next)
+      const providerSettings = await loadProviderSettings()
+
+      const existingSaved = providerSettings[providerId]?.saved_models ?? []
+      const nextSavedModels = existingSaved.some(entry => entry.id === model.id)
+        ? existingSaved.map(entry => (entry.id === model.id ? { ...entry, ...model, providerId } : entry))
+        : [...existingSaved, { ...model, providerId }]
+
+      await Promise.all([
+        saveModelCatalog(next),
+        saveProviderSettings({
+          [providerId]: {
+            ...(providerSettings[providerId] ?? { enabled: true }),
+            enabled: true,
+            saved_models: nextSavedModels,
+            last_synced_at: new Date().toISOString(),
+          },
+        }),
+      ])
+
       setCatalog(next)
       setJustAdded(prev => new Set(prev).add(model.id))
       toast.success('Modelo adicionado', `${model.label} foi incluído no seu Catálogo Pessoal.`)

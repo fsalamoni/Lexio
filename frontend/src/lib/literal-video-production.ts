@@ -125,6 +125,8 @@ function makeExecution(
   durationMs: number,
   costUsd = 0,
   executionState: VideoGenerationStepExecution['execution_state'] = 'waiting_io',
+  providerId?: string | null,
+  providerLabel?: string | null,
 ): VideoGenerationStepExecution {
   const agentName = {
     media_image_generation: 'Gerador de Imagens',
@@ -138,6 +140,8 @@ function makeExecution(
     phase,
     agent_name: agentName,
     model,
+    provider_id: providerId ?? null,
+    provider_label: providerLabel ?? null,
     tokens_in: 0,
     tokens_out: 0,
     cost_usd: Math.max(0, costUsd),
@@ -1178,9 +1182,12 @@ export async function generateLiteralMediaAssets(
           nextAsset.imageUrl = result.imageDataUrl
           executions.push(makeExecution(
             'media_image_generation',
-            chooseImageModel(models.video_image_generator) || 'openai/dall-e-3',
+            result.model,
             performance.now() - startedAt,
             result.cost_usd,
+            'waiting_io',
+            result.provider_id ?? null,
+            result.provider_label ?? null,
           ))
           onProgress?.(
             1,
@@ -1279,9 +1286,12 @@ export async function generateLiteralMediaAssets(
           asset.narrationUrl = blobToObjectUrl(result.audioBlob)
           executions.push(makeExecution(
             'media_tts_generation',
-            chooseAudioModel(models.video_tts) || DEFAULT_OPENROUTER_TTS_MODEL,
+            result.model || chooseAudioModel(models.video_tts) || DEFAULT_OPENROUTER_TTS_MODEL,
             performance.now() - startedAt,
             0.015 * (scene.narration.length / 1000),
+            'waiting_io',
+            result.provider_id ?? null,
+            result.provider_label ?? null,
           ))
           onProgress?.(
             2,

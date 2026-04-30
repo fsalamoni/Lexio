@@ -44,6 +44,10 @@ export interface AudioOverviewResult {
   audioBlob?: Blob          // Combined MP3 if TTS succeeded
   scriptExecution: {
     model: string
+    provider_id?: string | null
+    provider_label?: string | null
+    requested_model?: string | null
+    resolved_model?: string | null
     tokens_in: number
     tokens_out: number
     cost_usd: number
@@ -65,6 +69,9 @@ export interface SynthesizeAudioFromScriptResult {
   mimeType: string
   chunkCount: number
   segmentCount: number
+  model?: string
+  provider_id?: string
+  provider_label?: string
 }
 
 const DEFAULT_AUDIO_TTS_BATCH_CONCURRENCY = 2
@@ -236,6 +243,9 @@ export async function synthesizeAudioFromScript(
   })
   const workerCount = Math.max(1, Math.min(concurrencyDiagnostics.resolved, chunks.length))
   const audioBlobsByIndex: Array<Blob | null> = new Array(chunks.length).fill(null)
+  let resolvedModel: string | undefined
+  let resolvedProviderId: string | undefined
+  let resolvedProviderLabel: string | undefined
 
   onProgress?.(
     'Preparando síntese de áudio...',
@@ -260,6 +270,9 @@ export async function synthesizeAudioFromScript(
           model: input.model || 'openai/tts-1-hd',
         })
         audioBlobsByIndex[chunkIndex] = ttsResult.audioBlob
+        if (!resolvedModel) resolvedModel = ttsResult.model
+        if (!resolvedProviderId) resolvedProviderId = ttsResult.provider_id
+        if (!resolvedProviderLabel) resolvedProviderLabel = ttsResult.provider_label
       } catch (err) {
         if (!firstChunkError) firstChunkError = err
       }
@@ -281,6 +294,9 @@ export async function synthesizeAudioFromScript(
     mimeType,
     chunkCount: chunks.length,
     segmentCount,
+    model: resolvedModel,
+    provider_id: resolvedProviderId,
+    provider_label: resolvedProviderLabel,
   }
 }
 
@@ -333,6 +349,10 @@ export async function generateAudioOverview(
     script,
     scriptExecution: {
       model: llmResult.model,
+      provider_id: llmResult.provider_id ?? llmResult.operational?.providerId ?? null,
+      provider_label: llmResult.provider_label ?? llmResult.operational?.providerLabel ?? null,
+      requested_model: llmResult.operational?.requestedModel ?? null,
+      resolved_model: llmResult.operational?.resolvedModel ?? null,
       tokens_in: llmResult.tokens_in,
       tokens_out: llmResult.tokens_out,
       cost_usd: llmResult.cost_usd,

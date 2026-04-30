@@ -305,6 +305,10 @@ export interface VideoGenerationStepExecution {
   phase: string
   agent_name: string
   model: string
+  provider_id?: string | null
+  provider_label?: string | null
+  requested_model?: string | null
+  resolved_model?: string | null
   tokens_in: number
   tokens_out: number
   cost_usd: number
@@ -544,6 +548,8 @@ async function safeCallAgent(
     phase,
     agent_name: phase,
     model,
+    provider_id: null,
+    provider_label: null,
     tokens_in: 0,
     tokens_out: 0,
     cost_usd: 0,
@@ -1427,6 +1433,8 @@ REQUISITOS OBRIGATÓRIOS:
             phase: 'media_image_generation',
             agent_name: 'Gerador de Imagens',
             model: r.value.model,
+            provider_id: r.value.provider_id ?? null,
+            provider_label: r.value.provider_label ?? null,
             tokens_in: 0,
             tokens_out: 0,
             cost_usd: r.value.cost_usd,
@@ -1552,6 +1560,9 @@ REQUISITOS OBRIGATÓRIOS:
           segment,
           cleanText,
           audioDataUrl: await blobToDataUrl(result.audioBlob),
+          model: result.model || ttsModel,
+          provider_id: result.provider_id || null,
+          provider_label: result.provider_label || null,
           durationMs: Date.now() - startMs,
           costUsd: 0.015 * (cleanText.length / 1000),
         }
@@ -1562,6 +1573,9 @@ REQUISITOS OBRIGATÓRIOS:
           segment: NarrationSegment
           cleanText: string
           audioDataUrl: string
+          model: string
+          provider_id: string | null
+          provider_label: string | null
           durationMs: number
           costUsd: number
         }> => result.status === 'fulfilled',
@@ -1582,7 +1596,9 @@ REQUISITOS OBRIGATÓRIOS:
         executions.push({
           phase: 'media_tts_generation',
           agent_name: 'Narrador TTS',
-          model: ttsModel,
+          model: result.value.model,
+          provider_id: result.value.provider_id,
+          provider_label: result.value.provider_label,
           tokens_in: 0,
           tokens_out: 0,
           cost_usd: costUsd,
@@ -1686,6 +1702,10 @@ function makeExecution(phase: string, model: string, result: LLMResult): VideoGe
     phase,
     agent_name: phase,
     model,
+    provider_id: result.provider_id ?? result.operational?.providerId ?? null,
+    provider_label: result.provider_label ?? result.operational?.providerLabel ?? null,
+    requested_model: result.operational?.requestedModel ?? null,
+    resolved_model: result.operational?.resolvedModel ?? null,
     tokens_in: result.tokens_in ?? 0,
     tokens_out: result.tokens_out ?? 0,
     cost_usd: result.cost_usd ?? 0,

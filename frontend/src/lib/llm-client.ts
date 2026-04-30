@@ -168,12 +168,16 @@ export interface LLMResult {
   tokens_out: number
   cost_usd: number
   duration_ms: number
+  provider_id?: string
+  provider_label?: string
   operational?: LLMOperationalMeta
 }
 
 export interface LLMOperationalMeta {
   requestedModel: string
   resolvedModel: string
+  providerId?: string
+  providerLabel?: string
   fallbackUsed: boolean
   fallbackFrom?: string
   fallbackReason?: 'model_unavailable' | 'transient_error'
@@ -353,10 +357,17 @@ async function resolveCallContext(
   legacyApiKey: string | undefined,
   model: string,
 ): Promise<ResolvedProviderCall> {
+  const isLikelyOpenRouterKey = (key: string | undefined): boolean => {
+    if (!key) return false
+    const trimmed = key.trim()
+    if (!trimmed) return false
+    return /^sk-or-v1-/i.test(trimmed) || /^or-v1-/i.test(trimmed) || /^sk-or-/i.test(trimmed)
+  }
+
   const uid = getCurrentUserId() ?? undefined
   try {
     const resolved = await resolveProviderCall(model, uid)
-    if (legacyApiKey && resolved.provider.id === 'openrouter') {
+    if (legacyApiKey && resolved.provider.id === 'openrouter' && isLikelyOpenRouterKey(legacyApiKey)) {
       // Honour explicit override when the call still points at OpenRouter.
       return { ...resolved, apiKey: legacyApiKey }
     }
@@ -364,10 +375,11 @@ async function resolveCallContext(
   } catch (err) {
     // Fallback when the user has no settings yet: assume OpenRouter with the
     // legacy key. This preserves the historical behaviour for fresh installs.
-    if (!legacyApiKey) throw err
+    if (!isLikelyOpenRouterKey(legacyApiKey)) throw err
+    const legacyOpenRouterKey = legacyApiKey as string
     return {
       provider: PROVIDERS.openrouter as ProviderDefinition,
-      apiKey: legacyApiKey,
+      apiKey: legacyOpenRouterKey,
       baseUrl: PROVIDERS.openrouter.baseUrl,
     }
   }
@@ -445,9 +457,13 @@ async function executeChatCompletion(
       tokens_out: parsed.tokensOut,
       cost_usd,
       duration_ms: durationMs,
+      provider_id: resolved.provider.id,
+      provider_label: resolved.provider.label,
       operational: {
         requestedModel: model,
         resolvedModel: model,
+        providerId: resolved.provider.id,
+        providerLabel: resolved.provider.label,
         fallbackUsed: false,
         networkRetryCount: retryCount,
         emptyRetryCount: emptyAttempt,
@@ -517,6 +533,8 @@ export async function callLLMWithFallback(
             operational: {
               requestedModel: model,
               resolvedModel: fallbackResult.model,
+              providerId: fallbackResult.provider_id ?? fallbackResult.operational?.providerId,
+              providerLabel: fallbackResult.provider_label ?? fallbackResult.operational?.providerLabel,
               fallbackUsed: true,
               fallbackFrom: model,
               fallbackReason: err instanceof ModelUnavailableError ? 'model_unavailable' : 'transient_error',
@@ -564,6 +582,8 @@ export async function callLLMWithMessagesFallback(
             operational: {
               requestedModel: model,
               resolvedModel: fallbackResult.model,
+              providerId: fallbackResult.provider_id ?? fallbackResult.operational?.providerId,
+              providerLabel: fallbackResult.provider_label ?? fallbackResult.operational?.providerLabel,
               fallbackUsed: true,
               fallbackFrom: model,
               fallbackReason: err instanceof ModelUnavailableError ? 'model_unavailable' : 'transient_error',

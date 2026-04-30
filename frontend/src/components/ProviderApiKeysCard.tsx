@@ -60,14 +60,22 @@ export default function ProviderApiKeysCard() {
 
   const isEnabled = (pid: ProviderId): boolean => {
     if (pid in enabledOverrides) return enabledOverrides[pid]
+    const apiKeyField = apiKeyFieldForProvider(pid)
+    const entry = apiKeys.find(e => e.key === apiKeyField)
+    const apiKeySet = Boolean(entry?.is_set)
     const setting = providerSettings[pid]
-    // OpenRouter is implicitly enabled when its key is set (legacy behaviour).
+
+    // If a key exists and this provider was never toggled before, consider it
+    // active so the provider's catalog and execution path are immediately
+    // available.
     if (setting === undefined) {
-      const apiKeyField = apiKeyFieldForProvider(pid)
-      const entry = apiKeys.find(e => e.key === apiKeyField)
-      if (pid === 'openrouter') return Boolean(entry?.is_set)
-      return false
+      return apiKeySet
     }
+
+    // Enforce "configured key => active provider" even for users that had
+    // stale provider_settings with enabled=false.
+    if (apiKeySet) return true
+
     return Boolean(setting.enabled)
   }
 
@@ -93,6 +101,15 @@ export default function ProviderApiKeysCard() {
       if (Object.keys(keyUpdates).length > 0) {
         await saveApiKeys(keyUpdates)
       }
+
+      const providerHasConfiguredKey = (pid: ProviderId): boolean => {
+        const apiField = apiKeyFieldForProvider(pid)
+        const updatedValue = keyUpdates[apiField]
+        if (typeof updatedValue === 'string') return updatedValue.trim().length > 0
+        const currentEntry = apiKeys.find(e => e.key === apiField)
+        return Boolean(currentEntry?.is_set)
+      }
+
       const providerUpdates: ProviderSettingsMap = {}
       for (const [pid, enabled] of Object.entries(enabledOverrides)) {
         providerUpdates[pid] = { ...(providerSettings[pid] ?? {}), enabled }
@@ -100,6 +117,17 @@ export default function ProviderApiKeysCard() {
       for (const [pid, baseUrl] of Object.entries(baseUrlOverrides)) {
         providerUpdates[pid] = { ...(providerUpdates[pid] ?? providerSettings[pid] ?? { enabled: true }), base_url: baseUrl }
       }
+
+      // Key presence has precedence: provider remains active while a key is
+      // configured, matching the catalog visibility/execution contract.
+      for (const pid of PROVIDER_ORDER) {
+        if (!providerHasConfiguredKey(pid)) continue
+        providerUpdates[pid] = {
+          ...(providerUpdates[pid] ?? providerSettings[pid] ?? {}),
+          enabled: true,
+        }
+      }
+
       if (Object.keys(providerUpdates).length > 0) {
         await saveProviderSettings(providerUpdates)
       }

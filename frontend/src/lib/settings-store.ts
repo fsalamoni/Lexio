@@ -17,6 +17,17 @@ import { ensureUserSettingsMigrated, getCurrentUserId, getUserSettings, saveUser
 import { PROVIDERS, PROVIDER_ORDER, apiKeyFieldForProvider, type ProviderId } from './providers'
 import type { ProviderSettingsMap } from './firestore-types'
 
+export const PROVIDER_SETTINGS_UPDATED_EVENT = 'lexio:provider_settings_updated'
+
+export function emitProviderSettingsUpdated(): void {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
+  try {
+    window.dispatchEvent(new CustomEvent(PROVIDER_SETTINGS_UPDATED_EVENT))
+  } catch {
+    // Never break persistence flow because of UI refresh signaling.
+  }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ApiKeyEntry {
@@ -111,9 +122,11 @@ export async function saveApiKeys(updates: Record<string, string>, uid?: string)
     const settings = await getUserSettings(resolvedUid)
     const current = (settings.api_keys ?? {}) as Record<string, string>
     await saveUserSettings(resolvedUid, { api_keys: { ...current, ...updates } })
+    emitProviderSettingsUpdated()
     return
   }
   await api.patch('/admin/settings', { updates })
+  emitProviderSettingsUpdated()
 }
 
 export async function saveProviderSettings(
@@ -130,6 +143,7 @@ export async function saveProviderSettings(
     merged[pid] = { ...(current[pid] ?? { enabled: false }), ...entry }
   }
   await saveUserSettings(resolvedUid, { provider_settings: merged })
+  emitProviderSettingsUpdated()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

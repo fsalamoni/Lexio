@@ -9,6 +9,8 @@
  */
 
 import { withRateLimit, withRetryAfterDelay } from './media-rate-limiter'
+import { resolveProviderCall, type ResolvedProviderCall } from './provider-credentials'
+import { getCurrentUserId } from './firestore-service'
 
 const OPENROUTER_REFERER = typeof window !== 'undefined' && window.location?.origin
   ? window.location.origin
@@ -17,7 +19,8 @@ const OPENROUTER_REFERER = typeof window !== 'undefined' && window.location?.ori
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface TTSOptions {
-  apiKey: string
+  apiKey?: string
+  uid?: string
   text: string
   voice?: string        // e.g., 'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'
   model?: string        // e.g., 'openai/tts-1-hd'
@@ -28,6 +31,9 @@ export interface TTSOptions {
 export interface TTSResult {
   audioBlob: Blob
   durationEstimate?: number  // seconds (estimated)
+  model?: string
+  provider_id?: string
+  provider_label?: string
 }
 
 // ── OpenRouter TTS ──────────────────────────────────────────────────────────
@@ -38,6 +44,13 @@ function normalizeTTSModel(model?: string): string {
   const value = String(model || '').trim()
   if (!value) return DEFAULT_OPENROUTER_TTS_MODEL
   return value
+}
+
+function isLikelyOpenRouterKey(apiKey?: string): boolean {
+  if (!apiKey) return false
+  const key = apiKey.trim()
+  if (!key) return false
+  return /^sk-or-v1-/i.test(key) || /^or-v1-/i.test(key) || /^sk-or-/i.test(key)
 }
 
 function decodeBase64ToUint8Array(value: string): Uint8Array {
@@ -53,16 +66,19 @@ function decodeBase64ToUint8Array(value: string): Uint8Array {
  * Generate speech audio via OpenRouter chat completions audio output.
  * OpenRouter exposes audio generation through streamed chat completions.
  */
-export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSResult> {
+async function generateTTSWithOpenRouter(opts: TTSOptions & { apiKey: string; model: string; baseUrl?: string; providerId?: string; providerLabel?: string }): Promise<TTSResult> {
   const model = normalizeTTSModel(opts.model)
   const voice = opts.voice || 'nova'
   const speed = opts.speed || 1.0
+  const endpoint = opts.baseUrl
+    ? `${opts.baseUrl.replace(/\/+$/, '')}/api/v1/chat/completions`
+    : 'https://openrouter.ai/api/v1/chat/completions'
 
   const response = await withRateLimit(
-    'openrouter:tts',
+    `${opts.providerId ?? 'openrouter'}:tts`,
     18,
     async () => withRetryAfterDelay(
-      async () => fetch('https://openrouter.ai/api/v1/chat/completions', {
+      async () => fetch(endpoint, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${opts.apiKey}`,
@@ -158,7 +174,166 @@ export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSRes
   const wordCount = opts.text.split(/\s+/).length
   const durationEstimate = Math.round((wordCount / 150) * 60 / speed)
 
-  return { audioBlob, durationEstimate }
+  return {
+    audioBlob,
+    durationEstimate,
+    model,
+    provider_id: opts.providerId ?? 'openrouter',
+    provider_label: opts.providerLabel ?? 'OpenRouter',
+  }
+}
+
+async function generateTTSWithOpenAICompatible(opts: TTSOptions & {
+  apiKey: string
+  model: string
+  baseUrl: string
+  providerId: string
+  providerLabel: string
+  authHeader?: string
+  authPrefix?: string
+}): Promise<TTSResult> {
+  const voice = opts.voice || 'nova'
+  const speed = opts.speed || 1.0
+  const endpoint = `${opts.baseUrl.replace(/\/+$/, '')}/audio/speech`
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (opts.authHeader) {
+    headers[opts.authHeader] = `${opts.authPrefix ?? ''}${opts.apiKey}`
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: opts.model,
+      input: opts.text,
+      voice,
+      speed,
+      format: 'mp3',
+      response_format: 'mp3',
+    }),
+    signal: opts.signal,
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`TTS API error (${response.status}): ${errorText}`)
+  }
+
+  const audioBlob = await response.blob()
+  const wordCount = opts.text.split(/\s+/).length
+  const durationEstimate = Math.round((wordCount / 150) * 60 / speed)
+  return {
+    audioBlob,
+    durationEstimate,
+    model: opts.model,
+    provider_id: opts.providerId,
+    provider_label: opts.providerLabel,
+  }
+}
+
+async function generateTTSWithElevenLabs(opts: TTSOptions & {
+  apiKey: string
+  model: string
+  baseUrl: string
+  providerId: string
+  providerLabel: string
+}): Promise<TTSResult> {
+  const voiceId = opts.voice || 'EXAVITQu4vr4xnSDxMaL'
+  const endpoint = `${opts.baseUrl.replace(/\/+$/, '')}/text-to-speech/${voiceId}`
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'audio/mpeg',
+      'xi-api-key': opts.apiKey,
+    },
+    body: JSON.stringify({
+      text: opts.text,
+      model_id: opts.model,
+    }),
+    signal: opts.signal,
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`TTS API error (${response.status}): ${errorText}`)
+  }
+
+  const audioBlob = await response.blob()
+  const wordCount = opts.text.split(/\s+/).length
+  const durationEstimate = Math.round((wordCount / 150) * 60)
+  return {
+    audioBlob,
+    durationEstimate,
+    model: opts.model,
+    provider_id: opts.providerId,
+    provider_label: opts.providerLabel,
+  }
+}
+
+export async function generateTTS(opts: TTSOptions): Promise<TTSResult> {
+  const model = normalizeTTSModel(opts.model)
+  const uid = opts.uid ?? getCurrentUserId() ?? undefined
+  let resolved: ResolvedProviderCall
+  try {
+    resolved = await resolveProviderCall(model, uid)
+  } catch (error) {
+    // Legacy compatibility: if caller passed an explicit key, preserve the
+    // historical OpenRouter-only path instead of hard failing.
+    if (!isLikelyOpenRouterKey(opts.apiKey)) throw error
+    return generateTTSWithOpenRouter({
+      ...opts,
+      apiKey: opts.apiKey as string,
+      model,
+      providerId: 'openrouter',
+      providerLabel: 'OpenRouter',
+    })
+  }
+
+  if (resolved.provider.dialect === 'openrouter') {
+    const openrouterOverride = opts.apiKey && (/^sk-or-v1-/i.test(opts.apiKey) || /^or-v1-/i.test(opts.apiKey) || /^sk-or-/i.test(opts.apiKey))
+      ? opts.apiKey
+      : resolved.apiKey
+    return generateTTSWithOpenRouter({
+      ...opts,
+      apiKey: openrouterOverride,
+      model,
+      baseUrl: resolved.baseUrl,
+      providerId: resolved.provider.id,
+      providerLabel: resolved.provider.label,
+    })
+  }
+
+  if (resolved.provider.id === 'elevenlabs') {
+    return generateTTSWithElevenLabs({
+      ...opts,
+      apiKey: resolved.apiKey,
+      model,
+      baseUrl: resolved.baseUrl,
+      providerId: resolved.provider.id,
+      providerLabel: resolved.provider.label,
+    })
+  }
+
+  if (resolved.provider.dialect === 'openai-compatible' || resolved.provider.dialect === 'ollama') {
+    return generateTTSWithOpenAICompatible({
+      ...opts,
+      apiKey: resolved.apiKey,
+      model,
+      baseUrl: resolved.baseUrl,
+      providerId: resolved.provider.id,
+      providerLabel: resolved.provider.label,
+      authHeader: resolved.provider.authHeader,
+      authPrefix: resolved.provider.authPrefix,
+    })
+  }
+
+  throw new Error(`O provedor "${resolved.provider.label}" não suporta TTS neste fluxo.`)
+}
+
+// Backwards-compatible export kept for existing callsites.
+export async function generateTTSViaOpenRouter(opts: TTSOptions): Promise<TTSResult> {
+  return generateTTS(opts)
 }
 
 // ── Browser Web Speech API fallback ─────────────────────────────────────────

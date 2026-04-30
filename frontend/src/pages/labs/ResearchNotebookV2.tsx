@@ -1003,6 +1003,10 @@ export default function ResearchNotebookV2() {
       retry_count?: number
       used_fallback?: boolean
       fallback_from?: string | null
+      provider_id?: string | null
+      provider_label?: string | null
+      requested_model?: string | null
+      resolved_model?: string | null
       runtime_profile?: string | null
       runtime_hints?: string | null
       runtime_concurrency?: number | null
@@ -1033,6 +1037,10 @@ export default function ResearchNotebookV2() {
         phase: execution.phase,
         agent_name: execution.agent_name,
         model: execution.model,
+        provider_id: execution.provider_id,
+        provider_label: execution.provider_label,
+        requested_model: execution.requested_model,
+        resolved_model: execution.resolved_model,
         tokens_in: execution.tokens_in,
         tokens_out: execution.tokens_out,
         cost_usd: execution.cost_usd,
@@ -1097,6 +1105,10 @@ export default function ResearchNotebookV2() {
       retry_count?: number
       used_fallback?: boolean
       fallback_from?: string | null
+      provider_id?: string | null
+      provider_label?: string | null
+      requested_model?: string | null
+      resolved_model?: string | null
       runtime_profile?: string | null
       runtime_hints?: string | null
       runtime_concurrency?: number | null
@@ -1113,6 +1125,10 @@ export default function ResearchNotebookV2() {
         phase: execution.phase,
         agent_name: execution.agent_name,
         model: execution.model,
+        provider_id: execution.provider_id,
+        provider_label: execution.provider_label,
+        requested_model: execution.requested_model,
+        resolved_model: execution.resolved_model,
         tokens_in: execution.tokens_in,
         tokens_out: execution.tokens_out,
         cost_usd: execution.cost_usd,
@@ -1278,6 +1294,10 @@ export default function ResearchNotebookV2() {
           phase: execution.phase,
           agent_name: execution.agent_name,
           model: execution.model,
+          provider_id: execution.provider_id,
+          provider_label: execution.provider_label,
+          requested_model: execution.requested_model,
+          resolved_model: execution.resolved_model,
           tokens_in: execution.tokens_in,
           tokens_out: execution.tokens_out,
           cost_usd: execution.cost_usd,
@@ -2434,6 +2454,10 @@ Instruções:
         phase: 'notebook_assistente',
         agent_name: AGENT_LABELS.notebook_assistente,
         model: result.model,
+        provider_id: result.provider_id ?? result.operational?.providerId,
+        provider_label: result.provider_label ?? result.operational?.providerLabel,
+        requested_model: result.operational?.requestedModel,
+        resolved_model: result.operational?.resolvedModel,
         tokens_in: result.tokens_in,
         tokens_out: result.tokens_out,
         cost_usd: result.cost_usd,
@@ -3279,6 +3303,10 @@ Instruções:
             phase: 'notebook_pesquisador_externo',
             agent_name: 'Pesquisador Externo',
             model: externalResult.model,
+            provider_id: externalResult.provider_id ?? externalResult.operational?.providerId,
+            provider_label: externalResult.provider_label ?? externalResult.operational?.providerLabel,
+            requested_model: externalResult.operational?.requestedModel,
+            resolved_model: externalResult.operational?.resolvedModel,
             tokens_in: externalResult.tokens_in,
             tokens_out: externalResult.tokens_out,
             cost_usd: externalResult.cost_usd,
@@ -3523,6 +3551,10 @@ Instruções:
             phase: 'notebook_pesquisador_externo_profundo',
             agent_name: 'Pesquisador Externo Profundo',
             model: llmResult.model,
+            provider_id: llmResult.provider_id ?? llmResult.operational?.providerId,
+            provider_label: llmResult.provider_label ?? llmResult.operational?.providerLabel,
+            requested_model: llmResult.operational?.requestedModel,
+            resolved_model: llmResult.operational?.resolvedModel,
             tokens_in: llmResult.tokens_in,
             tokens_out: llmResult.tokens_out,
             cost_usd: llmResult.cost_usd,
@@ -3799,6 +3831,10 @@ Instruções:
               phase: 'notebook_ranqueador_jurisprudencia',
               agent_name: 'Ranqueador de Jurisprudência',
               model: rankResult.model,
+              provider_id: rankResult.provider_id ?? rankResult.operational?.providerId,
+              provider_label: rankResult.provider_label ?? rankResult.operational?.providerLabel,
+              requested_model: rankResult.operational?.requestedModel,
+              resolved_model: rankResult.operational?.resolvedModel,
               tokens_in: rankResult.tokens_in,
               tokens_out: rankResult.tokens_out,
               cost_usd: rankResult.cost_usd,
@@ -3892,6 +3928,10 @@ Instruções:
             phase: 'notebook_pesquisador_jurisprudencia',
             agent_name: 'Pesquisador de Jurisprudência (DataJud)',
             model: jurisprudenceResult.model,
+            provider_id: jurisprudenceResult.provider_id ?? jurisprudenceResult.operational?.providerId,
+            provider_label: jurisprudenceResult.provider_label ?? jurisprudenceResult.operational?.providerLabel,
+            requested_model: jurisprudenceResult.operational?.requestedModel,
+            resolved_model: jurisprudenceResult.operational?.resolvedModel,
             tokens_in: jurisprudenceResult.tokens_in,
             tokens_out: jurisprudenceResult.tokens_out,
             cost_usd: jurisprudenceResult.cost_usd,

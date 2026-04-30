@@ -1,5 +1,6 @@
 import { formatCost } from './currency-utils'
 import { DOCTYPE_LABELS } from './constants'
+import { PROVIDERS, providerIdFromLabel } from './providers'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 
 export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline'
@@ -15,6 +16,10 @@ export interface UsageExecutionRecord {
   agent_name: string
   model: string | null
   model_label: string
+  provider_id?: string | null
+  provider_label?: string | null
+  requested_model?: string | null
+  resolved_model?: string | null
   tokens_in: number
   tokens_out: number
   total_tokens: number
@@ -291,20 +296,83 @@ export function getModelLabel(model?: string | null): string {
   return model.split('/').pop() ?? model
 }
 
-export function getProviderKey(model?: string | null): string {
+const EXTRA_PROVIDER_LABELS: Record<string, string> = {
+  browser: 'Browser',
+  'external-provider': 'Provedor Externo',
+  unknown_provider: 'Não identificado',
+}
+
+function normalizeProviderKey(provider?: string | null): string | null {
+  if (!provider) return null
+  const normalized = provider.trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized in PROVIDERS) return normalized
+  if (normalized in EXTRA_PROVIDER_LABELS) return normalized
+  return normalized
+}
+
+function inferProviderKeyFromModel(model?: string | null): string {
   if (!model) return 'unknown_provider'
-  const [provider] = model.split('/')
-  return provider?.trim().toLowerCase() || 'unknown_provider'
+  const normalized = model.trim().toLowerCase()
+  if (!normalized) return 'unknown_provider'
+
+  const prefixed = normalized.split('/')[0]
+  if (prefixed in PROVIDERS) return prefixed
+  if (prefixed in EXTRA_PROVIDER_LABELS) return prefixed
+
+  if (normalized.startsWith('gpt-') || normalized.startsWith('o1') || normalized.startsWith('o3') || normalized.startsWith('o4')) {
+    return 'openai'
+  }
+  if (normalized.startsWith('claude')) return 'anthropic'
+  if (normalized.startsWith('gemini')) return 'google'
+  if (normalized.startsWith('grok')) return 'xai'
+  if (normalized.startsWith('qwen')) return 'qwen'
+  if (normalized.startsWith('moonshot') || normalized.startsWith('kimi')) return 'kimi'
+  if (normalized.startsWith('deepseek')) return 'deepseek'
+  if (normalized.startsWith('mistral')) return 'mistral'
+  if (normalized.startsWith('command-r')) return 'cohere'
+  if (normalized.startsWith('eleven_')) return 'elevenlabs'
+  if (normalized.startsWith('meta-llama')) return 'openrouter'
+
+  return prefixed || 'unknown_provider'
+}
+
+function getProviderLabelFromKey(providerKey?: string | null): string {
+  const normalized = normalizeProviderKey(providerKey) ?? 'unknown_provider'
+  if (normalized in PROVIDERS) {
+    return PROVIDERS[normalized as keyof typeof PROVIDERS].label
+  }
+  if (normalized in EXTRA_PROVIDER_LABELS) {
+    return EXTRA_PROVIDER_LABELS[normalized]
+  }
+  if (normalized === 'meta') return 'Meta'
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+}
+
+export function getProviderKey(model?: string | null): string {
+  return inferProviderKeyFromModel(model)
 }
 
 export function getProviderLabel(model?: string | null): string {
-  const providerKey = getProviderKey(model)
-  if (providerKey === 'anthropic') return 'Anthropic'
-  if (providerKey === 'openai') return 'OpenAI'
-  if (providerKey === 'google') return 'Google'
-  if (providerKey === 'meta') return 'Meta'
-  if (providerKey === 'unknown_provider') return 'Não identificado'
-  return providerKey.charAt(0).toUpperCase() + providerKey.slice(1)
+  return getProviderLabelFromKey(getProviderKey(model))
+}
+
+function getExecutionProviderKey(execution: UsageExecutionRecord): string {
+  const explicit = normalizeProviderKey(execution.provider_id)
+  if (explicit) return explicit
+
+  const byLabel = providerIdFromLabel(execution.provider_label ?? '')
+  if (byLabel) return byLabel
+
+  return inferProviderKeyFromModel(execution.model)
+}
+
+function getExecutionProviderLabel(execution: UsageExecutionRecord): string {
+  const explicitLabel = typeof execution.provider_label === 'string' && execution.provider_label.trim().length > 0
+    ? execution.provider_label.trim()
+    : null
+  if (explicitLabel) return explicitLabel
+  return getProviderLabelFromKey(getExecutionProviderKey(execution))
 }
 
 function normalizeExecutionState(state?: PipelineExecutionState | string | null): PipelineExecutionState | null {
@@ -381,6 +449,10 @@ export function createUsageExecutionRecord(input: {
   phase: string
   agent_name: string
   model?: string | null
+  provider_id?: string | null
+  provider_label?: string | null
+  requested_model?: string | null
+  resolved_model?: string | null
   tokens_in?: number
   tokens_out?: number
   cost_usd?: number
@@ -422,6 +494,12 @@ export function createUsageExecutionRecord(input: {
   const usedFallback = input.used_fallback == null
     ? (fallbackFrom ? true : null)
     : Boolean(input.used_fallback)
+  const normalizedProviderId = normalizeProviderKey(input.provider_id)
+    ?? providerIdFromLabel(input.provider_label ?? '')
+    ?? inferProviderKeyFromModel(input.model)
+  const providerLabel = typeof input.provider_label === 'string' && input.provider_label.trim().length > 0
+    ? input.provider_label.trim()
+    : getProviderLabelFromKey(normalizedProviderId)
 
   return {
     source_type: input.source_type,
@@ -434,6 +512,10 @@ export function createUsageExecutionRecord(input: {
     agent_name: input.agent_name,
     model: input.model ?? null,
     model_label: getModelLabel(input.model),
+    provider_id: normalizedProviderId === 'unknown_provider' ? null : normalizedProviderId,
+    provider_label: providerLabel,
+    requested_model: input.requested_model ?? null,
+    resolved_model: input.resolved_model ?? null,
     tokens_in: tokensIn,
     tokens_out: tokensOut,
     total_tokens: tokensIn + tokensOut,
@@ -533,7 +615,7 @@ export function buildCostBreakdown(
   for (const [funcKey, funcExecs] of execsByFunction.entries()) {
     by_model_per_function[funcKey] = aggregateBreakdown(funcExecs, e => e.model || 'unknown_model', e => e.model_label, exchangeRateBrl)
     by_phase_per_function[funcKey] = aggregateBreakdown(funcExecs, e => e.phase, e => e.phase_label, exchangeRateBrl)
-    by_provider_per_function[funcKey] = aggregateBreakdown(funcExecs, e => getProviderKey(e.model), e => getProviderLabel(e.model), exchangeRateBrl)
+    by_provider_per_function[funcKey] = aggregateBreakdown(funcExecs, e => getExecutionProviderKey(e), e => getExecutionProviderLabel(e), exchangeRateBrl)
     by_execution_state_per_function[funcKey] = aggregateBreakdown(
       funcExecs,
       e => e.execution_state || 'unknown_execution_state',
@@ -546,7 +628,7 @@ export function buildCostBreakdown(
     ...summary,
     total_cost_brl: round2(summary.total_cost_usd * exchangeRateBrl),
     exchange_rate_brl: exchangeRateBrl,
-    by_provider: aggregateBreakdown(executions, execution => getProviderKey(execution.model), execution => getProviderLabel(execution.model), exchangeRateBrl),
+    by_provider: aggregateBreakdown(executions, execution => getExecutionProviderKey(execution), execution => getExecutionProviderLabel(execution), exchangeRateBrl),
     by_model: aggregateBreakdown(executions, execution => execution.model || 'unknown_model', execution => execution.model_label, exchangeRateBrl),
     by_function: aggregateBreakdown(executions, execution => execution.function_key, execution => execution.function_label, exchangeRateBrl),
     by_phase: aggregateBreakdown(executions, execution => execution.phase, execution => execution.phase_label, exchangeRateBrl),
@@ -588,6 +670,10 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
         phase: execution.phase ?? 'document_total',
         agent_name: execution.agent_name ?? 'Documento (consolidado)',
         model: execution.model,
+        provider_id: execution.provider_id,
+        provider_label: execution.provider_label,
+        requested_model: execution.requested_model,
+        resolved_model: execution.resolved_model,
         tokens_in: execution.tokens_in,
         tokens_out: execution.tokens_out,
         cost_usd: execution.cost_usd,
@@ -618,6 +704,10 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
         phase: exec.phase ?? 'context_detail',
         agent_name: exec.agent_name ?? 'Detalhamento de Contexto',
         model: exec.model,
+        provider_id: exec.provider_id,
+        provider_label: exec.provider_label,
+        requested_model: exec.requested_model,
+        resolved_model: exec.resolved_model,
         tokens_in: exec.tokens_in,
         tokens_out: exec.tokens_out,
         cost_usd: exec.cost_usd,
@@ -669,6 +759,10 @@ export function extractDocumentUsageExecutions(document: UsageDocumentSummary): 
       phase: exec.phase ?? 'context_detail',
       agent_name: exec.agent_name ?? 'Detalhamento de Contexto',
       model: exec.model,
+      provider_id: exec.provider_id,
+      provider_label: exec.provider_label,
+      requested_model: exec.requested_model,
+      resolved_model: exec.resolved_model,
       tokens_in: exec.tokens_in,
       tokens_out: exec.tokens_out,
       cost_usd: exec.cost_usd,
@@ -697,6 +791,10 @@ export function extractThesisSessionExecutions(session: ThesisUsageSessionSummar
       phase: execution.phase ?? 'thesis_analysis_total',
       agent_name: execution.agent_name ?? 'Análise de teses (consolidada)',
       model: execution.model,
+      provider_id: execution.provider_id,
+      provider_label: execution.provider_label,
+      requested_model: execution.requested_model,
+      resolved_model: execution.resolved_model,
       tokens_in: execution.tokens_in,
       tokens_out: execution.tokens_out,
       cost_usd: execution.cost_usd,
@@ -751,6 +849,10 @@ export function extractAcervoUsageExecutions(acervoDoc: AcervoUsageSummary): Usa
     phase: execution.phase ?? 'acervo_ementa',
     agent_name: execution.agent_name ?? 'Acervo (consolidado)',
     model: execution.model,
+    provider_id: execution.provider_id,
+    provider_label: execution.provider_label,
+    requested_model: execution.requested_model,
+    resolved_model: execution.resolved_model,
     tokens_in: execution.tokens_in,
     tokens_out: execution.tokens_out,
     cost_usd: execution.cost_usd,
@@ -785,6 +887,10 @@ export function extractNotebookUsageExecutions(notebook: NotebookUsageSummary): 
       phase: execution.phase ?? 'caderno_pesquisa_total',
       agent_name: execution.agent_name ?? 'Caderno de Pesquisa (consolidado)',
       model: execution.model,
+      provider_id: execution.provider_id,
+      provider_label: execution.provider_label,
+      requested_model: execution.requested_model,
+      resolved_model: execution.resolved_model,
       tokens_in: execution.tokens_in,
       tokens_out: execution.tokens_out,
       cost_usd: execution.cost_usd,

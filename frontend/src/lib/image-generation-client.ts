@@ -11,6 +11,9 @@
  * - Clear error logging for debugging
  */
 
+import { resolveProviderCall, type ResolvedProviderCall } from './provider-credentials'
+import { getCurrentUserId } from './firestore-service'
+
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const OPENROUTER_REFERER = typeof window !== 'undefined' && window.location?.origin
   ? window.location.origin
@@ -23,10 +26,18 @@ const MAX_RETRIES = 1
 /** Delay between retries in ms */
 const RETRY_DELAY_MS = 2000
 
+function isLikelyOpenRouterKey(apiKey?: string): boolean {
+  if (!apiKey) return false
+  const key = apiKey.trim()
+  if (!key) return false
+  return /^sk-or-v1-/i.test(key) || /^or-v1-/i.test(key) || /^sk-or-/i.test(key)
+}
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface ImageGenerationOptions {
-  apiKey: string
+  apiKey?: string
+  uid?: string
   prompt: string
   negativePrompt?: string
   model?: string
@@ -38,6 +49,8 @@ export interface ImageGenerationResult {
   imageDataUrl: string   // base64 data URL (data:image/png;base64,...)
   model: string
   cost_usd: number
+  provider_id?: string
+  provider_label?: string
 }
 
 function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
@@ -66,8 +79,11 @@ function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
  * Returns the image as a base64 data URL.
  * Retries once on transient failures (network errors, 429, 500+).
  */
-export async function generateImageViaOpenRouter(opts: ImageGenerationOptions): Promise<ImageGenerationResult> {
+async function generateImageWithOpenRouter(opts: ImageGenerationOptions & { apiKey: string; baseUrl?: string; model: string; providerId?: string; providerLabel?: string }): Promise<ImageGenerationResult> {
   const model = opts.model || DEFAULT_IMAGE_MODEL
+  const endpoint = opts.baseUrl
+    ? `${opts.baseUrl.replace(/\/+$/, '')}/api/v1/chat/completions`
+    : OPENROUTER_URL
 
   const promptText = opts.negativePrompt
     ? `${opts.prompt}\n\nAvoid: ${opts.negativePrompt}`
@@ -111,7 +127,7 @@ export async function generateImageViaOpenRouter(opts: ImageGenerationOptions): 
     }
 
     try {
-      const response = await fetch(OPENROUTER_URL, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: bodyStr,
@@ -164,6 +180,8 @@ export async function generateImageViaOpenRouter(opts: ImageGenerationOptions): 
         imageDataUrl: validatedUrl,
         model,
         cost_usd: costUsd,
+        provider_id: opts.providerId ?? 'openrouter',
+        provider_label: opts.providerLabel ?? 'OpenRouter',
       }
     } catch (err) {
       lastError = err as Error
@@ -181,6 +199,131 @@ export async function generateImageViaOpenRouter(opts: ImageGenerationOptions): 
   }
 
   throw lastError || new Error('Image generation failed after retries')
+}
+
+function mapAspectRatioToSize(aspectRatio?: string): string | undefined {
+  if (!aspectRatio) return undefined
+  if (aspectRatio === '16:9') return '1536x1024'
+  if (aspectRatio === '9:16') return '1024x1536'
+  if (aspectRatio === '1:1') return '1024x1024'
+  if (aspectRatio === '4:3') return '1365x1024'
+  if (aspectRatio === '3:4') return '1024x1365'
+  return undefined
+}
+
+async function generateImageWithOpenAICompatible(
+  opts: ImageGenerationOptions & {
+    model: string
+    apiKey: string
+    baseUrl: string
+    providerId: string
+    providerLabel: string
+    authHeader?: string
+    authPrefix?: string
+  },
+): Promise<ImageGenerationResult> {
+  const promptText = opts.negativePrompt
+    ? `${opts.prompt}\n\nAvoid: ${opts.negativePrompt}`
+    : opts.prompt
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (opts.authHeader) {
+    headers[opts.authHeader] = `${opts.authPrefix ?? ''}${opts.apiKey}`
+  }
+
+  const body: Record<string, unknown> = {
+    model: opts.model,
+    prompt: promptText,
+    response_format: 'b64_json',
+  }
+  const size = mapAspectRatioToSize(opts.aspectRatio)
+  if (size) body.size = size
+
+  const url = `${opts.baseUrl.replace(/\/+$/, '')}/images/generations`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal: opts.signal,
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`Image generation API error (${response.status}): ${errorText}`)
+  }
+
+  const data = await response.json() as {
+    data?: Array<{ b64_json?: string; url?: string }>
+    usage?: { total_cost?: number }
+  }
+  const first = data.data?.[0]
+  const imageDataUrl = first?.b64_json
+    ? `data:image/png;base64,${first.b64_json}`
+    : (first?.url ?? null)
+
+  if (!imageDataUrl) {
+    throw new Error(`Image generation returned no image data for ${opts.providerLabel}.`)
+  }
+
+  return {
+    imageDataUrl: validateImageDataUrl(imageDataUrl),
+    model: opts.model,
+    cost_usd: data.usage?.total_cost ?? estimateCost(opts.model, data.usage ?? {}),
+    provider_id: opts.providerId,
+    provider_label: opts.providerLabel,
+  }
+}
+
+export async function generateImage(opts: ImageGenerationOptions): Promise<ImageGenerationResult> {
+  const model = opts.model || DEFAULT_IMAGE_MODEL
+  const uid = opts.uid ?? getCurrentUserId() ?? undefined
+  let resolved: ResolvedProviderCall
+  try {
+    resolved = await resolveProviderCall(model, uid)
+  } catch (error) {
+    if (!isLikelyOpenRouterKey(opts.apiKey)) throw error
+    return generateImageWithOpenRouter({
+      ...opts,
+      apiKey: opts.apiKey as string,
+      model,
+      providerId: 'openrouter',
+      providerLabel: 'OpenRouter',
+    })
+  }
+
+  if (resolved.provider.dialect === 'openrouter') {
+    const openrouterOverride = opts.apiKey && (/^sk-or-v1-/i.test(opts.apiKey) || /^or-v1-/i.test(opts.apiKey) || /^sk-or-/i.test(opts.apiKey))
+      ? opts.apiKey
+      : resolved.apiKey
+    return generateImageWithOpenRouter({
+      ...opts,
+      apiKey: openrouterOverride,
+      model,
+      baseUrl: resolved.baseUrl,
+      providerId: resolved.provider.id,
+      providerLabel: resolved.provider.label,
+    })
+  }
+
+  if (resolved.provider.dialect === 'openai-compatible' || resolved.provider.dialect === 'ollama') {
+    return generateImageWithOpenAICompatible({
+      ...opts,
+      model,
+      apiKey: resolved.apiKey,
+      baseUrl: resolved.baseUrl,
+      providerId: resolved.provider.id,
+      providerLabel: resolved.provider.label,
+      authHeader: resolved.provider.authHeader,
+      authPrefix: resolved.provider.authPrefix,
+    })
+  }
+
+  throw new Error(`O provedor "${resolved.provider.label}" não suporta geração de imagens neste fluxo.`)
+}
+
+// Backwards-compatible export kept for existing callsites.
+export async function generateImageViaOpenRouter(opts: ImageGenerationOptions): Promise<ImageGenerationResult> {
+  return generateImage(opts)
 }
 
 /**

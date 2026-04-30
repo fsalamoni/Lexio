@@ -65,6 +65,10 @@ export interface StudioStepExecution {
   phase: string
   agent_name: string
   model: string
+  provider_id?: string | null
+  provider_label?: string | null
+  requested_model?: string | null
+  resolved_model?: string | null
   tokens_in: number
   tokens_out: number
   cost_usd: number
@@ -130,6 +134,10 @@ function buildStudioExecution(
     phase,
     agent_name: agentName,
     model: result.model,
+    provider_id: result.provider_id ?? result.operational?.providerId ?? null,
+    provider_label: result.provider_label ?? result.operational?.providerLabel ?? null,
+    requested_model: result.operational?.requestedModel ?? null,
+    resolved_model: result.operational?.resolvedModel ?? null,
     tokens_in: result.tokens_in,
     tokens_out: result.tokens_out,
     cost_usd: result.cost_usd,
@@ -1044,6 +1052,8 @@ export async function generateStructuredVisualArtifactMedia(
           phase: 'visual_artifact_render',
           agent_name: 'Renderizador Visual Final',
           model: 'browser/svg-render',
+          provider_id: 'browser',
+          provider_label: 'Browser',
           tokens_in: 0,
           tokens_out: 0,
           cost_usd: 0,
@@ -1060,6 +1070,8 @@ export async function generateStructuredVisualArtifactMedia(
           phase: 'visual_artifact_render',
           agent_name: 'Renderizador Visual Final',
           model: 'browser/svg-render',
+          provider_id: 'browser',
+          provider_label: 'Browser',
           tokens_in: 0,
           tokens_out: 0,
           cost_usd: 0,
@@ -1076,6 +1088,8 @@ export async function generateStructuredVisualArtifactMedia(
           phase: 'visual_artifact_render',
           agent_name: 'Renderizador Visual Final',
           model: 'browser/svg-render',
+          provider_id: 'browser',
+          provider_label: 'Browser',
           tokens_in: 0,
           tokens_out: 0,
           cost_usd: 0,
