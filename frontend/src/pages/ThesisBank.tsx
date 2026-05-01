@@ -13,6 +13,7 @@ import {
   type ThesisData,
 } from '../lib/firestore-service'
 import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
+import { isUnrecoverableFirebaseTokenRefreshError } from '../lib/firebase-auth-errors'
 import ThesisAnalysisCard from '../components/ThesisAnalysisCard'
 import DraggablePanel from '../components/DraggablePanel'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -46,6 +47,7 @@ type ThesisLoadError = {
   detail: string
   code: string | null
   authRelated: boolean
+  retryAutomatically: boolean
 }
 
 function getFirebaseErrorCode(error: unknown): string | null {
@@ -56,10 +58,11 @@ function getFirebaseErrorCode(error: unknown): string | null {
 }
 
 function isAuthLoadError(error: unknown): boolean {
+  if (isUnrecoverableFirebaseTokenRefreshError(error)) return true
   const code = getFirebaseErrorCode(error)
-  if (code === 'permission-denied' || code === 'unauthenticated' || code === 'auth-session-invalid') return true
+  if (code === 'permission-denied' || code === 'unauthenticated' || code === 'auth-session-invalid' || code === 'auth/unrecoverable-token-refresh') return true
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-    return /missing or insufficient permissions|sess[aã]o do firebase/i.test(error.message)
+    return /missing or insufficient permissions|sess[aã]o do firebase|invalid_refresh_token|invalid_grant|token_expired/i.test(error.message)
   }
   return false
 }
@@ -67,12 +70,24 @@ function isAuthLoadError(error: unknown): boolean {
 function describeThesisLoadError(error: unknown): ThesisLoadError {
   const code = getFirebaseErrorCode(error)
   const authRelated = isAuthLoadError(error)
+  const unrecoverable = isUnrecoverableFirebaseTokenRefreshError(error) || code === 'auth-session-invalid' || code === 'auth/unrecoverable-token-refresh'
+  if (unrecoverable) {
+    return {
+      message: 'Sua sessão expirou e precisa de novo login.',
+      detail: 'O Firebase recusou a renovação do token. Entre novamente para criar uma sessão nova e voltar a acessar o banco de teses.',
+      code,
+      authRelated: true,
+      retryAutomatically: false,
+    }
+  }
+
   if (authRelated) {
     return {
       message: 'Estamos ressincronizando seu acesso ao banco de teses.',
       detail: 'O Firebase Auth e o Firestore ficaram fora de sincronia. A plataforma vai tentar recarregar automaticamente; se persistir, entre novamente para renovar a sessão.',
       code,
       authRelated: true,
+      retryAutomatically: true,
     }
   }
 
@@ -81,6 +96,7 @@ function describeThesisLoadError(error: unknown): ThesisLoadError {
     detail: 'A sessão local não foi alterada. Use tentar novamente quando a conexão estabilizar.',
     code,
     authRelated: false,
+    retryAutomatically: false,
   }
 }
 
@@ -344,7 +360,7 @@ export default function ThesisBank() {
     const nextError = describeThesisLoadError(error)
     setLoadError(nextError)
 
-    if (nextError.authRelated && typeof window !== 'undefined') {
+    if (nextError.retryAutomatically && typeof window !== 'undefined') {
       clearAuthRecoveryRetry()
       authRecoveryRetryRef.current = window.setTimeout(() => {
         setReloadTick(t => t + 1)
@@ -761,18 +777,20 @@ export default function ThesisBank() {
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setReloadTick(t => t + 1)}
-              className="px-3 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
-            >
-              Tentar novamente
-            </button>
+            {loadError.retryAutomatically || !loadError.authRelated ? (
+              <button
+                type="button"
+                onClick={() => setReloadTick(t => t + 1)}
+                className="px-3 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
+              >
+                Tentar novamente
+              </button>
+            ) : null}
             {loadError.authRelated && (
               <button
                 type="button"
                 onClick={() => { void logout() }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white text-rose-700 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors"
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${loadError.retryAutomatically ? 'bg-white text-rose-700 border border-rose-200 hover:bg-rose-100' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
               >
                 <LogIn className="w-3.5 h-3.5" />
                 Entrar novamente

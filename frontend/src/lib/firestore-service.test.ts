@@ -103,6 +103,10 @@ vi.mock('./auth-session-events', () => ({
 // ── Import under test (AFTER mocks are registered) ──────────────────────────
 
 import {
+  __resetFirebaseTokenRefreshGuardsForTests,
+} from './firebase-auth-errors'
+
+import {
   __resetFirestoreAuthCircuitForTests,
   getUserSettings,
   getResearchNotebook,
@@ -130,6 +134,7 @@ describe('saveNotebookDocumentToDocuments', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    __resetFirebaseTokenRefreshGuardsForTests()
     __resetFirestoreAuthCircuitForTests()
     mockGetIdToken.mockResolvedValue('token')
     mockFirebaseAuth.currentUser = {
@@ -417,6 +422,27 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(mockGetIdToken).toHaveBeenCalledWith(true)
     expect(result.items).toHaveLength(1)
     expect(result.items[0].id).toBe('doc-1')
+  })
+
+  it('stops Firestore retries when forced token refresh is unrecoverable', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+    const refreshError = Object.assign(new Error('Firebase: Error (auth/invalid-user-token).'), {
+      code: 'auth/invalid-user-token',
+    })
+
+    mockGetDocs.mockRejectedValue(permissionError)
+    mockGetIdToken.mockRejectedValue(refreshError)
+
+    await expect(listDocuments(uid)).rejects.toMatchObject({
+      code: 'firestore/auth-session-invalid',
+    })
+
+    expect(mockGetDocs).toHaveBeenCalledTimes(1)
+    expect(mockGetIdToken).toHaveBeenCalledTimes(1)
+    expect(mockEmitFirestoreAuthSessionInvalid).toHaveBeenCalledTimes(1)
+    expect(mockEmitFirestoreAuthAccessDegraded).not.toHaveBeenCalled()
   })
 
   it('keeps retrying with exponential backoff until permission-denied resolves', async () => {

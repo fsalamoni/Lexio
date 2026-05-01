@@ -24,6 +24,13 @@ import {
   emitFirestoreAuthAccessDegraded,
   emitFirestoreAuthSessionInvalid,
 } from './auth-session-events'
+import {
+  clearUnrecoverableFirebaseTokenRefresh,
+  createUnrecoverableFirebaseTokenRefreshError,
+  hasRecentUnrecoverableFirebaseTokenRefresh,
+  isUnrecoverableFirebaseTokenRefreshError,
+  markUnrecoverableFirebaseTokenRefresh,
+} from './firebase-auth-errors'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import { DEFAULT_DOC_STRUCTURES } from './document-structures'
 import {
@@ -743,13 +750,25 @@ function isSessionInvalidatingFirestoreError(error: unknown): boolean {
   return Boolean(code && SESSION_INVALIDATING_FIRESTORE_CODES.has(code))
 }
 
-async function refreshCurrentUserToken(): Promise<boolean> {
+async function refreshCurrentUserToken(contextLabel: string): Promise<boolean> {
   const currentUser = firebaseAuth?.currentUser
   if (!currentUser) return false
+  if (hasRecentUnrecoverableFirebaseTokenRefresh(currentUser.uid)) {
+    throw createUnrecoverableFirebaseTokenRefreshError(
+      contextLabel,
+      new Error('Recent unrecoverable Firebase token refresh failure.'),
+    )
+  }
+
   try {
     await currentUser.getIdToken(true)
+    clearUnrecoverableFirebaseTokenRefresh(currentUser.uid)
     return true
   } catch (error) {
+    if (isUnrecoverableFirebaseTokenRefreshError(error)) {
+      markUnrecoverableFirebaseTokenRefresh(currentUser.uid)
+      throw createUnrecoverableFirebaseTokenRefreshError(contextLabel, error)
+    }
     console.warn('Firestore token refresh failed:', getErrorMessage(error))
     return false
   }
@@ -808,7 +827,17 @@ async function withFirestoreRetry<T>(
         // Force a token refresh on every retry. This nudges the Firestore
         // SDK to revalidate its internal credentials against the freshly
         // minted ID token.
-        await refreshCurrentUserToken()
+        try {
+          await refreshCurrentUserToken(contextLabel)
+        } catch (refreshError) {
+          if (isUnrecoverableFirebaseTokenRefreshError(refreshError)) {
+            clearPermissionDeniedBurstForCurrentUser()
+            clearPermissionDeniedRecoveryForCurrentUser()
+            openAuthAccessCircuit(contextLabel, refreshError)
+            throw createInvalidFirebaseSessionError(contextLabel, refreshError)
+          }
+          throw refreshError
+        }
 
         const backoff = FIRESTORE_AUTH_RETRY_BACKOFF_MS[attempt] ?? FIRESTORE_AUTH_RETRY_DELAY_MS
         await new Promise<void>((resolve) => {

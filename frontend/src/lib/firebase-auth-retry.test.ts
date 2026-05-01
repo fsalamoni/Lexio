@@ -15,12 +15,19 @@ vi.mock('./firebase', () => ({
 }))
 
 import {
+  __resetFirebaseTokenRefreshGuardsForTests,
+  UNRECOVERABLE_FIREBASE_TOKEN_REFRESH_CODE,
+  markUnrecoverableFirebaseTokenRefresh,
+} from './firebase-auth-errors'
+
+import {
   shouldRetryTransientFirebaseAuthError,
   withTransientFirebaseAuthRetry,
 } from './firebase-auth-retry'
 
 describe('firebase-auth-retry', () => {
   beforeEach(() => {
+    __resetFirebaseTokenRefreshGuardsForTests()
     mockGetIdToken.mockReset()
     mockGetIdToken.mockResolvedValue('token-fresh')
   })
@@ -75,5 +82,38 @@ describe('firebase-auth-retry', () => {
     // The classifier itself still treats permission-denied as non-transient
     // for the legacy hydration path; the retry happens via a dedicated branch.
     expect(shouldRetryTransientFirebaseAuthError(error)).toBe(false)
+  })
+
+  it('does not retry the operation when forced token refresh is unrecoverable', async () => {
+    const error = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+    const refreshError = Object.assign(new Error('Firebase: Error (auth/invalid-user-token).'), {
+      code: 'auth/invalid-user-token',
+    })
+    const operation = vi.fn().mockRejectedValue(error)
+    mockGetIdToken.mockRejectedValue(refreshError)
+
+    await expect(withTransientFirebaseAuthRetry(operation, 0)).rejects.toMatchObject({
+      code: UNRECOVERABLE_FIREBASE_TOKEN_REFRESH_CODE,
+    })
+
+    expect(operation).toHaveBeenCalledTimes(1)
+    expect(mockGetIdToken).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the recent unrecoverable-refresh guard without calling securetoken again', async () => {
+    const error = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+    const operation = vi.fn().mockRejectedValue(error)
+    markUnrecoverableFirebaseTokenRefresh('user-1')
+
+    await expect(withTransientFirebaseAuthRetry(operation, 0)).rejects.toMatchObject({
+      code: UNRECOVERABLE_FIREBASE_TOKEN_REFRESH_CODE,
+    })
+
+    expect(operation).toHaveBeenCalledTimes(1)
+    expect(mockGetIdToken).not.toHaveBeenCalled()
   })
 })

@@ -1,4 +1,11 @@
 import { firebaseAuth } from './firebase'
+import {
+  clearUnrecoverableFirebaseTokenRefresh,
+  createUnrecoverableFirebaseTokenRefreshError,
+  hasRecentUnrecoverableFirebaseTokenRefresh,
+  isUnrecoverableFirebaseTokenRefreshError,
+  markUnrecoverableFirebaseTokenRefresh,
+} from './firebase-auth-errors'
 
 function getFirebaseErrorCode(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null
@@ -49,14 +56,34 @@ function wait(ms: number): Promise<void> {
   })
 }
 
-async function refreshIdTokenSafely(): Promise<boolean> {
+type TokenRefreshResult =
+  | { status: 'refreshed' }
+  | { status: 'transient-failure' }
+  | { status: 'unrecoverable-failure'; error: Error }
+
+async function refreshIdTokenSafely(contextLabel: string): Promise<TokenRefreshResult> {
   const current = firebaseAuth?.currentUser
-  if (!current) return false
+  if (!current) return { status: 'transient-failure' }
+  if (hasRecentUnrecoverableFirebaseTokenRefresh(current.uid)) {
+    return {
+      status: 'unrecoverable-failure',
+      error: createUnrecoverableFirebaseTokenRefreshError(contextLabel, new Error('Recent unrecoverable Firebase token refresh failure.')),
+    }
+  }
+
   try {
     await current.getIdToken(true)
-    return true
-  } catch {
-    return false
+    clearUnrecoverableFirebaseTokenRefresh(current.uid)
+    return { status: 'refreshed' }
+  } catch (error) {
+    if (isUnrecoverableFirebaseTokenRefreshError(error)) {
+      markUnrecoverableFirebaseTokenRefresh(current.uid)
+      return {
+        status: 'unrecoverable-failure',
+        error: createUnrecoverableFirebaseTokenRefreshError(contextLabel, error),
+      }
+    }
+    return { status: 'transient-failure' }
   }
 }
 
@@ -77,8 +104,9 @@ export async function withTransientFirebaseAuthRetry<T>(
       // pick up the new credential, and try once more. If it still fails
       // we let the original error propagate so the caller can show a
       // proper retry UI instead of looping.
-      const refreshed = await refreshIdTokenSafely()
-      if (!refreshed) throw error
+      const refresh = await refreshIdTokenSafely('withTransientFirebaseAuthRetry')
+      if (refresh.status === 'unrecoverable-failure') throw refresh.error
+      if (refresh.status !== 'refreshed') throw error
       await wait(600)
       return operation()
     }

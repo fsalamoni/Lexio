@@ -59,6 +59,7 @@ import {
   FIRESTORE_AUTH_SESSION_INVALID_EVENT,
   getSessionFingerprint,
 } from '../lib/auth-session-events'
+import { __resetFirebaseTokenRefreshGuardsForTests } from '../lib/firebase-auth-errors'
 
 function Probe({ emitInvalidSession, emitAuthAccessDegraded, triggerManualLogout }: {
   emitInvalidSession?: boolean
@@ -124,6 +125,7 @@ describe('AuthContext session recovery', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    __resetFirebaseTokenRefreshGuardsForTests()
     localStorage.clear()
     localStorage.setItem('lexio_token', 'token-initial-abcdefghijklmnop')
     localStorage.setItem('lexio_user_id', 'user-1')
@@ -278,6 +280,30 @@ describe('AuthContext session recovery', () => {
     expect(localStorage.getItem('lexio_user_id')).toBe('user-1')
   })
 
+  it('forces clean logout when initial token refresh is unrecoverable', async () => {
+    currentUser.getIdToken.mockRejectedValue(Object.assign(new Error('Firebase: Error (auth/invalid-user-token).'), {
+      code: 'auth/invalid-user-token',
+    }))
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('user-id').textContent).toBe('null')
+    })
+
+    expect(localStorage.getItem('lexio_user_id')).toBeNull()
+    expect(localStorage.getItem('lexio_token')).toBeNull()
+  })
+
   it('does not restore an active Firebase session from localStorage when SDK has no current user', async () => {
     mockFirebaseAuth.currentUser = null
     mockOnAuthStateChanged.mockImplementation((_auth: unknown, callback: (user: unknown) => void) => {
@@ -348,5 +374,31 @@ describe('AuthContext session recovery', () => {
     expect(mockFirebaseLogout).not.toHaveBeenCalled()
     expect(localStorage.getItem('lexio_user_id')).toBe('user-1')
     expect(localStorage.getItem('lexio_token')).not.toBeNull()
+  })
+
+  it('clears the session when degraded recovery hits unrecoverable token refresh', async () => {
+    currentUser.getIdToken
+      .mockResolvedValueOnce('token-first-hydration')
+      .mockRejectedValueOnce(Object.assign(new Error('Firebase: Error (auth/invalid-refresh-token).'), {
+        code: 'auth/invalid-refresh-token',
+      }))
+
+    render(
+      <AuthProvider>
+        <Probe emitAuthAccessDegraded />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('user-id').textContent).toBe('null')
+    })
+
+    expect(localStorage.getItem('lexio_user_id')).toBeNull()
+    expect(localStorage.getItem('lexio_token')).toBeNull()
   })
 })
