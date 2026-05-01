@@ -69,14 +69,17 @@ function Probe({ emitInvalidSession, emitAuthAccessDegraded, triggerManualLogout
 
   useEffect(() => {
     if (!emitInvalidSession) return
-    window.dispatchEvent(new CustomEvent(FIRESTORE_AUTH_SESSION_INVALID_EVENT, {
-      detail: {
-        contextLabel: 'listDocuments.query',
-        authUid: 'user-1',
-        sessionFingerprint: getSessionFingerprint('user-1'),
-        occurredAt: Date.now(),
-      },
-    }))
+    const timer = window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(FIRESTORE_AUTH_SESSION_INVALID_EVENT, {
+        detail: {
+          contextLabel: 'listDocuments.query',
+          authUid: 'user-1',
+          sessionFingerprint: getSessionFingerprint('user-1'),
+          occurredAt: Date.now(),
+        },
+      }))
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [emitInvalidSession])
 
   useEffect(() => {
@@ -86,19 +89,22 @@ function Probe({ emitInvalidSession, emitAuthAccessDegraded, triggerManualLogout
 
   useEffect(() => {
     if (!emitAuthAccessDegraded) return
-    window.dispatchEvent(new CustomEvent(FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT, {
-      detail: {
-        contextLabel: 'listDocuments.query',
-        authUid: 'user-1',
-        sessionFingerprint: getSessionFingerprint('user-1'),
-        occurredAt: Date.now(),
-        routePath: '/documents',
-        appVersion: 'test',
-        errorCode: 'permission-denied',
-        burstCount: 6,
-        uniqueContexts: 3,
-      },
-    }))
+    const timer = window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT, {
+        detail: {
+          contextLabel: 'listDocuments.query',
+          authUid: 'user-1',
+          sessionFingerprint: getSessionFingerprint('user-1'),
+          occurredAt: Date.now(),
+          routePath: '/documents',
+          appVersion: 'test',
+          errorCode: 'permission-denied',
+          burstCount: 6,
+          uniqueContexts: 3,
+        },
+      }))
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [emitAuthAccessDegraded])
 
   return (
@@ -233,6 +239,28 @@ describe('AuthContext session recovery', () => {
     await waitFor(() => {
       expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
     })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('user-id').textContent).toBe('null')
+    })
+
+    expect(localStorage.getItem('lexio_user_id')).toBeNull()
+    expect(localStorage.getItem('lexio_token')).toBeNull()
+  })
+
+  it('does not restore an active Firebase session from localStorage when SDK has no current user', async () => {
+    mockFirebaseAuth.currentUser = null
+    mockOnAuthStateChanged.mockImplementation((_auth: unknown, callback: (user: unknown) => void) => {
+      callback(null)
+      return () => undefined
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
 
     await waitFor(() => {
       expect(screen.getByTestId('ready').textContent).toBe('true')

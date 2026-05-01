@@ -11,8 +11,7 @@
  * No v2 code is modified by this module. The v2 pipeline in
  * `generation-service.ts` continues to be the only path used by `NewDocument`.
  */
-import { collection, doc, updateDoc, addDoc, getFirestore } from 'firebase/firestore'
-import { getApp } from 'firebase/app'
+import { collection, doc, updateDoc, addDoc } from 'firebase/firestore'
 import {
   AREA_NAMES,
   DOC_TYPE_NAMES,
@@ -31,7 +30,7 @@ import {
   type FallbackPriorityConfig,
   type ResearchNotebookModelMap,
 } from './model-config'
-import { loadAdminDocumentTypes } from './firestore-service'
+import { loadAdminDocumentTypes, writeUserScoped } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import {
   buildDocumentV3PipelineProgress,
@@ -127,8 +126,6 @@ export async function createDocumentV3(uid: string, input: {
   request_context?: Record<string, unknown> | null
   context_detail?: ContextDetailData | null
 }): Promise<{ id: string }> {
-  const db = getFirestore(getApp())
-  const colRef = collection(db, 'users', uid, 'documents')
   const now = new Date().toISOString()
   const docData = {
     document_type_id: input.document_type_id,
@@ -145,8 +142,11 @@ export async function createDocumentV3(uid: string, input: {
     created_at: now,
     updated_at: now,
   }
-  const ref = await addDoc(colRef, docData)
-  return { id: ref.id }
+  return writeUserScoped(uid, 'createDocumentV3', async (db, effectiveUid) => {
+    const colRef = collection(db, 'users', effectiveUid, 'documents')
+    const ref = await addDoc(colRef, docData)
+    return { id: ref.id }
+  })
 }
 
 /**
@@ -167,14 +167,18 @@ export async function generateDocumentV3(
   contextDetail?: ContextDetailData | null,
   options?: GenerateDocumentV3Options,
 ): Promise<void> {
-  const db = getFirestore(getApp())
-  const docRef = doc(db, 'users', uid, 'documents', docId)
   const signal = options?.signal
+  const persistDocument = (data: Record<string, unknown>, contextLabel: string) => {
+    return writeUserScoped(uid, contextLabel, async (db, effectiveUid) => {
+      const docRef = doc(db, 'users', effectiveUid, 'documents', docId)
+      await updateDoc(docRef, data)
+    })
+  }
 
-  await updateDoc(docRef, {
+  await persistDocument({
     status: 'processando',
     updated_at: new Date().toISOString(),
-  })
+  }, 'generateDocumentV3.start')
 
   const llmExecutions: UsageExecutionRecord[] = []
   const recordExecution = (
@@ -474,7 +478,7 @@ export async function generateDocumentV3(
 
     // tema persisted early so list view shows it during processing
     if (caseContext.briefings?.tema) {
-      await updateDoc(docRef, { tema: caseContext.briefings.tema }).catch(() => {})
+      await persistDocument({ tema: caseContext.briefings.tema }, 'generateDocumentV3.tema').catch(() => {})
     }
 
     // ── Phase 2: Análise jurídica ───────────────────────────────────────────
@@ -819,7 +823,7 @@ export async function generateDocumentV3(
       // J. Telemetria estendida: salvamos durações por fase e estimativa de
       // economia por paralelismo (soma das durações dos agentes − wall-clock).
       const parallelSavingsMs = Math.max(0, totalAgentDurationMs - wallClockMs)
-      await updateDoc(docRef, {
+      await persistDocument({
         texto_completo: finalText,
         status: 'concluido',
         quality_score: quality.score,
@@ -841,7 +845,7 @@ export async function generateDocumentV3(
           parallel_limit: parallelLimit,
         },
         updated_at: new Date().toISOString(),
-      })
+      }, 'generateDocumentV3.complete')
     })
 
     reportProgress(
@@ -854,10 +858,10 @@ export async function generateDocumentV3(
       },
     )
   } catch (err) {
-    await updateDoc(docRef, {
+    await persistDocument({
       status: 'erro',
       updated_at: new Date().toISOString(),
-    }).catch(() => {})
+    }, 'generateDocumentV3.error').catch(() => {})
     throw err
   }
 }

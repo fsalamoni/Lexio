@@ -577,6 +577,32 @@ describe('saveNotebookDocumentToDocuments', () => {
       { merge: true },
     )
   })
+
+  it('saves user settings under the authenticated uid and retries transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+    mockFirebaseAuth.currentUser = {
+      uid: 'live-user-456',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+    mockOnAuthStateChanged.mockImplementation((_auth: unknown, callback: (user: unknown) => void) => {
+      callback(mockFirebaseAuth.currentUser)
+      return () => undefined
+    })
+    mockSetDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(undefined)
+
+    await saveUserSettings('stale-user-123', { last_jurisprudence_tribunal_aliases: ['stf'] })
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', 'live-user-456', 'settings', 'preferences',
+    )
+    expect(mockSetDoc).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
 })
 
 describe('admin catalog sanitizers', () => {

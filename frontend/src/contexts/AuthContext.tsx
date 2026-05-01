@@ -90,10 +90,11 @@ function isAuthAccessError(error: unknown): boolean {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token,    setToken]    = useState<string | null>(localStorage.getItem('lexio_token'))
-  const [userId,   setUserId]   = useState<string | null>(localStorage.getItem('lexio_user_id'))
-  const [role,     setRole]     = useState<string | null>(localStorage.getItem('lexio_role'))
-  const [fullName, setFullName] = useState<string | null>(localStorage.getItem('lexio_full_name'))
+  const initialStoredAuthState = !IS_FIREBASE ? readStoredAuthState() : null
+  const [token,    setToken]    = useState<string | null>(initialStoredAuthState?.token ?? null)
+  const [userId,   setUserId]   = useState<string | null>(initialStoredAuthState?.userId ?? null)
+  const [role,     setRole]     = useState<string | null>(initialStoredAuthState?.role ?? null)
+  const [fullName, setFullName] = useState<string | null>(initialStoredAuthState?.fullName ?? null)
   // Demo mode is immediately ready; Firebase mode waits for onAuthStateChanged
   const [isReady,  setIsReady]  = useState(!IS_FIREBASE)
   const sessionRecoveryRef = useRef({
@@ -114,17 +115,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserId(null)
     setRole(null)
     setFullName(null)
-  }, [])
-
-  const restoreAuthStateFromStorage = useCallback((): boolean => {
-    const snapshot = readStoredAuthState()
-    if (!snapshot) return false
-
-    setToken(snapshot.token)
-    setUserId(snapshot.userId)
-    setRole(snapshot.role)
-    setFullName(snapshot.fullName)
-    return true
   }, [])
 
   const syncAuthFromFirebaseUser = useCallback(async (
@@ -231,26 +221,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (!recovered) {
-        // CRITICAL: if recovery failed because Firestore is rejecting the
-        // freshly-refreshed token (auth-access error), the token persisted in
-        // localStorage is exactly the one being rejected. Restoring it would
-        // re-trigger the same permission-denied loop indefinitely. Force a
-        // clean logout instead so the user can re-authenticate from scratch.
+        // CRITICAL: never restore an active Firebase session from localStorage.
+        // If the SDK has no live user or cannot mint a usable token, persisted
+        // credentials are only a stale cache and would recreate the zombie
+        // state where the UI is logged in but Firestore rejects every call.
         if (isAuthAccessError(recoveryError)) {
           manualLogoutRef.current = true
           await firebaseLogout().catch(() => undefined)
           clearAuthState()
-        } else {
-          // Transient failure (network/offline). Keep the user active and let
-          // the next attempt (or visibility refresh) recover.
-          restoreAuthStateFromStorage()
+        } else if (!firebaseAuth?.currentUser) {
+          clearAuthState()
         }
       }
     } finally {
       setIsReady(true)
       sessionRecoveryRef.current.inProgress = false
     }
-  }, [clearAuthState, currentSessionFingerprint, restoreAuthStateFromStorage, syncAuthFromFirebaseUser])
+  }, [clearAuthState, currentSessionFingerprint, syncAuthFromFirebaseUser])
 
   const recoverDegradedFirestoreAccess = useCallback(async (detail?: FirestoreAuthAccessDegradedEventDetail) => {
     if (!IS_FIREBASE) return
@@ -348,12 +335,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           manualLogoutRef.current = false
           await syncAuthFromFirebaseUser(fbUser)
         } else {
-          if (manualLogoutRef.current) {
-            manualLogoutRef.current = false
-            clearAuthState()
-          } else if (!restoreAuthStateFromStorage()) {
-            clearAuthState()
-          }
+          manualLogoutRef.current = false
+          clearAuthState()
         }
       } catch (error) {
         console.warn('[AuthContext] Failed to hydrate Firebase auth session:', error)
@@ -369,13 +352,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           manualLogoutRef.current = true
           await firebaseLogout().catch(() => undefined)
           clearAuthState()
-        } else if (!restoreAuthStateFromStorage()) {
+        } else {
           if (callbackUid) {
-            localStorage.setItem('lexio_user_id', callbackUid)
-            setUserId(callbackUid)
+            console.warn('[AuthContext] Firebase user present but token/profile bootstrap failed; active session was not restored from localStorage.')
           }
-          setRole((prev) => prev ?? localStorage.getItem('lexio_role') ?? 'user')
-          setFullName((prev) => prev ?? localStorage.getItem('lexio_full_name') ?? '')
+          clearAuthState()
         }
       } finally {
         setIsReady(true)
@@ -383,7 +364,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     return unsub
-  }, [clearAuthState, restoreAuthStateFromStorage, syncAuthFromFirebaseUser])
+  }, [clearAuthState, syncAuthFromFirebaseUser])
 
   // Keep the locally-persisted ID token in sync with whatever Firebase Auth
   // currently considers valid. The Firebase SDK rotates tokens automatically

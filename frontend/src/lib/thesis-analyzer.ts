@@ -86,6 +86,44 @@ function uid4(): string {
   return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10)
 }
 
+function extractBalancedJson(content: string): string | null {
+  const startCandidates = [content.indexOf('{'), content.indexOf('[')].filter(index => index >= 0)
+  if (startCandidates.length === 0) return null
+
+  const start = Math.min(...startCandidates)
+  const stack: string[] = []
+  let inString = false
+  let escaped = false
+
+  for (let i = start; i < content.length; i += 1) {
+    const char = content[i]
+
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+    if (inString) continue
+
+    if (char === '{') stack.push('}')
+    if (char === '[') stack.push(']')
+    if (char === '}' || char === ']') {
+      const expected = stack.pop()
+      if (expected !== char) return null
+      if (stack.length === 0) return content.slice(start, i + 1)
+    }
+  }
+
+  return null
+}
+
 function parseJson(raw: string): unknown {
   let content = raw.trim()
 
@@ -101,19 +139,10 @@ function parseJson(raw: string): unknown {
   // 2. Try direct parse first (fast path)
   try { return JSON.parse(content) } catch { /* fall through */ }
 
-  // 3. Find the outermost JSON object or array boundary
-  const objStart = content.indexOf('{')
-  const arrStart = content.indexOf('[')
-  const start = objStart === -1 ? arrStart
-    : arrStart === -1 ? objStart
-    : Math.min(objStart, arrStart)
-
-  if (start !== -1) {
-    const isArray = content[start] === '['
-    const end = isArray ? content.lastIndexOf(']') : content.lastIndexOf('}')
-    if (end > start) {
-      try { return JSON.parse(content.slice(start, end + 1)) } catch { /* fall through */ }
-    }
+  // 3. Extract the first balanced JSON object/array, ignoring prose around it.
+  const balancedJson = extractBalancedJson(content)
+  if (balancedJson) {
+    try { return JSON.parse(balancedJson) } catch { /* fall through */ }
   }
 
   // 4. Last resort: throw with context
@@ -689,7 +718,7 @@ export async function analyzeThesisBank(
         cost_usd: res.cost_usd,
         duration_ms: res.duration_ms,
       }))
-      const parsed = parseJsonObject(res.content) as {
+      type RevisorParsed = {
         suggestions?: Array<{
           temp_id?: string
           type?: string
@@ -703,6 +732,39 @@ export async function analyzeThesisBank(
           proposed_thesis?: AnalysisSuggestion['proposed_thesis']
         }>
         executive_summary?: string
+      }
+
+      let parsed: RevisorParsed
+      try {
+        parsed = parseJsonObject(res.content) as RevisorParsed
+      } catch (parseError) {
+        console.warn('Revisor returned invalid JSON; requesting one repair pass:', parseError)
+        const repair = await callLLMWithFallback(
+          apiKey,
+          'Você corrige saídas JSON inválidas. Retorne APENAS um objeto JSON válido, sem markdown, sem comentários e sem texto fora do JSON.',
+          `A saída abaixo deveria ser um objeto JSON válido no formato {"executive_summary":"...","suggestions":[...]}. Corrija somente a sintaxe e preserve os campos úteis.\n\n${res.content}`,
+          modelMap['thesis_revisor'],
+          resolveFb('thesis_revisor', modelMap['thesis_revisor']),
+          4000,
+          0,
+        )
+        llmExecutions.push(createUsageExecutionRecord({
+          source_type: 'thesis_analysis',
+          source_id: sessionId,
+          created_at: now,
+          phase: 'thesis_revisor_repair',
+          agent_name: 'Revisor Final (reparo JSON)',
+          model: repair.model,
+          provider_id: repair.provider_id ?? repair.operational?.providerId,
+          provider_label: repair.provider_label ?? repair.operational?.providerLabel,
+          requested_model: repair.operational?.requestedModel,
+          resolved_model: repair.operational?.resolvedModel,
+          tokens_in: repair.tokens_in,
+          tokens_out: repair.tokens_out,
+          cost_usd: repair.cost_usd,
+          duration_ms: repair.duration_ms,
+        }))
+        parsed = parseJsonObject(repair.content) as RevisorParsed
       }
 
       executiveSummary = parsed.executive_summary ?? executiveSummary

@@ -85,6 +85,7 @@ vi.mock('./firestore-service', () => ({
   loadAdminDocumentTypes: async () => [],
   getAllAcervoDocumentsForSearch: async () => [],
   listTheses: async () => ({ items: [] }),
+  writeUserScoped: async (uid: string, _contextLabel: string, operation: (db: Record<string, never>, effectiveUid: string) => Promise<unknown>) => operation({}, uid),
 }))
 
 // Force the v3 jurisprudence agent down its LLM-only fallback path during tests

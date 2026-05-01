@@ -6,6 +6,7 @@ const {
   apiInstance,
   apiCall,
   currentUser,
+  mockFirebaseAuth,
   capture,
   mockCreate,
 } = vi.hoisted(() => {
@@ -36,12 +37,15 @@ const {
     get: vi.fn(),
   })
 
+  const currentUser = {
+    getIdToken: vi.fn(),
+  }
+
   return {
     apiInstance,
     apiCall,
-    currentUser: {
-      getIdToken: vi.fn(),
-    },
+    currentUser,
+    mockFirebaseAuth: { currentUser: currentUser as typeof currentUser | null },
     capture,
     mockCreate: vi.fn(() => apiInstance),
   }
@@ -59,9 +63,7 @@ vi.mock('./demo-interceptor', () => ({
 
 vi.mock('../lib/firebase', () => ({
   IS_FIREBASE: true,
-  firebaseAuth: {
-    currentUser,
-  },
+  firebaseAuth: mockFirebaseAuth,
 }))
 
 describe('api client firebase session handling', () => {
@@ -70,6 +72,7 @@ describe('api client firebase session handling', () => {
     localStorage.clear()
     apiCall.mockReset()
     currentUser.getIdToken.mockReset()
+    mockFirebaseAuth.currentUser = currentUser
     capture.request = null
     capture.responseError = null
     await import('./client')
@@ -105,5 +108,15 @@ describe('api client firebase session handling', () => {
     }))
     expect(localStorage.getItem('lexio_token')).toBe('firebase-refreshed-token')
     expect(result).toEqual({ data: { ok: true } })
+  })
+
+  it('does not use a stored Firebase token when there is no live currentUser', async () => {
+    localStorage.setItem('lexio_token', 'stored-zombie-token')
+    mockFirebaseAuth.currentUser = null
+
+    const config = await capture.request?.({ headers: {} })
+
+    expect(currentUser.getIdToken).not.toHaveBeenCalled()
+    expect(config?.headers.Authorization).toBeUndefined()
   })
 })

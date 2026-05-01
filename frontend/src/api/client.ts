@@ -60,13 +60,15 @@ function readStoredAuthToken(): string | null {
 }
 
 async function resolveAuthToken(forceRefresh = false): Promise<string | null> {
-  if (IS_FIREBASE && firebaseAuth?.currentUser) {
+  if (IS_FIREBASE) {
+    if (!firebaseAuth?.currentUser) return null
     try {
       const token = await firebaseAuth.currentUser.getIdToken(forceRefresh)
       localStorage.setItem('lexio_token', token)
       return token
     } catch (error) {
       console.warn('[api] Firebase token refresh failed:', error)
+      return null
     }
   }
 
@@ -79,7 +81,7 @@ api.interceptors.request.use(async (config) => {
     token = await resolveAuthToken(false)
   } catch (error) {
     console.warn('[api] Failed to resolve auth token for request:', error)
-    token = readStoredAuthToken()
+    token = IS_FIREBASE ? null : readStoredAuthToken()
   }
   if (!token && IS_FIREBASE && firebaseAuth?.currentUser) {
     console.warn('[api] Proceeding without bearer token even though a Firebase user is present.')

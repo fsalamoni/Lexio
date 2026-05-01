@@ -38,6 +38,39 @@ import {
   type ThesisAnalysisResult,
 } from '../lib/thesis-analyzer'
 import { loadThesisAnalystModels, ModelsNotConfiguredError } from '../lib/model-config'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
+
+const PENDING_THESIS_ANALYSIS_WRITES_KEY = 'lexio_pending_thesis_analysis_writes'
+
+type PendingThesisAnalysisWrite =
+  | { id: string; uid: string; type: 'mark_analyzed'; docIds: string[]; createdAt: string }
+  | { id: string; uid: string; type: 'save_session'; session: Omit<ThesisAnalysisSessionData, 'id'>; createdAt: string }
+
+function readPendingThesisAnalysisWrites(): PendingThesisAnalysisWrite[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(PENDING_THESIS_ANALYSIS_WRITES_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed as PendingThesisAnalysisWrite[] : []
+  } catch {
+    return []
+  }
+}
+
+function writePendingThesisAnalysisWrites(items: PendingThesisAnalysisWrite[]): void {
+  if (typeof window === 'undefined') return
+  if (items.length === 0) {
+    localStorage.removeItem(PENDING_THESIS_ANALYSIS_WRITES_KEY)
+    return
+  }
+  localStorage.setItem(PENDING_THESIS_ANALYSIS_WRITES_KEY, JSON.stringify(items.slice(-20)))
+}
+
+function enqueuePendingThesisAnalysisWrite(item: PendingThesisAnalysisWrite): void {
+  const current = readPendingThesisAnalysisWrites()
+  writePendingThesisAnalysisWrites([...current.filter(existing => existing.id !== item.id), item])
+}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -239,8 +272,8 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
     if (!userId) return
     try {
       const [status, session] = await Promise.all([
-        getAcervoAnalysisStatus(userId),
-        getLastThesisAnalysisSession(userId).catch(() => null),
+        withTransientFirebaseAuthRetry(() => getAcervoAnalysisStatus(userId)),
+        withTransientFirebaseAuthRetry(() => getLastThesisAnalysisSession(userId)).catch(() => null),
       ])
       setAnalyzedCount(status.analyzed_count)
       setUnanalyzedCount(status.unanalyzed_count)
@@ -251,6 +284,35 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
   }, [userId])
 
   useEffect(() => { loadStats() }, [loadStats])
+
+  const replayPendingWrites = useCallback(async () => {
+    if (!userId) return
+    const pending = readPendingThesisAnalysisWrites()
+    const remaining: PendingThesisAnalysisWrite[] = []
+
+    for (const item of pending) {
+      if (item.uid !== userId) {
+        remaining.push(item)
+        continue
+      }
+      try {
+        if (item.type === 'mark_analyzed') {
+          await withTransientFirebaseAuthRetry(() => markAcervoDocumentsAnalyzed(userId, item.docIds))
+        } else {
+          await withTransientFirebaseAuthRetry(() => saveThesisAnalysisSession(userId, item.session))
+        }
+      } catch {
+        remaining.push(item)
+      }
+    }
+
+    if (remaining.length !== pending.length) {
+      writePendingThesisAnalysisWrites(remaining)
+      void loadStats()
+    }
+  }, [loadStats, userId])
+
+  useEffect(() => { void replayPendingWrites() }, [replayPendingWrites])
 
   // ── Resolve API key ────────────────────────────────────────────────────────
 
@@ -282,8 +344,8 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
     try {
       // Load theses and unanalyzed docs in parallel
       const [thesesResult, acervoStatus, modelMap] = await Promise.all([
-        listTheses(userId, { limit: 200 }),
-        getAcervoAnalysisStatus(userId),
+        withTransientFirebaseAuthRetry(() => listTheses(userId, { limit: 200 })),
+        withTransientFirebaseAuthRetry(() => getAcervoAnalysisStatus(userId)),
         loadThesisAnalystModels(),
       ])
 
@@ -315,32 +377,45 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
 
       // Mark analyzed docs in Firestore (non-critical — don't abort analysis if this fails)
       if (unanalyzedDocs.length > 0) {
+        const analyzedDocIds = unanalyzedDocs.map(d => d.id).filter((id): id is string => !!id)
         try {
-          await markAcervoDocumentsAnalyzed(
-            userId,
-            unanalyzedDocs.map(d => d.id).filter((id): id is string => !!id),
-          )
+          await withTransientFirebaseAuthRetry(() => markAcervoDocumentsAnalyzed(userId, analyzedDocIds))
         } catch {
+          enqueuePendingThesisAnalysisWrite({
+            id: `mark:${analysis.created_at}`,
+            uid: userId,
+            type: 'mark_analyzed',
+            docIds: analyzedDocIds,
+            createdAt: new Date().toISOString(),
+          })
           console.warn('Failed to mark acervo docs as analyzed (non-fatal)')
         }
       }
 
       // Persist session metadata (non-critical)
+      const sessionPayload: Omit<ThesisAnalysisSessionData, 'id'> = {
+        created_at: analysis.created_at,
+        total_theses_analyzed: analysis.total_theses_analyzed,
+        total_docs_analyzed: analysis.total_docs_analyzed,
+        total_new_docs: analysis.new_doc_count,
+        suggestions_count: analysis.suggestions.length,
+        accepted_count: 0,
+        rejected_count: 0,
+        executive_summary: analysis.executive_summary,
+        status: 'completed',
+        usage_summary: analysis.usage_summary,
+        llm_executions: analysis.llm_executions,
+      }
       try {
-        await saveThesisAnalysisSession(userId, {
-          created_at: analysis.created_at,
-          total_theses_analyzed: analysis.total_theses_analyzed,
-          total_docs_analyzed: analysis.total_docs_analyzed,
-          total_new_docs: analysis.new_doc_count,
-          suggestions_count: analysis.suggestions.length,
-          accepted_count: 0,
-          rejected_count: 0,
-          executive_summary: analysis.executive_summary,
-          status: 'completed',
-          usage_summary: analysis.usage_summary,
-          llm_executions: analysis.llm_executions,
-        })
+        await withTransientFirebaseAuthRetry(() => saveThesisAnalysisSession(userId, sessionPayload))
       } catch {
+        enqueuePendingThesisAnalysisWrite({
+          id: `session:${analysis.created_at}`,
+          uid: userId,
+          type: 'save_session',
+          session: sessionPayload,
+          createdAt: new Date().toISOString(),
+        })
         console.warn('Failed to persist analysis session (non-fatal)')
       }
 
@@ -373,27 +448,29 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
     try {
       if (suggestion.type === 'merge' && suggestion.proposed_thesis) {
         // 1. Create the new compiled thesis
-        await createThesis(userId, {
+        await withTransientFirebaseAuthRetry(() => createThesis(userId, {
           ...suggestion.proposed_thesis,
           source_type: 'compiled',
           usage_count: 0,
-        })
+        }))
         // 2. Delete/archive the source theses
         for (const id of suggestion.affected_thesis_ids ?? []) {
-          await deleteThesis(userId, id)
+          await withTransientFirebaseAuthRetry(() => deleteThesis(userId, id))
         }
       } else if (suggestion.type === 'delete') {
         for (const id of suggestion.affected_thesis_ids ?? []) {
-          await deleteThesis(userId, id)
+          await withTransientFirebaseAuthRetry(() => deleteThesis(userId, id))
         }
       } else if (suggestion.type === 'create' && suggestion.proposed_thesis) {
-        await createThesis(userId, {
+        await withTransientFirebaseAuthRetry(() => createThesis(userId, {
           ...suggestion.proposed_thesis,
           source_type: 'curated',
           usage_count: 0,
-        })
+        }))
       } else if (suggestion.type === 'improve' && suggestion.proposed_thesis && suggestion.affected_thesis_ids?.[0]) {
-        await updateThesis(userId, suggestion.affected_thesis_ids[0], suggestion.proposed_thesis)
+        const thesisId = suggestion.affected_thesis_ids[0]
+        const proposedThesis = suggestion.proposed_thesis
+        await withTransientFirebaseAuthRetry(() => updateThesis(userId, thesisId, proposedThesis))
       }
 
       setSuggestionStates(prev => ({ ...prev, [suggestion.id]: 'accepted' }))

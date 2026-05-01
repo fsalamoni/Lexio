@@ -492,6 +492,16 @@ async function resolveEffectiveUid(uid: string, contextLabel: string): Promise<s
   return authUid || requestedUid || uid
 }
 
+export async function writeUserScoped<T>(
+  uid: string,
+  contextLabel: string,
+  operation: (db: ReturnType<typeof ensureFirestore>, effectiveUid: string) => Promise<T>,
+): Promise<T> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, contextLabel)
+  return withFirestoreRetry(() => operation(db, effectiveUid), contextLabel)
+}
+
 function normalizeFirestoreDocumentId(value: string): string {
   const trimmed = String(value || '').trim()
   if (!trimmed) return trimmed
@@ -1405,19 +1415,21 @@ export async function getProfile(uid: string): Promise<ProfileData> {
 }
 
 export async function saveProfile(uid: string, data: ProfileData): Promise<void> {
-  const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'profile', 'data')
-  await setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true })
+  await writeUserScoped(uid, 'saveProfile', async (db, effectiveUid) => {
+    const ref = doc(db, 'users', effectiveUid, 'profile', 'data')
+    await setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true })
+  })
 }
 
 export async function completeOnboarding(uid: string, data: ProfileData): Promise<void> {
-  const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'profile', 'data')
-  await setDoc(ref, {
-    ...data,
-    onboarding_completed: true,
-    updated_at: serverTimestamp(),
-  }, { merge: true })
+  await writeUserScoped(uid, 'completeOnboarding', async (db, effectiveUid) => {
+    const ref = doc(db, 'users', effectiveUid, 'profile', 'data')
+    await setDoc(ref, {
+      ...data,
+      onboarding_completed: true,
+      updated_at: serverTimestamp(),
+    }, { merge: true })
+  })
 }
 
 // ── Wizard steps (static definition) ────────────────────────────────────────
@@ -1546,8 +1558,6 @@ export async function createDocument(uid: string, input: {
   request_context?: Record<string, unknown> | null
   context_detail?: ContextDetailData | null
 }): Promise<DocumentData> {
-  const db = ensureFirestore()
-  const colRef = collection(db, 'users', uid, 'documents')
   const now = new Date().toISOString()
   const docData = {
     document_type_id: input.document_type_id,
@@ -1564,8 +1574,11 @@ export async function createDocument(uid: string, input: {
     created_at: now,
     updated_at: now,
   }
-  const ref = await addDoc(colRef, docData)
-  return { id: ref.id, ...docData }
+  return writeUserScoped(uid, 'createDocument', async (db, effectiveUid) => {
+    const colRef = collection(db, 'users', effectiveUid, 'documents')
+    const ref = await addDoc(colRef, docData)
+    return { id: ref.id, ...docData }
+  })
 }
 
 export async function getDocument(uid: string, docId: string): Promise<DocumentData | null> {
@@ -1632,15 +1645,17 @@ export async function listDocuments(uid: string, opts?: {
 }
 
 export async function updateDocument(uid: string, docId: string, data: Partial<DocumentData>): Promise<void> {
-  const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'documents', docId)
-  await updateDoc(ref, { ...data, updated_at: new Date().toISOString() })
+  await writeUserScoped(uid, 'updateDocument', async (db, effectiveUid) => {
+    const ref = doc(db, 'users', effectiveUid, 'documents', docId)
+    await updateDoc(ref, { ...data, updated_at: new Date().toISOString() })
+  })
 }
 
 export async function deleteDocument(uid: string, docId: string): Promise<void> {
-  const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'documents', docId)
-  await deleteDoc(ref)
+  await writeUserScoped(uid, 'deleteDocument', async (db, effectiveUid) => {
+    const ref = doc(db, 'users', effectiveUid, 'documents', docId)
+    await deleteDoc(ref)
+  })
 }
 
 /**
@@ -1659,8 +1674,6 @@ export async function saveNotebookDocumentToDocuments(uid: string, input: {
   notebookTitle: string
   llm_executions?: DocumentData['llm_executions']
 }): Promise<DocumentData> {
-  const db = ensureFirestore()
-  const colRef = collection(db, 'users', uid, 'documents')
   const now = new Date().toISOString()
   const docData = stripUndefined({
     document_type_id: 'documento_caderno',
@@ -1680,8 +1693,11 @@ export async function saveNotebookDocumentToDocuments(uid: string, input: {
     created_at: now,
     updated_at: now,
   })
-  const ref = await addDoc(colRef, docData)
-  return { id: ref.id, ...docData }
+  return writeUserScoped(uid, 'saveNotebookDocumentToDocuments', async (db, effectiveUid) => {
+    const colRef = collection(db, 'users', effectiveUid, 'documents')
+    const ref = await addDoc(colRef, docData)
+    return { id: ref.id, ...docData }
+  })
 }
 
 
@@ -3312,7 +3328,6 @@ export async function listTheses(
 }
 
 export async function createThesis(uid: string, data: Partial<ThesisData>): Promise<ThesisData> {
-  const db = ensureFirestore()
   const now = new Date().toISOString()
   const thesis: Omit<ThesisData, 'id'> = {
     title: data.title || '',
@@ -3328,24 +3343,29 @@ export async function createThesis(uid: string, data: Partial<ThesisData>): Prom
     created_at: now,
     updated_at: now,
   }
-  const ref = await addDoc(collection(db, 'users', uid, 'theses'), thesis)
-  return { id: ref.id, ...thesis }
+  return writeUserScoped(uid, 'createThesis', async (db, effectiveUid) => {
+    const ref = await addDoc(collection(db, 'users', effectiveUid, 'theses'), thesis)
+    return { id: ref.id, ...thesis }
+  })
 }
 
 export async function updateThesis(uid: string, thesisId: string, data: Partial<ThesisData>): Promise<ThesisData> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'updateThesis')
-  const ref = doc(db, 'users', effectiveUid, 'theses', thesisId)
   const updates = { ...data, updated_at: serverTimestamp() }
   delete updates.id
-  await updateDoc(ref, updates)
+  const { db, effectiveUid } = await writeUserScoped(uid, 'updateThesis.write', async (db, effectiveUid) => {
+    const ref = doc(db, 'users', effectiveUid, 'theses', thesisId)
+    await updateDoc(ref, updates)
+    return { db, effectiveUid }
+  })
+  const ref = doc(db, 'users', effectiveUid, 'theses', thesisId)
   const snap = await withFirestoreRetry(() => getDoc(ref), 'updateThesis.read')
   return { id: snap.id, ...snap.data() } as ThesisData
 }
 
 export async function deleteThesis(uid: string, thesisId: string): Promise<void> {
-  const db = ensureFirestore()
-  await deleteDoc(doc(db, 'users', uid, 'theses', thesisId))
+  await writeUserScoped(uid, 'deleteThesis', async (db, effectiveUid) => {
+    await deleteDoc(doc(db, 'users', effectiveUid, 'theses', thesisId))
+  })
 }
 
 export async function getThesisStats(uid: string): Promise<{
@@ -3522,7 +3542,7 @@ export async function createAcervoDocument(
       'createAcervoDocument.dedup',
     )
     for (const snap of existing.docs) {
-      await deleteDoc(snap.ref)
+      await withFirestoreRetry(() => deleteDoc(snap.ref), 'createAcervoDocument.dedupDelete')
     }
   } catch (err) {
     console.warn('Acervo dedup check failed (non-fatal):', err)
@@ -3558,7 +3578,10 @@ export async function createAcervoDocument(
     storage_format: 'json',
     created_at: now,
   }
-  const ref = await addDoc(collection(db, 'users', effectiveUid, 'acervo'), acervoDoc)
+  const ref = await withFirestoreRetry(
+    () => addDoc(collection(db, 'users', effectiveUid, 'acervo'), acervoDoc),
+    'createAcervoDocument.write',
+  )
   return { id: ref.id, ...acervoDoc, truncated }
 }
 
@@ -3566,8 +3589,9 @@ export async function createAcervoDocument(
  * Delete an acervo document.
  */
 export async function deleteAcervoDocument(uid: string, docId: string): Promise<void> {
-  const db = ensureFirestore()
-  await deleteDoc(doc(db, 'users', uid, 'acervo', docId))
+  await writeUserScoped(uid, 'deleteAcervoDocument', async (db, effectiveUid) => {
+    await deleteDoc(doc(db, 'users', effectiveUid, 'acervo', docId))
+  })
 }
 
 /**
@@ -3631,7 +3655,6 @@ export async function updateAcervoEmenta(
   keywords: string[],
   executions?: UsageExecutionRecord[],
 ): Promise<void> {
-  const db = ensureFirestore()
   const updateData: Record<string, unknown> = {
     ementa,
     ementa_keywords: keywords,
@@ -3639,7 +3662,9 @@ export async function updateAcervoEmenta(
   if (executions && executions.length > 0) {
     updateData.llm_executions = await mergeAcervoExecutions(uid, docId, executions)
   }
-  await updateDoc(doc(db, 'users', uid, 'acervo', docId), updateData)
+  await writeUserScoped(uid, 'updateAcervoEmenta', async (db, effectiveUid) => {
+    await updateDoc(doc(db, 'users', effectiveUid, 'acervo', docId), updateData)
+  })
 }
 
 /**
@@ -3658,7 +3683,6 @@ export async function updateAcervoTags(
   },
   executions?: UsageExecutionRecord[],
 ): Promise<void> {
-  const db = ensureFirestore()
   const updateData: Record<string, unknown> = {
     ...tags,
     tags_generated: true,
@@ -3666,7 +3690,9 @@ export async function updateAcervoTags(
   if (executions && executions.length > 0) {
     updateData.llm_executions = await mergeAcervoExecutions(uid, docId, executions)
   }
-  await updateDoc(doc(db, 'users', uid, 'acervo', docId), updateData)
+  await writeUserScoped(uid, 'updateAcervoTags', async (db, effectiveUid) => {
+    await updateDoc(doc(db, 'users', effectiveUid, 'acervo', docId), updateData)
+  })
 }
 
 /**
@@ -3679,19 +3705,20 @@ export async function updateAcervoTextContent(
   textContent: string,
   filename?: string,
 ): Promise<void> {
-  const db = ensureFirestore()
   // Reconvert to structured JSON format
   const structured = textToStructuredJson(textContent, filename || 'document')
   const jsonStr = serializeStructuredJson(structured)
   const textToStore = jsonStr.length > ACERVO_MAX_TEXT_LENGTH
     ? jsonStr.slice(0, ACERVO_MAX_TEXT_LENGTH)
     : jsonStr
-  await updateDoc(doc(db, 'users', uid, 'acervo', docId), {
-    text_content: textToStore,
-    storage_format: 'json',
-    chunks_count: structured.full_text.length > 0
-      ? Math.ceil(structured.full_text.length / ACERVO_CHUNK_SIZE)
-      : 0,
+  await writeUserScoped(uid, 'updateAcervoTextContent', async (db, effectiveUid) => {
+    await updateDoc(doc(db, 'users', effectiveUid, 'acervo', docId), {
+      text_content: textToStore,
+      storage_format: 'json',
+      chunks_count: structured.full_text.length > 0
+        ? Math.ceil(structured.full_text.length / ACERVO_CHUNK_SIZE)
+        : 0,
+    })
   })
 }
 
@@ -3784,9 +3811,10 @@ export async function saveSettings(data: Record<string, unknown>): Promise<void>
 }
 
 export async function saveUserSettings(uid: string, data: Partial<UserSettingsData>): Promise<void> {
-  const db = ensureFirestore()
-  const ref = doc(db, 'users', uid, 'settings', 'preferences')
-  await setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true })
+  await writeUserScoped(uid, 'saveUserSettings', async (db, effectiveUid) => {
+    const ref = doc(db, 'users', effectiveUid, 'settings', 'preferences')
+    await setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true })
+  })
 }
 
 // ── Acervo analysis tracking ──────────────────────────────────────────────────
@@ -3799,16 +3827,18 @@ export async function markAcervoDocumentsAnalyzed(
   uid: string,
   docIds: string[],
 ): Promise<void> {
-  const db = ensureFirestore()
-  for (const docId of docIds) {
-    try {
-      await updateDoc(doc(db, 'users', uid, 'acervo', docId), {
-        analyzed_for_theses: true,
-      })
-    } catch {
-      // Non-fatal: if a doc no longer exists, skip silently
+  await writeUserScoped(uid, 'markAcervoDocumentsAnalyzed', async (db, effectiveUid) => {
+    for (const docId of docIds) {
+      try {
+        await updateDoc(doc(db, 'users', effectiveUid, 'acervo', docId), {
+          analyzed_for_theses: true,
+        })
+      } catch (error) {
+        if (isAuthAccessFirestoreError(error)) throw error
+        // Non-fatal: if a doc no longer exists, skip silently
+      }
     }
-  }
+  })
 }
 
 /**
@@ -3874,12 +3904,13 @@ export async function saveThesisAnalysisSession(
   uid: string,
   data: Omit<ThesisAnalysisSessionData, 'id'>,
 ): Promise<string> {
-  const db = ensureFirestore()
-  const ref = await addDoc(collection(db, 'users', uid, 'thesis_analysis_sessions'), stripUndefined({
-    ...data,
-    created_at: data.created_at ?? new Date().toISOString(),
-  }))
-  return ref.id
+  return writeUserScoped(uid, 'saveThesisAnalysisSession', async (db, effectiveUid) => {
+    const ref = await addDoc(collection(db, 'users', effectiveUid, 'thesis_analysis_sessions'), stripUndefined({
+      ...data,
+      created_at: data.created_at ?? new Date().toISOString(),
+    }))
+    return ref.id
+  })
 }
 
 /**
@@ -4144,7 +4175,10 @@ async function saveNotebookSearchMemory(
 ): Promise<void> {
   const ref = getNotebookSearchMemoryDocRef(uid, notebookId)
   const { sanitized, droppedAudits, droppedSavedSearches } = applyNotebookSearchMemoryRetention(payload)
-  await setDoc(ref, stripUndefined({ ...sanitized, updated_at: new Date().toISOString() }), { merge: true })
+  await withFirestoreRetry(
+    () => setDoc(ref, stripUndefined({ ...sanitized, updated_at: new Date().toISOString() }), { merge: true }),
+    'saveNotebookSearchMemory',
+  )
   if (droppedAudits > 0 || droppedSavedSearches > 0) {
     console.info(
       `[Lexio] saveNotebookSearchMemory: retention applied for notebook ${normalizeFirestoreDocumentId(notebookId)} ` +
@@ -4218,7 +4252,10 @@ export async function createResearchNotebook(uid: string, data: Omit<ResearchNot
   const { sources } = fitSourcesToFirestoreLimit(data.sources ?? [], otherBytes)
 
   const sanitized = { ...baseMeta, sources }
-  const docRef = await addDoc(collection(db, 'users', effectiveUid, 'research_notebooks'), sanitized)
+  const docRef = await withFirestoreRetry(
+    () => addDoc(collection(db, 'users', effectiveUid, 'research_notebooks'), sanitized),
+    'createResearchNotebook.write',
+  )
 
   try {
     await saveNotebookSearchMemory(effectiveUid, docRef.id, {
@@ -4287,9 +4324,15 @@ export async function deleteResearchNotebook(uid: string, notebookId: string): P
   const db = ensureFirestore()
   const effectiveUid = await resolveEffectiveUid(uid, 'deleteResearchNotebook')
   const normalizedNotebookId = normalizeFirestoreDocumentId(notebookId)
-  await deleteDoc(doc(db, 'users', effectiveUid, 'research_notebooks', normalizedNotebookId))
+  await withFirestoreRetry(
+    () => deleteDoc(doc(db, 'users', effectiveUid, 'research_notebooks', normalizedNotebookId)),
+    'deleteResearchNotebook',
+  )
   try {
-    await deleteDoc(getNotebookSearchMemoryDocRef(effectiveUid, normalizedNotebookId))
+    await withFirestoreRetry(
+      () => deleteDoc(getNotebookSearchMemoryDocRef(effectiveUid, normalizedNotebookId)),
+      'deleteResearchNotebook.memory',
+    )
   } catch {
     // Ignore missing/forbidden dedicated memory doc; notebook deletion is the source of truth.
   }
