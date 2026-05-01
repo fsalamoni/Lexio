@@ -5,21 +5,6 @@ import { firebaseAuth, IS_FIREBASE } from '../lib/firebase'
 import { firestore } from '../lib/firebase'
 import { firebaseLogin, firebaseRegister, firebaseLogout, firebaseGoogleLogin, handleGoogleRedirectResult, translateFirebaseError } from '../lib/auth-service'
 import api from '../api/client'
-import {
-  FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT,
-  FIRESTORE_AUTH_SESSION_INVALID_EVENT,
-  type FirestoreAuthAccessDegradedEventDetail,
-  getSessionFingerprint,
-  type FirestoreAuthSessionInvalidEventDetail,
-} from '../lib/auth-session-events'
-import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
-import {
-  clearUnrecoverableFirebaseTokenRefresh,
-  createUnrecoverableFirebaseTokenRefreshError,
-  hasRecentUnrecoverableFirebaseTokenRefresh,
-  isUnrecoverableFirebaseTokenRefreshError,
-  markUnrecoverableFirebaseTokenRefresh,
-} from '../lib/firebase-auth-errors'
 
 interface AuthContextType {
   token: string | null
@@ -49,344 +34,71 @@ function clearStorage() {
   localStorage.removeItem('lexio_full_name')
 }
 
-function readStoredAuthState(): {
-  token: string
-  userId: string
-  role: string
-  fullName: string
-} | null {
-  if (typeof window === 'undefined') return null
-
-  try {
-    const storedToken = localStorage.getItem('lexio_token')
-    const storedUserId = localStorage.getItem('lexio_user_id')
-    if (!storedToken || !storedUserId) return null
-
-    return {
-      token: storedToken,
-      userId: storedUserId,
-      role: localStorage.getItem('lexio_role') || 'user',
-      fullName: localStorage.getItem('lexio_full_name') || '',
-    }
-  } catch {
-    return null
+function readStored() {
+  if (typeof window === 'undefined') return { token: null, userId: null, role: null, fullName: null }
+  return {
+    token: localStorage.getItem('lexio_token'),
+    userId: localStorage.getItem('lexio_user_id'),
+    role: localStorage.getItem('lexio_role'),
+    fullName: localStorage.getItem('lexio_full_name'),
   }
-}
-
-const SESSION_INVALID_RECOVERY_COOLDOWN_MS = 12_000
-const AUTH_DEGRADED_KILL_SWITCH_COOLDOWN_MS = 30_000
-
-const AUTH_ACCESS_ERROR_CODES = new Set([
-  'permission-denied',
-  'unauthenticated',
-  'auth-session-invalid',
-])
-
-function normalizeAuthAccessErrorCode(code: unknown): string | null {
-  if (typeof code !== 'string') return null
-  return code.replace(/^firestore\//, '')
-}
-
-function isAuthAccessError(error: unknown): boolean {
-  if (isUnrecoverableFirebaseTokenRefreshError(error)) return true
-  if (!error || typeof error !== 'object') return false
-  const code = normalizeAuthAccessErrorCode((error as { code?: unknown }).code)
-  if (code && AUTH_ACCESS_ERROR_CODES.has(code)) return true
-  const message = (error as { message?: unknown }).message
-  if (typeof message === 'string' && /missing or insufficient permissions/i.test(message)) {
-    return true
-  }
-  return false
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const initialStoredAuthState = !IS_FIREBASE ? readStoredAuthState() : null
-  const [token,    setToken]    = useState<string | null>(initialStoredAuthState?.token ?? null)
-  const [userId,   setUserId]   = useState<string | null>(initialStoredAuthState?.userId ?? null)
-  const [role,     setRole]     = useState<string | null>(initialStoredAuthState?.role ?? null)
-  const [fullName, setFullName] = useState<string | null>(initialStoredAuthState?.fullName ?? null)
-  // Demo mode is immediately ready; Firebase mode waits for onAuthStateChanged
+  const initial = readStored()
+  const [token,    setToken]    = useState<string | null>(initial.token)
+  const [userId,   setUserId]   = useState<string | null>(initial.userId)
+  const [role,     setRole]     = useState<string | null>(initial.role)
+  const [fullName, setFullName] = useState<string | null>(initial.fullName)
   const [isReady,  setIsReady]  = useState(!IS_FIREBASE)
-  const sessionRecoveryRef = useRef({
-    inProgress: false,
-    lastAt: 0,
-    lastFingerprint: '',
-  })
-  const degradedKillSwitchRef = useRef({
-    inProgress: false,
-    lastAt: 0,
-    lastFingerprint: '',
-  })
-  const manualLogoutRef = useRef(false)
+  const tokenRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const clearAuthState = useCallback(() => {
-    clearStorage()
-    setToken(null)
-    setUserId(null)
-    setRole(null)
-    setFullName(null)
-  }, [])
-
-  const clearDeadFirebaseSession = useCallback(async (contextLabel: string, error?: unknown) => {
-    if (error) {
-      console.warn(`[AuthContext] ${contextLabel}: Firebase session is unrecoverable; clearing session.`, error)
-    }
-    manualLogoutRef.current = true
-    await firebaseLogout().catch(() => undefined)
-    clearAuthState()
-  }, [clearAuthState])
-
-  const syncAuthFromFirebaseUser = useCallback(async (
-    fbUser: User,
-    options?: { forceRefreshToken?: boolean },
-  ) => {
-    if (options?.forceRefreshToken && hasRecentUnrecoverableFirebaseTokenRefresh(fbUser.uid)) {
-      throw createUnrecoverableFirebaseTokenRefreshError(
-        'syncAuthFromFirebaseUser',
-        new Error('Recent unrecoverable Firebase token refresh failure.'),
-      )
-    }
-
-    let newToken: string
-    try {
-      newToken = await fbUser.getIdToken(Boolean(options?.forceRefreshToken))
-      clearUnrecoverableFirebaseTokenRefresh(fbUser.uid)
-    } catch (error) {
-      if (isUnrecoverableFirebaseTokenRefreshError(error)) {
-        markUnrecoverableFirebaseTokenRefresh(fbUser.uid)
-        throw createUnrecoverableFirebaseTokenRefreshError('syncAuthFromFirebaseUser', error)
-      }
-      throw error
-    }
-
-    localStorage.setItem('lexio_token', newToken)
-    localStorage.setItem('lexio_user_id', fbUser.uid)
-    setToken(newToken)
-    setUserId(fbUser.uid)
-
+  // Soft hydration of role/full_name from /users/{uid}. NEVER throws and
+  // NEVER logs the user out on failure: a transient permission-denied (token
+  // rotation, brief Auth/Firestore desync) is normal and must not destroy a
+  // live session. The fallback to localStorage / Firebase displayName keeps
+  // the UI usable; the next Firestore call will retry the read normally.
+  const hydrateProfile = useCallback(async (fbUser: User) => {
     if (!firestore) return
-    const db = firestore
-
     try {
-      // Mandatory bootstrap session-integrity check: if the authenticated user
-      // cannot read their own `/users/{uid}` document, the session cannot be
-      // considered healthy for workspace operations.
-      const userSnap = await withTransientFirebaseAuthRetry(
-        () => getDoc(doc(db, 'users', fbUser.uid)),
-      )
-      if (userSnap.exists()) {
-        const userData = userSnap.data() as { role?: string; full_name?: string }
-        const nextRole = userData.role ?? 'user'
-        const nextName = userData.full_name ?? fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
+      const snap = await getDoc(doc(firestore, 'users', fbUser.uid))
+      if (snap.exists()) {
+        const data = snap.data() as { role?: string; full_name?: string }
+        const nextRole = data.role ?? 'user'
+        const nextName = data.full_name ?? fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
         localStorage.setItem('lexio_role', nextRole)
         localStorage.setItem('lexio_full_name', nextName)
         setRole(nextRole)
         setFullName(nextName)
-      } else {
-        const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
-        localStorage.setItem('lexio_role', 'user')
-        localStorage.setItem('lexio_full_name', nextName)
-        setRole('user')
-        setFullName(nextName)
+        return
       }
+      const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
+      localStorage.setItem('lexio_role', 'user')
+      localStorage.setItem('lexio_full_name', nextName)
+      setRole('user')
+      setFullName(nextName)
     } catch (error) {
-      if (isUnrecoverableFirebaseTokenRefreshError(error)) {
-        throw error
-      }
-      if (isAuthAccessError(error)) {
-        if (!options?.forceRefreshToken) {
-          // During normal hydration, Firestore can briefly reject the current
-          // token before a forced refresh has been attempted. Try one explicit
-          // refresh+profile read before deciding the session is unrecoverable.
-          await syncAuthFromFirebaseUser(fbUser, { forceRefreshToken: true })
-          return
-        }
-
-        // After an explicit forced refresh, continued auth/permission failure
-        // means this session cannot access its own workspace data. Propagate so
-        // recovery can clear the dead session instead of leaving a logged-in UI
-        // where every Firestore read fails.
-        throw error
-      }
-      // Non-auth errors (transient network, offline, etc.) keep the soft
-      // fallback so we don't log users out on flaky connectivity.
+      // Soft fallback: keep whatever we already had locally; don't touch session.
       const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
       if (!localStorage.getItem('lexio_role')) {
         localStorage.setItem('lexio_role', 'user')
       }
       localStorage.setItem('lexio_full_name', nextName)
       setRole((prev) => prev ?? 'user')
-      setFullName(nextName)
+      setFullName((prev) => prev ?? nextName)
+      console.warn('[AuthContext] Profile hydration deferred (non-fatal):', error)
     }
   }, [])
 
-  const currentSessionFingerprint = useCallback(() => {
-    return getSessionFingerprint(firebaseAuth?.currentUser?.uid ?? userId)
-  }, [userId])
-
-  const recoverInvalidSession = useCallback(async (detail?: FirestoreAuthSessionInvalidEventDetail) => {
-    if (!IS_FIREBASE) return
-
-    const signalFingerprint = detail?.sessionFingerprint || ''
-    const liveFingerprint = currentSessionFingerprint()
-
-    // Ignore stale signals from an already-rotated session.
-    if (signalFingerprint && signalFingerprint !== liveFingerprint) {
-      return
-    }
-
-    const now = Date.now()
-    if (sessionRecoveryRef.current.inProgress) return
-    if (
-      sessionRecoveryRef.current.lastFingerprint === liveFingerprint
-      && now - sessionRecoveryRef.current.lastAt < SESSION_INVALID_RECOVERY_COOLDOWN_MS
-    ) {
-      return
-    }
-
-    const liveUid = firebaseAuth?.currentUser?.uid ?? null
-    if (detail?.authUid && liveUid && detail.authUid !== liveUid) {
-      return
-    }
-
-    sessionRecoveryRef.current.inProgress = true
-    sessionRecoveryRef.current.lastAt = now
-    sessionRecoveryRef.current.lastFingerprint = liveFingerprint
-
-    let recovered = false
-    let recoveryError: unknown = null
-    try {
-      if (firebaseAuth?.currentUser) {
-        try {
-          await syncAuthFromFirebaseUser(firebaseAuth.currentUser, { forceRefreshToken: true })
-          recovered = true
-        } catch (error) {
-          recoveryError = error
-          console.warn('[AuthContext] Failed to refresh Firebase session token and profile data after auth-session-invalid signal:', error)
-        }
-      }
-
-      if (!recovered) {
-        // CRITICAL: never restore an active Firebase session from localStorage.
-        // If the SDK has no live user or cannot mint a usable token, persisted
-        // credentials are only a stale cache and would recreate the zombie
-        // state where the UI is logged in but Firestore rejects every call.
-        if (isAuthAccessError(recoveryError)) {
-          await clearDeadFirebaseSession('recoverInvalidSession', recoveryError)
-        } else if (!firebaseAuth?.currentUser) {
-          clearAuthState()
-        }
-      }
-    } finally {
-      setIsReady(true)
-      sessionRecoveryRef.current.inProgress = false
-    }
-  }, [clearAuthState, clearDeadFirebaseSession, currentSessionFingerprint, syncAuthFromFirebaseUser])
-
-  const recoverDegradedFirestoreAccess = useCallback(async (detail?: FirestoreAuthAccessDegradedEventDetail) => {
-    if (!IS_FIREBASE) return
-
-    const signalFingerprint = detail?.sessionFingerprint || ''
-    const liveFingerprint = currentSessionFingerprint()
-
-    if (signalFingerprint && signalFingerprint !== liveFingerprint) {
-      return
-    }
-
-    const now = Date.now()
-    if (degradedKillSwitchRef.current.inProgress) return
-    if (
-      degradedKillSwitchRef.current.lastFingerprint === liveFingerprint
-      && now - degradedKillSwitchRef.current.lastAt < AUTH_DEGRADED_KILL_SWITCH_COOLDOWN_MS
-    ) {
-      return
-    }
-
-    degradedKillSwitchRef.current.inProgress = true
-    degradedKillSwitchRef.current.lastAt = now
-    degradedKillSwitchRef.current.lastFingerprint = liveFingerprint
-
-    // NON-DESTRUCTIVE recovery. A burst of `permission-denied` errors is
-    // almost always a transient token desync between Firebase Auth and
-    // Firestore (token rotation, tab regaining focus, first navigation after
-    // login). Forcing a logout here was destroying live sessions and
-    // bouncing users to /login mid-flow. Instead we proactively refresh the
-    // ID token and let the next query succeed naturally. If the token is
-    // genuinely invalid, the next withFirestoreRetry call will surface
-    // `auth-session-invalid`, which routes through `recoverInvalidSession`
-    // and performs a clean logout there — that path remains intact.
-    try {
-      const current = firebaseAuth?.currentUser
-      if (current) {
-        if (hasRecentUnrecoverableFirebaseTokenRefresh(current.uid)) {
-          await clearDeadFirebaseSession(
-            'recoverDegradedFirestoreAccess',
-            createUnrecoverableFirebaseTokenRefreshError(
-              'recoverDegradedFirestoreAccess',
-              new Error('Recent unrecoverable Firebase token refresh failure.'),
-            ),
-          )
-          return
-        }
-
-        await current.getIdToken(true).catch((error) => {
-          if (isUnrecoverableFirebaseTokenRefreshError(error)) {
-            markUnrecoverableFirebaseTokenRefresh(current.uid)
-            throw createUnrecoverableFirebaseTokenRefreshError('recoverDegradedFirestoreAccess', error)
-          }
-          console.warn('[AuthContext] Proactive token refresh after permission-denied burst failed:', error)
-        })
-        clearUnrecoverableFirebaseTokenRefresh(current.uid)
-      }
-      console.warn(
-        `[AuthContext] permission-denied burst observed (context=${detail?.contextLabel ?? 'unknown'}, count=${detail?.burstCount ?? 0}, contexts=${detail?.uniqueContexts ?? 0}). Session preserved; token refreshed.`,
-      )
-    } catch (error) {
-      if (isUnrecoverableFirebaseTokenRefreshError(error)) {
-        await clearDeadFirebaseSession('recoverDegradedFirestoreAccess', error)
-        return
-      }
-      console.warn('[AuthContext] Failed to refresh Firebase session after permission-denied burst:', error)
-    } finally {
-      setIsReady(true)
-      degradedKillSwitchRef.current.inProgress = false
-    }
-  }, [clearDeadFirebaseSession, currentSessionFingerprint])
-
-  useEffect(() => {
-    if (!IS_FIREBASE || typeof window === 'undefined') return
-
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<FirestoreAuthSessionInvalidEventDetail>).detail
-      void recoverInvalidSession(detail)
-    }
-
-    window.addEventListener(FIRESTORE_AUTH_SESSION_INVALID_EVENT, handler as EventListener)
-    return () => {
-      window.removeEventListener(FIRESTORE_AUTH_SESSION_INVALID_EVENT, handler as EventListener)
-    }
-  }, [recoverInvalidSession])
-
-  useEffect(() => {
-    if (!IS_FIREBASE || typeof window === 'undefined') return
-
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<FirestoreAuthAccessDegradedEventDetail>).detail
-      void recoverDegradedFirestoreAccess(detail)
-    }
-
-    window.addEventListener(FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT, handler as EventListener)
-    return () => {
-      window.removeEventListener(FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT, handler as EventListener)
-    }
-  }, [recoverDegradedFirestoreAccess])
-
-  // Listen to Firebase auth state (token refresh, logout from another tab, etc.)
+  // Single source of session truth: onAuthStateChanged.
+  // If Firebase reports a user, we keep the session.
+  // If Firebase reports no user (signed out, account disabled, refresh token
+  // permanently invalid), we clear local state. NO other code path clears
+  // the session — Firestore read failures, permission-denied, network blips,
+  // none of these are allowed to log the user out.
   useEffect(() => {
     if (!IS_FIREBASE || !firebaseAuth) return
 
-    // Handle redirect result from signInWithRedirect (Google login fallback).
-    // Must run before onAuthStateChanged so the user profile is persisted.
     handleGoogleRedirectResult().then((r) => {
       if (r) {
         persist(r.token, r.uid, r.role, r.full_name)
@@ -395,32 +107,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }).catch(() => {})
 
     const unsub = onAuthStateChanged(firebaseAuth, async (fbUser) => {
-      const callbackUid = fbUser?.uid ?? null
       try {
         if (fbUser) {
-          manualLogoutRef.current = false
-          await syncAuthFromFirebaseUser(fbUser)
-        } else {
-          manualLogoutRef.current = false
-          clearAuthState()
-        }
-      } catch (error) {
-        console.warn('[AuthContext] Failed to hydrate Firebase auth session:', error)
-        if (manualLogoutRef.current) {
-          manualLogoutRef.current = false
-          clearAuthState()
-        } else if (isAuthAccessError(error)) {
-          // CRITICAL: hydration failed because Firestore is rejecting this
-          // user's token (own /users/{uid} read denied). Restoring the same
-          // token from localStorage would cause every subsequent query to
-          // fail with permission-denied. Clear the dead session and force a
-          // clean re-login via ProtectedRoute redirect.
-          await clearDeadFirebaseSession('onAuthStateChanged', error)
-        } else {
-          if (callbackUid) {
-            console.warn('[AuthContext] Firebase user present but token/profile bootstrap failed; active session was not restored from localStorage.')
+          let newToken: string | null = null
+          try {
+            newToken = await fbUser.getIdToken()
+          } catch (error) {
+            // Token mint failed transiently — keep the previous token; SDK
+            // will retry on next operation. Don't logout here.
+            console.warn('[AuthContext] Initial getIdToken failed; keeping previous session:', error)
           }
-          clearAuthState()
+          if (newToken) {
+            localStorage.setItem('lexio_token', newToken)
+            setToken(newToken)
+          }
+          localStorage.setItem('lexio_user_id', fbUser.uid)
+          setUserId(fbUser.uid)
+
+          await hydrateProfile(fbUser)
+        } else {
+          clearStorage()
+          setToken(null); setUserId(null); setRole(null); setFullName(null)
         }
       } finally {
         setIsReady(true)
@@ -428,113 +135,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     return unsub
-  }, [clearAuthState, clearDeadFirebaseSession, syncAuthFromFirebaseUser])
+  }, [hydrateProfile])
 
-  // Keep the locally-persisted ID token in sync with whatever Firebase Auth
-  // currently considers valid. The Firebase SDK rotates tokens automatically
-  // (~hourly, plus when Firestore reports auth issues); listening here means
-  // the rest of the app — and any reload that hydrates from localStorage —
-  // always has the freshest token, eliminating the silent "zombie session"
-  // class of bugs where the UI looked logged in but Firestore rejected
-  // queries with `permission-denied`.
+  // Mirror rotated ID tokens into localStorage so the rest of the app and
+  // any reload pick up the freshest credential.
   useEffect(() => {
     if (!IS_FIREBASE || !firebaseAuth) return
-
     const unsub = onIdTokenChanged(firebaseAuth, async (fbUser) => {
       if (!fbUser) return
       try {
-        const freshToken = await fbUser.getIdToken()
-        clearUnrecoverableFirebaseTokenRefresh(fbUser.uid)
-        localStorage.setItem('lexio_token', freshToken)
-        setToken(freshToken)
+        const fresh = await fbUser.getIdToken()
+        localStorage.setItem('lexio_token', fresh)
+        setToken(fresh)
       } catch (error) {
-        if (isUnrecoverableFirebaseTokenRefreshError(error)) {
-          markUnrecoverableFirebaseTokenRefresh(fbUser.uid)
-          void clearDeadFirebaseSession('onIdTokenChanged', error)
-          return
-        }
-        console.warn('[AuthContext] Failed to capture rotated ID token:', error)
+        // Best-effort: never destroy the session here.
+        console.warn('[AuthContext] Could not capture rotated ID token:', error)
       }
     })
-
     return unsub
-  }, [clearDeadFirebaseSession])
+  }, [])
 
-  // Proactively refresh the ID token on a regular cadence so the SDK never
-  // serves Firestore a stale credential. Firebase Auth itself refreshes tokens
-  // ~every 55 minutes, but doing it explicitly here also covers cases where
-  // the tab was backgrounded for a long time and the next user action would
-  // have raced against the lazy refresh.
+  // Best-effort proactive refresh: nudge the SDK to renew the token every
+  // 25 minutes and when the tab regains focus after long idle. Failures are
+  // logged and ignored — the SDK has its own retry path.
   useEffect(() => {
     if (!IS_FIREBASE || !firebaseAuth) return
     if (!userId) return
 
-    const intervalMs = 25 * 60 * 1000 // 25 minutes
-    const intervalId = setInterval(() => {
+    const refresh = () => {
       const current = firebaseAuth?.currentUser
       if (!current) return
-      if (hasRecentUnrecoverableFirebaseTokenRefresh(current.uid)) {
-        void clearDeadFirebaseSession(
-          'proactiveTokenRefresh',
-          createUnrecoverableFirebaseTokenRefreshError(
-            'proactiveTokenRefresh',
-            new Error('Recent unrecoverable Firebase token refresh failure.'),
-          ),
-        )
-        return
-      }
-      current.getIdToken(true).then(() => {
-        clearUnrecoverableFirebaseTokenRefresh(current.uid)
-      }).catch((error) => {
-        if (isUnrecoverableFirebaseTokenRefreshError(error)) {
-          markUnrecoverableFirebaseTokenRefresh(current.uid)
-          void clearDeadFirebaseSession('proactiveTokenRefresh', error)
-          return
-        }
-        console.warn('[AuthContext] Proactive token refresh failed:', error)
-      })
-    }, intervalMs)
-
-    // Also refresh as soon as a tab regains focus after being backgrounded —
-    // long idle periods are a common trigger for "Missing or insufficient
-    // permissions" the moment the user returns and the page issues queries
-    // before the SDK has had a chance to renew its credentials.
-    const handleVisibility = () => {
-      if (typeof document === 'undefined') return
-      if (document.visibilityState !== 'visible') return
-      const current = firebaseAuth?.currentUser
-      if (!current) return
-      if (hasRecentUnrecoverableFirebaseTokenRefresh(current.uid)) {
-        void clearDeadFirebaseSession(
-          'visibilityTokenRefresh',
-          createUnrecoverableFirebaseTokenRefreshError(
-            'visibilityTokenRefresh',
-            new Error('Recent unrecoverable Firebase token refresh failure.'),
-          ),
-        )
-        return
-      }
-      current.getIdToken(true).then(() => {
-        clearUnrecoverableFirebaseTokenRefresh(current.uid)
-      }).catch((error) => {
-        if (isUnrecoverableFirebaseTokenRefreshError(error)) {
-          markUnrecoverableFirebaseTokenRefresh(current.uid)
-          void clearDeadFirebaseSession('visibilityTokenRefresh', error)
-        }
+      current.getIdToken(true).catch((error) => {
+        console.warn('[AuthContext] Best-effort token refresh failed:', error)
       })
     }
 
+    tokenRefreshTimerRef.current = setInterval(refresh, 25 * 60 * 1000)
+
+    const onVisible = () => {
+      if (typeof document === 'undefined') return
+      if (document.visibilityState === 'visible') refresh()
+    }
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibility)
+      document.addEventListener('visibilitychange', onVisible)
     }
 
     return () => {
-      clearInterval(intervalId)
+      if (tokenRefreshTimerRef.current) {
+        clearInterval(tokenRefreshTimerRef.current)
+        tokenRefreshTimerRef.current = null
+      }
       if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', handleVisibility)
+        document.removeEventListener('visibilitychange', onVisible)
       }
     }
-  }, [clearDeadFirebaseSession, userId])
+  }, [userId])
 
   const login = async (email: string, password: string) => {
     if (IS_FIREBASE) {
@@ -583,9 +238,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
-    manualLogoutRef.current = true
     if (IS_FIREBASE) await firebaseLogout().catch(() => undefined)
-    clearAuthState()
+    clearStorage()
+    setToken(null); setUserId(null); setRole(null); setFullName(null)
   }
 
   if (!isReady) {

@@ -424,7 +424,13 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(result.items[0].id).toBe('doc-1')
   })
 
-  it('stops Firestore retries when forced token refresh is unrecoverable', async () => {
+  it('surfaces the original Firestore error when token refresh keeps failing', async () => {
+    // Critical contract: even if the token refresh is unable to mint a fresh
+    // credential, the retry layer must NEVER synthesize an
+    // `auth-session-invalid` error. Doing so previously triggered AuthContext
+    // to log the user out automatically — the exact symptom the user reported.
+    // We surface the original permission-denied so the caller can show a
+    // soft retry UI; the live Firebase Auth session is preserved.
     const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
       code: 'firestore/permission-denied',
     })
@@ -436,14 +442,12 @@ describe('saveNotebookDocumentToDocuments', () => {
     mockGetIdToken.mockRejectedValue(refreshError)
 
     await expect(listDocuments(uid)).rejects.toMatchObject({
-      code: 'firestore/auth-session-invalid',
+      code: 'firestore/permission-denied',
     })
 
-    expect(mockGetDocs).toHaveBeenCalledTimes(1)
-    expect(mockGetIdToken).toHaveBeenCalledTimes(1)
-    expect(mockEmitFirestoreAuthSessionInvalid).toHaveBeenCalledTimes(1)
+    expect(mockEmitFirestoreAuthSessionInvalid).not.toHaveBeenCalled()
     expect(mockEmitFirestoreAuthAccessDegraded).not.toHaveBeenCalled()
-  })
+  }, 10_000)
 
   it('keeps retrying with exponential backoff until permission-denied resolves', async () => {
     const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
@@ -483,56 +487,47 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(mockGetDocs).toHaveBeenCalledTimes(4)
   }, 10_000)
 
-  it('opens auth circuit only after consecutive permission-denied bursts across calls', async () => {
-    const unauthenticatedError = Object.assign(new Error('Auth token expired.'), {
-      code: 'firestore/unauthenticated',
+  it('never escalates persistent permission-denied bursts into a session-invalid signal', async () => {
+    // CRITICAL contract: bursts of permission-denied across multiple contexts
+    // are NOT interpreted as "session is dead". The previous behavior opened
+    // a global circuit breaker after a few consecutive failures and emitted
+    // `auth-session-invalid`, which AuthContext then turned into an automatic
+    // logout. That logic is what was bouncing live users to /login mid-flow.
+    // Each call must fail independently with its original error, leaving the
+    // session intact so the user can retry without re-authenticating.
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
     })
 
-    // Each call exhausts its 4 retries without success. The circuit should open
-    // only after multiple consecutive call-level failures within the window.
-    mockGetDocs.mockRejectedValue(unauthenticatedError)
+    mockGetDocs.mockRejectedValue(permissionError)
+    mockGetDoc.mockRejectedValue(permissionError)
 
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
-    // Fourth consecutive failure across calls trips the circuit.
-    await expect(listDocuments(uid)).rejects.toMatchObject({
-      code: 'firestore/auth-session-invalid',
-    })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getResearchNotebook(uid, 'nb-1')).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getResearchNotebook(uid, 'nb-2')).rejects.toMatchObject({ code: 'firestore/permission-denied' })
 
-    mockGetDocs.mockClear()
-    // While the circuit is open, subsequent calls fast-fail without hitting the network.
-    await expect(listDocuments(uid)).rejects.toMatchObject({
-      code: 'firestore/auth-session-invalid',
-    })
-
-    expect(mockGetDocs).not.toHaveBeenCalled()
+    // No automatic session-invalidation events. The Firebase Auth session
+    // remains live; only the user (or onAuthStateChanged null) can clear it.
+    expect(mockEmitFirestoreAuthAccessDegraded).not.toHaveBeenCalled()
+    expect(mockEmitFirestoreAuthSessionInvalid).not.toHaveBeenCalled()
   }, 30_000)
 
-  it('keeps auth circuit scoped to the active authenticated uid', async () => {
+  it('does not open a circuit that fast-fails healthy calls after transient failures', async () => {
     const unauthenticatedError = Object.assign(new Error('Auth token expired.'), {
       code: 'firestore/unauthenticated',
     })
 
-    mockFirebaseAuth.currentUser = {
-      uid: 'auth-1',
-      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
-    }
-
-    // Trip the circuit on auth-1 with 4 consecutive call-level failures.
     mockGetDocs.mockRejectedValue(unauthenticatedError)
     await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
     await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
     await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({
-      code: 'firestore/auth-session-invalid',
-    })
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/unauthenticated' })
 
-    // New auth session/user should not inherit an old open circuit.
-    mockFirebaseAuth.currentUser = {
-      uid: 'auth-2',
-      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
-    }
+    // Once the underlying call recovers, the next request must succeed —
+    // no global "circuit open" cooldown blocking healthy traffic.
     mockGetDocs.mockReset()
     mockGetDocs.mockResolvedValueOnce({ docs: [], empty: true })
 
@@ -540,83 +535,7 @@ describe('saveNotebookDocumentToDocuments', () => {
 
     expect(result.items).toEqual([])
     expect(mockGetDocs).toHaveBeenCalledTimes(1)
-  }, 30_000)
-
-  it('does not open auth circuit for persistent permission-denied responses', async () => {
-    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
-      code: 'firestore/permission-denied',
-    })
-
-    mockGetDocs.mockRejectedValue(permissionError)
-
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-
-    mockGetDocs.mockClear()
-    mockGetDocs.mockResolvedValueOnce({ docs: [], empty: true })
-
-    const result = await listDocuments(uid)
-
-    expect(result.items).toEqual([])
-    expect(mockGetDocs).toHaveBeenCalledTimes(1)
-  }, 30_000)
-
-  it('emits degraded-auth recovery when permission-denied bursts across contexts', async () => {
-    // CRITICAL regression test: a persistent permission-denied burst must not
-    // leave the user stuck in a logged-in-but-data-inaccessible state. The
-    // first burst emits a non-destructive recovery signal so AuthContext can
-    // force-refresh the ID token while preserving the session.
-    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
-      code: 'firestore/permission-denied',
-    })
-
-    mockGetDocs.mockRejectedValue(permissionError)
-    mockGetDoc.mockRejectedValue(permissionError)
-
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(getResearchNotebook(uid, 'nb-1')).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-
-    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledTimes(1)
-    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledWith(expect.objectContaining({
-      contextLabel: 'getResearchNotebook',
-      authUid: uid,
-      errorCode: 'permission-denied',
-      burstCount: 3,
-      uniqueContexts: 3,
-    }))
     expect(mockEmitFirestoreAuthSessionInvalid).not.toHaveBeenCalled()
-  }, 30_000)
-
-  it('escalates repeated permission-denied bursts to invalid-session recovery', async () => {
-    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
-      code: 'firestore/permission-denied',
-    })
-
-    mockGetDocs.mockRejectedValue(permissionError)
-    mockGetDoc.mockRejectedValue(permissionError)
-
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(getResearchNotebook(uid, 'nb-1')).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-
-    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledTimes(1)
-    expect(mockEmitFirestoreAuthSessionInvalid).not.toHaveBeenCalled()
-
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(getResearchNotebook(uid, 'nb-2')).rejects.toMatchObject({
-      code: 'firestore/auth-session-invalid',
-    })
-
-    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledTimes(1)
-    expect(mockEmitFirestoreAuthSessionInvalid).toHaveBeenCalledTimes(1)
-    expect(mockEmitFirestoreAuthSessionInvalid).toHaveBeenCalledWith(expect.objectContaining({
-      contextLabel: 'getResearchNotebook',
-      authUid: uid,
-    }))
   }, 30_000)
 
   it('persists user settings to the preferences document with merge', async () => {

@@ -18,19 +18,8 @@ import {
   type QueryDocumentSnapshot,
   type QueryConstraint,
 } from 'firebase/firestore'
-import { onAuthStateChanged, onIdTokenChanged } from 'firebase/auth'
+import { onAuthStateChanged } from 'firebase/auth'
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
-import {
-  emitFirestoreAuthAccessDegraded,
-  emitFirestoreAuthSessionInvalid,
-} from './auth-session-events'
-import {
-  clearUnrecoverableFirebaseTokenRefresh,
-  createUnrecoverableFirebaseTokenRefreshError,
-  hasRecentUnrecoverableFirebaseTokenRefresh,
-  isUnrecoverableFirebaseTokenRefreshError,
-  markUnrecoverableFirebaseTokenRefresh,
-} from './firebase-auth-errors'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import { DEFAULT_DOC_STRUCTURES } from './document-structures'
 import {
@@ -148,55 +137,8 @@ function ensureFirestore() {
 }
 
 const FIREBASE_AUTH_SYNC_TIMEOUT_MS = 8_000
-const FIRESTORE_SESSION_INVALID_CODE = 'firestore/auth-session-invalid'
-const FIRESTORE_AUTH_CIRCUIT_COOLDOWN_MS = 800
-// Number of consecutive auth-access failures across calls (within the
-// recent-failure window) before the circuit opens. Keeping this higher than 1
-// avoids fast-failing healthy requests just because a single call hit a
-// transient token desync between Firebase Auth and Firestore.
-const FIRESTORE_AUTH_CIRCUIT_FAILURE_THRESHOLD = 4
-const FIRESTORE_AUTH_CIRCUIT_FAILURE_WINDOW_MS = 4_000
-const FIRESTORE_PERMISSION_DENIED_BURST_THRESHOLD = 3
-const FIRESTORE_PERMISSION_DENIED_BURST_WINDOW_MS = 12_000
-const FIRESTORE_PERMISSION_DENIED_MIN_CONTEXTS = 3
-const FIRESTORE_PERMISSION_DENIED_ESCALATION_WINDOW_MS = 30_000
-
-type FirestoreAuthCircuitState = {
-  openedAt: number
-  openUntil: number
-  lastContext: string
-}
-
-type FirestoreAuthFailureCounter = {
-  count: number
-  firstAt: number
-  lastAt: number
-}
-
-type FirestorePermissionDeniedBurstState = {
-  count: number
-  firstAt: number
-  lastAt: number
-  contexts: Set<string>
-}
-
-type FirestorePermissionDeniedRecoveryState = {
-  count: number
-  firstAt: number
-  lastAt: number
-  lastContext: string
-}
-
-type FirestoreRetryOptions = {
-  recoverAuthAccessErrors?: boolean
-}
 
 let authStateSyncPromise: Promise<void> | null = null
-const firestoreAuthCircuitByUid = new Map<string, FirestoreAuthCircuitState>()
-const firestoreAuthFailureCounterByUid = new Map<string, FirestoreAuthFailureCounter>()
-const firestorePermissionDeniedBurstByUid = new Map<string, FirestorePermissionDeniedBurstState>()
-const firestorePermissionDeniedRecoveryByUid = new Map<string, FirestorePermissionDeniedRecoveryState>()
-let lastObservedAuthUid: string | null = null
 
 function hasStoredLexioSession(): boolean {
   if (typeof window === 'undefined') return false
@@ -210,255 +152,15 @@ function hasStoredLexioSession(): boolean {
   }
 }
 
-function getCurrentFirebaseAuthUid(): string | null {
-  const rawUid = firebaseAuth?.currentUser?.uid
-  if (!rawUid) return null
-  const uid = rawUid.trim()
-  return uid || null
-}
-
-function syncAuthCircuitUserBoundary(): void {
-  const currentUid = getCurrentFirebaseAuthUid()
-  if (currentUid === lastObservedAuthUid) return
-
-  if (!currentUid) {
-    firestoreAuthCircuitByUid.clear()
-    firestoreAuthFailureCounterByUid.clear()
-    firestorePermissionDeniedBurstByUid.clear()
-    firestorePermissionDeniedRecoveryByUid.clear()
-  } else {
-    // New session/user boundary: never carry a stale open circuit into the new session.
-    firestoreAuthCircuitByUid.delete(currentUid)
-    firestoreAuthFailureCounterByUid.delete(currentUid)
-    firestorePermissionDeniedBurstByUid.delete(currentUid)
-    firestorePermissionDeniedRecoveryByUid.delete(currentUid)
-  }
-
-  lastObservedAuthUid = currentUid
-}
-
-function registerAuthAccessFailure(): boolean {
-  const uid = getCurrentFirebaseAuthUid()
-  if (!uid) return false
-
-  const now = Date.now()
-  const counter = firestoreAuthFailureCounterByUid.get(uid)
-  if (!counter || now - counter.lastAt > FIRESTORE_AUTH_CIRCUIT_FAILURE_WINDOW_MS) {
-    firestoreAuthFailureCounterByUid.set(uid, { count: 1, firstAt: now, lastAt: now })
-    return false
-  }
-
-  counter.count += 1
-  counter.lastAt = now
-  return counter.count >= FIRESTORE_AUTH_CIRCUIT_FAILURE_THRESHOLD
-}
-
-function clearAuthAccessFailureCounterForCurrentUser(): void {
-  const uid = getCurrentFirebaseAuthUid()
-  if (!uid) return
-  firestoreAuthFailureCounterByUid.delete(uid)
-}
-
-function clearPermissionDeniedBurstForCurrentUser(): void {
-  const uid = getCurrentFirebaseAuthUid()
-  if (!uid) return
-  firestorePermissionDeniedBurstByUid.delete(uid)
-}
-
-function clearPermissionDeniedRecoveryForCurrentUser(): void {
-  const uid = getCurrentFirebaseAuthUid()
-  if (!uid) return
-  firestorePermissionDeniedRecoveryByUid.delete(uid)
-}
-
-function registerPermissionDeniedRecoverySignal(contextLabel: string): boolean {
-  const uid = getCurrentFirebaseAuthUid()
-  if (!uid) return false
-
-  const now = Date.now()
-  const existing = firestorePermissionDeniedRecoveryByUid.get(uid)
-  if (!existing || now - existing.lastAt > FIRESTORE_PERMISSION_DENIED_ESCALATION_WINDOW_MS) {
-    firestorePermissionDeniedRecoveryByUid.set(uid, {
-      count: 1,
-      firstAt: now,
-      lastAt: now,
-      lastContext: contextLabel,
-    })
-    return false
-  }
-
-  existing.count += 1
-  existing.lastAt = now
-  existing.lastContext = contextLabel
-  return existing.count >= 2
-}
-
-function registerPermissionDeniedBurst(contextLabel: string): {
-  shouldTriggerKillSwitch: boolean
-  burstCount: number
-  uniqueContexts: number
-} {
-  const uid = getCurrentFirebaseAuthUid()
-  if (!uid) {
-    return {
-      shouldTriggerKillSwitch: false,
-      burstCount: 0,
-      uniqueContexts: 0,
-    }
-  }
-
-  const now = Date.now()
-  const existing = firestorePermissionDeniedBurstByUid.get(uid)
-  if (!existing || now - existing.lastAt > FIRESTORE_PERMISSION_DENIED_BURST_WINDOW_MS) {
-    const initialState: FirestorePermissionDeniedBurstState = {
-      count: 1,
-      firstAt: now,
-      lastAt: now,
-      contexts: new Set([contextLabel]),
-    }
-    firestorePermissionDeniedBurstByUid.set(uid, initialState)
-    return {
-      shouldTriggerKillSwitch: false,
-      burstCount: 1,
-      uniqueContexts: 1,
-    }
-  }
-
-  existing.count += 1
-  existing.lastAt = now
-  existing.contexts.add(contextLabel)
-
-  const shouldTriggerKillSwitch = existing.count >= FIRESTORE_PERMISSION_DENIED_BURST_THRESHOLD
-    && existing.contexts.size >= FIRESTORE_PERMISSION_DENIED_MIN_CONTEXTS
-
-  return {
-    shouldTriggerKillSwitch,
-    burstCount: existing.count,
-    uniqueContexts: existing.contexts.size,
-  }
-}
-
-function getAuthCircuitState(uid: string): FirestoreAuthCircuitState | null {
-  const state = firestoreAuthCircuitByUid.get(uid)
-  if (!state) return null
-  if (state.openUntil <= Date.now()) {
-    firestoreAuthCircuitByUid.delete(uid)
-    return null
-  }
-  return state
-}
-
-function openAuthAccessCircuit(contextLabel: string, reason?: unknown): void {
-  const uid = getCurrentFirebaseAuthUid()
-  if (!uid) return
-
-  const state = getAuthCircuitState(uid)
-  if (state) return
-
-  const now = Date.now()
-  const reasonMessage = reason ? ` (${getErrorMessage(reason)})` : ''
-  firestoreAuthCircuitByUid.set(uid, {
-    openedAt: now,
-    openUntil: now + FIRESTORE_AUTH_CIRCUIT_COOLDOWN_MS,
-    lastContext: contextLabel,
-  })
-  console.warn(
-    `[Firestore Auth Circuit] ${contextLabel}: opened for uid ${uid} during ${FIRESTORE_AUTH_CIRCUIT_COOLDOWN_MS}ms${reasonMessage}.`,
-  )
-}
-
-function closeAuthAccessCircuitForCurrentUser(): void {
-  const uid = getCurrentFirebaseAuthUid()
-  if (!uid) return
-  firestoreAuthCircuitByUid.delete(uid)
-  firestoreAuthFailureCounterByUid.delete(uid)
-  firestorePermissionDeniedBurstByUid.delete(uid)
-  firestorePermissionDeniedRecoveryByUid.delete(uid)
-}
-
-function throwIfAuthAccessCircuitOpen(contextLabel: string): void {
-  const uid = getCurrentFirebaseAuthUid()
-  if (!uid) return
-
-  const state = getAuthCircuitState(uid)
-  if (!state) return
-
-  const waitMs = Math.max(0, state.openUntil - Date.now())
-  const waitSecs = Math.max(1, Math.ceil(waitMs / 1000))
-  const error = new Error(`Sessão do Firebase inválida. Aguarde ${waitSecs}s e faça login novamente.`) as Error & { code?: string }
-  error.code = FIRESTORE_SESSION_INVALID_CODE
-
-  emitFirestoreAuthSessionInvalid({
-    contextLabel,
-    authUid: uid,
-  })
-
-  console.warn(
-    `[Firestore Auth Circuit] ${contextLabel}: fast-fail while circuit is open (${waitMs}ms remaining from ${state.lastContext}).`,
-  )
-  throw error
-}
-
+// Test-only no-op (kept exported because tests import this name).
 export function __resetFirestoreAuthCircuitForTests(): void {
-  firestoreAuthCircuitByUid.clear()
-  firestoreAuthFailureCounterByUid.clear()
-  firestorePermissionDeniedBurstByUid.clear()
-  firestorePermissionDeniedRecoveryByUid.clear()
-  lastObservedAuthUid = getCurrentFirebaseAuthUid()
-}
-
-/**
- * Proactively close any open auth-access circuit for the current uid. Called
- * on browser-level signals that strongly indicate the prior token desync is
- * resolved (tab regaining focus after being backgrounded, or Firebase Auth
- * rotating the ID token). Without this, a circuit opened during a burst at
- * mount time would keep page-level retries fast-failing for the full cooldown
- * window even after the SDK already has a fresh, valid credential.
- */
-function resetAuthCircuitProactively(reason: string): void {
-  const uid = getCurrentFirebaseAuthUid()
-  if (!uid) return
-  const hadCircuit = firestoreAuthCircuitByUid.has(uid)
-  firestoreAuthCircuitByUid.delete(uid)
-  firestoreAuthFailureCounterByUid.delete(uid)
-  firestorePermissionDeniedBurstByUid.delete(uid)
-  firestorePermissionDeniedRecoveryByUid.delete(uid)
-  if (hadCircuit) {
-    console.warn(`[Firestore Auth Circuit] proactively closed for uid ${uid} (${reason}).`)
-  }
-}
-
-let circuitResettersInstalled = false
-
-function installCircuitResettersOnce(): void {
-  if (circuitResettersInstalled) return
-  circuitResettersInstalled = true
-
-  if (firebaseAuth) {
-    try {
-      onIdTokenChanged(firebaseAuth, (user) => {
-        if (user) resetAuthCircuitProactively('id-token-rotated')
-      })
-    } catch {
-      // Listener wiring must never break Firestore reads.
-    }
-  }
-
-  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        resetAuthCircuitProactively('tab-visible')
-      }
-    })
-  }
-}
-
-if (IS_FIREBASE) {
-  installCircuitResettersOnce()
+  // Auth-access circuit, PD-burst tracker, and unrecoverable-refresh memo were
+  // removed because they were synthesizing `auth-session-invalid` from
+  // ordinary Firestore errors and bouncing live users to /login. Firebase Auth
+  // is the sole source of session truth via onAuthStateChanged.
 }
 
 async function waitForFirebaseAuthSync(timeoutMs = FIREBASE_AUTH_SYNC_TIMEOUT_MS): Promise<void> {
-  syncAuthCircuitUserBoundary()
   const auth = firebaseAuth
   if (!auth || auth.currentUser) return
   const expectHydratedUser = hasStoredLexioSession()
@@ -516,20 +218,7 @@ function createUnauthenticatedFirestoreError(contextLabel: string): Error {
   return error
 }
 
-function createInvalidFirebaseSessionError(contextLabel: string, reason?: unknown): Error {
-  const reasonMessage = reason ? ` (${getErrorMessage(reason)})` : ''
-  emitFirestoreAuthSessionInvalid({
-    contextLabel,
-    authUid: getCurrentFirebaseAuthUid(),
-  })
-  const error = new Error('Sessão do Firebase inválida. Faça login novamente.') as Error & { code?: string }
-  error.code = FIRESTORE_SESSION_INVALID_CODE
-  console.warn(`[Firestore Auth Sync] ${contextLabel}: persistent auth access error after retry${reasonMessage}.`)
-  return error
-}
-
 async function resolveEffectiveUid(uid: string, contextLabel: string): Promise<string> {
-  syncAuthCircuitUserBoundary()
   await waitForFirebaseAuthSync()
   const requestedUid = String(uid || '').trim()
   const authUid = firebaseAuth?.currentUser?.uid?.trim() || ''
@@ -705,16 +394,19 @@ const AUTH_RELATED_FIRESTORE_CODES = new Set([
   'auth-session-invalid',
 ])
 
-const SESSION_INVALIDATING_FIRESTORE_CODES = new Set([
-  'unauthenticated',
-  'auth-session-invalid',
-])
+// Kept for callers that opt out of the recovery path (e.g. legacy settings
+// reads that should fail fast without retrying token refresh). The cross-call
+// kill-switch behavior was removed; this option is now effectively a no-op
+// but the shape is preserved for backwards compatibility.
+type FirestoreRetryOptions = {
+  recoverAuthAccessErrors?: boolean
+}
 
-const FIRESTORE_AUTH_RETRY_DELAY_MS = 350
-// Exponential-ish backoff for auth-access retries. The Firestore SDK and
-// Firebase Auth occasionally desync the ID token (after a long idle period,
-// background tab, or token rotation), so we give the SDK several chances to
-// pick up a fresh token before declaring the session invalid.
+// Per-call retry only. We never escalate a Firestore failure into a
+// "session invalid" signal that would log the user out — the Firebase Auth
+// SDK is the sole source of session truth (onAuthStateChanged). Transient
+// permission-denied during token rotation is normal; we just retry with a
+// forced token refresh and let the SDK propagate fresh credentials.
 const FIRESTORE_AUTH_RETRY_BACKOFF_MS = [200, 600, 1500] as const
 const FIRESTORE_AUTH_MAX_RETRIES = FIRESTORE_AUTH_RETRY_BACKOFF_MS.length
 
@@ -726,12 +418,11 @@ function getFirebaseErrorCode(error: unknown): string | null {
   return null
 }
 
+// Kept for compatibility with callers (DocumentList, dashboard, notebook):
+// since we no longer synthesize this error code, this just returns false in
+// practice — callers' "skip toast on session-invalid" branch becomes inert.
 export function isFirestoreSessionInvalidError(error: unknown): boolean {
   return getFirebaseErrorCode(error) === 'auth-session-invalid'
-}
-
-function isAuthRetryableFirestoreCode(code: string | null): boolean {
-  return Boolean(code && AUTH_RETRYABLE_FIRESTORE_CODES.has(code))
 }
 
 function isRetryableFirestoreError(error: unknown): boolean {
@@ -740,37 +431,24 @@ function isRetryableFirestoreError(error: unknown): boolean {
   return RETRYABLE_FIRESTORE_CODES.has(code) || AUTH_RETRYABLE_FIRESTORE_CODES.has(code)
 }
 
+function isAuthRetryableFirestoreCode(code: string | null): boolean {
+  return Boolean(code && AUTH_RETRYABLE_FIRESTORE_CODES.has(code))
+}
+
 function isAuthAccessFirestoreError(error: unknown): boolean {
   const code = getFirebaseErrorCode(error)
   return Boolean(code && AUTH_RELATED_FIRESTORE_CODES.has(code))
 }
 
-function isSessionInvalidatingFirestoreError(error: unknown): boolean {
-  const code = getFirebaseErrorCode(error)
-  return Boolean(code && SESSION_INVALIDATING_FIRESTORE_CODES.has(code))
-}
-
-async function refreshCurrentUserToken(contextLabel: string): Promise<boolean> {
+async function refreshCurrentUserToken(): Promise<void> {
   const currentUser = firebaseAuth?.currentUser
-  if (!currentUser) return false
-  if (hasRecentUnrecoverableFirebaseTokenRefresh(currentUser.uid)) {
-    throw createUnrecoverableFirebaseTokenRefreshError(
-      contextLabel,
-      new Error('Recent unrecoverable Firebase token refresh failure.'),
-    )
-  }
-
+  if (!currentUser) return
   try {
     await currentUser.getIdToken(true)
-    clearUnrecoverableFirebaseTokenRefresh(currentUser.uid)
-    return true
   } catch (error) {
-    if (isUnrecoverableFirebaseTokenRefreshError(error)) {
-      markUnrecoverableFirebaseTokenRefresh(currentUser.uid)
-      throw createUnrecoverableFirebaseTokenRefreshError(contextLabel, error)
-    }
+    // Best-effort. Token refresh can fail transiently; the next retry
+    // attempt will try again. We never destroy the session here.
     console.warn('Firestore token refresh failed:', getErrorMessage(error))
-    return false
   }
 }
 
@@ -779,136 +457,53 @@ async function withFirestoreRetry<T>(
   contextLabel: string,
   options: FirestoreRetryOptions = {},
 ): Promise<T> {
-  syncAuthCircuitUserBoundary()
   const recoverAuthAccessErrors = options.recoverAuthAccessErrors !== false
-  if (recoverAuthAccessErrors) {
-    throwIfAuthAccessCircuitOpen(contextLabel)
-  }
-
   let lastError: unknown = null
 
   for (let attempt = 0; attempt <= FIRESTORE_AUTH_MAX_RETRIES; attempt += 1) {
     try {
-      const result = await operation()
-      closeAuthAccessCircuitForCurrentUser()
-      return result
+      return await operation()
     } catch (error) {
       lastError = error
 
       if (!isRetryableFirestoreError(error)) {
-        // Non-retryable error: surface immediately. We do not open the auth
-        // circuit on a single isolated permission-denied — that path runs
-        // through the auth-retry branch below where the circuit is only
-        // armed after consecutive failures across multiple calls.
         throw error
       }
 
       const code = getFirebaseErrorCode(error)
       const isAuthRetry = isAuthRetryableFirestoreCode(code)
-      const isLastAttempt = attempt >= FIRESTORE_AUTH_MAX_RETRIES
 
-      if (isAuthRetry) {
-        if (!recoverAuthAccessErrors) {
-          throw error
-        }
-        if (isLastAttempt) break
-
-        console.warn(
-          `[Firestore Retry] ${contextLabel}: attempt ${attempt + 1} failed, refreshing token (${getErrorMessage(error)})`,
-        )
-
-        await waitForFirebaseAuthSync()
-        if (!firebaseAuth?.currentUser) {
-          // No authenticated user available — bail out with a clean error so
-          // the caller can decide whether to wait or surface a login prompt.
-          throw createUnauthenticatedFirestoreError(contextLabel)
-        }
-
-        // Force a token refresh on every retry. This nudges the Firestore
-        // SDK to revalidate its internal credentials against the freshly
-        // minted ID token.
-        try {
-          await refreshCurrentUserToken(contextLabel)
-        } catch (refreshError) {
-          if (isUnrecoverableFirebaseTokenRefreshError(refreshError)) {
-            clearPermissionDeniedBurstForCurrentUser()
-            clearPermissionDeniedRecoveryForCurrentUser()
-            openAuthAccessCircuit(contextLabel, refreshError)
-            throw createInvalidFirebaseSessionError(contextLabel, refreshError)
-          }
-          throw refreshError
-        }
-
-        const backoff = FIRESTORE_AUTH_RETRY_BACKOFF_MS[attempt] ?? FIRESTORE_AUTH_RETRY_DELAY_MS
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, backoff)
-        })
-        continue
+      if (isAuthRetry && !recoverAuthAccessErrors) {
+        // Caller opted out of the auth-access recovery path; surface
+        // immediately so it can decide what to do.
+        throw error
       }
 
-      // Non-auth retryable errors (network blips, deadline-exceeded, etc.)
+      const isLastAttempt = attempt >= FIRESTORE_AUTH_MAX_RETRIES
       if (isLastAttempt) break
 
+      if (isAuthRetry) {
+        await waitForFirebaseAuthSync()
+        if (!firebaseAuth?.currentUser) {
+          throw createUnauthenticatedFirestoreError(contextLabel)
+        }
+        await refreshCurrentUserToken()
+      }
+
       console.warn(
-        `[Firestore Retry] ${contextLabel}: transient failure on attempt ${attempt + 1}, retrying (${getErrorMessage(error)})`,
+        `[Firestore Retry] ${contextLabel}: attempt ${attempt + 1} failed (${getErrorMessage(error)}); retrying.`,
       )
-      const backoff = FIRESTORE_AUTH_RETRY_BACKOFF_MS[attempt] ?? FIRESTORE_AUTH_RETRY_DELAY_MS
+
+      const backoff = FIRESTORE_AUTH_RETRY_BACKOFF_MS[attempt] ?? FIRESTORE_AUTH_RETRY_BACKOFF_MS[0]
       await new Promise<void>((resolve) => {
         setTimeout(resolve, backoff)
       })
     }
   }
 
-  // All attempts exhausted.
-  if (recoverAuthAccessErrors && isSessionInvalidatingFirestoreError(lastError)) {
-    const shouldOpenCircuit = registerAuthAccessFailure()
-    if (shouldOpenCircuit) {
-      openAuthAccessCircuit(contextLabel, lastError)
-      throw createInvalidFirebaseSessionError(contextLabel, lastError)
-    }
-    // Below the circuit threshold: bubble up the original error so the caller
-    // can decide whether to retry, fall back, or surface a soft-toast — the
-    // session itself is still considered live.
-    throw lastError
-  }
-
-  if (recoverAuthAccessErrors && isAuthAccessFirestoreError(lastError)) {
-    if (getFirebaseErrorCode(lastError) === 'permission-denied') {
-      const burst = registerPermissionDeniedBurst(contextLabel)
-      if (burst.shouldTriggerKillSwitch) {
-        const routePath = typeof window !== 'undefined' && window.location ? window.location.pathname : 'n/a'
-        const uid = getCurrentFirebaseAuthUid() || 'anonymous'
-        const sessionFingerprint = `${uid.slice(0, 8)}@${routePath}`
-        const shouldEscalate = registerPermissionDeniedRecoverySignal(contextLabel)
-
-        if (shouldEscalate) {
-          console.warn(
-            `[Firestore PD-Burst] context=${contextLabel} count=${burst.burstCount} uniqueContexts=${burst.uniqueContexts} route=${routePath} session=${sessionFingerprint}. Repeated burst after token recovery; escalating to invalid-session recovery.`,
-          )
-          clearPermissionDeniedBurstForCurrentUser()
-          openAuthAccessCircuit(contextLabel, lastError)
-          throw createInvalidFirebaseSessionError(contextLabel, lastError)
-        }
-
-        emitFirestoreAuthAccessDegraded({
-          contextLabel,
-          authUid: getCurrentFirebaseAuthUid(),
-          errorCode: 'permission-denied',
-          burstCount: burst.burstCount,
-          uniqueContexts: burst.uniqueContexts,
-        })
-        console.warn(
-          `[Firestore PD-Burst] context=${contextLabel} count=${burst.burstCount} uniqueContexts=${burst.uniqueContexts} route=${routePath} session=${sessionFingerprint}. Emitted non-destructive auth recovery signal.`,
-        )
-        clearPermissionDeniedBurstForCurrentUser()
-      }
-    } else {
-      clearPermissionDeniedBurstForCurrentUser()
-      clearPermissionDeniedRecoveryForCurrentUser()
-    }
-    throw lastError
-  }
-
+  // All retries exhausted: surface the original error to the caller. NEVER
+  // synthesize a session-invalid error here — that was the cross-call
+  // kill-switch that bounced live users to /login.
   throw lastError
 }
 
