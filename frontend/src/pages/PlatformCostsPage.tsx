@@ -200,6 +200,10 @@ export default function PlatformCostsPage() {
     () => breakdown?.by_function.find(row => row.key === 'document_generation_v3') ?? null,
     [breakdown],
   )
+  const thesisAnalysisFunction = useMemo(
+    () => breakdown?.by_function.find(row => row.key === 'thesis_analysis') ?? null,
+    [breakdown],
+  )
 
   if (!isReady) {
     return (
@@ -287,6 +291,15 @@ export default function PlatformCostsPage() {
               </p>
               <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
                 {documentV3Function ? `${fmtInt(documentV3Function.calls)} chamadas` : 'Nenhuma execução registrada'}
+              </p>
+            </div>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Banco de Teses</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                {thesisAnalysisFunction ? fmtUsd(thesisAnalysisFunction.cost_usd) : 'Sem consumo'}
+              </p>
+              <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
+                {thesisAnalysisFunction ? `${fmtInt(thesisAnalysisFunction.calls)} chamadas` : 'Nenhuma execução registrada'}
               </p>
             </div>
           </div>

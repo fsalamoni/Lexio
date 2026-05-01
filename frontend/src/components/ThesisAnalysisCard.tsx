@@ -405,6 +405,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
         status: 'completed',
         usage_summary: analysis.usage_summary,
         llm_executions: analysis.llm_executions,
+        pipeline_meta: analysis.pipeline_meta,
       }
       try {
         await withTransientFirebaseAuthRetry(() => saveThesisAnalysisSession(userId, sessionPayload))
@@ -700,7 +701,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
       <AgentTrailProgressModal
         isOpen={running || agentProgress.length > 0}
         title="Trilha de Análise do Banco de Teses"
-        subtitle="Pipeline de 5 agentes"
+        subtitle="Pipeline paralelo de 5 agentes"
         currentMessage={currentAgentMessage}
         percent={analysisPercent}
         steps={agentProgress.map(agent => ({

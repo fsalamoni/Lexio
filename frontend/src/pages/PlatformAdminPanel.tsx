@@ -571,6 +571,10 @@ export default function PlatformAdminPanel() {
     () => overview?.functions_by_usage.find(row => row.key === 'document_generation_v3') ?? null,
     [overview],
   )
+  const thesisAnalysisUsage = useMemo(
+    () => overview?.functions_by_usage.find(row => row.key === 'thesis_analysis') ?? null,
+    [overview],
+  )
 
   const documentStatusChart = useMemo(() => overview?.documents_by_status.slice(0, 6) ?? [], [overview])
   const artifactChart = useMemo(() => overview?.artifacts_by_type.slice(0, 6) ?? [], [overview])
@@ -1830,6 +1834,15 @@ export default function PlatformAdminPanel() {
               </p>
               <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
                 {documentV3Usage ? `${fmtInt(documentV3Usage.calls)} chamadas` : 'Nenhuma execução registrada'}
+              </p>
+            </div>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Banco de Teses</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                {thesisAnalysisUsage ? fmtUsd(thesisAnalysisUsage.cost_usd) : 'Sem consumo'}
+              </p>
+              <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
+                {thesisAnalysisUsage ? `${fmtInt(thesisAnalysisUsage.calls)} chamadas` : 'Nenhuma execução registrada'}
               </p>
             </div>
           </div>

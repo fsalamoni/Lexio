@@ -77,5 +77,13 @@ describe('user-scoped agent configuration coverage', () => {
       'v3_writer_reviser',
       'v3_supervisor',
     ]))
+
+    expect(AGENT_CONFIG_DEFS.thesis_analyst_models.map(agent => agent.key)).toEqual([
+      'thesis_catalogador',
+      'thesis_analista',
+      'thesis_compilador',
+      'thesis_curador',
+      'thesis_revisor',
+    ])
   })
 })

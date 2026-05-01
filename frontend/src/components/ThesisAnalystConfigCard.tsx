@@ -38,17 +38,18 @@ export default function ThesisAnalystConfigCard() {
           id: 'thesis-analyst',
           title: 'Pipeline de Análise de Teses',
           titleIcon: FlaskConical,
-          subtitle: '5 agentes · acionado manualmente',
+          subtitle: '5 agentes · trilhas paralelas · acionado manualmente',
           agents: THESIS_ANALYST_AGENT_DEFS,
           tone: V2_AGENT_CONFIG_TONES.teal,
           showIndex: true,
           afterContent: (
             <div className={`${V2_AGENT_CONFIG_INFO_BOX_BASE} ${V2_AGENT_CONFIG_TONES.teal.infoBox}`}>
               <p>
-                <strong>💡 Recomendação:</strong> O <strong>Catalogador</strong> pode usar um modelo rápido
-                (Haiku, Flash), pois sua tarefa é classificação. Os demais agentes exigem raciocínio mais
-                profundo; use modelos <strong>equilibrados ou premium</strong> para resultados melhores.
-                Modelos <strong>✦ Grátis</strong> são uma ótima opção para reduzir custos.
+                <strong>💡 Recomendação:</strong> O <strong>Catalogador</strong> e o <strong>Curador</strong> iniciam
+                trilhas paralelas para reduzir latência. O Catalogador pode usar um modelo rápido (Haiku,
+                Flash); o <strong>Compilador</strong> e o <strong>Revisor</strong> se beneficiam de modelos
+                equilibrados ou premium, pois consolidam e validam as sugestões finais. Modelos
+                <strong> ✦ Grátis</strong> continuam úteis para reduzir custos.
               </p>
             </div>
           ),

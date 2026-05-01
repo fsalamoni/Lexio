@@ -12,11 +12,19 @@
  * AnalysisSuggestion objects that the user can accept, modify or reject.
  */
 
-import { callLLMWithFallback, TransientLLMError } from './llm-client'
+import { callLLMWithFallback, TransientLLMError, type LLMResult } from './llm-client'
 import { type ThesisData, type AcervoDocumentData } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord, type UsageSummary } from './cost-analytics'
 import { type ThesisAnalystModelMap, validateModelMap, THESIS_ANALYST_AGENT_DEFS, buildPipelineFallbackResolver, loadFallbackPriorityConfig } from './model-config'
-import { getRuntimeConcurrencyHints, resolveAdaptiveConcurrencyWithDiagnostics } from './runtime-concurrency'
+import {
+  buildRuntimeProfileKey,
+  formatAdaptiveConcurrency,
+  formatRuntimeHints,
+  getRuntimeConcurrencyHints,
+  resolveAdaptiveConcurrencyWithDiagnostics,
+  runWithConcurrency,
+} from './runtime-concurrency'
+import { THESIS_PIPELINE_STAGES } from './thesis-pipeline'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -73,10 +81,28 @@ export interface ThesisAnalysisResult {
   executive_summary: string
   usage_summary: UsageSummary
   llm_executions: UsageExecutionRecord[]
+  pipeline_meta?: ThesisAnalysisPipelineMeta
 }
 
 export type ProgressCallback = (agents: AgentProgress[]) => void
 
+export interface ThesisAnalysisPipelineMeta {
+  pipeline_version: 'thesis_parallel_v1'
+  phase_durations_ms: Record<string, number>
+  total_agent_duration_ms: number
+  wall_clock_ms: number
+  parallel_savings_ms: number
+  parallel_limit: number
+  compilador_parallel_limit: number
+  runtime_profile: string
+  runtime_hints: string
+  runtime_cap: number
+  runtime_detail: string
+  compilador_runtime_detail?: string
+}
+
+const DEFAULT_THESIS_ANALYSIS_PARALLEL_LIMIT = 2
+const MAX_THESIS_ANALYSIS_PARALLEL_LIMIT = 3
 const DEFAULT_THESIS_COMPILADOR_BATCH_CONCURRENCY = 2
 const MAX_THESIS_COMPILADOR_BATCH_CONCURRENCY = 4
 
@@ -334,21 +360,67 @@ export async function analyzeThesisBank(
   // Validate all agent models are configured
   validateModelMap(modelMap, THESIS_ANALYST_AGENT_DEFS, 'thesis_analyst_models')
 
-  const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
-  const resolveFb = buildPipelineFallbackResolver(THESIS_ANALYST_AGENT_DEFS, fallbackConfig)
-
   const sessionId = uid4()
   const now = new Date().toISOString()
   const llmExecutions: UsageExecutionRecord[] = []
+  const wallClockStart = Date.now()
+  const phaseDurationsMs: Record<string, number> = {}
+  let totalAgentDurationMs = 0
+  let compiladorParallelLimit = 1
+  let compiladorRuntimeDetail: string | undefined
+
+  const trackPhase = async <T,>(phaseKey: string, fn: () => Promise<T>): Promise<T> => {
+    const startedAt = Date.now()
+    try {
+      return await fn()
+    } finally {
+      phaseDurationsMs[phaseKey] = (phaseDurationsMs[phaseKey] ?? 0) + (Date.now() - startedAt)
+    }
+  }
+
+  const fallbackConfig = await trackPhase('config', async () => loadFallbackPriorityConfig().catch(() => ({})))
+  const resolveFb = buildPipelineFallbackResolver(THESIS_ANALYST_AGENT_DEFS, fallbackConfig)
+
+  const analysisRuntimeHints = getRuntimeConcurrencyHints()
+  const analysisConcurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
+    envValue: import.meta.env.VITE_THESIS_ANALYSIS_PARALLEL_LIMIT as string | undefined,
+    fallback: DEFAULT_THESIS_ANALYSIS_PARALLEL_LIMIT,
+    min: 1,
+    max: MAX_THESIS_ANALYSIS_PARALLEL_LIMIT,
+    hints: analysisRuntimeHints,
+  })
+  const analysisParallelLimit = analysisConcurrencyDiagnostics.resolved
+  const analysisRuntimeHintsLabel = formatRuntimeHints(analysisRuntimeHints)
+  const analysisRuntimeDetail = formatAdaptiveConcurrency(analysisConcurrencyDiagnostics)
+  const analysisRuntimeProfile = buildRuntimeProfileKey(analysisRuntimeHints, analysisConcurrencyDiagnostics)
+  const analysisRuntimeUsageMeta = {
+    runtime_profile: analysisRuntimeProfile,
+    runtime_hints: analysisRuntimeHintsLabel,
+    runtime_concurrency: analysisParallelLimit,
+    runtime_cap: analysisConcurrencyDiagnostics.runtimeCap,
+  }
+
+  const buildExecutionTelemetry = (
+    result: LLMResult,
+    runtimeMeta: typeof analysisRuntimeUsageMeta = analysisRuntimeUsageMeta,
+  ) => ({
+    execution_state: (result.operational?.totalRetryCount ?? 0) > 0 ? 'retrying' : 'completed',
+    retry_count: result.operational?.totalRetryCount ?? 0,
+    used_fallback: result.operational?.fallbackUsed ?? null,
+    fallback_from: result.operational?.fallbackFrom ?? null,
+    ...runtimeMeta,
+  })
+
+  const recordAgentDuration = (result: LLMResult | null | undefined) => {
+    if (result?.duration_ms && result.duration_ms > 0) {
+      totalAgentDurationMs += result.duration_ms
+    }
+  }
 
   // Initialise progress state
-  const agents: AgentProgress[] = [
-    { key: 'thesis_catalogador', label: 'Catalogador',              status: 'pending' },
-    { key: 'thesis_analista',    label: 'Analista de Redundâncias', status: 'pending' },
-    { key: 'thesis_compilador',  label: 'Compilador',               status: 'pending' },
-    { key: 'thesis_curador',     label: 'Curador de Lacunas',       status: 'pending' },
-    { key: 'thesis_revisor',     label: 'Revisor Final',            status: 'pending' },
-  ]
+  const agents: AgentProgress[] = THESIS_PIPELINE_STAGES
+    .filter(stage => stage.modelKey)
+    .map(stage => ({ key: stage.key, label: stage.label, status: 'pending' as const }))
 
   const notify = (key: string, status: AgentProgress['status'], message?: string) => {
     const idx = agents.findIndex(a => a.key === key)
@@ -360,6 +432,69 @@ export async function analyzeThesisBank(
   const MAX_THESES_FOR_CATALOGUE = 120
   const thesesForCatalogue = theses.slice(0, MAX_THESES_FOR_CATALOGUE)
   const catalogue = thesesToCatalogueEntries(thesesForCatalogue)
+
+  const MAX_DOCS_FOR_CURADOR = 4
+  const docsForCurador = acervoDocs.slice(0, MAX_DOCS_FOR_CURADOR)
+  const newThesisProposals: Array<{
+    title: string; content: string; summary: string
+    legal_area_id: string; tags?: string[]; quality_score?: number
+  }> = []
+  let thematicGaps: string[] = []
+
+  const runCurador = async (): Promise<void> => {
+    notify('thesis_curador', 'running', analysisParallelLimit > 1 ? 'Analisando documentos do acervo em paralelo...' : 'Analisando documentos do acervo...')
+
+    if (docsForCurador.length > 0 || thematicGaps.length > 0) {
+      try {
+        const docsText = docsForCurador.map(d => acervoExcerpt(d)).join('\n\n===\n\n')
+        const gapsText = thematicGaps.length > 0
+          ? `\n\nLACUNAS TEMÁTICAS IDENTIFICADAS (priorize teses que preencham estas lacunas):\n${thematicGaps.map((g, i) => `${i + 1}. ${g}`).join('\n')}`
+          : ''
+        const catalogueText = catalogue.length > 0
+          ? `\n\nBANCO ATUAL (resumo compacto para evitar duplicidades):\n${JSON.stringify(catalogue.slice(0, 80), null, 2)}`
+          : ''
+
+        const res = await callLLMWithFallback(
+          apiKey,
+          CURADOR_SYSTEM,
+          `Documentos do acervo não analisados:\n\n${docsText}${gapsText}${catalogueText}`,
+          modelMap['thesis_curador'],
+          resolveFb('thesis_curador', modelMap['thesis_curador']),
+          3500,
+          0.2,
+        )
+        recordAgentDuration(res)
+        llmExecutions.push(createUsageExecutionRecord({
+          source_type: 'thesis_analysis',
+          source_id: sessionId,
+          created_at: now,
+          phase: 'thesis_curador',
+          agent_name: 'Curador de Lacunas',
+          model: res.model,
+          provider_id: res.provider_id ?? res.operational?.providerId,
+          provider_label: res.provider_label ?? res.operational?.providerLabel,
+          requested_model: res.operational?.requestedModel,
+          resolved_model: res.operational?.resolvedModel,
+          tokens_in: res.tokens_in,
+          tokens_out: res.tokens_out,
+          cost_usd: res.cost_usd,
+          duration_ms: res.duration_ms,
+          ...buildExecutionTelemetry(res),
+        }))
+        const proposals = parseJsonArray(res.content) as typeof newThesisProposals
+        newThesisProposals.push(...proposals.filter(p => p.title && p.content))
+      } catch (err) {
+        notify('thesis_curador', 'error', `Curador: ${agentErrorMessage(err)}`)
+        console.warn('Curador failed:', err)
+      }
+    }
+
+    notify('thesis_curador', 'done', `${newThesisProposals.length} novas teses propostas`)
+  }
+
+  const curadorPromise = analysisParallelLimit > 1
+    ? trackPhase('curadoria_acervo', runCurador)
+    : null
 
   // ── Agent 1: Catalogador ─────────────────────────────────────────────────────
 
@@ -373,7 +508,7 @@ export async function analyzeThesisBank(
   } = {}
 
   try {
-    const res = await callLLMWithFallback(
+    const res = await trackPhase('inventario', async () => callLLMWithFallback(
       apiKey,
       CATALOGADOR_SYSTEM,
       `Inventário de ${catalogue.length} teses jurídicas:\n${JSON.stringify(catalogue, null, 2)}`,
@@ -381,7 +516,8 @@ export async function analyzeThesisBank(
       resolveFb('thesis_catalogador', modelMap['thesis_catalogador']),
       3000,
       0.1,
-    )
+    ))
+    recordAgentDuration(res)
     llmExecutions.push(createUsageExecutionRecord({
       source_type: 'thesis_analysis',
       source_id: sessionId,
@@ -397,6 +533,7 @@ export async function analyzeThesisBank(
       tokens_out: res.tokens_out,
       cost_usd: res.cost_usd,
       duration_ms: res.duration_ms,
+      ...buildExecutionTelemetry(res),
     }))
     catalogueResult = parseJsonObject(res.content) as typeof catalogueResult
     notify('thesis_catalogador', 'done', `${catalogueResult.similar_groups?.length ?? 0} grupos identificados`)
@@ -407,7 +544,7 @@ export async function analyzeThesisBank(
   }
 
   const similarGroups = catalogueResult.similar_groups ?? []
-  const thematicGaps = catalogueResult.thematic_gaps ?? []
+  thematicGaps = catalogueResult.thematic_gaps ?? []
 
   // ── Agent 2: Analista ────────────────────────────────────────────────────────
 
@@ -435,7 +572,7 @@ export async function analyzeThesisBank(
 
   try {
     if (groupsWithContent.length > 0) {
-      const res = await callLLMWithFallback(
+      const res = await trackPhase('redundancia', async () => callLLMWithFallback(
         apiKey,
         ANALISTA_SYSTEM,
         `Grupos de teses para análise profunda:\n${JSON.stringify(groupsWithContent, null, 2)}`,
@@ -443,7 +580,8 @@ export async function analyzeThesisBank(
         resolveFb('thesis_analista', modelMap['thesis_analista']),
         4000,
         0.1,
-      )
+      ))
+      recordAgentDuration(res)
       llmExecutions.push(createUsageExecutionRecord({
         source_type: 'thesis_analysis',
         source_id: sessionId,
@@ -459,6 +597,7 @@ export async function analyzeThesisBank(
         tokens_out: res.tokens_out,
         cost_usd: res.cost_usd,
         duration_ms: res.duration_ms,
+        ...buildExecutionTelemetry(res),
       }))
       const parsed = parseJsonObject(res.content) as { analysis?: typeof analysisMergeGroups }
       analysisMergeGroups = (parsed.analysis ?? []).filter(g => g.action === 'merge')
@@ -497,22 +636,25 @@ export async function analyzeThesisBank(
     hints: compiladorHints,
   })
   const compiladorWorkerCount = Math.max(1, Math.min(compiladorConcurrencyDiagnostics.resolved, analysisMergeGroups.length || 1))
+  compiladorParallelLimit = compiladorWorkerCount
+  compiladorRuntimeDetail = formatAdaptiveConcurrency(compiladorConcurrencyDiagnostics)
+  const compiladorRuntimeUsageMeta = {
+    runtime_profile: buildRuntimeProfileKey(compiladorHints, compiladorConcurrencyDiagnostics),
+    runtime_hints: formatRuntimeHints(compiladorHints),
+    runtime_concurrency: compiladorWorkerCount,
+    runtime_cap: compiladorConcurrencyDiagnostics.runtimeCap,
+  }
 
-  let nextMergeIndex = 0
   let completedMergeCalls = 0
   let failedMergeCalls = 0
 
-  await Promise.all(Array.from({ length: compiladorWorkerCount }, async () => {
-    while (true) {
-      const groupIndex = nextMergeIndex++
-      if (groupIndex >= analysisMergeGroups.length) return
-
-      const group = analysisMergeGroups[groupIndex]
+  await trackPhase('compilacao', async () => {
+    const compiladorTasks = analysisMergeGroups.map((group, groupIndex) => async () => {
       const groupTheses = group.group_ids.map(id => thesisById.get(id)).filter((t): t is ThesisData => !!t)
 
       if (groupTheses.length < 2) {
         completedMergeCalls += 1
-        continue
+        return
       }
 
       try {
@@ -529,6 +671,7 @@ export async function analyzeThesisBank(
           2500,
           0.15,
         )
+        recordAgentDuration(res)
         llmExecutions.push(createUsageExecutionRecord({
           source_type: 'thesis_analysis',
           source_id: sessionId,
@@ -544,6 +687,7 @@ export async function analyzeThesisBank(
           tokens_out: res.tokens_out,
           cost_usd: res.cost_usd,
           duration_ms: res.duration_ms,
+          ...buildExecutionTelemetry(res, compiladorRuntimeUsageMeta),
         }))
         const compiled = parseJsonObject(res.content) as {
           title: string
@@ -570,8 +714,10 @@ export async function analyzeThesisBank(
           `Compilações prontas: ${successfulCalls}/${analysisMergeGroups.length}${failedMergeCalls > 0 ? ` (falhas: ${failedMergeCalls})` : ''}`,
         )
       }
-    }
-  }))
+    })
+
+    await runWithConcurrency(compiladorTasks, compiladorWorkerCount)
+  })
 
   const compiledGroups = compiledGroupsByIndex.filter((group): group is NonNullable<typeof group> => group !== null)
 
@@ -583,58 +729,11 @@ export async function analyzeThesisBank(
 
   // ── Agent 4: Curador de Lacunas ───────────────────────────────────────────────
 
-  notify('thesis_curador', 'running', 'Analisando documentos do acervo...')
-
-  const newThesisProposals: Array<{
-    title: string; content: string; summary: string
-    legal_area_id: string; tags?: string[]; quality_score?: number
-  }> = []
-
-  // Send up to 4 unanalyzed docs to the Curador
-  const MAX_DOCS_FOR_CURADOR = 4
-  const docsForCurador = acervoDocs.slice(0, MAX_DOCS_FOR_CURADOR)
-
-  if (docsForCurador.length > 0 || thematicGaps.length > 0) {
-    try {
-      const docsText = docsForCurador.map(d => acervoExcerpt(d)).join('\n\n===\n\n')
-      const gapsText = thematicGaps.length > 0
-        ? `\n\nLACUNAS TEMÁTICAS IDENTIFICADAS (priorize teses que preencham estas lacunas):\n${thematicGaps.map((g, i) => `${i + 1}. ${g}`).join('\n')}`
-        : ''
-
-      const res = await callLLMWithFallback(
-        apiKey,
-        CURADOR_SYSTEM,
-        `Documentos do acervo não analisados:\n\n${docsText}${gapsText}`,
-        modelMap['thesis_curador'],
-        resolveFb('thesis_curador', modelMap['thesis_curador']),
-        3500,
-        0.2,
-      )
-      llmExecutions.push(createUsageExecutionRecord({
-        source_type: 'thesis_analysis',
-        source_id: sessionId,
-        created_at: now,
-        phase: 'thesis_curador',
-        agent_name: 'Curador de Lacunas',
-        model: res.model,
-        provider_id: res.provider_id ?? res.operational?.providerId,
-        provider_label: res.provider_label ?? res.operational?.providerLabel,
-        requested_model: res.operational?.requestedModel,
-        resolved_model: res.operational?.resolvedModel,
-        tokens_in: res.tokens_in,
-        tokens_out: res.tokens_out,
-        cost_usd: res.cost_usd,
-        duration_ms: res.duration_ms,
-      }))
-      const proposals = parseJsonArray(res.content) as typeof newThesisProposals
-      newThesisProposals.push(...proposals.filter(p => p.title && p.content))
-    } catch (err) {
-      notify('thesis_curador', 'error', `Curador: ${agentErrorMessage(err)}`)
-      console.warn('Curador failed:', err)
-    }
+  if (curadorPromise) {
+    await curadorPromise
+  } else {
+    await trackPhase('curadoria_acervo', runCurador)
   }
-
-  notify('thesis_curador', 'done', `${newThesisProposals.length} novas teses propostas`)
 
   // ── Agent 5: Revisor Final ────────────────────────────────────────────────────
 
@@ -693,7 +792,7 @@ export async function analyzeThesisBank(
 
   if (rawSuggestions.length > 0) {
     try {
-      const res = await callLLMWithFallback(
+      const res = await trackPhase('revisao', async () => callLLMWithFallback(
         apiKey,
         REVISOR_SYSTEM,
         `Banco atual: ${theses.length} teses.\n\nSugestões para revisão:\n${JSON.stringify(revisorPayload, null, 2)}`,
@@ -701,7 +800,8 @@ export async function analyzeThesisBank(
         resolveFb('thesis_revisor', modelMap['thesis_revisor']),
         4000,
         0.1,
-      )
+      ))
+      recordAgentDuration(res)
       llmExecutions.push(createUsageExecutionRecord({
         source_type: 'thesis_analysis',
         source_id: sessionId,
@@ -717,6 +817,7 @@ export async function analyzeThesisBank(
         tokens_out: res.tokens_out,
         cost_usd: res.cost_usd,
         duration_ms: res.duration_ms,
+        ...buildExecutionTelemetry(res),
       }))
       type RevisorParsed = {
         suggestions?: Array<{
@@ -739,7 +840,7 @@ export async function analyzeThesisBank(
         parsed = parseJsonObject(res.content) as RevisorParsed
       } catch (parseError) {
         console.warn('Revisor returned invalid JSON; requesting one repair pass:', parseError)
-        const repair = await callLLMWithFallback(
+        const repair = await trackPhase('revisao_repair', async () => callLLMWithFallback(
           apiKey,
           'Você corrige saídas JSON inválidas. Retorne APENAS um objeto JSON válido, sem markdown, sem comentários e sem texto fora do JSON.',
           `A saída abaixo deveria ser um objeto JSON válido no formato {"executive_summary":"...","suggestions":[...]}. Corrija somente a sintaxe e preserve os campos úteis.\n\n${res.content}`,
@@ -747,7 +848,8 @@ export async function analyzeThesisBank(
           resolveFb('thesis_revisor', modelMap['thesis_revisor']),
           4000,
           0,
-        )
+        ))
+        recordAgentDuration(repair)
         llmExecutions.push(createUsageExecutionRecord({
           source_type: 'thesis_analysis',
           source_id: sessionId,
@@ -763,6 +865,7 @@ export async function analyzeThesisBank(
           tokens_out: repair.tokens_out,
           cost_usd: repair.cost_usd,
           duration_ms: repair.duration_ms,
+          ...buildExecutionTelemetry(repair),
         }))
         parsed = parseJsonObject(repair.content) as RevisorParsed
       }
@@ -878,6 +981,22 @@ export async function analyzeThesisBank(
     executiveSummary = 'O banco de teses está bem estruturado. Nenhuma ação necessária no momento.'
   }
 
+  const wallClockMs = Date.now() - wallClockStart
+  const pipelineMeta: ThesisAnalysisPipelineMeta = {
+    pipeline_version: 'thesis_parallel_v1',
+    phase_durations_ms: phaseDurationsMs,
+    total_agent_duration_ms: totalAgentDurationMs,
+    wall_clock_ms: wallClockMs,
+    parallel_savings_ms: Math.max(0, totalAgentDurationMs - wallClockMs),
+    parallel_limit: analysisParallelLimit,
+    compilador_parallel_limit: compiladorParallelLimit,
+    runtime_profile: analysisRuntimeProfile,
+    runtime_hints: analysisRuntimeHintsLabel,
+    runtime_cap: analysisConcurrencyDiagnostics.runtimeCap,
+    runtime_detail: analysisRuntimeDetail,
+    compilador_runtime_detail: compiladorRuntimeDetail,
+  }
+
   return {
     session_id: sessionId,
     created_at: now,
@@ -888,6 +1007,7 @@ export async function analyzeThesisBank(
     executive_summary: executiveSummary,
     usage_summary: buildUsageSummary(llmExecutions),
     llm_executions: llmExecutions,
+    pipeline_meta: pipelineMeta,
   }
 }
 

@@ -854,12 +854,10 @@ export async function resetAgentModels(uid?: string): Promise<void> {
 /**
  * Five-agent pipeline for the manual "Analisar Teses" feature.
  *
- * Agent execution order:
- *  1. Catalogador    — inventory & similarity clustering
- *  2. Analista       — deep redundancy analysis per cluster
- *  3. Compilador     — draft merged thesis for each merge group
- *  4. Curador        — extract new theses from unanalyzed acervo docs
- *  5. Revisor        — rank, annotate and finalise all suggestions
+ * Execution topology:
+ *  Track A: Catalogador → Analista → Compilador
+ *  Track B: Curador de Lacunas, started in parallel when runtime limits allow
+ *  Final: Revisor, after both tracks finish
  */
 export const THESIS_ANALYST_AGENT_DEFS: AgentModelDef[] = [
   {
@@ -892,7 +890,7 @@ export const THESIS_ANALYST_AGENT_DEFS: AgentModelDef[] = [
   {
     key: 'thesis_curador',
     label: 'Curador de Lacunas',
-    description: 'Extrai novas teses de documentos ainda não analisados, focando em lacunas temáticas',
+    description: 'Extrai novas teses de documentos ainda não analisados em trilha paralela ao inventário do banco',
     defaultModel: '',
     recommendedTier: 'balanced',
     icon: 'book-open',

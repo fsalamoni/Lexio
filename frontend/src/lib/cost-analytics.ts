@@ -146,6 +146,7 @@ const PHASE_LABELS: Record<string, string> = {
   thesis_compilador: 'Compilador',
   thesis_curador: 'Curador de Lacunas',
   thesis_revisor: 'Revisor Final',
+  thesis_revisor_repair: 'Revisor Final (reparo JSON)',
   acervo_buscador: 'Buscador de Acervo',
   acervo_compilador: 'Compilador de Base',
   acervo_revisor: 'Revisor de Base',

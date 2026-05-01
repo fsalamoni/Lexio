@@ -248,6 +248,21 @@ export interface ThesisAnalysisSessionData {
   status: 'completed' | 'partially_applied'
   usage_summary?: UsageSummary
   llm_executions?: UsageExecutionRecord[]
+  pipeline_meta?: {
+    pipeline_version?: string
+    phase_durations_ms?: Record<string, number>
+    total_agent_duration_ms?: number
+    wall_clock_ms?: number
+    parallel_savings_ms?: number
+    parallel_limit?: number
+    compilador_parallel_limit?: number
+    runtime_profile?: string | null
+    runtime_hints?: string | null
+    runtime_cap?: number
+    runtime_detail?: string | null
+    compilador_runtime_detail?: string | null
+    runtime_diagnostics?: Record<string, unknown>
+  }
 }
 
 // ── Acervo ───────────────────────────────────────────────────────────────────
