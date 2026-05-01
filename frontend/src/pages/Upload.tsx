@@ -21,6 +21,7 @@ import {
   type AdminClassificationTipos,
   type AdminLegalArea,
 } from '../lib/firestore-service'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
 import { generateAcervoEmenta, generateAcervoTags, NATUREZA_OPTIONS, type NaturezaValue } from '../lib/generation-service'
 import { ModelsNotConfiguredError } from '../lib/model-config'
 import type { UsageExecutionRecord } from '../lib/cost-analytics'
@@ -1033,7 +1034,7 @@ export default function Upload() {
 
   const fetchHistory = useCallback(() => {
     if (IS_FIREBASE && userId) {
-      listAcervoDocuments(userId)
+      withTransientFirebaseAuthRetry(() => listAcervoDocuments(userId))
         .then(res => setFirebaseHistory(res.items))
         .catch(() => toast.error('Erro ao carregar histórico do acervo'))
       return

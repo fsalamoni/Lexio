@@ -793,8 +793,11 @@ async function withFirestoreRetry<T>(
       // are routed through the destructive recovery path above.
       const burst = registerPermissionDeniedBurst(contextLabel)
       if (burst.shouldTriggerKillSwitch) {
+        const routePath = typeof window !== 'undefined' && window.location ? window.location.pathname : 'n/a'
+        const uid = getCurrentFirebaseAuthUid() || 'anonymous'
+        const sessionFingerprint = `${uid.slice(0, 8)}@${routePath}`
         console.warn(
-          `[Firestore Auth] permission-denied burst observed (count=${burst.burstCount}, contexts=${burst.uniqueContexts}, latest=${contextLabel}). Session preserved; relying on retry+token refresh to recover.`,
+          `[Firestore PD-Burst] context=${contextLabel} count=${burst.burstCount} uniqueContexts=${burst.uniqueContexts} route=${routePath} session=${sessionFingerprint}. Session preserved; relying on retry+token refresh to recover.`,
         )
         clearPermissionDeniedBurstForCurrentUser()
       }

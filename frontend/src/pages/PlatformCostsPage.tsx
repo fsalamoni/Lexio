@@ -9,6 +9,7 @@ import { V2EmptyState, V2MetricGrid, V2PageHero } from '../components/v2/V2PageP
 import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
 import { getPlatformCostBreakdown } from '../lib/firestore-service'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
 import type { CostBreakdown, CostBreakdownItem } from '../lib/cost-analytics'
 import { fmtUsd, fmtBrl, fmtInt } from '../lib/currency-utils'
 
@@ -167,25 +168,30 @@ export default function PlatformCostsPage() {
   }, [])
 
   useEffect(() => {
+    if (!isReady) return
+    let cancelled = false
     const load = async () => {
       setLoading(true)
       try {
         if (!IS_FIREBASE) {
           throw new Error('Os custos agregados da plataforma estão disponíveis apenas no modo Firebase.')
         }
-        setBreakdown(await getPlatformCostBreakdown())
+        const result = await withTransientFirebaseAuthRetry(() => getPlatformCostBreakdown())
+        if (!cancelled) setBreakdown(result)
       } catch (err) {
+        if (cancelled) return
         console.error(err)
         const { humanizeError } = await import('../lib/error-humanizer')
         const h = humanizeError(err)
         toast.error('Erro ao carregar custos agregados da plataforma', h.detail || h.title)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     load()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { cancelled = true }
+  }, [isReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const functionChart = useMemo(() => breakdown?.by_function.slice(0, 8).map(row => ({ label: row.label, usd: row.cost_usd })) ?? [], [breakdown])
   const providerChart = useMemo(() => breakdown?.by_provider.slice(0, 8).map(row => ({ label: row.label, usd: row.cost_usd })) ?? [], [breakdown])

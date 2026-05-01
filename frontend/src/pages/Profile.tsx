@@ -6,6 +6,7 @@ import { useToast } from '../components/Toast'
 import { Skeleton } from '../components/Skeleton'
 import { IS_FIREBASE, firebaseAuth } from '../lib/firebase'
 import { getProfile, saveProfile } from '../lib/firestore-service'
+import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
 import { PROFILE_SECTIONS, type ProfileData } from '../lib/profile-preferences'
 
 export default function Profile() {
@@ -15,22 +16,37 @@ export default function Profile() {
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['professional']))
   const [pwForm, setPwForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
   const [savingPw, setSavingPw] = useState(false)
-  const { userId } = useAuth()
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadTick, setReloadTick] = useState(0)
+  const { userId, isReady } = useAuth()
   const toast = useToast()
 
   useEffect(() => {
-    if (IS_FIREBASE && userId) {
-      getProfile(userId)
-        .then(data => setProfile(data || {}))
-        .catch(() => toast.error('Erro ao carregar perfil'))
-        .finally(() => setLoading(false))
-    } else {
-      api.get('/anamnesis/profile')
-        .then(res => setProfile(res.data || {}))
-        .catch(() => toast.error('Erro ao carregar perfil'))
-        .finally(() => setLoading(false))
+    if (IS_FIREBASE && (!isReady || !userId)) {
+      // Aguarda hidratação do Firebase Auth antes de qualquer leitura no Firestore.
+      return
     }
-  }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
+    let cancelled = false
+    setLoading(true)
+    setLoadError(null)
+    const run = async () => {
+      try {
+        if (IS_FIREBASE && userId) {
+          const data = await withTransientFirebaseAuthRetry(() => getProfile(userId))
+          if (!cancelled) setProfile(data || {})
+        } else {
+          const res = await api.get('/anamnesis/profile')
+          if (!cancelled) setProfile(res.data || {})
+        }
+      } catch {
+        if (!cancelled) setLoadError('Não foi possível carregar seu perfil. Tente novamente.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    run()
+    return () => { cancelled = true }
+  }, [userId, isReady, reloadTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateField = (key: string, value: any) => {
     setProfile(prev => ({ ...prev, [key]: value }))
@@ -217,6 +233,22 @@ export default function Profile() {
         <Skeleton className="h-8 w-40" />
         <Skeleton className="h-48 rounded-xl" />
         <Skeleton className="h-48 rounded-xl" />
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="max-w-2xl">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 flex items-center justify-between gap-4">
+          <span>{loadError}</span>
+          <button
+            onClick={() => setReloadTick(t => t + 1)}
+            className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-medium hover:bg-rose-700"
+          >
+            Tentar novamente
+          </button>
+        </div>
       </div>
     )
   }
