@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, Trash2, FileText } from 'lucide-react'
+import { BookOpen, Search, Tag, ChevronDown, ChevronUp, Star, Copy, Check as CheckIcon, Download, Plus, Pencil, Trash2, FileText, LogIn } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
@@ -39,6 +39,49 @@ interface ThesisStats {
   by_area: Record<string, number>
   average_quality_score: number | null
   most_used: { id: string; title: string; usage_count: number }[]
+}
+
+type ThesisLoadError = {
+  message: string
+  detail: string
+  code: string | null
+  authRelated: boolean
+}
+
+function getFirebaseErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null
+  const code = (error as { code?: unknown }).code
+  if (typeof code !== 'string') return null
+  return code.replace(/^firestore\//, '')
+}
+
+function isAuthLoadError(error: unknown): boolean {
+  const code = getFirebaseErrorCode(error)
+  if (code === 'permission-denied' || code === 'unauthenticated' || code === 'auth-session-invalid') return true
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return /missing or insufficient permissions|sess[aã]o do firebase/i.test(error.message)
+  }
+  return false
+}
+
+function describeThesisLoadError(error: unknown): ThesisLoadError {
+  const code = getFirebaseErrorCode(error)
+  const authRelated = isAuthLoadError(error)
+  if (authRelated) {
+    return {
+      message: 'Estamos ressincronizando seu acesso ao banco de teses.',
+      detail: 'O Firebase Auth e o Firestore ficaram fora de sincronia. A plataforma vai tentar recarregar automaticamente; se persistir, entre novamente para renovar a sessão.',
+      code,
+      authRelated: true,
+    }
+  }
+
+  return {
+    message: 'Não foi possível carregar suas teses agora. Verifique sua conexão e tente novamente.',
+    detail: 'A sessão local não foi alterada. Use tentar novamente quando a conexão estabilizar.',
+    code,
+    authRelated: false,
+  }
 }
 
 interface ThesisFormData {
@@ -280,30 +323,57 @@ export default function ThesisBank() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingThesis, setEditingThesis] = useState<ThesisItem | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<ThesisLoadError | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const authRecoveryRetryRef = useRef<number | null>(null)
   const seededRef = useRef(false)
   const toast = useToast()
-  const { userId, isReady } = useAuth()
+  const { userId, isReady, logout } = useAuth()
 
   const PAGE = 50
+
+  const clearAuthRecoveryRetry = useCallback(() => {
+    if (authRecoveryRetryRef.current) {
+      window.clearTimeout(authRecoveryRetryRef.current)
+      authRecoveryRetryRef.current = null
+    }
+  }, [])
+
+  const handleLoadFailure = useCallback((error: unknown) => {
+    const nextError = describeThesisLoadError(error)
+    setLoadError(nextError)
+
+    if (nextError.authRelated && typeof window !== 'undefined') {
+      clearAuthRecoveryRetry()
+      authRecoveryRetryRef.current = window.setTimeout(() => {
+        setReloadTick(t => t + 1)
+      }, 1800)
+    }
+  }, [clearAuthRecoveryRetry])
+
+  useEffect(() => () => clearAuthRecoveryRetry(), [clearAuthRecoveryRetry])
 
   const fetchTheses = useCallback((q: string, area: string) => {
     setLoading(true)
     setOffset(0)
     setLoadError(null)
 
-    if (IS_FIREBASE && userId) {
+    if (IS_FIREBASE) {
+      if (!userId) {
+        setLoading(false)
+        return
+      }
       withTransientFirebaseAuthRetry(
         () => listTheses(userId, { q: q || undefined, legalAreaId: area || undefined, limit: PAGE }),
       )
         .then(result => {
+          clearAuthRecoveryRetry()
           setTheses(result.items.map(t => ({ ...t, id: t.id! } as ThesisItem)))
           setTotal(result.total)
           setLoadError(null)
         })
-        .catch(() => setLoadError('Não foi possível carregar suas teses agora. Verifique sua conexão e tente novamente.'))
+        .catch(handleLoadFailure)
         .finally(() => setLoading(false))
     } else {
       const params = new URLSearchParams()
@@ -313,32 +383,33 @@ export default function ThesisBank() {
       params.set('skip', '0')
       api.get(`/theses?${params.toString()}`)
         .then(res => {
+          clearAuthRecoveryRetry()
           setTheses(Array.isArray(res.data?.items) ? res.data.items : [])
           setTotal(typeof res.data?.total === 'number' ? res.data.total : 0)
           setLoadError(null)
         })
-        .catch(() => setLoadError('Não foi possível carregar suas teses agora. Verifique sua conexão e tente novamente.'))
+        .catch(handleLoadFailure)
         .finally(() => setLoading(false))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId])
+  }, [userId, handleLoadFailure, clearAuthRecoveryRetry])
 
   const loadMore = () => {
     const nextOffset = offset + PAGE
     setLoadingMore(true)
 
     if (IS_FIREBASE && userId) {
-      listTheses(userId, {
+      withTransientFirebaseAuthRetry(() => listTheses(userId, {
         q: search || undefined,
         legalAreaId: areaFilter || undefined,
         limit: PAGE,
         skip: nextOffset,
-      })
+      }))
         .then(result => {
           setTheses(prev => [...prev, ...result.items.map(t => ({ ...t, id: t.id! } as ThesisItem))])
           setOffset(nextOffset)
         })
-        .catch(() => toast.error('Erro ao carregar mais teses'))
+        .catch((error) => toast.error('Erro ao carregar mais teses', describeThesisLoadError(error).message))
         .finally(() => setLoadingMore(false))
     } else {
       const params = new URLSearchParams()
@@ -402,13 +473,14 @@ export default function ThesisBank() {
 
   // Debounced search (400ms)
   useEffect(() => {
+    if (IS_FIREBASE && (!isReady || !userId)) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       fetchTheses(search, areaFilter)
     }, 400)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, areaFilter])
+  }, [search, areaFilter, isReady, userId])
 
   const handleAreaFilter = (area: string) => {
     setAreaFilter(prev => prev === area ? '' : area)
@@ -682,16 +754,31 @@ export default function ThesisBank() {
       {loadError ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-6 text-sm text-rose-800 flex flex-col items-start gap-3">
           <div>
-            <p className="font-medium">{loadError}</p>
-            <p className="text-rose-700/80 text-xs mt-1">Sua sessão continua ativa. Isso costuma ser uma dessincronização temporária entre o Firebase Auth e o Firestore.</p>
+            <p className="font-medium">{loadError.message}</p>
+            <p className="text-rose-700/80 text-xs mt-1">{loadError.detail}</p>
+            {loadError.code && (
+              <p className="text-rose-700/70 text-[11px] mt-1">Código: {loadError.code}</p>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => setReloadTick(t => t + 1)}
-            className="px-3 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
-          >
-            Tentar novamente
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setReloadTick(t => t + 1)}
+              className="px-3 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
+            >
+              Tentar novamente
+            </button>
+            {loadError.authRelated && (
+              <button
+                type="button"
+                onClick={() => { void logout() }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white text-rose-700 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                Entrar novamente
+              </button>
+            )}
+          </div>
         </div>
       ) : loading ? (
         <div className="space-y-3">

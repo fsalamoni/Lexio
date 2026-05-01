@@ -42,4 +42,27 @@ describe('firestore-service auth guardrails', () => {
     expect(retryLayer).not.toMatch(/signOut\s*\(/)
     expect(retryLayer).not.toMatch(/firebaseLogout\s*\(/)
   })
+
+    it('keeps platform and admin reads behind Firestore retry helpers', () => {
+      const requiredRetryContexts = [
+        'getSettings',
+        'getLegacySettingsDocData.',
+        'loadPlatformCollections.users',
+        'loadPlatformCollections.documents',
+        'loadPlatformCollections.theses',
+        'loadPlatformCollections.thesisAnalysisSessions',
+        'loadPlatformCollections.acervo',
+        'loadPlatformCollections.researchNotebooks',
+        'loadPlatformCollections.notebookSearchMemory',
+        'backfillNotebookSearchMemoryAcrossPlatform.notebooks',
+        'backfillNotebookSearchMemoryAcrossPlatform.memory.',
+      ]
+
+      for (const contextLabel of requiredRetryContexts) {
+        expect(source).toContain(contextLabel)
+      }
+
+      expect(source).not.toMatch(/await\s+getDocs\(\s*collectionGroup/)
+      expect(source).not.toMatch(/await\s+getDoc\(\s*doc\(db,\s*['"]settings['"]/)
+    })
 })

@@ -72,16 +72,18 @@ const AUTH_DEGRADED_KILL_SWITCH_COOLDOWN_MS = 30_000
 const AUTH_ACCESS_ERROR_CODES = new Set([
   'permission-denied',
   'unauthenticated',
-  'firestore/permission-denied',
-  'firestore/unauthenticated',
   'auth-session-invalid',
-  'firestore/auth-session-invalid',
 ])
+
+function normalizeAuthAccessErrorCode(code: unknown): string | null {
+  if (typeof code !== 'string') return null
+  return code.replace(/^firestore\//, '')
+}
 
 function isAuthAccessError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
-  const code = (error as { code?: unknown }).code
-  if (typeof code === 'string' && AUTH_ACCESS_ERROR_CODES.has(code)) return true
+  const code = normalizeAuthAccessErrorCode((error as { code?: unknown }).code)
+  if (code && AUTH_ACCESS_ERROR_CODES.has(code)) return true
   const message = (error as { message?: unknown }).message
   if (typeof message === 'string' && /missing or insufficient permissions/i.test(message)) {
     return true
@@ -153,13 +155,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setFullName(nextName)
       }
     } catch (error) {
-      // If reading the user's own profile fails with an auth/permission error,
-      // the freshly-issued token is still being rejected by Firestore — meaning
-      // the session is not actually recoverable. Propagate so the caller can
-      // clear the dead session instead of silently leaving the user "logged in"
-      // with an unusable session (which causes an infinite "Sessão inválida"
-      // loop on the dashboard).
       if (isAuthAccessError(error)) {
+        if (!options?.forceRefreshToken) {
+          // During normal hydration, Firestore can briefly reject the current
+          // token before a forced refresh has been attempted. Try one explicit
+          // refresh+profile read before deciding the session is unrecoverable.
+          await syncAuthFromFirebaseUser(fbUser, { forceRefreshToken: true })
+          return
+        }
+
+        // After an explicit forced refresh, continued auth/permission failure
+        // means this session cannot access its own workspace data. Propagate so
+        // recovery can clear the dead session instead of leaving a logged-in UI
+        // where every Firestore read fails.
         throw error
       }
       // Non-auth errors (transient network, offline, etc.) keep the soft

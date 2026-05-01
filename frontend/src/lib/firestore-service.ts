@@ -21,6 +21,7 @@ import {
 import { onAuthStateChanged, onIdTokenChanged } from 'firebase/auth'
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import {
+  emitFirestoreAuthAccessDegraded,
   emitFirestoreAuthSessionInvalid,
 } from './auth-session-events'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
@@ -148,9 +149,10 @@ const FIRESTORE_AUTH_CIRCUIT_COOLDOWN_MS = 800
 // transient token desync between Firebase Auth and Firestore.
 const FIRESTORE_AUTH_CIRCUIT_FAILURE_THRESHOLD = 4
 const FIRESTORE_AUTH_CIRCUIT_FAILURE_WINDOW_MS = 4_000
-const FIRESTORE_PERMISSION_DENIED_BURST_THRESHOLD = 6
+const FIRESTORE_PERMISSION_DENIED_BURST_THRESHOLD = 3
 const FIRESTORE_PERMISSION_DENIED_BURST_WINDOW_MS = 12_000
 const FIRESTORE_PERMISSION_DENIED_MIN_CONTEXTS = 3
+const FIRESTORE_PERMISSION_DENIED_ESCALATION_WINDOW_MS = 30_000
 
 type FirestoreAuthCircuitState = {
   openedAt: number
@@ -171,10 +173,22 @@ type FirestorePermissionDeniedBurstState = {
   contexts: Set<string>
 }
 
+type FirestorePermissionDeniedRecoveryState = {
+  count: number
+  firstAt: number
+  lastAt: number
+  lastContext: string
+}
+
+type FirestoreRetryOptions = {
+  recoverAuthAccessErrors?: boolean
+}
+
 let authStateSyncPromise: Promise<void> | null = null
 const firestoreAuthCircuitByUid = new Map<string, FirestoreAuthCircuitState>()
 const firestoreAuthFailureCounterByUid = new Map<string, FirestoreAuthFailureCounter>()
 const firestorePermissionDeniedBurstByUid = new Map<string, FirestorePermissionDeniedBurstState>()
+const firestorePermissionDeniedRecoveryByUid = new Map<string, FirestorePermissionDeniedRecoveryState>()
 let lastObservedAuthUid: string | null = null
 
 function hasStoredLexioSession(): boolean {
@@ -204,11 +218,13 @@ function syncAuthCircuitUserBoundary(): void {
     firestoreAuthCircuitByUid.clear()
     firestoreAuthFailureCounterByUid.clear()
     firestorePermissionDeniedBurstByUid.clear()
+    firestorePermissionDeniedRecoveryByUid.clear()
   } else {
     // New session/user boundary: never carry a stale open circuit into the new session.
     firestoreAuthCircuitByUid.delete(currentUid)
     firestoreAuthFailureCounterByUid.delete(currentUid)
     firestorePermissionDeniedBurstByUid.delete(currentUid)
+    firestorePermissionDeniedRecoveryByUid.delete(currentUid)
   }
 
   lastObservedAuthUid = currentUid
@@ -240,6 +256,34 @@ function clearPermissionDeniedBurstForCurrentUser(): void {
   const uid = getCurrentFirebaseAuthUid()
   if (!uid) return
   firestorePermissionDeniedBurstByUid.delete(uid)
+}
+
+function clearPermissionDeniedRecoveryForCurrentUser(): void {
+  const uid = getCurrentFirebaseAuthUid()
+  if (!uid) return
+  firestorePermissionDeniedRecoveryByUid.delete(uid)
+}
+
+function registerPermissionDeniedRecoverySignal(contextLabel: string): boolean {
+  const uid = getCurrentFirebaseAuthUid()
+  if (!uid) return false
+
+  const now = Date.now()
+  const existing = firestorePermissionDeniedRecoveryByUid.get(uid)
+  if (!existing || now - existing.lastAt > FIRESTORE_PERMISSION_DENIED_ESCALATION_WINDOW_MS) {
+    firestorePermissionDeniedRecoveryByUid.set(uid, {
+      count: 1,
+      firstAt: now,
+      lastAt: now,
+      lastContext: contextLabel,
+    })
+    return false
+  }
+
+  existing.count += 1
+  existing.lastAt = now
+  existing.lastContext = contextLabel
+  return existing.count >= 2
 }
 
 function registerPermissionDeniedBurst(contextLabel: string): {
@@ -322,6 +366,7 @@ function closeAuthAccessCircuitForCurrentUser(): void {
   firestoreAuthCircuitByUid.delete(uid)
   firestoreAuthFailureCounterByUid.delete(uid)
   firestorePermissionDeniedBurstByUid.delete(uid)
+  firestorePermissionDeniedRecoveryByUid.delete(uid)
 }
 
 function throwIfAuthAccessCircuitOpen(contextLabel: string): void {
@@ -351,6 +396,7 @@ export function __resetFirestoreAuthCircuitForTests(): void {
   firestoreAuthCircuitByUid.clear()
   firestoreAuthFailureCounterByUid.clear()
   firestorePermissionDeniedBurstByUid.clear()
+  firestorePermissionDeniedRecoveryByUid.clear()
   lastObservedAuthUid = getCurrentFirebaseAuthUid()
 }
 
@@ -369,6 +415,7 @@ function resetAuthCircuitProactively(reason: string): void {
   firestoreAuthCircuitByUid.delete(uid)
   firestoreAuthFailureCounterByUid.delete(uid)
   firestorePermissionDeniedBurstByUid.delete(uid)
+  firestorePermissionDeniedRecoveryByUid.delete(uid)
   if (hadCircuit) {
     console.warn(`[Firestore Auth Circuit] proactively closed for uid ${uid} (${reason}).`)
   }
@@ -711,9 +758,13 @@ async function refreshCurrentUserToken(): Promise<boolean> {
 async function withFirestoreRetry<T>(
   operation: () => Promise<T>,
   contextLabel: string,
+  options: FirestoreRetryOptions = {},
 ): Promise<T> {
   syncAuthCircuitUserBoundary()
-  throwIfAuthAccessCircuitOpen(contextLabel)
+  const recoverAuthAccessErrors = options.recoverAuthAccessErrors !== false
+  if (recoverAuthAccessErrors) {
+    throwIfAuthAccessCircuitOpen(contextLabel)
+  }
 
   let lastError: unknown = null
 
@@ -738,6 +789,9 @@ async function withFirestoreRetry<T>(
       const isLastAttempt = attempt >= FIRESTORE_AUTH_MAX_RETRIES
 
       if (isAuthRetry) {
+        if (!recoverAuthAccessErrors) {
+          throw error
+        }
         if (isLastAttempt) break
 
         console.warn(
@@ -777,7 +831,7 @@ async function withFirestoreRetry<T>(
   }
 
   // All attempts exhausted.
-  if (isSessionInvalidatingFirestoreError(lastError)) {
+  if (recoverAuthAccessErrors && isSessionInvalidatingFirestoreError(lastError)) {
     const shouldOpenCircuit = registerAuthAccessFailure()
     if (shouldOpenCircuit) {
       openAuthAccessCircuit(contextLabel, lastError)
@@ -789,30 +843,39 @@ async function withFirestoreRetry<T>(
     throw lastError
   }
 
-  if (isAuthAccessFirestoreError(lastError)) {
+  if (recoverAuthAccessErrors && isAuthAccessFirestoreError(lastError)) {
     if (getFirebaseErrorCode(lastError) === 'permission-denied') {
-      // Track bursts for telemetry only. We deliberately do NOT emit
-      // FIRESTORE_AUTH_ACCESS_DEGRADED here: a burst of `permission-denied`
-      // during a page load is almost always a transient token desync between
-      // Firebase Auth and Firestore (token rotation, tab regaining focus,
-      // first navigation after login, etc.) and is fully recoverable by the
-      // SDK on the next call. Reacting to it by destroying the user's session
-      // — as the previous kill-switch did — caused legitimate users to be
-      // silently logged out and bounced to /login mid-flow. Only persistent
-      // session-invalidation errors (`unauthenticated`, `auth-session-invalid`)
-      // are routed through the destructive recovery path above.
       const burst = registerPermissionDeniedBurst(contextLabel)
       if (burst.shouldTriggerKillSwitch) {
         const routePath = typeof window !== 'undefined' && window.location ? window.location.pathname : 'n/a'
         const uid = getCurrentFirebaseAuthUid() || 'anonymous'
         const sessionFingerprint = `${uid.slice(0, 8)}@${routePath}`
+        const shouldEscalate = registerPermissionDeniedRecoverySignal(contextLabel)
+
+        if (shouldEscalate) {
+          console.warn(
+            `[Firestore PD-Burst] context=${contextLabel} count=${burst.burstCount} uniqueContexts=${burst.uniqueContexts} route=${routePath} session=${sessionFingerprint}. Repeated burst after token recovery; escalating to invalid-session recovery.`,
+          )
+          clearPermissionDeniedBurstForCurrentUser()
+          openAuthAccessCircuit(contextLabel, lastError)
+          throw createInvalidFirebaseSessionError(contextLabel, lastError)
+        }
+
+        emitFirestoreAuthAccessDegraded({
+          contextLabel,
+          authUid: getCurrentFirebaseAuthUid(),
+          errorCode: 'permission-denied',
+          burstCount: burst.burstCount,
+          uniqueContexts: burst.uniqueContexts,
+        })
         console.warn(
-          `[Firestore PD-Burst] context=${contextLabel} count=${burst.burstCount} uniqueContexts=${burst.uniqueContexts} route=${routePath} session=${sessionFingerprint}. Session preserved; relying on retry+token refresh to recover.`,
+          `[Firestore PD-Burst] context=${contextLabel} count=${burst.burstCount} uniqueContexts=${burst.uniqueContexts} route=${routePath} session=${sessionFingerprint}. Emitted non-destructive auth recovery signal.`,
         )
         clearPermissionDeniedBurstForCurrentUser()
       }
     } else {
       clearPermissionDeniedBurstForCurrentUser()
+      clearPermissionDeniedRecoveryForCurrentUser()
     }
     throw lastError
   }
@@ -1250,7 +1313,11 @@ function buildFunctionRolloutRationale(input: {
 
 async function getLegacySettingsDocData(documentId: string): Promise<Record<string, unknown>> {
   const db = ensureFirestore()
-  const snap = await getDoc(doc(db, 'settings', documentId))
+  const snap = await withFirestoreRetry(
+    () => getDoc(doc(db, 'settings', documentId)),
+    `getLegacySettingsDocData.${documentId}`,
+    { recoverAuthAccessErrors: false },
+  )
   return snap.exists() ? (snap.data() as Record<string, unknown>) : {}
 }
 
@@ -1263,7 +1330,7 @@ export async function ensureUserSettingsMigrated(uid: string): Promise<UserSetti
   }
 
   try {
-    const globalSettings = await getSettings().catch(() => ({} as Record<string, unknown>))
+    const globalSettings = await getSettings({ recoverAuthAccessErrors: false }).catch(() => ({} as Record<string, unknown>))
     const mergedApiKeys = { ...((globalSettings.api_keys ?? {}) as Record<string, string>) }
 
     for (const flatKey of ['openrouter_api_key', 'datajud_api_key'] as const) {
@@ -1328,16 +1395,19 @@ async function loadPlatformCollections(force = false): Promise<PlatformCollectio
 
   const db = ensureFirestore()
   const [usersSnap, documentsSnap, thesesSnap, sessionsSnap, acervoSnap, notebooksSnap] = await Promise.all([
-    getDocs(collection(db, 'users')),
-    getDocs(collectionGroup(db, 'documents')),
-    getDocs(collectionGroup(db, 'theses')),
-    getDocs(collectionGroup(db, 'thesis_analysis_sessions')),
-    getDocs(collectionGroup(db, 'acervo')),
-    getDocs(collectionGroup(db, 'research_notebooks')),
+    withFirestoreRetry(() => getDocs(collection(db, 'users')), 'loadPlatformCollections.users'),
+    withFirestoreRetry(() => getDocs(collectionGroup(db, 'documents')), 'loadPlatformCollections.documents'),
+    withFirestoreRetry(() => getDocs(collectionGroup(db, 'theses')), 'loadPlatformCollections.theses'),
+    withFirestoreRetry(() => getDocs(collectionGroup(db, 'thesis_analysis_sessions')), 'loadPlatformCollections.thesisAnalysisSessions'),
+    withFirestoreRetry(() => getDocs(collectionGroup(db, 'acervo')), 'loadPlatformCollections.acervo'),
+    withFirestoreRetry(() => getDocs(collectionGroup(db, 'research_notebooks')), 'loadPlatformCollections.researchNotebooks'),
   ])
 
   const operationalWarnings: string[] = []
-  const notebookSearchMemoryDocs = await getDocs(collectionGroup(db, 'memory'))
+  const notebookSearchMemoryDocs = await withFirestoreRetry(
+    () => getDocs(collectionGroup(db, 'memory')),
+    'loadPlatformCollections.notebookSearchMemory',
+  )
     .then(snap => snap.docs)
     .catch(error => {
       const message = getErrorMessage(error)
@@ -2828,7 +2898,10 @@ export async function backfillNotebookSearchMemoryAcrossPlatform(opts?: {
     const constraints: QueryConstraint[] = [orderBy('created_at', 'desc'), limit(pageLimit)]
     if (cursor) constraints.push(startAfter(cursor))
 
-    const notebooksSnap = await getDocs(query(collectionGroup(db, 'research_notebooks'), ...constraints))
+    const notebooksSnap = await withFirestoreRetry(
+      () => getDocs(query(collectionGroup(db, 'research_notebooks'), ...constraints)),
+      'backfillNotebookSearchMemoryAcrossPlatform.notebooks',
+    )
     if (notebooksSnap.empty) break
 
     report.chunks_processed += 1
@@ -2849,7 +2922,10 @@ export async function backfillNotebookSearchMemoryAcrossPlatform(opts?: {
           continue
         }
 
-        const memorySnap = await getDoc(getNotebookSearchMemoryDocRef(uid, notebookDoc.id))
+        const memorySnap = await withFirestoreRetry(
+          () => getDoc(getNotebookSearchMemoryDocRef(uid, notebookDoc.id)),
+          `backfillNotebookSearchMemoryAcrossPlatform.memory.${notebookDoc.id}`,
+        )
         if (memorySnap.exists()) {
           report.already_dedicated += 1
           continue
@@ -3787,10 +3863,14 @@ export async function getAcervoContext(uid: string, maxChars = 8000): Promise<st
 
 // ── Admin settings (Firestore /settings collection) ──────────────────────────
 
-export async function getSettings(): Promise<Record<string, unknown>> {
+export async function getSettings(options: FirestoreRetryOptions = {}): Promise<Record<string, unknown>> {
   const db = ensureFirestore()
   const ref = doc(db, 'settings', 'platform')
-  const snap = await getDoc(ref)
+  const snap = await withFirestoreRetry(
+    () => getDoc(ref),
+    'getSettings',
+    options,
+  )
   if (!snap.exists()) return {}
   return snap.data() as Record<string, unknown>
 }

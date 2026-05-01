@@ -537,16 +537,11 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(mockGetDocs).toHaveBeenCalledTimes(1)
   }, 30_000)
 
-  it('does NOT emit a degraded-auth signal when permission-denied bursts across contexts', async () => {
-    // CRITICAL regression test: a burst of permission-denied errors across
-    // page-load queries (Dashboard, DocumentList, etc.) is almost always a
-    // transient token desync between Firebase Auth and Firestore. Reacting
-    // to it by emitting FIRESTORE_AUTH_ACCESS_DEGRADED — which the previous
-    // implementation did — caused AuthContext to firebaseLogout() and bounce
-    // legitimate users to /login mid-flow. This is the exact symptom the
-    // user reported in production (Apr 2026). The retry+token-refresh logic
-    // in withFirestoreRetry already absorbs the desync; the kill switch must
-    // stay disarmed and let the original error bubble up to the caller.
+  it('emits degraded-auth recovery when permission-denied bursts across contexts', async () => {
+    // CRITICAL regression test: a persistent permission-denied burst must not
+    // leave the user stuck in a logged-in-but-data-inaccessible state. The
+    // first burst emits a non-destructive recovery signal so AuthContext can
+    // force-refresh the ID token while preserving the session.
     const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
       code: 'firestore/permission-denied',
     })
@@ -556,12 +551,46 @@ describe('saveNotebookDocumentToDocuments', () => {
 
     await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
     await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
-    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
     await expect(getResearchNotebook(uid, 'nb-1')).rejects.toMatchObject({ code: 'firestore/permission-denied' })
 
-    expect(mockEmitFirestoreAuthAccessDegraded).not.toHaveBeenCalled()
+    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledTimes(1)
+    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledWith(expect.objectContaining({
+      contextLabel: 'getResearchNotebook',
+      authUid: uid,
+      errorCode: 'permission-denied',
+      burstCount: 3,
+      uniqueContexts: 3,
+    }))
+    expect(mockEmitFirestoreAuthSessionInvalid).not.toHaveBeenCalled()
+  }, 30_000)
+
+  it('escalates repeated permission-denied bursts to invalid-session recovery', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDocs.mockRejectedValue(permissionError)
+    mockGetDoc.mockRejectedValue(permissionError)
+
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getResearchNotebook(uid, 'nb-1')).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+
+    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledTimes(1)
+    expect(mockEmitFirestoreAuthSessionInvalid).not.toHaveBeenCalled()
+
+    await expect(listDocuments(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getUserSettings(uid)).rejects.toMatchObject({ code: 'firestore/permission-denied' })
+    await expect(getResearchNotebook(uid, 'nb-2')).rejects.toMatchObject({
+      code: 'firestore/auth-session-invalid',
+    })
+
+    expect(mockEmitFirestoreAuthAccessDegraded).toHaveBeenCalledTimes(1)
+    expect(mockEmitFirestoreAuthSessionInvalid).toHaveBeenCalledTimes(1)
+    expect(mockEmitFirestoreAuthSessionInvalid).toHaveBeenCalledWith(expect.objectContaining({
+      contextLabel: 'getResearchNotebook',
+      authUid: uid,
+    }))
   }, 30_000)
 
   it('persists user settings to the preferences document with merge', async () => {

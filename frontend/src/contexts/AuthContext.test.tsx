@@ -68,19 +68,21 @@ function Probe({ emitInvalidSession, emitAuthAccessDegraded, triggerManualLogout
   const { isReady, userId, logout } = useAuth()
 
   useEffect(() => {
-    if (!emitInvalidSession) return
+    if (!emitInvalidSession || !isReady || !userId) return
     const timer = window.setTimeout(() => {
       window.dispatchEvent(new CustomEvent(FIRESTORE_AUTH_SESSION_INVALID_EVENT, {
         detail: {
           contextLabel: 'listDocuments.query',
-          authUid: 'user-1',
-          sessionFingerprint: getSessionFingerprint('user-1'),
+          authUid: userId,
+          sessionFingerprint: getSessionFingerprint(userId),
           occurredAt: Date.now(),
+          routePath: '/documents',
+          appVersion: 'test',
         },
       }))
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [emitInvalidSession])
+  }, [emitInvalidSession, isReady, userId])
 
   useEffect(() => {
     if (!triggerManualLogout) return
@@ -88,13 +90,13 @@ function Probe({ emitInvalidSession, emitAuthAccessDegraded, triggerManualLogout
   }, [logout, triggerManualLogout])
 
   useEffect(() => {
-    if (!emitAuthAccessDegraded) return
+    if (!emitAuthAccessDegraded || !isReady || !userId) return
     const timer = window.setTimeout(() => {
       window.dispatchEvent(new CustomEvent(FIRESTORE_AUTH_ACCESS_DEGRADED_EVENT, {
         detail: {
           contextLabel: 'listDocuments.query',
-          authUid: 'user-1',
-          sessionFingerprint: getSessionFingerprint('user-1'),
+          authUid: userId,
+          sessionFingerprint: getSessionFingerprint(userId),
           occurredAt: Date.now(),
           routePath: '/documents',
           appVersion: 'test',
@@ -105,7 +107,7 @@ function Probe({ emitInvalidSession, emitAuthAccessDegraded, triggerManualLogout
       }))
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [emitAuthAccessDegraded])
+  }, [emitAuthAccessDegraded, isReady, userId])
 
   return (
     <>
@@ -208,7 +210,7 @@ describe('AuthContext session recovery', () => {
 
     await waitFor(() => {
       expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
-    })
+    }, { timeout: 3_000 })
 
     await waitFor(() => {
       expect(screen.getByTestId('ready').textContent).toBe('true')
@@ -238,7 +240,7 @@ describe('AuthContext session recovery', () => {
 
     await waitFor(() => {
       expect(mockFirebaseLogout).toHaveBeenCalledTimes(1)
-    })
+    }, { timeout: 3_000 })
 
     await waitFor(() => {
       expect(screen.getByTestId('ready').textContent).toBe('true')
@@ -247,6 +249,33 @@ describe('AuthContext session recovery', () => {
 
     expect(localStorage.getItem('lexio_user_id')).toBeNull()
     expect(localStorage.getItem('lexio_token')).toBeNull()
+  })
+
+  it('recovers initial hydration after one forced refresh when Firestore denial is transient', async () => {
+    currentUser.getIdToken.mockResolvedValue('token-refreshed')
+    mockGetDoc
+      .mockRejectedValueOnce(Object.assign(new Error('Missing or insufficient permissions.'), {
+        code: 'permission-denied',
+      }))
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ role: 'user', full_name: 'Test User' }),
+      })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('user-id').textContent).toBe('user-1')
+    })
+
+    expect(currentUser.getIdToken).toHaveBeenCalledWith(true)
+    expect(mockFirebaseLogout).not.toHaveBeenCalled()
+    expect(localStorage.getItem('lexio_user_id')).toBe('user-1')
   })
 
   it('does not restore an active Firebase session from localStorage when SDK has no current user', async () => {
