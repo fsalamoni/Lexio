@@ -14,6 +14,7 @@ const {
 } = vi.hoisted(() => {
   const hoistedCurrentUser = {
     uid: 'user-1',
+    email: 'user@example.com',
     displayName: 'Test User',
     getIdToken: vi.fn(),
   }
@@ -56,7 +57,7 @@ vi.mock('../lib/auth-service', () => ({
 import { AuthProvider, useAuth } from './AuthContext'
 
 function Probe({ triggerManualLogout }: { triggerManualLogout?: boolean }) {
-  const { isReady, userId, logout } = useAuth()
+  const { isReady, userId, role, logout } = useAuth()
 
   useEffect(() => {
     if (!triggerManualLogout) return
@@ -67,6 +68,7 @@ function Probe({ triggerManualLogout }: { triggerManualLogout?: boolean }) {
     <>
       <div data-testid="ready">{String(isReady)}</div>
       <div data-testid="user-id">{userId ?? 'null'}</div>
+      <div data-testid="role">{role ?? 'null'}</div>
     </>
   )
 }
@@ -79,6 +81,7 @@ describe('AuthContext session lifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    vi.unstubAllEnvs()
     localStorage.setItem('lexio_token', 'token-initial-abcdefghijklmnop')
     localStorage.setItem('lexio_user_id', 'user-1')
     localStorage.setItem('lexio_role', 'user')
@@ -137,6 +140,28 @@ describe('AuthContext session lifecycle', () => {
     expect(mockFirebaseLogout).not.toHaveBeenCalled()
     expect(localStorage.getItem('lexio_user_id')).toBe('user-1')
     expect(localStorage.getItem('lexio_token')).toBe('token-refreshed')
+  })
+
+  it('preserves admin access for the configured admin email when profile hydration is deferred', async () => {
+    vi.stubEnv('VITE_ADMIN_EMAIL', 'admin@example.com')
+    currentUser.email = 'admin@example.com'
+    mockGetDoc.mockRejectedValue(Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'permission-denied',
+    }))
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('role').textContent).toBe('admin')
+    })
+
+    expect(localStorage.getItem('lexio_role')).toBe('admin')
+    expect(mockFirebaseLogout).not.toHaveBeenCalled()
   })
 
   it('keeps the session live when getIdToken fails transiently', async () => {

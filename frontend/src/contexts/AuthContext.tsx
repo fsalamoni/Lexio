@@ -44,6 +44,15 @@ function readStored() {
   }
 }
 
+function resolveRole(profileRole?: string, email?: string | null): 'admin' | 'user' {
+  if (profileRole === 'admin') return 'admin'
+  const adminEmail = import.meta.env.VITE_ADMIN_EMAIL
+  if (adminEmail && email && email.toLowerCase() === adminEmail.toLowerCase()) {
+    return 'admin'
+  }
+  return 'user'
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const initial = readStored()
   const [token,    setToken]    = useState<string | null>(initial.token)
@@ -64,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const snap = await getDoc(doc(firestore, 'users', fbUser.uid))
       if (snap.exists()) {
         const data = snap.data() as { role?: string; full_name?: string }
-        const nextRole = data.role ?? 'user'
+        const nextRole = resolveRole(data.role, fbUser.email)
         const nextName = data.full_name ?? fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
         localStorage.setItem('lexio_role', nextRole)
         localStorage.setItem('lexio_full_name', nextName)
@@ -72,19 +81,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setFullName(nextName)
         return
       }
+      const nextRole = resolveRole(undefined, fbUser.email)
       const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
-      localStorage.setItem('lexio_role', 'user')
+      localStorage.setItem('lexio_role', nextRole)
       localStorage.setItem('lexio_full_name', nextName)
-      setRole('user')
+      setRole(nextRole)
       setFullName(nextName)
     } catch (error) {
       // Soft fallback: keep whatever we already had locally; don't touch session.
+      const nextRole = resolveRole(undefined, fbUser.email)
       const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
-      if (!localStorage.getItem('lexio_role')) {
-        localStorage.setItem('lexio_role', 'user')
+      if (nextRole === 'admin' || !localStorage.getItem('lexio_role')) {
+        localStorage.setItem('lexio_role', nextRole)
       }
       localStorage.setItem('lexio_full_name', nextName)
-      setRole((prev) => prev ?? 'user')
+      setRole((prev) => nextRole === 'admin' ? nextRole : prev ?? 'user')
       setFullName((prev) => prev ?? nextName)
       console.warn('[AuthContext] Profile hydration deferred (non-fatal):', error)
     }

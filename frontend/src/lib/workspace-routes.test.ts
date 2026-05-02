@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildWorkspaceAdminCostsPath,
   buildWorkspaceAdminPath,
+  buildWorkspaceChatPath,
   buildWorkspaceDashboardPath,
   buildWorkspaceDocumentDetailPath,
   buildWorkspaceDocumentEditPath,
@@ -40,6 +41,7 @@ describe('workspace-routes', () => {
     expect(buildWorkspaceThesesPath({ preserveSearch: '?labs=1' })).toBe('/theses')
     expect(buildWorkspaceSettingsPath({ preserveSearch: '?ui_v2=1', hash: 'section_model_catalog' })).toBe('/settings#section_model_catalog')
     expect(buildWorkspaceSettingsCostsPath({ preserveSearch: '?redesign_v2=1' })).toBe('/settings/costs')
+    expect(buildWorkspaceChatPath({ preserveSearch: '?labs=1' })).toBe('/chat')
     expect(buildWorkspaceAdminPath({ preserveSearch: '?labs=1' })).toBe('/admin')
     expect(buildWorkspaceAdminCostsPath({ preserveSearch: '?labs=1' })).toBe('/admin/costs')
     expect(buildWorkspaceProfilePath({ preserveSearch: '?labs=1' })).toBe('/profile')
@@ -47,6 +49,7 @@ describe('workspace-routes', () => {
 
   it('resolves common shell links through one centralized builder', () => {
     expect(buildWorkspaceShellPath('/notebook', { preserveSearch: '?labs=1' })).toBe('/notebook')
+    expect(buildWorkspaceShellPath('/chat', { preserveSearch: '?labs=1' })).toBe('/chat')
     expect(buildWorkspaceShellPath('/settings', { preserveSearch: '?labs=1' })).toBe('/settings')
     expect(buildWorkspaceShellPath('/labs/profile-v2', { preserveSearch: '?labs=1' })).toBe('/labs/profile-v2')
   })
