@@ -117,6 +117,10 @@ export async function withTransientFirebaseAuthRetry<T>(
         return operation()
       }
 
+      if (refresh.status === 'unrecoverable-failure') {
+        throw refresh.error
+      }
+
       // Local token refresh didn't help — ask AuthContext to try a
       // centralized session recovery before giving up.
       dispatchSessionRecoveryNeeded()
