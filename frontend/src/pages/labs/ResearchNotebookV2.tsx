@@ -1,10 +1,10 @@
 import { ChangeEvent, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ArrowRight, BookMarked, BookOpen, Bot, Brain, CheckCircle2, Database, Edit3,
+  Archive, ArchiveRestore, ArrowRight, BookMarked, BookOpen, Bot, Brain, CheckCircle2, Database, Edit3,
   Eye,
   ExternalLink, FileText, FolderOpen, Globe, Link2, Loader2,
-  MessageSquareText, Library, Mic, Plus, RotateCcw, Save, Search,
+  MessageSquareText, Library, Mic, MoreVertical, Pencil, Plus, RotateCcw, Save, Search,
   Send, Sparkles, Trash2, Upload, Wand2, X,
 } from 'lucide-react'
 import { DeepResearchModal, createDeepSearchSteps, createExternalSearchSteps, createJurisprudenceSteps, type ResearchStats, type ResearchStep } from '../../components/DeepResearchModal'
@@ -61,8 +61,8 @@ import {
   type ResearchContextAuditSummary,
 } from '../../lib/notebook-context-audit'
 import { getOpenRouterKey } from '../../lib/generation-service'
-import { callLLMWithFallback, callLLMWithMessages, ModelUnavailableError } from '../../lib/llm-client'
-import { loadResearchNotebookModels, loadVideoPipelineModels } from '../../lib/model-config'
+import { callLLMWithFallback, callLLMWithMessages, callLLMWithMessagesFallback, ModelUnavailableError } from '../../lib/llm-client'
+import { buildPipelineFallbackResolver, loadFallbackPriorityConfig, loadResearchNotebookModels, loadVideoPipelineModels, RESEARCH_NOTEBOOK_AGENT_DEFS } from '../../lib/model-config'
 import { analyzeNotebookAcervo, type AcervoAnalysisProgress, type AnalyzedDocument } from '../../lib/notebook-acervo-analyzer'
 import {
   buildAcervoModalProgressState,
@@ -414,6 +414,8 @@ export default function ResearchNotebookV2() {
   const [loading, setLoading] = useState(true)
   const [selectingNotebook, setSelectingNotebook] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [openMenuNotebookId, setOpenMenuNotebookId] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const [activeNotebook, setActiveNotebook] = useState<ResearchNotebookData | null>(null)
   const [activeSection, setActiveSection] = useState<ResearchNotebookV2Section>(
     parseResearchNotebookV2Section(searchParams.get('section')),
@@ -795,15 +797,42 @@ export default function ResearchNotebookV2() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [activeNotebook?.id, activeNotebook?.messages.length, chatLoading])
 
+  useEffect(() => {
+    if (!openMenuNotebookId) return
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target?.closest('[data-notebook-menu-root]')) {
+        setOpenMenuNotebookId(null)
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenMenuNotebookId(null)
+    }
+    globalThis.document.addEventListener('mousedown', handlePointerDown)
+    globalThis.document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      globalThis.document.removeEventListener('mousedown', handlePointerDown)
+      globalThis.document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [openMenuNotebookId])
+
+  const archivedNotebooksCount = useMemo(
+    () => notebooks.filter((notebook) => notebook.status === 'archived').length,
+    [notebooks],
+  )
+
   const filteredNotebooks = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase()
-    if (!normalizedQuery) return notebooks
-    return notebooks.filter((notebook) => {
+    const visibilityFiltered = notebooks.filter((notebook) =>
+      showArchived ? notebook.status === 'archived' : notebook.status !== 'archived',
+    )
+    if (!normalizedQuery) return visibilityFiltered
+    return visibilityFiltered.filter((notebook) => {
       return notebook.title.toLowerCase().includes(normalizedQuery)
         || notebook.topic.toLowerCase().includes(normalizedQuery)
         || (notebook.description?.toLowerCase().includes(normalizedQuery) ?? false)
     })
-  }, [notebooks, searchQuery])
+  }, [notebooks, searchQuery, showArchived])
 
   const snapshot = useMemo(
     () => (activeNotebook ? buildResearchNotebookV2Snapshot(activeNotebook) : null),
@@ -1005,6 +1034,40 @@ export default function ResearchNotebookV2() {
     } catch {
       toast.error('Erro ao excluir caderno')
     }
+  }
+
+  const handleRenameNotebook = async (notebook: ResearchNotebookData) => {
+    if (!userId || !notebook.id) return
+    const nextTitle = window.prompt('Novo título da conversa:', notebook.title)
+    if (nextTitle === null) return
+    const trimmed = nextTitle.trim()
+    if (!trimmed || trimmed === notebook.title) return
+    try {
+      await updateResearchNotebook(userId, notebook.id, { title: trimmed })
+      patchNotebook(notebook.id, { title: trimmed, updated_at: new Date().toISOString() })
+      toast.success('Conversa renomeada')
+    } catch {
+      toast.error('Erro ao renomear conversa')
+    }
+  }
+
+  const handleToggleArchiveNotebook = async (notebook: ResearchNotebookData) => {
+    if (!userId || !notebook.id) return
+    const nextStatus: ResearchNotebookData['status'] = notebook.status === 'archived' ? 'active' : 'archived'
+    try {
+      await updateResearchNotebook(userId, notebook.id, { status: nextStatus })
+      patchNotebook(notebook.id, { status: nextStatus, updated_at: new Date().toISOString() })
+      toast.success(nextStatus === 'archived' ? 'Conversa arquivada' : 'Conversa desarquivada')
+    } catch {
+      toast.error('Erro ao atualizar a conversa')
+    }
+  }
+
+  const handleOpenNotebookInNewTab = (notebook: ResearchNotebookData) => {
+    if (!notebook.id) return
+    const path = buildResearchNotebookWorkbenchPath({ notebookId: notebook.id, section: 'chat' })
+    const url = `${globalThis.location.origin}${path}`
+    globalThis.open(url, '_blank', 'noopener,noreferrer')
   }
 
   const handleChangeSection = (section: ResearchNotebookV2Section) => {
@@ -2354,11 +2417,11 @@ export default function ResearchNotebookV2() {
     const notebookId = activeNotebook.id
     const previousMessages = activeNotebook.messages
     const previousExecutions = activeNotebook.llm_executions || []
-    const previousUpdatedAt = activeNotebook.updated_at
+    const userInput = chatInput.trim()
     const userMsg: NotebookMessage = {
       id: generateId(),
       role: 'user',
-      content: chatInput.trim(),
+      content: userInput,
       created_at: new Date().toISOString(),
     }
 
@@ -2367,17 +2430,68 @@ export default function ResearchNotebookV2() {
     setChatInput('')
     setChatLoading(true)
 
+    // Persist the user message immediately so it's never lost — even if the
+    // assistant call fails, the conversation history reflects what the user
+    // actually typed. The orchestrator MUST never lose user input.
     try {
-      const apiKey = await getOpenRouterKey(userId || undefined)
-      const models = await loadResearchNotebookModels(userId)
-      const model = models.notebook_assistente
-      if (!model) {
-        patchNotebook(notebookId, {
-          messages: previousMessages,
-          llm_executions: previousExecutions,
-          updated_at: previousUpdatedAt,
+      await updateResearchNotebook(userId, notebookId, { messages: optimisticMessages })
+    } catch (persistError) {
+      console.warn('[Lexio] handleSendMessage: failed to persist user message immediately', persistError)
+      // We deliberately don't rollback here — keep the optimistic UI; the
+      // next persistence pass (after the assistant reply) will reconcile.
+    }
+
+    const appendAssistantFailureMessage = async (failureContent: string) => {
+      const failureMsg: NotebookMessage = {
+        id: generateId(),
+        role: 'assistant',
+        content: failureContent,
+        agent: 'notebook_assistente',
+        created_at: new Date().toISOString(),
+      }
+      const failureMessages = [...optimisticMessages, failureMsg]
+      patchNotebook(notebookId, { messages: failureMessages, updated_at: failureMsg.created_at })
+      try {
+        const fresh = await getFreshNotebookOrThrow(notebookId).catch(() => null)
+        const base = fresh?.messages.some((m) => m.id === userMsg.id)
+          ? fresh.messages
+          : [...(fresh?.messages || optimisticMessages.slice(0, -1)), userMsg]
+        await updateResearchNotebook(userId, notebookId, {
+          messages: [...base, failureMsg],
         })
-        setChatInput(userMsg.content)
+      } catch (persistError) {
+        console.warn('[Lexio] handleSendMessage: failed to persist failure message', persistError)
+      }
+    }
+
+    try {
+      const apiKey = await getOpenRouterKey(userId || undefined).catch((error) => {
+        console.warn('[Lexio] handleSendMessage: failed to load API key', error)
+        return ''
+      })
+      if (!apiKey) {
+        await appendAssistantFailureMessage(
+          '⚠️ Não foi possível obter a chave OpenRouter. Configure-a em Configurações > API Keys e tente novamente. Sua mensagem está salva no histórico.',
+        )
+        toast.warning('Chave OpenRouter ausente', 'Configure sua chave em Configurações > API Keys.')
+        return
+      }
+
+      const [models, fallbackConfig] = await Promise.all([
+        loadResearchNotebookModels(userId).catch((error) => {
+          console.warn('[Lexio] handleSendMessage: failed to load research notebook models', error)
+          return null
+        }),
+        loadFallbackPriorityConfig(userId || undefined).catch((error) => {
+          console.warn('[Lexio] handleSendMessage: failed to load fallback config', error)
+          return {}
+        }),
+      ])
+      const model = models?.notebook_assistente
+      if (!model) {
+        await appendAssistantFailureMessage(
+          `⚠️ O agente "${AGENT_LABELS.notebook_assistente}" não possui modelo configurado. Vá em Configurações > Caderno de Pesquisa e selecione um modelo. Sua mensagem está salva no histórico.`,
+        )
         toast.warning(
           'Modelo não configurado',
           `O agente "${AGENT_LABELS.notebook_assistente}" não possui modelo. Vá em Configurações > Caderno de Pesquisa e selecione um.`,
@@ -2399,7 +2513,8 @@ export default function ResearchNotebookV2() {
       if (useWebSearch) {
         try {
           webSnippet = (await searchWebService(`${activeNotebook.topic} ${userMsg.content}`)).slice(0, MAX_WEB_SEARCH_CHARS)
-        } catch {
+        } catch (webError) {
+          console.warn('[Lexio] handleSendMessage: web search failed (continuing without web context)', webError)
           webSnippet = ''
         }
       }
@@ -2449,7 +2564,50 @@ Instruções:
         { role: 'user', content: userMsg.content },
       ]
 
-      const result = await callLLMWithMessages(apiKey, llmMessages, model, 4000, 0.3)
+      // Build the user-configured fallback chain so the orchestrator can
+      // recover from transient errors and unavailable models without crashing.
+      const resolveFallbacks = buildPipelineFallbackResolver(RESEARCH_NOTEBOOK_AGENT_DEFS, fallbackConfig)
+      const fallbackChain = resolveFallbacks('notebook_assistente', model)
+
+      // Multi-attempt strategy: the LLM client already retries transient
+      // errors and walks the fallback chain. We add one extra outer attempt
+      // (with a brief pause) to recover from intermittent provider issues
+      // that the inner retries didn't shake off. The orchestrator never
+      // throws an unhandled crash to the UI.
+      const MAX_OUTER_ATTEMPTS = 2
+      let result: Awaited<ReturnType<typeof callLLMWithMessagesFallback>> | null = null
+      let lastError: unknown = null
+      for (let attempt = 1; attempt <= MAX_OUTER_ATTEMPTS; attempt += 1) {
+        try {
+          result = await callLLMWithMessagesFallback(
+            apiKey,
+            llmMessages,
+            model,
+            fallbackChain,
+            4000,
+            0.3,
+          )
+          break
+        } catch (attemptError) {
+          lastError = attemptError
+          if (attemptError instanceof DOMException && attemptError.name === 'AbortError') break
+          if (attempt < MAX_OUTER_ATTEMPTS) {
+            await new Promise((resolve) => globalThis.setTimeout(resolve, 1500 * attempt))
+          }
+        }
+      }
+
+      if (!result) {
+        const humanized = humanizeError(lastError)
+        const detail = lastError instanceof ModelUnavailableError
+          ? `O modelo "${lastError.modelId}" e seus fallbacks estão indisponíveis. Vá em Configurações > Caderno de Pesquisa para revisar a seleção, ou em Configurações > Prioridades de Fallback para ampliar as opções.`
+          : humanized.detail
+        await appendAssistantFailureMessage(
+          `⚠️ Não consegui gerar uma resposta após múltiplas tentativas. ${detail}\n\nSua mensagem está salva no histórico — você pode reformular a pergunta ou tentar novamente em alguns instantes.`,
+        )
+        toast.error('Erro ao gerar resposta', detail)
+        return
+      }
 
       const assistantMsg: NotebookMessage = {
         id: generateId(),
@@ -2472,38 +2630,43 @@ Instruções:
         duration_ms: result.duration_ms,
       })
 
-      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
-      const baseMessages = freshNotebook.messages.some((message) => message.id === userMsg.id)
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId).catch(() => null)
+      const baseMessages = freshNotebook?.messages.some((message) => message.id === userMsg.id)
         ? freshNotebook.messages
-        : [...freshNotebook.messages, userMsg]
+        : [...(freshNotebook?.messages || optimisticMessages.slice(0, -1)), userMsg]
       const finalMessages = [...baseMessages, assistantMsg]
-      const updatedExecutions = [...(freshNotebook.llm_executions || []), execution]
+      const updatedExecutions = [...(freshNotebook?.llm_executions || previousExecutions), execution]
 
-      await updateResearchNotebook(userId, notebookId, {
-        messages: finalMessages,
-        llm_executions: updatedExecutions,
-      })
+      try {
+        await updateResearchNotebook(userId, notebookId, {
+          messages: finalMessages,
+          llm_executions: updatedExecutions,
+        })
+      } catch (persistError) {
+        console.warn('[Lexio] handleSendMessage: failed to persist assistant reply (UI still shows it)', persistError)
+      }
       patchNotebook(notebookId, {
         messages: finalMessages,
         llm_executions: updatedExecutions,
         updated_at: assistantMsg.created_at,
       })
-    } catch (error) {
-      patchNotebook(notebookId, {
-        messages: previousMessages,
-        llm_executions: previousExecutions,
-        updated_at: previousUpdatedAt,
-      })
-      setChatInput(userMsg.content)
-      if (error instanceof ModelUnavailableError) {
-        toast.warning(
-          `Modelo indisponível: ${error.modelId}`,
-          `O modelo do agente "${AGENT_LABELS.notebook_assistente}" foi removido do OpenRouter. Vá em Configurações > Caderno de Pesquisa e substitua-o.`,
+
+      if (result.operational?.fallbackUsed) {
+        toast.info(
+          'Modelo de fallback utilizado',
+          `O modelo principal falhou; respondi usando "${result.model}".`,
         )
-      } else {
-        const humanized = humanizeError(error)
-        toast.error('Erro ao gerar resposta', humanized.detail)
       }
+    } catch (unexpectedError) {
+      // Catch-all so the orchestrator NEVER crashes the page or loses user
+      // input. We surface the failure as an assistant message so the
+      // conversation timeline stays intact and the user can retry.
+      console.error('[Lexio] handleSendMessage: unexpected failure (handled)', unexpectedError)
+      const humanized = humanizeError(unexpectedError)
+      await appendAssistantFailureMessage(
+        `⚠️ Ocorreu um erro inesperado: ${humanized.detail}\n\nSua mensagem está salva no histórico. Tente novamente — o orquestrador continua disponível.`,
+      )
+      toast.error('Erro inesperado no orquestrador', humanized.detail)
     } finally {
       setChatLoading(false)
     }
@@ -4205,10 +4368,25 @@ Instruções:
           <div className="v2-panel p-4">
             <div className="flex items-center justify-between gap-3 px-2 pb-2">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Fila de cadernos</p>
-                <p className="mt-1 text-sm text-[var(--v2-ink-soft)]">Seleção persistente com foco em retomada.</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">
+                  {showArchived ? 'Conversas arquivadas' : 'Fila de cadernos'}
+                </p>
+                <p className="mt-1 text-sm text-[var(--v2-ink-soft)]">
+                  {showArchived ? 'Conversas arquivadas — visíveis apenas neste filtro.' : 'Seleção persistente com foco em retomada.'}
+                </p>
               </div>
               {(loading || selectingNotebook) && <Loader2 className="h-4 w-4 animate-spin text-[var(--v2-accent-strong)]" />}
+            </div>
+
+            <div className="mb-3 flex items-center justify-between gap-2 px-2">
+              <button
+                type="button"
+                onClick={() => setShowArchived((prev) => !prev)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--v2-line-soft)] bg-white/60 px-3 py-1 text-[11px] font-medium text-[var(--v2-ink-soft)] transition-colors hover:border-[var(--v2-line-strong)] hover:bg-white"
+              >
+                {showArchived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                {showArchived ? 'Mostrar ativas' : `Arquivadas${archivedNotebooksCount > 0 ? ` (${archivedNotebooksCount})` : ''}`}
+              </button>
             </div>
 
             <div className="space-y-3">
@@ -4216,22 +4394,43 @@ Instruções:
                 Array.from({ length: 4 }).map((_, index) => <SkeletonCard key={index} />)
               ) : filteredNotebooks.length === 0 ? (
                 <div className="rounded-[1.4rem] border border-dashed border-[var(--v2-line-strong)] px-4 py-8 text-center text-sm text-[var(--v2-ink-soft)]">
-                  Nenhum caderno encontrado para o filtro atual.
+                  {showArchived ? 'Nenhuma conversa arquivada.' : 'Nenhum caderno encontrado para o filtro atual.'}
                 </div>
               ) : (
                 filteredNotebooks.map((notebook) => {
                   const itemSnapshot = buildResearchNotebookV2Snapshot(notebook)
                   const isActive = activeNotebook?.id === notebook.id
+                  const isMenuOpen = openMenuNotebookId === notebook.id
+                  const isArchived = notebook.status === 'archived'
+                  const hasRunningTask = tasks.some((task) => {
+                    if (task.status !== 'running') return false
+                    const metadata = getNotebookArtifactTaskMetadata(task.metadata)
+                    return metadata?.notebookId === notebook.id
+                  })
+                  const isCurrentChatRunning = isActive && chatLoading
+                  const isRunning = hasRunningTask || isCurrentChatRunning
 
                   return (
                     <div
                       key={notebook.id}
-                      className={`rounded-[1.4rem] border px-4 py-4 transition-all ${isActive ? 'border-[rgba(15,118,110,0.32)] bg-[rgba(15,118,110,0.08)] shadow-[var(--v2-shadow-soft)]' : 'border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] hover:-translate-y-0.5 hover:border-[var(--v2-line-strong)]'}`}
+                      className={`relative rounded-[1.4rem] border px-4 py-4 transition-all ${isActive ? 'border-[rgba(15,118,110,0.32)] bg-[rgba(15,118,110,0.08)] shadow-[var(--v2-shadow-soft)]' : 'border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] hover:-translate-y-0.5 hover:border-[var(--v2-line-strong)]'} ${isArchived ? 'opacity-80' : ''}`}
                     >
                       <button type="button" onClick={() => notebook.id && void hydrateNotebook(notebook.id, activeSection, true)} className="w-full text-left">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-[var(--v2-ink-strong)]">{notebook.title}</p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              {isRunning ? (
+                                <span title="Em execução" className="inline-flex h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-amber-500 shadow-[0_0_0_3px_rgba(245,158,11,0.18)]" aria-label="Em execução" />
+                              ) : (
+                                <span title="Concluído" className="inline-flex h-2 w-2 flex-shrink-0 rounded-full bg-emerald-500" aria-label="Concluído" />
+                              )}
+                              <p className="truncate text-sm font-semibold text-[var(--v2-ink-strong)]">{notebook.title}</p>
+                              {isArchived && (
+                                <span className="ml-1 rounded-full bg-[rgba(15,23,42,0.08)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">
+                                  arquivada
+                                </span>
+                              )}
+                            </div>
                             <p className="mt-1 truncate text-xs text-[var(--v2-ink-soft)]">{notebook.topic}</p>
                           </div>
                           <span className="rounded-full bg-[rgba(15,23,42,0.06)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">
@@ -4243,6 +4442,12 @@ Instruções:
                           <span>{itemSnapshot.messageCount} msg</span>
                           <span>{itemSnapshot.artifactCount} artefatos</span>
                           <span>{itemSnapshot.savedSearchCount} buscas salvas</span>
+                          {isRunning && (
+                            <span className="inline-flex items-center gap-1 font-medium text-amber-700">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Em execução
+                            </span>
+                          )}
                         </div>
 
                         <p className="mt-3 text-[11px] text-[var(--v2-ink-faint)]">
@@ -4250,11 +4455,78 @@ Instruções:
                         </p>
                       </button>
 
-                      <div className="mt-3 flex items-center justify-end">
-                        <button type="button" onClick={() => handleDeleteNotebook(notebook)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-red-600 transition-colors hover:bg-red-50">
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Excluir
+                      <div data-notebook-menu-root className="absolute right-3 top-3">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setOpenMenuNotebookId((current) => (current === notebook.id ? null : (notebook.id ?? null)))
+                          }}
+                          aria-label="Opções da conversa"
+                          aria-haspopup="menu"
+                          aria-expanded={isMenuOpen}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-transparent text-[var(--v2-ink-soft)] transition-colors hover:border-[var(--v2-line-strong)] hover:bg-white"
+                        >
+                          <MoreVertical className="h-4 w-4" />
                         </button>
+
+                        {isMenuOpen && (
+                          <div role="menu" className="absolute right-0 z-10 mt-1 w-52 overflow-hidden rounded-[0.9rem] border border-[var(--v2-line-strong)] bg-white shadow-lg">
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                setOpenMenuNotebookId(null)
+                                void handleRenameNotebook(notebook)
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--v2-ink-strong)] transition-colors hover:bg-[rgba(15,118,110,0.06)]"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Renomear
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                setOpenMenuNotebookId(null)
+                                handleOpenNotebookInNewTab(notebook)
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--v2-ink-strong)] transition-colors hover:bg-[rgba(15,118,110,0.06)]"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              Abrir em nova aba
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                setOpenMenuNotebookId(null)
+                                void handleToggleArchiveNotebook(notebook)
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--v2-ink-strong)] transition-colors hover:bg-[rgba(15,118,110,0.06)]"
+                            >
+                              {isArchived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                              {isArchived ? 'Desarquivar' : 'Arquivar'}
+                            </button>
+                            <div className="h-px bg-[var(--v2-line-soft)]" />
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                setOpenMenuNotebookId(null)
+                                void handleDeleteNotebook(notebook)
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Excluir
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
