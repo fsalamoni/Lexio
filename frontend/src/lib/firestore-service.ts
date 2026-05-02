@@ -84,6 +84,11 @@ export type {
   PlatformFunctionRolloutGuardrails,
   PlatformFunctionRolloutPolicyRow,
   PlatformFunctionRolloutPolicyPlan,
+  ChatEffortLevel,
+  ChatTurnStatus,
+  ChatTrailEvent,
+  ChatConversationData,
+  ChatTurnData,
 } from './firestore-types'
 import type {
   ProfileData,
@@ -122,6 +127,9 @@ import type {
   PlatformFunctionRolloutGuardrails,
   PlatformFunctionRolloutPolicyRow,
   PlatformFunctionRolloutPolicyPlan,
+  ChatEffortLevel,
+  ChatConversationData,
+  ChatTurnData,
 } from './firestore-types'
 
 // Re-export DEFAULT_DOC_STRUCTURES for backward compatibility
@@ -4039,6 +4047,322 @@ export async function deleteResearchNotebook(uid: string, notebookId: string): P
     )
   } catch {
     // Ignore missing/forbidden dedicated memory doc; notebook deletion is the source of truth.
+  }
+}
+
+// ── Chat Orchestrator (page `/chat`) ─────────────────────────────────────────
+
+/**
+ * Chat conversation CRUD. Each conversation lives under
+ * `/users/{uid}/chat_conversations/{conversationId}`; turns are stored in the
+ * `turns` subcollection. The orchestrator runtime (PR2) writes to these
+ * collections; PR1 ships only the data layer + UI shell.
+ *
+ * IMPORTANT: these helpers MUST NOT synthesize session-invalid errors when a
+ * Firestore call is rejected with permission-denied or unauthenticated. We
+ * propagate the original error to the caller so a transient burst (e.g., a
+ * stale token between renews) does not bounce a live user to /login. This
+ * mirrors the post-580392b contract for every user-scoped collection.
+ */
+
+const CHAT_CONVERSATIONS_COLLECTION = 'chat_conversations'
+const CHAT_TURNS_SUBCOLLECTION = 'turns'
+const DEFAULT_CHAT_EFFORT: ChatEffortLevel = 'medio'
+
+function chatConversationCollection(db: ReturnType<typeof ensureFirestore>, uid: string) {
+  return collection(db, 'users', uid, CHAT_CONVERSATIONS_COLLECTION)
+}
+
+function chatConversationDoc(
+  db: ReturnType<typeof ensureFirestore>,
+  uid: string,
+  conversationId: string,
+) {
+  return doc(
+    db,
+    'users',
+    uid,
+    CHAT_CONVERSATIONS_COLLECTION,
+    normalizeFirestoreDocumentId(conversationId),
+  )
+}
+
+function chatTurnsCollection(
+  db: ReturnType<typeof ensureFirestore>,
+  uid: string,
+  conversationId: string,
+) {
+  return collection(
+    db,
+    'users',
+    uid,
+    CHAT_CONVERSATIONS_COLLECTION,
+    normalizeFirestoreDocumentId(conversationId),
+    CHAT_TURNS_SUBCOLLECTION,
+  )
+}
+
+function chatTurnDoc(
+  db: ReturnType<typeof ensureFirestore>,
+  uid: string,
+  conversationId: string,
+  turnId: string,
+) {
+  return doc(
+    db,
+    'users',
+    uid,
+    CHAT_CONVERSATIONS_COLLECTION,
+    normalizeFirestoreDocumentId(conversationId),
+    CHAT_TURNS_SUBCOLLECTION,
+    normalizeFirestoreDocumentId(turnId),
+  )
+}
+
+/**
+ * List every chat conversation for the current user, newest-first.
+ * Falls back to a client-side sort if the indexed query is rejected (e.g.,
+ * the collection is brand-new and Firestore has not built the index yet).
+ */
+export async function listChatConversations(uid: string): Promise<{ items: ChatConversationData[] }> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'listChatConversations')
+  const colRef = chatConversationCollection(db, effectiveUid)
+  try {
+    const snap = await withFirestoreRetry(
+      () => getDocs(query(colRef, orderBy('updated_at', 'desc'))),
+      'listChatConversations.query',
+    )
+    return {
+      items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatConversationData)),
+    }
+  } catch (error) {
+    if (isAuthAccessFirestoreError(error)) {
+      throw error
+    }
+    console.warn(
+      'Firestore chat conversations query failed; using client-side fallback:',
+      getErrorMessage(error),
+    )
+    const fallbackSnap = await withFirestoreRetry(
+      () => getDocs(colRef),
+      'listChatConversations.fallback',
+    )
+    const items = fallbackSnap.docs
+      .map(d => ({ id: d.id, ...d.data() } as ChatConversationData))
+      .sort((a, b) => getDocumentCreatedAtValue(b.updated_at ?? b.created_at)
+        - getDocumentCreatedAtValue(a.updated_at ?? a.created_at))
+    return { items }
+  }
+}
+
+export async function getChatConversation(
+  uid: string,
+  conversationId: string,
+): Promise<ChatConversationData | null> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'getChatConversation')
+  const ref = chatConversationDoc(db, effectiveUid, conversationId)
+  const snap = await withFirestoreRetry(() => getDoc(ref), 'getChatConversation')
+  if (!snap.exists()) return null
+  return { id: snap.id, ...snap.data() } as ChatConversationData
+}
+
+/**
+ * Create a chat conversation. The document only stores metadata (title,
+ * effort knob, last preview). Returns the freshly minted Firestore ID.
+ */
+export async function createChatConversation(
+  uid: string,
+  data: Partial<Pick<ChatConversationData, 'title' | 'effort' | 'sidecar_root_path' | 'last_preview'>> = {},
+): Promise<string> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'createChatConversation')
+  const now = new Date().toISOString()
+  const sanitized = stripUndefined({
+    title: data.title?.trim() || 'Nova conversa',
+    effort: (data.effort ?? DEFAULT_CHAT_EFFORT) as ChatEffortLevel,
+    sidecar_root_path: data.sidecar_root_path,
+    last_preview: data.last_preview ?? '',
+    created_at: now,
+    updated_at: now,
+  })
+  const ref = await withFirestoreRetry(
+    () => addDoc(chatConversationCollection(db, effectiveUid), sanitized),
+    'createChatConversation.write',
+  )
+  return ref.id
+}
+
+export async function renameChatConversation(
+  uid: string,
+  conversationId: string,
+  title: string,
+): Promise<void> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'renameChatConversation')
+  const ref = chatConversationDoc(db, effectiveUid, conversationId)
+  const trimmed = title.trim() || 'Nova conversa'
+  await withFirestoreRetry(
+    () => updateDoc(ref, { title: trimmed, updated_at: new Date().toISOString() }),
+    'renameChatConversation.update',
+  )
+}
+
+export async function updateChatConversationEffort(
+  uid: string,
+  conversationId: string,
+  effort: ChatEffortLevel,
+): Promise<void> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'updateChatConversationEffort')
+  const ref = chatConversationDoc(db, effectiveUid, conversationId)
+  await withFirestoreRetry(
+    () => updateDoc(ref, { effort, updated_at: new Date().toISOString() }),
+    'updateChatConversationEffort.update',
+  )
+}
+
+export async function updateChatConversationPreview(
+  uid: string,
+  conversationId: string,
+  preview: string,
+): Promise<void> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'updateChatConversationPreview')
+  const ref = chatConversationDoc(db, effectiveUid, conversationId)
+  const trimmed = preview.length > 240 ? `${preview.slice(0, 237)}…` : preview
+  await withFirestoreRetry(
+    () => updateDoc(ref, { last_preview: trimmed, updated_at: new Date().toISOString() }),
+    'updateChatConversationPreview.update',
+  )
+}
+
+/**
+ * Delete a chat conversation. Firestore does NOT cascade child documents, so
+ * we explicitly delete every turn in the `turns` subcollection first. Failure
+ * to delete a child is logged but does not block the parent removal — orphaned
+ * turns are invisible to the UI once the parent is gone.
+ */
+export async function deleteChatConversation(
+  uid: string,
+  conversationId: string,
+): Promise<void> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'deleteChatConversation')
+  const turnsRef = chatTurnsCollection(db, effectiveUid, conversationId)
+  try {
+    const turnsSnap = await withFirestoreRetry(() => getDocs(turnsRef), 'deleteChatConversation.listTurns')
+    await Promise.all(
+      turnsSnap.docs.map(d =>
+        withFirestoreRetry(() => deleteDoc(d.ref), 'deleteChatConversation.deleteTurn').catch(err => {
+          console.warn('Chat: failed to delete turn during conversation cleanup:', getErrorMessage(err))
+        }),
+      ),
+    )
+  } catch (error) {
+    if (isAuthAccessFirestoreError(error)) throw error
+    console.warn('Chat: failed to enumerate turns during conversation cleanup:', getErrorMessage(error))
+  }
+  await withFirestoreRetry(
+    () => deleteDoc(chatConversationDoc(db, effectiveUid, conversationId)),
+    'deleteChatConversation.delete',
+  )
+}
+
+export async function listChatTurns(
+  uid: string,
+  conversationId: string,
+): Promise<{ items: ChatTurnData[] }> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'listChatTurns')
+  const colRef = chatTurnsCollection(db, effectiveUid, conversationId)
+  try {
+    const snap = await withFirestoreRetry(
+      () => getDocs(query(colRef, orderBy('created_at', 'asc'))),
+      'listChatTurns.query',
+    )
+    return {
+      items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatTurnData)),
+    }
+  } catch (error) {
+    if (isAuthAccessFirestoreError(error)) throw error
+    console.warn('Firestore chat turns query failed; using client-side fallback:', getErrorMessage(error))
+    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listChatTurns.fallback')
+    const items = fallbackSnap.docs
+      .map(d => ({ id: d.id, ...d.data() } as ChatTurnData))
+      .sort((a, b) => getDocumentCreatedAtValue(a.created_at) - getDocumentCreatedAtValue(b.created_at))
+    return { items }
+  }
+}
+
+/**
+ * Append a new turn to a conversation. Returns the freshly minted Firestore
+ * ID for the turn document.
+ */
+export async function appendChatTurn(
+  uid: string,
+  conversationId: string,
+  data: Omit<ChatTurnData, 'id' | 'created_at'> & { created_at?: string },
+): Promise<string> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'appendChatTurn')
+  const now = data.created_at ?? new Date().toISOString()
+  const sanitized = stripUndefined({
+    ...data,
+    conversation_id: conversationId,
+    trail: data.trail ?? [],
+    assistant_markdown: data.assistant_markdown ?? null,
+    status: data.status,
+    created_at: now,
+  })
+  const ref = await withFirestoreRetry(
+    () => addDoc(chatTurnsCollection(db, effectiveUid, conversationId), sanitized),
+    'appendChatTurn.write',
+  )
+  // Bump the parent conversation's updated_at so the sidebar list re-orders.
+  try {
+    await withFirestoreRetry(
+      () => updateDoc(chatConversationDoc(db, effectiveUid, conversationId), { updated_at: now }),
+      'appendChatTurn.bumpConversation',
+    )
+  } catch (error) {
+    console.warn('Chat: failed to bump conversation updated_at:', getErrorMessage(error))
+  }
+  return ref.id
+}
+
+/**
+ * Update a turn (status changes, append trail events, store final markdown).
+ * Caller is responsible for merging trail arrays — this helper does a
+ * straight `updateDoc` because partial array merges in Firestore are not
+ * possible without a transaction.
+ */
+export async function updateChatTurn(
+  uid: string,
+  conversationId: string,
+  turnId: string,
+  data: Partial<ChatTurnData>,
+): Promise<void> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'updateChatTurn')
+  const ref = chatTurnDoc(db, effectiveUid, conversationId, turnId)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { id, conversation_id, ...rest } = data
+  const sanitized = stripUndefined({ ...rest })
+  await withFirestoreRetry(() => updateDoc(ref, sanitized), 'updateChatTurn.update')
+  if (data.status === 'done' || data.status === 'error' || data.status === 'cancelled') {
+    try {
+      await withFirestoreRetry(
+        () =>
+          updateDoc(chatConversationDoc(db, effectiveUid, conversationId), {
+            updated_at: new Date().toISOString(),
+          }),
+        'updateChatTurn.bumpConversation',
+      )
+    } catch (error) {
+      console.warn('Chat: failed to bump conversation after turn finalisation:', getErrorMessage(error))
+    }
   }
 }
 

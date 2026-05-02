@@ -6,6 +6,7 @@ import {
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
   ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal, RefreshCw,
   Plus, Pencil, Trash2, X, Scale, Tags, Video, Headphones, Presentation, Palette,
+  MessagesSquare,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -35,6 +36,7 @@ import NotebookAcervoConfigCard from '../components/NotebookAcervoConfigCard'
 import VideoPipelineConfigCard from '../components/VideoPipelineConfigCard'
 import AudioPipelineConfigCard from '../components/AudioPipelineConfigCard'
 import PresentationPipelineConfigCard from '../components/PresentationPipelineConfigCard'
+import ChatOrchestratorConfigCard from '../components/ChatOrchestratorConfigCard'
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
 import ModelCatalogCard from '../components/ModelCatalogCard'
@@ -1166,6 +1168,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <PresentationPipelineConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Chat Orchestrator Config (Firebase-only) */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_chat_orchestrator_config"
+          title="Orquestrador (Chat)"
+          icon={MessagesSquare}
+          iconColor="text-indigo-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ChatOrchestratorConfigCard />
         </AdminCollapsibleSection>
       )}
 

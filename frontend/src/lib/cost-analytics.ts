@@ -3,7 +3,7 @@ import { DOCTYPE_LABELS } from './constants'
 import { PROVIDERS, providerIdFromLabel } from './providers'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 
-export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline'
+export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'chat_orchestrator'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -112,6 +112,7 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   video_pipeline: 'Gerador de Vídeo',
   audio_pipeline: 'Pipeline de Áudio',
   presentation_pipeline: 'Pipeline de Apresentação',
+  chat_orchestrator: 'Orquestrador (Chat)',
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -211,6 +212,16 @@ const PHASE_LABELS: Record<string, string> = {
   pres_designer: 'Apresentação: Designer Visual',
   pres_image_generator: 'Apresentação: Gerador de Imagens',
   pres_revisor: 'Apresentação: Revisor Final',
+  // ── Chat orchestrator phases ──
+  chat_orchestrator: 'Chat: Orquestrador',
+  chat_planner: 'Chat: Planejador',
+  chat_clarifier: 'Chat: Esclarecedor',
+  chat_legal_researcher: 'Chat: Pesquisador Jurídico',
+  chat_code_writer: 'Chat: Programador',
+  chat_fs_actor: 'Chat: Operador de Arquivos',
+  chat_summarizer: 'Chat: Sumarizador',
+  chat_critic: 'Chat: Crítico',
+  chat_writer: 'Chat: Redator',
 }
 
 const STUDIO_ARTIFACT_LABELS: Record<string, string> = {

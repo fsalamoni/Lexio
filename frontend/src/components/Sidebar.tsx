@@ -2,6 +2,7 @@ import { NavLink, matchPath, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, PlusCircle, Upload,
   Scale, LogOut, Settings, BookOpen, ChevronRight, UserCircle, DollarSign, Brain, Shield,
+  MessagesSquare,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useEffect, useMemo, useState } from 'react'
@@ -14,6 +15,7 @@ import { buildWorkspaceShellPath } from '../lib/workspace-routes'
 
 const links = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/chat', label: 'Chat', icon: MessagesSquare },
   {
     to: '/documents',
     label: 'Documentos',
