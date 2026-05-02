@@ -55,6 +55,12 @@ export function buildWorkspaceUploadPath(options?: { preserveSearch?: string }) 
   })
 }
 
+export function buildWorkspaceChatPath(options?: WorkspaceRouteOptions) {
+  return appendHash(buildRedesignPreviewPath('/chat', {
+    preserveSearch: options?.preserveSearch,
+  }), options?.hash)
+}
+
 export function buildWorkspaceThesesPath(options?: WorkspaceRouteOptions) {
   return appendHash(buildRedesignPreviewPath('/theses', {
     preserveSearch: options?.preserveSearch,
@@ -101,6 +107,8 @@ export function buildWorkspaceShellPath(pathname: string, options?: WorkspaceRou
       return buildWorkspaceNewDocumentPath(options)
     case '/upload':
       return buildWorkspaceUploadPath(options)
+    case '/chat':
+      return buildWorkspaceChatPath(options)
     case '/theses':
       return buildWorkspaceThesesPath(options)
     case '/settings':
