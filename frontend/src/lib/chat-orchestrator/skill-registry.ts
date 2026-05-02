@@ -2,6 +2,8 @@ import type { ChatTrailEvent } from '../firestore-types'
 import type { Skill, SkillContext, SkillResult } from './types'
 import { dispatchSpecialistAgent } from './dispatch'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
+import { buildSuperSkills } from './super-skills'
+import { buildSidecarSkills } from './sidecar-skills'
 
 /**
  * Agent keys callable through the `call_agent` skill. Every specialist
@@ -219,17 +221,26 @@ const submitFinalAnswerSkill: Skill<{ markdown?: string }> = {
 }
 
 /**
- * Build the skill registry available to the orchestrator on PR2. Future PRs
- * inject pipeline super-skills (PR3) and sidecar fs/shell skills (PR4) by
- * extending this array.
+ * Build the complete skill registry available to the orchestrator.
+ *
+ * PR2 (base): call_agent, summarize_context, critique_draft,
+ *             ask_user_question, submit_final_answer
+ * PR3 (pipelines): generate_document, check_document_status,
+ *                  search_jurisprudence, analyze_thesis
+ * PR4 (sidecar): read_file, list_directory, write_file, run_shell
  */
 export function buildSkillRegistry(): Skill[] {
   return [
+    // PR2 — Base orchestration skills
     callAgentSkill,
     summarizeContextSkill,
     critiqueDraftSkill,
     askUserQuestionSkill,
     submitFinalAnswerSkill,
+    // PR3 — Pipeline super-skills
+    ...buildSuperSkills(),
+    // PR4 — Desktop sidecar skills
+    ...buildSidecarSkills(),
   ]
 }
 

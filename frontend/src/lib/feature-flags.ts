@@ -166,7 +166,7 @@ export function isEnabled(flagKey: string): boolean {
 export function isTruthyFlag(rawValue: string | null | undefined): boolean {
   if (rawValue === undefined || rawValue === null) return false
   const lower = rawValue.toLowerCase().trim()
-  return lower === 'true' || lower === '1' || lower === 'yes'
+  return lower === 'true' || lower === '1' || lower === 'yes' || lower === 'enabled' || lower === 'on'
 }
 
 /**

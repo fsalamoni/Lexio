@@ -7,6 +7,12 @@ import {
   markUnrecoverableFirebaseTokenRefresh,
 } from './firebase-auth-errors'
 
+function dispatchSessionRecoveryNeeded() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('lexio:session-recovery-needed'))
+  }
+}
+
 function getFirebaseErrorCode(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null
   if ('code' in error && typeof error.code === 'string') {
@@ -105,9 +111,17 @@ export async function withTransientFirebaseAuthRetry<T>(
       // we let the original error propagate so the caller can show a
       // proper retry UI instead of looping.
       const refresh = await refreshIdTokenSafely('withTransientFirebaseAuthRetry')
-      if (refresh.status === 'unrecoverable-failure') throw refresh.error
-      if (refresh.status !== 'refreshed') throw error
-      await wait(600)
+
+      if (refresh.status === 'refreshed') {
+        await wait(600)
+        return operation()
+      }
+
+      // Local token refresh didn't help — ask AuthContext to try a
+      // centralized session recovery before giving up.
+      dispatchSessionRecoveryNeeded()
+      // Wait long enough for AuthContext to run getIdToken(true)
+      await wait(1500)
       return operation()
     }
 

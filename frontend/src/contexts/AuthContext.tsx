@@ -16,6 +16,7 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<void>
   register: (email: string, password: string, fullName: string, title?: string) => Promise<void>
   logout: () => void
+  recoverSession: () => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -61,6 +62,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [fullName, setFullName] = useState<string | null>(initial.fullName)
   const [isReady,  setIsReady]  = useState(!IS_FIREBASE)
   const tokenRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const sessionRecoveryInProgressRef = useRef(false)
+  const lastSessionRecoveryAttemptRef = useRef(0)
+  const sessionRecoveryFailCountRef = useRef(0)
 
   // Soft hydration of role/full_name from /users/{uid}. NEVER throws and
   // NEVER logs the user out on failure: a transient permission-denied (token
@@ -202,6 +206,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [userId])
 
+  // ── Global session recovery ──────────────────────────────────────────────
+  // When any component hits a `permission-denied` that a token refresh cannot
+  // resolve, it dispatches `lexio:session-recovery-needed`. This handler
+  // debounces (max once every 30s), forces `getIdToken(true)`, and if
+  // successful updates the token so all in-flight retries pick up the fresh
+  // credential. After 2 consecutive failures it forces a logout.
+  const recoverSession = useCallback(async (): Promise<boolean> => {
+    if (!IS_FIREBASE || !firebaseAuth) return false
+    const now = Date.now()
+    if (now - lastSessionRecoveryAttemptRef.current < 30_000) {
+      return false // still within debounce window
+    }
+    if (!firebaseAuth.currentUser) return false
+    if (sessionRecoveryInProgressRef.current) return false
+
+    sessionRecoveryInProgressRef.current = true
+    lastSessionRecoveryAttemptRef.current = now
+    try {
+      await firebaseAuth.currentUser.getIdToken(true)
+      const fresh = await firebaseAuth.currentUser.getIdToken()
+      localStorage.setItem('lexio_token', fresh)
+      setToken(fresh)
+      sessionRecoveryFailCountRef.current = 0
+      sessionRecoveryInProgressRef.current = false
+      return true
+    } catch (error) {
+      sessionRecoveryFailCountRef.current += 1
+      console.warn('[AuthContext] Session recovery attempt failed:', error)
+      if (sessionRecoveryFailCountRef.current >= 2) {
+        console.warn('[AuthContext] Two consecutive session recovery failures — forcing logout.')
+        clearStorage()
+        setToken(null); setUserId(null); setRole(null); setFullName(null)
+      }
+      sessionRecoveryInProgressRef.current = false
+      return false
+    }
+  }, [])
+
+  // Listen for session-recovery requests from any component
+  useEffect(() => {
+    if (!IS_FIREBASE) return
+    const handler = () => { void recoverSession() }
+    window.addEventListener('lexio:session-recovery-needed', handler)
+    return () => window.removeEventListener('lexio:session-recovery-needed', handler)
+  }, [recoverSession])
+
   const login = async (email: string, password: string) => {
     if (IS_FIREBASE) {
       try {
@@ -263,7 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ token, userId, role, fullName, isReady, login, loginWithGoogle, register, logout }}>
+    <AuthContext.Provider value={{ token, userId, role, fullName, isReady, login, loginWithGoogle, register, logout, recoverSession }}>
       {children}
     </AuthContext.Provider>
   )

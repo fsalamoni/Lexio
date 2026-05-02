@@ -51,7 +51,7 @@ export default function Chat() {
             busy={busy}
             onCancel={cancel}
           />
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
             {!activeId && (
               <div className="flex h-full items-center justify-center p-6">
                 <EmptyState demo={mock} />

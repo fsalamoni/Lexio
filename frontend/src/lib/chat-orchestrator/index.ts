@@ -8,6 +8,9 @@ export { EFFORT_PRESETS, EFFORT_LABELS, EFFORT_DESCRIPTIONS, DEFAULT_EFFORT, isE
 export { isMockRuntimeActive, mockOrchestratorLLM } from './mock-runtime'
 export { callOrchestratorLLM } from './orchestrator-llm'
 export { OrchestratorDecisionParseError } from './tools-adapter'
+export { buildSuperSkills, PIPELINE_DOCUMENT_TYPES, PIPELINE_DOCUMENT_LABELS } from './super-skills'
+export type { PipelineDocumentType } from './super-skills'
+export { buildSidecarSkills, checkSidecarStatus } from './sidecar-skills'
 export type {
   ChatEffortLevel,
   ChatTrailEvent,

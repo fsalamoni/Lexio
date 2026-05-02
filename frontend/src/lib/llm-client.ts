@@ -26,6 +26,15 @@ const MAX_EMPTY_RESPONSE_RETRIES = 2
 
 export interface LLMCallOptions {
   signal?: AbortSignal
+  /**
+   * When provided, the LLM call uses HTTP streaming (SSE) where supported by
+   * the provider, and `onToken` is invoked once per delta with the new chunk
+   * and the cumulative content so far. The function still returns the full
+   * `LLMResult` once the stream completes. If the provider does not support
+   * streaming, the call falls back transparently to the non-streaming path
+   * and `onToken` is invoked exactly once with the final content.
+   */
+  onToken?: (delta: string, total: string) => void
 }
 
 function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
@@ -326,6 +335,174 @@ function buildPlan(
   }
 }
 
+/**
+ * Returns true when the resolved provider's dialect is compatible with the
+ * OpenAI-style SSE streaming format (`data: {json}\n\n` with `[DONE]`).
+ */
+function dialectSupportsOpenAIStreaming(dialect: ProviderDefinition['dialect']): boolean {
+  return dialect === 'openrouter' || dialect === 'openai-compatible' || dialect === 'ollama'
+}
+
+/**
+ * Build a streaming-enabled request plan for OpenAI-compatible chat
+ * completions. Mutates the body to include `stream: true` and a usage hint
+ * so OpenRouter returns token usage in the final SSE event.
+ */
+function buildStreamingPlan(
+  resolved: ResolvedProviderCall,
+  messages: ChatMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number,
+): ProviderRequestPlan {
+  const basePlan = buildPlan(resolved, messages, model, maxTokens, temperature)
+  const parsedBody = JSON.parse(basePlan.body) as Record<string, unknown>
+  parsedBody.stream = true
+  if (resolved.provider.dialect === 'openrouter') {
+    parsedBody.stream_options = { include_usage: true }
+  }
+  return { ...basePlan, body: JSON.stringify(parsedBody) }
+}
+
+interface StreamCompletionResult {
+  content: string
+  tokensIn: number
+  tokensOut: number
+  cost?: number
+}
+
+/**
+ * Consume an OpenAI-compatible Server-Sent Events stream from a fetch
+ * Response, dispatching each delta to the supplied callback and returning
+ * the cumulative content and usage when the stream finishes.
+ */
+async function consumeOpenAIStream(
+  response: Response,
+  onDelta: (delta: string, total: string) => void,
+  signal?: AbortSignal,
+): Promise<StreamCompletionResult> {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    const fallbackText = await response.text().catch(() => '')
+    const parsed = parseOpenAIChatResponse(fallbackText)
+    if (parsed.content) onDelta(parsed.content, parsed.content)
+    return parsed
+  }
+
+  const decoder = new TextDecoder()
+  let buffered = ''
+  let accumulated = ''
+  let tokensIn = 0
+  let tokensOut = 0
+  let cost: number | undefined
+
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      if (signal?.aborted) {
+        throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+      }
+      const { value, done } = await reader.read()
+      if (done) break
+      buffered += decoder.decode(value, { stream: true })
+
+      // SSE frames are separated by a blank line. Drain any complete frames
+      // we currently have before reading the next chunk.
+      let separatorIndex = buffered.indexOf('\n\n')
+      while (separatorIndex !== -1) {
+        const rawFrame = buffered.slice(0, separatorIndex)
+        buffered = buffered.slice(separatorIndex + 2)
+        for (const line of rawFrame.split('\n')) {
+          const trimmed = line.trim()
+          if (!trimmed.startsWith('data:')) continue
+          const payload = trimmed.slice(5).trim()
+          if (!payload || payload === '[DONE]') continue
+          try {
+            const event = JSON.parse(payload) as Record<string, unknown>
+            const choices = event.choices as Array<{ delta?: { content?: string } }> | undefined
+            const delta = choices?.[0]?.delta?.content
+            if (typeof delta === 'string' && delta.length > 0) {
+              accumulated += delta
+              onDelta(delta, accumulated)
+            }
+            const usage = event.usage as Record<string, number> | undefined
+            if (usage) {
+              if (typeof usage.prompt_tokens === 'number') tokensIn = usage.prompt_tokens
+              if (typeof usage.completion_tokens === 'number') tokensOut = usage.completion_tokens
+              if (typeof usage.total_cost === 'number') cost = usage.total_cost
+            }
+          } catch {
+            // Ignore malformed lines — the next frame may still be valid.
+          }
+        }
+        separatorIndex = buffered.indexOf('\n\n')
+      }
+    }
+  } finally {
+    try { reader.releaseLock() } catch { /* noop */ }
+  }
+
+  return { content: accumulated, tokensIn, tokensOut, cost }
+}
+
+async function executeChatCompletionStreaming(
+  resolved: ResolvedProviderCall,
+  messages: ChatMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number,
+  options: LLMCallOptions,
+): Promise<LLMResult> {
+  const t0 = performance.now()
+  const plan = buildStreamingPlan(resolved, messages, model, maxTokens, temperature)
+  const onToken = options.onToken!
+
+  const { response, retryCount } = await fetchWithRetry(
+    plan.url,
+    { method: 'POST', headers: plan.headers, body: plan.body },
+    options.signal,
+  )
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => '')
+    if (isModelUnavailableResponse(response.status, errorBody)) {
+      throw new ModelUnavailableError(model)
+    }
+    if (isTransientUpstreamResponse(response.status, errorBody)) {
+      throw new TransientLLMError(`${resolved.provider.label} API error ${response.status}: ${errorBody.slice(0, 300)}`)
+    }
+    throw new Error(`${resolved.provider.label} API error ${response.status}: ${errorBody}`)
+  }
+
+  const streamed = await consumeOpenAIStream(response, onToken, options.signal)
+  if (!streamed.content) {
+    throw new TransientLLMError(`${resolved.provider.label} retornou stream vazio`)
+  }
+
+  const durationMs = Math.round(performance.now() - t0)
+  const cost_usd = streamed.cost ?? estimateCost(model, resolved.provider.id, streamed.tokensIn, streamed.tokensOut)
+  return {
+    content: streamed.content,
+    model,
+    tokens_in: streamed.tokensIn,
+    tokens_out: streamed.tokensOut,
+    cost_usd,
+    duration_ms: durationMs,
+    provider_id: resolved.provider.id,
+    provider_label: resolved.provider.label,
+    operational: {
+      requestedModel: model,
+      resolvedModel: model,
+      providerId: resolved.provider.id,
+      providerLabel: resolved.provider.label,
+      fallbackUsed: false,
+      networkRetryCount: retryCount,
+      emptyRetryCount: 0,
+      totalRetryCount: retryCount,
+    },
+  }
+}
+
 function estimateCost(model: string, providerId: string, tokensIn: number, tokensOut: number): number {
   const PRICING: Record<string, [number, number]> = {
     'anthropic/claude-3.5-haiku':         [0.80,  4.00],
@@ -395,6 +572,11 @@ async function executeChatCompletion(
 ): Promise<LLMResult> {
   const t0 = performance.now()
   const resolved = await resolveCallContext(legacyApiKey, model)
+
+  if (options?.onToken && dialectSupportsOpenAIStreaming(resolved.provider.dialect)) {
+    return executeChatCompletionStreaming(resolved, messages, model, maxTokens, temperature, options)
+  }
+
   const plan = buildPlan(resolved, messages, model, maxTokens, temperature)
 
   for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_RESPONSE_RETRIES; emptyAttempt++) {
