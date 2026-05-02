@@ -401,6 +401,116 @@ export interface ResearchNotebookData {
   usage_summary?: UsageSummary
 }
 
+// ── Chat Sidecar / External Workspace Sync ──────────────────────────────────
+
+export type ChatSidecarProvider = 'local_folder' | 'github' | 'dropbox' | 'google_drive' | 'gmail' | 'onedrive' | 'whatsapp' | 'discord' | 'telegram' | 'custom'
+export type ChatSidecarPermission = 'read' | 'write' | 'delete' | 'rename' | 'execute' | 'network'
+export type ChatSidecarApprovalPolicy = 'always' | 'per_command' | 'batch' | 'trusted_readonly'
+export type ChatSidecarDeviceStatus = 'online' | 'offline' | 'revoked'
+
+export interface ChatSidecarDeviceData {
+  id?: string
+  label: string
+  device_fingerprint: string
+  status: ChatSidecarDeviceStatus
+  capabilities: ChatSidecarPermission[]
+  app_version?: string
+  platform?: string
+  paired_at: string
+  last_seen_at?: string
+  revoked_at?: string
+}
+
+export interface ChatWorkspaceRootData {
+  id?: string
+  provider: ChatSidecarProvider
+  label: string
+  device_id?: string
+  display_path?: string
+  remote_url?: string
+  external_account_label?: string
+  permissions: ChatSidecarPermission[]
+  approval_policy: ChatSidecarApprovalPolicy
+  allowed_globs?: string[]
+  blocked_globs?: string[]
+  max_file_bytes?: number
+  sync_enabled: boolean
+  last_sync_at?: string
+  created_at: string
+  updated_at: string
+  revoked_at?: string
+}
+
+export interface ChatWorkspaceBindingData {
+  id?: string
+  conversation_id: string
+  root_id: string
+  provider: ChatSidecarProvider
+  label: string
+  permissions: ChatSidecarPermission[]
+  approval_policy: ChatSidecarApprovalPolicy
+  created_at: string
+  updated_at: string
+  disabled_at?: string
+}
+
+export type ChatSidecarCommandStatus = 'queued' | 'waiting_approval' | 'approved' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type ChatSidecarCommandOperation = 'list' | 'read' | 'write' | 'patch' | 'rename' | 'delete' | 'move' | 'git_status' | 'git_diff' | 'git_commit' | 'git_pull' | 'git_push' | 'sync_pull' | 'sync_push' | 'shell'
+
+export interface ChatSidecarCommandData {
+  id?: string
+  conversation_id: string
+  turn_id?: string
+  root_id: string
+  operation: ChatSidecarCommandOperation
+  status: ChatSidecarCommandStatus
+  path?: string
+  target_path?: string
+  args?: Record<string, unknown>
+  diff_preview?: string
+  risk_level?: 'low' | 'medium' | 'high'
+  approval_id?: string
+  result_summary?: string
+  error_message?: string
+  created_at: string
+  updated_at: string
+  completed_at?: string
+}
+
+export type ChatApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'cancelled'
+
+export interface ChatApprovalRequestData {
+  id?: string
+  conversation_id: string
+  command_ids: string[]
+  status: ChatApprovalStatus
+  title: string
+  summary: string
+  risk_level: 'low' | 'medium' | 'high'
+  requested_permissions: ChatSidecarPermission[]
+  expires_at?: string
+  decided_at?: string
+  decided_by?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatSidecarAuditEntryData {
+  id?: string
+  conversation_id: string
+  command_id?: string
+  approval_id?: string
+  root_id?: string
+  operation: string
+  actor: 'user' | 'orchestrator' | 'sidecar' | 'connector'
+  status: 'proposed' | 'approved' | 'executed' | 'rejected' | 'failed'
+  resource_path?: string
+  content_hash_before?: string
+  content_hash_after?: string
+  message?: string
+  created_at: string
+}
+
 // ── Onboarding Wizard ────────────────────────────────────────────────────────
 
 export interface WizardData {

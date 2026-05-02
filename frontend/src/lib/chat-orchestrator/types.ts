@@ -64,6 +64,8 @@ export interface SkillContext {
   signal: AbortSignal
   emit: (event: ChatTrailEvent) => void
   models: Record<string, string>
+  /** Per-agent fallback chain resolved from the user's fallback-priority settings. */
+  fallbackModels?: Record<string, string[]>
   apiKey: string
   /** Mock runtime active (demo mode / no Firebase). */
   mock: boolean
@@ -132,6 +134,7 @@ export interface RunChatTurnInput {
   history: Array<Pick<OrchestratorMessage, 'role' | 'content'>>
   user_input: string
   models: Record<string, string>
+  fallbackModels?: Record<string, string[]>
   apiKey: string
   signal: AbortSignal
   onTrail: (event: ChatTrailEvent) => void
@@ -151,6 +154,7 @@ export type OrchestratorLLMCall = (params: {
   history: OrchestratorMessage[]
   modelKey: string
   models: Record<string, string>
+  fallbackModels?: Record<string, string[]>
   apiKey: string
   signal: AbortSignal
   budget: BudgetTracker

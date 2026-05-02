@@ -100,6 +100,21 @@ service cloud.firestore {
         allow write: if isSelf(userId);
       }
 
+      // ── /users/{userId}/sidecar_devices/{deviceId} ───────────────────
+      // Locally paired helper devices. Owner can manage, admins read only
+      // for operational diagnostics without receiving local credentials.
+      match /sidecar_devices/{deviceId} {
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
+      }
+
+      // ── /users/{userId}/chat_workspace_roots/{rootId} ────────────────
+      // Roots/connectors the chat may bind to a specific conversation.
+      match /chat_workspace_roots/{rootId} {
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
+      }
+
       // ── /users/{userId}/chat_conversations/{conversationId} ──────────
       // Chat orchestrator conversations (page /chat) — owner-only.
       // Admins inherit read-only access via the collectionGroup rule below
@@ -113,6 +128,29 @@ service cloud.firestore {
         match /turns/{turnId} {
           allow read: if isSelf(userId) || isAdmin();
           allow write: if isSelf(userId);
+        }
+
+        match /workspace_bindings/{bindingId} {
+          allow read: if isSelf(userId) || isAdmin();
+          allow write: if isSelf(userId);
+        }
+
+        match /sidecar_commands/{commandId} {
+          allow read: if isSelf(userId) || isAdmin();
+          allow write: if isSelf(userId);
+        }
+
+        match /approvals/{approvalId} {
+          allow read: if isSelf(userId) || isAdmin();
+          allow write: if isSelf(userId);
+        }
+
+        // Audit is append-only for the owner; entries can be read but never
+        // modified or deleted through the client after creation.
+        match /audit/{auditId} {
+          allow read: if isSelf(userId) || isAdmin();
+          allow create: if isSelf(userId);
+          allow update, delete: if false;
         }
       }
     }
@@ -149,6 +187,18 @@ service cloud.firestore {
     }
 
     match /{path=**}/chat_conversations/{conversationId}/turns/{turnId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/chat_conversations/{conversationId}/sidecar_commands/{commandId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/chat_conversations/{conversationId}/approvals/{approvalId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/chat_conversations/{conversationId}/audit/{auditId} {
       allow read: if isAdmin();
     }
 

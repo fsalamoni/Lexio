@@ -1,4 +1,4 @@
-import { callLLMWithMessages, type LLMResult } from '../llm-client'
+import { callLLMWithMessages, callLLMWithMessagesFallback, type LLMResult } from '../llm-client'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import type { UsageExecutionRecord } from '../cost-analytics'
 import type { SkillContext } from './types'
@@ -95,7 +95,10 @@ export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Pro
   const startedAt = Date.now()
   let result: LLMResult
   try {
-    result = await callLLMWithMessages(ctx.apiKey, messages, model, resolvedMaxTokens, temperature, { signal: ctx.signal })
+    const fallbacks = ctx.fallbackModels?.[agentKey] ?? []
+    result = fallbacks.length > 0
+      ? await callLLMWithMessagesFallback(ctx.apiKey, messages, model, fallbacks, resolvedMaxTokens, temperature, { signal: ctx.signal })
+      : await callLLMWithMessages(ctx.apiKey, messages, model, resolvedMaxTokens, temperature, { signal: ctx.signal })
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     const message = err instanceof Error ? err.message : String(err)

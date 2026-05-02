@@ -1,4 +1,4 @@
-import { callLLMWithMessages } from '../llm-client'
+import { callLLMWithMessages, callLLMWithMessagesFallback } from '../llm-client'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import type { UsageExecutionRecord } from '../cost-analytics'
 import type { OrchestratorLLMCall, OrchestratorMessage } from './types'
@@ -9,7 +9,7 @@ import type { OrchestratorLLMCall, OrchestratorMessage } from './types'
  * loop's branching logic can be exercised without network access.
  */
 export const callOrchestratorLLM: OrchestratorLLMCall = async (params) => {
-  const { systemPrompt, history, models, modelKey, apiKey, signal, perCallTokenCap, agentLabel } = params
+  const { systemPrompt, history, models, fallbackModels, modelKey, apiKey, signal, perCallTokenCap, agentLabel } = params
   const model = models[modelKey]
   if (!model) {
     return {
@@ -30,7 +30,10 @@ export const callOrchestratorLLM: OrchestratorLLMCall = async (params) => {
   const startedAt = Date.now()
   let result
   try {
-    result = await callLLMWithMessages(apiKey, messages, model, perCallTokenCap, 0.2, { signal })
+    const fallbacks = fallbackModels?.[modelKey] ?? []
+    result = fallbacks.length > 0
+      ? await callLLMWithMessagesFallback(apiKey, messages, model, fallbacks, perCallTokenCap, 0.2, { signal })
+      : await callLLMWithMessages(apiKey, messages, model, perCallTokenCap, 0.2, { signal })
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     const message = err instanceof Error ? err.message : String(err)

@@ -89,6 +89,12 @@ export type {
   ChatTrailEvent,
   ChatConversationData,
   ChatTurnData,
+  ChatSidecarDeviceData,
+  ChatWorkspaceRootData,
+  ChatWorkspaceBindingData,
+  ChatSidecarCommandData,
+  ChatApprovalRequestData,
+  ChatSidecarAuditEntryData,
 } from './firestore-types'
 import type {
   ProfileData,
@@ -130,6 +136,12 @@ import type {
   ChatEffortLevel,
   ChatConversationData,
   ChatTurnData,
+  ChatSidecarDeviceData,
+  ChatWorkspaceRootData,
+  ChatWorkspaceBindingData,
+  ChatSidecarCommandData,
+  ChatApprovalRequestData,
+  ChatSidecarAuditEntryData,
 } from './firestore-types'
 
 // Re-export DEFAULT_DOC_STRUCTURES for backward compatibility
@@ -4067,6 +4079,12 @@ export async function deleteResearchNotebook(uid: string, notebookId: string): P
 
 const CHAT_CONVERSATIONS_COLLECTION = 'chat_conversations'
 const CHAT_TURNS_SUBCOLLECTION = 'turns'
+const SIDECAR_DEVICES_COLLECTION = 'sidecar_devices'
+const CHAT_WORKSPACE_ROOTS_COLLECTION = 'chat_workspace_roots'
+const CHAT_WORKSPACE_BINDINGS_SUBCOLLECTION = 'workspace_bindings'
+const CHAT_SIDECAR_COMMANDS_SUBCOLLECTION = 'sidecar_commands'
+const CHAT_APPROVALS_SUBCOLLECTION = 'approvals'
+const CHAT_AUDIT_SUBCOLLECTION = 'audit'
 const DEFAULT_CHAT_EFFORT: ChatEffortLevel = 'medio'
 
 function chatConversationCollection(db: ReturnType<typeof ensureFirestore>, uid: string) {
@@ -4099,6 +4117,48 @@ function chatTurnsCollection(
     CHAT_CONVERSATIONS_COLLECTION,
     normalizeFirestoreDocumentId(conversationId),
     CHAT_TURNS_SUBCOLLECTION,
+  )
+}
+
+function userSubcollection(db: ReturnType<typeof ensureFirestore>, uid: string, name: string) {
+  return collection(db, 'users', uid, name)
+}
+
+function userSubcollectionDoc(db: ReturnType<typeof ensureFirestore>, uid: string, name: string, documentId: string) {
+  return doc(db, 'users', uid, name, normalizeFirestoreDocumentId(documentId))
+}
+
+function chatConversationSubcollection(
+  db: ReturnType<typeof ensureFirestore>,
+  uid: string,
+  conversationId: string,
+  name: string,
+) {
+  return collection(
+    db,
+    'users',
+    uid,
+    CHAT_CONVERSATIONS_COLLECTION,
+    normalizeFirestoreDocumentId(conversationId),
+    name,
+  )
+}
+
+function chatConversationSubcollectionDoc(
+  db: ReturnType<typeof ensureFirestore>,
+  uid: string,
+  conversationId: string,
+  name: string,
+  documentId: string,
+) {
+  return doc(
+    db,
+    'users',
+    uid,
+    CHAT_CONVERSATIONS_COLLECTION,
+    normalizeFirestoreDocumentId(conversationId),
+    name,
+    normalizeFirestoreDocumentId(documentId),
   )
 }
 
@@ -4194,6 +4254,53 @@ export async function createChatConversation(
   return ref.id
 }
 
+/**
+ * Ensure a conversation document exists before writing child turn documents.
+ * Firestore allows subcollections below a missing parent; without this guard
+ * a turn can be persisted but the sidebar cannot list the conversation after
+ * a refresh. This helper is intentionally idempotent and preserves existing
+ * metadata whenever the parent already exists.
+ */
+export async function ensureChatConversation(
+  uid: string,
+  conversationId: string,
+  data: Partial<Pick<ChatConversationData, 'title' | 'effort' | 'sidecar_root_path' | 'last_preview'>> = {},
+): Promise<ChatConversationData> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'ensureChatConversation')
+  const normalizedConversationId = normalizeFirestoreDocumentId(conversationId)
+  const ref = chatConversationDoc(db, effectiveUid, normalizedConversationId)
+  const now = new Date().toISOString()
+  const snap = await withFirestoreRetry(() => getDoc(ref), 'ensureChatConversation.read')
+
+  if (snap.exists()) {
+    const existing = { id: snap.id, ...snap.data() } as ChatConversationData
+    const patch = stripUndefined({
+      ...(existing.title ? {} : { title: data.title?.trim() || 'Nova conversa' }),
+      ...(existing.effort ? {} : { effort: data.effort ?? DEFAULT_CHAT_EFFORT }),
+      ...(existing.created_at ? {} : { created_at: now }),
+      ...(existing.updated_at ? {} : { updated_at: now }),
+      ...(existing.last_preview !== undefined || data.last_preview === undefined ? {} : { last_preview: data.last_preview }),
+      ...(existing.sidecar_root_path !== undefined || data.sidecar_root_path === undefined ? {} : { sidecar_root_path: data.sidecar_root_path }),
+    })
+    if (Object.keys(patch).length > 0) {
+      await withFirestoreRetry(() => setDoc(ref, patch, { merge: true }), 'ensureChatConversation.repair')
+    }
+    return { ...existing, ...patch }
+  }
+
+  const created = stripUndefined({
+    title: data.title?.trim() || 'Nova conversa',
+    effort: data.effort ?? DEFAULT_CHAT_EFFORT,
+    sidecar_root_path: data.sidecar_root_path,
+    last_preview: data.last_preview ?? '',
+    created_at: now,
+    updated_at: now,
+  }) as Omit<ChatConversationData, 'id'>
+  await withFirestoreRetry(() => setDoc(ref, created, { merge: true }), 'ensureChatConversation.create')
+  return { id: normalizedConversationId, ...created }
+}
+
 export async function renameChatConversation(
   uid: string,
   conversationId: string,
@@ -4232,6 +4339,7 @@ export async function updateChatConversationPreview(
   const effectiveUid = await resolveEffectiveUid(uid, 'updateChatConversationPreview')
   const ref = chatConversationDoc(db, effectiveUid, conversationId)
   const trimmed = preview.length > 240 ? `${preview.slice(0, 237)}…` : preview
+  await ensureChatConversation(effectiveUid, conversationId, { last_preview: trimmed })
   await withFirestoreRetry(
     () => updateDoc(ref, { last_preview: trimmed, updated_at: new Date().toISOString() }),
     'updateChatConversationPreview.update',
@@ -4308,6 +4416,9 @@ export async function appendChatTurn(
   const db = ensureFirestore()
   const effectiveUid = await resolveEffectiveUid(uid, 'appendChatTurn')
   const now = data.created_at ?? new Date().toISOString()
+  await ensureChatConversation(effectiveUid, conversationId, {
+    title: data.user_input ? data.user_input.slice(0, 80) : 'Nova conversa',
+  })
   const sanitized = stripUndefined({
     ...data,
     conversation_id: conversationId,
@@ -4327,7 +4438,11 @@ export async function appendChatTurn(
       'appendChatTurn.bumpConversation',
     )
   } catch (error) {
-    console.warn('Chat: failed to bump conversation updated_at:', getErrorMessage(error))
+    if (isAuthAccessFirestoreError(error)) throw error
+    console.warn('Chat: failed to bump conversation updated_at; repairing parent document:', getErrorMessage(error))
+    await ensureChatConversation(effectiveUid, conversationId, {
+      title: data.user_input ? data.user_input.slice(0, 80) : 'Nova conversa',
+    })
   }
   return ref.id
 }
@@ -4361,9 +4476,243 @@ export async function updateChatTurn(
         'updateChatTurn.bumpConversation',
       )
     } catch (error) {
-      console.warn('Chat: failed to bump conversation after turn finalisation:', getErrorMessage(error))
+      if (isAuthAccessFirestoreError(error)) throw error
+      console.warn('Chat: failed to bump conversation after turn finalisation; repairing parent document:', getErrorMessage(error))
+      await ensureChatConversation(effectiveUid, conversationId)
     }
   }
+}
+
+export async function saveChatSidecarDevice(
+  uid: string,
+  data: Omit<ChatSidecarDeviceData, 'paired_at'> & { paired_at?: string },
+): Promise<string> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'saveChatSidecarDevice')
+  const now = new Date().toISOString()
+  const { id, ...rest } = data
+  const sanitized = stripUndefined({
+    ...rest,
+    label: rest.label?.trim() || 'Lexio Sidecar',
+    capabilities: rest.capabilities ?? ['read'],
+    status: rest.status ?? 'offline',
+    paired_at: rest.paired_at ?? now,
+    last_seen_at: rest.last_seen_at ?? now,
+  })
+
+  if (id) {
+    const normalizedId = normalizeFirestoreDocumentId(id)
+    await withFirestoreRetry(
+      () => setDoc(userSubcollectionDoc(db, effectiveUid, SIDECAR_DEVICES_COLLECTION, normalizedId), sanitized, { merge: true }),
+      'saveChatSidecarDevice.set',
+    )
+    return normalizedId
+  }
+
+  const ref = await withFirestoreRetry(
+    () => addDoc(userSubcollection(db, effectiveUid, SIDECAR_DEVICES_COLLECTION), sanitized),
+    'saveChatSidecarDevice.add',
+  )
+  return ref.id
+}
+
+export async function listChatSidecarDevices(uid: string): Promise<{ items: ChatSidecarDeviceData[] }> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'listChatSidecarDevices')
+  const colRef = userSubcollection(db, effectiveUid, SIDECAR_DEVICES_COLLECTION)
+  const snap = await withFirestoreRetry(
+    () => getDocs(query(colRef, orderBy('last_seen_at', 'desc'))),
+    'listChatSidecarDevices.query',
+  )
+  return { items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatSidecarDeviceData)) }
+}
+
+export async function saveChatWorkspaceRoot(
+  uid: string,
+  data: Omit<ChatWorkspaceRootData, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string },
+): Promise<string> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'saveChatWorkspaceRoot')
+  const now = new Date().toISOString()
+  const { id, ...rest } = data
+  const sanitized = stripUndefined({
+    ...rest,
+    label: rest.label?.trim() || 'Workspace',
+    permissions: rest.permissions ?? ['read'],
+    approval_policy: rest.approval_policy ?? 'always',
+    sync_enabled: rest.sync_enabled ?? true,
+    created_at: rest.created_at ?? now,
+    updated_at: now,
+  })
+
+  if (id) {
+    const normalizedId = normalizeFirestoreDocumentId(id)
+    await withFirestoreRetry(
+      () => setDoc(userSubcollectionDoc(db, effectiveUid, CHAT_WORKSPACE_ROOTS_COLLECTION, normalizedId), sanitized, { merge: true }),
+      'saveChatWorkspaceRoot.set',
+    )
+    return normalizedId
+  }
+
+  const ref = await withFirestoreRetry(
+    () => addDoc(userSubcollection(db, effectiveUid, CHAT_WORKSPACE_ROOTS_COLLECTION), sanitized),
+    'saveChatWorkspaceRoot.add',
+  )
+  return ref.id
+}
+
+export async function listChatWorkspaceRoots(uid: string): Promise<{ items: ChatWorkspaceRootData[] }> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'listChatWorkspaceRoots')
+  const colRef = userSubcollection(db, effectiveUid, CHAT_WORKSPACE_ROOTS_COLLECTION)
+  const snap = await withFirestoreRetry(
+    () => getDocs(query(colRef, orderBy('updated_at', 'desc'))),
+    'listChatWorkspaceRoots.query',
+  )
+  return { items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatWorkspaceRootData)) }
+}
+
+export async function bindChatWorkspaceRoot(
+  uid: string,
+  conversationId: string,
+  root: Pick<ChatWorkspaceBindingData, 'root_id' | 'provider' | 'label' | 'permissions' | 'approval_policy'>,
+): Promise<string> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'bindChatWorkspaceRoot')
+  const now = new Date().toISOString()
+  await ensureChatConversation(effectiveUid, conversationId)
+  const bindingId = normalizeFirestoreDocumentId(root.root_id)
+  const sanitized = stripUndefined({
+    conversation_id: normalizeFirestoreDocumentId(conversationId),
+    root_id: bindingId,
+    provider: root.provider,
+    label: root.label?.trim() || root.provider,
+    permissions: root.permissions,
+    approval_policy: root.approval_policy,
+    created_at: now,
+    updated_at: now,
+  })
+  await withFirestoreRetry(
+    () => setDoc(chatConversationSubcollectionDoc(db, effectiveUid, conversationId, CHAT_WORKSPACE_BINDINGS_SUBCOLLECTION, bindingId), sanitized, { merge: true }),
+    'bindChatWorkspaceRoot.set',
+  )
+  return bindingId
+}
+
+export async function listChatWorkspaceBindings(
+  uid: string,
+  conversationId: string,
+): Promise<{ items: ChatWorkspaceBindingData[] }> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'listChatWorkspaceBindings')
+  const colRef = chatConversationSubcollection(db, effectiveUid, conversationId, CHAT_WORKSPACE_BINDINGS_SUBCOLLECTION)
+  const snap = await withFirestoreRetry(
+    () => getDocs(query(colRef, orderBy('updated_at', 'desc'))),
+    'listChatWorkspaceBindings.query',
+  )
+  return { items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatWorkspaceBindingData)) }
+}
+
+export async function createChatSidecarCommand(
+  uid: string,
+  conversationId: string,
+  data: Omit<ChatSidecarCommandData, 'id' | 'conversation_id' | 'created_at' | 'updated_at' | 'status'> & { status?: ChatSidecarCommandData['status'] },
+): Promise<string> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'createChatSidecarCommand')
+  const now = new Date().toISOString()
+  await ensureChatConversation(effectiveUid, conversationId)
+  const sanitized = stripUndefined({
+    ...data,
+    conversation_id: normalizeFirestoreDocumentId(conversationId),
+    status: data.status ?? 'waiting_approval',
+    created_at: now,
+    updated_at: now,
+  })
+  const ref = await withFirestoreRetry(
+    () => addDoc(chatConversationSubcollection(db, effectiveUid, conversationId, CHAT_SIDECAR_COMMANDS_SUBCOLLECTION), sanitized),
+    'createChatSidecarCommand.add',
+  )
+  return ref.id
+}
+
+export async function updateChatSidecarCommand(
+  uid: string,
+  conversationId: string,
+  commandId: string,
+  data: Partial<ChatSidecarCommandData>,
+): Promise<void> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'updateChatSidecarCommand')
+  const { id, conversation_id, created_at, ...rest } = data
+  await withFirestoreRetry(
+    () => updateDoc(
+      chatConversationSubcollectionDoc(db, effectiveUid, conversationId, CHAT_SIDECAR_COMMANDS_SUBCOLLECTION, commandId),
+      stripUndefined({ ...rest, updated_at: new Date().toISOString() }),
+    ),
+    'updateChatSidecarCommand.update',
+  )
+}
+
+export async function createChatApprovalRequest(
+  uid: string,
+  conversationId: string,
+  data: Omit<ChatApprovalRequestData, 'id' | 'conversation_id' | 'created_at' | 'updated_at' | 'status'> & { status?: ChatApprovalRequestData['status'] },
+): Promise<string> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'createChatApprovalRequest')
+  const now = new Date().toISOString()
+  await ensureChatConversation(effectiveUid, conversationId)
+  const sanitized = stripUndefined({
+    ...data,
+    conversation_id: normalizeFirestoreDocumentId(conversationId),
+    status: data.status ?? 'pending',
+    created_at: now,
+    updated_at: now,
+  })
+  const ref = await withFirestoreRetry(
+    () => addDoc(chatConversationSubcollection(db, effectiveUid, conversationId, CHAT_APPROVALS_SUBCOLLECTION), sanitized),
+    'createChatApprovalRequest.add',
+  )
+  return ref.id
+}
+
+export async function updateChatApprovalRequest(
+  uid: string,
+  conversationId: string,
+  approvalId: string,
+  data: Partial<ChatApprovalRequestData>,
+): Promise<void> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'updateChatApprovalRequest')
+  const { id, conversation_id, created_at, ...rest } = data
+  await withFirestoreRetry(
+    () => updateDoc(
+      chatConversationSubcollectionDoc(db, effectiveUid, conversationId, CHAT_APPROVALS_SUBCOLLECTION, approvalId),
+      stripUndefined({ ...rest, updated_at: new Date().toISOString() }),
+    ),
+    'updateChatApprovalRequest.update',
+  )
+}
+
+export async function appendChatSidecarAuditEntry(
+  uid: string,
+  conversationId: string,
+  data: Omit<ChatSidecarAuditEntryData, 'id' | 'conversation_id' | 'created_at'> & { created_at?: string },
+): Promise<string> {
+  const db = ensureFirestore()
+  const effectiveUid = await resolveEffectiveUid(uid, 'appendChatSidecarAuditEntry')
+  await ensureChatConversation(effectiveUid, conversationId)
+  const sanitized = stripUndefined({
+    ...data,
+    conversation_id: normalizeFirestoreDocumentId(conversationId),
+    created_at: data.created_at ?? new Date().toISOString(),
+  })
+  const ref = await withFirestoreRetry(
+    () => addDoc(chatConversationSubcollection(db, effectiveUid, conversationId, CHAT_AUDIT_SUBCOLLECTION), sanitized),
+    'appendChatSidecarAuditEntry.add',
+  )
+  return ref.id
 }
 
 // ── Password change via Firebase Auth ────────────────────────────────────────

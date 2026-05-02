@@ -45,6 +45,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     signal: input.signal,
     emit: input.onTrail,
     models: input.models,
+    fallbackModels: input.fallbackModels,
     apiKey: input.apiKey,
     mock: Boolean(input.mock),
   }
@@ -117,7 +118,20 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       continue
     }
 
-    const result = await skill.run(decision.args, ctx)
+    let result
+    try {
+      result = await skill.run(decision.args, ctx)
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      const message = err instanceof Error ? err.message : String(err)
+      input.onTrail({ type: 'error', message: `Falha em ${decision.tool}: ${message}`, ts: new Date().toISOString() })
+      history = appendToolMessage(
+        history,
+        `A ferramenta "${decision.tool}" falhou, mas o orquestrador deve continuar com outra estratégia ou finalizar com o contexto disponível. Erro: ${message}`,
+        `${decision.tool}_error`,
+      )
+      continue
+    }
 
     history = appendToolMessage(history, result.tool_message, decision.tool)
 
@@ -175,7 +189,22 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
   }
 
   if (!draft) {
-    draft = await forceFinalize(history, ctx)
+    try {
+      draft = await forceFinalize(history, ctx)
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      const message = err instanceof Error ? err.message : String(err)
+      input.onTrail({ type: 'error', message: `Finalização forçada falhou: ${message}`, ts: new Date().toISOString() })
+      const userInputs = history.filter(m => !m.tool_summary && m.role === 'user').map(m => m.content)
+      const lastUser = userInputs[userInputs.length - 1] ?? input.user_input
+      draft = [
+        'Não consegui concluir a trilha multiagente completa, mas o turno ficou salvo para nova tentativa.',
+        '',
+        `**Pedido registrado:** ${lastUser}`,
+        '',
+        `**Detalhe técnico:** ${message}`,
+      ].join('\n')
+    }
     if (stopReason === 'max_iterations' && budget.exceeded()) stopReason = 'budget'
   }
 
@@ -205,6 +234,7 @@ async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Pro
     history,
     modelKey: ORCHESTRATOR_AGENT_KEY,
     models: ctx.models,
+    fallbackModels: ctx.fallbackModels,
     apiKey: ctx.apiKey,
     signal: ctx.signal,
     budget: ctx.budget,

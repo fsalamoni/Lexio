@@ -119,6 +119,8 @@ import {
   listThesisAnalysisSessions,
   getAcervoDocsWithoutTags,
   updateResearchNotebook,
+  ensureChatConversation,
+  appendChatTurn,
 } from './firestore-service'
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -576,6 +578,63 @@ describe('saveNotebookDocumentToDocuments', () => {
     )
     expect(mockSetDoc).toHaveBeenCalledTimes(2)
     expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('repairs a missing chat conversation document with an idempotent merge', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => false, id: 'conv-1', data: () => ({}) })
+
+    const result = await ensureChatConversation(uid, 'conv-1', { title: 'Parecer constitucional', effort: 'medio' })
+
+    expect(result.id).toBe('conv-1')
+    expect(result.title).toBe('Parecer constitucional')
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'chat_conversations', 'conv-1',
+    )
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-1' },
+      expect.objectContaining({
+        title: 'Parecer constitucional',
+        effort: 'medio',
+        last_preview: '',
+        created_at: expect.any(String),
+        updated_at: expect.any(String),
+      }),
+      { merge: true },
+    )
+  })
+
+  it('ensures the chat conversation parent before appending a turn', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => false, id: 'conv-1', data: () => ({}) })
+    mockAddDoc.mockResolvedValueOnce({ id: 'turn-1' })
+
+    const turnId = await appendChatTurn(uid, 'conv-1', {
+      conversation_id: 'conv-1',
+      user_input: 'Elabore um parecer sobre nepotismo.',
+      trail: [],
+      assistant_markdown: null,
+      status: 'running',
+    })
+
+    expect(turnId).toBe('turn-1')
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-1' },
+      expect.objectContaining({ title: 'Elabore um parecer sobre nepotismo.' }),
+      { merge: true },
+    )
+    expect(mockCollection).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'chat_conversations', 'conv-1', 'turns',
+    )
+    expect(mockAddDoc).toHaveBeenCalledWith('col-ref', expect.objectContaining({
+      conversation_id: 'conv-1',
+      user_input: 'Elabore um parecer sobre nepotismo.',
+      status: 'running',
+    }))
+    expect(mockUpdateDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-1' },
+      expect.objectContaining({ updated_at: expect.any(String) }),
+    )
   })
 })
 

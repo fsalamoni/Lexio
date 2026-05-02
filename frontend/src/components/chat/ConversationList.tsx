@@ -30,8 +30,8 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
       setLoading(false)
       return
     }
-    setLoading(true)
-    ;(async () => {
+    const loadConversations = async () => {
+      setLoading(true)
       try {
         if (!IS_FIREBASE) {
           if (cancelled) return
@@ -48,8 +48,14 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
       } finally {
         if (!cancelled) setLoading(false)
       }
-    })()
-    return () => { cancelled = true }
+    }
+    void loadConversations()
+    const onConversationUpserted = () => { void loadConversations() }
+    window.addEventListener('lexio:chat-conversation-upserted', onConversationUpserted)
+    return () => {
+      cancelled = true
+      window.removeEventListener('lexio:chat-conversation-upserted', onConversationUpserted)
+    }
   }, [userId])
 
   const handleCreate = async () => {

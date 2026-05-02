@@ -8,6 +8,7 @@ import type {
 } from '../../lib/firestore-types'
 import {
   appendChatTurn,
+  ensureChatConversation,
   getChatConversation,
   listChatTurns,
   updateChatTurn,
@@ -22,7 +23,12 @@ import {
   mockOrchestratorLLM,
   runChatTurn,
 } from '../../lib/chat-orchestrator'
-import { loadChatOrchestratorModels } from '../../lib/model-config'
+import {
+  buildPipelineFallbackResolver,
+  CHAT_ORCHESTRATOR_AGENT_DEFS,
+  loadChatOrchestratorModels,
+  loadFallbackPriorityConfig,
+} from '../../lib/model-config'
 import { getOpenRouterKey } from '../../lib/generation-service'
 import { useAuth } from '../../contexts/AuthContext'
 import { IS_FIREBASE } from '../../lib/firebase'
@@ -57,6 +63,13 @@ const initialState: ChatControllerState = {
   status: 'idle',
   error: null,
   effort: DEFAULT_EFFORT,
+}
+
+const CHAT_CONVERSATION_UPSERTED_EVENT = 'lexio:chat-conversation-upserted'
+
+function notifyChatConversationUpserted(conversationId: string) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(CHAT_CONVERSATION_UPSERTED_EVENT, { detail: { conversationId } }))
 }
 
 function reducer(state: ChatControllerState, action: Action): ChatControllerState {
@@ -143,11 +156,10 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
           dispatch({ type: 'LOAD_SUCCESS', conversation: synthetic, turns: [] })
           return
         }
-        const conv = await getChatConversation(userId!, conversationId)
+        let conv = await getChatConversation(userId!, conversationId)
         if (!conv) {
-          if (cancelled) return
-          dispatch({ type: 'LOAD_ERROR', error: 'Conversa não encontrada.' })
-          return
+          conv = await ensureChatConversation(userId!, conversationId, { title: 'Conversa recuperada' })
+          notifyChatConversationUpserted(conversationId)
         }
         const { items: turns } = await listChatTurns(userId!, conversationId)
         if (cancelled) return
@@ -185,6 +197,11 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
 
     if (IS_FIREBASE && userId) {
       try {
+        await ensureChatConversation(userId, conversationId, {
+          title: trimmed.slice(0, 80),
+          effort: state.effort,
+        })
+        notifyChatConversationUpserted(conversationId)
         turnId = await appendChatTurn(userId, conversationId, {
           conversation_id: conversationId,
           user_input: trimmed,
@@ -208,18 +225,47 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
 
     // Build models map + API key (mock stays empty for demo).
     let models: Record<string, string> = {}
+    let fallbackModels: Record<string, string[]> = {}
     let apiKey = ''
     try {
       if (mock) {
         models = mockModelMap()
+        fallbackModels = {}
         apiKey = 'demo'
       } else {
         models = await loadChatOrchestratorModels(userId ?? undefined)
+        const fallbackConfig = await loadFallbackPriorityConfig(userId ?? undefined)
+        const resolveFallbacks = buildPipelineFallbackResolver(CHAT_ORCHESTRATOR_AGENT_DEFS, fallbackConfig)
+        fallbackModels = Object.fromEntries(
+          Object.entries(models).map(([agentKey, model]) => [agentKey, resolveFallbacks(agentKey, model)]),
+        )
         apiKey = await getOpenRouterKey(userId ?? undefined)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      dispatch({ type: 'SEND_ERROR', error: message })
+      const completedAt = new Date().toISOString()
+      const errorEvent: ChatTrailEvent = { type: 'error', message, ts: completedAt }
+      const failedTurn: ChatTurnData = {
+        ...liveTurn,
+        id: turnId,
+        trail: [errorEvent],
+        assistant_markdown: `Não consegui iniciar o orquestrador porque a configuração falhou: ${message}`,
+        status: 'error',
+        completed_at: completedAt,
+      }
+      if (IS_FIREBASE && userId) {
+        try {
+          await updateChatTurn(userId, conversationId, turnId, {
+            trail: failedTurn.trail,
+            assistant_markdown: failedTurn.assistant_markdown,
+            status: 'error',
+            completed_at: completedAt,
+          })
+        } catch {
+          // best-effort; the in-memory turn still shows the failure.
+        }
+      }
+      dispatch({ type: 'COMMIT_TURN', turn: failedTurn, status: 'error' })
       return
     }
 
@@ -270,6 +316,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         history,
         user_input: trimmed,
         models,
+        fallbackModels,
         apiKey,
         signal: controller.signal,
         onTrail,
@@ -343,18 +390,29 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         return
       }
       const message = err instanceof Error ? err.message : String(err)
-      dispatch({ type: 'SEND_ERROR', error: message })
+      const completedAt = new Date().toISOString()
+      const errorEvent: ChatTrailEvent = { type: 'error', message, ts: completedAt }
+      const failedTurn: ChatTurnData = {
+        ...liveTurn,
+        id: turnId,
+        trail: [...trailBuffer, errorEvent],
+        assistant_markdown: `O orquestrador não conseguiu concluir este turno. O pedido ficou salvo e pode ser reenviado.\n\n**Detalhe técnico:** ${message}`,
+        status: 'error',
+        completed_at: completedAt,
+      }
       if (IS_FIREBASE && userId) {
         try {
           await updateChatTurn(userId, conversationId, turnId, {
             status: 'error',
-            trail: trailBuffer.slice(),
-            completed_at: new Date().toISOString(),
+            trail: failedTurn.trail,
+            assistant_markdown: failedTurn.assistant_markdown,
+            completed_at: failedTurn.completed_at,
           })
         } catch {
           // best-effort
         }
       }
+      dispatch({ type: 'COMMIT_TURN', turn: failedTurn, status: 'error' })
     } finally {
       abortRef.current = null
     }
