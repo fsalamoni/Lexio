@@ -62,7 +62,7 @@ import {
   type ResearchContextAuditSummary,
 } from '../../lib/notebook-context-audit'
 import { getOpenRouterKey } from '../../lib/generation-service'
-import { callLLMWithFallback, callLLMWithMessages, callLLMWithMessagesFallback, ModelUnavailableError } from '../../lib/llm-client'
+import { callLLMWithFallback, callLLMWithMessages, callLLMWithMessagesFallback, ModelUnavailableError, type LLMCallOptions } from '../../lib/llm-client'
 import { buildPipelineFallbackResolver, loadFallbackPriorityConfig, loadResearchNotebookModels, loadVideoPipelineModels, RESEARCH_NOTEBOOK_AGENT_DEFS } from '../../lib/model-config'
 import { analyzeNotebookAcervo, type AcervoAnalysisProgress, type AnalyzedDocument } from '../../lib/notebook-acervo-analyzer'
 import {
@@ -177,6 +177,28 @@ async function loadTtsRuntime() {
 
 const ARTIFACT_TYPE_MAP = new Map(ARTIFACT_TYPES.map((artifact) => [artifact.type, artifact] as const))
 const MEDIA_ARTIFACT_TYPES = new Set<StudioArtifact['type']>(['audio_script', 'video_script', 'video_production'])
+
+type ChatTrailKind =
+  | 'config'
+  | 'context'
+  | 'web_search'
+  | 'web_search_done'
+  | 'model_call'
+  | 'streaming'
+  | 'fallback'
+  | 'retry'
+  | 'persisting'
+  | 'complete'
+  | 'warn'
+  | 'error'
+
+interface ChatTrailEvent {
+  id: string
+  kind: ChatTrailKind
+  label: string
+  detail?: string
+  timestamp: string
+}
 const VISUAL_ARTIFACT_TYPES = new Set<StudioArtifactType>(['apresentacao', 'mapa_mental', 'infografico', 'tabela_dados'])
 const STUDIO_BRIDGE_PROMPT_LIMIT = 600
 const SECONDARY_TOAST_DELAY_MS = 600
@@ -463,6 +485,8 @@ export default function ResearchNotebookV2() {
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [useWebSearch, setUseWebSearch] = useState(false)
+  const [chatStreamingMessageId, setChatStreamingMessageId] = useState<string | null>(null)
+  const [chatTrail, setChatTrail] = useState<ChatTrailEvent[]>([])
   const [lastChatContextAudit, setLastChatContextAudit] = useState<ChatContextAuditSummary | null>(null)
   const [externalSearchQuery, setExternalSearchQuery] = useState('')
   const [externalResearchLoading, setExternalResearchLoading] = useState(false)
@@ -2417,16 +2441,28 @@ export default function ResearchNotebookV2() {
     patchNotebook(notebookId, { messages: optimisticMessages, updated_at: userMsg.created_at })
     setChatInput('')
     setChatLoading(true)
+    setChatTrail([])
+    setChatStreamingMessageId(null)
+
+    const trailStart = performance.now()
+    const pushTrail = (kind: ChatTrailKind, label: string, detail?: string) => {
+      setChatTrail((current) => [
+        ...current,
+        { id: generateId(), kind, label, detail, timestamp: new Date().toISOString() },
+      ])
+    }
+
+    pushTrail('config', 'Mensagem do usuário recebida', userInput.length > 80 ? `${userInput.slice(0, 80)}…` : userInput)
 
     // Persist the user message immediately so it's never lost — even if the
     // assistant call fails, the conversation history reflects what the user
     // actually typed. The orchestrator MUST never lose user input.
     try {
       await updateResearchNotebook(userId, notebookId, { messages: optimisticMessages })
+      pushTrail('persisting', 'Mensagem persistida no histórico')
     } catch (persistError) {
       console.warn('[Lexio] handleSendMessage: failed to persist user message immediately', persistError)
-      // We deliberately don't rollback here — keep the optimistic UI; the
-      // next persistence pass (after the assistant reply) will reconcile.
+      pushTrail('warn', 'Falha ao persistir mensagem do usuário (UI manteve)', String((persistError as Error)?.message || persistError))
     }
 
     const appendAssistantFailureMessage = async (failureContent: string) => {
@@ -2458,6 +2494,7 @@ export default function ResearchNotebookV2() {
         return ''
       })
       if (!apiKey) {
+        pushTrail('error', 'Chave OpenRouter ausente', 'Configure em Configurações > API Keys')
         await appendAssistantFailureMessage(
           '⚠️ Não foi possível obter a chave OpenRouter. Configure-a em Configurações > API Keys e tente novamente. Sua mensagem está salva no histórico.',
         )
@@ -2477,6 +2514,7 @@ export default function ResearchNotebookV2() {
       ])
       const model = models?.notebook_assistente
       if (!model) {
+        pushTrail('error', 'Modelo do agente não configurado', AGENT_LABELS.notebook_assistente)
         await appendAssistantFailureMessage(
           `⚠️ O agente "${AGENT_LABELS.notebook_assistente}" não possui modelo configurado. Vá em Configurações > Caderno de Pesquisa e selecione um modelo. Sua mensagem está salva no histórico.`,
         )
@@ -2486,6 +2524,7 @@ export default function ResearchNotebookV2() {
         )
         return
       }
+      pushTrail('config', 'Configuração carregada', `Modelo principal: ${model}`)
 
       const baseChatContextAudit = buildChatContextAudit({
         sources: activeNotebook.sources,
@@ -2496,13 +2535,21 @@ export default function ResearchNotebookV2() {
         maxConversationChars: MAX_STUDIO_CONTEXT_CHARS,
         liveWebEnabled: useWebSearch,
       })
+      pushTrail(
+        'context',
+        'Contexto compilado',
+        `${baseChatContextAudit.sourceSummary.includedSources}/${baseChatContextAudit.sourceSummary.totalSources} fonte(s) · ${baseChatContextAudit.conversationSummary.includedMessages} msg recentes`,
+      )
 
       let webSnippet = ''
       if (useWebSearch) {
+        pushTrail('web_search', 'Buscando na web ao vivo', `Tema: ${activeNotebook.topic}`)
         try {
           webSnippet = (await searchWebService(`${activeNotebook.topic} ${userMsg.content}`)).slice(0, MAX_WEB_SEARCH_CHARS)
+          pushTrail('web_search_done', 'Busca web concluída', webSnippet ? `${webSnippet.length} caracteres incorporados` : 'sem resultados úteis')
         } catch (webError) {
           console.warn('[Lexio] handleSendMessage: web search failed (continuing without web context)', webError)
+          pushTrail('warn', 'Busca web falhou (seguindo sem)', String((webError as Error)?.message || webError))
           webSnippet = ''
         }
       }
@@ -2556,6 +2603,55 @@ Instruções:
       // recover from transient errors and unavailable models without crashing.
       const resolveFallbacks = buildPipelineFallbackResolver(RESEARCH_NOTEBOOK_AGENT_DEFS, fallbackConfig)
       const fallbackChain = resolveFallbacks('notebook_assistente', model)
+      if (fallbackChain.length > 0) {
+        pushTrail('config', `Cadeia de fallback: ${fallbackChain.length}`, fallbackChain.join(' → '))
+      }
+
+      // Live streaming: create a placeholder assistant message and let the
+      // SSE stream append tokens to it as they arrive — same pattern as
+      // Claude/Manus. If the provider doesn't stream, this still works:
+      // onToken is called once with the final content.
+      const streamingMsgId = generateId()
+      const streamingMsgCreatedAt = new Date().toISOString()
+      const placeholderMsg: NotebookMessage = {
+        id: streamingMsgId,
+        role: 'assistant',
+        content: '',
+        agent: 'notebook_assistente',
+        created_at: streamingMsgCreatedAt,
+      }
+      setChatStreamingMessageId(streamingMsgId)
+      patchNotebook(notebookId, {
+        messages: [...optimisticMessages, placeholderMsg],
+        updated_at: streamingMsgCreatedAt,
+      })
+
+      let lastTokenTrailAt = 0
+      let tokenCount = 0
+      const onToken: NonNullable<LLMCallOptions['onToken']> = (_delta, total) => {
+        tokenCount += 1
+        setActiveNotebook((current) => {
+          if (!current || current.id !== notebookId) return current
+          const next = current.messages.map((msg) => (msg.id === streamingMsgId ? { ...msg, content: total } : msg))
+          return { ...current, messages: next }
+        })
+        // Throttle trail updates so we don't add hundreds of entries.
+        const now = performance.now()
+        if (now - lastTokenTrailAt > 600 || tokenCount === 1) {
+          lastTokenTrailAt = now
+          setChatTrail((current) => {
+            const last = current[current.length - 1]
+            const summary = `${total.length} caracteres recebidos`
+            if (last?.kind === 'streaming') {
+              return [...current.slice(0, -1), { ...last, detail: summary, timestamp: new Date().toISOString() }]
+            }
+            return [
+              ...current,
+              { id: generateId(), kind: 'streaming', label: 'Recebendo resposta em tempo real', detail: summary, timestamp: new Date().toISOString() },
+            ]
+          })
+        }
+      }
 
       // Multi-attempt strategy: the LLM client already retries transient
       // errors and walks the fallback chain. We add one extra outer attempt
@@ -2566,6 +2662,11 @@ Instruções:
       let result: Awaited<ReturnType<typeof callLLMWithMessagesFallback>> | null = null
       let lastError: unknown = null
       for (let attempt = 1; attempt <= MAX_OUTER_ATTEMPTS; attempt += 1) {
+        if (attempt === 1) {
+          pushTrail('model_call', `Chamando ${AGENT_LABELS.notebook_assistente}`, model)
+        } else {
+          pushTrail('retry', `Tentativa ${attempt}/${MAX_OUTER_ATTEMPTS}`, 'Aguardando antes de tentar novamente')
+        }
         try {
           result = await callLLMWithMessagesFallback(
             apiKey,
@@ -2574,22 +2675,36 @@ Instruções:
             fallbackChain,
             4000,
             0.3,
+            { onToken },
           )
           break
         } catch (attemptError) {
           lastError = attemptError
           if (attemptError instanceof DOMException && attemptError.name === 'AbortError') break
+          // Reset the streaming placeholder content because the next attempt
+          // will start fresh — keep the placeholder so the user sees retry
+          // happening.
+          setActiveNotebook((current) => {
+            if (!current || current.id !== notebookId) return current
+            const next = current.messages.map((msg) => (msg.id === streamingMsgId ? { ...msg, content: '' } : msg))
+            return { ...current, messages: next }
+          })
           if (attempt < MAX_OUTER_ATTEMPTS) {
             await new Promise((resolve) => globalThis.setTimeout(resolve, 1500 * attempt))
           }
         }
       }
 
+      setChatStreamingMessageId(null)
+
       if (!result) {
+        // Drop the placeholder before showing the failure message.
+        patchNotebook(notebookId, { messages: optimisticMessages, updated_at: userMsg.created_at })
         const humanized = humanizeError(lastError)
         const detail = lastError instanceof ModelUnavailableError
           ? `O modelo "${lastError.modelId}" e seus fallbacks estão indisponíveis. Vá em Configurações > Caderno de Pesquisa para revisar a seleção, ou em Configurações > Prioridades de Fallback para ampliar as opções.`
           : humanized.detail
+        pushTrail('error', 'Falha após todas as tentativas', detail)
         await appendAssistantFailureMessage(
           `⚠️ Não consegui gerar uma resposta após múltiplas tentativas. ${detail}\n\nSua mensagem está salva no histórico — você pode reformular a pergunta ou tentar novamente em alguns instantes.`,
         )
@@ -2597,13 +2712,17 @@ Instruções:
         return
       }
 
+      if (result.operational?.fallbackUsed) {
+        pushTrail('fallback', 'Fallback utilizado', `${result.operational.fallbackFrom ?? model} → ${result.model}`)
+      }
+
       const assistantMsg: NotebookMessage = {
-        id: generateId(),
+        id: streamingMsgId,
         role: 'assistant',
         content: result.content,
         agent: 'notebook_assistente',
         model: result.model,
-        created_at: new Date().toISOString(),
+        created_at: streamingMsgCreatedAt,
       }
 
       const execution = createUsageExecutionRecord({
@@ -2624,7 +2743,7 @@ Instruções:
 
       const freshNotebook = await getFreshNotebookOrThrow(notebookId).catch(() => null)
       const baseMessages = freshNotebook?.messages.some((message) => message.id === userMsg.id)
-        ? freshNotebook.messages
+        ? freshNotebook.messages.filter((message) => message.id !== streamingMsgId)
         : [...(freshNotebook?.messages || optimisticMessages.slice(0, -1)), userMsg]
       const finalMessages = [...baseMessages, assistantMsg]
       const updatedExecutions = [...(freshNotebook?.llm_executions || previousExecutions), execution]
@@ -2634,14 +2753,23 @@ Instruções:
           messages: finalMessages,
           llm_executions: updatedExecutions,
         })
+        pushTrail('persisting', 'Resposta persistida')
       } catch (persistError) {
         console.warn('[Lexio] handleSendMessage: failed to persist assistant reply (UI still shows it)', persistError)
+        pushTrail('warn', 'Falha ao persistir resposta (UI manteve)', String((persistError as Error)?.message || persistError))
       }
       patchNotebook(notebookId, {
         messages: finalMessages,
         llm_executions: updatedExecutions,
-        updated_at: assistantMsg.created_at,
+        updated_at: streamingMsgCreatedAt,
       })
+
+      const totalMs = Math.round(performance.now() - trailStart)
+      pushTrail(
+        'complete',
+        'Resposta concluída',
+        `${result.tokens_out} tokens · ${(totalMs / 1000).toFixed(1)}s · ${result.model}`,
+      )
 
       if (result.operational?.fallbackUsed) {
         toast.info(
@@ -2655,6 +2783,10 @@ Instruções:
       // conversation timeline stays intact and the user can retry.
       console.error('[Lexio] handleSendMessage: unexpected failure (handled)', unexpectedError)
       const humanized = humanizeError(unexpectedError)
+      pushTrail('error', 'Erro inesperado', humanized.detail)
+      // Drop any streaming placeholder before appending the failure message.
+      patchNotebook(notebookId, { messages: optimisticMessages, updated_at: userMsg.created_at })
+      setChatStreamingMessageId(null)
       await appendAssistantFailureMessage(
         `⚠️ Ocorreu um erro inesperado: ${humanized.detail}\n\nSua mensagem está salva no histórico. Tente novamente — o orquestrador continua disponível.`,
       )
@@ -4769,8 +4901,8 @@ Instruções:
               )}
 
               {activeSection === 'chat' && (
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-                  <section className="v2-panel flex min-h-[720px] flex-col overflow-hidden">
+                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                  <section className="v2-panel flex h-[calc(100vh-12rem)] min-h-[520px] flex-col overflow-hidden">
                     <div className="border-b border-[var(--v2-line-soft)] px-5 py-4 lg:px-6">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
@@ -4793,7 +4925,7 @@ Instruções:
                       </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto px-5 py-5 lg:px-6">
+                    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 lg:px-6">
                       {activeNotebook.messages.length === 0 ? (
                         <div className="flex h-full flex-col items-center justify-center text-center">
                           <Bot className="h-12 w-12 text-[var(--v2-accent-strong)]" />
@@ -4822,35 +4954,51 @@ Instruções:
                         </div>
                       ) : (
                         <div className="space-y-4">
-                          {activeNotebook.messages.map((message) => (
-                            <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-[88%] rounded-[1.5rem] px-4 py-3 text-sm shadow-[var(--v2-shadow-soft)] ${message.role === 'user' ? 'rounded-br-md bg-[var(--v2-ink-strong)] text-white' : 'rounded-bl-md border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] text-[var(--v2-ink-strong)]'}`}>
-                                {message.role === 'assistant' ? (
-                                  <div
-                                    className="prose prose-sm max-w-none text-[var(--v2-ink-strong)] prose-p:my-2 prose-pre:my-3 prose-pre:whitespace-pre-wrap prose-code:text-xs prose-a:text-[var(--v2-accent-strong)]"
-                                    dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(message.content) }}
-                                  />
-                                ) : (
-                                  <div className="whitespace-pre-wrap break-words">{message.content}</div>
-                                )}
+                          {activeNotebook.messages.map((message) => {
+                            const isStreamingMessage = message.id === chatStreamingMessageId
+                            return (
+                              <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[88%] rounded-[1.5rem] px-4 py-3 text-sm shadow-[var(--v2-shadow-soft)] ${message.role === 'user' ? 'rounded-br-md bg-[var(--v2-ink-strong)] text-white' : 'rounded-bl-md border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] text-[var(--v2-ink-strong)]'}`}>
+                                  {message.role === 'assistant' ? (
+                                    <>
+                                      {message.content ? (
+                                        <div
+                                          className="prose prose-sm max-w-none text-[var(--v2-ink-strong)] prose-p:my-2 prose-pre:my-3 prose-pre:whitespace-pre-wrap prose-code:text-xs prose-a:text-[var(--v2-accent-strong)]"
+                                          dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(message.content) }}
+                                        />
+                                      ) : isStreamingMessage ? (
+                                        <div className="flex items-center gap-2 text-[var(--v2-ink-soft)]">
+                                          <Loader2 className="h-4 w-4 animate-spin text-[var(--v2-accent-strong)]" />
+                                          <span>Aguardando primeira palavra do modelo…</span>
+                                        </div>
+                                      ) : null}
+                                      {isStreamingMessage && message.content && (
+                                        <span className="inline-block h-3 w-1.5 translate-y-0.5 animate-pulse bg-[var(--v2-accent-strong)] align-baseline" aria-hidden />
+                                      )}
+                                    </>
+                                  ) : (
+                                    <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                                  )}
 
-                                <div className={`mt-2 flex items-center gap-2 text-[10px] ${message.role === 'user' ? 'text-white/65' : 'text-[var(--v2-ink-faint)]'}`}>
-                                  <span>
-                                    {formatDate(message.created_at)}
-                                    {message.agent && <span className="ml-2">· {message.agent}</span>}
-                                  </span>
-                                  {message.role === 'assistant' && <CopyButton text={message.content} />}
+                                  <div className={`mt-2 flex items-center gap-2 text-[10px] ${message.role === 'user' ? 'text-white/65' : 'text-[var(--v2-ink-faint)]'}`}>
+                                    <span>
+                                      {formatDate(message.created_at)}
+                                      {message.agent && <span className="ml-2">· {message.agent}</span>}
+                                      {isStreamingMessage && <span className="ml-2 text-[var(--v2-accent-strong)]">· streaming</span>}
+                                    </span>
+                                    {message.role === 'assistant' && message.content && <CopyButton text={message.content} />}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            )
+                          })}
 
-                          {chatLoading && (
+                          {chatLoading && !chatStreamingMessageId && (
                             <div className="flex justify-start">
                               <div className="rounded-[1.5rem] rounded-bl-md border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] px-4 py-3 text-sm text-[var(--v2-ink-soft)] shadow-[var(--v2-shadow-soft)]">
                                 <div className="flex items-center gap-2">
                                   <Loader2 className="h-4 w-4 animate-spin text-[var(--v2-accent-strong)]" />
-                                  Pesquisando, consolidando fontes e preparando a resposta...
+                                  Compondo contexto e abrindo o stream do modelo...
                                 </div>
                               </div>
                             </div>
@@ -4910,6 +5058,76 @@ Instruções:
                   </section>
 
                   <aside className="space-y-6">
+                    {(chatTrail.length > 0 || chatLoading) && (
+                      <section className="v2-panel p-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Trilha do orquestrador</p>
+                            <h3 className="mt-2 text-xl font-semibold text-[var(--v2-ink-strong)]">Pensamento ao vivo</h3>
+                          </div>
+                          {chatLoading ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Em execução
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setChatTrail([])}
+                              className="inline-flex items-center gap-1 rounded-full border border-[var(--v2-line-soft)] bg-white/70 px-2 py-1 text-[10px] font-medium text-[var(--v2-ink-soft)] transition-colors hover:border-[var(--v2-line-strong)] hover:bg-white"
+                            >
+                              <X className="h-3 w-3" />
+                              Limpar
+                            </button>
+                          )}
+                        </div>
+                        <ol className="mt-4 max-h-[42vh] space-y-2 overflow-y-auto pr-1">
+                          {chatTrail.length === 0 ? (
+                            <li className="rounded-[1rem] border border-dashed border-[var(--v2-line-strong)] px-3 py-4 text-center text-[11px] text-[var(--v2-ink-soft)]">
+                              Aguardando primeira etapa…
+                            </li>
+                          ) : (
+                            chatTrail.map((event) => {
+                              const palette = (() => {
+                                switch (event.kind) {
+                                  case 'error':
+                                    return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', dot: 'bg-red-500' }
+                                  case 'warn':
+                                    return { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', dot: 'bg-amber-500' }
+                                  case 'fallback':
+                                  case 'retry':
+                                    return { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', dot: 'bg-orange-500' }
+                                  case 'streaming':
+                                    return { bg: 'bg-sky-50', border: 'border-sky-200', text: 'text-sky-700', dot: 'bg-sky-500' }
+                                  case 'web_search':
+                                  case 'web_search_done':
+                                    return { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', dot: 'bg-indigo-500' }
+                                  case 'model_call':
+                                    return { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', dot: 'bg-purple-500' }
+                                  case 'complete':
+                                    return { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', dot: 'bg-emerald-500' }
+                                  default:
+                                    return { bg: 'bg-[rgba(245,241,232,0.55)]', border: 'border-[var(--v2-line-soft)]', text: 'text-[var(--v2-ink-strong)]', dot: 'bg-[var(--v2-ink-faint)]' }
+                                }
+                              })()
+                              return (
+                                <li key={event.id} className={`rounded-[1rem] border px-3 py-2 text-[11px] leading-snug ${palette.bg} ${palette.border} ${palette.text}`}>
+                                  <div className="flex items-start gap-2">
+                                    <span className={`mt-1 inline-flex h-1.5 w-1.5 flex-shrink-0 rounded-full ${palette.dot} ${event.kind === 'streaming' ? 'animate-pulse' : ''}`} />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-semibold">{event.label}</p>
+                                      {event.detail && <p className="mt-0.5 break-words opacity-80">{event.detail}</p>}
+                                      <p className="mt-0.5 text-[10px] opacity-60">{formatDate(event.timestamp)}</p>
+                                    </div>
+                                  </div>
+                                </li>
+                              )
+                            })
+                          )}
+                        </ol>
+                      </section>
+                    )}
+
                     <section className="v2-panel p-5">
                       <div className="flex items-center justify-between gap-3">
                         <div>
