@@ -9,6 +9,7 @@ describe('user-scoped agent configuration coverage', () => {
       'acervo_ementa_models',
       'agent_models',
       'audio_pipeline_models',
+      'chat_orchestrator_models',
       'context_detail_models',
       'document_v3_models',
       'notebook_acervo_models',
@@ -16,6 +17,22 @@ describe('user-scoped agent configuration coverage', () => {
       'research_notebook_models',
       'thesis_analyst_models',
       'video_pipeline_models',
+    ])
+  })
+
+  it('registers every chat orchestrator agent under chat_orchestrator_models', () => {
+    expect(AGENT_CONFIG_DEFS.chat_orchestrator_models.map(agent => agent.key)).toEqual([
+      'chat_orchestrator',
+      'chat_planner',
+      'chat_clarifier',
+      'chat_legal_researcher',
+      'chat_code_writer',
+      'chat_fs_actor',
+      'chat_summarizer',
+      'chat_critic',
+      'chat_writer',
+      'chat_argument_builder',
+      'chat_ethics_auditor',
     ])
   })
 

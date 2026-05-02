@@ -144,6 +144,7 @@ docs/              → Documentação técnica
 | `/forgot-password` | ForgotPassword | Público |
 | `/reset-password` | ResetPassword | Público |
 | `/` | Dashboard | Auth |
+| `/chat` | Chat (Orquestrador) | Auth |
 | `/documents` | DocumentList | Auth |
 | `/documents/new` | NewDocument | Auth |
 | `/documents/:id` | DocumentDetail | Auth |
@@ -319,7 +320,7 @@ docs/              → Documentação técnica
 
 ## 11. Pipelines e agentes — inventário completo {#pipelines-e-agentes}
 
-### Total: 10 pipelines · 58 agentes
+### Total: 11 pipelines · 69 agentes
 
 ---
 
@@ -482,6 +483,28 @@ docs/              → Documentação técnica
 
 ---
 
+### Pipeline 11 — Orquestrador do Chat (11 agentes)
+**Config Firestore:** `chat_orchestrator_models`
+**Página:** `/chat` · **Arquivos:** `lib/chat-orchestrator/`, `pages/Chat.tsx`
+
+A página `/chat` hospeda uma conversa orquestrada com tools/super-skills e (no PR4) ações no PC via sidecar Node `@lexio/desktop`. PR1 entregou registro de agentes e persistência (`/users/{uid}/chat_conversations/{id}` + subcoleção `turns`); PR2 ligou o loop runtime e o `call_agent` para um subconjunto de especialistas; PR3 expandiu o quadro para 11 agentes (incluindo `chat_argument_builder` e `chat_ethics_auditor` inspirados no SalomoneIA), refinou os prompts dos especialistas e abriu o `call_agent` para todos os especialistas (exceto orquestrador e crítico, que têm fluxos próprios). PR4 entrega o sidecar `@lexio/desktop` para ações reais de filesystem/shell.
+
+| # | Key | Label | Categoria | Tier |
+|---|-----|-------|-----------|------|
+| 1 | `chat_orchestrator` | Orquestrador | reasoning | premium |
+| 2 | `chat_planner` | Planejador | reasoning | balanced |
+| 3 | `chat_clarifier` | Esclarecedor | extraction | fast |
+| 4 | `chat_legal_researcher` | Pesquisador Jurídico | reasoning | balanced |
+| 5 | `chat_code_writer` | Programador | writing | balanced |
+| 6 | `chat_fs_actor` | Operador de Arquivos | extraction | fast |
+| 7 | `chat_summarizer` | Sumarizador | synthesis | fast |
+| 8 | `chat_critic` | Crítico | reasoning | balanced |
+| 9 | `chat_writer` | Redator | writing | balanced |
+| 10 | `chat_argument_builder` | Fundamentador | reasoning | balanced |
+| 11 | `chat_ethics_auditor` | Auditor Ético | reasoning | balanced |
+
+---
+
 ### Resumo de agentes por pipeline
 
 | Pipeline | Agentes | Config Firestore |
@@ -496,7 +519,8 @@ docs/              → Documentação técnica
 | Vídeo | 11 | `video_pipeline_models` |
 | Áudio | 6 | `audio_pipeline_models` |
 | Apresentação | 6 | `presentation_pipeline_models` |
-| **TOTAL** | **58 agentes únicos** | **10 configs** |
+| Orquestrador do Chat | 11 (PR3: especialistas + super-skills) | `chat_orchestrator_models` |
+| **TOTAL** | **69 agentes únicos** | **11 configs** |
 
 ---
 

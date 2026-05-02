@@ -97,6 +97,11 @@ export interface UserSettingsData {
   audio_pipeline_models?: Record<string, string>
   presentation_pipeline_models?: Record<string, string>
   document_v3_models?: Record<string, string>
+  chat_orchestrator_models?: Record<string, string>
+  /** Default effort level used by the Chat orchestrator when the user opens a new conversation. */
+  chat_effort_default?: ChatEffortLevel
+  /** Timestamp of the last successful pairing handshake with the @lexio/desktop sidecar (no token persisted). */
+  chat_sidecar_paired_at?: string
   /**
    * User-defined fallback model priorities per agent category.
    * When a primary model fails (transient/upstream error or unavailable),
@@ -675,4 +680,118 @@ export interface PlatformFunctionRolloutPolicyPlan {
   hold_count: number
   relax_guarded_count: number
   rows: PlatformFunctionRolloutPolicyRow[]
+}
+
+// ── Chat Orchestrator (page `/chat`) ─────────────────────────────────────────
+
+/**
+ * Effort knob exposed to the user in the chat header. Maps to numerical
+ * presets (max iterations, fan-out, token budget) inside the orchestrator
+ * runtime; the value persisted on the conversation is the raw label.
+ */
+export type ChatEffortLevel = 'rapido' | 'medio' | 'profundo'
+
+/**
+ * Discriminated trail event emitted by the orchestrator while a turn is
+ * running. UI cards render each variant inline in the conversation stream
+ * (see PR3). Persisted as part of `ChatTurn.trail`.
+ */
+export type ChatTrailEvent =
+  | { type: 'iteration_start'; i: number; ts: string }
+  | { type: 'decision'; tool: string; rationale?: string; ts: string }
+  | { type: 'agent_call'; agent_key: string; task: string; ts: string }
+  | {
+      type: 'agent_response'
+      agent_key: string
+      output: string
+      usage?: UsageExecutionRecord
+      ts: string
+    }
+  | {
+      type: 'parallel_agents'
+      calls: Array<{ agent_key: string; task: string }>
+      ts: string
+    }
+  | {
+      type: 'super_skill_call'
+      skill: string
+      args_summary?: string
+      result_summary?: string
+      usage?: UsageExecutionRecord[]
+      ts: string
+    }
+  | { type: 'fs_action'; op: string; path: string; result?: string; ts: string }
+  | {
+      type: 'shell_action'
+      cmd: string
+      exit_code: number
+      stdout_tail?: string
+      stderr_tail?: string
+      duration_ms?: number
+      ts: string
+    }
+  | {
+      type: 'critic'
+      score: number
+      reasons: string[]
+      should_stop: boolean
+      ts: string
+    }
+  | {
+      type: 'clarification_request'
+      question: string
+      options?: string[]
+      ts: string
+    }
+  | { type: 'final_answer'; ts: string }
+  | { type: 'budget_hit'; reason: string; ts: string }
+  | { type: 'error'; message: string; ts: string }
+
+/** Lifecycle status of a single turn (one user input + assistant response). */
+export type ChatTurnStatus =
+  | 'running'
+  | 'awaiting_user'
+  | 'done'
+  | 'error'
+  | 'cancelled'
+
+/**
+ * Chat conversation document.
+ * Path: `/users/{uid}/chat_conversations/{conversationId}`.
+ * Turns live in the `turns` subcollection; the conversation document only
+ * stores metadata (title, effort knob, last preview).
+ */
+export interface ChatConversationData {
+  id?: string
+  title: string
+  effort: ChatEffortLevel
+  /** Display-only path the sidecar is rooted at, set when the user pairs the helper. */
+  sidecar_root_path?: string
+  /** Short preview of the latest assistant answer (used in the sidebar list). */
+  last_preview?: string
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Single turn inside a conversation.
+ * Path: `/users/{uid}/chat_conversations/{conversationId}/turns/{turnId}`.
+ * `trail` accumulates orchestration events as the turn progresses; the final
+ * markdown lands in `assistant_markdown` once the orchestrator emits
+ * `submit_final_answer` (or hits a hard stop).
+ */
+export interface ChatTurnData {
+  id?: string
+  conversation_id: string
+  user_input: string
+  trail: ChatTrailEvent[]
+  assistant_markdown: string | null
+  status: ChatTurnStatus
+  /** Pending question raised by the orchestrator while waiting for user input. */
+  pending_question?: { text: string; options?: string[] } | null
+  usage_summary?: Partial<UsageSummary>
+  /** Detailed per-call execution records (mirrors `documents/{id}.llm_executions`). */
+  llm_executions?: UsageExecutionRecord[]
+  created_at: string
+  completed_at?: string
 }

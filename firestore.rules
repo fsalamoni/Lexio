@@ -99,6 +99,22 @@ service cloud.firestore {
         allow read: if isSelf(userId) || isAdmin();
         allow write: if isSelf(userId);
       }
+
+      // ── /users/{userId}/chat_conversations/{conversationId} ──────────
+      // Chat orchestrator conversations (page /chat) — owner-only.
+      // Admins inherit read-only access via the collectionGroup rule below
+      // for aggregated platform analytics.
+      match /chat_conversations/{conversationId} {
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
+
+        // Each conversation owns a `turns` subcollection with one document
+        // per user/assistant exchange, including the orchestration trail.
+        match /turns/{turnId} {
+          allow read: if isSelf(userId) || isAdmin();
+          allow write: if isSelf(userId);
+        }
+      }
     }
 
     // ── Collection group access for platform analytics ──────────────────────
@@ -125,6 +141,14 @@ service cloud.firestore {
     }
 
     match /{path=**}/research_notebooks/{notebookId}/memory/{docId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/chat_conversations/{conversationId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/chat_conversations/{conversationId}/turns/{turnId} {
       allow read: if isAdmin();
     }
 

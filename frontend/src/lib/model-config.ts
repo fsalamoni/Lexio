@@ -722,6 +722,7 @@ type ScopedModelSettingsKey =
   | 'audio_pipeline_models'
   | 'presentation_pipeline_models'
   | 'document_v3_models'
+  | 'chat_orchestrator_models'
 
 function resolveScopedUid(uid?: string): string | undefined {
   return uid ?? getCurrentUserId() ?? undefined
@@ -1988,6 +1989,175 @@ export async function resetDocumentV3Models(uid?: string): Promise<void> {
   await resetScopedModelMap('document_v3_models', uid)
 }
 
+// ── Chat Orchestrator Agent Definitions ──────────────────────────────────────
+
+/**
+ * Chat Orchestrator pipeline — multi-agent conversational engine that powers
+ * the `/chat` page. The orchestrator decomposes the user request, dispatches
+ * specialists in parallel/sequence, summarises history when budget tightens,
+ * runs a critic, and emits the final answer. Specialists are invoked through
+ * the same scoped-model loading pipeline as every other Lexio pipeline.
+ *
+ * PR1 ships the agent registry, settings and config card. The runtime loop
+ * itself lands in PR2.
+ */
+export const CHAT_ORCHESTRATOR_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'chat_orchestrator',
+    label: 'Orquestrador',
+    description: 'Decide a próxima ação, despacha tools, invoca o crítico e emite a resposta final',
+    defaultModel: '',
+    recommendedTier: 'premium',
+    icon: 'compass',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Núcleo do chat: precisa decidir entre dezenas de tools com confiabilidade. Premium: Claude Sonnet, GPT-4.1, GPT-4o, Gemini 2.5 Pro. Modelos médios funcionam mas perdem precisão em tool-calling.',
+  },
+  {
+    key: 'chat_planner',
+    label: 'Planejador',
+    description: 'Quebra o pedido inicial em subtarefas e define a ordem ideal de execução',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'list-checks',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Planejamento estruturado curto. Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, Llama 4 Maverick. Grátis: DeepSeek R1:free, Llama 3.3 70B:free.',
+  },
+  {
+    key: 'chat_clarifier',
+    label: 'Esclarecedor',
+    description: 'Decide se vale interromper o usuário com uma pergunta antes de gastar mais tokens',
+    defaultModel: '',
+    recommendedTier: 'fast',
+    icon: 'help-circle',
+    agentCategory: 'extraction',
+    requiredCapability: 'text',
+    bestModelNote: 'Decisão rápida e barata. Claude Haiku, GPT-4o Mini, GPT-4.1 Nano, Gemini 2.5 Flash Lite, Llama 3.3 70B. Grátis: Gemini 2.0 Flash:free, Mistral Small:free.',
+  },
+  {
+    key: 'chat_legal_researcher',
+    label: 'Pesquisador Jurídico',
+    description: 'Conduz pesquisa em DataJud e na web e sintetiza descobertas relevantes para o caso',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'gavel',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Síntese de jurisprudência e doutrina. Premium: Claude Sonnet, GPT-4o, Gemini 2.5 Pro. Baratos: DeepSeek V3, Gemini 2.5 Flash, Qwen 2.5 72B.',
+  },
+  {
+    key: 'chat_code_writer',
+    label: 'Programador',
+    description: 'Gera ou edita código quando o turno envolve gravar/alterar arquivos via sidecar',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'code-2',
+    agentCategory: 'writing',
+    requiredCapability: 'text',
+    bestModelNote: 'Geração de código. Premium: Claude Sonnet, GPT-4.1, GPT-4o. Baratos: DeepSeek V3, Qwen3 30B, Llama 4 Maverick.',
+  },
+  {
+    key: 'chat_fs_actor',
+    label: 'Operador de Arquivos',
+    description: 'Traduz pedidos determinísticos em chamadas de filesystem/shell expostas pelo sidecar',
+    defaultModel: '',
+    recommendedTier: 'fast',
+    icon: 'folder-cog',
+    agentCategory: 'extraction',
+    requiredCapability: 'text',
+    bestModelNote: 'Mapeia ações em chamadas estruturadas. Modelos rápidos com boa aderência a JSON: GPT-4o Mini, Claude Haiku, Gemini 2.5 Flash, Mistral Small.',
+  },
+  {
+    key: 'chat_summarizer',
+    label: 'Sumarizador',
+    description: 'Comprime o histórico da conversa quando o orçamento de tokens fica apertado',
+    defaultModel: '',
+    recommendedTier: 'fast',
+    icon: 'file-minus',
+    agentCategory: 'synthesis',
+    requiredCapability: 'text',
+    bestModelNote: 'Compressão semântica rápida. GPT-4o Mini, Claude Haiku, Gemini 2.5 Flash, Mistral Small. Grátis: Llama 3.3 70B:free, Qwen3 30B:free.',
+  },
+  {
+    key: 'chat_critic',
+    label: 'Crítico',
+    description: 'Pontua o rascunho atual e decide se o orquestrador deve parar ou iterar mais',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'scale',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Avaliação crítica de qualidade. Premium: Claude Sonnet, GPT-4o. Baratos: DeepSeek V3, Gemini 2.5 Flash, Qwen 2.5 72B.',
+  },
+  {
+    key: 'chat_writer',
+    label: 'Redator',
+    description: 'Produz a resposta final do turno em markdown rico, com citações e formatação',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'pen-line',
+    agentCategory: 'writing',
+    requiredCapability: 'text',
+    bestModelNote: 'Redação final. Premium: Claude Sonnet, GPT-4.1, GPT-4o. Baratos: DeepSeek V3, Llama 4 Maverick, Gemini 2.5 Flash, Qwen 2.5 72B.',
+  },
+  {
+    key: 'chat_argument_builder',
+    label: 'Fundamentador',
+    description: 'Constrói argumentação jurídica em quatro etapas: tese, sustentação com evidência, contra-argumento mais forte e refutação',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'milestone',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Raciocínio adversarial. Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, Qwen 2.5 72B.',
+  },
+  {
+    key: 'chat_ethics_auditor',
+    label: 'Auditor Ético',
+    description: 'Avalia a entrega em quatro lentes: representação, framing, impacto sobre grupos vulneráveis e conformidade (LGPD, OAB, normas aplicáveis)',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'shield-check',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Avaliação de conformidade e ética. Premium: Claude Sonnet, GPT-4o. Baratos: DeepSeek V3, Gemini 2.5 Flash.',
+  },
+]
+
+/** Map from chat-orchestrator agent key → model ID */
+export type ChatOrchestratorModelMap = Record<string, string>
+
+/** Default model map for the chat orchestrator pipeline. */
+export function getDefaultChatOrchestratorModelMap(): ChatOrchestratorModelMap {
+  const map: ChatOrchestratorModelMap = {}
+  for (const def of CHAT_ORCHESTRATOR_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/**
+ * Load chat orchestrator model configuration.
+ * Returns saved overrides merged with defaults.
+ */
+export async function loadChatOrchestratorModels(uid?: string): Promise<ChatOrchestratorModelMap> {
+  return loadScopedModelMap('chat_orchestrator_models', CHAT_ORCHESTRATOR_AGENT_DEFS, getDefaultChatOrchestratorModelMap(), uid)
+}
+
+/**
+ * Save chat orchestrator model configuration to Firestore.
+ * Only stores non-default values to keep data minimal.
+ */
+export async function saveChatOrchestratorModels(models: ChatOrchestratorModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('chat_orchestrator_models', CHAT_ORCHESTRATOR_AGENT_DEFS, getDefaultChatOrchestratorModelMap(), models, uid)
+}
+
+/** Reset chat orchestrator models to defaults. */
+export async function resetChatOrchestratorModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('chat_orchestrator_models', uid)
+}
+
 export const AGENT_CONFIG_DEFS: Record<ScopedModelSettingsKey, AgentModelDef[]> = {
   agent_models: PIPELINE_AGENT_DEFS,
   thesis_analyst_models: THESIS_ANALYST_AGENT_DEFS,
@@ -2000,6 +2170,7 @@ export const AGENT_CONFIG_DEFS: Record<ScopedModelSettingsKey, AgentModelDef[]> 
   audio_pipeline_models: AUDIO_PIPELINE_AGENT_DEFS,
   presentation_pipeline_models: PRESENTATION_PIPELINE_AGENT_DEFS,
   document_v3_models: DOCUMENT_V3_PIPELINE_AGENT_DEFS,
+  chat_orchestrator_models: CHAT_ORCHESTRATOR_AGENT_DEFS,
 }
 
 export async function validateScopedAgentModels(

@@ -3,6 +3,7 @@ import {
   DollarSign, Coins, Cpu, BrainCircuit, ChevronDown, ChevronUp,
   FileText, BookOpen, TrendingUp, Loader2, MessageCircleQuestion, Tags, Brain,
   Video, Headphones, Presentation, Database, Shield, AlertTriangle, Save, Sparkles,
+  MessagesSquare,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -36,6 +37,7 @@ const COST_SECTION_IDS = [
   'section_video_pipeline',
   'section_audio_pipeline',
   'section_presentation_pipeline',
+  'section_chat_orchestrator',
 ] as const
 
 const COST_GENERAL_CARD_IDS = [
@@ -63,6 +65,7 @@ const COST_BREAKDOWN_SECTION_IDS = [
   'video_pipeline',
   'audio_pipeline',
   'presentation_pipeline',
+  'chat_orchestrator',
 ] as const
 
 function buildBreakdownCardIds(sectionId: string): string[] {
@@ -428,8 +431,8 @@ export default function CostTokensPage() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Split executions into all 11 function keys
-  const { docBreakdown, docV3Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, highlights: [] }
+  const { docBreakdown, docV3Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, chatOrchestratorBreakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, chatOrchestratorBreakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
@@ -446,6 +449,7 @@ export default function CostTokensPage() {
     const videoItems = breakdown.by_agent_function.filter(item => item.key.startsWith('video_pipeline::'))
     const audioItems = breakdown.by_agent_function.filter(item => item.key.startsWith('audio_pipeline::'))
     const presentationItems = breakdown.by_agent_function.filter(item => item.key.startsWith('presentation_pipeline::'))
+    const chatOrchestratorItems = breakdown.by_agent_function.filter(item => item.key.startsWith('chat_orchestrator::'))
 
     // Build approximate sub-breakdowns using available summary data
     const docFunc = breakdown.by_function.find(f => f.key === 'document_generation')
@@ -459,6 +463,7 @@ export default function CostTokensPage() {
     const videoFunc = breakdown.by_function.find(f => f.key === 'video_pipeline')
     const audioFunc = breakdown.by_function.find(f => f.key === 'audio_pipeline')
     const presentationFunc = breakdown.by_function.find(f => f.key === 'presentation_pipeline')
+    const chatOrchestratorFunc = breakdown.by_function.find(f => f.key === 'chat_orchestrator')
 
     const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[], funcKey?: string): CostBreakdown | null => {
       if (!func && agentItems.length === 0) return null
@@ -507,6 +512,7 @@ export default function CostTokensPage() {
     const videoBd = makeSub(videoFunc, videoItems, 'video_pipeline')
     const audioBd = makeSub(audioFunc, audioItems, 'audio_pipeline')
     const presentationBd = makeSub(presentationFunc, presentationItems, 'presentation_pipeline')
+    const chatOrchestratorBd = makeSub(chatOrchestratorFunc, chatOrchestratorItems, 'chat_orchestrator')
 
     // Build highlights
     const hl: { label: string; value: string; meta: string }[] = []
@@ -528,7 +534,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, highlights: hl }
+    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, chatOrchestratorBreakdown: chatOrchestratorBd, highlights: hl }
   }, [breakdown])
 
   // ── Budget status ──────────────────────────────────────────────────────
@@ -1051,6 +1057,28 @@ export default function CostTokensPage() {
               />
             ) : (
               <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o pipeline de apresentação.</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 12: Chat Orchestrator ──────────────────────── */}
+          <CollapsibleSection
+            id="section_chat_orchestrator"
+            title="Orquestrador (Chat)"
+            icon={MessagesSquare}
+            iconColor="text-indigo-600"
+            badge={chatOrchestratorBreakdown ? fmtUsd(chatOrchestratorBreakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {chatOrchestratorBreakdown ? (
+              <SectionBreakdown
+                sectionId="chat_orchestrator"
+                breakdown={chatOrchestratorBreakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o orquestrador (chat).</p>
             )}
           </CollapsibleSection>
         </>

@@ -27,6 +27,7 @@ const PlatformCostsPage = lazy(() => import('./pages/PlatformCostsPage'))
 const Onboarding = lazy(() => import('./pages/Onboarding'))
 const ThesisBank = lazy(() => import('./pages/ThesisBank'))
 const ResearchNotebookV2 = lazy(() => import('./pages/labs/ResearchNotebookV2'))
+const Chat = lazy(() => import('./pages/Chat'))
 const ProfileV2 = lazy(() => import('./pages/labs/ProfileV2'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 const V2WorkspaceLayout = lazy(() => import('./components/v2/V2WorkspaceLayout'))
@@ -63,6 +64,7 @@ function AuthenticatedShell() {
     <V2WorkspaceLayout>
       <Routes>
         <Route path="/" element={<DashboardV2 />} />
+        <Route path="/chat" element={<Chat />} />
         <Route path="/documents" element={<DocumentList />} />
         <Route path="/documents/new" element={<NewDocument />} />
         <Route path="/documents/new-v3" element={<NewDocumentV3 />} />
