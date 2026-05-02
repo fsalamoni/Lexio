@@ -1,46 +1,90 @@
-import { Construction, MessagesSquare, Sparkles } from 'lucide-react'
-import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../lib/model-config'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import ChatHeader from '../components/chat/ChatHeader'
+import Composer from '../components/chat/Composer'
+import ConversationList from '../components/chat/ConversationList'
+import EmptyState from '../components/chat/EmptyState'
+import MessageStream from '../components/chat/MessageStream'
+import { useChatController } from '../components/chat/use-chat-controller'
+import { isMockRuntimeActive } from '../lib/chat-orchestrator'
 
 /**
  * Chat — orchestrated multi-agent conversation page.
  *
- * PR1 ships only the route stub, the agent registry and the data layer. The
- * runtime loop (PR2), specialists + super-skills (PR3) and sidecar PC access
- * (PR4) land in subsequent PRs.
+ * Architecture (see `lib/chat-orchestrator/`):
+ *  - The page is a thin shell around `useChatController`.
+ *  - The controller owns the orchestrator runtime, persistence and
+ *    AbortController for cancellation.
+ *  - PR2 ships the runtime + UI; specialists/super-skills are unlocked in
+ *    PR3 and the @lexio/desktop sidecar in PR4.
  */
 export default function Chat() {
+  const [params, setParams] = useSearchParams()
+  const conversationId = params.get('id')
+  const [activeId, setActiveId] = useState<string | null>(conversationId)
+
+  useEffect(() => {
+    setActiveId(conversationId)
+  }, [conversationId])
+
+  const handleSelectConversation = (id: string) => {
+    setActiveId(id)
+    const next = new URLSearchParams(params)
+    next.set('id', id)
+    setParams(next, { replace: true })
+  }
+
+  const controller = useChatController({ conversationId: activeId })
+  const { state, sendMessage, cancel, setEffort } = controller
+  const mock = isMockRuntimeActive()
+  const busy = state.status === 'sending'
+
   return (
-    <div className="mx-auto flex min-h-[60vh] w-full max-w-3xl flex-col items-center justify-center gap-6 px-6 py-12 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600">
-        <MessagesSquare className="h-9 w-9" />
-      </div>
-
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold text-[var(--v2-ink-strong)]">Chat</h1>
-        <p className="text-sm text-[var(--v2-ink-muted)]">
-          Conversa orquestrada com {CHAT_ORCHESTRATOR_AGENT_DEFS.length} agentes especialistas, super-skills dos
-          pipelines do Lexio e ações no PC via sidecar local.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800">
-        <Construction className="h-4 w-4" />
-        Em construção · PR1 (fundação) entregue · runtime do orquestrador chega no PR2
-      </div>
-
-      <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
-        {CHAT_ORCHESTRATOR_AGENT_DEFS.map(agent => (
-          <div
-            key={agent.key}
-            className="flex flex-col gap-1 rounded-xl border border-[var(--v2-border)] bg-white/60 p-4 text-left"
-          >
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-indigo-500" />
-              <span className="text-sm font-semibold text-[var(--v2-ink-strong)]">{agent.label}</span>
-            </div>
-            <p className="text-xs leading-5 text-[var(--v2-ink-muted)]">{agent.description}</p>
+    <div className="flex h-[calc(100vh-3rem)] flex-col">
+      <div className="grid flex-1 overflow-hidden lg:grid-cols-[280px_1fr]">
+        <ConversationList activeId={activeId} onSelect={handleSelectConversation} />
+        <div className="flex flex-col overflow-hidden">
+          <ChatHeader
+            conversation={state.conversation}
+            effort={state.effort}
+            onChangeEffort={setEffort}
+            busy={busy}
+            onCancel={cancel}
+          />
+          <div className="flex-1 overflow-hidden">
+            {!activeId && (
+              <div className="flex h-full items-center justify-center p-6">
+                <EmptyState demo={mock} />
+              </div>
+            )}
+            {activeId && (
+              <MessageStream
+                turns={state.turns}
+                liveTurn={state.liveTurn}
+                emptyState={<EmptyState demo={mock} />}
+              />
+            )}
           </div>
-        ))}
+          {activeId && (
+            <div className="border-t border-[var(--v2-border)] bg-white/80 p-3">
+              {state.error && (
+                <div className="mb-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700">
+                  {state.error}
+                </div>
+              )}
+              <Composer
+                onSend={sendMessage}
+                disabled={busy || state.status === 'loading'}
+                busy={busy}
+                placeholder={
+                  state.status === 'awaiting_user'
+                    ? 'Responda à pergunta do orquestrador para continuar…'
+                    : undefined
+                }
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
