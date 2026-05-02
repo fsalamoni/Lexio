@@ -222,6 +222,8 @@ const PHASE_LABELS: Record<string, string> = {
   chat_summarizer: 'Chat: Sumarizador',
   chat_critic: 'Chat: Crítico',
   chat_writer: 'Chat: Redator',
+  chat_argument_builder: 'Chat: Fundamentador',
+  chat_ethics_auditor: 'Chat: Auditor Ético',
 }
 
 const STUDIO_ARTIFACT_LABELS: Record<string, string> = {

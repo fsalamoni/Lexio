@@ -31,6 +31,8 @@ describe('user-scoped agent configuration coverage', () => {
       'chat_summarizer',
       'chat_critic',
       'chat_writer',
+      'chat_argument_builder',
+      'chat_ethics_auditor',
     ])
   })
 

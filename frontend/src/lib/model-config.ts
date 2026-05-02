@@ -2101,6 +2101,28 @@ export const CHAT_ORCHESTRATOR_AGENT_DEFS: AgentModelDef[] = [
     requiredCapability: 'text',
     bestModelNote: 'Redação final. Premium: Claude Sonnet, GPT-4.1, GPT-4o. Baratos: DeepSeek V3, Llama 4 Maverick, Gemini 2.5 Flash, Qwen 2.5 72B.',
   },
+  {
+    key: 'chat_argument_builder',
+    label: 'Fundamentador',
+    description: 'Constrói argumentação jurídica em quatro etapas: tese, sustentação com evidência, contra-argumento mais forte e refutação',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'milestone',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Raciocínio adversarial. Premium: Claude Sonnet, GPT-4.1. Baratos: DeepSeek V3, Gemini 2.5 Flash, Qwen 2.5 72B.',
+  },
+  {
+    key: 'chat_ethics_auditor',
+    label: 'Auditor Ético',
+    description: 'Avalia a entrega em quatro lentes: representação, framing, impacto sobre grupos vulneráveis e conformidade (LGPD, OAB, normas aplicáveis)',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'shield-check',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Avaliação de conformidade e ética. Premium: Claude Sonnet, GPT-4o. Baratos: DeepSeek V3, Gemini 2.5 Flash.',
+  },
 ]
 
 /** Map from chat-orchestrator agent key → model ID */

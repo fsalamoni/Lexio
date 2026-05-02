@@ -320,7 +320,7 @@ docs/              → Documentação técnica
 
 ## 11. Pipelines e agentes — inventário completo {#pipelines-e-agentes}
 
-### Total: 11 pipelines · 67 agentes
+### Total: 11 pipelines · 69 agentes
 
 ---
 
@@ -483,11 +483,11 @@ docs/              → Documentação técnica
 
 ---
 
-### Pipeline 11 — Orquestrador do Chat (9 agentes)
+### Pipeline 11 — Orquestrador do Chat (11 agentes)
 **Config Firestore:** `chat_orchestrator_models`
-**Página:** `/chat` · **Arquivos:** `lib/chat-orchestrator/` (PR2+), `pages/Chat.tsx`
+**Página:** `/chat` · **Arquivos:** `lib/chat-orchestrator/`, `pages/Chat.tsx`
 
-A página `/chat` hospeda uma conversa orquestrada com tools/super-skills e (no PR4) ações no PC via sidecar Node `@lexio/desktop`. PR1 entrega apenas o registro de agentes, persistência (`/users/{uid}/chat_conversations/{id}` + subcoleção `turns`), regras Firestore, card de configuração e wiring de custos. O loop runtime, especialistas adicionais, super-skills dos pipelines existentes e integração com o sidecar chegam nos PRs 2–4.
+A página `/chat` hospeda uma conversa orquestrada com tools/super-skills e (no PR4) ações no PC via sidecar Node `@lexio/desktop`. PR1 entregou registro de agentes e persistência (`/users/{uid}/chat_conversations/{id}` + subcoleção `turns`); PR2 ligou o loop runtime e o `call_agent` para um subconjunto de especialistas; PR3 expandiu o quadro para 11 agentes (incluindo `chat_argument_builder` e `chat_ethics_auditor` inspirados no SalomoneIA), refinou os prompts dos especialistas e abriu o `call_agent` para todos os especialistas (exceto orquestrador e crítico, que têm fluxos próprios). PR4 entrega o sidecar `@lexio/desktop` para ações reais de filesystem/shell.
 
 | # | Key | Label | Categoria | Tier |
 |---|-----|-------|-----------|------|
@@ -500,6 +500,8 @@ A página `/chat` hospeda uma conversa orquestrada com tools/super-skills e (no 
 | 7 | `chat_summarizer` | Sumarizador | synthesis | fast |
 | 8 | `chat_critic` | Crítico | reasoning | balanced |
 | 9 | `chat_writer` | Redator | writing | balanced |
+| 10 | `chat_argument_builder` | Fundamentador | reasoning | balanced |
+| 11 | `chat_ethics_auditor` | Auditor Ético | reasoning | balanced |
 
 ---
 
@@ -517,8 +519,8 @@ A página `/chat` hospeda uma conversa orquestrada com tools/super-skills e (no 
 | Vídeo | 11 | `video_pipeline_models` |
 | Áudio | 6 | `audio_pipeline_models` |
 | Apresentação | 6 | `presentation_pipeline_models` |
-| Orquestrador do Chat | 9 (PR1: registro + persistência) | `chat_orchestrator_models` |
-| **TOTAL** | **67 agentes únicos** | **11 configs** |
+| Orquestrador do Chat | 11 (PR3: especialistas + super-skills) | `chat_orchestrator_models` |
+| **TOTAL** | **69 agentes únicos** | **11 configs** |
 
 ---
 

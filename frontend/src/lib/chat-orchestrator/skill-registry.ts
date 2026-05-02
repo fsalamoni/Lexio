@@ -3,14 +3,25 @@ import type { Skill, SkillContext, SkillResult } from './types'
 import { dispatchSpecialistAgent } from './dispatch'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 
-/** Subset of agent keys callable through `call_agent` in PR2. */
-export const PR2_CALLABLE_AGENT_KEYS = new Set<string>([
+/**
+ * Agent keys callable through the `call_agent` skill. Every specialist
+ * except the orchestrator itself (which drives the loop) and the critic
+ * (invoked through `critique_draft` and the auto-critic) is callable.
+ */
+export const CALLABLE_AGENT_KEYS = new Set<string>([
   'chat_planner',
+  'chat_clarifier',
+  'chat_legal_researcher',
+  'chat_code_writer',
+  'chat_fs_actor',
   'chat_summarizer',
   'chat_writer',
-  // chat_critic and chat_orchestrator are invoked through dedicated skills,
-  // not through call_agent.
+  'chat_argument_builder',
+  'chat_ethics_auditor',
 ])
+
+/** @deprecated kept for backwards compatibility with tests written for PR2. */
+export const PR2_CALLABLE_AGENT_KEYS = CALLABLE_AGENT_KEYS
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -32,9 +43,9 @@ const callAgentSkill: Skill<{ agent_key?: string; task?: string }> = {
   async run(args, ctx) {
     const agentKey = String(args.agent_key ?? '')
     const task = String(args.task ?? '')
-    if (!PR2_CALLABLE_AGENT_KEYS.has(agentKey)) {
+    if (!CALLABLE_AGENT_KEYS.has(agentKey)) {
       return {
-        tool_message: `Agente "${agentKey}" indisponível. Use um destes: ${[...PR2_CALLABLE_AGENT_KEYS].join(', ')}.`,
+        tool_message: `Agente "${agentKey}" indisponível. Use um destes: ${[...CALLABLE_AGENT_KEYS].join(', ')}.`,
       }
     }
     if (!task.trim()) {
@@ -225,7 +236,7 @@ export function buildSkillRegistry(): Skill[] {
 /** Registered agent keys (used in the system prompt to remind the orchestrator which keys exist). */
 export function listCallableAgentDescriptions(): Array<{ key: string; label: string; description: string }> {
   return CHAT_ORCHESTRATOR_AGENT_DEFS
-    .filter(agent => PR2_CALLABLE_AGENT_KEYS.has(agent.key))
+    .filter(agent => CALLABLE_AGENT_KEYS.has(agent.key))
     .map(agent => ({ key: agent.key, label: agent.label, description: agent.description }))
 }
 
