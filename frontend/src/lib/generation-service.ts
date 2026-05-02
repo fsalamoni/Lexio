@@ -1600,27 +1600,7 @@ export async function generateDocument(
       customStructure = trimmedStructure
     }
 
-    // 2. Triage — extract structured info from the request
-    reportProgress('triagem', 'Analisando solicitação...', 5, modelTriagem, undefined, 'waiting_io')
-    const triageResult = await callLLMWithFallback(
-      apiKey,
-      buildTriageSystem(docType),
-      buildTriageUser(request, areas, context, contextDetail),
-      modelTriagem, resolveFb('triagem', modelTriagem), 800, 0.1,
-    )
-    reportStageResult('triagem', 'Triagem concluída.', 7, triageResult)
-
-    // Extract tema from triage JSON
-    let tema = ''
-    try {
-      const triageJson = JSON.parse(extractJsonPayload(triageResult.content)) as Record<string, unknown>
-      tema = typeof triageJson.tema === 'string' ? triageJson.tema : request.slice(0, 100)
-    } catch {
-      tema = request.slice(0, 100)
-    }
-    await updateDoc(docRef, { tema })
-
-    // Start thesis prefetch early so it runs in parallel with acervo-specific agents.
+    // Start thesis prefetch BEFORE triage — it only needs uid + areas, no triage output.
     const thesisSectionPromise = (async (): Promise<string> => {
       try {
         const thesesByArea = areas.length > 0
@@ -1647,6 +1627,26 @@ export async function generateDocument(
         return ''
       }
     })()
+
+    // 2. Triage — extract structured info from the request (runs in parallel with thesis prefetch)
+    reportProgress('triagem', 'Analisando solicitação...', 5, modelTriagem, undefined, 'waiting_io')
+    const triageResult = await callLLMWithFallback(
+      apiKey,
+      buildTriageSystem(docType),
+      buildTriageUser(request, areas, context, contextDetail),
+      modelTriagem, resolveFb('triagem', modelTriagem), 800, 0.1,
+    )
+    reportStageResult('triagem', 'Triagem concluída.', 7, triageResult)
+
+    // Extract tema from triage JSON
+    let tema = ''
+    try {
+      const triageJson = JSON.parse(extractJsonPayload(triageResult.content)) as Record<string, unknown>
+      tema = typeof triageJson.tema === 'string' ? triageJson.tema : request.slice(0, 100)
+    } catch {
+      tema = request.slice(0, 100)
+    }
+    await updateDoc(docRef, { tema })
 
     // ── 2b. Acervo-based pre-generation agents ──────────────────────────────
     // Two-layer search:
@@ -1704,7 +1704,7 @@ export async function generateDocument(
             }
           })
 
-          const ementaWarmupBudgetMs = 3500
+          const ementaWarmupBudgetMs = 5000
           await Promise.race([
             Promise.allSettled(ementaPromises),
             new Promise<void>(resolve => {
