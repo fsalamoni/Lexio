@@ -128,9 +128,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             newToken = await fbUser.getIdToken()
           } catch (error) {
-            // Token mint failed transiently — keep the previous token; SDK
-            // will retry on next operation. Don't logout here.
-            console.warn('[AuthContext] Initial getIdToken failed; keeping previous session:', error)
+            // Token mint failed — check if this is an unrecoverable auth state.
+            // If the SDK cannot produce a valid token for a "signed-in" user,
+            // the session is zombie — force signOut to reset everything.
+            console.warn('[AuthContext] getIdToken failed during auth state change:', error)
+            const errCode = (error as { code?: string })?.code || ''
+            if (errCode.includes('invalid-user-token') || errCode.includes('user-token-expired') || errCode.includes('user-not-found') || errCode.includes('user-disabled')) {
+              console.error('[AuthContext] Unrecoverable token state detected — forcing signOut to reset zombie session.')
+              clearStorage()
+              setToken(null); setUserId(null); setRole(null); setFullName(null)
+              firebaseAuth?.signOut().catch(() => {})
+              setIsReady(true)
+              return
+            }
           }
           if (newToken) {
             localStorage.setItem('lexio_token', newToken)
@@ -144,6 +154,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           clearStorage()
           setToken(null); setUserId(null); setRole(null); setFullName(null)
         }
+      } catch (err) {
+        // If the entire auth handler crashes, ensure isReady is set to
+        // avoid the app hanging on "Verificando autenticacao..." forever.
+        console.error('[AuthContext] Unexpected error in auth state handler:', err)
       } finally {
         setIsReady(true)
       }
@@ -238,6 +252,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('[AuthContext] Two consecutive session recovery failures — forcing logout.')
         clearStorage()
         setToken(null); setUserId(null); setRole(null); setFullName(null)
+        // CRITICAL: Sign out the Firebase SDK so onAuthStateChanged fires
+        // with null user and the whole app resets to a clean auth state.
+        // Without this the SDK keeps a zombie session that triggers
+        // permission-denied cascades across every Firestore call with zero
+        // recovery path — the user gets permanently locked out until they
+        // manually clear site data or reload the tab.
+        firebaseAuth?.signOut().catch((err) => {
+          console.error('[AuthContext] signOut after session recovery failure:', err)
+        })
       }
       sessionRecoveryInProgressRef.current = false
       return false
