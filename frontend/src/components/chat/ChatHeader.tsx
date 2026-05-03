@@ -1,4 +1,5 @@
-import { MessagesSquare, Square, WifiOff } from 'lucide-react'
+import { MessagesSquare, Search, Square, WifiOff } from 'lucide-react'
+import clsx from 'clsx'
 import type { ChatConversationData, ChatEffortLevel } from '../../lib/firestore-types'
 import EffortPicker from './EffortPicker'
 
@@ -8,6 +9,8 @@ interface ChatHeaderProps {
   onChangeEffort: (effort: ChatEffortLevel) => void
   busy: boolean
   onCancel: () => void
+  onToggleSearch?: () => void
+  showSearch?: boolean
 }
 
 export default function ChatHeader({
@@ -16,6 +19,8 @@ export default function ChatHeader({
   onChangeEffort,
   busy,
   onCancel,
+  onToggleSearch,
+  showSearch,
 }: ChatHeaderProps) {
   return (
     <header className="flex items-center justify-between gap-3 border-b border-[var(--v2-border)] bg-white/80 px-4 py-3">
@@ -33,6 +38,22 @@ export default function ChatHeader({
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {onToggleSearch && (
+          <button
+            type="button"
+            onClick={onToggleSearch}
+            className={clsx(
+              'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold transition',
+              showSearch
+                ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                : 'border-[var(--v2-border)] bg-white text-[var(--v2-ink-strong)] hover:bg-[var(--v2-border)]',
+            )}
+            title="Busca híbrida (Qdrant + DataJud)"
+          >
+            <Search className="h-3 w-3" />
+            Buscar
+          </button>
+        )}
         <SidecarStatusPlaceholder />
         <EffortPicker value={effort} onChange={onChangeEffort} disabled={busy} />
         {busy && (

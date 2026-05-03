@@ -19,7 +19,7 @@ from packages.core.websocket import progress_manager
 from packages.api.middleware.rate_limit import limiter
 from packages.api.middleware.metrics import record_request, render_prometheus
 
-from packages.api.routes import auth, documents, document_types, legal_areas, uploads, stats, health, webhooks, admin, anamnesis, thesis_bank, notifications
+from packages.api.routes import auth, documents, document_types, legal_areas, uploads, stats, health, webhooks, admin, anamnesis, thesis_bank, notifications, search
 
 # Ensure models are imported for table creation
 from packages.core.database.models.user_profile import UserProfile  # noqa: F401
@@ -120,6 +120,7 @@ app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(anamnesis.router, prefix="/api/v1", tags=["Anamnesis"])
 app.include_router(thesis_bank.router, prefix="/api/v1/theses", tags=["Thesis Bank"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
+app.include_router(search.router, prefix="/api/v1", tags=["Search"])
 
 
 # Prometheus metrics endpoint

@@ -1016,7 +1016,7 @@
 - [x] `pageMode` — visualizador de documento como página A4
 - [x] Exportação PDF nativa dos artefatos
 - [x] Preview de documento na página Documentos
-- [ ] Busca híbrida (semântica + lexical) para jurisprudência
+- [x] Busca híbrida (semântica + lexical) para jurisprudência
 
 ### Prioridade 2 — Diferenciação de produto
 - [x] Pesquisa conversacional com contexto (memória multi-turno de filtros)

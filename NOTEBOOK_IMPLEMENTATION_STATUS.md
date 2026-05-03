@@ -873,3 +873,40 @@ frontend/src/pages/ResearchNotebook.tsx        — Modal, categorias, Audio Over
 - [ ] Edicao inline de artefatos gerados
 - [ ] Templates de instrucoes pre-definidos
 - [ ] Versionamento de artefatos (re-gerar mantendo anterior)
+
+---
+
+## Feature 1.2 — Busca Híbrida (Qdrant + DataJud com RRF) — Status em 2026-05-02
+
+### ✅ Implementado
+- **Backend**: `POST /api/v1/search/hybrid` com fusão RRF (Reciprocal Rank Fusion) entre Qdrant (semântico) e DataJud (lexical)
+- **Schemas**: `HybridSearchRequest`, `HybridSearchResponse`, `HybridResultItem` no backend
+- **Cliente Frontend**: `frontend/src/lib/search-client.ts` — função `hybridSearch()` com suporte a AbortController e autenticação
+- **UI — SearchPanel**: `frontend/src/components/chat/SearchPanel.tsx` — painel lateral de busca com:
+  - Campo de busca textual
+  - Sliders de peso semântico/lexical (RRF)
+  - Lista de resultados com score, source, expand/collapse
+  - Estatísticas de execução (tempo, contagem por fonte)
+  - Botão "Anexar ao contexto do chat" que injeta os resultados na conversa
+- **Integração no Chat**: `Chat.tsx` com grid responsivo de 3 colunas quando SearchPanel está aberto
+- **ChatHeader**: Botão "Buscar" com toggle visual (indigo quando ativo)
+- **Correção final da barra de rolagem**: `MessageStream.tsx` — thumb da scrollbar alterado de `var(--v2-border)` (opacidade muito baixa) para `rgba(15,23,42,0.25)`, garantindo visibilidade real da barra de rolagem no Chat Orquestrador
+
+### ⏳ Pendente
+- [ ] Super-skill `hybrid_search` no Chat Orquestrador (para o agente Orquestrador disparar buscas automaticamente)
+- [ ] Testes de integração frontend para o SearchPanel
+- [ ] Testes de integração backend para o endpoint de busca híbrida
+
+---
+
+## Pesquisa orientada à peça processual (Prioridade 3)
+- [ ] Backend: endpoint dedicado para busca por número de processo
+- [ ] Frontend: campo de número de processo no SearchPanel
+- [ ] Integração com DataJud para metadados processuais
+
+---
+
+## Consolidação de testes para superfícies V2 (Faixa E)
+- [ ] Testes de regressão visual para componentes V2
+- [ ] Testes de acessibilidade (axe-core) para SearchPanel e Chat
+- [ ] Testes E2E para fluxo de busca híbrida no Chat

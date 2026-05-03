@@ -147,6 +147,7 @@ body {
   --v2-panel-strong: rgba(255, 255, 255, 0.92);
   --v2-line-soft: rgba(15, 23, 42, 0.08);
   --v2-line-strong: rgba(15, 23, 42, 0.12);
+  --v2-border: rgba(15, 23, 42, 0.12);
   --v2-ink-strong: #172033;
   --v2-ink-soft: #5f6878;
   --v2-ink-faint: #7d8797;

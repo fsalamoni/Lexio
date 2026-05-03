@@ -14,6 +14,7 @@
 
 import type { ChatTrailEvent } from '../firestore-types'
 import type { Skill, SkillContext, SkillResult } from './types'
+import { hybridSearch } from '../search-client'
 
 // ── Tipos de documento suportados ─────────────────────────────────────────────
 
@@ -154,7 +155,6 @@ const generateDocumentSkill: Skill<GenerateDocumentArgs> = {
         headers['Authorization'] = `Bearer ${ctx.apiKey}`
       }
 
-      let response: Response
       let responseBody: unknown
 
       if (ctx.mock) {
@@ -167,7 +167,7 @@ const generateDocumentSkill: Skill<GenerateDocumentArgs> = {
           created_at: nowIso(),
         }
       } else {
-        response = await fetch(url, {
+        const response = await fetch(url, {
           method: 'POST',
           headers,
           body: JSON.stringify(payload),
@@ -523,6 +523,152 @@ const analyzeThesisSkill: Skill<AnalyzeThesisArgs> = {
   },
 }
 
+// ── Super-Skill: Busca Híbrida (semântica + lexical via RRF) ──────────────────
+
+interface HybridSearchArgs {
+  query?: string
+  top_k?: number
+  semantic_weight?: number
+  lexical_weight?: number
+}
+
+const hybridSearchSkill: Skill<HybridSearchArgs> = {
+  name: 'hybrid_search',
+  description:
+    'Executa busca híbrida combinando similaridade semântica (Qdrant/embeddings) ' +
+    'com correspondência textual (DataJud/Elasticsearch) via Reciprocal Rank Fusion. ' +
+    'Use quando o usuário solicitar pesquisa de jurisprudência, precedentes, súmulas ' +
+    'ou qualquer consulta que exija resultados precisos. ' +
+    'Prefira esta skill a search_jurisprudence quando precisar de maior precisão e cobertura.',
+  argsHint: {
+    query: 'Termos de busca em linguagem natural (ex.: "responsabilidade civil por danos ambientais em áreas de preservação permanente")',
+    top_k: 'Número máximo de resultados (padrão: 5, máximo: 20)',
+    semantic_weight: 'Peso da busca semântica entre 0 e 1 (padrão: 0.5)',
+    lexical_weight: 'Peso da busca lexical entre 0 e 1 (padrão: 0.5)',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const query = String(args.query ?? '').trim()
+    if (!query) {
+      return { tool_message: 'Erro: "query" é obrigatória para busca híbrida.' }
+    }
+    const topK = Math.min(Math.max(Number(args.top_k ?? 5) || 5, 1), 20)
+    const semanticWeight = Math.min(Math.max(Number(args.semantic_weight ?? 0.5) || 0.5, 0), 1)
+    const lexicalWeight = Math.min(Math.max(Number(args.lexical_weight ?? 0.5) || 0.5, 0), 1)
+
+    const startEvent: ChatTrailEvent = {
+      type: 'super_skill_call',
+      skill: 'hybrid_search',
+      args_summary: `"${clip(query, 100)}" (top_k=${topK}, sw=${semanticWeight}, lw=${lexicalWeight})`,
+      result_summary: `🔍 Pesquisando: "${clip(query, 80)}"...`,
+      ts: nowIso(),
+    }
+    ctx.emit(startEvent)
+
+    try {
+      let results: Array<{
+        source: string
+        content: string
+        score: number
+        origin: string
+        origins?: string[]
+        process_number?: string
+      }>
+      let stats: { fused_count: number; total_time_ms: number }
+
+      if (ctx.mock) {
+        results = [
+          {
+            source: 'DataJud',
+            content: 'EMENTA — Responsabilidade civil. Dano ambiental em área de preservação permanente. Dever de reparação incondicional. Aplicação da teoria do risco integral.',
+            score: 0.94,
+            origin: 'datajud',
+            process_number: 'REsp 1.950.500/SP',
+          },
+          {
+            source: 'DataJud',
+            content: 'EMENTA — Ação civil pública. Dano ambiental. Área de preservação permanente. Obrigação propter rem. Responsabilidade solidária.',
+            score: 0.87,
+            origin: 'datajud',
+            process_number: 'AI 850.300/PR',
+          },
+          {
+            source: 'Qdrant',
+            content: 'SÚMULA 618/STJ — A inversão do ônus da prova aplica-se a ações de reparação por danos ambientais.',
+            score: 0.82,
+            origin: 'qdrant',
+            origins: ['qdrant'],
+          },
+          {
+            source: 'DataJud',
+            content: 'EMENTA — Dano ambiental. Reparação. Área de preservação permanente. Nexo causal comprovado. Quantum indenizatório fixado em R$ 500.000,00.',
+            score: 0.78,
+            origin: 'datajud',
+            process_number: 'AC 1001234-56.2021.8.26.0000',
+          },
+        ]
+        stats = { fused_count: 4, total_time_ms: 1234 }
+      } else {
+        const apiResponse = await hybridSearch(query, {
+          topK,
+          semanticWeight,
+          lexicalWeight,
+          signal: ctx.signal,
+          apiKey: ctx.apiKey,
+        })
+        results = apiResponse.results
+        stats = apiResponse.stats
+      }
+
+      if (!results.length) {
+        const emptyEvent: ChatTrailEvent = {
+          type: 'super_skill_call',
+          skill: 'hybrid_search',
+          result_summary: `Nenhum resultado para "${clip(query, 80)}"`,
+          ts: nowIso(),
+        }
+        ctx.emit(emptyEvent)
+        return {
+          tool_message:
+            `Nenhum resultado encontrado na busca híbrida para "${query}".\n` +
+            `Sugira ao usuário refinar os termos de busca com palavras-chave mais específicas.`,
+        }
+      }
+
+      const summaryLines = results.map((r, i) => {
+        const originLabel = r.origin === 'datajud' ? 'DataJud' : r.origin === 'qdrant' ? 'Qdrant' : r.origin
+        const origins = r.origins && r.origins.length > 1 ? ` [fontes: ${r.origins.join(', ')}]` : ''
+        const processNumber = r.process_number ? `\n   📋 Processo: ${r.process_number}` : ''
+        return (
+          `${i + 1}. **[${originLabel}]** (score: ${r.score.toFixed(3)})${origins}${processNumber}\n` +
+          `   ${clip(r.content, 400)}`
+        )
+      })
+
+      const count = results.length
+      const timeSec = ((stats?.total_time_ms ?? 0) / 1000).toFixed(1)
+
+      const resultEvent: ChatTrailEvent = {
+        type: 'super_skill_call',
+        skill: 'hybrid_search',
+        result_summary: `${count} resultado(s) fusionados em ${timeSec}s para "${clip(query, 50)}"`,
+        ts: nowIso(),
+      }
+      ctx.emit(resultEvent)
+
+      return {
+        tool_message:
+          `📚 Resultados da busca híbrida (RRF) para "${query}" — ${count} itens em ${timeSec}s:\n\n` +
+          `${summaryLines.join('\n\n')}\n\n` +
+          `Use estes resultados para fundamentar a resposta ao usuário. Cite as fontes e os números dos processos quando disponíveis.`,
+      }
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      const message = err instanceof Error ? err.message : 'Erro desconhecido'
+      return { tool_message: `Erro na busca híbrida: ${message}` }
+    }
+  },
+}
+
 // ── Export ────────────────────────────────────────────────────────────────────
 
 /**
@@ -535,5 +681,6 @@ export function buildSuperSkills(): Skill[] {
     checkDocumentStatusSkill,
     searchJurisprudenceSkill,
     analyzeThesisSkill,
+    hybridSearchSkill,
   ]
 }
