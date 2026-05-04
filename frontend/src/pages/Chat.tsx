@@ -64,7 +64,7 @@ export default function Chat() {
         }`}
       >
         <ConversationList activeId={activeId} onSelect={handleSelectConversation} />
-        <div className="flex flex-col overflow-hidden">
+        <div className="flex flex-col overflow-hidden min-h-0">
           <ChatHeader
             conversation={state.conversation}
             effort={state.effort}
