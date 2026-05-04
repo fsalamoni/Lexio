@@ -56,10 +56,12 @@ const callAgentSkill: Skill<{ agent_key?: string; task?: string }> = {
     const callEvent: ChatTrailEvent = { type: 'agent_call', agent_key: agentKey, task: clip(task, 240), ts: nowIso() }
     ctx.emit(callEvent)
 
+    const onToken = ctx.onAgentToken ? ((delta: string, total: string) => ctx.onAgentToken!(agentKey, delta, total)) : undefined
     const { output, usage } = await dispatchSpecialistAgent({
       agentKey,
       task,
       ctx,
+      onToken,
     })
 
     const responseEvent: ChatTrailEvent = {
@@ -93,10 +95,12 @@ const summarizeContextSkill: Skill<{ instructions?: string }> = {
     }
     ctx.emit(callEvent)
 
+    const onToken = ctx.onAgentToken ? ((delta: string, total: string) => ctx.onAgentToken!('chat_summarizer', delta, total)) : undefined
     const { output, usage } = await dispatchSpecialistAgent({
       agentKey: 'chat_summarizer',
       task: instructions,
       ctx,
+      onToken,
     })
 
     const responseEvent: ChatTrailEvent = {
@@ -139,10 +143,12 @@ Rascunho:
 ${draft}
 """`
 
+    const onToken = ctx.onAgentToken ? ((delta: string, total: string) => ctx.onAgentToken!('chat_critic', delta, total)) : undefined
     const { output, usage } = await dispatchSpecialistAgent({
       agentKey: 'chat_critic',
       task: promptTask,
       ctx,
+      onToken,
     })
 
     let verdict: { score: number; reasons: string[]; should_stop: boolean }

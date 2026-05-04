@@ -4184,18 +4184,31 @@ function chatTurnDoc(
  * Falls back to a client-side sort if the indexed query is rejected (e.g.,
  * the collection is brand-new and Firestore has not built the index yet).
  */
-export async function listChatConversations(uid: string): Promise<{ items: ChatConversationData[] }> {
+export async function listChatConversations(
+  uid: string,
+  opts?: { startAfter?: string; limit?: number },
+): Promise<{ items: ChatConversationData[]; hasMore?: boolean }> {
   const db = ensureFirestore()
   const effectiveUid = await resolveEffectiveUid(uid, 'listChatConversations')
   const colRef = chatConversationCollection(db, effectiveUid)
+  const pageLimit = Math.max(1, Math.min(50, opts?.limit ?? 50))
+  const constraints: QueryConstraint[] = [orderBy('updated_at', 'desc'), limit(pageLimit + 1)]
+  if (opts?.startAfter) {
+    const cursorRef = chatConversationDoc(db, effectiveUid, opts.startAfter)
+    const cursorSnap = await withFirestoreRetry(() => getDoc(cursorRef), 'listChatConversations.cursor')
+    if (cursorSnap.exists()) {
+      constraints.push(startAfter(cursorSnap))
+    }
+  }
   try {
     const snap = await withFirestoreRetry(
-      () => getDocs(query(colRef, orderBy('updated_at', 'desc'))),
+      () => getDocs(query(colRef, ...constraints)),
       'listChatConversations.query',
     )
-    return {
-      items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatConversationData)),
-    }
+    const docs = snap.docs
+    const hasMore = docs.length > pageLimit
+    const items = docs.slice(0, pageLimit).map(d => ({ id: d.id, ...d.data() } as ChatConversationData))
+    return { items, hasMore }
   } catch (error) {
     if (isAuthAccessFirestoreError(error)) {
       throw error
@@ -4208,11 +4221,17 @@ export async function listChatConversations(uid: string): Promise<{ items: ChatC
       () => getDocs(colRef),
       'listChatConversations.fallback',
     )
-    const items = fallbackSnap.docs
+    const allItems = fallbackSnap.docs
       .map(d => ({ id: d.id, ...d.data() } as ChatConversationData))
       .sort((a, b) => getDocumentCreatedAtValue(b.updated_at ?? b.created_at)
         - getDocumentCreatedAtValue(a.updated_at ?? a.created_at))
-    return { items }
+    // Client-side pagination for fallback
+    const startIdx = opts?.startAfter
+      ? allItems.findIndex(item => item.id === opts.startAfter)
+      : 0
+    const slice = startIdx >= 0 ? allItems.slice(startIdx + 1, startIdx + 1 + pageLimit + 1) : allItems.slice(0, pageLimit + 1)
+    const hasMore = slice.length > pageLimit
+    return { items: slice.slice(0, pageLimit), hasMore }
   }
 }
 

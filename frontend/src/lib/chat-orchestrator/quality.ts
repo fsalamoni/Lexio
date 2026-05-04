@@ -31,10 +31,12 @@ Rascunho:
 ${draft}
 """`
 
+  const onToken = ctx.onAgentToken ? ((delta: string, total: string) => ctx.onAgentToken!('chat_critic', delta, total)) : undefined
   const { output, usage } = await dispatchSpecialistAgent({
     agentKey: 'chat_critic',
     task: promptTask,
     ctx,
+    onToken,
   })
 
   const verdict = parseVerdict(output)

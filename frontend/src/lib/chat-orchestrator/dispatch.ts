@@ -63,6 +63,8 @@ export interface DispatchSpecialistArgs {
   temperature?: number
   /** Override the per-call token cap (defaults to ctx-derived). */
   maxTokens?: number
+  /** Streaming callback: receives each token delta + the accumulated total so far. */
+  onToken?: (delta: string, total: string) => void
 }
 
 export interface DispatchSpecialistResult {
@@ -76,7 +78,7 @@ export interface DispatchSpecialistResult {
  * surfaces in cost-analytics with the correct breakdown.
  */
 export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Promise<DispatchSpecialistResult> {
-  const { agentKey, task, ctx, temperature = 0.4, maxTokens } = args
+  const { agentKey, task, ctx, temperature = 0.4, maxTokens, onToken } = args
   const model = ctx.models[agentKey]
   if (!model) {
     return { output: `Modelo do agente "${agentKey}" não está configurado em /settings.`, usage: null }
@@ -96,9 +98,10 @@ export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Pro
   let result: LLMResult
   try {
     const fallbacks = ctx.fallbackModels?.[agentKey] ?? []
+    const callOptions = { signal: ctx.signal, onToken }
     result = fallbacks.length > 0
-      ? await callLLMWithMessagesFallback(ctx.apiKey, messages, model, fallbacks, resolvedMaxTokens, temperature, { signal: ctx.signal })
-      : await callLLMWithMessages(ctx.apiKey, messages, model, resolvedMaxTokens, temperature, { signal: ctx.signal })
+      ? await callLLMWithMessagesFallback(ctx.apiKey, messages, model, fallbacks, resolvedMaxTokens, temperature, callOptions)
+      : await callLLMWithMessages(ctx.apiKey, messages, model, resolvedMaxTokens, temperature, callOptions)
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     const message = err instanceof Error ? err.message : String(err)

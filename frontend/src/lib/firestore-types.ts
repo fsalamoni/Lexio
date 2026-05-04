@@ -799,7 +799,7 @@ export interface PlatformFunctionRolloutPolicyPlan {
  * presets (max iterations, fan-out, token budget) inside the orchestrator
  * runtime; the value persisted on the conversation is the raw label.
  */
-export type ChatEffortLevel = 'rapido' | 'medio' | 'profundo'
+export type ChatEffortLevel = 'rapido' | 'medio' | 'profundo' | 'deep_research'
 
 /**
  * Discriminated trail event emitted by the orchestrator while a turn is
@@ -808,6 +808,14 @@ export type ChatEffortLevel = 'rapido' | 'medio' | 'profundo'
  */
 export type ChatTrailEvent =
   | { type: 'iteration_start'; i: number; ts: string }
+  | {
+      type: 'orchestrator_thought'
+      /** Partial / cumulative raw output from the orchestrator LLM as it streams. */
+      delta: string
+      /** Full accumulated text so far for this decision. */
+      total: string
+      ts: string
+    }
   | { type: 'decision'; tool: string; rationale?: string; ts: string }
   | { type: 'agent_call'; agent_key: string; task: string; ts: string }
   | {
@@ -851,6 +859,13 @@ export type ChatTrailEvent =
       type: 'clarification_request'
       question: string
       options?: string[]
+      ts: string
+    }
+  | {
+      type: 'agent_token'
+      agent_key: string
+      delta: string
+      total: string
       ts: string
     }
   | { type: 'final_answer'; ts: string }

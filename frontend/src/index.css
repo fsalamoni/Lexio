@@ -15,6 +15,14 @@ body {
 ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
+/* ─── Chat Orchestrator scrollbar (visible thumb) ───────────── */
+.chat-stream-scrollbar::-webkit-scrollbar { width: 6px; }
+.chat-stream-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.chat-stream-scrollbar::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.25); border-radius: 9999px; }
+.chat-stream-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(15,23,42,0.42); }
+/* Firefox */
+.chat-stream-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(15,23,42,0.25) transparent; }
+
 /* ─── Toast animations ───────────────────────────────────────── */
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(120%) scale(0.9); }

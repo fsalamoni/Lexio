@@ -226,7 +226,7 @@ export default function SearchPanel({
       </form>
 
       {/* Área de resultados */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--v2-border)] scrollbar-track-transparent">
+      <div className="flex-1 overflow-y-auto">
         {/* Loading */}
         {status === 'searching' && (
           <div className="flex items-center justify-center gap-2 p-6 text-xs text-[var(--v2-ink-faint)]">
@@ -356,7 +356,7 @@ function ResultRow({
 
           {/* Conteúdo expandido */}
           {expanded && (
-            <div className="mt-2 rounded-lg border border-[var(--v2-border)] bg-white p-2.5 text-xs text-[var(--v2-ink-strong)] leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--v2-border)]">
+            <div className="mt-2 rounded-lg border border-[var(--v2-border)] bg-white p-2.5 text-xs text-[var(--v2-ink-strong)] leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">
               {item.content}
             </div>
           )}

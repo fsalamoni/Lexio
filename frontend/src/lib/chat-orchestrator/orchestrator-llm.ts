@@ -9,7 +9,7 @@ import type { OrchestratorLLMCall, OrchestratorMessage } from './types'
  * loop's branching logic can be exercised without network access.
  */
 export const callOrchestratorLLM: OrchestratorLLMCall = async (params) => {
-  const { systemPrompt, history, models, fallbackModels, modelKey, apiKey, signal, perCallTokenCap, agentLabel } = params
+  const { systemPrompt, history, models, fallbackModels, modelKey, apiKey, signal, perCallTokenCap, agentLabel, onToken } = params
   const model = models[modelKey]
   if (!model) {
     return {
@@ -28,12 +28,16 @@ export const callOrchestratorLLM: OrchestratorLLMCall = async (params) => {
   ]
 
   const startedAt = Date.now()
+  
+  // ─ Streaming path: use onToken for real-time thought emission ─
+  const llmOptions = onToken ? { signal, onToken } : { signal }
+  
   let result
   try {
     const fallbacks = fallbackModels?.[modelKey] ?? []
     result = fallbacks.length > 0
-      ? await callLLMWithMessagesFallback(apiKey, messages, model, fallbacks, perCallTokenCap, 0.2, { signal })
-      : await callLLMWithMessages(apiKey, messages, model, perCallTokenCap, 0.2, { signal })
+      ? await callLLMWithMessagesFallback(apiKey, messages, model, fallbacks, perCallTokenCap, 0.2, llmOptions)
+      : await callLLMWithMessages(apiKey, messages, model, perCallTokenCap, 0.2, llmOptions)
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     const message = err instanceof Error ? err.message : String(err)

@@ -22,6 +22,20 @@ export default {
           900: '#1a2259',
         },
       },
+      keyframes: {
+        'fade-in': {
+          '0%': { opacity: '0', transform: 'translateY(6px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'stream-line': {
+          '0%': { opacity: '0', transform: 'translateX(-4px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+      },
+      animation: {
+        'fade-in': 'fade-in 0.35s ease-out',
+        'stream-line': 'stream-line 0.25s ease-out both',
+      },
     },
   },
     plugins: [

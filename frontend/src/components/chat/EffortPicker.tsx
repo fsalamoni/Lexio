@@ -9,7 +9,7 @@ interface EffortPickerProps {
   disabled?: boolean
 }
 
-const ORDER: ChatEffortLevel[] = ['rapido', 'medio', 'profundo']
+const ORDER: ChatEffortLevel[] = ['rapido', 'medio', 'profundo', 'deep_research']
 
 export default function EffortPicker({ value, onChange, disabled }: EffortPickerProps) {
   return (

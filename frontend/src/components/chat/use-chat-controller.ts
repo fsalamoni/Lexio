@@ -320,6 +320,18 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         apiKey,
         signal: controller.signal,
         onTrail,
+        onAgentToken: (agentKey: string, delta: string, total: string) => {
+          const event: ChatTrailEvent = {
+            type: 'agent_token',
+            agent_key: agentKey,
+            delta,
+            total,
+            ts: new Date().toISOString(),
+          }
+          trailBuffer.push(event)
+          dispatch({ type: 'TRAIL_APPEND', event })
+          schedulePersist()
+        },
         llmCall: mock ? mockOrchestratorLLM : undefined,
         mock,
       })

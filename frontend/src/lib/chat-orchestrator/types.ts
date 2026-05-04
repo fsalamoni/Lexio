@@ -68,7 +68,10 @@ export interface SkillContext {
   fallbackModels?: Record<string, string[]>
   apiKey: string
   /** Mock runtime active (demo mode / no Firebase). */
+  /** Mock runtime active (demo mode / no Firebase). */
   mock: boolean
+  /** Streaming callback: fires for each token delta produced by any specialist agent. */
+  onAgentToken?: (agentKey: string, delta: string, total: string) => void
 }
 
 /**
@@ -142,6 +145,8 @@ export interface RunChatTurnInput {
   llmCall?: OrchestratorLLMCall
   /** Force mock runtime regardless of environment. */
   mock?: boolean
+  /** Streaming callback: fires for each token delta produced by any specialist agent. */
+  onAgentToken?: (agentKey: string, delta: string, total: string) => void
 }
 
 /**
@@ -160,6 +165,8 @@ export type OrchestratorLLMCall = (params: {
   budget: BudgetTracker
   perCallTokenCap: number
   agentLabel?: string
+  /** Streaming callback: invoked token-by-token as the LLM generates the decision. */
+  onToken?: (delta: string, total: string) => void
 }) => Promise<{ raw: string; usage: UsageExecutionRecord | null }>
 
 export interface RunChatTurnOutput {

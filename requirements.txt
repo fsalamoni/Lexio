@@ -16,6 +16,7 @@ bcrypt==4.2.1
 
 # HTTP client
 httpx==0.28.1
+aiohttp==3.11.11
 
 # DOCX generation
 python-docx==1.1.2

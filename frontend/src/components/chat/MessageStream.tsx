@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import {
   AlertCircle,
   Bot,
+  Brain,
   CheckCircle2,
   CircleDot,
   Cpu,
@@ -34,7 +35,7 @@ export default function MessageStream({ turns, liveTurn, emptyState }: MessageSt
   }
 
   return (
-    <div className="flex flex-col gap-6 overflow-y-scroll overflow-x-hidden px-4 py-6 flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[rgba(15,23,42,0.25)] scrollbar-track-transparent">
+    <div className="flex flex-col gap-6 overflow-y-auto overflow-x-hidden px-4 py-6 flex-1 min-h-0 chat-stream-scrollbar">
       {allTurns.map((turn, idx) => (
         <TurnBlock key={turn.id ?? `t-${idx}`} turn={turn} live={turn === liveTurn} />
       ))}
@@ -43,11 +44,39 @@ export default function MessageStream({ turns, liveTurn, emptyState }: MessageSt
   )
 }
 
+function findActiveAgent(trail: ChatTrailEvent[]): string | null {
+  let pendingAgent: string | null = null
+  for (const event of trail) {
+    if (event.type === 'agent_call') {
+      pendingAgent = event.agent_key
+    } else if (event.type === 'agent_response') {
+      if (pendingAgent === event.agent_key) {
+        pendingAgent = null
+      }
+    }
+  }
+  return pendingAgent
+}
+
 function TurnBlock({ turn, live }: { turn: ChatTurnData; live: boolean }) {
+  const thinkerEvents = turn.trail.filter(e => e.type === 'orchestrator_thought')
+  const latestThought = thinkerEvents.length > 0 ? thinkerEvents[thinkerEvents.length - 1] : null
+  const trailWithoutThoughts = turn.trail.filter(e => e.type !== 'orchestrator_thought')
+  const activeAgent = findActiveAgent(turn.trail)
+  const showThoughtPanel = latestThought && (live || thinkerEvents.length >= 3)
+
   return (
     <div className="flex flex-col gap-3">
       <UserBubble text={turn.user_input} />
-      {turn.trail.length > 0 && <AgentTrail events={turn.trail} live={live} />}
+      {showThoughtPanel && (
+        <OrchestratorThinkingPanel
+          text={latestThought!.total}
+          live={live}
+          activeAgent={activeAgent}
+          collapsed={!live}
+        />
+      )}
+      {trailWithoutThoughts.length > 0 && <AgentTrail events={trailWithoutThoughts} live={live} />}
       {turn.pending_question && (
         <PendingQuestion question={turn.pending_question.text} options={turn.pending_question.options} />
       )}
@@ -55,7 +84,7 @@ function TurnBlock({ turn, live }: { turn: ChatTurnData; live: boolean }) {
       {live && !turn.assistant_markdown && (
         <div className="flex items-center gap-2 text-xs text-[var(--v2-ink-faint)]">
           <Hourglass className="h-3.5 w-3.5 animate-pulse" />
-          Orquestrador processando…
+          {activeAgent ? `Agente "${activeAgent}" em execução…` : 'Orquestrador processando…'}
         </div>
       )}
       {turn.status === 'cancelled' && (
@@ -146,6 +175,55 @@ function TrailEventRow({ event }: { event: ChatTrailEvent }) {
   )
 }
 
+/**
+ * Painel que exibe o pensamento ao vivo do orquestrador enquanto ele decide.
+ * Renderiza o texto acumulado em uma caixa estilizada com animação de digitação
+ * e um indicador pulsante de "pensando".
+ */
+function OrchestratorThinkingPanel({
+  text,
+  live,
+  activeAgent,
+  collapsed = false,
+}: {
+  text: string
+  live: boolean
+  activeAgent?: string | null
+  collapsed?: boolean
+}) {
+  const displayText = text || 'Analisando o pedido…'
+  const lines = displayText.split(/\r?\n/).filter(Boolean)
+  const previewText = displayText.slice(0, 180)
+  const isTruncated = displayText.length > 180
+  return (
+    <div
+      className={clsx(
+        'ml-11 rounded-2xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 shadow-sm',
+        live && 'animate-fade-in',
+      )}
+    >
+      <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-indigo-700">
+        <Brain className="h-3.5 w-3.5" />
+        Pensamento do orquestrador
+        {live && <CircleDot className="h-3 w-3 animate-pulse text-indigo-500" />}
+      </div>
+      <div className="text-xs leading-5 text-indigo-900/80 whitespace-pre-wrap max-h-48 overflow-y-auto">
+        {lines.map((line, idx) => (
+          <div key={idx} className={clsx('py-0.5', live && 'animate-stream-line')}>
+            {line}
+          </div>
+        ))}
+      </div>
+      {live && (
+        <div className="mt-2 flex items-center gap-1.5 text-[10px] text-indigo-400">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
+          {activeAgent ? `delegando para "${activeAgent}"…` : 'processando próximo passo…'}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function describeEvent(event: ChatTrailEvent): {
   Icon: typeof Sparkles
   iconClass: string
@@ -207,6 +285,14 @@ function describeEvent(event: ChatTrailEvent): {
       return { Icon: CheckCircle2, iconClass: 'text-emerald-600', title: 'Resposta final emitida' }
     case 'budget_hit':
       return { Icon: AlertCircle, iconClass: 'text-rose-500', title: 'Orçamento atingido', subtitle: event.reason }
+    case 'agent_token':
+      return {
+        Icon: Cpu,
+        iconClass: 'text-violet-500',
+        title: `${event.agent_key}`,
+        subtitle: `Streaming (${event.total.length} caracteres)`,
+        fullContent: event.total,
+      }
     case 'error':
       return { Icon: AlertCircle, iconClass: 'text-rose-600', title: 'Erro', subtitle: event.message }
     default:

@@ -43,8 +43,8 @@ const registry = buildSuperSkills()
 const skillMap = new Map(registry.map(s => [s.name, s]))
 
 describe('buildSuperSkills', () => {
-  it('returns 4 skills', () => {
-    expect(registry).toHaveLength(4)
+  it('returns 5 skills', () => {
+    expect(registry).toHaveLength(5)
   })
 
   it('every skill has required fields', () => {

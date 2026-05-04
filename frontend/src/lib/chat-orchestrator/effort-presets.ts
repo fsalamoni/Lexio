@@ -36,22 +36,32 @@ export const EFFORT_PRESETS: Record<ChatEffortLevel, EffortPreset> = {
     criticInterval: 2,
     summarizeAt: 0.6,
   },
+  deep_research: {
+    maxIterations: 24,
+    maxFanOut: 5,
+    maxTokens: 600_000,
+    perCallTokenCap: 32_000,
+    criticInterval: 2,
+    summarizeAt: 0.5,
+  },
 }
 
 export const EFFORT_LABELS: Record<ChatEffortLevel, string> = {
   rapido: 'Rápido',
   medio: 'Médio',
   profundo: 'Profundo',
+  deep_research: 'Pesquisa Profunda',
 }
 
 export const EFFORT_DESCRIPTIONS: Record<ChatEffortLevel, string> = {
   rapido: 'Resposta direta · até 3 iterações, sem crítico',
   medio: 'Equilibrado · até 8 iterações, crítico a cada 2',
   profundo: 'Investigação completa · até 14 iterações, crítico a cada 2',
+  deep_research: 'Pesquisa exaustiva · até 24 iterações, fan-out 5, até 600k tokens',
 }
 
 export function isEffortLevel(value: unknown): value is ChatEffortLevel {
-  return value === 'rapido' || value === 'medio' || value === 'profundo'
+  return value === 'rapido' || value === 'medio' || value === 'profundo' || value === 'deep_research'
 }
 
 export const DEFAULT_EFFORT: ChatEffortLevel = 'medio'

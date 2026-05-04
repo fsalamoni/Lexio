@@ -132,7 +132,7 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
         {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
         Nova conversa
       </button>
-      <div className="mt-2 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--v2-border)] scrollbar-track-transparent">
+      <div className="mt-2 flex-1 overflow-y-auto">
         {loading && (
           <div className="flex items-center gap-2 px-2 py-3 text-xs text-[var(--v2-ink-faint)]">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />

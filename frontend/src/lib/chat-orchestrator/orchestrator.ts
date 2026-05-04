@@ -47,6 +47,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     models: input.models,
     fallbackModels: input.fallbackModels,
     apiKey: input.apiKey,
+    onAgentToken: input.onAgentToken,
     mock: Boolean(input.mock),
   }
 
@@ -56,15 +57,24 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     { role: 'user', content: input.user_input },
   ]
 
-  let draft: string | null = null
-  let stopReason: 'final_answer' | 'critic_stop' | 'max_iterations' | 'budget' = 'max_iterations'
-  let consecutiveParseErrors = 0
+    let draft: string | null = null
+    let stopReason: 'final_answer' | 'critic_stop' | 'max_iterations' | 'budget' = 'max_iterations'
+    let consecutiveParseErrors = 0
+    const startedAt = Date.now()
+    let partialIterations = 0
 
-  for (let i = 1; i <= preset.maxIterations; i++) {
-    if (input.signal.aborted) {
-      throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
-    }
-    input.onTrail({ type: 'iteration_start', i, ts: new Date().toISOString() })
+    for (let i = 1; i <= preset.maxIterations; i++) {
+      if (input.signal.aborted) {
+        throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+      }
+      const elapsedMs = Date.now() - startedAt
+      input.onTrail({
+        type: 'iteration_start',
+        i,
+        ts: new Date().toISOString(),
+        elapsed_ms: elapsedMs,
+        budget_used_ratio: budget.usedRatio(),
+      })
 
     let decision: OrchestratorDecision
     try {
@@ -146,47 +156,64 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       }
     }
 
-    if (result.final_answer) {
-      draft = result.final_answer
-      stopReason = 'final_answer'
-      break
-    }
-
-    // Auto-summariser: when the budget approaches the threshold, ask the
-    // summariser to compact the history. This is a single deterministic
-    // injection per turn — repeated triggers would compound noise.
-    if (budget.usedRatio() >= preset.summarizeAt && !history.some(m => m.tag === 'auto_summary')) {
-      try {
-        const compacted = await injectAutoSummary(history, ctx)
-        if (compacted) history = compacted
-      } catch {
-        // best-effort
-      }
-    }
-
-    if (budget.exceeded()) {
-      input.onTrail({ type: 'budget_hit', reason: budget.isHardStopped().reason ?? 'token_cap_reached', ts: new Date().toISOString() })
-      stopReason = 'budget'
-      break
-    }
-
-    if (
-      preset.criticInterval > 0
-      && preset.criticInterval < preset.maxIterations
-      && draft
-      && i % preset.criticInterval === 0
-    ) {
-      try {
-        const verdict = await runCritic(draft, ctx)
-        if (verdict.shouldStop) {
-          stopReason = 'critic_stop'
-          break
+      if (result.final_answer) {
+        draft = result.final_answer
+        partialIterations = i
+        // Always attempt a critic pass before accepting the final answer.
+        // The critic now runs iteratively — even after a skill declares
+        // final_answer, we validate and can loop back for refinements.
+        if (
+          preset.criticInterval > 0
+          && preset.criticInterval <= preset.maxIterations
+          && i < preset.maxIterations
+        ) {
+          try {
+            const verdict = await runCritic(draft, ctx)
+            if (verdict.shouldStop || verdict.score >= 75) {
+              stopReason = verdict.shouldStop ? 'critic_stop' : 'final_answer'
+              break
+            }
+            // Draft needs improvement — feedback loops into next iteration.
+            history = appendToolMessage(
+              history,
+              `Crítico rejeitou o rascunho (score ${verdict.score}/100). Razões: ${verdict.reasons.join('; ')}. Refine e tente novamente.`,
+              'critique_feedback',
+            )
+            draft = null
+            continue
+          } catch {
+            // best-effort — accept draft if critic fails
+            stopReason = 'final_answer'
+            break
+          }
         }
-      } catch {
-        // best-effort — critic failure should not abort the loop
+        stopReason = 'final_answer'
+        break
+      }
+
+      // Auto-summariser: when the budget approaches the threshold, ask the
+      // summariser to compact the history. This is a single deterministic
+      // injection per turn — repeated triggers would compound noise.
+      if (budget.usedRatio() >= preset.summarizeAt && !history.some(m => m.tag === 'auto_summary')) {
+        try {
+          const compacted = await injectAutoSummary(history, ctx)
+          if (compacted) history = compacted
+        } catch {
+          // best-effort
+        }
+      }
+
+      if (budget.exceeded()) {
+        input.onTrail({
+          type: 'budget_hit',
+          reason: budget.isHardStopped().reason ?? 'token_cap_reached',
+          ts: new Date().toISOString(),
+          elapsed_ms: Date.now() - startedAt,
+        })
+        stopReason = 'budget'
+        break
       }
     }
-  }
 
   if (!draft) {
     try {
@@ -208,14 +235,22 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     if (stopReason === 'max_iterations' && budget.exceeded()) stopReason = 'budget'
   }
 
-  input.onTrail({ type: 'final_answer', ts: new Date().toISOString() })
+    const elapsedMs = Date.now() - startedAt
+    input.onTrail({
+      type: 'final_answer',
+      ts: new Date().toISOString(),
+      elapsed_ms: elapsedMs,
+      iterations: partialIterations || preset.maxIterations,
+      budget_used_ratio: budget.usedRatio(),
+    })
 
-  return {
-    status: 'done',
-    assistant_markdown: draft,
-    pending_question: null,
-    llm_executions: budget.records(),
-  }
+    return {
+      status: 'done',
+      assistant_markdown: draft,
+      pending_question: null,
+      llm_executions: budget.records(),
+      elapsed_ms: elapsedMs,
+    }
 }
 
 interface CallOrchestratorAndParseArgs {
@@ -229,6 +264,19 @@ interface CallOrchestratorAndParseArgs {
 
 async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Promise<OrchestratorDecision> {
   const { systemPrompt, history, ctx, llmCall, perCallTokenCap, allowedTools } = args
+
+  // ─ Streaming: emit `orchestrator_thought` events token-by-token ─
+  let accumulated = ''
+  const onToken = (delta: string, total: string) => {
+    accumulated = total
+    ctx.emit({
+      type: 'orchestrator_thought',
+      delta,
+      total,
+      ts: new Date().toISOString(),
+    })
+  }
+
   const { raw, usage } = await llmCall({
     systemPrompt,
     history,
@@ -240,6 +288,7 @@ async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Pro
     budget: ctx.budget,
     perCallTokenCap,
     agentLabel: 'Orquestrador',
+    onToken,
   })
   if (usage) {
     ctx.budget.recordUsage({ ...usage, source_id: ctx.turnId })
@@ -290,10 +339,15 @@ async function forceFinalize(history: OrchestratorMessage[], ctx: SkillContext):
   ].join('\n')
 
   const { dispatchSpecialistAgent } = await import('./dispatch')
+
+  const onToken = ctx.onAgentToken
+    ? (delta: string, total: string) => ctx.onAgentToken!(FINAL_FORCE_AGENT_KEY, delta, total)
+    : undefined
   const { output } = await dispatchSpecialistAgent({
     agentKey: FINAL_FORCE_AGENT_KEY,
     task,
     ctx,
+    onToken,
   })
   return output
 }
