@@ -488,6 +488,37 @@
 - Persistência direta em Firestore (`/users/{uid}/settings/preferences.token_budget`) com feedback de salvamento
 - Budget status calculado em tempo real via useMemo com aproximação do gasto atual
 
+### Etapa 47 — Validação Longitudinal por Perfil Operacional ✅
+- **Arquivos**: `pages/PlatformAdminPanel.tsx`, `lib/generation-service.orchestration.test.ts`
+- O histórico de calibração do admin agora persiste também o `alertProfile` efetivo dos limiares aplicados, preservando distinção entre perfis `conservative`, `balanced`, `aggressive` e `custom`
+- A validação longitudinal passou a agrupar e comparar combinações por janela, rollout, porte e perfil operacional, fechando a lacuna de efetividade que ainda ignorava o perfil dos thresholds
+- A recomendação da política mais efetiva agora consegue reaplicar também o último conjunto de limiares daquele combo histórico, em vez de atualizar apenas janela e modo de rollout
+- O teste de orquestração do `generation-service` foi saneado para voltar a passar no `typecheck` do frontend sem wrappers com spread incompatíveis com o `tsc`
+- Validação executada em `frontend/`: `npm run test -- src/lib/video-generation-pipeline.test.ts`, `npm run build` e `get_errors` limpo nos arquivos alterados; o `npm run typecheck` CLI segue sem erro novo nos slices tocados, mas nesta sessão não devolveu término estável antes do timeout da ferramenta
+
+### Etapa 47A — Busca Híbrida Semântico+Lexical na Jurisprudência ✅
+- **Arquivos**: `lib/datajud-service.ts`, `lib/datajud-service.test.ts`, `pages/ResearchNotebook.tsx`, `pages/labs/ResearchNotebookV2.tsx`
+- `searchDataJud()` ganhou o modo `semanticRerank`, que pede embeddings só para o topo lexical já filtrado e mistura score lexical + similaridade semântica sem exigir backend novo nem índice vetorial persistente
+- O fallback continua íntegro: se a chave OpenRouter não estiver disponível ou se a chamada de embeddings falhar, a ordenação determinística atual é preservada sem abortar a pesquisa de jurisprudência
+- O notebook clássico e o V2 passaram a acionar esse reranking no fluxo DataJud e exibem no modal quando o ranking híbrido foi aplicado em cima dos resultados candidatos
+- A suíte `datajud-service.test.ts` ganhou cobertura específica para promoção do candidato semanticamente mais aderente e para fallback limpo em erro da API de embeddings
+- Validação executada em `frontend/`: `npm run test -- src/lib/datajud-service.test.ts`, `npm run build` e `get_errors` limpo nos arquivos alterados
+
+### Etapa 47B — Reranking Jurídico com Fallback Funcional ✅
+- **Arquivos**: `lib/datajud-service.ts`, `lib/datajud-service.test.ts`, `pages/ResearchNotebook.tsx`, `pages/labs/ResearchNotebookV2.tsx`, `lib/v3-agents/jurisprudence-researcher.ts`
+- A etapa `rank` da pesquisa jurisprudencial deixou de depender exclusivamente do LLM: agora ela sempre aplica primeiro um ranqueamento jurídico determinístico local e só depois usa o modelo configurado como overlay opcional
+- Falha do ranqueador, payload JSON inválido ou ranking parcial não abortam mais a síntese; o notebook clássico, o V2 e o fluxo v3 preservam o ranqueamento local como fallback funcional explícito
+- O parsing e a mescla do ranking LLM passaram a ser compartilhados em `datajud-service.ts`, reduzindo duplicação e drift entre superfícies
+- A suíte `datajud-service.test.ts` ganhou cobertura para parsing do ranking, rerank local sem LLM, overlay parcial do LLM e fallback limpo quando o ranking retornado é inválido
+- Validação executada em `frontend/`: `npm run test -- src/lib/datajud-service.test.ts` (**71/71**), `npm run build`, `npm run typecheck` (exit code `0`) e `get_errors` limpo nos arquivos alterados
+
+### Etapa 47C — Memória Semântica Persistente por Caderno ✅
+- **Arquivos**: `lib/datajud-service.ts`, `lib/datajud-service.test.ts`, `lib/firestore-service.ts`, `lib/firestore-types.ts`, `pages/ResearchNotebook.tsx`, `pages/labs/ResearchNotebookV2.tsx`
+- O notebook clássico e o V2 passaram a persistir embeddings das consultas jurisprudenciais em `research_notebooks/{id}/memory/search_memory`, vinculando cada vetor à fonte `jurisprudencia` salva no caderno
+- Antes da revisão manual, a busca atual agora consulta essa memória semântica dedicada e refunde resultados históricos semanticamente próximos do mesmo caderno, reaproveitando `results_raw` persistidos sem precisar de backend vetorial adicional
+- A persistência da memória semântica não bloqueia a criação da fonte: se embeddings/chave estiverem indisponíveis, a busca continua com o fluxo lexical/determinístico e apenas deixa de registrar a entrada vetorial
+- A suíte `datajud-service.test.ts` ganhou cobertura explícita para construção da entrada de memória semântica e fusão histórica, elevando o slice para **73/73** testes verdes; `get_errors` no frontend permaneceu limpo após a integração
+
 ### Etapa 46 — Estimativa de Custo para Geração de Documentos ✅
 - **Arquivos**: `lib/generation-service.ts`
 - Adicionada função `estimateDocumentGenerationCost(requestLength, hasAcervo, thesesCount)` que retorna estimativa de tokens e custo por agente
@@ -501,11 +532,12 @@
 - Retorna `BudgetCheckResult` com status (`ok`/`warning`/`exceeded`), gasto atual, limite e mensagem
 
 ### Etapa 44 — UI de Retomada de Checkpoint de Vídeo ✅
-- **Arquivos**: `pages/ResearchNotebook.tsx`, `components/VideoGenerationCostModal.tsx`
-- O modal de geração de vídeo agora exibe banner informativo quando há checkpoint salvo de execução anterior (etapas completas, imagens/TTS gerados)
-- O estado de checkpoint é capturado do erro lançado pelo pipeline e armazenado no state do componente
-- Texto do botão muda para "Regenerar Fase 1" quando há checkpoint disponível
-- Toast de erro inclui informação de progresso salvo
+- **Arquivos**: `pages/ResearchNotebook.tsx`, `pages/labs/ResearchNotebookV2.tsx`, `components/VideoGenerationCostModal.tsx`, `lib/video-generation-pipeline.ts`
+- O modal de geração de vídeo agora exibe banner com o passo salvo, quantidades reaproveitáveis de imagens/TTS e duas ações explícitas: retomar do checkpoint ou recomeçar do zero
+- A retomada só é habilitada quando o roteiro não foi alterado; ao editar o conteúdo, a UI exige restauração do original para evitar misturar checkpoint antigo com roteiro novo
+- O estado de checkpoint continua sendo capturado do erro lançado pelo pipeline e armazenado no state do componente, tanto no notebook clássico quanto no V2
+- O pipeline aceita `checkpoint` de entrada e pula etapas já concluídas, inclusive reaproveitando `assembledPackage`, clips planejados, imagens e narrações já gerados
+- Toast de erro continua incluindo informação de progresso salvo
 
 ### Etapa 43 — Reranking Jurídico Determinístico Aprimorado ✅
 - **Arquivos**: `lib/datajud-service.ts`
@@ -876,7 +908,7 @@ frontend/src/pages/ResearchNotebook.tsx        — Modal, categorias, Audio Over
 
 ---
 
-## Feature 1.2 — Busca Híbrida (Qdrant + DataJud com RRF) — Status em 2026-05-02
+## Feature 1.2 — Busca Híbrida (Qdrant + DataJud com RRF / rerank semântico browser-side) — Status em 2026-05-05
 
 ### ✅ Implementado
 - **Backend**: `POST /api/v1/search/hybrid` com fusão RRF (Reciprocal Rank Fusion) entre Qdrant (semântico) e DataJud (lexical)
@@ -891,11 +923,13 @@ frontend/src/pages/ResearchNotebook.tsx        — Modal, categorias, Audio Over
 - **Integração no Chat**: `Chat.tsx` com grid responsivo de 3 colunas quando SearchPanel está aberto
 - **ChatHeader**: Botão "Buscar" com toggle visual (indigo quando ativo)
 - **Correção final da barra de rolagem**: `MessageStream.tsx` — thumb da scrollbar alterado de `var(--v2-border)` (opacidade muito baixa) para `rgba(15,23,42,0.25)`, garantindo visibilidade real da barra de rolagem no Chat Orquestrador
+- **Notebook/DataJud**: `frontend/src/lib/datajud-service.ts` agora faz reranking semântico browser-side com embeddings sobre o topo lexical de DataJud/JusBrasil/STF, ativado por `ResearchNotebook.tsx` e `ResearchNotebookV2.tsx`, com fallback automático para o ranking determinístico caso embeddings/chave não estejam disponíveis
 
 ### ⏳ Pendente
 - [ ] Super-skill `hybrid_search` no Chat Orquestrador (para o agente Orquestrador disparar buscas automaticamente)
 - [ ] Testes de integração frontend para o SearchPanel
 - [ ] Testes de integração backend para o endpoint de busca híbrida
+- [ ] Índice vetorial persistente e fusão multi-fonte completa no fluxo de jurisprudência do notebook (além do reranking browser-side)
 
 ---
 

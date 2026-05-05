@@ -6,9 +6,10 @@
  * Firestore remote config (future enhancement).
  *
  * Resolution priority:
- *   1. Local storage override (dev tools)
- *   2. Build-time env var (VITE_FF_*)
- *   3. Hardcoded default
+ *   1. Session storage override (dev tools)
+ *   2. User-scoped runtime override (Firestore settings/preferences)
+ *   3. Build-time env var (VITE_FF_*)
+ *   4. Hardcoded default
  *
  * Usage:
  *   import { isEnabled } from './feature-flags'
@@ -26,6 +27,8 @@ export interface FeatureFlagDefinition {
   /** If true, this flag can be toggled via local storage in dev mode */
   devToggleable: boolean
 }
+
+export type FeatureFlagSource = 'default' | 'env' | 'runtime' | 'sessionStorage'
 
 /** All canary feature flags for Subonda 2. */
 export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
@@ -122,41 +125,101 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
 // ── Storage key ───────────────────────────────────────────────────────────────
 
 const STORAGE_KEY_PREFIX = 'lexio:ff:'
+export const FEATURE_FLAGS_UPDATED_EVENT = 'lexio:feature_flags_updated'
 
-// ── Resolution ────────────────────────────────────────────────────────────────
+let runtimeFlagOverrides: Record<string, boolean> = {}
 
-/**
- * Check if a feature flag is enabled.
- *
- * Priority: local storage override > env var > default.
- */
-export function isEnabled(flagKey: string): boolean {
-  // 1. Local storage override (dev tools)
+function getSessionStorageFlagState(flagKey: string): { enabled: boolean; source: 'sessionStorage' } | null {
   try {
     const stored = sessionStorage.getItem(`${STORAGE_KEY_PREFIX}${flagKey}`)
     if (stored !== null) {
-      return stored === 'true'
+      return { enabled: stored === 'true', source: 'sessionStorage' }
     }
   } catch {
     // sessionStorage might be unavailable (SSR, test env)
   }
 
-  // 2. Build-time env var
+  return null
+}
+
+function getEnvOrDefaultFlagState(flagKey: string): {
+  enabled: boolean
+  source: 'env' | 'default'
+} {
   const def = FEATURE_FLAGS.find(f => f.key === flagKey)
   if (def) {
     try {
       const envValue = (import.meta as unknown as Record<string, unknown>).env as Record<string, string | undefined> | undefined
       const envVal = envValue?.[def.envVar]
       if (envVal !== undefined) {
-        return envVal === 'true'
+        return { enabled: envVal === 'true', source: 'env' }
       }
     } catch {
       // import.meta.env might not be available in all environments
     }
   }
 
-  // 3. Default
-  return def?.defaultEnabled ?? false
+  return { enabled: def?.defaultEnabled ?? false, source: 'default' }
+}
+
+function dispatchFeatureFlagsUpdated(): void {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
+  try {
+    window.dispatchEvent(new CustomEvent(FEATURE_FLAGS_UPDATED_EVENT))
+  } catch {
+    // Never break flag resolution because the UI event could not be emitted.
+  }
+}
+
+export function sanitizeFeatureFlagMap(input: Record<string, unknown> | null | undefined): Record<string, boolean> {
+  const sanitized: Record<string, boolean> = {}
+  if (!input) return sanitized
+
+  for (const flag of FEATURE_FLAGS) {
+    const raw = input[flag.key]
+    if (typeof raw === 'boolean') {
+      sanitized[flag.key] = raw
+    }
+  }
+
+  return sanitized
+}
+
+export function setRuntimeFeatureFlags(flags: Record<string, unknown>): void {
+  const next = sanitizeFeatureFlagMap(flags)
+  const previousSerialized = JSON.stringify(runtimeFlagOverrides)
+  const nextSerialized = JSON.stringify(next)
+  runtimeFlagOverrides = next
+  if (previousSerialized !== nextSerialized) {
+    dispatchFeatureFlagsUpdated()
+  }
+}
+
+export function clearRuntimeFeatureFlags(): void {
+  if (Object.keys(runtimeFlagOverrides).length === 0) return
+  runtimeFlagOverrides = {}
+  dispatchFeatureFlagsUpdated()
+}
+
+// ── Resolution ────────────────────────────────────────────────────────────────
+
+/**
+ * Check if a feature flag is enabled.
+ *
+ * Priority: session storage override > runtime override > env var > default.
+ */
+export function isEnabled(flagKey: string): boolean {
+  const sessionOverride = getSessionStorageFlagState(flagKey)
+  if (sessionOverride) {
+    return sessionOverride.enabled
+  }
+
+  // 2. User-scoped runtime override
+  if (flagKey in runtimeFlagOverrides) {
+    return runtimeFlagOverrides[flagKey]
+  }
+
+  return getEnvOrDefaultFlagState(flagKey).enabled
 }
 
 /**
@@ -184,6 +247,7 @@ export function isCanaryFlag(flagKey: string): boolean {
 export function setFlagOverride(flagKey: string, enabled: boolean): void {
   try {
     sessionStorage.setItem(`${STORAGE_KEY_PREFIX}${flagKey}`, String(enabled))
+    dispatchFeatureFlagsUpdated()
   } catch {
     // Ignore storage errors
   }
@@ -195,6 +259,7 @@ export function setFlagOverride(flagKey: string, enabled: boolean): void {
 export function clearFlagOverride(flagKey: string): void {
   try {
     sessionStorage.removeItem(`${STORAGE_KEY_PREFIX}${flagKey}`)
+    dispatchFeatureFlagsUpdated()
   } catch {
     // Ignore storage errors
   }
@@ -205,34 +270,40 @@ export function clearFlagOverride(flagKey: string): void {
  */
 export function getFlagState(flagKey: string): {
   enabled: boolean
-  source: 'default' | 'env' | 'sessionStorage'
+  source: FeatureFlagSource
 } {
-  // Check session storage first
-  try {
-    const stored = sessionStorage.getItem(`${STORAGE_KEY_PREFIX}${flagKey}`)
-    if (stored !== null) {
-      return { enabled: stored === 'true', source: 'sessionStorage' }
-    }
-  } catch { /* ignore */ }
-
-  // Check env var
-  const def = FEATURE_FLAGS.find(f => f.key === flagKey)
-  if (def) {
-    try {
-      const envValue = (import.meta as unknown as Record<string, unknown>).env as Record<string, string | undefined> | undefined
-      if (envValue?.[def.envVar] !== undefined) {
-        return { enabled: envValue[def.envVar] === 'true', source: 'env' }
-      }
-    } catch { /* ignore */ }
+  const sessionOverride = getSessionStorageFlagState(flagKey)
+  if (sessionOverride) {
+    return sessionOverride
   }
 
-  return { enabled: def?.defaultEnabled ?? false, source: 'default' }
+  if (flagKey in runtimeFlagOverrides) {
+    return { enabled: runtimeFlagOverrides[flagKey], source: 'runtime' }
+  }
+
+  return getEnvOrDefaultFlagState(flagKey)
+}
+
+/**
+ * Resolve the inherited state of a flag without considering user runtime overrides.
+ * Useful when the UI needs to reset a single flag back to session/env/default behavior.
+ */
+export function getNonRuntimeFlagState(flagKey: string): {
+  enabled: boolean
+  source: Exclude<FeatureFlagSource, 'runtime'>
+} {
+  const sessionOverride = getSessionStorageFlagState(flagKey)
+  if (sessionOverride) {
+    return sessionOverride
+  }
+
+  return getEnvOrDefaultFlagState(flagKey)
 }
 
 /**
  * List all flags with their current state (useful for debug panel).
  */
-export function listAllFlags(): Array<FeatureFlagDefinition & { enabled: boolean; source: 'default' | 'env' | 'sessionStorage' }> {
+export function listAllFlags(): Array<FeatureFlagDefinition & { enabled: boolean; source: FeatureFlagSource }> {
   return FEATURE_FLAGS.map(def => ({
     ...def,
     ...getFlagState(def.key),

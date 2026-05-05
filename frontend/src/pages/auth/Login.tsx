@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Scale, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
+import { IS_FIREBASE } from '../../lib/firebase'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -32,8 +33,11 @@ function GoogleIcon() {
 }
 
 export default function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const isLocalSmokeMode = !IS_FIREBASE && import.meta.env.VITE_DEMO_MODE === 'true'
+  const smokeEmail = (import.meta.env.VITE_SMOKE_LOGIN_EMAIL as string | undefined) ?? 'smoke@local.test'
+  const smokePassword = (import.meta.env.VITE_SMOKE_LOGIN_PASSWORD as string | undefined) ?? 'lexio-smoke-123'
+  const [email, setEmail] = useState(isLocalSmokeMode ? smokeEmail : '')
+  const [password, setPassword] = useState(isLocalSmokeMode ? smokePassword : '')
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -43,6 +47,12 @@ export default function Login() {
   const trimmedEmail = email.trim()
   const isEmailValid = !trimmedEmail || EMAIL_REGEX.test(trimmedEmail)
   const canSubmit = !loading && !googleLoading && Boolean(trimmedEmail) && Boolean(password) && isEmailValid
+
+  const applySmokeCredentials = () => {
+    setError('')
+    setEmail(smokeEmail)
+    setPassword(smokePassword)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -91,21 +101,38 @@ export default function Login() {
           <h2 className="text-xl font-semibold text-center mb-4">Entrar</h2>
           {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
-          <button
-            type="button"
-            onClick={handleGoogle}
-            disabled={googleLoading}
-            className="w-full flex items-center justify-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-gray-700 transition-colors"
-          >
-            <GoogleIcon />
-            {googleLoading ? 'Entrando...' : 'Entrar com Google'}
-          </button>
+          {isLocalSmokeMode ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-semibold">Modo smoke local</p>
+              <p className="mt-1">Email: {smokeEmail}</p>
+              <p>Senha: {smokePassword}</p>
+              <button
+                type="button"
+                onClick={applySmokeCredentials}
+                className="mt-3 w-full rounded-lg border border-amber-300 bg-white px-4 py-2 font-medium text-amber-900 hover:bg-amber-100"
+              >
+                Usar credenciais de smoke
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleGoogle}
+                disabled={googleLoading}
+                className="w-full flex items-center justify-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-gray-700 transition-colors"
+              >
+                <GoogleIcon />
+                {googleLoading ? 'Entrando...' : 'Entrar com Google'}
+              </button>
 
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-gray-200" />
-            <span className="text-xs text-gray-400">ou</span>
-            <div className="flex-1 h-px bg-gray-200" />
-          </div>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs text-gray-400">ou</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
+            </>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
             <div>
@@ -162,13 +189,19 @@ export default function Login() {
           </form>
 
           <div className="text-center space-y-1">
-            <p className="text-sm text-gray-500">
-              Não tem conta?{' '}
-              <Link to="/register" className="text-teal-600 hover:underline font-medium">Cadastre-se</Link>
-            </p>
-            <p className="text-sm">
-              <Link to="/forgot-password" className="text-gray-400 hover:text-gray-600 hover:underline text-xs">Esqueci minha senha</Link>
-            </p>
+            {isLocalSmokeMode ? (
+              <p className="text-sm text-gray-500">Este ambiente local usa um acesso fixo apenas para smoke de interface.</p>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500">
+                  Não tem conta?{' '}
+                  <Link to="/register" className="text-teal-600 hover:underline font-medium">Cadastre-se</Link>
+                </p>
+                <p className="text-sm">
+                  <Link to="/forgot-password" className="text-gray-400 hover:text-gray-600 hover:underline text-xs">Esqueci minha senha</Link>
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>

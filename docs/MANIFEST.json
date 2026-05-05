@@ -1,8 +1,8 @@
 {
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
-    "updated": "2026-04-26",
-    "cycle": "wave40-latency-progress-contract-subwave1",
+    "updated": "2026-05-05",
+    "cycle": "wave40-latency-progress-contract-subwave2",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -24,20 +24,31 @@
       "id": "E1.F2",
       "epic": "Pesquisa de Jurisprudência",
       "name": "Busca híbrida semântica + lexical",
-      "state": "missing",
-      "files": [],
-      "notes": "Requer serviço de embeddings externo"
+      "state": "implemented",
+      "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/lib/firestore-service.ts",
+        "frontend/src/lib/firestore-types.ts",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx"
+      ],
+      "notes": "Reranking semântico browser-side por embeddings aplicado sobre o topo lexical de DataJud/JusBrasil/STF; o notebook persiste memória semântica dedicada por caderno e funde resultados históricos semanticamente próximos antes da revisão"
     },
     {
       "id": "E1.F3",
       "epic": "Pesquisa de Jurisprudência",
       "name": "Reranking jurídico por relevância",
-      "state": "partial",
+      "state": "implemented",
       "files": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
         "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/lib/v3-agents/jurisprudence-researcher.ts",
         "frontend/src/lib/model-config.ts"
       ],
-      "notes": "Agente existe; skip gracioso se modelo não configurado; ranking agora retorna stance + score por processo"
+      "notes": "Etapa rank agora aplica fallback determinístico local, reaproveita parsing/mescla compartilhados e só usa o modelo como overlay opcional; falhas do ranqueador não derrubam a síntese"
     },
     {
       "id": "E1.F4",
@@ -118,8 +129,7 @@
       "state": "implemented",
       "files": [
         "frontend/src/lib/datajud-service.ts",
-        "frontend/src/lib/datajud-service.test.ts",
-        "frontend/src/pages/ResearchNotebook.tsx"
+        "frontend/src/lib/datajud-service.test.ts"
       ],
       "notes": "buildJurisprudenceAnalytics → JurisprudenceAnalytics (byArea/byStance/byYear/byTribunal/avgRelevanceScore); painel visual na aba Visão Geral"
     },
@@ -226,7 +236,8 @@
       "files": [
         "frontend/src/pages/ResearchNotebook.tsx",
         "frontend/src/pages/DocumentList.tsx"
-      ]
+      ],
+      "notes": "DocumentList aceita o deep-link ?open=<notebook_id> para abrir ou destacar o caderno correspondente a partir da navegação entre superfícies."
     },
     {
       "id": "E4.F4",
@@ -314,7 +325,7 @@
         "frontend/src/components/artifacts/VideoStudioEditor.tsx",
         "frontend/src/components/VideoGenerationCostModal.tsx"
       ],
-      "notes": "8 agentes LLM + subdivisão de clips + geração de imagem + TTS; tipo video_production adicionado"
+      "notes": "8 agentes LLM + subdivisão de clips + geração de imagem + TTS; tipo video_production adicionado; checkpoint agora permite retomada real a partir do último passo e reaproveita mídia já concluída"
     },
     {
       "id": "E7.F1",
@@ -692,6 +703,45 @@
       "notes": "A política progressiva por função ganhou banda de confiança operacional e thresholds preditivos adaptativos por criticidade/evidência, reduzindo falsos positivos sem perder bypass para sinais críticos; o painel admin recebeu distribuição de confiança, contagem de alertas preditivos, watchlist de baixa confiança e síntese explícita de alinhamento com a demonstração dos agentes. Fechamento operacional validado em release one-shot `24939740593` no HEAD `a2ed246`, com quality gates (functions `73031338133`, lint `73031338134`, source guardrails `73031338135`, frontend `73031338137`, unit tests `73031338143`), deploy Firebase (`73031401264`), Pages build/deploy (`73031401290`, `73031468718`) e release summary (`73031560811`) em sucesso; redesign V2 permaneceu skipped por input (`73031401347`)."
     },
     {
+      "id": "E5.F30",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Wave 40 Subonda 2 — latência documental, caches user-scoped e canários runtime",
+      "state": "partial",
+      "files": [
+        "frontend/src/lib/generation-service.ts",
+        "frontend/src/lib/generation-service.parallel.test.ts",
+        "frontend/src/lib/generation-service.orchestration.test.ts",
+        "frontend/src/lib/generation-cache.ts",
+        "frontend/src/lib/generation-cache.test.ts",
+        "frontend/src/lib/feature-flags.ts",
+        "frontend/src/lib/feature-flags.test.ts",
+        "frontend/src/lib/settings-store.ts",
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/datajud-service.test.ts",
+        "frontend/src/lib/firestore-service.ts",
+        "frontend/src/lib/firestore-types.ts",
+        "frontend/src/App.tsx",
+        "frontend/src/pages/AdminPanel.tsx",
+        "frontend/src/pages/PlatformAdminPanel.tsx",
+        "frontend/src/components/admin/RuntimeFeatureFlagsCard.tsx",
+        "frontend/src/components/admin/RuntimeFeatureFlagsCard.test.tsx",
+        "frontend/src/components/VideoGenerationCostModal.tsx",
+        "frontend/src/lib/video-generation-pipeline.ts",
+        "frontend/src/lib/video-generation-pipeline.test.ts",
+        "frontend/src/pages/ResearchNotebook.tsx",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx",
+        "frontend/src/lib/v3-agents/jurisprudence-researcher.ts",
+        "frontend/src/lib/chat-orchestrator/orchestrator.ts",
+        "docs/PLANO.md",
+        "docs/release/WEB_RELEASE_INDEX.md",
+        "docs/release/WEB_RELEASE_CACHE.md",
+        "docs/release/SUBONDA2_CLOSEOUT.md",
+        "docs/release/CROSS_PLATFORM_HANDOFF.md",
+        "docs/MANIFEST.json"
+      ],
+      "notes": "A implementacao principal da Subonda 2 passou a combinar caches user-scoped (templates administrativos, contexto leve do acervo, ementa e classificacao), feature flags runtime por usuario persistidas em Firestore e um caminho real de `FF_PARALLEL_PESQUISADOR` com fallback sequencial. A trilha de progresso multiagente agora propaga `executionState` em documentos, notebook e tese; a UX de video ganhou retomada real por `VideoCheckpoint`; o painel admin fechou a validacao longitudinal por perfil operacional de thresholds; e a jurisprudencia passou a contar com reranking semantico browser-side, fallback juridico resiliente e memoria semantica persistente por caderno com fusao historica. O teste de orquestracao do `generateDocument()` voltou a ficar tipado de forma compatível com o `tsc`, os testes focados de jurisprudencia subiram para 73/73 e o warning de chunking do chat-orchestrator permaneceu resolvido. Fechamento operacional ainda pendente nesta rodada: smoke test manual autenticado e commit/push/deploy do lote atual; a tentativa local com credenciais demo falhou porque o preview exige login Firebase real."
+    },
+    {
       "id": "E8.F1",
       "epic": "Redesign V2",
       "name": "Convivência controlada entre shells v1 e v2",
@@ -927,7 +977,7 @@
         "frontend/src/lib/video-pipeline-progress.ts",
         "frontend/src/lib/notebook-media-storage.ts"
       ],
-      "notes": "O workbench V2 agora cobre custo/revisao de `video_script`, geracao de video, reabertura de `video_production` e estudios salvos, `VideoStudioEditor`, producao literal, render final, fallback para provedor externo e persistencia compactada da timeline no proprio shell"
+      "notes": "O workbench V2 agora cobre custo/revisao de `video_script`, geracao de video, retomada assistida por checkpoint ou reinicio explicito, reabertura de `video_production` e estudios salvos, `VideoStudioEditor`, producao literal, render final, fallback para provedor externo e persistencia compactada da timeline no proprio shell"
     },
     {
       "id": "E8.F18",

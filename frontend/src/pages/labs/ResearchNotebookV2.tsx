@@ -34,7 +34,11 @@ import {
   type StudioArtifact,
   type StudioArtifactType,
 } from '../../lib/firestore-service'
-import type { NotebookMessage, NotebookResearchAuditEntry } from '../../lib/firestore-types'
+import type {
+  NotebookJurisprudenceSemanticMemoryEntry,
+  NotebookMessage,
+  NotebookResearchAuditEntry,
+} from '../../lib/firestore-types'
 import { humanizeError } from '../../lib/error-humanizer'
 import {
   buildResearchNotebookWorkbenchPath,
@@ -90,7 +94,11 @@ import {
   ALL_TRIBUNALS,
   DATAJUD_GRAUS,
   DEFAULT_TRIBUNALS,
+  buildJurisprudenceSemanticMemoryEntry,
+  fuseDataJudResultsWithSemanticMemory,
   formatDataJudResults,
+  parseDataJudRankingResponse,
+  rerankSelectedDataJudResults,
   searchDataJud,
   type DataJudEndpointAttempt,
   type DataJudErrorType,
@@ -229,7 +237,6 @@ const STUDIO_CATEGORY_COLORS = {
   },
 } as const
 
-const VALID_STANCES = ['favoravel', 'desfavoravel', 'neutro'] as const
 const MAX_PERSISTED_RESEARCH_AUDITS = 12
 const MAX_PERSISTED_SAVED_SEARCHES = 12
 
@@ -457,6 +464,7 @@ export default function ResearchNotebookV2() {
   const [acervoAnalysisPhase, setAcervoAnalysisPhase] = useState('')
   const [acervoAnalysisMessage, setAcervoAnalysisMessage] = useState('')
   const [acervoAnalysisPercent, setAcervoAnalysisPercent] = useState(0)
+  const [acervoAnalysisExecutionState, setAcervoAnalysisExecutionState] = useState<PipelineExecutionState | undefined>(undefined)
   const [acervoAnalysisMeta, setAcervoAnalysisMeta] = useState('')
   const [acervoAnalysisError, setAcervoAnalysisError] = useState('')
   const [showAcervoProgressModal, setShowAcervoProgressModal] = useState(false)
@@ -931,9 +939,10 @@ export default function ResearchNotebookV2() {
     phase: acervoAnalysisPhase,
     message: acervoAnalysisMessage,
     loading: acervoAnalysisLoading,
+    executionState: acervoAnalysisExecutionState,
     stageMeta: acervoAnalysisMeta || undefined,
     error: acervoAnalysisError || undefined,
-  }), [acervoAnalysisError, acervoAnalysisLoading, acervoAnalysisMessage, acervoAnalysisMeta, acervoAnalysisPhase])
+  }), [acervoAnalysisError, acervoAnalysisExecutionState, acervoAnalysisLoading, acervoAnalysisMessage, acervoAnalysisMeta, acervoAnalysisPhase])
 
   const acervoProgressState = useMemo(() => buildAcervoModalProgressState({
     phase: acervoAnalysisPhase,
@@ -1256,7 +1265,7 @@ export default function ResearchNotebookV2() {
     setVideoGenLastCheckpoint(null)
   }, [])
 
-  const handleGenerateVideo = useCallback(async (editedContent?: string) => {
+  const handleGenerateVideo = useCallback(async (editedContent?: string, options?: { resumeFromCheckpoint?: boolean }) => {
     if (!videoGenSavedArtifact || !userId || !activeNotebook?.id || videoGenLoading) return
 
     let resolveTask: (value: unknown) => void = () => {}
@@ -1290,7 +1299,6 @@ export default function ResearchNotebookV2() {
 
     try {
       setVideoGenLoading(true)
-      setVideoGenLastCheckpoint(null)
       videoGenOperationalEventKeysRef.current = new Set()
 
       const apiKey = await getOpenRouterKey(userId || undefined)
@@ -1305,6 +1313,8 @@ export default function ResearchNotebookV2() {
 
       let artifactToRun = videoGenSavedArtifact
       const scriptContent = editedContent || artifactToRun.content
+  const wantsResume = Boolean(options?.resumeFromCheckpoint && scriptContent === artifactToRun.content && videoGenLastCheckpoint?.completedStep)
+  const resumeCheckpoint = wantsResume ? videoGenLastCheckpoint || undefined : undefined
 
       if (editedContent && editedContent !== artifactToRun.content) {
         const freshNotebook = await getFreshNotebookOrThrow(notebookId)
@@ -1371,6 +1381,7 @@ export default function ResearchNotebookV2() {
         topic: activeNotebook.topic,
         sourceId: notebookId,
         generateMedia: true,
+        checkpoint: resumeCheckpoint,
       }, onProgress)
 
       const costKey: UsageFunctionKey = 'video_pipeline'
@@ -1407,6 +1418,7 @@ export default function ResearchNotebookV2() {
       setVideoProduction(normalizeVideoProductionPackage(result.package))
       setShowVideoGenCost(false)
       setVideoGenSavedArtifact(null)
+      setVideoGenLastCheckpoint(null)
 
       if (result.mediaErrors && result.mediaErrors.length > 0) {
         toast.warning(
@@ -2916,6 +2928,7 @@ Instruções:
     setAcervoAnalysisPhase('')
     setAcervoAnalysisMessage('Iniciando análise...')
     setAcervoAnalysisPercent(0)
+    setAcervoAnalysisExecutionState('queued')
     setAcervoAnalysisMeta('')
     setAcervoAnalysisError('')
     setAcervoAnalysisResults([])
@@ -2946,6 +2959,11 @@ Instruções:
               : progress.message,
           )
           setAcervoAnalysisPercent(Math.min(progress.percent, 99))
+          setAcervoAnalysisExecutionState(
+            analyzerConcluded
+              ? 'persisting'
+              : (progress.executionState ?? 'running'),
+          )
           setAcervoAnalysisMeta(
             analyzerConcluded
               ? 'Persistindo execuções e sincronizando estado'
@@ -2971,6 +2989,7 @@ Instruções:
       }
       setAcervoAnalysisPhase('concluido')
       setAcervoAnalysisPercent(100)
+      setAcervoAnalysisExecutionState('completed')
       setAcervoAnalysisMeta(persistenceMetaParts.join(' • '))
 
       if (result.documents.length > 0) {
@@ -2987,6 +3006,7 @@ Instruções:
       if (error instanceof DOMException && error.name === 'AbortError') {
         setAcervoAnalysisError('')
         setAcervoAnalysisMessage('Análise de acervo cancelada pelo usuário.')
+        setAcervoAnalysisExecutionState('cancelled')
         setAcervoAnalysisMeta('Cancelado manualmente')
         toast.info('Análise de acervo cancelada.')
         return
@@ -2994,6 +3014,7 @@ Instruções:
 
       const humanized = humanizeError(error)
       setAcervoAnalysisError(humanized.detail || humanized.title)
+      setAcervoAnalysisExecutionState('failed')
       setAcervoAnalysisMeta('Execução interrompida')
       if (error instanceof ModelUnavailableError) {
         toast.warning(
@@ -3145,6 +3166,7 @@ Instruções:
     source: NotebookSource,
     execution: ReturnType<typeof createUsageExecutionRecord> | Array<ReturnType<typeof createUsageExecutionRecord>>,
     researchAudit?: ResearchContextAuditSummary,
+    semanticMemoryEntry?: NotebookJurisprudenceSemanticMemoryEntry | null,
   ) => {
     if (!userId) throw new Error('Usuário não autenticado')
     const freshNotebook = await getFreshNotebookOrThrow(notebookId)
@@ -3157,17 +3179,25 @@ Instruções:
           created_at: new Date().toISOString(),
         } satisfies NotebookResearchAuditEntry, ...(freshNotebook.research_audits || [])].slice(0, MAX_PERSISTED_RESEARCH_AUDITS)
       : freshNotebook.research_audits
+    const updatedSemanticMemory = semanticMemoryEntry
+      ? [
+          semanticMemoryEntry,
+          ...(freshNotebook.jurisprudence_semantic_memory || []).filter((entry) => entry.source_id !== semanticMemoryEntry.source_id),
+        ]
+      : undefined
 
     await updateResearchNotebook(userId, notebookId, {
       sources: updatedSources,
       llm_executions: updatedExecutions,
       research_audits: updatedResearchAudits,
+      ...(updatedSemanticMemory ? { jurisprudence_semantic_memory: updatedSemanticMemory } : {}),
     })
 
     patchNotebook(notebookId, {
       sources: updatedSources,
       llm_executions: updatedExecutions,
       research_audits: updatedResearchAudits,
+      ...(updatedSemanticMemory ? { jurisprudence_semantic_memory: updatedSemanticMemory } : {}),
       updated_at: source.added_at,
     })
     setSelectedSourceId(source.id)
@@ -3933,6 +3963,7 @@ Instruções:
         legalArea: config.legalArea || undefined,
         enrichMissingText: true,
         maxTextEnrichment: 10,
+        semanticRerank: true,
         onProgress: (progress) => {
           setResearchModalStats((current) => ({
             ...current,
@@ -3948,8 +3979,6 @@ Instruções:
         },
         signal: abortController.signal,
       })
-
-      updateModalStep('query', { status: dataJudResult.results.length > 0 ? 'done' : 'error', detail: `${dataJudResult.results.length} resultado(s) de ${dataJudResult.tribunalsWithResults} tribunal(is)` })
 
       summarizeEndpointAttempts(dataJudResult.runtimeDiagnostics.endpointAttempts)
         .slice(0, 3)
@@ -3972,7 +4001,39 @@ Instruções:
       }
 
       updateModalStep('filter', { status: 'active' })
-      if (dataJudResult.results.length === 0) {
+      let reviewResults = dataJudResult.results
+      let semanticMemoryMatchedEntries = 0
+      let semanticMemoryImportedResults = 0
+
+      const semanticNotebookSnapshot = await getFreshNotebookOrThrow(notebookId).catch((error) => {
+        console.warn('Failed to load notebook semantic memory snapshot:', error)
+        return null
+      })
+
+      if (semanticNotebookSnapshot?.jurisprudence_semantic_memory?.length && semanticNotebookSnapshot.sources.length > 0) {
+        addModalSubstep('filter', 'Consultando memória semântica do caderno...')
+        const semanticFusion = await fuseDataJudResultsWithSemanticMemory(config.query, dataJudResult.results, {
+          memoryEntries: semanticNotebookSnapshot.jurisprudence_semantic_memory,
+          sources: semanticNotebookSnapshot.sources,
+          legalArea: config.legalArea || undefined,
+          maxTotal: Math.max(dataJudResult.results.length, 12),
+          signal: abortController.signal,
+        })
+        reviewResults = semanticFusion.results
+        if (semanticFusion.applied) {
+          semanticMemoryMatchedEntries = semanticFusion.matchedEntries
+          semanticMemoryImportedResults = semanticFusion.importedResults
+        }
+      }
+
+      updateModalStep('query', {
+        status: reviewResults.length > 0 ? 'done' : 'error',
+        detail: semanticMemoryImportedResults > 0
+          ? `${dataJudResult.results.length} via DataJud + ${semanticMemoryImportedResults} da memória do caderno`
+          : `${dataJudResult.results.length} resultado(s) de ${dataJudResult.tribunalsWithResults} tribunal(is)`,
+      })
+
+      if (reviewResults.length === 0) {
         const hasTechnicalFailure = dataJudResult.errorDetails.some((item) => item.type !== 'aborted')
         const detail = hasTechnicalFailure
           ? 'Nenhum resultado devido a falhas técnicas nos tribunais consultados'
@@ -3987,17 +4048,26 @@ Instruções:
         return
       }
 
-      addModalSubstep('filter', `${dataJudResult.results.length} resultado(s) encontrado(s)`)
+      addModalSubstep('filter', `${reviewResults.length} resultado(s) disponível(is) para revisão`)
+      if (semanticMemoryImportedResults > 0) {
+        addModalSubstep('filter', `Memória semântica reaproveitou ${semanticMemoryImportedResults} processo(s) de ${semanticMemoryMatchedEntries} busca(s) anterior(es)`)
+      }
       addModalSubstep('filter', `${dataJudResult.textStats.withBoth} com ementa + inteiro teor; ${dataJudResult.textStats.missingBoth} sem texto decisório`)
       if (dataJudResult.textStats.enrichedFromWeb > 0) {
         addModalSubstep('filter', `${dataJudResult.textStats.enrichedFromWeb} resultado(s) complementados por fonte pública`)
       }
-      updateModalStep('filter', { status: 'done', detail: `${dataJudResult.results.length} resultados` })
+      if (dataJudResult.runtimeDiagnostics.semanticRerankApplied) {
+        addModalSubstep(
+          'filter',
+          `Ranking híbrido semântico aplicado em ${dataJudResult.runtimeDiagnostics.semanticRerankCandidateCount ?? 0} resultado(s)`,
+        )
+      }
+      updateModalStep('filter', { status: 'done', detail: `${reviewResults.length} resultados` })
 
       setResearchModalOpen(false)
       setResearchModalCanClose(true)
 
-      const reviewItems: SearchResultItem[] = dataJudResult.results.map((result, index) => ({
+      const reviewItems: SearchResultItem[] = reviewResults.map((result, index) => ({
         id: `dj-${index}`,
         title: `${result.classe} — ${result.numeroProcesso}`,
         subtitle: `${result.tribunalName} · ${result.orgaoJulgador}`,
@@ -4047,7 +4117,7 @@ Instruções:
 
         const synthSteps = createJurisprudenceSteps()
         synthSteps[0].status = 'done'
-        synthSteps[0].detail = `${dataJudResult.results.length} resultados`
+        synthSteps[0].detail = `${reviewResults.length} resultados`
         synthSteps[1].status = 'done'
         synthSteps[1].detail = `${selected.length} selecionados`
         setResearchModalTitle('Pesquisa de Jurisprudência')
@@ -4065,86 +4135,72 @@ Instruções:
 
           updateModalStep('rank', { status: 'active' })
           const rankModel = models.notebook_ranqueador_jurisprudencia
-          let selectedResults = selected.map((item) => item._raw as DataJudResult)
+          const initiallySelectedResults = selected.map((item) => item._raw as DataJudResult)
+          let rankingOutcome = rerankSelectedDataJudResults(config.query, initiallySelectedResults, {
+            legalArea: config.legalArea || undefined,
+          })
+          let selectedResults = rankingOutcome.results
+
+          addModalSubstep('rank', `Ranqueamento jurídico local aplicado (top score: ${rankingOutcome.topScore ?? 'N/A'})`)
 
           if (rankModel) {
             addModalSubstep('rank', `Avaliando relevância com ${rankModel}...`)
             const rankTextContent = formatDataJudResults(selectedResults)
-            const rankResult = await callLLMWithFallback(
-              openRouterApiKey,
-              JURISPRUDENCE_RANKING_SYSTEM,
-              `Consulta: "${config.query}"\n\nProcessos para avaliar:\n${rankTextContent}`,
-              rankModel,
-              rankModel,
-              800,
-              0.1,
-            )
-
             try {
-              const cleaned = rankResult.content.replace(/```(?:json)?\s*/g, '').trim()
-              const parsed = JSON.parse(cleaned) as { ranking: Array<{ index: number; score: number; stance?: string }> }
-              if (Array.isArray(parsed.ranking)) {
-                const sorted = parsed.ranking
-                  .filter((item) => item.index >= 1 && item.index <= selectedResults.length)
-                  .sort((left, right) => right.score - left.score)
+              const rankResult = await callLLMWithFallback(
+                openRouterApiKey,
+                JURISPRUDENCE_RANKING_SYSTEM,
+                `Consulta: "${config.query}"\n\nProcessos para avaliar:\n${rankTextContent}`,
+                rankModel,
+                rankModel,
+                800,
+                0.1,
+              )
 
-                const reordered: DataJudResult[] = []
-                const seenIndices = new Set<number>()
-                let topScore: number | null = null
+              rankingOutcome = rerankSelectedDataJudResults(config.query, selectedResults, {
+                legalArea: config.legalArea || undefined,
+                ranking: parseDataJudRankingResponse(rankResult.content),
+              })
+              selectedResults = rankingOutcome.results
 
-                for (const item of sorted) {
-                  const resultIndex = item.index - 1
-                  if (seenIndices.has(resultIndex)) continue
-                  const process = selectedResults[resultIndex]
-                  if (!process) continue
-                  seenIndices.add(resultIndex)
-                  const enriched = { ...process, relevanceScore: item.score } as DataJudResult
-                  const rawStance = item.stance?.toLowerCase().trim()
-                  if (rawStance && VALID_STANCES.includes(rawStance as typeof VALID_STANCES[number])) {
-                    enriched.stance = rawStance as DataJudResult['stance']
-                  }
-                  reordered.push(enriched)
-                  if (topScore === null) topScore = item.score
-                }
+              llmExecutions.push(createUsageExecutionRecord({
+                source_type: 'caderno_pesquisa',
+                source_id: notebookId,
+                phase: 'notebook_ranqueador_jurisprudencia',
+                agent_name: 'Ranqueador de Jurisprudência',
+                model: rankResult.model,
+                provider_id: rankResult.provider_id ?? rankResult.operational?.providerId,
+                provider_label: rankResult.provider_label ?? rankResult.operational?.providerLabel,
+                requested_model: rankResult.operational?.requestedModel,
+                resolved_model: rankResult.operational?.resolvedModel,
+                tokens_in: rankResult.tokens_in,
+                tokens_out: rankResult.tokens_out,
+                cost_usd: rankResult.cost_usd,
+                duration_ms: rankResult.duration_ms,
+              }))
 
-                if (reordered.length > 0) {
-                  selectedResults = reordered
-                  addModalSubstep('rank', `Processos reordenados por relevância (top score: ${topScore ?? 'N/A'})`)
-                } else {
-                  addModalSubstep('rank', 'Ranking retornou índices inválidos/vazios — mantendo ordem original')
-                }
+              setResearchModalStats((current) => ({
+                ...current,
+                tokensUsed: (current.tokensUsed || 0) + rankResult.tokens_in + rankResult.tokens_out,
+                elapsedMs: Math.round(performance.now() - t0),
+              }))
+
+              if (rankingOutcome.strategy === 'llm') {
+                addModalSubstep('rank', `Ranqueamento do modelo aplicado sobre ${rankingOutcome.appliedCount} processo(s) (top score: ${rankingOutcome.topScore ?? 'N/A'})`)
+              } else {
+                addModalSubstep('rank', 'Ranking do modelo inválido — preservado o ranqueamento jurídico local')
+                toast.warning('Ranking de jurisprudência falhou', 'O modelo retornou ranking inválido. O ranqueamento jurídico local foi preservado.')
               }
-            } catch (rankParseError) {
-              console.warn('Jurisprudence ranking parse failed:', rankParseError)
-              addModalSubstep('rank', 'Parsing do ranking falhou — mantendo ordem original')
-              toast.warning('Ranking de jurisprudência falhou', 'O modelo retornou JSON inválido. Os resultados serão exibidos na ordem original.')
+            } catch (rankError) {
+              console.warn('Jurisprudence ranking request failed:', rankError)
+              addModalSubstep('rank', 'Falha no modelo de ranking — preservado o ranqueamento jurídico local')
+              toast.warning('Ranking de jurisprudência indisponível', 'O ranqueamento jurídico local foi usado como fallback.')
             }
 
-            llmExecutions.push(createUsageExecutionRecord({
-              source_type: 'caderno_pesquisa',
-              source_id: notebookId,
-              phase: 'notebook_ranqueador_jurisprudencia',
-              agent_name: 'Ranqueador de Jurisprudência',
-              model: rankResult.model,
-              provider_id: rankResult.provider_id ?? rankResult.operational?.providerId,
-              provider_label: rankResult.provider_label ?? rankResult.operational?.providerLabel,
-              requested_model: rankResult.operational?.requestedModel,
-              resolved_model: rankResult.operational?.resolvedModel,
-              tokens_in: rankResult.tokens_in,
-              tokens_out: rankResult.tokens_out,
-              cost_usd: rankResult.cost_usd,
-              duration_ms: rankResult.duration_ms,
-            }))
-
-            setResearchModalStats((current) => ({
-              ...current,
-              tokensUsed: (current.tokensUsed || 0) + rankResult.tokens_in + rankResult.tokens_out,
-              elapsedMs: Math.round(performance.now() - t0),
-            }))
             updateModalStep('rank', { status: 'done', detail: `${selectedResults.length} processos ranqueados` })
           } else {
-            addModalSubstep('rank', 'Modelo não configurado — mantendo ordem original')
-            updateModalStep('rank', { status: 'done', detail: 'Etapa ignorada (sem modelo)' })
+            addModalSubstep('rank', 'Modelo não configurado — mantendo ranqueamento jurídico local')
+            updateModalStep('rank', { status: 'done', detail: `${selectedResults.length} processos ranqueados localmente` })
           }
 
           updateModalStep('analyze', { status: 'active' })
@@ -4168,7 +4224,7 @@ Instruções:
             query: config.query,
             tribunalCount: config.tribunals.length,
             tribunalAliases: config.tribunals.map((tribunal) => tribunal.alias),
-            resultCount: dataJudResult.results.length,
+            resultCount: reviewResults.length,
             selectedCount: selected.length,
             compiledChars: textContent.length,
             legalArea: config.legalArea || null,
@@ -4233,7 +4289,24 @@ Instruções:
             duration_ms: jurisprudenceResult.duration_ms,
           }))
 
-          await appendNotebookSourceWithExecution(notebookId, source, llmExecutions, researchAudit)
+          const semanticMemoryEntry = await buildJurisprudenceSemanticMemoryEntry(config.query, {
+            sourceId: source.id,
+            legalArea: config.legalArea || null,
+            tribunalAliases: config.tribunals.map((tribunal) => tribunal.alias),
+            resultCount: selectedResults.length,
+            createdAt: source.added_at,
+            apiKey: openRouterApiKey,
+            signal: abortController.signal,
+          }).catch((error) => {
+            console.warn('Failed to persist notebook semantic memory entry:', error)
+            return null
+          })
+
+          if (semanticMemoryEntry) {
+            addModalSubstep('synthesize', 'Memória semântica do caderno atualizada para próximas buscas')
+          }
+
+          await appendNotebookSourceWithExecution(notebookId, source, llmExecutions, researchAudit, semanticMemoryEntry)
           setExternalSearchQuery('')
           toast.success(`Jurisprudência adicionada com ${selected.length} resultado(s) selecionado(s).`)
           autoCloseModal()
@@ -4396,28 +4469,7 @@ Instruções:
   const structuredArtifactCount = activeNotebook?.artifacts.filter((artifact) => artifact.format === 'json').length || 0
   const mediaArtifactCount = activeNotebook?.artifacts.filter((artifact) => MEDIA_ARTIFACT_TYPES.has(artifact.type)).length || 0
   const pendingSourceCount = Math.max(0, snapshot ? snapshot.sourceCount - snapshot.indexedSourceCount : 0)
-
-  if (!IS_FIREBASE) {
-    return (
-      <div className="space-y-6">
-        <section className="v2-panel p-6 lg:p-8">
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--v2-line-strong)] bg-[rgba(255,255,255,0.82)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--v2-ink-soft)]">
-              <Sparkles className="h-3.5 w-3.5" />
-              Notebook
-            </div>
-            <h1 className="v2-display text-2xl text-[var(--v2-ink-strong)]">Caderno de pesquisa requer Firebase ativo</h1>
-            <p className="max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
-              O caderno de pesquisa utiliza dados reais do usuario armazenados no Firebase. Ative o Firebase nas configuracoes para comecar.
-            </p>
-            <div className="flex flex-wrap gap-3 pt-2">
-              <Link to={buildWorkspaceSettingsPath({ preserveSearch: location.search })} className="v2-btn-primary">Abrir configurações</Link>
-            </div>
-          </div>
-        </section>
-      </div>
-    )
-  }
+  const isLocalSmokeMode = !IS_FIREBASE
 
   return (
     <div className="space-y-6">
@@ -4434,13 +4486,28 @@ Instruções:
               <p className="max-w-3xl text-sm leading-7 text-[var(--v2-ink-soft)] sm:text-[15px]">
                 Organize pesquisas, converse com a IA, gerencie fontes, crie artefatos e analise seu acervo a partir de um unico painel integrado.
               </p>
+              {isLocalSmokeMode && (
+                <div className="max-w-3xl rounded-[1.2rem] border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm leading-6 text-amber-900">
+                  Modo smoke local ativo. A navegação visual do notebook está liberada, mas persistência no Firestore, ingestão real e chamadas de IA permanecem desabilitadas neste modo.
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={() => setShowCreateForm((current) => !current)} className="v2-btn-primary">
+              <button
+                type="button"
+                onClick={() => setShowCreateForm((current) => !current)}
+                disabled={isLocalSmokeMode}
+                className="v2-btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 <Plus className="h-4 w-4" />
-                {showCreateForm ? 'Fechar criação' : 'Novo caderno'}
+                {isLocalSmokeMode ? 'Criação indisponível no smoke local' : showCreateForm ? 'Fechar criação' : 'Novo caderno'}
               </button>
+              {isLocalSmokeMode && (
+                <Link to={buildWorkspaceSettingsPath({ preserveSearch: location.search })} className="v2-btn-secondary">
+                  Abrir configurações
+                </Link>
+              )}
             </div>
           </div>
 
@@ -4476,7 +4543,7 @@ Instruções:
             </div>
           </div>
 
-          {showCreateForm && (
+          {showCreateForm && !isLocalSmokeMode && (
             <div className="v2-panel p-5">
               <div className="flex items-center gap-2">
                 <Wand2 className="h-4 w-4 text-[var(--v2-accent-strong)]" />
@@ -4680,9 +4747,13 @@ Instruções:
           {!activeNotebook || !snapshot ? (
             <div className="v2-panel p-8 text-center">
               <BookOpen className="mx-auto h-10 w-10 text-[var(--v2-accent-strong)]" />
-              <h2 className="mt-4 text-lg font-semibold text-[var(--v2-ink-strong)]">Escolha um caderno para abrir o workbench.</h2>
+              <h2 className="mt-4 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                {isLocalSmokeMode ? 'Notebook visível em modo smoke local.' : 'Escolha um caderno para abrir o workbench.'}
+              </h2>
               <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-[var(--v2-ink-soft)]">
-                Deck executivo, gestão de fontes, análise inteligente de acervo e estúdio completo. Assim que um item for selecionado, o contexto passa a refletir seus dados reais.
+                {isLocalSmokeMode
+                  ? 'Use esta rota para validar navegação, layout e estados vazios sem depender do Firebase. Para persistência real, ingestão e memória semântica, continue usando o modo Firebase.'
+                  : 'Deck executivo, gestão de fontes, análise inteligente de acervo e estúdio completo. Assim que um item for selecionado, o contexto passa a refletir seus dados reais.'}
               </p>
             </div>
           ) : (
@@ -6385,8 +6456,8 @@ Instruções:
           <VideoGenerationCostModal
             scriptContent={videoGenSavedArtifact.content}
             topic={activeNotebook?.topic || 'Vídeo'}
-            onGenerate={(editedContent) => {
-              void handleGenerateVideo(editedContent)
+            onGenerate={(editedContent, options) => {
+              void handleGenerateVideo(editedContent, options)
             }}
             onSkip={handleSkipVideoGeneration}
             isGenerating={videoGenLoading}

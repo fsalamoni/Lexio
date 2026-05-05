@@ -1,18 +1,21 @@
 # Web Release Index
 
-Last update: 2026-04-26
+Last update: 2026-05-05
 
-## Current Local Validation (Wave 40 — 2026-04-26, branch feature/w40-latency-progress-contract)
-- Scope: subonda 1 de latência documental e contrato de progresso confiável com demonstração lúdica de handoff multiagente
-- Frontend typecheck: success
-- Frontend tests: success (38 files, 299 tests)
+## Current Local Validation (Wave 40 — 2026-05-05, branch main)
+- Scope: subonda 2 da Wave 40 com caches user-scoped, canários runtime, retomada real do pipeline de vídeo por checkpoint, validação longitudinal do admin fechada por perfil operacional e fechamento da trilha jurisprudencial com rerank semântico browser-side, fallback jurídico local/LLM compartilhado e memória semântica persistente por caderno
+- Frontend typecheck: success (`npm run typecheck`, exit code `0`)
+- Frontend focused tests: success (`src/lib/video-generation-pipeline.test.ts`, 4/4; `src/lib/datajud-service.test.ts`, 73/73)
+- Frontend build: success
+- Frontend diagnostics: success (`get_errors` limpo em `frontend/` após a integração da memória semântica)
+- Frontend public smoke: success (`vite preview` local + `/login` carregado no browser)
+- Frontend authenticated smoke: success in local smoke mode (`npm run build:smoke` + `npm run preview:smoke`; credenciais fixas rejeitam senha incorreta e autenticam no fallback local até dashboard/admin/notebook)
 - Branch status: in progress (sem release one-shot disparado nesta subonda)
 - Key deltas:
-	- `document-pipeline.ts` normaliza percentuais por `executionState`
-	- `NewDocument.tsx` e `DocumentDetail.tsx` migrados para normalização canônica de progresso
-	- `generation-service.ts` com warm-up de ementas por orçamento de tempo (redução de bloqueio)
-	- `notebook-audio-pipeline.ts` com teto de concorrência TTS adaptativa ampliado
-	- `AgentTrailProgressModal.tsx` com handoff explícito entre mesas e fallback `prefers-reduced-motion`
+	- `generation-service.ts` manteve a subonda 2 tipada/validável ao remover wrappers de mock incompatíveis com o `tsc` em `generation-service.orchestration.test.ts`
+	- `video-generation-pipeline.ts`, `VideoGenerationCostModal.tsx`, `ResearchNotebook.tsx` e `ResearchNotebookV2.tsx` agora retomam o vídeo a partir de `VideoCheckpoint` com opção explícita de reinício
+	- `PlatformAdminPanel.tsx` agora fecha a leitura longitudinal também por perfil operacional de thresholds e consegue readotar o melhor combo histórico completo
+	- `datajud-service.ts` agora combina ranking lexical com reranking semântico por embeddings, memória semântica persistente por caderno e fusão histórica de fontes jurisprudenciais, além de centralizar o fallback jurídico local/LLM usado pelo notebook clássico, notebook V2 e agente v3
 
 ## Latest One-shot Validation (Wave 39 — 2026-04-25)
 - release-web run `24939740593`: success

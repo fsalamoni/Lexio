@@ -1,7 +1,7 @@
 /**
  * Firebase initialization.
- * IS_FIREBASE = false → demo mode (no Firebase credentials set).
- * IS_FIREBASE = true  → real Firebase Auth + Firestore.
+ * IS_FIREBASE = false -> demo mode (no Firebase credentials set or smoke override enabled).
+ * IS_FIREBASE = true  -> real Firebase Auth + Firestore.
  */
 
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
@@ -30,7 +30,13 @@ if (firebaseConfigIssues.length > 0) {
   console.error('[Firebase Config] Invalid production configuration:', firebaseConfigIssues.join(' | '))
 }
 
-export const IS_FIREBASE = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfigIssues.length === 0)
+const forceDemoMode = import.meta.env.VITE_FORCE_DEMO_MODE === 'true'
+
+if (forceDemoMode) {
+  console.warn('[Firebase Config] VITE_FORCE_DEMO_MODE=true -> skipping Firebase initialization for local smoke/demo mode.')
+}
+
+export const IS_FIREBASE = !forceDemoMode && Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfigIssues.length === 0)
 
 let _app: FirebaseApp | null = null
 let _auth: Auth | null = null

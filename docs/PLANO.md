@@ -16,7 +16,7 @@
 
 ## Andamento Atual (ciclo 2026-04-26)
 
-**Status:** ⚠️ avançando Faixa B com a fundação do redesign V2 em expansão controlada — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook, hardening de TTS/DocumentDetail, code splitting do ResearchNotebook, hardening de DataJud/CI-CD, `ProfileV2`, `DashboardV2`, dezoito ondas funcionais do trilho V2 validadas localmente, `/` agora promovida para `DashboardV2` sob gate, shell V2 cobrindo `/documents*`, `/upload`, `/theses`, `/settings*`, `/admin*` e `/profile`, aliases técnicos completos para os antigos labs de dashboard/notebook/profile, migração visual real das superfícies internas principais via primitives compartilhadas + base V2 compartilhada para configuracoes, custos pessoal/agregado, catalogo, configuracoes especializadas e o nucleo de governanca/admin promovidos para blocos integralmente nativos, alem de navegacao preview-safe consolidada entre sidebar/notificacoes/admin, um Hosting dedicado para o redesign em `lexio-redesign-v2-44760.web.app`, hotfix do deploy estavel do Firebase concluido com `DATAJUD_API_KEY` provisionado em producao, a Wave 36 de calibração adaptativa por função concluída em produção, a Wave 37 de aderência diária live vs alvo por função validada com release one-shot completo, a Wave 38 de política progressiva por criticidade com guardrails preditivos concluída com release integral em produção, a Wave 39 de confiança adaptativa para guardrails preditivos com redução de falsos positivos concluída com release one-shot ponta a ponta e a Wave 40 iniciada em branch dedicada com foco em latência documental e demonstração confiável da trilha multiagente.
+**Status:** ⚠️ avançando Faixa B com a fundação do redesign V2 em expansão controlada — effectiveness scoring, checkpoints de vídeo e reranking jurídico concluídos; estabilização crítica de admin/notebook, hardening de TTS/DocumentDetail, code splitting do ResearchNotebook, hardening de DataJud/CI-CD, `ProfileV2`, `DashboardV2`, dezoito ondas funcionais do trilho V2 validadas localmente, `/` agora promovida para `DashboardV2` sob gate, shell V2 cobrindo `/documents*`, `/upload`, `/theses`, `/settings*`, `/admin*` e `/profile`, aliases técnicos completos para os antigos labs de dashboard/notebook/profile, migração visual real das superfícies internas principais via primitives compartilhadas + base V2 compartilhada para configuracoes, custos pessoal/agregado, catalogo, configuracoes especializadas e o nucleo de governanca/admin promovidos para blocos integralmente nativos, alem de navegacao preview-safe consolidada entre sidebar/notificacoes/admin, um Hosting dedicado para o redesign em `lexio-redesign-v2-44760.web.app`, hotfix do deploy estavel do Firebase concluido com `DATAJUD_API_KEY` provisionado em producao, a Wave 36 de calibração adaptativa por função concluída em produção, a Wave 37 de aderência diária live vs alvo por função validada com release one-shot completo, a Wave 38 de política progressiva por criticidade com guardrails preditivos concluída com release integral em produção, a Wave 39 de confiança adaptativa para guardrails preditivos com redução de falsos positivos concluída com release one-shot ponta a ponta e a Wave 40 avançando no hardening local da subonda 2, com foco em latência documental, canários runtime por usuário e trilha multiagente confiável.
 
 **Atualização incremental (2026-04-26 — Wave 40: latência documental + contrato de progresso + handoff lúdico, subonda 1 em branch):**
 - ✅ `document-pipeline.ts` passou a normalizar `percent` por `executionState` via `normalizeProgressForExecution`, reforçando o contrato de verdade de progresso (`running <= 99`, `completed = 100`).
@@ -26,6 +26,16 @@
 - ✅ `AgentTrailProgressModal.tsx` evoluiu a demonstração lúdica com handoff textual explícito entre mesas/agentes, animações de transição refinadas e fallback `prefers-reduced-motion`.
 - ✅ Validação local da subonda concluída sem regressão: `npm run typecheck` e `npm run test -- --run` (**38/38 arquivos, 299/299 testes**).
 - 🔄 Próximo bloco (subonda 2): ampliar ganhos de latência no pipeline de documentos (paralelização segura adicional + caches de apoio), incorporar state machine de handoff (XState/Framer) e preparar canário com feature flags antes do closeout de release.
+
+**Atualização incremental (2026-05-05 — Wave 40: latência documental + canários/runtime + caches user-scoped, subonda 2 em hardening local):**
+- ✅ `generation-service.ts` passou a usar caches de apoio no caminho crítico do gerador documental (templates administrativos, contexto leve do acervo, ementas e classificação), com invalidação bulk realmente isolada por usuário em `generation-cache.ts`.
+- ✅ `FF_PARALLEL_PESQUISADOR` deixou de ser apenas preparação e passou a iniciar uma execução real em background após a triagem, com sincronização adiada até o fim do ramo do acervo e fallback sequencial explícito se a execução paralela falhar.
+- ✅ `feature-flags.ts`, `settings-store.ts`, `App.tsx`, `AdminPanel.tsx` e `RuntimeFeatureFlagsCard.tsx` agora sustentam canários runtime por usuário via Firestore, com precedência `sessionStorage > runtime do perfil > env > default` e reset por flag para o estado herdado.
+- ✅ `executionState` foi propagado de ponta a ponta nas superfícies documentais, de notebook e de tese, incluindo handoff machine, modais de progresso e persistência operacional de acervo.
+- ✅ Cobertura focada ampliada para o slice crítico: `generation-cache.test.ts`, `AgentTrailStateMachine.test.ts`, `pipeline-step-execution-state.test.ts`, `feature-flags.test.ts`, `RuntimeFeatureFlagsCard.test.tsx`, `thesis-analyzer.test.ts`, `generation-service.parallel.test.ts` e o novo `generation-service.orchestration.test.ts` cobrindo sobreposição real do `Pesquisador` com o ramo do acervo e fallback sequencial.
+- ✅ Validação estrutural ampliada: `npm run build` passou sem erros e o warning de chunking do chat-orchestrator foi eliminado ao alinhar `orchestrator.ts` ao import estático de `dispatch.ts`.
+- ⚠️ Closeout operacional ainda pendente nesta rodada: smoke test manual autenticado do gerador/upload/admin e trilha final de commit/push/deploy do lote atual. O smoke público do bundle já passou em `vite preview`, com boot limpo até `/login`; a primeira tentativa de login com credenciais demo falhou com `400`/"E-mail ou senha incorretos", indicando que o preview local está usando autenticação Firebase real e precisa de credencial válida ou build explícito em demo mode para concluir esse smoke.
+- 🔄 Próximo bloco: fechar a validação ampla da subonda 2 e executar o closeout operacional da Wave 40 antes de abrir nova frente funcional.
 
 **Atualização incremental (2026-04-25 — Wave 39: confiança adaptativa no rollout progressivo + mitigação de falsos positivos preditivos):**
 - ✅ `firestore-types.ts` foi ampliado com `PlatformFunctionRolloutConfidenceBand` e novos campos de confiança/threshold adaptativo em `PlatformFunctionRolloutPolicyRow` e `PlatformFunctionRolloutPolicyPlan`, permitindo leitura tipada de evidência por função.
@@ -206,11 +216,12 @@
 - ✅ Effectiveness scoring por coorte + auto-recomendação de política no admin (Etapas 40-41)
 - ✅ Checkpoints retomáveis do pipeline de vídeo com `VideoCheckpoint` exportável (Etapa 42)
 - ✅ Reranking jurídico determinístico aprimorado: decaimento temporal gradual, proximidade de frase e hierarquia de tribunal (Etapa 43)
-- Consolidar validação de impacto da recomendação assistida com métricas históricas de longo prazo, alertas de desvio e fechamento de limiares por perfil operacional
-- Expor checkpoints do vídeo na UI para retomada assistida pelo usuário
+- ✅ Checkpoints do vídeo expostos na UI com retomada assistida e opção explícita de reinício (Etapa 44)
+- ✅ Validação longitudinal da recomendação assistida consolidada com fechamento por perfil operacional de limiares e adoção do melhor combo histórico (Etapa 47)
 
 ### Faixa C — Lacunas funcionais declaradas
-- Implementar busca híbrida semântica + lexical para jurisprudência (feature ainda marcada como ausente)
+- ✅ Sem lacunas funcionais abertas na trilha de jurisprudência desta onda: o último gap (`E1.F2`, memória semântica persistente por caderno + fusão histórica) foi fechado na Etapa 47C
+- ⚠️ O que resta nesta subonda é closeout operacional: o smoke autenticado local do lote atual foi concluído em modo smoke/demo; permanecem commit/push/PR e release one-shot, com a revalidação em Firebase real podendo seguir como verificação pós-closeout
 
 ### Faixa D — Melhorias estruturais de UX (roadmap contínuo)
 - Compactação progressiva de contexto por jornada e orçamento de tokens por fluxo
@@ -426,10 +437,11 @@
 - Effectiveness scoring (0-100) por coorte longitudinal com coluna visual color-coded e auto-recomendação da melhor política com botão de adoção (Etapas 40-41)
 - Pipeline de vídeo agora exporta `VideoCheckpoint` com estado completo após cada passo; em caso de erro, o checkpoint é anexado à exceção para retomada (Etapa 42)
 - Reranking de jurisprudência aprimorado com decaimento temporal gradual (6 faixas), bônus de proximidade de frase e tie-breaking por hierarquia de tribunal (Etapa 43)
+- Modal de geração de vídeo agora oferece retomada assistida do checkpoint ou reinício explícito; o pipeline reaproveita pacote montado, clips/imagens/TTS já concluídos e o V2 segue o mesmo contrato do clássico (Etapa 44)
 
 **Em validacao ou proxima onda imediata:**
 - A telemetria operacional rica ja cobre documento, acervo, estudio e video com ETA, agregados e detalhamento principal de saida no notebook; a memoria auditavel agora cobre estudio, chat e buscas do notebook
-- O pipeline de video ainda pode evoluir em uma camada adicional de previsao por lote/renderizacao e resumir melhor checkpoints retomaveis
+- O pipeline de video ainda pode evoluir em uma camada adicional de previsao por lote/renderizacao e persistencia cross-session de checkpoints/retomadas
 - O `ResearchNotebookV2` agora já cobre overview, chat contextual, gestão de fontes, análise inteligente de acervo, viewer avançado, pesquisas externas/profundas/jurisprudenciais, governança principal de buscas salvas, inventário de artefatos, briefing do estúdio, geração base, pós-geração de áudio/imagem e o fluxo completo de vídeo; a próxima onda passa a ser consolidação do shell novo como trilho principal, com testes dedicados, limpeza de fallback residual e eventual despromoção do clássico para contingência
 - O trilho dedicado do redesign em Firebase já existe, mas agora precisa ser alimentado a cada avanço relevante do workbench para virar o ambiente principal de validação contínua da Faixa E
 - A trilha de memoria/contexto auditavel do notebook ainda nao esta completa: migracao dedicada, retencao/TTL, observabilidade agregada, base historica diaria, alertas operacionais, backfill administrativo com chunking, presets operacionais e recomendacao assistida com politica de rollout/aceitacao, preview de impacto, historico auditavel, metricas agregadas e alertas de desvio ja estao implantados; falta agora consolidar validacao continuada em producao e fechar ajustes finos por perfil de operacao
@@ -577,25 +589,40 @@
 
 ### Feature 1.2: Busca híbrida (semântica + lexical)
 
-**Estado:** ❌ Não implementado
+**Estado:** ✅ Implementado (ciclo 2026-05)
 
-**Objetivo:** Combinar busca Elasticsearch com scoring semântico por embeddings.
+**Objetivo:** Combinar recuperação lexical do Elasticsearch com scoring semântico por embeddings para refinar a relevância jurídica dos acórdãos.
 
-**Arquivos a afetar:** `frontend/src/lib/datajud-service.ts`, novo serviço de embeddings
+**Arquivos afetados:** `frontend/src/lib/datajud-service.ts`, `frontend/src/lib/datajud-service.test.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/lib/firestore-types.ts`, `frontend/src/pages/ResearchNotebook.tsx`, `frontend/src/pages/labs/ResearchNotebookV2.tsx`
 
-**Dependências:** Serviço de embeddings (OpenAI/OpenRouter), armazenamento de índice vetorial
+**Mudanças implementadas:**
+- `searchDataJud()` passou a aceitar `semanticRerank` e aplicar embeddings sobre o topo lexical retornado por DataJud/JusBrasil/STF, com blend híbrido de score e fallback integral para o ranking determinístico atual
+- O notebook clássico e o V2 agora ligam explicitamente o reranking semântico na pesquisa de jurisprudência e reportam no modal quando o ranking híbrido foi aplicado
+- O caderno agora persiste uma memória semântica dedicada (`search_memory`) com embeddings das consultas jurisprudenciais e a vincula às fontes `jurisprudencia` salvas no notebook
+- Antes da revisão, o notebook clássico e o V2 fundem os resultados atuais do DataJud com fontes jurisprudenciais históricas semanticamente próximas do mesmo caderno, reaproveitando resultados persistidos sem backend adicional
+- A suíte `datajud-service.test.ts` ganhou cobertura focada para promoção do candidato semanticamente mais próximo, fallback limpo quando a chamada de embeddings falha, construção da memória persistente e fusão histórica por similaridade
+
+**Observação operacional:** a disponibilidade de embeddings (OpenRouter/OpenAI) continua necessária para o caminho semântico; quando indisponível, o fluxo retorna automaticamente para a ordenação lexical/determinística sem abortar a pesquisa
 
 ---
 
 ### Feature 1.3: Reranking jurídico por relevância
 
-**Estado:** ⚠️ Parcial — agente `notebook_ranqueador_jurisprudencia` existe (skip gracioso se sem modelo)
+**Estado:** ✅ Implementado (ciclo 2026-05)
 
 **Objetivo:** Reordenar resultados por relevância temática, hierarquia de tribunal, atualidade.
 
 **Arquivos afetados:**
+- `frontend/src/lib/datajud-service.ts` — parsing/mescla de ranking e fallback determinístico compartilhado
+- `frontend/src/lib/datajud-service.test.ts` — cobertura do reranking local/LLM e fallback inválido
 - `frontend/src/pages/ResearchNotebook.tsx` — pipeline 5 etapas (query→filter→rank→analyze→synthesize)
-- `frontend/src/lib/model-config.ts` — `notebook_ranqueador_jurisprudencia`
+- `frontend/src/pages/labs/ResearchNotebookV2.tsx` — mesmo fallback funcional do notebook clássico
+- `frontend/src/lib/v3-agents/jurisprudence-researcher.ts` — uso do mesmo reranking compartilhado no fluxo v3
+
+**Mudanças implementadas:**
+- A etapa `rank` passou a aplicar sempre um ranqueamento jurídico determinístico local antes da fase opcional com LLM, deixando de degradar para mero skip quando o modelo está ausente
+- Quando o modelo do ranqueador falha, retorna JSON inválido ou rankeia apenas parte dos itens, o fluxo preserva o ranqueamento jurídico local em vez de abortar a síntese
+- Notebook clássico, notebook V2 e agente v3 de jurisprudência passaram a reutilizar a mesma lógica de parsing/reordenação, reduzindo drift entre superfícies
 
 ---
 

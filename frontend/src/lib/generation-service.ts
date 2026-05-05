@@ -33,7 +33,17 @@ import { PROVIDER_ORDER, apiKeyFieldForProvider } from './providers'
 import { firestore } from './firebase'
 import { buildDocumentPipelineProgress, buildDocumentStageMeta, type DocumentPipelineProgress } from './document-pipeline'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
-import { isTruthyFlag } from './feature-flags'
+import {
+  getAcervoContextFromCache,
+  getAdminDocTypesFromCache,
+  getClassificacaoFromCache,
+  getEmentaFromCache,
+  setAcervoContextInCache,
+  setAdminDocTypesInCache,
+  setClassificacaoInCache,
+  setEmentaInCache,
+} from './generation-cache'
+import { getFlagState, isEnabled, isTruthyFlag } from './feature-flags'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -105,6 +115,32 @@ interface RedatorRuntimeConfig {
   cap10kEnabled: boolean
   rollbackEnabled: boolean
   rollbackMinQuality: number
+}
+
+type AcervoSearchDoc = {
+  id: string
+  filename: string
+  created_at: string
+  ementa?: string
+  ementa_keywords?: string[]
+  natureza?: string
+  area_direito?: string[]
+  assuntos?: string[]
+  tipo_documento?: string
+  contexto?: string[]
+}
+
+type AdminDocTypeTemplate = {
+  id: string
+  structure?: string
+}
+
+type ParallelPreloadResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: unknown }
+type PesquisadorExecution = {
+  result: Awaited<ReturnType<typeof callLLMWithFallback>>
+  knowledgeBaseCompactionMeta?: string
 }
 
 export function getLLMOperationalUsageMeta(result: Pick<LLMResult, 'operational' | 'provider_id' | 'provider_label'>): Pick<
@@ -191,7 +227,10 @@ function parseBoundedNumber(
 }
 
 function resolveRedatorRuntimeConfig(): RedatorRuntimeConfig {
-  const cap10kEnabled = isTruthyFlag(import.meta.env.VITE_DOC_REDATOR_10K_ENABLED as string | undefined)
+  const redatorCanaryState = getFlagState('FF_DOC_REDATOR_10K')
+  const cap10kEnabled = redatorCanaryState.source === 'default'
+    ? isTruthyFlag(import.meta.env.VITE_DOC_REDATOR_10K_ENABLED as string | undefined)
+    : redatorCanaryState.enabled
   const rollbackDisabled = isTruthyFlag(import.meta.env.VITE_DOC_REDATOR_QUALITY_ROLLBACK_DISABLED as string | undefined)
   const rollbackMinQuality = parseBoundedNumber(
     import.meta.env.VITE_DOC_REDATOR_QUALITY_ROLLBACK_MIN as string | undefined,
@@ -205,6 +244,96 @@ function resolveRedatorRuntimeConfig(): RedatorRuntimeConfig {
     rollbackEnabled: cap10kEnabled && !rollbackDisabled,
     rollbackMinQuality,
   }
+}
+
+function toAdminDocTypeTemplates(
+  docTypes: Awaited<ReturnType<typeof loadAdminDocumentTypes>>,
+): AdminDocTypeTemplate[] {
+  return docTypes.map(docType => ({
+    id: docType.id,
+    structure: docType.structure,
+  }))
+}
+
+async function loadAdminDocTypesWithCache(uid: string): Promise<AdminDocTypeTemplate[]> {
+  if (isEnabled('FF_TEMPLATE_CACHE')) {
+    const cached = getAdminDocTypesFromCache(uid)
+    if (cached) return cached
+  }
+
+  const liveDocTypes = toAdminDocTypeTemplates(await loadAdminDocumentTypes())
+  if (isEnabled('FF_TEMPLATE_CACHE')) {
+    setAdminDocTypesInCache(uid, liveDocTypes)
+  }
+  return liveDocTypes
+}
+
+async function loadAcervoContextWithCache(uid: string, maxChars: number): Promise<string> {
+  const cached = getAcervoContextFromCache(uid)
+  if (cached) {
+    return cached.length > maxChars ? cached.slice(0, maxChars) : cached
+  }
+
+  const liveContext = await getAcervoContext(uid, maxChars)
+  if (liveContext) setAcervoContextInCache(uid, liveContext)
+  return liveContext
+}
+
+async function loadThesisKnowledgeBaseSection(uid: string, areas: string[]): Promise<string> {
+  try {
+    const thesesByArea = areas.length > 0
+      ? await Promise.all(areas.map(area => listTheses(uid, { legalAreaId: area, limit: MAX_THESES_PER_AREA })))
+      : [await listTheses(uid, { limit: MAX_THESES_FALLBACK })]
+    const allTheses: ThesisData[] = []
+    const seenIds = new Set<string>()
+    for (const result of thesesByArea) {
+      for (const thesis of result.items) {
+        if (thesis.id && !seenIds.has(thesis.id)) {
+          seenIds.add(thesis.id)
+          allTheses.push(thesis)
+        }
+      }
+    }
+    if (allTheses.length === 0) return ''
+    const thesesText = allTheses
+      .slice(0, MAX_THESES_INJECTED)
+      .map(thesis => `• ${thesis.title}\n  ${thesis.content}${thesis.summary ? `\n  Resumo: ${thesis.summary}` : ''}`)
+      .join('\n\n')
+    return `<banco_de_teses>\n${thesesText}\n</banco_de_teses>\n\n`
+  } catch (error) {
+    console.warn('Failed to load thesis bank:', error)
+    return ''
+  }
+}
+
+export async function resolveParallelPreloadWithSequentialFallback<T>(
+  preloadPromise: Promise<ParallelPreloadResult<T>> | null,
+  loadSequentially: () => Promise<T>,
+  onPreloadFailure?: (error: unknown) => void,
+): Promise<T> {
+  if (!preloadPromise) {
+    return loadSequentially()
+  }
+
+  const preloaded = await preloadPromise
+  if (preloaded.ok) {
+    return preloaded.value
+  }
+
+  onPreloadFailure?.(preloaded.error)
+  return loadSequentially()
+}
+
+export function selectAcervoDocsForBuscador(
+  docs: AcervoSearchDoc[],
+  searchKeywords: string[],
+  keywordPrefilterEnabled: boolean,
+): AcervoSearchDoc[] {
+  if (!keywordPrefilterEnabled) {
+    return docs.slice(0, MAX_PREFILTERED_DOCS)
+  }
+
+  return preFilterAcervoDocs(docs, searchKeywords)
 }
 
 // ── API key retrieval ─────────────────────────────────────────────────────────
@@ -609,6 +738,48 @@ function buildRedatorUser(
   return parts.join('\n')
 }
 
+export function buildPesquisadorUserPrompt(
+  request: string,
+  triagem: string,
+  knowledgeBase: string,
+  acervoBase?: string,
+): string {
+  const parts = [
+    `<triagem>${triagem}</triagem>`,
+    `<solicitacao>${request}</solicitacao>`,
+  ]
+
+  if (acervoBase) {
+    parts.push(
+      '<documento_base_acervo>',
+      'O texto abaixo é um documento base compilado a partir de documentos anteriores do acervo do usuário.',
+      'Ele contém fundamentação jurídica já consolidada pelo usuário em trabalhos anteriores.',
+      'Use-o como REFERÊNCIA PRINCIPAL. Foque sua pesquisa nas seções marcadas com [COMPLEMENTAR]',
+      'e em enriquecer a fundamentação existente. NÃO descarte o conteúdo do acervo — ele é a base.',
+      acervoBase,
+      '</documento_base_acervo>',
+    )
+  }
+
+  if (knowledgeBase) {
+    parts.push(
+      '<base_conhecimento>',
+      'Use as teses e documentos de referência abaixo como material COMPLEMENTAR à sua pesquisa.',
+      'Incorpore as teses relevantes, mas SEMPRE verifique e enriqueça com suas próprias referências.',
+      knowledgeBase,
+      '</base_conhecimento>',
+    )
+  }
+
+  parts.push(
+    acervoBase
+      ? 'Realize pesquisa jurídica COMPLEMENTAR ao documento base do acervo. Foque nas lacunas marcadas com [COMPLEMENTAR]. TRANSCREVA artigos de lei entre aspas. Inclua legislação, jurisprudência e doutrina que COMPLEMENTEM a fundamentação já existente.'
+      : 'Realize pesquisa jurídica EXAUSTIVA sobre o tema. TRANSCREVA artigos de lei entre aspas. Inclua legislação com texto dos dispositivos, jurisprudência com enunciados de súmulas, doutrina com autor e obra, e princípios constitucionais.',
+  )
+
+  return parts.join('\n')
+}
+
 // ── Acervo-based pre-generation agents ────────────────────────────────────────
 
 /**
@@ -827,7 +998,20 @@ export async function generateAcervoEmenta(
   textContent: string,
   model?: string,
   uid?: string,
-): Promise<{ ementa: string; keywords: string[]; llm_execution: UsageExecutionRecord }> {
+  docId?: string,
+): Promise<{ ementa: string; keywords: string[]; llm_execution: UsageExecutionRecord | null }> {
+  const shouldUseCache = Boolean(uid && docId && isEnabled('FF_EMENTA_CACHE'))
+  if (shouldUseCache) {
+    const cached = getEmentaFromCache(uid!, docId!)
+    if (cached) {
+      return {
+        ementa: cached.ementa,
+        keywords: cached.keywords,
+        llm_execution: null,
+      }
+    }
+  }
+
   // Load model from admin config if not explicitly provided
   let fallbackList: string[] = []
   if (!model) {
@@ -906,6 +1090,13 @@ export async function generateAcervoEmenta(
     ...getLLMOperationalUsageMeta(result),
   })
 
+  if (shouldUseCache) {
+    setEmentaInCache(uid!, docId!, {
+      ementa: ementaParts.join(' | '),
+      keywords: allKeywords,
+    })
+  }
+
   return { ementa: ementaParts.join(' | '), keywords: allKeywords, llm_execution }
 }
 
@@ -933,14 +1124,30 @@ export async function generateAcervoTags(
   textContent: string,
   model?: string,
   uid?: string,
+  docId?: string,
 ): Promise<{
   natureza: NaturezaValue
   area_direito: string[]
   assuntos: string[]
   tipo_documento: string
   contexto: string[]
-  llm_execution: UsageExecutionRecord
+  llm_execution: UsageExecutionRecord | null
 }> {
+  const shouldUseCache = Boolean(uid && docId && isEnabled('FF_CLASSIFICACAO_CACHE'))
+  if (shouldUseCache) {
+    const cached = getClassificacaoFromCache(uid!, docId!)
+    if (cached) {
+      return {
+        natureza: cached.natureza as NaturezaValue,
+        area_direito: cached.area_direito,
+        assuntos: cached.assuntos,
+        tipo_documento: cached.tipo_documento,
+        contexto: cached.contexto,
+        llm_execution: null,
+      }
+    }
+  }
+
   // Load model from admin config if not explicitly provided
   let fallbackList: string[] = []
   if (!model) {
@@ -1014,12 +1221,33 @@ export async function generateAcervoTags(
     ...getLLMOperationalUsageMeta(result),
   })
 
+  const areaDireito = Array.isArray(parsed.area_direito)
+    ? parsed.area_direito.map((s: string) => String(s).trim()).filter(Boolean)
+    : []
+  const assuntos = Array.isArray(parsed.assuntos)
+    ? parsed.assuntos.map((s: string) => String(s).trim()).filter(Boolean)
+    : []
+  const tipoDocumento = typeof parsed.tipo_documento === 'string' ? parsed.tipo_documento.trim() : ''
+  const contexto = Array.isArray(parsed.contexto)
+    ? parsed.contexto.map((s: string) => String(s).trim()).filter(Boolean)
+    : []
+
+  if (shouldUseCache) {
+    setClassificacaoInCache(uid!, docId!, {
+      natureza,
+      area_direito: areaDireito,
+      assuntos,
+      tipo_documento: tipoDocumento,
+      contexto,
+    })
+  }
+
   return {
     natureza,
-    area_direito: Array.isArray(parsed.area_direito) ? parsed.area_direito.map((s: string) => String(s).trim()).filter(Boolean) : [],
-    assuntos: Array.isArray(parsed.assuntos) ? parsed.assuntos.map((s: string) => String(s).trim()).filter(Boolean) : [],
-    tipo_documento: typeof parsed.tipo_documento === 'string' ? parsed.tipo_documento.trim() : '',
-    contexto: Array.isArray(parsed.contexto) ? parsed.contexto.map((s: string) => String(s).trim()).filter(Boolean) : [],
+    area_direito: areaDireito,
+    assuntos,
+    tipo_documento: tipoDocumento,
+    contexto,
     llm_execution,
   }
 }
@@ -1030,7 +1258,7 @@ export async function generateAcervoTags(
  * Prioritizes: natureza, área, assuntos, tipo_documento, then contexto (last).
  */
 function preFilterAcervoDocs(
-  docs: Array<{ id: string; filename: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: string; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }>,
+  docs: AcervoSearchDoc[],
   searchKeywords: string[],
 ): typeof docs {
   if (searchKeywords.length === 0) return docs.slice(0, MAX_PREFILTERED_DOCS)
@@ -1567,7 +1795,7 @@ export async function generateDocument(
     const [apiKey, agentModels, adminDocTypes] = await Promise.all([
       getOpenRouterKey(uid),
       loadDocumentAgentModels(uid),
-      loadAdminDocumentTypes().catch((e) => {
+      loadAdminDocTypesWithCache(uid).catch((e) => {
         console.warn('Failed to load admin document type structure:', e)
         return []
       }),
@@ -1601,32 +1829,19 @@ export async function generateDocument(
     }
 
     // Start thesis prefetch BEFORE triage — it only needs uid + areas, no triage output.
-    const thesisSectionPromise = (async (): Promise<string> => {
-      try {
-        const thesesByArea = areas.length > 0
-          ? await Promise.all(areas.map(area => listTheses(uid, { legalAreaId: area, limit: MAX_THESES_PER_AREA })))
-          : [await listTheses(uid, { limit: MAX_THESES_FALLBACK })]
-        const allTheses: ThesisData[] = []
-        const seenIds = new Set<string>()
-        for (const result of thesesByArea) {
-          for (const t of result.items) {
-            if (t.id && !seenIds.has(t.id)) {
-              seenIds.add(t.id)
-              allTheses.push(t)
-            }
-          }
-        }
-        if (allTheses.length === 0) return ''
-        const thesesText = allTheses
-          .slice(0, MAX_THESES_INJECTED)
-          .map(t => `• ${t.title}\n  ${t.content}${t.summary ? `\n  Resumo: ${t.summary}` : ''}`)
-          .join('\n\n')
-        return `<banco_de_teses>\n${thesesText}\n</banco_de_teses>\n\n`
-      } catch (e) {
-        console.warn('Failed to load thesis bank:', e)
-        return ''
-      }
-    })()
+    const thesisPrefetchEnabled = isEnabled('FF_THESIS_PREFETCH')
+    const parallelAcervoEnabled = includeAcervo && isEnabled('FF_PARALLEL_ACERVO')
+    const parallelPesquisadorEnabled = isEnabled('FF_PARALLEL_PESQUISADOR')
+    const acervoKeywordPrefilterEnabled = isEnabled('FF_ACERVO_KEYWORD_PREFILTER')
+    const acervoLlmPrefilterEnabled = isEnabled('FF_ACERVO_LLM_PREFILTER')
+    const thesisSectionPromise = thesisPrefetchEnabled
+      ? loadThesisKnowledgeBaseSection(uid, areas)
+      : null
+    const allAcervoDocsPromise = parallelAcervoEnabled
+      ? getAllAcervoDocumentsForSearch(uid)
+        .then((value) => ({ ok: true as const, value }))
+        .catch((error) => ({ ok: false as const, error }))
+      : null
 
     // 2. Triage — extract structured info from the request (runs in parallel with thesis prefetch)
     reportProgress('triagem', 'Analisando solicitação...', 5, modelTriagem, undefined, 'waiting_io')
@@ -1659,22 +1874,120 @@ export async function generateDocument(
     let compiladorResult: Awaited<ReturnType<typeof callLLM>> | null = null
     let revisorBaseResult: Awaited<ReturnType<typeof callLLM>> | null = null
 
+    const loadKnowledgeBaseSections = async (forceAcervoContext = false): Promise<{
+      thesisSection: string
+      acervoSection: string
+    }> => {
+      const thesisSection = await (thesisSectionPromise ?? loadThesisKnowledgeBaseSection(uid, areas))
+
+      let acervoSection = ''
+      if (includeAcervo && (forceAcervoContext || !acervoBase)) {
+        try {
+          const acervoContext = await loadAcervoContextWithCache(uid, MAX_ACERVO_CONTEXT_CHARS)
+          if (acervoContext) {
+            acervoSection = `<acervo_referencia>\n${acervoContext}\n</acervo_referencia>\n\n`
+          }
+        } catch (e) {
+          console.warn('Failed to load acervo context:', e)
+        }
+      }
+
+      return { thesisSection, acervoSection }
+    }
+
+    const knowledgeBaseSectionsPromise = parallelPesquisadorEnabled
+      ? loadKnowledgeBaseSections(true)
+      : null
+
+    const preparePesquisadorKnowledgeBase = async (acervoBaseForResearch?: string): Promise<{
+      knowledgeBase: string
+      knowledgeBaseCompactionMeta?: string
+    }> => {
+      const { thesisSection, acervoSection } = knowledgeBaseSectionsPromise
+        ? await knowledgeBaseSectionsPromise
+        : await loadKnowledgeBaseSections(Boolean(acervoBaseForResearch))
+
+      let knowledgeBase = thesisSection
+      if (!acervoBaseForResearch) {
+        knowledgeBase += acervoSection
+      }
+
+      let knowledgeBaseCompactionMeta: string | undefined
+      if (knowledgeBase.length > 40000) {
+        const originalLen = knowledgeBase.length
+        const compacted = compactContext(
+          [{ label: 'base_conhecimento', text: knowledgeBase, priority: 0 }],
+          40000,
+        )
+        knowledgeBase = compacted.text
+        knowledgeBaseCompactionMeta = `Base de conhecimento compactada: ${Math.round(originalLen / 1000)}k → ${Math.round(compacted.compactedChars / 1000)}k chars (${compacted.segmentsDropped} segmentos removidos)`
+      }
+
+      return { knowledgeBase, knowledgeBaseCompactionMeta }
+    }
+
+    const executePesquisador = async (
+      knowledgeBase: string,
+      acervoBaseForResearch?: string,
+    ): Promise<Awaited<ReturnType<typeof callLLMWithFallback>>> => {
+      return callLLMWithFallback(
+        apiKey,
+        buildPesquisadorSystem(docType, tema, profile),
+        buildPesquisadorUserPrompt(request, triageResult.content, knowledgeBase, acervoBaseForResearch),
+        modelPesquisador, resolveFb('pesquisador', modelPesquisador), 6000, 0.3,
+      )
+    }
+
+    const parallelPesquisadorPromise: Promise<ParallelPreloadResult<PesquisadorExecution>> | null = parallelPesquisadorEnabled && includeAcervo
+      ? (async () => {
+        const preparedKnowledgeBase = await preparePesquisadorKnowledgeBase()
+        const result = await executePesquisador(preparedKnowledgeBase.knowledgeBase)
+        return {
+          result,
+          knowledgeBaseCompactionMeta: preparedKnowledgeBase.knowledgeBaseCompactionMeta,
+        }
+      })()
+        .then((value) => ({ ok: true as const, value }))
+        .catch((error) => ({ ok: false as const, error }))
+      : null
+
     try {
       if (!includeAcervo) {
         console.log('[Acervo Pipeline] Skipped by user preference for this generation')
       } else {
-        const allAcervoDocs = await getAllAcervoDocumentsForSearch(uid)
+        const allAcervoDocs = await resolveParallelPreloadWithSequentialFallback(
+          allAcervoDocsPromise,
+          () => getAllAcervoDocumentsForSearch(uid),
+          (error) => {
+            console.warn('Failed to preload acervo documents in parallel; retrying sequential fetch:', error)
+          },
+        )
         console.log(`[Acervo Pipeline] Found ${allAcervoDocs.length} indexed documents in acervo`)
 
         if (allAcervoDocs.length > 0) {
-        reportProgress('acervo_buscador', 'Buscando documentos similares no acervo...', 8, modelAcervoBuscador, undefined, 'waiting_io')
+        reportProgress(
+          'acervo_buscador',
+          acervoLlmPrefilterEnabled
+            ? 'Buscando documentos similares no acervo...'
+            : 'Selecionando documentos do acervo por pré-filtro determinístico...',
+          8,
+          acervoLlmPrefilterEnabled ? modelAcervoBuscador : undefined,
+          acervoLlmPrefilterEnabled ? undefined : 'Buscador LLM desativado por feature flag',
+          acervoLlmPrefilterEnabled ? 'waiting_io' : 'running',
+        )
 
         // ── Layer 1: Zero-cost keyword pre-filter ──
         const searchKeywords = extractSearchKeywords(triageResult.content, request)
         console.log(`[Acervo Pre-filter] Search keywords:`, searchKeywords)
 
-        const preFiltered = preFilterAcervoDocs(allAcervoDocs, searchKeywords)
-        console.log(`[Acervo Pre-filter] ${allAcervoDocs.length} docs → ${preFiltered.length} candidates after keyword filter`)
+        const preFiltered = selectAcervoDocsForBuscador(
+          allAcervoDocs,
+          searchKeywords,
+          acervoKeywordPrefilterEnabled,
+        )
+        console.log(
+          `[Acervo Pre-filter] ${allAcervoDocs.length} docs → ${preFiltered.length} candidates after ${acervoKeywordPrefilterEnabled ? 'keyword filter' : 'direct cap'}`,
+        )
 
         // Generate ementas for pre-filtered docs that don't have one yet (async, non-blocking for future runs)
         const docsNeedingEmenta = preFiltered.filter(d => !d.ementa)
@@ -1693,8 +2006,9 @@ export async function generateDocument(
                 fullDoc.text_content,
                 undefined,
                 uid,
+                d.id,
               )
-              await updateAcervoEmenta(uid, d.id, ementa, keywords, [ementaExec])
+              await updateAcervoEmenta(uid, d.id, ementa, keywords, ementaExec ? [ementaExec] : undefined)
               // Update in-memory reference
               d.ementa = ementa
               d.ementa_keywords = keywords
@@ -1704,7 +2018,7 @@ export async function generateDocument(
             }
           })
 
-          const ementaWarmupBudgetMs = 5000
+          const ementaWarmupBudgetMs = isEnabled('FF_EMENTA_WARMUP_EXTENDED') ? 5000 : 3500
           await Promise.race([
             Promise.allSettled(ementaPromises),
             new Promise<void>(resolve => {
@@ -1720,49 +2034,62 @@ export async function generateDocument(
         }
 
         if (preFiltered.length > 0) {
-          // ── Layer 2: LLM Buscador ranks pre-filtered ementas ──
-          const docSummaries = preFiltered.map(d => ({
-            id: d.id,
-            filename: d.filename,
-            summary: d.ementa || d.filename, // Use ementa if available, otherwise just filename
-            created_at: d.created_at,
-            natureza: d.natureza,
-            area_direito: d.area_direito,
-            assuntos: d.assuntos,
-            tipo_documento: d.tipo_documento,
-            contexto: d.contexto,
-          }))
-
-          buscadorResult = await callLLMWithFallback(
-            apiKey,
-            buildAcervoBuscadorSystem(),
-            buildAcervoBuscadorUser(triageResult.content, request, docType, docSummaries),
-            modelAcervoBuscador, resolveFb('acervo_buscador', modelAcervoBuscador), 2000, 0.1,
-          )
-          reportStageResult('acervo_buscador', 'Busca no acervo concluída.', 10, buscadorResult)
-
-          // Parse buscador response
           let selectedIds: string[] = []
-          try {
-            let jsonStr = buscadorResult.content.trim()
-            const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
-            if (jsonMatch) jsonStr = jsonMatch[1].trim()
-            const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
-            if (braceMatch) jsonStr = braceMatch[0]
 
-            const parsed = JSON.parse(jsonStr)
-            const allSelected = parsed.selected || []
-            console.log(`[Acervo Buscador] LLM selected ${allSelected.length} from ${preFiltered.length} candidates:`,
-              allSelected.map((s: { id: string; score?: number; reason?: string }) =>
-                `${s.id.slice(0, 8)}... (score: ${s.score}, ${s.reason?.slice(0, 50)})`,
-              ))
+          // ── Layer 2: LLM Buscador ranks pre-filtered ementas ──
+          if (acervoLlmPrefilterEnabled) {
+            const docSummaries = preFiltered.map(d => ({
+              id: d.id,
+              filename: d.filename,
+              summary: d.ementa || d.filename, // Use ementa if available, otherwise just filename
+              created_at: d.created_at,
+              natureza: d.natureza,
+              area_direito: d.area_direito,
+              assuntos: d.assuntos,
+              tipo_documento: d.tipo_documento,
+              contexto: d.contexto,
+            }))
 
-            selectedIds = allSelected
-              .filter((s: { score?: number }) => (s.score ?? 0) >= 0.15)
-              .slice(0, MAX_ACERVO_SELECTED_DOCS)
-              .map((s: { id: string }) => s.id)
-          } catch (parseErr) {
-            console.warn('[Acervo Buscador] Parse error:', parseErr, 'Raw:', buscadorResult.content.slice(0, 300))
+            buscadorResult = await callLLMWithFallback(
+              apiKey,
+              buildAcervoBuscadorSystem(),
+              buildAcervoBuscadorUser(triageResult.content, request, docType, docSummaries),
+              modelAcervoBuscador, resolveFb('acervo_buscador', modelAcervoBuscador), 2000, 0.1,
+            )
+            reportStageResult('acervo_buscador', 'Busca no acervo concluída.', 10, buscadorResult)
+
+            try {
+              let jsonStr = buscadorResult.content.trim()
+              const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+              if (jsonMatch) jsonStr = jsonMatch[1].trim()
+              const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
+              if (braceMatch) jsonStr = braceMatch[0]
+
+              const parsed = JSON.parse(jsonStr)
+              const allSelected = parsed.selected || []
+              console.log(`[Acervo Buscador] LLM selected ${allSelected.length} from ${preFiltered.length} candidates:`,
+                allSelected.map((s: { id: string; score?: number; reason?: string }) =>
+                  `${s.id.slice(0, 8)}... (score: ${s.score}, ${s.reason?.slice(0, 50)})`,
+                ))
+
+              selectedIds = allSelected
+                .filter((s: { score?: number }) => (s.score ?? 0) >= 0.15)
+                .slice(0, MAX_ACERVO_SELECTED_DOCS)
+                .map((s: { id: string }) => s.id)
+            } catch (parseErr) {
+              console.warn('[Acervo Buscador] Parse error:', parseErr, 'Raw:', buscadorResult.content.slice(0, 300))
+            }
+          } else {
+            selectedIds = preFiltered.slice(0, MAX_ACERVO_SELECTED_DOCS).map(d => d.id)
+            reportProgress(
+              'acervo_buscador',
+              `Pré-filtro determinístico selecionou ${selectedIds.length} documento(s) do acervo.`,
+              10,
+              undefined,
+              'Buscador LLM desativado por feature flag',
+              'running',
+            )
+            console.log(`[Acervo Buscador] LLM disabled; selected ${selectedIds.length} deterministic candidates from ${preFiltered.length}`)
           }
 
           if (selectedIds.length > 0) {
@@ -1814,76 +2141,45 @@ export async function generateDocument(
     }
 
     // ── 2c. Load knowledge base — theses + acervo excerpts ──────────────────
-  reportProgress('pesquisador', 'Carregando base de conhecimento...', 18, modelPesquisador, undefined, 'waiting_io')
-    let knowledgeBase = ''
+    reportProgress('pesquisador', 'Carregando base de conhecimento...', 18, modelPesquisador, undefined, 'waiting_io')
 
-    // Load thesis references and lightweight acervo context in parallel.
-    const thesisTask = thesisSectionPromise
-
-    const acervoContextTask = (async (): Promise<string> => {
-      if (!includeAcervo || acervoBase) return ''
-      try {
-        const acervoContext = await getAcervoContext(uid, MAX_ACERVO_CONTEXT_CHARS)
-        if (!acervoContext) return ''
-        return `<acervo_referencia>\n${acervoContext}\n</acervo_referencia>\n\n`
-      } catch (e) {
-        console.warn('Failed to load acervo context:', e)
-        return ''
+    let pesquisaResult: Awaited<ReturnType<typeof callLLMWithFallback>>
+    if (parallelPesquisadorPromise) {
+      reportProgress(
+        'pesquisador',
+        'Sincronizando pesquisa iniciada em paralelo...',
+        22,
+        modelPesquisador,
+        'Execução paralela iniciada após a triagem',
+        'waiting_io',
+      )
+      const pesquisaExecution = await resolveParallelPreloadWithSequentialFallback(
+        parallelPesquisadorPromise,
+        async () => {
+          const preparedKnowledgeBase = await preparePesquisadorKnowledgeBase(acervoBase || undefined)
+          return {
+            result: await executePesquisador(preparedKnowledgeBase.knowledgeBase, acervoBase || undefined),
+            knowledgeBaseCompactionMeta: preparedKnowledgeBase.knowledgeBaseCompactionMeta,
+          }
+        },
+        (error) => {
+          console.warn('Parallel pesquisador failed; retrying sequential run:', error)
+        },
+      )
+      if (pesquisaExecution.knowledgeBaseCompactionMeta) {
+        console.log(`[Pesquisador] ${pesquisaExecution.knowledgeBaseCompactionMeta}`)
       }
-    })()
+      pesquisaResult = pesquisaExecution.result
+    } else {
+      const preparedKnowledgeBase = await preparePesquisadorKnowledgeBase(acervoBase || undefined)
+      if (preparedKnowledgeBase.knowledgeBaseCompactionMeta) {
+        reportProgress('acervo_compilador', preparedKnowledgeBase.knowledgeBaseCompactionMeta, 20, undefined, undefined, 'running')
+      }
 
-    const [thesisSection, acervoSection] = await Promise.all([thesisTask, acervoContextTask])
-    knowledgeBase += thesisSection
-    knowledgeBase += acervoSection
-
-    // Apply context compaction if knowledge base is very large (>40k chars)
-    if (knowledgeBase.length > 40000) {
-      const originalLen = knowledgeBase.length
-      const compacted = compactContext(
-        [{ label: 'base_conhecimento', text: knowledgeBase, priority: 0 }],
-        40000,
-      )
-      knowledgeBase = compacted.text
-      reportProgress('acervo_compilador', `Base de conhecimento compactada: ${Math.round(originalLen / 1000)}k → ${Math.round(compacted.compactedChars / 1000)}k chars (${compacted.segmentsDropped} segmentos removidos)`, 20, undefined, undefined, 'running')
+      reportProgress('pesquisador', 'Pesquisando legislação e jurisprudência...', 22, modelPesquisador, undefined, 'waiting_io')
+      pesquisaResult = await executePesquisador(preparedKnowledgeBase.knowledgeBase, acervoBase || undefined)
     }
 
-    // 3. Pesquisador — legal research synthesis
-  reportProgress('pesquisador', 'Pesquisando legislação e jurisprudência...', 22, modelPesquisador, undefined, 'waiting_io')
-    const pesquisadorUserParts = [
-      `<triagem>${triageResult.content}</triagem>`,
-      `<solicitacao>${request}</solicitacao>`,
-    ]
-    if (acervoBase) {
-      pesquisadorUserParts.push(
-        '<documento_base_acervo>',
-        'O texto abaixo é um documento base compilado a partir de documentos anteriores do acervo do usuário.',
-        'Ele contém fundamentação jurídica já consolidada pelo usuário em trabalhos anteriores.',
-        'Use-o como REFERÊNCIA PRINCIPAL. Foque sua pesquisa nas seções marcadas com [COMPLEMENTAR]',
-        'e em enriquecer a fundamentação existente. NÃO descarte o conteúdo do acervo — ele é a base.',
-        acervoBase,
-        '</documento_base_acervo>',
-      )
-    }
-    if (knowledgeBase) {
-      pesquisadorUserParts.push(
-        '<base_conhecimento>',
-        'Use as teses e documentos de referência abaixo como material COMPLEMENTAR à sua pesquisa.',
-        'Incorpore as teses relevantes, mas SEMPRE verifique e enriqueça com suas próprias referências.',
-        knowledgeBase,
-        '</base_conhecimento>',
-      )
-    }
-    pesquisadorUserParts.push(
-      acervoBase
-        ? 'Realize pesquisa jurídica COMPLEMENTAR ao documento base do acervo. Foque nas lacunas marcadas com [COMPLEMENTAR]. TRANSCREVA artigos de lei entre aspas. Inclua legislação, jurisprudência e doutrina que COMPLEMENTEM a fundamentação já existente.'
-        : 'Realize pesquisa jurídica EXAUSTIVA sobre o tema. TRANSCREVA artigos de lei entre aspas. Inclua legislação com texto dos dispositivos, jurisprudência com enunciados de súmulas, doutrina com autor e obra, e princípios constitucionais.',
-    )
-    const pesquisaResult = await callLLMWithFallback(
-      apiKey,
-      buildPesquisadorSystem(docType, tema, profile),
-      pesquisadorUserParts.join('\n'),
-      modelPesquisador, resolveFb('pesquisador', modelPesquisador), 6000, 0.3,
-    )
     reportStageResult('pesquisador', 'Pesquisa jurídica concluída.', 26, pesquisaResult)
 
     // 4. Jurista — initial thesis development

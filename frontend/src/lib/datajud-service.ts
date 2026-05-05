@@ -10,6 +10,7 @@
 
 import { fetchUrlContent, searchWebResults } from './web-search-service'
 import { loadApiKeyValues } from './settings-store'
+import type { NotebookJurisprudenceSemanticMemoryEntry, NotebookSource } from './firestore-types'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,22 @@ const MAX_TEXT_ENRICHMENT_RESULTS = 10
 const MAX_ENRICHMENT_FETCHES_PER_RESULT = 3
 const MAX_EMENTA_CHARS = 6_000
 const MAX_INTEIRO_TEOR_CHARS = 16_000
+const OPENROUTER_EMBEDDINGS_URL = typeof import.meta !== 'undefined'
+  ? (import.meta.env.VITE_DATAJUD_SEMANTIC_EMBEDDING_ENDPOINT?.trim() || 'https://openrouter.ai/api/v1/embeddings')
+  : 'https://openrouter.ai/api/v1/embeddings'
+const OPENROUTER_REFERER = typeof window !== 'undefined' && window.location?.origin
+  ? window.location.origin
+  : 'https://lexio.web.app'
+const DEFAULT_SEMANTIC_EMBEDDING_MODEL = typeof import.meta !== 'undefined'
+  ? (import.meta.env.VITE_DATAJUD_SEMANTIC_EMBEDDING_MODEL?.trim() || 'openai/text-embedding-3-small')
+  : 'openai/text-embedding-3-small'
+const MAX_SEMANTIC_RERANK_CANDIDATES = 8
+const MAX_SEMANTIC_RERANK_TEXT_CHARS = 2_400
+const HYBRID_LEXICAL_WEIGHT = 0.72
+const HYBRID_SEMANTIC_WEIGHT = 0.28
+const MAX_SEMANTIC_MEMORY_FUSION_ENTRIES = 3
+const MAX_SEMANTIC_MEMORY_RESULTS_PER_ENTRY = 5
+const MIN_SEMANTIC_MEMORY_SIMILARITY = 0.68
 
 /** Max results per tribunal */
 const RESULTS_PER_TRIBUNAL = 5
@@ -743,6 +760,22 @@ export interface DataJudResult {
   textCompleteness?: 'complete' | 'partial' | 'missing'
 }
 
+export const VALID_DATAJUD_STANCES = ['favoravel', 'desfavoravel', 'neutro'] as const
+
+export interface DataJudRankingEntry {
+  index: number
+  score: number
+  stance?: (typeof VALID_DATAJUD_STANCES)[number] | string
+}
+
+export interface DataJudSelectionRerankOutcome {
+  results: DataJudResult[]
+  strategy: 'local' | 'llm' | 'local_fallback'
+  topScore: number | null
+  appliedCount: number
+  reason?: string
+}
+
 export interface DataJudTextStats {
   withEmenta: number
   withInteiroTeor: number
@@ -765,6 +798,10 @@ export interface DataJudEndpointAttempt {
 export interface DataJudRuntimeDiagnostics {
   endpointAttempts: DataJudEndpointAttempt[]
   cacheTtlMs: number
+  semanticRerankApplied?: boolean
+  semanticRerankCandidateCount?: number
+  semanticRerankModel?: string
+  semanticRerankReason?: string
 }
 
 interface TextFieldCandidate {
@@ -804,6 +841,12 @@ export interface DataJudSearchOptions {
   enrichMissingText?: boolean
   /** Max number of results to enrich externally. */
   maxTextEnrichment?: number
+  /** Enable browser-side semantic reranking over the top lexical candidates. */
+  semanticRerank?: boolean
+  /** Optional explicit API key for semantic reranking. Defaults to the configured OpenRouter key. */
+  semanticApiKey?: string
+  /** Optional embeddings model for semantic reranking. */
+  semanticModel?: string
 }
 
 export interface DataJudSearchResult {
@@ -852,6 +895,405 @@ class DataJudRequestError extends Error {
   }
 }
 
+interface DataJudSemanticRerankOutcome {
+  results: DataJudResult[]
+  applied: boolean
+  candidateCount: number
+  model?: string
+  reason?: string
+}
+
+export interface DataJudSemanticMemoryFusionOutcome {
+  results: DataJudResult[]
+  applied: boolean
+  matchedEntries: number
+  importedResults: number
+  model?: string
+  reason?: string
+}
+
+interface RankedDataJudCandidate {
+  originalIndex: number
+  result: DataJudResult
+  score: number
+}
+
+function quantizeEmbedding(vector: number[]): number[] {
+  return vector.map(value => Number(value.toFixed(6)))
+}
+
+function parseNotebookJurisprudenceResults(source: NotebookSource): DataJudResult[] {
+  if (source.type !== 'jurisprudencia' || !source.results_raw) return []
+
+  try {
+    const parsed = JSON.parse(source.results_raw) as DataJudResult[]
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is DataJudResult => Boolean(entry && typeof entry === 'object' && typeof entry.numeroProcesso === 'string'))
+      : []
+  } catch {
+    return []
+  }
+}
+
+function dedupeDataJudResults(results: DataJudResult[]): DataJudResult[] {
+  const byProcess = new Map<string, DataJudResult>()
+
+  for (const result of results) {
+    const key = `${result.tribunal || ''}:${result.numeroProcesso || ''}`
+    const existing = byProcess.get(key)
+    if (!existing) {
+      byProcess.set(key, result)
+      continue
+    }
+
+    if ((result.relevanceScore ?? 0) > (existing.relevanceScore ?? 0)) {
+      byProcess.set(key, result)
+    }
+  }
+
+  return Array.from(byProcess.values())
+}
+
+async function fetchSingleSemanticEmbedding(
+  text: string,
+  options: {
+    apiKey?: string
+    model?: string
+    signal?: AbortSignal
+  } = {},
+): Promise<{ embedding: number[]; model: string } | null> {
+  const normalizedText = text.trim()
+  if (!normalizedText) return null
+
+  const apiKey = await resolveSemanticRerankApiKey(options.apiKey)
+  if (!apiKey) return null
+
+  const model = options.model?.trim() || DEFAULT_SEMANTIC_EMBEDDING_MODEL
+  const vectors = await fetchSemanticEmbeddings([normalizedText], apiKey, model, options.signal)
+  const [embedding] = vectors
+  if (!embedding || embedding.length === 0) return null
+  return { embedding: quantizeEmbedding(embedding), model }
+}
+
+export async function buildJurisprudenceSemanticMemoryEntry(
+  query: string,
+  options: {
+    sourceId: string
+    legalArea?: string | null
+    tribunalAliases?: string[]
+    resultCount?: number
+    createdAt?: string
+    apiKey?: string
+    model?: string
+    signal?: AbortSignal
+  },
+): Promise<NotebookJurisprudenceSemanticMemoryEntry | null> {
+  const semanticEmbedding = await fetchSingleSemanticEmbedding(query, options)
+  if (!semanticEmbedding) return null
+
+  const timestamp = options.createdAt || new Date().toISOString()
+  return {
+    source_id: options.sourceId,
+    query: query.trim(),
+    legal_area: options.legalArea ?? null,
+    tribunal_aliases: options.tribunalAliases,
+    query_embedding: semanticEmbedding.embedding,
+    embedding_model: semanticEmbedding.model,
+    result_count: options.resultCount,
+    created_at: timestamp,
+    updated_at: timestamp,
+  }
+}
+
+export async function fuseDataJudResultsWithSemanticMemory(
+  query: string,
+  results: DataJudResult[],
+  options: {
+    memoryEntries?: NotebookJurisprudenceSemanticMemoryEntry[]
+    sources?: NotebookSource[]
+    legalArea?: string
+    maxTotal?: number
+    apiKey?: string
+    model?: string
+    signal?: AbortSignal
+  } = {},
+): Promise<DataJudSemanticMemoryFusionOutcome> {
+  const memoryEntries = Array.isArray(options.memoryEntries) ? options.memoryEntries : []
+  const sources = Array.isArray(options.sources) ? options.sources : []
+  const maxTotal = options.maxTotal ?? Math.max(results.length, 12)
+
+  if (memoryEntries.length === 0 || sources.length === 0) {
+    return { results, applied: false, matchedEntries: 0, importedResults: 0, reason: 'missing_memory' }
+  }
+
+  const semanticEmbedding = await fetchSingleSemanticEmbedding(query, options)
+  if (!semanticEmbedding) {
+    return { results, applied: false, matchedEntries: 0, importedResults: 0, reason: 'missing_api_key' }
+  }
+
+  const compatibleEntries = memoryEntries
+    .filter(entry => Array.isArray(entry.query_embedding) && entry.query_embedding.length === semanticEmbedding.embedding.length)
+    .map(entry => ({
+      entry,
+      similarity: cosineSimilarity(semanticEmbedding.embedding, entry.query_embedding),
+    }))
+    .filter(item => Number.isFinite(item.similarity))
+    .sort((left, right) => right.similarity - left.similarity)
+
+  const sourceMap = new Map(sources.map(source => [source.id, source] as const))
+  const matched = compatibleEntries
+    .filter(item => item.similarity >= MIN_SEMANTIC_MEMORY_SIMILARITY)
+    .slice(0, MAX_SEMANTIC_MEMORY_FUSION_ENTRIES)
+    .map(item => ({
+      ...item,
+      source: sourceMap.get(item.entry.source_id),
+    }))
+    .filter((item): item is typeof item & { source: NotebookSource } => Boolean(item.source))
+
+  if (matched.length === 0) {
+    return {
+      results,
+      applied: false,
+      matchedEntries: 0,
+      importedResults: 0,
+      model: semanticEmbedding.model,
+      reason: 'no_similar_sources',
+    }
+  }
+
+  const importedResults = matched.flatMap(item => {
+    const storedResults = parseNotebookJurisprudenceResults(item.source)
+    return rankDataJudResultsLocally(query, storedResults, options.legalArea)
+      .slice(0, MAX_SEMANTIC_MEMORY_RESULTS_PER_ENTRY)
+      .map(({ result, score }) => ({
+        ...result,
+        relevanceScore: Math.max(result.relevanceScore ?? 0, score),
+      }))
+  })
+
+  if (importedResults.length === 0) {
+    return {
+      results,
+      applied: false,
+      matchedEntries: 0,
+      importedResults: 0,
+      model: semanticEmbedding.model,
+      reason: 'missing_source_results',
+    }
+  }
+
+  const fusedResults = rankAndFilterDataJudResults(
+    query,
+    dedupeDataJudResults([...results, ...importedResults]),
+    maxTotal,
+    options.legalArea,
+  )
+
+  return {
+    results: fusedResults,
+    applied: true,
+    matchedEntries: matched.length,
+    importedResults: importedResults.length,
+    model: semanticEmbedding.model,
+  }
+}
+
+async function resolveSemanticRerankApiKey(explicitKey?: string): Promise<string | null> {
+  const provided = explicitKey?.trim()
+  if (provided) return provided
+
+  const envKey = typeof import.meta !== 'undefined'
+    ? import.meta.env.VITE_OPENROUTER_API_KEY?.trim()
+    : ''
+  if (envKey) return envKey
+
+  try {
+    const apiKeys = await loadApiKeyValues()
+    const storedKey = apiKeys.openrouter_api_key?.trim()
+    return storedKey || null
+  } catch {
+    return null
+  }
+}
+
+function buildSemanticRerankText(result: DataJudResult): string {
+  return [
+    result.classe,
+    result.assuntos.slice(0, 8).join(' '),
+    result.ementa,
+    result.inteiroTeor?.slice(0, MAX_SEMANTIC_RERANK_TEXT_CHARS),
+    result.orgaoJulgador,
+    result.tribunalName,
+  ]
+    .filter((value): value is string => Boolean(value && value.trim()))
+    .join('\n\n')
+    .slice(0, MAX_SEMANTIC_RERANK_TEXT_CHARS)
+}
+
+async function fetchSemanticEmbeddings(
+  texts: string[],
+  apiKey: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<number[][]> {
+  const response = await fetch(OPENROUTER_EMBEDDINGS_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': OPENROUTER_REFERER,
+      'X-Title': 'Lexio Jurisprudence Search',
+    },
+    body: JSON.stringify({
+      model,
+      input: texts,
+      encoding_format: 'float',
+    }),
+    signal,
+  })
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => 'Unknown error')
+    throw new Error(`Embeddings API error (${response.status}): ${detail}`)
+  }
+
+  const payload = await response.json() as { data?: Array<{ embedding?: number[] }> }
+  const vectors = payload.data?.map(item => item.embedding ?? []) ?? []
+  if (vectors.length !== texts.length || vectors.some(vector => !Array.isArray(vector) || vector.length === 0)) {
+    throw new Error('Embeddings API returned an invalid payload.')
+  }
+  return vectors
+}
+
+function cosineSimilarity(left: number[], right: number[]): number {
+  if (left.length === 0 || right.length === 0 || left.length !== right.length) return 0
+
+  let dot = 0
+  let leftNorm = 0
+  let rightNorm = 0
+
+  for (let index = 0; index < left.length; index++) {
+    const leftValue = left[index] ?? 0
+    const rightValue = right[index] ?? 0
+    dot += leftValue * rightValue
+    leftNorm += leftValue * leftValue
+    rightNorm += rightValue * rightValue
+  }
+
+  if (leftNorm === 0 || rightNorm === 0) return 0
+  return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm))
+}
+
+export async function rerankDataJudResultsSemantically(
+  query: string,
+  results: DataJudResult[],
+  options: {
+    legalArea?: string
+    apiKey?: string
+    model?: string
+    signal?: AbortSignal
+    candidateCount?: number
+  } = {},
+): Promise<DataJudSemanticRerankOutcome> {
+  if (results.length < 2) {
+    return { results, applied: false, candidateCount: results.length, reason: 'insufficient_results' }
+  }
+
+  const queryTerms = extractSignificantQueryTerms(query)
+  if (queryTerms.length < 2) {
+    return { results, applied: false, candidateCount: 0, reason: 'short_query' }
+  }
+
+  const apiKey = await resolveSemanticRerankApiKey(options.apiKey)
+  if (!apiKey) {
+    return { results, applied: false, candidateCount: 0, reason: 'missing_api_key' }
+  }
+
+  const model = options.model?.trim() || DEFAULT_SEMANTIC_EMBEDDING_MODEL
+  const candidateCount = Math.min(results.length, options.candidateCount ?? MAX_SEMANTIC_RERANK_CANDIDATES)
+  const leadingCandidates = results.slice(0, candidateCount).map((result, index) => ({
+    result,
+    index,
+    lexicalScore: typeof result.relevanceScore === 'number'
+      ? result.relevanceScore
+      : scoreDataJudResult(query, result, options.legalArea),
+    semanticText: buildSemanticRerankText(result),
+  }))
+
+  if (leadingCandidates.filter(item => item.semanticText.length > 0).length < 2) {
+    return { results, applied: false, candidateCount, reason: 'missing_candidate_text' }
+  }
+
+  try {
+    const embeddings = await fetchSemanticEmbeddings(
+      [query, ...leadingCandidates.map(item => item.semanticText)],
+      apiKey,
+      model,
+      options.signal,
+    )
+
+    const [queryEmbedding, ...candidateEmbeddings] = embeddings
+    const semanticSimilarities = candidateEmbeddings.map(embedding => cosineSimilarity(queryEmbedding, embedding))
+    const minSimilarity = Math.min(...semanticSimilarities)
+    const maxSimilarity = Math.max(...semanticSimilarities)
+    const similaritySpan = maxSimilarity - minSimilarity
+
+    if (!Number.isFinite(minSimilarity) || !Number.isFinite(maxSimilarity)) {
+      return { results, applied: false, candidateCount, reason: 'invalid_similarity' }
+    }
+
+    const rerankedCandidates = leadingCandidates
+      .map((item, index) => {
+        const semanticSimilarity = semanticSimilarities[index] ?? 0
+        const semanticScore = similaritySpan > 1e-6
+          ? ((semanticSimilarity - minSimilarity) / similaritySpan) * 100
+          : 50
+        const hybridScore = Math.round(
+          item.lexicalScore * HYBRID_LEXICAL_WEIGHT + semanticScore * HYBRID_SEMANTIC_WEIGHT,
+        )
+
+        return {
+          ...item.result,
+          relevanceScore: Math.max(0, Math.min(100, hybridScore)),
+        }
+      })
+      .sort((left, right) => {
+        const scoreDiff = (right.relevanceScore ?? 0) - (left.relevanceScore ?? 0)
+        if (scoreDiff !== 0) return scoreDiff
+
+        const lexicalDiff = (
+          (leadingCandidates.find(item => item.result.numeroProcesso === right.numeroProcesso)?.lexicalScore ?? 0)
+          - (leadingCandidates.find(item => item.result.numeroProcesso === left.numeroProcesso)?.lexicalScore ?? 0)
+        )
+        if (lexicalDiff !== 0) return lexicalDiff
+
+        return right.dataAjuizamento.localeCompare(left.dataAjuizamento)
+      })
+
+    const untouchedTail = results.slice(candidateCount).map(result => ({
+      ...result,
+      relevanceScore: typeof result.relevanceScore === 'number'
+        ? result.relevanceScore
+        : scoreDataJudResult(query, result, options.legalArea),
+    }))
+
+    return {
+      results: [...rerankedCandidates, ...untouchedTail],
+      applied: true,
+      candidateCount,
+      model,
+    }
+  } catch (error) {
+    return {
+      results,
+      applied: false,
+      candidateCount,
+      model,
+      reason: error instanceof Error ? error.message : 'semantic_rerank_failed',
+    }
+  }
+}
+
 // ── Core Search Function ───────────────────────────────────────────────────────
 
 /**
@@ -870,6 +1312,7 @@ export async function searchDataJud(
   const signal = options.signal
   const enrichMissingText = options.enrichMissingText ?? false
   const maxTextEnrichment = options.maxTextEnrichment ?? MAX_TEXT_ENRICHMENT_RESULTS
+  const semanticRerankEnabled = options.semanticRerank ?? false
 
   // Auto-detect legal area from query when user didn't select one manually
   const effectiveLegalArea = options.legalArea || inferLegalAreaFromQuery(query)
@@ -1135,6 +1578,25 @@ export async function searchDataJud(
     }
   }
 
+  let semanticRerankApplied = false
+  let semanticRerankCandidateCount = 0
+  let semanticRerankModel: string | undefined
+  let semanticRerankReason = semanticRerankEnabled ? 'not_attempted' : 'disabled'
+
+  if (semanticRerankEnabled && refinedResults.length > 1) {
+    const semanticOutcome = await rerankDataJudResultsSemantically(query, refinedResults, {
+      legalArea: effectiveLegalArea,
+      apiKey: options.semanticApiKey,
+      model: options.semanticModel,
+      signal,
+    })
+    refinedResults = semanticOutcome.results
+    semanticRerankApplied = semanticOutcome.applied
+    semanticRerankCandidateCount = semanticOutcome.candidateCount
+    semanticRerankModel = semanticOutcome.model
+    semanticRerankReason = semanticOutcome.reason ?? (semanticOutcome.applied ? 'applied' : 'not_applied')
+  }
+
   const finalizedResults = refinedResults.map(result => ({
     ...result,
     textCompleteness: inferTextCompleteness(result),
@@ -1151,6 +1613,10 @@ export async function searchDataJud(
     runtimeDiagnostics: {
       endpointAttempts,
       cacheTtlMs: ENDPOINT_CACHE_TTL_MS,
+      semanticRerankApplied,
+      semanticRerankCandidateCount,
+      semanticRerankModel,
+      semanticRerankReason,
     },
   }
 }
@@ -1184,6 +1650,101 @@ export async function searchDataJudByNumber(
     }
   }
   return null
+}
+
+export function parseDataJudRankingResponse(content: string): DataJudRankingEntry[] | null {
+  const normalized = content
+    .replace(/```(?:json)?\s*/gi, '')
+    .replace(/```/g, '')
+    .trim()
+
+  if (!normalized) return null
+
+  try {
+    const parsed = JSON.parse(normalized) as { ranking?: DataJudRankingEntry[] }
+    return Array.isArray(parsed.ranking) ? parsed.ranking : null
+  } catch {
+    return null
+  }
+}
+
+export function rerankSelectedDataJudResults(
+  query: string,
+  results: DataJudResult[],
+  options: {
+    legalArea?: string
+    ranking?: DataJudRankingEntry[] | null
+  } = {},
+): DataJudSelectionRerankOutcome {
+  const localCandidates = rankDataJudResultsLocally(query, results, options.legalArea)
+  const localRanked = localCandidates.map(({ result, score }) => ({
+    ...result,
+    relevanceScore: score,
+  }))
+  const localTopScore = localRanked[0]?.relevanceScore ?? null
+  const ranking = options.ranking
+
+  if (!Array.isArray(ranking) || ranking.length === 0) {
+    return {
+      results: localRanked,
+      strategy: 'local',
+      topScore: localTopScore,
+      appliedCount: localRanked.length,
+      reason: 'missing_ranking',
+    }
+  }
+
+  const candidatesByIndex = new Map(localCandidates.map(candidate => [candidate.originalIndex, candidate] as const))
+  const seen = new Set<number>()
+  const llmRanked: DataJudResult[] = []
+
+  const sortedEntries = ranking
+    .filter(entry => Number.isFinite(entry.index) && entry.index >= 1 && entry.index <= results.length)
+    .sort((left, right) => right.score - left.score)
+
+  for (const entry of sortedEntries) {
+    const originalIndex = entry.index - 1
+    if (seen.has(originalIndex)) continue
+    const candidate = candidatesByIndex.get(originalIndex)
+    if (!candidate) continue
+    seen.add(originalIndex)
+
+    const enriched: DataJudResult = {
+      ...candidate.result,
+      relevanceScore: Math.max(0, Math.min(100, Math.round(entry.score))),
+    }
+
+    const rawStance = typeof entry.stance === 'string' ? entry.stance.trim().toLowerCase() : ''
+    if (rawStance && VALID_DATAJUD_STANCES.includes(rawStance as (typeof VALID_DATAJUD_STANCES)[number])) {
+      enriched.stance = rawStance as DataJudResult['stance']
+    }
+
+    llmRanked.push(enriched)
+  }
+
+  if (llmRanked.length === 0) {
+    return {
+      results: localRanked,
+      strategy: 'local_fallback',
+      topScore: localTopScore,
+      appliedCount: localRanked.length,
+      reason: 'invalid_ranking',
+    }
+  }
+
+  const localRemainder = localCandidates
+    .filter(candidate => !seen.has(candidate.originalIndex))
+    .map(({ result, score }) => ({
+      ...result,
+      relevanceScore: score,
+    }))
+
+  return {
+    results: [...llmRanked, ...localRemainder],
+    strategy: 'llm',
+    topScore: llmRanked[0]?.relevanceScore ?? localTopScore,
+    appliedCount: llmRanked.length,
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -1387,21 +1948,10 @@ function isDataJudDebug(): boolean {
 }
 
 function rankAndFilterDataJudResults(query: string, results: DataJudResult[], maxTotal: number, legalArea?: string): DataJudResult[] {
-  const scored = results
-    .map(result => ({
-      ...result,
-      relevanceScore: scoreDataJudResult(query, result, legalArea),
-    }))
-    .sort((left, right) => {
-      const scoreDiff = (right.relevanceScore ?? 0) - (left.relevanceScore ?? 0)
-      if (scoreDiff !== 0) return scoreDiff
-      // Tie-break by tribunal hierarchy (higher courts first)
-      const leftWeight = tribunalCategoryWeight(left.tribunalName, left.tribunal)
-      const rightWeight = tribunalCategoryWeight(right.tribunalName, right.tribunal)
-      if (rightWeight !== leftWeight) return rightWeight - leftWeight
-      // Then by date (most recent first)
-      return right.dataAjuizamento.localeCompare(left.dataAjuizamento)
-    })
+  const scored = rankDataJudResultsLocally(query, results, legalArea).map(({ result, score }) => ({
+    ...result,
+    relevanceScore: score,
+  }))
 
   if (scored.length === 0) return []
 
@@ -1425,6 +1975,23 @@ function rankAndFilterDataJudResults(query: string, results: DataJudResult[], ma
   }
 
   return filtered.slice(0, maxTotal)
+}
+
+function rankDataJudResultsLocally(query: string, results: DataJudResult[], legalArea?: string): RankedDataJudCandidate[] {
+  return results
+    .map((result, originalIndex) => ({
+      originalIndex,
+      result,
+      score: scoreDataJudResult(query, result, legalArea),
+    }))
+    .sort((left, right) => {
+      const scoreDiff = right.score - left.score
+      if (scoreDiff !== 0) return scoreDiff
+      const leftWeight = tribunalCategoryWeight(left.result.tribunalName, left.result.tribunal)
+      const rightWeight = tribunalCategoryWeight(right.result.tribunalName, right.result.tribunal)
+      if (rightWeight !== leftWeight) return rightWeight - leftWeight
+      return right.result.dataAjuizamento.localeCompare(left.result.dataAjuizamento)
+    })
 }
 
 export function scoreDataJudResult(query: string, result: DataJudResult, legalArea?: string): number {

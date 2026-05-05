@@ -32,6 +32,7 @@ export interface DocumentPipelineProgress {
 
 export interface DocumentPipelineStep extends DocumentPipelineStage {
   status: DocumentPipelineStepStatus
+  executionState?: PipelineExecutionState
   startedAt?: number
   completedAt?: number
   runtimeMessage?: string
@@ -66,6 +67,7 @@ export function createDocumentPipelineSteps(): DocumentPipelineStep[] {
   return DOCUMENT_PIPELINE_STAGES.map(stage => ({
     ...stage,
     status: 'pending',
+    executionState: 'queued',
     runtimeModel: stage.modelKey ? 'Carregando...' : '—',
   }))
 }
@@ -175,7 +177,7 @@ export function applyDocumentPipelineProgress(
   if (progress.phase === DOCUMENT_PIPELINE_COMPLETED_PHASE) {
     return steps.map(step => (
       step.status === 'active'
-        ? { ...step, status: 'completed', completedAt: now }
+        ? { ...step, status: 'completed', executionState: 'completed', completedAt: now }
         : step
     ))
   }
@@ -189,10 +191,15 @@ export function applyDocumentPipelineProgress(
         timers[progress.phase] = now
       }
 
+      const executionState = progress.executionState ?? step.executionState ?? 'running'
+      const isCompleting = executionState === 'completed'
+
       return {
         ...step,
-        status: 'active',
+        status: isCompleting ? 'completed' : 'active',
+        executionState,
         startedAt: step.startedAt ?? timers[progress.phase],
+        completedAt: isCompleting ? (step.completedAt ?? now) : step.completedAt,
         runtimeMessage: progress.message,
         runtimeModel: progress.modelLabel ?? step.runtimeModel,
         runtimeMeta: progress.stageMeta ?? step.runtimeMeta,
@@ -207,6 +214,7 @@ export function applyDocumentPipelineProgress(
       return {
         ...step,
         status: 'completed',
+        executionState: 'completed',
         completedAt: step.completedAt ?? now,
       }
     }

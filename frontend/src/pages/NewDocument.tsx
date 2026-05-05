@@ -117,8 +117,9 @@ export default function NewDocument() {
       progress: p.percent,
       executionState,
     })
+    const progressWithState = { ...p, executionState }
 
-    setPipelineAgents(prev => applyDocumentPipelineProgress(prev, p, agentTimers.current, now))
+    setPipelineAgents(prev => applyDocumentPipelineProgress(prev, progressWithState, agentTimers.current, now))
 
     setPipelinePercent(normalizedPercent)
     setPipelineMessage(p.message)
@@ -127,7 +128,7 @@ export default function NewDocument() {
       setPipelineAgents(prev =>
         prev.map(a =>
           a.status === 'active'
-            ? { ...a, status: 'completed' as const, completedAt: now }
+            ? { ...a, status: 'completed' as const, executionState: 'completed' as const, completedAt: now }
             : a,
         ),
       )
@@ -679,6 +680,7 @@ export default function NewDocument() {
           key: agent.key,
           label: agent.label,
           status: agent.status,
+          executionState: agent.executionState,
           detail: agent.runtimeMessage || agent.description,
           meta: getDocumentStepMeta(agent),
         }))}

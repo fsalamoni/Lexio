@@ -39,6 +39,7 @@ import PresentationPipelineConfigCard from '../components/PresentationPipelineCo
 import ChatOrchestratorConfigCard from '../components/ChatOrchestratorConfigCard'
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
+import RuntimeFeatureFlagsCard from '../components/admin/RuntimeFeatureFlagsCard'
 import ModelCatalogCard from '../components/ModelCatalogCard'
 import ProviderApiKeysCard from '../components/ProviderApiKeysCard'
 import ProviderCatalogsSection from '../components/ProviderCatalogsSection'
@@ -924,6 +925,19 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <ProviderApiKeysCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_runtime_feature_flags"
+          title="Feature Flags Runtime"
+          icon={Zap}
+          iconColor="text-amber-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <RuntimeFeatureFlagsCard />
         </AdminCollapsibleSection>
       )}
 

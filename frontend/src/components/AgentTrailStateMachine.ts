@@ -98,11 +98,13 @@ export function executionStateToAgentState(exec: PipelineExecutionState): AgentS
   switch (exec) {
     case 'running':
     case 'retrying':
+    case 'persisting':
       return 'running'
     case 'waiting_io':
       return 'waiting_io'
     case 'completed':
       return 'completed'
+    case 'cancelled':
     case 'failed':
       return 'error'
     default:

@@ -194,6 +194,7 @@ type RecommendationHistoryEntry = {
   rolloutMode: RecommendationRolloutMode
   recommendationWindowDays: number
   scaleProfile: ScaleProfile
+  alertProfile: AlertProfile
   recommendedThresholds?: AlertThresholds
   appliedThresholds: AlertThresholds
   impactCurrent?: AlertImpactSummary
@@ -337,6 +338,13 @@ function getRolloutRecommendationTone(value: 'tighten_now' | 'tighten_guarded' |
   return 'text-[var(--v2-ink-soft)]'
 }
 
+function getAlertProfileLabel(profile: AlertProfile): string {
+  if (profile === 'conservative') return 'Conservador'
+  if (profile === 'aggressive') return 'Agressivo'
+  if (profile === 'custom') return 'Customizado'
+  return 'Balanceado'
+}
+
 function buildExecutionTuningRecommendations(input: {
   stateRows: Array<CostBreakdownItem & { callShare: number; costShare: number }>
   functionRows: ExecutionFunctionReliabilityRow[]
@@ -474,7 +482,17 @@ export default function PlatformAdminPanel() {
       setLoading(true)
       try {
         if (!IS_FIREBASE) {
-          throw new Error('O painel admin agregado está disponível apenas no modo Firebase.')
+          setOverview(null)
+          setDaily([])
+          setPlatformBreakdown(null)
+          setRecentExecutions([])
+          setExecutionStateDaily([])
+          setExecutionStateComparison([])
+          setExecutionFunctionComparison([])
+          setExecutionFunctionCalibrations([])
+          setExecutionFunctionTargetAdherenceDaily([])
+          setExecutionFunctionRolloutPolicyPlan(null)
+          return
         }
 
         const [
@@ -1442,6 +1460,9 @@ export default function PlatformAdminPanel() {
       recommendationWindowDays: number
       rolloutMode: RecommendationRolloutMode
       scaleProfile: ScaleProfile
+      alertProfile: AlertProfile
+      latestCreatedAt: string
+      latestAppliedThresholds: AlertThresholds
       count: number
       manualActions: number
       assistedActions: number
@@ -1451,7 +1472,7 @@ export default function PlatformAdminPanel() {
     }>()
 
     recommendationHistory.forEach(entry => {
-      const key = `${entry.recommendationWindowDays}:${entry.rolloutMode}:${entry.scaleProfile}`
+      const key = `${entry.recommendationWindowDays}:${entry.rolloutMode}:${entry.scaleProfile}:${entry.alertProfile}`
       const currentCritical = entry.impactCurrent?.critical ?? 0
       const projectedCritical = entry.impactProjected?.critical ?? currentCritical
       const currentWarning = entry.impactCurrent?.warning ?? 0
@@ -1463,6 +1484,9 @@ export default function PlatformAdminPanel() {
         recommendationWindowDays: entry.recommendationWindowDays,
         rolloutMode: entry.rolloutMode,
         scaleProfile: entry.scaleProfile,
+        alertProfile: entry.alertProfile,
+        latestCreatedAt: entry.createdAt,
+        latestAppliedThresholds: entry.appliedThresholds,
         count: 0,
         manualActions: 0,
         assistedActions: 0,
@@ -1477,6 +1501,11 @@ export default function PlatformAdminPanel() {
       existing.deltaCriticalSum += (projectedCritical - currentCritical)
       existing.deltaWarningSum += (projectedWarning - currentWarning)
       existing.deltaInfoSum += (projectedInfo - currentInfo)
+      if (Date.parse(entry.createdAt) >= Date.parse(existing.latestCreatedAt)) {
+        existing.latestCreatedAt = entry.createdAt
+        existing.latestAppliedThresholds = entry.appliedThresholds
+        existing.alertProfile = entry.alertProfile
+      }
       groups.set(key, existing)
     })
 
@@ -1517,12 +1546,13 @@ export default function PlatformAdminPanel() {
     if (best.effectivenessScore < 40) return null
     const isCurrent = best.recommendationWindowDays === recommendationPolicy.recommendationWindowDays
       && best.rolloutMode === recommendationPolicy.rolloutMode
+      && areThresholdsEqual(best.latestAppliedThresholds, alertThresholds)
     return {
       ...best,
       isCurrent,
-      label: `${best.recommendationWindowDays}d / ${best.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'} / ${best.scaleProfile}`,
+      label: `${best.recommendationWindowDays}d / ${best.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'} / ${best.scaleProfile} / ${getAlertProfileLabel(best.alertProfile)}`,
     }
-  }, [longitudinalCalibrationInsights, recommendationPolicy])
+  }, [alertThresholds, longitudinalCalibrationInsights, recommendationPolicy])
 
   const appendRecommendationHistory = (entry: RecommendationHistoryEntry): RecommendationHistoryEntry[] => {
     return [entry, ...recommendationHistory].slice(0, MAX_RECOMMENDATION_HISTORY_ENTRIES)
@@ -1562,6 +1592,7 @@ export default function PlatformAdminPanel() {
           rollout_mode: entry.rolloutMode,
           recommendation_window_days: entry.recommendationWindowDays,
           scale_profile: entry.scaleProfile,
+          alert_profile: entry.alertProfile,
           recommended_thresholds: entry.recommendedThresholds
             ? {
                 memory_discard_total_7d_critical: entry.recommendedThresholds.discardTotalCritical7d,
@@ -1602,6 +1633,7 @@ export default function PlatformAdminPanel() {
           rolloutMode: recommendationPolicy.rolloutMode,
           recommendationWindowDays: recommendationPolicy.recommendationWindowDays,
           scaleProfile,
+          alertProfile: detectProfileFromThresholds(normalizedThresholds),
           recommendedThresholds: telemetryRecommendation.thresholds,
           appliedThresholds: normalizedThresholds,
           impactCurrent: projectedAlertImpact?.current,
@@ -1652,6 +1684,7 @@ export default function PlatformAdminPanel() {
         rolloutMode: recommendationPolicy.rolloutMode,
         recommendationWindowDays: recommendationPolicy.recommendationWindowDays,
         scaleProfile: telemetryRecommendation.scaleProfile,
+        alertProfile: nextProfile,
         recommendedThresholds: telemetryRecommendation.thresholds,
         appliedThresholds: nextThresholds,
         impactCurrent: projectedAlertImpact?.current,
@@ -1702,6 +1735,7 @@ export default function PlatformAdminPanel() {
         rolloutMode: nextPolicy.rolloutMode,
         recommendationWindowDays: nextPolicy.recommendationWindowDays,
         scaleProfile,
+        alertProfile: nextProfile,
         recommendedThresholds: nextThresholds,
         appliedThresholds: nextThresholds,
         impactCurrent: currentAlertImpact,
@@ -2966,18 +3000,19 @@ export default function PlatformAdminPanel() {
         <div className="rounded-[1.15rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.72)] p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--v2-ink-faint)]">Validação longitudinal</p>
-            <p className="text-[10px] text-[var(--v2-ink-faint)]">Janela × rollout × porte</p>
+            <p className="text-[10px] text-[var(--v2-ink-faint)]">Janela × rollout × porte × perfil</p>
           </div>
           {longitudinalCalibrationInsights.length === 0 ? (
             <p className="text-xs text-[var(--v2-ink-soft)]">Sem histórico suficiente para comparação longitudinal.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-[11px]">
+              <table className="w-full min-w-[820px] text-[11px]">
                 <thead className="bg-[rgba(255,255,255,0.74)] text-[var(--v2-ink-faint)] uppercase tracking-wide">
                   <tr>
                     <th className="px-2 py-1.5 text-left">Janela</th>
                     <th className="px-2 py-1.5 text-left">Rollout</th>
                     <th className="px-2 py-1.5 text-left">Porte</th>
+                    <th className="px-2 py-1.5 text-left">Perfil</th>
                     <th className="px-2 py-1.5 text-right">Amostras</th>
                     <th className="px-2 py-1.5 text-right">Delta crítico</th>
                     <th className="px-2 py-1.5 text-right">Delta atenção</th>
@@ -2988,10 +3023,11 @@ export default function PlatformAdminPanel() {
                 </thead>
                 <tbody className="divide-y divide-[var(--v2-line-soft)]">
                   {longitudinalCalibrationInsights.map(item => (
-                    <tr key={`${item.recommendationWindowDays}-${item.rolloutMode}-${item.scaleProfile}`} className="hover:bg-[rgba(255,255,255,0.66)]">
+                    <tr key={`${item.recommendationWindowDays}-${item.rolloutMode}-${item.scaleProfile}-${item.alertProfile}`} className="hover:bg-[rgba(255,255,255,0.66)]">
                       <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{item.recommendationWindowDays}d</td>
                       <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{item.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'}</td>
                       <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{item.scaleProfile}</td>
+                      <td className="px-2 py-1.5 text-[var(--v2-ink-strong)]">{getAlertProfileLabel(item.alertProfile)}</td>
                       <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{item.count}</td>
                       <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtSignedNumber(item.avgDeltaCritical)}</td>
                       <td className="px-2 py-1.5 text-right text-[var(--v2-ink-strong)]">{fmtSignedNumber(item.avgDeltaWarning)}</td>
@@ -3028,6 +3064,8 @@ export default function PlatformAdminPanel() {
               {!bestPolicyRecommendation.isCurrent && (
                 <button
                   onClick={() => {
+                    setAlertThresholds(bestPolicyRecommendation.latestAppliedThresholds)
+                    setAlertProfile(bestPolicyRecommendation.alertProfile)
                     setRecommendationPolicy(prev => ({
                       ...prev,
                       recommendationWindowDays: bestPolicyRecommendation.recommendationWindowDays,
@@ -3079,6 +3117,7 @@ export default function PlatformAdminPanel() {
                   <th className="px-2 py-2 text-left">Rollout</th>
                   <th className="px-2 py-2 text-left">Janela</th>
                   <th className="px-2 py-2 text-left">Porte</th>
+                  <th className="px-2 py-2 text-left">Perfil</th>
                   <th className="px-2 py-2 text-right">Crítico</th>
                   <th className="px-2 py-2 text-right">Atenção</th>
                   <th className="px-2 py-2 text-right">Info</th>
@@ -3092,6 +3131,7 @@ export default function PlatformAdminPanel() {
                     <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{entry.rolloutMode === 'assisted' ? 'Assistido' : 'Manual'}</td>
                     <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{entry.recommendationWindowDays}d</td>
                     <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{entry.scaleProfile}</td>
+                    <td className="px-2 py-2 text-[var(--v2-ink-strong)]">{getAlertProfileLabel(entry.alertProfile)}</td>
                     <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtImpactDelta(entry.impactCurrent?.critical, entry.impactProjected?.critical)}</td>
                     <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtImpactDelta(entry.impactCurrent?.warning, entry.impactProjected?.warning)}</td>
                     <td className="px-2 py-2 text-right text-[var(--v2-ink-strong)]">{fmtImpactDelta(entry.impactCurrent?.info, entry.impactProjected?.info)}</td>
@@ -3539,6 +3579,9 @@ function parseRecommendationHistory(raw: unknown): RecommendationHistoryEntry[] 
         : 30
 
       const appliedThresholds = asThresholds(data.applied_thresholds) || DEFAULT_ALERT_THRESHOLDS
+      const alertProfile = data.alert_profile === 'conservative' || data.alert_profile === 'balanced' || data.alert_profile === 'aggressive' || data.alert_profile === 'custom'
+        ? data.alert_profile
+        : detectProfileFromThresholds(appliedThresholds)
 
       return {
         id: typeof data.id === 'string' && data.id.trim() ? data.id : `${Date.parse(createdAt) || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -3547,6 +3590,7 @@ function parseRecommendationHistory(raw: unknown): RecommendationHistoryEntry[] 
         rolloutMode,
         recommendationWindowDays,
         scaleProfile,
+        alertProfile,
         recommendedThresholds: asThresholds(data.recommended_thresholds),
         appliedThresholds,
         impactCurrent: asImpact(data.impact_current),
@@ -3563,6 +3607,7 @@ function buildRecommendationHistoryEntry(input: {
   rolloutMode: RecommendationHistoryEntry['rolloutMode']
   recommendationWindowDays: number
   scaleProfile: RecommendationHistoryEntry['scaleProfile']
+  alertProfile: RecommendationHistoryEntry['alertProfile']
   recommendedThresholds?: AlertThresholds
   appliedThresholds: AlertThresholds
   impactCurrent?: AlertImpactSummary
@@ -3575,6 +3620,7 @@ function buildRecommendationHistoryEntry(input: {
     rolloutMode: input.rolloutMode,
     recommendationWindowDays: input.recommendationWindowDays,
     scaleProfile: input.scaleProfile,
+    alertProfile: input.alertProfile,
     recommendedThresholds: input.recommendedThresholds,
     appliedThresholds: input.appliedThresholds,
     impactCurrent: input.impactCurrent,

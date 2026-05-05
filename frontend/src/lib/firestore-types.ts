@@ -77,6 +77,8 @@ export type ProviderSettingsMap = Record<string, ProviderSettingEntry>
 export interface UserSettingsData {
   legacy_migrated_at?: string
   api_keys?: Record<string, string>
+  /** User-scoped runtime overrides for canary/frontend feature flags. */
+  feature_flags?: Record<string, boolean>
   /**
    * Multi-provider configuration. Holds enabled state + per-provider catalog
    * for Anthropic, OpenAI, DeepSeek, Kimi, Qwen, ElevenLabs, Groq, Ollama and
@@ -359,6 +361,18 @@ export interface NotebookSavedSearchEntry extends Omit<NotebookResearchAuditEntr
   updated_at: string
 }
 
+export interface NotebookJurisprudenceSemanticMemoryEntry {
+  source_id: string
+  query: string
+  legal_area?: string | null
+  tribunal_aliases?: string[]
+  query_embedding: number[]
+  embedding_model: string
+  result_count?: number
+  created_at: string
+  updated_at: string
+}
+
 export type StudioArtifactType =
   | 'resumo'
   | 'apresentacao'
@@ -394,6 +408,7 @@ export interface ResearchNotebookData {
   artifacts: StudioArtifact[]
   research_audits?: NotebookResearchAuditEntry[]
   saved_searches?: NotebookSavedSearchEntry[]
+  jurisprudence_semantic_memory?: NotebookJurisprudenceSemanticMemoryEntry[]
   status: 'active' | 'archived'
   created_at: string
   updated_at?: string

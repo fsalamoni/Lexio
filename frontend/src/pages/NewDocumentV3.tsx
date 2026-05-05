@@ -75,8 +75,9 @@ export default function NewDocumentV3() {
       ? 'completed'
       : deriveExecutionState({ progress: p.percent, phase: p.phase, executionState: p.executionState })
     const normalizedPercent = normalizeProgressForExecution({ progress: p.percent, executionState })
+    const progressWithState = { ...p, executionState }
 
-    setPipelineAgents(prev => applyDocumentV3PipelineProgress(prev, p, agentTimers.current, now))
+    setPipelineAgents(prev => applyDocumentV3PipelineProgress(prev, progressWithState, agentTimers.current, now))
     setPipelinePercent(normalizedPercent)
     setPipelineMessage(p.message)
 

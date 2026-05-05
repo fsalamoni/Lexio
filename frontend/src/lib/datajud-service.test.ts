@@ -4,10 +4,15 @@ import {
   _getEndpointCandidatesForHost,
   _resolveLocalProxyEndpoint,
   buildDataJudSearchBody,
+  buildJurisprudenceSemanticMemoryEntry,
+  parseDataJudRankingResponse,
   searchDataJud,
+  fuseDataJudResultsWithSemanticMemory,
   formatDataJudResults,
   classifyJurisprudenceArea,
   classifyResult,
+  rerankDataJudResultsSemantically,
+  rerankSelectedDataJudResults,
   scoreDataJudResult,
   sortByDate,
   groupByArea,
@@ -17,6 +22,7 @@ import {
   type TribunalInfo,
   type DataJudResult,
 } from './datajud-service'
+import type { NotebookSource } from './firestore-types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -659,6 +665,288 @@ describe('scoreDataJudResult', () => {
 
     expect(scoreDataJudResult('responsabilidade civil plano de saúde negativa de cobertura', relevant))
       .toBeGreaterThan(scoreDataJudResult('responsabilidade civil plano de saúde negativa de cobertura', weak))
+  })
+})
+
+describe('rerankDataJudResultsSemantically', () => {
+  function makeSemanticResult(overrides: Partial<DataJudResult> = {}): DataJudResult {
+    return {
+      tribunal: 'stj',
+      tribunalName: 'Superior Tribunal de Justiça',
+      numeroProcesso: '0001234-56.2023.8.26.0100',
+      classe: 'Recurso Especial',
+      classeCode: 1,
+      assuntos: ['Responsabilidade Civil'],
+      orgaoJulgador: '3ª Turma',
+      dataAjuizamento: '2025-01-01',
+      grau: 'SUP',
+      formato: 'Eletrônico',
+      movimentos: [],
+      ...overrides,
+    }
+  }
+
+  it('promotes semantically closer candidates over the top lexical slice', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [
+            { embedding: [1, 0] },
+            { embedding: [0, 1] },
+            { embedding: [0.95, 0.05] },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const lexicalLeader = makeSemanticResult({
+      numeroProcesso: '1',
+      assuntos: ['Contrato Genérico'],
+      ementa: 'Discussão contratual genérica sem negativa de cobertura.',
+      relevanceScore: 90,
+    })
+    const semanticLeader = makeSemanticResult({
+      numeroProcesso: '2',
+      assuntos: ['Plano de Saúde'],
+      ementa: 'NEGATIVA DE COBERTURA EM PLANO DE SAÚDE. DANO MORAL.',
+      relevanceScore: 78,
+    })
+
+    const outcome = await rerankDataJudResultsSemantically(
+      'plano de saúde negativa de cobertura',
+      [lexicalLeader, semanticLeader],
+      { apiKey: 'sk-or-test' },
+    )
+
+    expect(outcome.applied).toBe(true)
+    expect(outcome.candidateCount).toBe(2)
+    expect(outcome.results[0].numeroProcesso).toBe('2')
+    expect(outcome.results[0].relevanceScore).toBeGreaterThan(outcome.results[1].relevanceScore ?? 0)
+  })
+
+  it('falls back cleanly when the embeddings call fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('upstream unavailable', { status: 503 }),
+    )
+
+    const first = makeSemanticResult({ numeroProcesso: '1', relevanceScore: 88, ementa: 'Resultado lexical líder.' })
+    const second = makeSemanticResult({ numeroProcesso: '2', relevanceScore: 81, ementa: 'Resultado lexical secundário.' })
+
+    const outcome = await rerankDataJudResultsSemantically(
+      'plano de saúde negativa de cobertura',
+      [first, second],
+      { apiKey: 'sk-or-test' },
+    )
+
+    expect(outcome.applied).toBe(false)
+    expect(outcome.reason).toContain('Embeddings API error')
+    expect(outcome.results.map(result => result.numeroProcesso)).toEqual(['1', '2'])
+  })
+})
+
+describe('notebook semantic memory helpers', () => {
+  function makeNotebookResult(overrides: Partial<DataJudResult> = {}): DataJudResult {
+    return {
+      tribunal: 'STJ',
+      tribunalName: 'Superior Tribunal de Justiça',
+      numeroProcesso: '0001234-56.2024.8.26.0100',
+      classe: 'Recurso Especial',
+      classeCode: 1,
+      assuntos: ['Plano de Saúde'],
+      orgaoJulgador: '3ª Turma',
+      dataAjuizamento: '2025-01-01',
+      grau: 'SUP',
+      formato: 'Eletrônico',
+      movimentos: [],
+      ementa: 'PLANO DE SAÚDE. NEGATIVA DE COBERTURA. DANO MORAL.',
+      ...overrides,
+    }
+  }
+
+  it('builds a notebook semantic memory entry from the query embedding', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ embedding: [0.1234567, 0.7654321] }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const entry = await buildJurisprudenceSemanticMemoryEntry('plano de saúde negativa de cobertura', {
+      sourceId: 'source-1',
+      legalArea: 'consumer',
+      tribunalAliases: ['stj'],
+      resultCount: 3,
+      createdAt: '2026-05-05T12:00:00.000Z',
+      apiKey: 'sk-or-test',
+    })
+
+    expect(entry).toMatchObject({
+      source_id: 'source-1',
+      query: 'plano de saúde negativa de cobertura',
+      legal_area: 'consumer',
+      tribunal_aliases: ['stj'],
+      embedding_model: 'openai/text-embedding-3-small',
+      result_count: 3,
+      created_at: '2026-05-05T12:00:00.000Z',
+      updated_at: '2026-05-05T12:00:00.000Z',
+    })
+    expect(entry?.query_embedding).toEqual([0.123457, 0.765432])
+  })
+
+  it('fuses current DataJud results with semantically similar notebook jurisprudence memory', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ embedding: [1, 0] }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const currentResult = makeNotebookResult({
+      numeroProcesso: '1',
+      assuntos: ['Contrato Genérico'],
+      ementa: 'Discussão contratual genérica.',
+    })
+    const historicalResult = makeNotebookResult({
+      numeroProcesso: '2',
+      assuntos: ['Plano de Saúde'],
+      ementa: 'PLANO DE SAÚDE. NEGATIVA DE COBERTURA. TUTELA DE URGÊNCIA.',
+    })
+    const storedSource: NotebookSource = {
+      id: 'source-1',
+      type: 'jurisprudencia',
+      name: 'Jurisprudência anterior',
+      reference: 'plano de saúde',
+      results_raw: JSON.stringify([historicalResult]),
+      status: 'indexed',
+      added_at: '2026-05-04T10:00:00.000Z',
+    }
+
+    const outcome = await fuseDataJudResultsWithSemanticMemory(
+      'plano de saúde negativa de cobertura',
+      [currentResult],
+      {
+        memoryEntries: [{
+          source_id: 'source-1',
+          query: 'plano de saúde cobertura',
+          legal_area: 'consumer',
+          tribunal_aliases: ['stj'],
+          query_embedding: [1, 0],
+          embedding_model: 'openai/text-embedding-3-small',
+          result_count: 1,
+          created_at: '2026-05-04T10:00:00.000Z',
+          updated_at: '2026-05-04T10:00:00.000Z',
+        }],
+        sources: [storedSource],
+        legalArea: 'consumer',
+        apiKey: 'sk-or-test',
+        maxTotal: 5,
+      },
+    )
+
+    expect(outcome.applied).toBe(true)
+    expect(outcome.matchedEntries).toBe(1)
+    expect(outcome.importedResults).toBe(1)
+    expect(outcome.results[0].numeroProcesso).toBe('2')
+    expect(outcome.results.map(result => result.numeroProcesso)).toEqual(['2', '1'])
+  })
+})
+
+describe('parseDataJudRankingResponse', () => {
+  it('parses ranking payloads wrapped in json fences', () => {
+    const parsed = parseDataJudRankingResponse([
+      '```json',
+      '{"ranking":[{"index":2,"score":91,"stance":"favoravel"}]}',
+      '```',
+    ].join('\n'))
+
+    expect(parsed).toEqual([{ index: 2, score: 91, stance: 'favoravel' }])
+  })
+
+  it('returns null for invalid json payloads', () => {
+    expect(parseDataJudRankingResponse('{ nope')).toBeNull()
+  })
+})
+
+describe('rerankSelectedDataJudResults', () => {
+  function makeSelectedResult(overrides: Partial<DataJudResult> = {}): DataJudResult {
+    return {
+      tribunal: 'stj',
+      tribunalName: 'Superior Tribunal de Justiça',
+      numeroProcesso: '0001234-56.2023.8.26.0100',
+      classe: 'Recurso Especial',
+      classeCode: 1,
+      assuntos: ['Responsabilidade Civil'],
+      orgaoJulgador: '3ª Turma',
+      dataAjuizamento: '2025-01-01',
+      grau: 'SUP',
+      formato: 'Eletrônico',
+      movimentos: [],
+      ...overrides,
+    }
+  }
+
+  it('applies deterministic local ranking when no llm ranking is provided', () => {
+    const weaker = makeSelectedResult({ numeroProcesso: '1', assuntos: ['Contrato'], ementa: 'Discussão contratual genérica.' })
+    const stronger = makeSelectedResult({
+      numeroProcesso: '2',
+      assuntos: ['Plano de Saúde'],
+      ementa: 'PLANO DE SAÚDE. NEGATIVA DE COBERTURA. DANO MORAL.',
+    })
+
+    const outcome = rerankSelectedDataJudResults(
+      'plano de saúde negativa de cobertura',
+      [weaker, stronger],
+    )
+
+    expect(outcome.strategy).toBe('local')
+    expect(outcome.results[0].numeroProcesso).toBe('2')
+    expect(outcome.results[0].relevanceScore).toBeGreaterThan(outcome.results[1].relevanceScore ?? 0)
+  })
+
+  it('applies llm ordering and appends remaining items in local order', () => {
+    const first = makeSelectedResult({ numeroProcesso: '1', ementa: 'Resultado base um.' })
+    const second = makeSelectedResult({ numeroProcesso: '2', ementa: 'Resultado base dois.' })
+    const third = makeSelectedResult({ numeroProcesso: '3', ementa: 'Resultado base três.' })
+
+    const outcome = rerankSelectedDataJudResults(
+      'responsabilidade civil',
+      [first, second, third],
+      {
+        ranking: [
+          { index: 2, score: 93, stance: 'favoravel' },
+          { index: 1, score: 88, stance: 'neutro' },
+        ],
+      },
+    )
+
+    expect(outcome.strategy).toBe('llm')
+    expect(outcome.appliedCount).toBe(2)
+    expect(outcome.results.map(result => result.numeroProcesso)).toEqual(['2', '1', '3'])
+    expect(outcome.results[0].stance).toBe('favoravel')
+  })
+
+  it('falls back to local ordering when llm ranking is invalid', () => {
+    const weaker = makeSelectedResult({ numeroProcesso: '1', assuntos: ['Contrato'], ementa: 'Discussão contratual genérica.' })
+    const stronger = makeSelectedResult({
+      numeroProcesso: '2',
+      assuntos: ['Plano de Saúde'],
+      ementa: 'PLANO DE SAÚDE. NEGATIVA DE COBERTURA. DANO MORAL.',
+    })
+
+    const outcome = rerankSelectedDataJudResults(
+      'plano de saúde negativa de cobertura',
+      [weaker, stronger],
+      { ranking: [{ index: 99, score: 100 }] },
+    )
+
+    expect(outcome.strategy).toBe('local_fallback')
+    expect(outcome.reason).toBe('invalid_ranking')
+    expect(outcome.results[0].numeroProcesso).toBe('2')
   })
 })
 

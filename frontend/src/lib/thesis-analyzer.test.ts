@@ -271,6 +271,36 @@ describe('analyzeThesisBank parallel pipeline', () => {
     }
   })
 
+  it('emits waiting_io through the progress callback while agents wait on LLM calls', async () => {
+    const progressSnapshots: Array<Array<{ key: string; status: string; executionState?: string }>> = []
+
+    callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => responseForModel(model))
+
+    await analyzeThesisBank(
+      'sk-test',
+      [thesis('t1', 'Tese 1'), thesis('t2', 'Tese 2')],
+      [acervoDoc('doc-1')],
+      modelMap,
+      (agents) => {
+        progressSnapshots.push(agents.map(agent => ({
+          key: agent.key,
+          status: agent.status,
+          executionState: agent.executionState,
+        })))
+      },
+    )
+
+    expect(progressSnapshots.some(snapshot =>
+      snapshot.some(agent => agent.key === 'thesis_catalogador' && agent.executionState === 'waiting_io'),
+    )).toBe(true)
+
+    const finalSnapshot = progressSnapshots[progressSnapshots.length - 1]
+    expect(finalSnapshot.find(agent => agent.key === 'thesis_revisor')).toMatchObject({
+      status: 'done',
+      executionState: 'completed',
+    })
+  })
+
   it('keeps the Revisor JSON repair pass working', async () => {
     callLLMMock.mockImplementation(async (_apiKey, system: string, _prompt, model: string) => {
       if (model === 'revisor-model' && !String(system).includes('corrige saídas JSON')) {

@@ -65,6 +65,8 @@ export interface VideoGenerationInput {
   ttsModel?: string
   /** Target duration per clip in seconds (default 8) */
   clipDurationSeconds?: number
+  /** Optional checkpoint that lets the pipeline resume from the last successful step. */
+  checkpoint?: VideoCheckpoint
 }
 
 export interface VideoScene {
@@ -613,6 +615,108 @@ function generateSegmentId(): string {
   return `seg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+function cloneVideoProductionPackage(pkg: VideoProductionPackage): VideoProductionPackage {
+  return JSON.parse(JSON.stringify(pkg)) as VideoProductionPackage
+}
+
+function requireCheckpointData<T>(value: T | null | undefined, label: string): T {
+  if (value == null) {
+    throw new Error(`Checkpoint de vídeo inválido: ${label} ausente.`)
+  }
+  return value
+}
+
+function countPlannedClips(videoPackage: VideoProductionPackage | null): number {
+  if (!videoPackage) return 0
+  return videoPackage.scenes.reduce((sum, scene) => sum + (scene.clips?.length || 0), 0)
+}
+
+function countGeneratedClipImages(videoPackage: VideoProductionPackage | null): number {
+  if (!videoPackage) return 0
+  return videoPackage.scenes.reduce((sum, scene) => sum + (scene.clips?.filter(clip => Boolean(clip.generatedImageUrl)).length || 0), 0)
+}
+
+function countGeneratedNarrations(videoPackage: VideoProductionPackage | null): number {
+  if (!videoPackage) return 0
+  return videoPackage.narration.filter(segment => Boolean(segment.generatedAudioUrl)).length
+}
+
+function buildVideoProductionPackage(
+  input: VideoGenerationInput,
+  planData: Record<string, unknown>,
+  directedScenes: Record<string, unknown>,
+  designData: Record<string, unknown>,
+  compositorData: Record<string, unknown>,
+  narratorData: Record<string, unknown>,
+  reviewData: Record<string, unknown>,
+): VideoProductionPackage {
+  const scenes: VideoScene[] = ((directedScenes.scenes as Array<Record<string, unknown>>) || []).map((sceneData, index) => {
+    const imagePrompt = ((designData.imagePrompts as Array<Record<string, unknown>>) || []).find((prompt) => prompt.sceneNumber === (sceneData.number || index + 1))
+    const videoPrompt = ((designData.videoPrompts as Array<Record<string, unknown>>) || []).find((prompt) => prompt.sceneNumber === (sceneData.number || index + 1))
+    return {
+      number: (sceneData.number as number) || index + 1,
+      timeStart: (sceneData.timeStart as string) || '00:00',
+      timeEnd: (sceneData.timeEnd as string) || '00:00',
+      duration: (sceneData.duration as number) || 30,
+      narration: (sceneData.narration as string) || '',
+      visual: (sceneData.visual as string) || '',
+      imagePrompt: (imagePrompt?.prompt as string) || '',
+      videoPrompt: (videoPrompt?.prompt as string) || '',
+      transition: (sceneData.transition as string) || 'corte',
+      soundtrack: (sceneData.soundtrack as string) || '',
+      lowerThird: sceneData.lowerThird as string | undefined,
+      notes: sceneData.notes as string | undefined,
+      clips: [],
+    }
+  })
+
+  const narration: NarrationSegment[] = ((narratorData.narrationSegments as Array<Record<string, unknown>>) || []).map((segment) => ({
+    sceneNumber: (segment.sceneNumber as number) || 1,
+    text: (segment.text as string) || '',
+    voiceStyle: (segment.voiceStyle as string) || 'formal',
+    timeStart: (segment.timeStart as string) || '00:00',
+    timeEnd: (segment.timeEnd as string) || '00:00',
+    pauseAfter: segment.pauseAfter as number | undefined,
+  }))
+
+  const tracks: VideoTrack[] = ((compositorData.tracks as Array<Record<string, unknown>>) || []).map((track) => ({
+    type: (track.type as VideoTrack['type']) || 'video',
+    label: (track.label as string) || '',
+    segments: ((track.segments as Array<Record<string, unknown>>) || []).map((segment) => ({
+      id: generateSegmentId(),
+      startTime: (segment.startTime as number) || 0,
+      endTime: (segment.endTime as number) || 0,
+      label: (segment.label as string) || '',
+      content: (segment.content as string) || '',
+      sceneNumber: segment.sceneNumber as number | undefined,
+      metadata: segment.metadata as Record<string, string> | undefined,
+    })),
+  }))
+
+  const designGuideRaw = (planData.designGuide as Record<string, unknown>) || {}
+  const designGuide: DesignGuide = {
+    colorPalette: (designGuideRaw.colorPalette as string[]) || ['#1a1a2e', '#16213e', '#0f3460', '#533483', '#e94560'],
+    fontFamily: (designGuideRaw.fontFamily as string) || 'Inter',
+    style: (designGuideRaw.style as string) || 'Moderno e profissional',
+    characterDescriptions: (designGuideRaw.characterDescriptions as { name: string; description: string }[]) || [],
+    recurringElements: (designGuideRaw.recurringElements as string[]) || [],
+  }
+
+  return {
+    title: (planData.title as string) || input.topic,
+    totalDuration: (planData.totalDuration as number) || 600,
+    scenes,
+    narration,
+    tracks: tracks.length > 0 ? tracks : buildDefaultTracks(scenes, narration),
+    designGuide,
+    qualityReport: (reviewData.report as string) || 'Produção aprovada.',
+    productionNotes: [
+      ...((planData.productionNotes as string[]) || []),
+      ...((reviewData.productionNotes as string[]) || []),
+    ],
+  }
+}
+
 const DEFAULT_IMAGE_BATCH_CONCURRENCY = 3
 const DEFAULT_TTS_BATCH_CONCURRENCY = 2
 const MAX_IMAGE_BATCH_CONCURRENCY = 5
@@ -633,28 +737,56 @@ export async function runVideoGenerationPipeline(
   await validateScopedAgentModels('video_pipeline_models', models)
   const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
   const resolveFb = buildPipelineFallbackResolver(VIDEO_PIPELINE_AGENT_DEFS, fallbackConfig)
-  const executions: VideoGenerationStepExecution[] = []
   const wantMedia = input.generateMedia !== false // default true
   const totalSteps = wantMedia ? 11 : 8
   const mediaRuntimeHints = getRuntimeConcurrencyHints()
+  const executions: VideoGenerationStepExecution[] = input.checkpoint?.executions
+    ? [...input.checkpoint.executions]
+    : []
 
   // Checkpoint state for resumability — updated after each successful step
-  const checkpoint: VideoCheckpoint = {
-    completedStep: 0,
-    totalSteps,
-    executions,
-    mediaErrors: [],
-    imagesGenerated: 0,
-    ttsGenerated: 0,
-    clipsDone: 0,
-  }
+  const checkpoint: VideoCheckpoint = input.checkpoint
+    ? {
+        ...input.checkpoint,
+        totalSteps,
+        executions,
+        mediaErrors: [...(input.checkpoint.mediaErrors || [])],
+        imagesGenerated: input.checkpoint.imagesGenerated || 0,
+        ttsGenerated: input.checkpoint.ttsGenerated || 0,
+        clipsDone: input.checkpoint.clipsDone || 0,
+      }
+    : {
+        completedStep: 0,
+        totalSteps,
+        executions,
+        mediaErrors: [],
+        imagesGenerated: 0,
+        ttsGenerated: 0,
+        clipsDone: 0,
+      }
+
+  let planData = (checkpoint.planData ?? {}) as Record<string, unknown>
+  let scriptData = (checkpoint.scriptData ?? {}) as Record<string, unknown>
+  let directedScenes = (checkpoint.directedScenes ?? {}) as Record<string, unknown>
+  let storyboardData = (checkpoint.storyboardData ?? {}) as Record<string, unknown>
+  let designData = (checkpoint.designData ?? {}) as Record<string, unknown>
+  let compositorData = (checkpoint.compositorData ?? {}) as Record<string, unknown>
+  let narratorData = (checkpoint.narratorData ?? {}) as Record<string, unknown>
+  let reviewData = (checkpoint.reviewData ?? {}) as Record<string, unknown>
+  let videoPackage = checkpoint.assembledPackage ? cloneVideoProductionPackage(checkpoint.assembledPackage) : null
+  const mediaErrors = checkpoint.mediaErrors
+  let imagesGenerated = checkpoint.imagesGenerated || countGeneratedClipImages(videoPackage)
+  let ttsGenerated = checkpoint.ttsGenerated || countGeneratedNarrations(videoPackage)
+  let totalClipsPlanned = checkpoint.clipsDone || countPlannedClips(videoPackage)
+  const canResumeFromAssembledPackage = checkpoint.completedStep >= 9 && Boolean(checkpoint.assembledPackage)
 
   try {
 
   // ── Step 1: Planejador de Produção ────────────────────────────────────────
+  if (checkpoint.completedStep < 1) {
   onProgress?.(1, totalSteps, 'video_planejador', 'Planejador de Produção')
 
-  const { data: planData, result: planResult } = await safeCallAgent(input.apiKey, models.video_planejador, `
+  const { data, result: planResult } = await safeCallAgent(input.apiKey, models.video_planejador, `
 Você é um Planejador de Produção de vídeo profissional.
 
 Analise o roteiro abaixo e crie um plano de produção detalhado.
@@ -697,13 +829,18 @@ Requisitos:
 - Planeje a duração de cada segmento em segundos
 - Total deve somar a duração indicada no roteiro
 - O Guia de Design será usado como REFERÊNCIA OBRIGATÓRIA por todos os demais agentes — seja o mais específico possível`, 'video_planejador', executions, 2, signal, resolveFb('video_planejador', models.video_planejador))
+  planData = data as Record<string, unknown>
   if (planResult) onProgress?.(1, totalSteps, 'video_planejador', 'Planejador de Produção', buildVideoProgressMetaFromResult(planResult))
   checkpoint.completedStep = 1; checkpoint.planData = planData
+  } else if (!canResumeFromAssembledPackage) {
+    planData = requireCheckpointData(checkpoint.planData, 'planData do Planejador')
+  }
 
   // ── Step 2: Roteirista (refinar roteiro) ──────────────────────────────────
+  if (checkpoint.completedStep < 2) {
   onProgress?.(2, totalSteps, 'video_roteirista', 'Roteirista')
 
-  const { data: scriptData, result: scriptResult } = await safeCallAgent(input.apiKey, models.video_roteirista, `
+  const { data, result: scriptResult } = await safeCallAgent(input.apiKey, models.video_roteirista, `
 Você é um Roteirista profissional de vídeo. Refine e expanda o roteiro abaixo para produção.
 
 ROTEIRO ORIGINAL:
@@ -746,14 +883,19 @@ Requisitos adicionais:
 - Narração detalhada com marcações de tom e ênfase
 - Cada cena deve ter indicação precisa de início e fim
 - Cronologia e encadeamento lógico de ideias`, 'video_roteirista', executions, 2, signal, resolveFb('video_roteirista', models.video_roteirista))
+  scriptData = data as Record<string, unknown>
   if (scriptResult) onProgress?.(2, totalSteps, 'video_roteirista', 'Roteirista', buildVideoProgressMetaFromResult(scriptResult))
   if (!scriptData.scenes) scriptData.scenes = []
   checkpoint.completedStep = 2; checkpoint.scriptData = scriptData
+  } else if (!canResumeFromAssembledPackage) {
+    scriptData = requireCheckpointData(checkpoint.scriptData, 'scriptData do Roteirista')
+  }
 
   // ── Step 3: Diretor de Cenas ──────────────────────────────────────────────
+  if (checkpoint.completedStep < 3) {
   onProgress?.(3, totalSteps, 'video_diretor_cena', 'Diretor de Cenas')
 
-  const { data: directedScenes, result: directorResult } = await safeCallAgent(input.apiKey, models.video_diretor_cena, `
+  const { data, result: directorResult } = await safeCallAgent(input.apiKey, models.video_diretor_cena, `
 Você é um Diretor de Cenas profissional. Refine as cenas com instruções técnicas detalhadas.
 
 CENAS DO ROTEIRO:
@@ -794,14 +936,19 @@ Requisitos adicionais:
 - Adicione instruções de câmera para cada cena
 - Refine os timings para encadeamento suave
 - Garanta continuidade visual entre cenas consecutivas`, 'video_diretor_cena', executions, 2, signal, resolveFb('video_diretor_cena', models.video_diretor_cena))
+  directedScenes = data as Record<string, unknown>
   if (directorResult) onProgress?.(3, totalSteps, 'video_diretor_cena', 'Diretor de Cenas', buildVideoProgressMetaFromResult(directorResult))
   if (!directedScenes.scenes) directedScenes.scenes = scriptData.scenes || []
   checkpoint.completedStep = 3; checkpoint.directedScenes = directedScenes
+  } else if (!canResumeFromAssembledPackage) {
+    directedScenes = requireCheckpointData(checkpoint.directedScenes, 'directedScenes do Diretor de Cenas')
+  }
 
   // ── Step 4: Storyboarder ──────────────────────────────────────────────────
+  if (checkpoint.completedStep < 4) {
   onProgress?.(4, totalSteps, 'video_storyboarder', 'Storyboarder')
 
-  const { data: storyboardData, result: storyboardResult } = await safeCallAgent(input.apiKey, models.video_storyboarder, `
+  const { data, result: storyboardResult } = await safeCallAgent(input.apiKey, models.video_storyboarder, `
 Você é um Storyboarder profissional. Crie descrições visuais frame-a-frame para cada cena.
 
 CENAS DIRIGIDAS:
@@ -839,13 +986,18 @@ Requisitos adicionais:
 - 2-4 frames chave por cena (keyframes)
 - Descrições visuais detalhadas e precisas
 - Indique posição e tamanho dos elementos na composição`, 'video_storyboarder', executions, 2, signal, resolveFb('video_storyboarder', models.video_storyboarder))
+  storyboardData = data as Record<string, unknown>
   if (storyboardResult) onProgress?.(4, totalSteps, 'video_storyboarder', 'Storyboarder', buildVideoProgressMetaFromResult(storyboardResult))
   checkpoint.completedStep = 4; checkpoint.storyboardData = storyboardData
+  } else if (!canResumeFromAssembledPackage) {
+    storyboardData = requireCheckpointData(checkpoint.storyboardData, 'storyboardData do Storyboarder')
+  }
 
   // ── Step 5: Designer Visual ───────────────────────────────────────────────
+  if (checkpoint.completedStep < 5) {
   onProgress?.(5, totalSteps, 'video_designer', 'Designer Visual')
 
-  const { data: designData, result: designResult } = await safeCallAgent(input.apiKey, models.video_designer, `
+  const { data, result: designResult } = await safeCallAgent(input.apiKey, models.video_designer, `
 Você é um Designer Visual de produção de vídeo. Gere prompts detalhados de geração de imagem para cada cena.
 
 STORYBOARD:
@@ -895,13 +1047,18 @@ Requisitos adicionais:
 - Um prompt de imagem principal por cena (thumbnail/keyframe)
 - Um prompt de vídeo curto por cena (para composição)
 - Prompts em inglês para melhor compatibilidade com modelos de geração`, 'video_designer', executions, 2, signal, resolveFb('video_designer', models.video_designer))
+  designData = data as Record<string, unknown>
   if (designResult) onProgress?.(5, totalSteps, 'video_designer', 'Designer Visual', buildVideoProgressMetaFromResult(designResult))
   checkpoint.completedStep = 5; checkpoint.designData = designData
+  } else if (!canResumeFromAssembledPackage) {
+    designData = requireCheckpointData(checkpoint.designData, 'designData do Designer Visual')
+  }
 
   // ── Step 6: Compositor de Vídeo ───────────────────────────────────────────
+  if (checkpoint.completedStep < 6) {
   onProgress?.(6, totalSteps, 'video_compositor', 'Compositor de Vídeo')
 
-  const { data: compositorData, result: compositorResult } = await safeCallAgent(input.apiKey, models.video_compositor, `
+  const { data, result: compositorResult } = await safeCallAgent(input.apiKey, models.video_compositor, `
 Você é um Compositor de Vídeo profissional. Monte a timeline final do vídeo com todas as faixas.
 
 CENAS DIRIGIDAS:
@@ -996,13 +1153,18 @@ REGRA DE HARMONIA (OBRIGATÓRIA):
 - Transições entre cenas devem seguir um PADRÃO UNIFORME — não misture tipos
 - Trilha sonora deve ter continuidade — NÃO mude de gênero entre segmentos
 - Lower thirds e overlays devem seguir o MESMO estilo de design em todo o vídeo`, 'video_compositor', executions, 2, signal, resolveFb('video_compositor', models.video_compositor))
+  compositorData = data as Record<string, unknown>
   if (compositorResult) onProgress?.(6, totalSteps, 'video_compositor', 'Compositor de Vídeo', buildVideoProgressMetaFromResult(compositorResult))
   checkpoint.completedStep = 6; checkpoint.compositorData = compositorData
+  } else if (!canResumeFromAssembledPackage) {
+    compositorData = requireCheckpointData(checkpoint.compositorData, 'compositorData do Compositor de Vídeo')
+  }
 
   // ── Step 7: Narrador ──────────────────────────────────────────────────────
+  if (checkpoint.completedStep < 7) {
   onProgress?.(7, totalSteps, 'video_narrador', 'Narrador')
 
-  const { data: narratorData, result: narratorResult } = await safeCallAgent(input.apiKey, models.video_narrador, `
+  const { data, result: narratorResult } = await safeCallAgent(input.apiKey, models.video_narrador, `
 Você é um Narrador profissional e diretor de locução. Prepare o script final de narração com marcações de timing.
 
 CENAS:
@@ -1048,13 +1210,18 @@ Requisitos adicionais:
 - Marcações de ênfase com *asteriscos*
 - Indicações de [pausa] onde necessário
 - Timing sincronizado com a timeline do compositor`, 'video_narrador', executions, 2, signal, resolveFb('video_narrador', models.video_narrador))
+  narratorData = data as Record<string, unknown>
   if (narratorResult) onProgress?.(7, totalSteps, 'video_narrador', 'Narrador', buildVideoProgressMetaFromResult(narratorResult))
   checkpoint.completedStep = 7; checkpoint.narratorData = narratorData
+  } else if (!canResumeFromAssembledPackage) {
+    narratorData = requireCheckpointData(checkpoint.narratorData, 'narratorData do Narrador')
+  }
 
   // ── Step 8: Revisor Final ─────────────────────────────────────────────────
+  if (checkpoint.completedStep < 8) {
   onProgress?.(8, totalSteps, 'video_revisor', 'Revisor Final de Vídeo')
 
-  const { data: reviewData, result: reviewResult } = await safeCallAgent(input.apiKey, models.video_revisor, `
+  const { data, result: reviewResult } = await safeCallAgent(input.apiKey, models.video_revisor, `
 Você é o Revisor Final de Vídeo. Sua missão PRINCIPAL é garantir a HARMONIA e CONSISTÊNCIA VISUAL ABSOLUTA de todo o pacote de produção.
 
 PLANO:
@@ -1119,81 +1286,22 @@ Requisitos adicionais:
 - Valide sincronização entre narração e visual
 - Avalie encadeamento lógico de ideias
 - Identifique possíveis problemas e sugira melhorias`, 'video_revisor', executions, 2, signal, resolveFb('video_revisor', models.video_revisor))
+  reviewData = data as Record<string, unknown>
   if (reviewResult) onProgress?.(8, totalSteps, 'video_revisor', 'Revisor Final de Vídeo', buildVideoProgressMetaFromResult(reviewResult))
   checkpoint.completedStep = 8; checkpoint.reviewData = reviewData
+  } else if (!canResumeFromAssembledPackage) {
+    reviewData = requireCheckpointData(checkpoint.reviewData, 'reviewData do Revisor Final')
+  }
 
   // ── Assemble final package ────────────────────────────────────────────────
-
-  const scenes: VideoScene[] = ((directedScenes as Record<string, unknown>).scenes as Array<Record<string, unknown>> || []).map((s: Record<string, unknown>, i: number) => {
-    const imageP = ((designData as Record<string, unknown>).imagePrompts as Array<Record<string, unknown>> || []).find((p: Record<string, unknown>) => p.sceneNumber === (s.number || i + 1))
-    const videoP = ((designData as Record<string, unknown>).videoPrompts as Array<Record<string, unknown>> || []).find((p: Record<string, unknown>) => p.sceneNumber === (s.number || i + 1))
-    return {
-      number: (s.number as number) || i + 1,
-      timeStart: (s.timeStart as string) || '00:00',
-      timeEnd: (s.timeEnd as string) || '00:00',
-      duration: (s.duration as number) || 30,
-      narration: (s.narration as string) || '',
-      visual: (s.visual as string) || '',
-      imagePrompt: (imageP?.prompt as string) || '',
-      videoPrompt: (videoP?.prompt as string) || '',
-      transition: (s.transition as string) || 'corte',
-      soundtrack: (s.soundtrack as string) || '',
-      lowerThird: s.lowerThird as string | undefined,
-      notes: s.notes as string | undefined,
-      clips: [],
-    }
-  })
-
-  const narration: NarrationSegment[] = ((narratorData as Record<string, unknown>).narrationSegments as Array<Record<string, unknown>> || []).map((n: Record<string, unknown>) => ({
-    sceneNumber: (n.sceneNumber as number) || 1,
-    text: (n.text as string) || '',
-    voiceStyle: (n.voiceStyle as string) || 'formal',
-    timeStart: (n.timeStart as string) || '00:00',
-    timeEnd: (n.timeEnd as string) || '00:00',
-    pauseAfter: n.pauseAfter as number | undefined,
-  }))
-
-  const tracks: VideoTrack[] = ((compositorData as Record<string, unknown>).tracks as Array<Record<string, unknown>> || []).map((t: Record<string, unknown>) => ({
-    type: (t.type as VideoTrack['type']) || 'video',
-    label: (t.label as string) || '',
-    segments: ((t.segments as Array<Record<string, unknown>>) || []).map((seg: Record<string, unknown>) => ({
-      id: generateSegmentId(),
-      startTime: (seg.startTime as number) || 0,
-      endTime: (seg.endTime as number) || 0,
-      label: (seg.label as string) || '',
-      content: (seg.content as string) || '',
-      sceneNumber: seg.sceneNumber as number | undefined,
-      metadata: seg.metadata as Record<string, string> | undefined,
-    })),
-  }))
-
-  const designGuide: DesignGuide = {
-    colorPalette: (planData.designGuide as Record<string, unknown>)?.colorPalette as string[] || ['#1a1a2e', '#16213e', '#0f3460', '#533483', '#e94560'],
-    fontFamily: ((planData.designGuide as Record<string, unknown>)?.fontFamily as string) || 'Inter',
-    style: ((planData.designGuide as Record<string, unknown>)?.style as string) || 'Moderno e profissional',
-    characterDescriptions: ((planData.designGuide as Record<string, unknown>)?.characterDescriptions as { name: string; description: string }[]) || [],
-    recurringElements: ((planData.designGuide as Record<string, unknown>)?.recurringElements as string[]) || [],
+  if (!videoPackage) {
+    videoPackage = buildVideoProductionPackage(input, planData, directedScenes, designData, compositorData, narratorData, reviewData)
   }
+  checkpoint.assembledPackage = videoPackage
 
-  const videoPackage: VideoProductionPackage = {
-    title: (planData.title as string) || input.topic,
-    totalDuration: (planData.totalDuration as number) || 600,
-    scenes,
-    narration,
-    tracks: tracks.length > 0 ? tracks : buildDefaultTracks(scenes, narration),
-    designGuide,
-    qualityReport: (reviewData.report as string) || 'Produção aprovada.',
-    productionNotes: [
-      ...((planData.productionNotes as string[]) || []),
-      ...((reviewData.productionNotes as string[]) || []),
-    ],
-  }
-
-  // ── Media generation tracking ──────────────────────────────────────────────
-  const mediaErrors: string[] = []
-  let imagesGenerated = 0
-  let ttsGenerated = 0
-  let totalClipsPlanned = 0
+  const scenes = videoPackage.scenes
+  const narration = videoPackage.narration
+  const designGuide = videoPackage.designGuide
 
   // ── Step 9: Clip Subdivision (scene-by-scene loop) ────────────────────────
   //
@@ -1201,7 +1309,7 @@ Requisitos adicionais:
   // of ~clipDuration seconds each. Each clip gets its own image prompt
   // with continuity context from the previous clip.
   //
-  if (wantMedia && scenes.length > 0) {
+  if (wantMedia && scenes.length > 0 && checkpoint.completedStep < 9) {
     const clipDuration = input.clipDurationSeconds || 8
     const clipPlannerModel = models.video_clip_planner || models.video_designer
     const clipInterSceneDelayEnv = Number(import.meta.env.VITE_VIDEO_CLIP_INTER_SCENE_DELAY_MS as string | undefined)
@@ -1346,6 +1454,11 @@ REQUISITOS OBRIGATÓRIOS:
     }
 
     console.log(`[Video] Step 9 complete: ${totalClipsPlanned} clips planned across ${scenes.length} scenes`)
+    checkpoint.completedStep = 9
+    checkpoint.clipsDone = totalClipsPlanned
+    checkpoint.assembledPackage = videoPackage
+  } else if (wantMedia && scenes.length > 0) {
+    totalClipsPlanned = checkpoint.clipsDone || countPlannedClips(videoPackage)
   }
 
   // ── Step 10: Image Generation Loop (per scene → per clip) ─────────────────
@@ -1354,7 +1467,7 @@ REQUISITOS OBRIGATÓRIOS:
   // Each clip's image prompt was crafted with continuity context.
   // Scenes without clips (if Step 9 was skipped) fall back to single images.
   //
-  if (wantMedia && scenes.length > 0) {
+  if (wantMedia && scenes.length > 0 && checkpoint.completedStep < 10) {
     const imageModel = input.imageModel || models.video_image_generator || DEFAULT_IMAGE_MODEL
     const imageConcurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
       envValue: import.meta.env.VITE_VIDEO_IMAGE_BATCH_CONCURRENCY as string | undefined,
@@ -1369,7 +1482,7 @@ REQUISITOS OBRIGATÓRIOS:
     const imageRuntimeProfile = buildRuntimeProfileKey(mediaRuntimeHints, imageConcurrencyDiagnostics)
 
     // Collect all clips that need images
-    const allClips = scenes.flatMap(s => (s.clips || []).filter(c => c.imagePrompt))
+    const allClips = scenes.flatMap(s => (s.clips || []).filter(c => c.imagePrompt && !c.generatedImageUrl))
 
     console.log(`[Video] Step 10: Generating images for ${allClips.length} clips with model ${imageModel} (concurrency=${imageBatchConcurrency})`)
 
@@ -1422,6 +1535,7 @@ REQUISITOS OBRIGATÓRIOS:
             if (clip) {
               clip.generatedImageUrl = r.value.imageDataUrl
               imagesGenerated++
+              checkpoint.imagesGenerated = imagesGenerated
             }
             // Set scene thumbnail to first clip's image
             if (r.value.clipNumber === 1) {
@@ -1502,10 +1616,15 @@ REQUISITOS OBRIGATÓRIOS:
     }
 
     console.log(`[Video] Step 10 complete: ${imagesGenerated}/${allClips.length} clip images generated`)
+    checkpoint.completedStep = 10
+    checkpoint.imagesGenerated = imagesGenerated
+    checkpoint.assembledPackage = videoPackage
+  } else if (wantMedia && scenes.length > 0) {
+    imagesGenerated = checkpoint.imagesGenerated || countGeneratedClipImages(videoPackage)
   }
 
   // ── Step 11: Generate Narration TTS ───────────────────────────────────────
-  if (wantMedia && narration.length > 0) {
+  if (wantMedia && narration.length > 0 && checkpoint.completedStep < 11) {
     const ttsVoice = input.ttsVoice || 'nova'
     const ttsModel = input.ttsModel || DEFAULT_OPENROUTER_TTS_MODEL
     const ttsConcurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
@@ -1519,7 +1638,7 @@ REQUISITOS OBRIGATÓRIOS:
     const ttsRuntimeHintsLabel = formatRuntimeHints(mediaRuntimeHints)
     const ttsRuntimeMeta = `${formatAdaptiveConcurrency(ttsConcurrencyDiagnostics)} | ${ttsRuntimeHintsLabel}`
     const ttsRuntimeProfile = buildRuntimeProfileKey(mediaRuntimeHints, ttsConcurrencyDiagnostics)
-    const validSegments = narration.filter(s => s.text && s.text.trim().length >= 5)
+    const validSegments = narration.filter(s => s.text && s.text.trim().length >= 5 && !s.generatedAudioUrl)
 
     console.log(`[Video] Step 11: Generating TTS for ${validSegments.length} narration segments with voice ${ttsVoice} (concurrency=${ttsBatchConcurrency})`)
 
@@ -1585,6 +1704,7 @@ REQUISITOS OBRIGATÓRIOS:
         const { segment, audioDataUrl, durationMs, costUsd } = result.value
         segment.generatedAudioUrl = audioDataUrl
         ttsGenerated++
+        checkpoint.ttsGenerated = ttsGenerated
 
         // Also update the corresponding narration track segment
         const narrationTrack = videoPackage.tracks.find(t => t.type === 'narration')
@@ -1642,6 +1762,11 @@ REQUISITOS OBRIGATÓRIOS:
     }
 
     console.log(`[Video] Step 11 complete: ${ttsGenerated}/${validSegments.length} TTS segments generated`)
+    checkpoint.completedStep = 11
+    checkpoint.ttsGenerated = ttsGenerated
+    checkpoint.assembledPackage = videoPackage
+  } else if (wantMedia && narration.length > 0) {
+    ttsGenerated = checkpoint.ttsGenerated || countGeneratedNarrations(videoPackage)
   }
 
   // ── Add media status to production notes ─────────────────────────────────
@@ -1671,7 +1796,13 @@ REQUISITOS OBRIGATÓRIOS:
     }
   }
 
-  return { package: videoPackage, executions, mediaErrors, checkpoint: { ...checkpoint, completedStep: totalSteps, assembledPackage: videoPackage } }
+  checkpoint.completedStep = totalSteps
+  checkpoint.imagesGenerated = imagesGenerated
+  checkpoint.ttsGenerated = ttsGenerated
+  checkpoint.clipsDone = totalClipsPlanned || countPlannedClips(videoPackage)
+  checkpoint.assembledPackage = videoPackage
+
+  return { package: videoPackage, executions, mediaErrors, checkpoint: { ...checkpoint } }
 
   } catch (err) {
     // Attach checkpoint to the error so the caller can offer resumption

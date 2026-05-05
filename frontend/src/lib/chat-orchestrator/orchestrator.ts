@@ -1,5 +1,6 @@
 import type { ChatTrailEvent } from '../firestore-types'
 import { createBudget } from './budget'
+import { dispatchSpecialistAgent } from './dispatch'
 import { callOrchestratorLLM, appendToolMessage } from './orchestrator-llm'
 import { runCritic } from './quality'
 import { buildSkillRegistry, listCallableAgentDescriptions } from './skill-registry'
@@ -337,8 +338,6 @@ async function forceFinalize(history: OrchestratorMessage[], ctx: SkillContext):
     '',
     'Produza a resposta final em markdown rico (pt-BR), respeitando o que foi descoberto. Se faltar informação, declare isso explicitamente em vez de inventar.',
   ].join('\n')
-
-  const { dispatchSpecialistAgent } = await import('./dispatch')
 
   const onToken = ctx.onAgentToken
     ? (delta: string, total: string) => ctx.onAgentToken!(FINAL_FORCE_AGENT_KEY, delta, total)

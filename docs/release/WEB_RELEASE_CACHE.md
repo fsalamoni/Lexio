@@ -1,9 +1,9 @@
 # Web Release Cache
 
-Last update: 2026-04-26
+Last update: 2026-05-05
 
 ## Execution Snapshot
-- Branch: feature/w40-latency-progress-contract
+- Branch: main
 - Sync status: up-to-date with origin/main after fast-forward
 - Local release hardening: completed
 - Wave 27 deploy verification: completed
@@ -77,29 +77,47 @@ Last update: 2026-04-26
 - Wave 39 commit + push: completed (`a2ed246`)
 - Release workflow dispatch (wave39): completed (release-web.yml run 24939740593 success)
 
-## Current Wave Cache (2026-04-26)
+## Current Wave Cache (2026-05-05)
 
-- Wave tag: wave40-latency-progress-contract-subwave1
-- Scope: primeira subonda de implementação focada em latência de documentos e demonstração confiável do trabalho dos agentes, com contrato de progresso canônico (`running <= 99`, `completed = 100`) e otimizações seguras sem impacto no vínculo com banco.
+- Wave tag: wave40-latency-progress-contract-subwave2
+- Scope: segunda subonda da Wave 40 consolidando caches user-scoped, canários runtime, progresso explícito ponta a ponta, retomada real do pipeline de vídeo por checkpoint, fechamento da validação longitudinal do admin por perfil operacional de thresholds e a trilha jurisprudencial completa desta rodada: reranking semântico browser-side + reranking jurídico com fallback funcional compartilhado + memória semântica persistente por caderno.
 - Files touched (wave40/code+docs):
 	- frontend/src/lib/document-pipeline.ts
 	- frontend/src/pages/NewDocument.tsx
 	- frontend/src/pages/DocumentDetail.tsx
 	- frontend/src/lib/notebook-audio-pipeline.ts
 	- frontend/src/lib/generation-service.ts
+	- frontend/src/lib/generation-service.orchestration.test.ts
+	- frontend/src/lib/datajud-service.ts
+	- frontend/src/lib/datajud-service.test.ts
+	- frontend/src/lib/firestore-service.ts
+	- frontend/src/lib/firestore-types.ts
+	- frontend/src/lib/v3-agents/jurisprudence-researcher.ts
 	- frontend/src/components/AgentTrailProgressModal.tsx
+	- frontend/src/components/VideoGenerationCostModal.tsx
+	- frontend/src/lib/video-generation-pipeline.ts
+	- frontend/src/lib/video-generation-pipeline.test.ts
+	- frontend/src/pages/ResearchNotebook.tsx
+	- frontend/src/pages/labs/ResearchNotebookV2.tsx
+	- frontend/src/pages/PlatformAdminPanel.tsx
 	- docs/PLANO.md
 	- NOTEBOOK_IMPLEMENTATION_STATUS.md
 	- docs/release/WEB_RELEASE_INDEX.md
 	- docs/MANIFEST.json
 	- docs/release/WEB_RELEASE_CACHE.md
+	- docs/release/SUBONDA2_CLOSEOUT.md
+	- docs/release/CROSS_PLATFORM_HANDOFF.md
 
-## Current Validation Cache (2026-04-26)
-- frontend typecheck: completed
-- frontend test: completed
-- frontend tests result: 38 files, 299 tests passed
+## Current Validation Cache (2026-05-05)
+- frontend typecheck: completed (`npm run typecheck` com `TYPECHECK_EXIT:0`)
+- frontend focused test: completed
+- frontend focused tests result: `src/lib/video-generation-pipeline.test.ts` passou (4/4) e `src/lib/datajud-service.test.ts` passou (73/73)
+- frontend build: completed (`vite build` em 14.02s)
+- frontend diagnostics: completed (`get_errors` limpo em `frontend/` após a integração da memória semântica)
+- frontend public smoke: completed (`npm run preview -- --host 127.0.0.1 --port 4173`; `/login` carregou com sucesso no browser local)
+- frontend authenticated smoke: completed in local smoke mode (`npm run build:smoke` + `npm run preview:smoke`; fluxo validado com rejeição de senha incorreta, login fixo, dashboard/admin/notebook)
 - release-web dispatch (wave40): not started (subonda em branch)
-- Quality gates (wave40): local-only validation complete (typecheck + tests)
+- Quality gates (wave40): validação local forte do lote atual (typecheck + build + testes focados + diagnostics limpos nos arquivos alterados)
 - Deploy Firebase production (wave40): pending closeout da wave
 - Deploy GitHub Pages (wave40): pending closeout da wave
 - Release summary (wave40): pending closeout da wave
@@ -107,7 +125,8 @@ Last update: 2026-04-26
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
 ## Pending Operational Cache
-- Wave 40 closeout pendente: commit final da subonda 1, push da branch, eventual PR/merge e dispatch one-shot de release somente após concluir subonda 2.
+- Wave 40 closeout pendente: commit/push do `main`, dispatch one-shot de release e atualização final dos IDs de validação/deploy. A Faixa C de jurisprudência não tem mais gap funcional aberto nesta subonda; o que resta é trilha operacional de fechamento.
+- Observação operacional: o smoke autenticado local foi destravado com build explícito em smoke/demo; uma revalidação com Firebase Auth real pode ser feita depois, sem bloquear este closeout.
 
 ## Wave 39 Release Outcome
 - release-web dispatch (run 24939740593): success.

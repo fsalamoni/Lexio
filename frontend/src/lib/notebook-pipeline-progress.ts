@@ -2,6 +2,7 @@ import { formatCostBadge } from './currency-utils'
 import type { TaskInfo } from '../contexts/TaskManagerContext'
 import type { AcervoAnalysisProgress } from './notebook-acervo-analyzer'
 import type { StudioArtifactType } from './firestore-service'
+import type { PipelineExecutionState } from './pipeline-execution-contract'
 import type { VideoPipelineProgressState } from './video-pipeline-progress'
 import { ACERVO_TRAIL_STEPS, STUDIO_SPECIALIST_LABEL } from '../pages/notebook'
 
@@ -9,6 +10,7 @@ export interface NotebookTrailStep {
   key: string
   label: string
   status: 'pending' | 'active' | 'completed' | 'error'
+  executionState?: PipelineExecutionState
   detail?: string
   meta?: string
 }
@@ -160,6 +162,7 @@ export function buildAcervoTrailSteps(options: {
   phase: string
   message: string
   loading: boolean
+  executionState?: PipelineExecutionState
   stageMeta?: string
   error?: string
 }): NotebookTrailStep[] {
@@ -182,10 +185,19 @@ export function buildAcervoTrailSteps(options: {
       status = 'error'
     }
 
+    const executionState = status === 'error'
+      ? 'failed'
+      : status === 'completed'
+        ? 'completed'
+        : status === 'active'
+          ? (options.executionState ?? 'running')
+          : 'queued'
+
     return {
       key: step.key,
       label: step.label,
       status,
+      executionState,
       detail: status === 'active' ? options.message : undefined,
       meta: status === 'active'
         ? options.stageMeta || (currentIndex >= 0 ? `Etapa ${currentIndex + 1} de ${ACERVO_TRAIL_STEPS.length}` : undefined)
@@ -254,10 +266,19 @@ export function buildStudioTrailSteps(task: TaskInfo | undefined, artifactType: 
       status = 'error'
     }
 
+    const executionState = status === 'error'
+      ? (task?.status === 'cancelled' ? 'cancelled' : 'failed')
+      : status === 'completed'
+        ? 'completed'
+        : status === 'active'
+          ? (task?.executionState ?? 'running')
+          : 'queued'
+
     return {
       key: step.key,
       label: step.label,
       status,
+      executionState,
       detail: status === 'active' ? (task?.phase || undefined) : undefined,
       meta: status === 'active'
         ? (task?.stageMeta || ((task?.totalSteps)

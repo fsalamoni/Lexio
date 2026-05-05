@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:smoke": "vite build --mode smoke",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
+    "preview:smoke": "vite preview --host 127.0.0.1 --port 4173",
+    "smoke": "vite build --mode smoke && vite preview --host 127.0.0.1 --port 4173",
     "test": "vitest run",
     "test:watch": "vitest"
   },

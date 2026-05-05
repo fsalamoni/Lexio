@@ -33,7 +33,7 @@ vi.mock('./tts-client', () => ({
   generateTTSViaOpenRouter: (...args: unknown[]) => generateTTSViaOpenRouterMock(...args),
 }))
 
-import { runVideoGenerationPipeline } from './video-generation-pipeline'
+import { runVideoGenerationPipeline, type VideoCheckpoint } from './video-generation-pipeline'
 
 function llmResult(content: string, model: string) {
   return {
@@ -199,5 +199,200 @@ describe('runVideoGenerationPipeline', () => {
     }
 
     expect(progressStageMeta.some((meta) => meta.includes('auto'))).toBe(true)
+  })
+
+  it('resumes after a planning checkpoint without rerunning earlier agents', async () => {
+    const checkpoint: VideoCheckpoint = {
+      completedStep: 4,
+      totalSteps: 8,
+      planData: {
+        title: 'Video teste',
+        totalDuration: 8,
+        designGuide: {
+          colorPalette: ['#111111', '#222222', '#333333', '#444444', '#555555'],
+          fontFamily: 'Inter',
+          style: 'flat',
+          characterDescriptions: [],
+          recurringElements: [],
+        },
+        productionNotes: [],
+      },
+      scriptData: {
+        scenes: [
+          {
+            number: 1,
+            timeStart: '00:00',
+            timeEnd: '00:08',
+            duration: 8,
+            narration: 'Narracao da cena',
+            visual: 'Cena inicial',
+            transition: 'corte',
+            soundtrack: 'trilha base',
+          },
+        ],
+      },
+      directedScenes: {
+        scenes: [
+          {
+            number: 1,
+            timeStart: '00:00',
+            timeEnd: '00:08',
+            duration: 8,
+            narration: 'Narracao da cena',
+            visual: 'Cena inicial dirigida',
+            transition: 'corte',
+            soundtrack: 'trilha base',
+          },
+        ],
+      },
+      storyboardData: { scenes: [] },
+      executions: [],
+      mediaErrors: [],
+      imagesGenerated: 0,
+      ttsGenerated: 0,
+      clipsDone: 0,
+    }
+
+    callLLMMock
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        imagePrompts: [
+          { sceneNumber: 1, prompt: 'main image prompt', style: 'flat', aspectRatio: '16:9' },
+        ],
+        videoPrompts: [
+          { sceneNumber: 1, prompt: 'main video prompt', duration: 8 },
+        ],
+      }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({ tracks: [] }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        narrationSegments: [
+          {
+            sceneNumber: 1,
+            text: 'Texto de narracao',
+            voiceStyle: 'formal',
+            timeStart: '00:00',
+            timeEnd: '00:08',
+          },
+        ],
+      }), 'openai/gpt-4.1-mini'))
+      .mockResolvedValueOnce(llmResult(JSON.stringify({
+        approved: true,
+        report: 'ok',
+        productionNotes: [],
+      }), 'openai/gpt-4.1-mini'))
+
+    const result = await runVideoGenerationPipeline({
+      apiKey: 'key',
+      scriptContent: '{"title":"Teste"}',
+      topic: 'Tema',
+      sourceId: 'notebook-1',
+      generateMedia: false,
+      checkpoint,
+    })
+
+    expect(callLLMMock).toHaveBeenCalledTimes(4)
+    expect(result.package.scenes).toHaveLength(1)
+    expect(result.checkpoint?.completedStep).toBe(8)
+  })
+
+  it('resumes media generation from a checkpoint without regenerating completed images', async () => {
+    const checkpoint: VideoCheckpoint = {
+      completedStep: 10,
+      totalSteps: 11,
+      executions: [],
+      mediaErrors: [],
+      imagesGenerated: 1,
+      ttsGenerated: 0,
+      clipsDone: 1,
+      assembledPackage: {
+        title: 'Video teste',
+        totalDuration: 8,
+        scenes: [
+          {
+            number: 1,
+            timeStart: '00:00',
+            timeEnd: '00:08',
+            duration: 8,
+            narration: 'Narracao da cena',
+            visual: 'Cena inicial',
+            imagePrompt: 'clip image prompt',
+            videoPrompt: 'clip video prompt',
+            transition: 'corte',
+            soundtrack: 'trilha base',
+            clips: [
+              {
+                clipNumber: 1,
+                sceneNumber: 1,
+                timestamp: 0,
+                duration: 8,
+                description: 'Clip unico',
+                imagePrompt: 'clip image prompt',
+                motionDescription: 'static',
+                transition: 'crossfade',
+                generatedImageUrl: 'data:image/png;base64,AAA',
+              },
+            ],
+            generatedImageUrl: 'data:image/png;base64,AAA',
+          },
+        ],
+        narration: [
+          {
+            sceneNumber: 1,
+            text: 'Texto de narracao',
+            voiceStyle: 'formal',
+            timeStart: '00:00',
+            timeEnd: '00:08',
+          },
+        ],
+        tracks: [
+          {
+            type: 'video',
+            label: 'Video',
+            segments: [],
+          },
+          {
+            type: 'narration',
+            label: 'Narracao',
+            segments: [
+              {
+                id: 'seg-1',
+                startTime: 0,
+                endTime: 8,
+                label: 'Narracao Cena 1',
+                content: 'Texto de narracao',
+                sceneNumber: 1,
+              },
+            ],
+          },
+        ],
+        designGuide: {
+          colorPalette: ['#111111', '#222222', '#333333', '#444444', '#555555'],
+          fontFamily: 'Inter',
+          style: 'flat',
+          characterDescriptions: [],
+          recurringElements: [],
+        },
+        qualityReport: 'ok',
+        productionNotes: [],
+      },
+    }
+
+    generateTTSViaOpenRouterMock.mockResolvedValue({
+      audioBlob: new Blob(['audio']),
+    })
+
+    const result = await runVideoGenerationPipeline({
+      apiKey: 'key',
+      scriptContent: '{"title":"Teste"}',
+      topic: 'Tema',
+      sourceId: 'notebook-1',
+      generateMedia: true,
+      checkpoint,
+    })
+
+    expect(callLLMMock).not.toHaveBeenCalled()
+    expect(generateImageViaOpenRouterMock).not.toHaveBeenCalled()
+    expect(generateTTSViaOpenRouterMock).toHaveBeenCalledTimes(1)
+    expect(result.package.narration[0].generatedAudioUrl).toBe('data:audio/mpeg;base64,AAAB')
+    expect(result.checkpoint?.completedStep).toBe(11)
   })
 })

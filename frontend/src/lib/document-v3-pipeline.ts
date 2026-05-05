@@ -66,6 +66,7 @@ export interface DocumentV3PipelineProgress {
 
 export interface DocumentV3PipelineStep extends DocumentV3PipelineStage {
   status: DocumentV3PipelineStepStatus
+  executionState?: PipelineExecutionState
   startedAt?: number
   completedAt?: number
   runtimeMessage?: string
@@ -256,6 +257,7 @@ export function createDocumentV3PipelineSteps(): DocumentV3PipelineStep[] {
   return DOCUMENT_V3_PIPELINE_STAGES.map(stage => ({
     ...stage,
     status: 'pending',
+    executionState: 'queued',
     runtimeModel: stage.modelKey ? 'Carregando...' : '—',
   }))
 }
@@ -374,7 +376,7 @@ export function applyDocumentV3PipelineProgress(
   if (progress.phase === DOCUMENT_V3_PIPELINE_COMPLETED_PHASE) {
     return steps.map(step => (
       step.status !== 'completed'
-        ? { ...step, status: 'completed', completedAt: step.completedAt ?? now }
+        ? { ...step, status: 'completed', executionState: 'completed', completedAt: step.completedAt ?? now }
         : step
     ))
   }
@@ -392,10 +394,12 @@ export function applyDocumentV3PipelineProgress(
       if (!timers[progress.phase]) {
         timers[progress.phase] = now
       }
-      const isCompleting = progress.executionState === 'completed'
+      const executionState = progress.executionState ?? step.executionState ?? 'running'
+      const isCompleting = executionState === 'completed'
       return {
         ...step,
         status: isCompleting ? 'completed' : 'active',
+        executionState,
         startedAt: step.startedAt ?? timers[progress.phase],
         completedAt: isCompleting ? (step.completedAt ?? now) : step.completedAt,
         runtimeMessage: progress.message,
@@ -412,7 +416,7 @@ export function applyDocumentV3PipelineProgress(
     // Auto-complete earlier active steps in earlier phases when a later phase starts.
     const stepPhaseOrder = stagesByPhaseOrder.get(step.phase) ?? 0
     if (idx < phaseIdx && step.status === 'active' && stepPhaseOrder < targetPhaseOrder) {
-      return { ...step, status: 'completed', completedAt: step.completedAt ?? now }
+      return { ...step, status: 'completed', executionState: 'completed', completedAt: step.completedAt ?? now }
     }
 
     return step

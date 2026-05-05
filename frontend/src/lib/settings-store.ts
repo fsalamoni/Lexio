@@ -14,6 +14,7 @@
 import api from '../api/client'
 import { IS_FIREBASE } from './firebase'
 import { ensureUserSettingsMigrated, getCurrentUserId, getUserSettings, saveUserSettings } from './firestore-service'
+import { sanitizeFeatureFlagMap, setRuntimeFeatureFlags } from './feature-flags'
 import { PROVIDERS, PROVIDER_ORDER, apiKeyFieldForProvider, type ProviderId } from './providers'
 import type { ProviderSettingsMap } from './firestore-types'
 
@@ -144,6 +145,38 @@ export async function saveProviderSettings(
   }
   await saveUserSettings(resolvedUid, { provider_settings: merged })
   emitProviderSettingsUpdated()
+}
+
+export async function loadFeatureFlags(uid?: string): Promise<Record<string, boolean>> {
+  if (!IS_FIREBASE) return {}
+  const resolvedUid = uid ?? getCurrentUserId() ?? undefined
+  if (!resolvedUid) return {}
+  const settings = await ensureUserSettingsMigrated(resolvedUid)
+  return sanitizeFeatureFlagMap(settings.feature_flags as Record<string, unknown> | undefined)
+}
+
+export async function hydrateRuntimeFeatureFlags(uid?: string): Promise<Record<string, boolean>> {
+  const flags = await loadFeatureFlags(uid)
+  setRuntimeFeatureFlags(flags)
+  return flags
+}
+
+export async function saveFeatureFlags(
+  flags: Record<string, boolean>,
+  uid?: string,
+): Promise<Record<string, boolean>> {
+  const sanitized = sanitizeFeatureFlagMap(flags)
+  if (!IS_FIREBASE) {
+    setRuntimeFeatureFlags(sanitized)
+    return sanitized
+  }
+
+  const resolvedUid = uid ?? getCurrentUserId()
+  if (!resolvedUid) throw new Error('Usuário não autenticado.')
+
+  await saveUserSettings(resolvedUid, { feature_flags: sanitized })
+  setRuntimeFeatureFlags(sanitized)
+  return sanitized
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

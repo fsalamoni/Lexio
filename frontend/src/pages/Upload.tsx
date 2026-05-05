@@ -315,7 +315,7 @@ function EmentaModal({
     if (!doc.text_content) return
     setGenerating(true)
     try {
-      const result = await generateAcervoEmenta(apiKey, doc.filename, doc.text_content, undefined, uid)
+      const result = await generateAcervoEmenta(apiKey, doc.filename, doc.text_content, undefined, uid, doc.id)
       setEmenta(result.ementa)
       setKeywords(result.keywords.join(', '))
       setPendingExecution(result.llm_execution)
@@ -778,7 +778,7 @@ function TagsModal({
     if (!doc.text_content) return
     setGenerating(true)
     try {
-      const result = await generateAcervoTags(apiKey, doc.filename, doc.text_content, undefined, uid)
+      const result = await generateAcervoTags(apiKey, doc.filename, doc.text_content, undefined, uid, doc.id)
       setNatureza(result.natureza)
       // Match generated area names to available admin areas
       const generatedAreas = result.area_direito.filter(a => areaOptions.includes(a))
@@ -1232,8 +1232,8 @@ export default function Upload() {
       const batch = docsWithoutEmenta.slice(i, i + 5)
       await Promise.all(batch.map(async d => {
         try {
-          const result = await generateAcervoEmenta(apiKey, d.filename, d.text_content, undefined, userId)
-          await updateAcervoEmenta(userId, d.id!, result.ementa, result.keywords, [result.llm_execution])
+          const result = await generateAcervoEmenta(apiKey, d.filename, d.text_content, undefined, userId, d.id)
+          await updateAcervoEmenta(userId, d.id!, result.ementa, result.keywords, result.llm_execution ? [result.llm_execution] : undefined)
           successCount++
           // Update local state
           setFirebaseHistory(prev => prev.map(fd =>
@@ -1313,8 +1313,8 @@ export default function Upload() {
       const batch = docsWithoutTags.slice(i, i + 5)
       await Promise.all(batch.map(async d => {
         try {
-          const { llm_execution, ...tagsResult } = await generateAcervoTags(apiKey, d.filename, d.text_content, undefined, userId)
-          await updateAcervoTags(userId, d.id!, tagsResult, [llm_execution])
+          const { llm_execution, ...tagsResult } = await generateAcervoTags(apiKey, d.filename, d.text_content, undefined, userId, d.id)
+          await updateAcervoTags(userId, d.id!, tagsResult, llm_execution ? [llm_execution] : undefined)
           setFirebaseHistory(prev => prev.map(fd =>
             fd.id === d.id ? { ...fd, ...tagsResult, tags_generated: true } : fd,
           ))

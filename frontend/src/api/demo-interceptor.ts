@@ -12,6 +12,10 @@
 
 import type { AxiosInstance, AxiosError } from 'axios'
 
+const DEMO_SMOKE_LOGIN_EMAIL = (import.meta.env.VITE_SMOKE_LOGIN_EMAIL as string | undefined) ?? 'smoke@local.test'
+const DEMO_SMOKE_LOGIN_PASSWORD = (import.meta.env.VITE_SMOKE_LOGIN_PASSWORD as string | undefined) ?? 'lexio-smoke-123'
+const DEMO_SMOKE_LOGIN_NAME = (import.meta.env.VITE_SMOKE_LOGIN_NAME as string | undefined) ?? 'Admin Smoke Local'
+
 const DEMO_STATS = {
   total_documents: 12,
   completed_documents: 8,
@@ -173,21 +177,16 @@ function resolve(url: string, method?: string): unknown {
     return { id: 'demo-' + Date.now(), status: 'rascunho' }
   }
 
-  // Auth endpoints — return mock login/register responses
+  // Auth endpoints — enforce the fixed local smoke credentials.
   if (url === '/auth/login' && method === 'post') {
-    return {
-      access_token: 'demo-token-' + Date.now(),
-      user_id: 'demo-user',
-      role: 'admin',
-      full_name: 'Usuário Demo',
-    }
+    return null
   }
   if (url === '/auth/register' && method === 'post') {
     return {
       access_token: 'demo-token-' + Date.now(),
       user_id: 'demo-user',
       role: 'admin',
-      full_name: 'Usuário Demo',
+      full_name: DEMO_SMOKE_LOGIN_NAME,
     }
   }
 
@@ -230,12 +229,60 @@ export function installDemoInterceptor(api: AxiosInstance): void {
     (response) => response,
     (error: AxiosError) => {
     const status = error.response?.status
+    const url = error.config?.url ?? ''
+    const method = error.config?.method ?? 'get'
+
+    if (url === '/auth/login' && method === 'post') {
+      const rawBody = error.config?.data
+      let email = ''
+      let password = ''
+
+      if (typeof rawBody === 'string') {
+        try {
+          const parsed = JSON.parse(rawBody) as { email?: string; password?: string }
+          email = parsed.email?.trim() ?? ''
+          password = parsed.password ?? ''
+        } catch {
+          email = ''
+          password = ''
+        }
+      } else if (rawBody && typeof rawBody === 'object') {
+        const parsed = rawBody as { email?: string; password?: string }
+        email = parsed.email?.trim() ?? ''
+        password = parsed.password ?? ''
+      }
+
+      if (email === DEMO_SMOKE_LOGIN_EMAIL && password === DEMO_SMOKE_LOGIN_PASSWORD) {
+        return Promise.resolve({
+          data: {
+            access_token: 'demo-token-' + Date.now(),
+            user_id: 'demo-user',
+            role: 'admin',
+            full_name: DEMO_SMOKE_LOGIN_NAME,
+          },
+          status: 200,
+          statusText: 'OK (demo)',
+          headers: {},
+          config: error.config,
+        })
+      }
+
+      const unauthorizedError = new Error('Use as credenciais do smoke local exibidas na tela de login.') as AxiosError
+      unauthorizedError.config = error.config
+      unauthorizedError.isAxiosError = true
+      unauthorizedError.response = {
+        status: 401,
+        statusText: 'Unauthorized',
+        data: { detail: 'Use as credenciais do smoke local exibidas na tela de login.' },
+        headers: {},
+        config: (error.config ?? {}) as never,
+      }
+      return Promise.reject(unauthorizedError)
+    }
 
     // Let auth/rate-limit errors through so existing handlers work
     if (status === 401 || status === 429) return Promise.reject(error)
 
-    const url = error.config?.url ?? ''
-    const method = error.config?.method ?? 'get'
     return Promise.resolve({
       data: resolve(url, method),
       status: 200,

@@ -3,6 +3,8 @@ import {
   searchDataJud,
   formatDataJudResults,
   DEFAULT_TRIBUNALS,
+  parseDataJudRankingResponse,
+  rerankSelectedDataJudResults,
   type DataJudResult,
 } from '../datajud-service'
 import {
@@ -54,14 +56,6 @@ export interface JurisprudenceResearcherOptions {
   onSubstep?: (message: string) => void
 }
 
-interface RankedItem {
-  index: number
-  score: number
-  stance?: 'favoravel' | 'desfavoravel' | 'neutro'
-}
-
-const VALID_STANCES: ReadonlyArray<RankedItem['stance']> = ['favoravel', 'desfavoravel', 'neutro']
-
 /** Build a focused query string from the case context. */
 function buildJurisprudenceQuery(ctx: AgentRunContext): string {
   const parts: string[] = []
@@ -97,33 +91,10 @@ function rankResults(
       0.1,
       { signal: ctx.signal },
     )
-    let ranked = results
-    try {
-      const cleaned = llmResult.content.replace(/```(?:json)?\s*/g, '').trim()
-      const parsed = JSON.parse(cleaned) as { ranking?: RankedItem[] }
-      if (parsed.ranking && Array.isArray(parsed.ranking)) {
-        const sorted = parsed.ranking
-          .filter(r => Number.isFinite(r.index) && r.index >= 1 && r.index <= results.length)
-          .sort((a, b) => b.score - a.score)
-        const reordered: DataJudResult[] = []
-        const seen = new Set<number>()
-        for (const item of sorted) {
-          const idx = item.index - 1
-          if (seen.has(idx)) continue
-          const process = results[idx]
-          if (!process) continue
-          seen.add(idx)
-          const enriched: DataJudResult = { ...process, relevanceScore: item.score }
-          const stance = item.stance
-          if (stance && VALID_STANCES.includes(stance)) enriched.stance = stance
-          reordered.push(enriched)
-        }
-        if (reordered.length > 0) ranked = reordered
-      }
-    } catch {
-      // Keep original order on parse failure.
-    }
-    return { ranked, llmResult }
+    const reranked = rerankSelectedDataJudResults(query, results, {
+      ranking: parseDataJudRankingResponse(llmResult.content),
+    })
+    return { ranked: reranked.results, llmResult }
   })()
   return promise
 }
@@ -213,7 +184,7 @@ export async function runJurisprudenceResearcher(
 
   // Step 2: Rank with LLM (optional — only if a ranker model was supplied).
   const extras: Array<{ phase: string; agentName: string; llmResult: LLMResult }> = []
-  let ranked: DataJudResult[] = initialPool
+  let ranked: DataJudResult[] = rerankSelectedDataJudResults(query, initialPool).results
   try {
     const rankResult = await rankResults(ctx, query, initialPool, options)
     if (rankResult) {

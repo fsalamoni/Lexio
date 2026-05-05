@@ -432,7 +432,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
         const msg = err instanceof Error ? err.message : 'Erro desconhecido'
         toast.error('Erro na análise', msg)
       }
-      setAgentProgress(prev => prev.map(a => a.status === 'running' ? { ...a, status: 'error' } : a))
+      setAgentProgress(prev => prev.map(a => a.status === 'running' ? { ...a, status: 'error', executionState: 'failed' as const } : a))
     } finally {
       setRunning(false)
     }
@@ -712,6 +712,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
             : agent.status === 'done'
               ? 'completed'
               : agent.status,
+          executionState: agent.executionState,
           detail: agent.message,
         }))}
         isComplete={analysisComplete}

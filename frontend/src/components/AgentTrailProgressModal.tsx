@@ -1,7 +1,10 @@
 import { Loader2, CheckCircle2, AlertCircle, AlertTriangle, Circle, Activity, Settings, UserRound, MoveRight } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { deriveHandoff, executionStateToAgentState, getHandoffMessage, type AgentSlot, type AgentState } from './AgentTrailStateMachine'
 import DraggablePanel from './DraggablePanel'
+import { isEnabled } from '../lib/feature-flags'
+import type { PipelineExecutionState } from '../lib/pipeline-execution-contract'
 import { buildWorkspaceSettingsPath } from '../lib/workspace-routes'
 
 export type TrailStepStatus = 'pending' | 'active' | 'completed' | 'error'
@@ -10,6 +13,7 @@ export interface TrailStep {
   key: string
   label: string
   status: TrailStepStatus
+  executionState?: PipelineExecutionState
   detail?: string
   meta?: string
 }
@@ -32,14 +36,28 @@ interface AgentTrailProgressModalProps {
   children?: ReactNode
 }
 
-function StepStatusIcon({ status }: { status: TrailStepStatus }) {
-  if (status === 'completed') {
+function resolveTrailStepAgentState(step: TrailStep): AgentState {
+  if (step.executionState) {
+    return executionStateToAgentState(step.executionState)
+  }
+  return trailStatusToAgentState(step.status)
+}
+
+function isWaitingIoStep(step: TrailStep | undefined): boolean {
+  return Boolean(step && resolveTrailStepAgentState(step) === 'waiting_io')
+}
+
+function StepStatusIcon({ step }: { step: TrailStep }) {
+  if (step.status === 'completed') {
     return <CheckCircle2 className="w-4 h-4" style={{ color: 'var(--v2-accent-strong)' }} />
   }
-  if (status === 'active') {
+  if (step.status === 'active' && step.executionState === 'waiting_io') {
+    return <Activity className="w-4 h-4 animate-pulse" style={{ color: 'rgb(14,116,144)' }} />
+  }
+  if (step.status === 'active') {
     return <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--v2-accent-strong)' }} />
   }
-  if (status === 'error') {
+  if (step.status === 'error') {
     return <AlertCircle className="w-4 h-4" style={{ color: 'rgb(239,68,68)' }} />
   }
   return <Circle className="w-4 h-4" style={{ color: 'var(--v2-line-soft)' }} />
@@ -48,6 +66,125 @@ function StepStatusIcon({ status }: { status: TrailStepStatus }) {
 function getEffectivePercent(percent: number, isComplete: boolean): number {
   const safePercent = Math.max(0, Math.min(100, percent))
   return isComplete ? 100 : Math.min(99, safePercent)
+}
+
+function trailStatusToAgentState(status: TrailStepStatus): AgentState {
+  switch (status) {
+    case 'completed':
+      return 'completed'
+    case 'active':
+      return 'running'
+    case 'error':
+      return 'error'
+    default:
+      return 'idle'
+  }
+}
+
+interface DeskFlow {
+  activeStep?: TrailStep
+  previousDesk?: TrailStep
+  activeDesk?: TrailStep
+  incomingDesk?: TrailStep
+  nextStep?: TrailStep
+  traversedPath: string[]
+}
+
+function resolveLegacyDeskFlow(steps: TrailStep[]): DeskFlow {
+  const activeStep = steps.find(step => step.status === 'active')
+  const activeStepIndex = steps.findIndex(step => step.status === 'active')
+  const fallbackActiveIndex = steps.findIndex(step => step.status === 'pending')
+  const resolvedActiveIndex = activeStepIndex >= 0 ? activeStepIndex : fallbackActiveIndex
+  const previousDesk = resolvedActiveIndex > 0 ? steps[resolvedActiveIndex - 1] : undefined
+  const activeDesk = resolvedActiveIndex >= 0 ? steps[resolvedActiveIndex] : undefined
+  const incomingDesk = resolvedActiveIndex >= 0 && resolvedActiveIndex < steps.length - 1
+    ? steps[resolvedActiveIndex + 1]
+    : undefined
+  const nextStep = activeStep
+    ? steps[steps.findIndex(step => step.key === activeStep.key) + 1]
+    : steps.find(step => step.status === 'pending')
+  const traversedPath = steps
+    .filter(step => step.status === 'completed' || step.status === 'active')
+    .map(step => step.label)
+
+  return {
+    activeStep,
+    previousDesk,
+    activeDesk,
+    incomingDesk,
+    nextStep,
+    traversedPath,
+  }
+}
+
+function resolveStateMachineDeskFlow(steps: TrailStep[]): DeskFlow {
+  const stepByKey = new Map(steps.map(step => [step.key, step]))
+  const slots: AgentSlot[] = steps.map(step => ({
+    key: step.key,
+    label: step.label,
+    detail: step.detail,
+    meta: step.meta,
+    state: resolveTrailStepAgentState(step),
+  }))
+  const handoff = deriveHandoff(slots)
+  const previousDesk = handoff.previous ? stepByKey.get(handoff.previous.key) : undefined
+  const activeDesk = handoff.active
+    ? stepByKey.get(handoff.active.key)
+    : handoff.incoming
+      ? stepByKey.get(handoff.incoming.key)
+      : undefined
+  const activeIndex = activeDesk ? steps.findIndex(step => step.key === activeDesk.key) : -1
+  const incomingDesk = activeIndex >= 0
+    ? steps.slice(activeIndex + 1).find(step => step.status === 'pending')
+    : undefined
+  const traversedPath = steps
+    .filter(step => step.status === 'completed' || step.key === activeDesk?.key)
+    .map(step => step.label)
+
+  return {
+    activeStep: activeDesk,
+    previousDesk,
+    activeDesk,
+    incomingDesk,
+    nextStep: incomingDesk,
+    traversedPath,
+  }
+}
+
+function resolveHandoffMessage(
+  steps: TrailStep[],
+  flow: DeskFlow,
+  isComplete: boolean,
+  hasError: boolean,
+  usingStateMachine: boolean,
+): string {
+  if (isComplete) return 'Todos os agentes concluíram suas mesas.'
+  if (hasError) return 'Fluxo interrompido antes da próxima mesa.'
+
+  if (usingStateMachine) {
+    if (flow.activeDesk && isWaitingIoStep(flow.activeDesk)) {
+      return `${flow.activeDesk.label} está aguardando resposta do modelo antes da próxima mesa.`
+    }
+    if (flow.previousDesk && flow.activeDesk) {
+      return `${flow.previousDesk.label} concluiu e passou o dossiê para ${flow.activeDesk.label}.`
+    }
+    if (flow.activeDesk) {
+      const activeState = resolveTrailStepAgentState(flow.activeDesk)
+      return getHandoffMessage(null, activeState)
+    }
+    if (flow.incomingDesk) {
+      return `Preparando a entrada de ${flow.incomingDesk.label}.`
+    }
+    return 'Aguardando início da trilha.'
+  }
+
+  if (flow.previousDesk && flow.activeDesk) {
+    return `${flow.previousDesk.label} concluiu e passou o dossiê para ${flow.activeDesk.label}.`
+  }
+  if (flow.incomingDesk) {
+    return `${flow.activeDesk?.label || 'Agente atual'} está preparando a transição para ${flow.incomingDesk.label}.`
+  }
+  return 'Agente atual finalizando a última mesa.'
 }
 
 export default function AgentTrailProgressModal({
@@ -72,32 +209,28 @@ export default function AgentTrailProgressModal({
   if (!isOpen) return null
 
   const effectivePercent = getEffectivePercent(percent, isComplete)
-  const activeStep = steps.find(step => step.status === 'active')
-  const activeStepIndex = steps.findIndex(step => step.status === 'active')
-  const fallbackActiveIndex = steps.findIndex(step => step.status === 'pending')
-  const resolvedActiveIndex = activeStepIndex >= 0 ? activeStepIndex : fallbackActiveIndex
-  const previousDesk = resolvedActiveIndex > 0 ? steps[resolvedActiveIndex - 1] : undefined
-  const activeDesk = resolvedActiveIndex >= 0 ? steps[resolvedActiveIndex] : undefined
-  const incomingDesk = resolvedActiveIndex >= 0 && resolvedActiveIndex < steps.length - 1
-    ? steps[resolvedActiveIndex + 1]
-    : undefined
-  const nextStep = activeStep
-    ? steps[steps.findIndex(step => step.key === activeStep.key) + 1]
-    : steps.find(step => step.status === 'pending')
+  const handoffStateMachineEnabled = isEnabled('FF_HANDOFF_STATE_MACHINE')
+  const deskFlow = handoffStateMachineEnabled
+    ? resolveStateMachineDeskFlow(steps)
+    : resolveLegacyDeskFlow(steps)
+  const {
+    activeStep,
+    previousDesk,
+    activeDesk,
+    incomingDesk,
+    nextStep,
+    traversedPath,
+  } = deskFlow
+  const activeDeskWaitingIo = isWaitingIoStep(activeDesk)
   const completedCount = steps.filter(step => step.status === 'completed').length
   const totalCount = steps.length || 1
-  const traversedPath = steps
-    .filter(step => step.status === 'completed' || step.status === 'active')
-    .map(step => step.label)
-  const handoffMessage = isComplete
-    ? 'Todos os agentes concluíram suas mesas.'
-    : hasError
-      ? 'Fluxo interrompido antes da próxima mesa.'
-      : previousDesk && activeDesk
-        ? `${previousDesk.label} concluiu e passou o dossiê para ${activeDesk.label}.`
-        : incomingDesk
-          ? `${activeDesk?.label || 'Agente atual'} está preparando a transição para ${incomingDesk.label}.`
-          : 'Agente atual finalizando a última mesa.'
+  const handoffMessage = resolveHandoffMessage(
+    steps,
+    deskFlow,
+    isComplete,
+    hasError,
+    handoffStateMachineEnabled,
+  )
 
   return (
     <DraggablePanel
@@ -214,7 +347,7 @@ export default function AgentTrailProgressModal({
                 style={{ border: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.9)' }}
               >
                 <div className="relative rounded-xl border px-2.5 py-3" style={{ borderColor: 'rgba(15,118,110,0.2)', background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(240,253,250,0.9) 100%)' }}>
-                  {!isComplete && !hasError && activeDesk && incomingDesk && (
+                  {!isComplete && !hasError && activeDesk && incomingDesk && !activeDeskWaitingIo && (
                     <div className="pointer-events-none absolute left-[50%] top-[49%] h-px w-[28%]" style={{ background: 'linear-gradient(90deg, rgba(15,118,110,0.4), rgba(15,118,110,0.1))' }}>
                       <span
                         className="lexio-animated absolute -top-[3px] h-2 w-2 rounded-full"
@@ -235,15 +368,20 @@ export default function AgentTrailProgressModal({
                       const isActiveDesk = slot.role === 'active' && !isComplete && !hasError
                       const isIncomingDesk = slot.role === 'incoming' && !isComplete && !hasError && Boolean(slot.step)
                       const isPreviousDesk = slot.role === 'previous' && Boolean(slot.step)
+                      const isWaitingDesk = isActiveDesk && isWaitingIoStep(slot.step)
 
                       return (
                         <div key={slot.key} className="relative rounded-lg border px-2 py-2 min-h-[92px]" style={{
-                          borderColor: isActiveDesk ? 'rgba(15,118,110,0.55)' : 'rgba(148,163,184,0.28)',
+                          borderColor: isActiveDesk
+                            ? (isWaitingDesk ? 'rgba(14,116,144,0.45)' : 'rgba(15,118,110,0.55)')
+                            : 'rgba(148,163,184,0.28)',
                           background: isActiveDesk
-                            ? 'linear-gradient(180deg, rgba(15,118,110,0.12), rgba(15,118,110,0.04))'
+                            ? (isWaitingDesk
+                              ? 'linear-gradient(180deg, rgba(224,242,254,0.95), rgba(224,242,254,0.55))'
+                              : 'linear-gradient(180deg, rgba(15,118,110,0.12), rgba(15,118,110,0.04))')
                             : 'rgba(255,255,255,0.82)',
                           animation: isActiveDesk
-                            ? 'lexioDeskGlow 1.8s ease-in-out infinite'
+                            ? (isWaitingDesk ? undefined : 'lexioDeskGlow 1.8s ease-in-out infinite')
                             : isIncomingDesk
                               ? 'lexioDeskArrive 0.5s ease-out'
                               : undefined,
@@ -269,11 +407,15 @@ export default function AgentTrailProgressModal({
 
                           {isActiveDesk && (
                             <div className="lexio-animated absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border p-1" style={{
-                              borderColor: 'rgba(15,118,110,0.35)',
-                              background: 'rgba(15,118,110,0.14)',
-                              animation: 'lexioDeskPulse 1.3s ease-in-out infinite',
+                              borderColor: isWaitingDesk ? 'rgba(14,116,144,0.3)' : 'rgba(15,118,110,0.35)',
+                              background: isWaitingDesk ? 'rgba(224,242,254,0.92)' : 'rgba(15,118,110,0.14)',
+                              animation: isWaitingDesk ? 'lexioDeskArrive 0.5s ease-out' : 'lexioDeskPulse 1.3s ease-in-out infinite',
                             }}>
-                              <UserRound className="w-3.5 h-3.5" style={{ color: 'var(--v2-accent-strong)' }} />
+                              {isWaitingDesk ? (
+                                <Activity className="w-3.5 h-3.5" style={{ color: 'rgb(14,116,144)' }} />
+                              ) : (
+                                <UserRound className="w-3.5 h-3.5" style={{ color: 'var(--v2-accent-strong)' }} />
+                              )}
                             </div>
                           )}
 
@@ -320,13 +462,15 @@ export default function AgentTrailProgressModal({
                 className="flex items-start gap-2.5 p-2 rounded-xl"
                 style={{ border: '1px solid var(--v2-line-soft)', background: 'rgba(255,255,255,0.6)' }}
               >
-                <div className="mt-0.5"><StepStatusIcon status={step.status} /></div>
+                <div className="mt-0.5"><StepStatusIcon step={step} /></div>
                 <div className="min-w-0">
                   <p
                     className="text-sm font-medium"
                     style={{
                       color: step.status === 'error'
                         ? 'rgb(239,68,68)'
+                        : step.status === 'active' && step.executionState === 'waiting_io'
+                          ? 'rgb(14,116,144)'
                         : step.status === 'active'
                           ? 'var(--v2-accent-strong)'
                           : step.status === 'completed'

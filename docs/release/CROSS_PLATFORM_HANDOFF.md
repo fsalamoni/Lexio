@@ -1,6 +1,6 @@
-# Cross-Platform Handoff - Wave 39
+# Cross-Platform Handoff - Wave 40 Subwave 2
 
-Last update: 2026-04-25
+Last update: 2026-05-05
 
 ## Objective
 This file is the minimum operational package to continue Lexio work from another platform/session with no loss of planning, index, or cache context.
@@ -8,8 +8,8 @@ This file is the minimum operational package to continue Lexio work from another
 ## Repository Snapshot
 - Branch: main
 - Current head: resolve at handoff time with `git rev-parse --short HEAD`
-- Last functional wave commit: a2ed246
-- Working tree status at closeout: clean
+- Last stable release commit: a2ed246
+- Working tree status at handoff: dirty expected (wave 40 subwave 2 validated locally, closeout still pending)
 
 ## Latest Stable Release (One-shot)
 - Workflow: .github/workflows/release-web.yml
@@ -36,19 +36,22 @@ Read/update in this closeout order when opening the next cycle:
 3. docs/release/WEB_RELEASE_CACHE.md
 4. NOTEBOOK_IMPLEMENTATION_STATUS.md
 5. docs/release/WEB_RELEASE_INDEX.md
-6. docs/release/CROSS_PLATFORM_HANDOFF.md
+6. docs/release/SUBONDA2_CLOSEOUT.md
+7. docs/release/CROSS_PLATFORM_HANDOFF.md
 
-## What Was Delivered in Wave 39
-- `frontend/src/lib/firestore-types.ts` now defines confidence-aware rollout contracts (`PlatformFunctionRolloutConfidenceBand`) and extends policy row/plan fields with confidence and adaptive-threshold context for typed governance monitoring.
-- `frontend/src/lib/firestore-service.ts` now computes function-level confidence and adaptive predictive thresholds (`resolveFunctionPredictiveThresholds`, `computeFunctionRolloutConfidence`), refining risk/recommendation decisions to reduce false positives without suppressing critical bypass behavior.
-- `frontend/src/pages/PlatformAdminPanel.tsx` now renders the Wave 39 executive block with confidence distribution cards, predictive alert count, low-confidence watchlist and explicit alignment signals tied to the multiagent demonstration panel.
-- Governance/index/cache/handoff docs were synchronized for Wave 39 closeout with real one-shot release IDs.
+## What Was Delivered in Wave 40 Subwave 2
+- `frontend/src/lib/generation-service.ts` and related runtime/cache slices completed the subwave hardening for user-scoped caches, explicit execution-state progress and safe parallel researcher overlap.
+- `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/pages/ResearchNotebook.tsx` and `frontend/src/pages/labs/ResearchNotebookV2.tsx` now resume video production from persisted checkpoints instead of restarting from scratch.
+- `frontend/src/pages/PlatformAdminPanel.tsx` now closes longitudinal calibration by effective operational alert-threshold profile.
+- `frontend/src/lib/datajud-service.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/lib/firestore-types.ts`, `frontend/src/pages/ResearchNotebook.tsx` and `frontend/src/pages/labs/ResearchNotebookV2.tsx` now complete the jurisprudence hybrid-search stack with browser-side semantic rerank, resilient legal rerank fallback and notebook-scoped persistent semantic memory with historical result fusion.
+- Planning/index/cache/handoff docs were synchronized to the current in-progress Wave 40 worktree on `main` so work can resume without replaying session context.
 
 ## Validation Baseline
 Frontend:
-- npm run typecheck
-- npm run test -- --run (38 files, 299 tests)
-- npm run build
+- npm run typecheck (last explicit `TYPECHECK_EXIT:0` earlier in this same subwave)
+- npm run test -- src/lib/datajud-service.test.ts (73/73)
+- get_errors frontend (clean after semantic-memory integration)
+- npm run build (validated earlier in this same subwave)
 - functions npm run build
 
 Backend tests:
@@ -58,8 +61,8 @@ Release lane:
 - release-web.yml one-shot run 24939740593 completed in success
 
 ## Next Logical Block (starting point)
-- Consolidar feedback de produção por banda de confiança para recalibrar thresholds adaptativos por criticidade sem perder cobertura dos riscos críticos.
-- Reduzir alertas preditivos de baixa evidência com tuning de thresholds dinâmicos por volume observado e dias de observação, mantendo rastreabilidade executiva no painel admin.
+- Fechar a trilha operacional da subwave com commit/push de `main` e dispatch one-shot de release.
+- Se necessário após o release, revalidar a integração com Firebase Auth real; o smoke local autenticado já foi concluído via modo smoke/demo.
 - Manter o mesmo ordenamento de closeout documental e a verificação one-shot de release em todos os ciclos.
 
 ## Fast Resume Commands

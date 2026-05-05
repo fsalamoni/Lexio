@@ -1,10 +1,12 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { TaskManagerProvider } from './contexts/TaskManagerContext'
 import { ToastProvider } from './components/Toast'
 import TaskBar from './components/TaskBar'
 import { useApplyPlatformSkin } from './components/ThemeSkinSelector'
+import { clearRuntimeFeatureFlags, FEATURE_FLAGS_UPDATED_EVENT } from './lib/feature-flags'
+import { hydrateRuntimeFeatureFlags } from './lib/settings-store'
 import {
   buildWorkspaceSettingsPath,
 } from './lib/workspace-routes'
@@ -59,6 +61,29 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 
 function AuthenticatedShell() {
   useApplyPlatformSkin()
+  const { userId } = useAuth()
+  const [, setFeatureFlagsVersion] = useState(0)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const handleFeatureFlagsUpdated = () => setFeatureFlagsVersion(version => version + 1)
+    window.addEventListener(FEATURE_FLAGS_UPDATED_EVENT, handleFeatureFlagsUpdated)
+    return () => {
+      window.removeEventListener(FEATURE_FLAGS_UPDATED_EVENT, handleFeatureFlagsUpdated)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!userId) {
+      clearRuntimeFeatureFlags()
+      return
+    }
+
+    hydrateRuntimeFeatureFlags(userId).catch((error) => {
+      console.warn('[FeatureFlags] Runtime hydration failed; falling back to env/default flags.', error)
+      clearRuntimeFeatureFlags()
+    })
+  }, [userId])
 
   return (
     <V2WorkspaceLayout>

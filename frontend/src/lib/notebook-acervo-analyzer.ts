@@ -34,6 +34,7 @@ export interface AcervoAnalysisProgress {
   phase: string
   message: string
   percent: number
+  executionState?: PipelineExecutionState
   stageMeta?: string
   costUsd?: number
   durationMs?: number
@@ -685,7 +686,7 @@ export async function analyzeNotebookAcervo(
   }
 
   // ── 1. Load acervo ──
-  onProgress?.({ phase: 'nb_acervo_triagem', message: 'Carregando documentos do acervo...', percent: 5 })
+  emitProgress({ phase: 'nb_acervo_triagem', message: 'Carregando documentos do acervo...', percent: 5, executionState: 'running' })
   const allAcervoDocs = await getAllAcervoDocumentsForSearch(uid)
   throwIfAborted(signal)
   console.log(`[Notebook Acervo] Found ${allAcervoDocs.length} indexed documents in acervo`)
@@ -703,7 +704,7 @@ export async function analyzeNotebookAcervo(
   }
 
   // ── 2. Triagem — extract keywords from notebook topic ──
-  onProgress?.({ phase: 'nb_acervo_triagem', message: 'Analisando tema do caderno...', percent: 10 })
+  emitProgress({ phase: 'nb_acervo_triagem', message: 'Analisando tema do caderno...', percent: 10, executionState: 'waiting_io' })
   throwIfAborted(signal)
 
   const triageResult = await callLLM(
@@ -735,10 +736,11 @@ export async function analyzeNotebookAcervo(
   }))
 
   console.log(`[Notebook Acervo Triagem] Result:`, triageResult.content.slice(0, 200))
-  onProgress?.({
+  emitProgress({
     phase: 'nb_acervo_triagem',
     message: 'Triagem do tema concluída.',
     percent: 18,
+    executionState: resolveExecutionStateFromRetryCount(triageResult.operational?.totalRetryCount),
     stageMeta: buildAcervoStageMeta({
       model: triageResult.model,
       costUsd: triageResult.cost_usd,
@@ -751,7 +753,7 @@ export async function analyzeNotebookAcervo(
   })
 
   // ── 3. Pre-filter (zero-cost) + Buscador (LLM ranking) ──
-  onProgress?.({ phase: 'nb_acervo_buscador', message: 'Buscando documentos relevantes no acervo...', percent: 25 })
+  emitProgress({ phase: 'nb_acervo_buscador', message: 'Buscando documentos relevantes no acervo...', percent: 25, executionState: 'running' })
   throwIfAborted(signal)
 
   const searchKeywords = extractKeywordsFromTriage(triageResult.content, topic, description)
@@ -784,8 +786,9 @@ export async function analyzeNotebookAcervo(
           fullDoc.text_content,
           modelBuscador,
           uid,
+          d.id,
         )
-        await updateAcervoEmenta(uid, d.id, ementa, keywords, [ementaExec])
+        await updateAcervoEmenta(uid, d.id, ementa, keywords, ementaExec ? [ementaExec] : undefined)
         d.ementa = ementa
         d.ementa_keywords = keywords
       } catch (err) {
@@ -807,6 +810,13 @@ export async function analyzeNotebookAcervo(
     tipo_documento: d.tipo_documento,
     contexto: d.contexto,
   }))
+
+  emitProgress({
+    phase: 'nb_acervo_buscador',
+    message: 'Consultando o buscador para ranquear os documentos do acervo...',
+    percent: 32,
+    executionState: 'waiting_io',
+  })
 
   const buscadorResult = await callLLM(
     apiKey,
@@ -835,10 +845,11 @@ export async function analyzeNotebookAcervo(
     used_fallback: buscadorResult.operational?.fallbackUsed,
     fallback_from: buscadorResult.operational?.fallbackFrom,
   }))
-  onProgress?.({
+  emitProgress({
     phase: 'nb_acervo_buscador',
     message: 'Buscador concluiu a seleção inicial do acervo.',
     percent: 40,
+    executionState: resolveExecutionStateFromRetryCount(buscadorResult.operational?.totalRetryCount),
     stageMeta: buildAcervoStageMeta({
       model: buscadorResult.model,
       costUsd: buscadorResult.cost_usd,
@@ -877,7 +888,7 @@ export async function analyzeNotebookAcervo(
   }
 
   // ── 4. Analista — deep analysis of selected docs ──
-  onProgress?.({ phase: 'nb_acervo_analista', message: `Analisando ${selectedIds.length} documento(s) selecionado(s)...`, percent: 50 })
+  emitProgress({ phase: 'nb_acervo_analista', message: `Analisando ${selectedIds.length} documento(s) selecionado(s)...`, percent: 50, executionState: 'running' })
   throwIfAborted(signal)
 
   const selectedDocs = buildSelectedDocsForAnalista(selectedIds, allAcervoDocs)
@@ -896,20 +907,22 @@ export async function analyzeNotebookAcervo(
   let completedAnalistaBatches = 0
   let nextAnalistaBatchIndex = 0
 
-  onProgress?.({
+  emitProgress({
     phase: 'nb_acervo_analista',
     message: `Analista processando ${analistaBatches.length} lote(s) com até ${analistaWorkerCount} em paralelo (auto/adaptativo).`,
     percent: 50,
+    executionState: 'waiting_io',
     stageMeta: buildAcervoStageMeta({ runtimeMeta: analistaRuntimeMeta }),
   })
 
   const emitAnalistaBatchProgress = (message: string, options?: Partial<AcervoAnalysisProgress>) => {
     completedAnalistaBatches += 1
     const percent = 50 + Math.round((completedAnalistaBatches / totalAnalistaBatches) * 15)
-    onProgress?.({
+    emitProgress({
       phase: 'nb_acervo_analista',
       message,
       percent,
+      executionState: options?.executionState ?? 'running',
       ...options,
     })
   }
@@ -959,6 +972,7 @@ export async function analyzeNotebookAcervo(
       }
 
       emitAnalistaBatchProgress(`Analista concluiu o lote ${batchIndex + 1}/${analistaBatches.length}.`, {
+        executionState: resolveExecutionStateFromRetryCount(analistaResult.operational?.totalRetryCount),
         stageMeta: buildAcervoStageMeta({
           model: analistaResult.model,
           runtimeMeta: analistaRuntimeMeta,
@@ -1013,10 +1027,11 @@ export async function analyzeNotebookAcervo(
     .filter((analysis): analysis is AnalistaAnalysis => !!analysis)
 
   if (usedAnalistaFallback) {
-    onProgress?.({
+    emitProgress({
       phase: 'nb_acervo_analista',
       message: 'Analista parcialmente indisponível; concluído com fallback seguro.',
       percent: 65,
+      executionState: 'running',
       stageMeta: buildAcervoStageMeta({
         runtimeMeta: analistaRuntimeMeta,
         fallbackReason: 'Fallback seguro ativado',
@@ -1027,7 +1042,7 @@ export async function analyzeNotebookAcervo(
   }
 
   // ── 5. Curador — final curation ──
-  onProgress?.({ phase: 'nb_acervo_curador', message: 'Fazendo curadoria final dos documentos...', percent: 75 })
+  emitProgress({ phase: 'nb_acervo_curador', message: 'Fazendo curadoria final dos documentos...', percent: 75, executionState: 'waiting_io' })
   throwIfAborted(signal)
 
   let curadorContent: string | null = null
@@ -1062,10 +1077,11 @@ export async function analyzeNotebookAcervo(
     }))
 
     curadorContent = curadorResult.content
-    onProgress?.({
+    emitProgress({
       phase: 'nb_acervo_curador',
       message: 'Curadoria final concluída.',
       percent: 88,
+      executionState: resolveExecutionStateFromRetryCount(curadorResult.operational?.totalRetryCount),
       stageMeta: buildAcervoStageMeta({
         model: curadorResult.model,
         costUsd: curadorResult.cost_usd,

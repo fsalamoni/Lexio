@@ -55,6 +55,7 @@ export type {
   NotebookMessage,
   NotebookResearchAuditEntry,
   NotebookSavedSearchEntry,
+  NotebookJurisprudenceSemanticMemoryEntry,
   StudioArtifactType,
   StudioArtifact,
   ResearchNotebookData,
@@ -107,6 +108,7 @@ import type {
   ResearchNotebookData,
   NotebookResearchAuditEntry,
   NotebookSavedSearchEntry,
+  NotebookJurisprudenceSemanticMemoryEntry,
   ThesisAnalysisSessionData,
   WizardData,
   WizardStep,
@@ -344,6 +346,7 @@ type PlatformNotebookSearchMemoryRecord = {
   updated_at?: string
   research_audits?: unknown[]
   saved_searches?: unknown[]
+  jurisprudence_semantic_memory?: unknown[]
   retention?: {
     audits_dropped?: number
     saved_searches_dropped?: number
@@ -2578,8 +2581,9 @@ export async function backfillNotebookSearchMemoryAcrossPlatform(opts?: {
         const notebook = notebookDoc.data() as ResearchNotebookData
         const legacyAudits = Array.isArray(notebook.research_audits) ? notebook.research_audits : []
         const legacySavedSearches = Array.isArray(notebook.saved_searches) ? notebook.saved_searches : []
+        const legacySemanticMemory = Array.isArray(notebook.jurisprudence_semantic_memory) ? notebook.jurisprudence_semantic_memory : []
 
-        if (legacyAudits.length === 0 && legacySavedSearches.length === 0) {
+        if (legacyAudits.length === 0 && legacySavedSearches.length === 0 && legacySemanticMemory.length === 0) {
           report.empty_legacy += 1
           continue
         }
@@ -2588,6 +2592,7 @@ export async function backfillNotebookSearchMemoryAcrossPlatform(opts?: {
           await saveNotebookSearchMemory(uid, notebookDoc.id, {
             research_audits: legacyAudits,
             saved_searches: legacySavedSearches,
+            jurisprudence_semantic_memory: legacySemanticMemory,
             migrated_from_notebook_doc_at: new Date().toISOString(),
           })
         }
@@ -3712,6 +3717,7 @@ const NOTEBOOK_SEARCH_MEMORY_DOC_ID = 'search_memory'
 const NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS = 45
 const NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS = 60
 const NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES = 120
+const NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES = 24
 
 type NotebookSearchMemoryRetentionMeta = {
   audits_before?: number
@@ -3720,15 +3726,20 @@ type NotebookSearchMemoryRetentionMeta = {
   saved_searches_before?: number
   saved_searches_after?: number
   saved_searches_dropped?: number
+  jurisprudence_semantic_before?: number
+  jurisprudence_semantic_after?: number
+  jurisprudence_semantic_dropped?: number
   audit_ttl_days: number
   max_audits: number
   max_saved_searches: number
+  max_jurisprudence_semantic_entries?: number
   applied_at: string
 }
 
 type NotebookSearchMemoryData = {
   research_audits?: NotebookResearchAuditEntry[]
   saved_searches?: NotebookSavedSearchEntry[]
+  jurisprudence_semantic_memory?: NotebookJurisprudenceSemanticMemoryEntry[]
   retention?: NotebookSearchMemoryRetentionMeta
   updated_at?: string
   migrated_from_notebook_doc_at?: string
@@ -3818,13 +3829,23 @@ function getSavedSearchSortMs(item: NotebookSavedSearchEntry): number {
   return parseIsoMs(item.updated_at) ?? parseIsoMs(item.created_at) ?? 0
 }
 
+function getJurisprudenceSemanticMemorySortMs(item: NotebookJurisprudenceSemanticMemoryEntry): number {
+  return parseIsoMs(item.updated_at) ?? parseIsoMs(item.created_at) ?? 0
+}
+
 function applyNotebookSearchMemoryRetention(
   payload: Partial<NotebookSearchMemoryData>,
-): { sanitized: Partial<NotebookSearchMemoryData>; droppedAudits: number; droppedSavedSearches: number } {
+): {
+  sanitized: Partial<NotebookSearchMemoryData>
+  droppedAudits: number
+  droppedSavedSearches: number
+  droppedSemanticEntries: number
+} {
   const nowIso = new Date().toISOString()
   const next: Partial<NotebookSearchMemoryData> = { ...payload }
   let droppedAudits = 0
   let droppedSavedSearches = 0
+  let droppedSemanticEntries = 0
 
   if (payload.research_audits !== undefined) {
     const cutoffMs = Date.now() - NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS * 86_400_000
@@ -3847,6 +3868,7 @@ function applyNotebookSearchMemoryRetention(
         audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
         max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
         max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
+        max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
         applied_at: nowIso,
       }),
       audits_before: sortedAudits.length,
@@ -3855,6 +3877,7 @@ function applyNotebookSearchMemoryRetention(
       audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
       max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
       max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
+      max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
       applied_at: nowIso,
     }
   }
@@ -3870,6 +3893,7 @@ function applyNotebookSearchMemoryRetention(
         audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
         max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
         max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
+        max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
         applied_at: nowIso,
       }),
       saved_searches_before: sortedSaved.length,
@@ -3878,11 +3902,40 @@ function applyNotebookSearchMemoryRetention(
       audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
       max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
       max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
+      max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
       applied_at: nowIso,
     }
   }
 
-  return { sanitized: next, droppedAudits, droppedSavedSearches }
+  if (payload.jurisprudence_semantic_memory !== undefined) {
+    const sortedSemanticEntries = [...payload.jurisprudence_semantic_memory]
+      .filter(entry => Array.isArray(entry.query_embedding) && entry.query_embedding.length > 0 && Boolean(entry.source_id?.trim()) && Boolean(entry.query?.trim()))
+      .sort((a, b) => getJurisprudenceSemanticMemorySortMs(b) - getJurisprudenceSemanticMemorySortMs(a))
+
+    const retainedSemanticEntries = sortedSemanticEntries.slice(0, NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES)
+    droppedSemanticEntries = Math.max(sortedSemanticEntries.length - retainedSemanticEntries.length, 0)
+    next.jurisprudence_semantic_memory = retainedSemanticEntries
+
+    next.retention = {
+      ...(next.retention || {
+        audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
+        max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
+        max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
+        max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
+        applied_at: nowIso,
+      }),
+      jurisprudence_semantic_before: sortedSemanticEntries.length,
+      jurisprudence_semantic_after: retainedSemanticEntries.length,
+      jurisprudence_semantic_dropped: droppedSemanticEntries,
+      audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
+      max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
+      max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
+      max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
+      applied_at: nowIso,
+    }
+  }
+
+  return { sanitized: next, droppedAudits, droppedSavedSearches, droppedSemanticEntries }
 }
 
 async function getNotebookSearchMemory(uid: string, notebookId: string): Promise<NotebookSearchMemoryData | null> {
@@ -3898,15 +3951,15 @@ async function saveNotebookSearchMemory(
   payload: Partial<NotebookSearchMemoryData>,
 ): Promise<void> {
   const ref = getNotebookSearchMemoryDocRef(uid, notebookId)
-  const { sanitized, droppedAudits, droppedSavedSearches } = applyNotebookSearchMemoryRetention(payload)
+  const { sanitized, droppedAudits, droppedSavedSearches, droppedSemanticEntries } = applyNotebookSearchMemoryRetention(payload)
   await withFirestoreRetry(
     () => setDoc(ref, stripUndefined({ ...sanitized, updated_at: new Date().toISOString() }), { merge: true }),
     'saveNotebookSearchMemory',
   )
-  if (droppedAudits > 0 || droppedSavedSearches > 0) {
+  if (droppedAudits > 0 || droppedSavedSearches > 0 || droppedSemanticEntries > 0) {
     console.info(
       `[Lexio] saveNotebookSearchMemory: retention applied for notebook ${normalizeFirestoreDocumentId(notebookId)} ` +
-      `(audits dropped: ${droppedAudits}, saved searches dropped: ${droppedSavedSearches}).`,
+      `(audits dropped: ${droppedAudits}, saved searches dropped: ${droppedSavedSearches}, semantic entries dropped: ${droppedSemanticEntries}).`,
     )
   }
 }
@@ -3929,16 +3982,19 @@ export async function getResearchNotebook(uid: string, notebookId: string): Prom
         ...notebook,
         research_audits: memory.research_audits ?? notebook.research_audits,
         saved_searches: memory.saved_searches ?? notebook.saved_searches,
+        jurisprudence_semantic_memory: memory.jurisprudence_semantic_memory ?? notebook.jurisprudence_semantic_memory,
       }
     }
 
     // Opportunistic backfill: first read migrates existing in-doc arrays into
     // dedicated notebook memory storage without changing current API contracts.
     if ((notebook.research_audits && notebook.research_audits.length > 0)
-      || (notebook.saved_searches && notebook.saved_searches.length > 0)) {
+      || (notebook.saved_searches && notebook.saved_searches.length > 0)
+      || (notebook.jurisprudence_semantic_memory && notebook.jurisprudence_semantic_memory.length > 0)) {
       await saveNotebookSearchMemory(effectiveUid, snap.id, {
         research_audits: notebook.research_audits ?? [],
         saved_searches: notebook.saved_searches ?? [],
+        jurisprudence_semantic_memory: notebook.jurisprudence_semantic_memory ?? [],
         migrated_from_notebook_doc_at: new Date().toISOString(),
       })
     }
@@ -3967,6 +4023,7 @@ export async function createResearchNotebook(uid: string, data: Omit<ResearchNot
     artifacts: data.artifacts ?? [],
     research_audits: data.research_audits ?? [],
     saved_searches: data.saved_searches ?? [],
+    jurisprudence_semantic_memory: data.jurisprudence_semantic_memory ?? [],
     status: data.status ?? 'active',
     llm_executions: data.llm_executions ?? [],
     created_at: now,
@@ -3985,6 +4042,7 @@ export async function createResearchNotebook(uid: string, data: Omit<ResearchNot
     await saveNotebookSearchMemory(effectiveUid, docRef.id, {
       research_audits: sanitized.research_audits,
       saved_searches: sanitized.saved_searches,
+      jurisprudence_semantic_memory: sanitized.jurisprudence_semantic_memory,
       migrated_from_notebook_doc_at: now,
     })
   } catch (error) {
@@ -4003,12 +4061,13 @@ export async function updateResearchNotebook(uid: string, notebookId: string, da
   const ref = doc(db, 'users', effectiveUid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id, ...rest } = data
-  const shouldSyncSearchMemory = rest.research_audits !== undefined || rest.saved_searches !== undefined
+  const shouldSyncSearchMemory = rest.research_audits !== undefined || rest.saved_searches !== undefined || rest.jurisprudence_semantic_memory !== undefined
   const rootPayload = shouldSyncSearchMemory
     ? {
         ...rest,
         ...(rest.research_audits !== undefined ? { research_audits: [] as NotebookResearchAuditEntry[] } : {}),
         ...(rest.saved_searches !== undefined ? { saved_searches: [] as NotebookSavedSearchEntry[] } : {}),
+        ...(rest.jurisprudence_semantic_memory !== undefined ? { jurisprudence_semantic_memory: [] as NotebookJurisprudenceSemanticMemoryEntry[] } : {}),
       }
     : rest
 
@@ -4034,6 +4093,7 @@ export async function updateResearchNotebook(uid: string, notebookId: string, da
       await saveNotebookSearchMemory(effectiveUid, normalizeFirestoreDocumentId(notebookId), {
         ...(rest.research_audits !== undefined ? { research_audits: rest.research_audits } : {}),
         ...(rest.saved_searches !== undefined ? { saved_searches: rest.saved_searches } : {}),
+        ...(rest.jurisprudence_semantic_memory !== undefined ? { jurisprudence_semantic_memory: rest.jurisprudence_semantic_memory } : {}),
       })
     } catch (error) {
       console.warn('[Lexio] updateResearchNotebook: failed to sync dedicated search memory store.', error)

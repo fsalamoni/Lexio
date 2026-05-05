@@ -24,6 +24,7 @@ import {
   resolveAdaptiveConcurrencyWithDiagnostics,
   runWithConcurrency,
 } from './runtime-concurrency'
+import type { PipelineExecutionState } from './pipeline-execution-contract'
 import { THESIS_PIPELINE_STAGES } from './thesis-pipeline'
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -69,6 +70,7 @@ export interface AgentProgress {
   label: string
   status: 'pending' | 'running' | 'done' | 'error'
   message?: string
+  executionState?: PipelineExecutionState
 }
 
 export interface ThesisAnalysisResult {
@@ -420,11 +422,40 @@ export async function analyzeThesisBank(
   // Initialise progress state
   const agents: AgentProgress[] = THESIS_PIPELINE_STAGES
     .filter(stage => stage.modelKey)
-    .map(stage => ({ key: stage.key, label: stage.label, status: 'pending' as const }))
+    .map(stage => ({ key: stage.key, label: stage.label, status: 'pending' as const, executionState: 'queued' as const }))
 
-  const notify = (key: string, status: AgentProgress['status'], message?: string) => {
+  const resolveAgentExecutionState = (
+    status: AgentProgress['status'],
+    executionState?: PipelineExecutionState,
+  ): PipelineExecutionState => {
+    if (executionState) return executionState
+    switch (status) {
+      case 'pending':
+        return 'queued'
+      case 'done':
+        return 'completed'
+      case 'error':
+        return 'failed'
+      default:
+        return 'running'
+    }
+  }
+
+  const notify = (
+    key: string,
+    status: AgentProgress['status'],
+    message?: string,
+    executionState?: PipelineExecutionState,
+  ) => {
     const idx = agents.findIndex(a => a.key === key)
-    if (idx >= 0) agents[idx] = { ...agents[idx], status, message }
+    if (idx >= 0) {
+      agents[idx] = {
+        ...agents[idx],
+        status,
+        message,
+        executionState: resolveAgentExecutionState(status, executionState),
+      }
+    }
     onProgress?.([...agents])
   }
 
@@ -442,7 +473,12 @@ export async function analyzeThesisBank(
   let thematicGaps: string[] = []
 
   const runCurador = async (): Promise<void> => {
-    notify('thesis_curador', 'running', analysisParallelLimit > 1 ? 'Analisando documentos do acervo em paralelo...' : 'Analisando documentos do acervo...')
+    notify(
+      'thesis_curador',
+      'running',
+      analysisParallelLimit > 1 ? 'Analisando documentos do acervo em paralelo...' : 'Analisando documentos do acervo...',
+      'running',
+    )
 
     if (docsForCurador.length > 0 || thematicGaps.length > 0) {
       try {
@@ -453,6 +489,8 @@ export async function analyzeThesisBank(
         const catalogueText = catalogue.length > 0
           ? `\n\nBANCO ATUAL (resumo compacto para evitar duplicidades):\n${JSON.stringify(catalogue.slice(0, 80), null, 2)}`
           : ''
+
+        notify('thesis_curador', 'running', 'Curador aguardando resposta do modelo...', 'waiting_io')
 
         const res = await callLLMWithFallback(
           apiKey,
@@ -498,7 +536,7 @@ export async function analyzeThesisBank(
 
   // ── Agent 1: Catalogador ─────────────────────────────────────────────────────
 
-  notify('thesis_catalogador', 'running', 'Catalogando teses existentes...')
+  notify('thesis_catalogador', 'running', 'Catalogando teses existentes...', 'waiting_io')
 
   let catalogueResult: {
     similar_groups?: Array<{ ids: string[]; titles: string[]; reason: string }>
@@ -548,7 +586,7 @@ export async function analyzeThesisBank(
 
   // ── Agent 2: Analista ────────────────────────────────────────────────────────
 
-  notify('thesis_analista', 'running', 'Analisando redundâncias nos grupos...')
+  notify('thesis_analista', 'running', 'Analisando redundâncias nos grupos...', 'running')
 
   // Build full-content view for all theses in groups
   const thesisById = new Map(theses.filter(t => t.id).map(t => [t.id!, t]))
@@ -572,6 +610,7 @@ export async function analyzeThesisBank(
 
   try {
     if (groupsWithContent.length > 0) {
+      notify('thesis_analista', 'running', 'Analista aguardando resposta do modelo...', 'waiting_io')
       const res = await trackPhase('redundancia', async () => callLLMWithFallback(
         apiKey,
         ANALISTA_SYSTEM,
@@ -616,7 +655,7 @@ export async function analyzeThesisBank(
 
   // ── Agent 3: Compilador (one call per merge group) ────────────────────────────
 
-  notify('thesis_compilador', 'running', `Compilando ${analysisMergeGroups.length} grupos...`)
+  notify('thesis_compilador', 'running', `Compilando ${analysisMergeGroups.length} grupos...`, 'running')
 
   const compiledGroupsByIndex: Array<{
     source_ids: string[]
@@ -661,6 +700,8 @@ export async function analyzeThesisBank(
         const versionsText = groupTheses.map((t, i) =>
           `VERSÃO ${i + 1} — "${t.title}":\n${t.content.slice(0, 1200)}`
         ).join('\n\n---\n\n')
+
+        notify('thesis_compilador', 'running', `Compilador aguardando resposta para o grupo ${groupIndex + 1}/${analysisMergeGroups.length}...`, 'waiting_io')
 
         const res = await callLLMWithFallback(
           apiKey,
@@ -712,6 +753,7 @@ export async function analyzeThesisBank(
           'thesis_compilador',
           'running',
           `Compilações prontas: ${successfulCalls}/${analysisMergeGroups.length}${failedMergeCalls > 0 ? ` (falhas: ${failedMergeCalls})` : ''}`,
+          'running',
         )
       }
     })
@@ -737,7 +779,7 @@ export async function analyzeThesisBank(
 
   // ── Agent 5: Revisor Final ────────────────────────────────────────────────────
 
-  notify('thesis_revisor', 'running', 'Revisando e priorizando sugestões...')
+  notify('thesis_revisor', 'running', 'Revisando e priorizando sugestões...', 'running')
 
   // Build the raw suggestion payload for the Revisor
   const rawSuggestions: Array<{
@@ -792,6 +834,7 @@ export async function analyzeThesisBank(
 
   if (rawSuggestions.length > 0) {
     try {
+      notify('thesis_revisor', 'running', 'Revisor aguardando resposta do modelo...', 'waiting_io')
       const res = await trackPhase('revisao', async () => callLLMWithFallback(
         apiKey,
         REVISOR_SYSTEM,
@@ -840,6 +883,7 @@ export async function analyzeThesisBank(
         parsed = parseJsonObject(res.content) as RevisorParsed
       } catch (parseError) {
         console.warn('Revisor returned invalid JSON; requesting one repair pass:', parseError)
+        notify('thesis_revisor', 'running', 'Revisor corrigindo JSON retornado...', 'waiting_io')
         const repair = await trackPhase('revisao_repair', async () => callLLMWithFallback(
           apiKey,
           'Você corrige saídas JSON inválidas. Retorne APENAS um objeto JSON válido, sem markdown, sem comentários e sem texto fora do JSON.',

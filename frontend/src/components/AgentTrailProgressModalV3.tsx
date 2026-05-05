@@ -46,6 +46,7 @@ export default function AgentTrailProgressModalV3({
     key: agent.key,
     label: `${phaseLabelByKey[agent.phase] || agent.phase} · ${agent.label}`,
     status: agent.status,
+    executionState: agent.executionState,
     detail: agent.runtimeMessage || agent.description,
     meta: getDocumentV3StepMeta(agent),
   }))

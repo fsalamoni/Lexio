@@ -61,6 +61,10 @@ function buildKey(...parts: string[]): string {
   return `lexio:gencache:${parts.join(':')}`
 }
 
+function matchesUserScopedCacheKey(key: string, uid: string): boolean {
+  return key.includes(`:${uid}:`) || key.endsWith(`:${uid}`)
+}
+
 // ── Ementa cache ──────────────────────────────────────────────────────────────
 
 const ementaCache = new Map<string, CacheEntry<Omit<CachedEmenta, 'savedAt'>>>()
@@ -183,21 +187,20 @@ export function setAcervoContextInCache(uid: string, data: string): void {
 
 /** Invalidate all generation caches for a given user (e.g., after logout). */
 export function invalidateAllGenerationCaches(uid: string): void {
-  const prefix = buildKey('')
   for (const key of ementaCache.keys()) {
-    if (key.startsWith(prefix)) ementaCache.delete(key)
+    if (matchesUserScopedCacheKey(key, uid)) ementaCache.delete(key)
   }
   for (const key of classificacaoCache.keys()) {
-    if (key.startsWith(prefix)) classificacaoCache.delete(key)
+    if (matchesUserScopedCacheKey(key, uid)) classificacaoCache.delete(key)
   }
   for (const key of templateCache.keys()) {
-    if (key.startsWith(prefix)) templateCache.delete(key)
+    if (matchesUserScopedCacheKey(key, uid)) templateCache.delete(key)
   }
   for (const key of adminDocTypesCache.keys()) {
-    if (key.startsWith(prefix)) adminDocTypesCache.delete(key)
+    if (matchesUserScopedCacheKey(key, uid)) adminDocTypesCache.delete(key)
   }
   for (const key of acervoContextCache.keys()) {
-    if (key.startsWith(prefix)) acervoContextCache.delete(key)
+    if (matchesUserScopedCacheKey(key, uid)) acervoContextCache.delete(key)
   }
 }
 

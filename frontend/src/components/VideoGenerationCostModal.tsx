@@ -32,7 +32,7 @@ const AGENT_MODEL_RECOMMENDATIONS: Record<string, { icon: React.ElementType; cap
 interface VideoGenerationCostModalProps {
   scriptContent: string
   topic: string
-  onGenerate: (editedContent: string) => void
+  onGenerate: (editedContent: string, options?: { resumeFromCheckpoint?: boolean }) => void
   onSkip: () => void
   isGenerating: boolean
   generationProgress?: VideoPipelineProgressState
@@ -55,6 +55,11 @@ export default function VideoGenerationCostModal({
 
   const estimate = useMemo(() => estimateVideoGenerationCost(editedContent), [editedContent])
   const hasEdits = editedContent !== scriptContent
+  const hasCheckpoint = Boolean(lastCheckpoint && lastCheckpoint.completedStep > 0)
+  const resumeStep = hasCheckpoint
+    ? Math.min((lastCheckpoint?.completedStep || 0) + 1, lastCheckpoint?.totalSteps || VIDEO_PIPELINE_STAGES.length)
+    : null
+  const canResumeCheckpoint = Boolean(hasCheckpoint && !hasEdits)
 
   return (
     <DraggablePanel
@@ -391,14 +396,17 @@ export default function VideoGenerationCostModal({
         {/* Footer */}
         {!isGenerating && (
           <div className="flex flex-col gap-2 px-6 py-4 border-t flex-shrink-0" style={{ background: 'rgba(255,255,255,0.5)', borderColor: 'var(--v2-line-soft)' }}>
-            {lastCheckpoint && lastCheckpoint.completedStep > 0 && (
+            {hasCheckpoint && lastCheckpoint && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                 <span>
                   A geração anterior foi interrompida no passo <strong>{lastCheckpoint.completedStep}/{lastCheckpoint.totalSteps}</strong>.
                   {lastCheckpoint.imagesGenerated > 0 && ` ${lastCheckpoint.imagesGenerated} imagens geradas.`}
                   {lastCheckpoint.ttsGenerated > 0 && ` ${lastCheckpoint.ttsGenerated} narrações geradas.`}
-                  {' '}Ao executar novamente, o pipeline recomeça do início.
+                  {' '}
+                  {canResumeCheckpoint
+                    ? `Você pode retomar da etapa ${resumeStep}/${lastCheckpoint.totalSteps} ou reiniciar do zero.`
+                    : 'Para retomar do checkpoint, restaure o roteiro original antes de executar novamente.'}
                 </span>
               </div>
             )}
@@ -413,12 +421,23 @@ export default function VideoGenerationCostModal({
                 >
                   Apenas salvar roteiro
                 </button>
+                {hasCheckpoint && (
+                  <button
+                    onClick={() => onGenerate(editedContent, { resumeFromCheckpoint: false })}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors"
+                    style={{ borderColor: 'var(--v2-line-soft)', color: 'var(--v2-ink-soft)', background: 'rgba(255,255,255,0.85)' }}
+                  >
+                    Recomeçar do zero
+                  </button>
+                )}
                 <button
-                  onClick={() => onGenerate(editedContent)}
+                  onClick={() => onGenerate(editedContent, { resumeFromCheckpoint: canResumeCheckpoint })}
+                  disabled={hasCheckpoint && !canResumeCheckpoint}
                   className="flex items-center gap-2 px-5 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 transition-colors shadow-sm"
+                  style={hasCheckpoint && !canResumeCheckpoint ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
                 >
                   <Video className="w-4 h-4" />
-                  {lastCheckpoint && lastCheckpoint.completedStep > 0 ? 'Regenerar Fase 1' : 'Executar Fase 1'}
+                  {hasCheckpoint ? `Retomar da etapa ${resumeStep}` : 'Executar Fase 1'}
                 </button>
               </div>
             </div>
