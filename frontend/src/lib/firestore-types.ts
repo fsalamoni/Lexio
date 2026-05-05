@@ -807,7 +807,7 @@ export type ChatEffortLevel = 'rapido' | 'medio' | 'profundo' | 'deep_research'
  * (see PR3). Persisted as part of `ChatTurn.trail`.
  */
 export type ChatTrailEvent =
-  | { type: 'iteration_start'; i: number; ts: string }
+  | { type: 'iteration_start'; i: number; ts: string; elapsed_ms?: number; budget_used_ratio?: number }
   | {
       type: 'orchestrator_thought'
       /** Partial / cumulative raw output from the orchestrator LLM as it streams. */
@@ -868,8 +868,8 @@ export type ChatTrailEvent =
       total: string
       ts: string
     }
-  | { type: 'final_answer'; ts: string }
-  | { type: 'budget_hit'; reason: string; ts: string }
+  | { type: 'final_answer'; ts: string; elapsed_ms?: number; iterations?: number; budget_used_ratio?: number }
+  | { type: 'budget_hit'; reason: string; ts: string; elapsed_ms?: number }
   | { type: 'error'; message: string; ts: string }
 
 /** Lifecycle status of a single turn (one user input + assistant response). */

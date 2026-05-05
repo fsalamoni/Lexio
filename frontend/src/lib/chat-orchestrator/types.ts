@@ -174,4 +174,5 @@ export interface RunChatTurnOutput {
   assistant_markdown: string | null
   pending_question?: { text: string; options?: string[] } | null
   llm_executions: UsageExecutionRecord[]
+  elapsed_ms?: number
 }

@@ -229,6 +229,7 @@ function describeEvent(event: ChatTrailEvent): {
   iconClass: string
   title: string
   subtitle?: string
+  fullContent?: string
 } {
   switch (event.type) {
     case 'iteration_start':

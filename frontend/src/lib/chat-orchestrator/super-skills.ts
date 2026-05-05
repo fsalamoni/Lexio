@@ -60,6 +60,13 @@ function clip(text: string, max = 500): string {
   return `${text.slice(0, max - 1)}…`
 }
 
+/** Detecta AbortError em ambientes browser (DOMException) e Node (Error). */
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') return true
+  if (err instanceof Error && err.name === 'AbortError') return true
+  return false
+}
+
 /**
  * Resolve a base URL para chamadas à API.
  * Em produção, usa a mesma origem; em desenvolvimento, aponta para localhost:8000.
@@ -212,9 +219,7 @@ const generateDocumentSkill: Skill<GenerateDocumentArgs> = {
           `- O pipeline está processando. Informe ao usuário que o documento estará disponível no Estúdio de Artefatos em breve.`,
       }
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        throw err // propaga cancelamento
-      }
+      if (isAbortError(err)) throw err
       const message = err instanceof Error ? err.message : 'Erro desconhecido'
       const errorEvent: ChatTrailEvent = {
         type: 'super_skill_call',
@@ -315,7 +320,7 @@ const checkDocumentStatusSkill: Skill<CheckDocumentArgs> = {
             : '- O documento ainda está em processamento. Sugira ao usuário que aguarde e verifique novamente.'),
       }
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      if (isAbortError(err)) throw err
       const message = err instanceof Error ? err.message : 'Erro desconhecido'
       return { tool_message: `Erro ao consultar documento ${documentId}: ${message}` }
     }
@@ -428,7 +433,7 @@ const searchJurisprudenceSkill: Skill<SearchJurisprudenceArgs> = {
           `Use estes precedentes para fundamentar a resposta ao usuário.`,
       }
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      if (isAbortError(err)) throw err
       const message = err instanceof Error ? err.message : 'Erro desconhecido'
       return { tool_message: `Erro na pesquisa jurisprudencial: ${message}` }
     }
@@ -516,7 +521,7 @@ const analyzeThesisSkill: Skill<AnalyzeThesisArgs> = {
         tool_message: `📊 Análise da tese jurídica:\n\n${analysisText}\n\nUse esta análise para fundamentar a resposta ao usuário.`,
       }
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      if (isAbortError(err)) throw err
       const message = err instanceof Error ? err.message : 'Erro desconhecido'
       return { tool_message: `Erro na análise de tese: ${message}` }
     }
@@ -551,9 +556,12 @@ const hybridSearchSkill: Skill<HybridSearchArgs> = {
     if (!query) {
       return { tool_message: 'Erro: "query" é obrigatória para busca híbrida.' }
     }
-    const topK = Math.min(Math.max(Number(args.top_k ?? 5) || 5, 1), 20)
-    const semanticWeight = Math.min(Math.max(Number(args.semantic_weight ?? 0.5) || 0.5, 0), 1)
-    const lexicalWeight = Math.min(Math.max(Number(args.lexical_weight ?? 0.5) || 0.5, 0), 1)
+    const rawTopK = args.top_k !== undefined ? Number(args.top_k) : 5
+    const topK = Math.min(Math.max(Number.isFinite(rawTopK) ? rawTopK : 5, 1), 20)
+    const rawSw = args.semantic_weight !== undefined ? Number(args.semantic_weight) : 0.5
+    const semanticWeight = Math.min(Math.max(Number.isFinite(rawSw) ? rawSw : 0.5, 0), 1)
+    const rawLw = args.lexical_weight !== undefined ? Number(args.lexical_weight) : 0.5
+    const lexicalWeight = Math.min(Math.max(Number.isFinite(rawLw) ? rawLw : 0.5, 0), 1)
 
     const startEvent: ChatTrailEvent = {
       type: 'super_skill_call',
@@ -662,7 +670,7 @@ const hybridSearchSkill: Skill<HybridSearchArgs> = {
           `Use estes resultados para fundamentar a resposta ao usuário. Cite as fontes e os números dos processos quando disponíveis.`,
       }
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      if (isAbortError(err)) throw err
       const message = err instanceof Error ? err.message : 'Erro desconhecido'
       return { tool_message: `Erro na busca híbrida: ${message}` }
     }

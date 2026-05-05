@@ -9,7 +9,7 @@
  *  - Emissão de eventos ChatTrailEvent
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ── Mock do módulo search-client para isolar a skill ────────────────────────────
 
@@ -21,13 +21,31 @@ vi.mock('../search-client', () => ({
 
 // Importa depois que o mock está instalado
 import { buildSuperSkills } from './super-skills'
-import type { Skill, SkillContext, SkillResult } from './types'
+import type { BudgetTracker, Skill, SkillContext, SkillResult } from './types'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
+function createBudgetTracker(): BudgetTracker {
+  return {
+    recordUsage: vi.fn(),
+    used: () => ({ tokens: 0, cost_usd: 0 }),
+    usedRatio: () => 0,
+    exceeded: () => false,
+    hardStop: vi.fn(),
+    isHardStopped: () => ({ stopped: false }),
+    records: () => [],
+  }
+}
+
 function mockContext(overrides: Partial<SkillContext> = {}): SkillContext {
   return {
+    uid: 'test-user',
+    conversationId: 'conv-1',
+    turnId: 'turn-1',
+    effort: 'medio',
+    budget: createBudgetTracker(),
     emit: vi.fn(),
+    models: {},
     signal: new AbortController().signal,
     mock: false,
     apiKey: '',
@@ -104,6 +122,10 @@ describe('buildSuperSkills', () => {
 })
 
 describe('hybrid_search skill', () => {
+  beforeEach(() => {
+    mockHybridSearch.mockClear()
+  })
+
   it('deve rejeitar quando query está vazia', async () => {
     const ctx = mockContext()
     const result = await findAndRunSkill('hybrid_search', { query: '' }, ctx)
