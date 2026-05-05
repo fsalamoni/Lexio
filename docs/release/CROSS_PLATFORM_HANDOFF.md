@@ -8,26 +8,16 @@ This file is the minimum operational package to continue Lexio work from another
 ## Repository Snapshot
 - Branch: main
 - Current head: resolve at handoff time with `git rev-parse --short HEAD`
-- Last stable release commit: a2ed246
-- Working tree status at handoff: dirty expected (wave 40 subwave 2 validated locally, closeout still pending)
+- Wave 40 functional payload commit: 162224f
+- Working tree status at handoff: expected clean after the docs-sync closeout commit on `main`
 
-## Latest Stable Release (One-shot)
-- Workflow: .github/workflows/release-web.yml
-- Run: 24939740593
-- Conclusion: success
-- Head validated by release: a2ed246
-
-Jobs:
-- Functions quality: 73031338133 (success)
-- Lint (ruff): 73031338134 (success)
-- Source guardrails: 73031338135 (success)
-- Frontend quality: 73031338137 (success)
-- Unit tests: 73031338143 (success)
-- Deploy Firebase production: 73031401264 (success)
-- Deploy GitHub Pages / build: 73031401290 (success)
-- Deploy GitHub Pages / deploy: 73031468718 (success)
-- Deploy redesign V2: 73031401347 (skipped by input)
-- Release summary: 73031560811 (success)
+## Latest Wave 40 Payload Release
+- Firebase workflow: .github/workflows/firebase-deploy.yml
+- Firebase run: 25405834740 (success)
+- One-shot workflow: .github/workflows/release-web.yml
+- release-web run: 25405834580 (success)
+- Functional payload validated by release: 162224f
+- Release lane summary: Firebase production published on push; GitHub Pages published by one-shot release with the same payload baseline.
 
 ## Canonical Docs to Continue Work
 Read/update in this closeout order when opening the next cycle:
@@ -44,7 +34,7 @@ Read/update in this closeout order when opening the next cycle:
 - `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/pages/ResearchNotebook.tsx` and `frontend/src/pages/labs/ResearchNotebookV2.tsx` now resume video production from persisted checkpoints instead of restarting from scratch.
 - `frontend/src/pages/PlatformAdminPanel.tsx` now closes longitudinal calibration by effective operational alert-threshold profile.
 - `frontend/src/lib/datajud-service.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/lib/firestore-types.ts`, `frontend/src/pages/ResearchNotebook.tsx` and `frontend/src/pages/labs/ResearchNotebookV2.tsx` now complete the jurisprudence hybrid-search stack with browser-side semantic rerank, resilient legal rerank fallback and notebook-scoped persistent semantic memory with historical result fusion.
-- Planning/index/cache/handoff docs were synchronized to the current in-progress Wave 40 worktree on `main` so work can resume without replaying session context.
+- Planning/index/cache/handoff docs were synchronized to the closed Wave 40 payload baseline on `main`, so work can resume without replaying session context.
 
 ## Validation Baseline
 Frontend:
@@ -58,11 +48,12 @@ Backend tests:
 - python -m pytest -q (2203 passed)
 
 Release lane:
-- release-web.yml one-shot run 24939740593 completed in success
+- firebase-deploy.yml push run 25405834740 completed in success
+- release-web.yml one-shot run 25405834580 completed in success
 
 ## Next Logical Block (starting point)
-- Fechar a trilha operacional da subwave com commit/push de `main` e dispatch one-shot de release.
-- Se necessário após o release, revalidar a integração com Firebase Auth real; o smoke local autenticado já foi concluído via modo smoke/demo.
+- Abrir a próxima frente funcional com a base da Wave 40 já fechada em `main`.
+- Se necessário no próximo ciclo, revalidar a integração com Firebase Auth real; o smoke local autenticado já foi concluído via modo smoke/demo.
 - Manter o mesmo ordenamento de closeout documental e a verificação one-shot de release em todos os ciclos.
 
 ## Fast Resume Commands

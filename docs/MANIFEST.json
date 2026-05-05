@@ -706,7 +706,7 @@
       "id": "E5.F30",
       "epic": "Infraestrutura de Qualidade",
       "name": "Wave 40 Subonda 2 — latência documental, caches user-scoped e canários runtime",
-      "state": "partial",
+        "state": "implemented",
       "files": [
         "frontend/src/lib/generation-service.ts",
         "frontend/src/lib/generation-service.parallel.test.ts",
@@ -739,7 +739,7 @@
         "docs/release/CROSS_PLATFORM_HANDOFF.md",
         "docs/MANIFEST.json"
       ],
-      "notes": "A implementacao principal da Subonda 2 passou a combinar caches user-scoped (templates administrativos, contexto leve do acervo, ementa e classificacao), feature flags runtime por usuario persistidas em Firestore e um caminho real de `FF_PARALLEL_PESQUISADOR` com fallback sequencial. A trilha de progresso multiagente agora propaga `executionState` em documentos, notebook e tese; a UX de video ganhou retomada real por `VideoCheckpoint`; o painel admin fechou a validacao longitudinal por perfil operacional de thresholds; e a jurisprudencia passou a contar com reranking semantico browser-side, fallback juridico resiliente e memoria semantica persistente por caderno com fusao historica. O teste de orquestracao do `generateDocument()` voltou a ficar tipado de forma compatível com o `tsc`, os testes focados de jurisprudencia subiram para 73/73 e o warning de chunking do chat-orchestrator permaneceu resolvido. Fechamento operacional ainda pendente nesta rodada: smoke test manual autenticado e commit/push/deploy do lote atual; a tentativa local com credenciais demo falhou porque o preview exige login Firebase real."
+      "notes": "A Subonda 2 passou a combinar caches user-scoped (templates administrativos, contexto leve do acervo, ementa e classificacao), feature flags runtime por usuario persistidas em Firestore e um caminho real de `FF_PARALLEL_PESQUISADOR` com fallback sequencial. A trilha de progresso multiagente agora propaga `executionState` em documentos, notebook e tese; a UX de video ganhou retomada real por `VideoCheckpoint`; o painel admin fechou a validacao longitudinal por perfil operacional de thresholds; e a jurisprudencia passou a contar com reranking semantico browser-side, fallback juridico resiliente e memoria semantica persistente por caderno com fusao historica. O teste de orquestracao do `generateDocument()` voltou a ficar tipado de forma compatível com o `tsc`, os testes focados de jurisprudencia subiram para 73/73 e o warning de chunking do chat-orchestrator permaneceu resolvido. O fechamento operacional funcional foi concluido com smoke autenticado local via `VITE_FORCE_DEMO_MODE=true`, validacao local verde, commit/push do payload `162224f`, deploy Firebase por push (`25405834740`) e release one-shot para GitHub Pages (`25405834580`) em sucesso."
     },
     {
       "id": "E8.F1",

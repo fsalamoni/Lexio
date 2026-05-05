@@ -2,7 +2,7 @@
 
 **Data:** 05/05/2026
 **Versão:** v0.8.0-subonda2
-**Status:** ⚠️ Implementação principal concluída e validada localmente; follow-ups de admin/vídeo/jurisprudência integrados, incluindo memória semântica persistente por caderno e smoke autenticado local, com commit/push/deploy ainda pendentes
+**Status:** ✅ Implementação principal e closeout operacional concluídos; follow-ups de admin/vídeo/jurisprudência integrados, incluindo memória semântica persistente por caderno, smoke autenticado local, commit/push em `main` e deploys publicados no Firebase e no GitHub Pages
 
 ---
 
@@ -125,10 +125,21 @@ A **Subonda 2** consolida a segunda fase da Wave 40 no pipeline documental da Le
 
 ---
 
+## Fechamento Operacional
+
+- ✅ `git pull --rebase --autostash origin main`
+- ✅ Commit funcional publicado em `main`: `162224f` (`feat: close wave 40 subwave 2 local hardening`)
+- ✅ `git push origin main`
+- ✅ Deploy Firebase por push: `firebase-deploy.yml` run `25405834740` em `success`
+- ✅ Release one-shot para GitHub Pages: `release-web.yml` run `25405834580` em `success`
+- ✅ Publicação confirmada em `https://lexio.web.app` e `https://fsalamoni.github.io/Lexio/`
+
+---
+
 ## Próximos Passos
 
-1. Fechar a trilha operacional do lote atual com commit, push e deploy.
-2. Revalidar o lote com Firebase Auth real apenas se for necessário um smoke de integração contra a infra produtiva, não como bloqueador do closeout local.
+1. Abrir a próxima frente funcional sem carregar pendências desta subonda.
+2. Revalidar o lote com Firebase Auth real apenas se for necessário um smoke de integração contra a infra produtiva, não como bloqueador deste closeout.
 
 ---
 

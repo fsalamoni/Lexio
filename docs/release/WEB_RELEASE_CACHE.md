@@ -32,6 +32,7 @@ Last update: 2026-05-05
 - Wave 39 confiança adaptativa no rollout progressivo + mitigação de falsos positivos: completed (local validation)
 - Wave 39 release closeout: completed (run 24939740593 success)
 - Wave 40 subonda 1 latência documental + progresso confiável + handoff lúdico: completed (local validation em branch)
+- Wave 40 subonda 2 latência documental + caches user-scoped + canários runtime: completed (local validation + operational closeout)
 
 ## Cached Diagnostics
 - Detected risk: firebase-preview accepted FIREBASE_SERVICE_ACCOUNT in checks but did not authenticate with it for deploy/teardown.
@@ -76,6 +77,9 @@ Last update: 2026-05-05
 - Release workflow dispatch (wave38): completed (release-web.yml run 24933092299 success)
 - Wave 39 commit + push: completed (`a2ed246`)
 - Release workflow dispatch (wave39): completed (release-web.yml run 24939740593 success)
+- Wave 40 functional commit + push: completed (`162224f`)
+- Deploy Firebase por push (wave40): completed (firebase-deploy.yml run 25405834740 success)
+- Release workflow dispatch (wave40): completed (release-web.yml run 25405834580 success)
 
 ## Current Wave Cache (2026-05-05)
 
@@ -116,16 +120,16 @@ Last update: 2026-05-05
 - frontend diagnostics: completed (`get_errors` limpo em `frontend/` após a integração da memória semântica)
 - frontend public smoke: completed (`npm run preview -- --host 127.0.0.1 --port 4173`; `/login` carregou com sucesso no browser local)
 - frontend authenticated smoke: completed in local smoke mode (`npm run build:smoke` + `npm run preview:smoke`; fluxo validado com rejeição de senha incorreta, login fixo, dashboard/admin/notebook)
-- release-web dispatch (wave40): not started (subonda em branch)
-- Quality gates (wave40): validação local forte do lote atual (typecheck + build + testes focados + diagnostics limpos nos arquivos alterados)
-- Deploy Firebase production (wave40): pending closeout da wave
-- Deploy GitHub Pages (wave40): pending closeout da wave
-- Release summary (wave40): pending closeout da wave
+- release-web dispatch (wave40): completed (run 25405834580 success)
+- Quality gates (wave40): completed via validação local forte do lote atual + release-web one-shot (`25405834580` success)
+- Deploy Firebase production (wave40): completed (`25405834740` success)
+- Deploy GitHub Pages (wave40): completed (`25405834580` success)
+- Release summary (wave40): completed in the closeout lane (`25405834580` success)
 - Known non-blocking output: React Router future-flag warnings in notebook V2 tests
 - Resolved baseline preserved: timeout intermitente em `pages-build-deployment` segue não reproduzido após migração para deploy oficial por artifact + `deploy-pages`.
 
-## Pending Operational Cache
-- Wave 40 closeout pendente: commit/push do `main`, dispatch one-shot de release e atualização final dos IDs de validação/deploy. A Faixa C de jurisprudência não tem mais gap funcional aberto nesta subonda; o que resta é trilha operacional de fechamento.
+## Operational Closeout Cache
+- Wave 40 closeout: completed. O payload funcional `162224f` chegou a `main`, o deploy Firebase por push (`25405834740`) e o one-shot `release-web.yml` para Pages (`25405834580`) fecharam em sucesso e a Faixa C de jurisprudência permaneceu sem gaps funcionais abertos.
 - Observação operacional: o smoke autenticado local foi destravado com build explícito em smoke/demo; uma revalidação com Firebase Auth real pode ser feita depois, sem bloquear este closeout.
 
 ## Wave 39 Release Outcome
