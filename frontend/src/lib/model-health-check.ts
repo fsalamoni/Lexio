@@ -150,7 +150,7 @@ export async function runModelHealthCheck(force = false): Promise<HealthCheckRes
       try {
         const apiKey = apiKeys[apiKeyFieldForProvider(providerId)] ?? ''
         const baseUrl = providerSettings[providerId]?.base_url
-        const liveModels = await fetchProviderModels(providerId, apiKey, baseUrl)
+        const liveModels = await fetchProviderModels(providerId, apiKey, baseUrl, { allowStaticFallback: false })
         if (!Array.isArray(liveModels) || liveModels.length === 0) {
           skippedProviders.push(providerId)
           continue

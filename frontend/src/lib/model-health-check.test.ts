@@ -101,6 +101,7 @@ describe('runModelHealthCheck (provider-aware)', () => {
     expect(result.removedModels).toEqual([])
     expect(result.checkedProviders).toEqual(['groq'])
     expect(result.skippedProviders).toEqual([])
+    expect(fetchProviderModelsMock).toHaveBeenCalledWith('groq', 'gsk_test', undefined, { allowStaticFallback: false })
     expect(saveModelCatalogMock).not.toHaveBeenCalled()
   })
 
