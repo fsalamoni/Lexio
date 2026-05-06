@@ -108,6 +108,7 @@ const SUPERVISOR_QUALITY_ESCALATION_THRESHOLD = 70
 
 /** Character budget for each compacted phase summary (anti-bloat). */
 const PHASE_COMPACTION_CHAR_BUDGET = 3000
+const MAX_AGENT_FAILURE_MESSAGE_CHARS = 240
 
 export type GenerationProgressV3 = DocumentV3PipelineProgress
 export type ProgressCallbackV3 = (p: GenerationProgressV3) => void
@@ -125,14 +126,26 @@ interface SupervisorAction {
 }
 
 type NullableAgentRunResult<T> = AgentRunResult<T> | { output: T; llmResult: null }
+const ORCHESTRATOR_RECOVERY_ACTIONS = new Set<SupervisorAction['action']>([
+  'retry',
+  'escalate',
+  'local_fallback',
+  'continue_without_agent',
+  'second_round',
+  'revise_citations',
+])
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError'
 }
 
 function describeAgentFailure(err: unknown): string {
-  if (err instanceof Error && err.message.trim()) return err.message.trim().slice(0, 240)
-  return String(err).slice(0, 240)
+  if (err instanceof Error && err.message.trim()) return err.message.trim().slice(0, MAX_AGENT_FAILURE_MESSAGE_CHARS)
+  return String(err).slice(0, MAX_AGENT_FAILURE_MESSAGE_CHARS)
+}
+
+function isOrchestratorRecoveryAction(action: SupervisorAction): boolean {
+  return ORCHESTRATOR_RECOVERY_ACTIONS.has(action.action)
 }
 
 function fallbackIntent(ctx: SharedCaseContext): IntentSummary {
@@ -461,7 +474,7 @@ export async function generateDocumentV3(
     }
 
     const supervisorModel = agentModels.v3_supervisor || undefined
-    const orchestratorModel = agentModels.v3_pipeline_orchestrator || supervisorModel
+    const orchestratorModel = agentModels.v3_pipeline_orchestrator || supervisorModel || agentModels.v3_writer || undefined
     const parallelLimit = Math.max(1, options?.parallelLimit ?? DOCUMENT_V3_DEFAULT_PARALLEL_LIMIT)
     reportProgress('v3_pipeline_orchestrator', 'Orquestrador monitorando execução, retries e continuidade...', 3, {
       modelId: orchestratorModel,
@@ -606,7 +619,7 @@ export async function generateDocumentV3(
             completedPercent: 11,
             runner: runLegalIssueSpotter,
             fallbackOutput: () => fallbackLegalIssues(caseContext),
-            validate: (res) => res.output.length > 0 ? null : 'questoes_vazias',
+            validate: (res) => res.output.length > 0 ? null : 'questões_vazias',
           }),
         ],
         parallelLimit,
@@ -1054,14 +1067,7 @@ export async function generateDocumentV3(
       }
     }
 
-    const orchestratorRecoveryCount = supervisorActions.filter(action =>
-      action.action === 'retry'
-      || action.action === 'escalate'
-      || action.action === 'local_fallback'
-      || action.action === 'continue_without_agent'
-      || action.action === 'second_round'
-      || action.action === 'revise_citations',
-    ).length
+    const orchestratorRecoveryCount = supervisorActions.filter(isOrchestratorRecoveryAction).length
     const orchestratorExecution = createUsageExecutionRecord({
       source_type: 'document_generation_v3',
       source_id: docId,
