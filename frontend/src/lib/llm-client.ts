@@ -63,6 +63,7 @@ interface FetchWithRetryResult {
 
 async function fetchWithRetry(url: string, options: RequestInit, externalSignal?: AbortSignal): Promise<FetchWithRetryResult> {
   let lastError: Error | undefined
+  let retryAfterDelayMs: number | undefined
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (externalSignal?.aborted) {
@@ -72,7 +73,8 @@ async function fetchWithRetry(url: string, options: RequestInit, externalSignal?
     if (attempt > 0) {
       const baseDelayMs = 1000 * Math.pow(2, attempt - 1)
       const jitterMs = Math.round(baseDelayMs * Math.random() * 0.25)
-      const delayMs = baseDelayMs + jitterMs
+      const delayMs = retryAfterDelayMs ?? (baseDelayMs + jitterMs)
+      retryAfterDelayMs = undefined
       console.warn(`[LLM] Tentativa ${attempt + 1}/${MAX_RETRIES + 1} após ${delayMs}ms...`)
       await sleepWithSignal(delayMs, externalSignal)
     }
@@ -86,6 +88,14 @@ async function fetchWithRetry(url: string, options: RequestInit, externalSignal?
       const resp = await fetch(url, { ...options, signal: controller.signal })
       clearTimeout(timer)
       externalSignal?.removeEventListener('abort', onAbort)
+      if (!resp.ok && attempt < MAX_RETRIES && shouldRetryHttpTransient(resp.status)) {
+        const errorBody = await resp.clone().text().catch(() => '')
+        if (isTransientUpstreamResponse(resp.status, errorBody)) {
+          retryAfterDelayMs = parseRetryAfterMs(resp.headers.get('Retry-After'))
+          lastError = new TransientLLMError(`Resposta transitória do provedor (${resp.status})`)
+          continue
+        }
+      }
       return { response: resp, retryCount: attempt }
     } catch (err) {
       clearTimeout(timer)
@@ -107,6 +117,24 @@ async function fetchWithRetry(url: string, options: RequestInit, externalSignal?
     }
   }
   throw lastError ?? new Error('Falha de rede desconhecida')
+}
+
+function parseRetryAfterMs(raw: string | null): number | undefined {
+  if (!raw) return undefined
+  const trimmed = raw.trim()
+  if (!trimmed) return undefined
+  const seconds = Number(trimmed)
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(30_000, Math.round(seconds * 1000))
+  }
+  const dateMs = Date.parse(trimmed)
+  if (!Number.isFinite(dateMs)) return undefined
+  return Math.min(30_000, Math.max(0, dateMs - Date.now()))
+}
+
+function shouldRetryHttpTransient(status: number): boolean {
+  return status === 429 || status === 500 || status === 502 || status === 503
+    || status === 520 || status === 521 || status === 522 || status === 523 || status === 524
 }
 
 export class ModelUnavailableError extends Error {
