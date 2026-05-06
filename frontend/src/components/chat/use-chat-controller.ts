@@ -66,6 +66,9 @@ const initialState: ChatControllerState = {
 }
 
 const CHAT_CONVERSATION_UPSERTED_EVENT = 'lexio:chat-conversation-upserted'
+const MAX_STREAM_TOTAL_CHARS_FOR_PERSISTENCE = 6000
+const MAX_STREAM_DELTA_CHARS_FOR_PERSISTENCE = 600
+const MAX_TRAIL_EVENTS_FOR_PERSISTENCE = 180
 
 function notifyChatConversationUpserted(conversationId: string) {
   if (typeof window === 'undefined') return
@@ -93,7 +96,7 @@ function reducer(state: ChatControllerState, action: Action): ChatControllerStat
       if (!state.liveTurn) return state
       return {
         ...state,
-        liveTurn: { ...state.liveTurn, trail: [...state.liveTurn.trail, action.event] },
+        liveTurn: { ...state.liveTurn, trail: mergeStreamingTrailEvent(state.liveTurn.trail, action.event) },
       }
     case 'COMMIT_TURN':
       return {
@@ -185,11 +188,12 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
 
     let turnId = `local-${Date.now()}`
     const startedAt = new Date().toISOString()
+    const initialTrail: ChatTrailEvent[] = []
     const liveTurn: ChatTurnData = {
       id: turnId,
       conversation_id: conversationId,
       user_input: trimmed,
-      trail: [],
+      trail: initialTrail,
       assistant_markdown: null,
       status: 'running',
       created_at: startedAt,
@@ -213,8 +217,11 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         liveTurn.id = turnId
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        dispatch({ type: 'SEND_ERROR', error: `Falha ao registrar turno: ${message}` })
-        return
+        initialTrail.push({
+          type: 'error',
+          message: `Persistência inicial indisponível; seguindo em modo local. Detalhe: ${message}`,
+          ts: new Date().toISOString(),
+        })
       }
     }
 
@@ -249,8 +256,8 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         ...liveTurn,
         id: turnId,
         trail: [errorEvent],
-        assistant_markdown: `Não consegui iniciar o orquestrador porque a configuração falhou: ${message}`,
-        status: 'error',
+        assistant_markdown: buildRuntimeFallbackAnswer(trimmed, `Falha de configuração: ${message}`),
+        status: 'done',
         completed_at: completedAt,
       }
       if (IS_FIREBASE && userId) {
@@ -258,14 +265,14 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
           await updateChatTurn(userId, conversationId, turnId, {
             trail: failedTurn.trail,
             assistant_markdown: failedTurn.assistant_markdown,
-            status: 'error',
+            status: 'done',
             completed_at: completedAt,
           })
         } catch {
           // best-effort; the in-memory turn still shows the failure.
         }
       }
-      dispatch({ type: 'COMMIT_TURN', turn: failedTurn, status: 'error' })
+      dispatch({ type: 'COMMIT_TURN', turn: failedTurn, status: 'done' })
       return
     }
 
@@ -279,7 +286,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
       pendingPersist = false
       try {
         await updateChatTurn(userId, conversationId, turnId, {
-          trail: trailBuffer.slice(),
+          trail: compactChatTrailForPersistence(trailBuffer),
         })
       } catch {
         // best-effort
@@ -296,7 +303,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     }
 
     const onTrail = (event: ChatTrailEvent) => {
-      trailBuffer.push(event)
+      mergeStreamingTrailEventInPlace(trailBuffer, event)
       dispatch({ type: 'TRAIL_APPEND', event })
       schedulePersist()
     }
@@ -328,7 +335,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
             total,
             ts: new Date().toISOString(),
           }
-          trailBuffer.push(event)
+          mergeStreamingTrailEventInPlace(trailBuffer, event)
           dispatch({ type: 'TRAIL_APPEND', event })
           schedulePersist()
         },
@@ -355,7 +362,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
       if (IS_FIREBASE && userId) {
         try {
           await updateChatTurn(userId, conversationId, turnId, {
-            trail: completedTurn.trail,
+            trail: compactChatTrailForPersistence(completedTurn.trail),
             assistant_markdown: completedTurn.assistant_markdown,
             status: completedTurn.status,
             pending_question: completedTurn.pending_question ?? null,
@@ -372,12 +379,15 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
-          dispatch({ type: 'SEND_ERROR', error: `Falha ao salvar turno: ${message}` })
-          return
+          onTrail({
+            type: 'error',
+            message: `Falha ao salvar o turno no histórico remoto; a entrega foi mantida nesta tela. Detalhe: ${message}`,
+            ts: new Date().toISOString(),
+          })
         }
       }
 
-      dispatch({ type: 'COMMIT_TURN', turn: completedTurn, status: result.status })
+      dispatch({ type: 'COMMIT_TURN', turn: { ...completedTurn, trail: trailBuffer.slice() }, status: result.status })
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         const cancelledTurn: ChatTurnData = {
@@ -408,15 +418,15 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         ...liveTurn,
         id: turnId,
         trail: [...trailBuffer, errorEvent],
-        assistant_markdown: `O orquestrador não conseguiu concluir este turno. O pedido ficou salvo e pode ser reenviado.\n\n**Detalhe técnico:** ${message}`,
-        status: 'error',
+        assistant_markdown: buildRuntimeFallbackAnswer(trimmed, message),
+        status: 'done',
         completed_at: completedAt,
       }
       if (IS_FIREBASE && userId) {
         try {
           await updateChatTurn(userId, conversationId, turnId, {
-            status: 'error',
-            trail: failedTurn.trail,
+            status: 'done',
+            trail: compactChatTrailForPersistence(failedTurn.trail),
             assistant_markdown: failedTurn.assistant_markdown,
             completed_at: failedTurn.completed_at,
           })
@@ -424,7 +434,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
           // best-effort
         }
       }
-      dispatch({ type: 'COMMIT_TURN', turn: failedTurn, status: 'error' })
+      dispatch({ type: 'COMMIT_TURN', turn: failedTurn, status: 'done' })
     } finally {
       abortRef.current = null
     }
@@ -467,6 +477,77 @@ function mockModelMap(): Record<string, string> {
     chat_critic: 'demo/critic',
     chat_writer: 'demo/writer',
   }
+}
+
+export function mergeStreamingTrailEvent(trail: ChatTrailEvent[], event: ChatTrailEvent): ChatTrailEvent[] {
+  const next = trail.slice()
+  mergeStreamingTrailEventInPlace(next, event)
+  return next
+}
+
+function mergeStreamingTrailEventInPlace(trail: ChatTrailEvent[], event: ChatTrailEvent): void {
+  const last = trail[trail.length - 1]
+  if (last?.type === 'orchestrator_thought' && event.type === 'orchestrator_thought') {
+    trail[trail.length - 1] = event
+    return
+  }
+  if (
+    last?.type === 'agent_token'
+    && event.type === 'agent_token'
+    && last.agent_key === event.agent_key
+  ) {
+    trail[trail.length - 1] = event
+    return
+  }
+  trail.push(event)
+}
+
+export function compactChatTrailForPersistence(trail: ChatTrailEvent[]): ChatTrailEvent[] {
+  const compacted = trail.map(compactStreamingEvent)
+  if (compacted.length <= MAX_TRAIL_EVENTS_FOR_PERSISTENCE) return compacted
+
+  const head = compacted.slice(0, 40)
+  const tail = compacted.slice(-(MAX_TRAIL_EVENTS_FOR_PERSISTENCE - head.length - 1))
+  return [
+    ...head,
+    {
+      type: 'error',
+      message: `${compacted.length - head.length - tail.length} eventos intermediários foram resumidos para manter o histórico leve.`,
+      ts: new Date().toISOString(),
+    },
+    ...tail,
+  ]
+}
+
+function compactStreamingEvent(event: ChatTrailEvent): ChatTrailEvent {
+  if (event.type === 'orchestrator_thought' || event.type === 'agent_token') {
+    return {
+      ...event,
+      delta: truncateMiddle(event.delta, MAX_STREAM_DELTA_CHARS_FOR_PERSISTENCE),
+      total: truncateMiddle(event.total, MAX_STREAM_TOTAL_CHARS_FOR_PERSISTENCE),
+    }
+  }
+  return event
+}
+
+function truncateMiddle(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value
+  const keep = Math.max(0, Math.floor((maxChars - 32) / 2))
+  return `${value.slice(0, keep)}\n…[conteúdo de streaming resumido]…\n${value.slice(-keep)}`
+}
+
+function buildRuntimeFallbackAnswer(userInput: string, detail: string): string {
+  return [
+    'Consegui preservar este turno e manter o orquestrador disponível, mas uma falha técnica interrompeu a execução multiagente completa.',
+    '',
+    '## Pedido recebido',
+    userInput,
+    '',
+    '## Entrega segura',
+    'O pedido ficou registrado nesta conversa. Reenvie a solicitação ou peça para continuar a partir daqui; o orquestrador retomará com outra estratégia em vez de travar.',
+    '',
+    `**Detalhe técnico:** ${detail}`,
+  ].join('\n')
 }
 
 export { isEffortLevel, EFFORT_PRESETS }

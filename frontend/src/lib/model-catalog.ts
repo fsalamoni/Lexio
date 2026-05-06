@@ -405,6 +405,11 @@ export async function fetchProviderModels(
     return provider.staticModels.map(m => providerEntryToModelOption(provider, m))
   }
 
+  if (provider.authHeader && !apiKey.trim()) {
+    if (!allowStaticFallback) return []
+    return provider.staticModels.map(m => providerEntryToModelOption(provider, m))
+  }
+
   const normalizedBaseUrlOverride = baseUrlOverride?.trim().replace(/\/+$/, '')
   const url = normalizedBaseUrlOverride
     ? provider.id === 'ollama'
