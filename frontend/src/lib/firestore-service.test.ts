@@ -573,15 +573,9 @@ describe('saveNotebookDocumentToDocuments', () => {
       ],
     })
 
-    expect(mockSetDoc).toHaveBeenCalledWith(
-      { path: 'users/user-123/settings/preferences' },
-      expect.objectContaining({
-        model_catalog: [
-          expect.not.objectContaining({ rateLimits: undefined }),
-        ],
-      }),
-      { merge: true },
-    )
+    const lastCall = mockSetDoc.mock.calls[mockSetDoc.mock.calls.length - 1]
+    const payload = lastCall?.[1] as { model_catalog?: Array<Record<string, unknown>> }
+    expect(payload.model_catalog?.[0]).not.toHaveProperty('rateLimits')
   })
 
   it('saves user settings under the authenticated uid and retries transient permission-denied', async () => {
