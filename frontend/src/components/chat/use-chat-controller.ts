@@ -280,7 +280,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     // events stream in, plus a final flush at completion.
     let pendingPersist = false
     let scheduled: ReturnType<typeof setTimeout> | null = null
-    const trailBuffer: ChatTrailEvent[] = []
+    const trailBuffer: ChatTrailEvent[] = initialTrail.slice()
     const flushTrail = async () => {
       if (!IS_FIREBASE || !userId) return
       pendingPersist = false
