@@ -46,5 +46,9 @@ export function resolveOrchestratorModel(
   orchestratorKey: string,
   fallbackKeys: string[] = [],
 ): string | null {
-  return models[orchestratorKey] || fallbackKeys.map(key => models[key]).find(Boolean) || null
+  if (models[orchestratorKey]) return models[orchestratorKey]
+  for (const key of fallbackKeys) {
+    if (models[key]) return models[key]
+  }
+  return null
 }
