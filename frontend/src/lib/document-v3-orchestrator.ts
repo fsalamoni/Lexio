@@ -63,7 +63,17 @@ import { evaluateQualityV3 } from './v3-agents/quality-evaluator-v3'
 import { superviseAgent } from './v3-agents/supervisor'
 import type {
   AgentRunContext,
+  AgentRunResult,
+  AgentBriefings,
+  BuiltTheses,
+  CitationVerification,
+  DocumentOutline,
+  IntentSummary,
+  LegalIssue,
+  ParsedRequest,
+  ResearchSection,
   SharedCaseContext,
+  ThesisCritique,
 } from './v3-agents/types'
 
 /**
@@ -98,6 +108,7 @@ const SUPERVISOR_QUALITY_ESCALATION_THRESHOLD = 70
 
 /** Character budget for each compacted phase summary (anti-bloat). */
 const PHASE_COMPACTION_CHAR_BUDGET = 3000
+const MAX_AGENT_FAILURE_MESSAGE_CHARS = 240
 
 export type GenerationProgressV3 = DocumentV3PipelineProgress
 export type ProgressCallbackV3 = (p: GenerationProgressV3) => void
@@ -110,8 +121,150 @@ export interface GenerateDocumentV3Options {
 
 interface SupervisorAction {
   agent: string
-  action: 'retry' | 'escalate' | 'second_round' | 'revise_citations'
+  action: 'retry' | 'escalate' | 'second_round' | 'revise_citations' | 'local_fallback' | 'continue_without_agent'
   reason: string
+}
+
+type NullableAgentRunResult<T> = AgentRunResult<T> | { output: T; llmResult: null }
+const ORCHESTRATOR_RECOVERY_ACTIONS = new Set<SupervisorAction['action']>([
+  'retry',
+  'escalate',
+  'local_fallback',
+  'continue_without_agent',
+  'second_round',
+  'revise_citations',
+])
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
+function describeAgentFailure(err: unknown): string {
+  if (err instanceof Error) {
+    const message = err.message.trim()
+    if (message) return message.slice(0, MAX_AGENT_FAILURE_MESSAGE_CHARS)
+  }
+  return String(err).slice(0, MAX_AGENT_FAILURE_MESSAGE_CHARS)
+}
+
+function isOrchestratorRecoveryAction(action: SupervisorAction): boolean {
+  return ORCHESTRATOR_RECOVERY_ACTIONS.has(action.action)
+}
+
+function fallbackIntent(ctx: SharedCaseContext): IntentSummary {
+  return {
+    classification: ctx.docTypeLabel,
+    complexity: 3,
+    urgency: 3,
+    notes: 'Classificação local usada porque o LLM não respondeu durante a compreensão.',
+  }
+}
+
+function fallbackParsedRequest(ctx: SharedCaseContext): ParsedRequest {
+  return {
+    partes: [],
+    fatos: [ctx.request].filter(Boolean),
+    pedidos: [],
+    prazos: [],
+    observacoes: 'Extração local mínima usada porque o LLM não respondeu.',
+  }
+}
+
+function fallbackLegalIssues(ctx: SharedCaseContext): LegalIssue[] {
+  return [{
+    id: 'Q1',
+    titulo: ctx.docTypeLabel,
+    resumo: ctx.request.slice(0, 320) || 'Questão jurídica principal indicada pelo pedido.',
+    areas: ctx.areas,
+  }]
+}
+
+function fallbackBriefings(ctx: SharedCaseContext): AgentBriefings {
+  const tema = ctx.legalIssues?.[0]?.titulo || ctx.intent?.classification || ctx.docTypeLabel
+  const keywords = [
+    ...ctx.areaLabels,
+    ctx.docTypeLabel,
+    ...(ctx.legalIssues ?? []).map(issue => issue.titulo),
+  ].map(k => k.trim()).filter(Boolean).slice(0, 8)
+  return {
+    tema,
+    subtemas: (ctx.legalIssues ?? []).map(issue => issue.titulo).slice(0, 6),
+    palavrasChave: keywords,
+    analise: 'Prosseguir com análise jurídica prudente a partir dos fatos informados, sem inventar dados.',
+    pesquisa: 'Pesquisar fundamentos normativos e entendimentos seguros relacionados ao tema central.',
+    redacao: 'Redigir documento formal, técnico e autocontido com base apenas no contexto disponível.',
+  }
+}
+
+function fallbackTheses(ctx: SharedCaseContext): BuiltTheses {
+  const issues = ctx.legalIssues?.length ? ctx.legalIssues : fallbackLegalIssues(ctx)
+  const text = issues.map((issue, idx) => [
+    `## Tese ${idx + 1} — ${issue.titulo}`,
+    issue.resumo,
+    'A argumentação deve ser desenvolvida de forma prudente, conectando os fatos narrados aos fundamentos jurídicos pertinentes e evitando referências não verificadas.',
+  ].join('\n')).join('\n\n')
+  return { text, titles: issues.map((issue, idx) => `Tese ${idx + 1} — ${issue.titulo}`) }
+}
+
+function fallbackCritique(): ThesisCritique {
+  return {
+    text: '## Crítica operacional\n- Fraqueza: crítica LLM indisponível; revisar manualmente a suficiência probatória e a aderência dos pedidos aos fatos narrados.',
+    weaknesses: 1,
+  }
+}
+
+function fallbackResearchSection(kind: string): ResearchSection {
+  return {
+    text: `## ${kind} não concluída automaticamente\nO agente de ${kind.toLowerCase()} não respondeu após retries. Prosseguir sem inventar citações; o redator deve usar linguagem prudente e apenas fundamentos presentes no contexto.`,
+  }
+}
+
+function fallbackCitationVerification(): CitationVerification {
+  return {
+    text: '## Verificação parcial\n- Itens verificados: 0\n- Correções aplicadas: 0\nA verificação LLM não respondeu; citações novas devem ser evitadas ou formuladas de modo genérico e prudente.',
+    corrections: 0,
+  }
+}
+
+function fallbackOutline(ctx: SharedCaseContext): DocumentOutline {
+  const tema = ctx.briefings?.tema || ctx.docTypeLabel
+  return {
+    text: [
+      `## ${tema}`,
+      '1. Síntese da solicitação e premissas fáticas informadas.',
+      '2. Questões jurídicas relevantes e teses sustentáveis.',
+      '3. Fundamentação jurídica prudente, sem citações não verificadas.',
+      '4. Conclusão e encaminhamentos.',
+    ].join('\n'),
+  }
+}
+
+function fallbackEmergencyDocument(ctx: SharedCaseContext): string {
+  const tema = ctx.briefings?.tema || ctx.docTypeLabel
+  const facts = ctx.parsedFacts?.fatos?.length ? ctx.parsedFacts.fatos.join('; ') : ctx.request
+  const theses = ctx.refinedTheses?.text || ctx.theses?.text || fallbackTheses(ctx).text
+  const research = [
+    ctx.legislation?.text,
+    ctx.jurisprudence?.text,
+    ctx.doctrine?.text,
+    ctx.citationCheck?.text,
+  ].filter(Boolean).join('\n\n')
+  return [
+    tema.toUpperCase(),
+    '',
+    'SÍNTESE',
+    `Este rascunho foi concluído em modo de continuidade operacional porque o agente redator não respondeu após as tentativas de retomada. A solicitação original foi: ${ctx.request}`,
+    `Fatos e contexto disponíveis: ${facts}`,
+    '',
+    'QUESTÕES E TESES',
+    theses,
+    '',
+    'FUNDAMENTAÇÃO DISPONÍVEL',
+    research || 'Não houve retorno completo dos agentes de pesquisa. Por segurança, este texto não acrescenta citações específicas não verificadas.',
+    '',
+    'CONCLUSÃO',
+    'Recomenda-se revisão humana antes do protocolo ou uso externo, especialmente para completar citações, adequar pedidos e conferir documentos de suporte. Ainda assim, o pipeline foi preservado sem interromper a geração por falha transitória de LLM.',
+  ].join('\n\n')
 }
 
 /**
@@ -324,7 +477,111 @@ export async function generateDocumentV3(
     }
 
     const supervisorModel = agentModels.v3_supervisor || undefined
+    const orchestratorModel = agentModels.v3_pipeline_orchestrator || supervisorModel || agentModels.v3_writer || undefined
     const parallelLimit = Math.max(1, options?.parallelLimit ?? DOCUMENT_V3_DEFAULT_PARALLEL_LIMIT)
+    reportProgress('v3_pipeline_orchestrator', 'Orquestrador monitorando execução, retries e continuidade...', 3, {
+      modelId: orchestratorModel,
+      executionState: 'running',
+      stageMeta: `Limite paralelo: ${parallelLimit}`,
+    })
+
+    const recordAgentResult = (
+      phase: string,
+      agentName: string,
+      result: { llmResult: LLMResult | null; extraExecutions?: ReadonlyArray<{ phase: string; agentName: string; llmResult: LLMResult }> },
+    ) => {
+      if (result.llmResult) {
+        recordExecution(phase, agentName, result.llmResult)
+        recordAgentDuration(result.llmResult)
+      }
+      for (const extra of result.extraExecutions ?? []) {
+        recordExecution(extra.phase, extra.agentName, extra.llmResult)
+        recordAgentDuration(extra.llmResult)
+      }
+    }
+
+    const recordSupervisorRecovery = (
+      agent: string,
+      agentLabel: string,
+      action: SupervisorAction['action'],
+      reason: string,
+      percent: number,
+    ) => {
+      supervisorActions.push({ agent, action, reason })
+      const actionMessages: Record<SupervisorAction['action'], string> = {
+        retry: 'retentativa supervisionada',
+        escalate: 'escalonamento supervisionado',
+        second_round: 'segunda rodada supervisionada',
+        revise_citations: 'revisão de citações',
+        local_fallback: 'fallback local seguro',
+        continue_without_agent: 'seguindo sem bloquear a fase',
+      }
+      reportProgress('v3_pipeline_orchestrator', `Orquestrador: ${agentLabel} — ${actionMessages[action]}.`, percent, {
+        modelId: orchestratorModel,
+        executionState: 'retrying',
+        stageMeta: reason,
+      })
+    }
+
+    const runResilientAgent = async <T,>(opts: {
+      agentKey: string
+      agentLabel: string
+      startMessage: string
+      completedMessage: (output: T) => string
+      fallbackMessage: string
+      startPercent: number
+      completedPercent: number
+      runner: (ctx: AgentRunContext) => Promise<NullableAgentRunResult<T>>
+      fallbackOutput: () => T
+      validate?: (result: NullableAgentRunResult<T>) => string | null
+      maxRetries?: number
+      recoveryAction?: SupervisorAction['action']
+    }): Promise<NullableAgentRunResult<T>> => {
+      reportProgress(opts.agentKey, opts.startMessage, opts.startPercent, {
+        modelId: agentModels[opts.agentKey],
+        executionState: 'running',
+      })
+      try {
+        const supervised = await superviseAgent({
+          agentLabel: opts.agentLabel,
+          primaryModel: agentModels[opts.agentKey] || agentModels.v3_writer,
+          escalationModel: supervisorModel,
+          maxRetries: opts.maxRetries ?? 2,
+          runner: async (model, attempt) => {
+            if (attempt > 0) {
+              reportProgress(opts.agentKey, `Orquestrador retomando ${opts.agentLabel} (tentativa ${attempt + 1})...`, opts.startPercent, {
+                modelId: model,
+                executionState: 'retrying',
+              })
+            }
+            return opts.runner({ ...buildAgentCtx(opts.agentKey), model })
+          },
+          validate: opts.validate,
+        })
+        const result = supervised.output
+        recordAgentResult(opts.agentKey, opts.agentLabel, result)
+        if (supervised.usedEscalation) {
+          supervisorActions.push({ agent: opts.agentKey, action: 'escalate', reason: supervised.reason })
+        } else if (supervised.attempts > 1) {
+          supervisorActions.push({ agent: opts.agentKey, action: 'retry', reason: supervised.reason })
+        }
+        reportProgress(opts.agentKey, opts.completedMessage(result.output), opts.completedPercent, result.llmResult
+          ? { result: result.llmResult, executionState: 'running' }
+          : { executionState: 'running' })
+        return result
+      } catch (err) {
+        if (isAbortError(err)) throw err
+        const reason = describeAgentFailure(err)
+        const action = opts.recoveryAction ?? 'local_fallback'
+        recordSupervisorRecovery(opts.agentKey, opts.agentLabel, action, reason, opts.startPercent)
+        const fallback = { output: opts.fallbackOutput(), llmResult: null }
+        reportProgress(opts.agentKey, opts.fallbackMessage, opts.completedPercent, {
+          executionState: 'running',
+          stageMeta: `Fallback local: ${reason}`,
+        })
+        return fallback
+      }
+    }
 
     // ── Phase 1: Compreensão (parallel) ─────────────────────────────────────
     await trackPhase('compreensao', async () => {
@@ -333,45 +590,46 @@ export async function generateDocumentV3(
       // "waiting_io" pre-emission gap that previously sat between phases.
       const [intentRes, parserRes, issuesRes] = await runWithConcurrency<unknown>(
         [
-          async () => {
-            reportProgress('v3_intent_classifier', 'Compreendendo a solicitação...', 5, {
-              modelId: agentModels.v3_intent_classifier,
-              executionState: 'running',
-            })
-            const res = await runIntentClassifier(buildAgentCtx('v3_intent_classifier'))
-            recordExecution('v3_intent_classifier', 'Classificador de Intenção', res.llmResult)
-            recordAgentDuration(res.llmResult)
-            reportProgress('v3_intent_classifier', 'Classificação concluída.', 9, { result: res.llmResult, executionState: 'running' })
-            return res
-          },
-          async () => {
-            reportProgress('v3_request_parser', 'Extraindo fatos e partes...', 6, {
-              modelId: agentModels.v3_request_parser,
-              executionState: 'running',
-            })
-            const res = await runRequestParser(buildAgentCtx('v3_request_parser'))
-            recordExecution('v3_request_parser', 'Parser da Solicitação', res.llmResult)
-            recordAgentDuration(res.llmResult)
-            reportProgress('v3_request_parser', 'Parser concluído.', 10, { result: res.llmResult, executionState: 'running' })
-            return res
-          },
-          async () => {
-            reportProgress('v3_legal_issue_spotter', 'Identificando questões jurídicas...', 7, {
-              modelId: agentModels.v3_legal_issue_spotter,
-              executionState: 'running',
-            })
-            const res = await runLegalIssueSpotter(buildAgentCtx('v3_legal_issue_spotter'))
-            recordExecution('v3_legal_issue_spotter', 'Identificador de Questões', res.llmResult)
-            recordAgentDuration(res.llmResult)
-            reportProgress('v3_legal_issue_spotter', 'Questões identificadas.', 11, { result: res.llmResult, executionState: 'running' })
-            return res
-          },
+          () => runResilientAgent({
+            agentKey: 'v3_intent_classifier',
+            agentLabel: 'Classificador de Intenção',
+            startMessage: 'Compreendendo a solicitação...',
+            completedMessage: () => 'Classificação concluída.',
+            fallbackMessage: 'Classificação local aplicada.',
+            startPercent: 5,
+            completedPercent: 9,
+            runner: runIntentClassifier,
+            fallbackOutput: () => fallbackIntent(caseContext),
+          }),
+          () => runResilientAgent({
+            agentKey: 'v3_request_parser',
+            agentLabel: 'Parser da Solicitação',
+            startMessage: 'Extraindo fatos e partes...',
+            completedMessage: () => 'Parser concluído.',
+            fallbackMessage: 'Extração local mínima aplicada.',
+            startPercent: 6,
+            completedPercent: 10,
+            runner: runRequestParser,
+            fallbackOutput: () => fallbackParsedRequest(caseContext),
+          }),
+          () => runResilientAgent({
+            agentKey: 'v3_legal_issue_spotter',
+            agentLabel: 'Identificador de Questões',
+            startMessage: 'Identificando questões jurídicas...',
+            completedMessage: () => 'Questões identificadas.',
+            fallbackMessage: 'Questão jurídica local aplicada.',
+            startPercent: 7,
+            completedPercent: 11,
+            runner: runLegalIssueSpotter,
+            fallbackOutput: () => fallbackLegalIssues(caseContext),
+            validate: (res) => res.output.length > 0 ? null : 'questoes_vazias',
+          }),
         ],
         parallelLimit,
       ) as [
-        Awaited<ReturnType<typeof runIntentClassifier>>,
-        Awaited<ReturnType<typeof runRequestParser>>,
-        Awaited<ReturnType<typeof runLegalIssueSpotter>>,
+        NullableAgentRunResult<IntentSummary>,
+        NullableAgentRunResult<ParsedRequest>,
+        NullableAgentRunResult<LegalIssue[]>,
       ]
 
       caseContext.intent = intentRes.output
@@ -385,41 +643,23 @@ export async function generateDocumentV3(
       // emission here.
 
       // Architect consolidates the comprehension phase
-      reportProgress('v3_prompt_architect', 'Arquiteto consolidando briefings...', 13, {
-        modelId: agentModels.v3_prompt_architect,
-        executionState: 'running',
-      })
-      const architectRes = await superviseAgent({
+      const architectRes = await runResilientAgent({
+        agentKey: 'v3_prompt_architect',
         agentLabel: 'Arquiteto de Prompts',
-        primaryModel: agentModels.v3_prompt_architect,
-        escalationModel: supervisorModel,
-        runner: async (model) => {
-          const result = await runPromptArchitect({ ...buildAgentCtx('v3_prompt_architect'), model })
-          recordExecution('v3_prompt_architect', 'Arquiteto de Prompts', result.llmResult)
-          recordAgentDuration(result.llmResult)
-          reportProgress('v3_prompt_architect', 'Briefings prontos.', 16, { result: result.llmResult, executionState: 'running' })
-          return result
-        },
+        startMessage: 'Arquiteto consolidando briefings...',
+        completedMessage: () => 'Briefings prontos.',
+        fallbackMessage: 'Briefings locais aplicados.',
+        startPercent: 13,
+        completedPercent: 16,
+        runner: runPromptArchitect,
+        fallbackOutput: () => fallbackBriefings(caseContext),
         validate: (res) => (
           res.output.tema && (res.output.analise || res.output.pesquisa || res.output.redacao)
             ? null
             : 'briefings_vazios'
         ),
       })
-      caseContext.briefings = architectRes.output.output
-      if (architectRes.usedEscalation) {
-        supervisorActions.push({
-          agent: 'v3_prompt_architect',
-          action: 'escalate',
-          reason: architectRes.reason,
-        })
-      } else if (architectRes.attempts > 1) {
-        supervisorActions.push({
-          agent: 'v3_prompt_architect',
-          action: 'retry',
-          reason: architectRes.reason,
-        })
-      }
+      caseContext.briefings = architectRes.output
     })
 
     // A. Compactar a compreensão (Fase 1) — agentes da Fase 2 e 3 lerão a versão
@@ -485,30 +725,30 @@ export async function generateDocumentV3(
     await trackPhase('analise', async () => {
       const [acervoRes, thesisIORes] = await runWithConcurrency<unknown>(
         [
-          async () => {
-            reportProgress('v3_acervo_retriever', 'Buscando acervo relevante...', 18, {
-              modelId: agentModels.v3_acervo_retriever,
-              executionState: 'running',
-            })
-            const res = await runAcervoRetriever(buildAgentCtx('v3_acervo_retriever'), uid)
-            if (res.llmResult) {
-              recordExecution('v3_acervo_retriever', 'Buscador de Acervo', res.llmResult)
-              recordAgentDuration(res.llmResult)
-              reportProgress('v3_acervo_retriever', `Acervo (${res.output.selectedFilenames.length} docs).`, 22, { result: res.llmResult, executionState: 'running' })
-            } else {
-              reportProgress('v3_acervo_retriever', 'Sem acervo aplicável.', 22, { executionState: 'running' })
-            }
-            return res
-          },
-          async () => {
-            reportProgress('v3_thesis_retriever', 'Buscando teses do banco...', 19, {
-              modelId: agentModels.v3_thesis_retriever,
-              executionState: 'running',
-            })
-            const res = await runThesisRetriever(buildAgentCtx('v3_thesis_retriever'), uid)
-            reportProgress('v3_thesis_retriever', `Teses (${res.output.count}).`, 24, { executionState: 'running' })
-            return res
-          },
+          () => runResilientAgent({
+            agentKey: 'v3_acervo_retriever',
+            agentLabel: 'Buscador de Acervo',
+            startMessage: 'Buscando acervo relevante...',
+            completedMessage: output => output.selectedFilenames.length > 0 ? `Acervo (${output.selectedFilenames.length} docs).` : 'Sem acervo aplicável.',
+            fallbackMessage: 'Acervo ignorado para não bloquear a geração.',
+            startPercent: 18,
+            completedPercent: 22,
+            runner: ctx => runAcervoRetriever(ctx, uid),
+            fallbackOutput: () => ({ snippets: '', selectedFilenames: [] as string[] }),
+            recoveryAction: 'continue_without_agent',
+          }),
+          () => runResilientAgent({
+            agentKey: 'v3_thesis_retriever',
+            agentLabel: 'Buscador de Teses',
+            startMessage: 'Buscando teses do banco...',
+            completedMessage: output => `Teses (${output.count}).`,
+            fallbackMessage: 'Banco de teses ignorado para não bloquear a geração.',
+            startPercent: 19,
+            completedPercent: 24,
+            runner: ctx => runThesisRetriever(ctx, uid),
+            fallbackOutput: () => ({ snippets: '', count: 0 }),
+            recoveryAction: 'continue_without_agent',
+          }),
         ],
         parallelLimit,
       ) as [
@@ -519,55 +759,78 @@ export async function generateDocumentV3(
       caseContext.thesisSnippets = thesisIORes.output.snippets
 
       // Thesis builder
-      reportProgress('v3_thesis_builder', 'Construindo teses...', 27, {
-        modelId: agentModels.v3_thesis_builder,
-        executionState: 'running',
-      })
-      const builderRes = await superviseAgent({
+      const builderRes = await runResilientAgent({
+        agentKey: 'v3_thesis_builder',
         agentLabel: 'Construtor de Teses',
-        primaryModel: agentModels.v3_thesis_builder,
-        escalationModel: supervisorModel,
-        runner: async (model) => {
-          const result = await runThesisBuilder({ ...buildAgentCtx('v3_thesis_builder'), model })
-          recordExecution('v3_thesis_builder', 'Construtor de Teses', result.llmResult)
-          recordAgentDuration(result.llmResult)
-          reportProgress('v3_thesis_builder', 'Teses construídas.', 35, { result: result.llmResult, executionState: 'running' })
-          return result
-        },
+        startMessage: 'Construindo teses...',
+        completedMessage: () => 'Teses construídas.',
+        fallbackMessage: 'Teses locais mínimas aplicadas.',
+        startPercent: 27,
+        completedPercent: 35,
+        runner: runThesisBuilder,
+        fallbackOutput: () => fallbackTheses(caseContext),
         validate: (res) => (res.output.text.length > 200 ? null : 'tese_curta'),
       })
-      caseContext.theses = builderRes.output.output
-      if (builderRes.usedEscalation) {
-        supervisorActions.push({ agent: 'v3_thesis_builder', action: 'escalate', reason: builderRes.reason })
-      }
+      caseContext.theses = builderRes.output
 
       // Devil advocate
-      reportProgress('v3_devil_advocate', 'Crítica do advogado do diabo...', 38, {
-        modelId: agentModels.v3_devil_advocate,
+      const devilRes = await runResilientAgent({
+        agentKey: 'v3_devil_advocate',
+        agentLabel: 'Advogado do Diabo',
+        startMessage: 'Crítica do advogado do diabo...',
+        completedMessage: output => `Crítica concluída (${output.weaknesses} pontos).`,
+        fallbackMessage: 'Crítica local mínima aplicada.',
+        startPercent: 38,
+        completedPercent: 42,
+        runner: runDevilAdvocate,
+        fallbackOutput: fallbackCritique,
+        recoveryAction: 'continue_without_agent',
       })
-      const devilRes = await runDevilAdvocate(buildAgentCtx('v3_devil_advocate'))
       caseContext.critique = devilRes.output
-      recordExecution('v3_devil_advocate', 'Advogado do Diabo', devilRes.llmResult)
-      recordAgentDuration(devilRes.llmResult)
-      reportProgress('v3_devil_advocate', `Crítica concluída (${devilRes.output.weaknesses} pontos).`, 42, { result: devilRes.llmResult, executionState: 'running' })
 
       // Refiner — may loop with devil advocate based on supervisor decision (max 1 extra round)
-      let refinerRes = await runThesisRefiner(buildAgentCtx('v3_thesis_refiner'), devilRes.output)
+      let refinerRes = await runResilientAgent({
+        agentKey: 'v3_thesis_refiner',
+        agentLabel: 'Refinador de Teses',
+        startMessage: 'Refinando teses...',
+        completedMessage: () => 'Teses refinadas.',
+        fallbackMessage: 'Mantendo teses construídas sem refino LLM.',
+        startPercent: 44,
+        completedPercent: 48,
+        runner: ctx => runThesisRefiner(ctx, devilRes.output),
+        fallbackOutput: () => caseContext.theses ?? fallbackTheses(caseContext),
+      })
       caseContext.refinedTheses = refinerRes.output
-      recordExecution('v3_thesis_refiner', 'Refinador de Teses', refinerRes.llmResult)
-      recordAgentDuration(refinerRes.llmResult)
-      reportProgress('v3_thesis_refiner', 'Teses refinadas.', 48, { result: refinerRes.llmResult, executionState: 'running' })
 
       // Optional second round if the critique pointed many weaknesses
       if (devilRes.output.weaknesses >= SUPERVISOR_DEVIL_ROUND2_THRESHOLD) {
-        const devilRound2 = await runDevilAdvocate(buildAgentCtx('v3_devil_advocate'))
-        recordExecution('v3_devil_advocate', 'Advogado do Diabo (rodada 2)', devilRound2.llmResult)
-        recordAgentDuration(devilRound2.llmResult)
+        const devilRound2 = await runResilientAgent({
+          agentKey: 'v3_devil_advocate',
+          agentLabel: 'Advogado do Diabo (rodada 2)',
+          startMessage: 'Reavaliando crítica...',
+          completedMessage: output => `Crítica rodada 2 (${output.weaknesses} pontos).`,
+          fallbackMessage: 'Rodada 2 ignorada para manter continuidade.',
+          startPercent: 43,
+          completedPercent: 44,
+          runner: runDevilAdvocate,
+          fallbackOutput: () => devilRes.output,
+          recoveryAction: 'continue_without_agent',
+          maxRetries: 1,
+        })
         if (devilRound2.output.weaknesses < devilRes.output.weaknesses) {
-          refinerRes = await runThesisRefiner(buildAgentCtx('v3_thesis_refiner'), devilRound2.output)
+          refinerRes = await runResilientAgent({
+            agentKey: 'v3_thesis_refiner',
+            agentLabel: 'Refinador de Teses (rodada 2)',
+            startMessage: 'Refinando teses após rodada 2...',
+            completedMessage: () => 'Teses refinadas na rodada 2.',
+            fallbackMessage: 'Mantendo refino anterior.',
+            startPercent: 45,
+            completedPercent: 48,
+            runner: ctx => runThesisRefiner(ctx, devilRound2.output),
+            fallbackOutput: () => caseContext.refinedTheses ?? caseContext.theses ?? fallbackTheses(caseContext),
+            maxRetries: 1,
+          })
           caseContext.refinedTheses = refinerRes.output
-          recordExecution('v3_thesis_refiner', 'Refinador de Teses (rodada 2)', refinerRes.llmResult)
-          recordAgentDuration(refinerRes.llmResult)
           supervisorActions.push({
             agent: 'v3_thesis_refiner',
             action: 'second_round',
@@ -601,24 +864,28 @@ export async function generateDocumentV3(
     await trackPhase('pesquisa', async () => {
       const [legisRes, juriRes, doctRes, outlineRes] = await runWithConcurrency<unknown>(
         [
-          async () => {
-            reportProgress('v3_legislation_researcher', 'Pesquisando legislação...', 52, {
-              modelId: agentModels.v3_legislation_researcher,
-              executionState: 'running',
-            })
-            const res = await runLegislationResearcher(buildAgentCtx('v3_legislation_researcher'))
-            recordExecution('v3_legislation_researcher', 'Pesquisador de Legislação', res.llmResult)
-            recordAgentDuration(res.llmResult)
-            reportProgress('v3_legislation_researcher', 'Legislação concluída.', 60, { result: res.llmResult, executionState: 'running' })
-            return res
-          },
-          async () => {
-            reportProgress('v3_jurisprudence_researcher', 'Consultando DataJud (jurisprudência real)...', 53, {
-              modelId: agentModels.v3_jurisprudence_researcher,
-              executionState: 'running',
-            })
-            const res = await runJurisprudenceResearcher(
-              buildAgentCtx('v3_jurisprudence_researcher'),
+          () => runResilientAgent({
+            agentKey: 'v3_legislation_researcher',
+            agentLabel: 'Pesquisador de Legislação',
+            startMessage: 'Pesquisando legislação...',
+            completedMessage: () => 'Legislação concluída.',
+            fallbackMessage: 'Pesquisa de legislação ignorada com orientação prudente.',
+            startPercent: 52,
+            completedPercent: 60,
+            runner: runLegislationResearcher,
+            fallbackOutput: () => fallbackResearchSection('Legislação'),
+            recoveryAction: 'continue_without_agent',
+          }),
+          () => runResilientAgent({
+            agentKey: 'v3_jurisprudence_researcher',
+            agentLabel: 'Pesquisador de Jurisprudência',
+            startMessage: 'Consultando DataJud (jurisprudência real)...',
+            completedMessage: () => 'Jurisprudência concluída.',
+            fallbackMessage: 'Pesquisa de jurisprudência ignorada com orientação prudente.',
+            startPercent: 53,
+            completedPercent: 62,
+            runner: ctx => runJurisprudenceResearcher(
+              ctx,
               {
                 rankerModel: notebookModels.notebook_ranqueador_jurisprudencia || undefined,
                 synthesisModel: notebookModels.notebook_pesquisador_jurisprudencia || undefined,
@@ -629,48 +896,40 @@ export async function generateDocumentV3(
                   })
                 },
               },
-            )
-            // Primary execution (synthesis or fallback) plus any extras (DataJud rank).
-            recordExecution('v3_jurisprudence_researcher', 'Pesquisador de Jurisprudência', res.llmResult)
-            recordAgentDuration(res.llmResult)
-            for (const extra of res.extraExecutions ?? []) {
-              recordExecution(extra.phase, extra.agentName, extra.llmResult)
-              recordAgentDuration(extra.llmResult)
-            }
-            reportProgress('v3_jurisprudence_researcher', 'Jurisprudência concluída.', 62, { result: res.llmResult, executionState: 'running' })
-            return res
-          },
-          async () => {
-            reportProgress('v3_doctrine_researcher', 'Pesquisando doutrina...', 54, {
-              modelId: agentModels.v3_doctrine_researcher,
-              executionState: 'running',
-            })
-            const res = await runDoctrineResearcher(buildAgentCtx('v3_doctrine_researcher'))
-            recordExecution('v3_doctrine_researcher', 'Pesquisador de Doutrina', res.llmResult)
-            recordAgentDuration(res.llmResult)
-            reportProgress('v3_doctrine_researcher', 'Doutrina concluída.', 64, { result: res.llmResult, executionState: 'running' })
-            return res
-          },
-          async () => {
-            // I. outline-planner é disparado em paralelo com a pesquisa: depende
-            // apenas dos briefings + teses refinadas (já disponíveis).
-            reportProgress('v3_outline_planner', 'Planejando estrutura (em paralelo)...', 55, {
-              modelId: agentModels.v3_outline_planner,
-              executionState: 'running',
-            })
-            const res = await runOutlinePlanner(buildAgentCtx('v3_outline_planner'), customStructure)
-            recordExecution('v3_outline_planner', 'Planejador da Estrutura', res.llmResult)
-            recordAgentDuration(res.llmResult)
-            reportProgress('v3_outline_planner', 'Plano definido.', 66, { result: res.llmResult, executionState: 'running' })
-            return res
-          },
+            ),
+            fallbackOutput: () => fallbackResearchSection('Jurisprudência'),
+            recoveryAction: 'continue_without_agent',
+          }),
+          () => runResilientAgent({
+            agentKey: 'v3_doctrine_researcher',
+            agentLabel: 'Pesquisador de Doutrina',
+            startMessage: 'Pesquisando doutrina...',
+            completedMessage: () => 'Doutrina concluída.',
+            fallbackMessage: 'Pesquisa de doutrina ignorada com orientação prudente.',
+            startPercent: 54,
+            completedPercent: 64,
+            runner: runDoctrineResearcher,
+            fallbackOutput: () => fallbackResearchSection('Doutrina'),
+            recoveryAction: 'continue_without_agent',
+          }),
+          () => runResilientAgent({
+            agentKey: 'v3_outline_planner',
+            agentLabel: 'Planejador da Estrutura',
+            startMessage: 'Planejando estrutura (em paralelo)...',
+            completedMessage: () => 'Plano definido.',
+            fallbackMessage: 'Plano local mínimo definido.',
+            startPercent: 55,
+            completedPercent: 66,
+            runner: ctx => runOutlinePlanner(ctx, customStructure),
+            fallbackOutput: () => fallbackOutline(caseContext),
+          }),
         ],
         parallelLimit,
       ) as [
-        Awaited<ReturnType<typeof runLegislationResearcher>>,
-        Awaited<ReturnType<typeof runJurisprudenceResearcher>>,
-        Awaited<ReturnType<typeof runDoctrineResearcher>>,
-        Awaited<ReturnType<typeof runOutlinePlanner>>,
+        NullableAgentRunResult<ResearchSection>,
+        NullableAgentRunResult<ResearchSection>,
+        NullableAgentRunResult<ResearchSection>,
+        NullableAgentRunResult<DocumentOutline>,
       ]
       caseContext.legislation = legisRes.output
       caseContext.jurisprudence = juriRes.output
@@ -678,14 +937,19 @@ export async function generateDocumentV3(
       caseContext.outline = outlineRes.output
 
       // Citation verifier (sequential — depends on the research material)
-      reportProgress('v3_citation_verifier', 'Verificando citações...', 68, {
-        modelId: agentModels.v3_citation_verifier,
+      const citationRes = await runResilientAgent({
+        agentKey: 'v3_citation_verifier',
+        agentLabel: 'Verificador de Citações',
+        startMessage: 'Verificando citações...',
+        completedMessage: output => `Citações verificadas (${output.corrections} correções).`,
+        fallbackMessage: 'Verificação local parcial aplicada.',
+        startPercent: 68,
+        completedPercent: 72,
+        runner: runCitationVerifier,
+        fallbackOutput: fallbackCitationVerification,
+        recoveryAction: 'continue_without_agent',
       })
-      const citationRes = await runCitationVerifier(buildAgentCtx('v3_citation_verifier'))
       caseContext.citationCheck = citationRes.output
-      recordExecution('v3_citation_verifier', 'Verificador de Citações', citationRes.llmResult)
-      recordAgentDuration(citationRes.llmResult)
-      reportProgress('v3_citation_verifier', `Citações verificadas (${citationRes.output.corrections} correções).`, 72, { result: citationRes.llmResult, executionState: 'running' })
     })
 
     // A. Compactar a pesquisa (Fase 3) para o writer-reviser (writer
@@ -706,27 +970,20 @@ export async function generateDocumentV3(
     let finalText = ''
     let writerEscalated = false
     await trackPhase('redacao', async () => {
-      reportProgress('v3_writer', 'Redigindo o documento...', 85, {
-        modelId: agentModels.v3_writer,
-      })
-      const writerRes = await superviseAgent({
+      const writerRes = await runResilientAgent({
+        agentKey: 'v3_writer',
         agentLabel: 'Redator',
-        primaryModel: agentModels.v3_writer,
-        escalationModel: supervisorModel,
-        runner: async (model) => {
-          const result = await runWriter({ ...buildAgentCtx('v3_writer'), model })
-          recordExecution('v3_writer', 'Redator', result.llmResult)
-          recordAgentDuration(result.llmResult)
-          reportProgress('v3_writer', 'Redação concluída.', 90, { result: result.llmResult, executionState: 'running' })
-          return result
-        },
+        startMessage: 'Redigindo o documento...',
+        completedMessage: () => 'Redação concluída.',
+        fallbackMessage: 'Rascunho de continuidade gerado localmente.',
+        startPercent: 85,
+        completedPercent: 90,
+        runner: runWriter,
+        fallbackOutput: () => fallbackEmergencyDocument(caseContext),
         validate: (res) => (res.output.length > 800 ? null : 'documento_curto'),
       })
-      finalText = writerRes.output.output
-      writerEscalated = writerRes.usedEscalation
-      if (writerRes.usedEscalation) {
-        supervisorActions.push({ agent: 'v3_writer', action: 'escalate', reason: writerRes.reason })
-      }
+      finalText = writerRes.output
+      writerEscalated = supervisorActions.some(a => a.agent === 'v3_writer' && a.action === 'escalate')
 
       // C. Verificação determinística pós-redação contra o material da Fase 3.
       // Quando o writer introduz citações que não constam do material verificado,
@@ -738,15 +995,22 @@ export async function generateDocumentV3(
         caseContext.citationCheck?.text,
       ])
       if (draftCheck.unsupported.length > 0) {
-        reportProgress('v3_writer_reviser', `Revisando ${draftCheck.unsupported.length} citações não fundamentadas...`, 91, {
-          modelId: agentModels.v3_writer_reviser || agentModels.v3_writer,
+        const reviserResult = await runResilientAgent({
+          agentKey: 'v3_writer_reviser',
+          agentLabel: 'Revisor de Redação',
+          startMessage: `Revisando ${draftCheck.unsupported.length} citações não fundamentadas...`,
+          completedMessage: () => 'Revisão de citações concluída.',
+          fallbackMessage: 'Revisão LLM ignorada; mantendo rascunho atual.',
+          startPercent: 91,
+          completedPercent: 92,
+          runner: ctx => runWriterReviser(
+            ctx,
+            { draft: finalText, unsupportedCitations: draftCheck.unsupported },
+          ),
+          fallbackOutput: () => finalText,
+          recoveryAction: 'continue_without_agent',
+          maxRetries: 1,
         })
-        const reviserResult = await runWriterReviser(
-          { ...buildAgentCtx('v3_writer_reviser') },
-          { draft: finalText, unsupportedCitations: draftCheck.unsupported },
-        )
-        recordExecution('v3_writer_reviser', 'Revisor de Redação', reviserResult.llmResult)
-        recordAgentDuration(reviserResult.llmResult)
         if (reviserResult.output && reviserResult.output.length > 400) {
           finalText = reviserResult.output
         }
@@ -754,10 +1018,6 @@ export async function generateDocumentV3(
           agent: 'v3_writer_reviser',
           action: 'revise_citations',
           reason: `unsupported_${draftCheck.unsupported.length}`,
-        })
-        reportProgress('v3_writer_reviser', 'Revisão de citações concluída.', 92, {
-          result: reviserResult.llmResult,
-          executionState: 'running',
         })
       } else {
         // Mark the reviser step as completed without firing an LLM call so the
@@ -810,8 +1070,29 @@ export async function generateDocumentV3(
       }
     }
 
-    const usage_summary = buildUsageSummary(llmExecutions)
-    const totals = llmExecutions.reduce(
+    const orchestratorRecoveryCount = supervisorActions.filter(isOrchestratorRecoveryAction).length
+    const orchestratorExecution = createUsageExecutionRecord({
+      source_type: 'document_generation_v3',
+      source_id: docId,
+      phase: 'v3_pipeline_orchestrator',
+      agent_name: 'Orquestrador do Pipeline',
+      model: orchestratorModel ?? null,
+      tokens_in: 0,
+      tokens_out: 0,
+      cost_usd: 0,
+      duration_ms: Date.now() - wallClockStart,
+      execution_state: orchestratorRecoveryCount > 0 ? 'retrying' : 'completed',
+      retry_count: orchestratorRecoveryCount,
+      used_fallback: supervisorActions.some(action => action.action === 'local_fallback' || action.action === 'continue_without_agent'),
+      runtime_concurrency: parallelLimit,
+      runtime_hints: supervisorActions.length > 0
+        ? `${supervisorActions.length} ação(ões) de supervisão`
+        : 'Execução supervisionada sem recuperações',
+      document_type_id: docType,
+    })
+    const persistedExecutions = [orchestratorExecution, ...llmExecutions]
+    const usage_summary = buildUsageSummary(persistedExecutions)
+    const totals = persistedExecutions.reduce(
       (acc, e) => ({ tin: acc.tin + e.tokens_in, tout: acc.tout + e.tokens_out, cost: acc.cost + e.cost_usd }),
       { tin: 0, tout: 0, cost: 0 },
     )
@@ -831,10 +1112,13 @@ export async function generateDocumentV3(
         llm_tokens_in: totals.tin,
         llm_tokens_out: totals.tout,
         llm_cost_usd: parseFloat(totals.cost.toFixed(6)),
-        llm_executions: llmExecutions,
+        llm_executions: persistedExecutions,
         usage_summary,
         generation_meta: {
           pipeline_version: 'v3',
+          orchestrator_agent: 'v3_pipeline_orchestrator',
+          orchestrator_model: orchestratorModel ?? null,
+          orchestrator_recovery_count: orchestratorRecoveryCount,
           quality_passed: quality.passed,
           quality_failed: quality.failed,
           phase_durations_ms: phaseDurationsMs,

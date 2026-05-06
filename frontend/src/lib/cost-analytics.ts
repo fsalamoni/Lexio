@@ -125,6 +125,7 @@ const PHASE_LABELS: Record<string, string> = {
   moderador: 'Moderador',
   redacao: 'Redação',
   // ── Document v3 phases ──
+  v3_pipeline_orchestrator: 'V3: Orquestrador do Pipeline',
   v3_intent_classifier: 'V3: Classificador de Intenção',
   v3_request_parser: 'V3: Parser da Solicitação',
   v3_legal_issue_spotter: 'V3: Identificador de Questões Jurídicas',

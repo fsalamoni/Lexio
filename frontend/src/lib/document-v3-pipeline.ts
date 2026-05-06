@@ -94,6 +94,13 @@ export const DOCUMENT_V3_PIPELINE_STAGES: DocumentV3PipelineStage[] = [
     description: 'Carregando chaves, modelos e estrutura do documento',
     phase: 'config',
   },
+  {
+    key: 'v3_pipeline_orchestrator',
+    label: 'Orquestrador do Pipeline',
+    description: 'Supervisiona agentes, retries, escalonamentos e continuidade da execução',
+    phase: 'config',
+    modelKey: 'v3_pipeline_orchestrator',
+  },
 
   // ── Fase 1: Compreensão ────────────────────────────────────────────────────
   {

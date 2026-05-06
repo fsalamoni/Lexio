@@ -7,6 +7,7 @@ describe('cost analytics coverage', () => {
     expect(getPhaseLabel('studio_visual_apresentacao')).toBe('Estúdio: Designer Visual · Apresentação')
     expect(getPhaseLabel('studio_roteirista_audio_script')).toBe('Estúdio: Roteirista · Resumo em Áudio')
     expect(getPhaseLabel('redacao')).toBe('Redação')
+    expect(getPhaseLabel('v3_pipeline_orchestrator')).toBe('V3: Orquestrador do Pipeline')
     expect(getPhaseLabel('pres_image_generator')).toBe('Apresentação: Gerador de Imagens')
     expect(getPhaseLabel('media_video_clip_generation')).toBe('Vídeo: Geração de Clipes por Partes')
   })
@@ -40,5 +41,29 @@ describe('cost analytics coverage', () => {
       'Narrador / TTS',
       'Renderizador Visual de Apresentação',
     ]))
+  })
+
+  it('surfaces the v3 pipeline orchestrator as zero-cost operational usage', () => {
+    const executions = [
+      createUsageExecutionRecord({
+        source_type: 'document_generation_v3',
+        source_id: 'doc-v3-1',
+        phase: 'v3_pipeline_orchestrator',
+        agent_name: 'Orquestrador do Pipeline',
+        model: 'anthropic/claude-opus-4.5',
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: 0,
+        execution_state: 'retrying',
+        retry_count: 2,
+      }),
+    ]
+
+    const breakdown = buildCostBreakdown(executions)
+
+    expect(breakdown.by_function.find(item => item.key === 'document_generation_v3')?.label).toBe('Novo Documento v3')
+    expect(breakdown.by_phase.find(item => item.key === 'v3_pipeline_orchestrator')?.label).toBe('V3: Orquestrador do Pipeline')
+    expect(breakdown.by_agent.find(item => item.label === 'Orquestrador do Pipeline')?.cost_usd).toBe(0)
+    expect(breakdown.by_agent_function.find(item => item.key === 'document_generation_v3::Orquestrador do Pipeline')).toBeDefined()
   })
 })
