@@ -38,6 +38,7 @@ describe('user-scoped agent configuration coverage', () => {
 
   it('includes the media-critical agents in the user-facing scoped configs', () => {
     expect(AGENT_CONFIG_DEFS.research_notebook_models.map(agent => agent.key)).toEqual(expect.arrayContaining([
+      'research_notebook_orchestrator',
       'notebook_pesquisador',
       'notebook_analista',
       'notebook_assistente',
@@ -53,6 +54,7 @@ describe('user-scoped agent configuration coverage', () => {
     ]))
 
     expect(AGENT_CONFIG_DEFS.video_pipeline_models.map(agent => agent.key)).toEqual(expect.arrayContaining([
+      'video_pipeline_orchestrator',
       'video_planejador',
       'video_roteirista',
       'video_diretor_cena',
@@ -67,6 +69,7 @@ describe('user-scoped agent configuration coverage', () => {
     ]))
 
     expect(AGENT_CONFIG_DEFS.presentation_pipeline_models.map(agent => agent.key)).toEqual(expect.arrayContaining([
+      'presentation_pipeline_orchestrator',
       'pres_planejador',
       'pres_pesquisador',
       'pres_redator',
@@ -97,6 +100,7 @@ describe('user-scoped agent configuration coverage', () => {
     ]))
 
     expect(AGENT_CONFIG_DEFS.thesis_analyst_models.map(agent => agent.key)).toEqual([
+      'thesis_pipeline_orchestrator',
       'thesis_catalogador',
       'thesis_analista',
       'thesis_compilador',

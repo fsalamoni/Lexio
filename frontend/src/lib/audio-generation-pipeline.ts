@@ -17,6 +17,7 @@ import type {
   StudioStepExecution,
   StudioProgressMeta,
 } from './notebook-studio-pipeline'
+import { createOrchestratorUsageExecution, resolveOrchestratorModel } from './pipeline-orchestrator'
 
 export interface AudioGenerationPipelineResult {
   content: string
@@ -184,6 +185,7 @@ export async function runAudioGenerationPipeline(
   const resolveFb = buildPipelineFallbackResolver(AUDIO_PIPELINE_AGENT_DEFS, fallbackConfig)
 
   const requiredKeys = [
+    'audio_pipeline_orchestrator',
     'audio_planejador',
     'audio_roteirista',
     'audio_diretor',
@@ -197,6 +199,22 @@ export async function runAudioGenerationPipeline(
   }
 
   const executions: StudioStepExecution[] = []
+  const orchestratorStartedAt = Date.now()
+  const orchestratorModel = resolveOrchestratorModel(models, 'audio_pipeline_orchestrator', ['audio_planejador', 'audio_revisor'])
+  executions.push({
+    ...createOrchestratorUsageExecution({
+      sourceType: 'audio_pipeline',
+      sourceId: `audio-pipeline-${orchestratorStartedAt}`,
+      phase: 'audio_pipeline_orchestrator',
+      agentName: 'Orquestrador do Pipeline',
+      model: orchestratorModel,
+      startedAt: orchestratorStartedAt,
+    }),
+    model: orchestratorModel || 'orchestrator/unconfigured',
+    execution_state: 'completed',
+    retry_count: 0,
+    used_fallback: false,
+  })
 
   throwIfAborted(signal)
   onProgress?.(1, 5, 'Planejando estrutura do áudio…', {

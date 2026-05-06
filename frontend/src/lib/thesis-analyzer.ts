@@ -26,6 +26,7 @@ import {
 } from './runtime-concurrency'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 import { THESIS_PIPELINE_STAGES } from './thesis-pipeline'
+import { createOrchestratorUsageExecution, resolveOrchestratorModel } from './pipeline-orchestrator'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -366,6 +367,8 @@ export async function analyzeThesisBank(
   const now = new Date().toISOString()
   const llmExecutions: UsageExecutionRecord[] = []
   const wallClockStart = Date.now()
+  const orchestratorStartedAt = wallClockStart
+  const orchestratorModel = resolveOrchestratorModel(modelMap, 'thesis_pipeline_orchestrator', ['thesis_revisor', 'thesis_analista'])
   const phaseDurationsMs: Record<string, number> = {}
   let totalAgentDurationMs = 0
   let compiladorParallelLimit = 1
@@ -458,6 +461,13 @@ export async function analyzeThesisBank(
     }
     onProgress?.([...agents])
   }
+
+  notify(
+    'thesis_pipeline_orchestrator',
+    'running',
+    'Orquestrador monitorando execução, retries, paralelismo e continuidade...',
+    'running',
+  )
 
   // Limit inputs to avoid token overflow
   const MAX_THESES_FOR_CATALOGUE = 120
@@ -1040,6 +1050,20 @@ export async function analyzeThesisBank(
     runtime_detail: analysisRuntimeDetail,
     compilador_runtime_detail: compiladorRuntimeDetail,
   }
+
+  llmExecutions.unshift(createOrchestratorUsageExecution({
+    sourceType: 'thesis_analysis',
+    sourceId: sessionId,
+    createdAt: now,
+    phase: 'thesis_pipeline_orchestrator',
+    agentName: 'Orquestrador do Pipeline',
+    model: orchestratorModel,
+    startedAt: orchestratorStartedAt,
+    runtimeProfile: analysisRuntimeProfile,
+    runtimeHints: analysisRuntimeHintsLabel,
+    runtimeConcurrency: analysisParallelLimit,
+    runtimeCap: analysisConcurrencyDiagnostics.runtimeCap,
+  }))
 
   return {
     session_id: sessionId,
