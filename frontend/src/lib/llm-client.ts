@@ -520,6 +520,8 @@ function estimateCost(model: string, providerId: string, tokensIn: number, token
     'google/gemini-2.0-flash':            [0.075, 0.30],
     'google/gemini-2.0-flash-lite':       [0.038, 0.15],
     'meta-llama/llama-3.1-8b-instruct':   [0.06,  0.06],
+    'nvidia/llama-3.3-nemotron-super-49b-v1': [0.10, 0.40],
+    'nvidia/llama-3.1-nemotron-70b-instruct': [1.20, 1.20],
   }
   const compositeKey = `${providerId}/${model}`
   let rates = PRICING[model] ?? PRICING[compositeKey]

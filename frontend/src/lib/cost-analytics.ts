@@ -307,6 +307,7 @@ export function getModelLabel(model?: string | null): string {
   if (normalized.includes('gpt')) return 'GPT'
   if (normalized.includes('gemini')) return 'Gemini'
   if (normalized.includes('llama')) return 'Llama'
+  if (normalized.includes('nemotron')) return 'Nemotron'
   return model.split('/').pop() ?? model
 }
 
@@ -343,6 +344,7 @@ function inferProviderKeyFromModel(model?: string | null): string {
   if (normalized.startsWith('qwen')) return 'qwen'
   if (normalized.startsWith('moonshot') || normalized.startsWith('kimi')) return 'kimi'
   if (normalized.startsWith('deepseek')) return 'deepseek'
+  if (normalized.startsWith('nemotron') || normalized.startsWith('nvidia')) return 'nvidia'
   if (normalized.startsWith('mistral')) return 'mistral'
   if (normalized.startsWith('command-r')) return 'cohere'
   if (normalized.startsWith('eleven_')) return 'elevenlabs'
