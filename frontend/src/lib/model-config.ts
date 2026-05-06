@@ -1951,6 +1951,16 @@ export const DOCUMENT_V3_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
   },
   // Transversal
   {
+    key: 'v3_pipeline_orchestrator',
+    label: 'Orquestrador do Pipeline',
+    description: 'Controla retries, retomadas, escalonamentos e continuidade operacional do Novo Documento v3',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+  },
+  {
     key: 'v3_supervisor',
     label: 'Supervisor (refazimento)',
     description: 'Modelo usado quando o supervisor escala um agente para refazer um trabalho',

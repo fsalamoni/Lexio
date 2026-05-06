@@ -42,6 +42,7 @@ vi.mock('./model-config', () => ({
     { key: 'v3_outline_planner', agentCategory: 'synthesis' },
     { key: 'v3_writer', agentCategory: 'writing' },
     { key: 'v3_writer_reviser', agentCategory: 'writing' },
+    { key: 'v3_pipeline_orchestrator', agentCategory: 'reasoning' },
     { key: 'v3_supervisor', agentCategory: 'reasoning' },
   ],
   loadFallbackPriorityConfig: async () => ({}),
@@ -64,6 +65,7 @@ vi.mock('./model-config', () => ({
     v3_outline_planner: 'anthropic/claude-sonnet-4',
     v3_writer: 'anthropic/claude-sonnet-4',
     v3_writer_reviser: 'anthropic/claude-sonnet-4',
+    v3_pipeline_orchestrator: 'anthropic/claude-opus-4.5',
     v3_supervisor: 'anthropic/claude-opus-4.5',
   }),
 }))
@@ -458,6 +460,38 @@ describe('generateDocumentV3 orchestrator', () => {
     expect(typeof phases.redacao).toBe('number')
     expect(typeof meta.parallel_savings_ms).toBe('number')
     expect(Array.isArray(meta.supervisor_actions)).toBe(true)
+  })
+
+  it('continues the v3 pipeline when one LLM research agent never responds', async () => {
+    const responses = buildLLMResponses()
+    const router = buildHeadRouter(responses)
+    let legislationAttempts = 0
+    const phases: string[] = []
+    callLLMMock.mockImplementation(async (_apiKey, system: string) => {
+      const head = (system || '').slice(0, 60)
+      if (head.startsWith('Você é o PESQUISADOR DE LEGISLAÇÃO')) {
+        legislationAttempts++
+        throw new Error('Requisição excedeu o tempo limite (180s)')
+      }
+      return defaultLLMResponse(router(system))
+    })
+
+    await generateDocumentV3('uid1', 'doc1', 'parecer', 'Req', [], null, p => { phases.push(p.phase) })
+
+    expect(legislationAttempts).toBeGreaterThan(1)
+    expect(phases).toContain('v3_pipeline_orchestrator')
+    expect(phases).toContain('v3_jurisprudence_researcher')
+    expect(phases).toContain('v3_writer')
+    expect(phases).toContain(DOCUMENT_V3_PIPELINE_COMPLETED_PHASE)
+
+    const updateCalls = updateDocMock.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>
+    const finalUpdate = updateCalls.find(c => c[1].status === 'concluido')!
+    expect(finalUpdate).toBeDefined()
+    const meta = finalUpdate[1].generation_meta as { supervisor_actions: Array<{ agent: string; action: string; reason: string }> }
+    expect(meta.supervisor_actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ agent: 'v3_legislation_researcher', action: 'continue_without_agent' }),
+    ]))
+    expect((finalUpdate[1].texto_completo as string)).toContain('PARECER')
   })
 
   it('E: aborts when the AbortSignal fires before completion', async () => {

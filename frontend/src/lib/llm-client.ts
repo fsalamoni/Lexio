@@ -20,7 +20,7 @@ import { resolveProviderCall, type ResolvedProviderCall } from './provider-crede
 import { PROVIDERS, type ProviderDefinition } from './providers'
 import { getCurrentUserId } from './firestore-service'
 
-const REQUEST_TIMEOUT_MS = 120_000
+const REQUEST_TIMEOUT_MS = 180_000
 const MAX_RETRIES = 2
 const MAX_EMPTY_RESPONSE_RETRIES = 2
 
