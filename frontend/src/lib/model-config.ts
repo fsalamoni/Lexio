@@ -455,6 +455,16 @@ export function validateModelMap(
  */
 export const PIPELINE_AGENT_DEFS: AgentModelDef[] = [
   {
+    key: 'document_pipeline_orchestrator',
+    label: 'Orquestrador do Pipeline',
+    description: 'Controla retries, retomadas, escalonamentos e continuidade operacional da geração de documentos',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+  },
+  {
     key: 'triagem',
     label: 'Triagem',
     description: 'Extrai tema, subtemas e palavras-chave da solicitação',
@@ -862,6 +872,16 @@ export async function resetAgentModels(uid?: string): Promise<void> {
  */
 export const THESIS_ANALYST_AGENT_DEFS: AgentModelDef[] = [
   {
+    key: 'thesis_pipeline_orchestrator',
+    label: 'Orquestrador do Pipeline',
+    description: 'Controla retries, retomadas, paralelismo e continuidade operacional da análise de teses',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+  },
+  {
     key: 'thesis_catalogador',
     label: 'Catalogador',
     description: 'Faz inventário das teses existentes e agrupa candidatas a duplicatas ou compilação',
@@ -951,6 +971,16 @@ export async function resetThesisAnalystModels(uid?: string): Promise<void> {
  */
 export const CONTEXT_DETAIL_AGENT_DEFS: AgentModelDef[] = [
   {
+    key: 'context_detail_orchestrator',
+    label: 'Orquestrador do Detalhamento',
+    description: 'Supervisiona retries, retomadas e continuidade operacional do detalhamento de contexto',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+  },
+  {
     key: 'context_detail',
     label: 'Detalhamento de Contexto',
     description: 'Analisa a solicitação e gera perguntas para refinar o contexto do documento',
@@ -1004,6 +1034,16 @@ export async function resetContextDetailModels(uid?: string): Promise<void> {
  */
 export const ACERVO_CLASSIFICADOR_AGENT_DEFS: AgentModelDef[] = [
   {
+    key: 'acervo_classificador_orchestrator',
+    label: 'Orquestrador do Classificador',
+    description: 'Supervisiona retries, retomadas e continuidade operacional da classificação de acervo',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+  },
+  {
     key: 'acervo_classificador',
     label: 'Classificador de Acervo',
     description: 'Classifica documentos do acervo com tags de natureza, área do direito, assuntos e contexto',
@@ -1056,6 +1096,16 @@ export async function resetAcervoClassificadorModels(uid?: string): Promise<void
  * to support indexing and semantic search.
  */
 export const ACERVO_EMENTA_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'acervo_ementa_orchestrator',
+    label: 'Orquestrador de Ementas',
+    description: 'Supervisiona retries, retomadas e continuidade operacional da geração de ementas',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+  },
   {
     key: 'acervo_ementa',
     label: 'Gerador de Ementa',
@@ -1125,6 +1175,16 @@ export async function resetAcervoEmentaModels(uid?: string): Promise<void> {
  * flow, where structured JSON is rendered into persisted images or posters.
  */
 export const RESEARCH_NOTEBOOK_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'research_notebook_orchestrator',
+    label: 'Orquestrador do Caderno',
+    description: 'Controla retries, retomadas, paralelismo e continuidade operacional do Caderno de Pesquisa',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+  },
   // ── Pesquisa & Análise ──
   {
     key: 'notebook_pesquisador',
@@ -1283,6 +1343,16 @@ export async function resetResearchNotebookModels(uid?: string): Promise<void> {
  */
 export const NOTEBOOK_ACERVO_AGENT_DEFS: AgentModelDef[] = [
   {
+    key: 'notebook_acervo_orchestrator',
+    label: 'Orquestrador do Acervo do Caderno',
+    description: 'Controla retries, retomadas e continuidade operacional da análise de acervo no caderno',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+  },
+  {
     key: 'nb_acervo_triagem',
     label: 'Triagem de Acervo',
     description: 'Extrai palavras-chave, áreas e contexto do tema do caderno para busca no acervo',
@@ -1375,6 +1445,17 @@ export async function resetNotebookAcervoModels(uid?: string): Promise<void> {
  * segments. The Planejador agent estimates token costs before user approval.
  */
 export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'video_pipeline_orchestrator',
+    label: 'Orquestrador do Pipeline',
+    description: 'Controla retries, retomadas, checkpoints, fallbacks e continuidade operacional do gerador de vídeo',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Agente operacional: use um modelo de texto confiável para supervisionar retries, retomadas, checkpoints e continuidade sem gerar conteúdo final.',
+  },
   {
     key: 'video_planejador',
     label: 'Planejador de Produção',
@@ -1552,6 +1633,17 @@ export async function resetVideoPipelineModels(uid?: string): Promise<void> {
  */
 export const AUDIO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
   {
+    key: 'audio_pipeline_orchestrator',
+    label: 'Orquestrador do Pipeline',
+    description: 'Controla retries, retomadas, validações JSON e continuidade operacional do gerador de áudio',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Agente operacional: use um modelo de texto confiável para supervisionar retries, validações e continuidade sem gerar conteúdo final.',
+  },
+  {
     key: 'audio_planejador',
     label: 'Planejador de Áudio',
     description: 'Analisa opções do usuário (formato, duração, estilo, tom) e cria proposta com estimativa de custos',
@@ -1669,6 +1761,17 @@ export async function resetAudioPipelineModels(uid?: string): Promise<void> {
  *  6. Gerador de Imagens — materializes slide visuals with an image-capable model
  */
 export const PRESENTATION_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
+  {
+    key: 'presentation_pipeline_orchestrator',
+    label: 'Orquestrador do Pipeline',
+    description: 'Controla retries, retomadas, validações JSON, fallbacks visuais e continuidade operacional do gerador de apresentações',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'activity',
+    agentCategory: 'reasoning',
+    requiredCapability: 'text',
+    bestModelNote: 'Agente operacional: use um modelo de texto confiável para supervisionar retries, validações JSON e continuidade sem gerar conteúdo final.',
+  },
   {
     key: 'pres_planejador',
     label: 'Planejador de Apresentação',

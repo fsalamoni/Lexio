@@ -24,6 +24,7 @@ import type {
   StudioProgressMeta,
 } from './notebook-studio-pipeline'
 import type { ParsedPresentation, ParsedSlide } from './artifact-parsers'
+import { createOrchestratorUsageExecution, resolveOrchestratorModel } from './pipeline-orchestrator'
 
 export interface PresentationGenerationPipelineResult {
   content: string
@@ -394,6 +395,7 @@ export async function runPresentationGenerationPipeline(
   const resolveFb = buildPipelineFallbackResolver(PRESENTATION_PIPELINE_AGENT_DEFS, fallbackConfig)
 
   const requiredKeys = [
+    'presentation_pipeline_orchestrator',
     'pres_planejador',
     'pres_pesquisador',
     'pres_redator',
@@ -407,6 +409,23 @@ export async function runPresentationGenerationPipeline(
   }
 
   const executions: StudioStepExecution[] = []
+  const orchestratorStartedAt = Date.now()
+  const orchestratorModel = resolveOrchestratorModel(models, 'presentation_pipeline_orchestrator', ['pres_planejador', 'pres_revisor'])
+  const orchestratorSourceId = `presentation-pipeline-${input.artifactType}-${input.topic.trim().slice(0, 80) || 'sem-tema'}`
+  executions.push({
+    ...createOrchestratorUsageExecution({
+      sourceType: 'presentation_pipeline',
+      sourceId: orchestratorSourceId,
+      phase: 'presentation_pipeline_orchestrator',
+      agentName: 'Orquestrador do Pipeline',
+      model: orchestratorModel,
+      startedAt: orchestratorStartedAt,
+    }),
+    model: orchestratorModel || 'orchestrator/unconfigured',
+    execution_state: 'completed',
+    retry_count: 0,
+    used_fallback: false,
+  })
 
   throwIfAborted(signal)
   onProgress?.(1, 5, 'Planejando a apresentação…', {

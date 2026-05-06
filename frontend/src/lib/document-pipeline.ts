@@ -48,6 +48,7 @@ export const DOCUMENT_PIPELINE_COMPLETED_PHASE = 'concluido'
 
 export const DOCUMENT_PIPELINE_STAGES: DocumentPipelineStage[] = [
   { key: 'config', label: 'Configuração', description: 'Carregando chaves, modelos e preferências da execução' },
+  { key: 'document_pipeline_orchestrator', label: 'Orquestrador do Pipeline', description: 'Supervisiona retries, retomadas, escalonamentos e continuidade da execução', modelKey: 'document_pipeline_orchestrator' },
   { key: 'triagem', label: 'Triagem', description: 'Extração de tema, subtemas e palavras-chave da solicitação', modelKey: 'triagem' },
   { key: 'acervo_buscador', label: 'Buscador de Acervo', description: 'Buscando documentos similares no acervo do usuário', modelKey: 'acervo_buscador' },
   { key: 'acervo_compilador', label: 'Compilador de Base', description: 'Compilando uma base útil a partir do acervo selecionado', modelKey: 'acervo_compilador' },

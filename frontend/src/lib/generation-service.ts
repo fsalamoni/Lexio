@@ -33,6 +33,7 @@ import { PROVIDER_ORDER, apiKeyFieldForProvider } from './providers'
 import { firestore } from './firebase'
 import { buildDocumentPipelineProgress, buildDocumentStageMeta, type DocumentPipelineProgress } from './document-pipeline'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
+import { createOrchestratorUsageExecution, resolveOrchestratorModel } from './pipeline-orchestrator'
 import {
   getAcervoContextFromCache,
   getAdminDocTypesFromCache,
@@ -1819,6 +1820,17 @@ export async function generateDocument(
     const modelAcervoBuscador    = agentModels.acervo_buscador
     const modelAcervoCompilador  = agentModels.acervo_compilador
     const modelAcervoRevisor     = agentModels.acervo_revisor
+    const modelOrchestrator      = resolveOrchestratorModel(agentModels, 'document_pipeline_orchestrator', ['moderador', 'redator'])
+
+    reportProgress(
+      'document_pipeline_orchestrator',
+      'Orquestrador monitorando execução, retries, fallbacks e continuidade...',
+      3,
+      modelOrchestrator ?? undefined,
+      'Ativo durante todo o pipeline',
+      'running',
+    )
+    const orchestratorStartedAt = Date.now()
 
     // Load admin-configured document type structure template (if defined)
     let customStructure: string | undefined
@@ -2331,6 +2343,15 @@ export async function generateDocument(
         document_type_id: docType,
         document_type_label: DOC_TYPE_NAMES[docType] ?? docType,
       }] : []),
+      createOrchestratorUsageExecution({
+        sourceType: 'document_generation',
+        sourceId: docId,
+        phase: 'document_pipeline_orchestrator',
+        agentName: 'Orquestrador do Pipeline',
+        model: modelOrchestrator,
+        startedAt: orchestratorStartedAt,
+        documentTypeId: docType,
+      }),
       createUsageExecutionRecord({
         source_type: 'document_generation',
         source_id: docId,

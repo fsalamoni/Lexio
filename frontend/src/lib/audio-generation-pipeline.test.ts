@@ -28,6 +28,7 @@ describe('runAudioGenerationPipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     loadAudioPipelineModelsMock.mockResolvedValue({
+      audio_pipeline_orchestrator: 'openai/gpt-4.1-mini',
       audio_planejador: 'openai/gpt-4.1-mini',
       audio_roteirista: 'anthropic/claude-sonnet-4',
       audio_diretor: 'google/gemini-2.5-flash-preview',
@@ -110,6 +111,7 @@ describe('runAudioGenerationPipeline', () => {
     expect(parsed.title).toBe('Resumo em Áudio — Tema de Teste')
     expect(parsed.segments).toHaveLength(2)
     expect(result.executions.map(item => item.phase)).toEqual([
+      'audio_pipeline_orchestrator',
       'audio_planejador',
       'audio_roteirista',
       'audio_diretor',

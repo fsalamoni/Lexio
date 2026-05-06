@@ -33,6 +33,7 @@ import {
   VIDEO_PIPELINE_AGENT_DEFS,
 } from './model-config'
 import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
+import { createOrchestratorUsageExecution, resolveOrchestratorModel } from './pipeline-orchestrator'
 import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
 import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import type { VideoPipelineProgressMeta } from './video-pipeline-progress'
@@ -743,6 +744,24 @@ export async function runVideoGenerationPipeline(
   const executions: VideoGenerationStepExecution[] = input.checkpoint?.executions
     ? [...input.checkpoint.executions]
     : []
+  const orchestratorStartedAt = Date.now()
+  const orchestratorModel = resolveOrchestratorModel(models, 'video_pipeline_orchestrator', ['video_planejador', 'video_revisor'])
+  if (!executions.some(execution => execution.phase === 'video_pipeline_orchestrator')) {
+    executions.push({
+      ...createOrchestratorUsageExecution({
+        sourceType: 'video_pipeline',
+        sourceId: input.sourceId,
+        phase: 'video_pipeline_orchestrator',
+        agentName: 'Orquestrador do Pipeline',
+        model: orchestratorModel,
+        startedAt: orchestratorStartedAt,
+      }),
+      model: orchestratorModel || 'orchestrator/unconfigured',
+      execution_state: 'completed',
+      retry_count: 0,
+      used_fallback: false,
+    })
+  }
 
   // Checkpoint state for resumability — updated after each successful step
   const checkpoint: VideoCheckpoint = input.checkpoint

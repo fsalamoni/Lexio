@@ -34,6 +34,7 @@ describe('runPresentationGenerationPipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     loadPresentationPipelineModelsMock.mockResolvedValue({
+      presentation_pipeline_orchestrator: 'openai/gpt-4.1-mini',
       pres_planejador: 'openai/gpt-4.1-mini',
       pres_pesquisador: 'google/gemini-2.5-flash',
       pres_redator: 'anthropic/claude-sonnet-4',
@@ -84,6 +85,7 @@ describe('runPresentationGenerationPipeline', () => {
     expect(parsed.title).toBe('Apresentação de Teste')
     expect(parsed.slides).toHaveLength(2)
     expect(result.executions.map(item => item.phase)).toEqual([
+      'presentation_pipeline_orchestrator',
       'pres_planejador',
       'pres_pesquisador',
       'pres_redator',
