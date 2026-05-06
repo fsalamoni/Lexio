@@ -26,6 +26,7 @@ export type ProviderId =
   | 'kimi'
   | 'qwen'
   | 'groq'
+  | 'nvidia'
   | 'mistral'
   | 'xai'
   | 'cohere'
@@ -95,6 +96,12 @@ export interface ProviderDefinition {
   authHeader?: string
   /** Function that formats the auth header value from a raw key. */
   authPrefix?: string
+  /** Whether the Admin UI should expose a custom endpoint field. */
+  supportsBaseUrlOverride?: boolean
+  /** Label for custom endpoint field when supportsBaseUrlOverride is true. */
+  baseUrlLabel?: string
+  /** Help text for custom endpoint field when supportsBaseUrlOverride is true. */
+  baseUrlHelp?: string
   /**
    * Static fallback list of well-known models. Used when the provider does
    * not expose a `/models` endpoint, when the call fails, or when the user
@@ -332,6 +339,67 @@ export const PROVIDERS: Record<ProviderId, ProviderDefinition> = {
       { id: 'qwen/qwen3-32b', label: 'Qwen3 32B', tier: 'balanced', contextWindow: 131_000 },
     ],
   },
+  nvidia: {
+    id: 'nvidia',
+    label: 'NVIDIA',
+    color: 'bg-green-100 text-green-700',
+    description: 'NVIDIA NIM / AI Foundation Models via API OpenAI-compatible.',
+    consoleUrl: 'https://build.nvidia.com/explore/discover',
+    keyPrefix: 'nvapi-',
+    guide: [
+      'Acesse build.nvidia.com e entre com sua conta NVIDIA',
+      'Abra um modelo NIM compatível com chat e clique em Get API Key',
+      'Copie a chave (nvapi-...) e cole aqui',
+      'Para NIM self-hosted, informe a URL base do endpoint compatível com /v1',
+      'Planos gratuitos/trial têm cotas por conta; consulte Limits/Billing no console NVIDIA antes de uso em produção',
+    ],
+    dialect: 'openai-compatible',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    modelsListUrl: 'https://integrate.api.nvidia.com/v1/models',
+    modelsListShape: 'openai',
+    capabilities: ['text', 'image'],
+    authHeader: 'Authorization',
+    authPrefix: 'Bearer ',
+    supportsBaseUrlOverride: true,
+    baseUrlLabel: 'URL base NVIDIA NIM',
+    baseUrlHelp: 'Use https://integrate.api.nvidia.com/v1 para o serviço NVIDIA ou a URL /v1 do seu NIM self-hosted.',
+    staticModels: [
+      {
+        id: 'nvidia/llama-3.3-nemotron-super-49b-v1',
+        label: 'Llama 3.3 Nemotron Super 49B',
+        tier: 'balanced',
+        contextWindow: 128_000,
+        inputCost: 0.10,
+        outputCost: 0.40,
+      },
+      {
+        id: 'nvidia/llama-3.1-nemotron-70b-instruct',
+        label: 'Llama 3.1 Nemotron 70B Instruct',
+        tier: 'premium',
+        contextWindow: 128_000,
+        inputCost: 1.20,
+        outputCost: 1.20,
+      },
+      {
+        id: 'meta/llama-3.1-405b-instruct',
+        label: 'Llama 3.1 405B Instruct',
+        tier: 'premium',
+        contextWindow: 128_000,
+      },
+      {
+        id: 'meta/llama-3.1-70b-instruct',
+        label: 'Llama 3.1 70B Instruct',
+        tier: 'balanced',
+        contextWindow: 128_000,
+      },
+      {
+        id: 'mistralai/mixtral-8x7b-instruct-v0.1',
+        label: 'Mixtral 8x7B Instruct',
+        tier: 'fast',
+        contextWindow: 32_768,
+      },
+    ],
+  },
   mistral: {
     id: 'mistral',
     label: 'Mistral',
@@ -500,6 +568,9 @@ export const PROVIDERS: Record<ProviderId, ProviderDefinition> = {
     capabilities: ['text'],
     authHeader: 'Authorization',
     authPrefix: 'Bearer ',
+    supportsBaseUrlOverride: true,
+    baseUrlLabel: 'URL do servidor Ollama',
+    baseUrlHelp: 'Use a URL do servidor local; a plataforma ajusta automaticamente a listagem em /api/tags.',
     staticModels: [
       { id: 'llama3.2', label: 'Llama 3.2', tier: 'balanced' },
       { id: 'qwen2.5:14b', label: 'Qwen 2.5 14B', tier: 'balanced' },
@@ -543,6 +614,7 @@ export const PROVIDER_ORDER: ProviderId[] = [
   'kimi',
   'qwen',
   'groq',
+  'nvidia',
   'mistral',
   'xai',
   'cohere',

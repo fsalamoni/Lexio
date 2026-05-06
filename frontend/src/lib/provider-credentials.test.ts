@@ -60,6 +60,18 @@ describe('resolveProviderForModel', () => {
     expect(resolveProviderForModel('qwen/qwen3-235b-a22b')).toBe('qwen')
   })
 
+  it('routes NVIDIA catalog entries to the direct NVIDIA provider', () => {
+    const catalog = [
+      mkModel({
+        id: 'nvidia/llama-3.1-nemotron-70b-instruct',
+        providerId: 'nvidia',
+        provider: 'NVIDIA',
+      }),
+    ]
+
+    expect(resolveProviderForModel('nvidia/llama-3.1-nemotron-70b-instruct', catalog)).toBe('nvidia')
+  })
+
   it('defaults to openrouter for unknown model identifiers', () => {
     expect(resolveProviderForModel('my-custom-model-without-prefix')).toBe('openrouter')
   })

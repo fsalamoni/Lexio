@@ -233,6 +233,8 @@ export default function ProviderCatalogCard({ providerId, defaultOpen = false }:
               <p className="mt-1 text-[11px] text-blue-800">
                 {provider.id === 'openrouter'
                   ? `No OpenRouter Free Tier, o limite padrao e ${FREE_TIER_RATE_LIMITS.rpm} req/min e ${FREE_TIER_RATE_LIMITS.rpd} req/dia.`
+                  : provider.id === 'nvidia'
+                    ? 'Na NVIDIA, modelos sem cobrança explícita dependem das cotas trial/créditos da conta; confira Limits/Billing no console antes de uso em produção.'
                   : `No ${provider.label}, os limites de modelos gratuitos dependem do plano e devem ser conferidos no Console.`}
               </p>
             )}

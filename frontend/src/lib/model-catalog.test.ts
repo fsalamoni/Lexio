@@ -96,4 +96,20 @@ describe('model-catalog user persistence', () => {
     expect(option.isFree).toBe(true)
     expect(option.rateLimits).toMatchObject({ rpm: 20, rpd: 200 })
   })
+
+  it('does not treat zero-priced NVIDIA catalog entries as free without an explicit free flag', () => {
+    const option = providerEntryToModelOption(PROVIDERS.nvidia, {
+      id: 'nvidia/llama-3.1-nemotron-70b-instruct',
+      label: 'Llama 3.1 Nemotron 70B Instruct',
+      pricing: {
+        prompt: '0',
+        completion: '0',
+      },
+    })
+
+    expect(option.providerId).toBe('nvidia')
+    expect(option.provider).toBe('NVIDIA')
+    expect(option.isFree).toBe(false)
+    expect(option.rateLimits).toBeUndefined()
+  })
 })

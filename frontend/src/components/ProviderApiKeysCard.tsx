@@ -6,7 +6,7 @@
  *  - toggle the provider on/off
  *  - paste / rotate the API key
  *  - read a step-by-step setup guide
- *  - (Ollama) override the base URL when running self-hosted
+ *  - override the base URL for local/self-hosted providers when supported
  *
  * Persistence: api keys go to `users/{uid}/settings/preferences.api_keys`,
  * provider state goes to `users/{uid}/settings/preferences.provider_settings`.
@@ -287,10 +287,10 @@ export default function ProviderApiKeysCard() {
                   </div>
                 </div>
 
-                {pid === 'ollama' && (
+                {provider.supportsBaseUrlOverride && (
                   <div className="mt-3">
                     <label className="text-xs font-medium text-[var(--v2-ink-soft)] flex items-center gap-1">
-                      <Server className="w-3 h-3" /> URL do servidor Ollama
+                      <Server className="w-3 h-3" /> {provider.baseUrlLabel ?? `URL base ${provider.label}`}
                     </label>
                     <input
                       type="text"
@@ -299,6 +299,9 @@ export default function ProviderApiKeysCard() {
                       placeholder={provider.baseUrl}
                       className="mt-1 w-full rounded-[1.05rem] border border-[var(--v2-line-soft)] bg-[var(--v2-panel-strong)] px-3 py-2 font-mono text-sm text-[var(--v2-ink-strong)] outline-none focus:border-[rgba(15,118,110,0.34)] focus:ring-4 focus:ring-[rgba(15,118,110,0.12)]"
                     />
+                    {provider.baseUrlHelp && (
+                      <p className="mt-1 text-[11px] text-[var(--v2-ink-faint)]">{provider.baseUrlHelp}</p>
+                    )}
                   </div>
                 )}
               </div>

@@ -83,6 +83,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   xAI:       'bg-slate-100  text-slate-700',
   Cohere:    'bg-lime-100   text-lime-700',
   Microsoft: 'bg-cyan-100   text-cyan-700',
+  NVIDIA:    'bg-green-100  text-green-700',
 }
 
 const V2_CATALOG_PANEL = 'rounded-[1.6rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.76)] shadow-[0_18px_48px_rgba(15,23,42,0.08)]'

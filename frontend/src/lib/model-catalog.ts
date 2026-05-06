@@ -345,7 +345,9 @@ export function providerEntryToModelOption(
   const hasPricingData = hasInputCostNumber || hasOutputCostNumber || hasInputCostRaw || hasOutputCostRaw
   const inputCost = (raw as { inputCost?: number }).inputCost ?? (inputCostRaw ? parseFloat(inputCostRaw) * 1_000_000 : 0)
   const outputCost = (raw as { outputCost?: number }).outputCost ?? (outputCostRaw ? parseFloat(outputCostRaw) * 1_000_000 : 0)
-  const isFree = (raw as { isFree?: boolean }).isFree ?? (hasPricingData ? (inputCost === 0 && outputCost === 0) : false)
+  const explicitIsFree = (raw as { isFree?: boolean }).isFree
+  const isZeroPriced = hasPricingData ? (inputCost === 0 && outputCost === 0) : false
+  const isFree = explicitIsFree ?? (provider.id === 'nvidia' ? false : isZeroPriced)
   const contextWindow = (raw as { contextWindow?: number }).contextWindow
     ?? (raw as RawProviderModel).context_length
     ?? (raw as RawProviderModel).context_window
@@ -403,8 +405,11 @@ export async function fetchProviderModels(
     return provider.staticModels.map(m => providerEntryToModelOption(provider, m))
   }
 
-  const url = baseUrlOverride && provider.id === 'ollama'
-    ? `${baseUrlOverride.replace(/\/+$/, '')}/api/tags`
+  const normalizedBaseUrlOverride = baseUrlOverride?.trim().replace(/\/+$/, '')
+  const url = normalizedBaseUrlOverride
+    ? provider.id === 'ollama'
+      ? `${normalizedBaseUrlOverride.replace(/\/v1$/, '')}/api/tags`
+      : `${normalizedBaseUrlOverride}/models`
     : provider.modelsListUrl
 
   try {
