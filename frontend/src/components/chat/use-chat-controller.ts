@@ -69,6 +69,7 @@ const CHAT_CONVERSATION_UPSERTED_EVENT = 'lexio:chat-conversation-upserted'
 const MAX_STREAM_TOTAL_CHARS_FOR_PERSISTENCE = 6000
 const MAX_STREAM_DELTA_CHARS_FOR_PERSISTENCE = 600
 const MAX_TRAIL_EVENTS_FOR_PERSISTENCE = 180
+const STREAM_TRUNCATION_MARKER = '\n…[conteúdo de streaming resumido]…\n'
 
 function notifyChatConversationUpserted(conversationId: string) {
   if (typeof window === 'undefined') return
@@ -532,8 +533,8 @@ function compactStreamingEvent(event: ChatTrailEvent): ChatTrailEvent {
 
 function truncateMiddle(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value
-  const keep = Math.max(0, Math.floor((maxChars - 32) / 2))
-  return `${value.slice(0, keep)}\n…[conteúdo de streaming resumido]…\n${value.slice(-keep)}`
+  const keep = Math.max(0, Math.floor((maxChars - STREAM_TRUNCATION_MARKER.length) / 2))
+  return `${value.slice(0, keep)}${STREAM_TRUNCATION_MARKER}${value.slice(-keep)}`
 }
 
 function buildRuntimeFallbackAnswer(userInput: string, detail: string): string {

@@ -62,7 +62,7 @@ function TurnBlock({ turn, live }: { turn: ChatTurnData; live: boolean }) {
   const thoughtSegments = collectThoughtSegments(turn.trail)
   const trailWithoutThoughts = turn.trail.filter(e => e.type !== 'orchestrator_thought')
   const activeAgent = findActiveAgent(turn.trail)
-  const showThoughtPanel = thoughtSegments.length > 0 && (live || thoughtSegments.length > 0)
+  const showThoughtPanel = thoughtSegments.length > 0
 
   return (
     <div className="flex flex-col gap-3">
@@ -114,9 +114,6 @@ function collectThoughtSegments(trail: ChatTrailEvent[]): Array<{ text: string; 
       continue
     }
     previousWasThought = false
-    if (segments.length > 0 && segments[segments.length - 1].text === '') {
-      segments.pop()
-    }
   }
   return segments.filter(segment => segment.text.trim())
 }
