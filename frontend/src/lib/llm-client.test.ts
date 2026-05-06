@@ -96,14 +96,29 @@ describe('llm-client', () => {
 
   it('classifies upstream 502/503/429 responses as TransientLLMError', async () => {
     for (const status of [429, 502, 503]) {
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response('Service unavailable', { status }),
-      )
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(new Response('Service unavailable', { status, headers: { 'Retry-After': '0' } }))
+        .mockResolvedValueOnce(new Response('Service unavailable', { status, headers: { 'Retry-After': '0' } }))
+        .mockResolvedValueOnce(new Response('Service unavailable', { status }))
       await expect(
         callLLM('sk-or-test', 'system', 'user', 'flaky/model'),
       ).rejects.toBeInstanceOf(TransientLLMError)
       vi.restoreAllMocks()
     }
+  })
+
+  it('retries transient HTTP responses before surfacing failure', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    fetchSpy
+      .mockResolvedValueOnce(new Response('rate limited', { status: 429, headers: { 'Retry-After': '0' } }))
+      .mockResolvedValueOnce(new Response('temporary outage', { status: 503, headers: { 'Retry-After': '0' } }))
+      .mockResolvedValueOnce(successResponse('ok after retry'))
+
+    const result = await callLLM('sk-or-test', 'system', 'user', 'flaky/model')
+
+    expect(result.content).toBe('ok after retry')
+    expect(result.operational?.networkRetryCount).toBe(2)
+    expect(fetchSpy).toHaveBeenCalledTimes(3)
   })
 
   describe('RELIABLE_TEXT_FALLBACK_MODEL', () => {

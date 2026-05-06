@@ -343,5 +343,5 @@ export async function runWithConcurrency<T>(
   return results
 }
 
-/** Default concurrency cap for v3 parallel phases (aligned with OpenRouter free tier). */
-export const DOCUMENT_V3_DEFAULT_PARALLEL_LIMIT = 3
+/** Default concurrency cap for v3 parallel phases (kept conservative to avoid upstream rate limits). */
+export const DOCUMENT_V3_DEFAULT_PARALLEL_LIMIT = 2

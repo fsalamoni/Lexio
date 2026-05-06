@@ -231,7 +231,11 @@ describe('generateDocumentV3 orchestrator', () => {
       }
     })
 
-    await generateDocumentV3('uid1', 'doc1', 'parecer', 'Req', [], null, () => {})
+    await generateDocumentV3(
+      'uid1', 'doc1', 'parecer', 'Req', [], null, () => {},
+      undefined, undefined,
+      { parallelLimit: 3 },
+    )
 
     // The first 3 calls (Fase 1 parallel) should have started before any of them resolved
     const firstThree = calls.slice(0, 3)
