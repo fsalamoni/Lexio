@@ -140,7 +140,10 @@ function isAbortError(err: unknown): boolean {
 }
 
 function describeAgentFailure(err: unknown): string {
-  if (err instanceof Error && err.message.trim()) return err.message.trim().slice(0, MAX_AGENT_FAILURE_MESSAGE_CHARS)
+  if (err instanceof Error) {
+    const message = err.message.trim()
+    if (message) return message.slice(0, MAX_AGENT_FAILURE_MESSAGE_CHARS)
+  }
   return String(err).slice(0, MAX_AGENT_FAILURE_MESSAGE_CHARS)
 }
 
@@ -619,7 +622,7 @@ export async function generateDocumentV3(
             completedPercent: 11,
             runner: runLegalIssueSpotter,
             fallbackOutput: () => fallbackLegalIssues(caseContext),
-            validate: (res) => res.output.length > 0 ? null : 'questões_vazias',
+            validate: (res) => res.output.length > 0 ? null : 'questoes_vazias',
           }),
         ],
         parallelLimit,
