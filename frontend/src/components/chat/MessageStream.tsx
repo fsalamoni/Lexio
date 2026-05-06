@@ -59,21 +59,19 @@ function findActiveAgent(trail: ChatTrailEvent[]): string | null {
 }
 
 function TurnBlock({ turn, live }: { turn: ChatTurnData; live: boolean }) {
-  const thinkerEvents = turn.trail.filter(e => e.type === 'orchestrator_thought')
-  const latestThought = thinkerEvents.length > 0 ? thinkerEvents[thinkerEvents.length - 1] : null
+  const thoughtSegments = collectThoughtSegments(turn.trail)
   const trailWithoutThoughts = turn.trail.filter(e => e.type !== 'orchestrator_thought')
   const activeAgent = findActiveAgent(turn.trail)
-  const showThoughtPanel = latestThought && (live || thinkerEvents.length >= 3)
+  const showThoughtPanel = thoughtSegments.length > 0
 
   return (
     <div className="flex flex-col gap-3">
       <UserBubble text={turn.user_input} />
       {showThoughtPanel && (
-        <OrchestratorThinkingPanel
-          text={latestThought!.total}
+        <OrchestratorThinkingTimeline
+          segments={thoughtSegments}
           live={live}
           activeAgent={activeAgent}
-          collapsed={!live}
         />
       )}
       {trailWithoutThoughts.length > 0 && <AgentTrail events={trailWithoutThoughts} live={live} />}
@@ -98,6 +96,26 @@ function TurnBlock({ turn, live }: { turn: ChatTurnData; live: boolean }) {
       )}
     </div>
   )
+}
+
+function collectThoughtSegments(trail: ChatTrailEvent[]): Array<{ text: string; ts: string }> {
+  const segments: Array<{ text: string; ts: string }> = []
+  let previousWasThought = false
+  for (const event of trail) {
+    if (event.type === 'orchestrator_thought') {
+      const last = segments[segments.length - 1]
+      if (last && previousWasThought) {
+        last.text = event.total
+        last.ts = event.ts
+      } else {
+        segments.push({ text: event.total, ts: event.ts })
+      }
+      previousWasThought = true
+      continue
+    }
+    previousWasThought = false
+  }
+  return segments.filter(segment => segment.text.trim())
 }
 
 function UserBubble({ text }: { text: string }) {
@@ -180,21 +198,15 @@ function TrailEventRow({ event }: { event: ChatTrailEvent }) {
  * Renderiza o texto acumulado em uma caixa estilizada com animação de digitação
  * e um indicador pulsante de "pensando".
  */
-function OrchestratorThinkingPanel({
-  text,
+function OrchestratorThinkingTimeline({
+  segments,
   live,
   activeAgent,
-  collapsed = false,
 }: {
-  text: string
+  segments: Array<{ text: string; ts: string }>
   live: boolean
   activeAgent?: string | null
-  collapsed?: boolean
 }) {
-  const displayText = text || 'Analisando o pedido…'
-  const lines = displayText.split(/\r?\n/).filter(Boolean)
-  const previewText = displayText.slice(0, 180)
-  const isTruncated = displayText.length > 180
   return (
     <div
       className={clsx(
@@ -207,12 +219,24 @@ function OrchestratorThinkingPanel({
         Pensamento do orquestrador
         {live && <CircleDot className="h-3 w-3 animate-pulse text-indigo-500" />}
       </div>
-      <div className="text-xs leading-5 text-indigo-900/80 whitespace-pre-wrap max-h-48 overflow-y-auto">
-        {lines.map((line, idx) => (
-          <div key={idx} className={clsx('py-0.5', live && 'animate-stream-line')}>
-            {line}
-          </div>
-        ))}
+      <div className="flex max-h-56 flex-col gap-2 overflow-y-auto text-xs leading-5 text-indigo-900/80">
+        {segments.map((segment, segmentIdx) => {
+          const lines = (segment.text || 'Analisando o pedido…').split(/\r?\n/).filter(Boolean)
+          return (
+            <div key={`${segment.ts}-${segmentIdx}`} className="rounded-xl bg-white/45 px-3 py-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-indigo-500">
+                Passo {segmentIdx + 1}
+              </div>
+              <div className="whitespace-pre-wrap">
+                {lines.map((line, idx) => (
+                  <div key={idx} className={clsx('py-0.5', live && segmentIdx === segments.length - 1 && 'animate-stream-line')}>
+                    {line}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </div>
       {live && (
         <div className="mt-2 flex items-center gap-1.5 text-[10px] text-indigo-400">

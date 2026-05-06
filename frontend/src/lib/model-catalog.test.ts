@@ -15,7 +15,7 @@ vi.mock('./firestore-service', () => ({
 }))
 
 import { AVAILABLE_MODELS } from './model-config'
-import { invalidateCatalogCache, loadModelCatalog, providerEntryToModelOption, saveModelCatalog } from './model-catalog'
+import { fetchProviderModels, invalidateCatalogCache, loadModelCatalog, providerEntryToModelOption, saveModelCatalog } from './model-catalog'
 import { PROVIDERS } from './providers'
 
 describe('model-catalog user persistence', () => {
@@ -111,5 +111,14 @@ describe('model-catalog user persistence', () => {
     expect(option.provider).toBe('NVIDIA')
     expect(option.isFree).toBe(false)
     expect(option.rateLimits).toBeUndefined()
+  })
+
+  it('uses NVIDIA static models instead of fetching the remote catalog when no API key is configured', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+
+    const result = await fetchProviderModels('nvidia', '')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.map(model => model.id)).toEqual(PROVIDERS.nvidia.staticModels.map(model => model.id))
   })
 })
