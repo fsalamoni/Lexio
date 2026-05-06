@@ -554,6 +554,36 @@ describe('saveNotebookDocumentToDocuments', () => {
     )
   })
 
+  it('strips undefined values before persisting user settings', async () => {
+    await saveUserSettings(uid, {
+      model_catalog: [
+        {
+          id: 'test/model',
+          label: 'Test Model',
+          provider: 'Test',
+          tier: 'balanced',
+          description: 'Modelo de teste',
+          contextWindow: 128000,
+          inputCost: 0,
+          outputCost: 0,
+          isFree: false,
+          agentFit: { extraction: 7, synthesis: 7, reasoning: 7, writing: 7 },
+          rateLimits: undefined,
+        },
+      ],
+    })
+
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/settings/preferences' },
+      expect.objectContaining({
+        model_catalog: [
+          expect.not.objectContaining({ rateLimits: undefined }),
+        ],
+      }),
+      { merge: true },
+    )
+  })
+
   it('saves user settings under the authenticated uid and retries transient permission-denied', async () => {
     const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
       code: 'firestore/permission-denied',

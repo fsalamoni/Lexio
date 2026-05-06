@@ -3542,7 +3542,8 @@ export async function saveSettings(data: Record<string, unknown>): Promise<void>
 export async function saveUserSettings(uid: string, data: Partial<UserSettingsData>): Promise<void> {
   await writeUserScoped(uid, 'saveUserSettings', async (db, effectiveUid) => {
     const ref = doc(db, 'users', effectiveUid, 'settings', 'preferences')
-    await setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true })
+    const sanitized = stripUndefined(data as Record<string, unknown>)
+    await setDoc(ref, { ...sanitized, updated_at: serverTimestamp() }, { merge: true })
   })
 }
 

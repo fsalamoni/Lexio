@@ -386,9 +386,11 @@ export async function fetchProviderModels(
   providerId: ProviderId,
   apiKey: string,
   baseUrlOverride?: string,
+  options: { allowStaticFallback?: boolean } = {},
 ): Promise<ModelOption[]> {
   const provider = PROVIDERS[providerId]
   if (!provider) return []
+  const allowStaticFallback = options.allowStaticFallback ?? true
 
   if (provider.id === 'openrouter') {
     const orModels = await fetchOpenRouterModels()
@@ -397,6 +399,7 @@ export async function fetchProviderModels(
 
   const useStatic = !provider.modelsListUrl || provider.modelsListShape === 'static'
   if (useStatic) {
+    if (!allowStaticFallback) return []
     return provider.staticModels.map(m => providerEntryToModelOption(provider, m))
   }
 
@@ -425,11 +428,13 @@ export async function fetchProviderModels(
     // openai-shape
     const data = (json.data ?? []) as RawProviderModel[]
     if (!Array.isArray(data) || data.length === 0) {
+      if (!allowStaticFallback) return []
       return provider.staticModels.map(m => providerEntryToModelOption(provider, m))
     }
     return data.map(m => providerEntryToModelOption(provider, m))
   } catch (err) {
     console.warn(`[provider-catalog] Falha ao buscar modelos de ${provider.label}:`, err)
+    if (!allowStaticFallback) throw err
     return provider.staticModels.map(m => providerEntryToModelOption(provider, m))
   }
 }
