@@ -411,10 +411,11 @@ export async function runPresentationGenerationPipeline(
   const executions: StudioStepExecution[] = []
   const orchestratorStartedAt = Date.now()
   const orchestratorModel = resolveOrchestratorModel(models, 'presentation_pipeline_orchestrator', ['pres_planejador', 'pres_revisor'])
+  const orchestratorSourceId = `presentation-pipeline-${input.artifactType}-${input.topic.trim().slice(0, 80) || 'sem-tema'}`
   executions.push({
     ...createOrchestratorUsageExecution({
       sourceType: 'presentation_pipeline',
-      sourceId: `presentation-pipeline-${orchestratorStartedAt}`,
+      sourceId: orchestratorSourceId,
       phase: 'presentation_pipeline_orchestrator',
       agentName: 'Orquestrador do Pipeline',
       model: orchestratorModel,

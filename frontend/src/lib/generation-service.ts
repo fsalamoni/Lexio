@@ -1826,7 +1826,7 @@ export async function generateDocument(
       'document_pipeline_orchestrator',
       'Orquestrador monitorando execução, retries, fallbacks e continuidade...',
       3,
-      modelOrchestrator,
+      modelOrchestrator ?? undefined,
       'Ativo durante todo o pipeline',
       'running',
     )

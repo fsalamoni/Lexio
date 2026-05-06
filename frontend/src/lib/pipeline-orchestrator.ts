@@ -45,6 +45,6 @@ export function resolveOrchestratorModel(
   models: Record<string, string>,
   orchestratorKey: string,
   fallbackKeys: string[] = [],
-): string {
-  return models[orchestratorKey] || fallbackKeys.map(key => models[key]).find(Boolean) || ''
+): string | null {
+  return models[orchestratorKey] || fallbackKeys.map(key => models[key]).find(Boolean) || null
 }

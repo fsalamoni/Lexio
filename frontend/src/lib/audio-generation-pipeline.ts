@@ -201,10 +201,11 @@ export async function runAudioGenerationPipeline(
   const executions: StudioStepExecution[] = []
   const orchestratorStartedAt = Date.now()
   const orchestratorModel = resolveOrchestratorModel(models, 'audio_pipeline_orchestrator', ['audio_planejador', 'audio_revisor'])
+  const orchestratorSourceId = `audio-pipeline-${input.artifactType}-${input.topic.trim().slice(0, 80) || 'sem-tema'}`
   executions.push({
     ...createOrchestratorUsageExecution({
       sourceType: 'audio_pipeline',
-      sourceId: `audio-pipeline-${orchestratorStartedAt}`,
+      sourceId: orchestratorSourceId,
       phase: 'audio_pipeline_orchestrator',
       agentName: 'Orquestrador do Pipeline',
       model: orchestratorModel,
