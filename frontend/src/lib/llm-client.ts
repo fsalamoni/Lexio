@@ -125,11 +125,11 @@ function parseRetryAfterMs(raw: string | null): number | undefined {
   if (!trimmed) return undefined
   const seconds = Number(trimmed)
   if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.min(30_000, Math.round(seconds * 1000))
+    return Math.min(30_000, Math.max(100, Math.round(seconds * 1000)))
   }
   const dateMs = Date.parse(trimmed)
   if (!Number.isFinite(dateMs)) return undefined
-  return Math.min(30_000, Math.max(0, dateMs - Date.now()))
+  return Math.min(30_000, Math.max(100, dateMs - Date.now()))
 }
 
 function shouldRetryHttpTransient(status: number): boolean {
