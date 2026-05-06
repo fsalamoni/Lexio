@@ -408,7 +408,7 @@ export async function fetchProviderModels(
   const normalizedBaseUrlOverride = baseUrlOverride?.trim().replace(/\/+$/, '')
   const url = normalizedBaseUrlOverride
     ? provider.id === 'ollama'
-      ? `${normalizedBaseUrlOverride.replace(/\/v1$/i, '')}/api/tags`
+      ? `${normalizedBaseUrlOverride.replace(/\/v1$/, '')}/api/tags`
       : `${normalizedBaseUrlOverride}/models`
     : provider.modelsListUrl
 
