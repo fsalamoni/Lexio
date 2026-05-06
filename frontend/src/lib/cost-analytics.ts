@@ -117,6 +117,7 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
 
 const PHASE_LABELS: Record<string, string> = {
   triagem: 'Triagem',
+  document_pipeline_orchestrator: 'Documento: Orquestrador do Pipeline',
   pesquisador: 'Pesquisador',
   jurista: 'Jurista',
   advogado_diabo: 'Advogado do Diabo',
@@ -142,7 +143,11 @@ const PHASE_LABELS: Record<string, string> = {
   v3_citation_verifier: 'V3: Verificador de Citações',
   v3_writer: 'V3: Redator',
   v3_writer_reviser: 'V3: Revisor de Redação',
+  thesis_pipeline_orchestrator: 'Teses: Orquestrador do Pipeline',
   context_detail: 'Detalhamento de Contexto',
+  context_detail_orchestrator: 'Detalhamento: Orquestrador',
+  acervo_classificador_orchestrator: 'Acervo: Orquestrador do Classificador',
+  acervo_ementa_orchestrator: 'Acervo: Orquestrador de Ementas',
   thesis_catalogador: 'Catalogador',
   thesis_analista: 'Analista de Redundâncias',
   thesis_compilador: 'Compilador',
@@ -154,6 +159,7 @@ const PHASE_LABELS: Record<string, string> = {
   acervo_revisor: 'Revisor de Base',
   acervo_classificador: 'Classificador de Acervo',
   acervo_ementa: 'Gerador de Ementa',
+  research_notebook_orchestrator: 'Caderno: Orquestrador',
   notebook_pesquisador: 'Pesquisador de Fontes',
   notebook_pesquisador_externo: 'Pesquisador Externo',
   notebook_pesquisador_externo_profundo: 'Pesquisador Externo Profundo',
@@ -177,11 +183,13 @@ const PHASE_LABELS: Record<string, string> = {
   document_total: 'Documento (agregado)',
   thesis_analysis_total: 'Sessão de análise (agregada)',
   // ── Notebook Acervo phases ──
+  notebook_acervo_orchestrator: 'Acervo do Caderno: Orquestrador',
   nb_acervo_triagem: 'Triagem de Acervo (Caderno)',
   nb_acervo_buscador: 'Buscador de Acervo (Caderno)',
   nb_acervo_analista: 'Analista de Acervo (Caderno)',
   nb_acervo_curador: 'Curador de Fontes (Caderno)',
   // ── Video pipeline phases ──
+  video_pipeline_orchestrator: 'Vídeo: Orquestrador do Pipeline',
   video_planejador: 'Vídeo: Planejador de Produção',
   video_roteirista: 'Vídeo: Roteirista',
   video_diretor_cena: 'Vídeo: Diretor de Cenas',
@@ -200,6 +208,7 @@ const PHASE_LABELS: Record<string, string> = {
   audio_literal_generation: 'Áudio: Geração Literal Final',
   visual_artifact_render: 'Caderno: Renderização Visual Final',
   // ── Audio pipeline phases ──
+  audio_pipeline_orchestrator: 'Áudio: Orquestrador do Pipeline',
   audio_planejador: 'Áudio: Planejador',
   audio_roteirista: 'Áudio: Roteirista',
   audio_diretor: 'Áudio: Diretor',
@@ -207,6 +216,7 @@ const PHASE_LABELS: Record<string, string> = {
   audio_narrador: 'Áudio: Narrador / TTS',
   audio_revisor: 'Áudio: Revisor Final',
   // ── Presentation pipeline phases ──
+  presentation_pipeline_orchestrator: 'Apresentação: Orquestrador do Pipeline',
   pres_planejador: 'Apresentação: Planejador',
   pres_pesquisador: 'Apresentação: Pesquisador',
   pres_redator: 'Apresentação: Redator de Slides',

@@ -9,6 +9,7 @@
 
 export type ThesisPipelinePhase =
   | 'config'
+  | 'orquestracao'
   | 'inventario'
   | 'curadoria_acervo'
   | 'redundancia'
@@ -33,6 +34,13 @@ export const THESIS_PIPELINE_STAGES: ThesisPipelineStage[] = [
     label: 'Configuração',
     description: 'Carrega modelos, fallbacks e limites de paralelismo',
     phase: 'config',
+  },
+  {
+    key: 'thesis_pipeline_orchestrator',
+    label: 'Orquestrador do Pipeline',
+    description: 'Supervisiona agentes, retries, paralelismo e continuidade da execução',
+    phase: 'orquestracao',
+    modelKey: 'thesis_pipeline_orchestrator',
   },
   {
     key: 'thesis_catalogador',
