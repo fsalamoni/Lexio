@@ -212,6 +212,15 @@ describe('generateDocumentV3 orchestrator', () => {
     expect(typeof finalPayload.quality_score).toBe('number')
     expect(Array.isArray(finalPayload.llm_executions)).toBe(true)
     expect((finalPayload.llm_executions as unknown[]).length).toBeGreaterThan(5)
+    expect(finalPayload.llm_executions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        phase: 'v3_pipeline_orchestrator',
+        agent_name: 'Orquestrador do Pipeline',
+        cost_usd: 0,
+        tokens_in: 0,
+        tokens_out: 0,
+      }),
+    ]))
   })
 
   it('runs Fase 1 agents in parallel (timestamps overlap)', async () => {
@@ -452,6 +461,9 @@ describe('generateDocumentV3 orchestrator', () => {
     const finalUpdate = updateCalls.find(c => c[1].status === 'concluido')!
     const meta = finalUpdate[1].generation_meta as Record<string, unknown>
     expect(meta.pipeline_version).toBe('v3')
+    expect(meta.orchestrator_agent).toBe('v3_pipeline_orchestrator')
+    expect(meta.orchestrator_model).toBe('anthropic/claude-opus-4.5')
+    expect(typeof meta.orchestrator_recovery_count).toBe('number')
     expect(meta.phase_durations_ms).toBeTypeOf('object')
     const phases = meta.phase_durations_ms as Record<string, number>
     expect(typeof phases.compreensao).toBe('number')

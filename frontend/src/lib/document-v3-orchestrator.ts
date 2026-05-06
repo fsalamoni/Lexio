@@ -492,7 +492,15 @@ export async function generateDocumentV3(
       percent: number,
     ) => {
       supervisorActions.push({ agent, action, reason })
-      reportProgress('v3_pipeline_orchestrator', `Orquestrador: ${agentLabel} — ${action === 'local_fallback' ? 'fallback local seguro' : 'seguindo sem bloquear a fase'}.`, percent, {
+      const actionMessages: Record<SupervisorAction['action'], string> = {
+        retry: 'retentativa supervisionada',
+        escalate: 'escalonamento supervisionado',
+        second_round: 'segunda rodada supervisionada',
+        revise_citations: 'revisão de citações',
+        local_fallback: 'fallback local seguro',
+        continue_without_agent: 'seguindo sem bloquear a fase',
+      }
+      reportProgress('v3_pipeline_orchestrator', `Orquestrador: ${agentLabel} — ${actionMessages[action]}.`, percent, {
         modelId: orchestratorModel,
         executionState: 'retrying',
         stageMeta: reason,
@@ -1046,8 +1054,36 @@ export async function generateDocumentV3(
       }
     }
 
-    const usage_summary = buildUsageSummary(llmExecutions)
-    const totals = llmExecutions.reduce(
+    const orchestratorRecoveryCount = supervisorActions.filter(action =>
+      action.action === 'retry'
+      || action.action === 'escalate'
+      || action.action === 'local_fallback'
+      || action.action === 'continue_without_agent'
+      || action.action === 'second_round'
+      || action.action === 'revise_citations',
+    ).length
+    const orchestratorExecution = createUsageExecutionRecord({
+      source_type: 'document_generation_v3',
+      source_id: docId,
+      phase: 'v3_pipeline_orchestrator',
+      agent_name: 'Orquestrador do Pipeline',
+      model: orchestratorModel ?? null,
+      tokens_in: 0,
+      tokens_out: 0,
+      cost_usd: 0,
+      duration_ms: Date.now() - wallClockStart,
+      execution_state: orchestratorRecoveryCount > 0 ? 'retrying' : 'completed',
+      retry_count: orchestratorRecoveryCount,
+      used_fallback: supervisorActions.some(action => action.action === 'local_fallback' || action.action === 'continue_without_agent'),
+      runtime_concurrency: parallelLimit,
+      runtime_hints: supervisorActions.length > 0
+        ? `${supervisorActions.length} ação(ões) de supervisão`
+        : 'Execução supervisionada sem recuperações',
+      document_type_id: docType,
+    })
+    const persistedExecutions = [orchestratorExecution, ...llmExecutions]
+    const usage_summary = buildUsageSummary(persistedExecutions)
+    const totals = persistedExecutions.reduce(
       (acc, e) => ({ tin: acc.tin + e.tokens_in, tout: acc.tout + e.tokens_out, cost: acc.cost + e.cost_usd }),
       { tin: 0, tout: 0, cost: 0 },
     )
@@ -1067,10 +1103,13 @@ export async function generateDocumentV3(
         llm_tokens_in: totals.tin,
         llm_tokens_out: totals.tout,
         llm_cost_usd: parseFloat(totals.cost.toFixed(6)),
-        llm_executions: llmExecutions,
+        llm_executions: persistedExecutions,
         usage_summary,
         generation_meta: {
           pipeline_version: 'v3',
+          orchestrator_agent: 'v3_pipeline_orchestrator',
+          orchestrator_model: orchestratorModel ?? null,
+          orchestrator_recovery_count: orchestratorRecoveryCount,
           quality_passed: quality.passed,
           quality_failed: quality.failed,
           phase_durations_ms: phaseDurationsMs,

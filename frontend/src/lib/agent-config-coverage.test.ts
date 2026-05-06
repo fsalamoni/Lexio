@@ -92,6 +92,7 @@ describe('user-scoped agent configuration coverage', () => {
       'v3_outline_planner',
       'v3_writer',
       'v3_writer_reviser',
+      'v3_pipeline_orchestrator',
       'v3_supervisor',
     ]))
 

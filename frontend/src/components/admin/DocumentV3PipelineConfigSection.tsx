@@ -1,5 +1,6 @@
 import { type ElementType } from 'react'
 import {
+  Activity,
   BookOpen,
   ClipboardCheck,
   FileText,
@@ -25,6 +26,7 @@ import AgentModelConfigCard, {
 } from '../AgentModelConfigCard'
 
 const AGENT_ICONS: Record<string, ElementType> = {
+  'activity': Activity,
   'search': Search,
   'clipboard-check': ClipboardCheck,
   'scale': Scale,
