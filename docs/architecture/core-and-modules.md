@@ -15,7 +15,7 @@ The current frontend already has useful modular patterns:
 - `frontend/src/lib/chat-orchestrator/` is a domain submodule.
 - `frontend/src/lib/modules/dashboard/` is the first extracted product module with compatibility facades.
 - `frontend/src/lib/modules/notebook/` now owns notebook progress contracts and pure notebook constants behind compatibility facades.
-- `frontend/src/lib/modules/documents/` now owns document prompt metadata, profile prompt helpers and the extracted Pesquisador user prompt behind compatibility exports from `generation-service.ts`.
+- `frontend/src/lib/modules/documents/` now owns document prompt metadata, profile prompt helpers, acervo prompt builders, acervo search helpers and the extracted Pesquisador user prompt behind compatibility exports from `generation-service.ts`.
 - `frontend/src/lib/v3-agents/` extracts document V3 agents into isolated files.
 - `frontend/src/pages/notebook/` contains page-local notebook helpers.
 
@@ -131,14 +131,14 @@ Completed foundation extraction:
 1. Extract dashboard data and V2 helpers into `frontend/src/lib/modules/dashboard/`, preserving `dashboard-data.ts` and `dashboard-v2.ts` as facades.
 2. Extract notebook progress contracts and pure constants into `frontend/src/lib/modules/notebook/`, preserving `notebook-pipeline-progress.ts` and `notebook-constants.ts` as facades.
 3. Extract document prompt metadata/profile helpers into `frontend/src/lib/modules/documents/`, preserving public exports from `generation-service.ts` while migrating `document-v3-orchestrator.ts` to the module API.
+4. Extract document acervo prompt builders, JSON helper and keyword/prefilter helpers into `frontend/src/lib/modules/documents/`, preserving public `selectAcervoDocsForBuscador` compatibility from `generation-service.ts`.
 
 Next safe extraction order:
 
-1. Extract document acervo helpers into the Documents module.
-2. Split model agent definitions by pipeline while preserving existing exports from `model-config.ts`.
-3. Extract platform analytics from `firestore-service.ts`.
-4. Introduce Firestore path/reference helpers under core and migrate call sites gradually.
-5. Split high-risk repository operations only after tests are in place.
+1. Split model agent definitions by pipeline while preserving existing exports from `model-config.ts`.
+2. Extract platform analytics from `firestore-service.ts`.
+3. Introduce Firestore path/reference helpers under core and migrate call sites gradually.
+4. Split high-risk repository operations only after tests are in place.
 
 ## Compatibility Rule
 
