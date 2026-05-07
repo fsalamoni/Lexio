@@ -1,0 +1,138 @@
+# Core And Modules Architecture
+
+Last update: 2026-05-07
+
+## Goal
+
+Lexio should evolve toward a stable core with independent domain modules. The core owns shared contracts and adapters. Modules own product behavior.
+
+This keeps new features from changing central code paths unnecessarily and reduces the chance that one feature breaks another.
+
+## Current State
+
+The current frontend already has useful modular patterns:
+
+- `frontend/src/lib/chat-orchestrator/` is a domain submodule.
+- `frontend/src/lib/v3-agents/` extracts document V3 agents into isolated files.
+- `frontend/src/pages/notebook/` contains page-local notebook helpers.
+
+The main hotspots to reduce over time are:
+
+- `frontend/src/lib/generation-service.ts`
+- `frontend/src/lib/firestore-service.ts`
+- `frontend/src/lib/model-config.ts`
+
+## Target Shape
+
+```text
+frontend/src/lib/
+  core/
+    firebase/
+    firestore/
+    llm/
+    errors/
+    feature-flags/
+    telemetry/
+  modules/
+    documents/
+    notebook/
+    thesis/
+    chat/
+    admin/
+    media/
+    jurisprudence/
+  pipelines/
+    document-v2/
+    document-v3/
+    audio/
+    video/
+    presentation/
+```
+
+This is a target architecture, not a single large rewrite. Move behavior incrementally.
+
+## Core Responsibilities
+
+The core may contain:
+
+- Firebase app initialization and database routing.
+- Firestore reference/path helpers.
+- Auth-aware retry and session recovery contracts.
+- LLM client adapters and provider abstractions.
+- Error normalization and humanization.
+- Feature flag resolution.
+- Cross-module telemetry and cost execution records.
+- Shared domain primitives that are stable and UI-independent.
+
+The core must not contain:
+
+- UI components.
+- Page-local state.
+- Agent prompts for one domain.
+- Workflow-specific business rules that belong to a module.
+
+## Module Responsibilities
+
+A module owns one domain and should expose a small API.
+
+Recommended module contents:
+
+```text
+modules/<domain>/
+  index.ts
+  types.ts
+  service.ts
+  repository.ts
+  prompts.ts
+  pipeline.ts
+  *.test.ts
+```
+
+Use only the files that make sense. Do not create empty structure for its own sake.
+
+## Dependency Rules
+
+Allowed:
+
+```text
+pages -> components -> lib modules -> lib core
+pages -> lib modules
+modules -> core
+modules -> integrations
+```
+
+Forbidden:
+
+```text
+lib -> components
+core -> modules
+core -> pages
+module A -> module B internals
+```
+
+If a module needs another module, expose a narrow public API from that module's `index.ts`.
+
+## Incremental Extraction Order
+
+1. Extract document-generation prompts from `generation-service.ts`.
+2. Extract document acervo helpers into a document module.
+3. Split model agent definitions by pipeline while preserving existing exports from `model-config.ts`.
+4. Extract platform analytics from `firestore-service.ts`.
+5. Introduce Firestore path/reference helpers under core and migrate call sites gradually.
+6. Split high-risk repository operations only after tests are in place.
+
+## Compatibility Rule
+
+Any extraction must preserve public imports until all callers migrate. Prefer barrel exports and adapter functions over large call-site rewrites.
+
+## Testing Rule
+
+Every module extraction needs at least one of:
+
+- Existing tests still covering the old public API.
+- New tests for the extracted module.
+- A source-level guardrail when the risk is architectural, such as preventing `lib -> components` imports.
+
+## Firestore Migration Interaction
+
+Do not combine broad modular refactors with data cutover. During Firestore isolation, core changes should be limited to database routing, backup/audit/migration tools, and documentation. Domain refactors come after backup and parity validation are stable.

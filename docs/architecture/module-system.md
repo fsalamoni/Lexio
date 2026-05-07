@@ -2,6 +2,8 @@
 
 > Em produção, Lexio não usa módulos Python. Todos os pipelines são definidos em TypeScript no frontend e devem respeitar fronteiras modulares entre núcleo compartilhado e módulos de domínio.
 
+Para a estratégia completa de núcleo e módulos, consulte `docs/architecture/core-and-modules.md`. Para limites de dados Firestore e migração para database nomeado, consulte `docs/architecture/firestore-data-boundaries.md`.
+
 ## Definição de Agentes
 Cada pipeline é definido como arrays de `AgentModelDef` registrados em `model-config.ts`, mas novas implementações devem evoluir para módulos por pipeline em subdiretórios próprios de `frontend/src/lib`.
 
@@ -44,6 +46,8 @@ interface AgentModelDef {
 - Código de negócio não pode importar nada de `frontend/src/components`.
 - Qualquer novo pipeline, trilha, agente ou integração deve nascer em módulo próprio, com tipos, prompts, adaptadores e testes isolados.
 - Não ampliar arquivos centrais monolíticos quando a mudança puder ser extraída para submódulo dedicado.
+- Mudanças transversais de dados, Firebase, LLM, feature flags, erros e telemetria devem entrar primeiro como contratos/adaptadores de core; regras específicas de produto devem morar no módulo de domínio.
+- Refatorações modulares não devem ser misturadas com cutover de banco de dados. Durante a migração Firestore, manter mudanças de código focadas em roteamento de databaseId, backup, auditoria, migração shadow e validação.
 
 ## Fluxo de Chamada LLM
 ```

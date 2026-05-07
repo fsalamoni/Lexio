@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -27,16 +29,22 @@ function parseArgs(argv) {
   const result = {
     project: undefined,
     bucket: undefined,
+    databaseId: undefined,
     outDir: undefined,
+    includeStorageDownload: false,
     skipStorageDownload: false,
+    verifyManifest: false,
   }
 
   for (let index = 2; index < argv.length; index++) {
     const value = argv[index]
     if (value === '--project') result.project = argv[++index]
     else if (value === '--bucket') result.bucket = argv[++index]
+    else if (value === '--database-id') result.databaseId = argv[++index]
     else if (value === '--out-dir') result.outDir = argv[++index]
+    else if (value === '--include-storage-download') result.includeStorageDownload = true
     else if (value === '--skip-storage-download') result.skipStorageDownload = true
+    else if (value === '--verify-manifest') result.verifyManifest = true
   }
 
   return result
@@ -238,6 +246,7 @@ async function snapshotFirestore(projectId, databaseId, accessToken) {
         createTime: doc.createTime,
         updateTime: doc.updateTime,
         subcollections,
+        rawFields: doc.fields || {},
         fields: decodeFirestoreFields(doc.fields || {}),
       })
       for (const subcollection of subcollections) {
@@ -321,6 +330,74 @@ async function writeSnapshotFile(filePath, data) {
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8')
 }
 
+async function sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    const stream = createReadStream(filePath)
+    stream.on('error', reject)
+    stream.on('data', chunk => hash.update(chunk))
+    stream.on('end', () => resolve(hash.digest('hex')))
+  })
+}
+
+function toManifestPath(outDir, filePath) {
+  return path.relative(outDir, filePath).split(path.sep).join('/')
+}
+
+async function checksumOutputFile(outDir, filePath) {
+  const stat = await fs.stat(filePath)
+  return {
+    path: toManifestPath(outDir, filePath),
+    bytes: stat.size,
+    sha256: await sha256File(filePath),
+  }
+}
+
+async function listFilesRecursive(rootDir) {
+  if (!rootDir || !(await fileExists(rootDir))) return []
+
+  const entries = await fs.readdir(rootDir, { withFileTypes: true })
+  const files = []
+  for (const entry of entries) {
+    const entryPath = path.join(rootDir, entry.name)
+    if (entry.isDirectory()) files.push(...await listFilesRecursive(entryPath))
+    else if (entry.isFile()) files.push(entryPath)
+  }
+  return files
+}
+
+async function buildChecksumManifest(outDir, primaryFiles, storageRoot) {
+  const files = []
+  for (const filePath of primaryFiles) {
+    files.push(await checksumOutputFile(outDir, filePath))
+  }
+
+  const storageFiles = []
+  for (const filePath of await listFilesRecursive(storageRoot)) {
+    storageFiles.push(await checksumOutputFile(outDir, filePath))
+  }
+
+  files.sort((left, right) => left.path.localeCompare(right.path))
+  storageFiles.sort((left, right) => left.path.localeCompare(right.path))
+
+  return { files, storageFiles }
+}
+
+async function verifyChecksumManifest(outDir, manifest) {
+  const expected = [
+    ...(manifest?.checksums?.files || []),
+    ...(manifest?.checksums?.storageFiles || []),
+  ]
+
+  for (const entry of expected) {
+    const filePath = path.join(outDir, ...String(entry.path).split('/'))
+    const actual = await checksumOutputFile(outDir, filePath)
+    if (actual.bytes !== entry.bytes || actual.sha256 !== entry.sha256) {
+      throw new Error(`Checksum mismatch for ${entry.path}`)
+    }
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv)
   const projectId = await resolveProjectId(args.project)
@@ -329,10 +406,11 @@ async function main() {
   const { email, accessToken } = await ensureFreshAccessToken(configPath)
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19)
   const outDir = args.outDir || path.join(repoRoot, 'backups', 'firebase-cloud', timestamp)
-  const databaseId = '(default)'
+  const databaseId = args.databaseId || '(default)'
 
   await fs.mkdir(outDir, { recursive: true })
   log(`Project: ${projectId}`)
+  log(`Firestore database: ${databaseId}`)
   log(`Authenticated as: ${email}`)
   log(`Output directory: ${outDir}`)
 
@@ -364,19 +442,39 @@ async function main() {
     storageDownload.error = 'Skipped by --skip-storage-download'
   }
 
-  await writeSnapshotFile(path.join(outDir, 'firestore.database.json'), firestoreMetadata)
-  await writeSnapshotFile(path.join(outDir, 'firestore.snapshot.json'), firestoreSnapshot)
-  await writeSnapshotFile(path.join(outDir, 'storage.objects.json'), {
+  const firestoreDatabaseFile = path.join(outDir, 'firestore.database.json')
+  const firestoreSnapshotFile = path.join(outDir, 'firestore.snapshot.json')
+  const storageObjectsFile = path.join(outDir, 'storage.objects.json')
+  const storageDownloadFile = path.join(outDir, 'storage.download.json')
+  const manifestFile = path.join(outDir, 'manifest.json')
+
+  await writeSnapshotFile(firestoreDatabaseFile, firestoreMetadata)
+  await writeSnapshotFile(firestoreSnapshotFile, firestoreSnapshot)
+  await writeSnapshotFile(storageObjectsFile, {
     bucket,
     objects: storageObjects,
     error: storageError,
   })
-  await writeSnapshotFile(path.join(outDir, 'storage.download.json'), storageDownload)
-  await writeSnapshotFile(path.join(outDir, 'manifest.json'), {
+  await writeSnapshotFile(storageDownloadFile, storageDownload)
+
+  const checksums = await buildChecksumManifest(outDir, [
+    firestoreDatabaseFile,
+    firestoreSnapshotFile,
+    storageObjectsFile,
+    storageDownloadFile,
+  ], storageDownload.storageRoot)
+
+  const manifest = {
     exportedAt: new Date().toISOString(),
     projectId,
+    databaseId,
     bucket,
     authUser: email,
+    backupMode: {
+      storageDownload: args.skipStorageDownload ? 'skipped' : 'included',
+      explicitIncludeStorageDownloadFlag: args.includeStorageDownload,
+      verifiedManifest: args.verifyManifest,
+    },
     firestore: {
       topLevelCollections: firestoreSnapshot.topLevelCollections.length,
       visitedCollections: firestoreSnapshot.visitedCollections.length,
@@ -395,7 +493,15 @@ async function main() {
       'storage.download.json',
       'manifest.json',
     ],
-  })
+    checksums,
+  }
+
+  await writeSnapshotFile(manifestFile, manifest)
+
+  if (args.verifyManifest) {
+    await verifyChecksumManifest(outDir, manifest)
+    log('Manifest checksum verification passed')
+  }
 
   log(`Done. Firestore documents: ${firestoreSnapshot.documents.length}; storage objects: ${storageObjects.length}; downloaded files: ${storageDownload.downloadedCount}`)
 }

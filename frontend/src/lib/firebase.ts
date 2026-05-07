@@ -31,6 +31,9 @@ if (firebaseConfigIssues.length > 0) {
 }
 
 const forceDemoMode = import.meta.env.VITE_FORCE_DEMO_MODE === 'true'
+const configuredFirestoreDatabaseId = String(import.meta.env.VITE_FIRESTORE_DATABASE_ID || '').trim()
+
+export const FIRESTORE_DATABASE_ID = configuredFirestoreDatabaseId || '(default)'
 
 if (forceDemoMode) {
   console.warn('[Firebase Config] VITE_FORCE_DEMO_MODE=true -> skipping Firebase initialization for local smoke/demo mode.')
@@ -46,7 +49,7 @@ let _storage: FirebaseStorage | null = null
 if (IS_FIREBASE) {
   _app  = getApps().length ? getApps()[0] : initializeApp(firebaseConfig)
   _auth = getAuth(_app)
-  _db   = getFirestore(_app)
+  _db   = getFirestore(_app, FIRESTORE_DATABASE_ID)
   _storage = getStorage(_app)
 }
 

@@ -101,6 +101,7 @@ Arquivo: `frontend/.env.local`
 | `VITE_FIREBASE_APP_ID` | `1:143237037612:web:85bd9ddaf81973d5031b89` |
 | `VITE_OPENROUTER_API_KEY` | Fallback quando não há chave no Firestore |
 | `VITE_DEMO_MODE` | `true` para modo offline sem Firebase |
+| `VITE_FIRESTORE_DATABASE_ID` | Database Firestore ativo; padrão `(default)`, alvo de migração `lexio-prod` |
 
 ---
 
@@ -659,6 +660,8 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 | `/users/{uid}/acervo/{id}` | Documentos de referência (classificados) |
 | `/users/{uid}/research_notebooks/{id}` | Cadernos de pesquisa |
 | `/settings/platform` | Config global legada usada apenas como origem de migração |
+
+> Wave 41: a plataforma aceita database Firestore nomeado por `VITE_FIRESTORE_DATABASE_ID`, mas produção deve permanecer em `(default)` até backup completo, auditoria, migração shadow, validação de paridade e aprovação de cutover. Ver `docs/migration/firestore-database-isolation.md` e `docs/architecture/firestore-data-boundaries.md`.
 
 ### Subchaves de `/users/{uid}/settings/preferences`
 

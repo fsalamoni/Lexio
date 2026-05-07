@@ -1,8 +1,8 @@
 {
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
-    "updated": "2026-05-05",
-    "cycle": "wave40-latency-progress-contract-subwave2",
+    "updated": "2026-05-07",
+    "cycle": "wave41-firestore-isolation-core-modules",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
@@ -740,6 +740,30 @@
         "docs/MANIFEST.json"
       ],
       "notes": "A Subonda 2 passou a combinar caches user-scoped (templates administrativos, contexto leve do acervo, ementa e classificacao), feature flags runtime por usuario persistidas em Firestore e um caminho real de `FF_PARALLEL_PESQUISADOR` com fallback sequencial. A trilha de progresso multiagente agora propaga `executionState` em documentos, notebook e tese; a UX de video ganhou retomada real por `VideoCheckpoint`; o painel admin fechou a validacao longitudinal por perfil operacional de thresholds; e a jurisprudencia passou a contar com reranking semantico browser-side, fallback juridico resiliente e memoria semantica persistente por caderno com fusao historica. O teste de orquestracao do `generateDocument()` voltou a ficar tipado de forma compatível com o `tsc`, os testes focados de jurisprudencia subiram para 73/73 e o warning de chunking do chat-orchestrator permaneceu resolvido. O fechamento operacional funcional foi concluido com smoke autenticado local via `VITE_FORCE_DEMO_MODE=true`, validacao local verde, commit/push do payload `162224f`, deploy Firebase por push (`25405834740`) e release one-shot para GitHub Pages (`25405834580`) em sucesso."
+    },
+    {
+      "id": "E5.F31",
+      "epic": "Infraestrutura de Qualidade",
+      "name": "Firestore nomeado, backup seguro e arquitetura core modular",
+      "state": "partial",
+      "files": [
+        "frontend/src/lib/firebase.ts",
+        "scripts/firebase-cloud-sync.mjs",
+        "scripts/lexio-firestore-paths.mjs",
+        "scripts/lexio-firestore-audit.mjs",
+        "scripts/lexio-firestore-migrate-shadow.mjs",
+        "scripts/lexio-firestore-validate-shadow.mjs",
+        "docs/migration/firestore-database-isolation.md",
+        "docs/architecture/core-and-modules.md",
+        "docs/architecture/firestore-data-boundaries.md",
+        "docs/architecture/ai-development-guide.md",
+        "docs/architecture/module-system.md",
+        "docs/architecture/README.md",
+        "docs/PLANO.md",
+        "docs/MANIFEST.json",
+        "NOTEBOOK_IMPLEMENTATION_STATUS.md"
+      ],
+      "notes": "Inicio da Wave 41 em branch dedicada para migrar Lexio para um Firestore database nomeado (`lexio-prod`) sem perda de dados: backup com databaseId e checksums, rawFields preservados, auditoria/classificacao read-only, migracao shadow dry-run por padrao, validacao de paridade por snapshot e runtime `VITE_FIRESTORE_DATABASE_ID` com fallback `(default)`. Backup local completo de `(default)` concluido em `backups/firebase-cloud/2026-05-07_18-32-07` com 1118 documentos, 37 objetos Storage baixados e manifesto SHA-256 verificado; auditoria apontou 820 documentos Lexio candidatos e 298 excluidos/ambiguos; dry-run para `lexio-prod` planejou 820 escritas e 0 erros. `lexio-prod` ainda nao existe; criacao/validacao do database, execucao da migracao, cutover produtivo e qualquer exclusao de dados antigos permanecem pendentes e bloqueados por checkpoint explicito."
     },
     {
       "id": "E8.F1",

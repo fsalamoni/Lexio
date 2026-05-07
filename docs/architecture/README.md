@@ -41,6 +41,7 @@ Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
 5. **Catálogo dinâmico** — Modelos podem ser adicionados/removidos nas configurações pessoais; o catálogo persistido de cada usuário é a fonte de verdade para os seletores e validações dos próprios agentes
 6. **Deploy multipista** — GitHub Pages + Firebase Hosting estável + Firebase Hosting experimental do redesign V2, cada um com trilho próprio de CI/CD
 7. **Fronteiras modulares obrigatórias** — lógica central compartilhada em módulos de `lib`; UI consome módulos, mas módulos não dependem de UI
+8. **Isolamento de dados por databaseId** — Lexio deve evoluir para Firestore nomeado (`lexio-prod`) com fallback controlado para `(default)` até o cutover validado
 
 ## Política de Modularização
 
@@ -48,6 +49,13 @@ Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
 - O núcleo compartilhado deve concentrar contratos, adapters e utilitários transversais; implementações específicas devem morar em módulos/pipelines dedicados.
 - Dependências entre camadas devem ser unidirecionais: `components -> lib`, nunca `lib -> components`.
 - Ao identificar arquivos monolíticos, a evolução correta é extrair submódulos por responsabilidade, sem duplicar fontes de verdade.
+
+## Documentos Centrais De Evolução
+
+- `docs/architecture/core-and-modules.md` — desenho alvo de core + módulos e ordem segura de extração.
+- `docs/architecture/firestore-data-boundaries.md` — limites de dados Lexio, caminhos conhecidos, ambiguidades e databaseId.
+- `docs/architecture/ai-development-guide.md` — checklist operacional para agentes IA e futuras mudanças.
+- `docs/migration/firestore-database-isolation.md` — sequência segura de backup, auditoria, migração shadow, paridade e rollback.
 
 ## Pipelines Implementados
 
