@@ -27,6 +27,11 @@
         "frontend/src/lib/modules/notebook/notebook-constants.ts",
         "frontend/src/lib/notebook-pipeline-progress.ts",
         "frontend/src/lib/notebook-constants.ts",
+        "frontend/src/lib/modules/documents/index.ts",
+        "frontend/src/lib/modules/documents/prompts.ts",
+        "frontend/src/lib/modules/documents/prompts.test.ts",
+        "frontend/src/lib/document-v3-orchestrator.ts",
+        "frontend/src/lib/generation-service.ts",
         "docs/architecture/core-and-modules.md",
         "docs/architecture/domain-map.md",
         "docs/architecture/module-contracts.md",
@@ -36,7 +41,7 @@
         "docs/guides/refactoring-module.md",
         "docs/guides/testing-modules.md"
       ],
-      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard e notebook progress/constants para lib/modules/notebook com facades compatíveis; extração completa dos demais módulos segue incremental."
+      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard, notebook progress/constants para lib/modules/notebook e prompts/metadados iniciais de documentos para lib/modules/documents com exports compatíveis; extração completa dos demais módulos segue incremental."
     },
     {
       "id": "E1.F1",
