@@ -4,8 +4,9 @@ import { describe, expect, it } from 'vitest'
 const source = readFileSync(new URL('./firestore-service.ts', import.meta.url), 'utf-8')
 const platformAnalyticsSource = readFileSync(new URL('./platform-analytics.ts', import.meta.url), 'utf-8')
 const documentsRepositorySource = readFileSync(new URL('./modules/documents/repository.ts', import.meta.url), 'utf-8')
-const firestoreRepositoryBoundarySource = `${source}\n${documentsRepositorySource}`
-const firestoreBoundarySource = `${source}\n${platformAnalyticsSource}\n${documentsRepositorySource}`
+const thesesRepositorySource = readFileSync(new URL('./modules/theses/repository.ts', import.meta.url), 'utf-8')
+const firestoreRepositoryBoundarySource = `${source}\n${documentsRepositorySource}\n${thesesRepositorySource}`
+const firestoreBoundarySource = `${source}\n${platformAnalyticsSource}\n${documentsRepositorySource}\n${thesesRepositorySource}`
 
 describe('firestore-service auth guardrails', () => {
   it('avoids raw user-scoped read calls with unresolved uid', () => {

@@ -45,6 +45,7 @@ import {
   normalizeFirestoreDocumentId,
 } from './core/firestore'
 import { createDocumentsRepository } from './modules/documents'
+import { createThesesRepository } from './modules/theses'
 
 // ── Type definitions (re-exported from firestore-types.ts) ───────────────────
 
@@ -1400,141 +1401,20 @@ export function getRequestFields(documentTypeId: string): { fields: WizardField[
 
 // ── Theses (Firestore /users/{uid}/theses subcollection) ────────────────────
 
-export async function listTheses(
-  uid: string,
-  opts: { q?: string; legalAreaId?: string; limit?: number; skip?: number } = {},
-): Promise<{ items: ThesisData[]; total: number }> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'listTheses')
-  // Combining where() on one field with orderBy() on a different field requires a composite
-  // Firestore index that may not exist. When filtering by area we skip the server-side orderBy
-  // and sort client-side instead.
-  const constraints: QueryConstraint[] = opts.legalAreaId
-    ? [where('legal_area_id', '==', opts.legalAreaId)]
-    : [orderBy('created_at', 'desc')]
-  if (!opts.legalAreaId && opts.limit) constraints.push(limit(opts.limit + (opts.skip ?? 0)))
-  const colRef = collection(db, 'users', effectiveUid, 'theses')
+const thesesRepository = createThesesRepository({
+  ensureFirestore,
+  resolveEffectiveUid,
+  writeUserScoped,
+  withFirestoreRetry,
+  isAuthAccessFirestoreError,
+  getErrorMessage,
+})
 
-  let items: ThesisData[]
-  try {
-    const snap = await withFirestoreRetry(
-      () => getDocs(query(colRef, ...constraints)),
-      'listTheses.query',
-    )
-    items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
-  } catch (error) {
-    if (isAuthAccessFirestoreError(error)) {
-      throw error
-    }
-    console.warn('Firestore thesis query failed; using client-side fallback:', getErrorMessage(error))
-    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listTheses.fallback')
-    items = fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
-  }
-
-  // When area filter is active, sort client-side (avoids composite index requirement)
-  if (opts.legalAreaId) {
-    items.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-  }
-  // Client-side text search
-  if (opts.q) {
-    const q = opts.q.toLowerCase()
-    items = items.filter(t =>
-      t.title.toLowerCase().includes(q) ||
-      t.content.toLowerCase().includes(q) ||
-      (t.summary?.toLowerCase().includes(q) ?? false)
-    )
-  }
-  const total = items.length
-  if (opts.skip) items = items.slice(opts.skip)
-  if (opts.limit) items = items.slice(0, opts.limit)
-  return { items, total }
-}
-
-export async function createThesis(uid: string, data: Partial<ThesisData>): Promise<ThesisData> {
-  const now = new Date().toISOString()
-  const thesis: Omit<ThesisData, 'id'> = {
-    title: data.title || '',
-    content: data.content || '',
-    summary: data.summary ?? null,
-    legal_area_id: data.legal_area_id || 'civil',
-    document_type_id: data.document_type_id ?? null,
-    tags: data.tags ?? null,
-    category: data.category ?? null,
-    quality_score: data.quality_score ?? null,
-    usage_count: 0,
-    source_type: data.source_type || 'manual',
-    created_at: now,
-    updated_at: now,
-  }
-  return writeUserScoped(uid, 'createThesis', async (db, effectiveUid) => {
-    const ref = await addDoc(collection(db, 'users', effectiveUid, 'theses'), thesis)
-    return { id: ref.id, ...thesis }
-  })
-}
-
-export async function updateThesis(uid: string, thesisId: string, data: Partial<ThesisData>): Promise<ThesisData> {
-  const updates = { ...data, updated_at: serverTimestamp() }
-  delete updates.id
-  const { db, effectiveUid } = await writeUserScoped(uid, 'updateThesis.write', async (db, effectiveUid) => {
-    const ref = doc(db, 'users', effectiveUid, 'theses', thesisId)
-    await updateDoc(ref, updates)
-    return { db, effectiveUid }
-  })
-  const ref = doc(db, 'users', effectiveUid, 'theses', thesisId)
-  const snap = await withFirestoreRetry(() => getDoc(ref), 'updateThesis.read')
-  return { id: snap.id, ...snap.data() } as ThesisData
-}
-
-export async function deleteThesis(uid: string, thesisId: string): Promise<void> {
-  await writeUserScoped(uid, 'deleteThesis', async (db, effectiveUid) => {
-    await deleteDoc(doc(db, 'users', effectiveUid, 'theses', thesisId))
-  })
-}
-
-export async function getThesisStats(uid: string): Promise<{
-  total_theses: number
-  by_area: Record<string, number>
-  average_quality_score: number | null
-  most_used: { id: string; title: string; usage_count: number }[]
-}> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'getThesisStats')
-  const colRef = collection(db, 'users', effectiveUid, 'theses')
-
-  let items: ThesisData[]
-  try {
-    const snap = await withFirestoreRetry(
-      () => getDocs(query(colRef, orderBy('created_at', 'desc'))),
-      'getThesisStats.query',
-    )
-    items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisData))
-  } catch (error) {
-    if (isAuthAccessFirestoreError(error)) {
-      throw error
-    }
-    console.warn('Firestore thesis stats query failed; using client-side fallback:', getErrorMessage(error))
-    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'getThesisStats.fallback')
-    items = fallbackSnap.docs
-      .map(d => ({ id: d.id, ...d.data() } as ThesisData))
-      .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-  }
-
-  const by_area: Record<string, number> = {}
-  let scoreSum = 0
-  let scoreCount = 0
-  for (const t of items) {
-    by_area[t.legal_area_id] = (by_area[t.legal_area_id] ?? 0) + 1
-    if (t.quality_score != null) { scoreSum += t.quality_score; scoreCount++ }
-  }
-
-  const sorted = [...items].sort((a, b) => (b.usage_count ?? 0) - (a.usage_count ?? 0))
-  return {
-    total_theses: items.length,
-    by_area,
-    average_quality_score: scoreCount ? Math.round(scoreSum / scoreCount) : null,
-    most_used: sorted.slice(0, 5).map(t => ({ id: t.id!, title: t.title, usage_count: t.usage_count })),
-  }
-}
+export const listTheses = thesesRepository.listTheses
+export const createThesis = thesesRepository.createThesis
+export const updateThesis = thesesRepository.updateThesis
+export const deleteThesis = thesesRepository.deleteThesis
+export const getThesisStats = thesesRepository.getThesisStats
 
 /**
  * Seed the thesis bank with imported theses from the vectorized legal corpus.
