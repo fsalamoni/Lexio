@@ -5,16 +5,19 @@
 
 ---
 
-## Status Geral: Etapas 1-341 IMPLEMENTADAS · Etapas 342-347 IMPLEMENTADAS (sem cutover)
+## Status Geral: Etapas 1-341 IMPLEMENTADAS · Etapas 342-350 IMPLEMENTADAS (cutover pendente)
 
-### Etapas 342-347 — Wave 41 (Firestore Isolado + Core Modular) ⚠️
-- **Arquivos**: `frontend/src/lib/firebase.ts`, `scripts/firebase-cloud-sync.mjs`, `scripts/lexio-firestore-paths.mjs`, `scripts/lexio-firestore-audit.mjs`, `scripts/lexio-firestore-migrate-shadow.mjs`, `scripts/lexio-firestore-validate-shadow.mjs`, `docs/migration/firestore-database-isolation.md`, `docs/architecture/core-and-modules.md`, `docs/architecture/firestore-data-boundaries.md`, `docs/architecture/ai-development-guide.md`, `docs/architecture/module-system.md`, `docs/architecture/README.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`
+### Etapas 342-350 — Wave 41 (Firestore Isolado + Core Modular) ⚠️
+- **Arquivos**: `.github/workflows/firebase-deploy.yml`, `.github/workflows/deploy-pages.yml`, `.github/workflows/firebase-redesign-v2.yml`, `.github/workflows/firebase-preview.yml`, `firebase.json`, `frontend/src/lib/firebase.ts`, `scripts/validate-firebase-web-config.mjs`, `scripts/firebase-cloud-sync.mjs`, `scripts/lexio-firestore-paths.mjs`, `scripts/lexio-firestore-audit.mjs`, `scripts/lexio-firestore-migrate-shadow.mjs`, `scripts/lexio-firestore-validate-shadow.mjs`, `docs/migration/firestore-database-isolation.md`, `docs/architecture/core-and-modules.md`, `docs/architecture/firestore-data-boundaries.md`, `docs/architecture/ai-development-guide.md`, `docs/architecture/module-system.md`, `docs/architecture/README.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`
 - Etapa 342: branch dedicada aberta a partir de `main` para impedir que backup/migração/refatoração estrutural avancem direto em produção.
 - Etapa 343: backup Firebase evoluído com `--database-id`, preservação de `rawFields`, manifesto com `databaseId` e checksums SHA-256 verificáveis.
 - Etapa 344: auditoria de classificação Lexio, migração shadow com dry-run padrão e validação de paridade por snapshot foram adicionadas como scripts separados e não destrutivos.
 - Etapa 345: frontend passou a resolver o Firestore database ativo por `VITE_FIRESTORE_DATABASE_ID`, preservando `(default)` quando a variável não existe.
 - Etapa 346: documentação central criada para isolamento de dados, core+módulos e desenvolvimento futuro por IA; cutover, criação de `lexio-prod` e exclusão de legado continuam bloqueados até backup/auditoria/paridade.
 - Etapa 347: backup local completo de `(default)` concluído com manifesto verificado (1118 documentos, 37 objetos Storage), auditoria apontou 820 documentos Lexio candidatos e 298 excluídos/ambíguos, e dry-run da migração shadow para `lexio-prod` planejou 820 escritas com 0 erros. `lexio-prod` ainda não existe e nenhuma escrita/cutover foi executada.
+- Etapa 348: `lexio-prod` criado em `southamerica-east1` com delete protection habilitado; migração shadow executada a partir do backup com 820 escritas e 0 erros, sem deletar origem.
+- Etapa 349: backup do target `lexio-prod` concluído em `backups/firebase-cloud/2026-05-07_18-43-52` com 820 documentos e manifesto verificado; paridade por hash verde contra a origem Lexio (0 faltantes, 0 extras, 0 divergências).
+- Etapa 350: `firebase.json` passou a publicar rules/indexes nos databases `(default)` e `lexio-prod`; Firestore deploy isolado concluído com sucesso e workflows preparados para compilar clientes com `VITE_FIRESTORE_DATABASE_ID=lexio-prod`. Cutover real depende de merge/deploy + smoke autenticado; limpeza do `(default)` segue proibida.
 
 ### Etapas 338-341 — Wave 40 Subonda 1 (Latência + Progresso + Handoff Lúdico) ✅
 - **Arquivos**: `frontend/src/lib/document-pipeline.ts`, `frontend/src/pages/NewDocument.tsx`, `frontend/src/pages/DocumentDetail.tsx`, `frontend/src/lib/notebook-audio-pipeline.ts`, `frontend/src/lib/generation-service.ts`, `frontend/src/components/AgentTrailProgressModal.tsx`, `docs/PLANO.md`, `docs/release/WEB_RELEASE_INDEX.md`, `docs/release/WEB_RELEASE_CACHE.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`

@@ -31,6 +31,7 @@ env:
   FIREBASE_PROJECT_ID: hocapp-44760
   FIREBASE_HOSTING_DOMAIN: lexio.web.app
   FIREBASE_PRIMARY_AUTH_DOMAIN: hocapp-44760.firebaseapp.com
+  FIRESTORE_DATABASE_ID: lexio-prod
 
 permissions:
   contents: read
@@ -63,13 +64,15 @@ jobs:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
 
       - name: Validate Firebase web config consistency
-        run: node scripts/validate-firebase-web-config.mjs --expected-project "$FIREBASE_PROJECT_ID"
+        run: node scripts/validate-firebase-web-config.mjs --expected-project "$FIREBASE_PROJECT_ID" --expected-firestore-database-id "$FIRESTORE_DATABASE_ID"
         env:
           VITE_FIREBASE_PROJECT_ID: ${{ env.FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ env.FIREBASE_PRIMARY_AUTH_DOMAIN }}
           VITE_FIREBASE_STORAGE_BUCKET: ${{ env.FIREBASE_PROJECT_ID }}.firebasestorage.app
           VITE_FIREBASE_APP_ID: '1:143237037612:web:85bd9ddaf81973d5031b89'
+          VITE_FIRESTORE_DATABASE_ID: ${{ env.FIRESTORE_DATABASE_ID }}
           FIREBASE_PROJECT_ID: ${{ env.FIREBASE_PROJECT_ID }}
+          FIRESTORE_DATABASE_ID: ${{ env.FIRESTORE_DATABASE_ID }}
 
       - name: Typecheck
         run: npm run typecheck
@@ -89,6 +92,7 @@ jobs:
           VITE_FIREBASE_AUTH_DOMAIN:         ${{ env.FIREBASE_PRIMARY_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID:          ${{ env.FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_STORAGE_BUCKET:      ${{ env.FIREBASE_PROJECT_ID }}.firebasestorage.app
+          VITE_FIRESTORE_DATABASE_ID:        ${{ env.FIRESTORE_DATABASE_ID }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: '143237037612'
           VITE_FIREBASE_APP_ID:              '1:143237037612:web:85bd9ddaf81973d5031b89'
           VITE_ADMIN_EMAIL:                  ${{ secrets.VITE_ADMIN_EMAIL }}
@@ -300,7 +304,7 @@ jobs:
       - name: Deploy to Firebase
         run: |
           firebase deploy \
-            --only hosting:lexio,firestore:rules,firestore:indexes,storage,functions \
+            --only hosting:lexio,firestore,storage,functions \
             --project "$FIREBASE_PROJECT_ID" \
             --non-interactive
         env:

@@ -9,11 +9,15 @@ function log(message) {
 function parseArgs(argv) {
   const result = {
     expectedProject: undefined,
+    expectedFirestoreDatabaseId: undefined,
   }
   for (let index = 2; index < argv.length; index += 1) {
     const value = argv[index]
     if (value === '--expected-project') {
       result.expectedProject = argv[index + 1]
+      index += 1
+    } else if (value === '--expected-firestore-database-id') {
+      result.expectedFirestoreDatabaseId = argv[index + 1]
       index += 1
     }
   }
@@ -43,7 +47,9 @@ function main() {
   const projectId = normalize(process.env.VITE_FIREBASE_PROJECT_ID)
   const authDomain = normalize(process.env.VITE_FIREBASE_AUTH_DOMAIN)
   const storageBucket = normalize(process.env.VITE_FIREBASE_STORAGE_BUCKET)
+  const firestoreDatabaseId = normalize(process.env.VITE_FIRESTORE_DATABASE_ID) || '(default)'
   const expectedProject = normalize(options.expectedProject)
+  const expectedFirestoreDatabaseId = normalize(options.expectedFirestoreDatabaseId)
 
   const issues = []
   if (!projectId) {
@@ -71,6 +77,10 @@ function main() {
     issues.push(`VITE_FIREBASE_STORAGE_BUCKET (${storageBucket}) does not match VITE_FIREBASE_PROJECT_ID (${projectId})`)
   }
 
+  if (expectedFirestoreDatabaseId && firestoreDatabaseId !== expectedFirestoreDatabaseId) {
+    issues.push(`VITE_FIRESTORE_DATABASE_ID (${firestoreDatabaseId}) differs from expected database (${expectedFirestoreDatabaseId})`)
+  }
+
   if (issues.length > 0) {
     for (const issue of issues) {
       console.error(`[validate-firebase-web-config] ${issue}`)
@@ -78,7 +88,7 @@ function main() {
     process.exit(1)
   }
 
-  log(`Validated Firebase web config for project ${projectId}`)
+  log(`Validated Firebase web config for project ${projectId} and Firestore database ${firestoreDatabaseId}`)
 }
 
 try {

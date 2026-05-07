@@ -64,15 +64,27 @@ Completed on branch `feature/firestore-database-isolation-core-modules`:
 - Shadow migration dry-run report: `backups/firebase-cloud/2026-05-07_18-32-07/lexio-shadow-migration-dry-run.json`
 - Planned writes to `lexio-prod`: 820
 - Dry-run errors: 0
+- Target database created: `projects/hocapp-44760/databases/lexio-prod`
+- Target location: `southamerica-east1`
+- Target delete protection: enabled
+- Shadow migration execute report: `backups/firebase-cloud/2026-05-07_18-32-07/lexio-shadow-migration-result.json`
+- Shadow migration writes: 820
+- Shadow migration errors: 0
+- Target backup: `backups/firebase-cloud/2026-05-07_18-43-52`
+- Target backup documents: 820
+- Target backup checksum verification: passed
+- Parity report: `backups/firebase-cloud/2026-05-07_18-43-52/lexio-shadow-parity-report.json`
+- Parity result: 820 source Lexio docs, 820 target docs, 0 missing, 0 extra, 0 mismatched
+- Firestore rules/indexes deploy: success via `firebase deploy --only firestore --project hocapp-44760 --json`
+- CI/deploy cutover config: reusable Firebase/GitHub Pages/preview/redesign workflows now build with `VITE_FIRESTORE_DATABASE_ID=lexio-prod`
 
-Read-only database inventory confirmed the project currently has `(default)`, `anotes`, `bolao2026`, and `psico`. `lexio-prod` does not exist yet. The existing databases are in `southamerica-east1`; target creation should use the same region unless an explicit architecture decision changes it.
+Read-only database inventory before creation confirmed the project had `(default)`, `anotes`, `bolao2026`, and `psico`. `lexio-prod` was then created in the same region, `southamerica-east1`.
 
-Blocked until explicit checkpoint approval:
+Still blocked until a final release checkpoint:
 
-- Create `lexio-prod`.
-- Execute shadow migration writes.
-- Change production `VITE_FIRESTORE_DATABASE_ID`.
 - Delete or clean legacy `(default)` data.
+- Merge branch to `main` and deploy Hosting clients that point to `lexio-prod`.
+- Monitor authenticated production smoke after cutover.
 
 ## Safe Execution Sequence
 

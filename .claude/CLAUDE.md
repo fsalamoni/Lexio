@@ -661,7 +661,7 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 | `/users/{uid}/research_notebooks/{id}` | Cadernos de pesquisa |
 | `/settings/platform` | Config global legada usada apenas como origem de migração |
 
-> Wave 41: a plataforma aceita database Firestore nomeado por `VITE_FIRESTORE_DATABASE_ID`, mas produção deve permanecer em `(default)` até backup completo, auditoria, migração shadow, validação de paridade e aprovação de cutover. Ver `docs/migration/firestore-database-isolation.md` e `docs/architecture/firestore-data-boundaries.md`.
+> Wave 41: `lexio-prod` foi criado em `southamerica-east1`, recebeu 820 documentos via migração shadow, passou paridade por hash e teve rules/indexes publicados. O próximo passo é merge/deploy controlado dos clientes com `VITE_FIRESTORE_DATABASE_ID=lexio-prod`; não deletar dados do `(default)` sem plano separado. Ver `docs/migration/firestore-database-isolation.md` e `docs/architecture/firestore-data-boundaries.md`.
 
 ### Subchaves de `/users/{uid}/settings/preferences`
 

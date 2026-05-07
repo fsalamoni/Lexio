@@ -16,7 +16,7 @@
 
 ## Andamento Atual (ciclo 2026-04-26)
 
-**Status:** ⚠️ avançando Faixa B com a fundação do redesign V2 em expansão controlada — Wave 40 fechada em `main` e Wave 41 iniciada em branch dedicada para isolamento Firestore por databaseId nomeado + fundação documental de core/módulos, sem cutover produtivo e sem exclusão de dados legados.
+**Status:** ⚠️ avançando Faixa B com a fundação do redesign V2 em expansão controlada — Wave 40 fechada em `main` e Wave 41 avançada em branch dedicada para isolamento Firestore por databaseId nomeado + fundação documental de core/módulos, com shadow migration validada, sem exclusão de dados legados.
 
 **Atualização incremental (2026-05-07 — Wave 41: Firestore isolado + core modular, início em branch):**
 - ✅ Branch dedicada criada: `feature/firestore-database-isolation-core-modules`, partindo do baseline `1ec3f7d` em `main`.
@@ -26,7 +26,10 @@
 - ✅ Documentos centrais criados para guiar futuras IAs e devs: isolamento Firestore, limites de dados, arquitetura core+módulos e guia de desenvolvimento.
 - ✅ Backup local completo de `(default)` concluído em `backups/firebase-cloud/2026-05-07_18-32-07`: 1118 documentos Firestore, 37 objetos Storage baixados e manifesto verificado por SHA-256.
 - ✅ Auditoria read-only classificou 820 documentos Lexio candidatos e 298 documentos excluídos/ambíguos de outras coleções/plataformas; dry-run da migração shadow para `lexio-prod` planejou 820 escritas e 0 erros.
-- 🔒 `lexio-prod` ainda não existe; databases existentes no projeto: `(default)`, `anotes`, `bolao2026`, `psico`, todos em `southamerica-east1`. Criação do database, execução da migração, cutover e qualquer limpeza seguem bloqueados por checkpoint explícito.
+- ✅ `lexio-prod` criado em `southamerica-east1` com delete protection habilitado; migração shadow executada com 820 escritas e 0 erros.
+- ✅ Backup do target concluído em `backups/firebase-cloud/2026-05-07_18-43-52` com 820 documentos, manifesto verificado e paridade verde contra origem Lexio: 0 faltantes, 0 extras, 0 divergências de hash.
+- ✅ Firestore rules/indexes publicados para os databases configurados e workflows de deploy/preview/redesign/GitHub Pages preparados para compilar com `VITE_FIRESTORE_DATABASE_ID=lexio-prod`.
+- 🔒 Próximo checkpoint: merge controlado para `main`, deploy dos clientes apontando para `lexio-prod`, smoke autenticado e monitoramento. Exclusão/limpeza do `(default)` permanece fora de escopo.
 
 **Atualização incremental (2026-04-26 — Wave 40: latência documental + contrato de progresso + handoff lúdico, subonda 1 em branch):**
 - ✅ `document-pipeline.ts` passou a normalizar `percent` por `executionState` via `normalizeProgressForExecution`, reforçando o contrato de verdade de progresso (`running <= 99`, `completed = 100`).
