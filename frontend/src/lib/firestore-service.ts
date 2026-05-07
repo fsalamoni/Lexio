@@ -37,6 +37,13 @@ import {
   type UsageExecutionRecord,
   type UsageSummary,
 } from './cost-analytics'
+import {
+  NOTEBOOK_SEARCH_MEMORY_DOC_ID,
+  buildNotebookSearchMemoryDocPath,
+  buildResearchNotebookDocPath,
+  getRefUserId,
+  normalizeFirestoreDocumentId,
+} from './core/firestore'
 
 // ── Type definitions (re-exported from firestore-types.ts) ───────────────────
 
@@ -261,21 +268,6 @@ export async function writeUserScoped<T>(
   return withFirestoreRetry(() => operation(db, effectiveUid), contextLabel)
 }
 
-function normalizeFirestoreDocumentId(value: string): string {
-  const trimmed = String(value || '').trim()
-  if (!trimmed) return trimmed
-
-  const documentsMarker = '/documents/'
-  if (trimmed.includes(documentsMarker)) {
-    const [, pathAfterDocuments = ''] = trimmed.split(documentsMarker)
-    const segments = pathAfterDocuments.split('/').filter(Boolean)
-    return segments.length > 0 ? segments[segments.length - 1] : trimmed
-  }
-
-  const segments = trimmed.split('/').filter(Boolean)
-  return segments.length > 1 ? segments[segments.length - 1] : trimmed
-}
-
 export function getCurrentUserId(): string | null {
   if (typeof window === 'undefined') return null
   return window.localStorage.getItem('lexio_user_id')
@@ -487,12 +479,6 @@ async function withFirestoreRetry<T>(
   // synthesize a session-invalid error here — that was the cross-call
   // kill-switch that bounced live users to /login.
   throw lastError
-}
-
-function getRefUserId(refPath: string): string | null {
-  const parts = refPath.split('/')
-  if (parts.length >= 2 && parts[0] === 'users') return parts[1]
-  return null
 }
 
 async function getLegacySettingsDocData(documentId: string): Promise<Record<string, unknown>> {
@@ -2274,7 +2260,6 @@ export async function listResearchNotebooks(uid: string): Promise<{ items: Resea
 const NOTEBOOK_MAX_DOC_BYTES = 950_000
 /** Minimum chars preserved per source when trimming to fit Firestore limits */
 const MIN_SOURCE_TEXT_CHARS = 100
-const NOTEBOOK_SEARCH_MEMORY_DOC_ID = 'search_memory'
 const NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS = 45
 const NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS = 60
 const NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES = 120
@@ -2376,8 +2361,7 @@ function fitSourcesToFirestoreLimit(
 
 function getNotebookSearchMemoryDocRef(uid: string, notebookId: string) {
   const db = ensureFirestore()
-  const normalizedNotebookId = normalizeFirestoreDocumentId(notebookId)
-  return doc(db, 'users', uid, 'research_notebooks', normalizedNotebookId, 'memory', NOTEBOOK_SEARCH_MEMORY_DOC_ID)
+  return doc(db, ...buildNotebookSearchMemoryDocPath(uid, notebookId))
 }
 
 function parseIsoMs(value: unknown): number | null {
@@ -2531,7 +2515,7 @@ async function saveNotebookSearchMemory(
 export async function getResearchNotebook(uid: string, notebookId: string): Promise<ResearchNotebookData | null> {
   const db = ensureFirestore()
   const effectiveUid = await resolveEffectiveUid(uid, 'getResearchNotebook')
-  const ref = doc(db, 'users', effectiveUid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
+  const ref = doc(db, ...buildResearchNotebookDocPath(effectiveUid, notebookId))
   const snap = await withFirestoreRetry(() => getDoc(ref), 'getResearchNotebook')
   if (!snap.exists()) return null
   const notebook = { id: snap.id, ...snap.data() } as ResearchNotebookData
@@ -2619,7 +2603,7 @@ export async function createResearchNotebook(uid: string, data: Omit<ResearchNot
 export async function updateResearchNotebook(uid: string, notebookId: string, data: Partial<ResearchNotebookData>): Promise<void> {
   const db = ensureFirestore()
   const effectiveUid = await resolveEffectiveUid(uid, 'updateResearchNotebook')
-  const ref = doc(db, 'users', effectiveUid, 'research_notebooks', normalizeFirestoreDocumentId(notebookId))
+  const ref = doc(db, ...buildResearchNotebookDocPath(effectiveUid, notebookId))
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id, ...rest } = data
   const shouldSyncSearchMemory = rest.research_audits !== undefined || rest.saved_searches !== undefined || rest.jurisprudence_semantic_memory !== undefined

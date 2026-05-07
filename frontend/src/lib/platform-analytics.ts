@@ -8,6 +8,11 @@ import {
 
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import {
+  NOTEBOOK_SEARCH_MEMORY_DOC_ID,
+  getRefNotebookIdFromSearchMemoryPath,
+  getRefUserId,
+} from './core/firestore'
+import {
   buildCostBreakdown,
   extractAcervoUsageExecutions,
   extractDocumentUsageExecutions,
@@ -44,7 +49,6 @@ import type {
 } from './firestore-types'
 
 const PLATFORM_ANALYTICS_CACHE_TTL_MS = 60_000
-const NOTEBOOK_SEARCH_MEMORY_DOC_ID = 'search_memory'
 const FIREBASE_AUTH_SYNC_TIMEOUT_MS = 8_000
 const FIRESTORE_AUTH_RETRY_BACKOFF_MS = [200, 600, 1500] as const
 const FIRESTORE_AUTH_MAX_RETRIES = FIRESTORE_AUTH_RETRY_BACKOFF_MS.length
@@ -278,19 +282,6 @@ async function withPlatformFirestoreRetry<T>(
 
 function round6(value: number) {
   return Number(value.toFixed(6))
-}
-
-function getRefUserId(refPath: string): string | null {
-  const parts = refPath.split('/')
-  if (parts.length >= 2 && parts[0] === 'users') return parts[1]
-  return null
-}
-
-function getRefNotebookIdFromSearchMemoryPath(refPath: string): string | null {
-  const parts = refPath.split('/').filter(Boolean)
-  const notebookIndex = parts.findIndex((part, index) => part === 'research_notebooks' && index < parts.length - 1)
-  if (notebookIndex === -1) return null
-  return parts[notebookIndex + 1] || null
 }
 
 function getIsoDateKey(value: unknown): string | null {

@@ -35,7 +35,9 @@
 - ✅ Validação local pós-agent-defs concluída: manifest JSON, guardrail arquitetural (`309` arquivos fonte), typecheck, teste focado, suíte completa frontend (**70/70 arquivos**, **512/512 testes**) e build com `VITE_FIRESTORE_DATABASE_ID=lexio-prod` verdes.
 - ✅ Sexta fatia estrutural aplicada: analytics de plataforma foi extraído para `frontend/src/lib/platform-analytics.ts`; `firestore-service.ts` preserva as exports públicas como fachada compatível para `PlatformAdminPanel`/`PlatformCostsPage`.
 - ✅ Validação local pós-platform-analytics concluída: manifest JSON, guardrail arquitetural (`310` arquivos fonte), typecheck, teste focado de Firestore/custo (**2 arquivos**, **31 testes**), teste estrutural de auth/retry, suíte completa frontend (**70/70 arquivos**, **512/512 testes**) e build com `VITE_FIRESTORE_DATABASE_ID=lexio-prod` verdes.
-- 🔄 Próximo checkpoint: commit/push incremental e nova verificação remota do PR #143 antes de avançar para helpers core de paths/references do Firestore.
+- ✅ Sétima fatia estrutural aplicada: helpers puros de paths/references do Firestore foram introduzidos em `frontend/src/lib/core/firestore/`, concentrando normalização de IDs, extração de owner, parsing da memória de notebooks e builders tipados para paths de caderno/memória; `firestore-service.ts` e `platform-analytics.ts` passaram a consumir o core sem alterar exports públicas.
+- ✅ Validação local pós-core-firestore concluída: guardrail arquitetural (`313` arquivos fonte), typecheck, testes focados de Firestore/core (**3 arquivos**, **35 testes**), suíte completa frontend (**71/71 arquivos**, **515/515 testes**) e build com `VITE_FIRESTORE_DATABASE_ID=lexio-prod` verdes.
+- 🔄 Próximo checkpoint: commit/push incremental e nova verificação remota do PR #143 antes de dividir operações repository de maior risco em `firestore-service.ts`.
 
 **Atualização incremental (2026-05-07 — Wave 41: Firestore isolado + core modular, início em branch):**
 - ✅ Branch dedicada criada: `feature/firestore-database-isolation-core-modules`, partindo do baseline `1ec3f7d` em `main`.
