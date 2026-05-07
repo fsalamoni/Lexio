@@ -12,6 +12,7 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import StatusBadge from '../components/StatusBadge'
 import { SkeletonCard } from '../components/Skeleton'
+import { useToast } from '../components/Toast'
 import { IS_FIREBASE, firebaseAuth } from '../lib/firebase'
 import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../lib/constants'
 import { formatCost as fmtCost } from '../lib/currency-utils'
@@ -56,7 +57,8 @@ const PERIOD_OPTIONS = [
 export default function Dashboard() {
   const [periodDays, setPeriodDays] = useState(30)
   const location = useLocation()
-  const { stats, daily, agents, recent, byType, loading, chartLoading } = useDashboardData(periodDays)
+  const toast = useToast()
+  const { stats, daily, agents, recent, byType, loading, chartLoading } = useDashboardData(periodDays, toast)
   const costSeries = buildCostSeries(daily)
   const docsThisWeek = computeDocsThisWeek(daily)
   const notebookWorkbenchPath = buildWorkspaceShellPath('/notebook', { preserveSearch: location.search })

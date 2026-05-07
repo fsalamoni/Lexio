@@ -6,6 +6,7 @@
 import type { StudioArtifactType } from '../../lib/firestore-service'
 import type { UsageFunctionKey } from '../../lib/cost-analytics'
 import type React from 'react'
+export { ACERVO_TRAIL_STEPS, STUDIO_SPECIALIST_LABEL } from '../../lib/notebook-constants'
 
 // ── Source & context limits ───────────────────────────────────────────────────
 
@@ -48,31 +49,7 @@ export const ARTIFACT_COST_KEY: Partial<Record<StudioArtifactType, UsageFunction
   apresentacao: 'presentation_pipeline',
 }
 
-export const STUDIO_SPECIALIST_LABEL: Record<StudioArtifactType, string> = {
-  resumo: 'Escritor',
-  relatorio: 'Escritor',
-  documento: 'Escritor',
-  cartoes_didaticos: 'Escritor',
-  teste: 'Escritor',
-  guia_estruturado: 'Escritor',
-  apresentacao: 'Designer Visual',
-  mapa_mental: 'Designer Visual',
-  infografico: 'Designer Visual',
-  tabela_dados: 'Designer Visual',
-  audio_script: 'Roteirista de Áudio',
-  video_script: 'Pipeline de Vídeo',
-  video_production: 'Pipeline de Vídeo',
-  outro: 'Escritor',
-}
-
 // ── Trail step definitions ────────────────────────────────────────────────────
-
-export const ACERVO_TRAIL_STEPS = [
-  { key: 'nb_acervo_triagem', label: 'Triagem' },
-  { key: 'nb_acervo_buscador', label: 'Buscador' },
-  { key: 'nb_acervo_analista', label: 'Analista' },
-  { key: 'nb_acervo_curador', label: 'Curador' },
-] as const
 
 /** Human-readable agent labels for error messages */
 export const AGENT_LABELS: Record<string, string> = {

@@ -12,6 +12,7 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import StatusBadge from '../../components/StatusBadge'
 import { SkeletonCard } from '../../components/Skeleton'
+import { useToast } from '../../components/Toast'
 import { useAuth } from '../../contexts/AuthContext'
 import {
   buildCostSeries,
@@ -61,7 +62,8 @@ export default function DashboardV2() {
   const [periodDays, setPeriodDays] = useState(30)
   const location = useLocation()
   const { fullName } = useAuth()
-  const { stats, daily, agents, recent, byType, loading, chartLoading } = useDashboardData(periodDays)
+  const toast = useToast()
+  const { stats, daily, agents, recent, byType, loading, chartLoading } = useDashboardData(periodDays, toast)
   const docsThisWeek = computeDocsThisWeek(daily)
   const costSeries = buildCostSeries(daily)
   const greeting = getGreetingForHour(new Date().getHours())

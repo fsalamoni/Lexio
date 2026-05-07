@@ -16,7 +16,16 @@
 
 ## Andamento Atual (ciclo 2026-04-26)
 
-**Status:** ⚠️ avançando Faixa B com a fundação do redesign V2 em expansão controlada — Wave 40 fechada em `main` e Wave 41 avançada em branch dedicada para isolamento Firestore por databaseId nomeado + fundação documental de core/módulos, com shadow migration validada, sem exclusão de dados legados.
+**Status:** ⚠️ avançando Faixa C com foundation arquitetural core/módulos em branch dedicada após cutover Firestore concluído em produção. O foco atual é proteger fronteiras com guardrails automáticos, criar documentação canônica para IAs/devs e preparar extrações incrementais sem reescrita big-bang.
+
+**Atualização incremental (2026-05-07 — Wave 42: Core/Módulos Foundation, início em branch):**
+- ✅ Branch dedicada criada: `feature/core-modules-architecture-foundation`, partindo do `main` limpo em `ae849b7`.
+- ✅ Guardrail arquitetural criado em `scripts/lexio-architecture-guardrails.mjs` e exposto via `frontend npm run architecture:check`.
+- ✅ Workflow `Tests` passou a bloquear violações de fronteira no job `Source guardrails`.
+- ✅ Violações existentes corrigidas: `frontend/src/lib/dashboard-data.ts` não importa mais UI e `frontend/src/lib/notebook-pipeline-progress.ts` não importa mais `pages/notebook`.
+- ✅ Constantes puras do notebook foram movidas para `frontend/src/lib/notebook-constants.ts`, mantendo reexport compatível pela página.
+- ✅ Documentos centrais criados para orientar a modularização futura: mapa de domínios, contratos de módulo, regras de dependência, guias de criação/refatoração/testes e ADR incremental.
+- 🔄 Próximo checkpoint: validar typecheck, testes e build; depois iniciar extrações de baixo risco em core/shared/repositories.
 
 **Atualização incremental (2026-05-07 — Wave 41: Firestore isolado + core modular, início em branch):**
 - ✅ Branch dedicada criada: `feature/firestore-database-isolation-core-modules`, partindo do baseline `1ec3f7d` em `main`.

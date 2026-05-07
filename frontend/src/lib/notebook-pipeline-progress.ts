@@ -4,7 +4,7 @@ import type { AcervoAnalysisProgress } from './notebook-acervo-analyzer'
 import type { StudioArtifactType } from './firestore-service'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 import type { VideoPipelineProgressState } from './video-pipeline-progress'
-import { ACERVO_TRAIL_STEPS, STUDIO_SPECIALIST_LABEL } from '../pages/notebook'
+import { ACERVO_TRAIL_STEPS, STUDIO_SPECIALIST_LABEL } from './notebook-constants'
 
 export interface NotebookTrailStep {
   key: string

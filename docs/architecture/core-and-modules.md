@@ -22,6 +22,14 @@ The main hotspots to reduce over time are:
 - `frontend/src/lib/firestore-service.ts`
 - `frontend/src/lib/model-config.ts`
 
+Foundation work started after the Firestore cutover added the first automated architecture guardrail:
+
+- `scripts/lexio-architecture-guardrails.mjs`
+- `cd frontend && npm run architecture:check`
+- CI hook in `.github/workflows/test.yml` under `Source guardrails`
+
+The guardrail currently blocks `lib -> components`, `lib -> pages`, `core -> modules`, private cross-module imports, and direct OpenRouter API endpoints outside approved adapters.
+
 ## Target Shape
 
 ```text
@@ -132,6 +140,19 @@ Every module extraction needs at least one of:
 - Existing tests still covering the old public API.
 - New tests for the extracted module.
 - A source-level guardrail when the risk is architectural, such as preventing `lib -> components` imports.
+
+## Foundation Guardrails
+
+Run before every modular refactor:
+
+```bash
+cd frontend
+npm run architecture:check
+```
+
+If this fails, fix the boundary violation before continuing. Do not bypass the guardrail by moving UI, page state, or provider-specific behavior into `core`.
+
+Detailed rules live in `docs/architecture/dependency-rules.md`.
 
 ## Firestore Migration Interaction
 

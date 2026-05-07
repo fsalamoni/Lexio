@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import api from '../api/client'
-import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from './firebase'
 import { withTransientFirebaseAuthRetry } from './firebase-auth-retry'
@@ -86,6 +85,14 @@ const DEFAULT_RECENT_DOCUMENTS_LIMIT = 5
 type DashboardSnapshot = {
   documents: DocumentData[]
   thesisSessions: ThesisAnalysisSessionData[]
+}
+
+export interface DashboardDataNotifications {
+  error: (title: string, description?: string) => void
+}
+
+const noopDashboardNotifications: DashboardDataNotifications = {
+  error: () => {},
 }
 
 export function buildDashboardStats(snapshot: DashboardSnapshot): DashboardStats {
@@ -198,7 +205,10 @@ export function buildDashboardTypeStats(snapshot: DashboardSnapshot): TypeStat[]
   }))
 }
 
-export function useDashboardData(periodDays: number) {
+export function useDashboardData(
+  periodDays: number,
+  notifications: DashboardDataNotifications = noopDashboardNotifications,
+) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [daily, setDaily] = useState<DailyPoint[]>([])
   const [agents, setAgents] = useState<AgentStat[]>([])
@@ -208,7 +218,7 @@ export function useDashboardData(periodDays: number) {
   const [chartLoading, setChartLoading] = useState(false)
   const [firebaseSnapshot, setFirebaseSnapshot] = useState<DashboardSnapshot | null>(null)
   const { userId, isReady } = useAuth()
-  const toast = useToast()
+  const toast = notifications
   const lastAuthErrorToastAtRef = useRef(0)
   const shouldWaitForFirebaseUser = IS_FIREBASE && (!isReady || !userId)
 

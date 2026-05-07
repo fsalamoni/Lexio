@@ -1,11 +1,20 @@
 # Caderno de Pesquisa — Status de Implementacao (NotebookLM+)
 
 > Documento de tracking para agentes IA. Atualizado automaticamente.
-> Branch: `feature/firestore-database-isolation-core-modules`
+> Branch: `feature/core-modules-architecture-foundation`
 
 ---
 
-## Status Geral: Etapas 1-341 IMPLEMENTADAS · Etapas 342-350 IMPLEMENTADAS (cutover pendente)
+## Status Geral: Etapas 1-350 IMPLEMENTADAS · Etapas 351-356 EM ANDAMENTO (core/módulos foundation)
+
+### Etapas 351-356 — Wave 42 (Core/Módulos Foundation) ⚠️
+- **Arquivos**: `scripts/lexio-architecture-guardrails.mjs`, `.github/workflows/test.yml`, `frontend/package.json`, `frontend/src/lib/dashboard-data.ts`, `frontend/src/lib/notebook-pipeline-progress.ts`, `frontend/src/lib/notebook-constants.ts`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/labs/DashboardV2.tsx`, `frontend/src/pages/notebook/constants.ts`, `docs/architecture/core-and-modules.md`, `docs/architecture/domain-map.md`, `docs/architecture/module-contracts.md`, `docs/architecture/dependency-rules.md`, `docs/architecture/ai-development-guide.md`, `docs/guides/adding-module.md`, `docs/guides/refactoring-module.md`, `docs/guides/testing-modules.md`, `docs/architecture/adr/0001-core-modules-incremental.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`
+- Etapa 351: branch dedicada aberta a partir de `main` pós-cutover para isolar a foundation arquitetural.
+- Etapa 352: guardrail arquitetural criado e integrado ao workflow `Tests`, bloqueando `lib -> components`, `lib -> pages`, `core -> modules`, imports privados entre módulos e endpoints OpenRouter fora de adapters aprovados.
+- Etapa 353: violações atuais removidas: o dashboard recebe notificações da camada de página e o progresso do notebook consome constantes puras em `lib`.
+- Etapa 354: documentação canônica ampliada com mapa de domínios, contratos de módulo, regras de dependência, ADR e guias de criação/refatoração/testes.
+- Etapa 355: validação local inicial do guardrail concluída com sucesso (`284` arquivos fonte verificados).
+- Etapa 356: pendente nesta branch: typecheck, testes, build, commit/push e eventual PR/merge após revisão.
 
 ### Etapas 342-350 — Wave 41 (Firestore Isolado + Core Modular) ⚠️
 - **Arquivos**: `.github/workflows/firebase-deploy.yml`, `.github/workflows/deploy-pages.yml`, `.github/workflows/firebase-redesign-v2.yml`, `.github/workflows/firebase-preview.yml`, `firebase.json`, `frontend/src/lib/firebase.ts`, `scripts/validate-firebase-web-config.mjs`, `scripts/firebase-cloud-sync.mjs`, `scripts/lexio-firestore-paths.mjs`, `scripts/lexio-firestore-audit.mjs`, `scripts/lexio-firestore-migrate-shadow.mjs`, `scripts/lexio-firestore-validate-shadow.mjs`, `docs/migration/firestore-database-isolation.md`, `docs/architecture/core-and-modules.md`, `docs/architecture/firestore-data-boundaries.md`, `docs/architecture/ai-development-guide.md`, `docs/architecture/module-system.md`, `docs/architecture/README.md`, `docs/PLANO.md`, `docs/MANIFEST.json`, `NOTEBOOK_IMPLEMENTATION_STATUS.md`

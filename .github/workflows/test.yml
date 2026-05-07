@@ -28,6 +28,9 @@ jobs:
             exit 1
           fi
 
+      - name: Enforce frontend architecture boundaries
+        run: node scripts/lexio-architecture-guardrails.mjs
+
   unit-tests:
     name: Unit tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest

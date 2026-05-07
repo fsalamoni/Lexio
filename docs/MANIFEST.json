@@ -2,10 +2,33 @@
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
     "updated": "2026-05-07",
-    "cycle": "wave41-firestore-isolation-core-modules",
+    "cycle": "wave42-core-modules-foundation",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
   "features": [
+    {
+      "id": "E12.F1",
+      "epic": "Arquitetura Core Modular",
+      "name": "Foundation de guardrails e documentação core/módulos",
+      "state": "partial",
+      "files": [
+        "scripts/lexio-architecture-guardrails.mjs",
+        ".github/workflows/test.yml",
+        "frontend/package.json",
+        "frontend/src/lib/dashboard-data.ts",
+        "frontend/src/lib/notebook-pipeline-progress.ts",
+        "frontend/src/lib/notebook-constants.ts",
+        "docs/architecture/core-and-modules.md",
+        "docs/architecture/domain-map.md",
+        "docs/architecture/module-contracts.md",
+        "docs/architecture/dependency-rules.md",
+        "docs/architecture/ai-development-guide.md",
+        "docs/guides/adding-module.md",
+        "docs/guides/refactoring-module.md",
+        "docs/guides/testing-modules.md"
+      ],
+      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; extração completa dos módulos segue incremental."
+    },
     {
       "id": "E1.F1",
       "epic": "Pesquisa de Jurisprudência",
