@@ -75,7 +75,7 @@ import {
   buildStudioModalProgressState,
   buildStudioTaskPhaseMessage,
   buildStudioTrailSteps,
-} from '../../lib/notebook-pipeline-progress'
+} from '../../lib/modules/notebook'
 import { buildVideoPipelineProgress, type VideoPipelineProgressState } from '../../lib/video-pipeline-progress'
 import { buildStepProgressPercent, normalizeInFlightPercent, type PipelineExecutionState } from '../../lib/pipeline-execution-contract'
 import {

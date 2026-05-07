@@ -6,7 +6,7 @@
 import type { StudioArtifactType } from '../../lib/firestore-service'
 import type { UsageFunctionKey } from '../../lib/cost-analytics'
 import type React from 'react'
-export { ACERVO_TRAIL_STEPS, STUDIO_SPECIALIST_LABEL } from '../../lib/notebook-constants'
+export { ACERVO_TRAIL_STEPS, STUDIO_SPECIALIST_LABEL } from '../../lib/modules/notebook'
 
 // ── Source & context limits ───────────────────────────────────────────────────
 

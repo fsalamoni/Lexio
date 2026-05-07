@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyDocumentPipelineProgress, createDocumentPipelineSteps } from './document-pipeline'
 import { applyDocumentV3PipelineProgress, createDocumentV3PipelineSteps } from './document-v3-pipeline'
-import { buildAcervoTrailSteps, buildStudioTrailSteps } from './notebook-pipeline-progress'
+import { buildAcervoTrailSteps, buildStudioTrailSteps } from './modules/notebook'
 
 describe('pipeline step execution states', () => {
   it('stores executionState on document v2 steps', () => {

@@ -26,6 +26,7 @@
 - ✅ Constantes puras do notebook foram movidas para `frontend/src/lib/notebook-constants.ts`, mantendo reexport compatível pela página.
 - ✅ Documentos centrais criados para orientar a modularização futura: mapa de domínios, contratos de módulo, regras de dependência, guias de criação/refatoração/testes e ADR incremental.
 - ✅ Primeiro módulo de produto extraído: `frontend/src/lib/modules/dashboard/` agora concentra dados/sinais do dashboard; `dashboard-data.ts` e `dashboard-v2.ts` ficaram como facades de compatibilidade.
+- ✅ Segundo módulo de produto iniciado: `frontend/src/lib/modules/notebook/` agora concentra contratos de progresso e constantes puras do notebook; `notebook-pipeline-progress.ts` e `notebook-constants.ts` ficaram como facades de compatibilidade.
 - 🔄 Próximo checkpoint: validar pacote completo, commit/push incremental e avançar para extrações de baixo risco em core/shared/repositories.
 
 **Atualização incremental (2026-05-07 — Wave 41: Firestore isolado + core modular, início em branch):**

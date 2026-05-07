@@ -14,6 +14,7 @@ The current frontend already has useful modular patterns:
 
 - `frontend/src/lib/chat-orchestrator/` is a domain submodule.
 - `frontend/src/lib/modules/dashboard/` is the first extracted product module with compatibility facades.
+- `frontend/src/lib/modules/notebook/` now owns notebook progress contracts and pure notebook constants behind compatibility facades.
 - `frontend/src/lib/v3-agents/` extracts document V3 agents into isolated files.
 - `frontend/src/pages/notebook/` contains page-local notebook helpers.
 
@@ -127,6 +128,7 @@ If a module needs another module, expose a narrow public API from that module's 
 Completed foundation extraction:
 
 1. Extract dashboard data and V2 helpers into `frontend/src/lib/modules/dashboard/`, preserving `dashboard-data.ts` and `dashboard-v2.ts` as facades.
+2. Extract notebook progress contracts and pure constants into `frontend/src/lib/modules/notebook/`, preserving `notebook-pipeline-progress.ts` and `notebook-constants.ts` as facades.
 
 Next safe extraction order:
 
