@@ -48,6 +48,8 @@
         "frontend/src/lib/pipelines/agent-definitions/chat-orchestrator.ts",
         "frontend/src/lib/model-config.ts",
         "frontend/src/lib/agent-config-coverage.test.ts",
+        "frontend/src/lib/platform-analytics.ts",
+        "frontend/src/lib/firestore-service.ts",
         "frontend/src/lib/document-v3-orchestrator.ts",
         "frontend/src/lib/generation-service.ts",
         "docs/architecture/core-and-modules.md",
@@ -59,7 +61,7 @@
         "docs/guides/refactoring-module.md",
         "docs/guides/testing-modules.md"
       ],
-      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard, notebook progress/constants para lib/modules/notebook, prompts/metadados/helpers de acervo de documentos para lib/modules/documents e definições de agentes para lib/pipelines/agent-definitions, sempre com facades compatíveis; extração completa dos demais módulos segue incremental."
+      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard, notebook progress/constants para lib/modules/notebook, prompts/metadados/helpers de acervo de documentos para lib/modules/documents, definições de agentes para lib/pipelines/agent-definitions e analytics de plataforma para lib/platform-analytics, sempre com facades compatíveis; extração completa dos demais módulos segue incremental."
     },
     {
       "id": "E1.F1",
@@ -1257,6 +1259,7 @@
     "high": [
       "frontend/src/lib/datajud-service.ts",
       "frontend/src/lib/firestore-service.ts",
+      "frontend/src/lib/platform-analytics.ts",
       "frontend/src/pages/ResearchNotebook.tsx"
     ],
     "medium": [

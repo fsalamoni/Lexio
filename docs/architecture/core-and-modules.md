@@ -17,6 +17,7 @@ The current frontend already has useful modular patterns:
 - `frontend/src/lib/modules/notebook/` now owns notebook progress contracts and pure notebook constants behind compatibility facades.
 - `frontend/src/lib/modules/documents/` now owns document prompt metadata, profile prompt helpers, acervo prompt builders, acervo search helpers and the extracted Pesquisador user prompt behind compatibility exports from `generation-service.ts`.
 - `frontend/src/lib/pipelines/agent-definitions/` now owns per-pipeline agent definition arrays behind compatibility exports from `model-config.ts`.
+- `frontend/src/lib/platform-analytics.ts` now owns platform-wide Firestore aggregation, operational cost analytics and rollout policy calculations behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/v3-agents/` extracts document V3 agents into isolated files.
 - `frontend/src/pages/notebook/` contains page-local notebook helpers.
 
@@ -134,12 +135,13 @@ Completed foundation extraction:
 3. Extract document prompt metadata/profile helpers into `frontend/src/lib/modules/documents/`, preserving public exports from `generation-service.ts` while migrating `document-v3-orchestrator.ts` to the module API.
 4. Extract document acervo prompt builders, JSON helper and keyword/prefilter helpers into `frontend/src/lib/modules/documents/`, preserving public `selectAcervoDocsForBuscador` compatibility from `generation-service.ts`.
 5. Split model agent definitions by pipeline into `frontend/src/lib/pipelines/agent-definitions/`, preserving existing exports and scoped config registration from `model-config.ts`.
+6. Extract platform analytics into `frontend/src/lib/platform-analytics.ts`, preserving platform admin/cost imports through `firestore-service.ts` compatibility exports.
 
 Next safe extraction order:
 
-1. Extract platform analytics from `firestore-service.ts`.
-2. Introduce Firestore path/reference helpers under core and migrate call sites gradually.
-3. Split high-risk repository operations only after tests are in place.
+1. Introduce Firestore path/reference helpers under core and migrate call sites gradually.
+2. Split high-risk repository operations only after tests are in place.
+3. Move domain repositories out of `firestore-service.ts` one bounded area at a time.
 
 ## Compatibility Rule
 
