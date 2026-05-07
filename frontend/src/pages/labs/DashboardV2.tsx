@@ -20,13 +20,13 @@ import {
   formatCost,
   formatDuration,
   useDashboardData,
-} from '../../lib/dashboard-data'
+} from '../../lib/modules/dashboard'
 import {
   buildDashboardPriorityActions,
   buildDashboardSignals,
   getFirstName,
   getGreetingForHour,
-} from '../../lib/dashboard-v2'
+} from '../../lib/modules/dashboard'
 import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../../lib/constants'
 import { buildWorkspaceDocumentDetailPath, buildWorkspaceShellPath } from '../../lib/workspace-routes'
 

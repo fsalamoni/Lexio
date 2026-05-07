@@ -22,7 +22,7 @@ import {
   formatDuration as fmtDuration,
   getResumableDocument,
   useDashboardData,
-} from '../lib/dashboard-data'
+} from '../lib/modules/dashboard'
 import {
   buildWorkspaceDocumentDetailPath,
   buildWorkspaceDocumentsPath,

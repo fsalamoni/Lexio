@@ -15,7 +15,13 @@
         "scripts/lexio-architecture-guardrails.mjs",
         ".github/workflows/test.yml",
         "frontend/package.json",
+        "frontend/src/lib/modules/dashboard/index.ts",
+        "frontend/src/lib/modules/dashboard/dashboard-data.ts",
+        "frontend/src/lib/modules/dashboard/dashboard-v2.ts",
+        "frontend/src/lib/modules/dashboard/dashboard-data.test.ts",
+        "frontend/src/lib/modules/dashboard/dashboard-v2.test.ts",
         "frontend/src/lib/dashboard-data.ts",
+        "frontend/src/lib/dashboard-v2.ts",
         "frontend/src/lib/notebook-pipeline-progress.ts",
         "frontend/src/lib/notebook-constants.ts",
         "docs/architecture/core-and-modules.md",
@@ -27,7 +33,7 @@
         "docs/guides/refactoring-module.md",
         "docs/guides/testing-modules.md"
       ],
-      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; extração completa dos módulos segue incremental."
+      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard com facades compatíveis; extração completa dos demais módulos segue incremental."
     },
     {
       "id": "E1.F1",

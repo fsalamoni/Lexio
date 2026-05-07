@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { UsageExecutionRecord } from './cost-analytics'
+import type { UsageExecutionRecord } from '../../cost-analytics'
 import {
   buildCostSeries,
   buildDashboardDailyPoints,
@@ -10,7 +10,7 @@ import {
   getResumableDocument,
   type DashboardRecentDoc,
 } from './dashboard-data'
-import type { DocumentData, ThesisAnalysisSessionData } from './firestore-service'
+import type { DocumentData, ThesisAnalysisSessionData } from '../../firestore-service'
 
 function makeDoc(overrides: Partial<DashboardRecentDoc> = {}): DashboardRecentDoc {
   return {

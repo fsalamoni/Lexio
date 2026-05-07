@@ -13,6 +13,7 @@ This keeps new features from changing central code paths unnecessarily and reduc
 The current frontend already has useful modular patterns:
 
 - `frontend/src/lib/chat-orchestrator/` is a domain submodule.
+- `frontend/src/lib/modules/dashboard/` is the first extracted product module with compatibility facades.
 - `frontend/src/lib/v3-agents/` extracts document V3 agents into isolated files.
 - `frontend/src/pages/notebook/` contains page-local notebook helpers.
 
@@ -45,6 +46,7 @@ frontend/src/lib/
     documents/
     notebook/
     thesis/
+    dashboard/
     chat/
     admin/
     media/
@@ -121,6 +123,12 @@ module A -> module B internals
 If a module needs another module, expose a narrow public API from that module's `index.ts`.
 
 ## Incremental Extraction Order
+
+Completed foundation extraction:
+
+1. Extract dashboard data and V2 helpers into `frontend/src/lib/modules/dashboard/`, preserving `dashboard-data.ts` and `dashboard-v2.ts` as facades.
+
+Next safe extraction order:
 
 1. Extract document-generation prompts from `generation-service.ts`.
 2. Extract document acervo helpers into a document module.
