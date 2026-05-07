@@ -5,7 +5,7 @@
 Para a estratégia completa de núcleo e módulos, consulte `docs/architecture/core-and-modules.md`. Para limites de dados Firestore e migração para database nomeado, consulte `docs/architecture/firestore-data-boundaries.md`.
 
 ## Definição de Agentes
-Cada pipeline é definido como arrays de `AgentModelDef` registrados em `model-config.ts`, mas novas implementações devem evoluir para módulos por pipeline em subdiretórios próprios de `frontend/src/lib`.
+Cada pipeline é definido como arrays de `AgentModelDef` em `frontend/src/lib/pipelines/agent-definitions/`. `model-config.ts` reexporta esses arrays para preservar imports existentes e mantém a lógica user-scoped de carregar, salvar, resetar, validar catálogo/capabilities e resolver fallbacks.
 
 ```typescript
 interface AgentModelDef {
@@ -19,20 +19,22 @@ interface AgentModelDef {
 }
 ```
 
-## Arrays de Definição (10 pipelines)
+## Arrays de Definição (12 configs user-scoped)
 
 | Array | Pipeline | Agentes |
 |-------|----------|---------|
-| `DOCUMENT_AGENT_DEFS` | Geração de documentos | 11 |
-| `THESIS_ANALYST_AGENT_DEFS` | Análise de teses | 5 |
-| `CONTEXT_DETAIL_AGENT_DEFS` | Context detail | 1 |
-| `ACERVO_CLASSIFICADOR_AGENT_DEFS` | Classificador acervo | 1 |
-| `ACERVO_EMENTA_AGENT_DEFS` | Ementa acervo | 1 |
-| `RESEARCH_NOTEBOOK_AGENT_DEFS` | Caderno de pesquisa | 11 |
-| `NOTEBOOK_ACERVO_AGENT_DEFS` | Notebook acervo | 4 |
-| `VIDEO_PIPELINE_AGENT_DEFS` | Vídeo | 8 |
-| `AUDIO_PIPELINE_AGENT_DEFS` | Áudio | 6 |
-| `PRESENTATION_PIPELINE_AGENT_DEFS` | Apresentação | 6 |
+| `PIPELINE_AGENT_DEFS` | Geração de documentos v2 | 12 |
+| `THESIS_ANALYST_AGENT_DEFS` | Análise de teses | 6 |
+| `CONTEXT_DETAIL_AGENT_DEFS` | Context detail | 2 |
+| `ACERVO_CLASSIFICADOR_AGENT_DEFS` | Classificador acervo | 2 |
+| `ACERVO_EMENTA_AGENT_DEFS` | Ementa acervo | 2 |
+| `RESEARCH_NOTEBOOK_AGENT_DEFS` | Caderno de pesquisa | 13 |
+| `NOTEBOOK_ACERVO_AGENT_DEFS` | Notebook acervo | 5 |
+| `VIDEO_PIPELINE_AGENT_DEFS` | Vídeo | 12 |
+| `AUDIO_PIPELINE_AGENT_DEFS` | Áudio | 7 |
+| `PRESENTATION_PIPELINE_AGENT_DEFS` | Apresentação | 7 |
+| `DOCUMENT_V3_PIPELINE_AGENT_DEFS` | Documento v3 | 18 |
+| `CHAT_ORCHESTRATOR_AGENT_DEFS` | Orquestrador do Chat | 11 |
 
 ## Configuração de Modelos
 1. Cada usuário configura seus próprios modelos por agente nas Configurações Pessoais

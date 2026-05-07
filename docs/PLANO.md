@@ -31,7 +31,9 @@
 - ✅ Validação local pós-documents concluída: guardrail arquitetural, typecheck, testes focados, suíte completa frontend e build com `VITE_FIRESTORE_DATABASE_ID=lexio-prod` verdes.
 - ✅ Quarta fatia de módulo aplicada: helpers de acervo documental (`buildAcervo*`, seleção/prefiltro de documentos, extração de keywords e helper JSON) foram movidos para `frontend/src/lib/modules/documents/`, mantendo compatibilidade de `selectAcervoDocsForBuscador` via `generation-service.ts`.
 - ✅ Validação local pós-acervo concluída: manifest JSON, guardrail arquitetural, typecheck, testes focados, suíte completa frontend e build com `VITE_FIRESTORE_DATABASE_ID=lexio-prod` verdes.
-- 🔄 Próximo checkpoint: commit/push incremental, nova verificação remota do PR #143 e avanço para separação de definições de agentes por pipeline em `model-config.ts`.
+- ✅ Quinta fatia estrutural aplicada: definições de agentes foram separadas por pipeline em `frontend/src/lib/pipelines/agent-definitions/`; `model-config.ts` permanece como fachada compatível e dono da persistência/validação user-scoped.
+- ✅ Validação local pós-agent-defs concluída: manifest JSON, guardrail arquitetural (`309` arquivos fonte), typecheck, teste focado, suíte completa frontend (**70/70 arquivos**, **512/512 testes**) e build com `VITE_FIRESTORE_DATABASE_ID=lexio-prod` verdes.
+- 🔄 Próximo checkpoint: commit/push incremental e nova verificação remota do PR #143 antes de avançar para extração de analytics de plataforma em `firestore-service.ts`.
 
 **Atualização incremental (2026-05-07 — Wave 41: Firestore isolado + core modular, início em branch):**
 - ✅ Branch dedicada criada: `feature/firestore-database-isolation-core-modules`, partindo do baseline `1ec3f7d` em `main`.
