@@ -8,7 +8,7 @@ This document maps current product domains to their owning code areas and future
 
 | Domain | Current Key Files | Future Module | Notes |
 |--------|-------------------|---------------|-------|
-| Documents | `frontend/src/lib/modules/documents/`, `frontend/src/lib/generation-service.ts`, `document-pipeline.ts`, `document-v3-*`, `document-structures.ts`, `v3-agents/`, `pages/NewDocument*.tsx`, `pages/Document*.tsx` | `frontend/src/lib/modules/documents/` | Owns legal document generation, templates, V2/V3 agents, persistence metadata, quality and export integration. Prompt metadata/profile helpers and acervo prompt/search helpers now live in the Documents module; `generation-service.ts` keeps compatibility exports. |
+| Documents | `frontend/src/lib/modules/documents/`, `frontend/src/lib/generation-service.ts`, `document-pipeline.ts`, `document-v3-*`, `document-structures.ts`, `v3-agents/`, `pages/NewDocument*.tsx`, `pages/Document*.tsx` | `frontend/src/lib/modules/documents/` | Owns legal document generation, templates, V2/V3 agents, persistence metadata, quality and export integration. Prompt metadata/profile helpers, acervo prompt/search helpers and the first Documents Firestore repository now live in the Documents module; `generation-service.ts` and `firestore-service.ts` keep compatibility exports. |
 | Notebook | `frontend/src/lib/modules/notebook/`, `notebook-studio-pipeline.ts`, `notebook-audio-pipeline.ts`, `notebook-acervo-analyzer.ts`, `notebook-artifact-tasks.ts`, `notebook-media-storage.ts`, `research-notebook-*`, `pages/ResearchNotebook.tsx`, `pages/labs/ResearchNotebookV2.tsx` | `frontend/src/lib/modules/notebook/` | Owns sources, studio, artifacts, notebook memory, acervo analysis, notebook media and notebook progress contracts. `notebook-pipeline-progress.ts` and `notebook-constants.ts` are compatibility facades after Wave 42. |
 | Theses | `thesis-analyzer.ts`, `thesis-extractor.ts`, `thesis-pipeline.ts`, `pages/ThesisBank.tsx` | `frontend/src/lib/modules/theses/` | Owns thesis CRUD, extraction, batch analysis and suggestions. |
 | Chat | `frontend/src/lib/chat-orchestrator/`, `pages/Chat.tsx` | `frontend/src/lib/modules/chat/` or keep `chat-orchestrator/` as public module | Already has a strong module boundary and should be used as the template for other domains. |
@@ -25,7 +25,7 @@ When changing a feature, first identify its domain owner. Prefer changing the do
 
 ## Current Hotspots To Reduce
 
-- `frontend/src/lib/firestore-service.ts` — split into repositories/stores by domain; platform analytics has already moved to `platform-analytics.ts`, and shared Firestore path/reference helpers have moved to `frontend/src/lib/core/firestore/`.
+- `frontend/src/lib/firestore-service.ts` — split into repositories/stores by domain; platform analytics has already moved to `platform-analytics.ts`, shared Firestore path/reference helpers have moved to `frontend/src/lib/core/firestore/`, and Documents CRUD now lives in `frontend/src/lib/modules/documents/repository.ts` behind a compatibility facade.
 - `frontend/src/lib/generation-service.ts` — move document-specific orchestration into Documents.
 - `frontend/src/lib/model-config.ts` — remaining scoped model persistence, validation and fallback logic after agent definitions moved behind `pipelines/agent-definitions`.
 - `frontend/src/pages/ResearchNotebook.tsx` — move workflow logic into Notebook module/hooks while keeping UI in pages/components.

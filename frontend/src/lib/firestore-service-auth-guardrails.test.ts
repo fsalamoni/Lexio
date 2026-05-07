@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(new URL('./firestore-service.ts', import.meta.url), 'utf-8')
 const platformAnalyticsSource = readFileSync(new URL('./platform-analytics.ts', import.meta.url), 'utf-8')
-const firestoreBoundarySource = `${source}\n${platformAnalyticsSource}`
+const documentsRepositorySource = readFileSync(new URL('./modules/documents/repository.ts', import.meta.url), 'utf-8')
+const firestoreRepositoryBoundarySource = `${source}\n${documentsRepositorySource}`
+const firestoreBoundarySource = `${source}\n${platformAnalyticsSource}\n${documentsRepositorySource}`
 
 describe('firestore-service auth guardrails', () => {
   it('avoids raw user-scoped read calls with unresolved uid', () => {
@@ -14,7 +16,7 @@ describe('firestore-service auth guardrails', () => {
     ]
 
     for (const pattern of forbiddenReadPatterns) {
-      expect(source).not.toMatch(pattern)
+      expect(firestoreRepositoryBoundarySource).not.toMatch(pattern)
     }
   })
 
@@ -30,13 +32,13 @@ describe('firestore-service auth guardrails', () => {
     ]
 
     for (const pattern of requiredGuards) {
-      expect(source).toMatch(pattern)
+      expect(firestoreRepositoryBoundarySource).toMatch(pattern)
     }
   })
 
   it('does not allow sign-out side effects inside Firestore retry layer', () => {
     const retryLayerStart = source.indexOf('async function withFirestoreRetry')
-    const retryLayerEnd = source.indexOf('function getRefUserId')
+    const retryLayerEnd = source.indexOf('async function getLegacySettingsDocData')
     const retryLayer = retryLayerStart >= 0 && retryLayerEnd > retryLayerStart
       ? source.slice(retryLayerStart, retryLayerEnd)
       : source

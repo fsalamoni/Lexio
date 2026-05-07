@@ -44,6 +44,7 @@ import {
   getRefUserId,
   normalizeFirestoreDocumentId,
 } from './core/firestore'
+import { createDocumentsRepository } from './modules/documents'
 
 // ── Type definitions (re-exported from firestore-types.ts) ───────────────────
 
@@ -318,15 +319,6 @@ const USER_SETTINGS_MODEL_KEYS = [
   'presentation_pipeline_models',
 ] as const satisfies ReadonlyArray<keyof UserSettingsData>
 
-function matchesDocumentFilters(doc: DocumentData, opts?: {
-  status?: string
-  document_type_id?: string
-}) {
-  if (opts?.status && doc.status !== opts.status) return false
-  if (opts?.document_type_id && doc.document_type_id !== opts.document_type_id) return false
-  return true
-}
-
 function getDocumentCreatedAtValue(value: unknown) {
   if (typeof value === 'string') {
     const parsed = Date.parse(value)
@@ -558,13 +550,6 @@ export async function ensureUserSettingsMigrated(uid: string): Promise<UserSetti
   return { ...current, ...patch }
 }
 
-function sortDocuments(items: DocumentData[], sortDir?: string) {
-  const direction = sortDir === 'asc' ? 1 : -1
-  return [...items].sort((a, b) =>
-    (getDocumentCreatedAtValue(a.created_at) - getDocumentCreatedAtValue(b.created_at)) * direction,
-  )
-}
-
 // ── Profile (Anamnesis Layer 1) ──────────────────────────────────────────────
 
 export async function getProfile(uid: string): Promise<ProfileData> {
@@ -712,155 +697,22 @@ export async function getWizardData(uid: string): Promise<WizardData> {
 
 // ── Documents CRUD ──────────────────────────────────────────────────────────
 
-export async function createDocument(uid: string, input: {
-  document_type_id: string
-  original_request: string
-  template_variant?: string | null
-  legal_area_ids?: string[] | null
-  request_context?: Record<string, unknown> | null
-  context_detail?: ContextDetailData | null
-}): Promise<DocumentData> {
-  const now = new Date().toISOString()
-  const docData = {
-    document_type_id: input.document_type_id,
-    original_request: input.original_request,
-    template_variant: input.template_variant ?? null,
-    legal_area_ids: input.legal_area_ids ?? [],
-    request_context: input.request_context ?? null,
-    context_detail: input.context_detail ?? null,
-    tema: null,
-    status: 'rascunho',
-    quality_score: null,
-    texto_completo: null,
-    origem: 'web',
-    created_at: now,
-    updated_at: now,
-  }
-  return writeUserScoped(uid, 'createDocument', async (db, effectiveUid) => {
-    const colRef = collection(db, 'users', effectiveUid, 'documents')
-    const ref = await addDoc(colRef, docData)
-    return { id: ref.id, ...docData }
-  })
-}
+const documentsRepository = createDocumentsRepository({
+  ensureFirestore,
+  resolveEffectiveUid,
+  writeUserScoped,
+  withFirestoreRetry,
+  isAuthAccessFirestoreError,
+  getErrorMessage,
+  stripUndefined,
+})
 
-export async function getDocument(uid: string, docId: string): Promise<DocumentData | null> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'getDocument')
-  const ref = doc(db, 'users', effectiveUid, 'documents', docId)
-  const snap = await withFirestoreRetry(() => getDoc(ref), 'getDocument')
-  if (!snap.exists()) return null
-  return { id: snap.id, ...snap.data() } as DocumentData
-}
-
-export async function listDocuments(uid: string, opts?: {
-  status?: string
-  document_type_id?: string
-  limit?: number
-  sortBy?: string
-  sortDir?: string
-}): Promise<{ items: DocumentData[]; total: number }> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'listDocuments')
-  const colRef = collection(db, 'users', effectiveUid, 'documents')
-
-  // Build query constraints
-  const constraints: QueryConstraint[] = []
-
-  if (opts?.status) {
-    constraints.push(where('status', '==', opts.status))
-  }
-  if (opts?.document_type_id) {
-    constraints.push(where('document_type_id', '==', opts.document_type_id))
-  }
-
-  constraints.push(orderBy('created_at', opts?.sortDir === 'asc' ? 'asc' : 'desc'))
-
-  if (opts?.limit) {
-    constraints.push(limit(opts.limit))
-  }
-
-  const q = query(colRef, ...constraints)
-  try {
-    const snap = await withFirestoreRetry(() => getDocs(q), 'listDocuments.query')
-    const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentData))
-    return { items, total: items.length }
-  } catch (error) {
-    if (isAuthAccessFirestoreError(error)) {
-      throw error
-    }
-    try {
-      console.warn('Firestore document query failed; using client-side fallback:', getErrorMessage(error))
-      const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listDocuments.fallback')
-      const filteredItems = sortDocuments(
-        fallbackSnap.docs
-          .map(d => ({ id: d.id, ...d.data() } as DocumentData))
-          .filter(doc => matchesDocumentFilters(doc, opts)),
-        opts?.sortDir,
-      )
-      const limitedItems = opts?.limit ? filteredItems.slice(0, opts?.limit) : filteredItems
-      return { items: limitedItems, total: filteredItems.length }
-    } catch (fallbackError) {
-      console.warn('Firestore document fallback query also failed:', getErrorMessage(fallbackError))
-      throw fallbackError
-    }
-  }
-}
-
-export async function updateDocument(uid: string, docId: string, data: Partial<DocumentData>): Promise<void> {
-  await writeUserScoped(uid, 'updateDocument', async (db, effectiveUid) => {
-    const ref = doc(db, 'users', effectiveUid, 'documents', docId)
-    await updateDoc(ref, { ...data, updated_at: new Date().toISOString() })
-  })
-}
-
-export async function deleteDocument(uid: string, docId: string): Promise<void> {
-  await writeUserScoped(uid, 'deleteDocument', async (db, effectiveUid) => {
-    const ref = doc(db, 'users', effectiveUid, 'documents', docId)
-    await deleteDoc(ref)
-  })
-}
-
-/**
- * Persist a studio artifact of type "documento" from a Research Notebook
- * into the user's Documents collection. This ensures notebook-generated
- * formal documents appear in the Documents page alongside regular documents.
- *
- * @param uid - user ID
- * @param input - artifact content and notebook metadata
- * @returns the created DocumentData (with id assigned by Firestore)
- */
-export async function saveNotebookDocumentToDocuments(uid: string, input: {
-  topic: string
-  content: string
-  notebookId: string
-  notebookTitle: string
-  llm_executions?: DocumentData['llm_executions']
-}): Promise<DocumentData> {
-  const now = new Date().toISOString()
-  const docData = stripUndefined({
-    document_type_id: 'documento_caderno',
-    original_request: input.topic,
-    template_variant: null,
-    legal_area_ids: [],
-    request_context: null,
-    context_detail: null,
-    tema: input.topic,
-    status: 'concluido',
-    quality_score: null,
-    texto_completo: input.content,
-    origem: 'caderno' as const,
-    notebook_id: input.notebookId,
-    notebook_title: input.notebookTitle,
-    llm_executions: input.llm_executions ?? [],
-    created_at: now,
-    updated_at: now,
-  })
-  return writeUserScoped(uid, 'saveNotebookDocumentToDocuments', async (db, effectiveUid) => {
-    const colRef = collection(db, 'users', effectiveUid, 'documents')
-    const ref = await addDoc(colRef, docData)
-    return { id: ref.id, ...docData }
-  })
-}
+export const createDocument = documentsRepository.createDocument
+export const getDocument = documentsRepository.getDocument
+export const listDocuments = documentsRepository.listDocuments
+export const updateDocument = documentsRepository.updateDocument
+export const deleteDocument = documentsRepository.deleteDocument
+export const saveNotebookDocumentToDocuments = documentsRepository.saveNotebookDocumentToDocuments
 
 
 // ── Stats (computed from Firestore data) ─────────────────────────────────────
