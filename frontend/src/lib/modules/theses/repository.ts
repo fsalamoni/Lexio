@@ -15,7 +15,7 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore'
 
-import type { ThesisData } from '../../firestore-types'
+import type { ThesisAnalysisSessionData, ThesisData } from '../../firestore-types'
 
 export type ListThesesOptions = {
   q?: string
@@ -42,6 +42,8 @@ export type ThesesRepositoryDependencies = {
   withFirestoreRetry: <T>(operation: () => Promise<T>, contextLabel: string) => Promise<T>
   isAuthAccessFirestoreError: (error: unknown) => boolean
   getErrorMessage: (error: unknown) => string
+  getCreatedAtValue: (value: unknown) => number
+  stripUndefined: <T extends Record<string, unknown>>(value: T) => T
 }
 
 function sortThesesByCreatedAtDesc(items: ThesisData[]) {
@@ -186,11 +188,83 @@ export function createThesesRepository(deps: ThesesRepositoryDependencies) {
     }
   }
 
+  async function listThesisAnalysisSessions(uid: string): Promise<ThesisAnalysisSessionData[]> {
+    const db = deps.ensureFirestore()
+    const effectiveUid = await deps.resolveEffectiveUid(uid, 'listThesisAnalysisSessions')
+    const colRef = collection(db, 'users', effectiveUid, 'thesis_analysis_sessions')
+    try {
+      const snapshot = await deps.withFirestoreRetry(
+        () => getDocs(query(colRef, orderBy('created_at', 'desc'))),
+        'listThesisAnalysisSessions.query',
+      )
+      return snapshot.docs.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() } as ThesisAnalysisSessionData))
+    } catch (error) {
+      if (deps.isAuthAccessFirestoreError(error)) {
+        throw error
+      }
+      console.warn('Firestore thesis analysis query failed; using client-side fallback:', deps.getErrorMessage(error))
+      const fallbackSnapshot = await deps.withFirestoreRetry(
+        () => getDocs(colRef),
+        'listThesisAnalysisSessions.fallback',
+      )
+      return fallbackSnapshot.docs
+        .map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() } as ThesisAnalysisSessionData))
+        .sort((left, right) => deps.getCreatedAtValue(right.created_at) - deps.getCreatedAtValue(left.created_at))
+    }
+  }
+
+  async function saveThesisAnalysisSession(
+    uid: string,
+    data: Omit<ThesisAnalysisSessionData, 'id'>,
+  ): Promise<string> {
+    return deps.writeUserScoped(uid, 'saveThesisAnalysisSession', async (db, effectiveUid) => {
+      const ref = await addDoc(collection(db, 'users', effectiveUid, 'thesis_analysis_sessions'), deps.stripUndefined({
+        ...data,
+        created_at: data.created_at ?? new Date().toISOString(),
+      }))
+      return ref.id
+    })
+  }
+
+  async function getLastThesisAnalysisSession(
+    uid: string,
+  ): Promise<ThesisAnalysisSessionData | null> {
+    const db = deps.ensureFirestore()
+    const effectiveUid = await deps.resolveEffectiveUid(uid, 'getLastThesisAnalysisSession')
+    const colRef = collection(db, 'users', effectiveUid, 'thesis_analysis_sessions')
+    try {
+      const snapshot = await deps.withFirestoreRetry(
+        () => getDocs(query(colRef, orderBy('created_at', 'desc'), limit(1))),
+        'getLastThesisAnalysisSession.query',
+      )
+      if (snapshot.empty) return null
+      const docSnapshot = snapshot.docs[0]
+      return { id: docSnapshot.id, ...docSnapshot.data() } as ThesisAnalysisSessionData
+    } catch (error) {
+      if (deps.isAuthAccessFirestoreError(error)) {
+        throw error
+      }
+      console.warn('Firestore last thesis analysis query failed; using client-side fallback:', deps.getErrorMessage(error))
+      const fallbackSnapshot = await deps.withFirestoreRetry(
+        () => getDocs(colRef),
+        'getLastThesisAnalysisSession.fallback',
+      )
+      if (fallbackSnapshot.empty) return null
+      const [latest] = fallbackSnapshot.docs.sort((left, right) => {
+        return deps.getCreatedAtValue(right.data()?.created_at) - deps.getCreatedAtValue(left.data()?.created_at)
+      })
+      return latest ? ({ id: latest.id, ...latest.data() } as ThesisAnalysisSessionData) : null
+    }
+  }
+
   return {
     listTheses,
     createThesis,
     updateThesis,
     deleteThesis,
     getThesisStats,
+    listThesisAnalysisSessions,
+    saveThesisAnalysisSession,
+    getLastThesisAnalysisSession,
   }
 }

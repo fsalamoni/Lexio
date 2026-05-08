@@ -830,31 +830,6 @@ export async function getDashboardSnapshot(uid: string): Promise<{
   }
 }
 
-export async function listThesisAnalysisSessions(uid: string): Promise<ThesisAnalysisSessionData[]> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'listThesisAnalysisSessions')
-  const colRef = collection(db, 'users', effectiveUid, 'thesis_analysis_sessions')
-  try {
-    const snap = await withFirestoreRetry(
-      () => getDocs(query(colRef, orderBy('created_at', 'desc'))),
-      'listThesisAnalysisSessions.query',
-    )
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as ThesisAnalysisSessionData))
-  } catch (error) {
-    if (isAuthAccessFirestoreError(error)) {
-      throw error
-    }
-    console.warn('Firestore thesis analysis query failed; using client-side fallback:', getErrorMessage(error))
-    const fallbackSnap = await withFirestoreRetry(
-      () => getDocs(colRef),
-      'listThesisAnalysisSessions.fallback',
-    )
-    return fallbackSnap.docs
-      .map(d => ({ id: d.id, ...d.data() } as ThesisAnalysisSessionData))
-      .sort((a, b) => getDocumentCreatedAtValue(b.created_at) - getDocumentCreatedAtValue(a.created_at))
-  }
-}
-
 // ── Research Notebook (Caderno de Pesquisa) repository facade ────────────────
 
 export type { NotebookSearchMemoryBackfillReport } from './modules/notebook'
@@ -1301,6 +1276,8 @@ const thesesRepository = createThesesRepository({
   withFirestoreRetry,
   isAuthAccessFirestoreError,
   getErrorMessage,
+  getCreatedAtValue: getDocumentCreatedAtValue,
+  stripUndefined,
 })
 
 export const listTheses = thesesRepository.listTheses
@@ -1308,6 +1285,9 @@ export const createThesis = thesesRepository.createThesis
 export const updateThesis = thesesRepository.updateThesis
 export const deleteThesis = thesesRepository.deleteThesis
 export const getThesisStats = thesesRepository.getThesisStats
+export const listThesisAnalysisSessions = thesesRepository.listThesisAnalysisSessions
+export const saveThesisAnalysisSession = thesesRepository.saveThesisAnalysisSession
+export const getLastThesisAnalysisSession = thesesRepository.getLastThesisAnalysisSession
 
 /**
  * Seed the thesis bank with imported theses from the vectorized legal corpus.
@@ -1392,58 +1372,6 @@ export async function saveUserSettings(uid: string, data: Partial<UserSettingsDa
 
 export const markAcervoDocumentsAnalyzed = acervoRepository.markAcervoDocumentsAnalyzed
 export const getAcervoAnalysisStatus = acervoRepository.getAcervoAnalysisStatus
-
-// ── Thesis Analysis Session persistence ──────────────────────────────────────
-
-/**
- * Save a thesis analysis session record (for display on next visit).
- */
-export async function saveThesisAnalysisSession(
-  uid: string,
-  data: Omit<ThesisAnalysisSessionData, 'id'>,
-): Promise<string> {
-  return writeUserScoped(uid, 'saveThesisAnalysisSession', async (db, effectiveUid) => {
-    const ref = await addDoc(collection(db, 'users', effectiveUid, 'thesis_analysis_sessions'), stripUndefined({
-      ...data,
-      created_at: data.created_at ?? new Date().toISOString(),
-    }))
-    return ref.id
-  })
-}
-
-/**
- * Get the most recent thesis analysis session.
- */
-export async function getLastThesisAnalysisSession(
-  uid: string,
-): Promise<ThesisAnalysisSessionData | null> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'getLastThesisAnalysisSession')
-  const colRef = collection(db, 'users', effectiveUid, 'thesis_analysis_sessions')
-  try {
-    const snap = await withFirestoreRetry(
-      () => getDocs(query(colRef, orderBy('created_at', 'desc'), limit(1))),
-      'getLastThesisAnalysisSession.query',
-    )
-    if (snap.empty) return null
-    const d = snap.docs[0]
-    return { id: d.id, ...d.data() } as ThesisAnalysisSessionData
-  } catch (error) {
-    if (isAuthAccessFirestoreError(error)) {
-      throw error
-    }
-    console.warn('Firestore last thesis analysis query failed; using client-side fallback:', getErrorMessage(error))
-    const fallbackSnap = await withFirestoreRetry(
-      () => getDocs(colRef),
-      'getLastThesisAnalysisSession.fallback',
-    )
-    if (fallbackSnap.empty) return null
-    const [latest] = fallbackSnap.docs.sort((a, b) => {
-      return getDocumentCreatedAtValue(b.data()?.created_at) - getDocumentCreatedAtValue(a.data()?.created_at)
-    })
-    return latest ? ({ id: latest.id, ...latest.data() } as ThesisAnalysisSessionData) : null
-  }
-}
 
 // ── Chat Orchestrator (page `/chat`) ─────────────────────────────────────────
 

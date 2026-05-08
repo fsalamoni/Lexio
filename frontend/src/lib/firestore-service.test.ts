@@ -117,6 +117,8 @@ import {
   saveNotebookDocumentToDocuments,
   listTheses,
   listThesisAnalysisSessions,
+  saveThesisAnalysisSession,
+  getLastThesisAnalysisSession,
   getAcervoDocsWithoutTags,
   updateResearchNotebook,
   ensureChatConversation,
@@ -328,6 +330,59 @@ describe('saveNotebookDocumentToDocuments', () => {
     )
     expect(sessions).toHaveLength(1)
     expect(sessions[0].id).toBe('sess-1')
+  })
+
+  it('saves thesis analysis sessions under the authenticated uid', async () => {
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-456',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+    mockAddDoc.mockResolvedValueOnce({ id: 'sess-new' })
+
+    const result = await saveThesisAnalysisSession(uid, {
+      created_at: '2026-01-01T00:00:00.000Z',
+      total_theses_analyzed: 2,
+      total_docs_analyzed: 1,
+      total_new_docs: 1,
+      suggestions_count: 1,
+      accepted_count: 0,
+      rejected_count: 0,
+      executive_summary: 'Resumo',
+      status: 'completed',
+    })
+
+    expect(mockCollection).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', 'auth-456', 'thesis_analysis_sessions',
+    )
+    expect(mockAddDoc).toHaveBeenCalledWith('col-ref', expect.objectContaining({
+      created_at: '2026-01-01T00:00:00.000Z',
+      executive_summary: 'Resumo',
+    }))
+    expect(result).toBe('sess-new')
+  })
+
+  it('loads the latest thesis analysis session under the authenticated uid', async () => {
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-456',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        { id: 'sess-last', data: () => ({ created_at: '2026-01-02T00:00:00.000Z', summary: 'last' }) },
+      ],
+      empty: false,
+    })
+
+    const result = await getLastThesisAnalysisSession(uid)
+
+    expect(mockCollection).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', 'auth-456', 'thesis_analysis_sessions',
+    )
+    expect(mockOrderBy).toHaveBeenCalledWith('created_at', 'desc')
+    expect(mockLimit).toHaveBeenCalledWith(1)
+    expect(result?.id).toBe('sess-last')
   })
 
   it('fails fast for thesis sessions when firebase session is missing', async () => {
