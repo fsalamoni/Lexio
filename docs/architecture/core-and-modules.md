@@ -18,6 +18,7 @@ The current frontend already has useful modular patterns:
 - `frontend/src/lib/modules/documents/` now owns document prompt metadata, profile prompt helpers, acervo prompt builders, acervo search helpers, the extracted Pesquisador user prompt and the first Documents Firestore repository behind compatibility exports from `generation-service.ts` and `firestore-service.ts`.
 - `frontend/src/lib/modules/theses/` now owns the Thesis Bank Firestore repository and thesis analysis session persistence behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/modules/profile/` now owns Profile and Onboarding Firestore repository operations behind compatibility exports from `firestore-service.ts`.
+- `frontend/src/lib/modules/settings/` now owns platform/user settings reads/writes and legacy user settings migration behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/modules/acervo/` now owns Acervo Firestore repository operations behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/pipelines/agent-definitions/` now owns per-pipeline agent definition arrays behind compatibility exports from `model-config.ts`.
 - `frontend/src/lib/platform-analytics.ts` now owns platform-wide Firestore aggregation, operational cost analytics and rollout policy calculations behind compatibility exports from `firestore-service.ts`.
@@ -147,11 +148,12 @@ Completed foundation extraction:
 11. Extract Research Notebook CRUD, dedicated search-memory retention/backfill and notebook size safety into `frontend/src/lib/modules/notebook/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 12. Extract thesis analysis session listing, latest-session read and persistence into `frontend/src/lib/modules/theses/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 13. Extract Profile and Onboarding reads/writes plus wizard step assembly into `frontend/src/lib/modules/profile/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+14. Extract platform/user settings reads/writes and legacy migration into `frontend/src/lib/modules/settings/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 
 Next safe extraction order:
 
 1. Continue splitting high-risk Firestore repository operations only after tests are in place.
-2. Move one of the 4 remaining bounded repository slices out of `firestore-service.ts`: Settings/Migration, Admin Taxonomy, Dashboard Stats/Cost, or Chat, preserving public imports until callers migrate.
+2. Move one of the 3 remaining bounded repository slices out of `firestore-service.ts`: Admin Taxonomy, Dashboard Stats/Cost, or Chat, preserving public imports until callers migrate.
 
 ## Compatibility Rule
 

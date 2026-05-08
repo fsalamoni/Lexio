@@ -39,6 +39,7 @@ import { createAcervoRepository } from './modules/acervo'
 import { createDocumentsRepository } from './modules/documents'
 import { createResearchNotebookRepository } from './modules/notebook'
 import { createProfileRepository } from './modules/profile'
+import { createSettingsRepository } from './modules/settings'
 import { createThesesRepository } from './modules/theses'
 
 // ── Type definitions (re-exported from firestore-types.ts) ───────────────────
@@ -294,20 +295,6 @@ function round6(value: number) {
   return Number(value.toFixed(6))
 }
 
-const USER_SETTINGS_MIGRATION_FLAG = 'legacy_migrated_at'
-const USER_SETTINGS_MODEL_KEYS = [
-  'agent_models',
-  'thesis_analyst_models',
-  'context_detail_models',
-  'acervo_classificador_models',
-  'acervo_ementa_models',
-  'research_notebook_models',
-  'notebook_acervo_models',
-  'video_pipeline_models',
-  'audio_pipeline_models',
-  'presentation_pipeline_models',
-] as const satisfies ReadonlyArray<keyof UserSettingsData>
-
 function getDocumentCreatedAtValue(value: unknown) {
   if (typeof value === 'string') {
     const parsed = Date.parse(value)
@@ -462,82 +449,19 @@ async function withFirestoreRetry<T>(
   throw lastError
 }
 
-async function getLegacySettingsDocData(documentId: string): Promise<Record<string, unknown>> {
-  const db = ensureFirestore()
-  const snap = await withFirestoreRetry(
-    () => getDoc(doc(db, 'settings', documentId)),
-    `getLegacySettingsDocData.${documentId}`,
-    { recoverAuthAccessErrors: false },
-  )
-  return snap.exists() ? (snap.data() as Record<string, unknown>) : {}
-}
+const settingsRepository = createSettingsRepository({
+  ensureFirestore,
+  resolveEffectiveUid,
+  writeUserScoped,
+  withFirestoreRetry,
+  stripUndefined,
+})
 
-export async function ensureUserSettingsMigrated(uid: string): Promise<UserSettingsData> {
-  const current = await getUserSettings(uid)
-  if (current[USER_SETTINGS_MIGRATION_FLAG]) return current
-
-  const patch: Partial<UserSettingsData> = {
-    [USER_SETTINGS_MIGRATION_FLAG]: new Date().toISOString(),
-  }
-
-  try {
-    const globalSettings = await getSettings({ recoverAuthAccessErrors: false }).catch(() => ({} as Record<string, unknown>))
-    const mergedApiKeys = { ...((globalSettings.api_keys ?? {}) as Record<string, string>) }
-
-    for (const flatKey of ['openrouter_api_key', 'datajud_api_key'] as const) {
-      const flatValue = globalSettings[flatKey]
-      if (typeof flatValue === 'string' && flatValue.trim() && !mergedApiKeys[flatKey]) {
-        mergedApiKeys[flatKey] = flatValue
-      }
-    }
-
-    if ((!current.api_keys || Object.keys(current.api_keys).length === 0) && Object.keys(mergedApiKeys).length > 0) {
-      patch.api_keys = mergedApiKeys
-    }
-
-    if ((!current.model_catalog || current.model_catalog.length === 0) && Array.isArray(globalSettings.model_catalog) && globalSettings.model_catalog.length > 0) {
-      patch.model_catalog = globalSettings.model_catalog as UserSettingsData['model_catalog']
-    }
-
-    for (const key of USER_SETTINGS_MODEL_KEYS) {
-      const existingValue = current[key]
-      const legacyValue = globalSettings[key]
-      if (
-        (!existingValue || Object.keys(existingValue as Record<string, string>).length === 0) &&
-        legacyValue && typeof legacyValue === 'object' && !Array.isArray(legacyValue)
-      ) {
-        patch[key] = legacyValue as UserSettingsData[typeof key]
-      }
-    }
-
-    if (!current.document_types?.length) {
-      const legacyDocTypes = await getLegacySettingsDocData('admin_document_types').catch(() => ({} as Record<string, unknown>))
-      if (Array.isArray(legacyDocTypes.items) && legacyDocTypes.items.length > 0) {
-        patch.document_types = legacyDocTypes.items as AdminDocumentType[]
-      }
-    }
-
-    if (!current.legal_areas?.length) {
-      const legacyAreas = await getLegacySettingsDocData('admin_legal_areas').catch(() => ({} as Record<string, unknown>))
-      if (Array.isArray(legacyAreas.items) && legacyAreas.items.length > 0) {
-        patch.legal_areas = legacyAreas.items as AdminLegalArea[]
-      }
-    }
-
-    if (!current.classification_tipos || Object.keys(current.classification_tipos).length === 0) {
-      const legacyTipos = await getLegacySettingsDocData('admin_classification_tipos').catch(() => ({} as Record<string, unknown>))
-      if (legacyTipos.tipos && typeof legacyTipos.tipos === 'object' && !Array.isArray(legacyTipos.tipos)) {
-        patch.classification_tipos = legacyTipos.tipos as Record<string, Record<string, string[]>>
-      }
-    }
-  } catch {
-    // If legacy docs are inaccessible (e.g. non-admin users), mark migration as done
-    // so the app falls back to user defaults without leaking platform data.
-  }
-
-  await saveUserSettings(uid, patch)
-  return { ...current, ...patch }
-}
+export const getSettings = settingsRepository.getSettings
+export const saveSettings = settingsRepository.saveSettings
+export const getUserSettings = settingsRepository.getUserSettings
+export const saveUserSettings = settingsRepository.saveUserSettings
+export const ensureUserSettingsMigrated = settingsRepository.ensureUserSettingsMigrated
 
 // ── Profile (Anamnesis Layer 1) ──────────────────────────────────────────────
 
@@ -1198,43 +1122,6 @@ export const convertAcervoToJson = acervoRepository.convertAcervoToJson
 export const getAcervoDocsWithoutTags = acervoRepository.getAcervoDocsWithoutTags
 export const getAcervoDocsWithoutEmenta = acervoRepository.getAcervoDocsWithoutEmenta
 export const getAcervoContext = acervoRepository.getAcervoContext
-
-// ── Admin settings (Firestore /settings collection) ──────────────────────────
-
-export async function getSettings(options: FirestoreRetryOptions = {}): Promise<Record<string, unknown>> {
-  const db = ensureFirestore()
-  const ref = doc(db, 'settings', 'platform')
-  const snap = await withFirestoreRetry(
-    () => getDoc(ref),
-    'getSettings',
-    options,
-  )
-  if (!snap.exists()) return {}
-  return snap.data() as Record<string, unknown>
-}
-
-export async function getUserSettings(uid: string): Promise<UserSettingsData> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'getUserSettings')
-  const ref = doc(db, 'users', effectiveUid, 'settings', 'preferences')
-  const snap = await withFirestoreRetry(() => getDoc(ref), 'getUserSettings')
-  if (!snap.exists()) return {}
-  return snap.data() as UserSettingsData
-}
-
-export async function saveSettings(data: Record<string, unknown>): Promise<void> {
-  const db = ensureFirestore()
-  const ref = doc(db, 'settings', 'platform')
-  await setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true })
-}
-
-export async function saveUserSettings(uid: string, data: Partial<UserSettingsData>): Promise<void> {
-  await writeUserScoped(uid, 'saveUserSettings', async (db, effectiveUid) => {
-    const ref = doc(db, 'users', effectiveUid, 'settings', 'preferences')
-    const sanitized = stripUndefined(data as Record<string, unknown>)
-    await setDoc(ref, { ...sanitized, updated_at: serverTimestamp() }, { merge: true })
-  })
-}
 
 // ── Acervo analysis tracking ──────────────────────────────────────────────────
 

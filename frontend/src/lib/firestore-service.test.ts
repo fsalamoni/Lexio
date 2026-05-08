@@ -109,13 +109,16 @@ import {
 import {
   __resetFirestoreAuthCircuitForTests,
   completeOnboarding,
+  ensureUserSettingsMigrated,
   getProfile,
+  getSettings,
   getUserSettings,
   getWizardData,
   getResearchNotebook,
   listDocuments,
   sanitizeAdminDocumentTypes,
   sanitizeAdminLegalAreas,
+  saveSettings,
   saveUserSettings,
   saveProfile,
   saveNotebookDocumentToDocuments,
@@ -283,6 +286,38 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(result.last_jurisprudence_tribunal_aliases).toEqual(['trf1', 'tjrs'])
   })
 
+  it('loads legacy platform settings through the settings repository facade', async () => {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ api_keys: { openrouter_api_key: 'sk-platform' } }),
+    })
+
+    const result = await getSettings()
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'settings', 'platform',
+    )
+    expect(result.api_keys).toEqual({ openrouter_api_key: 'sk-platform' })
+  })
+
+  it('saves legacy platform settings through the settings repository facade', async () => {
+    await saveSettings({ api_keys: { datajud_api_key: 'datajud-key' } })
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'settings', 'platform',
+    )
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'settings/platform' },
+      expect.objectContaining({
+        api_keys: { datajud_api_key: 'datajud-key' },
+        updated_at: '__server_timestamp__',
+      }),
+      { merge: true },
+    )
+  })
+
   it('prefers authenticated uid when requested uid is stale', async () => {
     mockFirebaseAuth.currentUser = {
       uid: 'auth-456',
@@ -299,6 +334,53 @@ describe('saveNotebookDocumentToDocuments', () => {
       { _fake: true },
       'users', 'auth-456', 'settings', 'preferences',
     )
+  })
+
+  it('migrates legacy settings into user preferences once', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({}) })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          openrouter_api_key: 'sk-flat',
+          api_keys: { datajud_api_key: 'datajud-platform' },
+          agent_models: { triagem: 'openai/gpt-4o-mini' },
+        }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          items: [{ id: 'parecer', name: 'Parecer', description: '', templates: ['generic'], is_enabled: true }],
+        }),
+      })
+      .mockResolvedValueOnce({ exists: () => false, data: () => ({}) })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ tipos: { civil: { contratos: ['locacao'] } } }),
+      })
+
+    const result = await ensureUserSettingsMigrated(uid)
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'settings', 'preferences',
+    )
+    expect(mockDoc).toHaveBeenCalledWith({ _fake: true }, 'settings', 'platform')
+    expect(mockDoc).toHaveBeenCalledWith({ _fake: true }, 'settings', 'admin_document_types')
+    expect(mockDoc).toHaveBeenCalledWith({ _fake: true }, 'settings', 'admin_classification_tipos')
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/settings/preferences' },
+      expect.objectContaining({
+        legacy_migrated_at: expect.any(String),
+        api_keys: { datajud_api_key: 'datajud-platform', openrouter_api_key: 'sk-flat' },
+        agent_models: { triagem: 'openai/gpt-4o-mini' },
+        document_types: [{ id: 'parecer', name: 'Parecer', description: '', templates: ['generic'], is_enabled: true }],
+        classification_tipos: { civil: { contratos: ['locacao'] } },
+        updated_at: '__server_timestamp__',
+      }),
+      { merge: true },
+    )
+    expect(result.legacy_migrated_at).toEqual(expect.any(String))
   })
 
   it('loads profile data from the authenticated uid', async () => {

@@ -7,9 +7,10 @@ const acervoRepositorySource = readFileSync(new URL('./modules/acervo/repository
 const documentsRepositorySource = readFileSync(new URL('./modules/documents/repository.ts', import.meta.url), 'utf-8')
 const notebookRepositorySource = readFileSync(new URL('./modules/notebook/repository.ts', import.meta.url), 'utf-8')
 const profileRepositorySource = readFileSync(new URL('./modules/profile/repository.ts', import.meta.url), 'utf-8')
+const settingsRepositorySource = readFileSync(new URL('./modules/settings/repository.ts', import.meta.url), 'utf-8')
 const thesesRepositorySource = readFileSync(new URL('./modules/theses/repository.ts', import.meta.url), 'utf-8')
-const firestoreRepositoryBoundarySource = `${source}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${notebookRepositorySource}\n${profileRepositorySource}\n${thesesRepositorySource}`
-const firestoreBoundarySource = `${source}\n${platformAnalyticsSource}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${notebookRepositorySource}\n${profileRepositorySource}\n${thesesRepositorySource}`
+const firestoreRepositoryBoundarySource = `${source}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${notebookRepositorySource}\n${profileRepositorySource}\n${settingsRepositorySource}\n${thesesRepositorySource}`
+const firestoreBoundarySource = `${source}\n${platformAnalyticsSource}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${notebookRepositorySource}\n${profileRepositorySource}\n${settingsRepositorySource}\n${thesesRepositorySource}`
 
 describe('firestore-service auth guardrails', () => {
   it('avoids raw user-scoped read calls with unresolved uid', () => {
@@ -34,6 +35,7 @@ describe('firestore-service auth guardrails', () => {
       /resolveEffectiveUid\(uid,\s*'getResearchNotebook'\)/,
       /resolveEffectiveUid\(uid,\s*'listResearchNotebooks'\)/,
       /resolveEffectiveUid\(uid,\s*'getProfile'\)/,
+      /resolveEffectiveUid\(uid,\s*'getUserSettings'\)/,
     ]
 
     for (const pattern of requiredGuards) {
@@ -43,7 +45,7 @@ describe('firestore-service auth guardrails', () => {
 
   it('does not allow sign-out side effects inside Firestore retry layer', () => {
     const retryLayerStart = source.indexOf('async function withFirestoreRetry')
-    const retryLayerEnd = source.indexOf('async function getLegacySettingsDocData')
+    const retryLayerEnd = source.indexOf('const settingsRepository')
     const retryLayer = retryLayerStart >= 0 && retryLayerEnd > retryLayerStart
       ? source.slice(retryLayerStart, retryLayerEnd)
       : source
