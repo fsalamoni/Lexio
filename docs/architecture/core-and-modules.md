@@ -20,6 +20,7 @@ The current frontend already has useful modular patterns:
 - `frontend/src/lib/modules/profile/` now owns Profile and Onboarding Firestore repository operations behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/modules/settings/` now owns platform/user settings reads/writes and legacy user settings migration behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/modules/admin-taxonomy/` now owns document-type/legal-area catalogs, admin taxonomy sanitizers, classification tipos persistence, profile-based taxonomy filters and request fields behind compatibility exports from `firestore-service.ts`.
+- `frontend/src/lib/modules/chat/` now owns Chat Firestore repository operations, including conversations, turns, sidecar devices, workspace roots/bindings, sidecar commands, approvals and audit entries behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/modules/acervo/` now owns Acervo Firestore repository operations behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/pipelines/agent-definitions/` now owns per-pipeline agent definition arrays behind compatibility exports from `model-config.ts`.
 - `frontend/src/lib/platform-analytics.ts` now owns platform-wide Firestore aggregation, operational cost analytics and rollout policy calculations behind compatibility exports from `firestore-service.ts`.
@@ -152,11 +153,12 @@ Completed foundation extraction:
 14. Extract platform/user settings reads/writes and legacy migration into `frontend/src/lib/modules/settings/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 15. Extract Admin Taxonomy catalogs, sanitizers, load/save helpers, profile filters and request fields into `frontend/src/lib/modules/admin-taxonomy/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 16. Extract Dashboard Stats/Cost aggregations, dashboard snapshot reads and cost breakdown into `frontend/src/lib/modules/dashboard/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+17. Extract Chat conversations, turns, sidecar devices, workspace roots/bindings, sidecar commands, approvals and audit entries into `frontend/src/lib/modules/chat/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 
 Next safe extraction order:
 
-1. Continue splitting high-risk Firestore repository operations only after tests are in place.
-2. Move the last remaining bounded repository slice out of `firestore-service.ts`: Chat, preserving public imports until callers migrate.
+1. The planned Wave 42 bounded `firestore-service.ts` repository extraction phase is complete; define a new scoped plan before further splits.
+2. Continue splitting high-risk Firestore repository operations only after tests are in place.
 
 ## Compatibility Rule
 

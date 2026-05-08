@@ -17,9 +17,11 @@ const mockGetDocs = vi.fn()
 const mockQuery = vi.fn()
 const mockOrderBy = vi.fn()
 const mockLimit = vi.fn()
+const mockStartAfter = vi.fn()
 const mockSetDoc = vi.fn()
 const mockServerTimestamp = vi.fn()
 const mockUpdateDoc = vi.fn()
+const mockDeleteDoc = vi.fn()
 const mockEmitFirestoreAuthSessionInvalid = vi.fn()
 const mockEmitFirestoreAuthAccessDegraded = vi.fn()
 
@@ -56,11 +58,12 @@ vi.mock('firebase/firestore', () => ({
   getDoc: (...args: unknown[]) => mockGetDoc(...args),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
-  deleteDoc: vi.fn(),
+  deleteDoc: (...args: unknown[]) => mockDeleteDoc(...args),
   getDocs: (...args: unknown[]) => mockGetDocs(...args),
   query: (...args: unknown[]) => mockQuery(...args),
   orderBy: (...args: unknown[]) => mockOrderBy(...args),
   limit: (...args: unknown[]) => mockLimit(...args),
+  startAfter: (...args: unknown[]) => mockStartAfter(...args),
   where: vi.fn(),
   serverTimestamp: (...args: unknown[]) => mockServerTimestamp(...args),
 }))
@@ -144,8 +147,28 @@ import {
   getLastThesisAnalysisSession,
   getAcervoDocsWithoutTags,
   updateResearchNotebook,
+  listChatConversations,
+  getChatConversation,
+  createChatConversation,
   ensureChatConversation,
+  renameChatConversation,
+  updateChatConversationEffort,
+  updateChatConversationPreview,
+  deleteChatConversation,
+  listChatTurns,
   appendChatTurn,
+  updateChatTurn,
+  saveChatSidecarDevice,
+  listChatSidecarDevices,
+  saveChatWorkspaceRoot,
+  listChatWorkspaceRoots,
+  bindChatWorkspaceRoot,
+  listChatWorkspaceBindings,
+  createChatSidecarCommand,
+  updateChatSidecarCommand,
+  createChatApprovalRequest,
+  updateChatApprovalRequest,
+  appendChatSidecarAuditEntry,
 } from './firestore-service'
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -164,7 +187,7 @@ function stubStoredUserId(uid: string) {
 
 function makeGetDocsSnapshot(items: Array<{ id: string; data: Record<string, unknown> }>) {
   return {
-    docs: items.map(item => ({ id: item.id, data: () => item.data })),
+    docs: items.map(item => ({ id: item.id, ref: { path: `mock/${item.id}` }, data: () => item.data })),
     empty: items.length === 0,
   }
 }
@@ -223,10 +246,12 @@ describe('saveNotebookDocumentToDocuments', () => {
     mockGetDocs.mockResolvedValue({ docs: [], empty: true })
     mockOrderBy.mockImplementation((...args: unknown[]) => ({ orderBy: args }))
     mockLimit.mockImplementation((value: unknown) => ({ limit: value }))
+    mockStartAfter.mockImplementation((value: unknown) => ({ startAfter: value }))
     mockQuery.mockImplementation((...args: unknown[]) => ({ query: args }))
     mockSetDoc.mockResolvedValue(undefined)
     mockServerTimestamp.mockReturnValue('__server_timestamp__')
     mockUpdateDoc.mockResolvedValue(undefined)
+    mockDeleteDoc.mockResolvedValue(undefined)
     mockEmitFirestoreAuthSessionInvalid.mockReset()
     mockEmitFirestoreAuthAccessDegraded.mockReset()
   })
@@ -927,6 +952,268 @@ describe('saveNotebookDocumentToDocuments', () => {
       { path: 'users/user-123/chat_conversations/conv-1' },
       expect.objectContaining({ updated_at: expect.any(String) }),
     )
+  })
+
+  it('lists and updates chat conversation metadata through the facade', async () => {
+    mockGetDocs.mockResolvedValueOnce(makeGetDocsSnapshot([
+      { id: 'conv-new', data: { title: 'Nova', effort: 'medio', updated_at: '2026-05-08T12:00:00.000Z', created_at: '2026-05-08T11:00:00.000Z' } },
+      { id: 'conv-old', data: { title: 'Antiga', effort: 'rapido', updated_at: '2026-05-07T12:00:00.000Z', created_at: '2026-05-07T11:00:00.000Z' } },
+    ]))
+
+    const listed = await listChatConversations(uid, { limit: 1 })
+
+    expect(listed.items.map(item => item.id)).toEqual(['conv-new'])
+    expect(listed.hasMore).toBe(true)
+    expect(mockCollection).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'chat_conversations',
+    )
+    expect(mockOrderBy).toHaveBeenCalledWith('updated_at', 'desc')
+    expect(mockLimit).toHaveBeenCalledWith(2)
+
+    mockAddDoc.mockResolvedValueOnce({ id: 'conv-created' })
+    const createdId = await createChatConversation(uid, { title: '  Nova pauta  ' })
+
+    expect(createdId).toBe('conv-created')
+    expect(mockAddDoc).toHaveBeenLastCalledWith('col-ref', expect.objectContaining({
+      title: 'Nova pauta',
+      effort: 'medio',
+      last_preview: '',
+    }))
+
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      id: 'conv-new',
+      data: () => ({ title: 'Nova', effort: 'medio', created_at: '2026-05-08T11:00:00.000Z', updated_at: '2026-05-08T12:00:00.000Z' }),
+    })
+    const loaded = await getChatConversation(uid, 'conv-new')
+
+    expect(loaded?.id).toBe('conv-new')
+    expect(loaded?.title).toBe('Nova')
+
+    await renameChatConversation(uid, 'conv-new', '  Tese ajustada  ')
+    expect(mockUpdateDoc).toHaveBeenLastCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-new' },
+      expect.objectContaining({ title: 'Tese ajustada', updated_at: expect.any(String) }),
+    )
+
+    await updateChatConversationEffort(uid, 'conv-new', 'profundo')
+    expect(mockUpdateDoc).toHaveBeenLastCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-new' },
+      expect.objectContaining({ effort: 'profundo', updated_at: expect.any(String) }),
+    )
+
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      id: 'conv-new',
+      data: () => ({ title: 'Nova', effort: 'medio', created_at: '2026-05-08T11:00:00.000Z', updated_at: '2026-05-08T12:00:00.000Z' }),
+    })
+    await updateChatConversationPreview(uid, 'conv-new', 'x'.repeat(260))
+
+    const previewPayload = mockUpdateDoc.mock.calls[mockUpdateDoc.mock.calls.length - 1]?.[1] as { last_preview?: string }
+    expect(previewPayload.last_preview).toHaveLength(238)
+    expect(previewPayload.last_preview?.endsWith('…')).toBe(true)
+  })
+
+  it('lists, finalizes and deletes chat turns through the facade', async () => {
+    mockGetDocs.mockResolvedValueOnce(makeGetDocsSnapshot([
+      { id: 'turn-1', data: { conversation_id: 'conv-1', user_input: 'Oi', trail: [], assistant_markdown: null, status: 'done', created_at: '2026-05-08T10:00:00.000Z' } },
+    ]))
+
+    const turns = await listChatTurns(uid, 'conv-1')
+
+    expect(turns.items).toHaveLength(1)
+    expect(turns.items[0].id).toBe('turn-1')
+    expect(mockCollection).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'chat_conversations', 'conv-1', 'turns',
+    )
+
+    await updateChatTurn(uid, 'conv-1', 'turn-1', {
+      id: 'ignored',
+      conversation_id: 'ignored',
+      status: 'done',
+      assistant_markdown: 'Resposta final',
+    })
+
+    expect(mockUpdateDoc).toHaveBeenNthCalledWith(
+      1,
+      { path: 'users/user-123/chat_conversations/conv-1/turns/turn-1' },
+      expect.not.objectContaining({ id: expect.anything(), conversation_id: expect.anything() }),
+    )
+    expect(mockUpdateDoc).toHaveBeenLastCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-1' },
+      expect.objectContaining({ updated_at: expect.any(String) }),
+    )
+
+    mockGetDocs.mockResolvedValueOnce(makeGetDocsSnapshot([
+      { id: 'turn-1', data: { conversation_id: 'conv-1' } },
+      { id: 'turn-2', data: { conversation_id: 'conv-1' } },
+    ]))
+    await deleteChatConversation(uid, 'conv-1')
+
+    expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/turn-1' })
+    expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/turn-2' })
+    expect(mockDeleteDoc).toHaveBeenLastCalledWith({ path: 'users/user-123/chat_conversations/conv-1' })
+  })
+
+  it('persists sidecar devices, workspace roots and bindings through the facade', async () => {
+    const deviceId = await saveChatSidecarDevice(uid, {
+      id: 'device-1',
+      label: '  ',
+      device_fingerprint: 'fingerprint-1',
+      status: 'online',
+      capabilities: ['read'],
+      paired_at: '2026-05-08T10:00:00.000Z',
+    })
+
+    expect(deviceId).toBe('device-1')
+    expect(mockSetDoc).toHaveBeenLastCalledWith(
+      { path: 'users/user-123/sidecar_devices/device-1' },
+      expect.objectContaining({ label: 'Lexio Sidecar', status: 'online' }),
+      { merge: true },
+    )
+
+    mockGetDocs.mockResolvedValueOnce(makeGetDocsSnapshot([
+      { id: 'device-1', data: { label: 'Lexio Sidecar', device_fingerprint: 'fingerprint-1', status: 'online', capabilities: ['read'], paired_at: '2026-05-08T10:00:00.000Z' } },
+    ]))
+    const devices = await listChatSidecarDevices(uid)
+
+    expect(devices.items[0].id).toBe('device-1')
+    expect(mockOrderBy).toHaveBeenLastCalledWith('last_seen_at', 'desc')
+
+    const rootId = await saveChatWorkspaceRoot(uid, {
+      id: 'root-1',
+      provider: 'local_folder',
+      label: '',
+      permissions: ['read', 'write'],
+      approval_policy: 'always',
+      sync_enabled: true,
+    })
+
+    expect(rootId).toBe('root-1')
+    expect(mockSetDoc).toHaveBeenLastCalledWith(
+      { path: 'users/user-123/chat_workspace_roots/root-1' },
+      expect.objectContaining({ label: 'Workspace', permissions: ['read', 'write'] }),
+      { merge: true },
+    )
+
+    mockGetDocs.mockResolvedValueOnce(makeGetDocsSnapshot([
+      { id: 'root-1', data: { provider: 'local_folder', label: 'Workspace', permissions: ['read'], approval_policy: 'always', sync_enabled: true, created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T11:00:00.000Z' } },
+    ]))
+    const roots = await listChatWorkspaceRoots(uid)
+
+    expect(roots.items[0].id).toBe('root-1')
+
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      id: 'conv-1',
+      data: () => ({ title: 'Chat', effort: 'medio', created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T11:00:00.000Z' }),
+    })
+    const bindingId = await bindChatWorkspaceRoot(uid, 'conv-1', {
+      root_id: 'root-1',
+      provider: 'local_folder',
+      label: '',
+      permissions: ['read'],
+      approval_policy: 'always',
+    })
+
+    expect(bindingId).toBe('root-1')
+    expect(mockSetDoc).toHaveBeenLastCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-1/workspace_bindings/root-1' },
+      expect.objectContaining({ conversation_id: 'conv-1', label: 'local_folder' }),
+      { merge: true },
+    )
+
+    mockGetDocs.mockResolvedValueOnce(makeGetDocsSnapshot([
+      { id: 'root-1', data: { conversation_id: 'conv-1', root_id: 'root-1', provider: 'local_folder', label: 'Workspace', permissions: ['read'], approval_policy: 'always', created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T11:00:00.000Z' } },
+    ]))
+    const bindings = await listChatWorkspaceBindings(uid, 'conv-1')
+
+    expect(bindings.items[0].root_id).toBe('root-1')
+  })
+
+  it('persists sidecar commands, approvals and audit entries through the facade', async () => {
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      id: 'conv-1',
+      data: () => ({ title: 'Chat', effort: 'medio', created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T11:00:00.000Z' }),
+    })
+    mockAddDoc
+      .mockResolvedValueOnce({ id: 'cmd-1' })
+      .mockResolvedValueOnce({ id: 'approval-1' })
+      .mockResolvedValueOnce({ id: 'audit-1' })
+
+    const commandId = await createChatSidecarCommand(uid, 'conv-1', {
+      root_id: 'root-1',
+      operation: 'read',
+      path: 'peticao.md',
+    })
+
+    expect(commandId).toBe('cmd-1')
+    expect(mockAddDoc).toHaveBeenLastCalledWith('col-ref', expect.objectContaining({
+      conversation_id: 'conv-1',
+      status: 'waiting_approval',
+      operation: 'read',
+    }))
+
+    await updateChatSidecarCommand(uid, 'conv-1', 'cmd-1', {
+      id: 'ignored',
+      conversation_id: 'ignored',
+      created_at: 'ignored',
+      status: 'completed',
+      result_summary: 'Arquivo lido',
+    })
+
+    expect(mockUpdateDoc).toHaveBeenLastCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-1/sidecar_commands/cmd-1' },
+      expect.not.objectContaining({ id: expect.anything(), conversation_id: expect.anything(), created_at: expect.anything() }),
+    )
+
+    const approvalId = await createChatApprovalRequest(uid, 'conv-1', {
+      command_ids: ['cmd-1'],
+      title: 'Ler arquivo',
+      summary: 'Permite leitura de peticao.md',
+      risk_level: 'low',
+      requested_permissions: ['read'],
+    })
+
+    expect(approvalId).toBe('approval-1')
+    expect(mockAddDoc).toHaveBeenLastCalledWith('col-ref', expect.objectContaining({
+      conversation_id: 'conv-1',
+      status: 'pending',
+      command_ids: ['cmd-1'],
+    }))
+
+    await updateChatApprovalRequest(uid, 'conv-1', 'approval-1', {
+      id: 'ignored',
+      conversation_id: 'ignored',
+      created_at: 'ignored',
+      status: 'approved',
+      decided_by: uid,
+    })
+
+    expect(mockUpdateDoc).toHaveBeenLastCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-1/approvals/approval-1' },
+      expect.objectContaining({ status: 'approved', decided_by: uid, updated_at: expect.any(String) }),
+    )
+
+    const auditId = await appendChatSidecarAuditEntry(uid, 'conv-1', {
+      command_id: 'cmd-1',
+      root_id: 'root-1',
+      operation: 'read',
+      actor: 'sidecar',
+      status: 'executed',
+      message: 'Arquivo lido com sucesso',
+    })
+
+    expect(auditId).toBe('audit-1')
+    expect(mockAddDoc).toHaveBeenLastCalledWith('col-ref', expect.objectContaining({
+      conversation_id: 'conv-1',
+      operation: 'read',
+      actor: 'sidecar',
+      status: 'executed',
+    }))
   })
 })
 
