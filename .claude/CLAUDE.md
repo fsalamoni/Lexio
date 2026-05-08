@@ -1,6 +1,6 @@
 # Lexio — Referência Completa do Projeto
 
-> Última atualização: 16 de abril de 2026
+> Última atualização: 7 de maio de 2026
 
 ---
 
@@ -80,6 +80,7 @@ cd frontend
 npm install            # instalar dependências
 npm run dev            # servidor dev (porta 3000)
 npm run build          # build produção → dist/
+npm run architecture:check  # validar fronteiras core/módulos
 npm run typecheck      # verificar erros TS sem buildar
 npm run preview        # pré-visualizar build
 ```
@@ -823,6 +824,8 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 12. Manter modo demo funcional — atualizar `demo/data.ts` se adicionar novas rotas de API.
 13. Configurações pessoais devem persistir em `/users/{uid}/settings/preferences`; não reintroduzir dependência runtime em `/settings/platform`.
 14. Toda nova implementação deve nascer modularizada: núcleo compartilhado em `lib/`, módulos de domínio/pipeline isolados, e nunca criar dependência de `lib` para `components`.
+15. Antes de mover imports ou extrair módulos, rode `cd frontend && npm run architecture:check`; o CI bloqueia `lib -> components`, `lib -> pages`, `core -> modules`, imports privados entre módulos e endpoints OpenRouter fora de adapters aprovados.
+16. Para novas funcionalidades modulares, consulte `docs/architecture/domain-map.md`, `docs/architecture/module-contracts.md`, `docs/architecture/dependency-rules.md` e os guias em `docs/guides/`.
 
 ---
 

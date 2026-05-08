@@ -45,28 +45,37 @@ import {
   setEmentaInCache,
 } from './generation-cache'
 import { getFlagState, isEnabled, isTruthyFlag } from './feature-flags'
+import {
+  MAX_ACERVO_SELECTED_DOCS,
+  AREA_NAMES,
+  buildAcervoBuscadorSystem,
+  buildAcervoBuscadorUser,
+  buildAcervoCompiladorSystem,
+  buildAcervoCompiladorUser,
+  buildAcervoRevisorSystem,
+  buildAcervoRevisorUser,
+  DOC_TYPE_NAMES,
+  buildPesquisadorUserPrompt,
+  buildProfileBlock,
+  extractJsonPayload,
+  extractSearchKeywords,
+  selectAcervoDocsForBuscador,
+  type AcervoSearchDoc,
+  type UserProfileForGeneration,
+} from './modules/documents'
+
+export {
+  AREA_NAMES,
+  DOC_TYPE_NAMES,
+  buildPesquisadorUserPrompt,
+  buildProfileBlock,
+  selectAcervoDocsForBuscador,
+} from './modules/documents'
+export type { UserProfileForGeneration } from './modules/documents'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type GenerationProgress = DocumentPipelineProgress
-
-/** Subset of user profile relevant to document generation. */
-export interface UserProfileForGeneration {
-  institution?: string
-  position?: string
-  jurisdiction?: string
-  primary_areas?: string[]
-  specializations?: string[]
-  formality_level?: string
-  connective_style?: string
-  citation_style?: string
-  preferred_expressions?: string[]
-  avoided_expressions?: string[]
-  paragraph_length?: string
-  detail_level?: string
-  argument_depth?: string
-  include_opposing_view?: boolean
-}
 
 type ProgressCallback = (p: GenerationProgress) => void
 
@@ -82,20 +91,11 @@ const MAX_THESES_FALLBACK = 20
 const MAX_THESES_INJECTED = 15
 /** Max total characters of acervo reference excerpts. */
 const MAX_ACERVO_CONTEXT_CHARS = 6000
-/** Max acervo documents the buscador can select. */
-const MAX_ACERVO_SELECTED_DOCS = 3
 /** Max total characters sent to the compilador agent. */
 const MAX_ACERVO_COMPILADOR_CHARS = 120000
 /** Max chars of document text used to generate an ementa. */
 const MAX_EMENTA_SOURCE_CHARS = 8000
-/**
- * Max chars considered when extracting JSON payload from triage output.
- * Keeps parsing bounded when models return very large markdown blocks.
- */
-const MAX_TRIAGE_JSON_PAYLOAD_CHARS = 60_000
 // NOTE: No default models — all models must be configured in admin panel
-/** Max pre-filtered documents sent to the buscador LLM. */
-const MAX_PREFILTERED_DOCS = 30
 /** Session cache key for document pipeline model map. */
 const DOCUMENT_AGENT_MODELS_CACHE_KEY = 'lexio:document-agent-models:v1'
 /** Keep cache short to reduce stale settings risk after admin changes. */
@@ -116,19 +116,6 @@ interface RedatorRuntimeConfig {
   cap10kEnabled: boolean
   rollbackEnabled: boolean
   rollbackMinQuality: number
-}
-
-type AcervoSearchDoc = {
-  id: string
-  filename: string
-  created_at: string
-  ementa?: string
-  ementa_keywords?: string[]
-  natureza?: string
-  area_direito?: string[]
-  assuntos?: string[]
-  tipo_documento?: string
-  contexto?: string[]
 }
 
 type AdminDocTypeTemplate = {
@@ -325,18 +312,6 @@ export async function resolveParallelPreloadWithSequentialFallback<T>(
   return loadSequentially()
 }
 
-export function selectAcervoDocsForBuscador(
-  docs: AcervoSearchDoc[],
-  searchKeywords: string[],
-  keywordPrefilterEnabled: boolean,
-): AcervoSearchDoc[] {
-  if (!keywordPrefilterEnabled) {
-    return docs.slice(0, MAX_PREFILTERED_DOCS)
-  }
-
-  return preFilterAcervoDocs(docs, searchKeywords)
-}
-
 // ── API key retrieval ─────────────────────────────────────────────────────────
 
 export async function getOpenRouterKey(uid?: string): Promise<string> {
@@ -363,122 +338,6 @@ export async function getOpenRouterKey(uid?: string): Promise<string> {
   throw new Error(
     'Nenhuma chave de provedor de IA configurada. Acesse Configurações → Provedores de IA.',
   )
-}
-
-// ── Document type metadata ────────────────────────────────────────────────────
-
-export const DOC_TYPE_NAMES: Record<string, string> = {
-  parecer: 'Parecer Jurídico',
-  peticao_inicial: 'Petição Inicial',
-  contestacao: 'Contestação',
-  recurso: 'Recurso',
-  acao_civil_publica: 'Ação Civil Pública',
-  sentenca: 'Sentença',
-  mandado_seguranca: 'Mandado de Segurança',
-  habeas_corpus: 'Habeas Corpus',
-  agravo: 'Agravo de Instrumento',
-  embargos_declaracao: 'Embargos de Declaração',
-}
-
-export const AREA_NAMES: Record<string, string> = {
-  administrative: 'Direito Administrativo',
-  constitutional: 'Direito Constitucional',
-  civil: 'Direito Civil',
-  tax: 'Direito Tributário',
-  labor: 'Direito do Trabalho',
-  criminal: 'Direito Penal',
-  criminal_procedure: 'Processo Penal',
-  civil_procedure: 'Processo Civil',
-  consumer: 'Direito do Consumidor',
-  environmental: 'Direito Ambiental',
-  business: 'Direito Empresarial',
-  family: 'Direito de Família',
-  inheritance: 'Direito das Sucessões',
-  social_security: 'Direito Previdenciário',
-  electoral: 'Direito Eleitoral',
-  international: 'Direito Internacional',
-  digital: 'Direito Digital',
-}
-
-// ── Profile-aware prompt helpers ──────────────────────────────────────────────
-
-/**
- * Build a contextual block that injects user profile preferences into prompts,
- * so agents adapt style, depth and citations to the user's professional role.
- */
-export function buildProfileBlock(profile?: UserProfileForGeneration | null): string {
-  if (!profile) return ''
-  const parts: string[] = []
-
-  if (profile.institution || profile.position) {
-    const role = [profile.position, profile.institution].filter(Boolean).join(' — ')
-    parts.push(`<perfil_profissional>O usuário é ${role}.`)
-    if (profile.jurisdiction) parts.push(`Jurisdição: ${profile.jurisdiction}.`)
-    if (profile.specializations?.length) {
-      parts.push(`Especializações: ${profile.specializations.join(', ')}.`)
-    }
-    parts.push('Adapte a linguagem e as referências legais ao contexto profissional do usuário.</perfil_profissional>')
-  }
-
-  const styleParts: string[] = []
-  if (profile.formality_level === 'formal') {
-    styleParts.push('linguagem jurídica clássica e formal')
-  } else if (profile.formality_level === 'semiformal') {
-    styleParts.push('linguagem clara e objetiva')
-  }
-  if (profile.connective_style === 'classico') {
-    styleParts.push('conectivos clássicos (destarte, outrossim, mormente)')
-  } else if (profile.connective_style === 'moderno') {
-    styleParts.push('conectivos modernos (portanto, além disso, nesse sentido)')
-  }
-  if (profile.paragraph_length === 'curto') {
-    styleParts.push('parágrafos curtos (3-5 linhas)')
-  } else if (profile.paragraph_length === 'longo') {
-    styleParts.push('parágrafos longos e densos (10+ linhas)')
-  }
-  if (profile.citation_style === 'footnote') {
-    styleParts.push('citações em notas de rodapé quando possível')
-  } else if (profile.citation_style === 'abnt') {
-    styleParts.push('citações no formato ABNT')
-  }
-  if (styleParts.length > 0) {
-    parts.push(`<estilo_redacao>Preferências de redação: ${styleParts.join('; ')}.</estilo_redacao>`)
-  }
-
-  if (profile.preferred_expressions?.length) {
-    parts.push(`<expressoes_preferidas>Use quando adequado: ${profile.preferred_expressions.join(', ')}.</expressoes_preferidas>`)
-  }
-  if (profile.avoided_expressions?.length) {
-    parts.push(`<expressoes_evitar>NUNCA use: ${profile.avoided_expressions.join(', ')}.</expressoes_evitar>`)
-  }
-
-  // Depth directives
-  if (profile.argument_depth === 'profundo' || profile.detail_level === 'exaustivo') {
-    parts.push(
-      '<profundidade>',
-      'O usuário solicita análise EXAUSTIVA e PROFUNDA.',
-      'Para CADA argumento: transcreva o artigo de lei citado entre aspas,',
-      'cite súmulas com número e enunciado completo,',
-      'mencione autores doutrinários com nome, obra e posição,',
-      'e aplique ao caso concreto com subsunção detalhada.',
-      'Mínimo de 5 referências legislativas, 3 jurisprudenciais e 2 doutrinárias por tese.',
-      '</profundidade>',
-    )
-  } else if (profile.argument_depth === 'moderado' || profile.detail_level === 'detalhado') {
-    parts.push(
-      '<profundidade>',
-      'Análise DETALHADA com fundamentação sólida.',
-      'Transcreva artigos de lei relevantes, cite jurisprudência consolidada',
-      'e mencione posições doutrinárias quando pertinente.',
-      '</profundidade>',
-    )
-  }
-
-  if (profile.include_opposing_view) {
-    parts.push('<visao_contraria>Inclua análise da visão contrária e contra-argumentação em cada tese.</visao_contraria>')
-  }
-
-  return parts.length > 0 ? '\n' + parts.join('\n') : ''
 }
 
 // ── Prompt builders ───────────────────────────────────────────────────────────
@@ -737,254 +596,6 @@ function buildRedatorUser(
     'Texto puro, sem markdown.',
   )
   return parts.join('\n')
-}
-
-export function buildPesquisadorUserPrompt(
-  request: string,
-  triagem: string,
-  knowledgeBase: string,
-  acervoBase?: string,
-): string {
-  const parts = [
-    `<triagem>${triagem}</triagem>`,
-    `<solicitacao>${request}</solicitacao>`,
-  ]
-
-  if (acervoBase) {
-    parts.push(
-      '<documento_base_acervo>',
-      'O texto abaixo é um documento base compilado a partir de documentos anteriores do acervo do usuário.',
-      'Ele contém fundamentação jurídica já consolidada pelo usuário em trabalhos anteriores.',
-      'Use-o como REFERÊNCIA PRINCIPAL. Foque sua pesquisa nas seções marcadas com [COMPLEMENTAR]',
-      'e em enriquecer a fundamentação existente. NÃO descarte o conteúdo do acervo — ele é a base.',
-      acervoBase,
-      '</documento_base_acervo>',
-    )
-  }
-
-  if (knowledgeBase) {
-    parts.push(
-      '<base_conhecimento>',
-      'Use as teses e documentos de referência abaixo como material COMPLEMENTAR à sua pesquisa.',
-      'Incorpore as teses relevantes, mas SEMPRE verifique e enriqueça com suas próprias referências.',
-      knowledgeBase,
-      '</base_conhecimento>',
-    )
-  }
-
-  parts.push(
-    acervoBase
-      ? 'Realize pesquisa jurídica COMPLEMENTAR ao documento base do acervo. Foque nas lacunas marcadas com [COMPLEMENTAR]. TRANSCREVA artigos de lei entre aspas. Inclua legislação, jurisprudência e doutrina que COMPLEMENTEM a fundamentação já existente.'
-      : 'Realize pesquisa jurídica EXAUSTIVA sobre o tema. TRANSCREVA artigos de lei entre aspas. Inclua legislação com texto dos dispositivos, jurisprudência com enunciados de súmulas, doutrina com autor e obra, e princípios constitucionais.',
-  )
-
-  return parts.join('\n')
-}
-
-// ── Acervo-based pre-generation agents ────────────────────────────────────────
-
-/**
- * Buscador de Acervo — Ranks acervo documents by relevance to the new request.
- * Uses triage output (tema, keywords, subtopics) to find the most relevant
- * prior documents. Returns a JSON array of selected document IDs.
- */
-function buildAcervoBuscadorSystem(): string {
-  return [
-    'Você é um ESPECIALISTA EM RECUPERAÇÃO DE DOCUMENTOS JURÍDICOS.',
-    'Sua função é analisar ementas e tags de classificação de documentos do acervo e selecionar os mais relevantes.',
-    '',
-    '<regras>',
-    '1. Analise o NOME DO ARQUIVO — contém o tema principal (ex: "NEPOTISMO", "IMPROBIDADE").',
-    '2. Analise a EMENTA — contém tipo, assunto, síntese, áreas jurídicas e tópicos.',
-    '3. Analise as TAGS DE CLASSIFICAÇÃO quando disponíveis:',
-    '   - NATUREZA: consultivo, executório, transacional, negocial, doutrinário, decisório',
-    '   - ÁREA DO DIREITO: disciplinas jurídicas do conteúdo',
-    '   - ASSUNTOS: matérias da fundamentação',
-    '   - TIPO: classificação do tipo documental (parecer, petição, sentença, etc.)',
-    '   - CONTEXTO: circunstâncias fáticas do caso',
-    '4. Selecione APENAS documentos cujas tags/ementa se enquadram no contexto da solicitação.',
-    '5. Priorize: (a) MESMA NATUREZA e ÁREA, (b) MESMO ASSUNTO e TIPO, (c) mais ESPECÍFICOS, (d) mais RECENTES.',
-    '6. Máximo de 3 documentos. Se houver mais candidatos relevantes, filtre pelos mais específicos e recentes.',
-    '7. Score >= 0.7 para documentos sobre a mesma área E mesma situação.',
-    '8. Se nenhum for relevante, retorne lista vazia.',
-    '</regras>',
-    '',
-    '<formato_resposta>',
-    'Responda APENAS com JSON puro (sem markdown, sem ```), no formato:',
-    '{"selected": [{"id": "doc_id_exato", "score": 0.95, "reason": "Motivo"}]}',
-    'Onde score é de 0.0 a 1.0 (1.0 = tema idêntico).',
-    'O campo "id" deve conter o ID EXATO do documento.',
-    'Se nenhum for relevante: {"selected": []}',
-    '</formato_resposta>',
-  ].join('\n')
-}
-
-function buildAcervoBuscadorUser(
-  triagem: string,
-  request: string,
-  docType: string,
-  acervoDocs: Array<{ id: string; filename: string; summary: string; created_at: string; natureza?: string; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }>,
-): string {
-  const typeName = DOC_TYPE_NAMES[docType] ?? docType
-  const docsListStr = acervoDocs.map((d, i) => {
-    const parts = [
-      `[${i + 1}] ID: ${d.id}`,
-      `    Arquivo: ${d.filename}`,
-      `    Data: ${d.created_at}`,
-      `    Ementa: ${d.summary}`,
-    ]
-    if (d.natureza) parts.push(`    Natureza: ${d.natureza}`)
-    if (d.area_direito?.length) parts.push(`    Áreas: ${d.area_direito.join(', ')}`)
-    if (d.assuntos?.length) parts.push(`    Assuntos: ${d.assuntos.join(', ')}`)
-    if (d.tipo_documento) parts.push(`    Tipo: ${d.tipo_documento}`)
-    if (d.contexto?.length) parts.push(`    Contexto: ${d.contexto.join('; ')}`)
-    return parts.join('\n')
-  }).join('\n\n')
-
-  return [
-    `<tipo_documento>${typeName}</tipo_documento>`,
-    `<solicitacao>${request}</solicitacao>`,
-    `<triagem>${triagem}</triagem>`,
-    '',
-    `<acervo_disponivel>`,
-    `Total de documentos: ${acervoDocs.length}`,
-    '',
-    docsListStr,
-    `</acervo_disponivel>`,
-    '',
-    'Selecione SOMENTE documentos cuja ementa se enquadra no contexto desta solicitação.',
-    'Máximo de 3 documentos. Se houver muitos candidatos, escolha os mais específicos e mais recentes.',
-  ].join('\n')
-}
-
-/**
- * Compilador de Base — Merges selected acervo documents into a unified base document.
- */
-function buildAcervoCompiladorSystem(
-  docType: string,
-  tema: string,
-  profile?: UserProfileForGeneration | null,
-): string {
-  const typeName = DOC_TYPE_NAMES[docType] ?? docType
-  const profileBlock = buildProfileBlock(profile)
-  return [
-    `Você é um COMPILADOR JURÍDICO ESPECIALISTA, responsável por criar um documento base a partir de documentos anteriores do acervo do usuário.`,
-    profileBlock,
-    '',
-    `<objetivo>`,
-    `Criar um ${typeName} BASE sobre o tema "${tema}" a partir dos documentos de referência fornecidos.`,
-    `O usuário reutiliza fundamentações de documentos anteriores — sua tarefa é compilar e unificar.`,
-    `</objetivo>`,
-    '',
-    '<regras_compilacao>',
-    '1. PRESERVAR ipsis litteris todas as citações jurisprudenciais (ementas, acórdãos, súmulas) — NÃO altere nem resuma.',
-    '2. PRESERVAR ipsis litteris todas as citações doutrinárias (trechos entre aspas com autor e obra) — NÃO altere.',
-    '3. PRESERVAR ipsis litteris todas as transcrições de dispositivos legais (artigos de lei).',
-    '4. Quando textos IDÊNTICOS aparecerem em mais de um documento, mantenha APENAS UMA cópia.',
-    '5. Quando textos SEMELHANTES (mas não idênticos) existirem, priorize:',
-    '   a) O texto mais ESPECÍFICO (com mais detalhes e fundamentação)',
-    '   b) O texto mais RECENTE (do documento com data mais recente)',
-    '6. ADAPTE cabeçalhos, nomes de partes, localidades e datas ao NOVO CASO descrito na solicitação.',
-    '7. MANTENHA a estrutura lógica do tipo de documento (ementa, relatório, fundamentação, conclusão).',
-    '8. Marque com [ADAPTAR] trechos que contenham dados do caso anterior e precisam ser ajustados ao novo caso.',
-    '9. Marque com [COMPLEMENTAR] seções da nova solicitação que NÃO foram cobertas pelos documentos de referência.',
-    '10. NÃO invente conteúdo novo — apenas compile o que já existe nos documentos de referência.',
-    '</regras_compilacao>',
-    '',
-    '<formato>',
-    'Texto PURO. Sem markdown. Títulos em MAIÚSCULAS.',
-    'Parágrafos separados por duas quebras de linha.',
-    '</formato>',
-  ].join('\n')
-}
-
-function buildAcervoCompiladorUser(
-  request: string,
-  triagem: string,
-  docType: string,
-  selectedDocs: Array<{ filename: string; text_content: string; created_at: string }>,
-): string {
-  const typeName = DOC_TYPE_NAMES[docType] ?? docType
-  const docsStr = selectedDocs.map((d, i) =>
-    `<documento_referencia_${i + 1}>\nArquivo: ${d.filename}\nData: ${d.created_at}\n\n${d.text_content}\n</documento_referencia_${i + 1}>`,
-  ).join('\n\n')
-
-  return [
-    `<tipo_documento>${typeName}</tipo_documento>`,
-    `<solicitacao>${request}</solicitacao>`,
-    `<triagem>${triagem}</triagem>`,
-    '',
-    '<documentos_de_referencia>',
-    docsStr,
-    '</documentos_de_referencia>',
-    '',
-    `Compile os documentos de referência acima em um ${typeName} BASE unificado.`,
-    'Siga TODAS as regras de compilação. Preserve citações literalmente.',
-    'Remova duplicatas. Priorize textos mais específicos e recentes.',
-    'Adapte os dados factuais ao novo caso descrito na solicitação.',
-    'Marque com [ADAPTAR] e [COMPLEMENTAR] onde necessário.',
-  ].join('\n')
-}
-
-/**
- * Revisor de Base — Reviews the compiled base document for coherence and completeness.
- */
-function buildAcervoRevisorSystem(
-  docType: string,
-  tema: string,
-  profile?: UserProfileForGeneration | null,
-): string {
-  const typeName = DOC_TYPE_NAMES[docType] ?? docType
-  const profileBlock = buildProfileBlock(profile)
-  return [
-    `Você é REVISOR JURÍDICO SÊNIOR, especialista em ${typeName}.`,
-    profileBlock,
-    '',
-    `<objetivo>`,
-    `Revisar o documento base compilado sobre "${tema}" e entregá-lo pronto para as etapas seguintes do pipeline de geração.`,
-    `</objetivo>`,
-    '',
-    '<regras_revisao>',
-    '1. Verifique se NÃO restaram dados do caso anterior (nomes, localidades, datas erradas) — corrija para os dados do NOVO caso.',
-    '2. Substitua todas as marcações [ADAPTAR] por dados reais do novo caso (extraídos da solicitação e triagem).',
-    '3. MANTENHA as marcações [COMPLEMENTAR] — elas serão preenchidas pelos agentes seguintes.',
-    '4. Verifique a COERÊNCIA do fluxo lógico: introdução → fundamentação → conclusão.',
-    '5. Verifique se as TRANSIÇÕES entre parágrafos fazem sentido após a compilação.',
-    '6. NÃO altere citações jurisprudenciais, doutrinárias ou transcrições de lei — elas devem permanecer LITERAIS.',
-    '7. NÃO invente conteúdo novo — apenas revise e ajuste o que já existe.',
-    '8. NÃO remova conteúdo válido — apenas reorganize se necessário para melhor fluxo.',
-    '9. Se o texto está bom, retorne-o como está, sem alterações desnecessárias.',
-    '</regras_revisao>',
-    '',
-    '<formato>',
-    'Texto PURO. Sem markdown. Títulos em MAIÚSCULAS.',
-    'Parágrafos separados por duas quebras de linha.',
-    '</formato>',
-  ].join('\n')
-}
-
-function buildAcervoRevisorUser(
-  request: string,
-  triagem: string,
-  docType: string,
-  compiledBase: string,
-): string {
-  const typeName = DOC_TYPE_NAMES[docType] ?? docType
-  return [
-    `<tipo_documento>${typeName}</tipo_documento>`,
-    `<solicitacao>${request}</solicitacao>`,
-    `<triagem>${triagem}</triagem>`,
-    '',
-    '<documento_base_compilado>',
-    compiledBase,
-    '</documento_base_compilado>',
-    '',
-    `Revise este ${typeName} base compilado.`,
-    'Corrija dados do caso anterior que não foram adaptados.',
-    'Verifique coerência e fluxo lógico.',
-    'Mantenha todas as marcações [COMPLEMENTAR] para os agentes seguintes.',
-    'Preserve todas as citações literalmente.',
-  ].join('\n')
 }
 
 // ── Ementa generation ─────────────────────────────────────────────────────────
@@ -1251,129 +862,6 @@ export async function generateAcervoTags(
     contexto,
     llm_execution,
   }
-}
-
-/**
- * Pre-filter acervo documents by keyword matching against filenames and ementas.
- * Returns documents sorted by relevance (most keyword matches first).
- * Prioritizes: natureza, área, assuntos, tipo_documento, then contexto (last).
- */
-function preFilterAcervoDocs(
-  docs: AcervoSearchDoc[],
-  searchKeywords: string[],
-): typeof docs {
-  if (searchKeywords.length === 0) return docs.slice(0, MAX_PREFILTERED_DOCS)
-
-  const normalizedSearch = searchKeywords.map(k => k.toLowerCase().trim())
-
-  const scored = docs.map(d => {
-    let score = 0
-    const filenameLower = d.filename.toLowerCase()
-    const ementaLower = (d.ementa || '').toLowerCase()
-    const areasLower = (d.area_direito || []).map(a => a.toLowerCase())
-    const assuntosLower = (d.assuntos || []).map(a => a.toLowerCase())
-    const tipoLower = (d.tipo_documento || '').toLowerCase()
-    const contextoLower = (d.contexto || []).map(c => c.toLowerCase())
-
-    for (const keyword of normalizedSearch) {
-      // Filename match (high weight — filenames are curated by user)
-      if (filenameLower.includes(keyword)) score += 3
-      // Ementa keyword match (medium weight)
-      if (d.ementa_keywords?.some(ek => ek.includes(keyword) || keyword.includes(ek))) score += 2
-      // Ementa text match (lower weight)
-      if (ementaLower.includes(keyword)) score += 1
-      // Tag-based matches (high relevance — structured fields first)
-      if (areasLower.some(a => a.includes(keyword) || keyword.includes(a))) score += 2
-      if (assuntosLower.some(a => a.includes(keyword) || keyword.includes(a))) score += 2
-      // Tipo documento match
-      if (tipoLower && (tipoLower.includes(keyword) || keyword.includes(tipoLower))) score += 2
-      // Contexto match (last priority among tags)
-      if (contextoLower.some(c => c.includes(keyword) || keyword.includes(c))) score += 1
-    }
-
-    return { ...d, score }
-  })
-
-  return scored
-    .filter(d => d.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, MAX_PREFILTERED_DOCS)
-}
-
-/**
- * Strip markdown code fences and extract the first JSON object from an LLM response.
- * Many models wrap their JSON output in ```json ... ``` blocks; this ensures we always
- * get the raw JSON string regardless of formatting.
- */
-function extractJsonPayload(raw: string): string {
-  let jsonStr = raw.trim()
-  if (jsonStr.length > MAX_TRIAGE_JSON_PAYLOAD_CHARS) {
-    jsonStr = jsonStr.slice(0, MAX_TRIAGE_JSON_PAYLOAD_CHARS)
-  }
-
-  const fenceStart = jsonStr.indexOf('```')
-  if (fenceStart >= 0) {
-    const afterFence = jsonStr.indexOf('\n', fenceStart)
-    const contentStart = afterFence >= 0 ? afterFence + 1 : fenceStart + 3
-    const fenceEnd = jsonStr.indexOf('```', contentStart)
-    if (fenceEnd > contentStart) {
-      jsonStr = jsonStr.slice(contentStart, fenceEnd).trim()
-    } else {
-      jsonStr = jsonStr.slice(contentStart).trim()
-    }
-  }
-
-  const objectStart = jsonStr.indexOf('{')
-  const objectEnd = jsonStr.lastIndexOf('}')
-  if (objectStart >= 0 && objectEnd > objectStart) {
-    jsonStr = jsonStr.slice(objectStart, objectEnd + 1)
-  }
-
-  return jsonStr
-}
-
-/**
- * Extract search keywords from triage result for pre-filtering.
- */
-function extractSearchKeywords(triageContent: string, request: string): string[] {
-  const keywords: string[] = []
-
-  // Try to parse triage JSON for structured keywords.
-  // Strip markdown fences first — some models wrap JSON in ```json ... ``` blocks.
-  try {
-    const triage = JSON.parse(extractJsonPayload(triageContent)) as Record<string, unknown>
-    if (typeof triage.tema === 'string') {
-      keywords.push(...triage.tema.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3))
-    }
-    if (Array.isArray(triage.subtemas)) {
-      for (const sub of triage.subtemas.filter((v): v is string => typeof v === 'string')) {
-        keywords.push(...sub.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3))
-      }
-    }
-    if (Array.isArray(triage.palavras_chave)) {
-      for (const kw of triage.palavras_chave.filter((v): v is string => typeof v === 'string')) {
-        keywords.push(kw.toLowerCase().trim())
-      }
-    }
-  } catch {
-    // Not JSON — fall back to word extraction from the plain text portion only,
-    // filtering out structural tokens that pollute keyword matching.
-    const plainText = triageContent
-      .replace(/```[\s\S]*?```/g, ' ') // strip code fences
-      .replace(/[{}[\]",:]/g, ' ')     // strip JSON structural chars
-    keywords.push(...plainText.toLowerCase().split(/\s+/).filter(w => w.length > 4 && !/^[a-z_]+:$/.test(w)))
-  }
-
-  // Also extract main keywords from the request itself
-  const requestWords = request.toLowerCase()
-    .replace(/[.,;:!?()"]/g, ' ')
-    .split(/\s+/)
-    .filter(w => w.length > 4)
-    .filter(w => !['sobre', 'entre', 'sendo', 'quando', 'como', 'para', 'com', 'qual', 'quais', 'possível', 'prática', 'envolvendo', 'municipal'].includes(w))
-  keywords.push(...requestWords)
-
-  // Deduplicate
-  return [...new Set(keywords)]
 }
 
 // ── Advanced agent prompt builders ────────────────────────────────────────────

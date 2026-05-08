@@ -1,6 +1,6 @@
 # Firestore Data Boundaries
 
-Last update: 2026-05-07
+Last update: 2026-05-08
 
 ## Purpose
 
@@ -8,14 +8,14 @@ This document defines which Firestore data belongs to Lexio and how future agent
 
 ## Database Boundary
 
-Lexio is moving toward a dedicated Firestore database in the same Firebase project.
+Lexio uses a dedicated Firestore database in the same Firebase project for the validated cutover builds, while preserving the legacy database as a rollback source.
 
-- Source during migration: `(default)`
-- Target for Lexio: `lexio-prod`
+- Source during migration and rollback: `(default)`
+- Target for Lexio data: `lexio-prod`
 - Runtime selector: `VITE_FIRESTORE_DATABASE_ID`
-- Runtime fallback: `(default)`
+- Runtime fallback when the selector is absent: `(default)`
 
-The fallback is required until shadow migration and cutover are fully validated.
+The 2026-05-07 shadow migration copied 820 Lexio documents to `lexio-prod` and parity validation found 0 missing, 0 extra and 0 mismatched documents. As of 2026-05-08, PR #143 validates frontend and preview builds against `lexio-prod`; production cutover is only complete after merge/deploy and authenticated smoke.
 
 ## Known Lexio Paths
 
@@ -71,7 +71,14 @@ research_notebooks
 memory
 chat_conversations
 turns
+sidecar_commands
+approvals
+audit
 ```
+
+Backup/migration classification also recognizes owner-scoped operational collections that are not current admin collection-group reads: `sidecar_devices`, `chat_workspace_roots` and `workspace_bindings`.
+
+Chat audit entries are intentionally append-only in client rules. Deleting a conversation may remove mutable operational subcollections such as turns, bindings, commands and approvals; audit retention or physical cleanup requires a separate privileged cleanup plan.
 
 Any target database must have rules and indexes compatible with these collection-group reads.
 

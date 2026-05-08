@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:smoke": "vite build --mode smoke",
+    "architecture:check": "node ../scripts/lexio-architecture-guardrails.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "preview:smoke": "vite preview --host 127.0.0.1 --port 4173",

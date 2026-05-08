@@ -1,8 +1,38 @@
 import { describe, expect, it } from 'vitest'
 
-import { AGENT_CONFIG_DEFS } from './model-config'
+import {
+  ACERVO_CLASSIFICADOR_AGENT_DEFS,
+  ACERVO_EMENTA_AGENT_DEFS,
+  AGENT_CONFIG_DEFS,
+  AUDIO_PIPELINE_AGENT_DEFS,
+  CHAT_ORCHESTRATOR_AGENT_DEFS,
+  CONTEXT_DETAIL_AGENT_DEFS,
+  DOCUMENT_V3_PIPELINE_AGENT_DEFS,
+  NOTEBOOK_ACERVO_AGENT_DEFS,
+  PIPELINE_AGENT_DEFS,
+  PRESENTATION_PIPELINE_AGENT_DEFS,
+  RESEARCH_NOTEBOOK_AGENT_DEFS,
+  THESIS_ANALYST_AGENT_DEFS,
+  VIDEO_PIPELINE_AGENT_DEFS,
+} from './model-config'
+import * as pipelineAgentDefs from './pipelines/agent-definitions'
 
 describe('user-scoped agent configuration coverage', () => {
+  it('keeps model-config as the compatibility facade for per-pipeline agent definitions', () => {
+    expect(PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.PIPELINE_AGENT_DEFS)
+    expect(THESIS_ANALYST_AGENT_DEFS).toBe(pipelineAgentDefs.THESIS_ANALYST_AGENT_DEFS)
+    expect(CONTEXT_DETAIL_AGENT_DEFS).toBe(pipelineAgentDefs.CONTEXT_DETAIL_AGENT_DEFS)
+    expect(ACERVO_CLASSIFICADOR_AGENT_DEFS).toBe(pipelineAgentDefs.ACERVO_CLASSIFICADOR_AGENT_DEFS)
+    expect(ACERVO_EMENTA_AGENT_DEFS).toBe(pipelineAgentDefs.ACERVO_EMENTA_AGENT_DEFS)
+    expect(RESEARCH_NOTEBOOK_AGENT_DEFS).toBe(pipelineAgentDefs.RESEARCH_NOTEBOOK_AGENT_DEFS)
+    expect(NOTEBOOK_ACERVO_AGENT_DEFS).toBe(pipelineAgentDefs.NOTEBOOK_ACERVO_AGENT_DEFS)
+    expect(VIDEO_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.VIDEO_PIPELINE_AGENT_DEFS)
+    expect(AUDIO_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.AUDIO_PIPELINE_AGENT_DEFS)
+    expect(PRESENTATION_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.PRESENTATION_PIPELINE_AGENT_DEFS)
+    expect(DOCUMENT_V3_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.DOCUMENT_V3_PIPELINE_AGENT_DEFS)
+    expect(CHAT_ORCHESTRATOR_AGENT_DEFS).toBe(pipelineAgentDefs.CHAT_ORCHESTRATOR_AGENT_DEFS)
+  })
+
   it('keeps all scoped configuration groups registered', () => {
     expect(Object.keys(AGENT_CONFIG_DEFS).sort()).toEqual([
       'acervo_classificador_models',

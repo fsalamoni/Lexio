@@ -1,6 +1,6 @@
 # Core And Modules Architecture
 
-Last update: 2026-05-07
+Last update: 2026-05-08
 
 ## Goal
 
@@ -13,6 +13,18 @@ This keeps new features from changing central code paths unnecessarily and reduc
 The current frontend already has useful modular patterns:
 
 - `frontend/src/lib/chat-orchestrator/` is a domain submodule.
+- `frontend/src/lib/modules/dashboard/` owns dashboard data/V2 helpers plus Stats/Cost Firestore aggregation behind compatibility facades.
+- `frontend/src/lib/modules/notebook/` now owns notebook progress contracts, pure notebook constants and Research Notebook Firestore repository operations behind compatibility facades.
+- `frontend/src/lib/modules/documents/` now owns document prompt metadata, profile prompt helpers, acervo prompt builders, acervo search helpers, the extracted Pesquisador user prompt and the first Documents Firestore repository behind compatibility exports from `generation-service.ts` and `firestore-service.ts`.
+- `frontend/src/lib/modules/theses/` now owns the Thesis Bank Firestore repository and thesis analysis session persistence behind compatibility exports from `firestore-service.ts`.
+- `frontend/src/lib/modules/profile/` now owns Profile and Onboarding Firestore repository operations behind compatibility exports from `firestore-service.ts`.
+- `frontend/src/lib/modules/settings/` now owns platform/user settings reads/writes and legacy user settings migration behind compatibility exports from `firestore-service.ts`.
+- `frontend/src/lib/modules/admin-taxonomy/` now owns document-type/legal-area catalogs, admin taxonomy sanitizers, classification tipos persistence, profile-based taxonomy filters and request fields behind compatibility exports from `firestore-service.ts`.
+- `frontend/src/lib/modules/chat/` now owns Chat Firestore repository operations, including conversations, turns, sidecar devices, workspace roots/bindings, sidecar commands, approvals and audit entries behind compatibility exports from `firestore-service.ts`.
+- `frontend/src/lib/modules/acervo/` now owns Acervo Firestore repository operations behind compatibility exports from `firestore-service.ts`.
+- `frontend/src/lib/pipelines/agent-definitions/` now owns per-pipeline agent definition arrays behind compatibility exports from `model-config.ts`.
+- `frontend/src/lib/platform-analytics.ts` now owns platform-wide Firestore aggregation, operational cost analytics and rollout policy calculations behind compatibility exports from `firestore-service.ts`.
+- `frontend/src/lib/core/firestore/` now owns pure Firestore path/reference helpers shared by Firestore repositories and platform analytics.
 - `frontend/src/lib/v3-agents/` extracts document V3 agents into isolated files.
 - `frontend/src/pages/notebook/` contains page-local notebook helpers.
 
@@ -21,6 +33,14 @@ The main hotspots to reduce over time are:
 - `frontend/src/lib/generation-service.ts`
 - `frontend/src/lib/firestore-service.ts`
 - `frontend/src/lib/model-config.ts`
+
+Foundation work started after the Firestore cutover added the first automated architecture guardrail:
+
+- `scripts/lexio-architecture-guardrails.mjs`
+- `cd frontend && npm run architecture:check`
+- CI hook in `.github/workflows/test.yml` under `Source guardrails`
+
+The guardrail currently blocks `lib -> components`, `lib -> pages`, `core -> modules`, private cross-module imports, and direct OpenRouter API endpoints outside approved adapters.
 
 ## Target Shape
 
@@ -37,6 +57,7 @@ frontend/src/lib/
     documents/
     notebook/
     thesis/
+    dashboard/
     chat/
     admin/
     media/
@@ -114,12 +135,30 @@ If a module needs another module, expose a narrow public API from that module's 
 
 ## Incremental Extraction Order
 
-1. Extract document-generation prompts from `generation-service.ts`.
-2. Extract document acervo helpers into a document module.
-3. Split model agent definitions by pipeline while preserving existing exports from `model-config.ts`.
-4. Extract platform analytics from `firestore-service.ts`.
-5. Introduce Firestore path/reference helpers under core and migrate call sites gradually.
-6. Split high-risk repository operations only after tests are in place.
+Completed foundation extraction:
+
+1. Extract dashboard data and V2 helpers into `frontend/src/lib/modules/dashboard/`, preserving `dashboard-data.ts` and `dashboard-v2.ts` as facades.
+2. Extract notebook progress contracts and pure constants into `frontend/src/lib/modules/notebook/`, preserving `notebook-pipeline-progress.ts` and `notebook-constants.ts` as facades.
+3. Extract document prompt metadata/profile helpers into `frontend/src/lib/modules/documents/`, preserving public exports from `generation-service.ts` while migrating `document-v3-orchestrator.ts` to the module API.
+4. Extract document acervo prompt builders, JSON helper and keyword/prefilter helpers into `frontend/src/lib/modules/documents/`, preserving public `selectAcervoDocsForBuscador` compatibility from `generation-service.ts`.
+5. Split model agent definitions by pipeline into `frontend/src/lib/pipelines/agent-definitions/`, preserving existing exports and scoped config registration from `model-config.ts`.
+6. Extract platform analytics into `frontend/src/lib/platform-analytics.ts`, preserving platform admin/cost imports through `firestore-service.ts` compatibility exports.
+7. Introduce pure Firestore path/reference helpers under `frontend/src/lib/core/firestore/`, migrating shared ID normalization, owner extraction, notebook memory path parsing and notebook path builders without changing public Firestore service imports.
+8. Extract Documents CRUD and notebook-document persistence into `frontend/src/lib/modules/documents/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+9. Extract Thesis Bank CRUD/listing/stats into `frontend/src/lib/modules/theses/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+10. Extract Acervo CRUD, indexing reads, ementa/tag updates, text JSON conversion helpers and thesis-analysis markers into `frontend/src/lib/modules/acervo/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+11. Extract Research Notebook CRUD, dedicated search-memory retention/backfill and notebook size safety into `frontend/src/lib/modules/notebook/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+12. Extract thesis analysis session listing, latest-session read and persistence into `frontend/src/lib/modules/theses/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+13. Extract Profile and Onboarding reads/writes plus wizard step assembly into `frontend/src/lib/modules/profile/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+14. Extract platform/user settings reads/writes and legacy migration into `frontend/src/lib/modules/settings/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+15. Extract Admin Taxonomy catalogs, sanitizers, load/save helpers, profile filters and request fields into `frontend/src/lib/modules/admin-taxonomy/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+16. Extract Dashboard Stats/Cost aggregations, dashboard snapshot reads and cost breakdown into `frontend/src/lib/modules/dashboard/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+17. Extract Chat conversations, turns, sidecar devices, workspace roots/bindings, sidecar commands, approvals and audit entries into `frontend/src/lib/modules/chat/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+
+Next safe extraction order:
+
+1. The planned Wave 42 bounded `firestore-service.ts` repository extraction phase is complete; define a new scoped plan before further splits.
+2. Continue splitting high-risk Firestore repository operations only after tests are in place.
 
 ## Compatibility Rule
 
@@ -132,6 +171,19 @@ Every module extraction needs at least one of:
 - Existing tests still covering the old public API.
 - New tests for the extracted module.
 - A source-level guardrail when the risk is architectural, such as preventing `lib -> components` imports.
+
+## Foundation Guardrails
+
+Run before every modular refactor:
+
+```bash
+cd frontend
+npm run architecture:check
+```
+
+If this fails, fix the boundary violation before continuing. Do not bypass the guardrail by moving UI, page state, or provider-specific behavior into `core`.
+
+Detailed rules live in `docs/architecture/dependency-rules.md`.
 
 ## Firestore Migration Interaction
 

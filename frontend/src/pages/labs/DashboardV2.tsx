@@ -12,6 +12,7 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import StatusBadge from '../../components/StatusBadge'
 import { SkeletonCard } from '../../components/Skeleton'
+import { useToast } from '../../components/Toast'
 import { useAuth } from '../../contexts/AuthContext'
 import {
   buildCostSeries,
@@ -19,13 +20,13 @@ import {
   formatCost,
   formatDuration,
   useDashboardData,
-} from '../../lib/dashboard-data'
+} from '../../lib/modules/dashboard'
 import {
   buildDashboardPriorityActions,
   buildDashboardSignals,
   getFirstName,
   getGreetingForHour,
-} from '../../lib/dashboard-v2'
+} from '../../lib/modules/dashboard'
 import { DOCTYPE_SHORT_LABELS as DOCTYPE_LABELS } from '../../lib/constants'
 import { buildWorkspaceDocumentDetailPath, buildWorkspaceShellPath } from '../../lib/workspace-routes'
 
@@ -61,7 +62,8 @@ export default function DashboardV2() {
   const [periodDays, setPeriodDays] = useState(30)
   const location = useLocation()
   const { fullName } = useAuth()
-  const { stats, daily, agents, recent, byType, loading, chartLoading } = useDashboardData(periodDays)
+  const toast = useToast()
+  const { stats, daily, agents, recent, byType, loading, chartLoading } = useDashboardData(periodDays, toast)
   const docsThisWeek = computeDocsThisWeek(daily)
   const costSeries = buildCostSeries(daily)
   const greeting = getGreetingForHour(new Date().getHours())

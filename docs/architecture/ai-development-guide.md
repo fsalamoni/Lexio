@@ -14,6 +14,7 @@ This guide tells future AI agents how to modify Lexio without breaking data boun
 4. Do not overwrite user changes.
 5. If touching Firestore paths, read `docs/architecture/firestore-data-boundaries.md`.
 6. If touching modules or pipelines, read `docs/architecture/core-and-modules.md` and `docs/architecture/module-system.md`.
+7. Run `cd frontend && npm run architecture:check` after any import move or module extraction.
 
 ## Data Safety Rules
 
@@ -30,6 +31,26 @@ This guide tells future AI agents how to modify Lexio without breaking data boun
 - Domain modules own prompts, workflow rules, repositories, and tests for that domain.
 - Avoid growing monoliths such as `generation-service.ts`, `firestore-service.ts`, and `model-config.ts` when a focused module can hold the change.
 - Preserve existing exports while extracting internals.
+- Fix architecture guardrail failures before continuing; do not suppress the guardrail unless the exception is documented in `docs/architecture/dependency-rules.md`.
+
+## Module Refactoring Checklist
+
+When extracting legacy code into a module:
+
+1. Identify the owning domain in `docs/architecture/domain-map.md`.
+2. Define or update the module public API in `index.ts`.
+3. Keep old imports working through a thin facade until call sites migrate.
+4. Keep UI in pages/components and return UI-neutral state from lib.
+5. Run `npm run architecture:check`, `npm run typecheck`, `npm run test` and `npm run build`.
+6. Update module docs and `docs/MANIFEST.json`.
+
+## Guardrail Troubleshooting
+
+- `lib code must not import UI components`: move notification/rendering to pages/components and pass callbacks or structured state into lib hooks.
+- `lib code must not import pages`: move shared constants/types into `lib/shared` or the owning domain module.
+- `core must not import domain modules`: introduce a core interface and let modules implement it.
+- `modules may import another module only through its public index`: add the needed export to the target module `index.ts`.
+- `direct OpenRouter API URL detected`: route through an approved provider adapter or document a narrow adapter exception.
 
 ## Firestore Development Checklist
 
@@ -61,9 +82,10 @@ Before closing a branch:
 1. Run targeted tests for touched modules.
 2. Run `npm run typecheck` in `frontend` when frontend code changed.
 3. Run `npm run build` before deploy or PR closeout.
-4. Update docs and manifest when behavior or architecture changed.
-5. Push branch and open PR; do not merge migration work to `main` without explicit approval.
-6. After merge to `main`, Firebase deploy runs on push; GitHub Pages requires the release one-shot workflow.
+4. Run `npm run architecture:check` when frontend imports or modules changed.
+5. Update docs and manifest when behavior or architecture changed.
+6. Push branch and open PR; do not merge migration work to `main` without explicit approval.
+7. After merge to `main`, Firebase deploy runs on push; GitHub Pages requires the release one-shot workflow.
 
 ## Migration-Specific Commands
 

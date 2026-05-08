@@ -81,7 +81,7 @@ import {
   buildStudioTaskPhaseMessage,
   buildStudioTrailSteps,
   type NotebookOperationalAggregate,
-} from '../lib/notebook-pipeline-progress'
+} from '../lib/modules/notebook'
 import {
   accumulateOperationalSummary,
   buildOperationalEventKey,

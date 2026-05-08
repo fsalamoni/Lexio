@@ -35,8 +35,14 @@ export const LEXIO_COLLECTION_GROUPS = [
   'acervo',
   'research_notebooks',
   'memory',
+  'sidecar_devices',
+  'chat_workspace_roots',
   'chat_conversations',
   'turns',
+  'workspace_bindings',
+  'sidecar_commands',
+  'approvals',
+  'audit',
 ]
 
 export function normalizeDocumentPath(documentPath) {

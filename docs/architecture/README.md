@@ -53,9 +53,21 @@ Cloud Function (datajudProxy — proxy para API DataJud/CNJ)
 ## Documentos Centrais De Evolução
 
 - `docs/architecture/core-and-modules.md` — desenho alvo de core + módulos e ordem segura de extração.
+- `docs/architecture/domain-map.md` — mapa dos domínios atuais, arquivos críticos e módulos futuros.
+- `docs/architecture/module-contracts.md` — contrato obrigatório para novos módulos e extrações.
+- `docs/architecture/dependency-rules.md` — regras automatizadas de dependência e troubleshooting dos guardrails.
 - `docs/architecture/firestore-data-boundaries.md` — limites de dados Lexio, caminhos conhecidos, ambiguidades e databaseId.
 - `docs/architecture/ai-development-guide.md` — checklist operacional para agentes IA e futuras mudanças.
 - `docs/migration/firestore-database-isolation.md` — sequência segura de backup, auditoria, migração shadow, paridade e rollback.
+
+## Guardrail Arquitetural Local
+
+```bash
+cd frontend
+npm run architecture:check
+```
+
+Esse comando é bloqueante no workflow `Tests` e impede que novas mudanças façam `lib` depender de `components/pages`, que `core` dependa de módulos de domínio, ou que módulos acessem internals uns dos outros.
 
 ## Pipelines Implementados
 

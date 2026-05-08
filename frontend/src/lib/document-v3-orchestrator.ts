@@ -13,13 +13,15 @@
  */
 import { collection, doc, updateDoc, addDoc } from 'firebase/firestore'
 import {
+  getLLMOperationalUsageMeta,
+  getOpenRouterKey,
+} from './generation-service'
+import {
   AREA_NAMES,
   DOC_TYPE_NAMES,
   buildProfileBlock,
-  getLLMOperationalUsageMeta,
-  getOpenRouterKey,
   type UserProfileForGeneration,
-} from './generation-service'
+} from './modules/documents'
 import {
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
   loadDocumentV3Models,
