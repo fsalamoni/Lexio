@@ -12,9 +12,8 @@
 
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc,
-  collection, collectionGroup, getDocs, addDoc, query, orderBy, limit, where, startAfter,
+  collection, getDocs, addDoc, query, orderBy, limit, where, startAfter,
   serverTimestamp,
-  type DocumentSnapshot,
   type QueryConstraint,
 } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -34,13 +33,11 @@ import {
 } from './cost-analytics'
 import {
   NOTEBOOK_SEARCH_MEMORY_DOC_ID,
-  buildNotebookSearchMemoryDocPath,
-  buildResearchNotebookDocPath,
-  getRefUserId,
   normalizeFirestoreDocumentId,
 } from './core/firestore'
 import { createAcervoRepository } from './modules/acervo'
 import { createDocumentsRepository } from './modules/documents'
+import { createResearchNotebookRepository } from './modules/notebook'
 import { createThesesRepository } from './modules/theses'
 
 // ── Type definitions (re-exported from firestore-types.ts) ───────────────────
@@ -107,11 +104,7 @@ import type {
   DocumentData,
   ThesisData,
   AcervoDocumentData,
-  NotebookSource,
   ResearchNotebookData,
-  NotebookResearchAuditEntry,
-  NotebookSavedSearchEntry,
-  NotebookJurisprudenceSemanticMemoryEntry,
   ThesisAnalysisSessionData,
   WizardData,
   WizardStep,
@@ -862,6 +855,27 @@ export async function listThesisAnalysisSessions(uid: string): Promise<ThesisAna
   }
 }
 
+// ── Research Notebook (Caderno de Pesquisa) repository facade ────────────────
+
+export type { NotebookSearchMemoryBackfillReport } from './modules/notebook'
+
+const researchNotebookRepository = createResearchNotebookRepository({
+  ensureFirestore,
+  resolveEffectiveUid,
+  withFirestoreRetry,
+  isAuthAccessFirestoreError,
+  getErrorMessage,
+  getCreatedAtValue: getDocumentCreatedAtValue,
+  stripUndefined,
+})
+
+export const backfillNotebookSearchMemoryAcrossPlatform = researchNotebookRepository.backfillNotebookSearchMemoryAcrossPlatform
+export const listResearchNotebooks = researchNotebookRepository.listResearchNotebooks
+export const getResearchNotebook = researchNotebookRepository.getResearchNotebook
+export const createResearchNotebook = researchNotebookRepository.createResearchNotebook
+export const updateResearchNotebook = researchNotebookRepository.updateResearchNotebook
+export const deleteResearchNotebook = researchNotebookRepository.deleteResearchNotebook
+
 export async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
   const [{ items }, sessions, acervo, notebooks] = await Promise.all([
     listDocuments(uid),
@@ -889,123 +903,6 @@ export async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
   ]
 
   return buildCostBreakdown(executions)
-}
-
-export type NotebookSearchMemoryBackfillReport = {
-  scanned: number
-  migrated: number
-  already_dedicated: number
-  empty_legacy: number
-  failed: number
-  chunks_processed: number
-  chunk_size: number
-  max_notebooks?: number
-  reached_limit: boolean
-  dry_run: boolean
-}
-
-export async function backfillNotebookSearchMemoryAcrossPlatform(opts?: {
-  dryRun?: boolean
-  maxNotebooks?: number
-  chunkSize?: number
-}): Promise<NotebookSearchMemoryBackfillReport> {
-  const db = ensureFirestore()
-  const dryRun = Boolean(opts?.dryRun)
-  const maxNotebooks = opts?.maxNotebooks && opts.maxNotebooks > 0 ? Math.floor(opts.maxNotebooks) : undefined
-  const chunkSize = Math.max(50, Math.min(500, Math.floor(opts?.chunkSize ?? 200)))
-
-  const report: NotebookSearchMemoryBackfillReport = {
-    scanned: 0,
-    migrated: 0,
-    already_dedicated: 0,
-    empty_legacy: 0,
-    failed: 0,
-    chunks_processed: 0,
-    chunk_size: chunkSize,
-    max_notebooks: maxNotebooks,
-    reached_limit: false,
-    dry_run: dryRun,
-  }
-
-  let cursor: DocumentSnapshot | null = null
-
-  while (true) {
-    const remaining = maxNotebooks ? maxNotebooks - report.scanned : chunkSize
-    if (maxNotebooks && remaining <= 0) {
-      report.reached_limit = true
-      break
-    }
-
-    const pageLimit = Math.max(1, Math.min(chunkSize, remaining))
-    const constraints: QueryConstraint[] = [orderBy('created_at', 'desc'), limit(pageLimit)]
-    if (cursor) constraints.push(startAfter(cursor))
-
-    const notebooksSnap = await withFirestoreRetry(
-      () => getDocs(query(collectionGroup(db, 'research_notebooks'), ...constraints)),
-      'backfillNotebookSearchMemoryAcrossPlatform.notebooks',
-    )
-    if (notebooksSnap.empty) break
-
-    report.chunks_processed += 1
-    cursor = notebooksSnap.docs[notebooksSnap.docs.length - 1]
-
-    for (const notebookDoc of notebooksSnap.docs) {
-      if (maxNotebooks && report.scanned >= maxNotebooks) {
-        report.reached_limit = true
-        break
-      }
-
-      report.scanned += 1
-
-      try {
-        const uid = getRefUserId(notebookDoc.ref.path)
-        if (!uid) {
-          report.failed += 1
-          continue
-        }
-
-        const memorySnap = await withFirestoreRetry(
-          () => getDoc(getNotebookSearchMemoryDocRef(uid, notebookDoc.id)),
-          `backfillNotebookSearchMemoryAcrossPlatform.memory.${notebookDoc.id}`,
-        )
-        if (memorySnap.exists()) {
-          report.already_dedicated += 1
-          continue
-        }
-
-        const notebook = notebookDoc.data() as ResearchNotebookData
-        const legacyAudits = Array.isArray(notebook.research_audits) ? notebook.research_audits : []
-        const legacySavedSearches = Array.isArray(notebook.saved_searches) ? notebook.saved_searches : []
-        const legacySemanticMemory = Array.isArray(notebook.jurisprudence_semantic_memory) ? notebook.jurisprudence_semantic_memory : []
-
-        if (legacyAudits.length === 0 && legacySavedSearches.length === 0 && legacySemanticMemory.length === 0) {
-          report.empty_legacy += 1
-          continue
-        }
-
-        if (!dryRun) {
-          await saveNotebookSearchMemory(uid, notebookDoc.id, {
-            research_audits: legacyAudits,
-            saved_searches: legacySavedSearches,
-            jurisprudence_semantic_memory: legacySemanticMemory,
-            migrated_from_notebook_doc_at: new Date().toISOString(),
-          })
-        }
-
-        report.migrated += 1
-      } catch (error) {
-        report.failed += 1
-        console.warn('[Lexio] backfillNotebookSearchMemoryAcrossPlatform: failed for notebook', notebookDoc.id, error)
-      }
-    }
-
-    if (maxNotebooks && report.scanned >= maxNotebooks) {
-      report.reached_limit = true
-      break
-    }
-  }
-
-  return report
 }
 
 // ── Document types & legal areas (static definitions for Firebase mode) ──────
@@ -1545,450 +1442,6 @@ export async function getLastThesisAnalysisSession(
       return getDocumentCreatedAtValue(b.data()?.created_at) - getDocumentCreatedAtValue(a.data()?.created_at)
     })
     return latest ? ({ id: latest.id, ...latest.data() } as ThesisAnalysisSessionData) : null
-  }
-}
-
-// ── Research Notebook (Caderno de Pesquisa) CRUD ──────────────────────────────
-
-/**
- * List all research notebooks for a user, ordered by creation date (newest first).
- */
-export async function listResearchNotebooks(uid: string): Promise<{ items: ResearchNotebookData[] }> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'listResearchNotebooks')
-  const colRef = collection(db, 'users', effectiveUid, 'research_notebooks')
-  try {
-    const snap = await withFirestoreRetry(
-      () => getDocs(query(colRef, orderBy('created_at', 'desc'))),
-      'listResearchNotebooks.query',
-    )
-    return { items: snap.docs.map(d => ({ id: d.id, ...d.data() } as ResearchNotebookData)) }
-  } catch (error) {
-    if (isAuthAccessFirestoreError(error)) {
-      throw error
-    }
-    console.warn('Firestore notebook query failed; using client-side fallback:', getErrorMessage(error))
-    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listResearchNotebooks.fallback')
-    const items = fallbackSnap.docs
-      .map(d => ({ id: d.id, ...d.data() } as ResearchNotebookData))
-      .sort((a, b) => getDocumentCreatedAtValue(b.created_at) - getDocumentCreatedAtValue(a.created_at))
-    return { items }
-  }
-}
-
-// ── Firestore notebook size safety ────────────────────────────────────────────
-
-/**
- * Firestore has a 1 MiB (1,048,576 bytes) document size limit.
- * We target 950 KB to leave headroom for field names & UTF-8 overhead.
- */
-const NOTEBOOK_MAX_DOC_BYTES = 950_000
-/** Minimum chars preserved per source when trimming to fit Firestore limits */
-const MIN_SOURCE_TEXT_CHARS = 100
-const NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS = 45
-const NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS = 60
-const NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES = 120
-const NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES = 24
-
-type NotebookSearchMemoryRetentionMeta = {
-  audits_before?: number
-  audits_after?: number
-  audits_dropped?: number
-  saved_searches_before?: number
-  saved_searches_after?: number
-  saved_searches_dropped?: number
-  jurisprudence_semantic_before?: number
-  jurisprudence_semantic_after?: number
-  jurisprudence_semantic_dropped?: number
-  audit_ttl_days: number
-  max_audits: number
-  max_saved_searches: number
-  max_jurisprudence_semantic_entries?: number
-  applied_at: string
-}
-
-type NotebookSearchMemoryData = {
-  research_audits?: NotebookResearchAuditEntry[]
-  saved_searches?: NotebookSavedSearchEntry[]
-  jurisprudence_semantic_memory?: NotebookJurisprudenceSemanticMemoryEntry[]
-  retention?: NotebookSearchMemoryRetentionMeta
-  updated_at?: string
-  migrated_from_notebook_doc_at?: string
-}
-
-/**
- * Estimate the byte size of a value when serialised to JSON.
- * Adds a 10 % margin for multi-byte UTF-8 characters (common in Portuguese).
- */
-function estimateJsonBytes(value: unknown): number {
-  try {
-    const len = JSON.stringify(value).length
-    return len + Math.ceil(len * 0.1)
-  } catch (err) {
-    console.warn('[Lexio] estimateJsonBytes: JSON.stringify failed', err)
-    return 0
-  }
-}
-
-/**
- * If the sources array would push the notebook document past the Firestore
- * size limit, first strip `results_raw` from jurisprudência sources (cheapest
- * trade-off), then trim the longest `text_content` fields proportionally so
- * everything fits.  Returns `{ sources, truncated }`.
- */
-function fitSourcesToFirestoreLimit(
-  sources: NotebookSource[],
-  otherDataEstimateBytes: number,
-): { sources: NotebookSource[]; truncated: boolean } {
-  const totalBytes = estimateJsonBytes(sources) + otherDataEstimateBytes
-  if (totalBytes <= NOTEBOOK_MAX_DOC_BYTES) return { sources, truncated: false }
-
-  // Pass 1: drop results_raw from jurisprudência sources — this is typically
-  // the largest payload and has the least impact on analysis quality.
-  const withoutRaw: NotebookSource[] = sources.map(src => {
-    if (src.type !== 'jurisprudencia' || !src.results_raw) return src
-    const { results_raw: _dropped, ...rest } = src
-    return rest
-  })
-  if (estimateJsonBytes(withoutRaw) + otherDataEstimateBytes <= NOTEBOOK_MAX_DOC_BYTES) {
-    console.warn('[Lexio] Notebook sources: results_raw stripped to fit Firestore 1 MB limit')
-    return { sources: withoutRaw, truncated: true }
-  }
-
-  const budget = Math.max(NOTEBOOK_MAX_DOC_BYTES - otherDataEstimateBytes, 0)
-
-  // Pass 2: trim text_content proportionally
-  const totalTextChars = withoutRaw.reduce((s, src) => s + (src.text_content?.length ?? 0), 0)
-  if (totalTextChars === 0) return { sources: withoutRaw, truncated: true }
-
-  // Overhead per source (metadata fields, JSON syntax) — estimate once
-  const metaOverhead = estimateJsonBytes(withoutRaw) - Math.ceil(totalTextChars * 1.1)
-  const availableForText = Math.max(budget - metaOverhead, 0)
-
-  // Scale each source's text proportionally to fit
-  const ratio = availableForText / Math.ceil(totalTextChars * 1.1)
-
-  const trimmed: NotebookSource[] = withoutRaw.map(src => {
-    const text = src.text_content ?? ''
-    if (text.length === 0 || ratio >= 1) return src
-    const maxChars = Math.max(Math.floor(text.length * ratio), MIN_SOURCE_TEXT_CHARS)
-    if (maxChars >= text.length) return src
-    return { ...src, text_content: text.slice(0, maxChars) }
-  })
-
-  console.warn(
-    `[Lexio] Notebook sources trimmed to fit Firestore 1 MB limit ` +
-    `(estimated ${(totalBytes / 1024).toFixed(0)} KiB → budget ${(NOTEBOOK_MAX_DOC_BYTES / 1024).toFixed(0)} KiB)`,
-  )
-
-  return { sources: trimmed, truncated: true }
-}
-
-function getNotebookSearchMemoryDocRef(uid: string, notebookId: string) {
-  const db = ensureFirestore()
-  return doc(db, ...buildNotebookSearchMemoryDocPath(uid, notebookId))
-}
-
-function parseIsoMs(value: unknown): number | null {
-  if (typeof value !== 'string') return null
-  const parsed = Date.parse(value)
-  return Number.isNaN(parsed) ? null : parsed
-}
-
-function getSavedSearchSortMs(item: NotebookSavedSearchEntry): number {
-  return parseIsoMs(item.updated_at) ?? parseIsoMs(item.created_at) ?? 0
-}
-
-function getJurisprudenceSemanticMemorySortMs(item: NotebookJurisprudenceSemanticMemoryEntry): number {
-  return parseIsoMs(item.updated_at) ?? parseIsoMs(item.created_at) ?? 0
-}
-
-function applyNotebookSearchMemoryRetention(
-  payload: Partial<NotebookSearchMemoryData>,
-): {
-  sanitized: Partial<NotebookSearchMemoryData>
-  droppedAudits: number
-  droppedSavedSearches: number
-  droppedSemanticEntries: number
-} {
-  const nowIso = new Date().toISOString()
-  const next: Partial<NotebookSearchMemoryData> = { ...payload }
-  let droppedAudits = 0
-  let droppedSavedSearches = 0
-  let droppedSemanticEntries = 0
-
-  if (payload.research_audits !== undefined) {
-    const cutoffMs = Date.now() - NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS * 86_400_000
-    const sortedAudits = [...payload.research_audits].sort((a, b) =>
-      (parseIsoMs(b.created_at) ?? 0) - (parseIsoMs(a.created_at) ?? 0),
-    )
-    const ttlFiltered = sortedAudits.filter(audit => {
-      const ts = parseIsoMs(audit.created_at)
-      return ts !== null && ts >= cutoffMs
-    })
-
-    // Preserve at least one latest audit for continuity, even if all are expired.
-    const continuityBase = ttlFiltered.length > 0 ? ttlFiltered : sortedAudits.slice(0, 1)
-    const retainedAudits = continuityBase.slice(0, NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS)
-    droppedAudits = Math.max(sortedAudits.length - retainedAudits.length, 0)
-    next.research_audits = retainedAudits
-
-    next.retention = {
-      ...(next.retention || {
-        audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
-        max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
-        max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
-        max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
-        applied_at: nowIso,
-      }),
-      audits_before: sortedAudits.length,
-      audits_after: retainedAudits.length,
-      audits_dropped: droppedAudits,
-      audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
-      max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
-      max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
-      max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
-      applied_at: nowIso,
-    }
-  }
-
-  if (payload.saved_searches !== undefined) {
-    const sortedSaved = [...payload.saved_searches].sort((a, b) => getSavedSearchSortMs(b) - getSavedSearchSortMs(a))
-    const retainedSaved = sortedSaved.slice(0, NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES)
-    droppedSavedSearches = Math.max(sortedSaved.length - retainedSaved.length, 0)
-    next.saved_searches = retainedSaved
-
-    next.retention = {
-      ...(next.retention || {
-        audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
-        max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
-        max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
-        max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
-        applied_at: nowIso,
-      }),
-      saved_searches_before: sortedSaved.length,
-      saved_searches_after: retainedSaved.length,
-      saved_searches_dropped: droppedSavedSearches,
-      audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
-      max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
-      max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
-      max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
-      applied_at: nowIso,
-    }
-  }
-
-  if (payload.jurisprudence_semantic_memory !== undefined) {
-    const sortedSemanticEntries = [...payload.jurisprudence_semantic_memory]
-      .filter(entry => Array.isArray(entry.query_embedding) && entry.query_embedding.length > 0 && Boolean(entry.source_id?.trim()) && Boolean(entry.query?.trim()))
-      .sort((a, b) => getJurisprudenceSemanticMemorySortMs(b) - getJurisprudenceSemanticMemorySortMs(a))
-
-    const retainedSemanticEntries = sortedSemanticEntries.slice(0, NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES)
-    droppedSemanticEntries = Math.max(sortedSemanticEntries.length - retainedSemanticEntries.length, 0)
-    next.jurisprudence_semantic_memory = retainedSemanticEntries
-
-    next.retention = {
-      ...(next.retention || {
-        audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
-        max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
-        max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
-        max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
-        applied_at: nowIso,
-      }),
-      jurisprudence_semantic_before: sortedSemanticEntries.length,
-      jurisprudence_semantic_after: retainedSemanticEntries.length,
-      jurisprudence_semantic_dropped: droppedSemanticEntries,
-      audit_ttl_days: NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS,
-      max_audits: NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS,
-      max_saved_searches: NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES,
-      max_jurisprudence_semantic_entries: NOTEBOOK_SEARCH_MEMORY_MAX_JURISPRUDENCE_SEMANTIC_ENTRIES,
-      applied_at: nowIso,
-    }
-  }
-
-  return { sanitized: next, droppedAudits, droppedSavedSearches, droppedSemanticEntries }
-}
-
-async function getNotebookSearchMemory(uid: string, notebookId: string): Promise<NotebookSearchMemoryData | null> {
-  const ref = getNotebookSearchMemoryDocRef(uid, notebookId)
-  const snap = await withFirestoreRetry(() => getDoc(ref), 'getNotebookSearchMemory')
-  if (!snap.exists()) return null
-  return snap.data() as NotebookSearchMemoryData
-}
-
-async function saveNotebookSearchMemory(
-  uid: string,
-  notebookId: string,
-  payload: Partial<NotebookSearchMemoryData>,
-): Promise<void> {
-  const ref = getNotebookSearchMemoryDocRef(uid, notebookId)
-  const { sanitized, droppedAudits, droppedSavedSearches, droppedSemanticEntries } = applyNotebookSearchMemoryRetention(payload)
-  await withFirestoreRetry(
-    () => setDoc(ref, stripUndefined({ ...sanitized, updated_at: new Date().toISOString() }), { merge: true }),
-    'saveNotebookSearchMemory',
-  )
-  if (droppedAudits > 0 || droppedSavedSearches > 0 || droppedSemanticEntries > 0) {
-    console.info(
-      `[Lexio] saveNotebookSearchMemory: retention applied for notebook ${normalizeFirestoreDocumentId(notebookId)} ` +
-      `(audits dropped: ${droppedAudits}, saved searches dropped: ${droppedSavedSearches}, semantic entries dropped: ${droppedSemanticEntries}).`,
-    )
-  }
-}
-
-/**
- * Get a single research notebook by ID.
- */
-export async function getResearchNotebook(uid: string, notebookId: string): Promise<ResearchNotebookData | null> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'getResearchNotebook')
-  const ref = doc(db, ...buildResearchNotebookDocPath(effectiveUid, notebookId))
-  const snap = await withFirestoreRetry(() => getDoc(ref), 'getResearchNotebook')
-  if (!snap.exists()) return null
-  const notebook = { id: snap.id, ...snap.data() } as ResearchNotebookData
-
-  try {
-    const memory = await getNotebookSearchMemory(effectiveUid, snap.id)
-    if (memory) {
-      return {
-        ...notebook,
-        research_audits: memory.research_audits ?? notebook.research_audits,
-        saved_searches: memory.saved_searches ?? notebook.saved_searches,
-        jurisprudence_semantic_memory: memory.jurisprudence_semantic_memory ?? notebook.jurisprudence_semantic_memory,
-      }
-    }
-
-    // Opportunistic backfill: first read migrates existing in-doc arrays into
-    // dedicated notebook memory storage without changing current API contracts.
-    if ((notebook.research_audits && notebook.research_audits.length > 0)
-      || (notebook.saved_searches && notebook.saved_searches.length > 0)
-      || (notebook.jurisprudence_semantic_memory && notebook.jurisprudence_semantic_memory.length > 0)) {
-      await saveNotebookSearchMemory(effectiveUid, snap.id, {
-        research_audits: notebook.research_audits ?? [],
-        saved_searches: notebook.saved_searches ?? [],
-        jurisprudence_semantic_memory: notebook.jurisprudence_semantic_memory ?? [],
-        migrated_from_notebook_doc_at: new Date().toISOString(),
-      })
-    }
-  } catch (error) {
-    console.warn('[Lexio] getResearchNotebook: dedicated search memory unavailable, using notebook document fields.', error)
-  }
-
-  return notebook
-}
-
-/**
- * Create a new research notebook.
- */
-export async function createResearchNotebook(uid: string, data: Omit<ResearchNotebookData, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'createResearchNotebook')
-  const now = new Date().toISOString()
-
-  // Build preliminary payload WITHOUT sources to estimate non-source overhead
-  const baseMeta = stripUndefined({
-    title: data.title,
-    topic: data.topic,
-    description: data.description ?? '',
-    sources: [] as NotebookSource[],
-    messages: data.messages ?? [],
-    artifacts: data.artifacts ?? [],
-    research_audits: data.research_audits ?? [],
-    saved_searches: data.saved_searches ?? [],
-    jurisprudence_semantic_memory: data.jurisprudence_semantic_memory ?? [],
-    status: data.status ?? 'active',
-    llm_executions: data.llm_executions ?? [],
-    created_at: now,
-    updated_at: now,
-  })
-  const otherBytes = estimateJsonBytes(baseMeta)
-  const { sources } = fitSourcesToFirestoreLimit(data.sources ?? [], otherBytes)
-
-  const sanitized = { ...baseMeta, sources }
-  const docRef = await withFirestoreRetry(
-    () => addDoc(collection(db, 'users', effectiveUid, 'research_notebooks'), sanitized),
-    'createResearchNotebook.write',
-  )
-
-  try {
-    await saveNotebookSearchMemory(effectiveUid, docRef.id, {
-      research_audits: sanitized.research_audits,
-      saved_searches: sanitized.saved_searches,
-      jurisprudence_semantic_memory: sanitized.jurisprudence_semantic_memory,
-      migrated_from_notebook_doc_at: now,
-    })
-  } catch (error) {
-    console.warn('[Lexio] createResearchNotebook: failed to seed dedicated search memory store.', error)
-  }
-
-  return docRef.id
-}
-
-/**
- * Update an existing research notebook (partial update).
- */
-export async function updateResearchNotebook(uid: string, notebookId: string, data: Partial<ResearchNotebookData>): Promise<void> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'updateResearchNotebook')
-  const ref = doc(db, ...buildResearchNotebookDocPath(effectiveUid, notebookId))
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { id, ...rest } = data
-  const shouldSyncSearchMemory = rest.research_audits !== undefined || rest.saved_searches !== undefined || rest.jurisprudence_semantic_memory !== undefined
-  const rootPayload = shouldSyncSearchMemory
-    ? {
-        ...rest,
-        ...(rest.research_audits !== undefined ? { research_audits: [] as NotebookResearchAuditEntry[] } : {}),
-        ...(rest.saved_searches !== undefined ? { saved_searches: [] as NotebookSavedSearchEntry[] } : {}),
-        ...(rest.jurisprudence_semantic_memory !== undefined ? { jurisprudence_semantic_memory: [] as NotebookJurisprudenceSemanticMemoryEntry[] } : {}),
-      }
-    : rest
-
-  // When the update includes sources, ensure total estimated size is safe.
-  // We fetch the current document so we can account for existing fields.
-  if (rootPayload.sources) {
-    const snap = await withFirestoreRetry(() => getDoc(ref), 'updateResearchNotebook.read')
-    const existing = snap.exists() ? snap.data() : {}
-    const merged = { ...existing, ...stripUndefined(rootPayload), updated_at: new Date().toISOString() }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { sources: _src, ...mergedMeta } = merged
-    const otherBytes = estimateJsonBytes(mergedMeta)
-    const { sources } = fitSourcesToFirestoreLimit(rootPayload.sources, otherBytes)
-    const sanitized = stripUndefined({ ...rootPayload, sources, updated_at: new Date().toISOString() })
-    await withFirestoreRetry(() => updateDoc(ref, sanitized), 'updateResearchNotebook.updateWithSources')
-  } else {
-    const sanitized = stripUndefined({ ...rootPayload, updated_at: new Date().toISOString() })
-    await withFirestoreRetry(() => updateDoc(ref, sanitized), 'updateResearchNotebook.update')
-  }
-
-  if (shouldSyncSearchMemory) {
-    try {
-      await saveNotebookSearchMemory(effectiveUid, normalizeFirestoreDocumentId(notebookId), {
-        ...(rest.research_audits !== undefined ? { research_audits: rest.research_audits } : {}),
-        ...(rest.saved_searches !== undefined ? { saved_searches: rest.saved_searches } : {}),
-        ...(rest.jurisprudence_semantic_memory !== undefined ? { jurisprudence_semantic_memory: rest.jurisprudence_semantic_memory } : {}),
-      })
-    } catch (error) {
-      console.warn('[Lexio] updateResearchNotebook: failed to sync dedicated search memory store.', error)
-    }
-  }
-}
-
-/**
- * Delete a research notebook.
- */
-export async function deleteResearchNotebook(uid: string, notebookId: string): Promise<void> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'deleteResearchNotebook')
-  const normalizedNotebookId = normalizeFirestoreDocumentId(notebookId)
-  await withFirestoreRetry(
-    () => deleteDoc(doc(db, 'users', effectiveUid, 'research_notebooks', normalizedNotebookId)),
-    'deleteResearchNotebook',
-  )
-  try {
-    await withFirestoreRetry(
-      () => deleteDoc(getNotebookSearchMemoryDocRef(effectiveUid, normalizedNotebookId)),
-      'deleteResearchNotebook.memory',
-    )
-  } catch {
-    // Ignore missing/forbidden dedicated memory doc; notebook deletion is the source of truth.
   }
 }
 

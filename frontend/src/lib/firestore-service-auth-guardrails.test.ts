@@ -5,9 +5,10 @@ const source = readFileSync(new URL('./firestore-service.ts', import.meta.url), 
 const platformAnalyticsSource = readFileSync(new URL('./platform-analytics.ts', import.meta.url), 'utf-8')
 const acervoRepositorySource = readFileSync(new URL('./modules/acervo/repository.ts', import.meta.url), 'utf-8')
 const documentsRepositorySource = readFileSync(new URL('./modules/documents/repository.ts', import.meta.url), 'utf-8')
+const notebookRepositorySource = readFileSync(new URL('./modules/notebook/repository.ts', import.meta.url), 'utf-8')
 const thesesRepositorySource = readFileSync(new URL('./modules/theses/repository.ts', import.meta.url), 'utf-8')
-const firestoreRepositoryBoundarySource = `${source}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${thesesRepositorySource}`
-const firestoreBoundarySource = `${source}\n${platformAnalyticsSource}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${thesesRepositorySource}`
+const firestoreRepositoryBoundarySource = `${source}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${notebookRepositorySource}\n${thesesRepositorySource}`
+const firestoreBoundarySource = `${source}\n${platformAnalyticsSource}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${notebookRepositorySource}\n${thesesRepositorySource}`
 
 describe('firestore-service auth guardrails', () => {
   it('avoids raw user-scoped read calls with unresolved uid', () => {

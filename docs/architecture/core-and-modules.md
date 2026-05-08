@@ -14,7 +14,7 @@ The current frontend already has useful modular patterns:
 
 - `frontend/src/lib/chat-orchestrator/` is a domain submodule.
 - `frontend/src/lib/modules/dashboard/` is the first extracted product module with compatibility facades.
-- `frontend/src/lib/modules/notebook/` now owns notebook progress contracts and pure notebook constants behind compatibility facades.
+- `frontend/src/lib/modules/notebook/` now owns notebook progress contracts, pure notebook constants and Research Notebook Firestore repository operations behind compatibility facades.
 - `frontend/src/lib/modules/documents/` now owns document prompt metadata, profile prompt helpers, acervo prompt builders, acervo search helpers, the extracted Pesquisador user prompt and the first Documents Firestore repository behind compatibility exports from `generation-service.ts` and `firestore-service.ts`.
 - `frontend/src/lib/modules/theses/` now owns the Thesis Bank Firestore repository behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/modules/acervo/` now owns Acervo Firestore repository operations behind compatibility exports from `firestore-service.ts`.
@@ -143,11 +143,12 @@ Completed foundation extraction:
 8. Extract Documents CRUD and notebook-document persistence into `frontend/src/lib/modules/documents/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 9. Extract Thesis Bank CRUD/listing/stats into `frontend/src/lib/modules/theses/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 10. Extract Acervo CRUD, indexing reads, ementa/tag updates, text JSON conversion helpers and thesis-analysis markers into `frontend/src/lib/modules/acervo/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+11. Extract Research Notebook CRUD, dedicated search-memory retention/backfill and notebook size safety into `frontend/src/lib/modules/notebook/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 
 Next safe extraction order:
 
 1. Continue splitting high-risk Firestore repository operations only after tests are in place.
-2. Move the next bounded domain repository, such as Research Notebook or user settings/profile, out of `firestore-service.ts`, preserving public imports until callers migrate.
+2. Move the next bounded domain repository, such as user settings/profile, thesis analysis sessions or chat, out of `firestore-service.ts`, preserving public imports until callers migrate.
 
 ## Compatibility Rule
 
