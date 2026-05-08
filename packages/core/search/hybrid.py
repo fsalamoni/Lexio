@@ -3,7 +3,6 @@
 import logging
 from typing import Any
 
-from packages.core.config import settings
 from packages.core.embedding.client import generate_embedding
 from packages.core.search.qdrant import search_qdrant
 from packages.core.search.datajud import search_datajud
@@ -157,7 +156,7 @@ def _parse_datajud_text(text: str) -> list[dict[str, Any]]:
             parts = line.split(" — ")
             process_number = parts[0].replace("Processo ", "").strip() if parts else "?"
         results.append({
-            "source": f"DataJud — TJRS",
+            "source": "DataJud — TJRS",
             "content": line,
             "process_number": process_number,
             "raw_line": line,

@@ -1,9 +1,8 @@
 """Lexio API — Hybrid search endpoint (semantic + lexical)."""
 
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from packages.core.search.hybrid import hybrid_search
 from packages.core.auth.dependencies import get_current_user_id
