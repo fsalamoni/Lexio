@@ -81,19 +81,26 @@ Completed on branch `feature/firestore-database-isolation-core-modules`:
 
 Read-only database inventory before creation confirmed the project had `(default)`, `anotes`, `bolao2026`, and `psico`. `lexio-prod` was then created in the same region, `southamerica-east1`.
 
-## Release Checkpoint — 2026-05-08
+## Production Cutover Closeout — 2026-05-08
 
 Completed after the shadow migration:
 
-- PR #143 validates frontend, preview and guardrail builds with `VITE_FIRESTORE_DATABASE_ID=lexio-prod`.
+- PR #143 validated frontend, preview and guardrail builds with `VITE_FIRESTORE_DATABASE_ID=lexio-prod` and was merged to `main` as merge commit `15b32d1`.
+- Final PR head before merge: `366628c`.
+- Main `Tests` workflow: run `25576968289`, success.
+- Firebase production deploy on push: run `25576968354`, success.
+- One-shot web release: run `25581626099`, success, covering Firebase production and GitHub Pages. Redesign V2 was intentionally skipped.
 - `firebase.json` publishes the same rules/indexes to `(default)` and `lexio-prod`.
-- Legacy `(default)` data remains intact for rollback and must not be deleted automatically.
+- Authenticated production smoke against `https://lexio.web.app` loaded dashboard, documents, generator, notebook, chat, settings and profile without redirecting to login.
+- Browser monitoring during authenticated smoke observed 34 Firestore requests to `lexio-prod`, 0 requests to `(default)`, 0 failed requests, 0 bad Firestore responses and 0 console errors.
+- Public smoke passed for `https://lexio.web.app/login` and `https://fsalamoni.github.io/Lexio/login` with status 200 and a rendered React root.
+- DataJud proxy smoke passed with a valid `tjrs` request returning status 200.
+- Post-release Function error log check found no `datajudProxy` errors since the one-shot release started.
 
-Still required before declaring production cutover fully stable:
+Production clients now point to `lexio-prod`. Legacy `(default)` data remains intact for rollback and must not be deleted automatically.
 
-- Merge the validated branch to `main` and let the production Hosting workflows deploy clients pointing to `lexio-prod`.
-- Run authenticated production smoke against `lexio.web.app` after deploy.
-- Keep monitoring auth, Firestore permission and user-settings migration errors after cutover.
+Continuing guardrail after cutover:
+
 - Any deletion or cleanup of legacy `(default)` data requires a separate explicit cleanup plan, fresh backup and rollback strategy.
 
 ## Safe Execution Sequence

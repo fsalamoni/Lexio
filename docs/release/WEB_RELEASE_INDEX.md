@@ -1,8 +1,20 @@
 # Web Release Index
 
-Last update: 2026-05-05
+Last update: 2026-05-08
 
-## Current Validation Baseline (Wave 40 — 2026-05-05, branch main)
+## Current Validation Baseline (Wave 42 — 2026-05-08, branch main)
+- Scope: fechamento da foundation core/módulos, hardening das fronteiras Firestore, corte produtivo para `lexio-prod` e validação pós-deploy.
+- Merge: PR #143 mergeada em `main` com merge commit `15b32d1`; head validado antes do merge `366628c`.
+- Local sweep before merge: architecture check OK (329 arquivos), frontend typecheck OK, Functions build OK, manifest JSON OK, `git diff --check` OK, frontend full test suite OK (71 arquivos, 537 testes), frontend build com `VITE_FIRESTORE_DATABASE_ID=lexio-prod` OK, Python tests OK (2203 passed), Ruff OK.
+- PR checks: Source guardrails, Python tests, Ruff, Functions build, Frontend quality, Firebase secrets and preview deploy all success.
+- Main deploys: `Tests` run `25576968289` success; Firebase production deploy run `25576968354` success; release-web one-shot run `25581626099` success for Firebase production + GitHub Pages, with redesign V2 intentionally skipped.
+- Public smoke: `https://lexio.web.app/login` and `https://fsalamoni.github.io/Lexio/login` returned 200 with React root rendered.
+- Authenticated production smoke: dashboard, documents, generator, notebook, chat, settings and profile loaded without login redirects.
+- Firestore monitoring: 34 observed Firestore calls to `lexio-prod`, 0 to `(default)`, 0 bad Firestore responses, 0 request failures and 0 console errors during authenticated route traversal.
+- DataJud proxy smoke: valid `tjrs` request returned 200; recent `datajudProxy` error log query since release start returned no errors.
+- Cutover status: production clients now point to `lexio-prod`; legacy `(default)` remains intact for rollback and must not be cleaned up without a separate plan.
+
+## Previous Validation Baseline (Wave 40 — 2026-05-05, branch main)
 - Scope: subonda 2 da Wave 40 com caches user-scoped, canários runtime, retomada real do pipeline de vídeo por checkpoint, validação longitudinal do admin fechada por perfil operacional e fechamento da trilha jurisprudencial com rerank semântico browser-side, fallback jurídico local/LLM compartilhado e memória semântica persistente por caderno
 - Frontend typecheck: success (`npm run typecheck`, exit code `0`)
 - Frontend focused tests: success (`src/lib/video-generation-pipeline.test.ts`, 4/4; `src/lib/datajud-service.test.ts`, 73/73)

@@ -15,7 +15,7 @@ Lexio uses a dedicated Firestore database in the same Firebase project for the v
 - Runtime selector: `VITE_FIRESTORE_DATABASE_ID`
 - Runtime fallback when the selector is absent: `(default)`
 
-The 2026-05-07 shadow migration copied 820 Lexio documents to `lexio-prod` and parity validation found 0 missing, 0 extra and 0 mismatched documents. As of 2026-05-08, PR #143 validates frontend and preview builds against `lexio-prod`; production cutover is only complete after merge/deploy and authenticated smoke.
+The 2026-05-07 shadow migration copied 820 Lexio documents to `lexio-prod` and parity validation found 0 missing, 0 extra and 0 mismatched documents. On 2026-05-08, PR #143 was merged to `main`, production Firebase Hosting and GitHub Pages were deployed from merge commit `15b32d1`, authenticated smoke confirmed the app reads `lexio-prod`, and no browser Firestore errors were observed. The legacy `(default)` database remains preserved for rollback and must not be cleaned up without a separate plan.
 
 ## Known Lexio Paths
 

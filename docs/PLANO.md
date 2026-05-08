@@ -71,7 +71,9 @@
 - ✅ `lexio-prod` criado em `southamerica-east1` com delete protection habilitado; migração shadow executada com 820 escritas e 0 erros.
 - ✅ Backup do target concluído em `backups/firebase-cloud/2026-05-07_18-43-52` com 820 documentos, manifesto verificado e paridade verde contra origem Lexio: 0 faltantes, 0 extras, 0 divergências de hash.
 - ✅ Firestore rules/indexes publicados para os databases configurados e workflows de deploy/preview/redesign/GitHub Pages preparados para compilar com `VITE_FIRESTORE_DATABASE_ID=lexio-prod`.
-- 🔒 Próximo checkpoint: PR #143 já valida preview/frontend com `lexio-prod`; falta merge controlado para `main`, deploy dos clientes de produção apontando para `lexio-prod`, smoke autenticado e monitoramento. Exclusão/limpeza do `(default)` permanece fora de escopo.
+- ✅ Corte produtivo concluído em 2026-05-08: PR #143 mergeada em `main` (`15b32d1`), workflow `Tests` em sucesso (`25576968289`), deploy Firebase production em sucesso (`25576968354`) e release one-shot Firebase + GitHub Pages em sucesso (`25581626099`).
+- ✅ Smoke autenticado real em `https://lexio.web.app` carregou dashboard, documentos, gerador, notebook, chat, settings e profile; monitoramento de browser registrou 34 chamadas Firestore para `lexio-prod`, 0 para `(default)`, 0 falhas de request, 0 respostas Firestore ruins e 0 console errors. Smoke público de Firebase/Pages e DataJud proxy (`tjrs`, status 200) também passou.
+- 🔒 Pós-corte: exclusão/limpeza do `(default)` permanece fora de escopo e exige plano separado com backup fresco e rollback.
 
 **Atualização incremental (2026-04-26 — Wave 40: latência documental + contrato de progresso + handoff lúdico, subonda 1 em branch):**
 - ✅ `document-pipeline.ts` passou a normalizar `percent` por `executionState` via `normalizeProgressForExecution`, reforçando o contrato de verdade de progresso (`running <= 99`, `completed = 100`).

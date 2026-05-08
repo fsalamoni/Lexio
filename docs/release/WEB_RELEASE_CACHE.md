@@ -1,6 +1,6 @@
 # Web Release Cache
 
-Last update: 2026-05-05
+Last update: 2026-05-08
 
 ## Execution Snapshot
 - Branch: main
@@ -112,7 +112,26 @@ Last update: 2026-05-05
 	- docs/release/SUBONDA2_CLOSEOUT.md
 	- docs/release/CROSS_PLATFORM_HANDOFF.md
 
-## Current Validation Cache (2026-05-05)
+## Current Validation Cache (2026-05-08)
+- frontend architecture check: completed (`329` source files checked)
+- frontend typecheck: completed
+- frontend full test suite: completed (`71` files, `537` tests)
+- frontend build: completed with `VITE_FIRESTORE_DATABASE_ID=lexio-prod`
+- functions build: completed
+- Python tests: completed (`2203 passed`)
+- Ruff: completed after cleanup of hybrid search lint findings
+- manifest JSON and `git diff --check`: completed
+- PR #143: merged to `main` (`15b32d1`) after all final checks passed on head `366628c`
+- main Tests workflow: completed (`25576968289` success)
+- Firebase production deploy: completed (`25576968354` success)
+- release-web one-shot: completed (`25581626099` success), publishing Firebase production and GitHub Pages; redesign V2 skipped by input
+- public smoke: completed for `https://lexio.web.app/login` and `https://fsalamoni.github.io/Lexio/login` (status 200, React root present)
+- authenticated production smoke: completed on `https://lexio.web.app` through dashboard, documents, generator, notebook, chat, settings and profile
+- Firestore browser monitor: completed with 34 calls to `lexio-prod`, 0 calls to `(default)`, 0 bad Firestore responses, 0 request failures and 0 console errors
+- DataJud proxy smoke: completed (`tjrs`, status 200)
+- Function error monitor: completed with no `datajudProxy` errors since release start
+
+## Previous Validation Cache (2026-05-05)
 - frontend typecheck: completed (`npm run typecheck` com `TYPECHECK_EXIT:0`)
 - frontend focused test: completed
 - frontend focused tests result: `src/lib/video-generation-pipeline.test.ts` passou (4/4) e `src/lib/datajud-service.test.ts` passou (73/73)
