@@ -5,6 +5,7 @@
  * the function in isolation without a real Firestore connection.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { UsageExecutionRecord } from './cost-analytics'
 
 // ── Mock firebase/firestore SDK ─────────────────────────────────────────────
 
@@ -117,6 +118,12 @@ import {
   getDocumentTypesForProfile,
   getLegalAreasForProfile,
   getRequestFields,
+  getStats,
+  getDailyStats,
+  getByTypeStats,
+  getRecentDocuments,
+  getDashboardSnapshot,
+  getCostBreakdown,
   getResearchNotebook,
   loadAdminClassificationTipos,
   loadAdminDocumentTypes,
@@ -153,6 +160,35 @@ function stubStoredUserId(uid: string) {
   }
   localStorage.setItem('lexio_user_id', uid)
   vi.stubGlobal('window', { localStorage })
+}
+
+function makeGetDocsSnapshot(items: Array<{ id: string; data: Record<string, unknown> }>) {
+  return {
+    docs: items.map(item => ({ id: item.id, data: () => item.data })),
+    empty: items.length === 0,
+  }
+}
+
+function makeUsageExecution(overrides: Partial<UsageExecutionRecord> = {}): UsageExecutionRecord {
+  return {
+    source_type: 'document_generation',
+    source_id: 'doc-1',
+    created_at: '2026-05-07T12:00:00.000Z',
+    function_key: 'document_generation',
+    function_label: 'Geração de documentos',
+    phase: 'redacao',
+    phase_label: 'Redação',
+    agent_name: 'redator',
+    model: 'openai/gpt-4o-mini',
+    model_label: 'GPT-4o Mini',
+    tokens_in: 100,
+    tokens_out: 50,
+    total_tokens: 150,
+    cost_usd: 0.2,
+    duration_ms: 1200,
+    execution_state: 'completed',
+    ...overrides,
+  }
 }
 
 describe('saveNotebookDocumentToDocuments', () => {
@@ -891,6 +927,192 @@ describe('saveNotebookDocumentToDocuments', () => {
       { path: 'users/user-123/chat_conversations/conv-1' },
       expect.objectContaining({ updated_at: expect.any(String) }),
     )
+  })
+})
+
+describe('dashboard stats facade', () => {
+  const uid = 'user-123'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    __resetFirebaseTokenRefreshGuardsForTests()
+    __resetFirestoreAuthCircuitForTests()
+    mockGetIdToken.mockResolvedValue('token')
+    mockFirebaseAuth.currentUser = {
+      uid,
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+    mockOnAuthStateChanged.mockImplementation((_auth: unknown, callback: (user: unknown) => void) => {
+      callback(mockFirebaseAuth.currentUser)
+      return () => undefined
+    })
+    mockCollection.mockReturnValue('col-ref')
+    mockOrderBy.mockImplementation((...args: unknown[]) => ({ orderBy: args }))
+    mockLimit.mockImplementation((value: unknown) => ({ limit: value }))
+    mockQuery.mockImplementation((...args: unknown[]) => ({ query: args }))
+    mockGetDocs.mockResolvedValue(makeGetDocsSnapshot([]))
+  })
+
+  it('builds aggregate dashboard stats from documents and thesis sessions', async () => {
+    mockGetDocs
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'doc-1',
+          data: {
+            document_type_id: 'parecer',
+            status: 'concluido',
+            quality_score: 90,
+            created_at: '2026-05-07T12:00:00.000Z',
+            llm_executions: [makeUsageExecution({ cost_usd: 0.2 })],
+          },
+        },
+        {
+          id: 'doc-2',
+          data: {
+            document_type_id: 'contestacao',
+            status: 'em_revisao',
+            quality_score: 70,
+            created_at: '2026-05-07T13:00:00.000Z',
+            llm_executions: [],
+          },
+        },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'session-1',
+          data: {
+            created_at: '2026-05-07T14:00:00.000Z',
+            status: 'completed',
+            llm_executions: [makeUsageExecution({ source_type: 'thesis_analysis', function_key: 'thesis_analysis', cost_usd: 0.15 })],
+          },
+        },
+      ]))
+
+    const result = await getStats(uid)
+
+    expect(result).toMatchObject({
+      total_documents: 2,
+      completed_documents: 1,
+      processing_documents: 0,
+      pending_review_documents: 1,
+      average_quality_score: 80,
+      average_duration_ms: null,
+    })
+    expect(result.total_cost_usd).toBeCloseTo(0.35, 6)
+    expect(mockCollection).toHaveBeenCalledWith({ _fake: true }, 'users', uid, 'documents')
+    expect(mockCollection).toHaveBeenCalledWith({ _fake: true }, 'users', uid, 'thesis_analysis_sessions')
+  })
+
+  it('keeps dashboard snapshot, recent docs, daily stats and type stats behind the facade', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'))
+      const documentSnapshot = makeGetDocsSnapshot([
+        {
+          id: 'doc-1',
+          data: {
+            document_type_id: 'parecer',
+            tema: 'Tema A',
+            status: 'concluido',
+            quality_score: 90,
+            created_at: '2026-05-07T12:00:00.000Z',
+            llm_cost_usd: 0.1,
+            llm_executions: [makeUsageExecution({ created_at: '2026-05-07T12:00:00.000Z', cost_usd: 0.2 })],
+          },
+        },
+        {
+          id: 'doc-2',
+          data: {
+            document_type_id: 'parecer',
+            tema: 'Tema B',
+            status: 'rascunho',
+            quality_score: 70,
+            created_at: '2026-05-08T10:00:00.000Z',
+            llm_executions: [],
+          },
+        },
+      ])
+      const emptySessions = makeGetDocsSnapshot([])
+
+      mockGetDocs
+        .mockResolvedValueOnce(documentSnapshot)
+        .mockResolvedValueOnce(emptySessions)
+        .mockResolvedValueOnce(documentSnapshot)
+        .mockResolvedValueOnce(documentSnapshot)
+        .mockResolvedValueOnce(documentSnapshot)
+        .mockResolvedValueOnce(emptySessions)
+
+      const snapshot = await getDashboardSnapshot(uid)
+      const recent = await getRecentDocuments(uid, 1)
+      const byType = await getByTypeStats(uid)
+      const daily = await getDailyStats(uid, 2)
+
+      expect(snapshot.documents).toHaveLength(2)
+      expect(recent.map(document => document.id)).toEqual(['doc-1', 'doc-2'])
+      expect(mockLimit).toHaveBeenCalledWith(1)
+      expect(byType).toEqual([{ document_type_id: 'parecer', total: 2, avg_score: 80 }])
+      expect(daily).toEqual([
+        { dia: '2026-05-07', total: 1, concluidos: 1, custo: 0.3 },
+        { dia: '2026-05-08', total: 1, concluidos: 0, custo: 0 },
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('aggregates user cost breakdown across documents, theses, acervo and notebooks', async () => {
+    mockGetDocs
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'doc-1',
+          data: {
+            document_type_id: 'parecer',
+            status: 'concluido',
+            created_at: '2026-05-07T12:00:00.000Z',
+            llm_executions: [makeUsageExecution({ source_id: 'doc-1', cost_usd: 0.2 })],
+          },
+        },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'session-1',
+          data: {
+            created_at: '2026-05-07T13:00:00.000Z',
+            llm_executions: [makeUsageExecution({ source_type: 'thesis_analysis', function_key: 'thesis_analysis', source_id: 'session-1', cost_usd: 0.3 })],
+          },
+        },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'acervo-1',
+          data: {
+            filename: 'referencia.pdf',
+            status: 'indexed',
+            created_at: '2026-05-07T14:00:00.000Z',
+            llm_executions: [makeUsageExecution({ source_type: 'acervo_classificador', function_key: 'acervo_classificador', source_id: 'acervo-1', cost_usd: 0.4 })],
+          },
+        },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'notebook-1',
+          data: {
+            title: 'Caderno',
+            created_at: '2026-05-07T15:00:00.000Z',
+            llm_executions: [makeUsageExecution({ source_type: 'caderno_pesquisa', function_key: 'caderno_pesquisa', source_id: 'notebook-1', cost_usd: 0.5 })],
+          },
+        },
+      ]))
+
+    const result = await getCostBreakdown(uid)
+
+    expect(result.total_cost_usd).toBeCloseTo(1.4, 6)
+    expect(result.by_function.map(item => item.key)).toEqual(expect.arrayContaining([
+      'document_generation',
+      'thesis_analysis',
+      'acervo_classificador',
+      'caderno_pesquisa',
+    ]))
   })
 })
 

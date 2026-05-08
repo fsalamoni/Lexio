@@ -13,7 +13,7 @@ This keeps new features from changing central code paths unnecessarily and reduc
 The current frontend already has useful modular patterns:
 
 - `frontend/src/lib/chat-orchestrator/` is a domain submodule.
-- `frontend/src/lib/modules/dashboard/` is the first extracted product module with compatibility facades.
+- `frontend/src/lib/modules/dashboard/` owns dashboard data/V2 helpers plus Stats/Cost Firestore aggregation behind compatibility facades.
 - `frontend/src/lib/modules/notebook/` now owns notebook progress contracts, pure notebook constants and Research Notebook Firestore repository operations behind compatibility facades.
 - `frontend/src/lib/modules/documents/` now owns document prompt metadata, profile prompt helpers, acervo prompt builders, acervo search helpers, the extracted Pesquisador user prompt and the first Documents Firestore repository behind compatibility exports from `generation-service.ts` and `firestore-service.ts`.
 - `frontend/src/lib/modules/theses/` now owns the Thesis Bank Firestore repository and thesis analysis session persistence behind compatibility exports from `firestore-service.ts`.
@@ -151,11 +151,12 @@ Completed foundation extraction:
 13. Extract Profile and Onboarding reads/writes plus wizard step assembly into `frontend/src/lib/modules/profile/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 14. Extract platform/user settings reads/writes and legacy migration into `frontend/src/lib/modules/settings/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 15. Extract Admin Taxonomy catalogs, sanitizers, load/save helpers, profile filters and request fields into `frontend/src/lib/modules/admin-taxonomy/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+16. Extract Dashboard Stats/Cost aggregations, dashboard snapshot reads and cost breakdown into `frontend/src/lib/modules/dashboard/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 
 Next safe extraction order:
 
 1. Continue splitting high-risk Firestore repository operations only after tests are in place.
-2. Move one of the 2 remaining bounded repository slices out of `firestore-service.ts`: Dashboard Stats/Cost or Chat, preserving public imports until callers migrate.
+2. Move the last remaining bounded repository slice out of `firestore-service.ts`: Chat, preserving public imports until callers migrate.
 
 ## Compatibility Rule
 

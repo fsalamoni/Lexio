@@ -18,6 +18,8 @@
         "frontend/src/lib/modules/dashboard/index.ts",
         "frontend/src/lib/modules/dashboard/dashboard-data.ts",
         "frontend/src/lib/modules/dashboard/dashboard-v2.ts",
+        "frontend/src/lib/modules/dashboard/metrics.ts",
+        "frontend/src/lib/modules/dashboard/repository.ts",
         "frontend/src/lib/modules/dashboard/dashboard-data.test.ts",
         "frontend/src/lib/modules/dashboard/dashboard-v2.test.ts",
         "frontend/src/lib/dashboard-data.ts",
@@ -78,7 +80,7 @@
         "docs/guides/refactoring-module.md",
         "docs/guides/testing-modules.md"
       ],
-      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard, notebook progress/constants e repository Firestore de Research Notebook para lib/modules/notebook, prompts/metadados/helpers de acervo e o primeiro repository Firestore de documentos para lib/modules/documents, repository Firestore do Banco de Teses e sessões de análise de teses para lib/modules/theses, repository Firestore de Acervo para lib/modules/acervo, repository Firestore de Profile/Onboarding para lib/modules/profile, repository Firestore de Settings/Migration para lib/modules/settings, repository de Admin Taxonomy para lib/modules/admin-taxonomy, definições de agentes para lib/pipelines/agent-definitions, analytics de plataforma para lib/platform-analytics e helpers puros de paths/references do Firestore para lib/core/firestore, sempre com facades/entrypoints compatíveis; restam Dashboard Stats/Cost e Chat como fatias planejadas de firestore-service.ts nesta fase."
+      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard, incluindo builders puros em metrics.ts e repository de Dashboard Stats/Cost, notebook progress/constants e repository Firestore de Research Notebook para lib/modules/notebook, prompts/metadados/helpers de acervo e o primeiro repository Firestore de documentos para lib/modules/documents, repository Firestore do Banco de Teses e sessões de análise de teses para lib/modules/theses, repository Firestore de Acervo para lib/modules/acervo, repository Firestore de Profile/Onboarding para lib/modules/profile, repository Firestore de Settings/Migration para lib/modules/settings, repository de Admin Taxonomy para lib/modules/admin-taxonomy, definições de agentes para lib/pipelines/agent-definitions, analytics de plataforma para lib/platform-analytics e helpers puros de paths/references do Firestore para lib/core/firestore, sempre com facades/entrypoints compatíveis; resta Chat como fatia planejada de firestore-service.ts nesta fase."
     },
     {
       "id": "E1.F1",

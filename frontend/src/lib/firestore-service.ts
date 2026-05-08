@@ -19,22 +19,12 @@ import {
 import { onAuthStateChanged } from 'firebase/auth'
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import {
-  buildCostBreakdown,
-  buildUsageSummary,
-  extractDocumentUsageExecutions,
-  extractThesisSessionExecutions,
-  extractAcervoUsageExecutions,
-  extractNotebookUsageExecutions,
-  type CostBreakdown,
-  type UsageExecutionRecord,
-  type UsageSummary,
-} from './cost-analytics'
-import {
   NOTEBOOK_SEARCH_MEMORY_DOC_ID,
   normalizeFirestoreDocumentId,
 } from './core/firestore'
 import { createAdminTaxonomyRepository } from './modules/admin-taxonomy'
 import { createAcervoRepository } from './modules/acervo'
+import { createDashboardRepository } from './modules/dashboard/repository'
 import { createDocumentsRepository } from './modules/documents'
 import { createResearchNotebookRepository } from './modules/notebook'
 import { createProfileRepository } from './modules/profile'
@@ -102,11 +92,7 @@ import type {
   ProfileData,
   UserSettingsData,
   ContextDetailData,
-  DocumentData,
   ThesisData,
-  AcervoDocumentData,
-  ResearchNotebookData,
-  ThesisAnalysisSessionData,
   PlatformUsageRow,
   ChatEffortLevel,
   ChatConversationData,
@@ -284,10 +270,6 @@ function stripUndefined<T extends Record<string, any>>(obj: T): T {
     }
   }
   return result as T
-}
-
-function round6(value: number) {
-  return Number(value.toFixed(6))
 }
 
 function getDocumentCreatedAtValue(value: unknown) {
@@ -491,131 +473,6 @@ export const updateDocument = documentsRepository.updateDocument
 export const deleteDocument = documentsRepository.deleteDocument
 export const saveNotebookDocumentToDocuments = documentsRepository.saveNotebookDocumentToDocuments
 
-// ── Stats (computed from Firestore data) ─────────────────────────────────────
-
-export async function getStats(uid: string) {
-  const [{ items }, sessions] = await Promise.all([
-    listDocuments(uid),
-    listThesisAnalysisSessions(uid).catch(() => []),
-  ])
-  const executions = [
-    ...items.flatMap(doc => extractDocumentUsageExecutions(doc)),
-    ...sessions.flatMap(session => extractThesisSessionExecutions(session)),
-  ]
-  const usageSummary = buildUsageSummary(executions)
-  const total_documents = items.length
-  const completed_documents = items.filter(d => d.status === 'concluido' || d.status === 'aprovado').length
-  const processing_documents = items.filter(d => d.status === 'processando').length
-  const pending_review_documents = items.filter(d => d.status === 'em_revisao' || d.status === 'rascunho').length
-  const scores = items.map(d => d.quality_score).filter((s): s is number => s != null)
-  const average_quality_score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null
-
-  return {
-    total_documents,
-    completed_documents,
-    processing_documents,
-    pending_review_documents,
-    average_quality_score,
-    total_cost_usd: round6(usageSummary.total_cost_usd),
-    average_duration_ms: null,
-  }
-}
-
-/** Compute daily document counts from real Firestore documents for the last N days. */
-export async function getDailyStats(uid: string, days = 30) {
-  const [{ items }, sessions] = await Promise.all([
-    listDocuments(uid),
-    listThesisAnalysisSessions(uid).catch(() => []),
-  ])
-  const executions = [
-    ...items.flatMap(doc => extractDocumentUsageExecutions(doc)),
-    ...sessions.flatMap(session => extractThesisSessionExecutions(session)),
-  ]
-  const now = Date.now()
-  const msPerDay = 86_400_000
-  const cutoff = new Date(now - days * msPerDay).toISOString().slice(0, 10)
-
-  // Build a day→counts map
-  const dayMap = new Map<string, { total: number; concluidos: number; custo: number }>()
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now - i * msPerDay).toISOString().slice(0, 10)
-    dayMap.set(d, { total: 0, concluidos: 0, custo: 0 })
-  }
-
-  for (const doc of items) {
-    if (!doc.created_at) continue // skip docs without a creation date
-    const day = doc.created_at.slice(0, 10)
-    if (day >= cutoff) {
-      const entry = dayMap.get(day)
-      if (entry) {
-        entry.total++
-        if (doc.status === 'concluido' || doc.status === 'aprovado') entry.concluidos++
-        const cost = doc.llm_cost_usd
-        if (typeof cost === 'number') entry.custo += cost
-      }
-    }
-  }
-
-  for (const execution of executions) {
-    if (!execution.created_at) continue
-    const day = execution.created_at.slice(0, 10)
-    if (day < cutoff) continue
-
-    const entry = dayMap.get(day)
-    if (entry) entry.custo += execution.cost_usd
-  }
-
-  return Array.from(dayMap.entries()).map(([dia, v]) => ({
-    dia,
-    total: v.total,
-    concluidos: v.concluidos,
-    custo: round6(v.custo),
-  }))
-}
-
-/** Compute document counts by type from real Firestore documents. */
-export async function getByTypeStats(uid: string) {
-  const { items } = await listDocuments(uid)
-  const typeMap = new Map<string, { total: number; scores: number[] }>()
-
-  for (const doc of items) {
-    const t = doc.document_type_id
-    if (!t) continue // skip docs without a valid type
-    if (!typeMap.has(t)) typeMap.set(t, { total: 0, scores: [] })
-    const entry = typeMap.get(t)!
-    entry.total++
-    if (doc.quality_score != null) entry.scores.push(doc.quality_score)
-  }
-
-  return Array.from(typeMap.entries()).map(([document_type_id, v]) => ({
-    document_type_id,
-    total: v.total,
-    avg_score: v.scores.length > 0
-      ? Math.round(v.scores.reduce((a, b) => a + b, 0) / v.scores.length)
-      : null,
-  }))
-}
-
-export async function getRecentDocuments(uid: string, count = 5): Promise<DocumentData[]> {
-  const { items } = await listDocuments(uid, { limit: count })
-  return items
-}
-
-export async function getDashboardSnapshot(uid: string): Promise<{
-  documents: DocumentData[]
-  thesisSessions: ThesisAnalysisSessionData[]
-}> {
-  const [{ items }, thesisSessions] = await Promise.all([
-    listDocuments(uid),
-    listThesisAnalysisSessions(uid).catch(() => []),
-  ])
-
-  return {
-    documents: items,
-    thesisSessions,
-  }
-}
-
 // ── Research Notebook (Caderno de Pesquisa) repository facade ────────────────
 
 export type { NotebookSearchMemoryBackfillReport } from './modules/notebook'
@@ -636,35 +493,6 @@ export const getResearchNotebook = researchNotebookRepository.getResearchNoteboo
 export const createResearchNotebook = researchNotebookRepository.createResearchNotebook
 export const updateResearchNotebook = researchNotebookRepository.updateResearchNotebook
 export const deleteResearchNotebook = researchNotebookRepository.deleteResearchNotebook
-
-export async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
-  const [{ items }, sessions, acervo, notebooks] = await Promise.all([
-    listDocuments(uid),
-    listThesisAnalysisSessions(uid).catch(() => []),
-    listAcervoDocuments(uid).then(r => r.items).catch(() => [] as AcervoDocumentData[]),
-    listResearchNotebooks(uid).then(r => r.items).catch(() => [] as ResearchNotebookData[]),
-  ])
-
-  const executions = [
-    ...items.flatMap(doc => extractDocumentUsageExecutions(doc)),
-    ...sessions.flatMap(session => extractThesisSessionExecutions(session)),
-    ...acervo.flatMap(acervoDoc => extractAcervoUsageExecutions({
-      id: acervoDoc.id,
-      filename: acervoDoc.filename,
-      created_at: acervoDoc.created_at,
-      llm_executions: acervoDoc.llm_executions,
-    })),
-    ...notebooks.flatMap(nb => extractNotebookUsageExecutions({
-      id: nb.id,
-      title: nb.title,
-      created_at: nb.created_at,
-      llm_executions: nb.llm_executions,
-      usage_summary: nb.usage_summary,
-    })),
-  ]
-
-  return buildCostBreakdown(executions)
-}
 
 // ── Admin taxonomy repository facade ────────────────────────────────────────
 
@@ -752,6 +580,22 @@ export const convertAcervoToJson = acervoRepository.convertAcervoToJson
 export const getAcervoDocsWithoutTags = acervoRepository.getAcervoDocsWithoutTags
 export const getAcervoDocsWithoutEmenta = acervoRepository.getAcervoDocsWithoutEmenta
 export const getAcervoContext = acervoRepository.getAcervoContext
+
+// ── Dashboard Stats/Cost repository facade ─────────────────────────────────
+
+const dashboardRepository = createDashboardRepository({
+  listDocuments: documentsRepository.listDocuments,
+  listThesisAnalysisSessions: thesesRepository.listThesisAnalysisSessions,
+  listAcervoDocuments: acervoRepository.listAcervoDocuments,
+  listResearchNotebooks: researchNotebookRepository.listResearchNotebooks,
+})
+
+export const getStats = dashboardRepository.getStats
+export const getDailyStats = dashboardRepository.getDailyStats
+export const getByTypeStats = dashboardRepository.getByTypeStats
+export const getRecentDocuments = dashboardRepository.getRecentDocuments
+export const getDashboardSnapshot = dashboardRepository.getDashboardSnapshot
+export const getCostBreakdown = dashboardRepository.getCostBreakdown
 
 // ── Acervo analysis tracking ──────────────────────────────────────────────────
 
