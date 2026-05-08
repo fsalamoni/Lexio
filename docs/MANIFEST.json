@@ -1,7 +1,7 @@
 {
   "_meta": {
     "description": "Machine-readable snapshot of Lexio feature implementation state.",
-    "updated": "2026-05-07",
+    "updated": "2026-05-08",
     "cycle": "wave42-core-modules-foundation",
     "convention": "Update this file at the end of each implementation cycle. States: implemented | partial | missing"
   },
@@ -43,6 +43,8 @@
         "frontend/src/lib/modules/profile/repository.ts",
         "frontend/src/lib/modules/settings/index.ts",
         "frontend/src/lib/modules/settings/repository.ts",
+        "frontend/src/lib/modules/admin-taxonomy/index.ts",
+        "frontend/src/lib/modules/admin-taxonomy/repository.ts",
         "frontend/src/lib/pipelines/agent-definitions/index.ts",
         "frontend/src/lib/pipelines/agent-definitions/document-v2.ts",
         "frontend/src/lib/pipelines/agent-definitions/thesis-analyst.ts",
@@ -76,7 +78,7 @@
         "docs/guides/refactoring-module.md",
         "docs/guides/testing-modules.md"
       ],
-      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard, notebook progress/constants e repository Firestore de Research Notebook para lib/modules/notebook, prompts/metadados/helpers de acervo e o primeiro repository Firestore de documentos para lib/modules/documents, repository Firestore do Banco de Teses e sessões de análise de teses para lib/modules/theses, repository Firestore de Acervo para lib/modules/acervo, repository Firestore de Profile/Onboarding para lib/modules/profile, repository Firestore de Settings/Migration para lib/modules/settings, definições de agentes para lib/pipelines/agent-definitions, analytics de plataforma para lib/platform-analytics e helpers puros de paths/references do Firestore para lib/core/firestore, sempre com facades/entrypoints compatíveis; extração completa dos demais módulos segue incremental."
+      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard, notebook progress/constants e repository Firestore de Research Notebook para lib/modules/notebook, prompts/metadados/helpers de acervo e o primeiro repository Firestore de documentos para lib/modules/documents, repository Firestore do Banco de Teses e sessões de análise de teses para lib/modules/theses, repository Firestore de Acervo para lib/modules/acervo, repository Firestore de Profile/Onboarding para lib/modules/profile, repository Firestore de Settings/Migration para lib/modules/settings, repository de Admin Taxonomy para lib/modules/admin-taxonomy, definições de agentes para lib/pipelines/agent-definitions, analytics de plataforma para lib/platform-analytics e helpers puros de paths/references do Firestore para lib/core/firestore, sempre com facades/entrypoints compatíveis; restam Dashboard Stats/Cost e Chat como fatias planejadas de firestore-service.ts nesta fase."
     },
     {
       "id": "E1.F1",

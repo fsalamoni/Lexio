@@ -4,7 +4,7 @@
  * Mocks the Firebase SDK and the local firebase module so that we can test
  * the function in isolation without a real Firestore connection.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // ── Mock firebase/firestore SDK ─────────────────────────────────────────────
 
@@ -79,12 +79,12 @@ vi.mock('./firebase', () => ({
 // ── Mock classification-data (imported by firestore-service at module level) ─
 
 vi.mock('./classification-data', () => ({
-  CLASSIFICATION_TIPOS: {},
-  DEFAULT_AREA_ASSUNTOS: {},
+  CLASSIFICATION_TIPOS: { civil: { contratos: ['locacao'] } },
+  DEFAULT_AREA_ASSUNTOS: { civil: ['contratos', 'responsabilidade civil'] },
 }))
 
 vi.mock('./document-structures', () => ({
-  DEFAULT_DOC_STRUCTURES: {},
+  DEFAULT_DOC_STRUCTURES: { parecer: '# Estrutura padrão do parecer' },
 }))
 
 vi.mock('./document-json-converter', () => ({
@@ -114,10 +114,19 @@ import {
   getSettings,
   getUserSettings,
   getWizardData,
+  getDocumentTypesForProfile,
+  getLegalAreasForProfile,
+  getRequestFields,
   getResearchNotebook,
+  loadAdminClassificationTipos,
+  loadAdminDocumentTypes,
+  loadAdminLegalAreas,
   listDocuments,
   sanitizeAdminDocumentTypes,
   sanitizeAdminLegalAreas,
+  saveAdminClassificationTipos,
+  saveAdminDocumentTypes,
+  saveAdminLegalAreas,
   saveSettings,
   saveUserSettings,
   saveProfile,
@@ -133,6 +142,18 @@ import {
 } from './firestore-service'
 
 // ── Tests ───────────────────────────────────────────────────────────────────
+
+function stubStoredUserId(uid: string) {
+  const store = new Map<string, string>()
+  const localStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => { store.set(key, String(value)) },
+    removeItem: (key: string) => { store.delete(key) },
+    clear: () => { store.clear() },
+  }
+  localStorage.setItem('lexio_user_id', uid)
+  vi.stubGlobal('window', { localStorage })
+}
 
 describe('saveNotebookDocumentToDocuments', () => {
   const uid = 'user-123'
@@ -920,5 +941,142 @@ describe('admin catalog sanitizers', () => {
         is_enabled: false,
       },
     ])
+  })
+})
+
+describe('admin taxonomy facade', () => {
+  beforeEach(() => {
+    stubStoredUserId('user-123')
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('loads user document types and merges default structures', async () => {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        legacy_migrated_at: '2026-05-08T00:00:00.000Z',
+        document_types: [
+          { id: 'parecer', name: 'Parecer customizado', description: 'Uso interno', templates: ['custom'], is_enabled: true },
+        ],
+      }),
+    })
+
+    const result = await loadAdminDocumentTypes()
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', 'user-123', 'settings', 'preferences',
+    )
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: 'parecer',
+        name: 'Parecer customizado',
+        templates: ['custom'],
+        structure: '# Estrutura padrão do parecer',
+      }),
+    ])
+  })
+
+  it('saves sanitized document types into user preferences', async () => {
+    await saveAdminDocumentTypes([
+      { id: 'tipo_custom', name: 'Tipo Custom', description: 'Descrição', templates: [], is_enabled: false },
+    ])
+
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/settings/preferences' },
+      expect.objectContaining({
+        document_types: [{
+          id: 'tipo_custom',
+          name: 'Tipo Custom',
+          description: 'Descrição',
+          templates: ['generic'],
+          is_enabled: false,
+        }],
+        updated_at: '__server_timestamp__',
+      }),
+      { merge: true },
+    )
+  })
+
+  it('loads user legal areas and merges default assuntos', async () => {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        legacy_migrated_at: '2026-05-08T00:00:00.000Z',
+        legal_areas: [
+          { id: 'civil', name: 'Civil custom', description: 'Descrição', is_enabled: true },
+        ],
+      }),
+    })
+
+    const result = await loadAdminLegalAreas()
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: 'civil',
+        name: 'Civil custom',
+        assuntos: ['contratos', 'responsabilidade civil'],
+      }),
+    ])
+  })
+
+  it('saves sanitized legal areas into user preferences', async () => {
+    await saveAdminLegalAreas([
+      { id: 'area_custom', name: 'Área Custom', description: 'Descrição', assuntos: [' válido ', ''], is_enabled: true },
+    ])
+
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/settings/preferences' },
+      expect.objectContaining({
+        legal_areas: [{
+          id: 'area_custom',
+          name: 'Área Custom',
+          description: 'Descrição',
+          assuntos: ['válido'],
+          is_enabled: true,
+        }],
+        updated_at: '__server_timestamp__',
+      }),
+      { merge: true },
+    )
+  })
+
+  it('loads and saves classification tipos through user preferences', async () => {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        legacy_migrated_at: '2026-05-08T00:00:00.000Z',
+        classification_tipos: { civil: { contratos: ['compra e venda'] } },
+      }),
+    })
+
+    await expect(loadAdminClassificationTipos()).resolves.toEqual({
+      tipos: { civil: { contratos: ['compra e venda'] } },
+    })
+
+    await saveAdminClassificationTipos({ tax: { tributos: ['icms'] } })
+
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/settings/preferences' },
+      expect.objectContaining({
+        classification_tipos: { tax: { tributos: ['icms'] } },
+        updated_at: '__server_timestamp__',
+      }),
+      { merge: true },
+    )
+  })
+
+  it('keeps profile taxonomy filters and request fields available through the facade', () => {
+    const promotorDocIds = getDocumentTypesForProfile({ position: 'Promotor de Justiça' } as never).map(item => item.id)
+    const sortedAreaIds = getLegalAreasForProfile({ primary_areas: ['tax', 'civil'] } as never).slice(0, 2).map(item => item.id)
+    const parecerFields = getRequestFields('parecer').fields.map(field => field.key)
+
+    expect(promotorDocIds).toContain('parecer')
+    expect(promotorDocIds).not.toContain('sentenca')
+    expect(sortedAreaIds).toEqual(['civil', 'tax'])
+    expect(parecerFields).toContain('objeto')
   })
 })
