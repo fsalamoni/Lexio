@@ -17,6 +17,7 @@ The current frontend already has useful modular patterns:
 - `frontend/src/lib/modules/notebook/` now owns notebook progress contracts and pure notebook constants behind compatibility facades.
 - `frontend/src/lib/modules/documents/` now owns document prompt metadata, profile prompt helpers, acervo prompt builders, acervo search helpers, the extracted Pesquisador user prompt and the first Documents Firestore repository behind compatibility exports from `generation-service.ts` and `firestore-service.ts`.
 - `frontend/src/lib/modules/theses/` now owns the Thesis Bank Firestore repository behind compatibility exports from `firestore-service.ts`.
+- `frontend/src/lib/modules/acervo/` now owns Acervo Firestore repository operations behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/pipelines/agent-definitions/` now owns per-pipeline agent definition arrays behind compatibility exports from `model-config.ts`.
 - `frontend/src/lib/platform-analytics.ts` now owns platform-wide Firestore aggregation, operational cost analytics and rollout policy calculations behind compatibility exports from `firestore-service.ts`.
 - `frontend/src/lib/core/firestore/` now owns pure Firestore path/reference helpers shared by Firestore repositories and platform analytics.
@@ -141,11 +142,12 @@ Completed foundation extraction:
 7. Introduce pure Firestore path/reference helpers under `frontend/src/lib/core/firestore/`, migrating shared ID normalization, owner extraction, notebook memory path parsing and notebook path builders without changing public Firestore service imports.
 8. Extract Documents CRUD and notebook-document persistence into `frontend/src/lib/modules/documents/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 9. Extract Thesis Bank CRUD/listing/stats into `frontend/src/lib/modules/theses/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
+10. Extract Acervo CRUD, indexing reads, ementa/tag updates, text JSON conversion helpers and thesis-analysis markers into `frontend/src/lib/modules/acervo/repository.ts`, preserving public imports through `firestore-service.ts` compatibility exports.
 
 Next safe extraction order:
 
 1. Continue splitting high-risk Firestore repository operations only after tests are in place.
-2. Move the next bounded domain repository, such as Acervo or Research Notebook, out of `firestore-service.ts`, preserving public imports until callers migrate.
+2. Move the next bounded domain repository, such as Research Notebook or user settings/profile, out of `firestore-service.ts`, preserving public imports until callers migrate.
 
 ## Compatibility Rule
 

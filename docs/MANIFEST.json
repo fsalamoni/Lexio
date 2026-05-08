@@ -36,6 +36,8 @@
         "frontend/src/lib/modules/documents/repository.ts",
         "frontend/src/lib/modules/theses/index.ts",
         "frontend/src/lib/modules/theses/repository.ts",
+        "frontend/src/lib/modules/acervo/index.ts",
+        "frontend/src/lib/modules/acervo/repository.ts",
         "frontend/src/lib/pipelines/agent-definitions/index.ts",
         "frontend/src/lib/pipelines/agent-definitions/document-v2.ts",
         "frontend/src/lib/pipelines/agent-definitions/thesis-analyst.ts",
@@ -68,7 +70,7 @@
         "docs/guides/refactoring-module.md",
         "docs/guides/testing-modules.md"
       ],
-      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard, notebook progress/constants para lib/modules/notebook, prompts/metadados/helpers de acervo e o primeiro repository Firestore de documentos para lib/modules/documents, repository Firestore do Banco de Teses para lib/modules/theses, definições de agentes para lib/pipelines/agent-definitions, analytics de plataforma para lib/platform-analytics e helpers puros de paths/references do Firestore para lib/core/firestore, sempre com facades/entrypoints compatíveis; extração completa dos demais módulos segue incremental."
+      "notes": "Primeira fase da arquitetura core/módulos: CI passa a bloquear imports proibidos e endpoints OpenRouter fora de adapters; violações lib->UI/page conhecidas foram removidas; dashboard foi extraído para lib/modules/dashboard, notebook progress/constants para lib/modules/notebook, prompts/metadados/helpers de acervo e o primeiro repository Firestore de documentos para lib/modules/documents, repository Firestore do Banco de Teses para lib/modules/theses, repository Firestore de Acervo para lib/modules/acervo, definições de agentes para lib/pipelines/agent-definitions, analytics de plataforma para lib/platform-analytics e helpers puros de paths/references do Firestore para lib/core/firestore, sempre com facades/entrypoints compatíveis; extração completa dos demais módulos segue incremental."
     },
     {
       "id": "E1.F1",
@@ -1268,6 +1270,7 @@
       "frontend/src/lib/firestore-service.ts",
       "frontend/src/lib/modules/documents/repository.ts",
       "frontend/src/lib/modules/theses/repository.ts",
+      "frontend/src/lib/modules/acervo/repository.ts",
       "frontend/src/lib/core/firestore/paths.ts",
       "frontend/src/lib/platform-analytics.ts",
       "frontend/src/pages/ResearchNotebook.tsx"

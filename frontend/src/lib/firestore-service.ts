@@ -22,11 +22,6 @@ import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import { CLASSIFICATION_TIPOS, DEFAULT_AREA_ASSUNTOS } from './classification-data'
 import { DEFAULT_DOC_STRUCTURES } from './document-structures'
 import {
-  textToStructuredJson,
-  serializeStructuredJson,
-  resolveTextContent,
-} from './document-json-converter'
-import {
   buildCostBreakdown,
   buildUsageSummary,
   extractDocumentUsageExecutions,
@@ -44,6 +39,7 @@ import {
   getRefUserId,
   normalizeFirestoreDocumentId,
 } from './core/firestore'
+import { createAcervoRepository } from './modules/acervo'
 import { createDocumentsRepository } from './modules/documents'
 import { createThesesRepository } from './modules/theses'
 
@@ -1436,357 +1432,27 @@ export async function seedThesesIfEmpty(uid: string): Promise<number> {
 
 // ── Acervo Documents (Firestore /users/{uid}/acervo subcollection) ───────────
 
-const ACERVO_CHUNK_SIZE = 500
-const ACERVO_MAX_EXCERPT_LENGTH = 2000
-/**
- * Firestore has a 1 MiB (1,048,576 bytes) document size limit.
- * ~900 KB of text leaves headroom for metadata fields, field names,
- * and multi-byte UTF-8 characters that expand beyond their char count.
- */
-const ACERVO_MAX_TEXT_LENGTH = 900_000
+const acervoRepository = createAcervoRepository({
+  ensureFirestore,
+  resolveEffectiveUid,
+  writeUserScoped,
+  withFirestoreRetry,
+  isAuthAccessFirestoreError,
+  getErrorMessage,
+  getCreatedAtValue: getDocumentCreatedAtValue,
+})
 
-async function getIndexedAcervoDocs(
-  uid: string,
-  contextLabel: string,
-): Promise<Array<{ id: string; data: AcervoDocumentData }>> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, contextLabel)
-  const colRef = collection(db, 'users', effectiveUid, 'acervo')
-
-  try {
-    const snap = await withFirestoreRetry(
-      () => getDocs(query(colRef, where('status', '==', 'indexed'), orderBy('created_at', 'desc'))),
-      `${contextLabel}.query`,
-    )
-    return snap.docs.map(d => ({ id: d.id, data: d.data() as AcervoDocumentData }))
-  } catch (error) {
-    if (isAuthAccessFirestoreError(error)) {
-      throw error
-    }
-    console.warn('Firestore indexed acervo query failed; using client-side fallback:', getErrorMessage(error))
-    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), `${contextLabel}.fallback`)
-    return fallbackSnap.docs
-      .map(d => ({ id: d.id, data: d.data() as AcervoDocumentData }))
-      .filter(entry => entry.data.status === 'indexed')
-      .sort((a, b) => getDocumentCreatedAtValue(b.data.created_at) - getDocumentCreatedAtValue(a.data.created_at))
-  }
-}
-
-/**
- * List acervo (reference) documents for a user.
- * Transparently resolves structured JSON format to plain text for consumers.
- */
-export async function listAcervoDocuments(
-  uid: string,
-  opts: { limit?: number } = {},
-): Promise<{ items: AcervoDocumentData[]; total: number }> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'listAcervoDocuments')
-  const constraints: QueryConstraint[] = [orderBy('created_at', 'desc')]
-  if (opts.limit) constraints.push(limit(opts.limit))
-  const colRef = collection(db, 'users', effectiveUid, 'acervo')
-  try {
-    const snap = await withFirestoreRetry(
-      () => getDocs(query(colRef, ...constraints)),
-      'listAcervoDocuments.query',
-    )
-    const items = snap.docs.map(d => {
-      const raw = d.data() as AcervoDocumentData
-      return {
-        ...raw,
-        id: d.id,
-        // Resolve structured JSON to plain text for consumers that expect plain text
-        text_content: resolveTextContent(raw.text_content || ''),
-      }
-    })
-    return { items, total: items.length }
-  } catch (error) {
-    if (isAuthAccessFirestoreError(error)) {
-      throw error
-    }
-    console.warn('Firestore acervo query failed; using client-side fallback:', getErrorMessage(error))
-    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'listAcervoDocuments.fallback')
-    let items = fallbackSnap.docs.map(d => {
-      const raw = d.data() as AcervoDocumentData
-      return {
-        ...raw,
-        id: d.id,
-        text_content: resolveTextContent(raw.text_content || ''),
-      }
-    })
-    items = items.sort((a, b) => getDocumentCreatedAtValue(b.created_at) - getDocumentCreatedAtValue(a.created_at))
-    if (opts.limit) items = items.slice(0, opts.limit)
-    return { items, total: items.length }
-  }
-}
-
-/**
- * Create an acervo document from uploaded file text content.
- *
- * **Conversion**: Text is converted to a compact structured JSON format (v1)
- * before storage — this reduces Firestore document size by 30-60% while
- * maintaining full searchability via the `full_text` field.
- *
- * **Dedup rule**: If a document with the same filename already exists,
- * the older version is deleted so the newest upload always wins.
- */
-export async function createAcervoDocument(
-  uid: string,
-  data: { filename: string; content_type: string; size_bytes: number; text_content: string; pageCount?: number },
-): Promise<AcervoDocumentData & { truncated?: boolean }> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'createAcervoDocument')
-  const now = new Date().toISOString()
-
-  // Remove previous versions with the same filename (last upload wins)
-  try {
-    const existing = await withFirestoreRetry(
-      () => getDocs(query(collection(db, 'users', effectiveUid, 'acervo'), where('filename', '==', data.filename))),
-      'createAcervoDocument.dedup',
-    )
-    for (const snap of existing.docs) {
-      await withFirestoreRetry(() => deleteDoc(snap.ref), 'createAcervoDocument.dedupDelete')
-    }
-  } catch (err) {
-    console.warn('Acervo dedup check failed (non-fatal):', err)
-  }
-
-  const raw = data.text_content.trim()
-
-  // Convert to structured JSON for compact storage (pass pageCount for PDF metadata)
-  const structured = textToStructuredJson(raw, data.filename, data.pageCount)
-  const jsonStr = serializeStructuredJson(structured)
-
-  // Check if the JSON serialization fits within Firestore limits
-  const truncated = jsonStr.length > ACERVO_MAX_TEXT_LENGTH
-  const textToStore = truncated ? jsonStr.slice(0, ACERVO_MAX_TEXT_LENGTH) : jsonStr
-  if (truncated) {
-    console.warn(
-      `Acervo document "${data.filename}" JSON truncated from ${jsonStr.length} to ${ACERVO_MAX_TEXT_LENGTH} chars ` +
-      `(original text: ${raw.length} chars, compression: ${(structured.meta.compression_ratio * 100).toFixed(1)}%)`,
-    )
-  }
-
-  const chunks = structured.full_text.length > 0
-    ? Math.ceil(structured.full_text.length / ACERVO_CHUNK_SIZE)
-    : 0
-
-  const acervoDoc: Omit<AcervoDocumentData, 'id'> = {
-    filename: data.filename,
-    content_type: data.content_type,
-    size_bytes: data.size_bytes,
-    text_content: textToStore,
-    chunks_count: chunks,
-    status: structured.full_text.length > 0 ? 'indexed' : 'index_empty',
-    storage_format: 'json',
-    created_at: now,
-  }
-  const ref = await withFirestoreRetry(
-    () => addDoc(collection(db, 'users', effectiveUid, 'acervo'), acervoDoc),
-    'createAcervoDocument.write',
-  )
-  return { id: ref.id, ...acervoDoc, truncated }
-}
-
-/**
- * Delete an acervo document.
- */
-export async function deleteAcervoDocument(uid: string, docId: string): Promise<void> {
-  await writeUserScoped(uid, 'deleteAcervoDocument', async (db, effectiveUid) => {
-    await deleteDoc(doc(db, 'users', effectiveUid, 'acervo', docId))
-  })
-}
-
-/**
- * Get ALL indexed acervo documents with full text content (for acervo-based generation).
- * Transparently resolves structured JSON format to plain text via resolveTextContent().
- * Returns an array of { id, filename, text_content, created_at } for the buscador agent.
- */
-export async function getAllAcervoDocumentsForSearch(
-  uid: string,
-): Promise<Array<{ id: string; filename: string; text_content: string; created_at: string; ementa?: string; ementa_keywords?: string[]; natureza?: AcervoDocumentData['natureza']; area_direito?: string[]; assuntos?: string[]; tipo_documento?: string; contexto?: string[] }>> {
-  const docs = await getIndexedAcervoDocs(uid, 'getAllAcervoDocumentsForSearch')
-  return docs
-    .map(({ id, data }) => {
-      return {
-        id,
-        filename: data.filename,
-        text_content: resolveTextContent(data.text_content || ''),
-        created_at: data.created_at,
-        ementa: data.ementa,
-        ementa_keywords: data.ementa_keywords,
-        natureza: data.natureza,
-        area_direito: data.area_direito,
-        assuntos: data.assuntos,
-        tipo_documento: data.tipo_documento,
-        contexto: data.contexto,
-      }
-    })
-    .filter(d => d.text_content.length > 0)
-}
-
-/**
- * Merge new LLM execution records with any existing ones on an acervo document.
- */
-async function mergeAcervoExecutions(
-  uid: string,
-  docId: string,
-  executions: UsageExecutionRecord[],
-): Promise<UsageExecutionRecord[]> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'mergeAcervoExecutions')
-  try {
-    const existing = await withFirestoreRetry(
-      () => getDoc(doc(db, 'users', effectiveUid, 'acervo', docId)),
-      'mergeAcervoExecutions',
-    )
-    const existingExecs = (existing.data()?.llm_executions ?? []) as UsageExecutionRecord[]
-    return [...existingExecs, ...executions]
-  } catch {
-    return executions
-  }
-}
-
-/**
- * Update the ementa and keywords for an acervo document.
- * Optionally appends LLM execution records for cost tracking.
- */
-export async function updateAcervoEmenta(
-  uid: string,
-  docId: string,
-  ementa: string,
-  keywords: string[],
-  executions?: UsageExecutionRecord[],
-): Promise<void> {
-  const updateData: Record<string, unknown> = {
-    ementa,
-    ementa_keywords: keywords,
-  }
-  if (executions && executions.length > 0) {
-    updateData.llm_executions = await mergeAcervoExecutions(uid, docId, executions)
-  }
-  await writeUserScoped(uid, 'updateAcervoEmenta', async (db, effectiveUid) => {
-    await updateDoc(doc(db, 'users', effectiveUid, 'acervo', docId), updateData)
-  })
-}
-
-/**
- * Update classification tags for an acervo document.
- * Optionally appends LLM execution records for cost tracking.
- */
-export async function updateAcervoTags(
-  uid: string,
-  docId: string,
-  tags: {
-    natureza?: AcervoDocumentData['natureza']
-    area_direito?: string[]
-    assuntos?: string[]
-    tipo_documento?: string
-    contexto?: string[]
-  },
-  executions?: UsageExecutionRecord[],
-): Promise<void> {
-  const updateData: Record<string, unknown> = {
-    ...tags,
-    tags_generated: true,
-  }
-  if (executions && executions.length > 0) {
-    updateData.llm_executions = await mergeAcervoExecutions(uid, docId, executions)
-  }
-  await writeUserScoped(uid, 'updateAcervoTags', async (db, effectiveUid) => {
-    await updateDoc(doc(db, 'users', effectiveUid, 'acervo', docId), updateData)
-  })
-}
-
-/**
- * Update text content for an acervo document.
- * Re-converts the provided plain text to structured JSON before saving.
- */
-export async function updateAcervoTextContent(
-  uid: string,
-  docId: string,
-  textContent: string,
-  filename?: string,
-): Promise<void> {
-  // Reconvert to structured JSON format
-  const structured = textToStructuredJson(textContent, filename || 'document')
-  const jsonStr = serializeStructuredJson(structured)
-  const textToStore = jsonStr.length > ACERVO_MAX_TEXT_LENGTH
-    ? jsonStr.slice(0, ACERVO_MAX_TEXT_LENGTH)
-    : jsonStr
-  await writeUserScoped(uid, 'updateAcervoTextContent', async (db, effectiveUid) => {
-    await updateDoc(doc(db, 'users', effectiveUid, 'acervo', docId), {
-      text_content: textToStore,
-      storage_format: 'json',
-      chunks_count: structured.full_text.length > 0
-        ? Math.ceil(structured.full_text.length / ACERVO_CHUNK_SIZE)
-        : 0,
-    })
-  })
-}
-
-/**
- * Re-convert a legacy plain-text acervo document to structured JSON format.
- * Reads the current text_content (which listAcervoDocuments already resolved),
- * reconverts it to JSON, and stores it back. Returns the updated storage_format.
- */
-export async function convertAcervoToJson(
-  uid: string,
-  docId: string,
-  resolvedTextContent: string,
-  filename: string,
-): Promise<void> {
-  await updateAcervoTextContent(uid, docId, resolvedTextContent, filename)
-}
-
-/**
- * Get acervo documents that do NOT have classification tags yet.
- */
-export async function getAcervoDocsWithoutTags(
-  uid: string,
-): Promise<Array<{ id: string; filename: string; text_content: string }>> {
-  const docs = await getIndexedAcervoDocs(uid, 'getAcervoDocsWithoutTags')
-  return docs
-    .map(({ id, data }) => {
-      return { id, filename: data.filename, text_content: resolveTextContent(data.text_content || ''), tags_generated: data.tags_generated }
-    })
-    .filter(d => d.text_content.length > 0 && !d.tags_generated)
-    .map(({ tags_generated: _, ...rest }) => rest)
-}
-
-/**
- * Get acervo documents that do NOT have ementas yet.
- */
-export async function getAcervoDocsWithoutEmenta(
-  uid: string,
-): Promise<Array<{ id: string; filename: string; text_content: string }>> {
-  const docs = await getIndexedAcervoDocs(uid, 'getAcervoDocsWithoutEmenta')
-  return docs
-    .map(({ id, data }) => {
-      return { id, filename: data.filename, text_content: resolveTextContent(data.text_content || ''), ementa: data.ementa }
-    })
-    .filter(d => d.text_content.length > 0 && !d.ementa)
-    .map(({ ementa: _, ...rest }) => rest)
-}
-
-/**
- * Get text content from all indexed acervo documents (for generation context).
- * Returns concatenated text excerpts up to `maxChars` total characters.
- */
-export async function getAcervoContext(uid: string, maxChars = 8000): Promise<string> {
-  const docs = await getIndexedAcervoDocs(uid, 'getAcervoContext')
-  const parts: string[] = []
-  let total = 0
-  for (const { data } of docs) {
-    if (!data.text_content) continue
-    const text = resolveTextContent(data.text_content)
-    const excerpt = text.slice(0, ACERVO_MAX_EXCERPT_LENGTH)
-    if (total + excerpt.length > maxChars) break
-    parts.push(`[${data.filename}]\n${excerpt}`)
-    total += excerpt.length
-  }
-  return parts.join('\n\n---\n\n')
-}
+export const listAcervoDocuments = acervoRepository.listAcervoDocuments
+export const createAcervoDocument = acervoRepository.createAcervoDocument
+export const deleteAcervoDocument = acervoRepository.deleteAcervoDocument
+export const getAllAcervoDocumentsForSearch = acervoRepository.getAllAcervoDocumentsForSearch
+export const updateAcervoEmenta = acervoRepository.updateAcervoEmenta
+export const updateAcervoTags = acervoRepository.updateAcervoTags
+export const updateAcervoTextContent = acervoRepository.updateAcervoTextContent
+export const convertAcervoToJson = acervoRepository.convertAcervoToJson
+export const getAcervoDocsWithoutTags = acervoRepository.getAcervoDocsWithoutTags
+export const getAcervoDocsWithoutEmenta = acervoRepository.getAcervoDocsWithoutEmenta
+export const getAcervoContext = acervoRepository.getAcervoContext
 
 // ── Admin settings (Firestore /settings collection) ──────────────────────────
 
@@ -1827,81 +1493,8 @@ export async function saveUserSettings(uid: string, data: Partial<UserSettingsDa
 
 // ── Acervo analysis tracking ──────────────────────────────────────────────────
 
-/**
- * Mark a set of acervo documents as analyzed for theses.
- * Called after a successful thesis analysis run.
- */
-export async function markAcervoDocumentsAnalyzed(
-  uid: string,
-  docIds: string[],
-): Promise<void> {
-  await writeUserScoped(uid, 'markAcervoDocumentsAnalyzed', async (db, effectiveUid) => {
-    for (const docId of docIds) {
-      try {
-        await updateDoc(doc(db, 'users', effectiveUid, 'acervo', docId), {
-          analyzed_for_theses: true,
-        })
-      } catch (error) {
-        if (isAuthAccessFirestoreError(error)) throw error
-        // Non-fatal: if a doc no longer exists, skip silently
-      }
-    }
-  })
-}
-
-/**
- * Get acervo documents grouped by analysis status.
- * Returns { analyzed, unanalyzed } counts and the unanalyzed document list.
- */
-export async function getAcervoAnalysisStatus(uid: string): Promise<{
-  analyzed_count: number
-  unanalyzed_count: number
-  unanalyzed_docs: AcervoDocumentData[]
-}> {
-  const db = ensureFirestore()
-  const effectiveUid = await resolveEffectiveUid(uid, 'getAcervoAnalysisStatus')
-  const colRef = collection(db, 'users', effectiveUid, 'acervo')
-
-  let all: AcervoDocumentData[]
-  try {
-    const snap = await withFirestoreRetry(
-      () => getDocs(query(colRef, orderBy('created_at', 'desc'))),
-      'getAcervoAnalysisStatus.query',
-    )
-    all = snap.docs.map(d => {
-      const raw = d.data() as AcervoDocumentData
-      return {
-        ...raw,
-        id: d.id,
-        text_content: resolveTextContent(raw.text_content || ''),
-      }
-    })
-  } catch (error) {
-    if (isAuthAccessFirestoreError(error)) {
-      throw error
-    }
-    console.warn('Firestore acervo analysis query failed; using client-side fallback:', getErrorMessage(error))
-    const fallbackSnap = await withFirestoreRetry(() => getDocs(colRef), 'getAcervoAnalysisStatus.fallback')
-    all = fallbackSnap.docs
-      .map(d => {
-        const raw = d.data() as AcervoDocumentData
-        return {
-          ...raw,
-          id: d.id,
-          text_content: resolveTextContent(raw.text_content || ''),
-        }
-      })
-      .sort((a, b) => getDocumentCreatedAtValue(b.created_at) - getDocumentCreatedAtValue(a.created_at))
-  }
-
-  const analyzed = all.filter(d => d.analyzed_for_theses === true)
-  const unanalyzed = all.filter(d => d.analyzed_for_theses !== true && d.status === 'indexed' && d.text_content?.length > 0)
-  return {
-    analyzed_count: analyzed.length,
-    unanalyzed_count: unanalyzed.length,
-    unanalyzed_docs: unanalyzed,
-  }
-}
+export const markAcervoDocumentsAnalyzed = acervoRepository.markAcervoDocumentsAnalyzed
+export const getAcervoAnalysisStatus = acervoRepository.getAcervoAnalysisStatus
 
 // ── Thesis Analysis Session persistence ──────────────────────────────────────
 
