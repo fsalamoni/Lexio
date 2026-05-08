@@ -5,12 +5,13 @@ const source = readFileSync(new URL('./firestore-service.ts', import.meta.url), 
 const platformAnalyticsSource = readFileSync(new URL('./platform-analytics.ts', import.meta.url), 'utf-8')
 const acervoRepositorySource = readFileSync(new URL('./modules/acervo/repository.ts', import.meta.url), 'utf-8')
 const documentsRepositorySource = readFileSync(new URL('./modules/documents/repository.ts', import.meta.url), 'utf-8')
+const chatRepositorySource = readFileSync(new URL('./modules/chat/repository.ts', import.meta.url), 'utf-8')
 const notebookRepositorySource = readFileSync(new URL('./modules/notebook/repository.ts', import.meta.url), 'utf-8')
 const profileRepositorySource = readFileSync(new URL('./modules/profile/repository.ts', import.meta.url), 'utf-8')
 const settingsRepositorySource = readFileSync(new URL('./modules/settings/repository.ts', import.meta.url), 'utf-8')
 const thesesRepositorySource = readFileSync(new URL('./modules/theses/repository.ts', import.meta.url), 'utf-8')
-const firestoreRepositoryBoundarySource = `${source}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${notebookRepositorySource}\n${profileRepositorySource}\n${settingsRepositorySource}\n${thesesRepositorySource}`
-const firestoreBoundarySource = `${source}\n${platformAnalyticsSource}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${notebookRepositorySource}\n${profileRepositorySource}\n${settingsRepositorySource}\n${thesesRepositorySource}`
+const firestoreRepositoryBoundarySource = `${source}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${chatRepositorySource}\n${notebookRepositorySource}\n${profileRepositorySource}\n${settingsRepositorySource}\n${thesesRepositorySource}`
+const firestoreBoundarySource = `${source}\n${platformAnalyticsSource}\n${acervoRepositorySource}\n${documentsRepositorySource}\n${chatRepositorySource}\n${notebookRepositorySource}\n${profileRepositorySource}\n${settingsRepositorySource}\n${thesesRepositorySource}`
 
 describe('firestore-service auth guardrails', () => {
   it('avoids raw user-scoped read calls with unresolved uid', () => {
@@ -36,6 +37,28 @@ describe('firestore-service auth guardrails', () => {
       /resolveEffectiveUid\(uid,\s*'listResearchNotebooks'\)/,
       /resolveEffectiveUid\(uid,\s*'getProfile'\)/,
       /resolveEffectiveUid\(uid,\s*'getUserSettings'\)/,
+      /resolveEffectiveUid\(uid,\s*'listChatConversations'\)/,
+      /resolveEffectiveUid\(uid,\s*'getChatConversation'\)/,
+      /resolveEffectiveUid\(uid,\s*'createChatConversation'\)/,
+      /resolveEffectiveUid\(uid,\s*'ensureChatConversation'\)/,
+      /resolveEffectiveUid\(uid,\s*'renameChatConversation'\)/,
+      /resolveEffectiveUid\(uid,\s*'updateChatConversationEffort'\)/,
+      /resolveEffectiveUid\(uid,\s*'updateChatConversationPreview'\)/,
+      /resolveEffectiveUid\(uid,\s*'deleteChatConversation'\)/,
+      /resolveEffectiveUid\(uid,\s*'listChatTurns'\)/,
+      /resolveEffectiveUid\(uid,\s*'appendChatTurn'\)/,
+      /resolveEffectiveUid\(uid,\s*'updateChatTurn'\)/,
+      /resolveEffectiveUid\(uid,\s*'saveChatSidecarDevice'\)/,
+      /resolveEffectiveUid\(uid,\s*'listChatSidecarDevices'\)/,
+      /resolveEffectiveUid\(uid,\s*'saveChatWorkspaceRoot'\)/,
+      /resolveEffectiveUid\(uid,\s*'listChatWorkspaceRoots'\)/,
+      /resolveEffectiveUid\(uid,\s*'bindChatWorkspaceRoot'\)/,
+      /resolveEffectiveUid\(uid,\s*'listChatWorkspaceBindings'\)/,
+      /resolveEffectiveUid\(uid,\s*'createChatSidecarCommand'\)/,
+      /resolveEffectiveUid\(uid,\s*'updateChatSidecarCommand'\)/,
+      /resolveEffectiveUid\(uid,\s*'createChatApprovalRequest'\)/,
+      /resolveEffectiveUid\(uid,\s*'updateChatApprovalRequest'\)/,
+      /resolveEffectiveUid\(uid,\s*'appendChatSidecarAuditEntry'\)/,
     ]
 
     for (const pattern of requiredGuards) {

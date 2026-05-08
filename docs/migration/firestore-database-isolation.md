@@ -1,7 +1,8 @@
 # Firestore Database Isolation Plan
 
-Last update: 2026-05-07
-Branch: `feature/firestore-database-isolation-core-modules`
+Last update: 2026-05-08
+Original migration branch: `feature/firestore-database-isolation-core-modules`
+Current verification branch/PR: `feature/core-modules-architecture-foundation` / PR #143
 
 ## Objective
 
@@ -80,11 +81,20 @@ Completed on branch `feature/firestore-database-isolation-core-modules`:
 
 Read-only database inventory before creation confirmed the project had `(default)`, `anotes`, `bolao2026`, and `psico`. `lexio-prod` was then created in the same region, `southamerica-east1`.
 
-Still blocked until a final release checkpoint:
+## Release Checkpoint — 2026-05-08
 
-- Delete or clean legacy `(default)` data.
-- Merge branch to `main` and deploy Hosting clients that point to `lexio-prod`.
-- Monitor authenticated production smoke after cutover.
+Completed after the shadow migration:
+
+- PR #143 validates frontend, preview and guardrail builds with `VITE_FIRESTORE_DATABASE_ID=lexio-prod`.
+- `firebase.json` publishes the same rules/indexes to `(default)` and `lexio-prod`.
+- Legacy `(default)` data remains intact for rollback and must not be deleted automatically.
+
+Still required before declaring production cutover fully stable:
+
+- Merge the validated branch to `main` and let the production Hosting workflows deploy clients pointing to `lexio-prod`.
+- Run authenticated production smoke against `lexio.web.app` after deploy.
+- Keep monitoring auth, Firestore permission and user-settings migration errors after cutover.
+- Any deletion or cleanup of legacy `(default)` data requires a separate explicit cleanup plan, fresh backup and rollback strategy.
 
 ## Safe Execution Sequence
 

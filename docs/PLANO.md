@@ -16,7 +16,7 @@
 
 ## Andamento Atual (ciclo 2026-04-26)
 
-**Status:** ⚠️ avançando Faixa C com foundation arquitetural core/módulos em branch dedicada após cutover Firestore concluído em produção. O foco atual é proteger fronteiras com guardrails automáticos, criar documentação canônica para IAs/devs e preparar extrações incrementais sem reescrita big-bang.
+**Status:** ⚠️ avançando Faixa C com foundation arquitetural core/módulos em branch dedicada após migração shadow Firestore validada para `lexio-prod`. O foco atual é manter fronteiras protegidas por guardrails automáticos, documentação canônica e extrações incrementais sem reescrita big-bang; produção só deve ser declarada em cutover estável após merge/deploy e smoke autenticado.
 
 **Atualização incremental (2026-05-07 — Wave 42: Core/Módulos Foundation, início em branch):**
 - ✅ Branch dedicada criada: `feature/core-modules-architecture-foundation`, partindo do `main` limpo em `ae849b7`.
@@ -57,7 +57,8 @@
 - ✅ Validação local pós-dashboard-stats-cost concluída: guardrail arquitetural (`327` arquivos fonte), typecheck, testes focados de Firestore/Dashboard/guardrails (**4 arquivos**, **62 testes**), suíte completa frontend (**71/71 arquivos**, **533/533 testes**) e build com `VITE_FIRESTORE_DATABASE_ID=lexio-prod` verdes.
 - ✅ Décima sétima fatia estrutural aplicada: Chat (`listChatConversations`, `ensureChatConversation`, turns, sidecar devices, workspace roots/bindings, sidecar commands, approvals e audit) foi extraído para `frontend/src/lib/modules/chat/repository.ts`; `firestore-service.ts` agora preserva as exports públicas como fachada compatível para `ConversationList`, `use-chat-controller` e integrações do orquestrador.
 - ✅ Validação local pós-chat-repository concluída: guardrail arquitetural (`329` arquivos fonte), typecheck, testes focados de Firestore/Chat/orquestrador (**10 arquivos**, **110 testes**), suíte completa frontend (**71/71 arquivos**, **537/537 testes**) e build com `VITE_FIRESTORE_DATABASE_ID=lexio-prod` verdes.
-- 🔄 Próximo checkpoint: manifest JSON, `git diff --check`, Problems, commit/push incremental e nova verificação remota do PR #143. Restam exatamente **0 fatias** planejadas em `firestore-service.ts` nesta fase da Wave 42.
+- ✅ Closeout operacional pós-chat concluído: manifest JSON, `git diff --check`, Problems, commit/push `cd76045` e PR #143 verdes. Restam exatamente **0 fatias** planejadas em `firestore-service.ts` nesta fase da Wave 42.
+- ✅ Auditoria cautelosa pós-closeout (2026-05-08): reforçado o teste estrutural de auth/UID para incluir o repository de Chat, ampliada a limpeza de exclusão de conversas para subcoleções mutáveis (`turns`, `workspace_bindings`, `sidecar_commands`, `approvals`) sem violar o audit append-only, alinhado o inventário de collection groups de migração com os paths atuais de Chat e atualizado o exemplo de ambiente com `VITE_FIRESTORE_DATABASE_ID=lexio-prod`.
 
 **Atualização incremental (2026-05-07 — Wave 41: Firestore isolado + core modular, início em branch):**
 - ✅ Branch dedicada criada: `feature/firestore-database-isolation-core-modules`, partindo do baseline `1ec3f7d` em `main`.
@@ -70,7 +71,7 @@
 - ✅ `lexio-prod` criado em `southamerica-east1` com delete protection habilitado; migração shadow executada com 820 escritas e 0 erros.
 - ✅ Backup do target concluído em `backups/firebase-cloud/2026-05-07_18-43-52` com 820 documentos, manifesto verificado e paridade verde contra origem Lexio: 0 faltantes, 0 extras, 0 divergências de hash.
 - ✅ Firestore rules/indexes publicados para os databases configurados e workflows de deploy/preview/redesign/GitHub Pages preparados para compilar com `VITE_FIRESTORE_DATABASE_ID=lexio-prod`.
-- 🔒 Próximo checkpoint: merge controlado para `main`, deploy dos clientes apontando para `lexio-prod`, smoke autenticado e monitoramento. Exclusão/limpeza do `(default)` permanece fora de escopo.
+- 🔒 Próximo checkpoint: PR #143 já valida preview/frontend com `lexio-prod`; falta merge controlado para `main`, deploy dos clientes de produção apontando para `lexio-prod`, smoke autenticado e monitoramento. Exclusão/limpeza do `(default)` permanece fora de escopo.
 
 **Atualização incremental (2026-04-26 — Wave 40: latência documental + contrato de progresso + handoff lúdico, subonda 1 em branch):**
 - ✅ `document-pipeline.ts` passou a normalizar `percent` por `executionState` via `normalizeProgressForExecution`, reforçando o contrato de verdade de progresso (`running <= 99`, `completed = 100`).

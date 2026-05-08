@@ -1046,14 +1046,27 @@ describe('saveNotebookDocumentToDocuments', () => {
       expect.objectContaining({ updated_at: expect.any(String) }),
     )
 
-    mockGetDocs.mockResolvedValueOnce(makeGetDocsSnapshot([
-      { id: 'turn-1', data: { conversation_id: 'conv-1' } },
-      { id: 'turn-2', data: { conversation_id: 'conv-1' } },
-    ]))
+    mockGetDocs
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        { id: 'turn-1', data: { conversation_id: 'conv-1' } },
+        { id: 'turn-2', data: { conversation_id: 'conv-1' } },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        { id: 'binding-1', data: { conversation_id: 'conv-1' } },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        { id: 'cmd-1', data: { conversation_id: 'conv-1' } },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        { id: 'approval-1', data: { conversation_id: 'conv-1' } },
+      ]))
     await deleteChatConversation(uid, 'conv-1')
 
     expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/turn-1' })
     expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/turn-2' })
+    expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/binding-1' })
+    expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/cmd-1' })
+    expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/approval-1' })
     expect(mockDeleteDoc).toHaveBeenLastCalledWith({ path: 'users/user-123/chat_conversations/conv-1' })
   })
 

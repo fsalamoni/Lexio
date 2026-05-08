@@ -276,23 +276,50 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     )
   }
 
-  async function deleteChatConversation(uid: string, conversationId: string): Promise<void> {
-    const db = deps.ensureFirestore()
-    const effectiveUid = await deps.resolveEffectiveUid(uid, 'deleteChatConversation')
-    const turnsRef = chatTurnsCollection(db, effectiveUid, conversationId)
+  async function deleteChatSubcollectionDocuments(
+    db: Firestore,
+    effectiveUid: string,
+    conversationId: string,
+    subcollectionName: string,
+    contextLabel: string,
+  ): Promise<void> {
     try {
-      const turnsSnap = await deps.withFirestoreRetry(() => getDocs(turnsRef), 'deleteChatConversation.listTurns')
+      const subcollectionRef = chatConversationSubcollection(db, effectiveUid, conversationId, subcollectionName)
+      const snapshot = await deps.withFirestoreRetry(() => getDocs(subcollectionRef), `${contextLabel}.list`)
       await Promise.all(
-        turnsSnap.docs.map(docSnapshot =>
-          deps.withFirestoreRetry(() => deleteDoc(docSnapshot.ref), 'deleteChatConversation.deleteTurn').catch(error => {
-            console.warn('Chat: failed to delete turn during conversation cleanup:', deps.getErrorMessage(error))
+        snapshot.docs.map(docSnapshot =>
+          deps.withFirestoreRetry(() => deleteDoc(docSnapshot.ref), `${contextLabel}.delete`).catch(error => {
+            if (deps.isAuthAccessFirestoreError(error)) throw error
+            console.warn(`Chat: failed to delete ${subcollectionName} document during conversation cleanup:`, deps.getErrorMessage(error))
           }),
         ),
       )
     } catch (error) {
       if (deps.isAuthAccessFirestoreError(error)) throw error
-      console.warn('Chat: failed to enumerate turns during conversation cleanup:', deps.getErrorMessage(error))
+      console.warn(`Chat: failed to enumerate ${subcollectionName} during conversation cleanup:`, deps.getErrorMessage(error))
     }
+  }
+
+  async function deleteChatConversation(uid: string, conversationId: string): Promise<void> {
+    const db = deps.ensureFirestore()
+    const effectiveUid = await deps.resolveEffectiveUid(uid, 'deleteChatConversation')
+    const subcollectionsToDelete = [
+      CHAT_TURNS_SUBCOLLECTION,
+      CHAT_WORKSPACE_BINDINGS_SUBCOLLECTION,
+      CHAT_SIDECAR_COMMANDS_SUBCOLLECTION,
+      CHAT_APPROVALS_SUBCOLLECTION,
+    ] as const
+    await Promise.all(
+      subcollectionsToDelete.map(subcollectionName =>
+        deleteChatSubcollectionDocuments(
+          db,
+          effectiveUid,
+          conversationId,
+          subcollectionName,
+          `deleteChatConversation.${subcollectionName}`,
+        ),
+      ),
+    )
     await deps.withFirestoreRetry(
       () => deleteDoc(chatConversationDoc(db, effectiveUid, conversationId)),
       'deleteChatConversation.delete',

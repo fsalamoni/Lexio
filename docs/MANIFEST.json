@@ -831,6 +831,7 @@
         ".github/workflows/firebase-redesign-v2.yml",
         ".github/workflows/firebase-preview.yml",
         "firebase.json",
+        ".env.example",
         "scripts/validate-firebase-web-config.mjs",
         "scripts/firebase-cloud-sync.mjs",
         "scripts/lexio-firestore-paths.mjs",
@@ -847,7 +848,7 @@
         "docs/MANIFEST.json",
         "NOTEBOOK_IMPLEMENTATION_STATUS.md"
       ],
-      "notes": "Wave 41 em branch dedicada para migrar Lexio para um Firestore database nomeado (`lexio-prod`) sem perda de dados: backup com databaseId e checksums, rawFields preservados, auditoria/classificacao read-only, migracao shadow dry-run por padrao, validacao de paridade por snapshot e runtime `VITE_FIRESTORE_DATABASE_ID` com fallback `(default)`. Backup local completo de `(default)` concluido em `backups/firebase-cloud/2026-05-07_18-32-07` com 1118 documentos, 37 objetos Storage baixados e manifesto SHA-256 verificado; auditoria apontou 820 documentos Lexio candidatos e 298 excluidos/ambiguos. `lexio-prod` foi criado em `southamerica-east1` com delete protection habilitado; migracao shadow executada com 820 escritas e 0 erros; backup do target em `backups/firebase-cloud/2026-05-07_18-43-52` confirmou 820 documentos e paridade verde (0 faltantes, 0 extras, 0 divergencias). Firestore rules/indexes foram publicados para `(default)` e `lexio-prod`, e os workflows foram preparados para compilar com `VITE_FIRESTORE_DATABASE_ID=lexio-prod`. Cutover produtivo ainda depende de merge/deploy controlado e smoke autenticado; qualquer exclusao de dados antigos permanece proibida sem plano separado."
+      "notes": "Wave 41 em branch dedicada para migrar Lexio para um Firestore database nomeado (`lexio-prod`) sem perda de dados: backup com databaseId e checksums, rawFields preservados, auditoria/classificacao read-only, migracao shadow dry-run por padrao, validacao de paridade por snapshot e runtime `VITE_FIRESTORE_DATABASE_ID` com fallback `(default)`. Backup local completo de `(default)` concluido em `backups/firebase-cloud/2026-05-07_18-32-07` com 1118 documentos, 37 objetos Storage baixados e manifesto SHA-256 verificado; auditoria apontou 820 documentos Lexio candidatos e 298 excluidos/ambiguos. `lexio-prod` foi criado em `southamerica-east1` com delete protection habilitado; migracao shadow executada com 820 escritas e 0 erros; backup do target em `backups/firebase-cloud/2026-05-07_18-43-52` confirmou 820 documentos e paridade verde (0 faltantes, 0 extras, 0 divergencias). Firestore rules/indexes foram publicados para `(default)` e `lexio-prod`, os workflows e `.env.example` foram alinhados para compilar com `VITE_FIRESTORE_DATABASE_ID=lexio-prod`, e PR #143 valida preview/frontend contra o database nomeado. Cutover produtivo ainda depende de merge/deploy controlado e smoke autenticado; qualquer exclusao de dados antigos permanece proibida sem plano separado."
     },
     {
       "id": "E8.F1",
