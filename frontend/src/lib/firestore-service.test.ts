@@ -108,12 +108,16 @@ import {
 
 import {
   __resetFirestoreAuthCircuitForTests,
+  completeOnboarding,
+  getProfile,
   getUserSettings,
+  getWizardData,
   getResearchNotebook,
   listDocuments,
   sanitizeAdminDocumentTypes,
   sanitizeAdminLegalAreas,
   saveUserSettings,
+  saveProfile,
   saveNotebookDocumentToDocuments,
   listTheses,
   listThesisAnalysisSessions,
@@ -295,6 +299,76 @@ describe('saveNotebookDocumentToDocuments', () => {
       { _fake: true },
       'users', 'auth-456', 'settings', 'preferences',
     )
+  })
+
+  it('loads profile data from the authenticated uid', async () => {
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-456',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ position: 'Promotor de Justiça', onboarding_completed: true }),
+    })
+
+    const result = await getProfile(uid)
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', 'auth-456', 'profile', 'data',
+    )
+    expect(result.position).toBe('Promotor de Justiça')
+  })
+
+  it('saves profile data under the authenticated uid', async () => {
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-456',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+
+    await saveProfile(uid, { position: 'Advogada' })
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', 'auth-456', 'profile', 'data',
+    )
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/auth-456/profile/data' },
+      expect.objectContaining({ position: 'Advogada', updated_at: '__server_timestamp__' }),
+      { merge: true },
+    )
+  })
+
+  it('marks onboarding complete under the authenticated uid', async () => {
+    mockFirebaseAuth.currentUser = {
+      uid: 'auth-456',
+      getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
+    }
+
+    await completeOnboarding(uid, { institution: 'MPRS' })
+
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/auth-456/profile/data' },
+      expect.objectContaining({
+        institution: 'MPRS',
+        onboarding_completed: true,
+        updated_at: '__server_timestamp__',
+      }),
+      { merge: true },
+    )
+  })
+
+  it('loads wizard data from profile and canonical onboarding steps', async () => {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ onboarding_completed: false }),
+    })
+
+    const result = await getWizardData(uid)
+
+    expect(result.onboarding_completed).toBe(false)
+    expect(result.onboarding_steps).toHaveLength(4)
+    expect(result.onboarding_steps[0].title).toBe('Perfil Profissional')
   })
 
   it('fails fast with unauthenticated code when firebase session is missing', async () => {
