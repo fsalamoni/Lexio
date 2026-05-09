@@ -843,7 +843,7 @@ export default function CostTokensPage() {
 
           <CollapsibleSection
             id="section_document_v3"
-            title="Novo Documento v3"
+            title="Novo Documento"
             icon={Sparkles}
             iconColor="text-fuchsia-600"
             badge={docV3Breakdown ? fmtUsd(docV3Breakdown.total_cost_usd) : undefined}
@@ -858,7 +858,7 @@ export default function CostTokensPage() {
                 onToggle={toggleCollapse}
               />
             ) : (
-              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o Novo Documento v3.</p>
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o Novo Documento.</p>
             )}
           </CollapsibleSection>
 

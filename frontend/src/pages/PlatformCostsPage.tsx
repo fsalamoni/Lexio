@@ -285,7 +285,7 @@ export default function PlatformCostsPage() {
               <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{breakdown.by_provider[0]?.label || 'Sem dados'}</p>
             </div>
             <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Novo Documento v3</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Novo Documento</p>
               <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
                 {documentV3Function ? fmtUsd(documentV3Function.cost_usd) : 'Sem consumo'}
               </p>

@@ -1,0 +1,372 @@
+{
+  "generatedAt": "2026-05-09T13:47:22.413Z",
+  "git": {
+    "branch": null,
+    "head": null
+  },
+  "counts": {
+    "total": 17,
+    "coveredByDirectEvidence": 17,
+    "implementedNoDirectEvidence": 0,
+    "pending": 0,
+    "pendingHighRisk": 0,
+    "pendingMediumRisk": 0
+  },
+  "surfaces": [
+    {
+      "key": "notebook_source_viewer_utilities",
+      "label": "Notebook: source viewer utilities",
+      "rail": "notebook",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/research-notebook-v2.test.ts",
+      "anchors": [
+        "frontend/src/lib/research-notebook-v2.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/research-notebook-v2.test.ts",
+            "note": "source preview and viewer affordances are exercised for notebook sources"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "notebook_saved_search_memory",
+      "label": "Notebook: saved searches and semantic tags",
+      "rail": "notebook",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/research-notebook-v2.test.ts",
+      "anchors": [
+        "frontend/src/lib/research-notebook-v2.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/research-notebook-v2.test.ts",
+            "note": "saved-search titles, semantic tags and pin-first ordering are covered"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "notebook_artifacts_empty_state",
+      "label": "Notebook: artifacts empty state",
+      "rail": "notebook",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/pages/labs/ResearchNotebookV2.test.tsx",
+      "anchors": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/pages/labs/ResearchNotebookV2.test.tsx",
+            "note": "artifacts section is validated when reached directly with no generated outputs"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "notebook_studio_quick_action_handoff",
+      "label": "Notebook: studio quick-action handoff",
+      "rail": "notebook",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/pages/labs/ResearchNotebookV2.test.tsx",
+      "anchors": [
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/pages/labs/ResearchNotebookV2.test.tsx",
+            "note": "workbench quick actions reach the studio section through the intended flow"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "notebook_artifact_operational_summary",
+      "label": "Notebook: artifact operational summary",
+      "rail": "notebook",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/notebook-artifact-tasks.test.ts",
+      "anchors": [
+        "frontend/src/lib/notebook-artifact-tasks.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/notebook-artifact-tasks.test.ts",
+            "note": "artifact-task operational degradation is aggregated without duplicating reasons"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "chat_orchestrator_loop_control",
+      "label": "Chat: orchestrator loop control",
+      "rail": "chat",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/chat-orchestrator/orchestrator.test.ts",
+      "anchors": [
+        "frontend/src/lib/chat-orchestrator/orchestrator.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/chat-orchestrator/orchestrator.test.ts",
+            "note": "orchestrator finalization, iteration caps and clarification pauses are exercised directly"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "chat_decision_parser",
+      "label": "Chat: tool decision parser",
+      "rail": "chat",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/chat-orchestrator/tools-adapter.test.ts",
+      "anchors": [
+        "frontend/src/lib/chat-orchestrator/tools-adapter.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/chat-orchestrator/tools-adapter.test.ts",
+            "note": "tool-call parsing rejects malformed or unapproved orchestrator decisions"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "chat_workspace_bindings",
+      "label": "Chat: workspace roots and bindings",
+      "rail": "chat",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/firestore-service.test.ts",
+      "anchors": [
+        "frontend/src/lib/firestore-service.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/firestore-service.test.ts",
+            "note": "workspace roots and conversation bindings are persisted and retried through the facade"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "chat_approvals_and_audit",
+      "label": "Chat: approvals and sidecar audit trail",
+      "rail": "chat",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/firestore-service.test.ts",
+      "anchors": [
+        "frontend/src/lib/firestore-service.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/firestore-service.test.ts",
+            "note": "approval requests and sidecar audit entries have direct persistence and retry coverage"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "media_checkpoint_resume",
+      "label": "Media: video checkpoint resume",
+      "rail": "media",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/video-generation-pipeline.test.ts",
+      "anchors": [
+        "frontend/src/lib/video-generation-pipeline.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/video-generation-pipeline.test.ts",
+            "note": "video generation resumes from planning and media checkpoints without redoing completed work"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "media_progress_execution_states",
+      "label": "Media: progress execution states",
+      "rail": "media",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/video-pipeline-progress.test.ts",
+      "anchors": [
+        "frontend/src/lib/video-pipeline-progress.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/video-pipeline-progress.test.ts",
+            "note": "media progress state maps waiting IO, retrying and persisting phases explicitly"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "media_cost_breakdown",
+      "label": "Media: cost analytics breakdown",
+      "rail": "media",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/cost-analytics-coverage.test.ts",
+      "anchors": [
+        "frontend/src/lib/cost-analytics.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/cost-analytics-coverage.test.ts",
+            "note": "cross-pipeline media and v3 operational costs are aggregated into the intended breakdowns"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "document_v3_final_persistence",
+      "label": "Documento V3: final persistence recovery",
+      "rail": "document-v3",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/document-v3-orchestrator.test.ts",
+      "anchors": [
+        "frontend/src/lib/document-v3-orchestrator.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/document-v3-orchestrator.test.ts",
+            "note": "the V3 orchestrator records erro status after a failed final save"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "document_v3_runtime_badges",
+      "label": "Documento V3: retry and fallback progress badges",
+      "rail": "document-v3",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/components/PipelineProgressPanelV3.test.tsx",
+      "anchors": [
+        "frontend/src/components/PipelineProgressPanelV3.tsx"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/components/PipelineProgressPanelV3.test.tsx",
+            "note": "the V3 progress panel exposes retry and fallback runtime badges"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "document_detail_retry_action",
+      "label": "Document rail: detail retry action",
+      "rail": "document-rail",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/pages/DocumentDetail.test.tsx",
+      "anchors": [
+        "frontend/src/pages/DocumentDetail.tsx"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/pages/DocumentDetail.test.tsx",
+            "note": "detail page retry action uses the V3 reprocessing rail"
+          }
+        ],
+        "sources": [
+          {
+            "path": "frontend/src/pages/DocumentDetail.tsx",
+            "note": "detail page exposes a dedicated V3 retry action for failed documents"
+          }
+        ]
+      }
+    },
+    {
+      "key": "document_detail_open_generator",
+      "label": "Document rail: detail open-in-generator action",
+      "rail": "document-rail",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/pages/DocumentDetail.test.tsx",
+      "anchors": [
+        "frontend/src/pages/DocumentDetail.tsx"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/pages/DocumentDetail.test.tsx",
+            "note": "detail page forwards notebook-origin documents into the canonical generator route"
+          }
+        ],
+        "sources": [
+          {
+            "path": "frontend/src/pages/DocumentDetail.tsx",
+            "note": "detail page offers an open-in-generator CTA for notebook-origin documents"
+          }
+        ]
+      }
+    },
+    {
+      "key": "document_detail_duplicate_action",
+      "label": "Document rail: detail duplicate action",
+      "rail": "document-rail",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/pages/DocumentDetail.test.tsx",
+      "anchors": [
+        "frontend/src/pages/DocumentDetail.tsx"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/pages/DocumentDetail.test.tsx",
+            "note": "detail page duplicate action rebuilds a new canonical request with the same parameters"
+          }
+        ],
+        "sources": [
+          {
+            "path": "frontend/src/pages/DocumentDetail.tsx",
+            "note": "detail page exposes duplication into the canonical new-document route"
+          }
+        ]
+      }
+    }
+  ]
+}

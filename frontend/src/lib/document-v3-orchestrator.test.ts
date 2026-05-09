@@ -506,6 +506,31 @@ describe('generateDocumentV3 orchestrator', () => {
     expect((finalUpdate[1].texto_completo as string)).toContain('PARECER')
   })
 
+  it('persists error status when the final document save fails after earlier writes', async () => {
+    const responses = buildLLMResponses()
+    const router = buildHeadRouter(responses)
+    updateDocMock.mockImplementation(async (...args: unknown[]) => {
+      const data = (args[1] ?? {}) as Record<string, unknown>
+      if (data.status === 'concluido') {
+        throw new Error('final persist failure')
+      }
+    })
+    callLLMMock.mockImplementation(async (_apiKey, system: string) => defaultLLMResponse(router(system)))
+
+    await expect(
+      generateDocumentV3('uid1', 'doc1', 'parecer', 'Req', [], null, () => {}),
+    ).rejects.toThrow('final persist failure')
+
+    const updateCalls = updateDocMock.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>
+    const statuses = updateCalls.map(call => call[1].status as string | undefined).filter(Boolean)
+    expect(statuses).toContain('processando')
+    expect(statuses).toContain('concluido')
+    expect(statuses).toContain('erro')
+
+    const errorUpdate = updateCalls.find(call => call[1].status === 'erro')
+    expect(errorUpdate).toBeDefined()
+  })
+
   it('E: aborts when the AbortSignal fires before completion', async () => {
     const responses = buildLLMResponses()
     const router = buildHeadRouter(responses)

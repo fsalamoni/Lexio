@@ -51,72 +51,104 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Max-Age": "86400",
 };
 
-// ── Cloud Function (2nd Gen) ──────────────────────────────────────────────
+type DatajudProxyRequest = {
+  method?: string;
+  body?: {
+    tribunal?: unknown;
+    body?: unknown;
+  } | null;
+};
 
-export const datajudProxy = onRequest(
-  {
-    region: "southamerica-east1",
-    // Use the App Engine default SA — the default Compute Engine SA was deleted.
-    serviceAccount: "hocapp-44760@appspot.gserviceaccount.com",
-    secrets: [DATAJUD_API_KEY],
-  },
-  async (req, res) => {
-    // Set CORS headers on all responses
-    for (const [key, value] of Object.entries(CORS_HEADERS)) {
-      res.set(key, value);
-    }
+type DatajudProxyResponse = {
+  set: (key: string, value: string) => DatajudProxyResponse;
+  status: (code: number) => DatajudProxyResponse;
+  json: (payload: unknown) => void;
+  send: (payload: unknown) => void;
+};
 
-    // Handle CORS preflight
-    if (req.method === "OPTIONS") {
-      res.status(204).send("");
+type DatajudProxyDependencies = {
+  fetchImpl: typeof fetch;
+  getApiKey: () => string | undefined;
+  logError: (...args: unknown[]) => void;
+  createAbortController: () => AbortController;
+  setTimeoutImpl: typeof setTimeout;
+  clearTimeoutImpl: typeof clearTimeout;
+};
+
+const defaultDatajudProxyDependencies: DatajudProxyDependencies = {
+  fetchImpl: fetch,
+  getApiKey: () => DATAJUD_API_KEY.value()?.trim(),
+  logError: (...args: unknown[]) => logger.error(...args),
+  createAbortController: () => new AbortController(),
+  setTimeoutImpl: setTimeout,
+  clearTimeoutImpl: clearTimeout,
+};
+
+export async function handleDatajudProxyRequest(
+  req: DatajudProxyRequest,
+  res: DatajudProxyResponse,
+  overrides: Partial<DatajudProxyDependencies> = {}
+): Promise<void> {
+  const dependencies = {
+    ...defaultDatajudProxyDependencies,
+    ...overrides,
+  };
+
+  // Set CORS headers on all responses
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    res.set(key, value);
+  }
+
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
+  if (req.method !== "POST") {
+    res.status(405).json({error: "Method not allowed. Use POST."});
+    return;
+  }
+
+  // Parse and validate request
+  const {tribunal, body} = req.body ?? {};
+
+  if (!tribunal || typeof tribunal !== "string") {
+    res.status(400).json({error: "Missing or invalid 'tribunal' field."});
+    return;
+  }
+
+  const alias = tribunal.toLowerCase().trim();
+  if (!VALID_ALIASES.has(alias)) {
+    res.status(400).json({
+      error: `Invalid tribunal alias: '${alias}'.`,
+    });
+    return;
+  }
+
+  if (!body || typeof body !== "object") {
+    res.status(400).json({error: "Missing or invalid 'body' field."});
+    return;
+  }
+
+  const targetUrl = `${DATAJUD_BASE_URL}/api_publica_${alias}/_search`;
+
+  try {
+    const dataJudApiKey = dependencies.getApiKey()?.trim();
+    if (!dataJudApiKey) {
+      dependencies.logError("DATAJUD_API_KEY secret is not configured for datajudProxy.");
+      res.status(500).json({error: "DataJud proxy secret is not configured."});
       return;
     }
 
-    if (req.method !== "POST") {
-      res.status(405).json({error: "Method not allowed. Use POST."});
-      return;
-    }
-
-    // Parse and validate request
-    const {tribunal, body} = req.body ?? {};
-
-    if (!tribunal || typeof tribunal !== "string") {
-      res.status(400).json({error: "Missing or invalid 'tribunal' field."});
-      return;
-    }
-
-    const alias = tribunal.toLowerCase().trim();
-    if (!VALID_ALIASES.has(alias)) {
-      res.status(400).json({
-        error: `Invalid tribunal alias: '${alias}'.`,
-      });
-      return;
-    }
-
-    if (!body || typeof body !== "object") {
-      res.status(400).json({error: "Missing or invalid 'body' field."});
-      return;
-    }
-
-    // Forward to DataJud
-    const targetUrl =
-      `${DATAJUD_BASE_URL}/api_publica_${alias}/_search`;
+    const controller = dependencies.createAbortController();
+    const timeout = dependencies.setTimeoutImpl(
+      () => controller.abort(),
+      REQUEST_TIMEOUT_MS
+    );
 
     try {
-      const dataJudApiKey = DATAJUD_API_KEY.value()?.trim();
-      if (!dataJudApiKey) {
-        logger.error("DATAJUD_API_KEY secret is not configured for datajudProxy.");
-        res.status(500).json({error: "DataJud proxy secret is not configured."});
-        return;
-      }
-
-      const controller = new AbortController();
-      const timeout = setTimeout(
-        () => controller.abort(),
-        REQUEST_TIMEOUT_MS
-      );
-
-      const response = await fetch(targetUrl, {
+      const response = await dependencies.fetchImpl(targetUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -126,8 +158,6 @@ export const datajudProxy = onRequest(
         signal: controller.signal,
       });
 
-      clearTimeout(timeout);
-
       const data = await response.text();
 
       // Forward status and body from DataJud
@@ -135,14 +165,28 @@ export const datajudProxy = onRequest(
         .status(response.status)
         .set("Content-Type", response.headers.get("content-type") || "application/json")
         .send(data);
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") {
-        res.status(504).json({error: "DataJud request timed out."});
-        return;
-      }
-      const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error("DataJud proxy error:", message);
-      res.status(502).json({error: `DataJud proxy error: ${message}`});
+    } finally {
+      dependencies.clearTimeoutImpl(timeout);
     }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") {
+      res.status(504).json({error: "DataJud request timed out."});
+      return;
+    }
+    const message = err instanceof Error ? err.message : "Unknown error";
+    dependencies.logError("DataJud proxy error:", message);
+    res.status(502).json({error: `DataJud proxy error: ${message}`});
   }
+}
+
+// ── Cloud Function (2nd Gen) ──────────────────────────────────────────────
+
+export const datajudProxy = onRequest(
+  {
+    region: "southamerica-east1",
+    // Use the App Engine default SA — the default Compute Engine SA was deleted.
+    serviceAccount: "hocapp-44760@appspot.gserviceaccount.com",
+    secrets: [DATAJUD_API_KEY],
+  },
+  async (req, res) => handleDatajudProxyRequest(req, res)
 );

@@ -152,7 +152,7 @@ export default function NewDocumentV3() {
       abortControllerRef.current = controller
 
       const docTypeName = docTypes.find(d => d.id === selectedType)?.name || selectedType
-      startTask(`Gerando v3: ${docTypeName}`, async (onTaskProgress) => {
+      startTask(`Gerando documento: ${docTypeName}`, async (onTaskProgress) => {
         try {
           await generateDocumentV3(
             userId,
@@ -224,7 +224,7 @@ export default function NewDocumentV3() {
   return (
     <div className="space-y-6 v2-bridge-surface">
       <V2PageHero
-        eyebrow={<><FileText className="h-3.5 w-3.5" /> Gerador v3</>}
+        eyebrow={<><FileText className="h-3.5 w-3.5" /> Novo Documento</>}
         title="Pipeline supervisionada multi-agente em 4 fases"
         description="Compreensão · Análise · Pesquisa · Redação. Agentes paralelos por fase, supervisor com retry automático e contexto compartilhado para reduzir alucinações."
         aside={(
@@ -232,7 +232,7 @@ export default function NewDocumentV3() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Pipeline</p>
             <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Versão</p>
-              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">v3 (preview)</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">v3</p>
             </div>
             <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Tipo</p>
@@ -324,7 +324,7 @@ export default function NewDocumentV3() {
               ? 'Geração em andamento...'
               : (
                 <span className="inline-flex items-center gap-2">
-                  Gerar com pipeline v3
+                  Gerar documento
                   <kbd className="hidden sm:inline-block text-xs bg-teal-500/30 px-1.5 py-0.5 rounded">Ctrl+Enter</kbd>
                 </span>
               )}
@@ -333,7 +333,7 @@ export default function NewDocumentV3() {
 
       <AgentTrailProgressModalV3
         isOpen={generating}
-        title="Trilha de Geração v3"
+        title="Trilha de Geração"
         subtitle={currentType?.name || selectedType || undefined}
         currentMessage={pipelineMessage || 'Inicializando agentes...'}
         percent={pipelinePercent}
@@ -353,7 +353,7 @@ export default function NewDocumentV3() {
             setPipelineAgents(prev => prev.map(a =>
               a.status === 'active' ? { ...a, status: 'error' as const, completedAt: Date.now() } : a,
             ))
-            toast.info('Geração cancelada', 'A pipeline v3 foi interrompida.')
+            toast.info('Geração cancelada', 'A pipeline foi interrompida.')
           }
         }}
       >

@@ -5,9 +5,8 @@ import api, { invalidateApiCache } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import Breadcrumb from '../components/Breadcrumb'
 import ProgressTracker from '../components/ProgressTracker'
-import PipelineProgressPanel, {
-} from '../components/PipelineProgressPanel'
-import AgentTrailProgressModal from '../components/AgentTrailProgressModal'
+import PipelineProgressPanelV3 from '../components/PipelineProgressPanelV3'
+import AgentTrailProgressModalV3 from '../components/AgentTrailProgressModalV3'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
@@ -15,14 +14,13 @@ import { V2EmptyState, V2MetricGrid, V2PageHero } from '../components/v2/V2PageP
 import { IS_FIREBASE } from '../lib/firebase'
 import { formatCost as fmtCost } from '../lib/currency-utils'
 import { getDocument, updateDocument, deleteDocument as firestoreDeleteDoc, type ContextDetailData } from '../lib/firestore-service'
-import { generateDocument, type GenerationProgress } from '../lib/generation-service'
+import { generateDocumentV3, type GenerationProgressV3 } from '../lib/document-v3-orchestrator'
 import {
-  applyDocumentPipelineProgress,
-  createDocumentPipelineSteps,
-  DOCUMENT_PIPELINE_COMPLETED_PHASE,
-  getDocumentStepMeta,
-  type DocumentPipelineStep,
-} from '../lib/document-pipeline'
+  applyDocumentV3PipelineProgress,
+  createDocumentV3PipelineSteps,
+  DOCUMENT_V3_PIPELINE_COMPLETED_PHASE,
+  type DocumentV3PipelineStep,
+} from '../lib/document-v3-pipeline'
 import { deriveExecutionState, normalizeProgressForExecution } from '../lib/pipeline-execution-contract'
 import { TransientLLMError } from '../lib/llm-client'
 import { ModelsNotConfiguredError } from '../lib/model-config'
@@ -118,7 +116,7 @@ export default function DocumentDetail() {
 
   // Pipeline progress state for retry flow (Firebase mode)
   const [retryPipeline, setRetryPipeline] = useState(false)
-  const [pipelineAgents, setPipelineAgents] = useState<DocumentPipelineStep[]>([])
+  const [pipelineAgents, setPipelineAgents] = useState<DocumentV3PipelineStep[]>([])
   const [pipelinePercent, setPipelinePercent] = useState(0)
   const [pipelineMessage, setPipelineMessage] = useState('')
   const [pipelineComplete, setPipelineComplete] = useState(false)
@@ -127,7 +125,7 @@ export default function DocumentDetail() {
   const documentsPath = buildWorkspaceDocumentsPath({ preserveSearch: location.search })
 
   const initPipeline = useCallback(() => {
-    setPipelineAgents(createDocumentPipelineSteps())
+    setPipelineAgents(createDocumentV3PipelineSteps())
     setPipelinePercent(0)
     setPipelineMessage('')
     setPipelineComplete(false)
@@ -135,9 +133,9 @@ export default function DocumentDetail() {
     agentTimers.current = {}
   }, [])
 
-  const handleRetryProgress = useCallback((p: GenerationProgress) => {
+  const handleRetryProgress = useCallback((p: GenerationProgressV3) => {
     const now = Date.now()
-    const completed = p.phase === DOCUMENT_PIPELINE_COMPLETED_PHASE || p.executionState === 'completed'
+    const completed = p.phase === DOCUMENT_V3_PIPELINE_COMPLETED_PHASE || p.executionState === 'completed'
     const executionState = completed
       ? 'completed'
       : deriveExecutionState({
@@ -150,7 +148,7 @@ export default function DocumentDetail() {
       executionState,
     })
     const progressWithState = { ...p, executionState }
-    setPipelineAgents(prev => applyDocumentPipelineProgress(prev, progressWithState, agentTimers.current, now))
+    setPipelineAgents(prev => applyDocumentV3PipelineProgress(prev, progressWithState, agentTimers.current, now))
     setPipelinePercent(normalizedPercent)
     setPipelineMessage(p.message)
     if (completed) {
@@ -182,6 +180,9 @@ export default function DocumentDetail() {
               request_context: data.request_context ?? null,
               texto_completo: data.texto_completo ?? null,
               context_detail: data.context_detail ?? null,
+              origem: (data as any).origem ?? undefined,
+              notebook_id: (data as any).notebook_id ?? null,
+              notebook_title: (data as any).notebook_title ?? null,
               metadata_: (data as any).metadata_ ?? undefined,
             }
             setDoc(docData)
@@ -304,20 +305,25 @@ export default function DocumentDetail() {
         setRetryPipeline(true)
         toast.success('Reprocessamento iniciado')
         try {
-          const includeAcervoFromContext = doc.request_context?.include_acervo
-          const includeAcervo = typeof includeAcervoFromContext === 'boolean' ? includeAcervoFromContext : true
+          const requestContext = {
+            ...(doc.request_context ?? {}),
+            pipeline_version: 'v3',
+          }
 
-          await generateDocument(
+          await updateDocument(userId, id, {
+            request_context: requestContext,
+          } as any)
+
+          await generateDocumentV3(
             userId,
             id,
             doc.document_type_id,
             doc.original_request,
             doc.legal_area_ids ?? [],
-            undefined,
+            requestContext,
             handleRetryProgress,
             undefined,
-            undefined,
-            includeAcervo,
+            doc.context_detail ?? null,
           )
         } catch (err: any) {
           console.error('Retry generation failed:', err)
@@ -501,20 +507,13 @@ export default function DocumentDetail() {
         <ProgressTracker documentId={id} />
       )}
 
-      <AgentTrailProgressModal
+      <AgentTrailProgressModalV3
         isOpen={retryPipeline}
         title="Trilha de Reprocessamento"
         subtitle={docLabel}
         currentMessage={pipelineMessage || 'Reiniciando agentes...'}
         percent={pipelinePercent}
-        steps={pipelineAgents.map(agent => ({
-          key: agent.key,
-          label: agent.label,
-          status: agent.status,
-          executionState: agent.executionState,
-          detail: agent.runtimeMessage || agent.description,
-          meta: getDocumentStepMeta(agent),
-        }))}
+        agents={pipelineAgents}
         isComplete={pipelineComplete}
         hasError={pipelineError}
         canClose={pipelineComplete || pipelineError}
@@ -522,14 +521,14 @@ export default function DocumentDetail() {
           if (pipelineComplete || pipelineError) setRetryPipeline(false)
         }}
       >
-        <PipelineProgressPanel
+        <PipelineProgressPanelV3
           agents={pipelineAgents}
           percent={pipelinePercent}
           currentMessage={pipelineMessage}
           isComplete={pipelineComplete}
           hasError={pipelineError}
         />
-      </AgentTrailProgressModal>
+      </AgentTrailProgressModalV3>
 
       {/* Main info + actions */}
       <div className="bg-white rounded-xl border p-6 space-y-4">

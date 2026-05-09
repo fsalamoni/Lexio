@@ -1,6 +1,6 @@
 # Web Release Index
 
-Last update: 2026-05-08
+Last update: 2026-05-09
 
 ## Current Validation Baseline (Wave 42 — 2026-05-08, branch main)
 - Scope: fechamento da foundation core/módulos, hardening das fronteiras Firestore, corte produtivo para `lexio-prod` e validação pós-deploy.
@@ -13,6 +13,13 @@ Last update: 2026-05-08
 - Firestore monitoring: 34 observed Firestore calls to `lexio-prod`, 0 to `(default)`, 0 bad Firestore responses, 0 request failures and 0 console errors during authenticated route traversal.
 - DataJud proxy smoke: valid `tjrs` request returned 200; recent `datajudProxy` error log query since release start returned no errors.
 - Cutover status: production clients now point to `lexio-prod`; legacy `(default)` remains intact for rollback and must not be cleaned up without a separate plan.
+
+## Audit Closeout Sync (2026-05-09)
+- Platform audit final closeout: success (`PLATFORM_AUDIT_FINAL_CLOSEOUT.md` reports `plan-fully-closed`, `11/11` macrofases concluídas e `0` restantes)
+- Residual summary: success (`PLATFORM_AUDIT_RESIDUAL_SUMMARY.md` reports `0` residuals and `0` open categories)
+- Release closeout gate pack: success (`PLATFORM_AUDIT_RELEASE_CLOSEOUT.md` reports `13` covered gates, `0` drift, `0` missing)
+- Post-closeout green lane: success (`npm run typecheck`, frontend full suite, `npm run build`, `functions npm run build`, `ruff`, `pytest -q`)
+- Cross-platform handoff: synchronized with the final audit chain (`PLATFORM_AUDIT_FINAL_CLOSEOUT.md` + `npm run audit:final`)
 
 ## Previous Validation Baseline (Wave 40 — 2026-05-05, branch main)
 - Scope: subonda 2 da Wave 40 com caches user-scoped, canários runtime, retomada real do pipeline de vídeo por checkpoint, validação longitudinal do admin fechada por perfil operacional e fechamento da trilha jurisprudencial com rerank semântico browser-side, fallback jurídico local/LLM compartilhado e memória semântica persistente por caderno

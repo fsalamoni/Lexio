@@ -1,0 +1,113 @@
+{
+  "generatedAt": "2026-05-09T15:37:40.054Z",
+  "git": {
+    "branch": null,
+    "head": null
+  },
+  "status": "plan-fully-closed",
+  "counts": {
+    "totalMacrophases": 11,
+    "completedMacrophases": 11,
+    "remainingMacrophases": 0,
+    "openResiduals": 0,
+    "openReleaseDrift": 0
+  },
+  "releaseBaseline": {
+    "testsRun": "25576968289",
+    "firebaseRun": "25576968354",
+    "releaseRun": "25581626099",
+    "mergeCommit": "15b32d1",
+    "validatedHead": null,
+    "targetDatabase": "lexio-prod"
+  },
+  "macrophases": [
+    {
+      "id": 1,
+      "key": "baseline_inventory",
+      "title": "Baseline inventory",
+      "sourceArtifact": "docs/release/PLATFORM_AUDIT_BASELINE.md",
+      "completed": true,
+      "evidence": "baseline inventory artifact generated"
+    },
+    {
+      "id": 2,
+      "key": "coverage_matrix",
+      "title": "Coverage matrix",
+      "sourceArtifact": "docs/release/PLATFORM_AUDIT_MATRIX.md",
+      "completed": true,
+      "evidence": "execution matrix artifact generated"
+    },
+    {
+      "id": 3,
+      "key": "structural_static_scan",
+      "title": "Structural and static scan",
+      "sourceArtifact": "docs/release/PLATFORM_AUDIT_RISK_SCAN.md",
+      "completed": true,
+      "evidence": "architecture guardrail passed in the risk scan artifact"
+    },
+    {
+      "id": 4,
+      "key": "data_auth_security_scan",
+      "title": "Data, auth and security scan",
+      "sourceArtifact": "docs/release/PLATFORM_AUDIT_RESIDUAL_SUMMARY.json",
+      "completed": true,
+      "evidence": "security/config residual bucket is zero"
+    },
+    {
+      "id": 5,
+      "key": "functional_sweep",
+      "title": "Functional sweep",
+      "sourceArtifact": "docs/release/PLATFORM_AUDIT_MATRIX.md",
+      "completed": true,
+      "evidence": "route, UI, pipeline, backend and cloud gaps are zero"
+    },
+    {
+      "id": 6,
+      "key": "fault_injection",
+      "title": "Fault injection matrix",
+      "sourceArtifact": "docs/release/PLATFORM_AUDIT_FAULT_MATRIX.json",
+      "completed": true,
+      "evidence": "19 fault scenarios covered by direct evidence"
+    },
+    {
+      "id": 7,
+      "key": "deep_sweep",
+      "title": "Deep stateful sweep",
+      "sourceArtifact": "docs/release/PLATFORM_AUDIT_DEEP_SWEEP.json",
+      "completed": true,
+      "evidence": "17 deep surfaces covered by direct evidence"
+    },
+    {
+      "id": 8,
+      "key": "release_closeout",
+      "title": "Operational and release closeout",
+      "sourceArtifact": "docs/release/PLATFORM_AUDIT_RELEASE_CLOSEOUT.json",
+      "completed": true,
+      "evidence": "13 release gates covered by repo evidence"
+    },
+    {
+      "id": 9,
+      "key": "residual_consolidation",
+      "title": "Residual consolidation",
+      "sourceArtifact": "docs/release/PLATFORM_AUDIT_RESIDUAL_SUMMARY.json",
+      "completed": true,
+      "evidence": "0 open residuals across 5 zeroed categories"
+    },
+    {
+      "id": 10,
+      "key": "handoff_sync",
+      "title": "Handoff and doc sync",
+      "sourceArtifact": "docs/release/CROSS_PLATFORM_HANDOFF.md",
+      "completed": true,
+      "evidence": "handoff contains the full audit chain and final closeout command"
+    },
+    {
+      "id": 11,
+      "key": "final_closeout",
+      "title": "Final closeout",
+      "sourceArtifact": "docs/release/PLATFORM_AUDIT_FINAL_CLOSEOUT.md",
+      "completed": true,
+      "evidence": "all prior macrophases are complete and the plan is ready for archival closeout"
+    }
+  ]
+}

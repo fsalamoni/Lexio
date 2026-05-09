@@ -24,7 +24,7 @@
 import { doc, updateDoc } from 'firebase/firestore'
 import { callLLM, callLLMWithFallback, type LLMResult } from './llm-client'
 import { loadAgentModels, loadContextDetailModels, loadAcervoEmentaModels, loadAcervoClassificadorModels, validateModelMap, ModelsNotConfiguredError, PIPELINE_AGENT_DEFS, CONTEXT_DETAIL_AGENT_DEFS, ACERVO_EMENTA_AGENT_DEFS, ACERVO_CLASSIFICADOR_AGENT_DEFS, buildPipelineFallbackResolver, loadFallbackPriorityConfig, type AgentModelMap } from './model-config'
-import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, updateAcervoEmenta, loadAdminDocumentTypes, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
+import { listTheses, getAcervoContext, getAllAcervoDocumentsForSearch, updateAcervoEmenta, loadAdminDocumentTypes, writeUserScoped, type ThesisData, type ContextDetailData, type ContextDetailQuestion } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord } from './cost-analytics'
 import { evaluateQuality } from './quality-evaluator'
 import { compactContext } from './context-compactor'
@@ -1229,13 +1229,18 @@ export async function generateDocument(
 ): Promise<void> {
   if (!firestore) throw new Error('Firestore não configurado')
 
-  const docRef = doc(firestore, 'users', uid, 'documents', docId)
+  const persistDocument = (data: Record<string, unknown>, contextLabel: string) => {
+    return writeUserScoped(uid, contextLabel, async (db, effectiveUid) => {
+      const docRef = doc(db, 'users', effectiveUid, 'documents', docId)
+      await updateDoc(docRef, data)
+    })
+  }
 
   // Update status to "processando"
-  await updateDoc(docRef, {
+  await persistDocument({
     status: 'processando',
     updated_at: new Date().toISOString(),
-  })
+  }, 'generateDocument.start')
 
   try {
     const reportProgress = (
@@ -1361,7 +1366,7 @@ export async function generateDocument(
     } catch {
       tema = request.slice(0, 100)
     }
-    await updateDoc(docRef, { tema })
+    await persistDocument({ tema }, 'generateDocument.persistTema')
 
     // ── 2b. Acervo-based pre-generation agents ──────────────────────────────
     // Two-layer search:
@@ -2017,7 +2022,7 @@ export async function generateDocument(
     // 11. Save the generated text
     reportProgress('salvando', 'Salvando documento...', 95, undefined, undefined, 'persisting')
     const saveStartedAt = Date.now()
-    await updateDoc(docRef, {
+    await persistDocument({
       texto_completo: docResult.content,
       status: 'concluido',
       quality_score,
@@ -2039,7 +2044,7 @@ export async function generateDocument(
       llm_executions: llmExecutions,
       usage_summary,
       updated_at: new Date().toISOString(),
-    })
+    }, 'generateDocument.complete')
 
     const saveDurationMs = Date.now() - saveStartedAt
     const completionMetaParts = [`Persistido em ${Math.max(1, saveDurationMs)}ms`]
@@ -2049,10 +2054,10 @@ export async function generateDocument(
     reportProgress('concluido', 'Documento gerado com sucesso!', 100, undefined, completionMetaParts.join(' • '), 'completed')
   } catch (err) {
     // Update status to error
-    await updateDoc(docRef, {
+    await persistDocument({
       status: 'erro',
       updated_at: new Date().toISOString(),
-    }).catch((updateErr) => {
+    }, 'generateDocument.error').catch((updateErr) => {
       console.warn('Failed to persist document error status:', updateErr)
     })
     throw err

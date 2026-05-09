@@ -1,0 +1,78 @@
+{
+  "generatedAt": "2026-05-09T15:01:55.352Z",
+  "git": {
+    "branch": null,
+    "head": null
+  },
+  "status": "ready-for-final-closeout",
+  "counts": {
+    "totalOpenResiduals": 0,
+    "openCategories": 0,
+    "zeroedCategories": 5
+  },
+  "sourceArtifacts": {
+    "executionMatrix": "docs/release/PLATFORM_AUDIT_MATRIX.md",
+    "riskScan": "docs/release/PLATFORM_AUDIT_RISK_SCAN.json",
+    "faultMatrix": "docs/release/PLATFORM_AUDIT_FAULT_MATRIX.json",
+    "deepSweep": "docs/release/PLATFORM_AUDIT_DEEP_SWEEP.json",
+    "releaseCloseout": "docs/release/PLATFORM_AUDIT_RELEASE_CLOSEOUT.json"
+  },
+  "categories": {
+    "executionMatrix": {
+      "routeGapsOpen": 0,
+      "uiGapsOpen": 0,
+      "pipelineGapsOpen": 0,
+      "pipelineFaultInjectionGapsOpen": 0,
+      "backendPackageSlicesPending": 0,
+      "cloudFunctionSlicesPending": 0
+    },
+    "securityAndConfig": {
+      "unexpectedFirestoreCollections": 0,
+      "missingUserSubcollectionRules": 0,
+      "missingNestedSubcollectionRules": 0,
+      "missingRuntimeCollectionGroupRules": 0,
+      "missingCollectionGroupIndexes": 0,
+      "unresolvedCollectionGroupQueries": 0,
+      "missingFirestoreDeployDatabases": 0,
+      "misconfiguredFirestoreDeployDatabases": 0,
+      "unexpectedAuthObserverUsages": 0,
+      "unexpectedAdminEmailUsages": 0,
+      "unexpectedAdminRoleCheckUsages": 0,
+      "unexpectedFirestoreOperationFiles": 0,
+      "unexpectedUnguardedFirestoreOperationFiles": 0,
+      "unexpectedAuthRecoveryOptOutUsages": 0,
+      "unexpectedFirestoreBootstrapUsages": 0,
+      "unexpectedFirestoreDatabaseEnvUsages": 0,
+      "unexpectedSessionStorageFiles": 0,
+      "unexpectedSessionStorageWrites": 0,
+      "sensitiveConfigDefaults": 0
+    },
+    "faultMatrix": {
+      "implementedNoDirectEvidence": 0,
+      "pending": 0
+    },
+    "deepSweep": {
+      "implementedNoDirectEvidence": 0,
+      "pending": 0
+    },
+    "releaseCloseout": {
+      "driftDetected": 0,
+      "missing": 0
+    }
+  },
+  "categoryTotals": {
+    "executionMatrix": 0,
+    "securityAndConfig": 0,
+    "faultMatrix": 0,
+    "deepSweep": 0,
+    "releaseCloseout": 0
+  },
+  "releaseBaseline": {
+    "testsRun": "25576968289",
+    "firebaseRun": "25576968354",
+    "releaseRun": "25581626099",
+    "mergeCommit": "15b32d1",
+    "validatedHead": null,
+    "targetDatabase": "lexio-prod"
+  }
+}

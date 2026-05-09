@@ -995,11 +995,11 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* Document V3 Pipeline Config — Firebase mode (preview) */}
+      {/* Document V3 Pipeline Config — Firebase mode */}
       {IS_FIREBASE && (
         <AdminCollapsibleSection
           id="section_document_v3_pipeline_config"
-          title="Pipeline de Documentos v3 (preview)"
+          title="Pipeline de Documentos v3"
           icon={Brain}
           iconColor="text-teal-600"
           collapseState={collapseState}

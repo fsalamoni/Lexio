@@ -104,6 +104,7 @@ export function buildWorkspaceShellPath(pathname: string, options?: WorkspaceRou
     case '/documents':
       return buildWorkspaceDocumentsPath(options)
     case '/documents/new':
+    case '/documents/new-v3':
       return buildWorkspaceNewDocumentPath(options)
     case '/upload':
       return buildWorkspaceUploadPath(options)

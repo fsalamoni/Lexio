@@ -1,0 +1,1147 @@
+{
+  "generatedAt": "2026-05-09T13:07:57.043Z",
+  "git": {
+    "head": "a6128f7dd496694fe3692a1adf70300357c2afa6",
+    "branch": "main",
+    "dirty": true,
+    "statusLines": [
+      "M frontend/package.json",
+      " M frontend/src/App.tsx",
+      " M frontend/src/components/SearchResultsModal.tsx",
+      " M frontend/src/components/Sidebar.tsx",
+      " M frontend/src/components/v2/V2WorkspaceLayout.tsx",
+      " M frontend/src/lib/cost-analytics-coverage.test.ts",
+      " M frontend/src/lib/cost-analytics.ts",
+      " M frontend/src/lib/firestore-service-auth-guardrails.test.ts",
+      " M frontend/src/lib/firestore-service.test.ts",
+      " M frontend/src/lib/generation-service.ts",
+      " M frontend/src/lib/modules/settings/repository.ts",
+      " M frontend/src/lib/workspace-routes.test.ts",
+      " M frontend/src/lib/workspace-routes.ts",
+      " M frontend/src/pages/AdminPanel.tsx",
+      " M frontend/src/pages/CostTokensPage.tsx",
+      " M frontend/src/pages/DocumentDetail.tsx",
+      " M frontend/src/pages/NewDocumentV3.test.tsx",
+      " M frontend/src/pages/NewDocumentV3.tsx",
+      " M frontend/src/pages/PlatformAdminPanel.tsx",
+      " M frontend/src/pages/PlatformCostsPage.tsx",
+      " M packages/core/auth/jwt.py",
+      " M packages/core/config.py",
+      " M packages/core/database/engine.py",
+      " M packages/core/llm/client.py",
+      "?? docs/release/PLATFORM_AUDIT_BASELINE.json",
+      "?? docs/release/PLATFORM_AUDIT_BASELINE.md",
+      "?? docs/release/PLATFORM_AUDIT_MATRIX.md",
+      "?? docs/release/PLATFORM_AUDIT_RISK_SCAN.json",
+      "?? docs/release/PLATFORM_AUDIT_RISK_SCAN.md",
+      "?? frontend/src/App.test.tsx",
+      "?? frontend/src/components/AcervoClassificadorConfigCard.test.tsx",
+      "?? frontend/src/components/AcervoEmentaConfigCard.test.tsx",
+      "?? frontend/src/components/AgentModelConfigCard.test.tsx",
+      "?? frontend/src/components/AgentTrailProgressModal.test.tsx",
+      "?? frontend/src/components/AgentTrailProgressModalV3.test.tsx",
+      "?? frontend/src/components/AudioPipelineConfigCard.test.tsx",
+      "?? frontend/src/components/Breadcrumb.test.tsx",
+      "?? frontend/src/components/ChatOrchestratorConfigCard.test.tsx",
+      "?? frontend/src/components/ConfirmDialog.test.tsx",
+      "?? frontend/src/components/ContextDetailConfigCard.test.tsx",
+      "?? frontend/src/components/CostBreakdownModal.test.tsx",
+      "?? frontend/src/components/DeepResearchModal.test.tsx",
+      "?? frontend/src/components/ErrorBoundary.test.tsx",
+      "?? frontend/src/components/JurisprudenceConfigModal.test.tsx",
+      "?? frontend/src/components/Layout.test.tsx",
+      "?? frontend/src/components/ModelCatalogCard.test.tsx",
+      "?? frontend/src/components/ModelConfigCard.test.tsx",
+      "?? frontend/src/components/ModelSelectorModal.test.tsx",
+      "?? frontend/src/components/NotebookAcervoConfigCard.test.tsx",
+      "?? frontend/src/components/NotificationBell.test.tsx",
+      "?? frontend/src/components/PipelineProgressPanel.test.tsx",
+      "?? frontend/src/components/PresentationPipelineConfigCard.test.tsx",
+      "?? frontend/src/components/ProgressTracker.test.tsx",
+      "?? frontend/src/components/ProviderApiKeysCard.test.tsx",
+      "?? frontend/src/components/ProviderCatalogCard.test.tsx",
+      "?? frontend/src/components/ProviderCatalogsSection.test.tsx",
+      "?? frontend/src/components/ResearchNotebookConfigCard.test.tsx",
+      "?? frontend/src/components/RichTextEditor.test.tsx",
+      "?? frontend/src/components/SearchResultsModal.test.tsx",
+      "?? frontend/src/components/Sidebar.test.tsx",
+      "?? frontend/src/components/Skeleton.test.tsx",
+      "?? frontend/src/components/StatusBadge.test.tsx",
+      "?? frontend/src/components/TaskBar.test.tsx",
+      "?? frontend/src/components/ThemeSkinSelector.test.tsx",
+      "?? frontend/src/components/ThesisAnalysisCard.test.tsx",
+      "?? frontend/src/components/ThesisAnalystConfigCard.test.tsx",
+      "?? frontend/src/components/Toast.test.tsx",
+      "?? frontend/src/components/VideoGenerationCostModal.test.tsx",
+      "?? frontend/src/components/VideoPipelineConfigCard.test.tsx",
+      "?? frontend/src/components/admin/DocumentV3PipelineConfigSection.test.tsx",
+      "?? frontend/src/components/admin/FallbackPriorityConfigCard.test.tsx",
+      "?? frontend/src/components/artifacts/ArtifactViewerModal.test.tsx",
+      "?? frontend/src/components/artifacts/AudioOverviewPlayer.test.tsx",
+      "?? frontend/src/components/artifacts/AudioScriptViewer.test.tsx",
+      "?? frontend/src/components/artifacts/DataTableViewer.test.tsx",
+      "?? frontend/src/components/artifacts/FlashcardViewer.test.tsx",
+      "?? frontend/src/components/artifacts/InfographicRenderer.test.tsx",
+      "?? frontend/src/components/artifacts/MindMapViewer.test.tsx",
+      "?? frontend/src/components/artifacts/PresentationViewer.test.tsx",
+      "?? frontend/src/components/artifacts/QuizPlayer.test.tsx",
+      "?? frontend/src/components/artifacts/VideoScriptViewer.test.tsx",
+      "?? frontend/src/components/artifacts/VideoStudioEditor.test.tsx",
+      "?? frontend/src/components/artifacts/artifact-exporters.test.ts",
+      "?? frontend/src/components/artifacts/artifact-parsers.test.ts",
+      "?? frontend/src/components/artifacts/index.test.ts",
+      "?? frontend/src/components/chat/ChatHeader.test.tsx",
+      "?? frontend/src/components/chat/Composer.test.tsx",
+      "?? frontend/src/components/chat/ConversationList.test.tsx",
+      "?? frontend/src/components/chat/EmptyState.test.tsx",
+      "?? frontend/src/components/chat/MessageStream.test.tsx",
+      "?? frontend/src/components/chat/SearchPanel.test.tsx",
+      "?? frontend/src/components/v2/V2PagePrimitives.test.tsx",
+      "?? frontend/src/components/v2/V2WorkspaceLayout.test.tsx",
+      "?? frontend/src/lib/literal-video-production.test.ts",
+      "?? frontend/src/lib/notebook-media-storage.test.ts",
+      "?? frontend/src/lib/thesis-extractor.test.ts",
+      "?? scripts/lexio-platform-audit-baseline.mjs",
+      "?? scripts/lexio-platform-audit-risk-scan.mjs"
+    ]
+  },
+  "baselinePath": "docs/release/PLATFORM_AUDIT_BASELINE.json",
+  "guardrails": {
+    "architecture": {
+      "ok": true,
+      "output": "[lexio-architecture-guardrails] OK (396 source files checked)"
+    }
+  },
+  "coverage": {
+    "routeCoverageGaps": [],
+    "uiCoverageGaps": [],
+    "pipelineCoverageGaps": [],
+    "counts": {
+      "routeCoverageGaps": 0,
+      "uiCoverageGaps": 0,
+      "pipelineCoverageGaps": 0,
+      "uiCoverageGapsByKind": {}
+    }
+  },
+  "firestore": {
+    "knownCollections": [
+      "acervo",
+      "approvals",
+      "audit",
+      "chat_conversations",
+      "chat_workspace_roots",
+      "documents",
+      "memory",
+      "profile",
+      "research_notebooks",
+      "settings",
+      "sidecar_commands",
+      "sidecar_devices",
+      "theses",
+      "thesis_analysis_sessions",
+      "turns",
+      "users",
+      "workspace_bindings"
+    ],
+    "collectionUsageByName": {
+      "acervo": 12,
+      "documents": 10,
+      "memory": 1,
+      "profile": 3,
+      "research_notebooks": 5,
+      "settings": 5,
+      "theses": 7,
+      "thesis_analysis_sessions": 4,
+      "users": 50
+    },
+    "unknownCollections": [],
+    "collectionGroupUsageByName": {
+      "acervo": 1,
+      "documents": 1,
+      "memory": 1,
+      "research_notebooks": 2,
+      "theses": 1,
+      "thesis_analysis_sessions": 1
+    },
+    "unexpectedCollectionGroups": [],
+    "rulesCoverage": {
+      "rulePaths": [
+        "/",
+        "/users/{userId}",
+        "/users/{userId}/profile/{document}",
+        "/users/{userId}/settings/{document}",
+        "/users/{userId}/documents/{docId}",
+        "/users/{userId}/theses/{thesisId}",
+        "/users/{userId}/thesis_analysis_sessions/{sessionId}",
+        "/users/{userId}/acervo/{docId}",
+        "/users/{userId}/research_notebooks/{notebookId}",
+        "/users/{userId}/research_notebooks/{notebookId}/memory/{docId}",
+        "/users/{userId}/sidecar_devices/{deviceId}",
+        "/users/{userId}/chat_workspace_roots/{rootId}",
+        "/users/{userId}/chat_conversations/{conversationId}",
+        "/users/{userId}/chat_conversations/{conversationId}/turns/{turnId}",
+        "/users/{userId}/chat_conversations/{conversationId}/workspace_bindings/{bindingId}",
+        "/users/{userId}/chat_conversations/{conversationId}/sidecar_commands/{commandId}",
+        "/users/{userId}/chat_conversations/{conversationId}/approvals/{approvalId}",
+        "/users/{userId}/chat_conversations/{conversationId}/audit/{auditId}",
+        "/{path=**}/documents/{docId}",
+        "/{path=**}/theses/{thesisId}",
+        "/{path=**}/thesis_analysis_sessions/{sessionId}",
+        "/{path=**}/acervo/{docId}",
+        "/{path=**}/research_notebooks/{notebookId}",
+        "/{path=**}/research_notebooks/{notebookId}/memory/{docId}",
+        "/{path=**}/chat_conversations/{conversationId}",
+        "/{path=**}/chat_conversations/{conversationId}/turns/{turnId}",
+        "/{path=**}/chat_conversations/{conversationId}/sidecar_commands/{commandId}",
+        "/{path=**}/chat_conversations/{conversationId}/approvals/{approvalId}",
+        "/{path=**}/chat_conversations/{conversationId}/audit/{auditId}",
+        "/settings/{document}",
+        "/{document=**}"
+      ],
+      "directUserSubcollectionRuleNames": [
+        "acervo",
+        "chat_conversations",
+        "chat_workspace_roots",
+        "documents",
+        "profile",
+        "research_notebooks",
+        "settings",
+        "sidecar_devices",
+        "theses",
+        "thesis_analysis_sessions"
+      ],
+      "nestedUserSubcollectionRuleNames": [
+        "approvals",
+        "audit",
+        "memory",
+        "sidecar_commands",
+        "turns",
+        "workspace_bindings"
+      ],
+      "adminCollectionGroupRuleNames": [
+        "acervo",
+        "approvals",
+        "audit",
+        "chat_conversations",
+        "documents",
+        "memory",
+        "research_notebooks",
+        "sidecar_commands",
+        "theses",
+        "thesis_analysis_sessions",
+        "turns"
+      ],
+      "missingUserSubcollectionRules": [],
+      "missingNestedSubcollectionRules": [],
+      "missingRuntimeCollectionGroupRules": []
+    },
+    "indexCoverage": {
+      "collectionGroupQueries": [
+        {
+          "file": "frontend/src/lib/modules/notebook/repository.ts",
+          "collectionName": "research_notebooks",
+          "indexedConstraints": [
+            {
+              "kind": "orderBy",
+              "field": "created_at",
+              "direction": "desc"
+            }
+          ],
+          "indexedFields": [
+            "created_at"
+          ],
+          "unresolvedSignals": [],
+          "requiresCompositeIndex": false
+        }
+      ],
+      "collectionGroupQueriesRequiringCompositeIndex": [],
+      "unresolvedCollectionGroupQueries": [],
+      "compositeCollectionGroupIndexes": [],
+      "missingCollectionGroupIndexes": []
+    },
+    "deployConfig": {
+      "targetDatabase": "lexio-prod",
+      "firestoreEntries": [
+        {
+          "database": "(default)",
+          "rules": "firestore.rules",
+          "indexes": "firestore.indexes.json"
+        },
+        {
+          "database": "lexio-prod",
+          "rules": "firestore.rules",
+          "indexes": "firestore.indexes.json"
+        }
+      ],
+      "missingFirestoreDeployDatabases": [],
+      "misconfiguredFirestoreDeployDatabases": []
+    },
+    "registryReference": {
+      "lexioRootDocuments": [
+        "settings/platform"
+      ],
+      "userSubcollections": [
+        "acervo",
+        "chat_conversations",
+        "chat_workspace_roots",
+        "documents",
+        "profile",
+        "research_notebooks",
+        "settings",
+        "sidecar_devices",
+        "theses",
+        "thesis_analysis_sessions"
+      ],
+      "nestedSubcollections": [
+        "approvals",
+        "audit",
+        "memory",
+        "sidecar_commands",
+        "turns",
+        "workspace_bindings"
+      ],
+      "collectionGroups": [
+        "acervo",
+        "approvals",
+        "audit",
+        "chat_conversations",
+        "chat_workspace_roots",
+        "documents",
+        "memory",
+        "research_notebooks",
+        "sidecar_commands",
+        "sidecar_devices",
+        "theses",
+        "thesis_analysis_sessions",
+        "turns",
+        "workspace_bindings"
+      ]
+    }
+  },
+  "storage": {
+    "storageUsages": [
+      "frontend/src/lib/firebase.ts",
+      "frontend/src/lib/notebook-media-storage.ts"
+    ],
+    "expectedFiles": [
+      "frontend/src/lib/firebase.ts",
+      "frontend/src/lib/notebook-media-storage.ts"
+    ],
+    "unexpectedStorageUsages": []
+  },
+  "externalCalls": {
+    "openRouterOccurrences": [
+      "frontend/src/lib/datajud-service.ts",
+      "frontend/src/lib/image-generation-client.ts",
+      "frontend/src/lib/model-catalog.ts",
+      "frontend/src/lib/providers.ts",
+      "frontend/src/lib/tts-client.ts",
+      "packages/core/config.py"
+    ],
+    "unexpectedFrontendOpenRouterOccurrences": [],
+    "legacyBackendOpenRouterOccurrences": [
+      "packages/core/config.py"
+    ],
+    "nonFrontendOpenRouterOccurrences": [
+      "packages/core/config.py"
+    ],
+    "unexpectedNonFrontendOpenRouterOccurrences": []
+  },
+  "auth": {
+    "authObserverUsages": [
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "observer": "onAuthStateChanged"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "observer": "onIdTokenChanged"
+      },
+      {
+        "file": "frontend/src/lib/firestore-service.ts",
+        "observer": "onAuthStateChanged"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "observer": "onAuthStateChanged"
+      }
+    ],
+    "allowedAuthObserverFiles": [
+      "frontend/src/contexts/AuthContext.tsx",
+      "frontend/src/lib/firestore-service.ts",
+      "frontend/src/lib/platform-analytics.ts"
+    ],
+    "unexpectedAuthObserverUsages": [],
+    "adminEmailUsages": [
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "envVar": "VITE_ADMIN_EMAIL"
+      },
+      {
+        "file": "frontend/src/lib/auth-service.ts",
+        "envVar": "VITE_ADMIN_EMAIL"
+      }
+    ],
+    "allowedAdminEmailFiles": [
+      "frontend/src/contexts/AuthContext.tsx",
+      "frontend/src/lib/auth-service.ts"
+    ],
+    "unexpectedAdminEmailUsages": [],
+    "adminRoleCheckUsages": [
+      {
+        "file": "frontend/src/components/Sidebar.tsx",
+        "expression": "role === 'admin'"
+      },
+      {
+        "file": "frontend/src/components/v2/V2WorkspaceLayout.tsx",
+        "expression": "role === 'admin'"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "expression": "profileRole === 'admin'"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "expression": "nextRole === 'admin'"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "expression": "nextRole === 'admin'"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "expression": "user.role === 'admin'"
+      },
+      {
+        "file": "frontend/src/pages/DocumentDetail.tsx",
+        "expression": "role === 'admin'"
+      },
+      {
+        "file": "frontend/src/pages/DocumentDetail.tsx",
+        "expression": "role === 'admin'"
+      },
+      {
+        "file": "frontend/src/pages/DocumentDetail.tsx",
+        "expression": "role === 'admin'"
+      }
+    ],
+    "allowedAdminRoleCheckFiles": [
+      "frontend/src/components/Sidebar.tsx",
+      "frontend/src/components/v2/V2WorkspaceLayout.tsx",
+      "frontend/src/contexts/AuthContext.tsx",
+      "frontend/src/lib/platform-analytics.ts",
+      "frontend/src/pages/DocumentDetail.tsx"
+    ],
+    "unexpectedAdminRoleCheckUsages": [],
+    "firestoreOperationUsages": [
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/auth-service.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/auth-service.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/auth-service.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/auth-service.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/document-v3-orchestrator.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/document-v3-orchestrator.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/generation-service.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "deleteDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "deleteDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/acervo/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "deleteDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "deleteDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/chat/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/documents/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/documents/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/documents/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/documents/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/documents/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/documents/repository.ts",
+        "operation": "deleteDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/documents/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "deleteDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/notebook/repository.ts",
+        "operation": "deleteDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/profile/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/profile/repository.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/profile/repository.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/settings/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/settings/repository.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/settings/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/settings/repository.ts",
+        "operation": "setDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/settings/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "updateDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "getDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "deleteDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "addDoc"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/modules/theses/repository.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "operation": "getDocs"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "operation": "getDocs"
+      }
+    ],
+    "firestoreOperationFiles": [
+      "frontend/src/contexts/AuthContext.tsx",
+      "frontend/src/lib/auth-service.ts",
+      "frontend/src/lib/document-v3-orchestrator.ts",
+      "frontend/src/lib/generation-service.ts",
+      "frontend/src/lib/modules/acervo/repository.ts",
+      "frontend/src/lib/modules/chat/repository.ts",
+      "frontend/src/lib/modules/documents/repository.ts",
+      "frontend/src/lib/modules/notebook/repository.ts",
+      "frontend/src/lib/modules/profile/repository.ts",
+      "frontend/src/lib/modules/settings/repository.ts",
+      "frontend/src/lib/modules/theses/repository.ts",
+      "frontend/src/lib/platform-analytics.ts"
+    ],
+    "allowedFirestoreOperationFiles": [
+      "frontend/src/contexts/AuthContext.tsx",
+      "frontend/src/lib/auth-service.ts",
+      "frontend/src/lib/document-v3-orchestrator.ts",
+      "frontend/src/lib/firestore-service.ts",
+      "frontend/src/lib/generation-service.ts",
+      "frontend/src/lib/modules/acervo/repository.ts",
+      "frontend/src/lib/modules/chat/repository.ts",
+      "frontend/src/lib/modules/documents/repository.ts",
+      "frontend/src/lib/modules/notebook/repository.ts",
+      "frontend/src/lib/modules/profile/repository.ts",
+      "frontend/src/lib/modules/settings/repository.ts",
+      "frontend/src/lib/modules/theses/repository.ts",
+      "frontend/src/lib/platform-analytics.ts"
+    ],
+    "unexpectedFirestoreOperationFiles": [],
+    "firestoreWrapperGuardrailFiles": [
+      "frontend/src/lib/document-v3-orchestrator.ts",
+      "frontend/src/lib/generation-service.ts",
+      "frontend/src/lib/modules/acervo/repository.ts",
+      "frontend/src/lib/modules/chat/repository.ts",
+      "frontend/src/lib/modules/documents/repository.ts",
+      "frontend/src/lib/modules/notebook/repository.ts",
+      "frontend/src/lib/modules/profile/repository.ts",
+      "frontend/src/lib/modules/settings/repository.ts",
+      "frontend/src/lib/modules/theses/repository.ts",
+      "frontend/src/lib/platform-analytics.ts"
+    ],
+    "unguardedFirestoreOperationUsages": [],
+    "unexpectedUnguardedFirestoreOperationFiles": [],
+    "authRecoveryOptOutUsages": [
+      {
+        "file": "frontend/src/lib/modules/settings/repository.ts",
+        "expression": "recoverAuthAccessErrors: false"
+      },
+      {
+        "file": "frontend/src/lib/modules/settings/repository.ts",
+        "expression": "recoverAuthAccessErrors: false"
+      }
+    ],
+    "allowedAuthRecoveryOptOutFiles": [
+      "frontend/src/lib/modules/settings/repository.ts"
+    ],
+    "unexpectedAuthRecoveryOptOutUsages": [],
+    "firestoreBootstrapUsages": [
+      {
+        "file": "frontend/src/lib/firebase.ts",
+        "functionName": "getFirestore"
+      }
+    ],
+    "allowedFirestoreBootstrapFiles": [
+      "frontend/src/lib/firebase.ts"
+    ],
+    "unexpectedFirestoreBootstrapUsages": [],
+    "firestoreDatabaseEnvUsages": [
+      {
+        "file": "frontend/src/lib/firebase.ts",
+        "envVar": "VITE_FIRESTORE_DATABASE_ID"
+      }
+    ],
+    "unexpectedFirestoreDatabaseEnvUsages": [],
+    "sessionStorageKeys": [
+      "lexio_token",
+      "lexio_user_id",
+      "lexio_role",
+      "lexio_full_name"
+    ],
+    "sessionStorageUsages": [
+      {
+        "file": "frontend/src/api/client.ts",
+        "operation": "getItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/api/client.ts",
+        "operation": "setItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/api/client.ts",
+        "operation": "removeItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_user_id"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_role"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_full_name"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "removeItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "removeItem",
+        "key": "lexio_user_id"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "removeItem",
+        "key": "lexio_role"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "removeItem",
+        "key": "lexio_full_name"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "getItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "getItem",
+        "key": "lexio_user_id"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "getItem",
+        "key": "lexio_role"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "getItem",
+        "key": "lexio_full_name"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "getItem",
+        "key": "lexio_full_name"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_role"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_full_name"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "getItem",
+        "key": "lexio_full_name"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_role"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_full_name"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "getItem",
+        "key": "lexio_full_name"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "getItem",
+        "key": "lexio_role"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_role"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_full_name"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_user_id"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/contexts/AuthContext.tsx",
+        "operation": "setItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/lib/auth-session-events.ts",
+        "operation": "getItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/lib/firestore-service.ts",
+        "operation": "getItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/lib/firestore-service.ts",
+        "operation": "getItem",
+        "key": "lexio_user_id"
+      },
+      {
+        "file": "frontend/src/lib/firestore-service.ts",
+        "operation": "getItem",
+        "key": "lexio_user_id"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "operation": "getItem",
+        "key": "lexio_token"
+      },
+      {
+        "file": "frontend/src/lib/platform-analytics.ts",
+        "operation": "getItem",
+        "key": "lexio_user_id"
+      }
+    ],
+    "sessionStorageUsageByKey": {
+      "lexio_full_name": 9,
+      "lexio_role": 7,
+      "lexio_token": 12,
+      "lexio_user_id": 7
+    },
+    "sessionStorageUsageByOperation": {
+      "getItem": 15,
+      "removeItem": 5,
+      "setItem": 15
+    },
+    "sessionStorageFiles": [
+      "frontend/src/api/client.ts",
+      "frontend/src/contexts/AuthContext.tsx",
+      "frontend/src/lib/auth-session-events.ts",
+      "frontend/src/lib/firestore-service.ts",
+      "frontend/src/lib/platform-analytics.ts"
+    ],
+    "allowedSessionStorageFiles": [
+      "frontend/src/api/client.ts",
+      "frontend/src/contexts/AuthContext.tsx",
+      "frontend/src/lib/auth-session-events.ts",
+      "frontend/src/lib/firestore-service.ts",
+      "frontend/src/lib/platform-analytics.ts"
+    ],
+    "allowedSessionStorageWriteFiles": [
+      "frontend/src/api/client.ts",
+      "frontend/src/contexts/AuthContext.tsx"
+    ],
+    "unexpectedSessionStorageFiles": [],
+    "unexpectedSessionStorageWrites": []
+  },
+  "security": {
+    "sensitiveConfigDefaults": []
+  }
+}

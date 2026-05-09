@@ -102,7 +102,7 @@ export const DEFAULT_BRL_PER_USD = 5.7
 
 const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   document_generation: 'Geração de documentos',
-  document_generation_v3: 'Novo Documento v3',
+  document_generation_v3: 'Novo Documento',
   thesis_analysis: 'Análise de teses',
   context_detail: 'Detalhamento de contexto',
   acervo_classificador: 'Classificador de acervo',

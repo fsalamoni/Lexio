@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(new URL('./firestore-service.ts', import.meta.url), 'utf-8')
+const generationServiceSource = readFileSync(new URL('./generation-service.ts', import.meta.url), 'utf-8')
 const platformAnalyticsSource = readFileSync(new URL('./platform-analytics.ts', import.meta.url), 'utf-8')
 const acervoRepositorySource = readFileSync(new URL('./modules/acervo/repository.ts', import.meta.url), 'utf-8')
 const documentsRepositorySource = readFileSync(new URL('./modules/documents/repository.ts', import.meta.url), 'utf-8')
@@ -104,5 +105,18 @@ describe('firestore-service auth guardrails', () => {
 
     expect(firestoreBoundarySource).not.toMatch(/await\s+getDocs\(\s*collectionGroup/)
     expect(firestoreBoundarySource).not.toMatch(/await\s+getDoc\(\s*doc\(db,\s*['"]settings['"]/)
+  })
+
+  it('keeps legacy document generation persistence behind user-scoped writes', () => {
+    expect(generationServiceSource).toContain('writeUserScoped(uid, contextLabel')
+    expect(generationServiceSource).toContain("'generateDocument.start'")
+    expect(generationServiceSource).toContain("'generateDocument.persistTema'")
+    expect(generationServiceSource).toContain("'generateDocument.complete'")
+    expect(generationServiceSource).toContain("'generateDocument.error'")
+    expect(generationServiceSource).not.toMatch(/doc\(firestore,\s*['"]users['"],\s*uid,\s*['"]documents['"],\s*docId\)/)
+  })
+
+  it('keeps global settings writes behind the shared Firestore retry helper', () => {
+    expect(settingsRepositorySource).toMatch(/async function saveSettings[\s\S]*deps\.withFirestoreRetry\(\s*\(\)\s*=>\s*setDoc\(ref,/)
   })
 })

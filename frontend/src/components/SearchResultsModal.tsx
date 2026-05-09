@@ -51,9 +51,10 @@ export default function SearchResultsModal({
 
   // Sync if items change (modal reopened)
   React.useEffect(() => {
+    if (!isOpen) return
     setItems(initialItems)
     setExpandedId(null)
-  }, [initialItems])
+  }, [initialItems, isOpen])
 
   const config = VARIANT_CONFIG[variant]
   const VarIcon = config.icon

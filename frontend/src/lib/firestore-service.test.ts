@@ -11,6 +11,7 @@ import type { UsageExecutionRecord } from './cost-analytics'
 
 const mockAddDoc = vi.fn()
 const mockCollection = vi.fn()
+const mockCollectionGroup = vi.fn()
 const mockDoc = vi.fn()
 const mockGetDoc = vi.fn()
 const mockGetDocs = vi.fn()
@@ -54,6 +55,7 @@ const {
 vi.mock('firebase/firestore', () => ({
   addDoc: (...args: unknown[]) => mockAddDoc(...args),
   collection: (...args: unknown[]) => mockCollection(...args),
+  collectionGroup: (...args: unknown[]) => mockCollectionGroup(...args),
   doc: (...args: unknown[]) => mockDoc(...args),
   getDoc: (...args: unknown[]) => mockGetDoc(...args),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
@@ -127,7 +129,9 @@ import {
   getRecentDocuments,
   getDashboardSnapshot,
   getCostBreakdown,
+  getPlatformOverview,
   getResearchNotebook,
+  invalidatePlatformAnalyticsCache,
   loadAdminClassificationTipos,
   loadAdminDocumentTypes,
   loadAdminLegalAreas,
@@ -146,6 +150,8 @@ import {
   saveThesisAnalysisSession,
   getLastThesisAnalysisSession,
   getAcervoDocsWithoutTags,
+  updateAcervoEmenta,
+  deleteResearchNotebook,
   updateResearchNotebook,
   listChatConversations,
   getChatConversation,
@@ -227,6 +233,7 @@ describe('saveNotebookDocumentToDocuments', () => {
     vi.clearAllMocks()
     __resetFirebaseTokenRefreshGuardsForTests()
     __resetFirestoreAuthCircuitForTests()
+    invalidatePlatformAnalyticsCache()
     mockGetIdToken.mockResolvedValue('token')
     mockFirebaseAuth.currentUser = {
       uid,
@@ -237,6 +244,7 @@ describe('saveNotebookDocumentToDocuments', () => {
       return () => undefined
     })
     mockCollection.mockReturnValue('col-ref')
+    mockCollectionGroup.mockImplementation((...args: unknown[]) => ({ collectionGroup: args }))
     mockAddDoc.mockResolvedValue({ id: 'new-doc-id' })
     mockDoc.mockImplementation((...segments: unknown[]) => {
       const pathSegments = typeof segments[0] === 'object' ? segments.slice(1) : segments
@@ -353,6 +361,100 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(mockUpdateDoc).toHaveBeenCalledOnce()
   })
 
+  it('retries notebook reads after transient permission-denied and still checks dedicated memory', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce({
+        exists: () => true,
+        id: 'nb-xyz',
+        data: () => ({ title: 'Notebook', sources: [] }),
+      })
+      .mockResolvedValueOnce({ exists: () => false, id: 'search_memory', data: () => ({}) })
+
+    const result = await getResearchNotebook(uid, 'nb-xyz')
+
+    expect(result?.id).toBe('nb-xyz')
+    expect(mockGetDoc).toHaveBeenCalledTimes(3)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('retries notebook updates after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockUpdateDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(undefined)
+
+    await updateResearchNotebook(uid, 'nb-xyz', { title: 'Atualizado' })
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'research_notebooks', 'nb-xyz',
+    )
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('retries notebook dedicated memory sync after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockUpdateDoc.mockResolvedValueOnce(undefined)
+    mockSetDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(undefined)
+
+    await updateResearchNotebook(uid, 'nb-xyz', {
+      research_audits: [{
+        id: 'audit-1',
+        query: 'controle concentrado',
+        provider: 'datajud',
+        created_at: '2026-05-08T10:00:00.000Z',
+      }] as never,
+      saved_searches: [{
+        id: 'search-1',
+        label: 'Pesquisa principal',
+        query: 'controle concentrado',
+        created_at: '2026-05-08T10:00:00.000Z',
+      }] as never,
+    })
+
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(1)
+    expect(mockSetDoc).toHaveBeenCalledTimes(2)
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'research_notebooks', 'nb-xyz', 'memory', 'search_memory',
+    )
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('retries notebook dedicated memory deletion after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockDeleteDoc
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(undefined)
+
+    await deleteResearchNotebook(uid, 'nb-xyz')
+
+    expect(mockDeleteDoc).toHaveBeenCalledTimes(3)
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'research_notebooks', 'nb-xyz', 'memory', 'search_memory',
+    )
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
   it('loads user settings from the preferences document', async () => {
     mockGetDoc.mockResolvedValueOnce({
       exists: () => true,
@@ -398,6 +500,135 @@ describe('saveNotebookDocumentToDocuments', () => {
       }),
       { merge: true },
     )
+  })
+
+  it('retries legacy platform settings writes after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockSetDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(undefined)
+
+    await saveSettings({ api_keys: { datajud_api_key: 'datajud-key' } })
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'settings', 'platform',
+    )
+    expect(mockSetDoc).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('retries platform overview collection reads after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDocs
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'doc-1',
+          data: {
+            document_type_id: 'parecer',
+            status: 'concluido',
+            quality_score: 88,
+            origem: 'web',
+            created_at: '2026-05-08T12:00:00.000Z',
+          },
+        },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'nb-1',
+          data: {
+            title: 'Notebook teste',
+            created_at: '2026-05-08T12:00:00.000Z',
+            sources: [],
+            artifacts: [],
+          },
+        },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'user-1',
+          data: {
+            role: 'admin',
+            created_at: '2026-05-08T12:00:00.000Z',
+          },
+        },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+
+    const overview = await getPlatformOverview()
+
+    expect(overview.total_users).toBe(1)
+    expect(overview.total_documents).toBe(1)
+    expect(overview.total_notebooks).toBe(1)
+    expect(overview.operational_warnings).toEqual([])
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('loads platform overview with partial metrics when notebook search memory is unavailable', async () => {
+    const memoryUnavailableError = Object.assign(
+      new Error('PERMISSION_DENIED: Missing or insufficient permissions.'),
+      { code: 'firestore/internal' },
+    )
+
+    mockGetDocs
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'user-1',
+          data: {
+            role: 'admin',
+            created_at: '2026-05-08T12:00:00.000Z',
+          },
+        },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'nb-1',
+          data: {
+            title: 'Notebook teste',
+            created_at: '2026-05-08T12:00:00.000Z',
+            sources: [],
+            artifacts: [],
+          },
+        },
+      ]))
+      .mockRejectedValueOnce(memoryUnavailableError)
+
+    const overview = await getPlatformOverview()
+
+    expect(overview.total_users).toBe(1)
+    expect(overview.total_notebooks).toBe(1)
+    expect(overview.total_notebook_search_memory_docs).toBe(0)
+    expect(overview.operational_warnings).toHaveLength(1)
+    expect(overview.operational_warnings?.[0] ?? '').toContain('metricas parciais')
+  })
+
+  it('surfaces permission-denied immediately when legacy settings read opts out of auth recovery', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDoc.mockRejectedValueOnce(permissionError)
+
+    await expect(getSettings({ recoverAuthAccessErrors: false })).rejects.toMatchObject({
+      code: 'firestore/permission-denied',
+    })
+
+    expect(mockGetDoc).toHaveBeenCalledTimes(1)
+    expect(mockGetIdToken).not.toHaveBeenCalled()
   })
 
   it('prefers authenticated uid when requested uid is stale', async () => {
@@ -687,6 +918,52 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(docs[0].id).toBe('acervo-1')
   })
 
+  it('retries indexed acervo reads after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDocs
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'acervo-1',
+          data: {
+            filename: 'peticao.pdf',
+            text_content: 'texto',
+            status: 'indexed',
+            created_at: '2026-05-08T12:00:00.000Z',
+          },
+        },
+      ]))
+
+    const docs = await getAcervoDocsWithoutTags(uid)
+
+    expect(docs).toHaveLength(1)
+    expect(docs[0].id).toBe('acervo-1')
+    expect(mockGetDocs).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('retries acervo ementa updates after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockUpdateDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(undefined)
+
+    await updateAcervoEmenta(uid, 'acervo-1', 'Ementa sintética', ['tributario'])
+
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'acervo', 'acervo-1',
+    )
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
   it('retries listDocuments after permission-denied and recovers on token refresh', async () => {
     const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
       code: 'firestore/permission-denied',
@@ -897,6 +1174,21 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(mockGetIdToken).toHaveBeenCalledWith(true)
   })
 
+  it('retries stale snapshot write conflicts surfaced as firestore aborted', async () => {
+    const abortedError = Object.assign(new Error('Transaction aborted due to concurrent modification.'), {
+      code: 'firestore/aborted',
+    })
+
+    mockSetDoc
+      .mockRejectedValueOnce(abortedError)
+      .mockResolvedValueOnce(undefined)
+
+    await saveUserSettings(uid, { last_jurisprudence_tribunal_aliases: ['stm'] })
+
+    expect(mockSetDoc).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).not.toHaveBeenCalled()
+  })
+
   it('repairs a missing chat conversation document with an idempotent merge', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => false, id: 'conv-1', data: () => ({}) })
 
@@ -1013,6 +1305,55 @@ describe('saveNotebookDocumentToDocuments', () => {
     const previewPayload = mockUpdateDoc.mock.calls[mockUpdateDoc.mock.calls.length - 1]?.[1] as { last_preview?: string }
     expect(previewPayload.last_preview).toHaveLength(238)
     expect(previewPayload.last_preview?.endsWith('…')).toBe(true)
+  })
+
+  it('retries chat conversation listing after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDocs
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        { id: 'conv-new', data: { title: 'Nova', effort: 'medio', updated_at: '2026-05-08T12:00:00.000Z', created_at: '2026-05-08T11:00:00.000Z' } },
+      ]))
+
+    const result = await listChatConversations(uid, { limit: 1 })
+
+    expect(result.items.map(item => item.id)).toEqual(['conv-new'])
+    expect(mockGetDocs).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('retries appendChatTurn writes after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      id: 'conv-1',
+      data: () => ({ title: 'Parecer constitucional', effort: 'medio', created_at: '2026-05-08T11:00:00.000Z', updated_at: '2026-05-08T12:00:00.000Z' }),
+    })
+    mockAddDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce({ id: 'turn-1' })
+
+    const turnId = await appendChatTurn(uid, 'conv-1', {
+      conversation_id: 'conv-1',
+      user_input: 'Elabore um parecer sobre nepotismo.',
+      trail: [],
+      assistant_markdown: null,
+      status: 'running',
+    })
+
+    expect(turnId).toBe('turn-1')
+    expect(mockAddDoc).toHaveBeenCalledTimes(2)
+    expect(mockUpdateDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-1' },
+      expect.objectContaining({ updated_at: expect.any(String) }),
+    )
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
   })
 
   it('lists, finalizes and deletes chat turns through the facade', async () => {
@@ -1146,6 +1487,56 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(bindings.items[0].root_id).toBe('root-1')
   })
 
+  it('retries workspace root writes after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockSetDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(undefined)
+
+    const rootId = await saveChatWorkspaceRoot(uid, {
+      id: 'root-1',
+      provider: 'local_folder',
+      label: '',
+      permissions: ['read', 'write'],
+      approval_policy: 'always',
+      sync_enabled: true,
+    })
+
+    expect(rootId).toBe('root-1')
+    expect(mockSetDoc).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('retries workspace binding writes after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      id: 'conv-1',
+      data: () => ({ title: 'Chat', effort: 'medio', created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T11:00:00.000Z' }),
+    })
+    mockSetDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(undefined)
+
+    const bindingId = await bindChatWorkspaceRoot(uid, 'conv-1', {
+      root_id: 'root-1',
+      provider: 'local_folder',
+      label: '',
+      permissions: ['read'],
+      approval_policy: 'always',
+    })
+
+    expect(bindingId).toBe('root-1')
+    expect(mockSetDoc).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
   it('persists sidecar commands, approvals and audit entries through the facade', async () => {
     mockGetDoc.mockResolvedValue({
       exists: () => true,
@@ -1227,6 +1618,58 @@ describe('saveNotebookDocumentToDocuments', () => {
       actor: 'sidecar',
       status: 'executed',
     }))
+  })
+
+  it('retries sidecar command writes after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      id: 'conv-1',
+      data: () => ({ title: 'Chat', effort: 'medio', created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T11:00:00.000Z' }),
+    })
+    mockAddDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce({ id: 'cmd-1' })
+
+    const commandId = await createChatSidecarCommand(uid, 'conv-1', {
+      root_id: 'root-1',
+      operation: 'read',
+      path: 'peticao.md',
+    })
+
+    expect(commandId).toBe('cmd-1')
+    expect(mockAddDoc).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('retries approval request writes after transient permission-denied', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      id: 'conv-1',
+      data: () => ({ title: 'Chat', effort: 'medio', created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T11:00:00.000Z' }),
+    })
+    mockAddDoc
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce({ id: 'approval-1' })
+
+    const approvalId = await createChatApprovalRequest(uid, 'conv-1', {
+      command_ids: ['cmd-1'],
+      title: 'Ler arquivo',
+      summary: 'Permite leitura de peticao.md',
+      risk_level: 'low',
+      requested_permissions: ['read'],
+    })
+
+    expect(approvalId).toBe('approval-1')
+    expect(mockAddDoc).toHaveBeenCalledTimes(2)
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
   })
 })
 

@@ -1,6 +1,6 @@
-# Cross-Platform Handoff - Wave 40 Subwave 2
+# Cross-Platform Handoff - Wave 42 Firestore Cutover
 
-Last update: 2026-05-05
+Last update: 2026-05-09
 
 ## Objective
 This file is the minimum operational package to continue Lexio work from another platform/session with no loss of planning, index, or cache context.
@@ -8,60 +8,85 @@ This file is the minimum operational package to continue Lexio work from another
 ## Repository Snapshot
 - Branch: main
 - Current head: resolve at handoff time with `git rev-parse --short HEAD`
-- Wave 40 functional payload commit: 162224f
-- Working tree status at handoff: expected clean after the docs-sync closeout commit on `main`
+- Latest merged release baseline: 15b32d1
+- Validated head before merge: 366628c
+- Target Firestore database: lexio-prod
+- Working tree status at handoff: resolve with `git status --short` before continuing
 
-## Latest Wave 40 Payload Release
+## Latest Wave 42 Productive Release
 - Firebase workflow: .github/workflows/firebase-deploy.yml
-- Firebase run: 25405834740 (success)
+- Main Tests workflow: 25576968289 (success)
+- Firebase run: 25576968354 (success)
 - One-shot workflow: .github/workflows/release-web.yml
-- release-web run: 25405834580 (success)
-- Functional payload validated by release: 162224f
-- Release lane summary: Firebase production published on push; GitHub Pages published by one-shot release with the same payload baseline.
+- release-web run: 25581626099 (success)
+- Functional payload validated by release: 15b32d1
+- Release lane summary: Firebase production and GitHub Pages were published against the `lexio-prod` cutover baseline; redesign V2 stayed intentionally skipped.
+- Public smoke: `https://lexio.web.app/login` and `https://fsalamoni.github.io/Lexio/login` returned 200 with React root rendered.
+- Authenticated production smoke: dashboard, documents, generator, notebook, chat, settings and profile loaded without login redirects.
+- Firestore monitor: 34 calls to `lexio-prod`, 0 to `(default)`, 0 bad Firestore responses, 0 request failures and 0 console errors.
+- DataJud proxy smoke: valid `tjrs` request returned 200; no `datajudProxy` errors were observed after release start.
 
 ## Canonical Docs to Continue Work
 Read/update in this closeout order when opening the next cycle:
 1. docs/PLANO.md
 2. docs/MANIFEST.json
-3. docs/release/WEB_RELEASE_CACHE.md
-4. NOTEBOOK_IMPLEMENTATION_STATUS.md
-5. docs/release/WEB_RELEASE_INDEX.md
-6. docs/release/SUBONDA2_CLOSEOUT.md
-7. docs/release/CROSS_PLATFORM_HANDOFF.md
+3. docs/release/PLATFORM_AUDIT_MATRIX.md
+4. docs/release/PLATFORM_AUDIT_RISK_SCAN.md
+5. docs/release/PLATFORM_AUDIT_FAULT_MATRIX.md
+6. docs/release/PLATFORM_AUDIT_DEEP_SWEEP.md
+7. docs/release/PLATFORM_AUDIT_RELEASE_CLOSEOUT.md
+8. docs/release/PLATFORM_AUDIT_RESIDUAL_SUMMARY.md
+9. docs/release/PLATFORM_AUDIT_FINAL_CLOSEOUT.md
+10. docs/release/WEB_RELEASE_CACHE.md
+11. docs/release/WEB_RELEASE_INDEX.md
+12. NOTEBOOK_IMPLEMENTATION_STATUS.md
+13. docs/release/CROSS_PLATFORM_HANDOFF.md
 
-## What Was Delivered in Wave 40 Subwave 2
-- `frontend/src/lib/generation-service.ts` and related runtime/cache slices completed the subwave hardening for user-scoped caches, explicit execution-state progress and safe parallel researcher overlap.
-- `frontend/src/lib/video-generation-pipeline.ts`, `frontend/src/pages/ResearchNotebook.tsx` and `frontend/src/pages/labs/ResearchNotebookV2.tsx` now resume video production from persisted checkpoints instead of restarting from scratch.
-- `frontend/src/pages/PlatformAdminPanel.tsx` now closes longitudinal calibration by effective operational alert-threshold profile.
-- `frontend/src/lib/datajud-service.ts`, `frontend/src/lib/firestore-service.ts`, `frontend/src/lib/firestore-types.ts`, `frontend/src/pages/ResearchNotebook.tsx` and `frontend/src/pages/labs/ResearchNotebookV2.tsx` now complete the jurisprudence hybrid-search stack with browser-side semantic rerank, resilient legal rerank fallback and notebook-scoped persistent semantic memory with historical result fusion.
-- Planning/index/cache/handoff docs were synchronized to the closed Wave 40 payload baseline on `main`, so work can resume without replaying session context.
+## What Was Delivered in Wave 42
+- Firestore runtime was isolated to the named production database `lexio-prod` while preserving `(default)` as rollback-only data.
+- Migration tooling, parity validation, rules/indexes publication and workflow wiring were closed for the cutover without data loss.
+- Production clients now target `lexio-prod`, and authenticated/public/browser-monitor smoke confirmed the cutover with zero observed traffic to `(default)`.
+- The whole-platform audit now has executable artifacts for baseline, risk scan, fault injection, deep stateful sweep and release closeout under `docs/release/`.
+- Planning, manifest, release cache/index and this handoff are synchronized to the latest merged release baseline, so the next cycle can continue without replaying prior session context.
 
 ## Validation Baseline
 Frontend:
-- npm run typecheck (last explicit `TYPECHECK_EXIT:0` earlier in this same subwave)
-- npm run test -- src/lib/datajud-service.test.ts (73/73)
-- get_errors frontend (clean after semantic-memory integration)
-- npm run build (validated earlier in this same subwave)
+- architecture check OK
+- npm run typecheck OK
+- frontend full test suite OK (71 files, 537 tests)
+- npm run build with `VITE_FIRESTORE_DATABASE_ID=lexio-prod` OK
 - functions npm run build
+- manifest JSON OK
+- `git diff --check` OK
 
 Backend tests:
 - python -m pytest -q (2203 passed)
+- python -m ruff check packages tests
 
 Release lane:
-- firebase-deploy.yml push run 25405834740 completed in success
-- release-web.yml one-shot run 25405834580 completed in success
+- Tests workflow run 25576968289 completed in success
+- firebase-deploy.yml push run 25576968354 completed in success
+- release-web.yml one-shot run 25581626099 completed in success
 
 ## Next Logical Block (starting point)
-- Abrir a próxima frente funcional com a base da Wave 40 já fechada em `main`.
-- Se necessário no próximo ciclo, revalidar a integração com Firebase Auth real; o smoke local autenticado já foi concluído via modo smoke/demo.
-- Manter o mesmo ordenamento de closeout documental e a verificação one-shot de release em todos os ciclos.
+- Classify any residuals left by the audit artifacts and keep the release closeout pack synchronized as new fixes land.
+- If a new payload changes release-sensitive surfaces, rerun the audit scripts before dispatching the one-shot lane again.
+- Keep `lexio-prod` as the only production target and do not delete `(default)` data without a separate cleanup plan.
 
 ## Fast Resume Commands
 From repo root:
 - git checkout main
 - git pull --rebase --autostash origin main
+- git status --short
 - cd frontend
 - npm install
+- npm run audit:baseline
+- npm run audit:riskscan
+- npm run audit:faults
+- npm run audit:deep
+- npm run audit:final
+- npm run audit:release
+- npm run audit:residuals
 - npm run typecheck
 - npm run test -- --run
 - npm run build
@@ -73,3 +98,5 @@ Release trigger:
 - Keep GitHub Pages and Firebase both validated for each closeout cycle.
 - Keep redesign V2 optional unless explicitly requested.
 - Preserve current policy: no new backend runtime for production logic (frontend TS first).
+- Treat `docs/release/PLATFORM_AUDIT_RELEASE_CLOSEOUT.md` as the operational gate report for the release-closeout macrophase.
+- Do not clean up legacy `(default)` Firestore data as part of ordinary feature work.

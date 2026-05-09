@@ -6,6 +6,7 @@ import { ToastProvider } from './components/Toast'
 import TaskBar from './components/TaskBar'
 import { useApplyPlatformSkin } from './components/ThemeSkinSelector'
 import { clearRuntimeFeatureFlags, FEATURE_FLAGS_UPDATED_EVENT } from './lib/feature-flags'
+import { IS_FIREBASE } from './lib/firebase'
 import { hydrateRuntimeFeatureFlags } from './lib/settings-store'
 import {
   buildWorkspaceSettingsPath,
@@ -33,6 +34,7 @@ const Chat = lazy(() => import('./pages/Chat'))
 const ProfileV2 = lazy(() => import('./pages/labs/ProfileV2'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 const V2WorkspaceLayout = lazy(() => import('./components/v2/V2WorkspaceLayout'))
+const DefaultNewDocumentPage = IS_FIREBASE ? NewDocumentV3 : NewDocument
 
 function RouteFallback() {
   return (
@@ -91,8 +93,8 @@ function AuthenticatedShell() {
         <Route path="/" element={<DashboardV2 />} />
         <Route path="/chat" element={<Chat />} />
         <Route path="/documents" element={<DocumentList />} />
-        <Route path="/documents/new" element={<NewDocument />} />
-        <Route path="/documents/new-v3" element={<NewDocumentV3 />} />
+        <Route path="/documents/new" element={<DefaultNewDocumentPage />} />
+        <Route path="/documents/new-v3" element={<Navigate to="/documents/new" replace />} />
         <Route path="/documents/:id" element={<DocumentDetail />} />
         <Route path="/documents/:id/edit" element={<DocumentEditor />} />
         <Route path="/upload" element={<Upload />} />

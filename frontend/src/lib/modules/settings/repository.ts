@@ -58,7 +58,10 @@ export function createSettingsRepository(deps: SettingsRepositoryDependencies) {
   async function saveSettings(data: Record<string, unknown>): Promise<void> {
     const db = deps.ensureFirestore()
     const ref = doc(db, 'settings', 'platform')
-    await setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true })
+    await deps.withFirestoreRetry(
+      () => setDoc(ref, { ...data, updated_at: serverTimestamp() }, { merge: true }),
+      'saveSettings',
+    )
   }
 
   async function getUserSettings(uid: string): Promise<UserSettingsData> {

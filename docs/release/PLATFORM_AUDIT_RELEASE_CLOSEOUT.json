@@ -1,0 +1,320 @@
+{
+  "generatedAt": "2026-05-09T15:37:41.045Z",
+  "git": {
+    "branch": null,
+    "head": null
+  },
+  "releaseBaseline": {
+    "testsRun": "25576968289",
+    "firebaseRun": "25576968354",
+    "releaseRun": "25581626099",
+    "mergeCommit": "15b32d1",
+    "validatedHead": null,
+    "targetDatabase": "lexio-prod"
+  },
+  "counts": {
+    "total": 13,
+    "coveredByRepoEvidence": 13,
+    "driftDetected": 0,
+    "missing": 0,
+    "openHighRisk": 0,
+    "openMediumRisk": 0
+  },
+  "gates": [
+    {
+      "key": "release_workflow_dispatch",
+      "label": "Release workflow dispatch contract",
+      "area": "workflow",
+      "risk": "high",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"workflow_dispatch|deploy_firebase|deploy_github_pages|deploy_redesign_v2\" .github/workflows/release-web.yml",
+      "evidence": [
+        {
+          "path": ".github/workflows/release-web.yml",
+          "note": "one-shot workflow keeps manual dispatch enabled"
+        },
+        {
+          "path": ".github/workflows/release-web.yml",
+          "note": "Firebase production remains a first-class release input"
+        },
+        {
+          "path": ".github/workflows/release-web.yml",
+          "note": "GitHub Pages remains a first-class release input"
+        },
+        {
+          "path": ".github/workflows/release-web.yml",
+          "note": "redesign V2 stays explicitly optional during one-shot release"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "release_workflow_fanout",
+      "label": "Release lane fanout and summary",
+      "area": "workflow",
+      "risk": "high",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"quality-gates|deploy-firebase|deploy-pages|release-summary\" .github/workflows/release-web.yml",
+      "evidence": [
+        {
+          "path": ".github/workflows/release-web.yml",
+          "note": "release lane still gates on the reusable quality workflow"
+        },
+        {
+          "path": ".github/workflows/release-web.yml",
+          "note": "release lane still fans out to Firebase production deploy"
+        },
+        {
+          "path": ".github/workflows/release-web.yml",
+          "note": "release lane still fans out to GitHub Pages deploy"
+        },
+        {
+          "path": ".github/workflows/release-web.yml",
+          "note": "release lane still emits a final outcome summary"
+        },
+        {
+          "path": ".github/workflows/firebase-deploy.yml",
+          "note": "Firebase production workflow file exists for release fanout"
+        },
+        {
+          "path": ".github/workflows/deploy-pages.yml",
+          "note": "GitHub Pages workflow file exists for release fanout"
+        },
+        {
+          "path": ".github/workflows/test.yml",
+          "note": "quality-gates workflow target exists"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "release_plan_doc",
+      "label": "Release plan document present",
+      "area": "docs",
+      "risk": "medium",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"## Goal|## Scope\" docs/release/WEB_RELEASE_PLAN.md",
+      "evidence": [
+        {
+          "path": "docs/release/WEB_RELEASE_PLAN.md",
+          "note": "release plan keeps an explicit goal section"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_PLAN.md",
+          "note": "release plan keeps an explicit scope section"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "release_index_current_baseline",
+      "label": "Release index current baseline",
+      "area": "docs",
+      "risk": "high",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"Main deploys|Public smoke|Authenticated production smoke|Firestore monitoring|DataJud proxy smoke\" docs/release/WEB_RELEASE_INDEX.md",
+      "evidence": [
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "release index keeps a current validation baseline section"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "current baseline records main deploy run IDs"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "current baseline records public smoke results"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "current baseline records authenticated production smoke results"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "current baseline records Firestore monitoring results"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "current baseline records DataJud proxy smoke results"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "release_cache_current_baseline",
+      "label": "Release cache synced with current baseline",
+      "area": "docs",
+      "risk": "high",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"Current Validation Cache|25576968289|25576968354|25581626099\" docs/release/WEB_RELEASE_CACHE.md",
+      "evidence": [
+        {
+          "path": "docs/release/WEB_RELEASE_CACHE.md",
+          "note": "release cache keeps a current validation section"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_CACHE.md",
+          "note": "release cache carries the latest recorded run IDs"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "plan_synced_with_current_release",
+      "label": "Planning doc synced with current release IDs",
+      "area": "docs",
+      "risk": "high",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"25576968289|25576968354|25581626099|15b32d1\" docs/PLANO.md",
+      "evidence": [
+        {
+          "path": "docs/PLANO.md",
+          "note": "planning log carries the latest merge and deploy IDs"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "manifest_synced_with_current_release",
+      "label": "Manifest synced with current release IDs",
+      "area": "docs",
+      "risk": "high",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"25576968289|25576968354|25581626099|15b32d1\" docs/MANIFEST.json",
+      "evidence": [
+        {
+          "path": "docs/MANIFEST.json",
+          "note": "manifest notes carry the latest merge and deploy IDs"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "handoff_synced_with_current_release",
+      "label": "Cross-platform handoff synced with current release",
+      "area": "handoff",
+      "risk": "high",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"25576968289|25576968354|25581626099|15b32d1\" docs/release/CROSS_PLATFORM_HANDOFF.md",
+      "evidence": [
+        {
+          "path": "docs/release/CROSS_PLATFORM_HANDOFF.md",
+          "note": "handoff doc carries the same merge and deploy IDs as the current release baseline"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "handoff_resume_package",
+      "label": "Cross-platform handoff resume package",
+      "area": "handoff",
+      "risk": "medium",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"Canonical Docs to Continue Work|git pull --rebase --autostash origin main|npm run typecheck|gh workflow run release-web.yml\" docs/release/CROSS_PLATFORM_HANDOFF.md",
+      "evidence": [
+        {
+          "path": "docs/release/CROSS_PLATFORM_HANDOFF.md",
+          "note": "handoff doc keeps the canonical docs read order"
+        },
+        {
+          "path": "docs/release/CROSS_PLATFORM_HANDOFF.md",
+          "note": "handoff doc keeps git resume commands"
+        },
+        {
+          "path": "docs/release/CROSS_PLATFORM_HANDOFF.md",
+          "note": "handoff doc keeps frontend validation commands"
+        },
+        {
+          "path": "docs/release/CROSS_PLATFORM_HANDOFF.md",
+          "note": "handoff doc keeps the one-shot release trigger command"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "release_history_chain",
+      "label": "Release history chain retained",
+      "area": "docs",
+      "risk": "low",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"Previous Validation Baseline|Previous One-shot Validation|Wave 39 Release Outcome|Wave 38 Release Outcome\" docs/release/WEB_RELEASE_INDEX.md docs/release/WEB_RELEASE_CACHE.md",
+      "evidence": [
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "release index retains historical validation snapshots"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_CACHE.md",
+          "note": "release cache retains previous wave outcomes"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "production_cutover_recorded",
+      "label": "Production cutover target recorded",
+      "area": "operational",
+      "risk": "high",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"lexio-prod|0 to `(default)`|34 observed Firestore calls\" docs/release/WEB_RELEASE_INDEX.md docs/release/WEB_RELEASE_CACHE.md",
+      "evidence": [
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "release index records the production Firestore target"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "release index records browser-side Firestore monitoring volume"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_CACHE.md",
+          "note": "release cache preserves the `(default)` zero-traffic cutoff signal"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "smoke_and_proxy_recorded",
+      "label": "Public/auth/proxy smoke matrix recorded",
+      "area": "operational",
+      "risk": "high",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"Public smoke|Authenticated production smoke|DataJud proxy smoke\" docs/release/WEB_RELEASE_INDEX.md",
+      "evidence": [
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "release index records public smoke coverage"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "release index records authenticated smoke coverage"
+        },
+        {
+          "path": "docs/release/WEB_RELEASE_INDEX.md",
+          "note": "release index records proxy smoke coverage"
+        }
+      ],
+      "missingSignals": []
+    },
+    {
+      "key": "historical_closeout_archive",
+      "label": "Historical closeout archive present",
+      "area": "docs",
+      "risk": "low",
+      "status": "covered-by-repo-evidence",
+      "recommendedValidation": "rg -n \"Closeout da Release|Fechamento Operacional|Próximos Passos\" docs/release/SUBONDA2_CLOSEOUT.md",
+      "evidence": [
+        {
+          "path": "docs/release/SUBONDA2_CLOSEOUT.md",
+          "note": "historical closeout archive is still present"
+        },
+        {
+          "path": "docs/release/SUBONDA2_CLOSEOUT.md",
+          "note": "historical closeout retains its operational section"
+        }
+      ],
+      "missingSignals": []
+    }
+  ]
+}

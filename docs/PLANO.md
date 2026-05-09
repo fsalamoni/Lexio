@@ -16,7 +16,14 @@
 
 ## Andamento Atual (ciclo 2026-04-26)
 
-**Status:** ⚠️ avançando Faixa C com foundation arquitetural core/módulos em branch dedicada após migração shadow Firestore validada para `lexio-prod`. O foco atual é manter fronteiras protegidas por guardrails automáticos, documentação canônica e extrações incrementais sem reescrita big-bang; produção só deve ser declarada em cutover estável após merge/deploy e smoke autenticado.
+**Status:** ✅ plano de auditoria total da plataforma fechado. A trilha de 11 macrofases terminou com artefatos executáveis, `0` residuais abertos, `0` drift de release e baseline produtiva validada em `lexio-prod`; a próxima rodada já não precisa reabrir este fechamento e deve partir do baseline canônico atual.
+
+**Atualização incremental (2026-05-09 — fechamento do plano de auditoria total):**
+- ✅ A trilha integral de auditoria da plataforma foi materializada em comandos executáveis (`audit:baseline`, `audit:riskscan`, `audit:faults`, `audit:deep`, `audit:release`, `audit:residuals`, `audit:final`) com artefatos sincronizados em `docs/release/`.
+- ✅ `docs/release/PLATFORM_AUDIT_FINAL_CLOSEOUT.md` consolidou o status terminal do plano: `11/11` macrofases concluídas, `0` macrofases restantes, `0` residuais abertos e `0` drift de release.
+- ✅ `docs/release/PLATFORM_AUDIT_RESIDUAL_SUMMARY.md` confirmou `0` residuais nas 5 categorias consolidadas (execution matrix, security/config, fault matrix, deep sweep e release closeout).
+- ✅ Validação ampla pós-closeout concluída sem regressões: frontend `typecheck`, suíte completa de frontend, `build`, `functions build`, `ruff` e `pytest` (`2203 passed`) verdes.
+- ✅ `docs/release/CROSS_PLATFORM_HANDOFF.md` foi sincronizado com a cadeia canônica final de auditoria, incluindo `PLATFORM_AUDIT_FINAL_CLOSEOUT.md` e o comando `npm run audit:final`.
 
 **Atualização incremental (2026-05-07 — Wave 42: Core/Módulos Foundation, início em branch):**
 - ✅ Branch dedicada criada: `feature/core-modules-architecture-foundation`, partindo do `main` limpo em `ae849b7`.

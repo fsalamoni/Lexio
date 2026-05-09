@@ -61,7 +61,7 @@ describe('cost analytics coverage', () => {
 
     const breakdown = buildCostBreakdown(executions)
 
-    expect(breakdown.by_function.find(item => item.key === 'document_generation_v3')?.label).toBe('Novo Documento v3')
+    expect(breakdown.by_function.find(item => item.key === 'document_generation_v3')?.label).toBe('Novo Documento')
     expect(breakdown.by_phase.find(item => item.key === 'v3_pipeline_orchestrator')?.label).toBe('V3: Orquestrador do Pipeline')
     expect(breakdown.by_agent.find(item => item.label === 'Orquestrador do Pipeline')?.cost_usd).toBe(0)
     expect(breakdown.by_agent_function.find(item => item.key === 'document_generation_v3::Orquestrador do Pipeline')).toBeDefined()

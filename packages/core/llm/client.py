@@ -20,6 +20,7 @@ async def call_llm(
 ) -> dict:
     """Call an LLM via OpenRouter and return structured result."""
     model = model or settings.model_main
+    api_key = settings.require_non_empty("openrouter_api_key", "OPENROUTER_API_KEY")
     t0 = time.time()
 
     payload = {
@@ -36,7 +37,7 @@ async def call_llm(
         resp = await client.post(
             settings.openrouter_base_url,
             headers={
-                "Authorization": f"Bearer {settings.openrouter_api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://lexio.app",
                 "X-Title": "Lexio",

@@ -4,6 +4,9 @@ const hoisted = vi.hoisted(() => ({
   callLLMMock: vi.fn(),
   callLLMWithFallbackMock: vi.fn(),
   updateDocMock: vi.fn(async () => undefined),
+  writeUserScopedMock: vi.fn(async (uid: string, _contextLabel: string, callback: (db: unknown, effectiveUid: string) => Promise<unknown>) => {
+    return callback({}, uid)
+  }),
   loadAgentModelsMock: vi.fn(),
   loadApiKeyValuesMock: vi.fn(),
   listThesesMock: vi.fn(),
@@ -68,6 +71,7 @@ vi.mock('./firestore-service', () => ({
   getAllAcervoDocumentsForSearch: hoisted.getAllAcervoDocumentsForSearchMock,
   updateAcervoEmenta: hoisted.updateAcervoEmentaMock,
   loadAdminDocumentTypes: hoisted.loadAdminDocumentTypesMock,
+  writeUserScoped: hoisted.writeUserScopedMock,
 }))
 
 vi.mock('./cost-analytics', () => ({

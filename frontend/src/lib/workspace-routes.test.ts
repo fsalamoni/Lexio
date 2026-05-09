@@ -50,6 +50,7 @@ describe('workspace-routes', () => {
   it('resolves common shell links through one centralized builder', () => {
     expect(buildWorkspaceShellPath('/notebook', { preserveSearch: '?labs=1' })).toBe('/notebook')
     expect(buildWorkspaceShellPath('/chat', { preserveSearch: '?labs=1' })).toBe('/chat')
+    expect(buildWorkspaceShellPath('/documents/new-v3', { preserveSearch: '?labs=1' })).toBe('/documents/new')
     expect(buildWorkspaceShellPath('/settings', { preserveSearch: '?labs=1' })).toBe('/settings')
     expect(buildWorkspaceShellPath('/labs/profile-v2', { preserveSearch: '?labs=1' })).toBe('/labs/profile-v2')
   })

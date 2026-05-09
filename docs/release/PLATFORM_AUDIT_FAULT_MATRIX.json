@@ -1,0 +1,486 @@
+{
+  "generatedAt": "2026-05-09T13:34:01.161Z",
+  "git": {
+    "branch": null,
+    "head": null
+  },
+  "counts": {
+    "total": 19,
+    "coveredByDirectEvidence": 19,
+    "implementedNoDirectEvidence": 0,
+    "pending": 0,
+    "pendingHighRisk": 0,
+    "pendingMediumRisk": 0
+  },
+  "scenarios": [
+    {
+      "key": "missing_api_key",
+      "label": "API key ausente",
+      "domain": "providers-auth",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/error-humanizer.test.ts",
+      "anchors": [
+        "frontend/src/lib/llm-client.ts",
+        "frontend/src/lib/provider-credentials.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/error-humanizer.test.ts",
+            "note": "user-facing handling for invalid or missing provider key"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "model_unavailable",
+      "label": "Modelo indisponível",
+      "domain": "llm-provider",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/llm-client.test.ts",
+      "anchors": [
+        "frontend/src/lib/llm-client.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/llm-client.test.ts",
+            "note": "unavailable models are classified so fallback can take over"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "request_timeout",
+      "label": "Timeout",
+      "domain": "llm-provider",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/llm-client.test.ts src/lib/document-v3-orchestrator.test.ts",
+      "anchors": [
+        "frontend/src/lib/llm-client.ts",
+        "frontend/src/lib/document-v3-orchestrator.ts",
+        "functions/src/index.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/llm-client.test.ts",
+            "note": "timeouts become transient errors or fallback triggers"
+          },
+          {
+            "path": "frontend/src/lib/document-v3-orchestrator.test.ts",
+            "note": "v3 orchestration tolerates hung agents and cancel paths"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "rate_limit_429",
+      "label": "HTTP 429 / rate limit",
+      "domain": "llm-provider",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/llm-client.test.ts src/lib/error-humanizer.test.ts",
+      "anchors": [
+        "frontend/src/lib/llm-client.ts",
+        "frontend/src/lib/error-humanizer.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/llm-client.test.ts",
+            "note": "network retry path exercises rate limiting"
+          },
+          {
+            "path": "frontend/src/lib/error-humanizer.test.ts",
+            "note": "user-facing error text covers rate limiting"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "intermittent_network",
+      "label": "Rede intermitente",
+      "domain": "network-resilience",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/llm-client.test.ts src/lib/web-search-service.test.ts",
+      "anchors": [
+        "frontend/src/lib/llm-client.ts",
+        "frontend/src/lib/web-search-service.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/llm-client.test.ts",
+            "note": "LLM client retries transient network failures"
+          },
+          {
+            "path": "frontend/src/lib/web-search-service.test.ts",
+            "note": "web search falls back across Jina-backed strategies on network failure"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "invalid_json",
+      "label": "JSON inválido",
+      "domain": "pipeline-parsing",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/thesis-extractor.test.ts src/lib/audio-generation-pipeline.test.ts src/lib/datajud-service.test.ts",
+      "anchors": [
+        "frontend/src/lib/thesis-extractor.ts",
+        "frontend/src/lib/audio-generation-pipeline.ts",
+        "frontend/src/lib/datajud-service.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/thesis-extractor.test.ts",
+            "note": "thesis extraction degrades safely when extraction JSON is malformed"
+          },
+          {
+            "path": "frontend/src/lib/audio-generation-pipeline.test.ts",
+            "note": "audio pipeline reports malformed stage output"
+          },
+          {
+            "path": "frontend/src/lib/datajud-service.test.ts",
+            "note": "jurisprudence ranking parser falls back on malformed JSON payloads"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "permission_denied",
+      "label": "Permissão negada",
+      "domain": "firestore-auth",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/contexts/AuthContext.test.tsx src/lib/firestore-service.test.ts",
+      "anchors": [
+        "frontend/src/contexts/AuthContext.tsx",
+        "frontend/src/lib/firestore-service.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/contexts/AuthContext.test.tsx",
+            "note": "auth hydration survives permission-denied reads"
+          },
+          {
+            "path": "frontend/src/lib/firestore-service.test.ts",
+            "note": "firestore retries transient permission-denied operations"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "auth_stale",
+      "label": "Sessão stale / auth stale",
+      "domain": "auth-session",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/api/client.test.ts src/lib/firebase-auth-retry.test.ts",
+      "anchors": [
+        "frontend/src/api/client.ts",
+        "frontend/src/lib/firebase-auth-retry.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/api/client.test.ts",
+            "note": "client refreshes stale token paths without breaking session"
+          },
+          {
+            "path": "frontend/src/lib/firebase-auth-retry.test.ts",
+            "note": "firebase auth retry helper covers transient stale-session states"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "missing_index",
+      "label": "Índice ausente",
+      "domain": "firestore-indexing",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npm run audit:riskscan",
+      "anchors": [
+        "firestore.indexes.json",
+        "scripts/lexio-platform-audit-risk-scan.mjs"
+      ],
+      "evidence": {
+        "tests": [],
+        "audits": [
+          {
+            "path": "docs/release/PLATFORM_AUDIT_RISK_SCAN.json",
+            "note": "risk scan reports zero missing collection group indexes"
+          }
+        ],
+        "sources": []
+      }
+    },
+    {
+      "key": "partial_document_save",
+      "label": "Documento parcialmente salvo",
+      "domain": "document-persistence",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/generation-service.orchestration.test.ts src/lib/document-v3-orchestrator.test.ts",
+      "anchors": [
+        "frontend/src/lib/generation-service.ts",
+        "frontend/src/lib/document-v3-orchestrator.ts",
+        "frontend/src/pages/DocumentDetail.tsx"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/document-v3-orchestrator.test.ts",
+            "note": "v3 orchestrator records erro status after a failed final save attempt"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "media_upload_interrupted",
+      "label": "Upload de mídia interrompido",
+      "domain": "media-storage",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/notebook-media-storage.test.ts",
+      "anchors": [
+        "frontend/src/lib/notebook-media-storage.ts",
+        "frontend/src/lib/video-generation-pipeline.ts",
+        "frontend/src/pages/labs/ResearchNotebookV2.tsx"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/notebook-media-storage.test.ts",
+            "note": "storage cancellation is translated to an explicit interrupted upload error"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "user_cancelled",
+      "label": "Cancelamento do usuário",
+      "domain": "abort-cancel",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/document-v3-orchestrator.test.ts src/lib/chat-orchestrator/orchestrator.test.ts src/lib/chat-orchestrator/super-skills.test.ts src/lib/video-generation-pipeline.test.ts",
+      "anchors": [
+        "frontend/src/lib/document-v3-orchestrator.ts",
+        "frontend/src/lib/chat-orchestrator/orchestrator.ts",
+        "frontend/src/lib/video-generation-pipeline.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/document-v3-orchestrator.test.ts",
+            "note": "v3 document generation aborts cleanly on cancellation"
+          },
+          {
+            "path": "frontend/src/lib/chat-orchestrator/orchestrator.test.ts",
+            "note": "chat orchestrator propagates cancellation immediately"
+          },
+          {
+            "path": "frontend/src/lib/chat-orchestrator/super-skills.test.ts",
+            "note": "chat super-skills preserve abort semantics"
+          },
+          {
+            "path": "frontend/src/lib/video-generation-pipeline.test.ts",
+            "note": "video pipeline stops on cancelled signal"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "checkpoint_resume",
+      "label": "Retomada por checkpoint",
+      "domain": "media-checkpoint",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/video-generation-pipeline.test.ts",
+      "anchors": [
+        "frontend/src/lib/video-generation-pipeline.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/video-generation-pipeline.test.ts",
+            "note": "video generation resumes without rerunning completed work"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "stale_snapshot_conflict",
+      "label": "Snapshot concorrente stale",
+      "domain": "firestore-concurrency",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/firestore-service.test.ts",
+      "anchors": [
+        "frontend/src/lib/firestore-service.ts",
+        "frontend/src/lib/modules/notebook/repository.ts",
+        "frontend/src/lib/modules/chat/repository.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/firestore-service.test.ts",
+            "note": "write retries recover from concurrent stale snapshot conflicts surfaced as firestore aborted"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "datajud_error",
+      "label": "Erro no DataJud",
+      "domain": "external-datajud",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/datajud-service.test.ts src/lib/document-v3-orchestrator.test.ts",
+      "anchors": [
+        "frontend/src/lib/datajud-service.ts",
+        "frontend/src/lib/document-v3-orchestrator.ts",
+        "functions/src/index.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/document-v3-orchestrator.test.ts",
+            "note": "v3 researcher falls back when DataJud is unavailable"
+          },
+          {
+            "path": "frontend/src/lib/datajud-service.test.ts",
+            "note": "jurisprudence search preserves results and fallback flow on upstream issues"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "jina_error",
+      "label": "Erro no Jina",
+      "domain": "external-jina",
+      "risk": "medium",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/web-search-service.test.ts",
+      "anchors": [
+        "frontend/src/lib/web-search-service.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/web-search-service.test.ts",
+            "note": "web search retries and falls back when Jina-backed strategy fails"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "tts_error",
+      "label": "Erro no TTS",
+      "domain": "external-tts",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/tts-client.test.ts src/lib/audio-generation-pipeline.test.ts",
+      "anchors": [
+        "frontend/src/lib/tts-client.ts",
+        "frontend/src/lib/audio-generation-pipeline.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/audio-generation-pipeline.test.ts",
+            "note": "audio pipeline already exercises TTS-facing stages"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "video_provider_error",
+      "label": "Erro no provider de vídeo",
+      "domain": "external-video",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "npx vitest run src/lib/external-video-provider.test.ts",
+      "anchors": [
+        "frontend/src/lib/external-video-provider.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "frontend/src/lib/external-video-provider.test.ts",
+            "note": "external video provider surfaces recoverable provider failures"
+          }
+        ],
+        "audits": [],
+        "sources": []
+      }
+    },
+    {
+      "key": "cloud_function_error",
+      "label": "Erro na Cloud Function",
+      "domain": "functions-proxy",
+      "risk": "high",
+      "status": "covered-by-direct-evidence",
+      "recommendedValidation": "cd functions && npm test",
+      "anchors": [
+        "functions/src/index.ts"
+      ],
+      "evidence": {
+        "tests": [
+          {
+            "path": "functions/test/index.test.cjs",
+            "note": "datajud proxy maps missing secret, timeout and upstream proxy failures to explicit HTTP responses"
+          }
+        ],
+        "audits": [],
+        "sources": [
+          {
+            "path": "functions/src/index.ts",
+            "note": "function maps timeout, proxy failure and missing secret to explicit HTTP errors"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -71,7 +71,7 @@ import NewDocumentV3 from './NewDocumentV3'
 
 function renderPage() {
   return render(
-    <MemoryRouter initialEntries={["/documents/new-v3"]}>
+    <MemoryRouter initialEntries={["/documents/new"]}>
       <NewDocumentV3 />
     </MemoryRouter>,
   )
@@ -91,7 +91,7 @@ describe('NewDocumentV3 page', () => {
     await waitFor(() => {
       expect(screen.getByRole('option', { name: 'Parecer Jurídico' })).toBeTruthy()
     })
-    expect(screen.getByRole('button', { name: /Gerar com pipeline v3/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Gerar documento/i })).toBeTruthy()
   })
 
   it('calls createDocumentV3 + generateDocumentV3 on submit', async () => {
@@ -102,7 +102,7 @@ describe('NewDocumentV3 page', () => {
     fireEvent.change(screen.getByPlaceholderText(/Descreva a questão jurídica/i), {
       target: { value: 'Caso de teste para v3' },
     })
-    fireEvent.click(screen.getByRole('button', { name: /Gerar com pipeline v3/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Gerar documento/i }))
 
     await waitFor(() => expect(createDocumentV3Mock).toHaveBeenCalledTimes(1))
     const calls = createDocumentV3Mock.mock.calls as unknown as Array<[string, { document_type_id: string }]>
