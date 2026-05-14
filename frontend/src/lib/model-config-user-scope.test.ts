@@ -324,6 +324,6 @@ describe('presentation v2 multimodal defaults', () => {
 
     expect(videoGenerator).toBeDefined()
     expect(videoGenerator?.configurationMode).toBe('external-provider')
-    expect(videoGenerator?.requiredCapability).toBeUndefined()
+    expect(videoGenerator?.requiredCapability).toBe('video')
   })
 })
