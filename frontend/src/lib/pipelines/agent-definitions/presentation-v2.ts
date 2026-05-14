@@ -171,8 +171,9 @@ export const PRESENTATION_V2_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     recommendedTier: 'premium',
     icon: 'film',
     agentCategory: 'synthesis',
+    requiredCapability: 'video',
     configurationMode: 'external-provider',
-    configurationHint: 'Gerido por VITE_EXTERNAL_VIDEO_PROVIDER_* e validado no preflight do briefing.',
+    configurationHint: 'Gerido por VITE_EXTERNAL_VIDEO_PROVIDER_*; requer endpoint HTTP capaz de receber prompt e devolver URL final ou job_id/poll_url.',
     bestModelNote: 'Reservado para provedores de vídeo reais. Se não houver provedor compatível, o pipeline deve degradar para plano de vídeo sem falhar o deck.',
   },
   {

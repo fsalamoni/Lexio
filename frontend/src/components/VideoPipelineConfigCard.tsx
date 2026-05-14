@@ -80,6 +80,11 @@ export default function VideoPipelineConfigCard() {
                 externo configurado ou o fallback local do navegador. O <strong>Planejador</strong> estima
                 custos em tokens antes de iniciar a produção.
               </p>
+              <p className="mt-2">
+                <strong>Defaults multimodais:</strong> o <strong>Gerador de Imagens</strong> parte de <strong>google/gemini-2.5-flash-preview:image-output</strong>
+                (provider Google no catalogo OpenRouter) e o <strong>Narrador / TTS</strong> parte de <strong>openai/tts-1-hd</strong>
+                (provider OpenAI no catalogo OpenRouter). Ambos ficam restritos a modelos do catalogo pessoal com capability compativel.
+              </p>
             </div>
           ),
         },
@@ -129,6 +134,10 @@ export default function VideoPipelineConfigCard() {
             <p className="text-[var(--v2-ink-faint)]">
               Poll: {providerDiagnostics.pollIntervalMs}ms · Timeout: {Math.round(providerDiagnostics.pollTimeoutMs / 1000)}s
             </p>
+            <div className="rounded-[0.9rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.58)] p-2 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
+              <p><strong>Env vars esperadas:</strong> VITE_EXTERNAL_VIDEO_PROVIDER, VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT, VITE_EXTERNAL_VIDEO_PROVIDER_API_KEY, VITE_EXTERNAL_VIDEO_PROVIDER_STATUS_ENDPOINT.</p>
+              <p className="mt-1"><strong>Contrato do endpoint:</strong> POST JSON com prompt, duration_seconds, aspect_ratio, scene_number, part_number e provider; responda com url/video_url/output_url ou com job_id/poll_url para polling posterior.</p>
+            </div>
 
             {providerHealth ? (
               <p className={providerHealth.ok ? 'text-emerald-700' : 'text-amber-700'}>

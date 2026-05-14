@@ -13,6 +13,34 @@ vi.mock('../lib/model-catalog', () => ({
   useCatalogModels: () => agentModelConfigCardMocks.useCatalogModels(),
 }))
 
+vi.mock('../lib/media-capability-guidance', () => ({
+  getMediaCapabilityGuidance: (capability?: string) => {
+    if (capability === 'image') {
+      return {
+        capability: 'image',
+        summary: 'Nenhum modelo com capacidade real de imagem esta disponivel no catalogo pessoal deste usuario.',
+        routeHint: 'Configuracoes -> Provedores de IA -> Catalogos por Provedor -> Catalogo de Modelos.',
+        steps: [],
+        recommendedModels: [
+          { providerLabel: 'OpenAI direto', models: ['gpt-image-1'] },
+        ],
+      }
+    }
+    if (capability === 'video') {
+      return {
+        capability: 'video',
+        summary: 'Clipes de video nao usam seletor de modelo; dependem de provedor externo.',
+        routeHint: 'Configure as variaveis de ambiente do build e valide o endpoint.',
+        steps: [],
+        recommendedModels: [],
+        envVars: ['VITE_EXTERNAL_VIDEO_PROVIDER', 'VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT'],
+        endpointContractHint: 'POST JSON com prompt e retorno de URL ou job_id.',
+      }
+    }
+    return null
+  },
+}))
+
 vi.mock('./ModelSelectorModal', () => ({
   default: ({ open, agentLabel, onSelect, onClose }: any) => (
     open ? (
@@ -177,6 +205,7 @@ describe('AgentModelConfigCard', () => {
                 defaultModel: '',
                 recommendedTier: 'premium',
                 agentCategory: 'synthesis',
+                requiredCapability: 'video',
                 configurationMode: 'external-provider',
                 configurationHint: 'Configuração feita no ambiente.',
               },
@@ -198,9 +227,67 @@ describe('AgentModelConfigCard', () => {
       expect(screen.getByText('Preço não informado no catálogo local.')).toBeTruthy()
       expect(screen.getByText('Gerido por provedor externo')).toBeTruthy()
       expect(screen.getByText('Configuração feita no ambiente.')).toBeTruthy()
+      expect(screen.getByText(/vite_external_video_provider/i)).toBeTruthy()
+      expect(screen.getByText(/post json com prompt/i)).toBeTruthy()
     })
 
     expect(screen.queryByText('Agente de Vídeo', { selector: 'p' })).toBeFalsy()
     expect(screen.queryByRole('button', { name: 'Selecionar customizado' })).toBeNull()
+  })
+
+  it('shows precise remediation when a required capability is absent from the personal catalog', async () => {
+    const loadModels = vi.fn().mockResolvedValue({ image_agent: 'missing-image-model' })
+
+    agentModelConfigCardMocks.useCatalogModels.mockReturnValue([
+      {
+        id: 'text-model',
+        label: 'Modelo textual',
+        provider: 'Anthropic',
+        description: 'Sem imagem.',
+        contextWindow: 128000,
+        inputCost: 1,
+        outputCost: 3,
+        isFree: false,
+        tier: 'balanced',
+        capabilities: ['text'],
+      },
+    ])
+
+    render(
+      <AgentModelConfigCard
+        loadingMessage="Carregando..."
+        sections={[
+          {
+            id: 'image-section',
+            title: 'Imagem',
+            titleIcon: Sparkles,
+            agents: [
+              {
+                key: 'image_agent',
+                label: 'Gerador de Imagem',
+                description: 'Precisa de imagem real.',
+                icon: 'brain',
+                defaultModel: 'missing-image-model',
+                recommendedTier: 'balanced',
+                agentCategory: 'synthesis',
+                requiredCapability: 'image',
+              },
+            ],
+            tone: V2_AGENT_CONFIG_TONES.teal,
+          },
+        ]}
+        agentIcons={{ brain: Brain }}
+        loadModels={loadModels}
+        saveModels={vi.fn().mockResolvedValue(undefined)}
+        resetModels={vi.fn().mockResolvedValue(undefined)}
+        getDefaultModels={() => ({ image_agent: 'missing-image-model' })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText(/nenhum modelo com capacidade real de imagem/i)).toBeTruthy()
+      expect(screen.getByText(/openai direto:/i)).toBeTruthy()
+      expect(screen.getByText(/gpt-image-1/i)).toBeTruthy()
+    })
   })
 })

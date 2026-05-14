@@ -40,6 +40,11 @@ export default function AudioPipelineConfigCard() {
                 conteúdo em JSON, inclusive a etapa <strong>Narrador / TTS</strong> dentro do pipeline lógico.
                 A síntese de áudio real ocorre em etapa dedicada de geração de mídia.
               </p>
+              <p className="mt-2">
+                <strong>TTS real:</strong> o padrao inicial do narrador e <strong>openai/tts-1-hd</strong>
+                (provider OpenAI no catalogo pessoal). O seletor restringe a escolha a modelos com capability de audio,
+                portanto um modelo textual puro nunca pode ser salvo para essa etapa.
+              </p>
             </div>
           ),
         },

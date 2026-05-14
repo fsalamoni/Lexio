@@ -14,6 +14,7 @@ import {
 import type { AgentCategory, ModelCapability, ModelOption } from '../lib/model-config'
 import { useCatalogModels } from '../lib/model-catalog'
 import { formatCost } from '../lib/currency-utils'
+import { getMediaCapabilityGuidance } from '../lib/media-capability-guidance'
 import ModelSelectorModal from './ModelSelectorModal'
 
 export interface AgentModelConfigDef {
@@ -353,6 +354,11 @@ export default function AgentModelConfigCard<T extends Record<string, string>>({
                 const capabilityBadge = agent.requiredCapability ? CAPABILITY_BADGES[agent.requiredCapability] : null
                 const isProviderManaged = agent.configurationMode === 'external-provider'
                 const unknownPricing = hasUnknownPricing(currentModel)
+                const compatibleModels = agent.requiredCapability
+                  ? catalogModels.filter((model) => (model.capabilities ?? ['text']).includes(agent.requiredCapability as ModelCapability))
+                  : []
+                const capabilityGuidance = getMediaCapabilityGuidance(agent.requiredCapability)
+                const showMissingCapabilityGuidance = !isProviderManaged && Boolean(agent.requiredCapability) && compatibleModels.length === 0
 
                 return (
                   <div key={agent.key}>
@@ -398,6 +404,20 @@ export default function AgentModelConfigCard<T extends Record<string, string>>({
                                   <p className="mt-1 text-[11px] leading-5 text-amber-800">
                                     {agent.configurationHint || 'Este agente não usa seleção de modelo. A disponibilidade operacional vem do provedor configurado no ambiente e é verificada no preflight.'}
                                   </p>
+                                  {capabilityGuidance ? (
+                                    <>
+                                      <p className="mt-2 text-[11px] leading-5 text-amber-800">{capabilityGuidance.summary}</p>
+                                      <p className="mt-1 text-[11px] leading-5 text-amber-800">{capabilityGuidance.routeHint}</p>
+                                      {capabilityGuidance.envVars?.length ? (
+                                        <p className="mt-1 break-all font-mono text-[10px] leading-5 text-amber-900">
+                                          {capabilityGuidance.envVars.join(' | ')}
+                                        </p>
+                                      ) : null}
+                                      {capabilityGuidance.endpointContractHint ? (
+                                        <p className="mt-1 text-[11px] leading-5 text-amber-800">{capabilityGuidance.endpointContractHint}</p>
+                                      ) : null}
+                                    </>
+                                  ) : null}
                                 </div>
                                 <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
                                   sem modelo
@@ -405,49 +425,71 @@ export default function AgentModelConfigCard<T extends Record<string, string>>({
                               </div>
                             </div>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveAgentKey(agent.key)
-                                setModalOpen(true)
-                              }}
-                              className={`${SELECTOR_BASE} ${isDefault ? SELECTOR_DEFAULT : section.tone.customSelector} ${section.tone.selectorHover} mt-3`}
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="flex min-w-0 flex-1 items-center gap-2">
-                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap ${tierStyle.badge}`}>
-                                    {tierStyle.label}
-                                  </span>
-                                  {currentModel?.isFree ? (
-                                    <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-700 whitespace-nowrap">
-                                      ✦ GRÁTIS
-                                    </span>
-                                  ) : null}
-                                  <span className="truncate font-medium text-[var(--v2-ink-strong)]">
-                                    {currentModel?.label ?? currentModelId}
-                                  </span>
-                                  <span className="hidden truncate text-xs text-[var(--v2-ink-faint)] sm:block">
-                                    {currentModel?.provider}
-                                  </span>
+                            <>
+                              {showMissingCapabilityGuidance && capabilityGuidance ? (
+                                <div className="mt-3 rounded-[1rem] border border-amber-200 bg-[rgba(251,191,36,0.10)] px-3 py-2.5 text-sm text-amber-900">
+                                  <p className="font-semibold">{capabilityGuidance.summary}</p>
+                                  <p className="mt-1 text-[11px] leading-5 text-amber-800">{capabilityGuidance.routeHint}</p>
+                                  {capabilityGuidance.recommendedModels.map((entry) => (
+                                    <p key={`${entry.providerLabel}-${entry.models.join('|')}`} className="mt-1 text-[11px] leading-5 text-amber-800">
+                                      <strong>{entry.providerLabel}:</strong> {entry.models.join(', ')}
+                                      {entry.detail ? ` - ${entry.detail}` : ''}
+                                    </p>
+                                  ))}
                                 </div>
+                              ) : null}
 
-                                <div className="flex flex-shrink-0 items-center gap-3">
-                                  {currentModel ? (
-                                    <span className="flex items-center gap-1 text-[11px] text-[var(--v2-ink-soft)]">
-                                      <Cpu className="h-3 w-3" />
-                                      {formatContext(currentModel.contextWindow)}
-                                    </span>
-                                  ) : null}
-                                  {currentModel ? (
-                                    <span className={`flex items-center gap-1 text-[11px] ${currentModel.isFree ? 'font-semibold text-green-600' : (unknownPricing ? 'font-semibold text-amber-700' : 'text-[var(--v2-ink-soft)]')}`}>
-                                      <Coins className="h-3 w-3" />
-                                      {unknownPricing ? 'N/D' : formatCost(currentModel.inputCost)}
-                                    </span>
-                                  ) : null}
-                                  <ChevronRight className="h-4 w-4 text-[var(--v2-ink-faint)]" />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveAgentKey(agent.key)
+                                  setModalOpen(true)
+                                }}
+                                className={`${SELECTOR_BASE} ${isDefault ? SELECTOR_DEFAULT : section.tone.customSelector} ${section.tone.selectorHover} mt-3`}
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap ${tierStyle.badge}`}>
+                                        {tierStyle.label}
+                                      </span>
+                                      {currentModel?.isFree ? (
+                                        <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-700 whitespace-nowrap">
+                                          ✦ GRÁTIS
+                                        </span>
+                                      ) : null}
+                                      {currentModel?.provider ? (
+                                        <span className="rounded-full bg-[rgba(15,23,42,0.06)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--v2-ink-soft)] whitespace-nowrap">
+                                          {currentModel.provider}
+                                        </span>
+                                      ) : null}
+                                      <span className="truncate font-medium text-[var(--v2-ink-strong)]">
+                                        {currentModel?.label ?? currentModelId}
+                                      </span>
+                                    </div>
+                                    <p className="mt-1 truncate font-mono text-[10px] text-[var(--v2-ink-faint)]">
+                                      {currentModel?.id ?? currentModelId ?? 'sem modelo selecionado'}
+                                    </p>
+                                  </div>
+
+                                  <div className="flex flex-shrink-0 items-center gap-3">
+                                    {currentModel ? (
+                                      <span className="flex items-center gap-1 text-[11px] text-[var(--v2-ink-soft)]">
+                                        <Cpu className="h-3 w-3" />
+                                        {formatContext(currentModel.contextWindow)}
+                                      </span>
+                                    ) : null}
+                                    {currentModel ? (
+                                      <span className={`flex items-center gap-1 text-[11px] ${currentModel.isFree ? 'font-semibold text-green-600' : (unknownPricing ? 'font-semibold text-amber-700' : 'text-[var(--v2-ink-soft)]')}`}>
+                                        <Coins className="h-3 w-3" />
+                                        {unknownPricing ? 'N/D' : formatCost(currentModel.inputCost)}
+                                      </span>
+                                    ) : null}
+                                    <ChevronRight className="h-4 w-4 text-[var(--v2-ink-faint)]" />
+                                  </div>
                                 </div>
-                              </div>
-                            </button>
+                              </button>
+                            </>
                           )}
 
                           {currentModel ? (

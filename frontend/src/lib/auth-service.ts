@@ -28,6 +28,36 @@ export interface AuthResult {
   token: string
 }
 
+function resolveAuthRole(profileRole: unknown, email?: string | null): 'admin' | 'user' {
+  if (profileRole === 'admin') return 'admin'
+
+  const adminEmail = String(import.meta.env.VITE_ADMIN_EMAIL || '').trim().toLowerCase()
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+
+  if (adminEmail && normalizedEmail && normalizedEmail === adminEmail) {
+    return 'admin'
+  }
+
+  return 'user'
+}
+
+async function repairAdminProfileRole(
+  uid: string,
+  email: string,
+  fullName: string,
+  currentRole: unknown,
+): Promise<void> {
+  if (!firestore) return
+  if (resolveAuthRole(currentRole, email) !== 'admin' || currentRole === 'admin') return
+
+  await setDoc(doc(firestore, 'users', uid), {
+    email,
+    full_name: fullName,
+    role: 'admin',
+    updated_at: serverTimestamp(),
+  }, { merge: true })
+}
+
 // ── Login ─────────────────────────────────────────────────────────────────────
 
 export async function firebaseLogin(email: string, password: string): Promise<AuthResult> {
@@ -42,11 +72,15 @@ export async function firebaseLogin(email: string, password: string): Promise<Au
   if (!snap.exists()) throw new Error('Perfil não encontrado. Contate o administrador.')
 
   const data = snap.data()
+  const fullName = data.full_name ?? ''
+  const role = resolveAuthRole(data.role, cred.user.email)
+  await repairAdminProfileRole(cred.user.uid, cred.user.email!, fullName, data.role)
+
   return {
     uid: cred.user.uid,
     email: cred.user.email!,
-    role: data.role ?? 'user',
-    full_name: data.full_name ?? '',
+    role,
+    full_name: fullName,
     token,
   }
 }
@@ -68,8 +102,7 @@ export async function firebaseRegister(
   // Role is determined by VITE_ADMIN_EMAIL; default is 'user'.
   // (A collection-level query on /users would fail with permission-denied
   //  because Firestore rules only allow reading your own document.)
-  const adminEmail = import.meta.env.VITE_ADMIN_EMAIL
-  const role: 'admin' | 'user' = (adminEmail && email === adminEmail) ? 'admin' : 'user'
+  const role = resolveAuthRole(undefined, email)
 
   await setDoc(doc(firestore, 'users', cred.user.uid), {
     email,
@@ -97,14 +130,16 @@ async function processGoogleCredential(cred: UserCredential): Promise<AuthResult
   const snap = await getDoc(userRef)
   if (snap.exists()) {
     const data = snap.data()
-    return { uid, email, role: data.role ?? 'user', full_name: data.full_name ?? displayName, token }
+    const fullName = data.full_name ?? displayName
+    const role = resolveAuthRole(data.role, email)
+    await repairAdminProfileRole(uid, email, fullName, data.role)
+    return { uid, email, role, full_name: fullName, token }
   }
 
   // New user — determine role via VITE_ADMIN_EMAIL only.
   // (A collection-level getDocs on /users would fail with permission-denied
   //  because Firestore rules only allow reading your own document.)
-  const adminEmail = import.meta.env.VITE_ADMIN_EMAIL
-  const role: 'admin' | 'user' = (adminEmail && email === adminEmail) ? 'admin' : 'user'
+  const role = resolveAuthRole(undefined, email)
 
   await setDoc(userRef, {
     email,

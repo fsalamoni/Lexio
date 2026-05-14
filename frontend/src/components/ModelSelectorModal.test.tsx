@@ -73,6 +73,21 @@ vi.mock('../lib/currency-utils', () => ({
   formatCost: (value: number) => `$${value.toFixed(2)}`,
 }))
 
+vi.mock('../lib/media-capability-guidance', () => ({
+  getMediaCapabilityGuidance: (capability?: string) => capability === 'image'
+    ? {
+        capability: 'image',
+        summary: 'Nenhum modelo com capacidade real de imagem esta disponivel no catalogo pessoal deste usuario.',
+        routeHint: 'Configuracoes -> Provedores de IA -> Catalogos por Provedor -> Catalogo de Modelos.',
+        steps: [],
+        recommendedModels: [
+          { providerLabel: 'OpenAI direto', models: ['gpt-image-1'] },
+          { providerLabel: 'OpenRouter', models: ['google/gemini-2.5-flash-preview:image-output'] },
+        ],
+      }
+    : null,
+}))
+
 vi.mock('./DraggablePanel', () => ({
   default: ({ open, title, children }: { open: boolean; title: string; children: React.ReactNode }) => (
     open ? <div><h1>{title}</h1>{children}</div> : null
@@ -166,5 +181,40 @@ describe('ModelSelectorModal', () => {
     expect(screen.getByText('Modelo Imagem Sem Preço')).toBeTruthy()
     expect(screen.getAllByText('N/D').length).toBeGreaterThan(0)
     expect(screen.getByText(/n\/d = preço não disponível no catálogo local/i)).toBeTruthy()
+  })
+
+  it('shows precise provider/model guidance when no compatible capability exists in the personal catalog', () => {
+    selectorMocks.models = [
+      {
+        id: 'text-only',
+        label: 'Modelo Texto',
+        provider: 'Anthropic',
+        tier: 'balanced',
+        description: 'Texto puro',
+        contextWindow: 128000,
+        inputCost: 1,
+        outputCost: 2,
+        isFree: false,
+        agentFit: { extraction: 7, synthesis: 7, reasoning: 7, writing: 7 },
+        capabilities: ['text'],
+      },
+    ]
+
+    render(
+      <ModelSelectorModal
+        open
+        onClose={() => {}}
+        onSelect={() => {}}
+        currentModelId=""
+        agentCategory="synthesis"
+        agentLabel="Gerador de Imagens"
+        requiredCapability="image"
+      />,
+    )
+
+    expect(screen.getByText(/nenhum modelo com capacidade real de imagem/i)).toBeTruthy()
+    expect(screen.getByText(/openai direto:/i)).toBeTruthy()
+    expect(screen.getByText(/gpt-image-1/i)).toBeTruthy()
+    expect(screen.getByText(/catalogos por provedor/i)).toBeTruthy()
   })
 })

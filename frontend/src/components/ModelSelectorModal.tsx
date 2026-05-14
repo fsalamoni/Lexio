@@ -31,6 +31,7 @@ import {
 } from '../lib/model-config'
 import { useCatalogModels } from '../lib/model-catalog'
 import { formatCost } from '../lib/currency-utils'
+import { getMediaCapabilityGuidance } from '../lib/media-capability-guidance'
 import DraggablePanel from './DraggablePanel'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -152,6 +153,17 @@ export default function ModelSelectorModal({
   const allProviders = useMemo(
     () => [...new Set(catalogModels.map(m => m.provider))].sort(),
     [catalogModels],
+  )
+  const capabilityCatalogMatches = useMemo(() => {
+    if (!requiredCapability) return 0
+    return catalogModels.filter((model) => {
+      const capabilities = model.capabilities ?? ['text']
+      return capabilities.includes(requiredCapability)
+    }).length
+  }, [catalogModels, requiredCapability])
+  const capabilityGuidance = useMemo(
+    () => getMediaCapabilityGuidance(requiredCapability),
+    [requiredCapability],
   )
 
   const filtered = useMemo<ModelOption[]>(() => {
@@ -320,12 +332,23 @@ export default function ModelSelectorModal({
             <div className="flex flex-col items-center justify-center py-16" style={{ color: 'var(--v2-ink-faint)' }}>
               <Filter className="w-8 h-8 mb-2" />
               <p className="text-sm">Nenhum modelo encontrado com esses filtros.</p>
-              {requiredCapability && (
+              {requiredCapability && capabilityCatalogMatches === 0 && capabilityGuidance ? (
+                <div className="mt-3 max-w-xl rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-xs text-amber-900">
+                  <p className="font-semibold">{capabilityGuidance.summary}</p>
+                  <p className="mt-1 leading-5">{capabilityGuidance.routeHint}</p>
+                  {capabilityGuidance.recommendedModels.map((entry) => (
+                    <p key={`${entry.providerLabel}-${entry.models.join('|')}`} className="mt-1 leading-5">
+                      <strong>{entry.providerLabel}:</strong> {entry.models.join(', ')}
+                      {entry.detail ? ` - ${entry.detail}` : ''}
+                    </p>
+                  ))}
+                </div>
+              ) : requiredCapability ? (
                 <p className="text-xs text-amber-600 mt-2 max-w-sm text-center">
                   Este agente requer modelos com capacidade de <strong>{CAPABILITY_LABELS[requiredCapability].label}</strong>.
-                  Adicione modelos com essa capacidade no Catálogo de Modelos.
+                  Ajuste os filtros ou adicione modelos com essa capacidade no Catálogo de Modelos.
                 </p>
-              )}
+              ) : null}
             </div>
           ) : (
             filtered.map(model => {
