@@ -3251,6 +3251,81 @@ function buildPackagerRepairPrompt(args: {
   }
 }
 
+function buildPackagerQualityRecoveryPrompt(args: {
+  input: StudioPipelineInput
+  parts: {
+    contextAudit: string
+    narrativePlan: string
+    research: string
+    architecture: string
+    slides: string
+    visualDirection: string
+    dataDiagramming: string
+    assetPlan: string
+    review: string
+  }
+  weakManifest: string
+  rubric: PresentationV2DeckQualityResult
+  reviewerAudit: PresentationV2ReviewerAudit
+  orchestratorDirective?: string
+}): { system: string; user: string } {
+  const rubricWarnings = dedupeStrings([
+    ...args.rubric.warnings,
+    ...args.rubric.slideRubric
+      .filter(slide => slide.status !== 'ok')
+      .flatMap((slide) => slide.warnings.slice(0, 3).map((warning) => `Slide ${slide.slideNumber}: ${warning}`)),
+  ])
+  const reviewerSignals = dedupeStrings([
+    ...args.reviewerAudit.quality.warnings,
+    ...args.reviewerAudit.revisionNotes.map((note) => `Slide ${note.slideNumber ?? '?'}: ${note.issue}`),
+  ])
+
+  return {
+    system: [
+      'Você é o Empacotador do Gerador de Apresentação v2 em modo de recuperação premium.',
+      'Reescreva o manifesto inteiro para atingir um padrão executivo real, devolvendo SOMENTE JSON válido no schema PresentationV2Deck.',
+      'Não preserve slides fracos por inércia: elimine títulos genéricos, repetição, layouts default, speaker notes rasas e transições frouxas.',
+      'Cada slide deve ter função narrativa explícita, título específico, até 5 bullets densos, speaker notes robustas, transição clara, visualBrief útil e designNotes coerentes.',
+      'Preserve fontes prioritárias, seções, assets planejados, restrições institucionais, consistência visual e rastreabilidade jurídica.',
+      'Se precisar condensar ou redistribuir conteúdo para melhorar o arco narrativo, faça isso sem quebrar o schema nem inventar lastro inexistente.',
+    ].join(' '),
+    user: joinPromptSections([
+      buildInputBrief(args.input),
+      `Rubrica atual do deck: ${args.rubric.score}/100 (${args.rubric.status}).`,
+      args.rubric.slidesBelowThreshold.length > 0
+        ? `Slides abaixo do limiar: ${args.rubric.slidesBelowThreshold.join(', ')}.`
+        : undefined,
+      rubricWarnings.length > 0
+        ? `Alertas determinísticos a corrigir:\n${rubricWarnings.join('\n')}`
+        : undefined,
+      reviewerSignals.length > 0
+        ? `Alertas do reviewer a corrigir:\n${reviewerSignals.join('\n')}`
+        : undefined,
+      'Manifesto atual abaixo do padrão premium:',
+      args.weakManifest,
+      'Auditoria de contexto:',
+      args.parts.contextAudit,
+      'Plano narrativo:',
+      args.parts.narrativePlan,
+      'Pesquisa:',
+      args.parts.research,
+      'Arquitetura de conteúdo:',
+      args.parts.architecture,
+      'Slides redigidos:',
+      args.parts.slides,
+      'Direção visual:',
+      args.parts.visualDirection,
+      'Dados e diagramas:',
+      args.parts.dataDiagramming,
+      'Plano de assets:',
+      args.parts.assetPlan,
+      'Revisão:',
+      args.parts.review,
+      args.orchestratorDirective ? `Diretrizes do orquestrador:\n${args.orchestratorDirective}` : undefined,
+    ]),
+  }
+}
+
 function parseDeckOrThrow(raw: string): PresentationV2Deck {
   const parsed = parseArtifactContent('apresentacao_v2', extractJsonPayload(raw))
   if (parsed.kind !== 'presentation_v2') {
@@ -3811,6 +3886,8 @@ export async function runPresentationGenerationPipelineV2(
   let finalRubric = draftRubric
   let repairOutcome: 'applied' | 'skipped' | undefined
   const appliedRepairs: AppliedPresentationV2Repair[] = []
+  let qualityRecoveryApplied = false
+  let qualityRecoveryPreviousScore: number | null = null
 
   if (repairTargets.length > 0) {
     const repairedDeck = JSON.parse(JSON.stringify(draftDeck)) as PresentationV2Deck
@@ -3864,6 +3941,53 @@ export async function runPresentationGenerationPipelineV2(
     }
   }
 
+  if (finalRubric.status !== 'ok') {
+    try {
+      const qualityRecovery = await runAgentStep({
+        apiKey: input.apiKey,
+        models: runtimeModels,
+        resolveFallback,
+        agentKey: 'presentation_v2_packager',
+        agentLabel: 'Empacotador (quality recovery)',
+        prompt: buildPackagerQualityRecoveryPrompt({
+          input,
+          parts: packagerParts,
+          weakManifest: JSON.stringify(finalDeck, null, 2),
+          rubric: finalRubric,
+          reviewerAudit,
+          orchestratorDirective: buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_packager'),
+        }),
+        maxTokens: 12000,
+        temperature: 0.08,
+        step: PRESENTATION_V2_TOTAL_STEPS,
+        phase: 'Reempacotando o manifesto final para atingir o padrão premium',
+        onProgress,
+        signal,
+        progressState,
+        progressKey: 'presentation_v2_packager',
+      })
+      executions.push(qualityRecovery.execution)
+
+      const recoveredDeck = parseDeckOrThrow(qualityRecovery.content)
+      const recoveredRubric = evaluatePresentationV2Quality(recoveredDeck)
+      const recoveredImproved = (
+        recoveredRubric.score > finalRubric.score
+        || recoveredRubric.repairableSlides.length < finalRubric.repairableSlides.length
+        || recoveredRubric.status === 'ok'
+        || (recoveredRubric.status === 'repair' && finalRubric.status === 'critical')
+      )
+
+      if (recoveredImproved) {
+        qualityRecoveryPreviousScore = finalRubric.score
+        finalDeck = recoveredDeck
+        finalRubric = recoveredRubric
+        qualityRecoveryApplied = true
+      }
+    } catch {
+      // If the premium recovery pass fails, keep the best deck already assembled.
+    }
+  }
+
   const finalDeckWithQuality = applyQualitySnapshotToDeck({
     deck: finalDeck,
     rubric: finalRubric,
@@ -3883,6 +4007,25 @@ export async function runPresentationGenerationPipelineV2(
           ? 'Manifesto final recuperado por reparo explícito do empacotador.'
           : 'Manifesto final reconstruído localmente a partir das saídas intermediárias.',
         repairKind: 'manifest_recovery',
+      },
+    ]
+  }
+
+  if (qualityRecoveryApplied) {
+    finalDeckWithQuality.quality = {
+      ...finalDeckWithQuality.quality,
+      repairSummary: dedupeStrings([
+        ...(finalDeckWithQuality.quality?.repairSummary || []),
+        `Recuperação final de qualidade aplicada pelo empacotador: rubrica ${qualityRecoveryPreviousScore ?? 'n/d'} -> ${finalRubric.score}.`,
+      ]),
+    }
+    finalDeckWithQuality.revisionHistory = [
+      ...(finalDeckWithQuality.revisionHistory || []),
+      {
+        at: new Date().toISOString(),
+        agent: 'presentation_v2_packager',
+        summary: `Recuperação final elevou a rubrica do deck de ${qualityRecoveryPreviousScore ?? 'n/d'} para ${finalRubric.score}.`,
+        repairKind: 'quality_recovery',
       },
     ]
   }

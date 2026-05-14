@@ -129,6 +129,7 @@ import {
   getRecentDocuments,
   getDashboardSnapshot,
   getCostBreakdown,
+  getPlatformCostBreakdown,
   getPlatformOverview,
   getResearchNotebook,
   invalidatePlatformAnalyticsCache,
@@ -558,7 +559,7 @@ describe('saveNotebookDocumentToDocuments', () => {
         {
           id: 'user-1',
           data: {
-            role: 'admin',
+            role: 'platform_admin',
             created_at: '2026-05-08T12:00:00.000Z',
           },
         },
@@ -568,9 +569,71 @@ describe('saveNotebookDocumentToDocuments', () => {
     const overview = await getPlatformOverview()
 
     expect(overview.total_users).toBe(1)
+    expect(overview.admin_users).toBe(1)
+    expect(overview.standard_users).toBe(0)
     expect(overview.total_documents).toBe(1)
     expect(overview.total_notebooks).toBe(1)
     expect(overview.operational_warnings).toEqual([])
+    expect(mockGetIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('loads platform analytics with partial metrics when user profiles are unavailable', async () => {
+    const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
+      code: 'firestore/permission-denied',
+    })
+
+    mockCollection.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }))
+    mockCollectionGroup.mockImplementation((_db: unknown, collectionName: string) => ({ path: collectionName }))
+
+    mockGetDocs.mockImplementation(async (ref: { path?: string }) => {
+      switch (ref?.path) {
+        case 'users':
+          throw permissionError
+        case 'documents':
+          return makeGetDocsSnapshot([
+            {
+              id: 'doc-1',
+              data: {
+                document_type_id: 'parecer',
+                status: 'concluido',
+                quality_score: 92,
+                origem: 'web',
+                created_at: '2026-05-08T12:00:00.000Z',
+                llm_executions: [makeUsageExecution()],
+              },
+            },
+          ])
+        case 'theses':
+        case 'thesis_analysis_sessions':
+        case 'acervo':
+        case 'memory':
+          return makeGetDocsSnapshot([])
+        case 'research_notebooks':
+          return makeGetDocsSnapshot([
+            {
+              id: 'nb-1',
+              data: {
+                title: 'Notebook teste',
+                created_at: '2026-05-08T12:00:00.000Z',
+                sources: [],
+                artifacts: [],
+              },
+            },
+          ])
+        default:
+          return makeGetDocsSnapshot([])
+      }
+    })
+
+    const overview = await getPlatformOverview()
+    const breakdown = await getPlatformCostBreakdown(true)
+
+    expect(overview.total_users).toBe(0)
+    expect(overview.total_documents).toBe(1)
+    expect(overview.total_notebooks).toBe(1)
+    expect(overview.operational_warnings).toHaveLength(1)
+    expect(overview.operational_warnings?.[0] ?? '').toContain('perfis de usuarios')
+    expect(breakdown.total_calls).toBe(1)
     expect(mockGetIdToken).toHaveBeenCalledWith(true)
   })
 

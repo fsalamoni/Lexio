@@ -17,6 +17,7 @@ import {
   doc, getDoc, setDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { firebaseAuth, firestore, IS_FIREBASE } from './firebase'
+import { isAdminLikeRole, resolveAdminAwareRole } from './admin-role'
 
 const googleProvider = new GoogleAuthProvider()
 
@@ -28,19 +29,6 @@ export interface AuthResult {
   token: string
 }
 
-function resolveAuthRole(profileRole: unknown, email?: string | null): 'admin' | 'user' {
-  if (profileRole === 'admin') return 'admin'
-
-  const adminEmail = String(import.meta.env.VITE_ADMIN_EMAIL || '').trim().toLowerCase()
-  const normalizedEmail = String(email || '').trim().toLowerCase()
-
-  if (adminEmail && normalizedEmail && normalizedEmail === adminEmail) {
-    return 'admin'
-  }
-
-  return 'user'
-}
-
 async function repairAdminProfileRole(
   uid: string,
   email: string,
@@ -48,7 +36,7 @@ async function repairAdminProfileRole(
   currentRole: unknown,
 ): Promise<void> {
   if (!firestore) return
-  if (resolveAuthRole(currentRole, email) !== 'admin' || currentRole === 'admin') return
+  if (resolveAdminAwareRole(currentRole, email) !== 'admin' || isAdminLikeRole(currentRole)) return
 
   await setDoc(doc(firestore, 'users', uid), {
     email,
@@ -73,7 +61,7 @@ export async function firebaseLogin(email: string, password: string): Promise<Au
 
   const data = snap.data()
   const fullName = data.full_name ?? ''
-  const role = resolveAuthRole(data.role, cred.user.email)
+  const role = resolveAdminAwareRole(data.role, cred.user.email)
   await repairAdminProfileRole(cred.user.uid, cred.user.email!, fullName, data.role)
 
   return {
@@ -102,7 +90,7 @@ export async function firebaseRegister(
   // Role is determined by VITE_ADMIN_EMAIL; default is 'user'.
   // (A collection-level query on /users would fail with permission-denied
   //  because Firestore rules only allow reading your own document.)
-  const role = resolveAuthRole(undefined, email)
+  const role = resolveAdminAwareRole(undefined, email)
 
   await setDoc(doc(firestore, 'users', cred.user.uid), {
     email,
@@ -131,7 +119,7 @@ async function processGoogleCredential(cred: UserCredential): Promise<AuthResult
   if (snap.exists()) {
     const data = snap.data()
     const fullName = data.full_name ?? displayName
-    const role = resolveAuthRole(data.role, email)
+    const role = resolveAdminAwareRole(data.role, email)
     await repairAdminProfileRole(uid, email, fullName, data.role)
     return { uid, email, role, full_name: fullName, token }
   }
@@ -139,7 +127,7 @@ async function processGoogleCredential(cred: UserCredential): Promise<AuthResult
   // New user — determine role via VITE_ADMIN_EMAIL only.
   // (A collection-level getDocs on /users would fail with permission-denied
   //  because Firestore rules only allow reading your own document.)
-  const role = resolveAuthRole(undefined, email)
+  const role = resolveAdminAwareRole(undefined, email)
 
   await setDoc(userRef, {
     email,

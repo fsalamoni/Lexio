@@ -1290,11 +1290,14 @@ function evaluatePresentationV2SlideQuality(
     slide.transition,
     slide.visualBrief,
   ].filter(Boolean).join(' ')
+  const normalizedBullets = slide.bullets.map(bullet => normalizePresentationText(bullet)).filter(Boolean)
   const bulletWordCounts = slide.bullets.map(bullet => wordCount(bullet))
   const averageBulletWords = bulletWordCounts.length > 0 ? average(bulletWordCounts) : 0
   const totalBulletWords = bulletWordCounts.reduce((sum, value) => sum + value, 0)
   const speakerNotesWords = wordCount(slide.speakerNotes)
-  const duplicateBullets = new Set(slide.bullets.map(bullet => normalizePresentationText(bullet)).filter(Boolean)).size !== slide.bullets.filter(Boolean).length
+  const uniqueBulletCount = new Set(normalizedBullets).size
+  const duplicateBullets = uniqueBulletCount !== slide.bullets.filter(Boolean).length
+  const bulletVarietyRatio = normalizedBullets.length > 0 ? uniqueBulletCount / normalizedBullets.length : 1
   const chartLikeAssets = (slide.assets || []).filter(asset => asset.type === 'chart' || asset.type === 'diagram')
   const layoutIsGeneric = !slide.layout || slide.layout === 'default'
   const overlapWithPrevious = computeSlideOverlap(slide, previousSlide)
@@ -1398,7 +1401,10 @@ function evaluatePresentationV2SlideQuality(
 
   let speakerNotes = 100
   const speakerNotesReasons: string[] = []
-  if (speakerNotesWords < 25) {
+  if (speakerNotesWords < 12) {
+    speakerNotes -= 72
+    speakerNotesReasons.push('Speaker notes curtas demais para sustentar qualquer apresentação executiva.')
+  } else if (speakerNotesWords < 25) {
     speakerNotes -= 55
     speakerNotesReasons.push('Speaker notes curtas demais para sustentar a fala.')
   } else if (speakerNotesWords < 50) {
@@ -1423,6 +1429,13 @@ function evaluatePresentationV2SlideQuality(
 
   let repetition = 100
   const repetitionReasons: string[] = []
+  if (duplicateBullets && bulletVarietyRatio <= 0.6) {
+    repetition -= 36
+    repetitionReasons.push('Há repetição interna excessiva nos bullets do slide.')
+  } else if (duplicateBullets) {
+    repetition -= 18
+    repetitionReasons.push('Há repetição interna de bullets, reduzindo progressão do slide.')
+  }
   if (overlapWithPrevious > 0.65) {
     repetition -= 42
     repetitionReasons.push('O slide repete conteúdo demais em relação ao anterior.')
@@ -1442,7 +1455,14 @@ function evaluatePresentationV2SlideQuality(
     makeCategoryScore('narrative_consistency', 'Consistência narrativa', narrativeConsistency, narrativeConsistencyReasons),
     makeCategoryScore('repetition', 'Ausência de repetição', repetition, repetitionReasons),
   ]
-  const score = clampScore(average(categories.map(category => category.score)))
+  let score = clampScore(average(categories.map(category => category.score)))
+
+  if (speakerNotesWords < 12) {
+    score = Math.min(score, 68)
+  }
+  if (duplicateBullets && bulletVarietyRatio <= 0.6) {
+    score = Math.min(score, 72)
+  }
 
   const strengths = uniqueStrings(categories
     .filter(category => category.score >= 92)

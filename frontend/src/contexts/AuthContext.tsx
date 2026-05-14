@@ -3,6 +3,7 @@ import { onAuthStateChanged, onIdTokenChanged, type User } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { firebaseAuth, IS_FIREBASE } from '../lib/firebase'
 import { firestore } from '../lib/firebase'
+import { resolveAdminAwareRole } from '../lib/admin-role'
 import { firebaseLogin, firebaseRegister, firebaseLogout, firebaseGoogleLogin, handleGoogleRedirectResult, translateFirebaseError } from '../lib/auth-service'
 import api from '../api/client'
 
@@ -45,15 +46,6 @@ function readStored() {
   }
 }
 
-function resolveRole(profileRole?: string, email?: string | null): 'admin' | 'user' {
-  if (profileRole === 'admin') return 'admin'
-  const adminEmail = import.meta.env.VITE_ADMIN_EMAIL
-  if (adminEmail && email && email.toLowerCase() === adminEmail.toLowerCase()) {
-    return 'admin'
-  }
-  return 'user'
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const initial = readStored()
   const [token,    setToken]    = useState<string | null>(initial.token)
@@ -77,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const snap = await getDoc(doc(firestore, 'users', fbUser.uid))
       if (snap.exists()) {
         const data = snap.data() as { role?: string; full_name?: string }
-        const nextRole = resolveRole(data.role, fbUser.email)
+        const nextRole = resolveAdminAwareRole(data.role, fbUser.email)
         const nextName = data.full_name ?? fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
         localStorage.setItem('lexio_role', nextRole)
         localStorage.setItem('lexio_full_name', nextName)
@@ -85,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setFullName(nextName)
         return
       }
-      const nextRole = resolveRole(undefined, fbUser.email)
+      const nextRole = resolveAdminAwareRole(undefined, fbUser.email)
       const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
       localStorage.setItem('lexio_role', nextRole)
       localStorage.setItem('lexio_full_name', nextName)
@@ -93,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setFullName(nextName)
     } catch (error) {
       // Soft fallback: keep whatever we already had locally; don't touch session.
-      const nextRole = resolveRole(undefined, fbUser.email)
+      const nextRole = resolveAdminAwareRole(undefined, fbUser.email)
       const nextName = fbUser.displayName ?? localStorage.getItem('lexio_full_name') ?? ''
       if (nextRole === 'admin' || !localStorage.getItem('lexio_role')) {
         localStorage.setItem('lexio_role', nextRole)

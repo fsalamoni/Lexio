@@ -13,10 +13,14 @@ service cloud.firestore {
     }
 
     // Checks that the caller has admin role stored in /users/{uid}
+    function hasAdminRole(role) {
+      return role in ['admin', 'platform_admin'];
+    }
+
     function isAdmin() {
       return isAuth() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        hasAdminRole(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role);
     }
 
     // The caller is accessing their own user document
@@ -37,7 +41,7 @@ service cloud.firestore {
       function isValidUserCreate() {
         let data = request.resource.data;
         return data.keys().hasAll(['email', 'full_name', 'role', 'created_at'])
-          && data.role in ['admin', 'user']
+          && data.role in ['admin', 'platform_admin', 'user']
           && data.email == request.auth.token.email;
       }
 

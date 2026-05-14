@@ -195,6 +195,55 @@ function buildWeakPackagedDeck(): PresentationV2Deck {
   }
 }
 
+function buildPremiumPackagedDeck(): PresentationV2Deck {
+  return {
+    ...buildWeakPackagedDeck(),
+    slides: [
+      {
+        id: 'slide-1',
+        number: 1,
+        sectionId: 'section-1',
+        title: 'Janela de decisão para a audiência',
+        purpose: 'Abrir a tese principal e enquadrar a decisão executiva.',
+        layout: 'hero-left',
+        bullets: [
+          'A audiência entrou em janela crítica e exige uma deliberação executiva hoje.',
+          'A tese recomendada reduz exposição financeira sem comprometer a margem de acordo.',
+          'O objetivo do deck é autorizar a rodada final com parâmetros claros e defensáveis.',
+        ],
+        speakerNotes: 'Abrir pela urgência decisória, mostrar por que a estratégia recomendada concentra o melhor equilíbrio entre risco, custo e viabilidade negocial e preparar a passagem para a comparação objetiva dos cenários.',
+        transition: 'Na sequência, demonstramos por que a tese escolhida é a alternativa com melhor relação risco-retorno.',
+        visualBrief: 'Mesa executiva institucional com documentos estratégicos, iluminação editorial e atmosfera sóbria.',
+        designNotes: ['Contraste alto', 'Título com peso editorial'],
+        assets: [{ id: 'slide-1-image', type: 'image', status: 'planned', altText: 'Mesa executiva institucional com documentos estratégicos' }],
+      },
+      {
+        id: 'slide-2',
+        number: 2,
+        sectionId: 'section-2',
+        title: 'Tese com melhor relação risco-retorno',
+        purpose: 'Fechar a recomendação para aprovação imediata.',
+        layout: 'two-column-argument',
+        bullets: [
+          'A matriz compara custo provável, risco reputacional e tempo processual em três cenários.',
+          'O cenário recomendado preserva caixa, reduz incerteza e sustenta narrativa consistente em audiência.',
+          'A decisão pedida é autorizar a rodada final de negociação com parâmetros objetivos.',
+        ],
+        speakerNotes: 'Concluir destacando a superioridade do cenário recomendado, os custos evitados e os próximos passos imediatos para a audiência, deixando inequívoca a decisão esperada da diretoria jurídica.',
+        transition: 'Encerramos com a decisão pedida e os próximos passos imediatos.',
+        visualBrief: 'Matriz comparativa sóbria com destaque visual para o cenário recomendado.',
+        designNotes: ['Comparativo limpo', 'Ênfase na decisão final'],
+        chartSpec: { type: 'matrix', x: 'risco', y: 'retorno' },
+        assets: [{ id: 'slide-2-chart', type: 'chart', status: 'planned', altText: 'Matriz risco-retorno' }],
+      },
+    ],
+    assets: [
+      { id: 'slide-1-image', type: 'image', status: 'planned', altText: 'Mesa executiva institucional com documentos estratégicos' },
+      { id: 'slide-2-chart', type: 'chart', status: 'planned', altText: 'Matriz risco-retorno' },
+    ],
+  }
+}
+
 function buildOrchestratorPlanResponse() {
   return JSON.stringify({
     summary: 'Executar framing e composição em ondas paralelas seguras, mantendo o revisor antes do empacotamento.',
@@ -489,6 +538,24 @@ describe('inspectPresentationV2Preflight', () => {
 })
 
 describe('draftPresentationV2ClarifyingQuestions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    loadPresentationV2PipelineModelsMock.mockResolvedValue(baseModels)
+    validateScopedAgentModelsMock.mockResolvedValue(undefined)
+    loadModelCatalogMock.mockResolvedValue([])
+    buildPipelineFallbackResolverMock.mockReturnValue(() => [])
+    loadFallbackPriorityConfigMock.mockResolvedValue({})
+    resolveOrchestratorModelMock.mockReturnValue('demo/text-model')
+    callLLMWithFallbackMock.mockResolvedValue({
+      content: '{"needsClarification":false,"consolidatedBrief":"Briefing consolidado.","questions":[]}',
+      model: 'demo/text-model',
+      tokens_in: 120,
+      tokens_out: 80,
+      cost_usd: 0.001,
+      duration_ms: 20,
+    })
+  })
+
   it('adds deterministic premium-brief questions even when the model returns none', async () => {
     const result = await draftPresentationV2ClarifyingQuestions({
       apiKey: 'demo-key',
@@ -803,6 +870,129 @@ describe('draftPresentationV2ClarifyingQuestions', () => {
     ]))
   })
 
+  it('repackages the final manifesto when the deck still fails the premium rubric after selective repairs', async () => {
+    const scriptedResponses = [
+      llmResult(buildOrchestratorPlanResponse()),
+      llmResult(JSON.stringify({ usableSources: ['Parecer interno'], gaps: [], risks: [], constraints: [], contentSignals: [], designSignals: [], mediaOpportunities: [] })),
+      llmResult(JSON.stringify({
+        title: 'Estratégia de audiência',
+        subtitle: 'Aprovação executiva',
+        audience: 'Diretoria jurídica',
+        objective: 'Aprovar a estratégia final do caso.',
+        slideCount: 2,
+        durationMinutes: 12,
+        depth: 'profunda',
+        narrativeArc: 'Problema, tese e decisão.',
+        sections: [
+          { id: 'section-1', title: 'Contexto', purpose: 'Abrir a tese' },
+          { id: 'section-2', title: 'Decisão', purpose: 'Fechar a recomendação' },
+        ],
+        slideIntentMap: [],
+      })),
+      llmResult(JSON.stringify({ claims: [], evidence: ['Parecer interno'], citations: [], examples: [], numbers: [], controversies: [], cautions: [] })),
+      llmResult(JSON.stringify({
+        slides: [
+          { number: 1, sectionId: 'section-1', title: 'Abertura', purpose: 'Abrir a tese', evidenceRefs: ['e1'], cognitiveLoad: 'medium', transition: '', recommendedLayout: 'default' },
+          { number: 2, sectionId: 'section-2', title: 'Decisão', purpose: 'Fechar a recomendação', evidenceRefs: ['e2'], cognitiveLoad: 'medium', transition: 'Encerrar decisão', recommendedLayout: 'two-column-argument' },
+        ],
+      })),
+      llmResult(JSON.stringify({
+        title: 'Estratégia de audiência',
+        subtitle: 'Aprovação executiva',
+        slides: buildWeakPackagedDeck().slides,
+      })),
+      llmResult(JSON.stringify({
+        theme: buildWeakPackagedDeck().theme,
+        slides: [
+          { number: 1, layout: 'default', visualBrief: '', designNotes: [] },
+          { number: 2, layout: 'two-column-argument', visualBrief: 'Matriz comparativa sóbria.', designNotes: ['Comparativo limpo'] },
+        ],
+      })),
+      llmResult(JSON.stringify({
+        slides: [{ number: 2, chartSpec: { type: 'matrix', x: 'risco', y: 'retorno' } }],
+        assets: [{ id: 'slide-2-chart', type: 'chart', status: 'planned', altText: 'Matriz risco-retorno' }],
+        dataWarnings: [],
+      })),
+      llmResult(JSON.stringify({
+        slides: [
+          { number: 1, assets: [{ id: 'slide-1-chart', type: 'chart', status: 'planned' }] },
+          { number: 2, assets: [{ id: 'slide-2-chart', type: 'chart', status: 'planned', altText: 'Matriz risco-retorno' }] },
+        ],
+        assets: buildWeakPackagedDeck().assets,
+      })),
+      llmResult(JSON.stringify({
+        quality: {
+          score: 66,
+          strengths: ['Boa tese central.'],
+          warnings: ['Slide 1 continua genérico e redundante.'],
+          accessibility: [],
+          legalAccuracyNotes: [],
+        },
+        revisionNotes: [
+          {
+            slideNumber: 1,
+            severity: 'high',
+            category: 'content',
+            issue: 'O slide de abertura continua sem densidade executiva.',
+            recommendedAgent: 'presentation_v2_slide_writer',
+            repairPrompt: 'Fortalecer a decisão central e reescrever os bullets.',
+          },
+          {
+            slideNumber: 1,
+            severity: 'medium',
+            category: 'design',
+            issue: 'O layout ainda parece genérico.',
+            recommendedAgent: 'presentation_v2_visual_director',
+            repairPrompt: 'Dar protagonismo visual ao slide de abertura.',
+          },
+        ],
+      })),
+      llmResult(JSON.stringify(buildWeakPackagedDeck())),
+    ]
+    let scriptedIndex = 0
+
+    callLLMWithFallbackMock.mockImplementation((_apiKey: unknown, systemPrompt: unknown) => {
+      const normalizedSystemPrompt = String(systemPrompt ?? '')
+      if (normalizedSystemPrompt.includes('modo de recuperação premium')) {
+        return Promise.resolve(llmResult(JSON.stringify(buildPremiumPackagedDeck())))
+      }
+      if (normalizedSystemPrompt.includes('modo de reparo seletivo')) {
+        return Promise.resolve(llmResult('{}'))
+      }
+
+      const nextResponse = scriptedResponses[scriptedIndex++]
+      if (!nextResponse) {
+        throw new Error(`Unexpected LLM call ${scriptedIndex}`)
+      }
+      return Promise.resolve(nextResponse)
+    })
+
+    const result = await runPresentationGenerationPipelineV2({
+      apiKey: 'demo-key',
+      uid: 'user-123',
+      topic: 'Estratégia de audiência',
+      description: 'Aprovação final da estratégia do caso.',
+      sourceContext: 'Parecer interno e matriz de risco.',
+      conversationContext: 'A diretoria precisa decidir hoje.',
+      artifactType: 'apresentacao_v2',
+      artifactLabel: 'Apresentação v2',
+    })
+
+    const deck = JSON.parse(result.content) as PresentationV2Deck
+
+    expect(deck.slides[0].title).toBe('Janela de decisão para a audiência')
+    expect(deck.quality?.deckRubric?.status).toBe('ok')
+    expect(deck.quality?.repairSummary).toEqual(expect.arrayContaining([
+      expect.stringContaining('Recuperação final de qualidade aplicada pelo empacotador'),
+    ]))
+    expect(deck.revisionHistory).toEqual(expect.arrayContaining([
+      expect.objectContaining({ repairKind: 'quality_recovery' }),
+    ]))
+    expect(result.executions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ agent_name: 'Empacotador (quality recovery)' }),
+    ]))
+  })
+
   it('accepts a packaged deck when the model wraps valid JSON with extra prose', async () => {
     callLLMWithFallbackMock
       .mockResolvedValueOnce(llmResult(buildOrchestratorPlanResponse()))
@@ -819,6 +1009,7 @@ describe('draftPresentationV2ClarifyingQuestions', () => {
 
     const result = await runPresentationGenerationPipelineV2({
       apiKey: 'demo-key',
+      uid: 'user-123',
       topic: 'Estratégia de audiência',
       description: 'Aprovação final da estratégia do caso.',
       sourceContext: 'Parecer interno e matriz de risco.',
@@ -838,37 +1029,15 @@ describe('draftPresentationV2ClarifyingQuestions', () => {
     const narrativeDeferred = createDeferred<ReturnType<typeof llmResult>>()
     const researchDeferred = createDeferred<ReturnType<typeof llmResult>>()
     const startedAgents: string[] = []
-    const strongDeck: PresentationV2Deck = {
-      ...buildWeakPackagedDeck(),
-      slides: [
-        {
-          ...buildWeakPackagedDeck().slides[0],
-          title: 'Janela de decisão',
-          purpose: 'Abrir a recomendação executiva.',
-          layout: 'hero-left',
-          bullets: [
-            'O caso entrou em janela crítica de negociação com risco financeiro relevante.',
-            'A tese recomendada reduz exposição sem sacrificar margem de acordo.',
-            'A decisão pedida hoje é autorizar a rodada final com parâmetros claros.',
-          ],
-          speakerNotes: 'Abrir o deck explicando por que a estratégia proposta concentra o melhor equilíbrio entre risco, custo e viabilidade negocial.',
-          transition: 'Na sequência, demonstramos por que a tese é a melhor opção.',
-          visualBrief: 'Mesa executiva institucional com documentos estratégicos e atmosfera sóbria.',
-          designNotes: ['Contraste alto', 'Hierarquia editorial forte'],
-          assets: [{ id: 'slide-1-image', type: 'image', status: 'planned', altText: 'Mesa executiva institucional' }],
-        },
-        {
-          ...buildWeakPackagedDeck().slides[1],
-        },
-      ],
-      assets: [
-        { id: 'slide-1-image', type: 'image', status: 'planned', altText: 'Mesa executiva institucional' },
-        ...buildWeakPackagedDeck().assets.filter(asset => asset.id !== 'slide-1-chart'),
-      ],
-    }
+    const strongDeck: PresentationV2Deck = buildPremiumPackagedDeck()
     let callIndex = 0
 
-    callLLMWithFallbackMock.mockImplementation(() => {
+    callLLMWithFallbackMock.mockImplementation((_apiKey: unknown, systemPrompt: unknown) => {
+      const normalizedSystemPrompt = String(systemPrompt ?? '')
+      if (normalizedSystemPrompt.includes('modo de reparo seletivo') || normalizedSystemPrompt.includes('modo de recuperação premium')) {
+        return Promise.resolve(llmResult(JSON.stringify(strongDeck)))
+      }
+
       const current = callIndex++
       switch (current) {
         case 0:

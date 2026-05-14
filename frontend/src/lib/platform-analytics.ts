@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore'
 
 import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
+import { isAdminLikeRole } from './admin-role'
 import {
   NOTEBOOK_SEARCH_MEMORY_DOC_ID,
   getRefNotebookIdFromSearchMemoryPath,
@@ -278,6 +279,27 @@ async function withPlatformFirestoreRetry<T>(
   }
 
   throw lastError
+}
+
+async function loadPlatformCollectionDocs(
+  operation: () => Promise<{ docs: QueryDocumentSnapshot[] }>,
+  contextLabel: string,
+  warningLabel: string,
+  operationalWarnings: string[],
+): Promise<QueryDocumentSnapshot[]> {
+  try {
+    const snapshot = await withPlatformFirestoreRetry(operation, contextLabel)
+    return snapshot.docs
+  } catch (error) {
+    const message = getErrorMessage(error)
+    console.warn(`[PlatformAnalytics] ${warningLabel} indisponivel: ${message}`)
+    operationalWarnings.push(
+      /permission|insufficient|PERMISSION_DENIED/i.test(message)
+        ? `A leitura agregada de ${warningLabel} ficou temporariamente indisponivel por permissao do Firestore. O painel foi carregado com metricas parciais.`
+        : `A leitura agregada de ${warningLabel} ficou temporariamente indisponivel. O painel foi carregado com metricas parciais.`,
+    )
+    return []
+  }
 }
 
 function round6(value: number) {
@@ -717,16 +739,46 @@ async function loadPlatformCollections(force = false): Promise<PlatformCollectio
   }
 
   const db = ensurePlatformFirestore()
-  const [usersSnap, documentsSnap, thesesSnap, sessionsSnap, acervoSnap, notebooksSnap] = await Promise.all([
-    withPlatformFirestoreRetry(() => getDocs(collection(db, 'users')), 'loadPlatformCollections.users'),
-    withPlatformFirestoreRetry(() => getDocs(collectionGroup(db, 'documents')), 'loadPlatformCollections.documents'),
-    withPlatformFirestoreRetry(() => getDocs(collectionGroup(db, 'theses')), 'loadPlatformCollections.theses'),
-    withPlatformFirestoreRetry(() => getDocs(collectionGroup(db, 'thesis_analysis_sessions')), 'loadPlatformCollections.thesisAnalysisSessions'),
-    withPlatformFirestoreRetry(() => getDocs(collectionGroup(db, 'acervo')), 'loadPlatformCollections.acervo'),
-    withPlatformFirestoreRetry(() => getDocs(collectionGroup(db, 'research_notebooks')), 'loadPlatformCollections.researchNotebooks'),
+  const operationalWarnings: string[] = []
+  const [usersDocs, documentsDocs, thesesDocs, sessionsDocs, acervoDocs, notebooksDocs] = await Promise.all([
+    loadPlatformCollectionDocs(
+      () => getDocs(collection(db, 'users')),
+      'loadPlatformCollections.users',
+      'perfis de usuarios',
+      operationalWarnings,
+    ),
+    loadPlatformCollectionDocs(
+      () => getDocs(collectionGroup(db, 'documents')),
+      'loadPlatformCollections.documents',
+      'documentos',
+      operationalWarnings,
+    ),
+    loadPlatformCollectionDocs(
+      () => getDocs(collectionGroup(db, 'theses')),
+      'loadPlatformCollections.theses',
+      'teses',
+      operationalWarnings,
+    ),
+    loadPlatformCollectionDocs(
+      () => getDocs(collectionGroup(db, 'thesis_analysis_sessions')),
+      'loadPlatformCollections.thesisAnalysisSessions',
+      'sessoes de analise de teses',
+      operationalWarnings,
+    ),
+    loadPlatformCollectionDocs(
+      () => getDocs(collectionGroup(db, 'acervo')),
+      'loadPlatformCollections.acervo',
+      'documentos do acervo',
+      operationalWarnings,
+    ),
+    loadPlatformCollectionDocs(
+      () => getDocs(collectionGroup(db, 'research_notebooks')),
+      'loadPlatformCollections.researchNotebooks',
+      'cadernos de pesquisa',
+      operationalWarnings,
+    ),
   ])
 
-  const operationalWarnings: string[] = []
   const notebookSearchMemoryDocs = await withPlatformFirestoreRetry(
     () => getDocs(collectionGroup(db, 'memory')),
     'loadPlatformCollections.notebookSearchMemory',
@@ -771,12 +823,12 @@ async function loadPlatformCollections(force = false): Promise<PlatformCollectio
 
   const snapshot: PlatformCollectionsSnapshot = {
     fetchedAt: Date.now(),
-    users: usersSnap.docs.map(d => ({ ...(d.data() as PlatformUserRecord), id: d.id })),
-    documents: documentsSnap.docs.map(d => ({ ...(d.data() as DocumentData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as DocumentData & { _owner_user_id?: string })),
-    theses: thesesSnap.docs.map(d => ({ ...(d.data() as ThesisData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ThesisData & { _owner_user_id?: string })),
-    sessions: sessionsSnap.docs.map(d => ({ ...(d.data() as ThesisAnalysisSessionData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ThesisAnalysisSessionData & { _owner_user_id?: string })),
-    acervo: acervoSnap.docs.map(d => ({ ...(d.data() as AcervoDocumentData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as AcervoDocumentData & { _owner_user_id?: string })),
-    notebooks: notebooksSnap.docs.map(d => ({ ...(d.data() as ResearchNotebookData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ResearchNotebookData & { _owner_user_id?: string })),
+    users: usersDocs.map(d => ({ ...(d.data() as PlatformUserRecord), id: d.id })),
+    documents: documentsDocs.map(d => ({ ...(d.data() as DocumentData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as DocumentData & { _owner_user_id?: string })),
+    theses: thesesDocs.map(d => ({ ...(d.data() as ThesisData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ThesisData & { _owner_user_id?: string })),
+    sessions: sessionsDocs.map(d => ({ ...(d.data() as ThesisAnalysisSessionData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ThesisAnalysisSessionData & { _owner_user_id?: string })),
+    acervo: acervoDocs.map(d => ({ ...(d.data() as AcervoDocumentData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as AcervoDocumentData & { _owner_user_id?: string })),
+    notebooks: notebooksDocs.map(d => ({ ...(d.data() as ResearchNotebookData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ResearchNotebookData & { _owner_user_id?: string })),
     notebook_search_memory: notebookSearchMemory,
     operational_warnings: operationalWarnings,
   }
@@ -890,8 +942,8 @@ export async function getPlatformOverview(force = false): Promise<PlatformOvervi
 
   return {
     total_users: snapshot.users.length,
-    admin_users: snapshot.users.filter(user => user.role === 'admin').length,
-    standard_users: snapshot.users.filter(user => user.role !== 'admin').length,
+    admin_users: snapshot.users.filter(user => isAdminLikeRole(user.role)).length,
+    standard_users: snapshot.users.filter(user => !isAdminLikeRole(user.role)).length,
     new_users_30d: newUsers30d,
     active_users_30d: activeUsers.size,
     total_documents: snapshot.documents.length,

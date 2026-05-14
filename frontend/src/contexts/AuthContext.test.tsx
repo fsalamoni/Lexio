@@ -164,6 +164,26 @@ describe('AuthContext session lifecycle', () => {
     expect(mockFirebaseLogout).not.toHaveBeenCalled()
   })
 
+  it('normalizes platform_admin profiles to admin during hydration', async () => {
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ role: 'platform_admin', full_name: 'Platform Admin' }),
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ready').textContent).toBe('true')
+      expect(screen.getByTestId('role').textContent).toBe('admin')
+    })
+
+    expect(localStorage.getItem('lexio_role')).toBe('admin')
+  })
+
   it('keeps the session live when getIdToken fails transiently', async () => {
     currentUser.getIdToken.mockRejectedValue(new Error('network-request-failed'))
 

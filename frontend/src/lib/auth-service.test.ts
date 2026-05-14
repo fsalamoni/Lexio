@@ -105,4 +105,16 @@ describe('auth-service admin role resolution', () => {
       { merge: true },
     )
   })
+
+  it('treats platform_admin as an admin profile without rewriting it', async () => {
+    authServiceMocks.getDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ role: 'platform_admin', full_name: 'Admin User' }),
+    })
+
+    const result = await firebaseLogin('admin@example.com', 'secret')
+
+    expect(result.role).toBe('admin')
+    expect(authServiceMocks.setDoc).not.toHaveBeenCalled()
+  })
 })
