@@ -39,6 +39,7 @@ import {
 
 export interface StudioPipelineInput {
   apiKey: string
+  uid?: string
   topic: string
   description?: string
   sourceContext: string
@@ -112,12 +113,16 @@ export interface StudioStepExecution {
 
 export interface StudioProgressMeta {
   stageMeta?: string
+  stageLabel?: string
   executionState?: PipelineExecutionState
   costUsd?: number
   durationMs?: number
   retryCount?: number
   usedFallback?: boolean
   fallbackFrom?: string
+  activeAgentKeys?: string[]
+  completedAgentKeys?: string[]
+  progressPercent?: number
 }
 
 export type StudioProgressCallback = (step: number, totalSteps: number, phase: string, meta?: StudioProgressMeta) => void

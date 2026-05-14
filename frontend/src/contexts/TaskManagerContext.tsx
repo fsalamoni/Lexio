@@ -54,6 +54,8 @@ export interface TaskInfo {
   startedAt: number
   currentStep?: number
   totalSteps?: number
+  activeAgentKeys?: string[]
+  completedAgentKeys?: string[]
   completedAt?: number
   error?: string
   result?: unknown
@@ -69,6 +71,8 @@ export interface TaskProgress {
   operationals?: TaskOperationalSummary
   currentStep?: number
   totalSteps?: number
+  activeAgentKeys?: string[]
+  completedAgentKeys?: string[]
 }
 
 type TaskExecutor = (onProgress: (p: TaskProgress) => void, signal: AbortSignal) => Promise<unknown>
@@ -162,6 +166,8 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
         operationals: p.operationals,
         currentStep: p.currentStep,
         totalSteps: p.totalSteps,
+        activeAgentKeys: p.activeAgentKeys,
+        completedAgentKeys: p.completedAgentKeys,
       })
     }
 

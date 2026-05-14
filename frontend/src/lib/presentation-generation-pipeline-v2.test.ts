@@ -195,6 +195,38 @@ function buildWeakPackagedDeck(): PresentationV2Deck {
   }
 }
 
+function buildOrchestratorPlanResponse() {
+  return JSON.stringify({
+    summary: 'Executar framing e composição em ondas paralelas seguras, mantendo o revisor antes do empacotamento.',
+    globalDirectives: ['Preservar lastro documental.', 'Evitar redundância entre slides.'],
+    riskFlags: ['Não perder speaker notes nem assets planejados.'],
+    agentBriefs: {
+      presentation_v2_narrative_planner: 'Planejar o arco decisório com clareza executiva.',
+      presentation_v2_researcher: 'Priorizar evidências acionáveis e cautelas jurídicas.',
+      presentation_v2_slide_writer: 'Transformar cada slide em tese executiva com bullets densos.',
+    },
+    waves: [
+      { key: 'context', objective: 'Auditar contexto primeiro.', agents: ['presentation_v2_context_auditor'] },
+      { key: 'framing', objective: 'Narrativa e pesquisa em paralelo.', agents: ['presentation_v2_narrative_planner', 'presentation_v2_researcher'] },
+      { key: 'architecture', objective: 'Arquitetar o deck.', agents: ['presentation_v2_content_architect'] },
+      { key: 'composition', objective: 'Redação, direção visual e dados em paralelo.', agents: ['presentation_v2_slide_writer', 'presentation_v2_visual_director', 'presentation_v2_data_diagrammer'] },
+      { key: 'assets', objective: 'Planejar assets.', agents: ['presentation_v2_asset_planner'] },
+      { key: 'review', objective: 'Revisar.', agents: ['presentation_v2_reviewer'] },
+      { key: 'package', objective: 'Empacotar.', agents: ['presentation_v2_packager'] },
+    ],
+  })
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 describe('inspectPresentationV2Preflight', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -633,6 +665,7 @@ describe('draftPresentationV2ClarifyingQuestions', () => {
 
   it('applies selective repairs and stores a slide-by-slide rubric in the final deck', async () => {
     callLLMWithFallbackMock
+      .mockResolvedValueOnce(llmResult(buildOrchestratorPlanResponse()))
       .mockResolvedValueOnce(llmResult(JSON.stringify({ usableSources: ['Parecer interno'], gaps: [], risks: [], constraints: [], contentSignals: [], designSignals: [], mediaOpportunities: [] })))
       .mockResolvedValueOnce(llmResult(JSON.stringify({
         title: 'Estratégia de audiência',
@@ -735,6 +768,7 @@ describe('draftPresentationV2ClarifyingQuestions', () => {
 
     const result = await runPresentationGenerationPipelineV2({
       apiKey: 'demo-key',
+      uid: 'user-123',
       topic: 'Estratégia de audiência',
       description: 'Aprovação final da estratégia do caso.',
       sourceContext: 'Parecer interno e matriz de risco.',
@@ -767,6 +801,126 @@ describe('draftPresentationV2ClarifyingQuestions', () => {
       expect.objectContaining({ phase: 'presentation_v2_slide_writer_repair' }),
       expect.objectContaining({ phase: 'presentation_v2_visual_director_repair' }),
     ]))
+  })
+
+  it('accepts a packaged deck when the model wraps valid JSON with extra prose', async () => {
+    callLLMWithFallbackMock
+      .mockResolvedValueOnce(llmResult(buildOrchestratorPlanResponse()))
+      .mockResolvedValueOnce(llmResult('{"usableSources":["Parecer interno"],"gaps":[],"risks":[],"constraints":[],"contentSignals":[],"designSignals":[],"mediaOpportunities":[]}'))
+      .mockResolvedValueOnce(llmResult('{"title":"Estratégia de audiência","subtitle":"Aprovação executiva","audience":"Diretoria jurídica","objective":"Aprovar a estratégia final do caso.","slideCount":2,"durationMinutes":12,"depth":"profunda","narrativeArc":"Problema, tese e decisão.","sections":[{"id":"section-1","title":"Contexto","purpose":"Abrir a tese","slideNumbers":[1]},{"id":"section-2","title":"Decisão","purpose":"Fechar a recomendação","slideNumbers":[2]}],"slideIntentMap":[]}'))
+      .mockResolvedValueOnce(llmResult('{"claims":[],"evidence":["Parecer interno"],"citations":[],"examples":[],"numbers":[],"controversies":[],"cautions":[]}'))
+      .mockResolvedValueOnce(llmResult('{"slides":[{"number":1,"sectionId":"section-1","title":"Contexto","purpose":"Abrir a tese","keyMessage":"Mensagem 1","evidenceRefs":[],"cognitiveLoad":"medium","transition":"Seguir","recommendedLayout":"hero"},{"number":2,"sectionId":"section-2","title":"Decisão","purpose":"Fechar a recomendação","keyMessage":"Mensagem 2","evidenceRefs":[],"cognitiveLoad":"medium","transition":"Encerrar","recommendedLayout":"split"}]}'))
+      .mockResolvedValueOnce(llmResult('{"title":"Estratégia de audiência","subtitle":"Aprovação executiva","slides":[{"id":"slide-1","number":1,"sectionId":"section-1","title":"Contexto","purpose":"Abrir a tese","layout":"hero","bullets":["Ponto 1"],"speakerNotes":"Notas 1","transition":"Seguir","visualBrief":"Visual 1","designNotes":["Nota"]},{"id":"slide-2","number":2,"sectionId":"section-2","title":"Decisão","purpose":"Fechar a recomendação","layout":"split","bullets":["Ponto 2"],"speakerNotes":"Notas 2","transition":"Encerrar","visualBrief":"Visual 2","designNotes":["Nota 2"]}]}'))
+      .mockResolvedValueOnce(llmResult('{"theme":{"name":"Lexio Premium","mood":"institucional","palette":["#0F172A","#CBD5E1","#0EA5E9"],"layoutPrinciples":["hierarquia clara"],"accessibilityNotes":["alto contraste"]},"slides":[{"number":1,"layout":"hero","visualBrief":"Visual 1","designNotes":["Nota"]},{"number":2,"layout":"split","visualBrief":"Visual 2","designNotes":["Nota 2"]}]}'))
+      .mockResolvedValueOnce(llmResult('{"slides":[{"number":2,"chartSpec":{"type":"matrix"}}],"assets":[{"id":"slide-2-chart","type":"chart","status":"planned","altText":"Matriz risco-retorno"}],"dataWarnings":[]}'))
+      .mockResolvedValueOnce(llmResult('{"slides":[{"number":1,"assets":[{"id":"slide-1-image","type":"image","status":"planned","prompt":"Prompt 1","altText":"Alt 1"}]},{"number":2,"assets":[{"id":"slide-2-chart","type":"chart","status":"planned","altText":"Matriz risco-retorno"}]}],"assets":[{"id":"slide-1-image","type":"image","status":"planned","prompt":"Prompt 1","altText":"Alt 1"},{"id":"slide-2-chart","type":"chart","status":"planned","altText":"Matriz risco-retorno"}]}'))
+      .mockResolvedValueOnce(llmResult('{"quality":{"score":88,"strengths":["Boa composição."],"warnings":[],"accessibility":[],"legalAccuracyNotes":[]},"revisionNotes":[]}'))
+      .mockResolvedValueOnce(llmResult(`Aqui está o manifesto final solicitado:\n\n${JSON.stringify(buildWeakPackagedDeck(), null, 2)}\n\nValidação concluída.`))
+
+    const result = await runPresentationGenerationPipelineV2({
+      apiKey: 'demo-key',
+      topic: 'Estratégia de audiência',
+      description: 'Aprovação final da estratégia do caso.',
+      sourceContext: 'Parecer interno e matriz de risco.',
+      conversationContext: 'A diretoria precisa decidir hoje.',
+      artifactType: 'apresentacao_v2',
+      artifactLabel: 'Apresentação v2',
+    })
+
+    const deck = JSON.parse(result.content) as PresentationV2Deck
+
+    expect(loadPresentationV2PipelineModelsMock).toHaveBeenCalledWith('user-123')
+    expect(deck.schemaVersion).toBe('presentation_v2.1')
+    expect(deck.title).toBe('Estratégia de audiência')
+  })
+
+  it('runs the framing wave in parallel after the context audit', async () => {
+    const narrativeDeferred = createDeferred<ReturnType<typeof llmResult>>()
+    const researchDeferred = createDeferred<ReturnType<typeof llmResult>>()
+    const startedAgents: string[] = []
+    const strongDeck: PresentationV2Deck = {
+      ...buildWeakPackagedDeck(),
+      slides: [
+        {
+          ...buildWeakPackagedDeck().slides[0],
+          title: 'Janela de decisão',
+          purpose: 'Abrir a recomendação executiva.',
+          layout: 'hero-left',
+          bullets: [
+            'O caso entrou em janela crítica de negociação com risco financeiro relevante.',
+            'A tese recomendada reduz exposição sem sacrificar margem de acordo.',
+            'A decisão pedida hoje é autorizar a rodada final com parâmetros claros.',
+          ],
+          speakerNotes: 'Abrir o deck explicando por que a estratégia proposta concentra o melhor equilíbrio entre risco, custo e viabilidade negocial.',
+          transition: 'Na sequência, demonstramos por que a tese é a melhor opção.',
+          visualBrief: 'Mesa executiva institucional com documentos estratégicos e atmosfera sóbria.',
+          designNotes: ['Contraste alto', 'Hierarquia editorial forte'],
+          assets: [{ id: 'slide-1-image', type: 'image', status: 'planned', altText: 'Mesa executiva institucional' }],
+        },
+        {
+          ...buildWeakPackagedDeck().slides[1],
+        },
+      ],
+      assets: [
+        { id: 'slide-1-image', type: 'image', status: 'planned', altText: 'Mesa executiva institucional' },
+        ...buildWeakPackagedDeck().assets.filter(asset => asset.id !== 'slide-1-chart'),
+      ],
+    }
+    let callIndex = 0
+
+    callLLMWithFallbackMock.mockImplementation(() => {
+      const current = callIndex++
+      switch (current) {
+        case 0:
+          return Promise.resolve(llmResult(buildOrchestratorPlanResponse()))
+        case 1:
+          return Promise.resolve(llmResult('{"usableSources":["Parecer interno"],"gaps":[],"risks":[],"constraints":[],"contentSignals":[],"designSignals":[],"mediaOpportunities":[]}'))
+        case 2:
+          startedAgents.push('narrative')
+          return narrativeDeferred.promise
+        case 3:
+          startedAgents.push('research')
+          return researchDeferred.promise
+        case 4:
+          return Promise.resolve(llmResult('{"slides":[{"number":1,"sectionId":"section-1","title":"Contexto","purpose":"Abrir a tese","keyMessage":"Mensagem 1","evidenceRefs":[],"cognitiveLoad":"medium","transition":"Seguir","recommendedLayout":"hero"},{"number":2,"sectionId":"section-2","title":"Decisão","purpose":"Fechar a recomendação","keyMessage":"Mensagem 2","evidenceRefs":[],"cognitiveLoad":"medium","transition":"Encerrar","recommendedLayout":"split"}]}'))
+        case 5:
+          return Promise.resolve(llmResult('{"title":"Estratégia de audiência","subtitle":"Aprovação executiva","slides":[{"id":"slide-1","number":1,"sectionId":"section-1","title":"Contexto","purpose":"Abrir a tese","layout":"hero","bullets":["Ponto 1"],"speakerNotes":"Notas 1","transition":"Seguir","visualBrief":"Visual 1","designNotes":["Nota"]},{"id":"slide-2","number":2,"sectionId":"section-2","title":"Decisão","purpose":"Fechar a recomendação","layout":"split","bullets":["Ponto 2"],"speakerNotes":"Notas 2","transition":"Encerrar","visualBrief":"Visual 2","designNotes":["Nota 2"]}]}'))
+        case 6:
+          return Promise.resolve(llmResult('{"theme":{"name":"Lexio Premium","mood":"institucional","palette":["#0F172A","#CBD5E1","#0EA5E9"],"layoutPrinciples":["hierarquia clara"],"accessibilityNotes":["alto contraste"]},"slides":[{"number":1,"layout":"hero","visualBrief":"Visual 1","designNotes":["Nota"]},{"number":2,"layout":"split","visualBrief":"Visual 2","designNotes":["Nota 2"]}]}'))
+        case 7:
+          return Promise.resolve(llmResult('{"slides":[{"number":2,"chartSpec":{"type":"matrix"}}],"assets":[{"id":"slide-2-chart","type":"chart","status":"planned","altText":"Matriz risco-retorno"}],"dataWarnings":[]}'))
+        case 8:
+          return Promise.resolve(llmResult('{"slides":[{"number":1,"assets":[{"id":"slide-1-image","type":"image","status":"planned","prompt":"Prompt 1","altText":"Alt 1"}]},{"number":2,"assets":[{"id":"slide-2-chart","type":"chart","status":"planned","altText":"Matriz risco-retorno"}]}],"assets":[{"id":"slide-1-image","type":"image","status":"planned","prompt":"Prompt 1","altText":"Alt 1"},{"id":"slide-2-chart","type":"chart","status":"planned","altText":"Matriz risco-retorno"}]}'))
+        case 9:
+          return Promise.resolve(llmResult('{"quality":{"score":88,"strengths":["Boa composição."],"warnings":[],"accessibility":[],"legalAccuracyNotes":[]},"revisionNotes":[]}'))
+        case 10:
+          return Promise.resolve(llmResult(JSON.stringify(strongDeck)))
+        default:
+          throw new Error(`Unexpected LLM call ${current}`)
+      }
+    })
+
+    const pipelinePromise = runPresentationGenerationPipelineV2({
+      apiKey: 'demo-key',
+      topic: 'Estratégia de audiência',
+      description: 'Aprovação final da estratégia do caso.',
+      sourceContext: 'Parecer interno e matriz de risco.',
+      conversationContext: 'A diretoria precisa decidir hoje.',
+      artifactType: 'apresentacao_v2',
+      artifactLabel: 'Apresentação v2',
+    })
+
+    await vi.waitFor(() => {
+      expect(startedAgents).toEqual(['narrative', 'research'])
+    })
+
+    narrativeDeferred.resolve(llmResult('{"title":"Estratégia de audiência","subtitle":"Aprovação executiva","audience":"Diretoria jurídica","objective":"Aprovar a estratégia final do caso.","slideCount":2,"durationMinutes":12,"depth":"profunda","narrativeArc":"Problema, tese e decisão.","sections":[{"id":"section-1","title":"Contexto","purpose":"Abrir a tese","slideNumbers":[1]},{"id":"section-2","title":"Decisão","purpose":"Fechar a recomendação","slideNumbers":[2]}],"slideIntentMap":[]}'))
+    researchDeferred.resolve(llmResult('{"claims":[],"evidence":["Parecer interno"],"citations":[],"examples":[],"numbers":[],"controversies":[],"cautions":[]}'))
+
+    const result = await pipelinePromise
+    const deck = JSON.parse(result.content) as PresentationV2Deck
+
+    expect(deck.schemaVersion).toBe('presentation_v2.1')
   })
 })
 

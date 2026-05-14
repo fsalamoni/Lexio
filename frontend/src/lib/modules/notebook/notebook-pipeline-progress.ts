@@ -59,6 +59,10 @@ interface StudioTrailStepLabel {
   label: string
 }
 
+function normalizeStudioTrailKey(key: string): string {
+  return key.endsWith('_repair') ? key.slice(0, -'_repair'.length) : key
+}
+
 function getStudioTrailStepLabels(artifactType: StudioArtifactType | null): StudioTrailStepLabel[] {
   if (artifactType === 'apresentacao_v2') {
     return [
@@ -265,6 +269,9 @@ export function buildAcervoModalProgressState(options: {
 
 export function buildStudioTrailSteps(task: TaskInfo | undefined, artifactType: StudioArtifactType | null): NotebookTrailStep[] {
   const steps = getStudioTrailStepLabels(artifactType)
+  const activeKeys = new Set((task?.activeAgentKeys || []).map(normalizeStudioTrailKey))
+  const completedKeys = new Set((task?.completedAgentKeys || []).map(normalizeStudioTrailKey))
+  const useExplicitParallelState = activeKeys.size > 0 || completedKeys.size > 0
 
   const progressStep = task?.currentStep ?? 0
   const errorIndex = progressStep > 0 ? Math.min(progressStep, steps.length) - 1 : 0
@@ -279,12 +286,21 @@ export function buildStudioTrailSteps(task: TaskInfo | undefined, artifactType: 
     let status: NotebookTrailStep['status'] = 'pending'
     const oneBased = index + 1
 
-    if (progressStep >= steps.length && !loading && !studioErrorMessage) {
-      status = 'completed'
-    } else if (oneBased < progressStep) {
-      status = 'completed'
-    } else if (loading && oneBased === progressStep) {
-      status = 'active'
+    if (useExplicitParallelState) {
+      if (completedKeys.has(step.key) || (task?.status === 'completed' && !studioErrorMessage)) {
+        status = 'completed'
+      }
+      if (loading && activeKeys.has(step.key)) {
+        status = 'active'
+      }
+    } else {
+      if (progressStep >= steps.length && !loading && !studioErrorMessage) {
+        status = 'completed'
+      } else if (oneBased < progressStep) {
+        status = 'completed'
+      } else if (loading && oneBased === progressStep) {
+        status = 'active'
+      }
     }
 
     if (studioErrorMessage && index === errorIndex) {
@@ -322,9 +338,17 @@ export function buildStudioModalProgressState(
 ): NotebookModalProgressState {
   const progressStep = task?.currentStep ?? 0
   const totalSteps = task?.totalSteps ?? 0
-  const labels = getStudioTrailStepLabels(artifactType).map(step => step.label)
+  const steps = getStudioTrailStepLabels(artifactType)
+  const labelMap = new Map(steps.map(step => [step.key, step.label]))
+  const activeLabels = (task?.activeAgentKeys || [])
+    .map(normalizeStudioTrailKey)
+    .map(key => labelMap.get(key))
+    .filter((label): label is string => Boolean(label))
+  const labels = steps.map(step => step.label)
   const boundedIndex = Math.max(0, Math.min(progressStep - 1, labels.length - 1))
-  const stageLabel = progressStep > 0 ? labels[boundedIndex] : 'Preparando trilha'
+  const stageLabel = activeLabels.length > 1
+    ? `Execução paralela: ${activeLabels.join(' + ')}`
+    : activeLabels[0] || (progressStep > 0 ? labels[boundedIndex] : 'Preparando trilha')
   const hasError = task?.status === 'error' || task?.status === 'cancelled'
   const isComplete = task?.status === 'completed'
 
@@ -345,9 +369,18 @@ export function buildStudioTaskPhaseMessage(
   total: number,
   phase: string,
   artifactType: StudioArtifactType,
+  activeAgentKeys: string[] = [],
 ): string {
-  const labels = getStudioTrailStepLabels(artifactType).map(item => item.label)
-  const stageLabel = labels[Math.max(0, Math.min(step - 1, labels.length - 1))] || phase
+  const steps = getStudioTrailStepLabels(artifactType)
+  const labelMap = new Map(steps.map(item => [item.key, item.label]))
+  const activeLabels = activeAgentKeys
+    .map(normalizeStudioTrailKey)
+    .map(key => labelMap.get(key))
+    .filter((label): label is string => Boolean(label))
+  const labels = steps.map(item => item.label)
+  const stageLabel = activeLabels.length > 1
+    ? `Execução paralela: ${activeLabels.join(' + ')}`
+    : activeLabels[0] || labels[Math.max(0, Math.min(step - 1, labels.length - 1))] || phase
   const suffix = total > 0 ? ` (${step}/${total})` : ''
   return `${stageLabel}${suffix}: ${phase}`
 }

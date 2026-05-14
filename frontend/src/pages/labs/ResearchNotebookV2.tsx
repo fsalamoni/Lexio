@@ -2184,12 +2184,16 @@ export default function ResearchNotebookV2() {
           const apiKey = await getOpenRouterKey(userId || undefined)
           const onProgress = (step: number, total: number, phase: string, meta?: {
             stageMeta?: string
+            stageLabel?: string
             executionState?: PipelineExecutionState
             costUsd?: number
             durationMs?: number
             retryCount?: number
             usedFallback?: boolean
             fallbackFrom?: string
+            activeAgentKeys?: string[]
+            completedAgentKeys?: string[]
+            progressPercent?: number
           }) => {
             const eventKey = buildOperationalEventKey({
               phase,
@@ -2213,18 +2217,21 @@ export default function ResearchNotebookV2() {
             }
 
             onTaskProgress({
-              progress: buildStepProgressPercent(step, total),
-              phase: buildStudioTaskPhaseMessage(step, total, phase, artifactType),
+              progress: meta?.progressPercent ?? buildStepProgressPercent(step, total),
+              phase: buildStudioTaskPhaseMessage(step, total, phase, artifactType, meta?.activeAgentKeys),
               executionState: meta?.executionState ?? ((meta?.retryCount ?? 0) > 0 ? 'retrying' : 'running'),
               stageMeta: meta?.stageMeta,
               operationals: studioOperationalSummary,
               currentStep: step,
               totalSteps: total,
+              activeAgentKeys: meta?.activeAgentKeys,
+              completedAgentKeys: meta?.completedAgentKeys,
             })
           }
 
           const pipelineInput = {
             apiKey,
+            uid: userId || undefined,
             topic: notebookSnapshot.topic,
             description: notebookSnapshot.description,
             sourceContext: notebookSnapshot.sourceContext,
@@ -2337,6 +2344,7 @@ export default function ResearchNotebookV2() {
     const customInstructions = [studioCustomPrompt.trim(), briefingText].filter(Boolean).join('\n\n')
     return loadPresentationV2GenerationRuntime().then(({ draftPresentationV2ClarifyingQuestions }) => draftPresentationV2ClarifyingQuestions({
       apiKey,
+      uid: userId || undefined,
       topic: activeNotebook.topic,
       description: activeNotebook.description || undefined,
       sourceContext: studioAudit.sourceText || '',
@@ -2542,6 +2550,7 @@ export default function ResearchNotebookV2() {
         mediaTask?.ensureNotCancelled()
         const media = await generatePresentationV2MediaAssets({
           apiKey,
+          uid: userId || undefined,
           topic: notebookTopic,
           description: notebookDescription,
         }, currentArtifact.content, (step, total, phase, meta) => {

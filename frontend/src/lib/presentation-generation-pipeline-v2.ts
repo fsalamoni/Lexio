@@ -33,7 +33,7 @@ import type {
   StudioProgressMeta,
   StudioStepExecution,
 } from './notebook-studio-pipeline'
-import { createOrchestratorUsageExecution, resolveOrchestratorModel } from './pipeline-orchestrator'
+import { resolveOrchestratorModel } from './pipeline-orchestrator'
 
 export interface PresentationV2PipelineResult {
   content: string
@@ -247,7 +247,7 @@ interface AppliedPresentationV2Repair {
   reasons: string[]
 }
 
-const PRESENTATION_V2_TOTAL_STEPS = 10
+const PRESENTATION_V2_TOTAL_STEPS = 11
 const PRESENTATION_V2_TEXT_AGENT_KEYS = [
   'presentation_v2_orchestrator',
   'presentation_v2_context_auditor',
@@ -261,6 +261,70 @@ const PRESENTATION_V2_TEXT_AGENT_KEYS = [
   'presentation_v2_reviewer',
   'presentation_v2_packager',
 ] as const
+type PresentationV2TextAgentKey = typeof PRESENTATION_V2_TEXT_AGENT_KEYS[number]
+type PresentationV2WaveAgentKey = Exclude<PresentationV2TextAgentKey, 'presentation_v2_orchestrator'>
+
+interface PresentationV2OrchestratorWave {
+  key: string
+  objective: string
+  agents: PresentationV2WaveAgentKey[]
+}
+
+interface PresentationV2OrchestratorPlan {
+  summary?: string
+  globalDirectives: string[]
+  riskFlags: string[]
+  agentBriefs: Partial<Record<PresentationV2WaveAgentKey, string>>
+  waves: PresentationV2OrchestratorWave[]
+}
+
+interface PresentationV2RuntimeProgressState {
+  activeAgentKeys: Set<string>
+  completedAgentKeys: Set<string>
+  totalSteps: number
+  onProgress?: StudioProgressCallback
+}
+
+const PRESENTATION_V2_WAVE_AGENT_KEYS = PRESENTATION_V2_TEXT_AGENT_KEYS.filter(
+  (key): key is PresentationV2WaveAgentKey => key !== 'presentation_v2_orchestrator',
+)
+const PRESENTATION_V2_DEFAULT_WAVES: PresentationV2OrchestratorWave[] = [
+  {
+    key: 'context',
+    objective: 'Auditar contexto, lacunas e lastro probatório antes de liberar o restante do pipeline.',
+    agents: ['presentation_v2_context_auditor'],
+  },
+  {
+    key: 'framing',
+    objective: 'Executar em paralelo a narrativa macro e a pesquisa consolidada para reduzir o caminho crítico.',
+    agents: ['presentation_v2_narrative_planner', 'presentation_v2_researcher'],
+  },
+  {
+    key: 'architecture',
+    objective: 'Transformar narrativa e pesquisa em arquitetura slide a slide.',
+    agents: ['presentation_v2_content_architect'],
+  },
+  {
+    key: 'composition',
+    objective: 'Em paralelo, redigir os slides, dirigir o sistema visual e especificar dados/diagramas.',
+    agents: ['presentation_v2_slide_writer', 'presentation_v2_visual_director', 'presentation_v2_data_diagrammer'],
+  },
+  {
+    key: 'assets',
+    objective: 'Planejar assets multimodais a partir do texto, direção visual e specs analíticas.',
+    agents: ['presentation_v2_asset_planner'],
+  },
+  {
+    key: 'review',
+    objective: 'Auditar coerência jurídica, narrativa, visual e multimodal antes do empacotamento.',
+    agents: ['presentation_v2_reviewer'],
+  },
+  {
+    key: 'package',
+    objective: 'Empacotar o manifesto final no schema PresentationV2Deck.',
+    agents: ['presentation_v2_packager'],
+  },
+]
 const INITIAL_TEXT_ONLY_MEDIA_AGENT_KEYS = [
   'presentation_v2_image_generator',
   'presentation_v2_tts',
@@ -876,7 +940,23 @@ function throwIfAborted(signal?: AbortSignal): void {
 
 function extractJsonPayload(content: string): string {
   const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  return (fenced?.[1] || content).trim()
+  const candidate = (fenced?.[1] || content).trim()
+  const objectStart = candidate.indexOf('{')
+  const arrayStart = candidate.indexOf('[')
+  const starts = [objectStart, arrayStart].filter((index) => index >= 0)
+
+  if (starts.length === 0) return candidate
+
+  const start = Math.min(...starts)
+  const opening = candidate[start]
+  const closing = opening === '[' ? ']' : '}'
+  const end = candidate.lastIndexOf(closing)
+
+  if (end > start) {
+    return candidate.slice(start, end + 1).trim()
+  }
+
+  return candidate
 }
 
 function resolveExecutionStateFromRetryCount(retryCount?: number): PipelineExecutionState {
@@ -1909,7 +1989,7 @@ export async function generatePresentationV2VideoClips(
 }
 
 export async function generatePresentationV2MediaAssets(
-  input: Pick<StudioPipelineInput, 'apiKey' | 'topic' | 'description'>,
+  input: Pick<StudioPipelineInput, 'apiKey' | 'topic' | 'description' | 'uid'>,
   rawPresentationContent: string,
   onProgress?: StudioProgressCallback,
   signal?: AbortSignal,
@@ -1921,7 +2001,7 @@ export async function generatePresentationV2MediaAssets(
     throw new Error('A apresentação v2 não possui estrutura válida para gerar slides visuais.')
   }
 
-  const models = await loadPresentationV2PipelineModels()
+  const models = await loadPresentationV2PipelineModels(input.uid)
   const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
   const resolveFallback = buildPipelineFallbackResolver(PRESENTATION_V2_PIPELINE_AGENT_DEFS, fallbackConfig)
   await validateScopedAgentModels('presentation_v2_pipeline_models', omitInactiveMediaModels(models, ['presentation_v2_image_generator']))
@@ -2165,6 +2245,90 @@ export async function generatePresentationV2StructuredVisualAssets(
   return { structuredVisuals, executions }
 }
 
+function joinPromptSections(sections: Array<string | undefined>): string {
+  return sections
+    .map(section => section?.trim() || '')
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function buildOrchestratorPrompt(input: StudioPipelineInput): { system: string; user: string } {
+  return {
+    system: [
+      'Você é o Orquestrador do Gerador de Apresentação v2 do Lexio.',
+      'Seu papel é comandar a execução inteira, liberar ondas paralelas seguras e orientar cada agente em tempo real.',
+      'Responda SOMENTE em JSON válido com: summary, globalDirectives[], riskFlags[], agentBriefs{}, waves[].',
+      'agentBriefs deve usar apenas estas chaves: presentation_v2_context_auditor, presentation_v2_narrative_planner, presentation_v2_researcher, presentation_v2_content_architect, presentation_v2_slide_writer, presentation_v2_visual_director, presentation_v2_data_diagrammer, presentation_v2_asset_planner, presentation_v2_reviewer, presentation_v2_packager.',
+      'waves deve conter apenas agentes permitidos e respeitar este DAG: context_auditor -> [narrative_planner + researcher] -> content_architect -> [slide_writer + visual_director + data_diagrammer] -> asset_planner -> reviewer -> packager.',
+      'Não crie agentes novos, não remova o revisor e nunca mova o packager para antes do reviewer.',
+    ].join(' '),
+    user: buildInputBrief(input),
+  }
+}
+
+function normalizePresentationV2WaveAgentKey(value: unknown): PresentationV2WaveAgentKey | null {
+  const candidate = String(value || '').trim() as PresentationV2WaveAgentKey
+  return PRESENTATION_V2_WAVE_AGENT_KEYS.includes(candidate) ? candidate : null
+}
+
+function parsePresentationV2OrchestratorPlan(content: string): PresentationV2OrchestratorPlan {
+  const parsed = parseJsonObject(content)
+  const agentBriefsRaw = typeof parsed.agentBriefs === 'object' && parsed.agentBriefs !== null
+    ? parsed.agentBriefs as Record<string, unknown>
+    : typeof parsed.agent_briefs === 'object' && parsed.agent_briefs !== null
+      ? parsed.agent_briefs as Record<string, unknown>
+      : {}
+  const rawWaves = Array.isArray(parsed.waves) ? parsed.waves as Record<string, unknown>[] : []
+  const waveObjectives = new Map<string, string>()
+
+  for (const wave of rawWaves) {
+    const objective = String(wave.objective ?? wave.reason ?? wave.summary ?? '').trim()
+    if (!objective) continue
+    const agents = Array.isArray(wave.agents) ? wave.agents : []
+    const normalizedAgents = agents
+      .map(agent => normalizePresentationV2WaveAgentKey(agent))
+      .filter((agent): agent is PresentationV2WaveAgentKey => Boolean(agent))
+    const matchedWave = PRESENTATION_V2_DEFAULT_WAVES.find((candidate) => (
+      candidate.agents.length === normalizedAgents.length
+      && candidate.agents.every(agent => normalizedAgents.includes(agent))
+    ))
+    if (matchedWave) {
+      waveObjectives.set(matchedWave.key, objective)
+    }
+  }
+
+  const agentBriefs = Object.fromEntries(
+    Object.entries(agentBriefsRaw)
+      .map(([key, value]) => [normalizePresentationV2WaveAgentKey(key), String(value || '').trim()] as const)
+      .filter((entry): entry is readonly [PresentationV2WaveAgentKey, string] => Boolean(entry[0] && entry[1])),
+  ) as Partial<Record<PresentationV2WaveAgentKey, string>>
+
+  return {
+    summary: String(parsed.summary ?? parsed.objective ?? '').trim() || undefined,
+    globalDirectives: toTrimmedStringArray(parsed.globalDirectives ?? parsed.global_directives).slice(0, 8),
+    riskFlags: toTrimmedStringArray(parsed.riskFlags ?? parsed.risk_flags).slice(0, 8),
+    agentBriefs,
+    waves: PRESENTATION_V2_DEFAULT_WAVES.map(wave => ({
+      ...wave,
+      objective: waveObjectives.get(wave.key) || wave.objective,
+    })),
+  }
+}
+
+function buildPresentationV2AgentDirective(
+  plan: PresentationV2OrchestratorPlan,
+  agentKey: PresentationV2WaveAgentKey,
+): string | undefined {
+  const parts = [
+    plan.summary ? `Resumo do orquestrador: ${plan.summary}` : '',
+    plan.globalDirectives.length > 0 ? `Diretrizes globais: ${plan.globalDirectives.join(' | ')}` : '',
+    plan.agentBriefs[agentKey] ? `Diretiva específica para ${agentKey}: ${plan.agentBriefs[agentKey]}` : '',
+    plan.riskFlags.length > 0 ? `Riscos a vigiar: ${plan.riskFlags.join(' | ')}` : '',
+  ].filter(Boolean)
+
+  return parts.length > 0 ? parts.join('\n') : undefined
+}
+
 function buildClarifierPrompt(input: StudioPipelineInput): { system: string; user: string } {
   return {
     system: [
@@ -2178,71 +2342,126 @@ function buildClarifierPrompt(input: StudioPipelineInput): { system: string; use
   }
 }
 
-function buildContextAuditPrompt(input: StudioPipelineInput): { system: string; user: string } {
+function buildContextAuditPrompt(input: StudioPipelineInput, orchestratorDirective?: string): { system: string; user: string } {
   return {
     system: 'Você é o Auditor de Contexto do Gerador de Apresentação v2. Responda em JSON com: usableSources[], gaps[], risks[], constraints[], contentSignals[], designSignals[], mediaOpportunities[].',
-    user: buildInputBrief(input),
+    user: joinPromptSections([
+      buildInputBrief(input),
+      orchestratorDirective ? `Diretrizes do orquestrador:\n${orchestratorDirective}` : undefined,
+    ]),
   }
 }
 
-function buildNarrativePlanPrompt(input: StudioPipelineInput, contextAudit: string): { system: string; user: string } {
+function buildNarrativePlanPrompt(input: StudioPipelineInput, contextAudit: string, orchestratorDirective?: string): { system: string; user: string } {
   return {
     system: 'Você é o Planejador Narrativo. Crie começo, meio e fim. Responda em JSON com: title, subtitle, audience, objective, slideCount, durationMinutes, depth, narrativeArc, sections[], slideIntentMap[].',
-    user: [buildInputBrief(input), 'Auditoria de contexto:', contextAudit].join('\n\n'),
+    user: joinPromptSections([
+      buildInputBrief(input),
+      'Auditoria de contexto:',
+      contextAudit,
+      orchestratorDirective ? `Diretrizes do orquestrador:\n${orchestratorDirective}` : undefined,
+    ]),
   }
 }
 
-function buildResearchPrompt(input: StudioPipelineInput, contextAudit: string, narrativePlan: string): { system: string; user: string } {
+function buildResearchPrompt(input: StudioPipelineInput, contextAudit: string, orchestratorDirective?: string): { system: string; user: string } {
   return {
     system: 'Você é o Pesquisador da Apresentação v2. Responda em JSON com: claims[], evidence[], citations[], examples[], numbers[], controversies[], cautions[]. Preserve fonte e confiabilidade.',
-    user: [buildInputBrief(input), 'Auditoria de contexto:', contextAudit, 'Plano narrativo:', narrativePlan].join('\n\n'),
+    user: joinPromptSections([
+      buildInputBrief(input),
+      'Auditoria de contexto:',
+      contextAudit,
+      orchestratorDirective ? `Diretrizes do orquestrador:\n${orchestratorDirective}` : undefined,
+    ]),
   }
 }
 
-function buildContentArchitecturePrompt(narrativePlan: string, research: string): { system: string; user: string } {
+function buildContentArchitecturePrompt(narrativePlan: string, research: string, orchestratorDirective?: string): { system: string; user: string } {
   return {
     system: 'Você é o Arquiteto de Conteúdo. Responda em JSON com slides[] contendo number, sectionId, title, purpose, keyMessage, evidenceRefs, cognitiveLoad, transition, recommendedLayout.',
-    user: ['Plano narrativo:', narrativePlan, 'Pesquisa consolidada:', research].join('\n\n'),
+    user: joinPromptSections([
+      'Plano narrativo:',
+      narrativePlan,
+      'Pesquisa consolidada:',
+      research,
+      orchestratorDirective ? `Diretrizes do orquestrador:\n${orchestratorDirective}` : undefined,
+    ]),
   }
 }
 
-function buildSlideWriterPrompt(input: StudioPipelineInput, architecture: string, research: string): { system: string; user: string } {
+function buildSlideWriterPrompt(input: StudioPipelineInput, architecture: string, research: string, orchestratorDirective?: string): { system: string; user: string } {
   return {
     system: [
       'Você é o Redator de Slides da Apresentação v2.',
       'Responda em JSON com: title, subtitle, slides:[{id, number, sectionId, title, purpose, layout, bullets, speakerNotes, transition, visualBrief, designNotes}].',
       'Cada slide deve ter título forte, até 5 bullets densos, notas completas e transição narrativa para o próximo slide.',
     ].join(' '),
-    user: [buildInputBrief(input), 'Arquitetura:', architecture, 'Pesquisa:', research].join('\n\n'),
+    user: joinPromptSections([
+      buildInputBrief(input),
+      'Arquitetura:',
+      architecture,
+      'Pesquisa:',
+      research,
+      orchestratorDirective ? `Diretrizes do orquestrador:\n${orchestratorDirective}` : undefined,
+    ]),
   }
 }
 
-function buildVisualDirectorPrompt(slidesJson: string): { system: string; user: string } {
+function buildVisualDirectorPrompt(
+  input: StudioPipelineInput,
+  narrativePlan: string,
+  architecture: string,
+  research: string,
+  orchestratorDirective?: string,
+): { system: string; user: string } {
   return {
-    system: 'Você é o Diretor Visual. Receba slides JSON e devolva JSON com: theme{name,mood,palette,fontPairing,layoutPrinciples,accessibilityNotes,designSystem{narrativeMode,surfaceStyle,contrastStrategy,accentStrategy,hierarchyRules[],layoutFamilies[]}}, slides[] atualizados com layout, visualBrief, designNotes e chartSpec quando útil. Não remova conteúdo.',
-    user: slidesJson,
+    system: 'Você é o Diretor Visual. Receba narrativa, arquitetura e pesquisa e devolva JSON com: theme{name,mood,palette,fontPairing,layoutPrinciples,accessibilityNotes,designSystem{narrativeMode,surfaceStyle,contrastStrategy,accentStrategy,hierarchyRules[],layoutFamilies[]}}, slides[] com number, sectionId, layout, visualBrief e designNotes. Não precisa repetir bullets nem speakerNotes.',
+    user: joinPromptSections([
+      buildInputBrief(input),
+      'Plano narrativo:',
+      narrativePlan,
+      'Arquitetura:',
+      architecture,
+      'Pesquisa consolidada:',
+      research,
+      orchestratorDirective ? `Diretrizes do orquestrador:\n${orchestratorDirective}` : undefined,
+    ]),
   }
 }
 
-function buildDataDiagrammerPrompt(slidesJson: string, visualDirection: string, research: string): { system: string; user: string } {
+function buildDataDiagrammerPrompt(architecture: string, research: string, orchestratorDirective?: string): { system: string; user: string } {
   return {
     system: [
       'Você é o especialista em Dados e Diagramas da Apresentação v2.',
       'Responda em JSON com: slides[] atualizados com chartSpec quando houver valor analítico, assets[] de type="chart" ou type="diagram", e dataWarnings[].',
       'Use gráficos apenas quando houver dado, comparação, linha temporal, processo, matriz, fluxo decisório ou estrutura conceitual real. Não invente números; quando não houver número confiável, prefira diagramas conceituais.',
     ].join(' '),
-    user: ['Slides:', slidesJson, 'Direção visual:', visualDirection, 'Pesquisa/evidências:', research].join('\n\n'),
+    user: joinPromptSections([
+      'Arquitetura:',
+      architecture,
+      'Pesquisa/evidências:',
+      research,
+      orchestratorDirective ? `Diretrizes do orquestrador:\n${orchestratorDirective}` : undefined,
+    ]),
   }
 }
 
-function buildAssetPlannerPrompt(slidesJson: string, visualDirection: string, dataDiagramming: string): { system: string; user: string } {
+function buildAssetPlannerPrompt(slidesJson: string, visualDirection: string, dataDiagramming: string, orchestratorDirective?: string): { system: string; user: string } {
   return {
     system: 'Você é o Planejador de Assets. Responda em JSON com assets[] e slides[] atualizados. Assets devem ter id,type,status="planned",prompt,negativePrompt,altText. Planeje imagens, backgrounds, charts, áudio e vídeo apenas quando agregarem valor.',
-    user: ['Slides:', slidesJson, 'Direção visual:', visualDirection, 'Specs de dados e diagramas:', dataDiagramming].join('\n\n'),
+    user: joinPromptSections([
+      'Slides:',
+      slidesJson,
+      'Direção visual:',
+      visualDirection,
+      'Specs de dados e diagramas:',
+      dataDiagramming,
+      orchestratorDirective ? `Diretrizes do orquestrador:\n${orchestratorDirective}` : undefined,
+    ]),
   }
 }
 
-function buildReviewerPrompt(input: StudioPipelineInput, draftDeck: string): { system: string; user: string } {
+function buildReviewerPrompt(input: StudioPipelineInput, draftDeck: string, orchestratorDirective?: string): { system: string; user: string } {
   return {
     system: [
       'Você é o Revisor Multimodal.',
@@ -2251,7 +2470,12 @@ function buildReviewerPrompt(input: StudioPipelineInput, draftDeck: string): { s
       'Cada item de revisionNotes deve ter, quando aplicável: slideNumber, severity, category, issue, recommendedAgent, repairPrompt.',
       'recommendedAgent deve ser um entre: presentation_v2_slide_writer, presentation_v2_content_architect, presentation_v2_visual_director, presentation_v2_data_diagrammer.',
     ].join(' '),
-    user: [buildInputBrief(input), 'Deck preliminar:', draftDeck].join('\n\n'),
+    user: joinPromptSections([
+      buildInputBrief(input),
+      'Deck preliminar:',
+      draftDeck,
+      orchestratorDirective ? `Diretrizes do orquestrador:\n${orchestratorDirective}` : undefined,
+    ]),
   }
 }
 
@@ -2265,7 +2489,7 @@ function buildPackagerPrompt(input: StudioPipelineInput, parts: {
   dataDiagramming: string
   assetPlan: string
   review: string
-}): { system: string; user: string } {
+}, orchestratorDirective?: string): { system: string; user: string } {
   return {
     system: [
       'Você é o Empacotador do Gerador de Apresentação v2.',
@@ -2274,18 +2498,28 @@ function buildPackagerPrompt(input: StudioPipelineInput, parts: {
       'Theme deve preservar ou sintetizar designSystem{narrativeMode,surfaceStyle,contrastStrategy,accentStrategy,hierarchyRules,layoutFamilies} quando houver sinal suficiente.',
       'Slides devem preservar bullets e speakerNotes, ter layout, visualBrief e assets planejados. Mídias não materializadas devem ficar status="planned" ou "pending", nunca como data URL falsa.',
     ].join(' '),
-    user: [
+    user: joinPromptSections([
       buildInputBrief(input),
-      'Auditoria de contexto:', parts.contextAudit,
-      'Plano narrativo:', parts.narrativePlan,
-      'Pesquisa:', parts.research,
-      'Arquitetura de conteúdo:', parts.architecture,
-      'Slides redigidos:', parts.slides,
-      'Direção visual:', parts.visualDirection,
-      'Dados e diagramas:', parts.dataDiagramming,
-      'Plano de assets:', parts.assetPlan,
-      'Revisão:', parts.review,
-    ].join('\n\n'),
+      'Auditoria de contexto:',
+      parts.contextAudit,
+      'Plano narrativo:',
+      parts.narrativePlan,
+      'Pesquisa:',
+      parts.research,
+      'Arquitetura de conteúdo:',
+      parts.architecture,
+      'Slides redigidos:',
+      parts.slides,
+      'Direção visual:',
+      parts.visualDirection,
+      'Dados e diagramas:',
+      parts.dataDiagramming,
+      'Plano de assets:',
+      parts.assetPlan,
+      'Revisão:',
+      parts.review,
+      orchestratorDirective ? `Diretrizes do orquestrador:\n${orchestratorDirective}` : undefined,
+    ]),
   }
 }
 
@@ -2710,6 +2944,313 @@ function applySlideRepairPatch(deck: PresentationV2Deck, slideNumber: number, pa
   return true
 }
 
+function toRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    : []
+}
+
+function toOptionalTrimmedString(value: unknown): string | undefined {
+  const normalized = String(value ?? '').trim()
+  return normalized || undefined
+}
+
+function toPositiveNumber(value: unknown): number | undefined {
+  const normalized = Number(value)
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : undefined
+}
+
+function normalizeDeckLevelAsset(raw: Record<string, unknown>, index: number): PresentationV2SlideAsset | null {
+  const type = String(raw.type ?? '').trim()
+  if (!type) return null
+  return {
+    id: String(raw.id ?? `deck-asset-${index + 1}`),
+    type: type as PresentationV2SlideAsset['type'],
+    status: String(raw.status ?? 'planned') as PresentationV2SlideAsset['status'],
+    prompt: raw.prompt ? String(raw.prompt) : undefined,
+    negativePrompt: raw.negativePrompt ? String(raw.negativePrompt) : raw.negative_prompt ? String(raw.negative_prompt) : undefined,
+    providerId: raw.providerId ? String(raw.providerId) : raw.provider_id ? String(raw.provider_id) : undefined,
+    providerLabel: raw.providerLabel ? String(raw.providerLabel) : raw.provider_label ? String(raw.provider_label) : undefined,
+    model: raw.model ? String(raw.model) : undefined,
+    url: raw.url ? String(raw.url) : undefined,
+    storagePath: raw.storagePath ? String(raw.storagePath) : raw.storage_path ? String(raw.storage_path) : undefined,
+    mimeType: raw.mimeType ? String(raw.mimeType) : raw.mime_type ? String(raw.mime_type) : undefined,
+    altText: raw.altText ? String(raw.altText) : raw.alt_text ? String(raw.alt_text) : undefined,
+    error: raw.error ? String(raw.error) : undefined,
+  }
+}
+
+function indexSlidePayloadsByNumber(items: Record<string, unknown>[]): Map<number, Record<string, unknown>> {
+  const map = new Map<number, Record<string, unknown>>()
+  for (const item of items) {
+    const number = Number(item.number ?? item.slideNumber ?? item.slide_number)
+    if (!Number.isFinite(number) || number <= 0) continue
+    const current = map.get(number) || {}
+    const mergedAssets = [
+      ...toRecordArray(current.assets),
+      ...toRecordArray(item.assets),
+    ]
+    map.set(number, {
+      ...current,
+      ...item,
+      ...(mergedAssets.length > 0 ? { assets: mergedAssets } : {}),
+    })
+  }
+  return map
+}
+
+function buildPresentationV2FallbackDeck(args: {
+  input: StudioPipelineInput
+  parts: {
+    narrativePlan: string
+    architecture: string
+    slides: string
+    visualDirection: string
+    dataDiagramming: string
+    assetPlan: string
+  }
+  reviewerAudit: PresentationV2ReviewerAudit
+  reason: string
+}): PresentationV2Deck {
+  const briefing = args.input.presentationV2Briefing
+  const narrative = parseJsonObject(args.parts.narrativePlan)
+  const architecture = parseJsonObject(args.parts.architecture)
+  const slidesPayload = parseJsonObject(args.parts.slides)
+  const visual = parseJsonObject(args.parts.visualDirection)
+  const dataDiagramming = parseJsonObject(args.parts.dataDiagramming)
+  const assetPlan = parseJsonObject(args.parts.assetPlan)
+
+  const architectureSlides = indexSlidePayloadsByNumber(toRecordArray(architecture.slides))
+  const writerSlides = indexSlidePayloadsByNumber(toRecordArray(slidesPayload.slides))
+  const visualSlides = indexSlidePayloadsByNumber(toRecordArray(visual.slides))
+  const dataSlides = indexSlidePayloadsByNumber(toRecordArray(dataDiagramming.slides))
+  const assetSlides = indexSlidePayloadsByNumber(toRecordArray(assetPlan.slides))
+  const deckLevelAssetsRaw = [
+    ...toRecordArray(dataDiagramming.assets),
+    ...toRecordArray(assetPlan.assets),
+  ]
+
+  const slideNumbers = new Set<number>()
+  for (const map of [architectureSlides, writerSlides, visualSlides, dataSlides, assetSlides]) {
+    for (const key of map.keys()) slideNumbers.add(key)
+  }
+  const requestedSlideCount = toPositiveNumber(briefing?.slideCount) || toPositiveNumber(narrative.slideCount) || 1
+  if (slideNumbers.size === 0) {
+    for (let index = 1; index <= requestedSlideCount; index += 1) slideNumbers.add(index)
+  }
+  const orderedSlideNumbers = Array.from(slideNumbers).sort((left, right) => left - right)
+
+  const slides = orderedSlideNumbers.map((number) => {
+    const architectureSlide = architectureSlides.get(number) || {}
+    const writerSlide = writerSlides.get(number) || {}
+    const visualSlide = visualSlides.get(number) || {}
+    const dataSlide = dataSlides.get(number) || {}
+    const assetSlide = assetSlides.get(number) || {}
+    const slideAssets = [
+      ...toRecordArray(writerSlide.assets),
+      ...toRecordArray(dataSlide.assets),
+      ...toRecordArray(assetSlide.assets),
+      ...deckLevelAssetsRaw.filter((asset) => {
+        const assetSlideNumber = Number(asset.slideNumber ?? asset.slide_number ?? asset.number)
+        return assetSlideNumber === number || String(asset.id ?? '').startsWith(`slide-${number}-`)
+      }),
+    ]
+      .map((asset, index) => normalizeAssetPatch(asset, number, index))
+      .filter((asset): asset is PresentationV2SlideAsset => Boolean(asset))
+
+    return {
+      id: String(writerSlide.id ?? `slide-${number}`),
+      number,
+      sectionId: toOptionalTrimmedString(writerSlide.sectionId ?? writerSlide.section_id ?? architectureSlide.sectionId ?? architectureSlide.section_id),
+      title: String(writerSlide.title ?? architectureSlide.title ?? `Slide ${number}`),
+      purpose: toOptionalTrimmedString(writerSlide.purpose ?? architectureSlide.purpose),
+      layout: String(writerSlide.layout ?? visualSlide.layout ?? architectureSlide.recommendedLayout ?? architectureSlide.recommended_layout ?? 'default'),
+      bullets: toTrimmedStringArray(writerSlide.bullets).slice(0, 5),
+      speakerNotes: String(writerSlide.speakerNotes ?? writerSlide.speaker_notes ?? writerSlide.notes ?? ''),
+      transition: toOptionalTrimmedString(writerSlide.transition ?? architectureSlide.transition),
+      visualBrief: toOptionalTrimmedString(writerSlide.visualBrief ?? writerSlide.visual_brief ?? visualSlide.visualBrief ?? visualSlide.visual_brief),
+      designNotes: dedupeStrings([
+        ...toTrimmedStringArray(writerSlide.designNotes ?? writerSlide.design_notes),
+        ...toTrimmedStringArray(visualSlide.designNotes ?? visualSlide.design_notes),
+      ]),
+      chartSpec: typeof (dataSlide.chartSpec ?? dataSlide.chart_spec) === 'object' && (dataSlide.chartSpec ?? dataSlide.chart_spec) !== null
+        ? (dataSlide.chartSpec ?? dataSlide.chart_spec) as Record<string, unknown>
+        : undefined,
+      assets: slideAssets,
+    }
+  })
+
+  let sections = toRecordArray(narrative.sections).map((section, index) => {
+    const id = String(section.id ?? `section-${index + 1}`)
+    const explicitSlideNumbers = Array.isArray(section.slideNumbers ?? section.slide_numbers)
+      ? ((section.slideNumbers ?? section.slide_numbers) as unknown[]).map(Number).filter(Number.isFinite)
+      : []
+    const inferredSlideNumbers = slides.filter(slide => slide.sectionId === id).map(slide => slide.number)
+    return {
+      id,
+      title: String(section.title ?? `Seção ${index + 1}`),
+      purpose: String(section.purpose ?? ''),
+      slideNumbers: explicitSlideNumbers.length > 0 ? explicitSlideNumbers : inferredSlideNumbers,
+    }
+  }).filter(section => section.slideNumbers.length > 0)
+
+  if (sections.length === 0) {
+    const grouped = new Map<string, { id: string; title: string; purpose: string; slideNumbers: number[] }>()
+    for (const slide of slides) {
+      const id = slide.sectionId || 'section-1'
+      const current = grouped.get(id) || {
+        id,
+        title: id === 'section-1' ? 'Narrativa principal' : id,
+        purpose: slide.purpose || '',
+        slideNumbers: [],
+      }
+      current.slideNumbers.push(slide.number)
+      if (!current.purpose && slide.purpose) current.purpose = slide.purpose
+      grouped.set(id, current)
+    }
+    sections = Array.from(grouped.values())
+  }
+
+  if (sections.length === 0) {
+    sections = [{
+      id: 'section-1',
+      title: 'Narrativa principal',
+      purpose: String(narrative.narrativeArc ?? 'Conduzir a decisão principal da apresentação.'),
+      slideNumbers: slides.map(slide => slide.number),
+    }]
+  }
+
+  for (const slide of slides) {
+    if (slide.sectionId) continue
+    const section = sections.find(entry => entry.slideNumbers.includes(slide.number)) || sections[0]
+    slide.sectionId = section?.id
+  }
+
+  const themeRaw = typeof visual.theme === 'object' && visual.theme !== null
+    ? visual.theme as Record<string, unknown>
+    : {}
+  const extraDeckAssets = deckLevelAssetsRaw
+    .map((asset, index) => normalizeDeckLevelAsset(asset, index))
+    .filter((asset): asset is PresentationV2SlideAsset => Boolean(asset))
+
+  const deck: PresentationV2Deck = {
+    schemaVersion: 'presentation_v2.1',
+    title: String((slidesPayload.title ?? narrative.title ?? args.input.topic) || 'Apresentação v2'),
+    subtitle: toOptionalTrimmedString(slidesPayload.subtitle ?? narrative.subtitle),
+    generationSpec: {
+      request: [args.input.topic, args.input.description, args.input.customInstructions].filter(Boolean).join(' | ') || args.input.topic,
+      objective: briefing?.objective || toOptionalTrimmedString(narrative.objective),
+      audience: briefing?.audience || toOptionalTrimmedString(narrative.audience),
+      slideCount: slides.length,
+      depth: briefing?.depth || toOptionalTrimmedString(narrative.depth) || 'profunda',
+      durationMinutes: briefing?.durationMinutes || toPositiveNumber(narrative.durationMinutes),
+      language: 'pt-BR',
+      tone: briefing?.tone,
+      visualStyle: briefing?.visualStyle,
+      outputFormat: 'pptx',
+      multimodal: briefing?.multimodal,
+      constraints: dedupeStrings(splitBriefingLines(briefing?.constraints)),
+      sourcePriority: dedupeStrings(splitBriefingLines(briefing?.sourcePriority)),
+    },
+    outline: {
+      narrativeArc: String(narrative.narrativeArc ?? narrative.narrative_arc ?? 'Começo, desenvolvimento e fechamento progressivos.'),
+      sections,
+    },
+    theme: {
+      name: String(themeRaw.name ?? 'Lexio Presentation v2'),
+      mood: toOptionalTrimmedString(themeRaw.mood),
+      palette: toTrimmedStringArray(themeRaw.palette),
+      fontPairing: typeof themeRaw.fontPairing === 'object' && themeRaw.fontPairing !== null
+        ? themeRaw.fontPairing as PresentationV2Deck['theme']['fontPairing']
+        : undefined,
+      layoutPrinciples: toTrimmedStringArray(themeRaw.layoutPrinciples ?? themeRaw.layout_principles),
+      accessibilityNotes: toTrimmedStringArray(themeRaw.accessibilityNotes ?? themeRaw.accessibility_notes),
+      designSystem: typeof (themeRaw.designSystem ?? themeRaw.design_system) === 'object' && (themeRaw.designSystem ?? themeRaw.design_system) !== null
+        ? (themeRaw.designSystem ?? themeRaw.design_system) as PresentationV2Deck['theme']['designSystem']
+        : undefined,
+    },
+    slides,
+    assets: mergeSlideAssets(slides.flatMap(slide => slide.assets || []), extraDeckAssets),
+    quality: {
+      score: args.reviewerAudit.quality.score,
+      strengths: args.reviewerAudit.quality.strengths,
+      warnings: dedupeStrings([
+        ...args.reviewerAudit.quality.warnings,
+        'Manifesto reconstruído localmente a partir das saídas intermediárias do pipeline.',
+      ]),
+      accessibility: args.reviewerAudit.quality.accessibility,
+      legalAccuracyNotes: args.reviewerAudit.quality.legalAccuracyNotes,
+    },
+    exportHints: {
+      aspectRatio: '16:9',
+      preferredExport: 'pptx',
+      useRenderedSlideFallback: true,
+      includeSpeakerNotes: true,
+    },
+    revisionHistory: [{
+      at: new Date().toISOString(),
+      agent: 'presentation_v2_packager',
+      summary: `Manifesto reconstruído localmente após falha do empacotador: ${args.reason}`,
+      repairKind: 'manifest_recovery',
+    }],
+  }
+
+  rebuildDeckAssets(deck)
+  return deck
+}
+
+function buildPackagerRepairPrompt(args: {
+  input: StudioPipelineInput
+  parts: {
+    contextAudit: string
+    narrativePlan: string
+    research: string
+    architecture: string
+    slides: string
+    visualDirection: string
+    dataDiagramming: string
+    assetPlan: string
+    review: string
+  }
+  invalidManifest: string
+  reason: string
+  orchestratorDirective?: string
+}): { system: string; user: string } {
+  return {
+    system: [
+      'Você é o Empacotador do Gerador de Apresentação v2 em modo de recuperação.',
+      'Corrija o manifesto inválido e devolva SOMENTE JSON válido no schema PresentationV2Deck.',
+      'Não explique nada fora do JSON. Não perca bullets, speakerNotes, sections, assets nem quality.',
+      'Se algum campo estiver faltando, sintetize o mínimo necessário a partir das partes fornecidas para manter o schema íntegro.',
+    ].join(' '),
+    user: joinPromptSections([
+      buildInputBrief(args.input),
+      `Falha detectada no manifesto anterior: ${args.reason}`,
+      'Manifesto inválido retornado pelo packager:',
+      args.invalidManifest,
+      'Auditoria de contexto:',
+      args.parts.contextAudit,
+      'Plano narrativo:',
+      args.parts.narrativePlan,
+      'Pesquisa:',
+      args.parts.research,
+      'Arquitetura de conteúdo:',
+      args.parts.architecture,
+      'Slides redigidos:',
+      args.parts.slides,
+      'Direção visual:',
+      args.parts.visualDirection,
+      'Dados e diagramas:',
+      args.parts.dataDiagramming,
+      'Plano de assets:',
+      args.parts.assetPlan,
+      'Revisão:',
+      args.parts.review,
+      args.orchestratorDirective ? `Diretrizes do orquestrador:\n${args.orchestratorDirective}` : undefined,
+    ]),
+  }
+}
+
 function parseDeckOrThrow(raw: string): PresentationV2Deck {
   const parsed = parseArtifactContent('apresentacao_v2', extractJsonPayload(raw))
   if (parsed.kind !== 'presentation_v2') {
@@ -2797,6 +3338,37 @@ function applyQualitySnapshotToDeck(args: {
   return deck
 }
 
+function buildPresentationV2ProgressStep(state: PresentationV2RuntimeProgressState): number {
+  const provisionalStep = state.completedAgentKeys.size + (state.activeAgentKeys.size > 0 ? 1 : 0)
+  return Math.max(0, Math.min(state.totalSteps, provisionalStep))
+}
+
+function buildPresentationV2ProgressPercent(state: PresentationV2RuntimeProgressState): number {
+  const completed = state.completedAgentKeys.size
+  const activeBonus = state.activeAgentKeys.size > 0 ? 0.5 : 0
+  const percent = Math.round(((completed + activeBonus) / Math.max(1, state.totalSteps)) * 100)
+  return Math.max(0, Math.min(99, percent))
+}
+
+function emitPresentationV2Progress(
+  state: PresentationV2RuntimeProgressState | undefined,
+  phase: string,
+  meta?: StudioProgressMeta,
+): void {
+  if (!state?.onProgress) return
+  state.onProgress(
+    buildPresentationV2ProgressStep(state),
+    state.totalSteps,
+    phase,
+    {
+      ...meta,
+      activeAgentKeys: Array.from(state.activeAgentKeys),
+      completedAgentKeys: Array.from(state.completedAgentKeys),
+      progressPercent: buildPresentationV2ProgressPercent(state),
+    },
+  )
+}
+
 async function runAgentStep(args: {
   apiKey: string
   models: Record<string, string>
@@ -2808,34 +3380,84 @@ async function runAgentStep(args: {
   temperature: number
   step: number
   phase: string
+  progressState?: PresentationV2RuntimeProgressState
+  progressKey?: string
+  emitStartProgress?: boolean
   onProgress?: StudioProgressCallback
   signal?: AbortSignal
 }): Promise<{ content: string; execution: StudioStepExecution }> {
-  throwIfAborted(args.signal)
-  args.onProgress?.(args.step, PRESENTATION_V2_TOTAL_STEPS, args.phase, { executionState: 'running' })
-  const model = args.models[args.agentKey]
-  const result = await callLLMWithFallback(
-    args.apiKey,
-    args.prompt.system,
-    args.prompt.user,
-    model,
-    args.resolveFallback(args.agentKey, model),
-    args.maxTokens,
-    args.temperature,
-    { signal: args.signal },
-  )
-  args.onProgress?.(args.step, PRESENTATION_V2_TOTAL_STEPS, `${args.phase} concluído.`, buildProgressMeta(result))
-  return {
-    content: result.content,
-    execution: toExecution(args.agentKey, args.agentLabel, result),
+  const progressKey = args.progressKey || args.agentKey
+  if (args.progressState) {
+    args.progressState.activeAgentKeys.add(progressKey)
+    if (args.emitStartProgress !== false) {
+      emitPresentationV2Progress(args.progressState, args.phase, { executionState: 'running' })
+    }
+  } else {
+    args.onProgress?.(args.step, PRESENTATION_V2_TOTAL_STEPS, args.phase, { executionState: 'running' })
   }
+
+  throwIfAborted(args.signal)
+  const model = args.models[args.agentKey]
+  try {
+    const result = await callLLMWithFallback(
+      args.apiKey,
+      args.prompt.system,
+      args.prompt.user,
+      model,
+      args.resolveFallback(args.agentKey, model),
+      args.maxTokens,
+      args.temperature,
+      { signal: args.signal },
+    )
+    if (args.progressState) {
+      args.progressState.activeAgentKeys.delete(progressKey)
+      args.progressState.completedAgentKeys.add(progressKey)
+      emitPresentationV2Progress(args.progressState, `${args.phase} concluído.`, buildProgressMeta(result))
+    } else {
+      args.onProgress?.(args.step, PRESENTATION_V2_TOTAL_STEPS, `${args.phase} concluído.`, buildProgressMeta(result))
+    }
+
+    return {
+      content: result.content,
+      execution: toExecution(args.agentKey, args.agentLabel, result),
+    }
+  } catch (error) {
+    if (args.progressState) {
+      args.progressState.activeAgentKeys.delete(progressKey)
+    }
+    throw error
+  }
+}
+
+async function runPresentationV2Wave(args: {
+  wave: PresentationV2OrchestratorWave
+  progressState: PresentationV2RuntimeProgressState
+  tasks: Array<Omit<Parameters<typeof runAgentStep>[0], 'step' | 'onProgress' | 'progressState' | 'emitStartProgress'>>
+}): Promise<Array<{ content: string; execution: StudioStepExecution }>> {
+  for (const task of args.tasks) {
+    args.progressState.activeAgentKeys.add(task.progressKey || task.agentKey)
+  }
+
+  emitPresentationV2Progress(args.progressState, args.wave.objective, {
+    executionState: 'running',
+    stageMeta: args.tasks.length > 1
+      ? `Paralelo: ${args.tasks.map(task => task.agentLabel).join(' • ')}`
+      : args.tasks[0]?.agentLabel,
+  })
+
+  return Promise.all(args.tasks.map(task => runAgentStep({
+    ...task,
+    step: buildPresentationV2ProgressStep(args.progressState),
+    progressState: args.progressState,
+    emitStartProgress: false,
+  })))
 }
 
 export async function draftPresentationV2ClarifyingQuestions(
   input: StudioPipelineInput,
   signal?: AbortSignal,
 ): Promise<PresentationV2ClarificationResult> {
-  const models = await loadPresentationV2PipelineModels()
+  const models = await loadPresentationV2PipelineModels(input.uid)
   await validateScopedAgentModels('presentation_v2_pipeline_models', omitInactiveMediaModels(models))
   const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
   const resolveFallback = buildPipelineFallbackResolver(PRESENTATION_V2_PIPELINE_AGENT_DEFS, fallbackConfig)
@@ -2881,206 +3503,308 @@ export async function runPresentationGenerationPipelineV2(
   onProgress?: StudioProgressCallback,
   signal?: AbortSignal,
 ): Promise<PresentationV2PipelineResult> {
-  const models = await loadPresentationV2PipelineModels()
-  await validateScopedAgentModels('presentation_v2_pipeline_models', omitInactiveMediaModels(models))
+  const models = await loadPresentationV2PipelineModels(input.uid)
+  const orchestratorModel = resolveOrchestratorModel(models, 'presentation_v2_orchestrator', ['presentation_v2_narrative_planner', 'presentation_v2_reviewer'])
+  const runtimeModels: Record<string, string> = {
+    ...models,
+    presentation_v2_orchestrator: orchestratorModel || models.presentation_v2_orchestrator,
+  }
+  await validateScopedAgentModels('presentation_v2_pipeline_models', omitInactiveMediaModels(runtimeModels))
   const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
   const resolveFallback = buildPipelineFallbackResolver(PRESENTATION_V2_PIPELINE_AGENT_DEFS, fallbackConfig)
 
-  const missing = PRESENTATION_V2_TEXT_AGENT_KEYS.filter(key => !models[key])
+  const missing = PRESENTATION_V2_TEXT_AGENT_KEYS.filter(key => !runtimeModels[key])
   if (missing.length > 0) {
     throw new Error(`Agente(s) sem modelo no Gerador de Apresentação v2: ${missing.join(', ')}`)
   }
 
   const executions: StudioStepExecution[] = []
-  const orchestratorStartedAt = Date.now()
-  const orchestratorModel = resolveOrchestratorModel(models, 'presentation_v2_orchestrator', ['presentation_v2_narrative_planner', 'presentation_v2_reviewer'])
-  executions.push({
-    ...createOrchestratorUsageExecution({
-      sourceType: 'presentation_pipeline_v2',
-      sourceId: `presentation-v2-${input.topic.trim().slice(0, 80) || 'sem-tema'}`,
-      phase: 'presentation_v2_orchestrator',
-      agentName: 'Orquestrador v2',
-      model: orchestratorModel,
-      startedAt: orchestratorStartedAt,
-    }),
-    model: orchestratorModel || 'orchestrator/unconfigured',
-    execution_state: 'completed',
-    retry_count: 0,
-    used_fallback: false,
-  })
+  const progressState: PresentationV2RuntimeProgressState = {
+    activeAgentKeys: new Set<string>(),
+    completedAgentKeys: new Set<string>(),
+    totalSteps: PRESENTATION_V2_TOTAL_STEPS,
+    onProgress,
+  }
 
-  const contextAudit = await runAgentStep({
+  const orchestrator = await runAgentStep({
     apiKey: input.apiKey,
-    models,
+    models: runtimeModels,
     resolveFallback,
-    agentKey: 'presentation_v2_context_auditor',
-    agentLabel: 'Auditor de Contexto',
-    prompt: buildContextAuditPrompt(input),
-    maxTokens: 3000,
-    temperature: 0.15,
+    agentKey: 'presentation_v2_orchestrator',
+    agentLabel: 'Orquestrador v2',
+    prompt: buildOrchestratorPrompt(input),
+    maxTokens: 3200,
+    temperature: 0.12,
     step: 1,
-    phase: 'Auditando contexto, fontes e lacunas',
+    phase: 'Orquestrador definindo ondas paralelas e controles da produção',
     onProgress,
     signal,
+    progressState,
+  })
+  executions.push(orchestrator.execution)
+  const orchestratorPlan = parsePresentationV2OrchestratorPlan(orchestrator.content)
+  const [contextWave, framingWave, architectureWave, compositionWave, assetsWave, reviewWave, packageWave] = orchestratorPlan.waves
+
+  const [contextAudit] = await runPresentationV2Wave({
+    wave: contextWave,
+    progressState,
+    tasks: [{
+      apiKey: input.apiKey,
+      models: runtimeModels,
+      resolveFallback,
+      agentKey: 'presentation_v2_context_auditor',
+      agentLabel: 'Auditor de Contexto',
+      prompt: buildContextAuditPrompt(input, buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_context_auditor')),
+      maxTokens: 3000,
+      temperature: 0.15,
+      phase: 'Auditando contexto, fontes e lacunas',
+      signal,
+    }],
   })
   executions.push(contextAudit.execution)
 
-  const narrativePlan = await runAgentStep({
-    apiKey: input.apiKey,
-    models,
-    resolveFallback,
-    agentKey: 'presentation_v2_narrative_planner',
-    agentLabel: 'Planejador Narrativo',
-    prompt: buildNarrativePlanPrompt(input, contextAudit.content),
-    maxTokens: 4200,
-    temperature: 0.2,
-    step: 2,
-    phase: 'Planejando começo, meio e fim',
-    onProgress,
-    signal,
+  const [narrativePlan, research] = await runPresentationV2Wave({
+    wave: framingWave,
+    progressState,
+    tasks: [
+      {
+        apiKey: input.apiKey,
+        models: runtimeModels,
+        resolveFallback,
+        agentKey: 'presentation_v2_narrative_planner',
+        agentLabel: 'Planejador Narrativo',
+        prompt: buildNarrativePlanPrompt(input, contextAudit.content, buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_narrative_planner')),
+        maxTokens: 4200,
+        temperature: 0.2,
+        phase: 'Planejando começo, meio e fim',
+        signal,
+      },
+      {
+        apiKey: input.apiKey,
+        models: runtimeModels,
+        resolveFallback,
+        agentKey: 'presentation_v2_researcher',
+        agentLabel: 'Pesquisador',
+        prompt: buildResearchPrompt(input, contextAudit.content, buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_researcher')),
+        maxTokens: 5000,
+        temperature: 0.15,
+        phase: 'Selecionando evidências e mensagens-chave',
+        signal,
+      },
+    ],
   })
-  executions.push(narrativePlan.execution)
+  executions.push(narrativePlan.execution, research.execution)
 
-  const research = await runAgentStep({
-    apiKey: input.apiKey,
-    models,
-    resolveFallback,
-    agentKey: 'presentation_v2_researcher',
-    agentLabel: 'Pesquisador',
-    prompt: buildResearchPrompt(input, contextAudit.content, narrativePlan.content),
-    maxTokens: 5000,
-    temperature: 0.15,
-    step: 3,
-    phase: 'Selecionando evidências e mensagens-chave',
-    onProgress,
-    signal,
-  })
-  executions.push(research.execution)
-
-  const architecture = await runAgentStep({
-    apiKey: input.apiKey,
-    models,
-    resolveFallback,
-    agentKey: 'presentation_v2_content_architect',
-    agentLabel: 'Arquiteto de Conteúdo',
-    prompt: buildContentArchitecturePrompt(narrativePlan.content, research.content),
-    maxTokens: 5200,
-    temperature: 0.2,
-    step: 4,
-    phase: 'Arquitetando conteúdo slide a slide',
-    onProgress,
-    signal,
+  const [architecture] = await runPresentationV2Wave({
+    wave: architectureWave,
+    progressState,
+    tasks: [{
+      apiKey: input.apiKey,
+      models: runtimeModels,
+      resolveFallback,
+      agentKey: 'presentation_v2_content_architect',
+      agentLabel: 'Arquiteto de Conteúdo',
+      prompt: buildContentArchitecturePrompt(
+        narrativePlan.content,
+        research.content,
+        buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_content_architect'),
+      ),
+      maxTokens: 5200,
+      temperature: 0.2,
+      phase: 'Arquitetando conteúdo slide a slide',
+      signal,
+    }],
   })
   executions.push(architecture.execution)
 
-  const slides = await runAgentStep({
-    apiKey: input.apiKey,
-    models,
-    resolveFallback,
-    agentKey: 'presentation_v2_slide_writer',
-    agentLabel: 'Redator de Slides',
-    prompt: buildSlideWriterPrompt(input, architecture.content, research.content),
-    maxTokens: 9000,
-    temperature: 0.25,
-    step: 5,
-    phase: 'Escrevendo slides e notas do apresentador',
-    onProgress,
-    signal,
+  const [slides, visualDirection, dataDiagramming] = await runPresentationV2Wave({
+    wave: compositionWave,
+    progressState,
+    tasks: [
+      {
+        apiKey: input.apiKey,
+        models: runtimeModels,
+        resolveFallback,
+        agentKey: 'presentation_v2_slide_writer',
+        agentLabel: 'Redator de Slides',
+        prompt: buildSlideWriterPrompt(
+          input,
+          architecture.content,
+          research.content,
+          buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_slide_writer'),
+        ),
+        maxTokens: 9000,
+        temperature: 0.25,
+        phase: 'Escrevendo slides e notas do apresentador',
+        signal,
+      },
+      {
+        apiKey: input.apiKey,
+        models: runtimeModels,
+        resolveFallback,
+        agentKey: 'presentation_v2_visual_director',
+        agentLabel: 'Diretor Visual',
+        prompt: buildVisualDirectorPrompt(
+          input,
+          narrativePlan.content,
+          architecture.content,
+          research.content,
+          buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_visual_director'),
+        ),
+        maxTokens: 7000,
+        temperature: 0.22,
+        phase: 'Definindo sistema visual e layouts',
+        signal,
+      },
+      {
+        apiKey: input.apiKey,
+        models: runtimeModels,
+        resolveFallback,
+        agentKey: 'presentation_v2_data_diagrammer',
+        agentLabel: 'Dados e Diagramas',
+        prompt: buildDataDiagrammerPrompt(
+          architecture.content,
+          research.content,
+          buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_data_diagrammer'),
+        ),
+        maxTokens: 5800,
+        temperature: 0.18,
+        phase: 'Especificando gráficos, diagramas e visualizações',
+        signal,
+      },
+    ],
   })
-  executions.push(slides.execution)
+  executions.push(slides.execution, visualDirection.execution, dataDiagramming.execution)
 
-  const visualDirection = await runAgentStep({
-    apiKey: input.apiKey,
-    models,
-    resolveFallback,
-    agentKey: 'presentation_v2_visual_director',
-    agentLabel: 'Diretor Visual',
-    prompt: buildVisualDirectorPrompt(slides.content),
-    maxTokens: 7000,
-    temperature: 0.25,
-    step: 6,
-    phase: 'Definindo sistema visual e layouts',
-    onProgress,
-    signal,
-  })
-  executions.push(visualDirection.execution)
-
-  const dataDiagramming = await runAgentStep({
-    apiKey: input.apiKey,
-    models,
-    resolveFallback,
-    agentKey: 'presentation_v2_data_diagrammer',
-    agentLabel: 'Dados e Diagramas',
-    prompt: buildDataDiagrammerPrompt(slides.content, visualDirection.content, research.content),
-    maxTokens: 5800,
-    temperature: 0.18,
-    step: 7,
-    phase: 'Especificando gráficos, diagramas e visualizações',
-    onProgress,
-    signal,
-  })
-  executions.push(dataDiagramming.execution)
-
-  const assetPlan = await runAgentStep({
-    apiKey: input.apiKey,
-    models,
-    resolveFallback,
-    agentKey: 'presentation_v2_asset_planner',
-    agentLabel: 'Planejador de Assets',
-    prompt: buildAssetPlannerPrompt(slides.content, visualDirection.content, dataDiagramming.content),
-    maxTokens: 7000,
-    temperature: 0.2,
-    step: 8,
-    phase: 'Planejando imagens, áudio, vídeo e diagramas',
-    onProgress,
-    signal,
+  const [assetPlan] = await runPresentationV2Wave({
+    wave: assetsWave,
+    progressState,
+    tasks: [{
+      apiKey: input.apiKey,
+      models: runtimeModels,
+      resolveFallback,
+      agentKey: 'presentation_v2_asset_planner',
+      agentLabel: 'Planejador de Assets',
+      prompt: buildAssetPlannerPrompt(
+        slides.content,
+        visualDirection.content,
+        dataDiagramming.content,
+        buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_asset_planner'),
+      ),
+      maxTokens: 7000,
+      temperature: 0.2,
+      phase: 'Planejando imagens, áudio, vídeo e diagramas',
+      signal,
+    }],
   })
   executions.push(assetPlan.execution)
 
-  const review = await runAgentStep({
-    apiKey: input.apiKey,
-    models,
-    resolveFallback,
-    agentKey: 'presentation_v2_reviewer',
-    agentLabel: 'Revisor Multimodal',
-    prompt: buildReviewerPrompt(input, [slides.content, visualDirection.content, dataDiagramming.content, assetPlan.content].join('\n\n')),
-    maxTokens: 5000,
-    temperature: 0.15,
-    step: 9,
-    phase: 'Auditando qualidade jurídica, visual e multimodal',
-    onProgress,
-    signal,
+  const [review] = await runPresentationV2Wave({
+    wave: reviewWave,
+    progressState,
+    tasks: [{
+      apiKey: input.apiKey,
+      models: runtimeModels,
+      resolveFallback,
+      agentKey: 'presentation_v2_reviewer',
+      agentLabel: 'Revisor Multimodal',
+      prompt: buildReviewerPrompt(
+        input,
+        [slides.content, visualDirection.content, dataDiagramming.content, assetPlan.content].join('\n\n'),
+        buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_reviewer'),
+      ),
+      maxTokens: 5000,
+      temperature: 0.15,
+      phase: 'Auditando qualidade jurídica, visual e multimodal',
+      signal,
+    }],
   })
   executions.push(review.execution)
 
-  const packager = await runAgentStep({
-    apiKey: input.apiKey,
-    models,
-    resolveFallback,
-    agentKey: 'presentation_v2_packager',
-    agentLabel: 'Empacotador',
-    prompt: buildPackagerPrompt(input, {
-      contextAudit: contextAudit.content,
-      narrativePlan: narrativePlan.content,
-      research: research.content,
-      architecture: architecture.content,
-      slides: slides.content,
-      visualDirection: visualDirection.content,
-      dataDiagramming: dataDiagramming.content,
-      assetPlan: assetPlan.content,
-      review: review.content,
-    }),
-    maxTokens: 11000,
-    temperature: 0.1,
-    step: 10,
-    phase: 'Empacotando manifesto final da apresentação v2',
-    onProgress,
-    signal,
+  const packagerParts = {
+    contextAudit: contextAudit.content,
+    narrativePlan: narrativePlan.content,
+    research: research.content,
+    architecture: architecture.content,
+    slides: slides.content,
+    visualDirection: visualDirection.content,
+    dataDiagramming: dataDiagramming.content,
+    assetPlan: assetPlan.content,
+    review: review.content,
+  }
+
+  const [packager] = await runPresentationV2Wave({
+    wave: packageWave,
+    progressState,
+    tasks: [{
+      apiKey: input.apiKey,
+      models: runtimeModels,
+      resolveFallback,
+      agentKey: 'presentation_v2_packager',
+      agentLabel: 'Empacotador',
+      prompt: buildPackagerPrompt(
+        input,
+        packagerParts,
+        buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_packager'),
+      ),
+      maxTokens: 11000,
+      temperature: 0.1,
+      phase: 'Empacotando manifesto final da apresentação v2',
+      signal,
+    }],
   })
   executions.push(packager.execution)
 
   const reviewerAudit = parseReviewerAudit(review.content)
-  const draftDeck = parseDeckOrThrow(packager.content)
+  let manifestRecovery: 'repair' | 'local_fallback' | null = null
+  let draftDeck: PresentationV2Deck
+  try {
+    draftDeck = parseDeckOrThrow(packager.content)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'manifesto_invalido'
+    try {
+      const packagerRepair = await runAgentStep({
+        apiKey: input.apiKey,
+        models: runtimeModels,
+        resolveFallback,
+        agentKey: 'presentation_v2_packager',
+        agentLabel: 'Empacotador (reparo)',
+        prompt: buildPackagerRepairPrompt({
+          input,
+          parts: packagerParts,
+          invalidManifest: packager.content,
+          reason,
+          orchestratorDirective: buildPresentationV2AgentDirective(orchestratorPlan, 'presentation_v2_packager'),
+        }),
+        maxTokens: 11000,
+        temperature: 0.05,
+        step: PRESENTATION_V2_TOTAL_STEPS,
+        phase: 'Reparando manifesto final da apresentação v2',
+        onProgress,
+        signal,
+        progressState,
+        progressKey: 'presentation_v2_packager',
+      })
+      executions.push(packagerRepair.execution)
+      draftDeck = parseDeckOrThrow(packagerRepair.content)
+      manifestRecovery = 'repair'
+    } catch {
+      draftDeck = buildPresentationV2FallbackDeck({
+        input,
+        parts: {
+          narrativePlan: narrativePlan.content,
+          architecture: architecture.content,
+          slides: slides.content,
+          visualDirection: visualDirection.content,
+          dataDiagramming: dataDiagramming.content,
+          assetPlan: assetPlan.content,
+        },
+        reviewerAudit,
+        reason,
+      })
+      manifestRecovery = 'local_fallback'
+    }
+  }
   const draftRubric = evaluatePresentationV2Quality(draftDeck)
   const repairTargets = buildRepairTargets(draftRubric, reviewerAudit)
   let finalDeck = draftDeck
@@ -3093,26 +3817,28 @@ export async function runPresentationGenerationPipelineV2(
     for (const target of repairTargets) {
       const slide = repairedDeck.slides.find(item => item.number === target.slideNumber)
       if (!slide) continue
-      for (const agentKey of target.recommendedAgents) {
-        const repair = await runRepairAgentStep({
-          apiKey: input.apiKey,
-          models,
-          resolveFallback,
+      const repairResults = await Promise.all(target.recommendedAgents.map(agentKey => runRepairAgentStep({
+        apiKey: input.apiKey,
+        models: runtimeModels,
+        resolveFallback,
+        agentKey,
+        agentLabel: buildRepairAgentLabel(agentKey),
+        prompt: buildRepairPrompt({
           agentKey,
-          agentLabel: buildRepairAgentLabel(agentKey),
-          prompt: buildRepairPrompt({
-            agentKey,
-            input,
-            deck: repairedDeck,
-            slide,
-            target,
-            narrativePlan: narrativePlan.content,
-            research: research.content,
-          }),
-          slideNumber: target.slideNumber,
-          onProgress,
-          signal,
-        })
+          input,
+          deck: repairedDeck,
+          slide,
+          target,
+          narrativePlan: narrativePlan.content,
+          research: research.content,
+        }),
+        slideNumber: target.slideNumber,
+        onProgress,
+        signal,
+      })))
+
+      for (const [index, repair] of repairResults.entries()) {
+        const agentKey = target.recommendedAgents[index]
         executions.push(repair.execution)
         const patch = parseSlideRepairPatch(repair.content, target.slideNumber)
         if (patch && applySlideRepairPatch(repairedDeck, target.slideNumber, patch)) {
@@ -3138,14 +3864,30 @@ export async function runPresentationGenerationPipelineV2(
     }
   }
 
-  const finalContent = JSON.stringify(applyQualitySnapshotToDeck({
+  const finalDeckWithQuality = applyQualitySnapshotToDeck({
     deck: finalDeck,
     rubric: finalRubric,
     reviewerAudit,
     appliedRepairs: repairOutcome === 'applied' ? appliedRepairs : [],
     repairTargets,
     repairOutcome,
-  }), null, 2)
+  })
+
+  if (manifestRecovery) {
+    finalDeckWithQuality.revisionHistory = [
+      ...(finalDeckWithQuality.revisionHistory || []),
+      {
+        at: new Date().toISOString(),
+        agent: 'presentation_v2_packager',
+        summary: manifestRecovery === 'repair'
+          ? 'Manifesto final recuperado por reparo explícito do empacotador.'
+          : 'Manifesto final reconstruído localmente a partir das saídas intermediárias.',
+        repairKind: 'manifest_recovery',
+      },
+    ]
+  }
+
+  const finalContent = JSON.stringify(finalDeckWithQuality, null, 2)
 
   return {
     content: finalContent,
