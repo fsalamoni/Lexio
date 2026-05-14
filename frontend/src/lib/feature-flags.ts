@@ -120,6 +120,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_THESIS_PREFETCH',
     devToggleable: true,
   },
+  {
+    key: 'FF_PRESENTATION_V2_ENABLED',
+    label: 'Gerador de Apresentação v2',
+    description: 'Habilita o novo gerador multimodal de apresentações no caderno de pesquisa',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_PRESENTATION_V2_ENABLED',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────

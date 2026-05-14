@@ -15,10 +15,14 @@ vi.mock('./firestore-service', () => ({
 }))
 
 import {
+  AVAILABLE_MODELS,
   DEPRECATED_MODEL_REWRITES,
+  InvalidSavedModelSelectionError,
   loadAgentModels,
+  loadPresentationV2PipelineModels,
   ModelCapabilityMismatchError,
   ModelNotInUserCatalogError,
+  PRESENTATION_V2_PIPELINE_AGENT_DEFS,
   resolveFallbackModelsForCategory,
   rewriteDeprecatedModelId,
   saveAgentModels,
@@ -76,7 +80,7 @@ describe('model-config personal catalog enforcement', () => {
     saveUserSettingsMock.mockResolvedValue(undefined)
   })
 
-  it('ignores saved agent selections that are not in the user personal catalog', async () => {
+  it('rejects loading saved agent selections that are not in the user personal catalog', async () => {
     ensureUserSettingsMigratedMock.mockResolvedValue({
       model_catalog: personalCatalog,
       agent_models: {
@@ -85,10 +89,7 @@ describe('model-config personal catalog enforcement', () => {
       },
     })
 
-    const result = await loadAgentModels('user-1')
-
-    expect(result.triagem).toBe('')
-    expect(result.pesquisador).toBe('allowed/model')
+    await expect(loadAgentModels('user-1')).rejects.toBeInstanceOf(InvalidSavedModelSelectionError)
   })
 
   it('rejects saving an agent model that is outside the user personal catalog', async () => {
@@ -104,6 +105,30 @@ describe('model-config personal catalog enforcement', () => {
     await expect(
       validateScopedAgentModels('agent_models', { triagem: 'forbidden/model' }, 'user-1'),
     ).rejects.toBeInstanceOf(ModelNotInUserCatalogError)
+  })
+
+  it('rejects loading saved multimodal selections with incompatible capabilities', async () => {
+    ensureUserSettingsMigratedMock.mockResolvedValue({
+      model_catalog: [textOnlyModel],
+      presentation_v2_pipeline_models: {
+        presentation_v2_image_generator: 'allowed/model',
+      },
+    })
+
+    await expect(loadPresentationV2PipelineModels('user-1')).rejects.toBeInstanceOf(InvalidSavedModelSelectionError)
+  })
+
+  it('ignores stale saved model selections for provider-managed presentation v2 video generation', async () => {
+    ensureUserSettingsMigratedMock.mockResolvedValue({
+      model_catalog: [textOnlyModel],
+      presentation_v2_pipeline_models: {
+        presentation_v2_video_generator: 'allowed/model',
+      },
+    })
+
+    const result = await loadPresentationV2PipelineModels('user-1')
+
+    expect(result.presentation_v2_video_generator).toBe('')
   })
 })
 
@@ -275,5 +300,30 @@ describe('deprecated model ID rewrites', () => {
     )
 
     expect(fallback).toEqual(['google/gemini-2.5-flash-lite'])
+  })
+})
+
+describe('presentation v2 multimodal defaults', () => {
+  it('keeps image and audio defaults in the curated catalog with explicit capabilities', () => {
+    const multimodalDefaults = PRESENTATION_V2_PIPELINE_AGENT_DEFS.filter((agent) => (
+      Boolean(agent.defaultModel)
+      && (agent.requiredCapability === 'image' || agent.requiredCapability === 'audio')
+    ))
+
+    expect(multimodalDefaults.length).toBeGreaterThan(0)
+
+    for (const agent of multimodalDefaults) {
+      const catalogEntry = AVAILABLE_MODELS.find((model) => model.id === agent.defaultModel)
+      expect(catalogEntry, `${agent.key} default model missing from AVAILABLE_MODELS`).toBeDefined()
+      expect(catalogEntry?.capabilities, `${agent.key} default model should declare explicit capabilities`).toContain(agent.requiredCapability)
+    }
+  })
+
+  it('marks the video clip generator as provider-managed rather than model-configured', () => {
+    const videoGenerator = PRESENTATION_V2_PIPELINE_AGENT_DEFS.find((agent) => agent.key === 'presentation_v2_video_generator')
+
+    expect(videoGenerator).toBeDefined()
+    expect(videoGenerator?.configurationMode).toBe('external-provider')
+    expect(videoGenerator?.requiredCapability).toBeUndefined()
   })
 })

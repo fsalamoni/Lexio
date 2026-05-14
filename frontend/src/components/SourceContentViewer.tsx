@@ -872,12 +872,10 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
     [source],
   )
 
-  if (!source) return null
-
-  const isJurisprudencia = source.type === 'jurisprudencia'
+  const isJurisprudencia = source?.type === 'jurisprudencia'
   const jurisprudenciaResults = useMemo(
-    () => (isJurisprudencia ? parseJurisprudenceResults(source.results_raw) : []),
-    [isJurisprudencia, source.results_raw],
+    () => (isJurisprudencia ? parseJurisprudenceResults(source?.results_raw) : []),
+    [isJurisprudencia, source?.results_raw],
   )
   const hasSections = sections && sections.length > 0
   const charCount = plain.length
@@ -885,6 +883,8 @@ export default function SourceContentViewer({ source, onClose }: SourceContentVi
 
   // Choose panel title icon based on source type
   const icon = isJurisprudencia ? <Scale size={16} /> : hasSections ? <BookOpen size={16} /> : <FileText size={16} />
+
+  if (!source) return null
 
   return (
     <DraggablePanel

@@ -42,7 +42,29 @@ describe('model-catalog user persistence', () => {
     )
   })
 
-  it('returns the saved personal catalog without reseeding when already present', async () => {
+  it('seeds multimodal defaults with explicit capabilities for image and audio generation', async () => {
+    ensureUserSettingsMigratedMock.mockResolvedValue({})
+    saveUserSettingsMock.mockResolvedValue(undefined)
+
+    const result = await loadModelCatalog('user-1')
+
+    expect(result).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'google/gemini-2.5-flash-preview:image-output',
+        capabilities: ['image'],
+      }),
+      expect.objectContaining({
+        id: 'openai/tts-1-hd',
+        capabilities: ['audio'],
+      }),
+      expect.objectContaining({
+        id: 'openai/tts-1',
+        capabilities: ['audio'],
+      }),
+    ]))
+  })
+
+  it('preserves saved personal models and backfills required multimodal defaults when missing', async () => {
     ensureUserSettingsMigratedMock.mockResolvedValue({
       model_catalog: [
         {
@@ -62,8 +84,75 @@ describe('model-catalog user persistence', () => {
 
     const result = await loadModelCatalog('user-1')
 
-    expect(result).toHaveLength(1)
-    expect(result[0].id).toBe('custom/model')
+    expect(result).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'custom/model' }),
+      expect.objectContaining({ id: 'google/gemini-2.5-flash-preview:image-output', capabilities: ['image'] }),
+      expect.objectContaining({ id: 'openai/tts-1-hd', capabilities: ['audio'] }),
+    ]))
+    expect(saveUserSettingsMock).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({
+        model_catalog: expect.arrayContaining([
+          expect.objectContaining({ id: 'custom/model' }),
+          expect.objectContaining({ id: 'google/gemini-2.5-flash-preview:image-output' }),
+          expect.objectContaining({ id: 'openai/tts-1-hd' }),
+        ]),
+      }),
+    )
+  })
+
+  it('does not rewrite an existing saved catalog when required multimodal defaults are already present', async () => {
+    ensureUserSettingsMigratedMock.mockResolvedValue({
+      model_catalog: [
+        {
+          id: 'custom/model',
+          label: 'Custom Model',
+          provider: 'Custom',
+          tier: 'balanced',
+          description: 'Personalizado',
+          contextWindow: 123000,
+          inputCost: 1,
+          outputCost: 2,
+          isFree: false,
+          agentFit: { extraction: 6, synthesis: 7, reasoning: 8, writing: 7 },
+          capabilities: ['text'],
+        },
+        {
+          id: 'google/gemini-2.5-flash-preview:image-output',
+          label: 'Gemini 2.5 Flash Image',
+          provider: 'Google',
+          tier: 'balanced',
+          description: 'Imagem',
+          contextWindow: 1000000,
+          inputCost: 0,
+          outputCost: 0,
+          isFree: false,
+          agentFit: { extraction: 1, synthesis: 9, reasoning: 1, writing: 1 },
+          capabilities: ['image'],
+        },
+        {
+          id: 'openai/tts-1-hd',
+          label: 'TTS 1 HD',
+          provider: 'OpenAI',
+          tier: 'premium',
+          description: 'Audio',
+          contextWindow: 128000,
+          inputCost: 0,
+          outputCost: 0,
+          isFree: false,
+          agentFit: { extraction: 1, synthesis: 9, reasoning: 1, writing: 1 },
+          capabilities: ['audio'],
+        },
+      ],
+    })
+
+    const result = await loadModelCatalog('user-1')
+
+    expect(result).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'custom/model' }),
+      expect.objectContaining({ id: 'google/gemini-2.5-flash-preview:image-output' }),
+      expect.objectContaining({ id: 'openai/tts-1-hd' }),
+    ]))
     expect(saveUserSettingsMock).not.toHaveBeenCalled()
   })
 

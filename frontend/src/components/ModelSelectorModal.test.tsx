@@ -44,6 +44,19 @@ const selectorMocks = vi.hoisted(() => ({
       agentFit: { extraction: 5, synthesis: 8, reasoning: 10, writing: 9 },
       capabilities: ['text'],
     },
+    {
+      id: 'image-unknown-pricing',
+      label: 'Modelo Imagem Sem Preço',
+      provider: 'Google',
+      tier: 'balanced',
+      description: 'Modelo multimodal sem tabela local',
+      contextWindow: 512000,
+      inputCost: 0,
+      outputCost: 0,
+      isFree: false,
+      agentFit: { extraction: 4, synthesis: 9, reasoning: 5, writing: 4 },
+      capabilities: ['image'],
+    },
   ],
 }))
 
@@ -135,5 +148,23 @@ describe('ModelSelectorModal', () => {
     fireEvent.change(screen.getByPlaceholderText(/buscar modelo/i), { target: { value: 'inexistente' } })
 
     expect(screen.getByText(/nenhum modelo encontrado com esses filtros/i)).toBeTruthy()
+  })
+
+  it('shows N/D when pricing is unknown in the local catalog', () => {
+    render(
+      <ModelSelectorModal
+        open
+        onClose={() => {}}
+        onSelect={() => {}}
+        currentModelId="image-unknown-pricing"
+        agentCategory="synthesis"
+        agentLabel="Gerador de Imagens"
+        requiredCapability="image"
+      />,
+    )
+
+    expect(screen.getByText('Modelo Imagem Sem Preço')).toBeTruthy()
+    expect(screen.getAllByText('N/D').length).toBeGreaterThan(0)
+    expect(screen.getByText(/n\/d = preço não disponível no catálogo local/i)).toBeTruthy()
   })
 })

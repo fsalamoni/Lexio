@@ -12,7 +12,18 @@
 import { useState, useEffect } from 'react'
 import { IS_FIREBASE } from './firebase'
 import { ensureUserSettingsMigrated, getCurrentUserId, saveUserSettings } from './firestore-service'
-import { AVAILABLE_MODELS, FREE_TIER_RATE_LIMITS, type ModelOption, type ModelCapability, type AgentFitScores, type AgentCategory } from './model-config'
+import {
+  AUDIO_PIPELINE_AGENT_DEFS,
+  AVAILABLE_MODELS,
+  FREE_TIER_RATE_LIMITS,
+  PRESENTATION_PIPELINE_AGENT_DEFS,
+  PRESENTATION_V2_PIPELINE_AGENT_DEFS,
+  VIDEO_PIPELINE_AGENT_DEFS,
+  type ModelOption,
+  type ModelCapability,
+  type AgentFitScores,
+  type AgentCategory,
+} from './model-config'
 import type { UserSettingsData } from './firestore-types'
 
 // ── Event bus ─────────────────────────────────────────────────────────────────
@@ -31,6 +42,59 @@ function getCatalogCacheKey(uid?: string): string {
 
 function getSeedCatalog(): ModelOption[] {
   return normalizeModelCatalog(AVAILABLE_MODELS)
+}
+
+function getRequiredMultimodalDefaultModelIds(): string[] {
+  const ids = new Set<string>()
+  const defs = [
+    ...AUDIO_PIPELINE_AGENT_DEFS,
+    ...VIDEO_PIPELINE_AGENT_DEFS,
+    ...PRESENTATION_PIPELINE_AGENT_DEFS,
+    ...PRESENTATION_V2_PIPELINE_AGENT_DEFS,
+  ]
+
+  for (const def of defs) {
+    if (!def.defaultModel) continue
+    if (def.requiredCapability !== 'image' && def.requiredCapability !== 'audio') continue
+    ids.add(def.defaultModel)
+  }
+
+  return [...ids]
+}
+
+function mergeRequiredMultimodalDefaults(savedCatalog: ModelOption[]): { catalog: ModelOption[]; changed: boolean } {
+  const requiredById = new Map(
+    getSeedCatalog()
+      .filter(model => getRequiredMultimodalDefaultModelIds().includes(model.id))
+      .map(model => [model.id, model]),
+  )
+
+  if (requiredById.size === 0) {
+    return { catalog: normalizeModelCatalog(savedCatalog), changed: false }
+  }
+
+  const merged = [...savedCatalog]
+  let changed = false
+
+  for (const [requiredId, requiredModel] of requiredById) {
+    const existingIndex = merged.findIndex(model => model.id === requiredId)
+    if (existingIndex === -1) {
+      merged.push(requiredModel)
+      changed = true
+      continue
+    }
+
+    const existing = merged[existingIndex]
+    const existingCapabilities = existing.capabilities ?? []
+    const requiredCapabilities = requiredModel.capabilities ?? []
+    const missingRequiredCapability = requiredCapabilities.some(capability => !existingCapabilities.includes(capability))
+    if (missingRequiredCapability) {
+      merged[existingIndex] = { ...existing, capabilities: requiredCapabilities }
+      changed = true
+    }
+  }
+
+  return { catalog: normalizeModelCatalog(merged), changed }
 }
 
 export function emitCatalogUpdated(updated?: ModelOption[], uid?: string): void {
@@ -71,8 +135,12 @@ export async function loadModelCatalog(uid?: string): Promise<ModelOption[]> {
           0,
         )
         if (maxScore > 5) {
-          catalogCache.set(cacheKey, validated)
-          return validated
+          const { catalog: mergedCatalog, changed } = mergeRequiredMultimodalDefaults(validated)
+          catalogCache.set(cacheKey, mergedCatalog)
+          if (changed && resolvedUid) {
+            await saveUserSettings(resolvedUid, { model_catalog: mergedCatalog } as UserSettingsData)
+          }
+          return mergedCatalog
         }
         // Old scale detected — reseed the personal catalog below.
       }

@@ -5,7 +5,7 @@ import {
   BarChart3, DollarSign, FileText, TrendingUp, ToggleLeft, ToggleRight,
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
   ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal, RefreshCw,
-  Plus, Pencil, Trash2, X, Scale, Tags, Video, Headphones, Presentation, Palette,
+  Plus, Pencil, Trash2, X, Scale, Tags, Video, Headphones, Presentation, Palette, Sparkles,
   MessagesSquare,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
@@ -36,6 +36,7 @@ import NotebookAcervoConfigCard from '../components/NotebookAcervoConfigCard'
 import VideoPipelineConfigCard from '../components/VideoPipelineConfigCard'
 import AudioPipelineConfigCard from '../components/AudioPipelineConfigCard'
 import PresentationPipelineConfigCard from '../components/PresentationPipelineConfigCard'
+import PresentationV2PipelineConfigCard from '../components/PresentationV2PipelineConfigCard'
 import ChatOrchestratorConfigCard from '../components/ChatOrchestratorConfigCard'
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
@@ -1182,6 +1183,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <PresentationPipelineConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Presentation v2 Pipeline Config (Firebase-only) */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_presentation_v2_pipeline_config"
+          title="Gerador de Apresentação v2"
+          icon={Sparkles}
+          iconColor="text-violet-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <PresentationV2PipelineConfigCard />
         </AdminCollapsibleSection>
       )}
 

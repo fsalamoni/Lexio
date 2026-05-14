@@ -39,7 +39,7 @@ export type ArtifactDef = { type: StudioArtifactType; label: string; icon: React
 export type ArtifactCategory = { label: string; emoji: string; color: string; items: ArtifactDef[] }
 
 /** Artifact types that get a review/edit step before saving */
-export const REVIEWABLE_ARTIFACT_TYPES: StudioArtifactType[] = ['video_script', 'audio_script', 'apresentacao']
+export const REVIEWABLE_ARTIFACT_TYPES: StudioArtifactType[] = ['video_script', 'audio_script', 'apresentacao', 'apresentacao_v2']
 
 /** Map media artifact types to the correct cost function key */
 export const ARTIFACT_COST_KEY: Partial<Record<StudioArtifactType, UsageFunctionKey>> = {
@@ -47,6 +47,7 @@ export const ARTIFACT_COST_KEY: Partial<Record<StudioArtifactType, UsageFunction
   video_production: 'video_pipeline',
   audio_script: 'audio_pipeline',
   apresentacao: 'presentation_pipeline',
+  apresentacao_v2: 'presentation_pipeline_v2',
 }
 
 // ── Trail step definitions ────────────────────────────────────────────────────
@@ -61,6 +62,23 @@ export const AGENT_LABELS: Record<string, string> = {
   studio_roteirista: 'Roteirista',
   studio_visual: 'Designer Visual',
   studio_revisor: 'Revisor de Qualidade',
+  presentation_v2_orchestrator: 'Apresentação v2: Orquestrador',
+  presentation_v2_context_auditor: 'Apresentação v2: Auditor de Contexto',
+  presentation_v2_clarifier: 'Apresentação v2: Clarificador',
+  presentation_v2_narrative_planner: 'Apresentação v2: Planejador Narrativo',
+  presentation_v2_researcher: 'Apresentação v2: Pesquisador',
+  presentation_v2_content_architect: 'Apresentação v2: Arquiteto de Conteúdo',
+  presentation_v2_slide_writer: 'Apresentação v2: Redator de Slides',
+  presentation_v2_visual_director: 'Apresentação v2: Diretor Visual',
+  presentation_v2_data_diagrammer: 'Apresentação v2: Dados e Diagramas',
+  presentation_v2_asset_planner: 'Apresentação v2: Planejador de Assets',
+  presentation_v2_image_generator: 'Apresentação v2: Gerador de Imagens',
+  presentation_v2_audio_director: 'Apresentação v2: Diretor de Áudio',
+  presentation_v2_tts: 'Apresentação v2: Narrador TTS',
+  presentation_v2_video_director: 'Apresentação v2: Diretor de Vídeo',
+  presentation_v2_video_generator: 'Apresentação v2: Gerador de Clipes',
+  presentation_v2_reviewer: 'Apresentação v2: Revisor Multimodal',
+  presentation_v2_packager: 'Apresentação v2: Empacotador',
   nb_acervo_triagem: 'Triagem de Acervo',
   nb_acervo_buscador: 'Buscador de Acervo',
   nb_acervo_analista: 'Analista de Acervo',

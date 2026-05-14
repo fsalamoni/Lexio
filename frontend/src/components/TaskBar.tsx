@@ -33,7 +33,7 @@ function formatElapsed(ms: number): string {
   return `${mins}m${remSecs.toString().padStart(2, '0')}s`
 }
 
-function TaskRow({ task, onDismiss }: { task: TaskInfo; onDismiss: () => void }) {
+function TaskRow({ task, onCancel, onDismiss }: { task: TaskInfo; onCancel: () => void; onDismiss: () => void }) {
   const elapsed = (task.completedAt ?? Date.now()) - task.startedAt
   const isRunning = task.status === 'running'
   const isError = task.status === 'error'
@@ -49,6 +49,17 @@ function TaskRow({ task, onDismiss }: { task: TaskInfo; onDismiss: () => void })
         {isCancelled && <CircleSlash2 className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
         <span className="text-xs font-medium text-gray-800 truncate flex-1">{task.name}</span>
         <span className="text-[10px] text-gray-400 flex-shrink-0">{formatElapsed(elapsed)}</span>
+        {isRunning && task.cancellable && (
+          <button
+            type="button"
+            onClick={onCancel}
+            title="Cancelar tarefa"
+            aria-label={`Cancelar ${task.name}`}
+            className="p-0.5 rounded hover:bg-amber-100 text-amber-500 flex-shrink-0"
+          >
+            <CircleSlash2 size={12} />
+          </button>
+        )}
         {!isRunning && (
           <button onClick={onDismiss} className="p-0.5 rounded hover:bg-gray-200 text-gray-400 flex-shrink-0">
             <X size={12} />
@@ -86,7 +97,7 @@ function TaskRow({ task, onDismiss }: { task: TaskInfo; onDismiss: () => void })
 }
 
 export default function TaskBar() {
-  const { tasks, dismissTask, activeCount } = useTaskManager()
+  const { tasks, cancelTask, dismissTask, activeCount } = useTaskManager()
   const [expanded, setExpanded] = useState(false)
 
   if (tasks.length === 0) return null
@@ -104,7 +115,7 @@ export default function TaskBar() {
           </div>
           <div className="max-h-[70vh] sm:max-h-60 overflow-y-auto">
             {tasks.map(t => (
-              <TaskRow key={t.id} task={t} onDismiss={() => dismissTask(t.id)} />
+              <TaskRow key={t.id} task={t} onCancel={() => cancelTask(t.id)} onDismiss={() => dismissTask(t.id)} />
             ))}
           </div>
         </div>

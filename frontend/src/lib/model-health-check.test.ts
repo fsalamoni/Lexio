@@ -152,4 +152,38 @@ describe('runModelHealthCheck (provider-aware)', () => {
       expect.objectContaining({ id: 'llama-3.1-8b-instant' }),
     ])
   })
+
+  it('also clears invalid models from presentation_v2_pipeline_models', async () => {
+    ensureUserSettingsMigratedMock.mockResolvedValue({
+      api_keys: {
+        groq_api_key: 'gsk_test',
+      },
+      provider_settings: {
+        groq: { enabled: true },
+      },
+      presentation_v2_pipeline_models: {
+        presentation_v2_reviewer: 'llama-3.3-70b-versatile',
+      },
+    })
+    loadModelCatalogMock.mockResolvedValue([
+      mkCatalogModel('llama-3.3-70b-versatile', 'Llama 3.3 70B Versatile', 'groq'),
+      mkCatalogModel('llama-3.1-8b-instant', 'Llama 3.1 8B Instant', 'groq'),
+    ])
+    fetchProviderModelsMock.mockResolvedValue([
+      mkCatalogModel('llama-3.1-8b-instant', 'Llama 3.1 8B Instant', 'groq'),
+    ])
+
+    const result = await runModelHealthCheck(true)
+
+    expect(result.clearedAgents).toEqual([
+      {
+        configKey: 'presentation_v2_pipeline_models',
+        agentKey: 'presentation_v2_reviewer',
+        modelId: 'llama-3.3-70b-versatile',
+      },
+    ])
+    expect(saveUserSettingsMock).toHaveBeenCalledWith('user-1', expect.objectContaining({
+      presentation_v2_pipeline_models: {},
+    }))
+  })
 })

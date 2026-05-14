@@ -20,6 +20,8 @@
     "preview:smoke": "vite preview --host 127.0.0.1 --port 4173",
     "smoke": "vite build --mode smoke && vite preview --host 127.0.0.1 --port 4173",
     "test": "vitest run",
+    "test:presentation-v2": "vitest run src/lib/presentation-v2-regression-harness.test.ts src/demo/presentation-v2-golden-benchmark.test.ts src/lib/presentation-generation-pipeline-v2.test.ts src/lib/quality-evaluator.presentation-v2.test.ts src/components/PresentationV2BriefingModal.test.tsx src/components/artifacts/PresentationV2Viewer.test.tsx src/components/artifacts/ArtifactViewerModal.test.tsx src/components/artifacts/artifact-exporters.test.ts src/demo/notebook-data.test.ts src/pages/labs/presentation-v2-briefing-seed.test.ts src/pages/CostTokensPage.test.tsx",
+    "test:presentation-v2:benchmark": "vitest run src/api/demo-interceptor.test.ts src/lib/presentation-v2-regression-harness.test.ts src/demo/presentation-v2-golden-benchmark.test.ts src/demo/notebook-data.test.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

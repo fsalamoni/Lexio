@@ -237,6 +237,54 @@ describe('llm-client', () => {
       expect(fetchSpy).toHaveBeenCalledTimes(2)
     })
 
+    it('serializes multimodal message parts and parses array-based text responses', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async (_url, options) => {
+        const body = JSON.parse(String(options?.body)) as {
+          messages?: Array<{ role: string; content: unknown }>
+        }
+
+        expect(body.messages).toEqual([
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Critique the rendered slide image.' },
+              { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA', detail: 'high' } },
+            ],
+          },
+        ])
+
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: [{ type: 'text', text: '{"quality":{"score":84}}' }] } }],
+            usage: {
+              prompt_tokens: 11,
+              completion_tokens: 22,
+              cost: 0.0001,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      })
+
+      const result = await callLLMWithMessagesFallback(
+        'sk-or-test',
+        [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Critique the rendered slide image.' },
+              { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA', detail: 'high' } },
+            ],
+          },
+        ],
+        'openai/gpt-4o-mini',
+        [],
+      )
+
+      expect(result.content).toBe('{"quality":{"score":84}}')
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+    })
+
     it('does not retry timeout on the same model, surfacing TransientLLMError immediately', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(
         new DOMException('timed out', 'AbortError'),

@@ -5,7 +5,7 @@
 import React from 'react'
 import {
   BookMarked, CreditCard, FileQuestion, FileText, BarChart3,
-  Presentation, Map, PenTool, Table, Mic, Video, Film,
+  Presentation, Map, PenTool, Table, Mic, Video, Film, Sparkles,
   Database, Upload, Link2, Globe, Brain, Library,
 } from 'lucide-react'
 import type { StudioArtifactType } from '../../lib/firestore-service'
@@ -34,6 +34,7 @@ export const ARTIFACT_CATEGORIES: ArtifactCategory[] = [
     label: 'Visual', emoji: '🎨', color: 'purple',
     items: [
       { type: 'apresentacao', label: 'Apresentação', icon: Presentation, description: 'Slides profissionais com notas do apresentador' },
+      { type: 'apresentacao_v2', label: 'Apresentação v2', icon: Sparkles, description: 'Deck multimodal com briefing inteligente, design, assets, notas e plano de exportação' },
       { type: 'mapa_mental', label: 'Mapa Mental', icon: Map, description: 'Visualização interativa de conceitos e relações' },
       { type: 'infografico', label: 'Infográfico', icon: PenTool, description: 'Dados e estatísticas em layout visual impactante' },
       { type: 'tabela_dados', label: 'Tabela de Dados', icon: Table, description: 'Tabela interativa com ordenação e filtros' },

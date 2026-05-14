@@ -8,6 +8,7 @@ export const STUDIO_SPECIALIST_LABEL: Record<StudioArtifactType, string> = {
   teste: 'Escritor',
   guia_estruturado: 'Escritor',
   apresentacao: 'Designer Visual',
+  apresentacao_v2: 'Gerador de Apresentação v2',
   mapa_mental: 'Designer Visual',
   infografico: 'Designer Visual',
   tabela_dados: 'Designer Visual',

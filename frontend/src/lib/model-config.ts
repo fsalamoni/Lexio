@@ -23,6 +23,7 @@ import {
   NOTEBOOK_ACERVO_AGENT_DEFS,
   PIPELINE_AGENT_DEFS,
   PRESENTATION_PIPELINE_AGENT_DEFS,
+  PRESENTATION_V2_PIPELINE_AGENT_DEFS,
   RESEARCH_NOTEBOOK_AGENT_DEFS,
   THESIS_ANALYST_AGENT_DEFS,
   VIDEO_PIPELINE_AGENT_DEFS,
@@ -39,6 +40,7 @@ export {
   NOTEBOOK_ACERVO_AGENT_DEFS,
   PIPELINE_AGENT_DEFS,
   PRESENTATION_PIPELINE_AGENT_DEFS,
+  PRESENTATION_V2_PIPELINE_AGENT_DEFS,
   RESEARCH_NOTEBOOK_AGENT_DEFS,
   THESIS_ANALYST_AGENT_DEFS,
   VIDEO_PIPELINE_AGENT_DEFS,
@@ -175,6 +177,14 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     contextWindow: 1_000_000, inputCost: 1.25, outputCost: 10.00, isFree: false,
     agentFit: { extraction: 7, synthesis: 9, reasoning: 9, writing: 8 },
   },
+  {
+    id: 'google/gemini-2.5-flash-preview:image-output',
+    label: 'Gemini 2.5 Flash Image', provider: 'Google', tier: 'balanced',
+    description: 'Gerador de imagens via OpenRouter para slides, ilustrações e fundos do estúdio',
+    contextWindow: 1_000_000, inputCost: 0, outputCost: 0, isFree: false,
+    agentFit: { extraction: 1, synthesis: 9, reasoning: 1, writing: 1 },
+    capabilities: ['image'],
+  },
 
   // ── OpenAI ────────────────────────────────────────────────────────────────────
   {
@@ -232,6 +242,30 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     description: 'Máximo raciocínio — para argumentações jurídicas de alta complexidade',
     contextWindow: 200_000, inputCost: 10.00, outputCost: 40.00, isFree: false,
     agentFit: { extraction: 3, synthesis: 7, reasoning: 10, writing: 7 },
+  },
+  {
+    id: 'openai/gpt-image-1',
+    label: 'GPT Image 1', provider: 'OpenAI', tier: 'balanced',
+    description: 'Gerador de imagens da OpenAI para ilustrações, fundos e composições visuais',
+    contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: false,
+    agentFit: { extraction: 1, synthesis: 9, reasoning: 1, writing: 1 },
+    capabilities: ['image'],
+  },
+  {
+    id: 'openai/tts-1-hd',
+    label: 'TTS 1 HD', provider: 'OpenAI', tier: 'premium',
+    description: 'Text-to-speech em alta fidelidade para narração e locução de artefatos',
+    contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: false,
+    agentFit: { extraction: 1, synthesis: 9, reasoning: 1, writing: 1 },
+    capabilities: ['audio'],
+  },
+  {
+    id: 'openai/tts-1',
+    label: 'TTS 1', provider: 'OpenAI', tier: 'balanced',
+    description: 'Text-to-speech otimizado para locução rápida e econômica',
+    contextWindow: 128_000, inputCost: 0, outputCost: 0, isFree: false,
+    agentFit: { extraction: 1, synthesis: 8, reasoning: 1, writing: 1 },
+    capabilities: ['audio'],
   },
 
   // ── DeepSeek ──────────────────────────────────────────────────────────────────
@@ -421,8 +455,16 @@ export interface AgentModelDef {
   agentCategory: AgentCategory
   /** Required model capability — restricts model selection to only models with this capability. Defaults to 'text'. */
   requiredCapability?: ModelCapability
+  /** How this agent is configured operationally. */
+  configurationMode?: 'model' | 'external-provider'
+  /** Optional operator-facing hint for external-provider managed agents. */
+  configurationHint?: string
   /** Admin hint — short note about the best model type for this agent */
   bestModelNote?: string
+}
+
+function isProviderManagedAgent(agent: AgentModelDef): boolean {
+  return agent.configurationMode === 'external-provider'
 }
 
 export class ModelCapabilityMismatchError extends Error {
@@ -438,6 +480,36 @@ export class ModelCapabilityMismatchError extends Error {
     this.agentLabel = agent.label
     this.modelId = modelId
     this.requiredCapability = requiredCapability
+  }
+}
+
+export interface InvalidSavedModelSelectionIssue {
+  agentKey: string
+  agentLabel: string
+  modelId: string
+  reason: 'not-in-catalog' | 'capability-mismatch'
+  requiredCapability?: ModelCapability
+}
+
+export class InvalidSavedModelSelectionError extends Error {
+  settingsKey: string
+  issues: InvalidSavedModelSelectionIssue[]
+
+  constructor(settingsKey: string, issues: InvalidSavedModelSelectionIssue[]) {
+    const summarized = issues
+      .slice(0, 3)
+      .map((issue) => {
+        if (issue.reason === 'not-in-catalog') {
+          return `${issue.agentLabel}: modelo "${issue.modelId}" fora do catálogo pessoal`
+        }
+        return `${issue.agentLabel}: modelo "${issue.modelId}" sem capability "${issue.requiredCapability}"`
+      })
+      .join('; ')
+    const suffix = issues.length > 3 ? ` (+${issues.length - 3} adicional/is)` : ''
+    super(`As configurações salvas de modelos para "${settingsKey}" estão inválidas: ${summarized}${suffix}. Revise e salve novamente.`)
+    this.name = 'InvalidSavedModelSelectionError'
+    this.settingsKey = settingsKey
+    this.issues = issues
   }
 }
 
@@ -564,6 +636,7 @@ function validateModelCapabilitiesAgainstDefs(
   catalogEntries: ModelOption[],
 ): void {
   for (const agent of defs) {
+    if (isProviderManagedAgent(agent)) continue
     const modelId = models[agent.key]
     const requiredCapability = agent.requiredCapability
     if (!modelId || !requiredCapability) continue
@@ -574,6 +647,48 @@ function validateModelCapabilitiesAgainstDefs(
   }
 }
 
+function collectInvalidSavedModelSelectionIssues(
+  defs: AgentModelDef[],
+  saved: Record<string, string>,
+  catalogIds: Set<string>,
+  catalogEntries: ModelOption[],
+): InvalidSavedModelSelectionIssue[] {
+  const issues: InvalidSavedModelSelectionIssue[] = []
+
+  for (const agent of defs) {
+    if (isProviderManagedAgent(agent)) continue
+    const rawSaved = saved[agent.key]
+    if (typeof rawSaved !== 'string' || !rawSaved) continue
+
+    const savedId = rewriteDeprecatedModelId(rawSaved)
+    if (!catalogIds.has(savedId)) {
+      issues.push({
+        agentKey: agent.key,
+        agentLabel: agent.label,
+        modelId: savedId,
+        reason: 'not-in-catalog',
+      })
+      continue
+    }
+
+    const requiredCapability = agent.requiredCapability
+    if (!requiredCapability) continue
+
+    const capabilities = getModelCapabilities(savedId, catalogEntries)
+    if (!capabilities.includes(requiredCapability)) {
+      issues.push({
+        agentKey: agent.key,
+        agentLabel: agent.label,
+        modelId: savedId,
+        reason: 'capability-mismatch',
+        requiredCapability,
+      })
+    }
+  }
+
+  return issues
+}
+
 export function sanitizeModelCapabilitiesAgainstDefs<T extends Record<string, string>>(
   defs: AgentModelDef[],
   models: T,
@@ -581,6 +696,10 @@ export function sanitizeModelCapabilitiesAgainstDefs<T extends Record<string, st
 ): T {
   const next = { ...models }
   for (const agent of defs) {
+    if (isProviderManagedAgent(agent)) {
+      delete next[agent.key]
+      continue
+    }
     const modelId = next[agent.key]
     const requiredCapability = agent.requiredCapability
     if (!modelId || !requiredCapability) continue
@@ -627,6 +746,7 @@ function validateModelIdsAgainstCatalog(
   catalogIds: Set<string>,
 ): void {
   for (const agent of defs) {
+    if (isProviderManagedAgent(agent)) continue
     const modelId = models[agent.key]
     if (!modelId) continue
     if (!catalogIds.has(modelId)) {
@@ -646,6 +766,7 @@ type ScopedModelSettingsKey =
   | 'video_pipeline_models'
   | 'audio_pipeline_models'
   | 'presentation_pipeline_models'
+  | 'presentation_v2_pipeline_models'
   | 'document_v3_models'
   | 'chat_orchestrator_models'
 
@@ -662,6 +783,7 @@ function applySavedModelOverrides<T extends Record<string, string>>(
 ): T {
   const mutableTarget = target as Record<string, string>
   for (const def of defs) {
+    if (isProviderManagedAgent(def)) continue
     const rawSaved = saved[def.key]
     if (typeof rawSaved !== 'string' || !rawSaved) continue
     // Auto-promote deprecated provider IDs (e.g. google/gemini-2.0-flash-001
@@ -693,8 +815,14 @@ async function loadScopedModelMap<T extends Record<string, string>>(
     const catalogEntries = buildCatalogEntries(settingsRecord)
     const userSaved = (userSettings[key] ?? {}) as Record<string, string>
 
+    const invalidSavedIssues = collectInvalidSavedModelSelectionIssues(defs, userSaved, catalogIds, catalogEntries)
+    if (invalidSavedIssues.length > 0) {
+      throw new InvalidSavedModelSelectionError(key, invalidSavedIssues)
+    }
+
     applySavedModelOverrides(defaults, defs, userSaved, catalogIds, catalogEntries)
-  } catch {
+  } catch (error) {
+    if (error instanceof InvalidSavedModelSelectionError) throw error
     // On error, just return defaults silently
   }
 
@@ -1082,6 +1210,34 @@ export async function resetPresentationPipelineModels(uid?: string): Promise<voi
 }
 
 
+/** Map from presentation v2 pipeline agent key → model ID */
+export type PresentationV2PipelineModelMap = Record<string, string>
+
+/** Default model map for the presentation v2 pipeline. */
+export function getDefaultPresentationV2PipelineModelMap(): PresentationV2PipelineModelMap {
+  const map: PresentationV2PipelineModelMap = {}
+  for (const def of PRESENTATION_V2_PIPELINE_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/** Load presentation v2 pipeline model configuration. */
+export async function loadPresentationV2PipelineModels(uid?: string): Promise<PresentationV2PipelineModelMap> {
+  return loadScopedModelMap('presentation_v2_pipeline_models', PRESENTATION_V2_PIPELINE_AGENT_DEFS, getDefaultPresentationV2PipelineModelMap(), uid)
+}
+
+/** Save presentation v2 pipeline model configuration to Firestore. */
+export async function savePresentationV2PipelineModels(models: PresentationV2PipelineModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('presentation_v2_pipeline_models', PRESENTATION_V2_PIPELINE_AGENT_DEFS, getDefaultPresentationV2PipelineModelMap(), models, uid)
+}
+
+/** Reset presentation v2 pipeline models to defaults. */
+export async function resetPresentationV2PipelineModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('presentation_v2_pipeline_models', uid)
+}
+
+
 /** Map from document v3 agent key → model ID */
 export type DocumentV3PipelineModelMap = Record<string, string>
 
@@ -1154,6 +1310,7 @@ export const AGENT_CONFIG_DEFS: Record<ScopedModelSettingsKey, AgentModelDef[]> 
   video_pipeline_models: VIDEO_PIPELINE_AGENT_DEFS,
   audio_pipeline_models: AUDIO_PIPELINE_AGENT_DEFS,
   presentation_pipeline_models: PRESENTATION_PIPELINE_AGENT_DEFS,
+  presentation_v2_pipeline_models: PRESENTATION_V2_PIPELINE_AGENT_DEFS,
   document_v3_models: DOCUMENT_V3_PIPELINE_AGENT_DEFS,
   chat_orchestrator_models: CHAT_ORCHESTRATOR_AGENT_DEFS,
 }

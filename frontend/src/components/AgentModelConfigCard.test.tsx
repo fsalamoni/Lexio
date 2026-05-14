@@ -125,4 +125,82 @@ describe('AgentModelConfigCard', () => {
       expect(screen.getByText('Modelo padrão')).toBeTruthy()
     })
   })
+
+  it('renders provider-managed agents without opening the model selector and flags unknown pricing as N/D', async () => {
+    const loadModels = vi.fn().mockResolvedValue({
+      image_agent: 'image-model',
+      video_agent: '',
+    })
+    const saveModels = vi.fn().mockResolvedValue(undefined)
+    const resetModels = vi.fn().mockResolvedValue(undefined)
+    const getDefaultModels = vi.fn(() => ({ image_agent: 'image-model', video_agent: '' }))
+
+    agentModelConfigCardMocks.useCatalogModels.mockReturnValue([
+      {
+        id: 'image-model',
+        label: 'Modelo de imagem sem preço local',
+        provider: 'Google',
+        description: 'Imagem premium.',
+        contextWindow: 128000,
+        inputCost: 0,
+        outputCost: 0,
+        isFree: false,
+        tier: 'balanced',
+        capabilities: ['image'],
+      },
+    ])
+
+    render(
+      <AgentModelConfigCard
+        loadingMessage="Carregando..."
+        sections={[
+          {
+            id: 'base-section',
+            title: 'Seção base',
+            titleIcon: Sparkles,
+            agents: [
+              {
+                key: 'image_agent',
+                label: 'Agente de Imagem',
+                description: 'Seleciona imagens.',
+                icon: 'brain',
+                defaultModel: 'image-model',
+                recommendedTier: 'balanced',
+                agentCategory: 'synthesis',
+                requiredCapability: 'image',
+              },
+              {
+                key: 'video_agent',
+                label: 'Agente de Vídeo',
+                description: 'Usa provedor externo.',
+                icon: 'brain',
+                defaultModel: '',
+                recommendedTier: 'premium',
+                agentCategory: 'synthesis',
+                configurationMode: 'external-provider',
+                configurationHint: 'Configuração feita no ambiente.',
+              },
+            ],
+            tone: V2_AGENT_CONFIG_TONES.teal,
+          },
+        ]}
+        agentIcons={{ brain: Brain }}
+        loadModels={loadModels}
+        saveModels={saveModels}
+        resetModels={resetModels}
+        getDefaultModels={getDefaultModels}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Agente de Imagem')).toBeTruthy()
+      expect(screen.getAllByText('N/D').length).toBeGreaterThan(0)
+      expect(screen.getByText('Preço não informado no catálogo local.')).toBeTruthy()
+      expect(screen.getByText('Gerido por provedor externo')).toBeTruthy()
+      expect(screen.getByText('Configuração feita no ambiente.')).toBeTruthy()
+    })
+
+    expect(screen.queryByText('Agente de Vídeo', { selector: 'p' })).toBeFalsy()
+    expect(screen.queryByRole('button', { name: 'Selecionar customizado' })).toBeNull()
+  })
 })

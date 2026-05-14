@@ -11,6 +11,7 @@ import {
   NOTEBOOK_ACERVO_AGENT_DEFS,
   PIPELINE_AGENT_DEFS,
   PRESENTATION_PIPELINE_AGENT_DEFS,
+  PRESENTATION_V2_PIPELINE_AGENT_DEFS,
   RESEARCH_NOTEBOOK_AGENT_DEFS,
   THESIS_ANALYST_AGENT_DEFS,
   VIDEO_PIPELINE_AGENT_DEFS,
@@ -29,6 +30,7 @@ describe('user-scoped agent configuration coverage', () => {
     expect(VIDEO_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.VIDEO_PIPELINE_AGENT_DEFS)
     expect(AUDIO_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.AUDIO_PIPELINE_AGENT_DEFS)
     expect(PRESENTATION_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.PRESENTATION_PIPELINE_AGENT_DEFS)
+    expect(PRESENTATION_V2_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.PRESENTATION_V2_PIPELINE_AGENT_DEFS)
     expect(DOCUMENT_V3_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.DOCUMENT_V3_PIPELINE_AGENT_DEFS)
     expect(CHAT_ORCHESTRATOR_AGENT_DEFS).toBe(pipelineAgentDefs.CHAT_ORCHESTRATOR_AGENT_DEFS)
   })
@@ -44,6 +46,7 @@ describe('user-scoped agent configuration coverage', () => {
       'document_v3_models',
       'notebook_acervo_models',
       'presentation_pipeline_models',
+      'presentation_v2_pipeline_models',
       'research_notebook_models',
       'thesis_analyst_models',
       'video_pipeline_models',
@@ -106,6 +109,15 @@ describe('user-scoped agent configuration coverage', () => {
       'pres_designer',
       'pres_image_generator',
       'pres_revisor',
+    ]))
+
+    expect(AGENT_CONFIG_DEFS.presentation_v2_pipeline_models.map(agent => agent.key)).toEqual(expect.arrayContaining([
+      'presentation_v2_orchestrator',
+      'presentation_v2_image_generator',
+      'presentation_v2_tts',
+      'presentation_v2_video_generator',
+      'presentation_v2_reviewer',
+      'presentation_v2_packager',
     ]))
 
     expect(AGENT_CONFIG_DEFS.document_v3_models.map(agent => agent.key)).toEqual(expect.arrayContaining([

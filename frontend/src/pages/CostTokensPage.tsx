@@ -38,6 +38,7 @@ const COST_SECTION_IDS = [
   'section_audio_pipeline',
   'section_presentation_pipeline',
   'section_chat_orchestrator',
+  'section_presentation_pipeline_v2',
 ] as const
 
 const COST_GENERAL_CARD_IDS = [
@@ -66,6 +67,7 @@ const COST_BREAKDOWN_SECTION_IDS = [
   'audio_pipeline',
   'presentation_pipeline',
   'chat_orchestrator',
+  'presentation_pipeline_v2',
 ] as const
 
 function buildBreakdownCardIds(sectionId: string): string[] {
@@ -431,8 +433,8 @@ export default function CostTokensPage() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Split executions into all 11 function keys
-  const { docBreakdown, docV3Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, chatOrchestratorBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, chatOrchestratorBreakdown: null, highlights: [] }
+  const { docBreakdown, docV3Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, presentationV2Breakdown, chatOrchestratorBreakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, presentationV2Breakdown: null, chatOrchestratorBreakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
@@ -449,6 +451,7 @@ export default function CostTokensPage() {
     const videoItems = breakdown.by_agent_function.filter(item => item.key.startsWith('video_pipeline::'))
     const audioItems = breakdown.by_agent_function.filter(item => item.key.startsWith('audio_pipeline::'))
     const presentationItems = breakdown.by_agent_function.filter(item => item.key.startsWith('presentation_pipeline::'))
+    const presentationV2Items = breakdown.by_agent_function.filter(item => item.key.startsWith('presentation_pipeline_v2::'))
     const chatOrchestratorItems = breakdown.by_agent_function.filter(item => item.key.startsWith('chat_orchestrator::'))
 
     // Build approximate sub-breakdowns using available summary data
@@ -463,6 +466,7 @@ export default function CostTokensPage() {
     const videoFunc = breakdown.by_function.find(f => f.key === 'video_pipeline')
     const audioFunc = breakdown.by_function.find(f => f.key === 'audio_pipeline')
     const presentationFunc = breakdown.by_function.find(f => f.key === 'presentation_pipeline')
+    const presentationV2Func = breakdown.by_function.find(f => f.key === 'presentation_pipeline_v2')
     const chatOrchestratorFunc = breakdown.by_function.find(f => f.key === 'chat_orchestrator')
 
     const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[], funcKey?: string): CostBreakdown | null => {
@@ -512,6 +516,7 @@ export default function CostTokensPage() {
     const videoBd = makeSub(videoFunc, videoItems, 'video_pipeline')
     const audioBd = makeSub(audioFunc, audioItems, 'audio_pipeline')
     const presentationBd = makeSub(presentationFunc, presentationItems, 'presentation_pipeline')
+    const presentationV2Bd = makeSub(presentationV2Func, presentationV2Items, 'presentation_pipeline_v2')
     const chatOrchestratorBd = makeSub(chatOrchestratorFunc, chatOrchestratorItems, 'chat_orchestrator')
 
     // Build highlights
@@ -534,7 +539,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, chatOrchestratorBreakdown: chatOrchestratorBd, highlights: hl }
+    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, presentationV2Breakdown: presentationV2Bd, chatOrchestratorBreakdown: chatOrchestratorBd, highlights: hl }
   }, [breakdown])
 
   // ── Budget status ──────────────────────────────────────────────────────
@@ -1060,7 +1065,28 @@ export default function CostTokensPage() {
             )}
           </CollapsibleSection>
 
-          {/* ── Section 12: Chat Orchestrator ──────────────────────── */}
+          <CollapsibleSection
+            id="section_presentation_pipeline_v2"
+            title="Pipeline de Apresentação v2"
+            icon={Sparkles}
+            iconColor="text-fuchsia-600"
+            badge={presentationV2Breakdown ? fmtUsd(presentationV2Breakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {presentationV2Breakdown ? (
+              <SectionBreakdown
+                sectionId="presentation_pipeline_v2"
+                breakdown={presentationV2Breakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o pipeline de apresentação v2.</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 13: Chat Orchestrator ──────────────────────── */}
           <CollapsibleSection
             id="section_chat_orchestrator"
             title="Orquestrador (Chat)"

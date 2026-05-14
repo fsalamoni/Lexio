@@ -114,6 +114,10 @@ function formatContext(tokens: number): string {
   return String(tokens)
 }
 
+function hasUnknownPricing(model: ModelOption): boolean {
+  return !model.isFree && model.inputCost === 0 && model.outputCost === 0
+}
+
 
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -328,6 +332,7 @@ export default function ModelSelectorModal({
               const isCurrent = model.id === currentModelId
               const tierStyle = TIER_STYLES[model.tier]
               const provColor = PROVIDER_COLORS[model.provider] ?? 'bg-gray-100 text-gray-700'
+              const unknownPricing = hasUnknownPricing(model)
 
               return (
                 <button
@@ -404,16 +409,16 @@ export default function ModelSelectorModal({
 
                   {/* Input cost */}
                   <div className="flex flex-col items-center min-w-[64px]">
-                    <span className="text-xs font-mono font-semibold" style={{ color: model.isFree ? '#059669' : 'var(--v2-ink-strong)' }}>
-                      {formatCost(model.inputCost)}
+                    <span className="text-xs font-mono font-semibold" style={{ color: model.isFree ? '#059669' : (unknownPricing ? '#b45309' : 'var(--v2-ink-strong)') }}>
+                      {unknownPricing ? 'N/D' : formatCost(model.inputCost)}
                     </span>
                     <span className="text-[10px]" style={{ color: 'var(--v2-ink-faint)' }}>/1M entrada</span>
                   </div>
 
                   {/* Output cost */}
                   <div className="flex flex-col items-center min-w-[70px]">
-                    <span className="text-xs font-mono font-semibold" style={{ color: model.isFree ? '#059669' : 'var(--v2-ink-strong)' }}>
-                      {formatCost(model.outputCost)}
+                    <span className="text-xs font-mono font-semibold" style={{ color: model.isFree ? '#059669' : (unknownPricing ? '#b45309' : 'var(--v2-ink-strong)') }}>
+                      {unknownPricing ? 'N/D' : formatCost(model.outputCost)}
                     </span>
                     <span className="text-[10px]" style={{ color: 'var(--v2-ink-faint)' }}>/1M saída</span>
                   </div>
@@ -428,7 +433,7 @@ export default function ModelSelectorModal({
           <p className="text-xs flex-1" style={{ color: 'var(--v2-ink-faint)' }}>
             <strong>Adequação /10</strong> — escala global absoluta: ≥9 excelente · 7-8 bom · 5-6 adequado · ≤4 fraco.
             Coluna destacada = categoria desta função ({CATEGORY_LABELS[agentCategory]}).
-            Preços em USD/1M tokens (OpenRouter).
+            Preços em USD/1M tokens (OpenRouter). N/D = preço não disponível no catálogo local.
             {' '}<span className="text-amber-700">&#9888; Modelos ✦ Grátis: limite de {FREE_TIER_RATE_LIMITS.rpm} req/min e {FREE_TIER_RATE_LIMITS.rpd} req/dia.</span>
           </p>
           <button type="button" onClick={onClose} className="v2-btn-secondary">

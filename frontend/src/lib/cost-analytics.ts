@@ -3,7 +3,7 @@ import { DOCTYPE_LABELS } from './constants'
 import { PROVIDERS, providerIdFromLabel } from './providers'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 
-export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'chat_orchestrator'
+export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -112,6 +112,7 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   video_pipeline: 'Gerador de Vídeo',
   audio_pipeline: 'Pipeline de Áudio',
   presentation_pipeline: 'Pipeline de Apresentação',
+  presentation_pipeline_v2: 'Gerador de Apresentação v2',
   chat_orchestrator: 'Orquestrador (Chat)',
 }
 
@@ -223,6 +224,23 @@ const PHASE_LABELS: Record<string, string> = {
   pres_designer: 'Apresentação: Designer Visual',
   pres_image_generator: 'Apresentação: Gerador de Imagens',
   pres_revisor: 'Apresentação: Revisor Final',
+  presentation_v2_orchestrator: 'Apresentação v2: Orquestrador',
+  presentation_v2_context_auditor: 'Apresentação v2: Auditor de Contexto',
+  presentation_v2_clarifier: 'Apresentação v2: Clarificador',
+  presentation_v2_narrative_planner: 'Apresentação v2: Planejador Narrativo',
+  presentation_v2_researcher: 'Apresentação v2: Pesquisador',
+  presentation_v2_content_architect: 'Apresentação v2: Arquiteto de Conteúdo',
+  presentation_v2_slide_writer: 'Apresentação v2: Redator de Slides',
+  presentation_v2_visual_director: 'Apresentação v2: Diretor Visual',
+  presentation_v2_data_diagrammer: 'Apresentação v2: Dados e Diagramas',
+  presentation_v2_asset_planner: 'Apresentação v2: Planejador de Assets',
+  presentation_v2_image_generator: 'Apresentação v2: Gerador de Imagens',
+  presentation_v2_audio_director: 'Apresentação v2: Diretor de Áudio',
+  presentation_v2_tts: 'Apresentação v2: Narrador TTS',
+  presentation_v2_video_director: 'Apresentação v2: Diretor de Vídeo',
+  presentation_v2_video_generator: 'Apresentação v2: Gerador de Clipes',
+  presentation_v2_reviewer: 'Apresentação v2: Revisor Multimodal',
+  presentation_v2_packager: 'Apresentação v2: Empacotador',
   // ── Chat orchestrator phases ──
   chat_orchestrator: 'Chat: Orquestrador',
   chat_planner: 'Chat: Planejador',

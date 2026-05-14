@@ -98,6 +98,7 @@ export interface UserSettingsData {
   video_pipeline_models?: Record<string, string>
   audio_pipeline_models?: Record<string, string>
   presentation_pipeline_models?: Record<string, string>
+  presentation_v2_pipeline_models?: Record<string, string>
   document_v3_models?: Record<string, string>
   chat_orchestrator_models?: Record<string, string>
   /** Default effort level used by the Chat orchestrator when the user opens a new conversation. */
@@ -376,6 +377,7 @@ export interface NotebookJurisprudenceSemanticMemoryEntry {
 export type StudioArtifactType =
   | 'resumo'
   | 'apresentacao'
+  | 'apresentacao_v2'
   | 'mapa_mental'
   | 'cartoes_didaticos'
   | 'infografico'
@@ -396,6 +398,220 @@ export interface StudioArtifact {
   content: string
   format: 'markdown' | 'json' | 'html'
   created_at: string
+}
+
+export type PresentationV2Depth = 'executiva' | 'intermediaria' | 'profunda' | 'tecnica'
+export type PresentationV2AssetType = 'image' | 'background' | 'audio' | 'video' | 'chart' | 'diagram' | 'icon' | 'render' | 'other'
+export type PresentationV2AssetStatus = 'planned' | 'pending' | 'generated' | 'stored' | 'failed' | 'skipped'
+
+export interface PresentationV2ClarificationAnswer {
+  id: string
+  question: string
+  answer: string
+  category?: 'content' | 'audience' | 'depth' | 'duration' | 'design' | 'media' | 'constraints' | 'other'
+}
+
+export interface PresentationV2GenerationSpec {
+  request: string
+  objective?: string
+  audience?: string
+  slideCount?: number
+  depth?: PresentationV2Depth | string
+  durationMinutes?: number
+  language?: string
+  tone?: string
+  visualStyle?: string
+  outputFormat?: 'pptx' | 'pdf' | 'web' | 'images' | 'mixed' | string
+  multimodal?: {
+    images?: boolean
+    audio?: boolean
+    video?: boolean
+    charts?: boolean
+    diagrams?: boolean
+  }
+  constraints?: string[]
+  sourcePriority?: string[]
+  clarifications?: PresentationV2ClarificationAnswer[]
+}
+
+export interface PresentationV2OutlineSection {
+  id: string
+  title: string
+  purpose: string
+  slideNumbers: number[]
+}
+
+export interface PresentationV2Theme {
+  name: string
+  mood?: string
+  palette?: string[]
+  fontPairing?: {
+    heading?: string
+    body?: string
+    mono?: string
+  }
+  layoutPrinciples?: string[]
+  accessibilityNotes?: string[]
+  designSystem?: {
+    narrativeMode?: string
+    surfaceStyle?: string
+    contrastStrategy?: string
+    accentStrategy?: string
+    hierarchyRules?: string[]
+    layoutFamilies?: Array<{
+      id: string
+      label: string
+      usage?: string
+      slideNumbers: number[]
+    }>
+  }
+}
+
+export interface PresentationV2SlideAsset {
+  id: string
+  type: PresentationV2AssetType
+  status: PresentationV2AssetStatus
+  prompt?: string
+  negativePrompt?: string
+  qualityScore?: number
+  qualityWarnings?: string[]
+  retryCount?: number
+  providerId?: string | null
+  providerLabel?: string | null
+  model?: string | null
+  url?: string
+  storagePath?: string
+  mimeType?: string
+  altText?: string
+  error?: string
+  operatorReview?: {
+    status: 'approved' | 'rejected'
+    at: string
+    source?: 'viewer_asset' | string
+    reason?: string
+  }
+}
+
+export interface PresentationV2Slide {
+  id: string
+  number: number
+  sectionId?: string
+  title: string
+  purpose?: string
+  layout: string
+  bullets: string[]
+  speakerNotes: string
+  transition?: string
+  visualBrief?: string
+  designNotes?: string[]
+  chartSpec?: Record<string, unknown>
+  assets?: PresentationV2SlideAsset[]
+  renderedImageUrl?: string
+  renderedImageStoragePath?: string
+}
+
+export interface PresentationV2RubricCategorySnapshot {
+  key: string
+  label: string
+  score: number
+  reasons?: string[]
+}
+
+export interface PresentationV2SlideRubricSnapshot {
+  slideNumber: number
+  score: number
+  status?: 'ok' | 'repair' | 'critical' | string
+  strengths?: string[]
+  warnings?: string[]
+  repairHints?: string[]
+  recommendedAgents?: string[]
+  categories?: PresentationV2RubricCategorySnapshot[]
+}
+
+export interface PresentationV2DeckRubricSnapshot {
+  score?: number
+  status?: 'ok' | 'repair' | 'critical' | string
+  slideThreshold?: number
+  deckThreshold?: number
+  slidesBelowThreshold?: number[]
+  repairableSlides?: number[]
+  strengths?: string[]
+  warnings?: string[]
+}
+
+export interface PresentationV2MultimodalSlideAuditSnapshot {
+  slideNumber: number
+  score: number
+  status?: 'ok' | 'review' | 'critical' | string
+  strengths?: string[]
+  warnings?: string[]
+  availableAssetTypes?: string[]
+  missingAssetTypes?: string[]
+}
+
+export interface PresentationV2MultimodalAuditSnapshot {
+  score?: number
+  status?: 'ok' | 'review' | 'critical' | string
+  strengths?: string[]
+  warnings?: string[]
+  auditedAssetTypes?: string[]
+  slides?: PresentationV2MultimodalSlideAuditSnapshot[]
+}
+
+export interface PresentationV2ExportReadinessSnapshot {
+  score?: number
+  status?: 'ok' | 'review' | 'critical' | string
+  visualAssetCount?: number
+  altTextCoverage?: number
+  missingAltTextAssets?: string[]
+  blockingIssues?: string[]
+  accessibilityNotes?: string[]
+  legalAccuracyNotes?: string[]
+  warnings?: string[]
+}
+
+export interface PresentationV2Deck {
+  schemaVersion: 'presentation_v2.1'
+  title: string
+  subtitle?: string
+  generationSpec: PresentationV2GenerationSpec
+  outline: {
+    narrativeArc: string
+    sections: PresentationV2OutlineSection[]
+  }
+  theme: PresentationV2Theme
+  slides: PresentationV2Slide[]
+  assets: PresentationV2SlideAsset[]
+  quality?: {
+    score?: number
+    strengths?: string[]
+    warnings?: string[]
+    accessibility?: string[]
+    legalAccuracyNotes?: string[]
+    deckRubric?: PresentationV2DeckRubricSnapshot
+    slideRubric?: PresentationV2SlideRubricSnapshot[]
+    multimodalAudit?: PresentationV2MultimodalAuditSnapshot
+    exportReadiness?: PresentationV2ExportReadinessSnapshot
+    repairSummary?: string[]
+  }
+  exportHints?: {
+    aspectRatio?: '16:9' | '4:3' | string
+    preferredExport?: 'pptx' | 'pdf' | 'web' | string
+    useRenderedSlideFallback?: boolean
+    includeSpeakerNotes?: boolean
+  }
+  revisionHistory?: Array<{
+    at: string
+    agent: string
+    summary: string
+    slideNumbers?: number[]
+    repairAgent?: string
+    repairKind?: string
+    operatorSource?: 'viewer_queue' | 'modal_recommendation' | 'toolbar' | string
+    operatorAction?: 'briefing' | 'visual' | 'audio' | 'video' | string
+    operatorReason?: string
+    assetTypes?: string[]
+  }>
 }
 
 export interface ResearchNotebookData {

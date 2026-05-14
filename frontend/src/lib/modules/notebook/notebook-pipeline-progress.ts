@@ -54,6 +54,36 @@ export interface NotebookOperationalAggregate {
   phaseCounts?: Record<string, number>
 }
 
+interface StudioTrailStepLabel {
+  key: string
+  label: string
+}
+
+function getStudioTrailStepLabels(artifactType: StudioArtifactType | null): StudioTrailStepLabel[] {
+  if (artifactType === 'apresentacao_v2') {
+    return [
+      { key: 'presentation_v2_orchestrator', label: 'Orquestrador' },
+      { key: 'presentation_v2_context_auditor', label: 'Auditor de Contexto' },
+      { key: 'presentation_v2_narrative_planner', label: 'Planejador Narrativo' },
+      { key: 'presentation_v2_researcher', label: 'Pesquisador' },
+      { key: 'presentation_v2_content_architect', label: 'Arquiteto de Conteúdo' },
+      { key: 'presentation_v2_slide_writer', label: 'Redator de Slides' },
+      { key: 'presentation_v2_visual_director', label: 'Diretor Visual' },
+      { key: 'presentation_v2_data_diagrammer', label: 'Dados e Diagramas' },
+      { key: 'presentation_v2_asset_planner', label: 'Planejador de Assets' },
+      { key: 'presentation_v2_reviewer', label: 'Revisor Multimodal' },
+      { key: 'presentation_v2_packager', label: 'Empacotador' },
+    ]
+  }
+
+  const specialistLabel = artifactType ? STUDIO_SPECIALIST_LABEL[artifactType] : 'Especialista'
+  return [
+    { key: 'studio_pesquisador', label: 'Pesquisador do Estúdio' },
+    { key: 'studio_specialist', label: specialistLabel },
+    { key: 'studio_revisor', label: 'Revisor de Qualidade' },
+  ]
+}
+
 function formatUsd(costUsd: number): string {
   return formatCostBadge(costUsd)
 }
@@ -234,12 +264,7 @@ export function buildAcervoModalProgressState(options: {
 }
 
 export function buildStudioTrailSteps(task: TaskInfo | undefined, artifactType: StudioArtifactType | null): NotebookTrailStep[] {
-  const specialistLabel = artifactType ? STUDIO_SPECIALIST_LABEL[artifactType] : 'Especialista'
-  const steps = [
-    { key: 'studio_pesquisador', label: 'Pesquisador do Estúdio' },
-    { key: 'studio_specialist', label: specialistLabel },
-    { key: 'studio_revisor', label: 'Revisor de Qualidade' },
-  ]
+  const steps = getStudioTrailStepLabels(artifactType)
 
   const progressStep = task?.currentStep ?? 0
   const errorIndex = progressStep > 0 ? Math.min(progressStep, steps.length) - 1 : 0
@@ -297,8 +322,7 @@ export function buildStudioModalProgressState(
 ): NotebookModalProgressState {
   const progressStep = task?.currentStep ?? 0
   const totalSteps = task?.totalSteps ?? 0
-  const specialistLabel = artifactType ? STUDIO_SPECIALIST_LABEL[artifactType] : 'Especialista'
-  const labels = ['Pesquisador do Estúdio', specialistLabel, 'Revisor de Qualidade']
+  const labels = getStudioTrailStepLabels(artifactType).map(step => step.label)
   const boundedIndex = Math.max(0, Math.min(progressStep - 1, labels.length - 1))
   const stageLabel = progressStep > 0 ? labels[boundedIndex] : 'Preparando trilha'
   const hasError = task?.status === 'error' || task?.status === 'cancelled'
@@ -322,8 +346,7 @@ export function buildStudioTaskPhaseMessage(
   phase: string,
   artifactType: StudioArtifactType,
 ): string {
-  const specialistLabel = STUDIO_SPECIALIST_LABEL[artifactType]
-  const labels = ['Pesquisador do Estúdio', specialistLabel, 'Revisor de Qualidade']
+  const labels = getStudioTrailStepLabels(artifactType).map(item => item.label)
   const stageLabel = labels[Math.max(0, Math.min(step - 1, labels.length - 1))] || phase
   const suffix = total > 0 ? ` (${step}/${total})` : ''
   return `${stageLabel}${suffix}: ${phase}`

@@ -1,5 +1,23 @@
-import { describe, it, expect } from 'vitest'
-import { fmtChars, formatDate, parseJurisprudenceText } from './SourceContentViewer'
+// @vitest-environment jsdom
+
+import { createElement } from 'react'
+import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import type { NotebookSource } from '../lib/firestore-types'
+import SourceContentViewer, { fmtChars, formatDate, parseJurisprudenceText } from './SourceContentViewer'
+
+function makeSource(overrides: Partial<NotebookSource> = {}): NotebookSource {
+  return {
+    id: 'src-demo-1',
+    type: 'upload',
+    name: 'Briefing juridico demo.txt',
+    reference: 'upload://briefing-demo',
+    text_content: 'Briefing ficticio usado apenas para smoke local da apresentacao v2.',
+    status: 'indexed',
+    added_at: '2026-05-10T21:00:00.000Z',
+    ...overrides,
+  }
+}
 
 // ── fmtChars ──────────────────────────────────────────────────────────────────
 
@@ -103,5 +121,20 @@ describe('parseJurisprudenceText', () => {
     expect(sections.length).toBeGreaterThanOrEqual(2)
     expect(sections[0].heading).toBe('Título')
     expect(sections[1].heading).toBe('Subtítulo')
+  })
+})
+
+describe('SourceContentViewer', () => {
+  it('preserves hook order when source toggles between null and populated', () => {
+    const onClose = vi.fn()
+    const source = makeSource()
+    const { rerender } = render(createElement(SourceContentViewer, { source: null, onClose }))
+
+    rerender(createElement(SourceContentViewer, { source, onClose }))
+    expect(screen.getAllByText('Briefing juridico demo.txt').length).toBeGreaterThan(0)
+    expect(screen.getByText(/Briefing ficticio usado apenas para smoke local/i)).toBeDefined()
+
+    rerender(createElement(SourceContentViewer, { source: null, onClose }))
+    expect(screen.queryByText(/Briefing ficticio usado apenas para smoke local/i)).toBeNull()
   })
 })

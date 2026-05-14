@@ -9,6 +9,8 @@
  * computed as: (earned_weight / total_weight) × 100.
  */
 
+import type { PresentationV2Deck, PresentationV2Slide } from './firestore-types'
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface QualityRule {
@@ -27,6 +29,43 @@ export interface QualityResult {
   score: number
   passed: string[]
   failed: string[]
+}
+
+export type PresentationV2RepairAgent =
+  | 'presentation_v2_slide_writer'
+  | 'presentation_v2_content_architect'
+  | 'presentation_v2_visual_director'
+  | 'presentation_v2_data_diagrammer'
+
+export interface PresentationV2RubricCategoryScore {
+  key: 'completeness' | 'density' | 'transition' | 'clarity' | 'objective_coverage' | 'audience_fit' | 'speaker_notes' | 'narrative_consistency' | 'repetition'
+  label: string
+  score: number
+  reasons: string[]
+}
+
+export interface PresentationV2SlideQualityResult {
+  slideNumber: number
+  score: number
+  status: 'ok' | 'repair' | 'critical'
+  strengths: string[]
+  warnings: string[]
+  repairHints: string[]
+  recommendedAgents: PresentationV2RepairAgent[]
+  categories: PresentationV2RubricCategoryScore[]
+}
+
+export interface PresentationV2DeckQualityResult {
+  score: number
+  status: 'ok' | 'repair' | 'critical'
+  strengths: string[]
+  warnings: string[]
+  slideThreshold: number
+  deckThreshold: number
+  slidesBelowThreshold: number[]
+  repairableSlides: number[]
+  repairTargets: PresentationV2SlideQualityResult[]
+  slideRubric: PresentationV2SlideQualityResult[]
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -1157,4 +1196,354 @@ export function evaluateQuality(text: string, docType: string, ctx: EvalContext 
 
   const score = Math.round((earned / totalWeight) * 100)
   return { score, passed, failed }
+}
+
+const PRESENTATION_V2_STOPWORDS = new Set([
+  'para', 'com', 'sem', 'uma', 'umas', 'uns', 'que', 'como', 'sobre', 'entre', 'pelo', 'pela',
+  'pelos', 'pelas', 'este', 'esta', 'esse', 'essa', 'isso', 'aquela', 'aquele', 'depois', 'antes',
+  'mais', 'menos', 'muito', 'muita', 'ser', 'estar', 'tem', 'tudo', 'todas', 'todos', 'sobre',
+  'direito', 'juridica', 'juridico', 'juridicos', 'juridicas', 'slide', 'slides', 'deck',
+  'apresentacao', 'apresentação', 'tema', 'principal', 'objetivo', 'estrategia', 'estratégia',
+])
+
+function clampScore(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function normalizePresentationText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map(value => value.trim()).filter(Boolean)))
+}
+
+function wordCount(value?: string): number {
+  if (!value) return 0
+  const normalized = normalizePresentationText(value)
+  return normalized ? normalized.split(' ').filter(Boolean).length : 0
+}
+
+function tokenizePresentationKeywords(...values: Array<string | undefined>): string[] {
+  const tokens = values
+    .map(value => normalizePresentationText(value || ''))
+    .join(' ')
+    .split(' ')
+    .map(token => token.trim())
+    .filter(token => token.length >= 5 && !PRESENTATION_V2_STOPWORDS.has(token))
+  return uniqueStrings(tokens)
+}
+
+function countKeywordHits(text: string, keywords: string[]): number {
+  const normalized = normalizePresentationText(text)
+  return keywords.filter(keyword => normalized.includes(keyword)).length
+}
+
+function computeSlideOverlap(current: PresentationV2Slide, sibling?: PresentationV2Slide): number {
+  if (!sibling) return 0
+  const currentBullets = uniqueStrings(current.bullets.map(bullet => normalizePresentationText(bullet)).filter(Boolean))
+  const siblingBullets = new Set(sibling.bullets.map(bullet => normalizePresentationText(bullet)).filter(Boolean))
+  if (currentBullets.length === 0 || siblingBullets.size === 0) return 0
+  const shared = currentBullets.filter(bullet => siblingBullets.has(bullet)).length
+  return shared / Math.max(currentBullets.length, siblingBullets.size)
+}
+
+function makeCategoryScore(
+  key: PresentationV2RubricCategoryScore['key'],
+  label: string,
+  score: number,
+  reasons: string[],
+): PresentationV2RubricCategoryScore {
+  return {
+    key,
+    label,
+    score: clampScore(score),
+    reasons: uniqueStrings(reasons),
+  }
+}
+
+function evaluatePresentationV2SlideQuality(
+  deck: PresentationV2Deck,
+  slide: PresentationV2Slide,
+  index: number,
+  slideThreshold: number,
+): PresentationV2SlideQualityResult {
+  const previousSlide = index > 0 ? deck.slides[index - 1] : undefined
+  const objectiveKeywords = tokenizePresentationKeywords(deck.generationSpec.objective, deck.generationSpec.request)
+  const audienceKeywords = tokenizePresentationKeywords(deck.generationSpec.audience, deck.generationSpec.tone)
+  const slideText = [
+    slide.title,
+    slide.purpose,
+    ...slide.bullets,
+    slide.speakerNotes,
+    slide.transition,
+    slide.visualBrief,
+  ].filter(Boolean).join(' ')
+  const bulletWordCounts = slide.bullets.map(bullet => wordCount(bullet))
+  const averageBulletWords = bulletWordCounts.length > 0 ? average(bulletWordCounts) : 0
+  const totalBulletWords = bulletWordCounts.reduce((sum, value) => sum + value, 0)
+  const speakerNotesWords = wordCount(slide.speakerNotes)
+  const duplicateBullets = new Set(slide.bullets.map(bullet => normalizePresentationText(bullet)).filter(Boolean)).size !== slide.bullets.filter(Boolean).length
+  const chartLikeAssets = (slide.assets || []).filter(asset => asset.type === 'chart' || asset.type === 'diagram')
+  const layoutIsGeneric = !slide.layout || slide.layout === 'default'
+  const overlapWithPrevious = computeSlideOverlap(slide, previousSlide)
+
+  let completeness = 100
+  const completenessReasons: string[] = []
+  if (!slide.purpose?.trim()) {
+    completeness -= 18
+    completenessReasons.push('Falta propósito explícito do slide.')
+  }
+  if (slide.bullets.length === 0) {
+    completeness -= 45
+    completenessReasons.push('Slide sem bullets estruturados.')
+  } else if (slide.bullets.length === 1) {
+    completeness -= 15
+    completenessReasons.push('Slide com apenas um bullet perde sustentação narrativa.')
+  }
+  if (!slide.visualBrief?.trim() && (!slide.designNotes || slide.designNotes.length === 0)) {
+    completeness -= 12
+    completenessReasons.push('Direção visual do slide ainda está rasa.')
+  }
+  if (chartLikeAssets.length > 0 && !slide.chartSpec) {
+    completeness -= 15
+    completenessReasons.push('Há asset de gráfico/diagrama sem spec de dados correspondente.')
+  }
+
+  let density = 100
+  const densityReasons: string[] = []
+  if (slide.bullets.length > 5) {
+    density -= 28
+    densityReasons.push('Há mais de 5 bullets; risco de sobrecarga cognitiva.')
+  }
+  if (averageBulletWords > 18) {
+    density -= 22
+    densityReasons.push('Os bullets estão longos demais para leitura executiva.')
+  }
+  if (averageBulletWords > 0 && averageBulletWords < 4) {
+    density -= 12
+    densityReasons.push('Os bullets estão curtos demais e soam telegráficos.')
+  }
+  if (totalBulletWords > 75) {
+    density -= 18
+    densityReasons.push('O volume total de texto em bullets está alto para um único slide.')
+  }
+  if (deck.generationSpec.depth === 'executiva' && totalBulletWords > 55) {
+    density -= 10
+    densityReasons.push('A profundidade executiva pede ainda mais síntese neste slide.')
+  }
+
+  let transition = 100
+  const transitionReasons: string[] = []
+  if (index < deck.slides.length - 1 && !slide.transition?.trim()) {
+    transition -= 38
+    transitionReasons.push('Falta transição explícita para o próximo slide.')
+  } else if (slide.transition?.trim() && wordCount(slide.transition) < 4) {
+    transition -= 12
+    transitionReasons.push('A transição existe, mas ainda está genérica demais.')
+  }
+
+  let clarity = 100
+  const clarityReasons: string[] = []
+  if (/^slide\s+\d+$/i.test(slide.title.trim())) {
+    clarity -= 35
+    clarityReasons.push('Título ainda genérico demais.')
+  }
+  if (duplicateBullets) {
+    clarity -= 20
+    clarityReasons.push('Há bullets repetidos ou quase idênticos no mesmo slide.')
+  }
+  if (slide.bullets.some(bullet => bullet.trim().length > 180)) {
+    clarity -= 15
+    clarityReasons.push('Há bullet excessivamente longo para leitura em tela.')
+  }
+
+  let objectiveCoverage = 100
+  const objectiveCoverageReasons: string[] = []
+  if (objectiveKeywords.length > 0) {
+    const objectiveHits = countKeywordHits(slideText, objectiveKeywords)
+    if (objectiveHits === 0) {
+      objectiveCoverage -= 40
+      objectiveCoverageReasons.push('O slide não evidencia o objetivo central do deck.')
+    } else if (objectiveHits < Math.max(1, Math.ceil(objectiveKeywords.length / 3))) {
+      objectiveCoverage -= 18
+      objectiveCoverageReasons.push('O vínculo com o objetivo do deck ainda está fraco.')
+    }
+  }
+
+  let audienceFit = 100
+  const audienceFitReasons: string[] = []
+  if (audienceKeywords.length > 0) {
+    const audienceHits = countKeywordHits(slideText, audienceKeywords)
+    if (audienceHits === 0 && speakerNotesWords < 45) {
+      audienceFit -= 22
+      audienceFitReasons.push('Falta mediação explícita para o público-alvo informado.')
+    }
+  }
+  if (deck.generationSpec.depth === 'tecnica' && speakerNotesWords < 45) {
+    audienceFit -= 12
+    audienceFitReasons.push('Profundidade técnica pede notas do apresentador mais robustas.')
+  }
+
+  let speakerNotes = 100
+  const speakerNotesReasons: string[] = []
+  if (speakerNotesWords < 25) {
+    speakerNotes -= 55
+    speakerNotesReasons.push('Speaker notes curtas demais para sustentar a fala.')
+  } else if (speakerNotesWords < 50) {
+    speakerNotes -= 24
+    speakerNotesReasons.push('Speaker notes ainda superficiais para uma apresentação premium.')
+  }
+
+  let narrativeConsistency = 100
+  const narrativeConsistencyReasons: string[] = []
+  if (!slide.sectionId?.trim()) {
+    narrativeConsistency -= 12
+    narrativeConsistencyReasons.push('O slide está sem vínculo de seção explícito.')
+  }
+  if (previousSlide && normalizePresentationText(previousSlide.title) === normalizePresentationText(slide.title)) {
+    narrativeConsistency -= 32
+    narrativeConsistencyReasons.push('Título repetido em relação ao slide anterior.')
+  }
+  if (!slide.purpose?.trim()) {
+    narrativeConsistency -= 15
+    narrativeConsistencyReasons.push('Sem propósito, o slide perde função no arco narrativo.')
+  }
+
+  let repetition = 100
+  const repetitionReasons: string[] = []
+  if (overlapWithPrevious > 0.65) {
+    repetition -= 42
+    repetitionReasons.push('O slide repete conteúdo demais em relação ao anterior.')
+  } else if (overlapWithPrevious > 0.45) {
+    repetition -= 18
+    repetitionReasons.push('Há sobreposição relevante com o slide anterior.')
+  }
+
+  const categories = [
+    makeCategoryScore('completeness', 'Completude', completeness, completenessReasons),
+    makeCategoryScore('density', 'Densidade', density, densityReasons),
+    makeCategoryScore('transition', 'Transição', transition, transitionReasons),
+    makeCategoryScore('clarity', 'Clareza', clarity, clarityReasons),
+    makeCategoryScore('objective_coverage', 'Cobertura do objetivo', objectiveCoverage, objectiveCoverageReasons),
+    makeCategoryScore('audience_fit', 'Aderência ao público', audienceFit, audienceFitReasons),
+    makeCategoryScore('speaker_notes', 'Speaker notes', speakerNotes, speakerNotesReasons),
+    makeCategoryScore('narrative_consistency', 'Consistência narrativa', narrativeConsistency, narrativeConsistencyReasons),
+    makeCategoryScore('repetition', 'Ausência de repetição', repetition, repetitionReasons),
+  ]
+  const score = clampScore(average(categories.map(category => category.score)))
+
+  const strengths = uniqueStrings(categories
+    .filter(category => category.score >= 92)
+    .slice(0, 3)
+    .map(category => `${category.label}: acima do padrão esperado.`))
+  const warnings = uniqueStrings(categories
+    .flatMap(category => category.reasons.map(reason => `${category.label}: ${reason}`))
+    .slice(0, 6))
+
+  const recommendedAgents = new Set<PresentationV2RepairAgent>()
+  if ([density, clarity, objectiveCoverage, speakerNotes].some(categoryScore => categoryScore < 80)) {
+    recommendedAgents.add('presentation_v2_slide_writer')
+  }
+  if ([transition, narrativeConsistency].some(categoryScore => categoryScore < 80)) {
+    recommendedAgents.add('presentation_v2_content_architect')
+  }
+  if ((!slide.visualBrief?.trim() && (!slide.designNotes || slide.designNotes.length === 0)) || layoutIsGeneric) {
+    recommendedAgents.add('presentation_v2_visual_director')
+  }
+  if (chartLikeAssets.length > 0 && !slide.chartSpec) {
+    recommendedAgents.add('presentation_v2_data_diagrammer')
+  }
+  if (recommendedAgents.size === 0 && score < slideThreshold) {
+    recommendedAgents.add('presentation_v2_slide_writer')
+  }
+
+  const repairHints = uniqueStrings(Array.from(recommendedAgents).map((agent) => {
+    switch (agent) {
+      case 'presentation_v2_content_architect':
+        return 'Revisar propósito e transição para recolocar o slide no arco narrativo.'
+      case 'presentation_v2_visual_director':
+        return 'Refinar layout, direção visual e hierarquia de design do slide.'
+      case 'presentation_v2_data_diagrammer':
+        return 'Materializar chartSpec/diagrama coerente com os assets planejados.'
+      default:
+        return 'Reescrever título, bullets e speaker notes para elevar clareza e densidade.'
+    }
+  }))
+
+  return {
+    slideNumber: slide.number,
+    score,
+    status: score < Math.max(55, slideThreshold - 12) ? 'critical' : score < slideThreshold ? 'repair' : 'ok',
+    strengths,
+    warnings,
+    repairHints,
+    recommendedAgents: Array.from(recommendedAgents),
+    categories,
+  }
+}
+
+export function evaluatePresentationV2Quality(
+  deck: PresentationV2Deck,
+  options: { slideThreshold?: number; deckThreshold?: number } = {},
+): PresentationV2DeckQualityResult {
+  const slideThreshold = options.slideThreshold ?? 74
+  const deckThreshold = options.deckThreshold ?? 82
+  const slideRubric = deck.slides.map((slide, index) => evaluatePresentationV2SlideQuality(deck, slide, index, slideThreshold))
+  const score = clampScore(average(slideRubric.map(slide => slide.score)))
+  const slidesBelowThreshold = slideRubric
+    .filter(slide => slide.score < slideThreshold)
+    .map(slide => slide.slideNumber)
+  const repairTargets = slideRubric.filter(slide => slide.status !== 'ok')
+
+  const strengths = uniqueStrings([
+    score >= deckThreshold ? 'A média global do deck ficou acima do limiar premium definido.' : '',
+    slidesBelowThreshold.length === 0 ? 'Nenhum slide ficou abaixo do limiar mínimo da rubrica.' : '',
+    slideRubric.some(slide => slide.strengths.length >= 2) ? 'Há slides com sinais claros de maturidade narrativa e operacional.' : '',
+  ].filter(Boolean))
+
+  const warnings = uniqueStrings([
+    slidesBelowThreshold.length > 0
+      ? `${slidesBelowThreshold.length} slide(s) ficaram abaixo do limiar ${slideThreshold}: ${slidesBelowThreshold.join(', ')}.`
+      : '',
+    slideRubric.some(slide => slide.recommendedAgents.includes('presentation_v2_content_architect'))
+      ? 'Há lacunas de transição ou encaixe narrativo pedindo reparo estrutural.'
+      : '',
+    slideRubric.some(slide => slide.recommendedAgents.includes('presentation_v2_visual_director'))
+      ? 'Há slides com direção visual ou layout ainda genéricos.'
+      : '',
+    slideRubric.some(slide => slide.recommendedAgents.includes('presentation_v2_data_diagrammer'))
+      ? 'Há assets analíticos planejados sem spec suficiente para materialização consistente.'
+      : '',
+  ].filter(Boolean))
+
+  const criticalSlides = slideRubric.filter(slide => slide.status === 'critical').length
+
+  return {
+    score,
+    status: score < Math.max(60, deckThreshold - 10) || criticalSlides >= 2
+      ? 'critical'
+      : score < deckThreshold || slidesBelowThreshold.length > 0
+        ? 'repair'
+        : 'ok',
+    strengths,
+    warnings,
+    slideThreshold,
+    deckThreshold,
+    slidesBelowThreshold,
+    repairableSlides: repairTargets.map(slide => slide.slideNumber),
+    repairTargets,
+    slideRubric,
+  }
 }

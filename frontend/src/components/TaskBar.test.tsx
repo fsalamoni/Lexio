@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import TaskBar from './TaskBar'
 
 const taskBarMocks = vi.hoisted(() => ({
+  cancelTask: vi.fn(),
   dismissTask: vi.fn(),
   useTaskManager: vi.fn(),
 }))
@@ -22,6 +23,7 @@ describe('TaskBar', () => {
   it('renders running task details and expands the list', () => {
     taskBarMocks.useTaskManager.mockReturnValue({
       activeCount: 1,
+      cancelTask: taskBarMocks.cancelTask,
       dismissTask: taskBarMocks.dismissTask,
       tasks: [
         {
@@ -31,6 +33,7 @@ describe('TaskBar', () => {
           startedAt: Date.now() - 15_000,
           progress: 65,
           phase: 'Pesquisa externa',
+          cancellable: true,
           stageMeta: 'Aguardando retorno do provedor',
           operationals: {
             totalCostUsd: 0,
@@ -52,11 +55,14 @@ describe('TaskBar', () => {
     expect(screen.getByText('Aguardando retorno do provedor')).toBeTruthy()
     expect(screen.getByText('2 retries • 1 fallback • 2 etapas')).toBeTruthy()
     expect(screen.getByText('65%')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Cancelar Pipeline v3/ }))
+    expect(taskBarMocks.cancelTask).toHaveBeenCalledWith('task-1')
   })
 
   it('shows completed tasks and allows dismissing them', () => {
     taskBarMocks.useTaskManager.mockReturnValue({
       activeCount: 0,
+      cancelTask: taskBarMocks.cancelTask,
       dismissTask: taskBarMocks.dismissTask,
       tasks: [
         {

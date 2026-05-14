@@ -16,6 +16,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -57,6 +58,7 @@ export interface TaskInfo {
   error?: string
   result?: unknown
   metadata?: TaskMetadata
+  cancellable?: boolean
 }
 
 export interface TaskProgress {
@@ -69,16 +71,19 @@ export interface TaskProgress {
   totalSteps?: number
 }
 
-type TaskExecutor = (onProgress: (p: TaskProgress) => void) => Promise<unknown>
+type TaskExecutor = (onProgress: (p: TaskProgress) => void, signal: AbortSignal) => Promise<unknown>
 
 interface StartTaskOptions {
   metadata?: TaskMetadata
+  cancellable?: boolean
 }
 
 interface TaskManagerContextType {
   tasks: TaskInfo[]
   /** Starts a new persistent task. Returns task id. */
   startTask: (name: string, executor: TaskExecutor, options?: StartTaskOptions) => string
+  /** Request cancellation for a running cancellable task */
+  cancelTask: (id: string) => void
   /** Dismiss a completed/errored task from the list */
   dismissTask: (id: string) => void
   /** Get a specific task by id */
@@ -91,6 +96,13 @@ interface TaskManagerContextType {
 
 const TaskManagerContext = createContext<TaskManagerContextType | null>(null)
 
+function isAbortError(err: unknown): boolean {
+  return (
+    (err instanceof DOMException && err.name === 'AbortError') ||
+    (err instanceof Error && err.name === 'AbortError')
+  )
+}
+
 export function useTaskManager(): TaskManagerContextType {
   const ctx = useContext(TaskManagerContext)
   if (!ctx) throw new Error('useTaskManager must be inside TaskManagerProvider')
@@ -102,6 +114,13 @@ export function useTaskManager(): TaskManagerContextType {
 export function TaskManagerProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<TaskInfo[]>([])
   const idCounter = useRef(0)
+  const tasksRef = useRef<TaskInfo[]>([])
+  const abortControllers = useRef<Record<string, AbortController>>({})
+  const cancelledTaskIds = useRef(new Set<string>())
+
+  useEffect(() => {
+    tasksRef.current = tasks
+  }, [tasks])
 
   const updateTask = useCallback((id: string, patch: Partial<TaskInfo>) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t))
@@ -109,6 +128,8 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
 
   const startTask = useCallback((name: string, executor: TaskExecutor, options?: StartTaskOptions): string => {
     const id = `task_${++idCounter.current}_${Date.now()}`
+    const abortController = new AbortController()
+    abortControllers.current[id] = abortController
     const task: TaskInfo = {
       id,
       name,
@@ -118,10 +139,12 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
       phase: 'Iniciando...',
       startedAt: Date.now(),
       metadata: options?.metadata,
+      cancellable: options?.cancellable,
     }
     setTasks(prev => [...prev, task])
 
     const onProgress = (p: TaskProgress) => {
+      if (cancelledTaskIds.current.has(id)) return
       const executionState = deriveExecutionState({
         progress: p.progress,
         phase: p.phase,
@@ -143,8 +166,17 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
     }
 
     // Execute in background — survives navigation
-    executor(onProgress)
+    executor(onProgress, abortController.signal)
       .then(result => {
+        if (cancelledTaskIds.current.has(id)) {
+          updateTask(id, {
+            status: 'cancelled',
+            executionState: 'cancelled',
+            phase: 'Cancelado',
+            completedAt: Date.now(),
+          })
+          return
+        }
         updateTask(id, {
           status: 'completed',
           executionState: 'completed',
@@ -156,7 +188,7 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
       })
       .catch(err => {
         const msg = err instanceof Error ? err.message : String(err)
-        const isAbort = err instanceof DOMException && err.name === 'AbortError'
+        const isAbort = isAbortError(err) || cancelledTaskIds.current.has(id)
         updateTask(id, {
           status: isAbort ? 'cancelled' : 'error',
           executionState: isAbort ? 'cancelled' : 'failed',
@@ -165,8 +197,25 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
           error: isAbort ? undefined : msg,
         })
       })
+      .finally(() => {
+        delete abortControllers.current[id]
+        cancelledTaskIds.current.delete(id)
+      })
 
     return id
+  }, [updateTask])
+
+  const cancelTask = useCallback((id: string) => {
+    const task = tasksRef.current.find(item => item.id === id)
+    if (!task || task.status !== 'running' || !task.cancellable) return
+
+    cancelledTaskIds.current.add(id)
+    abortControllers.current[id]?.abort()
+    updateTask(id, {
+      executionState: 'cancelled',
+      phase: 'Cancelando...',
+      stageMeta: 'Interrupção solicitada pelo usuário.',
+    })
   }, [updateTask])
 
   const dismissTask = useCallback((id: string) => {
@@ -180,7 +229,7 @@ export function TaskManagerProvider({ children }: { children: ReactNode }) {
   const activeCount = tasks.filter(t => t.status === 'running').length
 
   return (
-    <TaskManagerContext.Provider value={{ tasks, startTask, dismissTask, getTask, activeCount }}>
+    <TaskManagerContext.Provider value={{ tasks, startTask, cancelTask, dismissTask, getTask, activeCount }}>
       {children}
     </TaskManagerContext.Provider>
   )

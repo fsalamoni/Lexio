@@ -10,7 +10,7 @@
  * interceptor only catches residual API calls that couldn't be handled.
  */
 
-import type { AxiosInstance, AxiosError } from 'axios'
+import type { AxiosInstance, AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 
 const DEMO_SMOKE_LOGIN_EMAIL = (import.meta.env.VITE_SMOKE_LOGIN_EMAIL as string | undefined) ?? 'smoke@local.test'
 const DEMO_SMOKE_LOGIN_PASSWORD = (import.meta.env.VITE_SMOKE_LOGIN_PASSWORD as string | undefined) ?? 'lexio-smoke-123'
@@ -145,7 +145,14 @@ const ARRAY_ENDPOINTS: Record<string, unknown[]> = {
   ],
 }
 
+function normalizeUrl(url: string): string {
+  const withoutBase = url.replace(/^\/api\/v1/, '')
+  return withoutBase.split('?')[0] || '/'
+}
+
 function resolve(url: string, method?: string): unknown {
+  url = normalizeUrl(url)
+
   // Exact-match object endpoints
   if (url in OBJECT_ENDPOINTS) return OBJECT_ENDPOINTS[url]
   // Exact-match array endpoints
@@ -219,12 +226,81 @@ function resolve(url: string, method?: string): unknown {
   return []
 }
 
+function parseLoginBody(rawBody: unknown): { email: string; password: string } {
+  if (typeof rawBody === 'string') {
+    try {
+      const parsed = JSON.parse(rawBody) as { email?: string; password?: string }
+      return { email: parsed.email?.trim() ?? '', password: parsed.password ?? '' }
+    } catch {
+      return { email: '', password: '' }
+    }
+  }
+
+  if (rawBody && typeof rawBody === 'object') {
+    const parsed = rawBody as { email?: string; password?: string }
+    return { email: parsed.email?.trim() ?? '', password: parsed.password ?? '' }
+  }
+
+  return { email: '', password: '' }
+}
+
+function buildDemoResponse(
+  data: unknown,
+  config: InternalAxiosRequestConfig,
+  status = 200,
+  statusText = status >= 400 ? 'Error (demo)' : 'OK (demo)',
+): AxiosResponse {
+  return {
+    data,
+    status,
+    statusText,
+    headers: {},
+    config,
+  }
+}
+
+function buildDemoAdapterResponse(config: InternalAxiosRequestConfig): Promise<AxiosResponse> {
+  const url = normalizeUrl(config.url ?? '')
+  const method = config.method ?? 'get'
+
+  if (url === '/auth/login' && method === 'post') {
+    const { email, password } = parseLoginBody(config.data)
+    if (email === DEMO_SMOKE_LOGIN_EMAIL && password === DEMO_SMOKE_LOGIN_PASSWORD) {
+      return Promise.resolve(buildDemoResponse({
+        access_token: 'demo-token-' + Date.now(),
+        user_id: 'demo-user',
+        role: 'admin',
+        full_name: DEMO_SMOKE_LOGIN_NAME,
+      }, config))
+    }
+
+    const response = buildDemoResponse(
+      { detail: 'Use as credenciais do smoke local exibidas na tela de login.' },
+      config,
+      401,
+      'Unauthorized',
+    )
+    const unauthorizedError = new Error('Use as credenciais do smoke local exibidas na tela de login.') as AxiosError
+    unauthorizedError.config = config
+    unauthorizedError.isAxiosError = true
+    unauthorizedError.response = response
+    return Promise.reject(unauthorizedError)
+  }
+
+  return Promise.resolve(buildDemoResponse(resolve(url, method), config))
+}
+
 /**
  * Install demo-mode response interceptor on the given axios instance.
  * Failed requests are silently resolved with mock data; 401/429 errors
  * are still propagated so auth logic keeps working.
  */
 export function installDemoInterceptor(api: AxiosInstance): void {
+  api.interceptors.request.use((config) => {
+    config.adapter = buildDemoAdapterResponse
+    return config
+  })
+
   api.interceptors.response.use(
     (response) => response,
     (error: AxiosError) => {

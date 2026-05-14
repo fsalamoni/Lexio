@@ -46,6 +46,37 @@ export interface StudioPipelineInput {
   customInstructions?: string
   artifactType: StudioArtifactType
   artifactLabel: string
+  presentationV2Briefing?: {
+    slideCount: number
+    depth: string
+    objective: string
+    audience: string
+    coreMessage: string
+    successCriteria: string
+    proofObligations?: string
+    institutionalConstraints?: string
+    durationMinutes?: number
+    slideDensity?: 'leve' | 'equilibrada' | 'densa'
+    evidenceMode?: 'padrao' | 'reforcada' | 'estrita'
+    tone?: string
+    visualStyle?: string
+    multimodal?: {
+      images?: boolean
+      audio?: boolean
+      video?: boolean
+      charts?: boolean
+      diagrams?: boolean
+    }
+    mediaRequirements?: {
+      images?: 'disabled' | 'optional' | 'required'
+      audio?: 'disabled' | 'optional' | 'required'
+      video?: 'disabled' | 'optional' | 'required'
+      charts?: 'disabled' | 'optional' | 'required'
+      diagrams?: 'disabled' | 'optional' | 'required'
+    }
+    constraints?: string
+    sourcePriority?: string
+  }
   /** Optional legal area id (e.g. 'civil', 'tax', 'criminal'). When provided, prompts are enriched with area-specific guidance. */
   legalArea?: string
 }
@@ -184,6 +215,7 @@ const ARTIFACT_AGENT_MAP: Record<StudioArtifactType, SpecialistRole> = {
   teste:             'studio_escritor',
   guia_estruturado:  'studio_escritor',
   apresentacao:      'studio_visual',
+  apresentacao_v2:   'studio_visual',
   mapa_mental:       'studio_visual',
   infografico:       'studio_visual',
   tabela_dados:      'studio_visual',

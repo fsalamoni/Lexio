@@ -223,9 +223,98 @@ export interface LLMOperationalMeta {
   totalRetryCount: number
 }
 
-interface ChatMessage {
+export type ChatMessageTextPart = {
+  type: 'text'
+  text: string
+}
+
+export type ChatMessageImagePart = {
+  type: 'image_url'
+  image_url: {
+    url: string
+    detail?: 'auto' | 'low' | 'high'
+  }
+}
+
+export type ChatMessageContentPart = ChatMessageTextPart | ChatMessageImagePart
+export type ChatMessageContent = string | ChatMessageContentPart[]
+
+export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: ChatMessageContent
+}
+
+type AnthropicContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+
+function extractTextFromChatMessageContent(content: ChatMessageContent): string {
+  if (typeof content === 'string') return content
+  return content
+    .map((part) => (part.type === 'text' ? part.text : ''))
+    .filter(Boolean)
+    .join('')
+}
+
+function parseImageDataUrl(dataUrl: string): { mediaType: string; data: string } | null {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/)
+  if (!match) return null
+  return {
+    mediaType: match[1],
+    data: match[2],
+  }
+}
+
+function buildAnthropicMessageContent(content: ChatMessageContent): string | AnthropicContentBlock[] {
+  if (typeof content === 'string') return content
+
+  const blocks: AnthropicContentBlock[] = []
+  for (const part of content) {
+    if (part.type === 'text') {
+      if (part.text.trim()) {
+        blocks.push({ type: 'text', text: part.text })
+      }
+      continue
+    }
+
+    const imageData = parseImageDataUrl(part.image_url.url)
+    if (imageData) {
+      blocks.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: imageData.mediaType,
+          data: imageData.data,
+        },
+      })
+      continue
+    }
+
+    if (part.image_url.url.trim()) {
+      blocks.push({ type: 'text', text: `Image reference: ${part.image_url.url}` })
+    }
+  }
+
+  if (blocks.length === 1 && blocks[0].type === 'text') {
+    return blocks[0].text
+  }
+  return blocks
+}
+
+function extractTextFromOpenAIContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+
+  return content
+    .map((part) => {
+      if (!part || typeof part !== 'object') return ''
+      const candidate = part as Record<string, unknown>
+      if (typeof candidate.text === 'string') return candidate.text
+      if (typeof candidate.content === 'string') return candidate.content
+      return ''
+    })
+    .filter(Boolean)
+    .join('')
 }
 
 // ── Provider dispatch ─────────────────────────────────────────────────────────
@@ -293,10 +382,13 @@ function buildAnthropicPlan(
 ): ProviderRequestPlan {
   const url = `${resolved.baseUrl.replace(/\/+$/, '')}/v1/messages`
   // Anthropic separates the system prompt from the messages list.
-  const systemMessages = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
+  const systemMessages = messages
+    .filter(m => m.role === 'system')
+    .map(m => extractTextFromChatMessageContent(m.content))
+    .join('\n\n')
   const conversation = messages.filter(m => m.role !== 'system').map(m => ({
     role: m.role === 'assistant' ? 'assistant' : 'user',
-    content: m.content,
+    content: buildAnthropicMessageContent(m.content),
   }))
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -320,8 +412,8 @@ function buildAnthropicPlan(
 
 function parseOpenAIChatResponse(raw: string): { content: string; tokensIn: number; tokensOut: number; cost?: number } {
   const data = JSON.parse(raw) as Record<string, unknown>
-  const choices = data.choices as Array<{ message?: { content?: string } }> | undefined
-  const content = choices?.[0]?.message?.content ?? ''
+  const choices = data.choices as Array<{ message?: { content?: unknown } }> | undefined
+  const content = extractTextFromOpenAIContent(choices?.[0]?.message?.content)
   const usage = (data.usage ?? {}) as Record<string, number>
   return {
     content,
@@ -447,9 +539,9 @@ async function consumeOpenAIStream(
           if (!payload || payload === '[DONE]') continue
           try {
             const event = JSON.parse(payload) as Record<string, unknown>
-            const choices = event.choices as Array<{ delta?: { content?: string } }> | undefined
-            const delta = choices?.[0]?.delta?.content
-            if (typeof delta === 'string' && delta.length > 0) {
+            const choices = event.choices as Array<{ delta?: { content?: unknown } }> | undefined
+            const delta = extractTextFromOpenAIContent(choices?.[0]?.delta?.content)
+            if (delta.length > 0) {
               accumulated += delta
               onDelta(delta, accumulated)
             }

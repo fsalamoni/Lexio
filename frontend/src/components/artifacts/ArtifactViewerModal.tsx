@@ -8,10 +8,10 @@ import {
   Download, Copy, Check as CheckIcon, Trash2, RotateCcw,
   FileText, Map, CreditCard, BarChart3, Table, FileQuestion,
   Presentation, Mic, Video, PenTool, BookMarked, Sparkles, Image as ImageIcon,
-  ChevronDown,
+  AlertTriangle, CheckCircle2, ChevronDown,
 } from 'lucide-react'
 import type { StudioArtifact, StudioArtifactType } from '../../lib/firestore-service'
-import { parseArtifactContent, type ParsedArtifact } from './artifact-parsers'
+import { parseArtifactContent, type ParsedArtifact, type ParsedPresentationV2 } from './artifact-parsers'
 import {
   exportAsMarkdown,
   exportAsJSON,
@@ -20,18 +20,24 @@ import {
   exportQuizAsText,
   exportPresentationAsText,
   exportPresentationAsPptx,
+  exportPresentationV2AsPptx,
   exportAudioScriptAsText,
   exportVideoScriptAsText,
   exportFileFromUrl,
   exportPresentationImagesAsZip,
+  formatPresentationV2ExportGateLabel,
   printAsPDF,
+  resolvePresentationV2PrimaryExportIssue,
+  summarizePresentationV2ExportReadiness,
 } from './artifact-exporters'
 import DraggablePanel from '../DraggablePanel'
+import { useToast } from '../Toast'
 
 // Lazy-loaded viewers — will be created in subsequent steps
 import FlashcardViewer from './FlashcardViewer'
 import QuizPlayer from './QuizPlayer'
 import PresentationViewer from './PresentationViewer'
+import PresentationV2Viewer, { type PresentationV2AssetReviewContext, type PresentationV2OperatorActionContext } from './PresentationV2Viewer'
 import MindMapViewer from './MindMapViewer'
 import DataTableViewer from './DataTableViewer'
 import InfographicRenderer from './InfographicRenderer'
@@ -49,6 +55,7 @@ const ARTIFACT_ICONS: Record<StudioArtifactType, React.ElementType> = {
   cartoes_didaticos: CreditCard,
   teste: FileQuestion,
   apresentacao: Presentation,
+  apresentacao_v2: Sparkles,
   mapa_mental: Map,
   infografico: PenTool,
   tabela_dados: Table,
@@ -66,6 +73,7 @@ const ARTIFACT_LABELS: Record<StudioArtifactType, string> = {
   cartoes_didaticos: 'Cartões Didáticos',
   teste: 'Teste/Quiz',
   apresentacao: 'Apresentação',
+  apresentacao_v2: 'Apresentação v2',
   mapa_mental: 'Mapa Mental',
   infografico: 'Infográfico',
   tabela_dados: 'Tabela de Dados',
@@ -73,6 +81,172 @@ const ARTIFACT_LABELS: Record<StudioArtifactType, string> = {
   video_script: 'Vídeo',
   video_production: 'Produção de Vídeo',
   outro: 'Outro',
+}
+
+const PRESENTATION_V2_VISUAL_REPAIR_AGENTS = new Set([
+  'presentation_v2_image_generator',
+  'presentation_v2_visual_director',
+  'presentation_v2_data_diagrammer',
+])
+
+function summarizeSlideList(slideNumbers: number[]) {
+  const unique = Array.from(new Set(slideNumbers)).sort((left, right) => left - right)
+  if (unique.length === 0) return ''
+  return unique.length === 1 ? `slide ${unique[0]}` : `slides ${unique.join(', ')}`
+}
+
+function hasStoredPresentationV2Asset(data: ParsedPresentationV2, type: 'render' | 'chart' | 'diagram' | 'audio' | 'video') {
+  const assets = data.assets || []
+  return assets.some((asset) => asset.type === type && (asset.status === 'stored' || Boolean(asset.url || asset.storagePath)))
+}
+
+function hasStoredPresentationV2VisualAsset(data: ParsedPresentationV2) {
+  const assets = data.assets || []
+  return assets.some((asset) => (asset.type === 'render' || asset.type === 'chart' || asset.type === 'diagram') && (asset.status === 'stored' || Boolean(asset.url || asset.storagePath)))
+}
+
+type PresentationV2OperatorRecommendation = {
+  tone: 'critical' | 'review' | 'ready'
+  title: string
+  summary: string
+  ctaLabel?: string
+  ctaAction?: PresentationV2ActionHandler
+  ctaContext?: PresentationV2OperatorActionContext
+  unavailableReason?: string
+  context: string[]
+}
+
+type PresentationV2ActionHandler = (context?: PresentationV2OperatorActionContext) => void
+type PresentationV2AssetReviewHandler = (context: PresentationV2AssetReviewContext) => void
+
+function resolvePresentationV2OperatorRecommendation({
+  data,
+  exportReadiness,
+  onRegenerate,
+  onGenerateImage,
+  onGenerateAudio,
+  onGenerateVideo,
+}: {
+  data: ParsedPresentationV2
+  exportReadiness: ReturnType<typeof summarizePresentationV2ExportReadiness>
+  onRegenerate?: PresentationV2ActionHandler
+  onGenerateImage?: PresentationV2ActionHandler
+  onGenerateAudio?: PresentationV2ActionHandler
+  onGenerateVideo?: PresentationV2ActionHandler
+}): PresentationV2OperatorRecommendation {
+  const slideRubric = data.deck.quality?.slideRubric || []
+  const multimodalSlides = data.deck.quality?.multimodalAudit?.slides || []
+  const visualRepairSlides = slideRubric.filter((entry) => (entry.recommendedAgents || []).some((agent) => PRESENTATION_V2_VISUAL_REPAIR_AGENTS.has(agent)))
+  const rubricSlidesNeedingReview = slideRubric.filter((entry) => entry.status !== 'ok' || (entry.warnings?.length ?? 0) > 0 || (entry.repairHints?.length ?? 0) > 0)
+  const multimodalSlidesNeedingReview = multimodalSlides.filter((entry) => entry.status !== 'ok' || (entry.warnings?.length ?? 0) > 0)
+  const missingVisuals = !hasStoredPresentationV2VisualAsset(data)
+  const missingAudio = !hasStoredPresentationV2Asset(data, 'audio')
+  const missingVideo = !hasStoredPresentationV2Asset(data, 'video')
+  const exportGate = formatPresentationV2ExportGateLabel(exportReadiness).toLowerCase()
+  const context = [
+    `Exportação: ${exportGate}`,
+    rubricSlidesNeedingReview.length > 0 ? `Rubrica: ${summarizeSlideList(rubricSlidesNeedingReview.map((entry) => entry.slideNumber))}` : null,
+    multimodalSlidesNeedingReview.length > 0 ? `Coerência: ${summarizeSlideList(multimodalSlidesNeedingReview.map((entry) => entry.slideNumber))}` : null,
+    missingAudio ? 'Narração pendente' : 'Narração materializada',
+    missingVideo ? 'Clipes pendentes' : 'Clipes materializados',
+  ].filter(Boolean) as string[]
+
+  if (missingVisuals && onGenerateImage) {
+    return {
+      tone: exportReadiness.canExportPptx === false ? 'critical' : 'review',
+      title: 'Gerar slides visuais antes da próxima exportação',
+      summary: 'O deck ainda não materializou os visuais finais. Gere os slides visuais para reduzir ruído de revisão no manifesto e na exportação.',
+      ctaLabel: 'Gerar Slides Visuais',
+      ctaAction: onGenerateImage,
+      ctaContext: { source: 'modal_recommendation', action: 'visual' },
+      context,
+    }
+  }
+
+  if (visualRepairSlides.length > 0) {
+    const slideLabel = summarizeSlideList(visualRepairSlides.map((entry) => entry.slideNumber))
+    const firstHint = visualRepairSlides.flatMap((entry) => entry.repairHints || entry.warnings || []).find(Boolean)
+    const repairVerb = visualRepairSlides.length === 1 ? 'ainda pede' : 'ainda pedem'
+    return {
+      tone: exportReadiness.canExportPptx === false ? 'critical' : 'review',
+      title: 'Rodar reparo visual guiado antes da próxima exportação',
+      summary: `${slideLabel} ${repairVerb} reforço visual no manifesto.${firstHint ? ` ${firstHint}` : ''}`,
+      ctaLabel: onGenerateImage ? 'Gerar Slides Visuais' : undefined,
+      ctaAction: onGenerateImage,
+      ctaContext: { source: 'modal_recommendation', action: 'visual', slideNumber: visualRepairSlides[0]?.slideNumber, reason: firstHint },
+      unavailableReason: onGenerateImage ? undefined : 'A geração visual não está disponível neste ambiente. Abra o notebook fora do modo smoke para executar o reparo visual.',
+      context,
+    }
+  }
+
+  if (rubricSlidesNeedingReview.length > 0) {
+    const slideLabel = summarizeSlideList(rubricSlidesNeedingReview.map((entry) => entry.slideNumber))
+    const firstHint = rubricSlidesNeedingReview.flatMap((entry) => entry.repairHints || entry.warnings || []).find(Boolean)
+    const repairVerb = rubricSlidesNeedingReview.length === 1 ? 'tem' : 'têm'
+    return {
+      tone: exportReadiness.canExportPptx === false ? 'critical' : 'review',
+      title: 'Reabrir briefing com reparo guiado',
+      summary: `${slideLabel} ${repairVerb} pendências de roteiro, estrutura ou fala no manifesto.${firstHint ? ` ${firstHint}` : ''}`,
+      ctaLabel: onRegenerate ? 'Revisar Briefing' : undefined,
+      ctaAction: onRegenerate,
+      ctaContext: { source: 'modal_recommendation', action: 'briefing', slideNumber: rubricSlidesNeedingReview[0]?.slideNumber, reason: firstHint },
+      unavailableReason: onRegenerate ? undefined : 'A regeneração guiada não está disponível neste ambiente. Abra o artefato no notebook para reabrir o briefing com foco de reparo.',
+      context,
+    }
+  }
+
+  if (exportReadiness.canExportPptx === false) {
+    return {
+      tone: 'critical',
+      title: 'Revisar pendências antes de exportar o PPTX',
+      summary: resolvePresentationV2PrimaryExportIssue(exportReadiness) || 'O deck ainda possui bloqueios operacionais de acessibilidade ou conformidade.',
+      context,
+    }
+  }
+
+  if (missingAudio) {
+    return {
+      tone: multimodalSlidesNeedingReview.length > 0 ? 'review' : 'ready',
+      title: 'Materializar a narração do deck',
+      summary: 'A narração ainda não foi gerada. Produzir o TTS ajuda a fechar a revisão multimodal antes da exportação final.',
+      ctaLabel: onGenerateAudio ? 'Gerar Narração' : undefined,
+      ctaAction: onGenerateAudio,
+      ctaContext: { source: 'modal_recommendation', action: 'audio' },
+      unavailableReason: onGenerateAudio ? undefined : 'A geração de narração não está disponível neste ambiente. Execute esta etapa em um notebook com mídia habilitada.',
+      context,
+    }
+  }
+
+  if (missingVideo && multimodalSlidesNeedingReview.length > 0) {
+    const slideLabel = summarizeSlideList(multimodalSlidesNeedingReview.map((entry) => entry.slideNumber))
+    const multimodalVerb = multimodalSlidesNeedingReview.length === 1 ? 'ainda exige' : 'ainda exigem'
+    return {
+      tone: 'review',
+      title: 'Fechar o alinhamento multimodal com clipes do deck',
+      summary: `${slideLabel} ${multimodalVerb} alinhamento multimodal. Gerar os clipes da apresentação reduz a lacuna entre manifesto, narrativa e assets finais.`,
+      ctaLabel: onGenerateVideo ? 'Gerar Clipes' : undefined,
+      ctaAction: onGenerateVideo,
+      ctaContext: { source: 'modal_recommendation', action: 'video', slideNumber: multimodalSlidesNeedingReview[0]?.slideNumber },
+      unavailableReason: onGenerateVideo ? undefined : 'A geração de clipes não está disponível neste ambiente. Execute esta etapa fora do modo smoke.',
+      context,
+    }
+  }
+
+  if (exportReadiness.status === 'review') {
+    return {
+      tone: 'review',
+      title: 'Deck pronto para revisão final do operador',
+      summary: resolvePresentationV2PrimaryExportIssue(exportReadiness) || 'As principais superfícies estão prontas, mas ainda vale revisar a pendência prioritária antes da exportação final.',
+      context,
+    }
+  }
+
+  return {
+    tone: 'ready',
+    title: 'Deck pronto para a próxima etapa',
+    summary: 'O manifesto já está consistente para exportação e para continuação da produção multimodal, se necessário.',
+    context,
+  }
 }
 
 // ── Markdown fallback renderer ──────────────────────────────────────────────
@@ -139,7 +313,17 @@ function CopyButton({ text }: { text: string }) {
 
 // ── Viewer router ───────────────────────────────────────────────────────────
 
-function ArtifactContent({ artifact, parsed }: { artifact: StudioArtifact; parsed: ParsedArtifact }) {
+interface ArtifactContentProps {
+  artifact: StudioArtifact
+  parsed: ParsedArtifact
+  onRegenerate?: PresentationV2ActionHandler
+  onGenerateVideo?: PresentationV2ActionHandler
+  onGenerateAudio?: PresentationV2ActionHandler
+  onGenerateImage?: PresentationV2ActionHandler
+  onReviewPresentationV2Asset?: PresentationV2AssetReviewHandler
+}
+
+function ArtifactContent({ artifact, parsed, onRegenerate, onGenerateVideo, onGenerateAudio, onGenerateImage, onReviewPresentationV2Asset }: ArtifactContentProps) {
   switch (parsed.kind) {
     case 'flashcards':
       return <FlashcardViewer data={parsed.data} />
@@ -147,6 +331,17 @@ function ArtifactContent({ artifact, parsed }: { artifact: StudioArtifact; parse
       return <QuizPlayer data={parsed.data} />
     case 'presentation':
       return <PresentationViewer data={parsed.data} />
+    case 'presentation_v2':
+      return (
+        <PresentationV2Viewer
+          data={parsed.data}
+          onRegenerate={onRegenerate}
+          onGenerateVideo={onGenerateVideo}
+          onGenerateAudio={onGenerateAudio}
+          onGenerateImage={onGenerateImage}
+          onReviewAsset={onReviewPresentationV2Asset}
+        />
+      )
     case 'mindmap':
       return <MindMapViewer data={parsed.data} />
     case 'datatable':
@@ -188,10 +383,11 @@ interface ArtifactViewerModalProps {
   onClose: () => void
   onDelete: () => void
   onDownload: () => void
-  onRegenerate?: () => void
-  onGenerateVideo?: () => void
-  onGenerateAudio?: () => void
-  onGenerateImage?: () => void
+  onRegenerate?: PresentationV2ActionHandler
+  onGenerateVideo?: PresentationV2ActionHandler
+  onGenerateAudio?: PresentationV2ActionHandler
+  onGenerateImage?: PresentationV2ActionHandler
+  onReviewPresentationV2Asset?: PresentationV2AssetReviewHandler
   onOpenStudio?: () => void
 }
 
@@ -204,11 +400,26 @@ export default function ArtifactViewerModal({
   onGenerateVideo,
   onGenerateAudio,
   onGenerateImage,
+  onReviewPresentationV2Asset,
   onOpenStudio,
 }: ArtifactViewerModalProps) {
+  const toast = useToast()
   const Icon = ARTIFACT_ICONS[artifact.type] || Sparkles
   const label = ARTIFACT_LABELS[artifact.type] || artifact.type
   const parsed = parseArtifactContent(artifact.type, artifact.content)
+  const presentationV2ExportReadiness = parsed.kind === 'presentation_v2'
+    ? summarizePresentationV2ExportReadiness(parsed.data)
+    : null
+  const presentationV2Recommendation = parsed.kind === 'presentation_v2' && presentationV2ExportReadiness
+    ? resolvePresentationV2OperatorRecommendation({
+        data: parsed.data,
+        exportReadiness: presentationV2ExportReadiness,
+        onRegenerate,
+        onGenerateImage,
+        onGenerateAudio,
+        onGenerateVideo,
+      })
+    : null
 
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -259,6 +470,37 @@ export default function ArtifactViewerModal({
           options.push({ label: 'Slides em PNG (.zip)', action: () => void exportPresentationImagesAsZip(parsed.data, safeName) })
         }
         options.push({ label: 'JSON (.json)', action: () => exportAsJSON(parsed.data, safeName) })
+        break
+      case 'presentation_v2':
+        const exportGateLabel = presentationV2ExportReadiness
+          ? formatPresentationV2ExportGateLabel(presentationV2ExportReadiness).toLowerCase()
+          : ''
+        options.push({
+          label: exportGateLabel
+            ? `PowerPoint v2 (.pptx) • ${exportGateLabel}`
+            : 'PowerPoint v2 (.pptx)',
+          action: () => {
+            if (presentationV2ExportReadiness?.canExportPptx === false) {
+              toast.error(
+                'Exportação v2 bloqueada',
+                resolvePresentationV2PrimaryExportIssue(presentationV2ExportReadiness) || 'Revise as pendências de acessibilidade e conformidade antes de exportar o PPTX.',
+              )
+              return
+            }
+            if (presentationV2ExportReadiness?.status === 'review') {
+              toast.warning(
+                'Exportação v2 com pendências',
+                resolvePresentationV2PrimaryExportIssue(presentationV2ExportReadiness) || 'O deck ainda tem alertas de acessibilidade ou conformidade. O PPTX será gerado mesmo assim.',
+              )
+            }
+            return exportPresentationV2AsPptx(parsed.data, safeName)
+          },
+        })
+        options.push({ label: 'Texto Slides (.txt)', action: () => exportPresentationAsText(parsed.data.presentation, safeName) })
+        if (parsed.data.presentation.slides.some(slide => slide.renderedImageUrl)) {
+          options.push({ label: 'Slides em PNG (.zip)', action: () => void exportPresentationImagesAsZip(parsed.data.presentation, safeName) })
+        }
+        options.push({ label: 'Manifesto v2 (.json)', action: () => exportAsJSON(parsed.data.deck, safeName) })
         break
       case 'datatable':
         options.push({ label: 'CSV (.csv)', action: () => exportDataTableAsCSV(parsed.data, safeName) })
@@ -358,6 +600,7 @@ export default function ArtifactViewerModal({
                       onClick={() => {
                         Promise.resolve(opt.action()).catch(error => {
                           console.error('Artifact export failed:', error)
+                          toast.error('Falha na exportação', error instanceof Error ? error.message : 'O artefato não pôde ser exportado.')
                         })
                         setShowExportMenu(false)
                       }}
@@ -374,7 +617,7 @@ export default function ArtifactViewerModal({
             </div>
             {onRegenerate && (
               <button
-                onClick={onRegenerate}
+                onClick={() => onRegenerate(artifact.type === 'apresentacao_v2' ? { source: 'toolbar', action: 'briefing' } : undefined)}
                 className="p-2 rounded-lg transition-colors"
                 style={{ color: 'var(--v2-ink-faint)' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.07)')}
@@ -384,34 +627,34 @@ export default function ArtifactViewerModal({
                 <RotateCcw className="w-4 h-4" />
               </button>
             )}
-            {onGenerateVideo && artifact.type === 'video_script' && (
+            {onGenerateVideo && (artifact.type === 'video_script' || artifact.type === 'apresentacao_v2') && (
               <button
-                onClick={onGenerateVideo}
+                onClick={() => onGenerateVideo(artifact.type === 'apresentacao_v2' ? { source: 'toolbar', action: 'video' } : undefined)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 transition-colors shadow-sm"
-                title="Gerar Vídeo Completo"
+                title={artifact.type === 'apresentacao_v2' ? 'Gerar clipes da apresentação' : 'Gerar Vídeo Completo'}
               >
                 <Video className="w-3.5 h-3.5" />
-                Gerar Vídeo
+                {artifact.type === 'apresentacao_v2' ? 'Gerar Clipes' : 'Gerar Vídeo'}
               </button>
             )}
-            {onGenerateAudio && artifact.type === 'audio_script' && (
+            {onGenerateAudio && (artifact.type === 'audio_script' || artifact.type === 'apresentacao_v2') && (
               <button
-                onClick={onGenerateAudio}
+                onClick={() => onGenerateAudio(artifact.type === 'apresentacao_v2' ? { source: 'toolbar', action: 'audio' } : undefined)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm"
-                title="Gerar Resumo em Áudio"
+                title={artifact.type === 'apresentacao_v2' ? 'Gerar narração da apresentação' : 'Gerar Resumo em Áudio'}
               >
                 <Mic className="w-3.5 h-3.5" />
-                Gerar Resumo em Áudio
+                {artifact.type === 'apresentacao_v2' ? 'Gerar Narração' : 'Gerar Resumo em Áudio'}
               </button>
             )}
-            {onGenerateImage && ['apresentacao', 'mapa_mental', 'infografico', 'tabela_dados'].includes(artifact.type) && (
+            {onGenerateImage && ['apresentacao', 'apresentacao_v2', 'mapa_mental', 'infografico', 'tabela_dados'].includes(artifact.type) && (
               <button
-                onClick={onGenerateImage}
+                onClick={() => onGenerateImage(artifact.type === 'apresentacao_v2' ? { source: 'toolbar', action: 'visual' } : undefined)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 transition-colors shadow-sm"
-                title={artifact.type === 'apresentacao' ? 'Gerar slides visuais' : 'Gerar imagem final'}
+                title={artifact.type === 'apresentacao' || artifact.type === 'apresentacao_v2' ? 'Gerar slides visuais' : 'Gerar imagem final'}
               >
                 <ImageIcon className="w-3.5 h-3.5" />
-                {artifact.type === 'apresentacao' ? 'Gerar Slides Visuais' : 'Gerar Imagem Final'}
+                {artifact.type === 'apresentacao' || artifact.type === 'apresentacao_v2' ? 'Gerar Slides Visuais' : 'Gerar Imagem Final'}
               </button>
             )}
             {onOpenStudio && artifact.type === 'video_script' && (
@@ -437,9 +680,92 @@ export default function ArtifactViewerModal({
           </div>
         </div>
 
+        {presentationV2Recommendation && (
+          <div
+            className="mx-6 mt-4 rounded-2xl border p-4"
+            style={{
+              borderColor: presentationV2Recommendation.tone === 'critical'
+                ? 'rgba(220,38,38,0.22)'
+                : presentationV2Recommendation.tone === 'review'
+                  ? 'rgba(217,119,6,0.24)'
+                  : 'rgba(5,150,105,0.24)',
+              background: presentationV2Recommendation.tone === 'critical'
+                ? 'rgba(220,38,38,0.05)'
+                : presentationV2Recommendation.tone === 'review'
+                  ? 'rgba(217,119,6,0.06)'
+                  : 'rgba(5,150,105,0.06)',
+            }}
+          >
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--v2-ink-faint)' }}>
+                  {presentationV2Recommendation.tone === 'ready'
+                    ? <CheckCircle2 className="h-3.5 w-3.5" />
+                    : <AlertTriangle className="h-3.5 w-3.5" />}
+                  Próxima ação recomendada
+                </div>
+                <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--v2-ink-strong)' }}>
+                  {presentationV2Recommendation.title}
+                </p>
+                <p className="mt-1 text-sm" style={{ color: 'var(--v2-ink-soft)' }}>
+                  {presentationV2Recommendation.summary}
+                </p>
+                {presentationV2Recommendation.unavailableReason && (
+                  <p className="mt-2 text-xs" style={{ color: 'var(--v2-ink-faint)' }}>
+                    {presentationV2Recommendation.unavailableReason}
+                  </p>
+                )}
+                {presentationV2Recommendation.context.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px]" style={{ color: 'var(--v2-ink-muted)' }}>
+                    {presentationV2Recommendation.context.map((item) => (
+                      <span key={item} className="rounded-full border px-2.5 py-1" style={{ borderColor: 'var(--v2-line-soft)' }}>
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {presentationV2Recommendation.ctaLabel && presentationV2Recommendation.ctaAction && (
+                <button
+                  onClick={() => presentationV2Recommendation.ctaAction?.(presentationV2Recommendation.ctaContext)}
+                  aria-label={`Ação recomendada: ${presentationV2Recommendation.ctaLabel}`}
+                  title={`Ação recomendada: ${presentationV2Recommendation.ctaLabel}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors"
+                  style={{
+                    background: presentationV2Recommendation.ctaLabel === 'Revisar Briefing'
+                      ? 'rgb(124,58,237)'
+                      : presentationV2Recommendation.ctaLabel === 'Gerar Narração'
+                      ? 'rgb(5,150,105)'
+                      : presentationV2Recommendation.ctaLabel === 'Gerar Clipes'
+                        ? 'rgb(225,29,72)'
+                        : 'rgb(217,119,6)',
+                  }}
+                >
+                  {presentationV2Recommendation.ctaLabel === 'Revisar Briefing'
+                    ? <RotateCcw className="h-3.5 w-3.5" />
+                    : presentationV2Recommendation.ctaLabel === 'Gerar Narração'
+                    ? <Mic className="h-3.5 w-3.5" />
+                    : presentationV2Recommendation.ctaLabel === 'Gerar Clipes'
+                      ? <Video className="h-3.5 w-3.5" />
+                      : <ImageIcon className="h-3.5 w-3.5" />}
+                  {presentationV2Recommendation.ctaLabel}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          <ArtifactContent artifact={artifact} parsed={parsed} />
+          <ArtifactContent
+            artifact={artifact}
+            parsed={parsed}
+            onRegenerate={onRegenerate}
+            onGenerateVideo={onGenerateVideo}
+            onGenerateAudio={onGenerateAudio}
+            onGenerateImage={onGenerateImage}
+            onReviewPresentationV2Asset={onReviewPresentationV2Asset}
+          />
         </div>
 
         {/* Delete confirmation */}

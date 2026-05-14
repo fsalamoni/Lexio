@@ -6,11 +6,24 @@ import type {
   ParsedSlide,
   MindMapNode,
 } from './artifact-parsers'
+import type { PresentationV2Deck, PresentationV2Slide, PresentationV2SlideAsset } from './firestore-types'
 
 export interface RenderedArtifactImage {
   blob: Blob
   mimeType: string
   extension: string
+}
+
+interface ChartDatum {
+  label: string
+  value: number
+  note?: string
+}
+
+interface DiagramNode {
+  id: string
+  label: string
+  detail?: string
 }
 
 function escapeXml(value: string): string {
@@ -324,4 +337,203 @@ export async function renderDataTableImage(data: ParsedDataTable): Promise<Rende
     mimeType: 'image/png',
     extension: '.png',
   }
+}
+
+export async function renderPresentationV2ChartAsset(
+  deck: PresentationV2Deck,
+  slide: PresentationV2Slide,
+  asset: PresentationV2SlideAsset,
+): Promise<RenderedArtifactImage> {
+  const width = 1600
+  const height = 900
+  const data = normalizeChartData(slide, asset)
+  const spec = asRecord(slide.chartSpec) || {}
+  const title = firstString(spec.title, asset.altText, slide.title) || slide.title
+  const legend = firstString(spec.legend, spec.subtitle, asset.prompt, slide.purpose) || deck.title
+  const ink = normalizeColor(deck.theme.palette?.[0], '#0f172a')
+  const accent = normalizeColor(deck.theme.palette?.[2], '#0f766e')
+  const soft = normalizeColor(deck.theme.palette?.[3], '#e0f2fe')
+  const maxValue = Math.max(1, ...data.map(item => Math.abs(item.value)))
+  const chartTop = 250
+  const chartLeft = 160
+  const chartWidth = 1260
+  const chartHeight = 470
+  const barGap = 22
+  const barWidth = Math.max(74, (chartWidth - barGap * Math.max(0, data.length - 1)) / Math.max(1, data.length))
+
+  const bars = data.map((item, index) => {
+    const x = chartLeft + index * (barWidth + barGap)
+    const barHeight = Math.max(16, (Math.abs(item.value) / maxValue) * chartHeight)
+    const y = chartTop + chartHeight - barHeight
+    const labelLines = wrapText(item.label, 17).slice(0, 2)
+    return [
+      `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="18" fill="${accent}" opacity="${0.95 - (index % 3) * 0.12}"/>`,
+      `<text x="${x + barWidth / 2}" y="${y - 18}" text-anchor="middle" class="strong">${escapeXml(String(item.value))}</text>`,
+      labelLines.map((line, lineIndex) => `<text x="${x + barWidth / 2}" y="${chartTop + chartHeight + 44 + lineIndex * 24}" text-anchor="middle" class="small">${escapeXml(line)}</text>`).join(''),
+    ].join('')
+  }).join('')
+
+  const body = [
+    `<rect width="${width}" height="${height}" fill="#ffffff"/>`,
+    `<rect x="0" y="0" width="${width}" height="170" fill="${ink}"/>`,
+    `<text x="104" y="78" style="font:700 44px Georgia, serif; fill:#ffffff;">${escapeXml(wrapText(title, 46).slice(0, 1)[0] || title)}</text>`,
+    `<text x="106" y="124" style="font:500 22px Georgia, serif; fill:rgba(255,255,255,0.84);">${escapeXml(wrapText(legend, 90).slice(0, 1)[0] || legend)}</text>`,
+    `<rect x="96" y="206" width="1408" height="614" rx="34" fill="${soft}" opacity="0.58"/>`,
+    `<line x1="${chartLeft}" y1="${chartTop + chartHeight}" x2="${chartLeft + chartWidth}" y2="${chartTop + chartHeight}" stroke="#94a3b8" stroke-width="3"/>`,
+    bars,
+    `<text x="104" y="852" class="caption">Slide ${slide.number} · Gráfico renderizado localmente pelo Gerador de Apresentação v2</text>`,
+  ].join('')
+
+  return {
+    blob: await svgToPngBlob(buildBaseSvg(width, height, body), width, height),
+    mimeType: 'image/png',
+    extension: '.png',
+  }
+}
+
+export async function renderPresentationV2DiagramAsset(
+  deck: PresentationV2Deck,
+  slide: PresentationV2Slide,
+  asset: PresentationV2SlideAsset,
+): Promise<RenderedArtifactImage> {
+  const width = 1600
+  const height = 900
+  const nodes = normalizeDiagramNodes(slide, asset)
+  const spec = asRecord(slide.chartSpec) || {}
+  const title = firstString(spec.title, asset.altText, slide.title) || slide.title
+  const legend = firstString(spec.legend, spec.subtitle, asset.prompt, slide.purpose) || deck.outline.narrativeArc
+  const ink = normalizeColor(deck.theme.palette?.[0], '#0f172a')
+  const accent = normalizeColor(deck.theme.palette?.[2], '#0f766e')
+  const nodeColors = ['#e0f2fe', '#dcfce7', '#fef3c7', '#fce7f3', '#ede9fe', '#cffafe']
+
+  const rows = nodes.map((node, index) => {
+    const row = Math.floor(index / 2)
+    const col = index % 2
+    const x = 120 + col * 710
+    const y = 228 + row * 136
+    const color = nodeColors[index % nodeColors.length]
+    const labelLines = wrapText(node.label, 42).slice(0, 2)
+    const detailLines = wrapText(node.detail || '', 58).slice(0, 2)
+    const arrow = index < nodes.length - 1
+      ? col === 0
+        ? `<path d="M760 ${y + 58} H814" stroke="${accent}" stroke-width="5" stroke-linecap="round"/><path d="M814 ${y + 58} l-18 -12 v24 z" fill="${accent}"/>`
+        : `<path d="M1180 ${y + 104} C1180 ${y + 150}, 420 ${y + 150}, 420 ${y + 136}" fill="none" stroke="${accent}" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 10"/>`
+      : ''
+    return [
+      `<rect x="${x}" y="${y}" width="580" height="104" rx="26" fill="${color}" stroke="${accent}" stroke-width="3"/>`,
+      `<circle cx="${x + 46}" cy="${y + 52}" r="23" fill="${accent}"/>`,
+      `<text x="${x + 36}" y="${y + 60}" style="font:700 20px Georgia, serif; fill:#ffffff;">${index + 1}</text>`,
+      linesToSvg(labelLines, x + 86, y + 42, 26, 'strong'),
+      detailLines.length ? linesToSvg(detailLines, x + 86, y + 82, 20, 'small') : '',
+      arrow,
+    ].join('')
+  }).join('')
+
+  const body = [
+    `<rect width="${width}" height="${height}" fill="#f8fafc"/>`,
+    `<rect x="0" y="0" width="${width}" height="172" fill="${ink}"/>`,
+    `<text x="104" y="78" style="font:700 44px Georgia, serif; fill:#ffffff;">${escapeXml(wrapText(title, 48).slice(0, 1)[0] || title)}</text>`,
+    `<text x="106" y="124" style="font:500 22px Georgia, serif; fill:rgba(255,255,255,0.84);">${escapeXml(wrapText(legend, 90).slice(0, 1)[0] || legend)}</text>`,
+    rows,
+    `<text x="104" y="852" class="caption">Slide ${slide.number} · Diagrama renderizado localmente pelo Gerador de Apresentação v2</text>`,
+  ].join('')
+
+  return {
+    blob: await svgToPngBlob(buildBaseSvg(width, height, body), width, height),
+    mimeType: 'image/png',
+    extension: '.png',
+  }
+}
+
+export async function renderPresentationV2StructuredAsset(
+  deck: PresentationV2Deck,
+  slide: PresentationV2Slide,
+  asset: PresentationV2SlideAsset,
+): Promise<RenderedArtifactImage> {
+  return asset.type === 'diagram'
+    ? renderPresentationV2DiagramAsset(deck, slide, asset)
+    : renderPresentationV2ChartAsset(deck, slide, asset)
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return undefined
+}
+
+function firstArray(...values: unknown[]): unknown[] {
+  for (const value of values) {
+    if (Array.isArray(value) && value.length > 0) return value
+  }
+  return []
+}
+
+function toFiniteNumber(value: unknown, fallback: number): number {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numeric) ? numeric : fallback
+}
+
+function normalizeColor(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim()
+  if (!trimmed) return fallback
+  if (/^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(trimmed)) return trimmed
+  return fallback
+}
+
+function normalizeChartData(slide: PresentationV2Slide, asset: PresentationV2SlideAsset): ChartDatum[] {
+  const spec = asRecord(slide.chartSpec) || {}
+  const rawData = firstArray(spec.data, spec.values, spec.points, spec.series, spec.items)
+  const data = rawData.map((item, index): ChartDatum | null => {
+    if (typeof item === 'number') {
+      return { label: `Item ${index + 1}`, value: item }
+    }
+    const record = asRecord(item)
+    if (!record) return null
+    const label = firstString(record.label, record.name, record.category, record.title, record.x) || `Item ${index + 1}`
+    const value = toFiniteNumber(record.value ?? record.y ?? record.amount ?? record.total ?? record.count ?? record.score, NaN)
+    if (!Number.isFinite(value)) return null
+    return { label, value, note: firstString(record.note, record.description, record.detail) }
+  }).filter((item): item is ChartDatum => Boolean(item))
+
+  if (data.length > 0) return data.slice(0, 7)
+
+  return slide.bullets.slice(0, 5).map((bullet, index) => ({
+    label: bullet,
+    value: Math.max(20, 100 - index * 14),
+  }))
+}
+
+function normalizeDiagramNodes(slide: PresentationV2Slide, asset: PresentationV2SlideAsset): DiagramNode[] {
+  const spec = asRecord(slide.chartSpec) || {}
+  const rawNodes = firstArray(spec.nodes, spec.steps, spec.items, spec.flow)
+  const nodes = rawNodes.map((item, index): DiagramNode | null => {
+    if (typeof item === 'string') {
+      return { id: `node-${index + 1}`, label: item }
+    }
+    const record = asRecord(item)
+    if (!record) return null
+    const label = firstString(record.label, record.name, record.title, record.step, record.text)
+    if (!label) return null
+    return {
+      id: firstString(record.id) || `node-${index + 1}`,
+      label,
+      detail: firstString(record.detail, record.description, record.note),
+    }
+  }).filter((item): item is DiagramNode => Boolean(item))
+
+  if (nodes.length > 0) return nodes.slice(0, 8)
+
+  return slide.bullets.slice(0, 6).map((bullet, index) => ({
+    id: `node-${index + 1}`,
+    label: bullet,
+    detail: index === 0 ? asset.altText || asset.prompt : undefined,
+  }))
 }

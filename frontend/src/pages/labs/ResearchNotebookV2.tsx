@@ -10,11 +10,19 @@ import {
 import { DeepResearchModal, createDeepSearchSteps, createExternalSearchSteps, createJurisprudenceSteps, type ResearchStats, type ResearchStep } from '../../components/DeepResearchModal'
 import JurisprudenceConfigModal, { type JurisprudenceSearchConfig } from '../../components/JurisprudenceConfigModal'
 import SearchResultsModal from '../../components/SearchResultsModal'
+import type { PresentationV2AssetReviewContext, PresentationV2OperatorActionContext } from '../../components/artifacts/PresentationV2Viewer'
+import PresentationV2BriefingModal, {
+  createDefaultPresentationV2BriefingPayload,
+  formatPresentationV2BriefingPayload,
+  type PresentationV2BriefingPayload,
+} from '../../components/PresentationV2BriefingModal'
 import { SkeletonCard } from '../../components/Skeleton'
 import { useToast } from '../../components/Toast'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTaskManager, type TaskOperationalSummary } from '../../contexts/TaskManagerContext'
+import { getDemoResearchNotebooks } from '../../demo/notebook-data'
 import { IS_FIREBASE } from '../../lib/firebase'
+import { FEATURE_FLAGS_UPDATED_EVENT, isEnabled } from '../../lib/feature-flags'
 import { withTransientFirebaseAuthRetry } from '../../lib/firebase-auth-retry'
 import {
   createResearchNotebook,
@@ -37,6 +45,7 @@ import {
 import type {
   NotebookJurisprudenceSemanticMemoryEntry,
   NotebookMessage,
+  PresentationV2Deck,
   NotebookResearchAuditEntry,
 } from '../../lib/firestore-types'
 import { humanizeError } from '../../lib/error-humanizer'
@@ -65,6 +74,7 @@ import {
   type ChatContextAuditSummary,
   type ResearchContextAuditSummary,
 } from '../../lib/notebook-context-audit'
+import { buildPresentationV2BriefingSeedFromDeck } from './presentation-v2-briefing-seed'
 import { getOpenRouterKey } from '../../lib/generation-service'
 import { callLLMWithFallback, callLLMWithMessages, callLLMWithMessagesFallback, ModelUnavailableError, type LLMCallOptions } from '../../lib/llm-client'
 import { buildPipelineFallbackResolver, loadFallbackPriorityConfig, loadResearchNotebookModels, loadVideoPipelineModels, RESEARCH_NOTEBOOK_AGENT_DEFS } from '../../lib/model-config'
@@ -147,12 +157,18 @@ const SourceContentViewer = lazy(() => import('../../components/SourceContentVie
 const VideoGenerationCostModal = lazy(() => import('../../components/VideoGenerationCostModal'))
 const VideoStudioEditor = lazy(() => import('../../components/artifacts/VideoStudioEditor'))
 
+const NOTEBOOK_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
+
 async function loadAudioGenerationRuntime() {
   return import('../../lib/audio-generation-pipeline')
 }
 
 async function loadPresentationGenerationRuntime() {
   return import('../../lib/presentation-generation-pipeline')
+}
+
+async function loadPresentationV2GenerationRuntime() {
+  return import('../../lib/presentation-generation-pipeline-v2')
 }
 
 async function loadVideoGenerationRuntime() {
@@ -165,6 +181,36 @@ async function loadStudioPipelineRuntime() {
 
 async function loadNotebookMediaStorageRuntime() {
   return import('../../lib/notebook-media-storage')
+}
+
+function mergePresentationV2QualitySnapshots(
+  deck: PresentationV2Deck,
+  patches: Partial<Pick<NonNullable<PresentationV2Deck['quality']>, 'multimodalAudit' | 'exportReadiness'>>,
+): PresentationV2Deck {
+  return {
+    ...deck,
+    quality: {
+      ...(deck.quality || {}),
+      ...patches,
+    },
+  }
+}
+
+function buildPresentationV2OperatorRevisionMetadata(context?: PresentationV2OperatorActionContext) {
+  return {
+    operatorSource: context?.source,
+    operatorAction: context?.action,
+    operatorReason: context?.reason,
+    assetTypes: context?.assetTypes,
+  }
+}
+
+function formatPresentationV2OperatorSuffix(context?: PresentationV2OperatorActionContext): string {
+  const parts = [
+    context?.source ? `origem ${context.source}` : '',
+    context?.reason ? `motivo: ${context.reason}` : '',
+  ].filter(Boolean)
+  return parts.length ? ` (${parts.join('; ')})` : ''
 }
 
 async function loadLiteralVideoRuntime() {
@@ -207,7 +253,7 @@ interface ChatTrailEvent {
   detail?: string
   timestamp: string
 }
-const VISUAL_ARTIFACT_TYPES = new Set<StudioArtifactType>(['apresentacao', 'mapa_mental', 'infografico', 'tabela_dados'])
+const VISUAL_ARTIFACT_TYPES = new Set<StudioArtifactType>(['apresentacao', 'apresentacao_v2', 'mapa_mental', 'infografico', 'tabela_dados'])
 const STUDIO_BRIDGE_PROMPT_LIMIT = 600
 const SECONDARY_TOAST_DELAY_MS = 600
 const STUDIO_CATEGORY_COLORS = {
@@ -293,7 +339,7 @@ function isVideoStudioArtifact(artifact: StudioArtifact | null | undefined) {
   }
 }
 
-function isVisualArtifactType(type: StudioArtifactType): type is 'apresentacao' | 'mapa_mental' | 'infografico' | 'tabela_dados' {
+function isVisualArtifactType(type: StudioArtifactType): type is 'apresentacao' | 'apresentacao_v2' | 'mapa_mental' | 'infografico' | 'tabela_dados' {
   return VISUAL_ARTIFACT_TYPES.has(type)
 }
 
@@ -488,6 +534,16 @@ export default function ResearchNotebookV2() {
   const [videoStudioLiteralLoading, setVideoStudioLiteralLoading] = useState(false)
   const [videoStudioLiteralProgress, setVideoStudioLiteralProgress] = useState<VideoPipelineProgressState | null>(null)
   const [studioCustomPrompt, setStudioCustomPrompt] = useState('')
+  const [presentationV2Enabled, setPresentationV2Enabled] = useState(() => isEnabled('FF_PRESENTATION_V2_ENABLED'))
+  const [showPresentationV2BriefingModal, setShowPresentationV2BriefingModal] = useState(false)
+  const [presentationV2BriefingSeed, setPresentationV2BriefingSeed] = useState<PresentationV2BriefingPayload>(() => createDefaultPresentationV2BriefingPayload())
+
+  useEffect(() => {
+    const refreshPresentationV2Flag = () => setPresentationV2Enabled(isEnabled('FF_PRESENTATION_V2_ENABLED'))
+    refreshPresentationV2Flag()
+    window.addEventListener(FEATURE_FLAGS_UPDATED_EVENT, refreshPresentationV2Flag)
+    return () => window.removeEventListener(FEATURE_FLAGS_UPDATED_EVENT, refreshPresentationV2Flag)
+  }, [])
   const [showStudioProgressModal, setShowStudioProgressModal] = useState(false)
   const [selectedStudioTaskId, setSelectedStudioTaskId] = useState<string | null>(null)
   const [chatInput, setChatInput] = useState('')
@@ -582,6 +638,11 @@ export default function ResearchNotebookV2() {
     return taskMap
   }, [notebookArtifactTasks])
 
+  const studioArtifactCategories = useMemo(() => ARTIFACT_CATEGORIES.map((category) => ({
+    ...category,
+    items: category.items.filter((artifact) => presentationV2Enabled || artifact.type !== 'apresentacao_v2'),
+  })).filter((category) => category.items.length > 0), [presentationV2Enabled])
+
   const selectedStudioTask = useMemo(() => {
     if (selectedStudioTaskId) {
       const found = notebookArtifactTasks.find((task) => task.id === selectedStudioTaskId)
@@ -589,6 +650,11 @@ export default function ResearchNotebookV2() {
     }
     return notebookArtifactTasks.find((task) => task.status === 'running') || null
   }, [notebookArtifactTasks, selectedStudioTaskId])
+
+  const openPresentationV2Briefing = useCallback((seed?: PresentationV2BriefingPayload) => {
+    setPresentationV2BriefingSeed(seed || createDefaultPresentationV2BriefingPayload())
+    setShowPresentationV2BriefingModal(true)
+  }, [])
 
   const selectedStudioTaskMetadata = selectedStudioTask
     ? getNotebookArtifactTaskMetadata(selectedStudioTask.metadata)
@@ -599,6 +665,26 @@ export default function ResearchNotebookV2() {
     section: ResearchNotebookV2Section,
     syncSelection = true,
   ) => {
+    if (!IS_FIREBASE && NOTEBOOK_DEMO_MODE) {
+      setSelectingNotebook(true)
+      try {
+        const demoNotebooks = getDemoResearchNotebooks()
+        const notebook = demoNotebooks.find((item) => item.id === notebookId)
+        if (!notebook) {
+          toast.warning('Caderno demo não encontrado', 'A seleção solicitada não está disponível no modo demo.')
+          return
+        }
+        setActiveNotebook(notebook)
+        setNotebooks(demoNotebooks)
+        setActiveSection(section)
+        setSelectedSourceId((current) => current && notebook.sources.some((source) => source.id === current) ? current : (notebook.sources[0]?.id || null))
+        if (syncSelection) syncRoute(notebook.id || notebookId, section)
+      } finally {
+        setSelectingNotebook(false)
+      }
+      return
+    }
+
     if (shouldWaitForFirebaseUser || !userId) return
     setSelectingNotebook(true)
     try {
@@ -621,6 +707,16 @@ export default function ResearchNotebookV2() {
   }, [shouldWaitForFirebaseUser, syncRoute, toast, userId])
 
   const loadNotebooks = useCallback(async () => {
+    if (!IS_FIREBASE && NOTEBOOK_DEMO_MODE) {
+      const demoNotebooks = getDemoResearchNotebooks()
+      setNotebooks(demoNotebooks)
+      setActiveNotebook((current) => current ?? demoNotebooks[0] ?? null)
+      setSelectedSourceId((current) => current ?? demoNotebooks[0]?.sources[0]?.id ?? null)
+      if (demoNotebooks[0]) setActiveSection('artifacts')
+      setLoading(false)
+      return
+    }
+
     if (shouldWaitForFirebaseUser || !userId || !IS_FIREBASE) {
       setLoading(false)
       return
@@ -1244,6 +1340,59 @@ export default function ResearchNotebookV2() {
     await updateResearchNotebook(userId, notebookId, { llm_executions: updatedExecutions })
     patchNotebook(notebookId, { llm_executions: updatedExecutions })
   }, [getFreshNotebookOrThrow, patchNotebook, userId])
+
+  const isAbortLikeError = (error: unknown): boolean => (
+    (error instanceof DOMException && error.name === 'AbortError') ||
+    (error instanceof Error && error.name === 'AbortError')
+  )
+
+  const startPresentationV2MediaTask = useCallback((name: string, totalSteps: number) => {
+    let resolveTask: (value: unknown) => void = () => {}
+    let rejectTask: (reason?: unknown) => void = () => {}
+    let taskSignal: AbortSignal | undefined
+    let reportTaskProgress: (update: {
+      progress: number
+      phase: string
+      executionState?: PipelineExecutionState
+      stageMeta?: string
+      currentStep?: number
+      totalSteps?: number
+    }) => void = () => {}
+
+    const createAbortError = () => new DOMException('Operação cancelada pelo usuário.', 'AbortError')
+    const ensureNotCancelled = () => {
+      if (taskSignal?.aborted) throw createAbortError()
+    }
+
+    const taskPromise = new Promise((resolve, reject) => {
+      resolveTask = resolve
+      rejectTask = reject
+    })
+
+    startTask(name, (onTaskProgress, signal) => {
+      taskSignal = signal
+      signal.addEventListener('abort', () => rejectTask(createAbortError()), { once: true })
+      reportTaskProgress = onTaskProgress
+      onTaskProgress({
+        progress: 0,
+        phase: 'Preparando mídia da apresentação v2...',
+        executionState: 'queued',
+        stageMeta: 'Aguardando runtime e Storage',
+        currentStep: 0,
+        totalSteps,
+      })
+      return taskPromise
+    }, {
+      metadata: {
+        taskKind: 'presentation-v2-media',
+        notebookId: activeNotebook?.id,
+        artifactType: 'apresentacao_v2',
+      },
+      cancellable: true,
+    })
+
+    return { reportTaskProgress, resolveTask, rejectTask, ensureNotCancelled, signal: taskSignal }
+  }, [activeNotebook?.id, startTask])
 
   const openVideoStudioArtifact = useCallback((artifact: StudioArtifact) => {
     try {
@@ -1965,7 +2114,7 @@ export default function ResearchNotebookV2() {
     }
   }, [activeNotebook?.id, appendNotebookExecutions, getFreshNotebookOrThrow, handleSaveVideoStudioToNotebook, startTask, toast, userId, videoStudioApiKey, videoStudioLiteralLoading, viewingArtifact?.type])
 
-  const handleGenerateArtifact = async (artifactType: StudioArtifactType) => {
+  const handleGenerateArtifact = async (artifactType: StudioArtifactType, presentationV2Briefing?: PresentationV2BriefingPayload) => {
     if (!userId || !activeNotebook?.id) return
 
     const existingTask = runningArtifactTasksByType.get(artifactType)
@@ -1976,7 +2125,35 @@ export default function ResearchNotebookV2() {
       return
     }
 
+    if (artifactType === 'apresentacao_v2' && !presentationV2Enabled) {
+      toast.info('Gerador de Apresentação v2 ainda está em rollout.', 'Ative a flag FF_PRESENTATION_V2_ENABLED em Configurações para testar a versão multimodal.')
+      return
+    }
+
+    if (artifactType === 'apresentacao_v2' && !presentationV2Briefing) {
+      openPresentationV2Briefing(createDefaultPresentationV2BriefingPayload())
+      return
+    }
+
     const artifactDef = ARTIFACT_TYPES.find((artifact) => artifact.type === artifactType)
+    const presentationV2BriefingText = presentationV2Briefing
+      ? formatPresentationV2BriefingPayload(presentationV2Briefing)
+      : ''
+    const mergedCustomInstructions = [studioCustomPrompt.trim(), presentationV2BriefingText]
+      .filter(Boolean)
+      .join('\n\n')
+
+    if (artifactType === 'apresentacao_v2' && presentationV2Briefing) {
+      const preflight = await handlePreflightPresentationV2Briefing(presentationV2Briefing)
+      if (!preflight.ready) {
+        toast.error('Preflight bloqueou a geração v2', preflight.blockers[0] || 'Revise os modelos configurados para o pipeline v2.')
+        return
+      }
+      if (preflight.warnings.length > 0) {
+        toast.warning('Preflight v2 com avisos', preflight.warnings[0])
+      }
+    }
+
     const notebookSnapshot = {
       id: activeNotebook.id,
       topic: activeNotebook.topic,
@@ -1984,7 +2161,7 @@ export default function ResearchNotebookV2() {
       description: activeNotebook.description || undefined,
       sourceContext: studioAudit.sourceText || '',
       conversationContext: studioAudit.conversationText,
-      customInstructions: studioCustomPrompt.trim() || undefined,
+      customInstructions: mergedCustomInstructions || undefined,
     }
 
     const taskId = startTask(
@@ -2061,6 +2238,8 @@ export default function ResearchNotebookV2() {
             ? await loadAudioGenerationRuntime().then(({ runAudioGenerationPipeline }) => runAudioGenerationPipeline(pipelineInput, onProgress))
             : artifactType === 'apresentacao'
               ? await loadPresentationGenerationRuntime().then(({ runPresentationGenerationPipeline }) => runPresentationGenerationPipeline(pipelineInput, onProgress))
+              : artifactType === 'apresentacao_v2'
+                ? await loadPresentationV2GenerationRuntime().then(({ runPresentationGenerationPipelineV2 }) => runPresentationGenerationPipelineV2(pipelineInput, onProgress))
               : await loadStudioPipelineRuntime().then(({ runStudioPipeline }) => runStudioPipeline(pipelineInput, onProgress))
 
           const artifact: StudioArtifact = {
@@ -2082,7 +2261,10 @@ export default function ResearchNotebookV2() {
             totalSteps: STUDIO_PIPELINE_TOTAL_STEPS,
           })
 
-          await saveArtifactToNotebook(artifact, result.executions, {
+          await saveArtifactToNotebook(artifact, [
+            ...(presentationV2Briefing?.clarificationExecutions || []),
+            ...result.executions,
+          ], {
             notebookId: notebookSnapshot.id,
             notebookTopic: notebookSnapshot.topic,
             notebookTitle: notebookSnapshot.title,
@@ -2145,6 +2327,73 @@ export default function ResearchNotebookV2() {
     setShowStudioProgressModal(true)
   }
 
+  const handleClarifyPresentationV2Briefing = async (payload: PresentationV2BriefingPayload) => {
+    if (!userId || !activeNotebook?.id) {
+      throw new Error('Abra um caderno antes de preparar a apresentação v2.')
+    }
+    const apiKey = await getOpenRouterKey(userId || undefined)
+    const artifactDef = ARTIFACT_TYPES.find((artifact) => artifact.type === 'apresentacao_v2')
+    const briefingText = formatPresentationV2BriefingPayload(payload)
+    const customInstructions = [studioCustomPrompt.trim(), briefingText].filter(Boolean).join('\n\n')
+    return loadPresentationV2GenerationRuntime().then(({ draftPresentationV2ClarifyingQuestions }) => draftPresentationV2ClarifyingQuestions({
+      apiKey,
+      topic: activeNotebook.topic,
+      description: activeNotebook.description || undefined,
+      sourceContext: studioAudit.sourceText || '',
+      conversationContext: studioAudit.conversationText,
+      customInstructions: customInstructions || undefined,
+      artifactType: 'apresentacao_v2',
+      artifactLabel: artifactDef?.label || 'Apresentação v2',
+      presentationV2Briefing: {
+        slideCount: payload.slideCount,
+        depth: payload.depth,
+        objective: payload.objective,
+        audience: payload.audience,
+        coreMessage: payload.coreMessage,
+        successCriteria: payload.successCriteria,
+        proofObligations: payload.proofObligations,
+        institutionalConstraints: payload.institutionalConstraints,
+        durationMinutes: payload.durationMinutes,
+        slideDensity: payload.slideDensity,
+        evidenceMode: payload.evidenceMode,
+        tone: payload.tone,
+        visualStyle: payload.visualStyle,
+        multimodal: payload.multimodal,
+        mediaRequirements: payload.mediaRequirements,
+        constraints: payload.constraints,
+        sourcePriority: payload.sourcePriority,
+      },
+    }))
+  }
+
+  const handlePreflightPresentationV2Briefing = async (payload: PresentationV2BriefingPayload) => {
+    return loadPresentationV2GenerationRuntime().then(({ inspectPresentationV2Preflight }) => inspectPresentationV2Preflight({
+      uid: userId || undefined,
+      slideCount: payload.slideCount,
+      depth: payload.depth,
+      durationMinutes: payload.durationMinutes,
+      objective: payload.objective,
+      audience: payload.audience,
+      coreMessage: payload.coreMessage,
+      successCriteria: payload.successCriteria,
+      proofObligations: payload.proofObligations,
+      institutionalConstraints: payload.institutionalConstraints,
+      slideDensity: payload.slideDensity,
+      evidenceMode: payload.evidenceMode,
+      sourcePriority: payload.sourcePriority,
+      constraints: payload.constraints,
+      multimodal: payload.multimodal,
+      mediaRequirements: payload.mediaRequirements,
+      sourceAudit: {
+        includedSources: studioAudit.sourceSummary.includedSources,
+        totalSources: studioAudit.sourceSummary.totalSources,
+        includedChars: studioAudit.sourceSummary.includedChars,
+        truncatedSources: studioAudit.sourceSummary.truncatedSources,
+        totalContextChars: studioAudit.totalContextChars,
+      },
+    }))
+  }
+
   const handleDeleteArtifact = async (artifactId: string) => {
     if (!userId || !activeNotebook?.id) return
 
@@ -2187,18 +2436,36 @@ export default function ResearchNotebookV2() {
     URL.revokeObjectURL(url)
   }
 
-  const handleGenerateVisualArtifact = async (artifact: StudioArtifact) => {
+  const handleGenerateVisualArtifact = async (artifact: StudioArtifact, context?: PresentationV2OperatorActionContext) => {
     if (!userId || !activeNotebook?.id || visualGenLoading) return
     if (!isVisualArtifactType(artifact.type)) return
+    if (isLocalSmokeMode) {
+      toast.warning('Geração visual indisponível', 'O smoke local libera apenas visualização e exportação. Ative o Firebase para gerar mídia real.')
+      return
+    }
 
     const uid = userId
     const notebookId = activeNotebook.id
     const notebookTopic = activeNotebook.topic
     const notebookDescription = activeNotebook.description || undefined
+    const focusSlideNumbers = artifact.type === 'apresentacao_v2' && context?.slideNumber
+      ? [context.slideNumber]
+      : undefined
+    const focusSlideSuffix = focusSlideNumbers?.length ? ` do slide ${focusSlideNumbers[0]}` : ''
     setVisualGenLoading(true)
     setVisualGeneratingArtifactId(artifact.id)
+    const mediaTask = artifact.type === 'apresentacao_v2'
+      ? startPresentationV2MediaTask(`Apresentação v2: visuais${focusSlideSuffix} de ${artifact.title.slice(0, 36)}`, 4)
+      : null
 
     try {
+      mediaTask?.reportTaskProgress({
+        progress: 8,
+        phase: 'Carregando manifesto e runtime visual v2...',
+        executionState: 'running',
+        currentStep: 1,
+        totalSteps: 4,
+      })
       const freshNotebook = await getFreshNotebookOrThrow(notebookId)
       const currentArtifact = freshNotebook.artifacts.find((item) => item.id === artifact.id) ?? artifact
       const { uploadNotebookMediaArtifact } = await loadNotebookMediaStorageRuntime()
@@ -2264,6 +2531,193 @@ export default function ResearchNotebookV2() {
           slides: updatedSlides,
         }, null, 2)
         successMessage = `${updatedSlides.length} slide(s) visual(is) gerado(s) com sucesso.`
+      } else if (currentArtifact.type === 'apresentacao_v2' && parsed.kind === 'presentation_v2') {
+        const apiKey = await getOpenRouterKey(userId || undefined)
+        const {
+          auditPresentationV2ExportReadiness,
+          auditPresentationV2MultimodalCoherence,
+          generatePresentationV2MediaAssets,
+          generatePresentationV2StructuredVisualAssets,
+        } = await loadPresentationV2GenerationRuntime()
+        mediaTask?.ensureNotCancelled()
+        const media = await generatePresentationV2MediaAssets({
+          apiKey,
+          topic: notebookTopic,
+          description: notebookDescription,
+        }, currentArtifact.content, (step, total, phase, meta) => {
+          mediaTask?.reportTaskProgress({
+            progress: 12 + Math.round((step / Math.max(1, total)) * 48),
+            phase,
+            executionState: meta?.executionState || 'running',
+            stageMeta: meta?.stageMeta,
+            currentStep: 2,
+            totalSteps: 4,
+          })
+        }, mediaTask?.signal, { slideNumbers: focusSlideNumbers })
+        mediaTask?.ensureNotCancelled()
+        mediaTask?.reportTaskProgress({
+          progress: 66,
+          phase: 'Renderizando gráficos e diagramas v2...',
+          executionState: 'waiting_io',
+          currentStep: 3,
+          totalSteps: 4,
+        })
+        const structuredMedia = await generatePresentationV2StructuredVisualAssets(currentArtifact.content, { signal: mediaTask?.signal, slideNumbers: focusSlideNumbers })
+        mediaTask?.ensureNotCancelled()
+        const original = JSON.parse(currentArtifact.content) as PresentationV2Deck
+        const updatedAssetsById = new Map((original.assets || []).map(asset => [asset.id, { ...asset }]))
+        const updatedSlides = original.slides.map((slide) => {
+          const generatedSlide = media.slideVisuals.find((item) => item.slideNumber === slide.number)
+          if (!generatedSlide) return slide
+
+          return {
+            ...slide,
+            renderedImageUrl: '',
+            renderedImageStoragePath: '',
+            assets: (slide.assets || []).map(asset => ({ ...asset })),
+          }
+        })
+
+        for (let index = 0; index < updatedSlides.length; index++) {
+          const slide = updatedSlides[index]
+          const generatedSlide = media.slideVisuals.find((item) => item.slideNumber === slide.number)
+          if (!generatedSlide) continue
+
+          mediaTask?.ensureNotCancelled()
+          const storedImage = await uploadNotebookMediaArtifact(
+            uid,
+            notebookId,
+            `${currentArtifact.title}-v2-slide-${slide.number}`,
+            generatedSlide.blob,
+            'images',
+            generatedSlide.extension,
+          )
+          mediaTask?.ensureNotCancelled()
+          mediaTask?.reportTaskProgress({
+            progress: 70 + Math.round(((index + 1) / Math.max(1, updatedSlides.length)) * 12),
+            phase: `Salvando visual v2 do slide ${slide.number} no Storage...`,
+            executionState: 'persisting',
+            currentStep: 4,
+            totalSteps: 4,
+          })
+
+          updatedSlides[index] = {
+            ...slide,
+            renderedImageUrl: storedImage.url,
+            renderedImageStoragePath: storedImage.path,
+            assets: [
+              ...(slide.assets || []).filter(asset => asset.id !== generatedSlide.assetId),
+              {
+                id: generatedSlide.assetId,
+                type: 'render',
+                status: 'stored',
+                prompt: generatedSlide.prompt,
+                negativePrompt: generatedSlide.negativePrompt,
+                qualityScore: generatedSlide.qualityScore,
+                qualityWarnings: generatedSlide.qualityWarnings,
+                retryCount: generatedSlide.retryCount,
+                providerId: generatedSlide.providerId,
+                providerLabel: generatedSlide.providerLabel,
+                model: generatedSlide.model,
+                url: storedImage.url,
+                storagePath: storedImage.path,
+                mimeType: generatedSlide.mimeType,
+                altText: `Visual final do slide ${slide.number}: ${slide.title}`,
+              },
+            ],
+          }
+          updatedAssetsById.set(generatedSlide.assetId, {
+            ...(updatedAssetsById.get(generatedSlide.assetId) || {}),
+            id: generatedSlide.assetId,
+            type: 'render',
+            status: 'stored',
+            prompt: generatedSlide.prompt,
+            negativePrompt: generatedSlide.negativePrompt,
+            qualityScore: generatedSlide.qualityScore,
+            qualityWarnings: generatedSlide.qualityWarnings,
+            retryCount: generatedSlide.retryCount,
+            providerId: generatedSlide.providerId,
+            providerLabel: generatedSlide.providerLabel,
+            model: generatedSlide.model,
+            url: storedImage.url,
+            storagePath: storedImage.path,
+            mimeType: generatedSlide.mimeType,
+            altText: `Visual final do slide ${slide.number}: ${slide.title}`,
+          })
+        }
+
+        for (const structured of structuredMedia.structuredVisuals) {
+          mediaTask?.ensureNotCancelled()
+          const storedImage = await uploadNotebookMediaArtifact(
+            uid,
+            notebookId,
+            `${currentArtifact.title}-v2-slide-${structured.slideNumber}-${structured.assetType}`,
+            structured.blob,
+            'images',
+            structured.extension,
+          )
+          mediaTask?.ensureNotCancelled()
+          const slideIndex = updatedSlides.findIndex(slide => slide.number === structured.slideNumber)
+          const existingAsset = slideIndex >= 0
+            ? updatedSlides[slideIndex].assets?.find(asset => asset.id === structured.assetId)
+            : updatedAssetsById.get(structured.assetId)
+          const structuredAsset = {
+            ...(existingAsset || {}),
+            id: structured.assetId,
+            type: structured.assetType,
+            status: 'stored' as const,
+            prompt: structured.prompt || existingAsset?.prompt,
+            model: structured.model,
+            providerId: 'browser',
+            providerLabel: 'Browser',
+            url: storedImage.url,
+            storagePath: storedImage.path,
+            mimeType: structured.mimeType,
+            altText: structured.altText || existingAsset?.altText || `${structured.assetType === 'chart' ? 'Gráfico' : 'Diagrama'} do slide ${structured.slideNumber}`,
+          }
+
+          if (slideIndex >= 0) {
+            updatedSlides[slideIndex] = {
+              ...updatedSlides[slideIndex],
+              assets: [
+                ...(updatedSlides[slideIndex].assets || []).filter(asset => asset.id !== structured.assetId),
+                structuredAsset,
+              ],
+            }
+          }
+          updatedAssetsById.set(structured.assetId, structuredAsset)
+        }
+
+        visualExecutions.push(...media.executions, ...structuredMedia.executions)
+        mediaTask?.reportTaskProgress({
+          progress: 92,
+          phase: 'Atualizando manifesto v2 com assets visuais...',
+          executionState: 'persisting',
+          currentStep: 4,
+          totalSteps: 4,
+        })
+        const updatedDeck = {
+          ...original,
+          slides: updatedSlides,
+          assets: Array.from(updatedAssetsById.values()),
+          revisionHistory: [
+            ...(original.revisionHistory || []),
+            {
+              at: new Date().toISOString(),
+              agent: 'presentation_v2_image_generator',
+              slideNumbers: focusSlideNumbers,
+              ...buildPresentationV2OperatorRevisionMetadata(context),
+              summary: `${media.slideVisuals.length} visual(is) de slide e ${structuredMedia.structuredVisuals.length} gráfico(s)/diagrama(s) materializado(s) no Storage${formatPresentationV2OperatorSuffix(context)}.`,
+            },
+          ],
+        }
+        nextContent = JSON.stringify(mergePresentationV2QualitySnapshots(updatedDeck, {
+          multimodalAudit: auditPresentationV2MultimodalCoherence(updatedDeck),
+          exportReadiness: auditPresentationV2ExportReadiness(updatedDeck),
+        }), null, 2)
+        successMessage = focusSlideNumbers?.length
+          ? `Visuais v2 do slide ${focusSlideNumbers[0]} atualizados com sucesso.`
+          : `${media.slideVisuals.length} slide(s) visual(is) v2 e ${structuredMedia.structuredVisuals.length} gráfico(s)/diagrama(s) gerado(s) com sucesso.`
       } else if (
         (currentArtifact.type === 'infografico' && parsed.kind === 'infographic')
         || (currentArtifact.type === 'mapa_mental' && parsed.kind === 'mindmap')
@@ -2311,7 +2765,11 @@ export default function ResearchNotebookV2() {
 
       await appendNotebookExecutions(
         notebookId,
-        currentArtifact.type === 'apresentacao' ? 'presentation_pipeline' : 'caderno_pesquisa',
+        currentArtifact.type === 'apresentacao'
+          ? 'presentation_pipeline'
+          : currentArtifact.type === 'apresentacao_v2'
+            ? 'presentation_pipeline_v2'
+            : 'caderno_pesquisa',
         visualExecutions,
       )
 
@@ -2321,8 +2779,15 @@ export default function ResearchNotebookV2() {
       })
 
       toast.success(successMessage)
+      mediaTask?.resolveTask({ artifactId: currentArtifact.id, media: 'visual' })
     } catch (error) {
+      if (isAbortLikeError(error)) {
+        mediaTask?.rejectTask(error)
+        toast.info('Geração visual v2 cancelada.')
+        return
+      }
       console.error('Visual artifact generation error:', error)
+      mediaTask?.rejectTask(error)
       const message = error instanceof Error ? error.message : 'Falha ao gerar mídia visual.'
       const isCapabilityError = message.toLowerCase().includes('capability')
         || message.toLowerCase().includes('modalities')
@@ -2342,19 +2807,155 @@ export default function ResearchNotebookV2() {
     }
   }
 
-  const handleGenerateAudioFromArtifact = async (artifact: StudioArtifact) => {
+  const handleGenerateAudioFromArtifact = async (artifact: StudioArtifact, context?: PresentationV2OperatorActionContext) => {
     if (!userId || !activeNotebook?.id || audioGenLoading) return
-    if (artifact.type !== 'audio_script') return
+    if (artifact.type !== 'audio_script' && artifact.type !== 'apresentacao_v2') return
+    if (isLocalSmokeMode) {
+      toast.warning('Geração de áudio indisponível', 'O smoke local libera apenas visualização e exportação. Ative o Firebase para gerar mídia real.')
+      return
+    }
 
     const uid = userId
     const notebookId = activeNotebook.id
+    const focusSlideNumbers = artifact.type === 'apresentacao_v2' && context?.slideNumber
+      ? [context.slideNumber]
+      : undefined
+    const focusSlideSuffix = focusSlideNumbers?.length ? ` do slide ${focusSlideNumbers[0]}` : ''
     setAudioGenLoading(true)
     setAudioGeneratingArtifactId(artifact.id)
+    const mediaTask = artifact.type === 'apresentacao_v2'
+      ? startPresentationV2MediaTask(`Apresentação v2: narração${focusSlideSuffix} de ${artifact.title.slice(0, 36)}`, 4)
+      : null
 
     try {
       const apiKey = await getOpenRouterKey(userId || undefined)
       if (!apiKey) {
+        mediaTask?.rejectTask(new Error('Chave da API não configurada.'))
         toast.error('Chave da API não configurada. Acesse Configurações > Chaves de API.')
+        return
+      }
+
+      if (artifact.type === 'apresentacao_v2') {
+        mediaTask?.reportTaskProgress({
+          progress: 10,
+          phase: 'Preparando roteiro de narração v2...',
+          executionState: 'running',
+          currentStep: 1,
+          totalSteps: 4,
+        })
+        const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+        const currentArtifact = freshNotebook.artifacts.find((item) => item.id === artifact.id) ?? artifact
+        const [{ auditPresentationV2ExportReadiness, auditPresentationV2MultimodalCoherence, generatePresentationV2AudioNarration }, { uploadNotebookMediaArtifact }] = await Promise.all([
+          loadPresentationV2GenerationRuntime(),
+          loadNotebookMediaStorageRuntime(),
+        ])
+        mediaTask?.ensureNotCancelled()
+        const synthesis = await generatePresentationV2AudioNarration({
+          apiKey,
+          uid,
+        }, currentArtifact.content, mediaTask?.signal, { slideNumbers: focusSlideNumbers })
+        mediaTask?.ensureNotCancelled()
+        mediaTask?.reportTaskProgress({
+          progress: 62,
+          phase: 'Salvando narração v2 no Storage...',
+          executionState: 'persisting',
+          stageMeta: synthesis.model,
+          currentStep: 3,
+          totalSteps: 4,
+        })
+
+        mediaTask?.ensureNotCancelled()
+        const storedAudio = await uploadNotebookMediaArtifact(
+          uid,
+          notebookId,
+          focusSlideNumbers?.length
+            ? `${currentArtifact.title}-slide-${focusSlideNumbers[0]}-narracao-v2`
+            : `${currentArtifact.title}-narracao-v2`,
+          synthesis.audioBlob,
+          'audios',
+          synthesis.extension,
+        )
+
+        const original = JSON.parse(currentArtifact.content) as PresentationV2Deck
+        const focusedSlide = focusSlideNumbers?.length
+          ? original.slides.find(slide => slide.number === focusSlideNumbers[0])
+          : undefined
+        const audioAsset = {
+          id: focusedSlide ? `slide-${focusedSlide.number}-narration-audio` : 'deck-narration-audio',
+          type: 'audio' as const,
+          status: 'stored' as const,
+          model: synthesis.model,
+          qualityScore: synthesis.qualityScore,
+          qualityWarnings: synthesis.qualityWarnings,
+          providerId: synthesis.providerId ?? null,
+          providerLabel: synthesis.providerLabel ?? null,
+          url: storedAudio.url,
+          storagePath: storedAudio.path,
+          mimeType: synthesis.mimeType,
+          altText: focusedSlide
+            ? `Narração do slide ${focusedSlide.number}: ${focusedSlide.title}`
+            : `Narração completa da apresentação ${original.title}`,
+        }
+        const updatedSlides = focusedSlide
+          ? original.slides.map(slide => slide.number === focusedSlide.number
+            ? {
+                ...slide,
+                assets: [
+                  ...(slide.assets || []).filter(asset => asset.id !== audioAsset.id),
+                  audioAsset,
+                ],
+              }
+            : slide)
+          : original.slides
+        const updatedDeck = {
+          ...original,
+          slides: updatedSlides,
+          assets: [
+            ...(original.assets || []).filter(asset => asset.id !== audioAsset.id),
+            audioAsset,
+          ],
+          revisionHistory: [
+            ...(original.revisionHistory || []),
+            {
+              at: new Date().toISOString(),
+              agent: 'presentation_v2_tts',
+              slideNumbers: focusSlideNumbers,
+              ...buildPresentationV2OperatorRevisionMetadata(context),
+              summary: `${focusedSlide ? `Narração TTS do slide ${focusedSlide.number}` : 'Narração TTS completa'} salva no Storage${synthesis.durationEstimate ? ` (~${synthesis.durationEstimate}s)` : ''}${typeof synthesis.qualityScore === 'number' ? ` · alinhamento ${synthesis.qualityScore}/100` : ''}${formatPresentationV2OperatorSuffix(context)}.`,
+            },
+          ],
+        }
+        const updatedArtifacts = freshNotebook.artifacts.map((current): StudioArtifact => (
+          current.id === currentArtifact.id
+            ? {
+                ...current,
+                format: 'json',
+                content: JSON.stringify(mergePresentationV2QualitySnapshots(updatedDeck, {
+                  multimodalAudit: auditPresentationV2MultimodalCoherence(updatedDeck),
+                  exportReadiness: auditPresentationV2ExportReadiness(updatedDeck),
+                }), null, 2),
+              }
+            : current
+        ))
+
+        await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
+        patchNotebook(notebookId, { artifacts: updatedArtifacts })
+        await appendNotebookExecutions(notebookId, 'presentation_pipeline_v2', [synthesis.execution])
+        mediaTask?.reportTaskProgress({
+          progress: 94,
+          phase: 'Atualizando manifesto v2 com narração...',
+          executionState: 'persisting',
+          currentStep: 4,
+          totalSteps: 4,
+        })
+
+        setViewingArtifact((current) => {
+          if (current?.id !== artifact.id) return current
+          return updatedArtifacts.find((item) => item.id === artifact.id) || current
+        })
+
+        toast.success(focusedSlide ? `Narração v2 do slide ${focusedSlide.number} gerada com sucesso!` : 'Narração v2 gerada com sucesso!', synthesis.durationEstimate ? `Duração estimada: ${synthesis.durationEstimate}s` : 'Áudio salvo no Storage')
+        mediaTask?.resolveTask({ artifactId: currentArtifact.id, media: 'audio' })
         return
       }
 
@@ -2413,7 +3014,13 @@ export default function ResearchNotebookV2() {
 
       toast.success('Resumo em áudio gerado com sucesso!', `${synthesis.chunkCount} parte(s) sintetizada(s)`)    
     } catch (error) {
+      if (isAbortLikeError(error)) {
+        mediaTask?.rejectTask(error)
+        toast.info('Geração de áudio v2 cancelada.')
+        return
+      }
       console.error('Audio literal generation error:', error)
+      mediaTask?.rejectTask(error)
       const message = error instanceof Error ? error.message : String(error)
       const isCapabilityError = message.toLowerCase().includes('capability')
         || message.toLowerCase().includes('modalities')
@@ -2432,6 +3039,245 @@ export default function ResearchNotebookV2() {
     } finally {
       setAudioGenLoading(false)
       setAudioGeneratingArtifactId(null)
+    }
+  }
+
+  const handleReviewPresentationV2Asset = async (artifact: StudioArtifact, review: PresentationV2AssetReviewContext) => {
+    if (!userId || !activeNotebook?.id) return
+    if (artifact.type !== 'apresentacao_v2') return
+
+    const uid = userId
+    const notebookId = activeNotebook.id
+    try {
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const currentArtifact = freshNotebook.artifacts.find((item) => item.id === artifact.id) ?? artifact
+      const original = JSON.parse(currentArtifact.content) as PresentationV2Deck
+      const reviewedAt = new Date().toISOString()
+      const operatorReview = {
+        status: review.reviewDecision,
+        at: reviewedAt,
+        source: review.source,
+        reason: review.reason,
+      }
+      const updateAssetReview = <T extends { id: string }>(asset: T): T => (
+        asset.id === review.assetId
+          ? { ...asset, operatorReview }
+          : asset
+      )
+      const updatedDeck: PresentationV2Deck = {
+        ...original,
+        assets: (original.assets || []).map(updateAssetReview),
+        slides: original.slides.map(slide => ({
+          ...slide,
+          assets: (slide.assets || []).map(updateAssetReview),
+        })),
+        revisionHistory: [
+          ...(original.revisionHistory || []),
+          {
+            at: reviewedAt,
+            agent: 'presentation_v2_operator',
+            slideNumbers: review.slideNumber ? [review.slideNumber] : undefined,
+            operatorSource: review.source,
+            operatorAction: review.assetType === 'video' ? 'video' : 'visual',
+            operatorReason: review.reason,
+            assetTypes: [review.assetType],
+            summary: `Operador ${review.reviewDecision === 'approved' ? 'aprovou' : 'rejeitou'} ${review.assetType} ${review.assetId}${review.slideNumber ? ` no slide ${review.slideNumber}` : ''}.`,
+          },
+        ],
+      }
+      const { auditPresentationV2ExportReadiness, auditPresentationV2MultimodalCoherence } = await loadPresentationV2GenerationRuntime()
+      const updatedArtifacts = freshNotebook.artifacts.map((current): StudioArtifact => (
+        current.id === currentArtifact.id
+          ? {
+              ...current,
+              format: 'json',
+              content: JSON.stringify(mergePresentationV2QualitySnapshots(updatedDeck, {
+                multimodalAudit: auditPresentationV2MultimodalCoherence(updatedDeck),
+                exportReadiness: auditPresentationV2ExportReadiness(updatedDeck),
+              }), null, 2),
+            }
+          : current
+      ))
+
+      await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
+      patchNotebook(notebookId, { artifacts: updatedArtifacts })
+      setViewingArtifact((current) => {
+        if (current?.id !== artifact.id) return current
+        return updatedArtifacts.find((item) => item.id === artifact.id) || current
+      })
+      toast.success(review.reviewDecision === 'approved' ? 'Asset aprovado pelo operador.' : 'Asset rejeitado pelo operador.', review.assetId)
+    } catch (error) {
+      console.error('Presentation v2 asset review error:', error)
+      toast.error('Falha ao registrar revisão do asset', error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const handleGeneratePresentationV2VideoClips = async (artifact: StudioArtifact, context?: PresentationV2OperatorActionContext) => {
+    if (!userId || !activeNotebook?.id || videoGenLoading) return
+    if (artifact.type !== 'apresentacao_v2') return
+    if (isLocalSmokeMode) {
+      toast.warning('Geração de clipes indisponível', 'O smoke local libera apenas visualização e exportação. Ative o Firebase para gerar mídia real.')
+      return
+    }
+
+    const uid = userId
+    const notebookId = activeNotebook.id
+      const focusSlideNumbers = context?.slideNumber ? [context.slideNumber] : undefined
+      const focusSlideSuffix = focusSlideNumbers?.length ? ` do slide ${focusSlideNumbers[0]}` : ''
+    setVideoGenLoading(true)
+      const mediaTask = startPresentationV2MediaTask(`Apresentação v2: clipes${focusSlideSuffix} de ${artifact.title.slice(0, 36)}`, 4)
+
+    try {
+      mediaTask.reportTaskProgress({
+        progress: 10,
+        phase: 'Preparando provedor externo de clipes v2...',
+        executionState: 'running',
+        currentStep: 1,
+        totalSteps: 4,
+      })
+      const freshNotebook = await getFreshNotebookOrThrow(notebookId)
+      const currentArtifact = freshNotebook.artifacts.find((item) => item.id === artifact.id) ?? artifact
+      const [{ auditPresentationV2ExportReadiness, auditPresentationV2MultimodalCoherence, generatePresentationV2VideoClips }, { uploadNotebookMediaArtifact }] = await Promise.all([
+        loadPresentationV2GenerationRuntime(),
+        loadNotebookMediaStorageRuntime(),
+      ])
+      mediaTask.reportTaskProgress({
+        progress: 24,
+        phase: 'Solicitando clipes v2 ao provedor externo...',
+        executionState: 'waiting_io',
+        currentStep: 2,
+        totalSteps: 4,
+      })
+      mediaTask.ensureNotCancelled()
+      const generated = await generatePresentationV2VideoClips(currentArtifact.content, {
+        maxClips: focusSlideNumbers?.length ? 1 : 3,
+        signal: mediaTask.signal,
+        slideNumbers: focusSlideNumbers,
+      })
+      mediaTask.ensureNotCancelled()
+
+      if (generated.skippedReason) {
+        toast.warning('Clipes v2 não gerados', `${generated.skippedReason} Configure VITE_EXTERNAL_VIDEO_PROVIDER_* para materializar vídeo.`)
+        mediaTask.resolveTask({ artifactId: currentArtifact.id, media: 'video', skipped: true })
+        return
+      }
+      if (generated.clips.length === 0) {
+        toast.warning('Nenhum clipe v2 retornado', 'O provedor externo não retornou URLs utilizáveis para os assets planejados.')
+        mediaTask.resolveTask({ artifactId: currentArtifact.id, media: 'video', skipped: true })
+        return
+      }
+
+      const original = JSON.parse(currentArtifact.content) as PresentationV2Deck
+      const updatedAssetsById = new Map((original.assets || []).map(asset => [asset.id, { ...asset }]))
+      const updatedSlides = original.slides.map(slide => ({
+        ...slide,
+        assets: (slide.assets || []).map(asset => ({ ...asset })),
+      }))
+
+      for (const [index, clip] of generated.clips.entries()) {
+        mediaTask.ensureNotCancelled()
+        mediaTask.reportTaskProgress({
+          progress: 58 + Math.round((index / Math.max(1, generated.clips.length)) * 24),
+          phase: `Salvando clipe v2 do slide ${clip.slideNumber} no Storage...`,
+          executionState: 'persisting',
+          currentStep: 3,
+          totalSteps: 4,
+        })
+        mediaTask.ensureNotCancelled()
+        const storedVideo = await uploadNotebookMediaArtifact(
+          uid,
+          notebookId,
+          `${currentArtifact.title}-v2-slide-${clip.slideNumber}-clip`,
+          clip.blob,
+          'videos',
+          clip.extension,
+        )
+        const videoAsset = {
+          id: clip.assetId,
+          type: 'video' as const,
+          status: 'stored' as const,
+          prompt: clip.prompt,
+          qualityScore: clip.qualityScore,
+          qualityWarnings: clip.qualityWarnings,
+          providerId: clip.provider,
+          providerLabel: clip.provider,
+          model: `external/${clip.provider}`,
+          url: storedVideo.url,
+          storagePath: storedVideo.path,
+          mimeType: clip.mimeType,
+          altText: `Clipe do slide ${clip.slideNumber}`,
+        }
+
+        const slideIndex = updatedSlides.findIndex(slide => slide.number === clip.slideNumber)
+        if (slideIndex >= 0) {
+          updatedSlides[slideIndex] = {
+            ...updatedSlides[slideIndex],
+            assets: [
+              ...(updatedSlides[slideIndex].assets || []).filter(asset => asset.id !== clip.assetId),
+              videoAsset,
+            ],
+          }
+        }
+        updatedAssetsById.set(clip.assetId, videoAsset)
+      }
+
+      const updatedDeck = {
+        ...original,
+        slides: updatedSlides,
+        assets: Array.from(updatedAssetsById.values()),
+        revisionHistory: [
+          ...(original.revisionHistory || []),
+          {
+            at: new Date().toISOString(),
+            agent: 'presentation_v2_video_generator',
+            slideNumbers: focusSlideNumbers,
+            ...buildPresentationV2OperatorRevisionMetadata(context),
+            summary: `${generated.clips.length} clipe(s) externo(s) salvo(s) no Storage${formatPresentationV2OperatorSuffix(context)}.${generated.clips.some(clip => typeof clip.qualityScore === 'number') ? ` Alinhamento médio ${Math.round(generated.clips.reduce((sum, clip) => sum + (clip.qualityScore || 0), 0) / Math.max(1, generated.clips.length))}/100.` : ''}`,
+          },
+        ],
+      }
+      const updatedArtifacts = freshNotebook.artifacts.map((current): StudioArtifact => (
+        current.id === currentArtifact.id
+          ? {
+              ...current,
+              format: 'json',
+              content: JSON.stringify(mergePresentationV2QualitySnapshots(updatedDeck, {
+                multimodalAudit: auditPresentationV2MultimodalCoherence(updatedDeck),
+                exportReadiness: auditPresentationV2ExportReadiness(updatedDeck),
+              }), null, 2),
+            }
+          : current
+      ))
+
+      await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
+      patchNotebook(notebookId, { artifacts: updatedArtifacts })
+      await appendNotebookExecutions(notebookId, 'presentation_pipeline_v2', generated.executions)
+      mediaTask.reportTaskProgress({
+        progress: 94,
+        phase: 'Atualizando manifesto v2 com clipes...',
+        executionState: 'persisting',
+        currentStep: 4,
+        totalSteps: 4,
+      })
+
+      setViewingArtifact((current) => {
+        if (current?.id !== artifact.id) return current
+        return updatedArtifacts.find((item) => item.id === artifact.id) || current
+      })
+
+      toast.success('Clipes v2 gerados com sucesso!', `${generated.clips.length} clipe(s) salvo(s) no Storage.`)
+      mediaTask.resolveTask({ artifactId: currentArtifact.id, media: 'video' })
+    } catch (error) {
+      if (isAbortLikeError(error)) {
+        mediaTask.rejectTask(error)
+        toast.info('Geração de clipes v2 cancelada.')
+        return
+      }
+      console.error('Presentation v2 video clip generation error:', error)
+      mediaTask.rejectTask(error)
+      toast.error('Falha ao gerar clipes v2', error instanceof Error ? error.message : String(error))
+    } finally {
+      setVideoGenLoading(false)
     }
   }
 
@@ -6029,7 +6875,7 @@ Instruções:
                     </section>
 
                     <div className="space-y-5">
-                      {ARTIFACT_CATEGORIES.map((category) => {
+                      {studioArtifactCategories.map((category) => {
                         const colors = STUDIO_CATEGORY_COLORS[category.color as keyof typeof STUDIO_CATEGORY_COLORS] || STUDIO_CATEGORY_COLORS.blue
 
                         return (
@@ -6113,12 +6959,12 @@ Instruções:
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Categorias</p>
-                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{ARTIFACT_CATEGORIES.length}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{studioArtifactCategories.length}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">blocos de geração mapeados</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--v2-ink-faint)]">Artefatos</p>
-                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{ARTIFACT_CATEGORIES.reduce((total, category) => total + category.items.length, 0)}</p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{studioArtifactCategories.reduce((total, category) => total + category.items.length, 0)}</p>
                           <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">tipos iniciáveis a partir do estúdio</p>
                         </div>
                         <div className="rounded-[1.2rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
@@ -6186,9 +7032,9 @@ Instruções:
                             const viewerReady = artifact.type !== 'video_production'
                             const savedStudio = isVideoStudioArtifact(artifact)
                             const openInStudio = artifact.type === 'video_production' || savedStudio
-                            const canGenerateVideo = artifact.type === 'video_script' && !savedStudio
-                            const canGenerateAudio = artifact.type === 'audio_script'
-                            const canGenerateVisual = isVisualArtifactType(artifact.type)
+                            const canGenerateVideo = !isLocalSmokeMode && (((artifact.type === 'video_script' && !savedStudio) || artifact.type === 'apresentacao_v2'))
+                            const canGenerateAudio = !isLocalSmokeMode && (artifact.type === 'audio_script' || artifact.type === 'apresentacao_v2')
+                            const canGenerateVisual = !isLocalSmokeMode && isVisualArtifactType(artifact.type)
                             const isGeneratingAudio = audioGenLoading && audioGeneratingArtifactId === artifact.id
                             const isGeneratingVisual = visualGenLoading && visualGeneratingArtifactId === artifact.id
 
@@ -6236,6 +7082,10 @@ Instruções:
                                       <button
                                         type="button"
                                         onClick={() => {
+                                          if (artifact.type === 'apresentacao_v2') {
+                                            void handleGeneratePresentationV2VideoClips(artifact)
+                                            return
+                                          }
                                           setVideoGenSavedArtifact(artifact)
                                           setShowVideoGenCost(true)
                                         }}
@@ -6243,7 +7093,7 @@ Instruções:
                                         className="v2-btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
                                       >
                                         {videoGenLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                                        {videoGenLoading ? 'Gerando vídeo...' : 'Gerar vídeo'}
+                                        {videoGenLoading ? 'Gerando vídeo...' : artifact.type === 'apresentacao_v2' ? 'Gerar clipes' : 'Gerar vídeo'}
                                       </button>
                                     )}
                                     {canGenerateAudio && (
@@ -6254,7 +7104,7 @@ Instruções:
                                         className="v2-btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
                                       >
                                         {isGeneratingAudio ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-                                        {isGeneratingAudio ? 'Gerando áudio...' : 'Gerar áudio'}
+                                        {isGeneratingAudio ? 'Gerando áudio...' : artifact.type === 'apresentacao_v2' ? 'Gerar narração' : 'Gerar áudio'}
                                       </button>
                                     )}
                                     {canGenerateVisual && (
@@ -6267,7 +7117,7 @@ Instruções:
                                         {isGeneratingVisual ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
                                         {isGeneratingVisual
                                           ? 'Gerando visual...'
-                                          : artifact.type === 'apresentacao'
+                                          : artifact.type === 'apresentacao' || artifact.type === 'apresentacao_v2'
                                             ? 'Gerar slides'
                                             : 'Gerar imagem'}
                                       </button>
@@ -6384,6 +7234,19 @@ Instruções:
         }}
       />
 
+      <PresentationV2BriefingModal
+        open={showPresentationV2BriefingModal}
+        topic={activeNotebook?.topic || ''}
+        initialPayload={presentationV2BriefingSeed}
+        onClose={() => setShowPresentationV2BriefingModal(false)}
+        onClarify={handleClarifyPresentationV2Briefing}
+        onPreflight={handlePreflightPresentationV2Briefing}
+        onGenerate={(payload) => {
+          setShowPresentationV2BriefingModal(false)
+          void handleGenerateArtifact('apresentacao_v2', payload)
+        }}
+      />
+
       <Suspense fallback={null}>
         {showAcervoProgressModal && (
           <AgentTrailProgressModal
@@ -6425,7 +7288,35 @@ Instruções:
               void handleDeleteArtifact(viewingArtifact.id)
             }}
             onDownload={() => handleDownloadArtifact(viewingArtifact)}
-            onGenerateVideo={viewingArtifact.type === 'video_script' && !isVideoStudioArtifact(viewingArtifact)
+            onRegenerate={(context?: PresentationV2OperatorActionContext) => {
+              if (viewingArtifact.type === 'apresentacao_v2') {
+                try {
+                  const parsed = parseArtifactContent(viewingArtifact.type, viewingArtifact.content)
+                  if (parsed.kind === 'presentation_v2') {
+                    openPresentationV2Briefing(buildPresentationV2BriefingSeedFromDeck(parsed.data.deck, {
+                      focusSlideNumber: context?.slideNumber,
+                      focusAction: context?.action,
+                      focusReason: context?.reason,
+                    }))
+                    return
+                  }
+                } catch (error) {
+                  console.error('Presentation v2 regenerate seed error:', error)
+                }
+
+                openPresentationV2Briefing(createDefaultPresentationV2BriefingPayload())
+                return
+              }
+
+              const artifactType = viewingArtifact.type
+              void handleGenerateArtifact(artifactType)
+            }}
+            onGenerateVideo={!isLocalSmokeMode && viewingArtifact.type === 'apresentacao_v2'
+              ? (context?: PresentationV2OperatorActionContext) => {
+                  if (videoGenLoading) return
+                  void handleGeneratePresentationV2VideoClips(viewingArtifact, context)
+                }
+              : !isLocalSmokeMode && viewingArtifact.type === 'video_script' && !isVideoStudioArtifact(viewingArtifact)
               ? () => {
                   if (videoGenLoading) return
                   setVideoGenSavedArtifact(viewingArtifact)
@@ -6433,16 +7324,21 @@ Instruções:
                   setViewingArtifact(null)
                 }
               : undefined}
-            onGenerateAudio={viewingArtifact.type === 'audio_script'
-              ? () => {
+            onGenerateAudio={!isLocalSmokeMode && (viewingArtifact.type === 'audio_script' || viewingArtifact.type === 'apresentacao_v2')
+              ? (context?: PresentationV2OperatorActionContext) => {
                   if (audioGenLoading && audioGeneratingArtifactId === viewingArtifact.id) return
-                  void handleGenerateAudioFromArtifact(viewingArtifact)
+                  void handleGenerateAudioFromArtifact(viewingArtifact, context)
                 }
               : undefined}
-            onGenerateImage={isVisualArtifactType(viewingArtifact.type)
-              ? () => {
+            onGenerateImage={!isLocalSmokeMode && isVisualArtifactType(viewingArtifact.type)
+              ? (context?: PresentationV2OperatorActionContext) => {
                   if (visualGenLoading && visualGeneratingArtifactId === viewingArtifact.id) return
-                  void handleGenerateVisualArtifact(viewingArtifact)
+                  void handleGenerateVisualArtifact(viewingArtifact, context)
+                }
+              : undefined}
+            onReviewPresentationV2Asset={viewingArtifact.type === 'apresentacao_v2'
+              ? (context: PresentationV2AssetReviewContext) => {
+                  void handleReviewPresentationV2Asset(viewingArtifact, context)
                 }
               : undefined}
             onOpenStudio={isVideoStudioArtifact(viewingArtifact)

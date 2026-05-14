@@ -40,6 +40,9 @@ const USER_SETTINGS_MODEL_KEYS = [
   'video_pipeline_models',
   'audio_pipeline_models',
   'presentation_pipeline_models',
+  'presentation_v2_pipeline_models',
+  'document_v3_models',
+  'chat_orchestrator_models',
 ] as const satisfies ReadonlyArray<keyof UserSettingsData>
 
 export function createSettingsRepository(deps: SettingsRepositoryDependencies) {
