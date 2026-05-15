@@ -96,8 +96,9 @@ function isRecoverableImageModelError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return /api error \(404\)/i.test(message)
     || /api error \(400\)/i.test(message)
-    || /model/i.test(message)
-    || /not found/i.test(message)
+    || /model not found/i.test(message)
+    || /unknown model/i.test(message)
+    || /model unavailable/i.test(message)
     || /capability/i.test(message)
     || /modalit(?:y|ies)/i.test(message)
 }

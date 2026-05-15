@@ -73,24 +73,23 @@ function sanitizeJsonArtifactContent(
   }
 }
 
+function sanitizeLegacyPresentationSlide(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value
+  return sanitizeStructuredMediaFields(value as Record<string, unknown>, [
+    {
+      urlFields: ['renderedImageUrl', 'rendered_image_url'],
+      storagePathFields: ['renderedImageStoragePath', 'rendered_image_storage_path'],
+    },
+  ])
+}
+
 function trySanitizeLegacyPresentationArtifactContent(raw: string): string | null {
   const parsed = parseArtifactContent('apresentacao', raw)
   if (parsed.kind !== 'presentation') return null
 
   return sanitizeJsonArtifactContent(raw, (value) => ({
     ...value,
-    slides: Array.isArray(value.slides)
-      ? value.slides.map((slide) => (
-          slide && typeof slide === 'object'
-            ? sanitizeStructuredMediaFields(slide as Record<string, unknown>, [
-                {
-                  urlFields: ['renderedImageUrl', 'rendered_image_url'],
-                  storagePathFields: ['renderedImageStoragePath', 'rendered_image_storage_path'],
-                },
-              ])
-            : slide
-        ))
-      : value.slides,
+    slides: Array.isArray(value.slides) ? value.slides.map(sanitizeLegacyPresentationSlide) : value.slides,
   }))
 }
 
