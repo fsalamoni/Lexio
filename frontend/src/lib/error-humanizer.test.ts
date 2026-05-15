@@ -38,6 +38,11 @@ describe('error-humanizer', () => {
     expect(result.title).toBe('Créditos do provedor esgotados')
   })
 
+  it('handles OpenRouter credit-limit wording', () => {
+    const result = humanizeError(new Error('OpenRouter API error 402: {"error":{"message":"This request requires more credits, or fewer max_tokens. You requested up to 9000 tokens, but can only afford 6352."}}'))
+    expect(result.title).toBe('Créditos do provedor esgotados')
+  })
+
   it('handles Firebase permission denied', () => {
     const result = humanizeError({ code: 'PERMISSION_DENIED', message: 'Missing permissions' })
     expect(result.title).toBe('Permissão negada')

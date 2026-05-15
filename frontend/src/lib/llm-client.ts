@@ -23,6 +23,7 @@ import { getCurrentUserId } from './firestore-service'
 const REQUEST_TIMEOUT_MS = 180_000
 const MAX_RETRIES = 2
 const MAX_EMPTY_RESPONSE_RETRIES = 2
+const MAX_TOKEN_BUDGET_RETRIES = 2
 
 export interface LLMCallOptions {
   signal?: AbortSignal
@@ -175,6 +176,114 @@ function isTransientUpstreamResponse(status: number, errorBody: string): boolean
   if (lower.includes('overloaded') || lower.includes('temporarily unavailable')) return true
   if (lower.includes('rate limit') || lower.includes('rate-limit')) return true
   return false
+}
+
+function extractProviderErrorMessage(errorBody: string): string {
+  if (!errorBody) return ''
+  try {
+    const parsed = JSON.parse(errorBody) as Record<string, unknown>
+    const nestedError = parsed.error
+    if (nestedError && typeof nestedError === 'object') {
+      const nestedRecord = nestedError as Record<string, unknown>
+      if (typeof nestedRecord.message === 'string') return nestedRecord.message
+      const metadata = nestedRecord.metadata
+      if (metadata && typeof metadata === 'object' && typeof (metadata as Record<string, unknown>).raw === 'string') {
+        return (metadata as Record<string, unknown>).raw as string
+      }
+    }
+    if (typeof parsed.message === 'string') return parsed.message
+  } catch {
+    // Ignore malformed JSON payloads and fall back to the raw response body.
+  }
+  return errorBody
+}
+
+function deriveReducedMaxTokensForBudgetRetry(
+  providerId: string,
+  status: number,
+  requestedMaxTokens: number,
+  errorBody: string,
+): number | null {
+  if (providerId !== 'openrouter' || status !== 402 || requestedMaxTokens <= 128) return null
+
+  const message = extractProviderErrorMessage(errorBody)
+  if (!/(more credits|fewer max_tokens|can only afford|insufficient.*credits?)/i.test(message)) {
+    return null
+  }
+
+  const affordMatch = message.match(/can only afford\s+(\d+)/i)
+  const affordableMaxTokens = affordMatch ? Number.parseInt(affordMatch[1], 10) : Number.NaN
+  const candidate = Number.isFinite(affordableMaxTokens) && affordableMaxTokens > 0
+    ? affordableMaxTokens
+    : Math.floor(requestedMaxTokens * 0.7)
+
+  const bounded = Math.max(128, Math.min(requestedMaxTokens - 1, candidate))
+  return bounded < requestedMaxTokens ? bounded : null
+}
+
+interface ProviderFetchResult {
+  response: Response
+  errorBody?: string
+  networkRetryCount: number
+  tokenBudgetRetryCount: number
+}
+
+async function fetchProviderResponse(
+  resolved: ResolvedProviderCall,
+  messages: ChatMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number,
+  options: LLMCallOptions | undefined,
+  streaming: boolean,
+): Promise<ProviderFetchResult> {
+  let requestedMaxTokens = maxTokens
+  let networkRetryCount = 0
+  let tokenBudgetRetryCount = 0
+
+  for (let budgetAttempt = 0; budgetAttempt <= MAX_TOKEN_BUDGET_RETRIES; budgetAttempt++) {
+    const plan = streaming
+      ? buildStreamingPlan(resolved, messages, model, requestedMaxTokens, temperature)
+      : buildPlan(resolved, messages, model, requestedMaxTokens, temperature)
+
+    const { response, retryCount } = await fetchWithRetry(
+      plan.url,
+      { method: 'POST', headers: plan.headers, body: plan.body },
+      options?.signal,
+    )
+    networkRetryCount += retryCount
+
+    if (response.ok) {
+      return {
+        response,
+        networkRetryCount,
+        tokenBudgetRetryCount,
+      }
+    }
+
+    const errorBody = await response.text().catch(() => '')
+    const reducedMaxTokens = budgetAttempt < MAX_TOKEN_BUDGET_RETRIES
+      ? deriveReducedMaxTokensForBudgetRetry(resolved.provider.id, response.status, requestedMaxTokens, errorBody)
+      : null
+
+    if (reducedMaxTokens !== null) {
+      tokenBudgetRetryCount += 1
+      console.warn(
+        `[LLM] ${resolved.provider.label} limitou o orçamento da resposta; reduzindo max_tokens de ${requestedMaxTokens} para ${reducedMaxTokens}.`,
+      )
+      requestedMaxTokens = reducedMaxTokens
+      continue
+    }
+
+    return {
+      response,
+      errorBody,
+      networkRetryCount,
+      tokenBudgetRetryCount,
+    }
+  }
+
+  throw new Error(`${resolved.provider.label} não retornou resposta após reduzir max_tokens`)
 }
 
 export const RELIABLE_TEXT_FALLBACK_MODEL = 'google/gemini-2.5-flash'
@@ -574,17 +683,24 @@ async function executeChatCompletionStreaming(
   options: LLMCallOptions,
 ): Promise<LLMResult> {
   const t0 = performance.now()
-  const plan = buildStreamingPlan(resolved, messages, model, maxTokens, temperature)
   const onToken = options.onToken!
 
-  const { response, retryCount } = await fetchWithRetry(
-    plan.url,
-    { method: 'POST', headers: plan.headers, body: plan.body },
-    options.signal,
+  const {
+    response,
+    errorBody = '',
+    networkRetryCount,
+    tokenBudgetRetryCount,
+  } = await fetchProviderResponse(
+    resolved,
+    messages,
+    model,
+    maxTokens,
+    temperature,
+    options,
+    true,
   )
 
   if (!response.ok) {
-    const errorBody = await response.text().catch(() => '')
     if (isModelUnavailableResponse(response.status, errorBody)) {
       throw new ModelUnavailableError(model)
     }
@@ -616,9 +732,9 @@ async function executeChatCompletionStreaming(
       providerId: resolved.provider.id,
       providerLabel: resolved.provider.label,
       fallbackUsed: false,
-      networkRetryCount: retryCount,
+      networkRetryCount,
       emptyRetryCount: 0,
-      totalRetryCount: retryCount,
+      totalRetryCount: networkRetryCount + tokenBudgetRetryCount,
     },
   }
 }
@@ -699,8 +815,6 @@ async function executeChatCompletion(
     return executeChatCompletionStreaming(resolved, messages, model, maxTokens, temperature, options)
   }
 
-  const plan = buildPlan(resolved, messages, model, maxTokens, temperature)
-
   for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_RESPONSE_RETRIES; emptyAttempt++) {
     if (options?.signal?.aborted) {
       throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
@@ -711,14 +825,22 @@ async function executeChatCompletion(
       await sleepWithSignal(delayMs, options?.signal)
     }
 
-    const { response, retryCount } = await fetchWithRetry(
-      plan.url,
-      { method: 'POST', headers: plan.headers, body: plan.body },
-      options?.signal,
+    const {
+      response,
+      errorBody = '',
+      networkRetryCount,
+      tokenBudgetRetryCount,
+    } = await fetchProviderResponse(
+      resolved,
+      messages,
+      model,
+      maxTokens,
+      temperature,
+      options,
+      false,
     )
 
     if (!response.ok) {
-      const errorBody = await response.text().catch(() => '')
       if (isModelUnavailableResponse(response.status, errorBody)) {
         throw new ModelUnavailableError(model)
       }
@@ -769,9 +891,9 @@ async function executeChatCompletion(
         providerId: resolved.provider.id,
         providerLabel: resolved.provider.label,
         fallbackUsed: false,
-        networkRetryCount: retryCount,
+        networkRetryCount,
         emptyRetryCount: emptyAttempt,
-        totalRetryCount: retryCount + emptyAttempt,
+        totalRetryCount: networkRetryCount + tokenBudgetRetryCount + emptyAttempt,
       },
     }
   }

@@ -22,7 +22,7 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string; suggestion?: str
 
   // LLM/API specific
   { pattern: /context.*length|token.*limit|max.*tokens/i, message: 'Texto muito longo para o modelo', suggestion: 'Reduza o tamanho da solicitação ou use um modelo com janela maior.' },
-  { pattern: /quota|billing|insufficient.*funds/i, message: 'Créditos do provedor esgotados', suggestion: 'Verifique o saldo da sua chave de API nas configurações.' },
+  { pattern: /quota|billing|insufficient.*funds|more credits|can only afford/i, message: 'Créditos do provedor esgotados', suggestion: 'Verifique o saldo da sua chave de API nas configurações ou reduza o volume da solicitação.' },
   { pattern: /invalid.*api.*key|authentication.*failed/i, message: 'Chave de API inválida', suggestion: 'Verifique suas chaves em Configurações > Chaves de API.' },
   { pattern: /content.*filter|safety|moderation/i, message: 'Conteúdo bloqueado pelo provedor', suggestion: 'Reformule sua solicitação para evitar filtros de segurança.' },
 
