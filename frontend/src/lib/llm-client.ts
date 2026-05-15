@@ -226,6 +226,7 @@ interface ProviderFetchResult {
   errorBody?: string
   networkRetryCount: number
   tokenBudgetRetryCount: number
+  parseResponse: (raw: string) => { content: string; tokensIn: number; tokensOut: number; cost?: number }
 }
 
 async function fetchProviderResponse(
@@ -258,6 +259,7 @@ async function fetchProviderResponse(
         response,
         networkRetryCount,
         tokenBudgetRetryCount,
+        parseResponse: plan.parseResponse,
       }
     }
 
@@ -280,6 +282,7 @@ async function fetchProviderResponse(
       errorBody,
       networkRetryCount,
       tokenBudgetRetryCount,
+      parseResponse: plan.parseResponse,
     }
   }
 
@@ -830,6 +833,7 @@ async function executeChatCompletion(
       errorBody = '',
       networkRetryCount,
       tokenBudgetRetryCount,
+      parseResponse,
     } = await fetchProviderResponse(
       resolved,
       messages,
@@ -861,7 +865,7 @@ async function executeChatCompletion(
 
     let parsed
     try {
-      parsed = plan.parseResponse(rawText)
+      parsed = parseResponse(rawText)
     } catch (parseErr) {
       throw new Error(
         `${resolved.provider.label} retornou JSON inválido (${(parseErr as Error).message}). ` +
