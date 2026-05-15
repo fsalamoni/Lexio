@@ -500,7 +500,7 @@ export function createResearchNotebookRepository(deps: ResearchNotebookRepositor
     const { sources } = fitSourcesToFirestoreLimit(data.sources ?? [], otherBytes)
 
     const withSources = { ...baseMeta, sources }
-    const { llm_executions } = fitExecutionsToFirestoreLimit(
+    const { executions: llm_executions } = fitExecutionsToFirestoreLimit(
       withSources.llm_executions ?? [],
       estimateJsonBytes({ ...withSources, llm_executions: [] }),
     )
