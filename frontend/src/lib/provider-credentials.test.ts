@@ -5,6 +5,8 @@ import type { ModelOption } from './model-config'
 import type { ProviderSettingsMap } from './firestore-types'
 import { PROVIDERS } from './providers'
 
+const openRouterBaseUrl = PROVIDERS.openrouter.baseUrl
+
 function mkModel(overrides: Partial<ModelOption>): ModelOption {
   return {
     id: overrides.id ?? 'openai/gpt-4.1-mini',
@@ -80,9 +82,9 @@ describe('resolveProviderForModel', () => {
 
 describe('normalizeProviderBaseUrl', () => {
   it('normalizes legacy OpenRouter hosted base URLs saved with /api suffixes', () => {
-    expect(normalizeProviderBaseUrl(PROVIDERS.openrouter, 'https://openrouter.ai/api')).toBe('https://openrouter.ai')
-    expect(normalizeProviderBaseUrl(PROVIDERS.openrouter, 'https://openrouter.ai/api/v1')).toBe('https://openrouter.ai')
-    expect(normalizeProviderBaseUrl(PROVIDERS.openrouter, 'https://openrouter.ai/api/v1/chat/completions')).toBe('https://openrouter.ai')
+    expect(normalizeProviderBaseUrl(PROVIDERS.openrouter, `${openRouterBaseUrl}/api`)).toBe(openRouterBaseUrl)
+    expect(normalizeProviderBaseUrl(PROVIDERS.openrouter, `${openRouterBaseUrl}/api/v1`)).toBe(openRouterBaseUrl)
+    expect(normalizeProviderBaseUrl(PROVIDERS.openrouter, `${openRouterBaseUrl}/api/v1/chat/completions`)).toBe(openRouterBaseUrl)
   })
 
   it('preserves custom OpenRouter-compatible gateways as entered by the user', () => {
