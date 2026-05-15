@@ -36,6 +36,19 @@ function gatewayTimeoutResponse() {
   )
 }
 
+function insufficientCreditsResponse(affordableTokens = 6352) {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: `This request requires more credits, or fewer max_tokens. You requested up to 9000 tokens, but can only afford ${affordableTokens}.`,
+        code: 402,
+        metadata: { provider_name: null },
+      },
+    }),
+    { status: 402, headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
 function successResponse(content: string) {
   return new Response(
     JSON.stringify({
@@ -295,6 +308,23 @@ describe('llm-client', () => {
       ).rejects.toBeInstanceOf(TransientLLMError)
 
       expect(fetchSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('retries OpenRouter 402 insufficient-credit errors with a lower max_tokens budget', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(insufficientCreditsResponse(6352))
+        .mockResolvedValueOnce(successResponse('ok after token budget retry'))
+
+      const result = await callLLM('sk-or-test', 'system', 'user', 'openai/gpt-4o', 9000)
+
+      expect(result.content).toBe('ok after token budget retry')
+      expect(result.operational?.totalRetryCount).toBe(1)
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+
+      const firstBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)) as { max_tokens: number }
+      const secondBody = JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body)) as { max_tokens: number }
+      expect(firstBody.max_tokens).toBe(9000)
+      expect(secondBody.max_tokens).toBe(6352)
     })
   })
 })
