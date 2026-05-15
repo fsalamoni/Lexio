@@ -21,6 +21,7 @@ const OPENROUTER_REFERER = typeof window !== 'undefined' && window.location?.ori
 
 export const DEFAULT_IMAGE_MODEL = 'google/gemini-2.5-flash-preview:image-output'
 const OPENROUTER_IMAGE_MODEL_FALLBACKS = ['openai/gpt-image-1', 'black-forest-labs/flux-schnell']
+const unavailableOpenRouterImageModels = new Set<string>()
 const DIRECT_IMAGE_MODEL_FALLBACKS: Partial<Record<ResolvedProviderCall['provider']['id'], string[]>> = {
   openai: ['gpt-image-1'],
 }
@@ -104,15 +105,19 @@ function isRecoverableImageModelError(error: unknown): boolean {
 }
 
 function buildImageModelCandidates(model: string, resolved: ResolvedProviderCall, preferOpenRouterKey: boolean): string[] {
+  const candidates = preferOpenRouterKey || resolved.provider.dialect === 'openrouter'
+    ? uniqueStrings([model, ...OPENROUTER_IMAGE_MODEL_FALLBACKS])
+    : uniqueStrings([
+        normalizeModelForProvider(model, resolved.provider.id),
+        ...(DIRECT_IMAGE_MODEL_FALLBACKS[resolved.provider.id] || []),
+      ])
+
   if (preferOpenRouterKey || resolved.provider.dialect === 'openrouter') {
-    return uniqueStrings([model, ...OPENROUTER_IMAGE_MODEL_FALLBACKS])
+    const availableCandidates = candidates.filter(candidate => !unavailableOpenRouterImageModels.has(candidate))
+    return availableCandidates.length > 0 ? availableCandidates : candidates
   }
 
-  const normalizedModel = normalizeModelForProvider(model, resolved.provider.id)
-  return uniqueStrings([
-    normalizedModel,
-    ...(DIRECT_IMAGE_MODEL_FALLBACKS[resolved.provider.id] || []),
-  ])
+  return candidates
 }
 
 // ── Image Generation ────────────────────────────────────────────────────────
@@ -372,6 +377,9 @@ export async function generateImage(opts: ImageGenerationOptions): Promise<Image
       lastError = error
       if (index >= candidateModels.length - 1 || !isRecoverableImageModelError(error)) {
         throw error
+      }
+      if (preferOpenRouterKey || resolved.provider.dialect === 'openrouter') {
+        unavailableOpenRouterImageModels.add(candidateModel)
       }
       console.warn(`[ImageGen] Modelo ${candidateModel} indisponível; tentando fallback ${candidateModels[index + 1]}.`)
     }

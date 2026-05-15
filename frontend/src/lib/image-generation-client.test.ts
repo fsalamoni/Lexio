@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { PROVIDERS } from './providers'
+
 const resolveProviderCallMock = vi.fn()
 const getCurrentUserIdMock = vi.fn()
+const openRouterChatCompletionsUrl = `${PROVIDERS.openrouter.baseUrl}/api/v1/chat/completions`
 
 vi.mock('./provider-credentials', () => ({
   resolveProviderCall: (...args: unknown[]) => resolveProviderCallMock(...args),
@@ -58,10 +61,55 @@ describe('image-generation-client', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock.mock.calls[0][0]).toBe('https://openrouter.ai/api/v1/chat/completions')
+    expect(fetchMock.mock.calls[0][0]).toBe(openRouterChatCompletionsUrl)
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe(DEFAULT_IMAGE_MODEL)
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).model).toBe('openai/gpt-image-1')
     expect(result.model).toBe('openai/gpt-image-1')
+  })
+
+  it('skips OpenRouter image models that already failed with 404 in the current session', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: async () => 'model not found',
+      })
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: [
+                  {
+                    type: 'image_url',
+                    image_url: { url: 'data:image/png;base64,AAAA' },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { total_cost: 0.02 },
+        }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+    resolveProviderCallMock.mockRejectedValue(new Error('Chave de API ausente para "Google AI".'))
+
+    await generateImage({
+      apiKey: 'sk-or-v1-test',
+      prompt: 'Gerar primeira imagem executiva',
+      model: 'unavailable/image-model',
+    })
+    await generateImage({
+      apiKey: 'sk-or-v1-test',
+      prompt: 'Gerar segunda imagem executiva',
+      model: 'unavailable/image-model',
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe('unavailable/image-model')
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).model).toBe('openai/gpt-image-1')
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body)).model).toBe('openai/gpt-image-1')
   })
 
   it('strips the provider prefix for direct OpenAI image generation', async () => {
