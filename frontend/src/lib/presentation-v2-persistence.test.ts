@@ -111,6 +111,54 @@ describe('presentation-v2-persistence', () => {
     expect(persisted.assets.some((asset) => asset.id === 'deck-audio-1')).toBe(true)
   })
 
+  it('compacts verbose presentation v2 metadata before Firestore persistence', () => {
+    const deck = buildDeck()
+    deck.slides = Array.from({ length: 24 }, (_, index) => ({
+      ...deck.slides[0],
+      id: `slide-${index + 1}`,
+      number: index + 1,
+      title: `Slide ${index + 1}`,
+      speakerNotes: 'Notas extensas. '.repeat(2000),
+      assets: [
+        {
+          id: `render-${index + 1}`,
+          type: 'render',
+          status: 'stored',
+          prompt: 'Prompt visual detalhado. '.repeat(200),
+          negativePrompt: 'Evitar inconsistências. '.repeat(120),
+          qualityWarnings: Array.from({ length: 20 }, () => 'Aviso de qualidade muito detalhado. '.repeat(40)),
+          url: `https://firebasestorage.googleapis.com/v0/b/demo/o/render-${index + 1}.png`,
+          storagePath: `research_notebooks/user/nb/images/render-${index + 1}.png`,
+          mimeType: 'image/png',
+        },
+      ],
+    }))
+    deck.assets = deck.slides.flatMap(slide => slide.assets || [])
+    deck.quality = {
+      warnings: Array.from({ length: 30 }, () => 'Alerta extenso de qualidade. '.repeat(80)),
+      repairSummary: Array.from({ length: 30 }, () => 'Resumo extenso de reparo. '.repeat(80)),
+      exportReadiness: {
+        score: 80,
+        status: 'review',
+        blockingIssues: Array.from({ length: 30 }, () => 'Bloqueio extenso de exportação. '.repeat(80)),
+      },
+    }
+    deck.revisionHistory = Array.from({ length: 30 }, (_, index) => ({
+      at: `2026-05-15T13:${String(index).padStart(2, '0')}:00.000Z`,
+      agent: 'presentation_v2_image_generator',
+      summary: 'Histórico detalhado de revisão. '.repeat(80),
+    }))
+
+    const content = stringifyPresentationV2DeckForFirestore(deck)
+    const persisted = JSON.parse(content) as PresentationV2Deck
+
+    expect(new TextEncoder().encode(content).length).toBeLessThan(850_000)
+    expect(persisted.slides[0].speakerNotes.length).toBeLessThanOrEqual(6000)
+    expect(persisted.slides[0].assets?.[0].prompt?.length).toBeLessThanOrEqual(1200)
+    expect(persisted.quality?.warnings?.length).toBeLessThanOrEqual(8)
+    expect(persisted.revisionHistory?.length).toBeLessThanOrEqual(12)
+  })
+
   it('sanitizes only Presentation V2 artifacts in artifact arrays', () => {
     const artifacts: StudioArtifact[] = [
       {
