@@ -73,7 +73,7 @@ function sanitizeJsonArtifactContent(
   }
 }
 
-function sanitizeLegacyPresentationArtifactContent(raw: string): string | null {
+function trySanitizeLegacyPresentationArtifactContent(raw: string): string | null {
   const parsed = parseArtifactContent('apresentacao', raw)
   if (parsed.kind !== 'presentation') return null
 
@@ -175,7 +175,7 @@ export function sanitizePresentationV2ArtifactForFirestore(artifact: StudioArtif
   }
 
   if (artifact.type === 'apresentacao') {
-    const content = sanitizeLegacyPresentationArtifactContent(artifact.content)
+    const content = trySanitizeLegacyPresentationArtifactContent(artifact.content)
     return content ? { ...artifact, content } : artifact
   }
 

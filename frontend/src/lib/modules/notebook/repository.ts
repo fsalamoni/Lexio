@@ -167,7 +167,7 @@ function fitExecutionsToFirestoreLimit(
   if (retained.length < executions.length) {
     console.warn(
       `[Lexio] Notebook llm_executions trimmed to fit Firestore 1 MB limit ` +
-      `(kept ${retained.length}/${executions.length} most recent records).`,
+      `(removed ${executions.length - retained.length} oldest records; kept ${retained.length}/${executions.length} most recent records).`,
     )
   }
 
