@@ -152,6 +152,28 @@ function fitSourcesToFirestoreLimit(
   return { sources: trimmed, truncated: true }
 }
 
+function fitExecutionsToFirestoreLimit(
+  executions: NonNullable<ResearchNotebookData['llm_executions']>,
+  otherDataEstimateBytes: number,
+): { executions: NonNullable<ResearchNotebookData['llm_executions']>; truncated: boolean } {
+  const totalBytes = estimateJsonBytes(executions) + otherDataEstimateBytes
+  if (totalBytes <= NOTEBOOK_MAX_DOC_BYTES) return { executions, truncated: false }
+
+  const retained = [...executions]
+  while (retained.length > 0 && estimateJsonBytes(retained) + otherDataEstimateBytes > NOTEBOOK_MAX_DOC_BYTES) {
+    retained.shift()
+  }
+
+  if (retained.length < executions.length) {
+    console.warn(
+      `[Lexio] Notebook llm_executions trimmed to fit Firestore 1 MB limit ` +
+      `(kept ${retained.length}/${executions.length} most recent records).`,
+    )
+  }
+
+  return { executions: retained, truncated: retained.length < executions.length }
+}
+
 function applyNotebookSearchMemoryRetention(
   payload: Partial<NotebookSearchMemoryData>,
 ): {
@@ -477,7 +499,12 @@ export function createResearchNotebookRepository(deps: ResearchNotebookRepositor
     const otherBytes = estimateJsonBytes(baseMeta)
     const { sources } = fitSourcesToFirestoreLimit(data.sources ?? [], otherBytes)
 
-    const sanitized = { ...baseMeta, sources }
+    const withSources = { ...baseMeta, sources }
+    const { llm_executions } = fitExecutionsToFirestoreLimit(
+      withSources.llm_executions ?? [],
+      estimateJsonBytes({ ...withSources, llm_executions: [] }),
+    )
+    const sanitized = { ...withSources, llm_executions }
     const docRef = await deps.withFirestoreRetry(
       () => addDoc(collection(db, 'users', effectiveUid, 'research_notebooks'), sanitized),
       'createResearchNotebook.write',
@@ -516,15 +543,28 @@ export function createResearchNotebookRepository(deps: ResearchNotebookRepositor
         }
       : rest
 
-    if (rootPayload.sources) {
+    if (rootPayload.sources || rootPayload.llm_executions) {
       const snapshot = await deps.withFirestoreRetry(() => getDoc(ref), 'updateResearchNotebook.read')
       const existing = snapshot.exists() ? snapshot.data() : {}
-      const merged = { ...existing, ...deps.stripUndefined(rootPayload), updated_at: new Date().toISOString() }
-      const { sources: _sources, ...mergedMeta } = merged
-      const otherBytes = estimateJsonBytes(mergedMeta)
-      const { sources } = fitSourcesToFirestoreLimit(rootPayload.sources, otherBytes)
-      const sanitized = deps.stripUndefined({ ...rootPayload, sources, updated_at: new Date().toISOString() })
-      await deps.withFirestoreRetry(() => updateDoc(ref, sanitized), 'updateResearchNotebook.updateWithSources')
+      const now = new Date().toISOString()
+      let fittedPayload = deps.stripUndefined({ ...rootPayload })
+
+      if (rootPayload.sources) {
+        const merged = { ...existing, ...fittedPayload, updated_at: now }
+        const { sources: _sources, ...mergedMeta } = merged
+        const { sources } = fitSourcesToFirestoreLimit(rootPayload.sources, estimateJsonBytes(mergedMeta))
+        fittedPayload = { ...fittedPayload, sources }
+      }
+
+      if (rootPayload.llm_executions) {
+        const merged = { ...existing, ...fittedPayload, updated_at: now }
+        const { llm_executions: _llmExecutions, ...mergedMeta } = merged
+        const { executions } = fitExecutionsToFirestoreLimit(rootPayload.llm_executions, estimateJsonBytes(mergedMeta))
+        fittedPayload = { ...fittedPayload, llm_executions: executions }
+      }
+
+      const sanitized = deps.stripUndefined({ ...fittedPayload, updated_at: now })
+      await deps.withFirestoreRetry(() => updateDoc(ref, sanitized), 'updateResearchNotebook.updateWithFittedPayload')
     } else {
       const sanitized = deps.stripUndefined({ ...rootPayload, updated_at: new Date().toISOString() })
       await deps.withFirestoreRetry(() => updateDoc(ref, sanitized), 'updateResearchNotebook.update')

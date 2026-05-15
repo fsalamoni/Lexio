@@ -125,4 +125,47 @@ describe('presentation-v2-persistence', () => {
     expect(documentArtifact.content).toContain('SHOULD_STAY_BECAUSE_NOT_JSON_V2')
     expect(sanitizePresentationV2ArtifactForFirestore(documentArtifact)).toBe(documentArtifact)
   })
+
+  it('sanitizes inline media URLs for legacy presentation and structured notebook artifacts', () => {
+    const legacyPresentation: StudioArtifact = {
+      id: 'presentation',
+      type: 'apresentacao',
+      title: 'Deck legado',
+      format: 'json',
+      created_at: '2026-05-14T20:00:00.000Z',
+      content: JSON.stringify({
+        slides: [
+          {
+            number: 1,
+            title: 'Slide 1',
+            bullets: ['Teste'],
+            speakerNotes: 'Notas',
+            renderedImageUrl: 'data:image/png;base64,INLINE',
+            renderedImageStoragePath: 'research_notebooks/user/nb/images/legacy-slide.png',
+          },
+        ],
+      }),
+    }
+    const infographic: StudioArtifact = {
+      id: 'infographic',
+      type: 'infografico',
+      title: 'Infográfico',
+      format: 'json',
+      created_at: '2026-05-14T20:00:00.000Z',
+      content: JSON.stringify({
+        title: 'Resumo',
+        sections: [{ title: 'Secao', content: 'Conteúdo' }],
+        renderedImageUrl: 'blob:http://localhost/final-image',
+        renderedImageStoragePath: 'research_notebooks/user/nb/images/infographic.png',
+      }),
+    }
+
+    const sanitizedLegacy = sanitizePresentationV2ArtifactForFirestore(legacyPresentation)
+    const sanitizedInfographic = sanitizePresentationV2ArtifactForFirestore(infographic)
+
+    expect(sanitizedLegacy.content).not.toContain('data:image/png;base64,INLINE')
+    expect(sanitizedLegacy.content).toContain('legacy-slide.png')
+    expect(sanitizedInfographic.content).not.toContain('blob:http://localhost/final-image')
+    expect(sanitizedInfographic.content).toContain('infographic.png')
+  })
 })
