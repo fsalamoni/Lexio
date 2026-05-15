@@ -99,7 +99,7 @@ function isRecoverableImageModelError(error: unknown): boolean {
     || /model/i.test(message)
     || /not found/i.test(message)
     || /capability/i.test(message)
-    || /modalit/i.test(message)
+    || /modalit(?:y|ies)/i.test(message)
 }
 
 function buildImageModelCandidates(model: string, resolved: ResolvedProviderCall, preferOpenRouterKey: boolean): string[] {
@@ -376,7 +376,11 @@ export async function generateImage(opts: ImageGenerationOptions): Promise<Image
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error('Image generation failed after model fallback')
+  const attemptedModels = candidateModels.join(', ')
+  if (lastError instanceof Error) {
+    throw new Error(`Image generation failed after model fallback (${attemptedModels}): ${lastError.message}`)
+  }
+  throw new Error(`Image generation failed after model fallback (${attemptedModels}).`)
 }
 
 // Backwards-compatible export kept for existing callsites.
