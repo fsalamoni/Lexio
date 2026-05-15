@@ -149,16 +149,34 @@ function sanitizeStructuredArtifactRootMediaContent(
   return sanitizeJsonArtifactContent(raw, value => sanitizeStructuredMediaFields(value, fieldGroups))
 }
 
+function mergeDeckAssets(deckAssets: PresentationV2SlideAsset[] = [], slides: PresentationV2Slide[] = []): PresentationV2SlideAsset[] {
+  const merged = new Map<string, PresentationV2SlideAsset>()
+  for (const asset of deckAssets) {
+    merged.set(asset.id, sanitizeAssetForFirestore(asset))
+  }
+  for (const asset of slides.flatMap(slide => slide.assets || [])) {
+    merged.set(asset.id, sanitizeAssetForFirestore(asset))
+  }
+  return Array.from(merged.values())
+}
+
 export function sanitizePresentationV2DeckForFirestore(deck: PresentationV2Deck): PresentationV2Deck {
+  const slides = (deck.slides || []).map(sanitizeSlideForFirestore)
   return {
     ...deck,
-    slides: (deck.slides || []).map(sanitizeSlideForFirestore),
-    assets: (deck.assets || []).map(sanitizeAssetForFirestore),
+    slides,
+    assets: mergeDeckAssets(deck.assets || [], slides),
   }
 }
 
 export function stringifyPresentationV2DeckForFirestore(deck: PresentationV2Deck): string {
-  return JSON.stringify(sanitizePresentationV2DeckForFirestore(deck), null, 2)
+  const sanitizedDeck = sanitizePresentationV2DeckForFirestore(deck)
+  const slideAssetIds = new Set(sanitizedDeck.slides.flatMap(slide => (slide.assets || []).map(asset => asset.id)))
+  const persistedDeck: PresentationV2Deck = {
+    ...sanitizedDeck,
+    assets: sanitizedDeck.assets.filter(asset => !slideAssetIds.has(asset.id)),
+  }
+  return JSON.stringify(persistedDeck)
 }
 
 export function sanitizePresentationV2ArtifactForFirestore(artifact: StudioArtifact): StudioArtifact {

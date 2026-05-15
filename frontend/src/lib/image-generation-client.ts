@@ -20,6 +20,10 @@ const OPENROUTER_REFERER = typeof window !== 'undefined' && window.location?.ori
   : 'https://lexio.web.app'
 
 export const DEFAULT_IMAGE_MODEL = 'google/gemini-2.5-flash-preview:image-output'
+const OPENROUTER_IMAGE_MODEL_FALLBACKS = ['openai/gpt-image-1', 'black-forest-labs/flux-schnell']
+const DIRECT_IMAGE_MODEL_FALLBACKS: Partial<Record<ResolvedProviderCall['provider']['id'], string[]>> = {
+  openai: ['gpt-image-1'],
+}
 
 /** Max retries for transient failures */
 const MAX_RETRIES = 1
@@ -72,6 +76,44 @@ function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
+function buildOpenRouterEndpoint(baseUrl?: string): string {
+  if (!baseUrl) return OPENROUTER_URL
+  const trimmed = baseUrl.replace(/\/+$/, '')
+  if (trimmed.endsWith('/api/v1')) return `${trimmed}/chat/completions`
+  return `${trimmed}/api/v1/chat/completions`
+}
+
+function normalizeModelForProvider(model: string, providerId: string): string {
+  const prefix = `${providerId}/`
+  return model.startsWith(prefix) ? model.slice(prefix.length) : model
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  return Array.from(new Set(values.map(value => value?.trim()).filter(Boolean) as string[]))
+}
+
+function isRecoverableImageModelError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /api error \(404\)/i.test(message)
+    || /api error \(400\)/i.test(message)
+    || /model/i.test(message)
+    || /not found/i.test(message)
+    || /capability/i.test(message)
+    || /modalit/i.test(message)
+}
+
+function buildImageModelCandidates(model: string, resolved: ResolvedProviderCall, preferOpenRouterKey: boolean): string[] {
+  if (preferOpenRouterKey || resolved.provider.dialect === 'openrouter') {
+    return uniqueStrings([model, ...OPENROUTER_IMAGE_MODEL_FALLBACKS])
+  }
+
+  const normalizedModel = normalizeModelForProvider(model, resolved.provider.id)
+  return uniqueStrings([
+    normalizedModel,
+    ...(DIRECT_IMAGE_MODEL_FALLBACKS[resolved.provider.id] || []),
+  ])
+}
+
 // ── Image Generation ────────────────────────────────────────────────────────
 
 /**
@@ -81,9 +123,7 @@ function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
  */
 async function generateImageWithOpenRouter(opts: ImageGenerationOptions & { apiKey: string; baseUrl?: string; model: string; providerId?: string; providerLabel?: string }): Promise<ImageGenerationResult> {
   const model = opts.model || DEFAULT_IMAGE_MODEL
-  const endpoint = opts.baseUrl
-    ? `${opts.baseUrl.replace(/\/+$/, '')}/api/v1/chat/completions`
-    : OPENROUTER_URL
+  const endpoint = buildOpenRouterEndpoint(opts.baseUrl)
 
   const promptText = opts.negativePrompt
     ? `${opts.prompt}\n\nAvoid: ${opts.negativePrompt}`
@@ -277,48 +317,66 @@ async function generateImageWithOpenAICompatible(
 export async function generateImage(opts: ImageGenerationOptions): Promise<ImageGenerationResult> {
   const model = opts.model || DEFAULT_IMAGE_MODEL
   const uid = opts.uid ?? getCurrentUserId() ?? undefined
+  const preferOpenRouterKey = isLikelyOpenRouterKey(opts.apiKey)
   let resolved: ResolvedProviderCall
   try {
     resolved = await resolveProviderCall(model, uid)
   } catch (error) {
-    if (!isLikelyOpenRouterKey(opts.apiKey)) throw error
-    return generateImageWithOpenRouter({
-      ...opts,
+    if (!preferOpenRouterKey) throw error
+    resolved = {
+      provider: {
+        id: 'openrouter',
+        label: 'OpenRouter',
+        dialect: 'openrouter',
+        baseUrl: 'https://openrouter.ai',
+      } as ResolvedProviderCall['provider'],
       apiKey: opts.apiKey as string,
-      model,
-      providerId: 'openrouter',
-      providerLabel: 'OpenRouter',
-    })
+      baseUrl: 'https://openrouter.ai',
+    }
   }
 
-  if (resolved.provider.dialect === 'openrouter') {
-    const openrouterOverride = opts.apiKey && (/^sk-or-v1-/i.test(opts.apiKey) || /^or-v1-/i.test(opts.apiKey) || /^sk-or-/i.test(opts.apiKey))
-      ? opts.apiKey
-      : resolved.apiKey
-    return generateImageWithOpenRouter({
-      ...opts,
-      apiKey: openrouterOverride,
-      model,
-      baseUrl: resolved.baseUrl,
-      providerId: resolved.provider.id,
-      providerLabel: resolved.provider.label,
-    })
+  const candidateModels = buildImageModelCandidates(model, resolved, preferOpenRouterKey)
+  let lastError: unknown = null
+
+  for (let index = 0; index < candidateModels.length; index++) {
+    const candidateModel = candidateModels[index]
+    try {
+      if (preferOpenRouterKey || resolved.provider.dialect === 'openrouter') {
+        const openrouterApiKey = preferOpenRouterKey ? opts.apiKey as string : resolved.apiKey
+        return await generateImageWithOpenRouter({
+          ...opts,
+          apiKey: openrouterApiKey,
+          model: candidateModel,
+          baseUrl: preferOpenRouterKey ? undefined : resolved.baseUrl,
+          providerId: 'openrouter',
+          providerLabel: 'OpenRouter',
+        })
+      }
+
+      if (resolved.provider.dialect === 'openai-compatible' || resolved.provider.dialect === 'ollama') {
+        return await generateImageWithOpenAICompatible({
+          ...opts,
+          model: candidateModel,
+          apiKey: resolved.apiKey,
+          baseUrl: resolved.baseUrl,
+          providerId: resolved.provider.id,
+          providerLabel: resolved.provider.label,
+          authHeader: resolved.provider.authHeader,
+          authPrefix: resolved.provider.authPrefix,
+        })
+      }
+
+      throw new Error(`O provedor "${resolved.provider.label}" não suporta geração de imagens neste fluxo.`)
+    } catch (error) {
+      lastError = error
+      if (index >= candidateModels.length - 1 || !isRecoverableImageModelError(error)) {
+        throw error
+      }
+      console.warn(`[ImageGen] Modelo ${candidateModel} indisponível; tentando fallback ${candidateModels[index + 1]}.`)
+    }
   }
 
-  if (resolved.provider.dialect === 'openai-compatible' || resolved.provider.dialect === 'ollama') {
-    return generateImageWithOpenAICompatible({
-      ...opts,
-      model,
-      apiKey: resolved.apiKey,
-      baseUrl: resolved.baseUrl,
-      providerId: resolved.provider.id,
-      providerLabel: resolved.provider.label,
-      authHeader: resolved.provider.authHeader,
-      authPrefix: resolved.provider.authPrefix,
-    })
-  }
-
-  throw new Error(`O provedor "${resolved.provider.label}" não suporta geração de imagens neste fluxo.`)
+  throw lastError instanceof Error ? lastError : new Error('Image generation failed after model fallback')
 }
 
 // Backwards-compatible export kept for existing callsites.

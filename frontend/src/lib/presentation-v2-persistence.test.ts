@@ -71,6 +71,14 @@ function buildDeck(): PresentationV2Deck {
         storagePath: 'research_notebooks/user/nb/images/image.png',
         mimeType: 'image/png',
       },
+      {
+        id: 'deck-audio-1',
+        type: 'audio',
+        status: 'stored',
+        url: 'https://firebasestorage.googleapis.com/v0/b/demo/o/audio.mp3',
+        storagePath: 'research_notebooks/user/nb/audio/audio.mp3',
+        mimeType: 'audio/mpeg',
+      },
     ],
   }
 }
@@ -92,11 +100,15 @@ describe('presentation-v2-persistence', () => {
 
   it('stringifies decks without inline media payloads', () => {
     const content = stringifyPresentationV2DeckForFirestore(buildDeck())
+    const persisted = JSON.parse(content) as PresentationV2Deck
 
     expect(content).not.toContain('data:image')
     expect(content).not.toContain('blob:http')
     expect(content).not.toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
     expect(content).toContain('firebasestorage.googleapis.com')
+    expect(content).not.toContain('\n  ')
+    expect(persisted.assets.some((asset) => asset.id === 'render-1')).toBe(false)
+    expect(persisted.assets.some((asset) => asset.id === 'deck-audio-1')).toBe(true)
   })
 
   it('sanitizes only Presentation V2 artifacts in artifact arrays', () => {
