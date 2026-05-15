@@ -129,4 +129,40 @@ describe('artifact-parsers barrel', () => {
     })
     expect(parsed.data.qualityWarnings).toEqual(['Validar jurisprudência citada'])
   })
+
+  it('merges slide assets with deck-level assets when persisted deck omits duplicated slide assets', () => {
+    const parsed = parseArtifactContent('apresentacao_v2', JSON.stringify({
+      schemaVersion: 'presentation_v2.1',
+      title: 'Deck compacto',
+      generationSpec: { request: 'Teste' },
+      outline: { narrativeArc: 'Teste', sections: [] },
+      theme: { name: 'Tema' },
+      slides: [
+        {
+          id: 'slide-1',
+          number: 1,
+          title: 'Slide 1',
+          layout: 'hero',
+          bullets: ['Ponto 1'],
+          speakerNotes: 'Notas',
+          assets: [
+            { id: 'slide-1-render', type: 'render', status: 'stored', url: 'https://storage.example/slide-1.png' },
+          ],
+        },
+      ],
+      assets: [
+        { id: 'deck-audio-1', type: 'audio', status: 'stored', url: 'https://storage.example/deck-audio.mp3' },
+      ],
+    }))
+
+    expect(parsed.kind).toBe('presentation_v2')
+    if (parsed.kind !== 'presentation_v2') {
+      throw new Error('expected presentation_v2 artifact')
+    }
+
+    expect(parsed.data.assets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'slide-1-render', type: 'render' }),
+      expect.objectContaining({ id: 'deck-audio-1', type: 'audio' }),
+    ]))
+  })
 })

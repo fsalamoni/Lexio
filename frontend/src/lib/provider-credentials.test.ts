@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveProviderForModel } from './provider-credentials'
+import { normalizeProviderBaseUrl, resolveProviderForModel } from './provider-credentials'
 import type { ModelOption } from './model-config'
 import type { ProviderSettingsMap } from './firestore-types'
+import { PROVIDERS } from './providers'
 
 function mkModel(overrides: Partial<ModelOption>): ModelOption {
   return {
@@ -74,5 +75,17 @@ describe('resolveProviderForModel', () => {
 
   it('defaults to openrouter for unknown model identifiers', () => {
     expect(resolveProviderForModel('my-custom-model-without-prefix')).toBe('openrouter')
+  })
+})
+
+describe('normalizeProviderBaseUrl', () => {
+  it('normalizes legacy OpenRouter hosted base URLs saved with /api suffixes', () => {
+    expect(normalizeProviderBaseUrl(PROVIDERS.openrouter, 'https://openrouter.ai/api')).toBe('https://openrouter.ai')
+    expect(normalizeProviderBaseUrl(PROVIDERS.openrouter, 'https://openrouter.ai/api/v1')).toBe('https://openrouter.ai')
+    expect(normalizeProviderBaseUrl(PROVIDERS.openrouter, 'https://openrouter.ai/api/v1/chat/completions')).toBe('https://openrouter.ai')
+  })
+
+  it('preserves custom OpenRouter-compatible gateways as entered by the user', () => {
+    expect(normalizeProviderBaseUrl(PROVIDERS.openrouter, 'https://proxy.lexio.dev/api')).toBe('https://proxy.lexio.dev/api')
   })
 })

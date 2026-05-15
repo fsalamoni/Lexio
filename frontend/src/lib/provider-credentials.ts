@@ -39,6 +39,26 @@ interface SettingsBundle {
   catalog: ModelOption[]
 }
 
+export function normalizeProviderBaseUrl(provider: ProviderDefinition, baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  if (!trimmed) return provider.baseUrl
+
+  if (provider.dialect === 'openrouter') {
+    try {
+      const parsed = new URL(trimmed)
+      const isHostedOpenRouter = /(^|\.)openrouter\.ai$/i.test(parsed.hostname)
+      if (isHostedOpenRouter) {
+        parsed.pathname = parsed.pathname.replace(/\/api(?:\/v1(?:\/chat\/completions)?)?$/i, '') || '/'
+        return parsed.toString().replace(/\/$/, '')
+      }
+    } catch {
+      return trimmed
+    }
+  }
+
+  return trimmed
+}
+
 async function loadSettingsBundle(uid?: string): Promise<SettingsBundle> {
   if (!IS_FIREBASE) {
     return { apiKeys: {}, providerSettings: {}, catalog: [] }
@@ -142,7 +162,7 @@ export async function resolveProviderCall(
     throw new Error(`Chave de API ausente para "${provider.label}". Configure-a em Configurações → Provedores de IA.`)
   }
 
-  const baseUrl = setting?.base_url?.trim() || provider.baseUrl
+  const baseUrl = normalizeProviderBaseUrl(provider, setting?.base_url?.trim() || provider.baseUrl)
   return { provider, apiKey, baseUrl }
 }
 

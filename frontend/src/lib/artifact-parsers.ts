@@ -274,8 +274,13 @@ function normalizePresentationV2Deck(raw: Record<string, unknown>): Presentation
         slideNumbers: Array.isArray(section.slideNumbers ?? section.slide_numbers)
           ? ((section.slideNumbers ?? section.slide_numbers) as unknown[]).map(Number).filter(Number.isFinite)
           : [],
-      }))
+        }))
     : [{ id: 'section-1', title: 'Narrativa principal', purpose: String(outline.narrativeArc ?? outline.narrative_arc ?? ''), slideNumbers: slides.map(slide => slide.number) }]
+
+  const mergedAssets = new Map<string, PresentationV2SlideAsset>()
+  const rawAssets = Array.isArray(raw.assets) ? raw.assets as PresentationV2SlideAsset[] : []
+  for (const asset of rawAssets) mergedAssets.set(asset.id, asset)
+  for (const asset of slides.flatMap(slide => slide.assets || [])) mergedAssets.set(asset.id, asset)
 
   return {
     schemaVersion: 'presentation_v2.1',
@@ -351,7 +356,7 @@ function normalizePresentationV2Deck(raw: Record<string, unknown>): Presentation
         : undefined,
     },
     slides,
-    assets: Array.isArray(raw.assets) ? raw.assets as PresentationV2SlideAsset[] : slides.flatMap(slide => slide.assets || []),
+    assets: Array.from(mergedAssets.values()),
     quality: {
       score: typeof quality.score === 'number' ? quality.score : undefined,
       strengths: toStringArray(quality.strengths ?? quality.pontos_fortes),
