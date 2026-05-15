@@ -50,6 +50,11 @@ import type {
 } from '../../lib/firestore-types'
 import { humanizeError } from '../../lib/error-humanizer'
 import {
+  sanitizePresentationV2ArtifactsForFirestore,
+  sanitizePresentationV2DeckForFirestore,
+  stringifyPresentationV2DeckForFirestore,
+} from '../../lib/presentation-v2-persistence'
+import {
   buildResearchNotebookWorkbenchPath,
   parseResearchNotebookV2Section,
   type ResearchNotebookV2Section,
@@ -194,6 +199,20 @@ function mergePresentationV2QualitySnapshots(
       ...patches,
     },
   }
+}
+
+function buildPresentationV2PersistedContent(
+  deck: PresentationV2Deck,
+  auditors: {
+    auditPresentationV2MultimodalCoherence: (deck: PresentationV2Deck) => NonNullable<PresentationV2Deck['quality']>['multimodalAudit']
+    auditPresentationV2ExportReadiness: (deck: PresentationV2Deck) => NonNullable<PresentationV2Deck['quality']>['exportReadiness']
+  },
+): string {
+  const sanitizedDeck = sanitizePresentationV2DeckForFirestore(deck)
+  return stringifyPresentationV2DeckForFirestore(mergePresentationV2QualitySnapshots(sanitizedDeck, {
+    multimodalAudit: auditors.auditPresentationV2MultimodalCoherence(sanitizedDeck),
+    exportReadiness: auditors.auditPresentationV2ExportReadiness(sanitizedDeck),
+  }))
 }
 
 function buildPresentationV2OperatorRevisionMetadata(context?: PresentationV2OperatorActionContext) {
@@ -1219,7 +1238,7 @@ export default function ResearchNotebookV2() {
     const notebookTopic = options?.notebookTopic ?? activeNotebook?.topic ?? artifact.title
     const notebookTitle = options?.notebookTitle ?? activeNotebook?.title ?? ''
     const freshNotebook = await getFreshNotebookOrThrow(notebookId)
-    const updatedArtifacts = [...freshNotebook.artifacts, artifact]
+    const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore([...freshNotebook.artifacts, artifact])
 
     const costKey: UsageFunctionKey = ARTIFACT_COST_KEY[artifact.type] ?? 'caderno_pesquisa'
     const newExecutions = executions.map((execution) =>
@@ -1467,7 +1486,7 @@ export default function ResearchNotebookV2() {
 
       if (editedContent && editedContent !== artifactToRun.content) {
         const freshNotebook = await getFreshNotebookOrThrow(notebookId)
-        const updatedArtifacts = freshNotebook.artifacts.map((artifact) =>
+        const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore(freshNotebook.artifacts.map((artifact) =>
           artifact.id === artifactToRun.id
             ? {
                 ...artifact,
@@ -1475,7 +1494,7 @@ export default function ResearchNotebookV2() {
                 created_at: new Date().toISOString(),
               }
             : artifact,
-        )
+        ))
         artifactToRun = updatedArtifacts.find((artifact) => artifact.id === artifactToRun.id) || { ...artifactToRun, content: editedContent }
 
         await updateResearchNotebook(userId, notebookId, { artifacts: updatedArtifacts })
@@ -1869,6 +1888,7 @@ export default function ResearchNotebookV2() {
         ]
       }
 
+      updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore(updatedArtifacts)
       const savedArtifact = existingIdx >= 0 ? updatedArtifacts[existingIdx] : updatedArtifacts[updatedArtifacts.length - 1]
 
       await updateResearchNotebook(userId, notebookId, { artifacts: updatedArtifacts })
@@ -2410,7 +2430,7 @@ export default function ResearchNotebookV2() {
 
     try {
       const notebook = await getFreshNotebookOrThrow(notebookId)
-      const updatedArtifacts = notebook.artifacts.filter((artifact) => artifact.id !== artifactId)
+      const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore(notebook.artifacts.filter((artifact) => artifact.id !== artifactId))
 
       await updateResearchNotebook(userId, notebookId, { artifacts: updatedArtifacts })
       patchNotebook(notebookId, { artifacts: updatedArtifacts, updated_at: updatedAt })
@@ -2547,13 +2567,15 @@ export default function ResearchNotebookV2() {
           generatePresentationV2MediaAssets,
           generatePresentationV2StructuredVisualAssets,
         } = await loadPresentationV2GenerationRuntime()
+        const original = sanitizePresentationV2DeckForFirestore(JSON.parse(currentArtifact.content) as PresentationV2Deck)
+        const presentationV2Content = stringifyPresentationV2DeckForFirestore(original)
         mediaTask?.ensureNotCancelled()
         const media = await generatePresentationV2MediaAssets({
           apiKey,
           uid: userId || undefined,
           topic: notebookTopic,
           description: notebookDescription,
-        }, currentArtifact.content, (step, total, phase, meta) => {
+        }, presentationV2Content, (step, total, phase, meta) => {
           mediaTask?.reportTaskProgress({
             progress: 12 + Math.round((step / Math.max(1, total)) * 48),
             phase,
@@ -2571,9 +2593,8 @@ export default function ResearchNotebookV2() {
           currentStep: 3,
           totalSteps: 4,
         })
-        const structuredMedia = await generatePresentationV2StructuredVisualAssets(currentArtifact.content, { signal: mediaTask?.signal, slideNumbers: focusSlideNumbers })
+        const structuredMedia = await generatePresentationV2StructuredVisualAssets(presentationV2Content, { signal: mediaTask?.signal, slideNumbers: focusSlideNumbers })
         mediaTask?.ensureNotCancelled()
-        const original = JSON.parse(currentArtifact.content) as PresentationV2Deck
         const updatedAssetsById = new Map((original.assets || []).map(asset => [asset.id, { ...asset }]))
         const updatedSlides = original.slides.map((slide) => {
           const generatedSlide = media.slideVisuals.find((item) => item.slideNumber === slide.number)
@@ -2720,10 +2741,10 @@ export default function ResearchNotebookV2() {
             },
           ],
         }
-        nextContent = JSON.stringify(mergePresentationV2QualitySnapshots(updatedDeck, {
-          multimodalAudit: auditPresentationV2MultimodalCoherence(updatedDeck),
-          exportReadiness: auditPresentationV2ExportReadiness(updatedDeck),
-        }), null, 2)
+        nextContent = buildPresentationV2PersistedContent(updatedDeck, {
+          auditPresentationV2MultimodalCoherence,
+          auditPresentationV2ExportReadiness,
+        })
         successMessage = focusSlideNumbers?.length
           ? `Visuais v2 do slide ${focusSlideNumbers[0]} atualizados com sucesso.`
           : `${media.slideVisuals.length} slide(s) visual(is) v2 e ${structuredMedia.structuredVisuals.length} gráfico(s)/diagrama(s) gerado(s) com sucesso.`
@@ -2759,7 +2780,7 @@ export default function ResearchNotebookV2() {
         throw new Error('O artefato visual não possui estrutura válida para gerar imagem final.')
       }
 
-      const updatedArtifacts = freshNotebook.artifacts.map((current) => (
+      const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore(freshNotebook.artifacts.map((current) => (
         current.id === currentArtifact.id
           ? {
               ...current,
@@ -2767,7 +2788,7 @@ export default function ResearchNotebookV2() {
               content: nextContent,
             }
           : current
-      ))
+      )))
 
       await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
       patchNotebook(notebookId, { artifacts: updatedArtifacts })
@@ -2858,11 +2879,13 @@ export default function ResearchNotebookV2() {
           loadPresentationV2GenerationRuntime(),
           loadNotebookMediaStorageRuntime(),
         ])
+        const original = sanitizePresentationV2DeckForFirestore(JSON.parse(currentArtifact.content) as PresentationV2Deck)
+        const presentationV2Content = stringifyPresentationV2DeckForFirestore(original)
         mediaTask?.ensureNotCancelled()
         const synthesis = await generatePresentationV2AudioNarration({
           apiKey,
           uid,
-        }, currentArtifact.content, mediaTask?.signal, { slideNumbers: focusSlideNumbers })
+        }, presentationV2Content, mediaTask?.signal, { slideNumbers: focusSlideNumbers })
         mediaTask?.ensureNotCancelled()
         mediaTask?.reportTaskProgress({
           progress: 62,
@@ -2885,7 +2908,6 @@ export default function ResearchNotebookV2() {
           synthesis.extension,
         )
 
-        const original = JSON.parse(currentArtifact.content) as PresentationV2Deck
         const focusedSlide = focusSlideNumbers?.length
           ? original.slides.find(slide => slide.number === focusSlideNumbers[0])
           : undefined
@@ -2934,18 +2956,19 @@ export default function ResearchNotebookV2() {
             },
           ],
         }
-        const updatedArtifacts = freshNotebook.artifacts.map((current): StudioArtifact => (
+        const persistedContent = buildPresentationV2PersistedContent(updatedDeck, {
+          auditPresentationV2MultimodalCoherence,
+          auditPresentationV2ExportReadiness,
+        })
+        const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore(freshNotebook.artifacts.map((current): StudioArtifact => (
           current.id === currentArtifact.id
             ? {
                 ...current,
                 format: 'json',
-                content: JSON.stringify(mergePresentationV2QualitySnapshots(updatedDeck, {
-                  multimodalAudit: auditPresentationV2MultimodalCoherence(updatedDeck),
-                  exportReadiness: auditPresentationV2ExportReadiness(updatedDeck),
-                }), null, 2),
+                content: persistedContent,
               }
             : current
-        ))
+        )))
 
         await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
         patchNotebook(notebookId, { artifacts: updatedArtifacts })
@@ -2988,7 +3011,7 @@ export default function ResearchNotebookV2() {
       )
 
       const freshNotebook = await getFreshNotebookOrThrow(notebookId)
-      const updatedArtifacts = freshNotebook.artifacts.map((current): StudioArtifact => {
+      const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore(freshNotebook.artifacts.map((current): StudioArtifact => {
         if (current.id !== artifact.id) return current
 
         try {
@@ -3010,7 +3033,7 @@ export default function ResearchNotebookV2() {
             content: `${current.content}${separator}\n\n## Audio Literal\n\nArquivo: ${storedAudio.url}`,
           }
         }
-      })
+      }))
 
       await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
       patchNotebook(notebookId, { artifacts: updatedArtifacts })
@@ -3060,7 +3083,7 @@ export default function ResearchNotebookV2() {
     try {
       const freshNotebook = await getFreshNotebookOrThrow(notebookId)
       const currentArtifact = freshNotebook.artifacts.find((item) => item.id === artifact.id) ?? artifact
-      const original = JSON.parse(currentArtifact.content) as PresentationV2Deck
+      const original = sanitizePresentationV2DeckForFirestore(JSON.parse(currentArtifact.content) as PresentationV2Deck)
       const reviewedAt = new Date().toISOString()
       const operatorReview = {
         status: review.reviewDecision,
@@ -3095,18 +3118,19 @@ export default function ResearchNotebookV2() {
         ],
       }
       const { auditPresentationV2ExportReadiness, auditPresentationV2MultimodalCoherence } = await loadPresentationV2GenerationRuntime()
-      const updatedArtifacts = freshNotebook.artifacts.map((current): StudioArtifact => (
+      const persistedContent = buildPresentationV2PersistedContent(updatedDeck, {
+        auditPresentationV2MultimodalCoherence,
+        auditPresentationV2ExportReadiness,
+      })
+      const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore(freshNotebook.artifacts.map((current): StudioArtifact => (
         current.id === currentArtifact.id
           ? {
               ...current,
               format: 'json',
-              content: JSON.stringify(mergePresentationV2QualitySnapshots(updatedDeck, {
-                multimodalAudit: auditPresentationV2MultimodalCoherence(updatedDeck),
-                exportReadiness: auditPresentationV2ExportReadiness(updatedDeck),
-              }), null, 2),
+              content: persistedContent,
             }
           : current
-      ))
+      )))
 
       await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
       patchNotebook(notebookId, { artifacts: updatedArtifacts })
@@ -3158,7 +3182,9 @@ export default function ResearchNotebookV2() {
         totalSteps: 4,
       })
       mediaTask.ensureNotCancelled()
-      const generated = await generatePresentationV2VideoClips(currentArtifact.content, {
+      const original = sanitizePresentationV2DeckForFirestore(JSON.parse(currentArtifact.content) as PresentationV2Deck)
+      const presentationV2Content = stringifyPresentationV2DeckForFirestore(original)
+      const generated = await generatePresentationV2VideoClips(presentationV2Content, {
         maxClips: focusSlideNumbers?.length ? 1 : 3,
         signal: mediaTask.signal,
         slideNumbers: focusSlideNumbers,
@@ -3176,7 +3202,6 @@ export default function ResearchNotebookV2() {
         return
       }
 
-      const original = JSON.parse(currentArtifact.content) as PresentationV2Deck
       const updatedAssetsById = new Map((original.assets || []).map(asset => [asset.id, { ...asset }]))
       const updatedSlides = original.slides.map(slide => ({
         ...slide,
@@ -3245,18 +3270,19 @@ export default function ResearchNotebookV2() {
           },
         ],
       }
-      const updatedArtifacts = freshNotebook.artifacts.map((current): StudioArtifact => (
+      const persistedContent = buildPresentationV2PersistedContent(updatedDeck, {
+        auditPresentationV2MultimodalCoherence,
+        auditPresentationV2ExportReadiness,
+      })
+      const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore(freshNotebook.artifacts.map((current): StudioArtifact => (
         current.id === currentArtifact.id
           ? {
               ...current,
               format: 'json',
-              content: JSON.stringify(mergePresentationV2QualitySnapshots(updatedDeck, {
-                multimodalAudit: auditPresentationV2MultimodalCoherence(updatedDeck),
-                exportReadiness: auditPresentationV2ExportReadiness(updatedDeck),
-              }), null, 2),
+              content: persistedContent,
             }
           : current
-      ))
+      )))
 
       await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
       patchNotebook(notebookId, { artifacts: updatedArtifacts })
