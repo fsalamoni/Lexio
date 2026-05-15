@@ -323,4 +323,90 @@ describe('analyzeThesisBank parallel pipeline', () => {
     expect(result.suggestions).toHaveLength(1)
     expect(result.llm_executions.map(execution => execution.phase)).toContain('thesis_revisor_repair')
   })
+
+  it('compacts the Curador prompt to avoid provider prompt-token limits', async () => {
+    const curadorPrompts: string[] = []
+    const largeTheses = Array.from({ length: 120 }, (_, index) => thesis(`t${index}`, `Tese extensa ${index}`))
+    const largeDocs = Array.from({ length: 5 }, (_, index) => ({
+      ...acervoDoc(`doc-${index}`),
+      text_content: `Documento ${index}. ${'Fundamentação jurídica detalhada. '.repeat(500)}`,
+    }))
+
+    callLLMMock.mockImplementation(async (_apiKey, _system, prompt: string, model: string) => {
+      if (model === 'curador-model') curadorPrompts.push(prompt)
+      return responseForModel(model)
+    })
+
+    await analyzeThesisBank('sk-test', largeTheses, largeDocs, modelMap)
+
+    expect(curadorPrompts).toHaveLength(1)
+    expect(curadorPrompts[0].length).toBeLessThan(9000)
+    expect(curadorPrompts[0]).toContain('[doc-0.pdf]')
+    expect(curadorPrompts[0]).toContain('[doc-1.pdf]')
+    expect(curadorPrompts[0]).not.toContain('[doc-2.pdf]')
+  })
+
+  it('parses common Revisor JSON trailing-comma responses without an LLM repair pass', async () => {
+    callLLMMock.mockImplementation(async (_apiKey, system: string, _prompt, model: string) => {
+      if (model === 'revisor-model' && !String(system).includes('corrige saídas JSON')) {
+        return llmResult(`\`\`\`json
+{
+  "executive_summary": "JSON aceito localmente.",
+  "suggestions": [
+    {
+      "type": "create",
+      "priority": "high",
+      "impact_score": 8,
+      "title": "Sugestão com vírgula",
+      "description": "Ok",
+      "rationale": "Ok",
+    }
+  ],
+}
+\`\`\``, model, 20)
+      }
+      if (String(system).includes('corrige saídas JSON')) {
+        throw new Error('repair should not be called')
+      }
+      return responseForModel(model)
+    })
+
+    const result = await runDefaultAnalysis()
+
+    expect(result.executive_summary).toBe('JSON aceito localmente.')
+    expect(result.suggestions[0]).toMatchObject({ priority: 'high', title: 'Sugestão com vírgula' })
+    expect(result.llm_executions.map(execution => execution.phase)).not.toContain('thesis_revisor_repair')
+  })
+
+  it('finalizes Revisor with local fallback suggestions when the Revisor model fails', async () => {
+    const progressSnapshots: Array<Array<{ key: string; status: string; executionState?: string; message?: string }>> = []
+
+    callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => {
+      if (model === 'revisor-model') throw new Error('provider quota exceeded')
+      return responseForModel(model)
+    })
+
+    const result = await analyzeThesisBank(
+      'sk-test',
+      [thesis('t1', 'Tese 1'), thesis('t2', 'Tese 2')],
+      [acervoDoc('doc-1')],
+      modelMap,
+      (agents) => {
+        progressSnapshots.push(agents.map(agent => ({
+          key: agent.key,
+          status: agent.status,
+          executionState: agent.executionState,
+          message: agent.message,
+        })))
+      },
+    )
+
+    expect(result.suggestions).toHaveLength(1)
+    expect(result.suggestions[0]).toMatchObject({ type: 'create', title: 'Nova tese: Nova tese do acervo' })
+    const finalSnapshot = progressSnapshots[progressSnapshots.length - 1]
+    expect(finalSnapshot.find(agent => agent.key === 'thesis_revisor')).toMatchObject({
+      status: 'done',
+      executionState: 'completed',
+    })
+  })
 })

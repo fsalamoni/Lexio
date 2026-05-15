@@ -108,11 +108,30 @@ const DEFAULT_THESIS_ANALYSIS_PARALLEL_LIMIT = 2
 const MAX_THESIS_ANALYSIS_PARALLEL_LIMIT = 3
 const DEFAULT_THESIS_COMPILADOR_BATCH_CONCURRENCY = 2
 const MAX_THESIS_COMPILADOR_BATCH_CONCURRENCY = 4
+const MAX_THESES_FOR_CATALOGUE = 80
+const CATALOGUE_SUMMARY_CHARS = 120
+const MAX_CURADOR_DOCS = 2
+const CURADOR_DOC_EXCERPT_CHARS = 1200
+const MAX_CATALOGUE_ENTRIES_FOR_CURADOR = 24
+const MAX_THEMATIC_GAPS_FOR_CURADOR = 8
+const MAX_ANALISTA_GROUPS = 10
+const ANALISTA_THESIS_CONTENT_CHARS = 500
+const COMPILADOR_THESIS_CONTENT_CHARS = 900
+const MAX_REVISOR_SUGGESTIONS = 30
+const REVISOR_CREATE_SUMMARY_CHARS = 160
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function uid4(): string {
   return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10)
+}
+
+function compactJson(value: unknown): string {
+  return JSON.stringify(value)
+}
+
+function stripJsonTrailingCommas(content: string): string {
+  return content.replace(/,\s*([}\]])/g, '$1')
 }
 
 function extractBalancedJson(content: string): string | null {
@@ -167,11 +186,13 @@ function parseJson(raw: string): unknown {
 
   // 2. Try direct parse first (fast path)
   try { return JSON.parse(content) } catch { /* fall through */ }
+  try { return JSON.parse(stripJsonTrailingCommas(content)) } catch { /* fall through */ }
 
   // 3. Extract the first balanced JSON object/array, ignoring prose around it.
   const balancedJson = extractBalancedJson(content)
   if (balancedJson) {
     try { return JSON.parse(balancedJson) } catch { /* fall through */ }
+    try { return JSON.parse(stripJsonTrailingCommas(balancedJson)) } catch { /* fall through */ }
   }
 
   // 4. Last resort: throw with context
@@ -198,8 +219,8 @@ function thesesToCatalogueEntries(theses: ThesisData[]): Array<{
     .filter(t => t.id)
     .map(t => ({
       id: t.id!,
-      title: t.title,
-      summary: t.summary?.slice(0, 180) || t.content.slice(0, 180),
+      title: t.title.slice(0, 140),
+      summary: t.summary?.slice(0, CATALOGUE_SUMMARY_CHARS) || t.content.slice(0, CATALOGUE_SUMMARY_CHARS),
       area: t.legal_area_id,
     }))
 }
@@ -469,13 +490,10 @@ export async function analyzeThesisBank(
     'running',
   )
 
-  // Limit inputs to avoid token overflow
-  const MAX_THESES_FOR_CATALOGUE = 120
   const thesesForCatalogue = theses.slice(0, MAX_THESES_FOR_CATALOGUE)
   const catalogue = thesesToCatalogueEntries(thesesForCatalogue)
 
-  const MAX_DOCS_FOR_CURADOR = 4
-  const docsForCurador = acervoDocs.slice(0, MAX_DOCS_FOR_CURADOR)
+  const docsForCurador = acervoDocs.slice(0, MAX_CURADOR_DOCS)
   const newThesisProposals: Array<{
     title: string; content: string; summary: string
     legal_area_id: string; tags?: string[]; quality_score?: number
@@ -492,12 +510,12 @@ export async function analyzeThesisBank(
 
     if (docsForCurador.length > 0 || thematicGaps.length > 0) {
       try {
-        const docsText = docsForCurador.map(d => acervoExcerpt(d)).join('\n\n===\n\n')
+        const docsText = docsForCurador.map(d => acervoExcerpt(d, CURADOR_DOC_EXCERPT_CHARS)).join('\n\n===\n\n')
         const gapsText = thematicGaps.length > 0
-          ? `\n\nLACUNAS TEMÁTICAS IDENTIFICADAS (priorize teses que preencham estas lacunas):\n${thematicGaps.map((g, i) => `${i + 1}. ${g}`).join('\n')}`
+          ? `\n\nLACUNAS TEMÁTICAS IDENTIFICADAS (priorize teses que preencham estas lacunas):\n${thematicGaps.slice(0, MAX_THEMATIC_GAPS_FOR_CURADOR).map((g, i) => `${i + 1}. ${g.slice(0, 180)}`).join('\n')}`
           : ''
         const catalogueText = catalogue.length > 0
-          ? `\n\nBANCO ATUAL (resumo compacto para evitar duplicidades):\n${JSON.stringify(catalogue.slice(0, 80), null, 2)}`
+          ? `\n\nBANCO ATUAL (resumo compacto para evitar duplicidades):\n${compactJson(catalogue.slice(0, MAX_CATALOGUE_ENTRIES_FOR_CURADOR))}`
           : ''
 
         notify('thesis_curador', 'running', 'Curador aguardando resposta do modelo...', 'waiting_io')
@@ -559,7 +577,7 @@ export async function analyzeThesisBank(
     const res = await trackPhase('inventario', async () => callLLMWithFallback(
       apiKey,
       CATALOGADOR_SYSTEM,
-      `Inventário de ${catalogue.length} teses jurídicas:\n${JSON.stringify(catalogue, null, 2)}`,
+      `Inventário de ${catalogue.length} teses jurídicas:\n${compactJson(catalogue)}`,
       modelMap['thesis_catalogador'],
       resolveFb('thesis_catalogador', modelMap['thesis_catalogador']),
       3000,
@@ -600,12 +618,12 @@ export async function analyzeThesisBank(
 
   // Build full-content view for all theses in groups
   const thesisById = new Map(theses.filter(t => t.id).map(t => [t.id!, t]))
-  const groupsWithContent = similarGroups.map(group => ({
+  const groupsWithContent = similarGroups.slice(0, MAX_ANALISTA_GROUPS).map(group => ({
     ...group,
     theses_content: group.ids
       .map(id => {
         const t = thesisById.get(id)
-        return t ? { id, title: t.title, content: t.content.slice(0, 800) } : null
+        return t ? { id, title: t.title.slice(0, 140), content: t.content.slice(0, ANALISTA_THESIS_CONTENT_CHARS) } : null
       })
       .filter((x): x is { id: string; title: string; content: string } => x !== null),
   }))
@@ -624,7 +642,7 @@ export async function analyzeThesisBank(
       const res = await trackPhase('redundancia', async () => callLLMWithFallback(
         apiKey,
         ANALISTA_SYSTEM,
-        `Grupos de teses para análise profunda:\n${JSON.stringify(groupsWithContent, null, 2)}`,
+        `Grupos de teses para análise profunda:\n${compactJson(groupsWithContent)}`,
         modelMap['thesis_analista'],
         resolveFb('thesis_analista', modelMap['thesis_analista']),
         4000,
@@ -708,7 +726,7 @@ export async function analyzeThesisBank(
 
       try {
         const versionsText = groupTheses.map((t, i) =>
-          `VERSÃO ${i + 1} — "${t.title}":\n${t.content.slice(0, 1200)}`
+          `VERSÃO ${i + 1} — "${t.title}":\n${t.content.slice(0, COMPILADOR_THESIS_CONTENT_CHARS)}`
         ).join('\n\n---\n\n')
 
         notify('thesis_compilador', 'running', `Compilador aguardando resposta para o grupo ${groupIndex + 1}/${analysisMergeGroups.length}...`, 'waiting_io')
@@ -823,7 +841,7 @@ export async function analyzeThesisBank(
   ]
 
   // Slim version for the Revisor — strip full thesis content to keep the prompt small
-  const revisorPayload = rawSuggestions.map(s => {
+  const revisorPayload = rawSuggestions.slice(0, MAX_REVISOR_SUGGESTIONS).map(s => {
     if (s.type === 'merge') {
       const d = s.data as { source_ids: string[]; source_titles: string[] }
       return { temp_id: s.temp_id, type: s.type, source_ids: d.source_ids, source_titles: d.source_titles }
@@ -834,7 +852,7 @@ export async function analyzeThesisBank(
     }
     if (s.type === 'create') {
       const d = s.data as { title: string; summary: string; legal_area_id: string; tags: string[] }
-      return { temp_id: s.temp_id, type: s.type, title: d.title, summary: d.summary?.slice(0, 200), legal_area_id: d.legal_area_id, tags: d.tags }
+      return { temp_id: s.temp_id, type: s.type, title: d.title?.slice(0, 140), summary: d.summary?.slice(0, REVISOR_CREATE_SUMMARY_CHARS), legal_area_id: d.legal_area_id, tags: d.tags?.slice(0, 6) }
     }
     return { temp_id: s.temp_id, type: s.type }
   })
@@ -848,7 +866,7 @@ export async function analyzeThesisBank(
       const res = await trackPhase('revisao', async () => callLLMWithFallback(
         apiKey,
         REVISOR_SYSTEM,
-        `Banco atual: ${theses.length} teses.\n\nSugestões para revisão:\n${JSON.stringify(revisorPayload, null, 2)}`,
+        `Banco atual: ${theses.length} teses. Revisar até ${revisorPayload.length} sugestões priorizadas.\n\nSugestões para revisão:\n${compactJson(revisorPayload)}`,
         modelMap['thesis_revisor'],
         resolveFb('thesis_revisor', modelMap['thesis_revisor']),
         4000,
@@ -897,10 +915,10 @@ export async function analyzeThesisBank(
         const repair = await trackPhase('revisao_repair', async () => callLLMWithFallback(
           apiKey,
           'Você corrige saídas JSON inválidas. Retorne APENAS um objeto JSON válido, sem markdown, sem comentários e sem texto fora do JSON.',
-          `A saída abaixo deveria ser um objeto JSON válido no formato {"executive_summary":"...","suggestions":[...]}. Corrija somente a sintaxe e preserve os campos úteis.\n\n${res.content}`,
+          `A saída abaixo deveria ser um objeto JSON válido no formato {"executive_summary":"...","suggestions":[...]}. Corrija somente a sintaxe e preserve os campos úteis.\n\n${res.content.slice(0, 12_000)}`,
           modelMap['thesis_revisor'],
           resolveFb('thesis_revisor', modelMap['thesis_revisor']),
-          4000,
+          2500,
           0,
         ))
         recordAgentDuration(repair)
@@ -976,7 +994,6 @@ export async function analyzeThesisBank(
 
       notify('thesis_revisor', 'done', `${finalSuggestions.length} sugestões finalizadas`)
     } catch (err) {
-      notify('thesis_revisor', 'error', `Revisor: ${agentErrorMessage(err)}`)
       console.warn('Revisor failed, using raw suggestions:', err)
 
       // Fallback: build suggestions directly from raw data without Revisor
@@ -1029,6 +1046,7 @@ export async function analyzeThesisBank(
           },
         } satisfies AnalysisSuggestion
       })
+      notify('thesis_revisor', 'done', `${finalSuggestions.length} sugestões finalizadas com revisão local`)
     }
   } else {
     notify('thesis_revisor', 'done', 'Nenhuma sugestão gerada')
