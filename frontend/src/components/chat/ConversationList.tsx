@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Loader2, MessagesSquare, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Archive, Loader2, MessagesSquare, Pencil, Plus } from 'lucide-react'
 import clsx from 'clsx'
 import type { ChatConversationData } from '../../lib/firestore-types'
 import {
   createChatConversation,
   deleteChatConversation,
   listChatConversations,
+  listChatTurns,
   renameChatConversation,
 } from '../../lib/firestore-service'
 import { useAuth } from '../../contexts/AuthContext'
 import { IS_FIREBASE } from '../../lib/firebase'
+import {
+  deriveChatConversationPreviewFromTurns,
+  deriveChatConversationTitleFromTurns,
+  isArchivedChatConversation,
+  isLegacyRecoveredConversation,
+} from '../../lib/chat-conversation-integrity'
 
 interface ConversationListProps {
   activeId: string | null
@@ -45,8 +52,9 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
           return
         }
         const { items } = await listChatConversations(userId!)
+        const visibleItems = await filterVisibleConversations(userId!, items)
         if (cancelled) return
-        setItems(items)
+        setItems(visibleItems)
       } catch {
         if (cancelled) return
         setItems([])
@@ -208,9 +216,9 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
                         type="button"
                         onClick={() => handleDelete(item.id!)}
                         className="rounded p-1 text-[var(--v2-ink-faint)] hover:bg-rose-50 hover:text-rose-600"
-                        title="Excluir"
+                        title="Arquivar"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <Archive className="h-3 w-3" />
                       </button>
                     </div>
                   )}
@@ -222,4 +230,23 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
       </div>
     </div>
   )
+}
+
+async function filterVisibleConversations(uid: string, conversations: ChatConversationData[]): Promise<ChatConversationData[]> {
+  const candidates = conversations.filter(conversation => !isArchivedChatConversation(conversation))
+  const checked = await Promise.all(candidates.map(async conversation => {
+    if (!conversation.id || !isLegacyRecoveredConversation(conversation)) return conversation
+    try {
+      const { items: turns } = await listChatTurns(uid, conversation.id)
+      if (turns.length === 0) return null
+      return {
+        ...conversation,
+        title: deriveChatConversationTitleFromTurns(turns),
+        last_preview: deriveChatConversationPreviewFromTurns(turns) || conversation.last_preview,
+      }
+    } catch {
+      return conversation
+    }
+  }))
+  return checked.filter((conversation): conversation is ChatConversationData => Boolean(conversation))
 }

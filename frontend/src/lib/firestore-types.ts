@@ -1284,6 +1284,9 @@ export interface ChatConversationData {
   last_preview?: string
   created_at: string
   updated_at: string
+  /** Soft-delete marker. Conversations with this field are hidden from normal lists but their turns remain preserved. */
+  deleted_at?: string
+  deleted_by?: string
 }
 
 /**

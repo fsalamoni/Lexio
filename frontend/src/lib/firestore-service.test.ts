@@ -1419,7 +1419,7 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(mockGetIdToken).toHaveBeenCalledWith(true)
   })
 
-  it('lists, finalizes and deletes chat turns through the facade', async () => {
+  it('lists, finalizes and archives chat conversations without deleting turns', async () => {
     mockGetDocs.mockResolvedValueOnce(makeGetDocsSnapshot([
       { id: 'turn-1', data: { conversation_id: 'conv-1', user_input: 'Oi', trail: [], assistant_markdown: null, status: 'done', created_at: '2026-05-08T10:00:00.000Z' } },
     ]))
@@ -1450,28 +1450,18 @@ describe('saveNotebookDocumentToDocuments', () => {
       expect.objectContaining({ updated_at: expect.any(String) }),
     )
 
-    mockGetDocs
-      .mockResolvedValueOnce(makeGetDocsSnapshot([
-        { id: 'turn-1', data: { conversation_id: 'conv-1' } },
-        { id: 'turn-2', data: { conversation_id: 'conv-1' } },
-      ]))
-      .mockResolvedValueOnce(makeGetDocsSnapshot([
-        { id: 'binding-1', data: { conversation_id: 'conv-1' } },
-      ]))
-      .mockResolvedValueOnce(makeGetDocsSnapshot([
-        { id: 'cmd-1', data: { conversation_id: 'conv-1' } },
-      ]))
-      .mockResolvedValueOnce(makeGetDocsSnapshot([
-        { id: 'approval-1', data: { conversation_id: 'conv-1' } },
-      ]))
     await deleteChatConversation(uid, 'conv-1')
 
-    expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/turn-1' })
-    expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/turn-2' })
-    expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/binding-1' })
-    expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/cmd-1' })
-    expect(mockDeleteDoc).toHaveBeenCalledWith({ path: 'mock/approval-1' })
-    expect(mockDeleteDoc).toHaveBeenLastCalledWith({ path: 'users/user-123/chat_conversations/conv-1' })
+    expect(mockDeleteDoc).not.toHaveBeenCalled()
+    expect(mockSetDoc).toHaveBeenLastCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-1' },
+      expect.objectContaining({
+        deleted_at: expect.any(String),
+        deleted_by: 'user-123',
+        updated_at: expect.any(String),
+      }),
+      { merge: true },
+    )
   })
 
   it('persists sidecar devices, workspace roots and bindings through the facade', async () => {

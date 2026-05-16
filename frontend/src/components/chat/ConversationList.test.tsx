@@ -15,6 +15,7 @@ const chatMocks = vi.hoisted(() => ({
   createChatConversationMock: vi.fn(),
   deleteChatConversationMock: vi.fn(),
   listChatConversationsMock: vi.fn(),
+  listChatTurnsMock: vi.fn(),
   renameChatConversationMock: vi.fn(),
 }))
 
@@ -28,6 +29,7 @@ vi.mock('../../lib/firestore-service', () => ({
   createChatConversation: (...args: unknown[]) => chatMocks.createChatConversationMock(...args),
   deleteChatConversation: (...args: unknown[]) => chatMocks.deleteChatConversationMock(...args),
   listChatConversations: (...args: unknown[]) => chatMocks.listChatConversationsMock(...args),
+  listChatTurns: (...args: unknown[]) => chatMocks.listChatTurnsMock(...args),
   renameChatConversation: (...args: unknown[]) => chatMocks.renameChatConversationMock(...args),
 }))
 
@@ -65,6 +67,7 @@ describe('ConversationList', () => {
     })
     chatMocks.createChatConversationMock.mockResolvedValue('conv-2')
     chatMocks.deleteChatConversationMock.mockResolvedValue(undefined)
+    chatMocks.listChatTurnsMock.mockResolvedValue({ items: [] })
     chatMocks.renameChatConversationMock.mockResolvedValue(undefined)
   })
 
@@ -87,6 +90,7 @@ describe('ConversationList', () => {
           {
             id: 'conv-1',
             title: 'Conversa recuperada',
+            last_preview: 'Historico recuperado',
             effort: 'medio',
             created_at: '2026-05-08T10:00:00.000Z',
             updated_at: '2026-05-08T10:00:00.000Z',
@@ -104,6 +108,68 @@ describe('ConversationList', () => {
     await waitFor(() => {
       expect(chatMocks.listChatConversationsMock).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('hides empty legacy recovered placeholders without deleting them', async () => {
+    chatMocks.listChatConversationsMock.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'empty-recovered',
+          title: 'Conversa recuperada',
+          last_preview: '',
+          effort: 'medio',
+          created_at: '2026-05-08T10:00:00.000Z',
+          updated_at: '2026-05-08T10:00:00.000Z',
+        },
+        {
+          id: 'conv-1',
+          title: 'Conversa inicial',
+          effort: 'medio',
+          created_at: '2026-05-08T10:00:00.000Z',
+          updated_at: '2026-05-08T10:00:00.000Z',
+        },
+      ],
+    })
+
+    renderList()
+
+    expect(await screen.findByRole('button', { name: 'Conversa inicial' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Conversa recuperada' })).toBeNull()
+    expect(chatMocks.listChatTurnsMock).toHaveBeenCalledWith('user-1', 'empty-recovered')
+    expect(chatMocks.deleteChatConversationMock).not.toHaveBeenCalled()
+  })
+
+  it('shows legacy recovered conversations with a title derived from preserved turns', async () => {
+    chatMocks.listChatConversationsMock.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'recovered-with-turns',
+          title: 'Conversa recuperada',
+          last_preview: '',
+          effort: 'medio',
+          created_at: '2026-05-08T10:00:00.000Z',
+          updated_at: '2026-05-08T10:00:00.000Z',
+        },
+      ],
+    })
+    chatMocks.listChatTurnsMock.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'turn-1',
+          conversation_id: 'recovered-with-turns',
+          user_input: 'Recupere o parecer administrativo',
+          assistant_markdown: 'Parecer preservado.',
+          trail: [],
+          status: 'done',
+          created_at: '2026-05-08T10:00:00.000Z',
+        },
+      ],
+    })
+
+    renderList({ activeId: null })
+
+    expect(await screen.findByRole('button', { name: 'Recupere o parecer administrativo' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Conversa recuperada' })).toBeNull()
   })
 
   it('creates a new conversation and selects it', async () => {

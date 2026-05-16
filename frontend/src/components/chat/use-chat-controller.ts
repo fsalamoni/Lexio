@@ -14,6 +14,7 @@ import {
   getChatConversation,
   listChatTurns,
   persistChatAgentWorkPackage,
+  renameChatConversation,
   updateChatApprovalRequest,
   updateChatTurn,
   updateChatConversationEffort,
@@ -38,6 +39,12 @@ import {
 import { getOpenRouterKey } from '../../lib/generation-service'
 import { useAuth } from '../../contexts/AuthContext'
 import { IS_FIREBASE } from '../../lib/firebase'
+import {
+  deriveChatConversationPreviewFromTurns,
+  deriveChatConversationTitleFromTurns,
+  isArchivedChatConversation,
+  isLegacyRecoveredConversation,
+} from '../../lib/chat-conversation-integrity'
 
 export interface ChatControllerState {
   conversationId: string | null
@@ -477,12 +484,40 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
           dispatch({ type: 'LOAD_SUCCESS', conversation: synthetic, turns: [] })
           return
         }
+        const { items: turns } = await listChatTurns(userId!, conversationId)
         let conv = await getChatConversation(userId!, conversationId)
         if (!conv) {
-          conv = await ensureChatConversation(userId!, conversationId, { title: 'Conversa recuperada' })
+          if (turns.length === 0) {
+            if (cancelled) return
+            dispatch({ type: 'LOAD_ERROR', error: 'Conversa não encontrada. Nenhum histórico foi alterado.' })
+            return
+          }
+          conv = await ensureChatConversation(userId!, conversationId, {
+            title: deriveChatConversationTitleFromTurns(turns),
+            last_preview: deriveChatConversationPreviewFromTurns(turns),
+          })
           notifyChatConversationUpserted(conversationId)
         }
-        const { items: turns } = await listChatTurns(userId!, conversationId)
+        if (isArchivedChatConversation(conv)) {
+          if (cancelled) return
+          dispatch({ type: 'LOAD_ERROR', error: 'Conversa arquivada. O histórico permanece preservado.' })
+          return
+        }
+        if (isLegacyRecoveredConversation(conv)) {
+          if (turns.length === 0) {
+            if (cancelled) return
+            dispatch({ type: 'LOAD_ERROR', error: 'Conversa recuperada vazia ignorada. Nenhum histórico foi alterado.' })
+            return
+          }
+          const repairedTitle = deriveChatConversationTitleFromTurns(turns)
+          const repairedPreview = deriveChatConversationPreviewFromTurns(turns)
+          await renameChatConversation(userId!, conversationId, repairedTitle)
+          if (repairedPreview) {
+            await updateChatConversationPreview(userId!, conversationId, repairedPreview)
+          }
+          conv = { ...conv, title: repairedTitle, last_preview: repairedPreview }
+          notifyChatConversationUpserted(conversationId)
+        }
         if (cancelled) return
         dispatch({ type: 'LOAD_SUCCESS', conversation: conv, turns })
       } catch (err) {
