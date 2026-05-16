@@ -117,6 +117,7 @@ describe('buildSuperSkills', () => {
     expect(names).toContain('check_document_status')
     expect(names).toContain('search_jurisprudence')
     expect(names).toContain('analyze_thesis')
+    expect(names).toContain('generate_studio_artifact')
     expect(names).toContain('hybrid_search')
   })
 })
@@ -348,5 +349,57 @@ describe('generate_document skill', () => {
     expect(persistWorkPackage).toHaveBeenCalled()
     expect(emit.mock.calls.some(call => call[0].type === 'agent_work_package')).toBe(true)
     expect(emit.mock.calls.some(call => call[0].type === 'pipeline_progress')).toBe(false)
+  })
+})
+
+describe('generate_studio_artifact skill', () => {
+  it('deve rejeitar quando artifact_type está vazio', async () => {
+    const result = await findAndRunSkill('generate_studio_artifact', {
+      topic: 'Responsabilidade civil',
+    }, mockContext())
+
+    expect(result.tool_message).toContain('artifact_type')
+  })
+
+  it('deve rejeitar quando topic está vazio', async () => {
+    const result = await findAndRunSkill('generate_studio_artifact', {
+      artifact_type: 'resumo',
+    }, mockContext())
+
+    expect(result.tool_message).toContain('topic')
+  })
+
+  it('deve pedir aprovação antes de salvar artefato persistente', async () => {
+    const emit = vi.fn()
+    const ctx = mockContext({ emit })
+
+    const result = await findAndRunSkill('generate_studio_artifact', {
+      artifact_type: 'resumo',
+      topic: 'Inexigibilidade de licitação',
+      notebook_id: 'nb-1',
+    }, ctx)
+
+    expect(result.awaiting_user?.question).toContain('Gerar Resumo')
+    expect(result.awaiting_user?.resume_tool).toBe('generate_studio_artifact')
+    expect(emit.mock.calls.some(call => call[0].type === 'approval_requested')).toBe(true)
+  })
+
+  it('deve gerar pacote de artefato em modo mock quando aprovado', async () => {
+    const emit = vi.fn()
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({ mock: true, emit, persistWorkPackage })
+
+    const result = await findAndRunSkill('generate_studio_artifact', {
+      artifact_type: 'resumo',
+      topic: 'Inexigibilidade de licitação',
+      notebook_id: 'nb-1',
+      source_context: 'Contratação direta por fornecedor exclusivo.',
+      approved: true,
+    }, ctx)
+
+    expect(result.tool_message).toContain('Resumo gerado com sucesso')
+    expect(result.tool_message).toContain('nb-1')
+    expect(persistWorkPackage).toHaveBeenCalled()
+    expect(emit.mock.calls.some(call => call[0].type === 'agent_work_package')).toBe(true)
   })
 })

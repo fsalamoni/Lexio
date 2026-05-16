@@ -43,8 +43,8 @@ const registry = buildSuperSkills()
 const skillMap = new Map(registry.map(s => [s.name, s]))
 
 describe('buildSuperSkills', () => {
-  it('returns 5 skills', () => {
-    expect(registry).toHaveLength(5)
+  it('returns 6 skills', () => {
+    expect(registry).toHaveLength(6)
   })
 
   it('every skill has required fields', () => {
@@ -219,5 +219,29 @@ describe('analyze_thesis', () => {
     const ctx = mockContext()
     const result = await skill.run({ thesis: 'Dano moral presumido', legal_area: 'consumidor' }, ctx)
     expect(result.tool_message).toContain('📊')
+  })
+})
+
+describe('generate_studio_artifact', () => {
+  const skill = skillMap.get('generate_studio_artifact')!
+
+  it('rejects missing artifact_type', async () => {
+    const ctx = mockContext()
+    const result = await skill.run({ topic: 'Licitação' }, ctx)
+    expect(result.tool_message).toContain('"artifact_type" é obrigatório')
+  })
+
+  it('requests approval before persisting a notebook artifact', async () => {
+    const ctx = mockContext()
+    const result = await skill.run({ artifact_type: 'resumo', topic: 'Licitação', notebook_id: 'nb-1' }, ctx)
+    expect(result.awaiting_user?.question).toContain('Gerar Resumo')
+    expect(ctx.trail.some(e => e.type === 'approval_requested')).toBe(true)
+  })
+
+  it('returns a chat work package in mock mode when approved', async () => {
+    const ctx = mockContext()
+    const result = await skill.run({ artifact_type: 'resumo', topic: 'Licitação', notebook_id: 'nb-1', approved: true }, ctx)
+    expect(result.tool_message).toContain('Resumo gerado com sucesso')
+    expect(ctx.trail.some(e => e.type === 'agent_work_package')).toBe(true)
   })
 })

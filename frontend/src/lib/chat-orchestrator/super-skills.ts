@@ -11,7 +11,7 @@
  *  5. Retorna o status do pipeline e cria pacote de artefato quando possível
  */
 
-import type { ChatAgentWorkPackage, ChatArtifactRef, ChatTrailEvent } from '../firestore-types'
+import type { ChatAgentWorkPackage, ChatArtifactKind, ChatArtifactRef, ChatTrailEvent, StudioArtifact, StudioArtifactType } from '../firestore-types'
 import type { Skill, SkillContext, SkillResult } from './types'
 import { hybridSearch } from '../search-client'
 
@@ -47,6 +47,38 @@ export const PIPELINE_DOCUMENT_LABELS: Record<PipelineDocumentType, string> = {
   embargos_declaracao: 'Embargos de Declaração',
 }
 
+export const STUDIO_CHAT_ARTIFACT_TYPES = [
+  'resumo',
+  'relatorio',
+  'documento',
+  'guia_estruturado',
+  'cartoes_didaticos',
+  'teste',
+  'mapa_mental',
+  'infografico',
+  'tabela_dados',
+  'audio_script',
+  'video_script',
+  'apresentacao',
+] as const satisfies readonly StudioArtifactType[]
+
+export type StudioChatArtifactType = (typeof STUDIO_CHAT_ARTIFACT_TYPES)[number]
+
+export const STUDIO_CHAT_ARTIFACT_LABELS: Record<StudioChatArtifactType, string> = {
+  resumo: 'Resumo',
+  relatorio: 'Relatório',
+  documento: 'Documento',
+  guia_estruturado: 'Guia Estruturado',
+  cartoes_didaticos: 'Cartões Didáticos',
+  teste: 'Quiz',
+  mapa_mental: 'Mapa Mental',
+  infografico: 'Infográfico',
+  tabela_dados: 'Tabela de Dados',
+  audio_script: 'Roteiro de Áudio',
+  video_script: 'Roteiro de Vídeo',
+  apresentacao: 'Apresentação',
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function nowIso(): string {
@@ -57,6 +89,32 @@ function clip(text: string, max = 500): string {
   if (!text) return ''
   if (text.length <= max) return text
   return `${text.slice(0, max - 1)}…`
+}
+
+function makeChatArtifactId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function mapStudioArtifactKind(artifactType: StudioArtifactType): ChatArtifactKind {
+  if (artifactType === 'apresentacao') return 'presentation'
+  if (artifactType === 'audio_script') return 'audio'
+  if (artifactType === 'video_script') return 'video'
+  if (artifactType === 'tabela_dados') return 'spreadsheet'
+  if (artifactType === 'mapa_mental' || artifactType === 'infografico') return 'image'
+  if (artifactType === 'teste') return 'data'
+  return 'text'
+}
+
+function buildNotebookSourceContextFromSources(sources: Array<{ title?: string; text_content?: string; summary?: string }>, fallback: string): string {
+  const context = sources
+    .filter(source => source.text_content?.trim() || source.summary?.trim())
+    .slice(0, 8)
+    .map((source, index) => [
+      `Fonte ${index + 1}: ${source.title || 'Sem título'}`,
+      clip(source.text_content?.trim() || source.summary?.trim() || '', 2500),
+    ].join('\n'))
+    .join('\n\n')
+  return context || fallback
 }
 
 /** Detecta AbortError em ambientes browser (DOMException) e Node (Error). */
@@ -641,6 +699,256 @@ const analyzeThesisSkill: Skill<AnalyzeThesisArgs> = {
   },
 }
 
+// ── Super-Skill: Gerar Artefato no Caderno de Pesquisa ───────────────────────
+
+interface GenerateStudioArtifactArgs {
+  artifact_type?: string
+  topic?: string
+  notebook_id?: string
+  notebook_title?: string
+  source_context?: string
+  conversation_context?: string
+  instructions?: string
+  legal_area?: string
+  approved?: boolean
+}
+
+const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
+  name: 'generate_studio_artifact',
+  description:
+    'Gera um artefato do Estúdio do Caderno de Pesquisa e salva no notebook do usuário. ' +
+    `Tipos disponíveis: ${STUDIO_CHAT_ARTIFACT_TYPES.map(type => `${type} (${STUDIO_CHAT_ARTIFACT_LABELS[type]})`).join(', ')}. ` +
+    'Use quando o usuário pedir resumo, relatório, mapa mental, roteiro, tabela, quiz, apresentação ou outro artefato de estudo/pesquisa.',
+  argsHint: {
+    artifact_type: `Tipo de artefato. Um de: ${STUDIO_CHAT_ARTIFACT_TYPES.join(', ')}`,
+    topic: 'Tema central do artefato a gerar.',
+    notebook_id: 'ID do caderno existente. Se omitido, cria um novo caderno para o tema.',
+    notebook_title: 'Título do novo caderno quando notebook_id não for informado.',
+    source_context: 'Texto/fonte principal para o Estúdio usar. Se omitido e houver notebook_id, usa as fontes do caderno.',
+    conversation_context: 'Contexto conversacional adicional para orientar o artefato.',
+    instructions: 'Instruções customizadas de tom, formato ou foco.',
+    legal_area: 'Área jurídica opcional para enriquecer o prompt.',
+    approved: 'true apenas depois de o usuário aprovar explicitamente no chat',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const artifactTypeRaw = String(args.artifact_type ?? '').trim().toLowerCase()
+    const topic = String(args.topic ?? '').trim()
+    const notebookIdArg = String(args.notebook_id ?? '').trim()
+    const notebookTitle = String(args.notebook_title ?? '').trim()
+    const sourceContextArg = String(args.source_context ?? '').trim()
+    const conversationContextArg = String(args.conversation_context ?? '').trim()
+    const instructions = String(args.instructions ?? '').trim()
+    const legalArea = String(args.legal_area ?? '').trim()
+
+    if (!artifactTypeRaw) {
+      return { tool_message: 'Erro: "artifact_type" é obrigatório para gerar um artefato do Estúdio.' }
+    }
+    if (!(STUDIO_CHAT_ARTIFACT_TYPES as readonly string[]).includes(artifactTypeRaw)) {
+      return {
+        tool_message: `Erro: tipo de artefato "${artifactTypeRaw}" não reconhecido. Tipos disponíveis: ${STUDIO_CHAT_ARTIFACT_TYPES.join(', ')}.`,
+      }
+    }
+    if (!topic) {
+      return { tool_message: 'Erro: "topic" é obrigatório. Informe o tema central do artefato.' }
+    }
+
+    const artifactType = artifactTypeRaw as StudioChatArtifactType
+    const label = STUDIO_CHAT_ARTIFACT_LABELS[artifactType]
+
+    if (!normalizeSideEffectApproval(args.approved)) {
+      return requestApprovalForSkill(ctx, {
+        title: `Gerar ${label} no Caderno de Pesquisa`,
+        summary: [
+          `O chat vai executar o pipeline do Estúdio do Caderno e salvar um artefato persistente.`,
+          `Tipo: ${label}`,
+          `Tema: ${topic}`,
+          notebookIdArg ? `Caderno existente: ${notebookIdArg}` : `Sem caderno informado: será criado um novo caderno.`,
+          'A geração chama modelos LLM e grava em /research_notebooks.',
+        ].join('\n'),
+        riskLevel: 'medium',
+        permissions: ['write', 'network'],
+        resumeTool: 'generate_studio_artifact',
+        resumeArgs: {
+          artifact_type: artifactType,
+          topic,
+          notebook_id: notebookIdArg,
+          notebook_title: notebookTitle,
+          source_context: sourceContextArg,
+          conversation_context: conversationContextArg,
+          instructions,
+          legal_area: legalArea,
+          approved: true,
+        },
+      })
+    }
+
+    const artifactId = makeChatArtifactId('studio-artifact')
+    const startEvent: ChatTrailEvent = {
+      type: 'super_skill_call',
+      skill: `Notebook Studio: ${label}`,
+      result_summary: `Iniciando geração de ${label}: "${clip(topic, 100)}"`,
+      ts: nowIso(),
+    }
+    ctx.emit(startEvent)
+
+    try {
+      let notebookId = notebookIdArg
+      let content = ''
+      let executionCount = 0
+      let format: StudioArtifact['format'] = 'markdown'
+
+      if (ctx.mock) {
+        notebookId = notebookId || 'mock-notebook'
+        content = [`# ${label}: ${topic}`, '', sourceContextArg || 'Conteúdo gerado em modo demonstração.'].join('\n')
+      } else {
+        if (!ctx.apiKey?.trim()) {
+          return { tool_message: 'Erro: nenhuma chave OpenRouter disponível. Configure sua chave em Configurações antes de gerar artefatos do Estúdio.' }
+        }
+
+        const [{ createResearchNotebook, getResearchNotebook }, { isStructuredArtifactType }, { runStudioPipeline }, { persistStudioArtifactToNotebook }] = await Promise.all([
+          import('../firestore-service'),
+          import('../artifact-parsers'),
+          import('../notebook-studio-pipeline'),
+          import('../notebook-studio-artifact-persistence'),
+        ])
+
+        let notebook = notebookId ? await getResearchNotebook(ctx.uid, notebookId) : null
+        if (notebookId && !notebook) {
+          return { tool_message: `Caderno ${notebookId} não encontrado ou inacessível. Informe outro notebook_id ou deixe em branco para criar um novo.` }
+        }
+        if (!notebookId) {
+          notebookId = await createResearchNotebook(ctx.uid, {
+            title: notebookTitle || `Chat - ${clip(topic, 70)}`,
+            description: 'Caderno criado pelo Chat Orquestrador para artefatos do Estúdio.',
+            topic,
+            sources: [],
+            messages: [],
+            artifacts: [],
+            status: 'active',
+          })
+          notebook = await getResearchNotebook(ctx.uid, notebookId)
+        }
+
+        const sourceContext = sourceContextArg || buildNotebookSourceContextFromSources(notebook?.sources ?? [], topic)
+        const conversationContext = conversationContextArg || `Solicitação feita pelo Chat Orquestrador na conversa ${ctx.conversationId}.`
+        const result = await runStudioPipeline({
+          apiKey: ctx.apiKey,
+          uid: ctx.uid,
+          topic,
+          description: instructions,
+          sourceContext,
+          conversationContext,
+          customInstructions: instructions,
+          artifactType,
+          artifactLabel: label,
+          legalArea: legalArea || undefined,
+        }, (step, totalSteps, phase, meta) => ctx.emit({
+          type: 'pipeline_progress',
+          pipeline: 'notebook_studio',
+          phase,
+          progress: meta?.progressPercent ?? Math.round((step / Math.max(totalSteps, 1)) * 100),
+          artifact_id: artifactId,
+          ts: nowIso(),
+        }), ctx.signal)
+
+        content = result.content
+        format = isStructuredArtifactType(artifactType) ? 'json' : 'markdown'
+        const artifact: StudioArtifact = {
+          id: artifactId,
+          type: artifactType,
+          title: `${label} - ${topic}`,
+          content,
+          format,
+          created_at: nowIso(),
+        }
+        const persisted = await persistStudioArtifactToNotebook({
+          uid: ctx.uid,
+          notebookId,
+          artifact,
+          executions: result.executions,
+        })
+        executionCount = persisted.executionCount
+        result.executions.forEach(execution => ctx.budget.recordUsage({
+          total_tokens: (execution.tokens_in ?? 0) + (execution.tokens_out ?? 0),
+          cost_usd: execution.cost_usd,
+          model: execution.model,
+          agent_name: execution.agent_name,
+          phase: execution.phase,
+        }))
+      }
+
+      const chatArtifact: ChatArtifactRef = {
+        artifact_id: artifactId,
+        logical_document_id: `notebook-${notebookId}-${artifactId}`,
+        version: 1,
+        title: `${label} - ${topic}`,
+        kind: mapStudioArtifactKind(artifactType),
+        format: format === 'json' ? 'json' : 'markdown',
+        summary: `${label} gerado pelo Estúdio do Caderno de Pesquisa.`,
+        content_preview: content,
+        manifest_json: {
+          notebook_id: notebookId,
+          artifact_id: artifactId,
+          artifact_type: artifactType,
+          topic,
+          execution_count: executionCount,
+        },
+        exports: [
+          { label: format === 'json' ? 'JSON' : 'Markdown', format: format === 'json' ? 'json' : 'markdown', status: 'planned' },
+          { label: 'TXT', format: 'txt', status: 'planned' },
+          { label: 'HTML', format: 'html', status: 'planned' },
+        ],
+      }
+      const workPackage = await deliverWorkPackage(ctx, {
+        conversation_id: ctx.conversationId,
+        turn_id: ctx.turnId,
+        agent_key: 'generate_studio_artifact',
+        task: `Gerar ${label} no Caderno de Pesquisa`,
+        thought: {
+          summary: `Pipeline Notebook Studio executado para criar ${label}.`,
+          decisions: ['Salvar o artefato no Research Notebook e também entregar referência na trilha do chat.'],
+          next_steps: ['Abrir o caderno para revisar, editar ou exportar o artefato.'],
+        },
+        result_markdown: `${label} gerado no caderno ${notebookId}.`,
+        artifacts: [chatArtifact],
+        created_at: nowIso(),
+        completed_at: nowIso(),
+      })
+
+      const readyExports = workPackage.artifacts?.[0]?.exports
+        ?.filter(exportRef => exportRef.status === 'ready')
+        .map(exportRef => exportRef.label)
+        .join(', ')
+
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: `Notebook Studio: ${label}`,
+        result_summary: `${label} salvo no caderno ${notebookId}.`,
+        ts: nowIso(),
+      })
+
+      return {
+        tool_message:
+          `${label} gerado com sucesso no Caderno de Pesquisa.\n` +
+          `- Caderno: ${notebookId}\n` +
+          `- Artefato: ${artifactId}\n` +
+          (readyExports ? `- Exports prontos: ${readyExports}\n` : '') +
+          `- O artefato também foi registrado na trilha do chat.`,
+      }
+    } catch (err: unknown) {
+      if (isAbortError(err)) throw err
+      const message = err instanceof Error ? err.message : 'Erro desconhecido'
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: `Notebook Studio: ${label}`,
+        result_summary: `Erro: ${message}`,
+        ts: nowIso(),
+      })
+      return { tool_message: `Falha ao gerar ${label} no Caderno de Pesquisa: ${message}.` }
+    }
+  },
+}
+
 // ── Super-Skill: Busca Híbrida (semântica + lexical via RRF) ──────────────────
 
 interface HybridSearchArgs {
@@ -802,6 +1110,7 @@ export function buildSuperSkills(): Skill[] {
     checkDocumentStatusSkill,
     searchJurisprudenceSkill,
     analyzeThesisSkill,
+    generateStudioArtifactSkill,
     hybridSearchSkill,
   ]
 }
