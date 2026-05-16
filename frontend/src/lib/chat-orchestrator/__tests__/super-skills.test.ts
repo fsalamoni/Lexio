@@ -256,14 +256,14 @@ describe('generate_studio_artifact', () => {
     }
   })
 
-  it('supports Presentation V2 artifacts in mock mode', async () => {
+  it('supports audio script artifacts in mock mode', async () => {
     const ctx = mockContext()
-    const result = await skill.run({ artifact_type: 'apresentacao_v2', topic: 'Estratégia', notebook_id: 'nb-1', approved: true }, ctx)
-    expect(result.tool_message).toContain('Apresentação v2 gerado com sucesso')
+    const result = await skill.run({ artifact_type: 'audio_script', topic: 'Estratégia', notebook_id: 'nb-1', approved: true }, ctx)
+    expect(result.tool_message).toContain('Roteiro de Áudio gerado com sucesso')
     const packageEvent = ctx.trail.find(e => e.type === 'agent_work_package')
     expect(packageEvent?.type).toBe('agent_work_package')
     if (packageEvent?.type === 'agent_work_package') {
-      expect(packageEvent.package.artifacts?.[0]?.format).toBe('json')
+      expect(packageEvent.package.artifacts?.[0]?.kind).toBe('audio')
     }
   })
 })

@@ -14,9 +14,42 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // ── Mock do módulo search-client para isolar a skill ────────────────────────────
 
 const mockHybridSearch = vi.fn()
+const createResearchNotebookMock = vi.fn()
+const getResearchNotebookMock = vi.fn()
+const runStudioPipelineMock = vi.fn()
+const runAudioGenerationPipelineMock = vi.fn()
+const generateAudioLiteralMediaMock = vi.fn()
+const uploadNotebookMediaArtifactMock = vi.fn()
+const persistStudioArtifactToNotebookMock = vi.fn()
 
 vi.mock('../search-client', () => ({
   hybridSearch: (...args: unknown[]) => mockHybridSearch(...args),
+}))
+
+vi.mock('../firestore-service', () => ({
+  createResearchNotebook: (...args: unknown[]) => createResearchNotebookMock(...args),
+  getResearchNotebook: (...args: unknown[]) => getResearchNotebookMock(...args),
+}))
+
+vi.mock('../artifact-parsers', () => ({
+  isStructuredArtifactType: (type: string) => ['audio_script', 'video_script', 'apresentacao', 'apresentacao_v2', 'mapa_mental', 'infografico', 'tabela_dados', 'cartoes_didaticos', 'teste'].includes(type),
+}))
+
+vi.mock('../notebook-studio-pipeline', () => ({
+  runStudioPipeline: (...args: unknown[]) => runStudioPipelineMock(...args),
+}))
+
+vi.mock('../audio-generation-pipeline', () => ({
+  runAudioGenerationPipeline: (...args: unknown[]) => runAudioGenerationPipelineMock(...args),
+  generateAudioLiteralMedia: (...args: unknown[]) => generateAudioLiteralMediaMock(...args),
+}))
+
+vi.mock('../notebook-media-storage', () => ({
+  uploadNotebookMediaArtifact: (...args: unknown[]) => uploadNotebookMediaArtifactMock(...args),
+}))
+
+vi.mock('../notebook-studio-artifact-persistence', () => ({
+  persistStudioArtifactToNotebook: (...args: unknown[]) => persistStudioArtifactToNotebookMock(...args),
 }))
 
 // Importa depois que o mock está instalado
@@ -353,6 +386,39 @@ describe('generate_document skill', () => {
 })
 
 describe('generate_studio_artifact skill', () => {
+  beforeEach(() => {
+    createResearchNotebookMock.mockReset().mockResolvedValue('created-notebook')
+    getResearchNotebookMock.mockReset().mockResolvedValue({
+      id: 'nb-1',
+      title: 'Caderno de teste',
+      topic: 'Licitação',
+      sources: [],
+      artifacts: [],
+    })
+    runStudioPipelineMock.mockReset().mockResolvedValue({ content: '# Artefato', executions: [] })
+    runAudioGenerationPipelineMock.mockReset().mockResolvedValue({
+      content: JSON.stringify({
+        title: 'Resumo em Áudio',
+        duration: '5 minutos',
+        segments: [
+          { time: '00:00', type: 'narracao', speaker: 'Host A', text: 'Introdução do tema.' },
+        ],
+      }, null, 2),
+      executions: [
+        { phase: 'audio_roteirista', agent_name: 'Roteirista de Áudio', model: 'openai/gpt-4.1-mini', tokens_in: 100, tokens_out: 80, cost_usd: 0.001, duration_ms: 50 },
+      ],
+    })
+    generateAudioLiteralMediaMock.mockReset().mockResolvedValue({
+      audioBlob: new Blob(['audio'], { type: 'audio/mpeg' }),
+      mimeType: 'audio/mpeg',
+      chunkCount: 1,
+      segmentCount: 1,
+      execution: { phase: 'audio_literal_generation', agent_name: 'Narrador / TTS', model: 'openai/tts-1-hd', tokens_in: 0, tokens_out: 0, cost_usd: 0.01, duration_ms: 40 },
+    })
+    uploadNotebookMediaArtifactMock.mockReset().mockResolvedValue({ url: 'https://storage.test/audio.mp3', path: 'research_notebooks/test-user/nb-1/audios/audio.mp3' })
+    persistStudioArtifactToNotebookMock.mockReset().mockImplementation(async (input: { executions: unknown[] }) => ({ executionCount: input.executions.length }))
+  })
+
   it('deve rejeitar quando artifact_type está vazio', async () => {
     const result = await findAndRunSkill('generate_studio_artifact', {
       topic: 'Responsabilidade civil',
@@ -421,5 +487,47 @@ describe('generate_studio_artifact skill', () => {
     const workPackage = persistWorkPackage.mock.calls[0][0]
     expect(workPackage.artifacts[0].format).toBe('json')
     expect(workPackage.artifacts[0].exports.some((exportRef: { format: string }) => exportRef.format === 'pptx')).toBe(true)
+  })
+
+  it('deve usar pipeline dedicado de áudio e persistir MP3 quando solicitado', async () => {
+    const emit = vi.fn()
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({ apiKey: 'key', emit, persistWorkPackage })
+
+    const result = await findAndRunSkill('generate_studio_artifact', {
+      artifact_type: 'audio_script',
+      topic: 'Inexigibilidade de licitação',
+      notebook_id: 'nb-1',
+      generate_audio: true,
+      tts_model: 'openai/tts-1-hd',
+      approved: true,
+    }, ctx)
+
+    expect(result.tool_message).toContain('Roteiro de Áudio gerado com sucesso')
+    expect(result.tool_message).toContain('Áudio literal: disponível')
+    expect(runAudioGenerationPipelineMock).toHaveBeenCalledWith(
+      expect.objectContaining({ artifactType: 'audio_script', artifactLabel: 'Roteiro de Áudio' }),
+      expect.any(Function),
+      ctx.signal,
+    )
+    expect(generateAudioLiteralMediaMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'openai/tts-1-hd', rawScriptContent: expect.stringContaining('Resumo em Áudio') }),
+      expect.any(Function),
+    )
+    expect(uploadNotebookMediaArtifactMock).toHaveBeenCalledWith(
+      'test-user',
+      'nb-1',
+      expect.stringContaining('Roteiro de Áudio'),
+      expect.any(Blob),
+      'audios',
+      '.mp3',
+    )
+    expect(persistStudioArtifactToNotebookMock).toHaveBeenCalledWith(expect.objectContaining({
+      notebookId: 'nb-1',
+      artifact: expect.objectContaining({ content: expect.stringContaining('audioUrl') }),
+      executions: expect.arrayContaining([expect.objectContaining({ phase: 'audio_literal_generation' })]),
+    }))
+    const workPackage = persistWorkPackage.mock.calls[0][0]
+    expect(workPackage.artifacts[0].exports.some((exportRef: { format: string; status: string }) => exportRef.format === 'mp3' && exportRef.status === 'ready')).toBe(true)
   })
 })

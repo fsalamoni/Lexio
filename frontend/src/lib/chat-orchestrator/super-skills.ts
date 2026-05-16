@@ -11,7 +11,7 @@
  *  5. Retorna o status do pipeline e cria pacote de artefato quando possível
  */
 
-import type { ChatAgentWorkPackage, ChatArtifactKind, ChatArtifactRef, ChatTrailEvent, StudioArtifact, StudioArtifactType } from '../firestore-types'
+import type { ChatAgentWorkPackage, ChatArtifactExportRef, ChatArtifactKind, ChatArtifactRef, ChatTrailEvent, StudioArtifact, StudioArtifactType } from '../firestore-types'
 import type { Skill, SkillContext, SkillResult } from './types'
 import { hybridSearch } from '../search-client'
 
@@ -205,6 +205,30 @@ function buildMockPresentationV2Content(topic: string, label: string): string {
       },
     ],
   }, null, 2)
+}
+
+function attachLiteralAudioToContent(content: string, audio: { url: string; path?: string; mimeType: string }): string {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>
+    return JSON.stringify({
+      ...parsed,
+      audioUrl: audio.url,
+      audioStoragePath: audio.path,
+      audioMimeType: audio.mimeType,
+    }, null, 2)
+  } catch {
+    const separator = content.trim().endsWith('\n') ? '' : '\n'
+    return `${content}${separator}\n## Áudio literal\n\nArquivo: ${audio.url}`
+  }
+}
+
+function inferAudioExtensionFromMimeType(mimeType?: string): string {
+  const normalized = String(mimeType ?? '').toLowerCase()
+  if (normalized.includes('mpeg') || normalized.includes('mp3')) return '.mp3'
+  if (normalized.includes('wav')) return '.wav'
+  if (normalized.includes('ogg')) return '.ogg'
+  if (normalized.includes('webm')) return '.webm'
+  return '.mp3'
 }
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
@@ -854,6 +878,10 @@ interface GenerateStudioArtifactArgs {
   video?: boolean | string
   charts?: boolean | string
   diagrams?: boolean | string
+  generate_audio?: boolean | string
+  literal_audio?: boolean | string
+  voice?: string
+  tts_model?: string
   approved?: boolean
 }
 
@@ -878,6 +906,9 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
     depth: 'Para apresentacao_v2: executiva, intermediaria, profunda ou tecnica.',
     images: 'Para apresentacao_v2: true/false para planejar imagens.',
     charts: 'Para apresentacao_v2: true/false para planejar gráficos.',
+    generate_audio: 'Para audio_script: true para gerar também o áudio literal por TTS e salvar o MP3 no caderno.',
+    voice: 'Para audio_script com TTS: voz desejada, quando suportada pelo modelo configurado.',
+    tts_model: 'Para audio_script com TTS: modelo TTS opcional, ex.: openai/tts-1-hd.',
     approved: 'true apenas depois de o usuário aprovar explicitamente no chat',
   },
   async run(args, ctx): Promise<SkillResult> {
@@ -889,6 +920,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
     const conversationContextArg = String(args.conversation_context ?? '').trim()
     const instructions = String(args.instructions ?? '').trim()
     const legalArea = String(args.legal_area ?? '').trim()
+    const shouldGenerateLiteralAudio = artifactTypeRaw === 'audio_script' && (toBoolean(args.generate_audio, false) || toBoolean(args.literal_audio, false))
 
     if (!artifactTypeRaw) {
       return { tool_message: 'Erro: "artifact_type" é obrigatório para gerar um artefato do Estúdio.' }
@@ -913,8 +945,9 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           `Tipo: ${label}`,
           `Tema: ${topic}`,
           notebookIdArg ? `Caderno existente: ${notebookIdArg}` : `Sem caderno informado: será criado um novo caderno.`,
+          shouldGenerateLiteralAudio ? 'Também será gerado áudio literal por TTS e salvo no Cloud Storage do caderno.' : '',
           'A geração chama modelos LLM e grava em /research_notebooks.',
-        ].join('\n'),
+        ].filter(Boolean).join('\n'),
         riskLevel: 'medium',
         permissions: ['write', 'network'],
         resumeTool: 'generate_studio_artifact',
@@ -947,6 +980,10 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           video: args.video,
           charts: args.charts,
           diagrams: args.diagrams,
+          generate_audio: args.generate_audio,
+          literal_audio: args.literal_audio,
+          voice: args.voice,
+          tts_model: args.tts_model,
           approved: true,
         },
       })
@@ -966,6 +1003,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
       let content = ''
       let executionCount = 0
       let format: StudioArtifact['format'] = 'markdown'
+      let literalAudioExport: ChatArtifactExportRef | null = null
 
       if (ctx.mock) {
         notebookId = notebookId || 'mock-notebook'
@@ -978,11 +1016,10 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           return { tool_message: 'Erro: nenhuma chave OpenRouter disponível. Configure sua chave em Configurações antes de gerar artefatos do Estúdio.' }
         }
 
-        const [{ createResearchNotebook, getResearchNotebook }, { isStructuredArtifactType }, { runStudioPipeline }, presentationV2Pipeline, { persistStudioArtifactToNotebook }] = await Promise.all([
+        const [{ createResearchNotebook, getResearchNotebook }, { isStructuredArtifactType }, { runStudioPipeline }, { persistStudioArtifactToNotebook }] = await Promise.all([
           import('../firestore-service'),
           import('../artifact-parsers'),
           import('../notebook-studio-pipeline'),
-          import('../presentation-generation-pipeline-v2'),
           import('../notebook-studio-artifact-persistence'),
         ])
 
@@ -1027,10 +1064,55 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           ts: nowIso(),
         })
         const result = artifactType === 'apresentacao_v2'
-          ? await presentationV2Pipeline.runPresentationGenerationPipelineV2(pipelineInput, progressCallback, ctx.signal)
-          : await runStudioPipeline(pipelineInput, progressCallback, ctx.signal)
+          ? await import('../presentation-generation-pipeline-v2').then(module => module.runPresentationGenerationPipelineV2(pipelineInput, progressCallback, ctx.signal))
+          : artifactType === 'audio_script'
+            ? await import('../audio-generation-pipeline').then(module => module.runAudioGenerationPipeline(pipelineInput, progressCallback, ctx.signal))
+            : await runStudioPipeline(pipelineInput, progressCallback, ctx.signal)
 
         content = result.content
+        const executions = [...result.executions]
+        if (artifactType === 'audio_script' && shouldGenerateLiteralAudio) {
+          const [{ generateAudioLiteralMedia }, { uploadNotebookMediaArtifact }] = await Promise.all([
+            import('../audio-generation-pipeline'),
+            import('../notebook-media-storage'),
+          ])
+          const synthesis = await generateAudioLiteralMedia({
+            apiKey: ctx.apiKey,
+            rawScriptContent: content,
+            voice: String(args.voice ?? '').trim() || undefined,
+            model: String(args.tts_model ?? '').trim() || undefined,
+          }, (step, totalSteps, phase, meta) => ctx.emit({
+            type: 'pipeline_progress',
+            pipeline: 'audio_literal',
+            phase,
+            progress: meta?.progressPercent ?? Math.round((step / Math.max(totalSteps, 1)) * 100),
+            artifact_id: artifactId,
+            ts: nowIso(),
+          }))
+          const storedAudio = await uploadNotebookMediaArtifact(
+            ctx.uid,
+            notebookId,
+            `${label}-${topic}-audio-literal`,
+            synthesis.audioBlob,
+            'audios',
+            inferAudioExtensionFromMimeType(synthesis.mimeType),
+          )
+          content = attachLiteralAudioToContent(content, {
+            url: storedAudio.url,
+            path: storedAudio.path,
+            mimeType: synthesis.mimeType,
+          })
+          executions.push(synthesis.execution)
+          literalAudioExport = {
+            label: 'MP3',
+            format: 'mp3',
+            status: 'ready',
+            mime_type: synthesis.mimeType,
+            extension: inferAudioExtensionFromMimeType(synthesis.mimeType),
+            download_url: storedAudio.url,
+            storage_path: storedAudio.path,
+          }
+        }
         format = isStructuredArtifactType(artifactType) ? 'json' : 'markdown'
         const artifact: StudioArtifact = {
           id: artifactId,
@@ -1044,10 +1126,10 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           uid: ctx.uid,
           notebookId,
           artifact,
-          executions: result.executions,
+          executions,
         })
         executionCount = persisted.executionCount
-        result.executions.forEach(execution => ctx.budget.recordUsage({
+        executions.forEach(execution => ctx.budget.recordUsage({
           total_tokens: (execution.tokens_in ?? 0) + (execution.tokens_out ?? 0),
           cost_usd: execution.cost_usd,
           model: execution.model,
@@ -1078,6 +1160,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           { label: 'TXT', format: 'txt', status: 'planned' },
           { label: 'HTML', format: 'html', status: 'planned' },
           { label: 'PDF', format: 'pdf', status: 'planned' },
+          ...(literalAudioExport ? [literalAudioExport] : []),
           { label: 'ZIP', format: 'zip', status: 'planned' },
         ],
       }
@@ -1114,6 +1197,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           `${label} gerado com sucesso no Caderno de Pesquisa.\n` +
           `- Caderno: ${notebookId}\n` +
           `- Artefato: ${artifactId}\n` +
+          (literalAudioExport ? `- Áudio literal: disponível (${literalAudioExport.mime_type || 'audio'})\n` : '') +
           (readyExports ? `- Exports prontos: ${readyExports}\n` : '') +
           `- O artefato também foi registrado na trilha do chat.`,
       }
