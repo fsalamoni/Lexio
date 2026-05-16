@@ -461,6 +461,7 @@ function buildOrchestratorSystemPrompt(skills: Skill[], effort: string): string 
     '- Encerre o turno chamando `submit_final_answer` exatamente uma vez quando a resposta estiver pronta.',
     '- Use `ask_user_question` apenas quando uma decisão depende de informação que só o usuário tem.',
     '- Use `request_user_approval` antes de Novo Documento, Caderno de Pesquisa, Storage grande, mídia paga, sidecar write/shell ou qualquer ação persistente/cara.',
+    '- Use `call_agents_parallel` quando duas ou mais subtarefas independentes puderem rodar no mesmo lote; não use para tarefas com dependência sequencial.',
     '- Se faltar contexto, prefira chamar `chat_planner` antes de redigir.',
     '- Se o histórico estiver longo, chame `summarize_context` para liberar tokens.',
     '- Antes de finalizar, se estiver inseguro, chame `critique_draft` com o rascunho atual.',

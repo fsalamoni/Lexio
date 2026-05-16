@@ -5,6 +5,7 @@ import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import { buildSuperSkills } from './super-skills'
 import { buildSidecarSkills } from './sidecar-skills'
 import { parseAgentOutputPackage } from './agent-output'
+import { EFFORT_PRESETS } from './effort-presets'
 
 /**
  * Agent keys callable through the `call_agent` skill. Every specialist
@@ -100,6 +101,138 @@ const callAgentSkill: Skill<{ agent_key?: string; task?: string }> = {
       tool_message: buildAgentToolMessage(agentKey, parsed.displayMarkdown, workPackage),
     }
   },
+}
+
+interface ParallelAgentCall {
+  agent_key?: string
+  task?: string
+}
+
+const callAgentsParallelSkill: Skill<{ calls?: ParallelAgentCall[]; shared_context?: string }> = {
+  name: 'call_agents_parallel',
+  description: 'Invoca múltiplos agentes especialistas independentes em paralelo, respeitando o fan-out do esforço atual e travando agentes duplicados no mesmo lote. Use quando subtarefas não dependem uma da outra.',
+  argsHint: {
+    calls: 'array de { agent_key, task }. Máximo conforme esforço: rapido=2, medio=3, profundo=4, deep_research=5.',
+    shared_context: 'contexto opcional acrescentado ao início de cada tarefa do lote',
+  },
+  async run(args, ctx) {
+    const fanOut = EFFORT_PRESETS[ctx.effort]?.maxFanOut ?? 2
+    const normalized = normalizeParallelAgentCalls(args.calls, fanOut, String(args.shared_context ?? ''))
+    if (!normalized.accepted.length) {
+      return {
+        tool_message: normalized.messages.length
+          ? `Nenhum agente paralelo pôde ser chamado. ${normalized.messages.join(' ')}`
+          : 'Erro: call_agents_parallel requer ao menos uma chamada válida em calls[].',
+      }
+    }
+
+    const results = await Promise.all(normalized.accepted.map(async call => runParallelAgentCall(call, ctx)))
+    const successful = results.filter(result => result.ok)
+    const failed = results.filter(result => !result.ok)
+    const summaries = results.map(result => result.summary).join('\n\n')
+    const guardrails = normalized.messages.length ? `\n\nAjustes do lote:\n${normalized.messages.map(message => `- ${message}`).join('\n')}` : ''
+    const failures = failed.length ? `\n\nFalhas no lote: ${failed.map(result => result.agentKey).join(', ')}` : ''
+    return {
+      tool_message: [
+        `Lote paralelo concluído: ${successful.length}/${results.length} agente(s) responderam.`,
+        guardrails,
+        failures,
+        '',
+        summaries,
+      ].filter(Boolean).join('\n'),
+    }
+  },
+}
+
+function normalizeParallelAgentCalls(calls: unknown, fanOut: number, sharedContext: string): { accepted: Array<{ agentKey: string; task: string }>; messages: string[] } {
+  const items = Array.isArray(calls) ? calls : []
+  const accepted: Array<{ agentKey: string; task: string }> = []
+  const messages: string[] = []
+  const lockedAgents = new Set<string>()
+
+  for (const item of items) {
+    if (accepted.length >= fanOut) {
+      messages.push(`Fan-out limitado a ${fanOut}; chamadas excedentes foram ignoradas.`)
+      break
+    }
+    if (!item || typeof item !== 'object') {
+      messages.push('Uma chamada foi ignorada por formato inválido.')
+      continue
+    }
+    const record = item as Record<string, unknown>
+    const agentKey = String(record.agent_key ?? '').trim()
+    const task = String(record.task ?? '').trim()
+    if (!CALLABLE_AGENT_KEYS.has(agentKey)) {
+      messages.push(`Agente "${agentKey || 'vazio'}" indisponível no lote.`)
+      continue
+    }
+    if (lockedAgents.has(agentKey)) {
+      messages.push(`Agente "${agentKey}" já estava no lote; duplicata ignorada.`)
+      continue
+    }
+    if (!task) {
+      messages.push(`Chamada de "${agentKey}" ignorada porque a tarefa estava vazia.`)
+      continue
+    }
+    lockedAgents.add(agentKey)
+    accepted.push({
+      agentKey,
+      task: sharedContext.trim()
+        ? [`Contexto compartilhado do lote:`, sharedContext.trim(), '', `Subtarefa específica:`, task].join('\n')
+        : task,
+    })
+  }
+
+  return { accepted, messages: Array.from(new Set(messages)) }
+}
+
+async function runParallelAgentCall(call: { agentKey: string; task: string }, ctx: SkillContext): Promise<{ ok: boolean; agentKey: string; summary: string }> {
+  const callEvent: ChatTrailEvent = { type: 'agent_call', agent_key: call.agentKey, task: clip(call.task, 240), ts: nowIso() }
+  ctx.emit(callEvent)
+  try {
+    const onToken = ctx.onAgentToken ? ((delta: string, total: string) => ctx.onAgentToken!(call.agentKey, delta, total)) : undefined
+    const { output, usage } = await dispatchSpecialistAgent({
+      agentKey: call.agentKey,
+      task: call.task,
+      ctx,
+      onToken,
+    })
+    const parsed = parseAgentOutputPackage({
+      rawOutput: output,
+      agentKey: call.agentKey,
+      task: call.task,
+      conversationId: ctx.conversationId,
+      turnId: ctx.turnId,
+      timestamp: nowIso(),
+    })
+    const workPackage = await prepareWorkPackageForDelivery(parsed.workPackage, ctx)
+    ctx.emit({
+      type: 'agent_response',
+      agent_key: call.agentKey,
+      output: clip(parsed.displayMarkdown, 1200),
+      ...(usage ? { usage } : {}),
+      ts: nowIso(),
+    })
+    ctx.emit({
+      type: 'agent_work_package',
+      package: workPackage,
+      ts: workPackage.completed_at ?? nowIso(),
+    })
+    return {
+      ok: true,
+      agentKey: call.agentKey,
+      summary: buildAgentToolMessage(call.agentKey, parsed.displayMarkdown, workPackage),
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    const message = error instanceof Error ? error.message : String(error)
+    ctx.emit({ type: 'error', message: `Falha em ${call.agentKey}: ${message}`, ts: nowIso() })
+    return {
+      ok: false,
+      agentKey: call.agentKey,
+      summary: `Falha em ${call.agentKey}: ${message}`,
+    }
+  }
 }
 
 function buildAgentToolMessage(
@@ -400,6 +533,7 @@ export function buildSkillRegistry(): Skill[] {
   return [
     // PR2 — Base orchestration skills
     callAgentSkill,
+    callAgentsParallelSkill,
     summarizeContextSkill,
     critiqueDraftSkill,
     askUserQuestionSkill,

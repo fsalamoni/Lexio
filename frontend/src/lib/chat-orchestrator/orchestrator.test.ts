@@ -253,4 +253,41 @@ describe('runChatTurn', () => {
     expect(result.assistant_markdown).toContain('Minuta Principal')
     expect(result.assistant_markdown).toContain('DOCX (')
   })
+
+  it('runs independent specialists through a capped parallel batch', async () => {
+    const events: ChatTrailEvent[] = []
+    let attempt = 0
+    const llmCall = vi.fn(async () => {
+      attempt += 1
+      if (attempt === 1) {
+        return {
+          raw: JSON.stringify({
+            tool: 'call_agents_parallel',
+            args: {
+              shared_context: 'Analisar estratégia para audiência.',
+              calls: [
+                { agent_key: 'chat_planner', task: 'Planeje a abordagem.' },
+                { agent_key: 'chat_planner', task: 'Duplicata que deve ser ignorada.' },
+                { agent_key: 'chat_writer', task: 'Rascunhe uma resposta.' },
+                { agent_key: 'chat_legal_researcher', task: 'Excedente pelo fan-out rápido.' },
+              ],
+            },
+          }),
+          usage: null,
+        }
+      }
+      return {
+        raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# final' } }),
+        usage: null,
+      }
+    })
+
+    const result = await runChatTurn(makeInput({ effort: 'rapido', llmCall, onTrail: e => events.push(e) }))
+
+    expect(result.status).toBe('done')
+    expect(result.assistant_markdown).toBe('# final')
+    expect(events.filter(e => e.type === 'agent_call').map(e => e.agent_key)).toEqual(['chat_planner', 'chat_writer'])
+    expect(events.filter(e => e.type === 'agent_response')).toHaveLength(2)
+    expect(events.filter(e => e.type === 'agent_work_package')).toHaveLength(2)
+  })
 })
