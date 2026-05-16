@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, type Dispatch } from 'react'
 import type {
   ChatConversationData,
+  ChatPendingQuestionData,
   ChatTrailEvent,
   ChatTurnData,
   ChatTurnStatus,
@@ -8,20 +9,25 @@ import type {
 } from '../../lib/firestore-types'
 import {
   appendChatTurn,
+  createChatApprovalRequest,
   ensureChatConversation,
   getChatConversation,
   listChatTurns,
+  persistChatAgentWorkPackage,
+  updateChatApprovalRequest,
   updateChatTurn,
   updateChatConversationEffort,
   updateChatConversationPreview,
 } from '../../lib/firestore-service'
 import {
+  buildSuperSkills,
   DEFAULT_EFFORT,
   EFFORT_PRESETS,
   isEffortLevel,
   isMockRuntimeActive,
   mockOrchestratorLLM,
   runChatTurn,
+  type SkillContext,
 } from '../../lib/chat-orchestrator'
 import {
   buildPipelineFallbackResolver,
@@ -50,6 +56,7 @@ type Action =
   | { type: 'LOAD_ERROR'; error: string }
   | { type: 'BEGIN_SEND'; turn: ChatTurnData }
   | { type: 'TRAIL_APPEND'; event: ChatTrailEvent }
+  | { type: 'RESOLVE_PENDING_TURN'; turnId: string; event: ChatTrailEvent; completedAt: string }
   | { type: 'COMMIT_TURN'; turn: ChatTurnData; status: ChatTurnStatus }
   | { type: 'SEND_ERROR'; error: string }
   | { type: 'SET_EFFORT'; effort: ChatEffortLevel }
@@ -99,6 +106,23 @@ function reducer(state: ChatControllerState, action: Action): ChatControllerStat
         ...state,
         liveTurn: { ...state.liveTurn, trail: mergeStreamingTrailEvent(state.liveTurn.trail, action.event) },
       }
+    case 'RESOLVE_PENDING_TURN': {
+      const turns = state.turns.map(turn => {
+        if (turn.id !== action.turnId) return turn
+        return {
+          ...turn,
+          trail: mergeStreamingTrailEvent(turn.trail, action.event),
+          status: 'done' as ChatTurnStatus,
+          pending_question: null,
+          completed_at: action.completedAt,
+        }
+      })
+      return {
+        ...state,
+        turns,
+        status: turns.some(turn => turn.status === 'awaiting_user') ? 'awaiting_user' : 'idle',
+      }
+    }
     case 'COMMIT_TURN':
       return {
         ...state,
@@ -119,6 +143,299 @@ function reducer(state: ChatControllerState, action: Action): ChatControllerStat
       return state.conversation ? { ...state, conversation: { ...state.conversation, last_preview: action.preview } } : state
     default:
       return state
+  }
+}
+
+type ApprovalDecision = 'approved' | 'rejected' | 'adjust'
+
+async function executeApprovalDecision(args: {
+  pendingTurn: ChatTurnData
+  pendingQuestion: ChatPendingQuestionData
+  decision: ApprovalDecision
+  userInput: string
+  conversationId: string
+  userId: string | null
+  effort: ChatEffortLevel
+  dispatch: Dispatch<Action>
+}): Promise<void> {
+  const { pendingTurn, pendingQuestion, decision, userInput, conversationId, userId, effort, dispatch } = args
+  const approvalId = pendingQuestion.approval_id ?? `local-${pendingTurn.id ?? Date.now()}`
+  const approved = decision === 'approved'
+  const completedAt = new Date().toISOString()
+  const resolutionEvent: ChatTrailEvent = {
+    type: 'approval_resolved',
+    approval_id: approvalId,
+    approved,
+    reason: decision === 'adjust'
+      ? 'Usuário solicitou ajustes antes da execução.'
+      : approved
+        ? 'Usuário aprovou a execução no chat.'
+        : 'Usuário rejeitou a execução no chat.',
+    ts: completedAt,
+  }
+
+  if (IS_FIREBASE && userId && pendingTurn.id) {
+    try {
+      await updateChatTurn(userId, conversationId, pendingTurn.id, {
+        trail: compactChatTrailForPersistence(mergeStreamingTrailEvent(pendingTurn.trail, resolutionEvent)),
+        status: 'done',
+        pending_question: null,
+        completed_at: completedAt,
+      })
+      if (pendingQuestion.approval_id) {
+        await updateChatApprovalRequest(userId, conversationId, pendingQuestion.approval_id, {
+          status: decision === 'approved' ? 'approved' : decision === 'adjust' ? 'cancelled' : 'rejected',
+          decided_at: completedAt,
+          decided_by: userId,
+        })
+      }
+    } catch {
+      // best-effort; the in-memory state still resolves the pending question.
+    }
+  }
+  if (pendingTurn.id) {
+    dispatch({ type: 'RESOLVE_PENDING_TURN', turnId: pendingTurn.id, event: resolutionEvent, completedAt })
+  }
+
+  if (!approved || !pendingQuestion.resume_tool || !pendingQuestion.resume_args) {
+    const assistantMarkdown = decision === 'adjust'
+      ? 'Tudo bem. A ação pendente foi pausada para ajustes; descreva no próximo envio o que deve mudar antes de executar.'
+      : 'Ação cancelada. Nenhum documento, arquivo ou custo adicional foi gerado a partir desta aprovação.'
+    await persistResolvedApprovalReply({
+      conversationId,
+      userId,
+      userInput,
+      resolutionEvent,
+      assistantMarkdown,
+      dispatch,
+    })
+    return
+  }
+
+  await runApprovedResumeTool({
+    conversationId,
+    userId,
+    effort,
+    userInput,
+    pendingQuestion,
+    resolutionEvent,
+    dispatch,
+  })
+}
+
+async function persistResolvedApprovalReply(args: {
+  conversationId: string
+  userId: string | null
+  userInput: string
+  resolutionEvent: ChatTrailEvent
+  assistantMarkdown: string
+  dispatch: Dispatch<Action>
+}): Promise<void> {
+  const { conversationId, userId, userInput, resolutionEvent, assistantMarkdown, dispatch } = args
+  const now = new Date().toISOString()
+  let turnId = `local-${Date.now()}`
+  const turn: ChatTurnData = {
+    id: turnId,
+    conversation_id: conversationId,
+    user_input: userInput,
+    trail: [resolutionEvent],
+    assistant_markdown: assistantMarkdown,
+    status: 'done',
+    created_at: now,
+    completed_at: now,
+  }
+  if (IS_FIREBASE && userId) {
+    try {
+      await ensureChatConversation(userId, conversationId, { title: userInput.slice(0, 80) })
+      notifyChatConversationUpserted(conversationId)
+      turnId = await appendChatTurn(userId, conversationId, {
+        conversation_id: conversationId,
+        user_input: userInput,
+        trail: [resolutionEvent],
+        assistant_markdown: assistantMarkdown,
+        status: 'done',
+        created_at: now,
+        completed_at: now,
+      })
+      turn.id = turnId
+      await updateChatConversationPreview(userId, conversationId, assistantMarkdown)
+    } catch {
+      // best-effort; local state still records the user's decision.
+    }
+  }
+  dispatch({ type: 'COMMIT_TURN', turn, status: 'done' })
+}
+
+async function runApprovedResumeTool(args: {
+  conversationId: string
+  userId: string | null
+  effort: ChatEffortLevel
+  userInput: string
+  pendingQuestion: ChatPendingQuestionData
+  resolutionEvent: ChatTrailEvent
+  dispatch: Dispatch<Action>
+}): Promise<void> {
+  const { conversationId, userId, effort, userInput, pendingQuestion, resolutionEvent, dispatch } = args
+  const mock = isMockRuntimeActive()
+  let turnId = `local-${Date.now()}`
+  const startedAt = new Date().toISOString()
+  const trailBuffer: ChatTrailEvent[] = [resolutionEvent]
+  const liveTurn: ChatTurnData = {
+    id: turnId,
+    conversation_id: conversationId,
+    user_input: userInput,
+    trail: trailBuffer.slice(),
+    assistant_markdown: null,
+    status: 'running',
+    created_at: startedAt,
+  }
+
+  if (IS_FIREBASE && userId) {
+    try {
+      await ensureChatConversation(userId, conversationId, { title: userInput.slice(0, 80), effort })
+      notifyChatConversationUpserted(conversationId)
+      turnId = await appendChatTurn(userId, conversationId, {
+        conversation_id: conversationId,
+        user_input: userInput,
+        trail: compactChatTrailForPersistence(trailBuffer),
+        assistant_markdown: null,
+        status: 'running',
+        created_at: startedAt,
+      })
+      liveTurn.id = turnId
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      trailBuffer.push({
+        type: 'error',
+        message: `Persistência inicial indisponível; seguindo a aprovação em modo local. Detalhe: ${message}`,
+        ts: new Date().toISOString(),
+      })
+    }
+  }
+
+  dispatch({ type: 'BEGIN_SEND', turn: liveTurn })
+
+  const onTrail = (event: ChatTrailEvent) => {
+    mergeStreamingTrailEventInPlace(trailBuffer, event)
+    dispatch({ type: 'TRAIL_APPEND', event })
+  }
+
+  try {
+    const skill = buildSuperSkills().find(candidate => candidate.name === pendingQuestion.resume_tool)
+    if (!skill) {
+      throw new Error(`Continuação aprovada não encontrada: ${pendingQuestion.resume_tool}`)
+    }
+    const controller = new AbortController()
+    const ctx: SkillContext = {
+      uid: userId ?? 'demo',
+      conversationId,
+      turnId,
+      effort,
+      budget: createApprovalResumeBudget(),
+      signal: controller.signal,
+      emit: onTrail,
+      models: mock ? mockModelMap() : {},
+      apiKey: mock ? 'demo' : '',
+      mock,
+      persistWorkPackage: IS_FIREBASE && userId
+        ? workPackage => persistChatAgentWorkPackage(userId, conversationId, workPackage)
+        : undefined,
+      createApprovalRequest: IS_FIREBASE && userId
+        ? data => createChatApprovalRequest(userId, conversationId, data)
+        : undefined,
+    }
+    const result = await skill.run(pendingQuestion.resume_args ?? {}, ctx)
+    const completedAt = new Date().toISOString()
+    const completedTurn: ChatTurnData = {
+      ...liveTurn,
+      id: turnId,
+      trail: trailBuffer.slice(),
+      assistant_markdown: result.final_answer ?? result.tool_message,
+      status: result.awaiting_user ? 'awaiting_user' : 'done',
+      pending_question: result.awaiting_user ? {
+        text: result.awaiting_user.question,
+        options: result.awaiting_user.options,
+        approval_id: result.awaiting_user.approval_id,
+        resume_tool: result.awaiting_user.resume_tool,
+        resume_args: result.awaiting_user.resume_args,
+      } : null,
+      llm_executions: [],
+      completed_at: completedAt,
+    }
+    if (IS_FIREBASE && userId) {
+      try {
+        await updateChatTurn(userId, conversationId, turnId, {
+          trail: compactChatTrailForPersistence(completedTurn.trail),
+          assistant_markdown: completedTurn.assistant_markdown,
+          status: completedTurn.status,
+          pending_question: completedTurn.pending_question,
+          llm_executions: [],
+          completed_at: completedAt,
+        })
+        if (completedTurn.assistant_markdown) {
+          await updateChatConversationPreview(userId, conversationId, completedTurn.assistant_markdown)
+        }
+      } catch {
+        // best-effort; the local turn remains visible.
+      }
+    }
+    dispatch({ type: 'COMMIT_TURN', turn: completedTurn, status: completedTurn.status })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const completedAt = new Date().toISOString()
+    const errorEvent: ChatTrailEvent = { type: 'error', message, ts: completedAt }
+    trailBuffer.push(errorEvent)
+    const failedTurn: ChatTurnData = {
+      ...liveTurn,
+      id: turnId,
+      trail: trailBuffer.slice(),
+      assistant_markdown: buildRuntimeFallbackAnswer(userInput, message),
+      status: 'done',
+      completed_at: completedAt,
+    }
+    if (IS_FIREBASE && userId) {
+      try {
+        await updateChatTurn(userId, conversationId, turnId, {
+          trail: compactChatTrailForPersistence(failedTurn.trail),
+          assistant_markdown: failedTurn.assistant_markdown,
+          status: 'done',
+          completed_at: completedAt,
+        })
+      } catch {
+        // best-effort
+      }
+    }
+    dispatch({ type: 'COMMIT_TURN', turn: failedTurn, status: 'done' })
+  }
+}
+
+function findLatestPendingApprovalTurn(turns: ChatTurnData[]): { turn: ChatTurnData; question: ChatPendingQuestionData } | null {
+  for (let turnIndex = turns.length - 1; turnIndex >= 0; turnIndex -= 1) {
+    const turn = turns[turnIndex]
+    if (turn.status === 'awaiting_user' && turn.pending_question?.approval_id) {
+      return { turn, question: turn.pending_question }
+    }
+  }
+  return null
+}
+
+function normalizeApprovalDecision(text: string): ApprovalDecision | null {
+  const normalized = text.trim().toLowerCase()
+  if (/^(aprovar|aprovado|aprovada|autorizar|autorizo|sim|ok|pode|confirmo)\b/.test(normalized)) return 'approved'
+  if (/^(rejeitar|rejeito|negar|nego|cancelar|cancela|não|nao)\b/.test(normalized)) return 'rejected'
+  if (/^(ajustar|ajuste|alterar|corrigir|modificar|revisar)\b/.test(normalized)) return 'adjust'
+  return null
+}
+
+function createApprovalResumeBudget(): SkillContext['budget'] {
+  return {
+    recordUsage() {},
+    used: () => ({ tokens: 0, cost_usd: 0 }),
+    usedRatio: () => 0,
+    exceeded: () => false,
+    hardStop() {},
+    isHardStopped: () => ({ stopped: false }),
+    records: () => [],
   }
 }
 
@@ -184,6 +501,22 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
 
     const trimmed = text.trim()
     if (!trimmed) return
+
+    const pendingApproval = findLatestPendingApprovalTurn(state.turns)
+    const approvalDecision = pendingApproval ? normalizeApprovalDecision(trimmed) : null
+    if (pendingApproval && approvalDecision) {
+      await executeApprovalDecision({
+        pendingTurn: pendingApproval.turn,
+        pendingQuestion: pendingApproval.question,
+        decision: approvalDecision,
+        userInput: trimmed,
+        conversationId,
+        userId,
+        effort: state.effort,
+        dispatch,
+      })
+      return
+    }
 
     const mock = isMockRuntimeActive()
 
@@ -342,6 +675,12 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         },
         llmCall: mock ? mockOrchestratorLLM : undefined,
         mock,
+        persistWorkPackage: IS_FIREBASE && userId
+          ? workPackage => persistChatAgentWorkPackage(userId, conversationId, workPackage)
+          : undefined,
+        createApprovalRequest: IS_FIREBASE && userId
+          ? data => createChatApprovalRequest(userId, conversationId, data)
+          : undefined,
       })
 
       if (scheduled) {
@@ -477,6 +816,13 @@ function mockModelMap(): Record<string, string> {
     chat_summarizer: 'demo/summarizer',
     chat_critic: 'demo/critic',
     chat_writer: 'demo/writer',
+    chat_argument_builder: 'demo/argument-builder',
+    chat_ethics_auditor: 'demo/ethics-auditor',
+    chat_artifact_architect: 'demo/artifact-architect',
+    chat_document_composer: 'demo/document-composer',
+    chat_data_builder: 'demo/data-builder',
+    chat_media_director: 'demo/media-director',
+    chat_export_packager: 'demo/export-packager',
   }
 }
 

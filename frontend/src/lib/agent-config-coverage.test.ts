@@ -66,6 +66,11 @@ describe('user-scoped agent configuration coverage', () => {
       'chat_writer',
       'chat_argument_builder',
       'chat_ethics_auditor',
+      'chat_artifact_architect',
+      'chat_document_composer',
+      'chat_data_builder',
+      'chat_media_director',
+      'chat_export_packager',
     ])
   })
 

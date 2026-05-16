@@ -31,6 +31,33 @@ vi.mock('./dispatch', () => {
       }
       const output = args.agentKey === 'chat_critic'
         ? JSON.stringify({ score: 90, reasons: ['ok'], should_stop: true })
+        : args.task.includes('artifact-json')
+          ? [
+              'Rascunho criado.',
+              '',
+              '```json',
+              JSON.stringify({
+                lexio_agent_package: {
+                  thought: {
+                    summary: 'Transformei a subtarefa em um artefato versionado.',
+                    decisions: ['Usar markdown como fonte inicial'],
+                  },
+                  result_markdown: '## Minuta\nConteúdo do artefato.',
+                  artifacts: [
+                    {
+                      logical_document_id: 'minuta-principal',
+                      title: 'Minuta Principal',
+                      kind: 'legal_document',
+                      format: 'markdown',
+                      version: 1,
+                      summary: 'Minuta inicial para revisão.',
+                      exports: [{ label: 'DOCX', format: 'docx', status: 'planned' }],
+                    },
+                  ],
+                },
+              }),
+              '```',
+            ].join('\n')
         : `(${args.agentKey} #${counter}) ${args.task.slice(0, 80)}`
       return { output, usage }
     }),
@@ -120,6 +147,32 @@ describe('runChatTurn', () => {
     expect(events.some(e => e.type === 'clarification_request')).toBe(true)
   })
 
+  it('pauses the turn and emits approval_requested for side-effectful actions', async () => {
+    const events: ChatTrailEvent[] = []
+    const llmCall = vi.fn(async () => ({
+      raw: JSON.stringify({
+        tool: 'request_user_approval',
+        args: {
+          title: 'Gerar Novo Documento',
+          summary: 'Criar um documento jurídico persistente a partir da conversa.',
+          action: 'generate_document_v3',
+          risk_level: 'medium',
+          requested_permissions: ['write', 'network'],
+          estimated_cost: 'baixo',
+          estimated_time: '2 a 5 minutos',
+        },
+      }),
+      usage: null,
+    }))
+
+    const result = await runChatTurn(makeInput({ llmCall, onTrail: e => events.push(e) }))
+
+    expect(result.status).toBe('awaiting_user')
+    expect(result.pending_question?.text).toContain('Gerar Novo Documento')
+    const approvalEvent = events.find(e => e.type === 'approval_requested')
+    expect(approvalEvent).toMatchObject({ type: 'approval_requested', title: 'Gerar Novo Documento', risk_level: 'medium' })
+  })
+
   it('throws AbortError when the signal is already aborted', async () => {
     const ac = new AbortController()
     ac.abort()
@@ -173,5 +226,31 @@ describe('runChatTurn', () => {
     const result = await runChatTurn(makeInput({ llmCall }))
     expect(result.llm_executions).toHaveLength(1)
     expect(result.llm_executions[0].source_type).toBe('chat_orchestrator')
+  })
+
+  it('emits agent work packages and lists latest artifacts in the final answer', async () => {
+    const events: ChatTrailEvent[] = []
+    let attempt = 0
+    const llmCall = vi.fn(async () => {
+      attempt += 1
+      if (attempt === 1) {
+        return {
+          raw: JSON.stringify({ tool: 'call_agent', args: { agent_key: 'chat_writer', task: 'artifact-json' } }),
+          usage: null,
+        }
+      }
+      return {
+        raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# Concluído' } }),
+        usage: null,
+      }
+    })
+
+    const result = await runChatTurn(makeInput({ llmCall, onTrail: e => events.push(e) }))
+
+    expect(result.status).toBe('done')
+    expect(events.some(e => e.type === 'agent_work_package')).toBe(true)
+    expect(result.assistant_markdown).toContain('Documentos e artefatos criados')
+    expect(result.assistant_markdown).toContain('Minuta Principal')
+    expect(result.assistant_markdown).toContain('DOCX (')
   })
 })

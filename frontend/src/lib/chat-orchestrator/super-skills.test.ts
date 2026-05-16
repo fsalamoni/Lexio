@@ -316,3 +316,37 @@ describe('hybrid_search skill', () => {
     expect(opts.lexicalWeight).toBe(0.5)
   })
 })
+
+describe('generate_document skill', () => {
+  it('deve pedir aprovação antes de criar documento persistente', async () => {
+    const emit = vi.fn()
+    const ctx = mockContext({ emit })
+
+    const result = await findAndRunSkill('generate_document', {
+      document_type: 'parecer',
+      content: 'Analisar responsabilidade civil em contrato.',
+      title: 'Parecer contratual',
+    }, ctx)
+
+    expect(result.awaiting_user?.question).toContain('Gerar Parecer Jurídico')
+    expect(emit.mock.calls.some(call => call[0].type === 'approval_requested')).toBe(true)
+  })
+
+  it('deve gerar pacote de artefato em modo mock quando aprovado', async () => {
+    const emit = vi.fn()
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({ mock: true, emit, persistWorkPackage })
+
+    const result = await findAndRunSkill('generate_document', {
+      document_type: 'parecer',
+      content: 'Analisar responsabilidade civil em contrato.',
+      title: 'Parecer contratual',
+      approved: true,
+    }, ctx)
+
+    expect(result.tool_message).toContain('Documento de Parecer Jurídico gerado')
+    expect(persistWorkPackage).toHaveBeenCalled()
+    expect(emit.mock.calls.some(call => call[0].type === 'agent_work_package')).toBe(true)
+    expect(emit.mock.calls.some(call => call[0].type === 'pipeline_progress')).toBe(false)
+  })
+})

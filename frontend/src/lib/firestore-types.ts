@@ -726,6 +726,14 @@ export interface ChatApprovalRequestData {
   updated_at: string
 }
 
+export interface ChatPendingQuestionData {
+  text: string
+  options?: string[]
+  approval_id?: string
+  resume_tool?: string
+  resume_args?: Record<string, unknown>
+}
+
 export interface ChatSidecarAuditEntryData {
   id?: string
   conversation_id: string
@@ -1032,6 +1040,113 @@ export interface PlatformFunctionRolloutPolicyPlan {
  */
 export type ChatEffortLevel = 'rapido' | 'medio' | 'profundo' | 'deep_research'
 
+export type ChatArtifactKind =
+  | 'text'
+  | 'legal_document'
+  | 'code'
+  | 'presentation'
+  | 'spreadsheet'
+  | 'audio'
+  | 'video'
+  | 'image'
+  | 'data'
+  | 'other'
+
+export type ChatArtifactFormat =
+  | 'markdown'
+  | 'json'
+  | 'docx'
+  | 'pdf'
+  | 'pptx'
+  | 'xlsx'
+  | 'csv'
+  | 'txt'
+  | 'html'
+  | 'typescript'
+  | 'javascript'
+  | 'python'
+  | 'zip'
+  | 'mp3'
+  | 'mp4'
+  | 'png'
+  | 'webp'
+  | 'other'
+
+export interface ChatArtifactExportRef {
+  export_id?: string
+  label: string
+  format: ChatArtifactFormat
+  status: 'planned' | 'ready' | 'failed' | 'unavailable'
+  mime_type?: string
+  extension?: string
+  download_url?: string
+  storage_path?: string
+  reason?: string
+}
+
+export interface ChatArtifactRef {
+  artifact_id: string
+  logical_document_id: string
+  version: number
+  title: string
+  kind: ChatArtifactKind
+  format: ChatArtifactFormat
+  summary?: string
+  manifest_json?: Record<string, unknown>
+  content_preview?: string
+  storage_path?: string
+  download_url?: string
+  mime_type?: string
+  extension?: string
+  is_latest?: boolean
+  supersedes_artifact_id?: string
+  exports?: ChatArtifactExportRef[]
+}
+
+export interface ChatAgentWorkPackage {
+  id?: string
+  conversation_id: string
+  turn_id: string
+  iteration?: number
+  sequence?: number
+  agent_key: string
+  task?: string
+  thought?: {
+    summary: string
+    assumptions?: string[]
+    decisions?: string[]
+    risks?: string[]
+    next_steps?: string[]
+  }
+  result_markdown: string
+  artifacts?: ChatArtifactRef[]
+  created_at: string
+  completed_at?: string
+}
+
+export interface ChatArtifactData extends ChatArtifactRef {
+  conversation_id: string
+  turn_id: string
+  created_by_agent_key: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatArtifactVersionData extends ChatArtifactData {
+  version_id?: string
+}
+
+export interface ChatArtifactExportData extends ChatArtifactExportRef {
+  id?: string
+  conversation_id: string
+  turn_id: string
+  artifact_id: string
+  logical_document_id: string
+  version: number
+  created_at: string
+  updated_at: string
+}
+
 /**
  * Discriminated trail event emitted by the orchestrator while a turn is
  * running. UI cards render each variant inline in the conversation stream
@@ -1099,6 +1214,48 @@ export type ChatTrailEvent =
       total: string
       ts: string
     }
+  | {
+      type: 'agent_work_package'
+      package: ChatAgentWorkPackage
+      ts: string
+    }
+  | {
+      type: 'agent_artifact_created' | 'agent_artifact_updated'
+      agent_key: string
+      artifact: ChatArtifactRef
+      ts: string
+    }
+  | {
+      type: 'artifact_export_ready'
+      agent_key?: string
+      artifact_id: string
+      logical_document_id: string
+      export_ref: ChatArtifactExportRef
+      ts: string
+    }
+  | {
+      type: 'pipeline_progress'
+      pipeline: string
+      phase: string
+      progress?: number
+      artifact_id?: string
+      ts: string
+    }
+  | {
+      type: 'approval_requested'
+      approval_id: string
+      title: string
+      summary: string
+      risk_level?: 'low' | 'medium' | 'high'
+      ts: string
+    }
+  | {
+      type: 'approval_resolved'
+      approval_id: string
+      approved: boolean
+      reason?: string
+      ts: string
+    }
   | { type: 'final_answer'; ts: string; elapsed_ms?: number; iterations?: number; budget_used_ratio?: number }
   | { type: 'budget_hit'; reason: string; ts: string; elapsed_ms?: number }
   | { type: 'error'; message: string; ts: string }
@@ -1144,7 +1301,7 @@ export interface ChatTurnData {
   assistant_markdown: string | null
   status: ChatTurnStatus
   /** Pending question raised by the orchestrator while waiting for user input. */
-  pending_question?: { text: string; options?: string[] } | null
+  pending_question?: ChatPendingQuestionData | null
   usage_summary?: Partial<UsageSummary>
   /** Detailed per-call execution records (mirrors `documents/{id}.llm_executions`). */
   llm_executions?: UsageExecutionRecord[]

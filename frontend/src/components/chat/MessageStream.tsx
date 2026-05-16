@@ -6,24 +6,29 @@ import {
   CheckCircle2,
   CircleDot,
   Cpu,
+  Download,
+  FileJson,
+  FileText,
   GaugeCircle,
   HelpCircle,
   Hourglass,
   ListChecks,
+  PackageCheck,
   Sparkles,
   User,
   Wrench,
 } from 'lucide-react'
 import clsx from 'clsx'
-import type { ChatTrailEvent, ChatTurnData } from '../../lib/firestore-types'
+import type { ChatAgentWorkPackage, ChatArtifactRef, ChatTrailEvent, ChatTurnData } from '../../lib/firestore-types'
 
 interface MessageStreamProps {
   turns: ChatTurnData[]
   liveTurn: ChatTurnData | null
   emptyState?: React.ReactNode
+  onSendPendingAnswer?: (answer: string) => void
 }
 
-export default function MessageStream({ turns, liveTurn, emptyState }: MessageStreamProps) {
+export default function MessageStream({ turns, liveTurn, emptyState, onSendPendingAnswer }: MessageStreamProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -37,7 +42,7 @@ export default function MessageStream({ turns, liveTurn, emptyState }: MessageSt
   return (
     <div className="flex flex-col gap-6 overflow-y-auto overflow-x-hidden px-4 py-6 flex-1 min-h-0 chat-stream-scrollbar">
       {allTurns.map((turn, idx) => (
-        <TurnBlock key={turn.id ?? `t-${idx}`} turn={turn} live={turn === liveTurn} />
+        <TurnBlock key={turn.id ?? `t-${idx}`} turn={turn} live={turn === liveTurn} onSendPendingAnswer={onSendPendingAnswer} />
       ))}
       <div ref={bottomRef} />
     </div>
@@ -58,7 +63,15 @@ function findActiveAgent(trail: ChatTrailEvent[]): string | null {
   return pendingAgent
 }
 
-function TurnBlock({ turn, live }: { turn: ChatTurnData; live: boolean }) {
+function TurnBlock({
+  turn,
+  live,
+  onSendPendingAnswer,
+}: {
+  turn: ChatTurnData
+  live: boolean
+  onSendPendingAnswer?: (answer: string) => void
+}) {
   const thoughtSegments = collectThoughtSegments(turn.trail)
   const trailWithoutThoughts = turn.trail.filter(e => e.type !== 'orchestrator_thought')
   const activeAgent = findActiveAgent(turn.trail)
@@ -76,7 +89,11 @@ function TurnBlock({ turn, live }: { turn: ChatTurnData; live: boolean }) {
       )}
       {trailWithoutThoughts.length > 0 && <AgentTrail events={trailWithoutThoughts} live={live} />}
       {turn.pending_question && (
-        <PendingQuestion question={turn.pending_question.text} options={turn.pending_question.options} />
+        <PendingQuestion
+          question={turn.pending_question.text}
+          options={turn.pending_question.options}
+          onSendPendingAnswer={onSendPendingAnswer}
+        />
       )}
       {turn.assistant_markdown && <AssistantBubble markdown={turn.assistant_markdown} />}
       {live && !turn.assistant_markdown && (
@@ -144,7 +161,15 @@ function AssistantBubble({ markdown }: { markdown: string }) {
   )
 }
 
-function PendingQuestion({ question, options }: { question: string; options?: string[] }) {
+function PendingQuestion({
+  question,
+  options,
+  onSendPendingAnswer,
+}: {
+  question: string
+  options?: string[]
+  onSendPendingAnswer?: (answer: string) => void
+}) {
   return (
     <div className="ml-11 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
       <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
@@ -153,13 +178,21 @@ function PendingQuestion({ question, options }: { question: string; options?: st
       </div>
       <p className="whitespace-pre-wrap text-sm">{question}</p>
       {options && options.length > 0 && (
-        <ul className="mt-2 list-disc pl-4 text-xs">
+        <div className="mt-3 flex flex-wrap gap-2">
           {options.map(opt => (
-            <li key={opt}>{opt}</li>
+            <button
+              key={opt}
+              type="button"
+              onClick={() => onSendPendingAnswer?.(opt)}
+              className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!onSendPendingAnswer}
+            >
+              {opt}
+            </button>
           ))}
-        </ul>
+        </div>
       )}
-      <p className="mt-2 text-xs text-amber-700">Responda no campo abaixo para continuar.</p>
+      <p className="mt-2 text-xs text-amber-700">Use uma opção ou responda no campo abaixo para continuar.</p>
     </div>
   )
 }
@@ -181,6 +214,10 @@ function AgentTrail({ events, live }: { events: ChatTrailEvent[]; live: boolean 
 }
 
 function TrailEventRow({ event }: { event: ChatTrailEvent }) {
+  if (event.type === 'agent_work_package') {
+    return <AgentWorkPackageCard workPackage={event.package} />
+  }
+
   const meta = describeEvent(event)
   return (
     <li className="flex items-start gap-2 text-xs">
@@ -190,6 +227,130 @@ function TrailEventRow({ event }: { event: ChatTrailEvent }) {
         {meta.subtitle && <div className="text-[var(--v2-ink-muted)]">{meta.subtitle}</div>}
       </div>
     </li>
+  )
+}
+
+function AgentWorkPackageCard({ workPackage }: { workPackage: ChatAgentWorkPackage }) {
+  const artifacts = workPackage.artifacts ?? []
+  return (
+    <li className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-[var(--v2-ink-strong)]">
+      <div className="flex items-start gap-2">
+        <PackageCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-emerald-800">Pacote de trabalho · {workPackage.agent_key}</div>
+          {workPackage.task && <div className="mt-0.5 text-[var(--v2-ink-muted)]">{workPackage.task}</div>}
+        </div>
+      </div>
+
+      {workPackage.result_markdown && (
+        <div className="mt-2 rounded-md bg-white/70 px-3 py-2 leading-5">
+          <RenderMarkdown markdown={workPackage.result_markdown} />
+        </div>
+      )}
+
+      {workPackage.thought && (
+        <details className="mt-2 rounded-md border border-emerald-200 bg-white/65 px-3 py-2">
+          <summary className="cursor-pointer select-none font-semibold text-emerald-800">Pensamento do agente</summary>
+          <div className="mt-2 space-y-2 leading-5 text-[var(--v2-ink-muted)]">
+            <p>{workPackage.thought.summary}</p>
+            <ThoughtList title="Premissas" items={workPackage.thought.assumptions} />
+            <ThoughtList title="Decisões" items={workPackage.thought.decisions} />
+            <ThoughtList title="Riscos" items={workPackage.thought.risks} />
+            <ThoughtList title="Próximo uso" items={workPackage.thought.next_steps} />
+          </div>
+        </details>
+      )}
+
+      {artifacts.length > 0 && (
+        <div className="mt-2 flex flex-col gap-2">
+          {artifacts.map(artifact => (
+            <ArtifactCard key={artifact.artifact_id} artifact={artifact} />
+          ))}
+        </div>
+      )}
+    </li>
+  )
+}
+
+function ThoughtList({ title, items }: { title: string; items?: string[] }) {
+  if (!items?.length) return null
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">{title}</div>
+      <ul className="mt-1 list-disc pl-4">
+        {items.map((item, idx) => <li key={`${title}-${idx}`}>{item}</li>)}
+      </ul>
+    </div>
+  )
+}
+
+function ArtifactCard({ artifact }: { artifact: ChatArtifactRef }) {
+  const hasManifest = Boolean(artifact.manifest_json)
+  const exports = artifact.exports ?? []
+  return (
+    <div className="rounded-md border border-[var(--v2-border)] bg-white px-3 py-2">
+      <div className="flex items-start gap-2">
+        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-600" />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-[var(--v2-ink-strong)]">{artifact.title}</div>
+          <div className="text-[var(--v2-ink-muted)]">
+            {artifact.kind}/{artifact.format} · v{artifact.version}{artifact.is_latest === false ? ' · versão anterior' : ''}
+          </div>
+          {artifact.summary && <p className="mt-1 text-[var(--v2-ink-muted)]">{artifact.summary}</p>}
+        </div>
+      </div>
+
+      {artifact.content_preview && (
+        <div className="mt-2 whitespace-pre-wrap rounded bg-[rgba(15,23,42,0.04)] px-2 py-1.5 text-[var(--v2-ink-muted)]">
+          {artifact.content_preview}
+        </div>
+      )}
+
+      {hasManifest && (
+        <details className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+          <summary className="flex cursor-pointer select-none items-center gap-1.5 font-semibold text-slate-700">
+            <FileJson className="h-3.5 w-3.5" />
+            Documento JSON
+          </summary>
+          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-[11px] leading-4 text-slate-700">
+            {JSON.stringify(artifact.manifest_json, null, 2)}
+          </pre>
+        </details>
+      )}
+
+      {(artifact.download_url || exports.length > 0) && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {artifact.download_url && (
+            <a
+              href={artifact.download_url}
+              download
+              className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+            >
+              <Download className="h-3 w-3" />
+              Baixar {artifact.format.toUpperCase()}
+            </a>
+          )}
+          {exports.map(exportRef => exportRef.download_url ? (
+            <a
+              key={`${artifact.artifact_id}-${exportRef.label}`}
+              href={exportRef.download_url}
+              download
+              className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+            >
+              <Download className="h-3 w-3" />
+              {exportRef.label}
+            </a>
+          ) : (
+            <span
+              key={`${artifact.artifact_id}-${exportRef.label}`}
+              className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600"
+            >
+              {exportRef.label}: {exportRef.status === 'ready' ? 'pronto' : exportRef.status === 'planned' ? 'planejado' : exportRef.status}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -278,6 +439,37 @@ function describeEvent(event: ChatTrailEvent): {
         iconClass: 'text-emerald-600',
         title: `Resposta de ${event.agent_key}`,
         subtitle: event.output.length > 220 ? `${event.output.slice(0, 219)}…` : event.output,
+      }
+    case 'agent_artifact_created':
+    case 'agent_artifact_updated':
+      return {
+        Icon: FileText,
+        iconClass: 'text-emerald-600',
+        title: event.type === 'agent_artifact_created' ? 'Artefato criado' : 'Artefato atualizado',
+        subtitle: `${event.artifact.title} · ${event.artifact.kind}/${event.artifact.format} v${event.artifact.version}`,
+      }
+    case 'artifact_export_ready':
+      return {
+        Icon: Download,
+        iconClass: 'text-indigo-600',
+        title: `Export pronto: ${event.export_ref.label}`,
+        subtitle: `${event.logical_document_id} · ${event.export_ref.format}`,
+      }
+    case 'pipeline_progress':
+      return {
+        Icon: Hourglass,
+        iconClass: 'text-indigo-500',
+        title: `${event.pipeline}: ${event.phase}`,
+        subtitle: typeof event.progress === 'number' ? `${Math.round(event.progress)}%` : undefined,
+      }
+    case 'approval_requested':
+      return { Icon: HelpCircle, iconClass: 'text-amber-600', title: event.title, subtitle: event.summary }
+    case 'approval_resolved':
+      return {
+        Icon: event.approved ? CheckCircle2 : AlertCircle,
+        iconClass: event.approved ? 'text-emerald-600' : 'text-rose-600',
+        title: event.approved ? 'Aprovação concedida' : 'Aprovação negada',
+        subtitle: event.reason,
       }
     case 'parallel_agents':
       return {

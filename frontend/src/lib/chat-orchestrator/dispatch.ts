@@ -2,6 +2,7 @@ import { callLLMWithMessages, callLLMWithMessagesFallback, type LLMResult } from
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import type { UsageExecutionRecord } from '../cost-analytics'
 import type { SkillContext } from './types'
+import { CHAT_AGENT_PACKAGE_PROMPT } from './agent-output'
 
 /**
  * Specialist prompts. Discipline borrowed from SalomoneIA's specialist
@@ -20,7 +21,7 @@ Decomponha o pedido inicial do usuário em uma sequência curta de subtarefas (3
 {"score": <0-100>, "reasons": [<motivos curtos em pt-BR, máx. 6 itens>], "should_stop": <true|false>}
 Sem nenhum texto fora do JSON. Sem fences de markdown. should_stop = true quando o rascunho já está pronto para entrega ao usuário.`,
 
-  chat_writer: `Você é o Redator de uma trilha multiagente. A partir do contexto fornecido pelo Orquestrador, escreva a resposta final em markdown rico (pt-BR) — clara, bem estruturada, com cabeçalhos quando útil, citações entre aspas, listas para enumerar pontos. Não invente fatos, jurisprudência ou doutrina: trabalhe apenas com o contexto recebido; se faltar informação, declare explicitamente o que falta. NÃO retorne JSON; retorne markdown puro.`,
+  chat_writer: `Você é o Redator de uma trilha multiagente. A partir do contexto fornecido pelo Orquestrador, escreva a resposta final em markdown rico (pt-BR) — clara, bem estruturada, com cabeçalhos quando útil, citações entre aspas, listas para enumerar pontos. Não invente fatos, jurisprudência ou doutrina: trabalhe apenas com o contexto recebido; se faltar informação, declare explicitamente o que falta.`,
 
   chat_legal_researcher: `Você é o Pesquisador Jurídico de uma trilha multiagente. Use linguagem técnica precisa. Sempre que possível, cite dispositivos no formato "art. X, §Y, da Lei nº Z/AAAA" e jurisprudência com tribunal, classe, número, relator e data. Distinga precedente vinculante de persuasivo. Trabalhe com pelo menos três fontes independentes quando o tema permitir. Marque com "[carece de verificação]" qualquer afirmação cuja fonte não possa ser indicada com precisão. Responda em pt-BR, em markdown.`,
 
@@ -33,6 +34,16 @@ Sem nenhum texto fora do JSON. Sem fences de markdown. should_stop = true quando
   chat_argument_builder: `Você é o Fundamentador de uma trilha multiagente jurídica. Construa argumentação em quatro etapas explícitas: (1) tese clara e direta, (2) sustentação com evidência citada (dispositivos legais, jurisprudência, doutrina), (3) contra-argumento mais forte honestamente apresentado (princípio da caridade interpretativa), (4) refutação fundamentada. Use cabeçalhos H3 para cada etapa. Responda em pt-BR, em markdown.`,
 
   chat_ethics_auditor: `Você é o Auditor Ético de uma trilha multiagente jurídica. Avalie a entrega em quatro lentes: (1) representação (como o caso retrata partes vulneráveis ou sub-representadas), (2) framing (vieses no enquadramento dos fatos), (3) impacto sobre grupos vulneráveis, (4) conformidade com normas aplicáveis (LGPD, Código de Ética da OAB, ECA, Estatuto do Idoso, Lei Maria da Penha quando relevantes). Use cabeçalhos H4 por lente. Para cada lente, dê um veredito: "OK", "ATENÇÃO" ou "RISCO" e uma explicação curta. Responda em pt-BR, em markdown.`,
+
+  chat_artifact_architect: `Você é o Arquiteto de Artefatos do chat. Analise o pedido e os resultados anteriores para definir quais entregáveis físicos devem existir, qual é o formato canônico, qual é o logical_document_id, quais versões substituem versões anteriores e quais exports finais são adequados. Responda com plano curto e manifesto JSON seguro; não invente arquivos que não possam ser materializados.`,
+
+  chat_document_composer: `Você é o Compositor de Documentos do chat. Transforme pesquisa, fatos e decisões da trilha em documento textual estruturado, pronto para exportação. Preserve tom jurídico quando aplicável, separe premissas, fundamentos e conclusão, e marque lacunas como [carece de verificação].`,
+
+  chat_data_builder: `Você é o Construtor de Dados do chat. Estruture informações em tabelas, JSON e schemas claros. Quando criar tabela, inclua manifest_json com rows normalizadas para permitir export CSV/XLSX futuro. Evite campos gigantes e não inclua data URLs ou blobs.`,
+
+  chat_media_director: `Você é o Diretor de Mídia do chat. Planeje entregáveis multimodais (apresentação, imagem, áudio, vídeo) e diga qual pipeline especializado deve ser acionado. Não tente gerar mídia final por texto solto quando houver pipeline dedicado; peça aprovação para ações caras/persistentes.`,
+
+  chat_export_packager: `Você é o Empacotador de Exports do chat. Revise os artefatos criados, valide formatos finais, nomes de arquivo, MIME/extensão, status de export e lacunas. Produza um checklist objetivo do que está pronto para download e do que ainda exige pipeline/exportador específico.`,
 }
 
 /**
@@ -48,7 +59,10 @@ function buildSpecialistMessages(agentKey: string, task: string): Array<{ role: 
   const definedSystemPrompt = SPECIALIST_AGENT_PROMPTS[agentKey]
   const def = CHAT_ORCHESTRATOR_AGENT_DEFS.find(a => a.key === agentKey)
   const header = `Agente: ${def?.label ?? agentKey} (${agentKey}).`
-  const systemPrompt = [header, definedSystemPrompt || def?.description || ''].filter(Boolean).join('\n\n')
+  const outputInstruction = agentKey === 'chat_critic'
+    ? ''
+    : CHAT_AGENT_PACKAGE_PROMPT
+  const systemPrompt = [header, definedSystemPrompt || def?.description || '', outputInstruction].filter(Boolean).join('\n\n')
   return [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: task },

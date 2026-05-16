@@ -1,4 +1,4 @@
-import type { ChatTrailEvent } from '../firestore-types'
+import type { ChatArtifactRef, ChatTrailEvent } from '../firestore-types'
 import { createBudget } from './budget'
 import { dispatchSpecialistAgent } from './dispatch'
 import { callOrchestratorLLM, appendToolMessage } from './orchestrator-llm'
@@ -6,6 +6,7 @@ import { runCritic } from './quality'
 import { buildSkillRegistry, listCallableAgentDescriptions } from './skill-registry'
 import { OrchestratorDecisionParseError, parseOrchestratorDecision, renderSkillsManifest } from './tools-adapter'
 import { EFFORT_PRESETS } from './effort-presets'
+import { parseAgentOutputPackage } from './agent-output'
 import type {
   OrchestratorDecision,
   OrchestratorMessage,
@@ -36,6 +37,11 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
   const skillsByName = new Map<string, Skill>(skills.map(s => [s.name, s]))
   const llmCall = input.llmCall ?? callOrchestratorLLM
   const allowedTools = skills.map(s => s.name)
+  const latestArtifactsByLogicalId = new Map<string, { artifact: ChatArtifactRef; agentKey?: string }>()
+  const emitTrail = (event: ChatTrailEvent) => {
+    collectLatestArtifacts(event, latestArtifactsByLogicalId)
+    input.onTrail(event)
+  }
 
   const ctx: SkillContext = {
     uid: input.uid,
@@ -44,11 +50,13 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     effort: input.effort,
     budget,
     signal: input.signal,
-    emit: input.onTrail,
+    emit: emitTrail,
     models: input.models,
     fallbackModels: input.fallbackModels,
     apiKey: input.apiKey,
     onAgentToken: input.onAgentToken,
+    persistWorkPackage: input.persistWorkPackage,
+    createApprovalRequest: input.createApprovalRequest,
     mock: Boolean(input.mock),
   }
 
@@ -69,7 +77,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
         throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
       }
       const elapsedMs = Date.now() - startedAt
-      input.onTrail({
+      emitTrail({
         type: 'iteration_start',
         i,
         ts: new Date().toISOString(),
@@ -94,7 +102,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       if (consecutiveParseErrors >= 2) {
         // Two parse failures in a row — give up on the loop and let the
         // forced finaliser produce a closing answer from whatever we have.
-        input.onTrail({
+        emitTrail({
           type: 'error',
           message: err instanceof Error ? err.message : String(err),
           ts: new Date().toISOString(),
@@ -110,7 +118,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       continue
     }
 
-    input.onTrail({
+    emitTrail({
       type: 'decision',
       tool: decision.tool,
       ...(decision.rationale ? { rationale: decision.rationale } : {}),
@@ -135,7 +143,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') throw err
       const message = err instanceof Error ? err.message : String(err)
-      input.onTrail({ type: 'error', message: `Falha em ${decision.tool}: ${message}`, ts: new Date().toISOString() })
+      emitTrail({ type: 'error', message: `Falha em ${decision.tool}: ${message}`, ts: new Date().toISOString() })
       history = appendToolMessage(
         history,
         `A ferramenta "${decision.tool}" falhou, mas o orquestrador deve continuar com outra estratégia ou finalizar com o contexto disponível. Erro: ${message}`,
@@ -152,7 +160,13 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       return {
         status: 'awaiting_user',
         assistant_markdown: null,
-        pending_question: { text: result.awaiting_user.question, options: result.awaiting_user.options },
+        pending_question: {
+          text: result.awaiting_user.question,
+          options: result.awaiting_user.options,
+          approval_id: result.awaiting_user.approval_id,
+          resume_tool: result.awaiting_user.resume_tool,
+          resume_args: result.awaiting_user.resume_args,
+        },
         llm_executions: budget.records(),
       }
     }
@@ -205,7 +219,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       }
 
       if (budget.exceeded()) {
-        input.onTrail({
+        emitTrail({
           type: 'budget_hit',
           reason: budget.isHardStopped().reason ?? 'token_cap_reached',
           ts: new Date().toISOString(),
@@ -222,7 +236,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') throw err
       const message = err instanceof Error ? err.message : String(err)
-      input.onTrail({ type: 'error', message: `Finalização forçada falhou: ${message}`, ts: new Date().toISOString() })
+      emitTrail({ type: 'error', message: `Finalização forçada falhou: ${message}`, ts: new Date().toISOString() })
       const userInputs = history.filter(m => !m.tool_summary && m.role === 'user').map(m => m.content)
       const lastUser = userInputs[userInputs.length - 1] ?? input.user_input
       draft = [
@@ -236,8 +250,10 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     if (stopReason === 'max_iterations' && budget.exceeded()) stopReason = 'budget'
   }
 
+    draft = appendLatestArtifactSummary(draft, latestArtifactsByLogicalId)
+
     const elapsedMs = Date.now() - startedAt
-    input.onTrail({
+    emitTrail({
       type: 'final_answer',
       ts: new Date().toISOString(),
       elapsed_ms: elapsedMs,
@@ -252,6 +268,69 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       llm_executions: budget.records(),
       elapsed_ms: elapsedMs,
     }
+}
+
+function collectLatestArtifacts(
+  event: ChatTrailEvent,
+  latestArtifactsByLogicalId: Map<string, { artifact: ChatArtifactRef; agentKey?: string }>,
+): void {
+  if (event.type === 'agent_work_package') {
+    for (const artifact of event.package.artifacts ?? []) {
+      if (artifact.is_latest === false) continue
+      upsertLatestArtifact(latestArtifactsByLogicalId, artifact, event.package.agent_key)
+    }
+    return
+  }
+
+  if (event.type === 'agent_artifact_created' || event.type === 'agent_artifact_updated') {
+    if (event.artifact.is_latest === false) return
+    upsertLatestArtifact(latestArtifactsByLogicalId, event.artifact, event.agent_key)
+  }
+}
+
+function upsertLatestArtifact(
+  latestArtifactsByLogicalId: Map<string, { artifact: ChatArtifactRef; agentKey?: string }>,
+  artifact: ChatArtifactRef,
+  agentKey?: string,
+): void {
+  const current = latestArtifactsByLogicalId.get(artifact.logical_document_id)
+  if (!current || artifact.version >= current.artifact.version) {
+    latestArtifactsByLogicalId.set(artifact.logical_document_id, { artifact, agentKey })
+  }
+}
+
+function appendLatestArtifactSummary(
+  markdown: string,
+  latestArtifactsByLogicalId: Map<string, { artifact: ChatArtifactRef; agentKey?: string }>,
+): string {
+  const artifacts = [...latestArtifactsByLogicalId.values()]
+  if (!artifacts.length) return markdown
+
+  const lines = artifacts
+    .sort((a, b) => a.artifact.title.localeCompare(b.artifact.title, 'pt-BR'))
+    .map(({ artifact, agentKey }) => {
+      const source = agentKey ? ` · agente ${agentKey}` : ''
+      const exports = (artifact.exports ?? [])
+        .map(exportRef => `${exportRef.label} (${formatExportStatus(exportRef.status)})`)
+        .join(', ')
+      const exportText = exports ? ` · exports: ${exports}` : ''
+      return `- **${artifact.title}** — ${artifact.kind}/${artifact.format} v${artifact.version}${source}${exportText}`
+    })
+
+  return [
+    markdown.trimEnd(),
+    '',
+    '## Documentos e artefatos criados',
+    ...lines,
+  ].join('\n')
+}
+
+function formatExportStatus(status: string): string {
+  if (status === 'ready') return 'pronto'
+  if (status === 'planned') return 'planejado'
+  if (status === 'failed') return 'falhou'
+  if (status === 'unavailable') return 'indisponível'
+  return status
 }
 
 interface CallOrchestratorAndParseArgs {
@@ -348,7 +427,13 @@ async function forceFinalize(history: OrchestratorMessage[], ctx: SkillContext):
     ctx,
     onToken,
   })
-  return output
+  return parseAgentOutputPackage({
+    rawOutput: output,
+    agentKey: FINAL_FORCE_AGENT_KEY,
+    task,
+    conversationId: ctx.conversationId,
+    turnId: ctx.turnId,
+  }).displayMarkdown
 }
 
 function buildOrchestratorSystemPrompt(skills: Skill[], effort: string): string {
@@ -375,6 +460,7 @@ function buildOrchestratorSystemPrompt(skills: Skill[], effort: string): string 
     '**Regras**:',
     '- Encerre o turno chamando `submit_final_answer` exatamente uma vez quando a resposta estiver pronta.',
     '- Use `ask_user_question` apenas quando uma decisão depende de informação que só o usuário tem.',
+    '- Use `request_user_approval` antes de Novo Documento, Caderno de Pesquisa, Storage grande, mídia paga, sidecar write/shell ou qualquer ação persistente/cara.',
     '- Se faltar contexto, prefira chamar `chat_planner` antes de redigir.',
     '- Se o histórico estiver longo, chame `summarize_context` para liberar tokens.',
     '- Antes de finalizar, se estiver inseguro, chame `critique_draft` com o rascunho atual.',

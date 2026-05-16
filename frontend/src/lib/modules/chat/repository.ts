@@ -17,7 +17,11 @@ import {
 
 import { normalizeFirestoreDocumentId } from '../../core/firestore'
 import type {
+  ChatAgentWorkPackage,
   ChatApprovalRequestData,
+  ChatArtifactData,
+  ChatArtifactExportData,
+  ChatArtifactVersionData,
   ChatConversationData,
   ChatEffortLevel,
   ChatSidecarAuditEntryData,
@@ -48,6 +52,10 @@ const CHAT_WORKSPACE_BINDINGS_SUBCOLLECTION = 'workspace_bindings'
 const CHAT_SIDECAR_COMMANDS_SUBCOLLECTION = 'sidecar_commands'
 const CHAT_APPROVALS_SUBCOLLECTION = 'approvals'
 const CHAT_AUDIT_SUBCOLLECTION = 'audit'
+const CHAT_WORK_PACKAGES_SUBCOLLECTION = 'work_packages'
+const CHAT_ARTIFACTS_SUBCOLLECTION = 'artifacts'
+const CHAT_ARTIFACT_VERSIONS_SUBCOLLECTION = 'artifact_versions'
+const CHAT_ARTIFACT_EXPORTS_SUBCOLLECTION = 'artifact_exports'
 const DEFAULT_CHAT_EFFORT: ChatEffortLevel = 'medio'
 
 function chatConversationCollection(db: Firestore, uid: string) {
@@ -308,6 +316,10 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
       CHAT_WORKSPACE_BINDINGS_SUBCOLLECTION,
       CHAT_SIDECAR_COMMANDS_SUBCOLLECTION,
       CHAT_APPROVALS_SUBCOLLECTION,
+      CHAT_WORK_PACKAGES_SUBCOLLECTION,
+      CHAT_ARTIFACTS_SUBCOLLECTION,
+      CHAT_ARTIFACT_VERSIONS_SUBCOLLECTION,
+      CHAT_ARTIFACT_EXPORTS_SUBCOLLECTION,
     ] as const
     await Promise.all(
       subcollectionsToDelete.map(subcollectionName =>
@@ -410,6 +422,97 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
         await ensureChatConversation(effectiveUid, conversationId)
       }
     }
+  }
+
+  async function persistChatAgentWorkPackage(
+    uid: string,
+    conversationId: string,
+    workPackage: ChatAgentWorkPackage,
+  ): Promise<ChatAgentWorkPackage> {
+    const db = deps.ensureFirestore()
+    const effectiveUid = await deps.resolveEffectiveUid(uid, 'persistChatAgentWorkPackage')
+    const now = new Date().toISOString()
+    await ensureChatConversation(effectiveUid, conversationId)
+
+    const packageId = normalizeFirestoreDocumentId(workPackage.id || [
+      workPackage.turn_id,
+      workPackage.agent_key,
+      workPackage.completed_at || workPackage.created_at || now,
+    ].join('-'))
+    const normalizedPackage: ChatAgentWorkPackage = deps.stripUndefined({
+      ...workPackage,
+      id: packageId,
+      conversation_id: normalizeFirestoreDocumentId(conversationId),
+      completed_at: workPackage.completed_at ?? now,
+    })
+
+    await deps.withFirestoreRetry(
+      () => setDoc(
+        chatConversationSubcollectionDoc(db, effectiveUid, conversationId, CHAT_WORK_PACKAGES_SUBCOLLECTION, packageId),
+        normalizedPackage,
+        { merge: true },
+      ),
+      'persistChatAgentWorkPackage.package',
+    )
+
+    await Promise.all((normalizedPackage.artifacts ?? []).map(async (artifact) => {
+      const artifactId = normalizeFirestoreDocumentId(artifact.artifact_id)
+      const artifactData: ChatArtifactData = deps.stripUndefined({
+        ...artifact,
+        artifact_id: artifactId,
+        logical_document_id: normalizeFirestoreDocumentId(artifact.logical_document_id),
+        conversation_id: normalizeFirestoreDocumentId(conversationId),
+        turn_id: normalizeFirestoreDocumentId(workPackage.turn_id),
+        created_by_agent_key: workPackage.agent_key,
+        created_at: workPackage.created_at || now,
+        updated_at: now,
+      })
+      const versionId = normalizeFirestoreDocumentId(`${artifactData.logical_document_id}-v${artifactData.version}`)
+      const versionData: ChatArtifactVersionData = deps.stripUndefined({ ...artifactData, version_id: versionId })
+
+      await Promise.all([
+        deps.withFirestoreRetry(
+          () => setDoc(
+            chatConversationSubcollectionDoc(db, effectiveUid, conversationId, CHAT_ARTIFACTS_SUBCOLLECTION, artifactId),
+            artifactData,
+            { merge: true },
+          ),
+          'persistChatAgentWorkPackage.artifact',
+        ),
+        deps.withFirestoreRetry(
+          () => setDoc(
+            chatConversationSubcollectionDoc(db, effectiveUid, conversationId, CHAT_ARTIFACT_VERSIONS_SUBCOLLECTION, versionId),
+            versionData,
+            { merge: true },
+          ),
+          'persistChatAgentWorkPackage.version',
+        ),
+        ...((artifact.exports ?? []).map((exportRef) => {
+          const exportId = normalizeFirestoreDocumentId(exportRef.export_id || `${artifactId}-${exportRef.format}-${exportRef.label}`)
+          const exportData: ChatArtifactExportData = deps.stripUndefined({
+            ...exportRef,
+            id: exportId,
+            conversation_id: normalizeFirestoreDocumentId(conversationId),
+            turn_id: normalizeFirestoreDocumentId(workPackage.turn_id),
+            artifact_id: artifactId,
+            logical_document_id: artifactData.logical_document_id,
+            version: artifactData.version,
+            created_at: now,
+            updated_at: now,
+          })
+          return deps.withFirestoreRetry(
+            () => setDoc(
+              chatConversationSubcollectionDoc(db, effectiveUid, conversationId, CHAT_ARTIFACT_EXPORTS_SUBCOLLECTION, exportId),
+              exportData,
+              { merge: true },
+            ),
+            'persistChatAgentWorkPackage.export',
+          )
+        })),
+      ])
+    }))
+
+    return normalizedPackage
   }
 
   async function saveChatSidecarDevice(
@@ -659,6 +762,7 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     listChatTurns,
     appendChatTurn,
     updateChatTurn,
+    persistChatAgentWorkPackage,
     saveChatSidecarDevice,
     listChatSidecarDevices,
     saveChatWorkspaceRoot,

@@ -94,12 +94,11 @@ function buildParagraphs(text: string): Paragraph[] {
  * @param docType  - Document type label for the title
  * @param tema     - Document topic for the subtitle
  */
-export async function generateAndDownloadDocx(
+export async function generateDocxBlob(
   text: string,
-  filename: string,
   docType?: string,
   tema?: string,
-): Promise<void> {
+): Promise<Blob> {
   const titleParagraphs: Paragraph[] = []
 
   if (docType) {
@@ -178,6 +177,15 @@ export async function generateAndDownloadDocx(
     },
   })
 
-  const blob = await Packer.toBlob(doc)
+  return Packer.toBlob(doc)
+}
+
+export async function generateAndDownloadDocx(
+  text: string,
+  filename: string,
+  docType?: string,
+  tema?: string,
+): Promise<void> {
+  const blob = await generateDocxBlob(text, docType, tema)
   saveAs(blob, `${filename}.docx`)
 }

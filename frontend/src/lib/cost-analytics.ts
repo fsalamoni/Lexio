@@ -253,6 +253,11 @@ const PHASE_LABELS: Record<string, string> = {
   chat_writer: 'Chat: Redator',
   chat_argument_builder: 'Chat: Fundamentador',
   chat_ethics_auditor: 'Chat: Auditor Ético',
+  chat_artifact_architect: 'Chat: Arquiteto de Artefatos',
+  chat_document_composer: 'Chat: Compositor de Documentos',
+  chat_data_builder: 'Chat: Construtor de Dados',
+  chat_media_director: 'Chat: Diretor de Mídia',
+  chat_export_packager: 'Chat: Empacotador de Exports',
 }
 
 const STUDIO_ARTIFACT_LABELS: Record<string, string> = {

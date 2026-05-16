@@ -1,18 +1,17 @@
 /**
  * PR3 — Super-Skills de Pipeline
  *
- * Expõe os pipelines de geração de documentos jurídicos como skills do
- * orquestrador de chat. O usuário pode solicitar "gere uma petição inicial
- * sobre..." e o orquestrador dispara o pipeline correspondente via API REST.
+ * Expõe pipelines browser-native como skills do orquestrador de chat.
  *
  * Cada super-skill:
  *  1. Valida os argumentos (tipo de documento, conteúdo, template)
- *  2. Chama `POST /api/v1/documents/` com o payload apropriado
- *  3. Emite eventos `super_skill_call` na trilha
- *  4. Retorna o status do pipeline (processando, concluído, erro)
+ *  2. Solicita aprovação quando a ação é persistente/cara
+ *  3. Chama os pipelines frontend reais
+ *  4. Emite eventos `super_skill_call`/`pipeline_progress` na trilha
+ *  5. Retorna o status do pipeline e cria pacote de artefato quando possível
  */
 
-import type { ChatTrailEvent } from '../firestore-types'
+import type { ChatAgentWorkPackage, ChatArtifactRef, ChatTrailEvent } from '../firestore-types'
 import type { Skill, SkillContext, SkillResult } from './types'
 import { hybridSearch } from '../search-client'
 
@@ -67,15 +66,69 @@ function isAbortError(err: unknown): boolean {
   return false
 }
 
-/**
- * Resolve a base URL para chamadas à API.
- * Em produção, usa a mesma origem; em desenvolvimento, aponta para localhost:8000.
- */
-function resolveApiBase(): string {
-  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-    return 'http://localhost:8000'
+function normalizeSideEffectApproval(value: unknown): boolean {
+  return value === true || String(value ?? '').trim().toLowerCase() === 'true'
+}
+
+async function requestApprovalForSkill(ctx: SkillContext, args: {
+  title: string
+  summary: string
+  riskLevel?: 'low' | 'medium' | 'high'
+  permissions?: Array<'read' | 'write' | 'delete' | 'rename' | 'execute' | 'network'>
+  resumeTool?: string
+  resumeArgs?: Record<string, unknown>
+}): Promise<SkillResult> {
+  let approvalId = `local-${Date.now()}`
+  if (ctx.createApprovalRequest) {
+    approvalId = await ctx.createApprovalRequest({
+      command_ids: [],
+      title: args.title,
+      summary: args.summary,
+      risk_level: args.riskLevel ?? 'medium',
+      requested_permissions: args.permissions ?? ['write', 'network'],
+    })
   }
-  return ''
+  ctx.emit({
+    type: 'approval_requested',
+    approval_id: approvalId,
+    title: args.title,
+    summary: args.summary,
+    risk_level: args.riskLevel ?? 'medium',
+    ts: nowIso(),
+  })
+  return {
+    tool_message: `Aguardando aprovação do usuário (${approvalId}): ${args.title}`,
+    awaiting_user: {
+      question: `${args.title}\n\n${args.summary}\n\nResponda "aprovar" para autorizar ou "rejeitar" para cancelar.`,
+      options: ['aprovar', 'rejeitar', 'ajustar'],
+      approval_id: approvalId,
+      resume_tool: args.resumeTool,
+      resume_args: args.resumeArgs,
+    },
+  }
+}
+
+async function deliverWorkPackage(ctx: SkillContext, workPackage: ChatAgentWorkPackage): Promise<ChatAgentWorkPackage> {
+  let materialized = workPackage
+  try {
+    const { materializeChatAgentWorkPackageExports } = await import('../chat-artifact-exporters')
+    materialized = await materializeChatAgentWorkPackageExports(workPackage, {
+      userId: ctx.uid,
+      conversationId: ctx.conversationId,
+      turnId: ctx.turnId,
+    })
+  } catch {
+    // The artifact metadata is still useful even if export materialization fails.
+  }
+  if (ctx.persistWorkPackage) {
+    try {
+      materialized = await ctx.persistWorkPackage(materialized)
+    } catch {
+      // best-effort; the trail still carries the package in the current turn.
+    }
+  }
+  ctx.emit({ type: 'agent_work_package', package: materialized, ts: materialized.completed_at ?? nowIso() })
+  return materialized
 }
 
 // ── Super-Skill: Gerar Documento Jurídico ─────────────────────────────────────
@@ -90,6 +143,8 @@ interface GenerateDocumentArgs {
   template_variant?: string
   /** Área do direito (ex.: "civil", "penal", "trabalhista"). */
   legal_area?: string
+  /** Deve ser true apenas depois de aprovação explícita do usuário no chat. */
+  approved?: boolean
 }
 
 const generateDocumentSkill: Skill<GenerateDocumentArgs> = {
@@ -109,6 +164,7 @@ const generateDocumentSkill: Skill<GenerateDocumentArgs> = {
       'Quanto mais detalhado, melhor o resultado.',
     template_variant: 'Variante de template (opcional). Ex.: "apelacao", "merito", "generic".',
     legal_area: 'Área do direito (opcional). Ex.: "civil", "penal", "trabalhista".',
+    approved: 'true apenas depois de o usuário aprovar explicitamente no chat',
   },
   async run(args, ctx): Promise<SkillResult> {
     const documentType = String(args.document_type ?? '').trim().toLowerCase()
@@ -133,6 +189,32 @@ const generateDocumentSkill: Skill<GenerateDocumentArgs> = {
 
     const label = PIPELINE_DOCUMENT_LABELS[documentType as PipelineDocumentType]
 
+    if (!normalizeSideEffectApproval(args.approved)) {
+      return requestApprovalForSkill(ctx, {
+        title: `Gerar ${label}`,
+        summary: [
+          `O chat vai criar um documento persistente em /documents usando o pipeline Documento V3.`,
+          title ? `Título: ${title}` : '',
+          description ? `Descrição: ${description}` : '',
+          `Tipo: ${label}`,
+          legalArea ? `Área: ${legalArea}` : '',
+          'A geração chama modelos LLM, grava no Firestore e pode gerar exports no card da trilha.',
+        ].filter(Boolean).join('\n'),
+        riskLevel: 'medium',
+        permissions: ['write', 'network'],
+        resumeTool: 'generate_document',
+        resumeArgs: {
+          document_type: documentType,
+          title,
+          description,
+          content,
+          template_variant: templateVariant,
+          legal_area: legalArea,
+          approved: true,
+        },
+      })
+    }
+
     // ── Emitir evento de início ────────────────────────────────────────────
     const startEvent: ChatTrailEvent = {
       type: 'super_skill_call',
@@ -142,65 +224,50 @@ const generateDocumentSkill: Skill<GenerateDocumentArgs> = {
     }
     ctx.emit(startEvent)
 
-    // ── Chamar API do pipeline ─────────────────────────────────────────────
+    // ── Chamar pipeline frontend real ──────────────────────────────────────
     try {
-      const base = resolveApiBase()
-      const url = `${base}/api/v1/documents/`
-
-      const payload: Record<string, unknown> = {
-        document_type_id: documentType,
-        title: title || `${label} — ${clip(content, 80)}`,
-        description: description || clip(content, 200),
-        content,
-        template_variant: templateVariant,
-      }
-      if (legalArea) payload.legal_area = legalArea
-
-      // Incluir token de autenticação se disponível (Firebase)
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (!ctx.mock && ctx.apiKey) {
-        headers['Authorization'] = `Bearer ${ctx.apiKey}`
-      }
-
-      let responseBody: unknown
+      let docId: string
+      let docStatus = 'concluido'
+      let documentText = ''
+      const legalAreas = legalArea ? [legalArea] : []
 
       if (ctx.mock) {
-        // Modo demo: simular resposta bem-sucedida
-        responseBody = {
-          id: `mock-doc-${Date.now()}`,
-          document_type_id: documentType,
-          title: title || `${label}`,
-          status: 'processando',
-          created_at: nowIso(),
-        }
+        docId = `mock-doc-${Date.now()}`
+        documentText = [`# ${title || label}`, '', content].join('\n')
       } else {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-          signal: ctx.signal,
+        const { createDocumentV3, generateDocumentV3 } = await import('../document-v3-orchestrator')
+        const { getDocument } = await import('../firestore-service')
+        const created = await createDocumentV3(ctx.uid, {
+          document_type_id: documentType,
+          original_request: content,
+          template_variant: templateVariant,
+          legal_area_ids: legalAreas,
+          request_context: { title, description, source: 'chat_orchestrator' },
         })
-
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => 'Erro desconhecido')
-          const errorEvent: ChatTrailEvent = {
-            type: 'super_skill_call',
-            skill: `Pipeline: ${label}`,
-            result_summary: `Falha ao iniciar pipeline: HTTP ${response.status}`,
+        docId = created.id
+        await generateDocumentV3(
+          ctx.uid,
+          docId,
+          documentType,
+          content,
+          legalAreas,
+          { title, description, source: 'chat_orchestrator' },
+          progress => ctx.emit({
+            type: 'pipeline_progress',
+            pipeline: 'document_v3',
+            phase: progress.stageLabel || progress.phase || progress.message,
+            progress: progress.percent,
+            artifact_id: docId,
             ts: nowIso(),
-          }
-          ctx.emit(errorEvent)
-          return {
-            tool_message: `Falha ao iniciar pipeline de ${label} (HTTP ${response.status}): ${errorText.slice(0, 300)}`,
-          }
-        }
-
-        responseBody = await response.json()
+          }),
+          null,
+          null,
+          { signal: ctx.signal },
+        )
+        const savedDocument = await getDocument(ctx.uid, docId)
+        docStatus = String(savedDocument?.status ?? 'concluido')
+        documentText = String(savedDocument?.texto_completo ?? '')
       }
-
-      const doc = responseBody as Record<string, unknown>
-      const docId = String(doc.id ?? 'desconhecido')
-      const docStatus = String(doc.status ?? 'processando')
 
       // ── Emitir evento de conclusão ─────────────────────────────────────
       const completeEvent: ChatTrailEvent = {
@@ -211,12 +278,58 @@ const generateDocumentSkill: Skill<GenerateDocumentArgs> = {
       }
       ctx.emit(completeEvent)
 
+      const artifact: ChatArtifactRef = {
+        artifact_id: `document-v3-${docId}`,
+        logical_document_id: `document-v3-${docId}`,
+        version: 1,
+        title: title || `${label} — ${clip(content, 60)}`,
+        kind: 'legal_document',
+        format: 'markdown',
+        summary: `Documento ${docId} gerado pelo pipeline Documento V3 com status ${docStatus}.`,
+        content_preview: documentText || content,
+        manifest_json: {
+          document_id: docId,
+          document_type_id: documentType,
+          label,
+          status: docStatus,
+          legal_area_ids: legalAreas,
+          template_variant: templateVariant,
+        },
+        exports: [
+          { label: 'Markdown', format: 'markdown', status: 'planned' },
+          { label: 'DOCX', format: 'docx', status: 'planned' },
+          { label: 'JSON', format: 'json', status: 'planned' },
+        ],
+      }
+      const workPackage = await deliverWorkPackage(ctx, {
+        conversation_id: ctx.conversationId,
+        turn_id: ctx.turnId,
+        agent_key: 'generate_document',
+        task: `Gerar ${label}`,
+        thought: {
+          summary: `Pipeline Documento V3 executado para criar ${label}.`,
+          decisions: ['Usar Documento V3 browser-native em vez de API REST inativa.'],
+          risks: documentText ? undefined : ['O texto final não pôde ser relido; use o documento persistido como fonte de verdade.'],
+          next_steps: ['Revisar o documento antes de protocolo ou uso externo.'],
+        },
+        result_markdown: `Documento ${docId} gerado com status ${docStatus}.`,
+        artifacts: [artifact],
+        created_at: nowIso(),
+        completed_at: nowIso(),
+      })
+
+      const readyExports = workPackage.artifacts?.[0]?.exports
+        ?.filter(exportRef => exportRef.status === 'ready')
+        .map(exportRef => exportRef.label)
+        .join(', ')
+
       return {
         tool_message:
-          `✅ Documento de ${label} iniciado com sucesso!\n` +
+          `Documento de ${label} gerado com sucesso.\n` +
           `- ID: ${docId}\n` +
           `- Status: ${docStatus}\n` +
-          `- O pipeline está processando. Informe ao usuário que o documento estará disponível no Estúdio de Artefatos em breve.`,
+          (readyExports ? `- Exports prontos: ${readyExports}\n` : '') +
+          `- O documento foi registrado como artefato na trilha do chat.`,
       }
     } catch (err: unknown) {
       if (isAbortError(err)) throw err
@@ -228,9 +341,7 @@ const generateDocumentSkill: Skill<GenerateDocumentArgs> = {
         ts: nowIso(),
       }
       ctx.emit(errorEvent)
-      return {
-        tool_message: `Falha ao conectar ao pipeline de ${label}: ${message}. Verifique se o servidor da API está rodando.`,
-      }
+      return { tool_message: `Falha ao executar pipeline de ${label}: ${message}.` }
     }
   },
 }
@@ -264,13 +375,6 @@ const checkDocumentStatusSkill: Skill<CheckDocumentArgs> = {
     ctx.emit(startEvent)
 
     try {
-      const base = resolveApiBase()
-      const url = `${base}/api/v1/documents/${encodeURIComponent(documentId)}`
-      const headers: Record<string, string> = {}
-      if (!ctx.mock && ctx.apiKey) {
-        headers['Authorization'] = `Bearer ${ctx.apiKey}`
-      }
-
       let responseBody: unknown
 
       if (ctx.mock) {
@@ -282,13 +386,10 @@ const checkDocumentStatusSkill: Skill<CheckDocumentArgs> = {
           updated_at: nowIso(),
         }
       } else {
-        const response = await fetch(url, { headers, signal: ctx.signal })
-        if (!response.ok) {
-          return {
-            tool_message: `Documento ${documentId} não encontrado ou inacessível (HTTP ${response.status}).`,
-          }
-        }
-        responseBody = await response.json()
+        const { getDocument } = await import('../firestore-service')
+        const document = await getDocument(ctx.uid, documentId)
+        if (!document) return { tool_message: `Documento ${documentId} não encontrado ou inacessível.` }
+        responseBody = document
       }
 
       const doc = responseBody as Record<string, unknown>
@@ -362,16 +463,8 @@ const searchJurisprudenceSkill: Skill<SearchJurisprudenceArgs> = {
     ctx.emit(startEvent)
 
     try {
-      const base = resolveApiBase()
-      const params = new URLSearchParams({ query, max_results: String(maxResults) })
-      if (tribunal) params.set('tribunal', tribunal)
-      const url = `${base}/api/v1/datajud/search?${params.toString()}`
-      const headers: Record<string, string> = {}
-      if (!ctx.mock && ctx.apiKey) {
-        headers['Authorization'] = `Bearer ${ctx.apiKey}`
-      }
-
       let results: Array<Record<string, unknown>>
+      let formattedNativeResults = ''
 
       if (ctx.mock) {
         results = [
@@ -391,12 +484,25 @@ const searchJurisprudenceSkill: Skill<SearchJurisprudenceArgs> = {
           },
         ]
       } else {
-        const response = await fetch(url, { headers, signal: ctx.signal })
-        if (!response.ok) {
-          return { tool_message: `Pesquisa indisponível (HTTP ${response.status}). O serviço DataJud pode estar offline.` }
+        const { ALL_TRIBUNALS, formatDataJudResults, searchDataJud } = await import('../datajud-service')
+        const normalizedTribunal = tribunal?.toLowerCase()
+        const tribunals = normalizedTribunal
+          ? ALL_TRIBUNALS.filter(item => item.alias === normalizedTribunal || item.name.toLowerCase().includes(normalizedTribunal))
+          : undefined
+        if (normalizedTribunal && !tribunals?.length) {
+          return { tool_message: `Tribunal "${tribunal}" não reconhecido para pesquisa DataJud.` }
         }
-        const body = (await response.json()) as Record<string, unknown>
-        results = (Array.isArray(body.results) ? body.results : []) as Array<Record<string, unknown>>
+        const dataJudResult = await searchDataJud(query, {
+          tribunals,
+          maxPerTribunal: Math.max(1, Math.min(maxResults, 5)),
+          maxTotal: maxResults,
+          enrichMissingText: true,
+          maxTextEnrichment: Math.min(maxResults, 5),
+          semanticRerank: false,
+          signal: ctx.signal,
+        })
+        results = dataJudResult.results.slice(0, maxResults) as unknown as Array<Record<string, unknown>>
+        formattedNativeResults = formatDataJudResults(dataJudResult.results.slice(0, maxResults))
       }
 
       if (!results.length) {
@@ -410,7 +516,7 @@ const searchJurisprudenceSkill: Skill<SearchJurisprudenceArgs> = {
         return { tool_message: `Nenhum resultado encontrado para "${query}". Sugira refinar a busca ou tentar termos mais amplos.` }
       }
 
-      const summary = results
+      const summary = formattedNativeResults || results
         .map(
           (r, i) =>
             `${i + 1}. **${r.numero_processo ?? 'N/A'}** (${r.tribunal ?? 'N/A'})\n` +
@@ -472,13 +578,6 @@ const analyzeThesisSkill: Skill<AnalyzeThesisArgs> = {
     ctx.emit(startEvent)
 
     try {
-      const base = resolveApiBase()
-      const url = `${base}/api/v1/thesis-bank/analyze`
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (!ctx.mock && ctx.apiKey) {
-        headers['Authorization'] = `Bearer ${ctx.apiKey}`
-      }
-
       let analysisText: string
 
       if (ctx.mock) {
@@ -496,17 +595,31 @@ const analyzeThesisSkill: Skill<AnalyzeThesisArgs> = {
           `- Necessidade de distinção fática cuidadosa\n\n` +
           `**Recomendação:** Tese viável com boa fundamentação. Recomenda-se citar precedentes do STJ.`
       } else {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ thesis, legal_area: legalArea }),
-          signal: ctx.signal,
+        const { listTheses } = await import('../firestore-service')
+        const { items, total } = await listTheses(ctx.uid, {
+          q: thesis,
+          legalAreaId: legalArea,
+          limit: 8,
         })
-        if (!response.ok) {
-          return { tool_message: `Banco de Teses indisponível (HTTP ${response.status}).` }
-        }
-        const body = (await response.json()) as Record<string, unknown>
-        analysisText = String(body.analysis ?? body.result ?? 'Análise indisponível.')
+        const matches = items.map((item, idx) => [
+          `${idx + 1}. **${item.title}**`,
+          item.summary ? `   Resumo: ${clip(item.summary, 300)}` : '',
+          item.content ? `   Conteúdo: ${clip(item.content, 500)}` : '',
+          item.legal_area_id ? `   Área: ${item.legal_area_id}` : '',
+          item.tags?.length ? `   Tags: ${item.tags.slice(0, 6).join(', ')}` : '',
+        ].filter(Boolean).join('\n')).join('\n\n')
+        analysisText = [
+          `**Consulta ao Banco de Teses do usuário**`,
+          `**Tese consultada:** ${thesis}`,
+          legalArea ? `**Área filtrada:** ${legalArea}` : '',
+          `**Resultados encontrados:** ${items.length}${total > items.length ? ` de ${total}` : ''}`,
+          '',
+          matches || 'Nenhuma tese semelhante foi encontrada no banco do usuário.',
+          '',
+          items.length
+            ? 'Use as teses acima como memória jurídica privada do usuário e compare aderência, lacunas e riscos antes de recomendar estratégia.'
+            : 'Recomende pesquisa complementar e, se fizer sentido, sugira cadastrar a tese após validação.',
+        ].filter(Boolean).join('\n')
       }
 
       const resultEvent: ChatTrailEvent = {

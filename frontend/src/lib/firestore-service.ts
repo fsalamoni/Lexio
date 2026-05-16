@@ -68,6 +68,10 @@ export type {
   PlatformFunctionRolloutPolicyRow,
   PlatformFunctionRolloutPolicyPlan,
   ChatEffortLevel,
+  ChatAgentWorkPackage,
+  ChatArtifactData,
+  ChatArtifactVersionData,
+  ChatArtifactExportData,
   ChatTurnStatus,
   ChatTrailEvent,
   ChatConversationData,
@@ -607,6 +611,7 @@ export const deleteChatConversation = chatRepository.deleteChatConversation
 export const listChatTurns = chatRepository.listChatTurns
 export const appendChatTurn = chatRepository.appendChatTurn
 export const updateChatTurn = chatRepository.updateChatTurn
+export const persistChatAgentWorkPackage = chatRepository.persistChatAgentWorkPackage
 export const saveChatSidecarDevice = chatRepository.saveChatSidecarDevice
 export const listChatSidecarDevices = chatRepository.listChatSidecarDevices
 export const saveChatWorkspaceRoot = chatRepository.saveChatWorkspaceRoot

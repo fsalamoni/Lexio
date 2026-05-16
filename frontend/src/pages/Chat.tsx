@@ -85,6 +85,7 @@ export default function Chat() {
                 turns={state.turns}
                 liveTurn={state.liveTurn}
                 emptyState={<EmptyState demo={mock} />}
+                onSendPendingAnswer={sendMessage}
               />
             )}
           </div>

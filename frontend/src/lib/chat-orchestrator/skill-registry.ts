@@ -4,6 +4,7 @@ import { dispatchSpecialistAgent } from './dispatch'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import { buildSuperSkills } from './super-skills'
 import { buildSidecarSkills } from './sidecar-skills'
+import { parseAgentOutputPackage } from './agent-output'
 
 /**
  * Agent keys callable through the `call_agent` skill. Every specialist
@@ -20,6 +21,11 @@ export const CALLABLE_AGENT_KEYS = new Set<string>([
   'chat_writer',
   'chat_argument_builder',
   'chat_ethics_auditor',
+  'chat_artifact_architect',
+  'chat_document_composer',
+  'chat_data_builder',
+  'chat_media_director',
+  'chat_export_packager',
 ])
 
 /** @deprecated kept for backwards compatibility with tests written for PR2. */
@@ -64,19 +70,96 @@ const callAgentSkill: Skill<{ agent_key?: string; task?: string }> = {
       onToken,
     })
 
+    const parsed = parseAgentOutputPackage({
+      rawOutput: output,
+      agentKey,
+      task,
+      conversationId: ctx.conversationId,
+      turnId: ctx.turnId,
+      timestamp: nowIso(),
+    })
+    const workPackage = await prepareWorkPackageForDelivery(parsed.workPackage, ctx)
+
     const responseEvent: ChatTrailEvent = {
       type: 'agent_response',
       agent_key: agentKey,
-      output: clip(output, 1200),
+      output: clip(parsed.displayMarkdown, 1200),
       ...(usage ? { usage } : {}),
       ts: nowIso(),
     }
     ctx.emit(responseEvent)
 
+    const packageEvent: ChatTrailEvent = {
+      type: 'agent_work_package',
+      package: workPackage,
+      ts: workPackage.completed_at ?? nowIso(),
+    }
+    ctx.emit(packageEvent)
+
     return {
-      tool_message: `Resposta de ${agentKey}:\n${output}`,
+      tool_message: buildAgentToolMessage(agentKey, parsed.displayMarkdown, workPackage),
     }
   },
+}
+
+function buildAgentToolMessage(
+  agentKey: string,
+  displayMarkdown: string,
+  workPackage: ReturnType<typeof parseAgentOutputPackage>['workPackage'],
+): string {
+  const artifacts = workPackage.artifacts ?? []
+  const artifactSummary = artifacts.length
+    ? `\n\nArtefatos criados/atualizados:\n${artifacts.map(artifact => {
+        const readyExports = (artifact.exports ?? []).filter(exportRef => exportRef.status === 'ready').map(exportRef => exportRef.label).join(', ')
+        return `- ${artifact.title} (${artifact.kind}/${artifact.format}) v${artifact.version}${readyExports ? ` · exports prontos: ${readyExports}` : ''}`
+      }).join('\n')}`
+    : ''
+  return `Resposta de ${agentKey}:\n${displayMarkdown}${artifactSummary}`
+}
+
+async function prepareWorkPackageForDelivery(
+  workPackage: ReturnType<typeof parseAgentOutputPackage>['workPackage'],
+  ctx: SkillContext,
+) {
+  let materialized = workPackage
+  if ((workPackage.artifacts ?? []).length > 0) {
+    try {
+      const { materializeChatAgentWorkPackageExports } = await import('../chat-artifact-exporters')
+      materialized = await materializeChatAgentWorkPackageExports(workPackage, {
+        userId: ctx.uid,
+        conversationId: ctx.conversationId,
+        turnId: ctx.turnId,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      materialized = {
+        ...workPackage,
+        thought: {
+          ...workPackage.thought,
+          summary: workPackage.thought?.summary || 'Pacote do agente criado.',
+          risks: [...(workPackage.thought?.risks ?? []), `Falha ao materializar exports automaticamente: ${message}`].slice(0, 8),
+        },
+      }
+    }
+  }
+
+  if (ctx.persistWorkPackage) {
+    try {
+      return await ctx.persistWorkPackage(materialized)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return {
+        ...materialized,
+        thought: {
+          ...materialized.thought,
+          summary: materialized.thought?.summary || 'Pacote do agente criado.',
+          risks: [...(materialized.thought?.risks ?? []), `Falha ao persistir pacote no Firestore: ${message}`].slice(0, 8),
+        },
+      }
+    }
+  }
+
+  return materialized
 }
 
 const summarizeContextSkill: Skill<{ instructions?: string }> = {
@@ -208,6 +291,84 @@ const askUserQuestionSkill: Skill<{ question?: string; options?: string[] }> = {
   },
 }
 
+const requestUserApprovalSkill: Skill<{
+  title?: string
+  summary?: string
+  action?: string
+  risk_level?: 'low' | 'medium' | 'high'
+  requested_permissions?: string[]
+  estimated_cost?: string
+  estimated_time?: string
+}> = {
+  name: 'request_user_approval',
+  description: 'Solicita aprovação explícita do usuário antes de executar ações caras, persistentes, com Storage, sidecar, mídia paga, Novo Documento ou Caderno de Pesquisa.',
+  argsHint: {
+    title: 'título curto da ação que será aprovada',
+    summary: 'resumo claro do que será criado, alterado, custo/tempo estimado e destino',
+    action: 'ação pretendida (ex.: generate_document_v3, run_notebook_studio, export_media)',
+    risk_level: 'low | medium | high',
+    requested_permissions: 'permissões necessárias: read, write, delete, rename, execute, network',
+    estimated_cost: 'estimativa textual de custo, se houver',
+    estimated_time: 'estimativa textual de duração, se houver',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const title = clip(String(args.title || args.action || 'Aprovar ação do chat'), 120)
+    const summaryParts = [
+      String(args.summary || '').trim(),
+      args.estimated_cost ? `Custo estimado: ${args.estimated_cost}` : '',
+      args.estimated_time ? `Tempo estimado: ${args.estimated_time}` : '',
+    ].filter(Boolean)
+    const summary = clip(summaryParts.join('\n'), 1000) || 'O orquestrador precisa da sua aprovação antes de prosseguir.'
+    const riskLevel = args.risk_level === 'high' || args.risk_level === 'medium' || args.risk_level === 'low'
+      ? args.risk_level
+      : 'medium'
+    const requestedPermissions = normalizeRequestedPermissions(args.requested_permissions)
+    let approvalId = `local-${Date.now()}`
+
+    if (ctx.createApprovalRequest) {
+      approvalId = await ctx.createApprovalRequest({
+        command_ids: [],
+        title,
+        summary,
+        risk_level: riskLevel,
+        requested_permissions: requestedPermissions,
+      })
+    }
+
+    const event: ChatTrailEvent = {
+      type: 'approval_requested',
+      approval_id: approvalId,
+      title,
+      summary,
+      risk_level: riskLevel,
+      ts: nowIso(),
+    }
+    ctx.emit(event)
+
+    const question = [
+      `${title}`,
+      '',
+      summary,
+      '',
+      'Responda "aprovar" para autorizar, "rejeitar" para cancelar ou descreva ajustes antes de executar.',
+    ].join('\n')
+
+    return {
+      tool_message: `Aguardando aprovação do usuário (${approvalId}): ${title}`,
+      awaiting_user: { question, options: ['aprovar', 'rejeitar', 'ajustar'], approval_id: approvalId },
+    }
+  },
+}
+
+function normalizeRequestedPermissions(value: unknown): Array<'read' | 'write' | 'delete' | 'rename' | 'execute' | 'network'> {
+  const allowed = new Set(['read', 'write', 'delete', 'rename', 'execute', 'network'])
+  const items = Array.isArray(value) ? value : []
+  const normalized = items
+    .map(item => String(item).trim().toLowerCase())
+    .filter(item => allowed.has(item)) as Array<'read' | 'write' | 'delete' | 'rename' | 'execute' | 'network'>
+  return normalized.length ? Array.from(new Set(normalized)) : ['network']
+}
+
 const submitFinalAnswerSkill: Skill<{ markdown?: string }> = {
   name: 'submit_final_answer',
   description: 'Finaliza o turno e envia ao usuário a resposta em markdown. Use exatamente uma vez, ao final.',
@@ -242,6 +403,7 @@ export function buildSkillRegistry(): Skill[] {
     summarizeContextSkill,
     critiqueDraftSkill,
     askUserQuestionSkill,
+    requestUserApprovalSkill,
     submitFinalAnswerSkill,
     // PR3 — Pipeline super-skills
     ...buildSuperSkills(),

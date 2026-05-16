@@ -83,7 +83,7 @@ describe('generate_document', () => {
     expect(result.tool_message).toContain('"content" é obrigatório')
   })
 
-  it('succeeds with valid args in mock mode', async () => {
+  it('requests approval before generating a persistent document', async () => {
     const ctx = mockContext()
     const result = await skill.run(
       {
@@ -93,12 +93,28 @@ describe('generate_document', () => {
       },
       ctx,
     )
-    expect(result.tool_message).toContain('✅')
+    expect(result.awaiting_user?.question).toContain('Gerar Petição Inicial')
+    expect(ctx.trail.some(e => e.type === 'approval_requested')).toBe(true)
+  })
+
+  it('succeeds with valid approved args in mock mode', async () => {
+    const ctx = mockContext()
+    const result = await skill.run(
+      {
+        document_type: 'peticao_inicial',
+        title: 'Petição de Teste',
+        content: 'Fatos relevantes do caso...',
+        approved: true,
+      },
+      ctx,
+    )
+    expect(result.tool_message).toContain('gerado com sucesso')
     expect(result.tool_message).toContain('Petição Inicial')
     expect(result.tool_message).toContain('mock-doc-')
     // Verify trail events
     const superSkillEvents = ctx.trail.filter(e => e.type === 'super_skill_call')
     expect(superSkillEvents.length).toBeGreaterThanOrEqual(2) // start + complete
+    expect(ctx.trail.some(e => e.type === 'agent_work_package')).toBe(true)
   })
 
   it('uses template_variant and legal_area when provided', async () => {
@@ -109,22 +125,23 @@ describe('generate_document', () => {
         content: 'Fundamentos do recurso.',
         template_variant: 'apelacao',
         legal_area: 'civil',
+        approved: true,
       },
       ctx,
     )
-    expect(result.tool_message).toContain('✅')
+    expect(result.tool_message).toContain('gerado com sucesso')
   })
 
   it('works for all valid document types', async () => {
     for (const docType of PIPELINE_DOCUMENT_TYPES.slice(0, 3)) {
       const ctx = mockContext()
       const result = await skill.run(
-        { document_type: docType, content: `Conteúdo para ${docType}.` },
+        { document_type: docType, content: `Conteúdo para ${docType}.`, approved: true },
         ctx,
       )
-      expect(result.tool_message).toContain('✅')
+      expect(result.tool_message).toContain('gerado com sucesso')
     }
-  }, 10000)
+  }, 20000)
 })
 
 describe('check_document_status', () => {

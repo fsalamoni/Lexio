@@ -20,9 +20,20 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*|audio/.*|video/.*');
     }
 
+    function isReasonableChatArtifactUpload() {
+      return request.resource != null
+        && request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType.matches('text/.*|application/json|application/pdf|application/zip|application/vnd.openxmlformats-officedocument.wordprocessingml.document|application/vnd.openxmlformats-officedocument.presentationml.presentation|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|image/.*|audio/.*|video/.*');
+    }
+
     match /research_notebooks/{userId}/{notebookId}/{mediaKind}/{fileName} {
       allow read: if isSelf(userId);
       allow write: if isSelf(userId) && isAllowedMediaKind(mediaKind) && isReasonableUpload();
+    }
+
+    match /chat_artifacts/{userId}/{conversationId}/{turnId}/{artifactId}/{fileName} {
+      allow read: if isSelf(userId);
+      allow write: if isSelf(userId) && isReasonableChatArtifactUpload();
     }
 
     match /{allPaths=**} {

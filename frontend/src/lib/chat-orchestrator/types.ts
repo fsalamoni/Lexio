@@ -8,6 +8,9 @@
 
 import type {
   ChatEffortLevel,
+  ChatAgentWorkPackage,
+  ChatApprovalRequestData,
+  ChatPendingQuestionData,
   ChatTrailEvent,
   ChatTurnStatus,
 } from '../firestore-types'
@@ -72,6 +75,12 @@ export interface SkillContext {
   mock: boolean
   /** Streaming callback: fires for each token delta produced by any specialist agent. */
   onAgentToken?: (agentKey: string, delta: string, total: string) => void
+  /** Optional durable persistence hook; awaited before the runtime advances to the next iteration. */
+  persistWorkPackage?: (workPackage: ChatAgentWorkPackage) => Promise<ChatAgentWorkPackage>
+  /** Optional approval persistence hook for costly or side-effectful actions. */
+  createApprovalRequest?: (
+    data: Omit<ChatApprovalRequestData, 'id' | 'conversation_id' | 'created_at' | 'updated_at' | 'status'> & { status?: ChatApprovalRequestData['status'] }
+  ) => Promise<string>
 }
 
 /**
@@ -91,7 +100,13 @@ export interface SkillResult<Output = unknown> {
   tool_message: string
   trail?: ChatTrailEvent[]
   final_answer?: string
-  awaiting_user?: { question: string; options?: string[] }
+  awaiting_user?: {
+    question: string
+    options?: string[]
+    approval_id?: string
+    resume_tool?: string
+    resume_args?: Record<string, unknown>
+  }
   output?: Output
 }
 
@@ -147,6 +162,10 @@ export interface RunChatTurnInput {
   mock?: boolean
   /** Streaming callback: fires for each token delta produced by any specialist agent. */
   onAgentToken?: (agentKey: string, delta: string, total: string) => void
+  /** Optional durable persistence hook; awaited before the runtime advances to the next iteration. */
+  persistWorkPackage?: (workPackage: ChatAgentWorkPackage) => Promise<ChatAgentWorkPackage>
+  /** Optional approval persistence hook for costly or side-effectful actions. */
+  createApprovalRequest?: SkillContext['createApprovalRequest']
 }
 
 /**
@@ -172,7 +191,7 @@ export type OrchestratorLLMCall = (params: {
 export interface RunChatTurnOutput {
   status: ChatTurnStatus
   assistant_markdown: string | null
-  pending_question?: { text: string; options?: string[] } | null
+  pending_question?: ChatPendingQuestionData | null
   llm_executions: UsageExecutionRecord[]
   elapsed_ms?: number
 }

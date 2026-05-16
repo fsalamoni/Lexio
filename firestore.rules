@@ -149,6 +149,26 @@ service cloud.firestore {
           allow write: if isSelf(userId);
         }
 
+        match /work_packages/{packageId} {
+          allow read: if isSelf(userId) || isAdmin();
+          allow write: if isSelf(userId);
+        }
+
+        match /artifacts/{artifactId} {
+          allow read: if isSelf(userId) || isAdmin();
+          allow write: if isSelf(userId);
+        }
+
+        match /artifact_versions/{versionId} {
+          allow read: if isSelf(userId) || isAdmin();
+          allow write: if isSelf(userId);
+        }
+
+        match /artifact_exports/{exportId} {
+          allow read: if isSelf(userId) || isAdmin();
+          allow write: if isSelf(userId);
+        }
+
         // Audit is append-only for the owner; entries can be read but never
         // modified or deleted through the client after creation.
         match /audit/{auditId} {
@@ -199,6 +219,22 @@ service cloud.firestore {
     }
 
     match /{path=**}/chat_conversations/{conversationId}/approvals/{approvalId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/chat_conversations/{conversationId}/work_packages/{packageId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/chat_conversations/{conversationId}/artifacts/{artifactId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/chat_conversations/{conversationId}/artifact_versions/{versionId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/chat_conversations/{conversationId}/artifact_exports/{exportId} {
       allow read: if isAdmin();
     }
 

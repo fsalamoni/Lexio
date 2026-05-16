@@ -38,6 +38,35 @@ describe('MessageStream', () => {
               { type: 'orchestrator_thought', delta: 'Analisando', total: 'Analisando o pedido', ts: '2026-05-08T10:00:00.000Z' },
               { type: 'agent_call', agent_key: 'chat_planner', task: 'Planejar resposta', ts: '2026-05-08T10:00:01.000Z' },
               { type: 'agent_response', agent_key: 'chat_planner', output: 'Plano inicial', ts: '2026-05-08T10:00:02.000Z' },
+              {
+                type: 'agent_work_package',
+                ts: '2026-05-08T10:00:02.500Z',
+                package: {
+                  conversation_id: 'conv-1',
+                  turn_id: 'turn-1',
+                  agent_key: 'chat_planner',
+                  task: 'Planejar resposta',
+                  result_markdown: 'Plano inicial',
+                  thought: {
+                    summary: 'Organizei a execução antes da próxima iteração.',
+                    decisions: ['Gerar uma síntese curta'],
+                  },
+                  artifacts: [
+                    {
+                      artifact_id: 'sintese-v1',
+                      logical_document_id: 'sintese',
+                      version: 1,
+                      title: 'Síntese do caso',
+                      kind: 'text',
+                      format: 'markdown',
+                      summary: 'Documento textual inicial.',
+                      manifest_json: { sections: ['Resumo'] },
+                      exports: [{ label: 'DOCX', format: 'docx', status: 'planned' }],
+                    },
+                  ],
+                  created_at: '2026-05-08T10:00:02.500Z',
+                },
+              },
               { type: 'final_answer', ts: '2026-05-08T10:00:03.000Z' },
             ],
             assistant_markdown: '## Síntese\n- ponto **forte**\n- item com `código`',
@@ -58,6 +87,11 @@ describe('MessageStream', () => {
     expect(screen.getByText(/analisando o pedido/i)).toBeTruthy()
     expect(screen.getByText(/trilha de agentes/i)).toBeTruthy()
     expect(screen.getByText(/chama chat_planner/i)).toBeTruthy()
+    expect(screen.getByText(/pacote de trabalho/i)).toBeTruthy()
+    expect(screen.getByText(/pensamento do agente/i)).toBeTruthy()
+    expect(screen.getByText('Síntese do caso')).toBeTruthy()
+    expect(screen.getByText(/documento json/i)).toBeTruthy()
+    expect(screen.getByText(/DOCX: planejado/i)).toBeTruthy()
     expect(screen.getByText(/pergunta do orquestrador/i)).toBeTruthy()
     expect(screen.getByText(/qual recorte você prefere/i)).toBeTruthy()
     expect(screen.getByText('Só fatos')).toBeTruthy()

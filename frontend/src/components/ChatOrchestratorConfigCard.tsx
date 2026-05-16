@@ -2,14 +2,19 @@ import type { ElementType } from 'react'
 import {
   Code2,
   Compass,
+  Clapperboard,
+  Download,
   FileMinus,
+  FileText,
   FolderCog,
   Gavel,
   HelpCircle,
   ListChecks,
   MessagesSquare,
+  PackageCheck,
   PenLine,
   Scale,
+  Table2,
 } from 'lucide-react'
 import {
   CHAT_ORCHESTRATOR_AGENT_DEFS,
@@ -33,6 +38,11 @@ const AGENT_ICONS: Record<string, ElementType> = {
   'file-minus': FileMinus,
   scale: Scale,
   'pen-line': PenLine,
+  'package-check': PackageCheck,
+  'file-text': FileText,
+  'table-2': Table2,
+  clapperboard: Clapperboard,
+  download: Download,
 }
 
 export default function ChatOrchestratorConfigCard() {

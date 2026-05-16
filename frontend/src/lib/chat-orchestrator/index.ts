@@ -21,6 +21,7 @@ export type {
   OrchestratorDecision,
   OrchestratorLLMCall,
   Skill,
+  SkillContext,
   SkillResult,
   EffortPreset,
 } from './types'
