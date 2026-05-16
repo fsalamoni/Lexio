@@ -60,6 +60,7 @@ export const STUDIO_CHAT_ARTIFACT_TYPES = [
   'audio_script',
   'video_script',
   'apresentacao',
+  'apresentacao_v2',
 ] as const satisfies readonly StudioArtifactType[]
 
 export type StudioChatArtifactType = (typeof STUDIO_CHAT_ARTIFACT_TYPES)[number]
@@ -77,6 +78,7 @@ export const STUDIO_CHAT_ARTIFACT_LABELS: Record<StudioChatArtifactType, string>
   audio_script: 'Roteiro de Áudio',
   video_script: 'Roteiro de Vídeo',
   apresentacao: 'Apresentação',
+  apresentacao_v2: 'Apresentação v2',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -96,7 +98,7 @@ function makeChatArtifactId(prefix: string): string {
 }
 
 function mapStudioArtifactKind(artifactType: StudioArtifactType): ChatArtifactKind {
-  if (artifactType === 'apresentacao') return 'presentation'
+  if (artifactType === 'apresentacao' || artifactType === 'apresentacao_v2') return 'presentation'
   if (artifactType === 'audio_script') return 'audio'
   if (artifactType === 'video_script') return 'video'
   if (artifactType === 'tabela_dados') return 'spreadsheet'
@@ -115,6 +117,126 @@ function buildNotebookSourceContextFromSources(sources: Array<{ title?: string; 
     ].join('\n'))
     .join('\n\n')
   return context || fallback
+}
+
+function buildPresentationV2Briefing(args: GenerateStudioArtifactArgs, topic: string, instructions: string) {
+  const slideCount = clampNumber(args.slide_count, 6, 3, 24)
+  const durationMinutes = clampNumber(args.duration_minutes, Math.max(5, Math.round(slideCount * 1.5)), 3, 120)
+  const objective = String(args.objective ?? '').trim() || instructions || `Apresentar ${topic} com narrativa executiva e evidências claras.`
+  const audience = String(args.audience ?? '').trim() || 'Público jurídico e decisores institucionais'
+  const coreMessage = String(args.core_message ?? '').trim() || topic
+  const successCriteria = String(args.success_criteria ?? '').trim() || 'Deck compreensível, fundamentado e pronto para revisão no Lexio.'
+  const depth = normalizePresentationDepth(args.depth)
+  const slideDensity = normalizeSlideDensity(args.slide_density)
+  const evidenceMode = normalizeEvidenceMode(args.evidence_mode)
+  const multimodal = {
+    images: toBoolean(args.images, true),
+    audio: toBoolean(args.audio, false),
+    video: toBoolean(args.video, false),
+    charts: toBoolean(args.charts, true),
+    diagrams: toBoolean(args.diagrams, true),
+  }
+
+  return {
+    slideCount,
+    depth,
+    objective,
+    audience,
+    coreMessage,
+    successCriteria,
+    proofObligations: String(args.proof_obligations ?? '').trim() || undefined,
+    institutionalConstraints: String(args.institutional_constraints ?? '').trim() || undefined,
+    durationMinutes,
+    slideDensity,
+    evidenceMode,
+    tone: String(args.tone ?? '').trim() || 'Sóbrio, jurídico e executivo',
+    visualStyle: String(args.visual_style ?? '').trim() || 'Editorial institucional, limpo e orientado a decisão',
+    multimodal,
+    mediaRequirements: {
+      images: multimodal.images ? 'optional' as const : 'disabled' as const,
+      audio: multimodal.audio ? 'optional' as const : 'disabled' as const,
+      video: multimodal.video ? 'optional' as const : 'disabled' as const,
+      charts: multimodal.charts ? 'optional' as const : 'disabled' as const,
+      diagrams: multimodal.diagrams ? 'optional' as const : 'disabled' as const,
+    },
+    constraints: String(args.constraints ?? '').trim() || undefined,
+    sourcePriority: String(args.source_priority ?? '').trim() || undefined,
+  }
+}
+
+function buildMockPresentationV2Content(topic: string, label: string): string {
+  return JSON.stringify({
+    schemaVersion: 'presentation_v2.1',
+    title: `${label} - ${topic}`,
+    generationSpec: {
+      request: topic,
+      objective: `Apresentar ${topic}`,
+      audience: 'Público jurídico',
+      slideCount: 3,
+      depth: 'executiva',
+    },
+    slides: [
+      {
+        number: 1,
+        sectionId: 'abertura',
+        title: topic,
+        purpose: 'Abrir a narrativa.',
+        layout: 'hero',
+        bullets: ['Contexto central', 'Mensagem principal', 'Decisão esperada'],
+        speakerNotes: 'Apresentar o contexto e a tese central.',
+      },
+      {
+        number: 2,
+        sectionId: 'fundamentos',
+        title: 'Fundamentos',
+        purpose: 'Organizar evidências.',
+        layout: 'split',
+        bullets: ['Base factual', 'Base jurídica', 'Riscos e mitigação'],
+        speakerNotes: 'Explicar os fundamentos relevantes.',
+      },
+      {
+        number: 3,
+        sectionId: 'fechamento',
+        title: 'Encaminhamento',
+        purpose: 'Fechar com próximos passos.',
+        layout: 'summary',
+        bullets: ['Síntese', 'Recomendação', 'Ação imediata'],
+        speakerNotes: 'Encerrar com recomendação prática.',
+      },
+    ],
+  }, null, 2)
+}
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(max, Math.max(min, Math.round(parsed)))
+}
+
+function normalizePresentationDepth(value: unknown): 'executiva' | 'intermediaria' | 'profunda' | 'tecnica' {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'intermediaria' || normalized === 'profunda' || normalized === 'tecnica') return normalized
+  return 'executiva'
+}
+
+function normalizeSlideDensity(value: unknown): 'leve' | 'equilibrada' | 'densa' {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'leve' || normalized === 'densa') return normalized
+  return 'equilibrada'
+}
+
+function normalizeEvidenceMode(value: unknown): 'padrao' | 'reforcada' | 'estrita' {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'reforcada' || normalized === 'estrita') return normalized
+  return 'padrao'
+}
+
+function toBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (['true', '1', 'sim', 'yes'].includes(normalized)) return true
+  if (['false', '0', 'nao', 'não', 'no'].includes(normalized)) return false
+  return fallback
 }
 
 /** Detecta AbortError em ambientes browser (DOMException) e Node (Error). */
@@ -356,7 +478,9 @@ const generateDocumentSkill: Skill<GenerateDocumentArgs> = {
         exports: [
           { label: 'Markdown', format: 'markdown', status: 'planned' },
           { label: 'DOCX', format: 'docx', status: 'planned' },
+          { label: 'PDF', format: 'pdf', status: 'planned' },
           { label: 'JSON', format: 'json', status: 'planned' },
+          { label: 'ZIP', format: 'zip', status: 'planned' },
         ],
       }
       const workPackage = await deliverWorkPackage(ctx, {
@@ -710,6 +834,26 @@ interface GenerateStudioArtifactArgs {
   conversation_context?: string
   instructions?: string
   legal_area?: string
+  slide_count?: number | string
+  duration_minutes?: number | string
+  objective?: string
+  audience?: string
+  core_message?: string
+  success_criteria?: string
+  depth?: string
+  slide_density?: string
+  evidence_mode?: string
+  tone?: string
+  visual_style?: string
+  proof_obligations?: string
+  institutional_constraints?: string
+  constraints?: string
+  source_priority?: string
+  images?: boolean | string
+  audio?: boolean | string
+  video?: boolean | string
+  charts?: boolean | string
+  diagrams?: boolean | string
   approved?: boolean
 }
 
@@ -728,6 +872,12 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
     conversation_context: 'Contexto conversacional adicional para orientar o artefato.',
     instructions: 'Instruções customizadas de tom, formato ou foco.',
     legal_area: 'Área jurídica opcional para enriquecer o prompt.',
+    slide_count: 'Para apresentacao_v2: número de slides entre 3 e 24.',
+    audience: 'Para apresentacao_v2: público-alvo do deck.',
+    objective: 'Para apresentacao_v2: objetivo narrativo ou decisão buscada.',
+    depth: 'Para apresentacao_v2: executiva, intermediaria, profunda ou tecnica.',
+    images: 'Para apresentacao_v2: true/false para planejar imagens.',
+    charts: 'Para apresentacao_v2: true/false para planejar gráficos.',
     approved: 'true apenas depois de o usuário aprovar explicitamente no chat',
   },
   async run(args, ctx): Promise<SkillResult> {
@@ -777,6 +927,26 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           conversation_context: conversationContextArg,
           instructions,
           legal_area: legalArea,
+          slide_count: args.slide_count,
+          duration_minutes: args.duration_minutes,
+          objective: args.objective,
+          audience: args.audience,
+          core_message: args.core_message,
+          success_criteria: args.success_criteria,
+          depth: args.depth,
+          slide_density: args.slide_density,
+          evidence_mode: args.evidence_mode,
+          tone: args.tone,
+          visual_style: args.visual_style,
+          proof_obligations: args.proof_obligations,
+          institutional_constraints: args.institutional_constraints,
+          constraints: args.constraints,
+          source_priority: args.source_priority,
+          images: args.images,
+          audio: args.audio,
+          video: args.video,
+          charts: args.charts,
+          diagrams: args.diagrams,
           approved: true,
         },
       })
@@ -799,16 +969,20 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
 
       if (ctx.mock) {
         notebookId = notebookId || 'mock-notebook'
-        content = [`# ${label}: ${topic}`, '', sourceContextArg || 'Conteúdo gerado em modo demonstração.'].join('\n')
+        content = artifactType === 'apresentacao_v2'
+          ? buildMockPresentationV2Content(topic, label)
+          : [`# ${label}: ${topic}`, '', sourceContextArg || 'Conteúdo gerado em modo demonstração.'].join('\n')
+        format = artifactType === 'apresentacao_v2' ? 'json' : 'markdown'
       } else {
         if (!ctx.apiKey?.trim()) {
           return { tool_message: 'Erro: nenhuma chave OpenRouter disponível. Configure sua chave em Configurações antes de gerar artefatos do Estúdio.' }
         }
 
-        const [{ createResearchNotebook, getResearchNotebook }, { isStructuredArtifactType }, { runStudioPipeline }, { persistStudioArtifactToNotebook }] = await Promise.all([
+        const [{ createResearchNotebook, getResearchNotebook }, { isStructuredArtifactType }, { runStudioPipeline }, presentationV2Pipeline, { persistStudioArtifactToNotebook }] = await Promise.all([
           import('../firestore-service'),
           import('../artifact-parsers'),
           import('../notebook-studio-pipeline'),
+          import('../presentation-generation-pipeline-v2'),
           import('../notebook-studio-artifact-persistence'),
         ])
 
@@ -831,7 +1005,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
 
         const sourceContext = sourceContextArg || buildNotebookSourceContextFromSources(notebook?.sources ?? [], topic)
         const conversationContext = conversationContextArg || `Solicitação feita pelo Chat Orquestrador na conversa ${ctx.conversationId}.`
-        const result = await runStudioPipeline({
+        const pipelineInput = {
           apiKey: ctx.apiKey,
           uid: ctx.uid,
           topic,
@@ -842,14 +1016,19 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           artifactType,
           artifactLabel: label,
           legalArea: legalArea || undefined,
-        }, (step, totalSteps, phase, meta) => ctx.emit({
+          ...(artifactType === 'apresentacao_v2' ? { presentationV2Briefing: buildPresentationV2Briefing(args, topic, instructions) } : {}),
+        }
+        const progressCallback = (step: number, totalSteps: number, phase: string, meta?: { progressPercent?: number }) => ctx.emit({
           type: 'pipeline_progress',
-          pipeline: 'notebook_studio',
+          pipeline: artifactType === 'apresentacao_v2' ? 'presentation_v2' : 'notebook_studio',
           phase,
           progress: meta?.progressPercent ?? Math.round((step / Math.max(totalSteps, 1)) * 100),
           artifact_id: artifactId,
           ts: nowIso(),
-        }), ctx.signal)
+        })
+        const result = artifactType === 'apresentacao_v2'
+          ? await presentationV2Pipeline.runPresentationGenerationPipelineV2(pipelineInput, progressCallback, ctx.signal)
+          : await runStudioPipeline(pipelineInput, progressCallback, ctx.signal)
 
         content = result.content
         format = isStructuredArtifactType(artifactType) ? 'json' : 'markdown'
@@ -895,8 +1074,11 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
         },
         exports: [
           { label: format === 'json' ? 'JSON' : 'Markdown', format: format === 'json' ? 'json' : 'markdown', status: 'planned' },
+          ...(mapStudioArtifactKind(artifactType) === 'presentation' ? [{ label: 'PPTX', format: 'pptx' as const, status: 'planned' as const }] : []),
           { label: 'TXT', format: 'txt', status: 'planned' },
           { label: 'HTML', format: 'html', status: 'planned' },
+          { label: 'PDF', format: 'pdf', status: 'planned' },
+          { label: 'ZIP', format: 'zip', status: 'planned' },
         ],
       }
       const workPackage = await deliverWorkPackage(ctx, {

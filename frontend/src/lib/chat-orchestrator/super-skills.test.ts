@@ -402,4 +402,24 @@ describe('generate_studio_artifact skill', () => {
     expect(persistWorkPackage).toHaveBeenCalled()
     expect(emit.mock.calls.some(call => call[0].type === 'agent_work_package')).toBe(true)
   })
+
+  it('deve aceitar apresentacao_v2 e gerar manifesto JSON em modo mock', async () => {
+    const emit = vi.fn()
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({ mock: true, emit, persistWorkPackage })
+
+    const result = await findAndRunSkill('generate_studio_artifact', {
+      artifact_type: 'apresentacao_v2',
+      topic: 'Estratégia de audiência',
+      notebook_id: 'nb-1',
+      slide_count: 5,
+      audience: 'Diretoria jurídica',
+      approved: true,
+    }, ctx)
+
+    expect(result.tool_message).toContain('Apresentação v2 gerado com sucesso')
+    const workPackage = persistWorkPackage.mock.calls[0][0]
+    expect(workPackage.artifacts[0].format).toBe('json')
+    expect(workPackage.artifacts[0].exports.some((exportRef: { format: string }) => exportRef.format === 'pptx')).toBe(true)
+  })
 })

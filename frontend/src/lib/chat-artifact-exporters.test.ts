@@ -111,18 +111,23 @@ describe('materializeChatAgentWorkPackageExports', () => {
     expect(result.artifacts?.[1]?.exports?.find(exportRef => exportRef.format === 'pptx')).toMatchObject({ status: 'ready', extension: '.pptx' })
   })
 
-  it('marks unsupported formats as unavailable instead of pretending success', async () => {
+  it('materializes native PDF and ZIP exports when requested', async () => {
     const result = await materializeChatAgentWorkPackageExports({
       ...basePackage,
       artifacts: [
         {
-          artifact_id: 'deck-v1',
-          logical_document_id: 'deck',
-          title: 'Apresentação',
-          kind: 'presentation',
-          format: 'pdf',
+          artifact_id: 'texto-v1',
+          logical_document_id: 'texto',
+          title: 'Parecer jurídico',
+          kind: 'legal_document',
+          format: 'markdown',
           version: 1,
-          exports: [{ label: 'PDF', format: 'pdf', status: 'planned' }],
+          content_preview: '# Parecer\n\nConteúdo do parecer.',
+          manifest_json: { document_id: 'doc-1' },
+          exports: [
+            { label: 'PDF', format: 'pdf', status: 'planned' },
+            { label: 'ZIP', format: 'zip', status: 'planned' },
+          ],
         },
       ],
     }, {
@@ -131,10 +136,7 @@ describe('materializeChatAgentWorkPackageExports', () => {
       turnId: 'turn-1',
     })
 
-    expect(result.artifacts?.[0]?.exports?.[0]).toMatchObject({
-      label: 'PDF',
-      format: 'pdf',
-      status: 'unavailable',
-    })
+    expect(result.artifacts?.[0]?.exports?.find(exportRef => exportRef.format === 'pdf')).toMatchObject({ status: 'ready', extension: '.pdf' })
+    expect(result.artifacts?.[0]?.exports?.find(exportRef => exportRef.format === 'zip')).toMatchObject({ status: 'ready', extension: '.zip' })
   })
 })

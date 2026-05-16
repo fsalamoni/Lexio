@@ -15,11 +15,13 @@ const SUPPORTED_EXPORT_FORMATS = new Set<ChatArtifactFormat>([
   'html',
   'csv',
   'docx',
+  'pdf',
   'pptx',
   'xlsx',
   'typescript',
   'javascript',
   'python',
+  'zip',
 ])
 
 interface MaterializeOptions {
@@ -126,6 +128,9 @@ function normalizeRequestedExports(artifact: ChatArtifactRef): ChatArtifactExpor
   if ((artifact.kind === 'text' || artifact.kind === 'legal_document') && !byFormat.has('docx')) {
     byFormat.set('docx', { label: 'DOCX', format: 'docx', status: 'planned' })
   }
+  if ((artifact.kind === 'text' || artifact.kind === 'legal_document') && !byFormat.has('pdf')) {
+    byFormat.set('pdf', { label: 'PDF', format: 'pdf', status: 'planned' })
+  }
   if (!hasExplicitExports && artifact.kind === 'presentation' && !byFormat.has('pptx')) {
     byFormat.set('pptx', { label: 'PPTX', format: 'pptx', status: 'planned' })
   }
@@ -134,6 +139,9 @@ function normalizeRequestedExports(artifact: ChatArtifactRef): ChatArtifactExpor
   }
   if (artifact.manifest_json && !byFormat.has('json')) {
     byFormat.set('json', { label: 'JSON', format: 'json', status: 'planned' })
+  }
+  if (!byFormat.has('zip')) {
+    byFormat.set('zip', { label: 'ZIP', format: 'zip', status: 'planned' })
   }
 
   return [...byFormat.values()]
@@ -159,6 +167,10 @@ async function buildExportBlob(
     const blob = await generateDocxBlob(text, artifact.kind === 'legal_document' ? 'Documento jurídico' : 'Documento', artifact.title)
     return { blob, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', extension: '.docx' }
   }
+  if (format === 'pdf') {
+    const blob = buildPdfBlob(artifact.title, text)
+    return { blob, mimeType: 'application/pdf', extension: '.pdf' }
+  }
   if (format === 'pptx') {
     const blob = await buildPptxBlob(artifact, text)
     return { blob, mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', extension: '.pptx' }
@@ -166,6 +178,10 @@ async function buildExportBlob(
   if (format === 'xlsx') {
     const blob = await buildXlsxBlob(artifact, text)
     return { blob, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', extension: '.xlsx' }
+  }
+  if (format === 'zip') {
+    const blob = await buildZipBlob(artifact, workPackage, text)
+    return { blob, mimeType: 'application/zip', extension: '.zip' }
   }
   if (TEXT_FORMATS.has(format)) {
     const extension = format === 'markdown' ? '.md' : format === 'typescript' ? '.ts' : format === 'javascript' ? '.js' : format === 'python' ? '.py' : '.txt'
@@ -263,6 +279,126 @@ async function buildXlsxBlob(artifact: ChatArtifactRef, fallbackText: string): P
     type: 'blob',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
+}
+
+function buildPdfBlob(title: string, text: string): Blob {
+  const pages = paginatePdfLines([title, '', ...wrapPdfText(text || 'Conteúdo gerado pelo Lexio.')])
+  const objects: string[] = []
+  const pageObjectIds: number[] = []
+
+  objects.push('<< /Type /Catalog /Pages 2 0 R >>')
+  objects.push('')
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+
+  pages.forEach((lines, index) => {
+    const contentObjectId = 4 + index * 2
+    const pageObjectId = contentObjectId + 1
+    pageObjectIds.push(pageObjectId)
+    objects.push(renderPdfContentStream(lines, index === 0))
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObjectId} 0 R >>`)
+  })
+
+  objects[1] = `<< /Type /Pages /Kids [${pageObjectIds.map(id => `${id} 0 R`).join(' ')}] /Count ${pageObjectIds.length} >>`
+
+  const chunks: string[] = ['%PDF-1.4\n']
+  const offsets: number[] = [0]
+  let cursor = chunks[0].length
+  objects.forEach((body, index) => {
+    offsets.push(cursor)
+    const objectText = `${index + 1} 0 obj\n${body}\nendobj\n`
+    chunks.push(objectText)
+    cursor += objectText.length
+  })
+  const xrefOffset = cursor
+  chunks.push(`xref\n0 ${objects.length + 1}\n`)
+  chunks.push('0000000000 65535 f \n')
+  offsets.slice(1).forEach(offset => chunks.push(`${String(offset).padStart(10, '0')} 00000 n \n`))
+  chunks.push(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`)
+
+  return new Blob(chunks, { type: 'application/pdf' })
+}
+
+function renderPdfContentStream(lines: string[], firstPage: boolean): string {
+  const textOps = lines.map((line, index) => {
+    const fontSize = firstPage && index === 0 ? 16 : 11
+    const y = firstPage && index === 0 ? 790 : 760 - index * 15
+    return `BT /F1 ${fontSize} Tf 56 ${y} Td <${toPdfUtf16Hex(line)}> Tj ET`
+  }).join('\n')
+  return `<< /Length ${textOps.length} >>\nstream\n${textOps}\nendstream`
+}
+
+function wrapPdfText(value: string): string[] {
+  const lines: string[] = []
+  for (const paragraph of value.replace(/\r\n/g, '\n').split('\n')) {
+    const clean = paragraph.trim()
+    if (!clean) {
+      lines.push('')
+      continue
+    }
+    let current = ''
+    for (const word of clean.split(/\s+/)) {
+      const next = current ? `${current} ${word}` : word
+      if (next.length > 92 && current) {
+        lines.push(current)
+        current = word
+      } else {
+        current = next
+      }
+    }
+    if (current) lines.push(current)
+  }
+  return lines
+}
+
+function paginatePdfLines(lines: string[]): string[][] {
+  const pageSize = 48
+  const pages: string[][] = []
+  for (let index = 0; index < lines.length; index += pageSize) {
+    pages.push(lines.slice(index, index + pageSize))
+  }
+  return pages.length ? pages : [['Conteúdo gerado pelo Lexio.']]
+}
+
+function toPdfUtf16Hex(value: string): string {
+  const bytes = [0xfe, 0xff]
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    bytes.push((code >> 8) & 0xff, code & 0xff)
+  }
+  return bytes.map(byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase()
+}
+
+async function buildZipBlob(
+  artifact: ChatArtifactRef,
+  workPackage: ChatAgentWorkPackage,
+  fallbackText: string,
+): Promise<Blob> {
+  const JSZip = (await import('jszip')).default
+  const zip = new JSZip()
+  const baseName = sanitizeFileStem(artifact.title || artifact.artifact_id)
+  const primaryExtension = artifact.format === 'markdown' ? 'md' : artifact.format === 'typescript' ? 'ts' : artifact.format === 'javascript' ? 'js' : artifact.format === 'python' ? 'py' : artifact.format
+
+  zip.file('README.md', [
+    `# ${artifact.title}`,
+    '',
+    artifact.summary || 'Pacote de artefato gerado pelo Lexio Chat.',
+    '',
+    `- Artefato: ${artifact.artifact_id}`,
+    `- Documento lógico: ${artifact.logical_document_id}`,
+    `- Versão: ${artifact.version}`,
+    `- Formato primário: ${artifact.format}`,
+  ].join('\n'))
+  zip.file(`${baseName}.${primaryExtension}`, fallbackText || artifact.summary || artifact.title)
+  zip.file('work-package.json', JSON.stringify(workPackage, null, 2))
+  zip.file('artifact.json', JSON.stringify(artifact, null, 2))
+  if (artifact.manifest_json) {
+    zip.file('manifest.json', JSON.stringify(artifact.manifest_json, null, 2))
+  }
+  if (workPackage.result_markdown) {
+    zip.file('result.md', workPackage.result_markdown)
+  }
+
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/zip' })
 }
 
 function normalizePresentationSlides(artifact: ChatArtifactRef, fallbackText: string): Array<{ title: string; bullets: string[]; body: string; notes: string }> {
@@ -402,6 +538,16 @@ function renderCsv(manifest: Record<string, unknown> | undefined, fallback: stri
 function csvCell(value: unknown): string {
   const text = String(value ?? '')
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+function sanitizeFileStem(value: string): string {
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+  return normalized || 'artefato'
 }
 
 function escapeHtml(value: string): string {

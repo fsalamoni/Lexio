@@ -244,4 +244,26 @@ describe('generate_studio_artifact', () => {
     expect(result.tool_message).toContain('Resumo gerado com sucesso')
     expect(ctx.trail.some(e => e.type === 'agent_work_package')).toBe(true)
   })
+
+  it('supports Presentation V2 artifacts in mock mode', async () => {
+    const ctx = mockContext()
+    const result = await skill.run({ artifact_type: 'apresentacao_v2', topic: 'Estratégia', notebook_id: 'nb-1', approved: true }, ctx)
+    expect(result.tool_message).toContain('Apresentação v2 gerado com sucesso')
+    const packageEvent = ctx.trail.find(e => e.type === 'agent_work_package')
+    expect(packageEvent?.type).toBe('agent_work_package')
+    if (packageEvent?.type === 'agent_work_package') {
+      expect(packageEvent.package.artifacts?.[0]?.format).toBe('json')
+    }
+  })
+
+  it('supports Presentation V2 artifacts in mock mode', async () => {
+    const ctx = mockContext()
+    const result = await skill.run({ artifact_type: 'apresentacao_v2', topic: 'Estratégia', notebook_id: 'nb-1', approved: true }, ctx)
+    expect(result.tool_message).toContain('Apresentação v2 gerado com sucesso')
+    const packageEvent = ctx.trail.find(e => e.type === 'agent_work_package')
+    expect(packageEvent?.type).toBe('agent_work_package')
+    if (packageEvent?.type === 'agent_work_package') {
+      expect(packageEvent.package.artifacts?.[0]?.format).toBe('json')
+    }
+  })
 })
