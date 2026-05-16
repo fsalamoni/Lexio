@@ -19,6 +19,7 @@ const getResearchNotebookMock = vi.fn()
 const runStudioPipelineMock = vi.fn()
 const runAudioGenerationPipelineMock = vi.fn()
 const generateAudioLiteralMediaMock = vi.fn()
+const runVideoGenerationPipelineMock = vi.fn()
 const uploadNotebookMediaArtifactMock = vi.fn()
 const persistStudioArtifactToNotebookMock = vi.fn()
 
@@ -42,6 +43,10 @@ vi.mock('../notebook-studio-pipeline', () => ({
 vi.mock('../audio-generation-pipeline', () => ({
   runAudioGenerationPipeline: (...args: unknown[]) => runAudioGenerationPipelineMock(...args),
   generateAudioLiteralMedia: (...args: unknown[]) => generateAudioLiteralMediaMock(...args),
+}))
+
+vi.mock('../video-generation-pipeline', () => ({
+  runVideoGenerationPipeline: (...args: unknown[]) => runVideoGenerationPipelineMock(...args),
 }))
 
 vi.mock('../notebook-media-storage', () => ({
@@ -408,6 +413,24 @@ describe('generate_studio_artifact skill', () => {
         { phase: 'audio_roteirista', agent_name: 'Roteirista de Áudio', model: 'openai/gpt-4.1-mini', tokens_in: 100, tokens_out: 80, cost_usd: 0.001, duration_ms: 50 },
       ],
     })
+    runVideoGenerationPipelineMock.mockReset().mockResolvedValue({
+      package: {
+        title: 'Vídeo de Teste',
+        totalDuration: 60,
+        scenes: [
+          { number: 1, timeStart: '00:00', timeEnd: '00:30', duration: 30, narration: 'Cena inicial', visual: 'Imagem institucional', imagePrompt: 'prompt', videoPrompt: 'video prompt', transition: 'corte', soundtrack: 'trilha', clips: [] },
+        ],
+        narration: [],
+        tracks: [],
+        designGuide: { colorPalette: ['#111111'], fontFamily: 'Inter', style: 'institucional', characterDescriptions: [], recurringElements: [] },
+        qualityReport: 'ok',
+        productionNotes: [],
+      },
+      executions: [
+        { phase: 'video_planejador', agent_name: 'Planejador de Produção', model: 'openai/gpt-4.1-mini', tokens_in: 100, tokens_out: 80, cost_usd: 0.002, duration_ms: 60 },
+      ],
+      mediaErrors: [],
+    })
     generateAudioLiteralMediaMock.mockReset().mockResolvedValue({
       audioBlob: new Blob(['audio'], { type: 'audio/mpeg' }),
       mimeType: 'audio/mpeg',
@@ -529,5 +552,55 @@ describe('generate_studio_artifact skill', () => {
     }))
     const workPackage = persistWorkPackage.mock.calls[0][0]
     expect(workPackage.artifacts[0].exports.some((exportRef: { format: string; status: string }) => exportRef.format === 'mp3' && exportRef.status === 'ready')).toBe(true)
+  })
+
+  it('deve gerar pacote de produção de vídeo quando solicitado', async () => {
+    runStudioPipelineMock.mockResolvedValueOnce({
+      content: JSON.stringify({
+        title: 'Roteiro de Vídeo',
+        duration: '1 minuto',
+        scenes: [
+          { number: 1, time: '00:00-00:30', narration: 'Cena inicial', visual: 'Imagem institucional' },
+        ],
+      }, null, 2),
+      executions: [
+        { phase: 'studio_roteirista', agent_name: 'Roteirista', model: 'openai/gpt-4.1-mini', tokens_in: 90, tokens_out: 70, cost_usd: 0.001, duration_ms: 30 },
+      ],
+    })
+    const emit = vi.fn()
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({ apiKey: 'key', emit, persistWorkPackage })
+
+    const result = await findAndRunSkill('generate_studio_artifact', {
+      artifact_type: 'video_script',
+      topic: 'Inexigibilidade de licitação',
+      notebook_id: 'nb-1',
+      generate_video: true,
+      clip_duration_seconds: 6,
+      approved: true,
+    }, ctx)
+
+    expect(result.tool_message).toContain('Roteiro de Vídeo gerado com sucesso')
+    expect(result.tool_message).toContain('Produção de vídeo')
+    expect(runVideoGenerationPipelineMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scriptContent: expect.stringContaining('Roteiro de Vídeo'),
+        topic: 'Inexigibilidade de licitação',
+        sourceId: 'nb-1',
+        generateMedia: false,
+        clipDurationSeconds: 6,
+      }),
+      expect.any(Function),
+      ctx.signal,
+    )
+    expect(persistStudioArtifactToNotebookMock).toHaveBeenCalledTimes(2)
+    expect(persistStudioArtifactToNotebookMock.mock.calls[1][0].artifact).toEqual(expect.objectContaining({
+      type: 'video_production',
+      format: 'json',
+      content: expect.stringContaining('Vídeo de Teste'),
+    }))
+    const workPackage = persistWorkPackage.mock.calls[0][0]
+    expect(workPackage.artifacts).toHaveLength(2)
+    expect(workPackage.artifacts[1]).toEqual(expect.objectContaining({ kind: 'video', format: 'json' }))
   })
 })

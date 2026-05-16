@@ -266,4 +266,15 @@ describe('generate_studio_artifact', () => {
       expect(packageEvent.package.artifacts?.[0]?.kind).toBe('audio')
     }
   })
+
+  it('supports video script artifacts in mock mode', async () => {
+    const ctx = mockContext()
+    const result = await skill.run({ artifact_type: 'video_script', topic: 'Estratégia', notebook_id: 'nb-1', approved: true }, ctx)
+    expect(result.tool_message).toContain('Roteiro de Vídeo gerado com sucesso')
+    const packageEvent = ctx.trail.find(e => e.type === 'agent_work_package')
+    expect(packageEvent?.type).toBe('agent_work_package')
+    if (packageEvent?.type === 'agent_work_package') {
+      expect(packageEvent.package.artifacts?.[0]?.kind).toBe('video')
+    }
+  })
 })

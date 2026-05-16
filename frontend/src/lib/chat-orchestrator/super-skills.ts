@@ -231,6 +231,27 @@ function inferAudioExtensionFromMimeType(mimeType?: string): string {
   return '.mp3'
 }
 
+function sanitizeVideoProductionForPersistence(value: unknown): unknown {
+  if (value == null) return value
+  if (value instanceof Blob) return undefined
+  if (typeof value === 'string') {
+    if (value.startsWith('blob:') || value.startsWith('data:')) return undefined
+    return value
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map(item => sanitizeVideoProductionForPersistence(item))
+      .filter(item => item !== undefined)
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => [key, sanitizeVideoProductionForPersistence(item)] as const)
+      .filter(([, item]) => item !== undefined)
+    return Object.fromEntries(entries)
+  }
+  return value
+}
+
 function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
@@ -882,6 +903,9 @@ interface GenerateStudioArtifactArgs {
   literal_audio?: boolean | string
   voice?: string
   tts_model?: string
+  generate_video?: boolean | string
+  video_production?: boolean | string
+  clip_duration_seconds?: number | string
   approved?: boolean
 }
 
@@ -909,6 +933,8 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
     generate_audio: 'Para audio_script: true para gerar também o áudio literal por TTS e salvar o MP3 no caderno.',
     voice: 'Para audio_script com TTS: voz desejada, quando suportada pelo modelo configurado.',
     tts_model: 'Para audio_script com TTS: modelo TTS opcional, ex.: openai/tts-1-hd.',
+    generate_video: 'Para video_script: true para gerar também o pacote do Estúdio de Vídeo, sem mídia literal por padrão.',
+    clip_duration_seconds: 'Para generate_video: duração alvo dos clips em segundos, entre 4 e 20.',
     approved: 'true apenas depois de o usuário aprovar explicitamente no chat',
   },
   async run(args, ctx): Promise<SkillResult> {
@@ -921,6 +947,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
     const instructions = String(args.instructions ?? '').trim()
     const legalArea = String(args.legal_area ?? '').trim()
     const shouldGenerateLiteralAudio = artifactTypeRaw === 'audio_script' && (toBoolean(args.generate_audio, false) || toBoolean(args.literal_audio, false))
+    const shouldGenerateVideoProduction = artifactTypeRaw === 'video_script' && (toBoolean(args.generate_video, false) || toBoolean(args.video_production, false))
 
     if (!artifactTypeRaw) {
       return { tool_message: 'Erro: "artifact_type" é obrigatório para gerar um artefato do Estúdio.' }
@@ -946,6 +973,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           `Tema: ${topic}`,
           notebookIdArg ? `Caderno existente: ${notebookIdArg}` : `Sem caderno informado: será criado um novo caderno.`,
           shouldGenerateLiteralAudio ? 'Também será gerado áudio literal por TTS e salvo no Cloud Storage do caderno.' : '',
+          shouldGenerateVideoProduction ? 'Também será gerado um pacote do Estúdio de Vídeo, salvo como artefato adicional no caderno.' : '',
           'A geração chama modelos LLM e grava em /research_notebooks.',
         ].filter(Boolean).join('\n'),
         riskLevel: 'medium',
@@ -984,6 +1012,9 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           literal_audio: args.literal_audio,
           voice: args.voice,
           tts_model: args.tts_model,
+          generate_video: args.generate_video,
+          video_production: args.video_production,
+          clip_duration_seconds: args.clip_duration_seconds,
           approved: true,
         },
       })
@@ -1004,6 +1035,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
       let executionCount = 0
       let format: StudioArtifact['format'] = 'markdown'
       let literalAudioExport: ChatArtifactExportRef | null = null
+      let videoProductionChatArtifact: ChatArtifactRef | null = null
 
       if (ctx.mock) {
         notebookId = notebookId || 'mock-notebook'
@@ -1136,6 +1168,72 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           agent_name: execution.agent_name,
           phase: execution.phase,
         }))
+
+        if (artifactType === 'video_script' && shouldGenerateVideoProduction) {
+          const { runVideoGenerationPipeline } = await import('../video-generation-pipeline')
+          const videoResult = await runVideoGenerationPipeline({
+            apiKey: ctx.apiKey,
+            scriptContent: content,
+            topic,
+            sourceId: notebookId,
+            generateMedia: false,
+            clipDurationSeconds: clampNumber(args.clip_duration_seconds, 8, 4, 20),
+          }, (step, totalSteps, phase, agent, meta) => ctx.emit({
+            type: 'pipeline_progress',
+            pipeline: 'video_pipeline',
+            phase: agent ? `${agent}: ${phase}${meta?.stageMeta ? ` (${meta.stageMeta})` : ''}` : phase,
+            progress: Math.round((step / Math.max(totalSteps, 1)) * 100),
+            artifact_id: `${artifactId}-video-production`,
+            ts: nowIso(),
+          }), ctx.signal)
+          const productionArtifactId = `${artifactId}-video-production`
+          const productionContent = JSON.stringify(sanitizeVideoProductionForPersistence(videoResult.package), null, 2)
+          const productionArtifact: StudioArtifact = {
+            id: productionArtifactId,
+            type: 'video_production',
+            title: `Produção de Vídeo - ${topic}`,
+            content: productionContent,
+            format: 'json',
+            created_at: nowIso(),
+          }
+          const productionPersisted = await persistStudioArtifactToNotebook({
+            uid: ctx.uid,
+            notebookId,
+            artifact: productionArtifact,
+            executions: videoResult.executions,
+          })
+          videoResult.executions.forEach(execution => ctx.budget.recordUsage({
+            total_tokens: (execution.tokens_in ?? 0) + (execution.tokens_out ?? 0),
+            cost_usd: execution.cost_usd,
+            model: execution.model,
+            agent_name: execution.agent_name,
+            phase: execution.phase,
+          }))
+          videoProductionChatArtifact = {
+            artifact_id: productionArtifactId,
+            logical_document_id: `notebook-${notebookId}-${productionArtifactId}`,
+            version: 1,
+            title: `Produção de Vídeo - ${topic}`,
+            kind: 'video',
+            format: 'json',
+            summary: `Pacote de produção de vídeo gerado pelo pipeline dedicado.`,
+            content_preview: productionContent,
+            manifest_json: {
+              notebook_id: notebookId,
+              artifact_id: productionArtifactId,
+              artifact_type: 'video_production',
+              topic,
+              execution_count: productionPersisted.executionCount,
+              media_errors: videoResult.mediaErrors,
+              media_generation: 'disabled_by_chat_bridge',
+            },
+            exports: [
+              { label: 'JSON', format: 'json', status: 'planned' },
+              { label: 'TXT', format: 'txt', status: 'planned' },
+              { label: 'ZIP', format: 'zip', status: 'planned' },
+            ],
+          }
+        }
       }
 
       const chatArtifact: ChatArtifactRef = {
@@ -1153,6 +1251,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           artifact_type: artifactType,
           topic,
           execution_count: executionCount,
+          video_production_artifact_id: videoProductionChatArtifact?.artifact_id,
         },
         exports: [
           { label: format === 'json' ? 'JSON' : 'Markdown', format: format === 'json' ? 'json' : 'markdown', status: 'planned' },
@@ -1175,7 +1274,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           next_steps: ['Abrir o caderno para revisar, editar ou exportar o artefato.'],
         },
         result_markdown: `${label} gerado no caderno ${notebookId}.`,
-        artifacts: [chatArtifact],
+        artifacts: videoProductionChatArtifact ? [chatArtifact, videoProductionChatArtifact] : [chatArtifact],
         created_at: nowIso(),
         completed_at: nowIso(),
       })
@@ -1198,6 +1297,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           `- Caderno: ${notebookId}\n` +
           `- Artefato: ${artifactId}\n` +
           (literalAudioExport ? `- Áudio literal: disponível (${literalAudioExport.mime_type || 'audio'})\n` : '') +
+          (videoProductionChatArtifact ? `- Produção de vídeo: ${videoProductionChatArtifact.artifact_id}\n` : '') +
           (readyExports ? `- Exports prontos: ${readyExports}\n` : '') +
           `- O artefato também foi registrado na trilha do chat.`,
       }
