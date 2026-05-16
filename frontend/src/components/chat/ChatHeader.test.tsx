@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import ChatHeader from './ChatHeader'
 
+vi.mock('../../lib/model-config', () => ({
+  CHAT_ORCHESTRATOR_AGENT_DEFS: Array.from({ length: 16 }, (_, index) => ({ key: `chat-${index}` })),
+}))
+
 describe('ChatHeader', () => {
   afterEach(() => {
     cleanup()
@@ -34,6 +38,8 @@ describe('ChatHeader', () => {
     )
 
     expect(screen.getByRole('heading', { name: 'Conversa estratégica' })).toBeTruthy()
+    expect(screen.getByText(/16 agentes configuráveis/i)).toBeTruthy()
+    expect(screen.getByText(/lotes paralelos/i)).toBeTruthy()
     expect(screen.getByText(/sidecar offline/i)).toBeTruthy()
     expect(screen.getByRole('button', { name: /buscar/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /cancelar/i })).toBeTruthy()

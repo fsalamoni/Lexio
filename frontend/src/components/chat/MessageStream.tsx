@@ -519,8 +519,7 @@ function describeEvent(event: ChatTrailEvent): {
 
 /**
  * Tiny markdown renderer — full TipTap is overkill for assistant bubbles.
- * Preserves paragraphs, bold/italic, inline code and bullet lists. PR3 will
- * upgrade this to a richer renderer with citations/links.
+ * Preserves paragraphs, bold/italic, inline code and bullet lists.
  */
 function RenderMarkdown({ markdown }: { markdown: string }) {
   const lines = markdown.split(/\r?\n/)

@@ -1,6 +1,7 @@
 import { MessagesSquare, Search, Square, WifiOff } from 'lucide-react'
 import clsx from 'clsx'
 import type { ChatConversationData, ChatEffortLevel } from '../../lib/firestore-types'
+import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../../lib/model-config'
 import EffortPicker from './EffortPicker'
 
 interface ChatHeaderProps {
@@ -33,7 +34,7 @@ export default function ChatHeader({
             {conversation?.title ?? 'Chat'}
           </h1>
           <p className="text-xs text-[var(--v2-ink-faint)]">
-            Orquestrador multiagente · 9 agentes ativos · super-skills no PR3 · sidecar no PR4
+            Orquestrador multiagente · {CHAT_ORCHESTRATOR_AGENT_DEFS.length} agentes configuráveis · lotes paralelos · pipelines ativos
           </p>
         </div>
       </div>
@@ -71,15 +72,11 @@ export default function ChatHeader({
   )
 }
 
-/**
- * Visual placeholder for the sidecar pairing status. Real wiring lands in
- * PR4 alongside the @lexio/desktop helper.
- */
 function SidecarStatusPlaceholder() {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full border border-[var(--v2-border)] bg-white px-3 py-1 text-[11px] text-[var(--v2-ink-faint)]"
-      title="O sidecar @lexio/desktop chega no PR4 — sem ele, o chat funciona, mas não pode ler/gravar arquivos no seu PC."
+      title="Sidecar @lexio/desktop não pareado nesta sessão. O chat funciona no browser; ações locais de arquivos/shell dependem do sidecar ativo."
     >
       <WifiOff className="h-3 w-3" />
       Sidecar offline

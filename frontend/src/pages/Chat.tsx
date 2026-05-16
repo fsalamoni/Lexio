@@ -18,7 +18,7 @@ import type { HybridResultItem } from '../lib/search-client'
  *  - The controller owns the orchestrator runtime, persistence and
  *    AbortController for cancellation.
  *  - PR2 ships the runtime + UI; specialists/super-skills are unlocked in
- *    PR3 and the @lexio/desktop sidecar in PR4.
+ *    pipeline super-skills and the @lexio/desktop sidecar.
  */
 export default function Chat() {
   const [params, setParams] = useSearchParams()

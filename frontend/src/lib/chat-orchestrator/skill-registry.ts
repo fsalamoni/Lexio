@@ -525,9 +525,9 @@ const submitFinalAnswerSkill: Skill<{ markdown?: string }> = {
  *
  * PR2 (base): call_agent, summarize_context, critique_draft,
  *             ask_user_question, submit_final_answer
- * PR3 (pipelines): generate_document, check_document_status,
+ * Pipeline super-skills: generate_document, check_document_status,
  *                  search_jurisprudence, analyze_thesis
- * PR4 (sidecar): read_file, list_directory, write_file, run_shell
+ * Sidecar skills: read_file, list_directory, write_file, run_shell
  */
 export function buildSkillRegistry(): Skill[] {
   return [
@@ -539,9 +539,9 @@ export function buildSkillRegistry(): Skill[] {
     askUserQuestionSkill,
     requestUserApprovalSkill,
     submitFinalAnswerSkill,
-    // PR3 — Pipeline super-skills
+    // Pipeline super-skills
     ...buildSuperSkills(),
-    // PR4 — Desktop sidecar skills
+    // Desktop sidecar skills
     ...buildSidecarSkills(),
   ]
 }

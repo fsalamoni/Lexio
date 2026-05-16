@@ -35,7 +35,7 @@ describe('ChatOrchestratorConfigCard', () => {
 
     expect(screen.getByText('Carregando configuração do Orquestrador (Chat)...')).toBeTruthy()
     expect(screen.getByText('Trilha Multiagente do Chat')).toBeTruthy()
-    expect(screen.getByText('9 agentes · conversa orquestrada com tools, super-skills e ações no PC')).toBeTruthy()
+    expect(screen.getByText('9 agentes configuráveis · tools, super-skills, lotes paralelos e ações locais via sidecar')).toBeTruthy()
     expect(screen.getByText(/Como funciona:/)).toBeTruthy()
     expect(screen.getByText(/filesystem e shell/)).toBeTruthy()
   })
