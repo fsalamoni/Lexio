@@ -3,6 +3,7 @@ import { getResearchNotebook, updateResearchNotebook } from './firestore-service
 import type { StudioArtifact, StudioArtifactType } from './firestore-types'
 import type { StudioStepExecution } from './notebook-studio-pipeline'
 import { sanitizePresentationV2ArtifactsForFirestore } from './presentation-v2-persistence'
+import { materializeStudioArtifactExports } from './chat-artifact-exporters'
 
 const ARTIFACT_COST_KEY: Partial<Record<StudioArtifactType, UsageFunctionKey>> = {
   video_script: 'video_pipeline',
@@ -30,7 +31,8 @@ export async function persistStudioArtifactToNotebook({
     throw new Error(`Caderno ${notebookId} não encontrado ou inacessível.`)
   }
 
-  const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore([...(notebook.artifacts ?? []), artifact])
+  const materializedArtifact = await materializeStudioArtifactExports(artifact, { userId: uid, notebookId })
+  const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore([...(notebook.artifacts ?? []), materializedArtifact])
   const costKey = ARTIFACT_COST_KEY[artifact.type] ?? 'caderno_pesquisa'
   const newExecutions = executions.map(execution => createUsageExecutionRecord({
     source_type: costKey,
@@ -57,5 +59,5 @@ export async function persistStudioArtifactToNotebook({
     llm_executions: [...(notebook.llm_executions ?? []), ...newExecutions],
   })
 
-  return { artifact, executionCount: newExecutions.length }
+  return { artifact: materializedArtifact, executionCount: newExecutions.length }
 }

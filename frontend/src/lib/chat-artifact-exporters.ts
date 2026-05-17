@@ -2,10 +2,13 @@ import type {
   ChatAgentWorkPackage,
   ChatArtifactExportRef,
   ChatArtifactFormat,
+  ChatArtifactKind,
   ChatArtifactRef,
+  StudioArtifact,
+  StudioArtifactType,
 } from './firestore-types'
 import { generateDocxBlob } from './docx-generator'
-import { uploadChatArtifactFile } from './chat-artifact-storage'
+import { uploadChatArtifactFile, uploadNotebookArtifactFile, type StoredChatArtifactFile } from './chat-artifact-storage'
 
 const TEXT_FORMATS = new Set<ChatArtifactFormat>(['markdown', 'txt', 'typescript', 'javascript', 'python'])
 const SUPPORTED_EXPORT_FORMATS = new Set<ChatArtifactFormat>([
@@ -28,6 +31,18 @@ interface MaterializeOptions {
   userId: string
   conversationId: string
   turnId: string
+  uploadFile?: (args: {
+    artifactId: string
+    exportId: string
+    title: string
+    extension: string
+    blob: Blob
+  }) => Promise<StoredChatArtifactFile>
+}
+
+interface MaterializeStudioArtifactOptions {
+  userId: string
+  notebookId: string
 }
 
 interface ExportBlobResult {
@@ -45,6 +60,37 @@ export async function materializeChatAgentWorkPackageExports(
 ): Promise<ChatAgentWorkPackage> {
   const artifacts = await Promise.all((workPackage.artifacts ?? []).map(artifact => materializeArtifactExports(artifact, workPackage, options)))
   return { ...workPackage, artifacts }
+}
+
+export async function materializeStudioArtifactExports(
+  artifact: StudioArtifact,
+  options: MaterializeStudioArtifactOptions,
+): Promise<StudioArtifact> {
+  const chatArtifact = studioArtifactToChatArtifactRef(artifact)
+  const workPackage = studioArtifactToWorkPackage(artifact, options.notebookId)
+  const materialized = await materializeArtifactExports(chatArtifact, workPackage, {
+    userId: options.userId,
+    conversationId: `notebook-${options.notebookId}`,
+    turnId: 'studio-artifacts',
+    uploadFile: ({ artifactId, exportId, title, extension, blob }) => uploadNotebookArtifactFile({
+      userId: options.userId,
+      notebookId: options.notebookId,
+      artifactId,
+      exportId,
+      title,
+      extension,
+      blob,
+    }),
+  })
+
+  return {
+    ...artifact,
+    download_url: materialized.download_url,
+    storage_path: materialized.storage_path,
+    mime_type: materialized.mime_type,
+    extension: materialized.extension,
+    exports: materialized.exports,
+  }
 }
 
 async function materializeArtifactExports(
@@ -76,10 +122,23 @@ async function materializeArtifactExports(
       const generated = await buildExportBlob(artifact, workPackage, exportRef.format)
       const exportId = exportRef.export_id || `${artifact.artifact_id}-${exportRef.format}`
       const attemptCount = (exportRef.attempt_count ?? 0) + 1
-      const stored = await uploadExportWithRetry(() => uploadChatArtifactFile({
+      const uploadFile = options.uploadFile ?? ((args: {
+        artifactId: string
+        exportId: string
+        title: string
+        extension: string
+        blob: Blob
+      }) => uploadChatArtifactFile({
           userId: options.userId,
           conversationId: options.conversationId,
           turnId: options.turnId,
+          artifactId: args.artifactId,
+          exportId: args.exportId,
+          title: args.title,
+          extension: args.extension,
+          blob: args.blob,
+        }))
+      const stored = await uploadExportWithRetry(() => uploadFile({
           artifactId: artifact.artifact_id,
           exportId,
           title: artifact.title,
@@ -412,8 +471,8 @@ async function buildZipBlob(
 }
 
 function normalizePresentationSlides(artifact: ChatArtifactRef, fallbackText: string): Array<{ title: string; bullets: string[]; body: string; notes: string }> {
-  const rawSlides = artifact.manifest_json?.slides
-  if (Array.isArray(rawSlides)) {
+  const rawSlides = findPresentationSlides(artifact.manifest_json)
+  if (rawSlides.length) {
     const slides = rawSlides
       .map((rawSlide, idx) => normalizePresentationSlide(rawSlide, idx))
       .filter((slide): slide is { title: string; bullets: string[]; body: string; notes: string } => Boolean(slide))
@@ -429,14 +488,42 @@ function normalizePresentationSlides(artifact: ChatArtifactRef, fallbackText: st
   }))
 }
 
+function findPresentationSlides(manifest: Record<string, unknown> | undefined): unknown[] {
+  if (!manifest) return []
+  const candidates = [
+    manifest.slides,
+    getRecord(manifest.presentation)?.slides,
+    getRecord(manifest.deck)?.slides,
+    getRecord(manifest.data)?.slides,
+    getRecord(getRecord(manifest.data)?.presentation)?.slides,
+    getRecord(getRecord(manifest.data)?.deck)?.slides,
+  ]
+  const slides = candidates.find(Array.isArray)
+  return Array.isArray(slides) ? slides : []
+}
+
+function getRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+}
+
 function normalizePresentationSlide(rawSlide: unknown, idx: number): { title: string; bullets: string[]; body: string; notes: string } | null {
   if (!rawSlide || typeof rawSlide !== 'object' || Array.isArray(rawSlide)) return null
   const record = rawSlide as Record<string, unknown>
   const title = String(record.title || record.heading || `Slide ${idx + 1}`).trim()
-  const rawBullets = Array.isArray(record.bullets) ? record.bullets : Array.isArray(record.items) ? record.items : []
+  const rawBullets = Array.isArray(record.bullets)
+    ? record.bullets
+    : Array.isArray(record.items)
+      ? record.items
+      : Array.isArray(record.keyPoints)
+        ? record.keyPoints
+        : Array.isArray(record.key_points)
+          ? record.key_points
+          : Array.isArray(record.bulletPoints)
+            ? record.bulletPoints
+            : []
   const bullets = rawBullets.map(item => String(item).trim()).filter(Boolean).slice(0, 8)
-  const body = String(record.body || record.content || record.summary || bullets.join('\n')).trim()
-  const notes = String(record.notes || record.speakerNotes || record.speaker_notes || body).trim()
+  const body = String(record.body || record.content || record.summary || record.narrative || bullets.join('\n')).trim()
+  const notes = String(record.notes || record.speakerNotes || record.speaker_notes || record.narration || body).trim()
   return { title, bullets, body, notes }
 }
 
@@ -603,4 +690,62 @@ function isTransientExportError(error: unknown): boolean {
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function studioArtifactToChatArtifactRef(artifact: StudioArtifact): ChatArtifactRef {
+  return {
+    artifact_id: artifact.id,
+    logical_document_id: artifact.id,
+    version: 1,
+    title: artifact.title,
+    kind: mapStudioArtifactKind(artifact.type),
+    format: artifact.format,
+    summary: summarizeStudioArtifactContent(artifact.content),
+    manifest_json: parseStudioArtifactManifest(artifact),
+    content_preview: artifact.content,
+    storage_path: artifact.storage_path,
+    download_url: artifact.download_url,
+    mime_type: artifact.mime_type,
+    extension: artifact.extension,
+    is_latest: true,
+    exports: artifact.exports,
+  }
+}
+
+function studioArtifactToWorkPackage(artifact: StudioArtifact, notebookId: string): ChatAgentWorkPackage {
+  return {
+    conversation_id: `notebook-${notebookId}`,
+    turn_id: 'studio-artifacts',
+    agent_key: 'chat_export_packager',
+    task: `Materializar exports do artefato ${artifact.title}`,
+    result_markdown: artifact.content,
+    created_at: artifact.created_at,
+    artifacts: [studioArtifactToChatArtifactRef(artifact)],
+  }
+}
+
+function mapStudioArtifactKind(artifactType: StudioArtifactType): ChatArtifactKind {
+  if (artifactType === 'apresentacao' || artifactType === 'apresentacao_v2') return 'presentation'
+  if (artifactType === 'audio_script') return 'audio'
+  if (artifactType === 'video_script' || artifactType === 'video_production') return 'video'
+  if (artifactType === 'tabela_dados') return 'spreadsheet'
+  if (artifactType === 'mapa_mental' || artifactType === 'infografico') return 'image'
+  if (artifactType === 'teste' || artifactType === 'cartoes_didaticos') return 'data'
+  return 'text'
+}
+
+function parseStudioArtifactManifest(artifact: StudioArtifact): Record<string, unknown> | undefined {
+  if (artifact.format !== 'json') return undefined
+  try {
+    const parsed = JSON.parse(artifact.content) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : { value: parsed }
+  } catch {
+    return undefined
+  }
+}
+
+function summarizeStudioArtifactContent(content: string): string {
+  return content.replace(/\s+/g, ' ').trim().slice(0, 280)
 }

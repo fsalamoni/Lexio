@@ -78,3 +78,42 @@ export async function uploadChatArtifactFile(args: {
     path,
   }
 }
+
+export async function uploadNotebookArtifactFile(args: {
+  userId: string
+  notebookId: string
+  artifactId: string
+  exportId: string
+  title: string
+  extension: string
+  blob: Blob
+}): Promise<StoredChatArtifactFile> {
+  if (!IS_FIREBASE || !storage) {
+    if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      return { url: URL.createObjectURL(args.blob) }
+    }
+    return { url: '' }
+  }
+
+  const notebookId = sanitizePathSegment(args.notebookId, 'notebook')
+  const artifactId = sanitizePathSegment(args.artifactId, 'artifact')
+  const exportId = sanitizePathSegment(args.exportId, 'export')
+  const title = sanitizePathSegment(args.title, 'artifact')
+  const extension = normalizeExtension(args.extension)
+  const path = `notebook_artifacts/${args.userId}/${notebookId}/${artifactId}/${title}-${exportId}${extension}`
+  const storageRef = ref(storage, path)
+
+  try {
+    await uploadBytes(storageRef, args.blob, {
+      contentType: args.blob.type || 'application/octet-stream',
+      cacheControl: 'private,max-age=3600',
+    })
+  } catch (error) {
+    throw new Error(describeStorageUploadError(error))
+  }
+
+  return {
+    url: await getDownloadURL(storageRef),
+    path,
+  }
+}

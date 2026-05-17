@@ -398,6 +398,11 @@ export interface StudioArtifact {
   content: string
   format: 'markdown' | 'json' | 'html'
   created_at: string
+  download_url?: string
+  storage_path?: string
+  mime_type?: string
+  extension?: string
+  exports?: ChatArtifactExportRef[]
 }
 
 export type PresentationV2Depth = 'executiva' | 'intermediaria' | 'profunda' | 'tecnica'

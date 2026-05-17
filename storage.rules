@@ -42,6 +42,11 @@ service firebase.storage {
       allow write: if isSelf(userId) && isReasonableChatArtifactUpload();
     }
 
+    match /notebook_artifacts/{userId}/{notebookId}/{artifactId}/{fileName} {
+      allow read: if isSelf(userId);
+      allow write: if isSelf(userId) && isReasonableChatArtifactUpload();
+    }
+
     match /chat_inputs/{userId}/{conversationId}/{turnId}/{attachmentId}/{fileName} {
       allow read: if isSelf(userId);
       allow write: if isSelf(userId) && isReasonableChatInputUpload();

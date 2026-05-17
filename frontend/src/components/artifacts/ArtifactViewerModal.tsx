@@ -11,6 +11,7 @@ import {
   AlertTriangle, CheckCircle2, ChevronDown,
 } from 'lucide-react'
 import type { StudioArtifact, StudioArtifactType } from '../../lib/firestore-service'
+import type { ChatArtifactExportRef } from '../../lib/firestore-types'
 import { parseArtifactContent, type ParsedArtifact, type ParsedPresentationV2 } from './artifact-parsers'
 import {
   exportAsMarkdown,
@@ -376,6 +377,16 @@ function ArtifactContent({ artifact, parsed, onRegenerate, onGenerateVideo, onGe
   }
 }
 
+function resolveStoredExportExtension(exportRef: ChatArtifactExportRef): string {
+  if (exportRef.extension?.trim()) return exportRef.extension.startsWith('.') ? exportRef.extension : `.${exportRef.extension}`
+  if (exportRef.format === 'markdown') return '.md'
+  if (exportRef.format === 'typescript') return '.ts'
+  if (exportRef.format === 'javascript') return '.js'
+  if (exportRef.format === 'python') return '.py'
+  if (exportRef.format === 'other') return ''
+  return `.${exportRef.format}`
+}
+
 // ── Main Modal ──────────────────────────────────────────────────────────────
 
 interface ArtifactViewerModalProps {
@@ -448,7 +459,13 @@ export default function ArtifactViewerModal({
   const safeName = artifact.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)
 
   const getExportOptions = (): { label: string; action: () => void | Promise<void> }[] => {
+    const readyStoredExports = (artifact.exports ?? [])
+      .filter((exportRef): exportRef is ChatArtifactExportRef & { download_url: string } => exportRef.status === 'ready' && Boolean(exportRef.download_url))
     const options: { label: string; action: () => void | Promise<void> }[] = [
+      ...readyStoredExports.map(exportRef => ({
+        label: `${exportRef.label || exportRef.format.toUpperCase()} pronto (${resolveStoredExportExtension(exportRef)})`,
+        action: () => exportFileFromUrl(exportRef.download_url, safeName, resolveStoredExportExtension(exportRef)),
+      })),
       { label: 'Markdown (.md)', action: () => exportAsMarkdown(artifact.content, safeName) },
       { label: 'PDF (imprimir)', action: () => printAsPDF(renderMarkdownToHtml(artifact.content), artifact.title) },
     ]

@@ -6,9 +6,24 @@ const firestoreMocks = vi.hoisted(() => ({
   updateResearchNotebook: vi.fn(),
 }))
 
+const exportMocks = vi.hoisted(() => ({
+  materializeStudioArtifactExports: vi.fn(async (artifact: StudioArtifact, _options: { userId: string; notebookId: string }) => ({
+    ...artifact,
+    download_url: 'https://cdn.lexio.test/artifact.md',
+    storage_path: 'notebook_artifacts/user-1/nb-1/art-1/artifact.md',
+    exports: [
+      { label: 'Markdown', format: 'markdown', status: 'ready', download_url: 'https://cdn.lexio.test/artifact.md', storage_path: 'notebook_artifacts/user-1/nb-1/art-1/artifact.md' },
+    ],
+  })),
+}))
+
 vi.mock('./firestore-service', () => ({
   getResearchNotebook: (...args: unknown[]) => firestoreMocks.getResearchNotebook(...args),
   updateResearchNotebook: (...args: unknown[]) => firestoreMocks.updateResearchNotebook(...args),
+}))
+
+vi.mock('./chat-artifact-exporters', () => ({
+  materializeStudioArtifactExports: (artifact: StudioArtifact, options: { userId: string; notebookId: string }) => exportMocks.materializeStudioArtifactExports(artifact, options),
 }))
 
 import { persistStudioArtifactToNotebook } from './notebook-studio-artifact-persistence'
@@ -16,6 +31,14 @@ import { persistStudioArtifactToNotebook } from './notebook-studio-artifact-pers
 describe('persistStudioArtifactToNotebook', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    exportMocks.materializeStudioArtifactExports.mockImplementation(async (artifact: StudioArtifact, _options: { userId: string; notebookId: string }) => ({
+      ...artifact,
+      download_url: 'https://cdn.lexio.test/artifact.md',
+      storage_path: 'notebook_artifacts/user-1/nb-1/art-1/artifact.md',
+      exports: [
+        { label: 'Markdown', format: 'markdown', status: 'ready', download_url: 'https://cdn.lexio.test/artifact.md', storage_path: 'notebook_artifacts/user-1/nb-1/art-1/artifact.md' },
+      ],
+    }))
     firestoreMocks.getResearchNotebook.mockResolvedValue({
       id: 'nb-1',
       title: 'Caderno',
@@ -58,8 +81,15 @@ describe('persistStudioArtifactToNotebook', () => {
     })
 
     expect(result.executionCount).toBe(1)
+    const expectedArtifact = expect.objectContaining({
+      id: 'art-1',
+      download_url: 'https://cdn.lexio.test/artifact.md',
+      exports: [expect.objectContaining({ status: 'ready', format: 'markdown' })],
+    })
+    expect(exportMocks.materializeStudioArtifactExports).toHaveBeenCalledWith(artifact, { userId: 'user-1', notebookId: 'nb-1' })
+    expect(result.artifact).toEqual(expectedArtifact)
     expect(firestoreMocks.updateResearchNotebook).toHaveBeenCalledWith('user-1', 'nb-1', expect.objectContaining({
-      artifacts: [artifact],
+      artifacts: [expectedArtifact],
       llm_executions: [expect.objectContaining({
         source_type: 'caderno_pesquisa',
         source_id: 'nb-1',

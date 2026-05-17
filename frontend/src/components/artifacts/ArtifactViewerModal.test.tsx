@@ -276,6 +276,48 @@ describe('ArtifactViewerModal', () => {
     expect(screen.getByTestId('report-viewer').textContent).toBe('Petição Inicial:page')
   })
 
+  it('shows materialized notebook exports before local export fallbacks', async () => {
+    artifactViewerMocks.parseArtifactContent.mockReturnValue({
+      kind: 'markdown',
+      data: '# Relatório\n\nConteúdo consolidado',
+    })
+
+    render(
+      <ArtifactViewerModal
+        artifact={makeArtifact({
+          type: 'relatorio',
+          title: 'Relatório Persistido',
+          format: 'markdown',
+          exports: [
+            {
+              label: 'DOCX',
+              format: 'docx',
+              status: 'ready',
+              extension: '.docx',
+              download_url: 'https://cdn.lexio.test/relatorio.docx',
+            },
+          ],
+        })}
+        onClose={() => {}}
+        onDelete={() => {}}
+        onDownload={() => {}}
+      />,
+    )
+
+    fireEvent.click(screen.getByTitle('Exportar'))
+    expect(screen.getByText('DOCX pronto (.docx)')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('DOCX pronto (.docx)'))
+
+    await waitFor(() => {
+      expect(artifactViewerMocks.exportFileFromUrl).toHaveBeenCalledWith(
+        'https://cdn.lexio.test/relatorio.docx',
+        'Relat_rio_Persistido',
+        '.docx',
+      )
+    })
+  })
+
   it('keeps presentation v2 export available while hiding media actions when handlers are omitted', () => {
     artifactViewerMocks.parseArtifactContent.mockReturnValue({
       kind: 'presentation_v2',
