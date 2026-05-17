@@ -400,6 +400,8 @@ interface ArtifactViewerModalProps {
   onGenerateImage?: PresentationV2ActionHandler
   onReviewPresentationV2Asset?: PresentationV2AssetReviewHandler
   onOpenStudio?: () => void
+  onMaterializeExports?: () => void | Promise<void>
+  exportMaterializing?: boolean
 }
 
 export default function ArtifactViewerModal({
@@ -413,6 +415,8 @@ export default function ArtifactViewerModal({
   onGenerateImage,
   onReviewPresentationV2Asset,
   onOpenStudio,
+  onMaterializeExports,
+  exportMaterializing,
 }: ArtifactViewerModalProps) {
   const toast = useToast()
   const Icon = ARTIFACT_ICONS[artifact.type] || Sparkles
@@ -461,11 +465,19 @@ export default function ArtifactViewerModal({
   const getExportOptions = (): { label: string; action: () => void | Promise<void> }[] => {
     const readyStoredExports = (artifact.exports ?? [])
       .filter((exportRef): exportRef is ChatArtifactExportRef & { download_url: string } => exportRef.status === 'ready' && Boolean(exportRef.download_url))
+    const canMaterializeStoredExports = Boolean(onMaterializeExports)
+      && (!artifact.exports?.length || artifact.exports.some(exportRef => exportRef.status !== 'ready' || !exportRef.download_url))
     const options: { label: string; action: () => void | Promise<void> }[] = [
       ...readyStoredExports.map(exportRef => ({
         label: `${exportRef.label || exportRef.format.toUpperCase()} pronto (${resolveStoredExportExtension(exportRef)})`,
         action: () => exportFileFromUrl(exportRef.download_url, safeName, resolveStoredExportExtension(exportRef)),
       })),
+      ...(canMaterializeStoredExports
+        ? [{
+            label: exportMaterializing ? 'Preparando exports...' : 'Preparar exports prontos',
+            action: () => exportMaterializing ? undefined : onMaterializeExports?.(),
+          }]
+        : []),
       { label: 'Markdown (.md)', action: () => exportAsMarkdown(artifact.content, safeName) },
       { label: 'PDF (imprimir)', action: () => printAsPDF(renderMarkdownToHtml(artifact.content), artifact.title) },
     ]

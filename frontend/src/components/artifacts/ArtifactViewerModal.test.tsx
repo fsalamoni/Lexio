@@ -318,6 +318,38 @@ describe('ArtifactViewerModal', () => {
     })
   })
 
+  it('offers on-demand export preparation for legacy notebook artifacts', async () => {
+    artifactViewerMocks.parseArtifactContent.mockReturnValue({
+      kind: 'markdown',
+      data: '# Relatório\n\nConteúdo sem exports persistidos',
+    })
+    const onMaterializeExports = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <ArtifactViewerModal
+        artifact={makeArtifact({
+          type: 'relatorio',
+          title: 'Relatório legado',
+          format: 'markdown',
+          exports: undefined,
+        })}
+        onClose={() => {}}
+        onDelete={() => {}}
+        onDownload={() => {}}
+        onMaterializeExports={onMaterializeExports}
+      />,
+    )
+
+    fireEvent.click(screen.getByTitle('Exportar'))
+    expect(screen.getByText('Preparar exports prontos')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Preparar exports prontos'))
+
+    await waitFor(() => {
+      expect(onMaterializeExports).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it('keeps presentation v2 export available while hiding media actions when handlers are omitted', () => {
     artifactViewerMocks.parseArtifactContent.mockReturnValue({
       kind: 'presentation_v2',

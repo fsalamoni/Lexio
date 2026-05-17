@@ -54,6 +54,7 @@ import {
   sanitizePresentationV2DeckForFirestore,
   stringifyPresentationV2DeckForFirestore,
 } from '../../lib/presentation-v2-persistence'
+import { materializeExistingStudioArtifactExports } from '../../lib/notebook-studio-artifact-persistence'
 import {
   buildResearchNotebookWorkbenchPath,
   parseResearchNotebookV2Section,
@@ -539,6 +540,7 @@ export default function ResearchNotebookV2() {
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   const [viewerSource, setViewerSource] = useState<NotebookSource | null>(null)
   const [viewingArtifact, setViewingArtifact] = useState<StudioArtifact | null>(null)
+  const [materializingArtifactExportId, setMaterializingArtifactExportId] = useState<string | null>(null)
   const [audioGenLoading, setAudioGenLoading] = useState(false)
   const [audioGeneratingArtifactId, setAudioGeneratingArtifactId] = useState<string | null>(null)
   const [visualGenLoading, setVisualGenLoading] = useState(false)
@@ -2462,6 +2464,27 @@ export default function ResearchNotebookV2() {
     anchor.click()
     document.body.removeChild(anchor)
     URL.revokeObjectURL(url)
+  }
+
+  const handleMaterializeArtifactExports = async (artifact: StudioArtifact) => {
+    if (!userId || !activeNotebook?.id || materializingArtifactExportId) return
+
+    const notebookId = activeNotebook.id
+    setMaterializingArtifactExportId(artifact.id)
+    try {
+      const materialized = await materializeExistingStudioArtifactExports({
+        uid: userId,
+        notebookId,
+        artifactId: artifact.id,
+      })
+      patchNotebook(notebookId, { artifacts: materialized.artifacts, updated_at: new Date().toISOString() })
+      setViewingArtifact((current) => (current?.id === artifact.id ? materialized.artifact : current))
+      toast.success('Exports prontos', 'Os arquivos persistidos foram gerados para este artefato.')
+    } catch (error) {
+      toast.error('Falha ao preparar exports', error instanceof Error ? error.message : 'Não foi possível gerar os arquivos persistidos.')
+    } finally {
+      setMaterializingArtifactExportId(null)
+    }
   }
 
   const handleGenerateVisualArtifact = async (artifact: StudioArtifact, context?: PresentationV2OperatorActionContext) => {
@@ -7323,6 +7346,8 @@ Instruções:
               void handleDeleteArtifact(viewingArtifact.id)
             }}
             onDownload={() => handleDownloadArtifact(viewingArtifact)}
+            onMaterializeExports={() => handleMaterializeArtifactExports(viewingArtifact)}
+            exportMaterializing={materializingArtifactExportId === viewingArtifact.id}
             onRegenerate={(context?: PresentationV2OperatorActionContext) => {
               if (viewingArtifact.type === 'apresentacao_v2') {
                 try {

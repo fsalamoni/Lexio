@@ -26,7 +26,7 @@ vi.mock('./chat-artifact-exporters', () => ({
   materializeStudioArtifactExports: (artifact: StudioArtifact, options: { userId: string; notebookId: string }) => exportMocks.materializeStudioArtifactExports(artifact, options),
 }))
 
-import { persistStudioArtifactToNotebook } from './notebook-studio-artifact-persistence'
+import { materializeExistingStudioArtifactExports, persistStudioArtifactToNotebook } from './notebook-studio-artifact-persistence'
 
 describe('persistStudioArtifactToNotebook', () => {
   beforeEach(() => {
@@ -116,5 +116,50 @@ describe('persistStudioArtifactToNotebook', () => {
       },
       executions: [],
     })).rejects.toThrow('Caderno missing')
+  })
+
+  it('materializes exports for an existing notebook artifact and replaces it in place', async () => {
+    const existingArtifact: StudioArtifact = {
+      id: 'legacy-art',
+      type: 'relatorio',
+      title: 'Relatório legado',
+      content: '# Relatório legado',
+      format: 'markdown',
+      created_at: '2026-05-08T10:05:00.000Z',
+    }
+    firestoreMocks.getResearchNotebook.mockResolvedValueOnce({
+      id: 'nb-1',
+      title: 'Caderno',
+      topic: 'Tema',
+      sources: [],
+      messages: [],
+      artifacts: [
+        { id: 'before', type: 'resumo', title: 'Antes', content: '# Antes', format: 'markdown', created_at: '2026-05-08T10:00:00.000Z' },
+        existingArtifact,
+      ],
+      status: 'active',
+      created_at: '2026-05-08T10:00:00.000Z',
+      llm_executions: [],
+    })
+
+    const result = await materializeExistingStudioArtifactExports({
+      uid: 'user-1',
+      notebookId: 'nb-1',
+      artifactId: 'legacy-art',
+    })
+
+    expect(exportMocks.materializeStudioArtifactExports).toHaveBeenCalledWith(existingArtifact, { userId: 'user-1', notebookId: 'nb-1' })
+    expect(result.artifact).toEqual(expect.objectContaining({
+      id: 'legacy-art',
+      download_url: 'https://cdn.lexio.test/artifact.md',
+      exports: [expect.objectContaining({ status: 'ready', format: 'markdown' })],
+    }))
+    expect(result.artifacts.map(artifact => artifact.id)).toEqual(['before', 'legacy-art'])
+    expect(firestoreMocks.updateResearchNotebook).toHaveBeenCalledWith('user-1', 'nb-1', expect.objectContaining({
+      artifacts: [
+        expect.objectContaining({ id: 'before' }),
+        expect.objectContaining({ id: 'legacy-art', download_url: 'https://cdn.lexio.test/artifact.md' }),
+      ],
+    }))
   })
 })

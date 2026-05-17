@@ -51,6 +51,7 @@ import {
   createUsageExecutionRecord,
   type UsageFunctionKey,
 } from '../lib/cost-analytics'
+import { materializeExistingStudioArtifactExports } from '../lib/notebook-studio-artifact-persistence'
 import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
 import {
   generateStructuredVisualArtifactMedia,
@@ -298,6 +299,7 @@ export default function ResearchNotebook() {
 
   // Artifact viewer modal
   const [viewingArtifact, setViewingArtifact] = useState<StudioArtifact | null>(null)
+  const [materializingArtifactExportId, setMaterializingArtifactExportId] = useState<string | null>(null)
 
   // Create dialog
   const [showCreate, setShowCreate] = useState(false)
@@ -4121,6 +4123,30 @@ Instruções:
     URL.revokeObjectURL(url)
   }
 
+  const handleMaterializeArtifactExports = async (artifact: StudioArtifact) => {
+    if (!userId || !activeNotebook?.id || materializingArtifactExportId) return
+
+    const notebookId = activeNotebook.id
+    setMaterializingArtifactExportId(artifact.id)
+    try {
+      const materialized = await materializeExistingStudioArtifactExports({
+        uid: userId,
+        notebookId,
+        artifactId: artifact.id,
+      })
+      setActiveNotebook((current) => current && current.id === notebookId ? { ...current, artifacts: materialized.artifacts } : current)
+      setNotebooks((current) => current.map((notebook) => (
+        notebook.id === notebookId ? { ...notebook, artifacts: materialized.artifacts } : notebook
+      )))
+      setViewingArtifact((current) => (current?.id === artifact.id ? materialized.artifact : current))
+      toast.success('Exports prontos', 'Os arquivos persistidos foram gerados para este artefato.')
+    } catch (error) {
+      toast.error('Falha ao preparar exports', error instanceof Error ? error.message : 'Não foi possível gerar os arquivos persistidos.')
+    } finally {
+      setMaterializingArtifactExportId(null)
+    }
+  }
+
   // ── Filtered notebooks ──────────────────────────────────────────────
   const filteredNotebooks = useMemo(() => {
     if (!searchQuery.trim()) return notebooks
@@ -6390,6 +6416,8 @@ Instruções:
                   setViewingArtifact(null)
                 }}
                 onDownload={() => handleDownloadArtifact(viewingArtifact)}
+                onMaterializeExports={() => handleMaterializeArtifactExports(viewingArtifact)}
+                exportMaterializing={materializingArtifactExportId === viewingArtifact.id}
                 onGenerateVideo={viewingArtifact.type === 'video_script' && !isVideoStudio ? () => {
                   setVideoGenSavedArtifact(viewingArtifact)
                   setShowVideoGenCost(true)

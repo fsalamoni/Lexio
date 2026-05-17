@@ -20,6 +20,12 @@ export interface PersistStudioArtifactToNotebookInput {
   executions: StudioStepExecution[]
 }
 
+export interface MaterializeExistingStudioArtifactExportsInput {
+  uid: string
+  notebookId: string
+  artifactId: string
+}
+
 export async function persistStudioArtifactToNotebook({
   uid,
   notebookId,
@@ -60,4 +66,30 @@ export async function persistStudioArtifactToNotebook({
   })
 
   return { artifact: materializedArtifact, executionCount: newExecutions.length }
+}
+
+export async function materializeExistingStudioArtifactExports({
+  uid,
+  notebookId,
+  artifactId,
+}: MaterializeExistingStudioArtifactExportsInput): Promise<{ artifact: StudioArtifact; artifacts: StudioArtifact[] }> {
+  const notebook = await getResearchNotebook(uid, notebookId)
+  if (!notebook) {
+    throw new Error(`Caderno ${notebookId} não encontrado ou inacessível.`)
+  }
+
+  const existingArtifact = (notebook.artifacts ?? []).find(candidate => candidate.id === artifactId)
+  if (!existingArtifact) {
+    throw new Error(`Artefato ${artifactId} não encontrado no caderno ${notebookId}.`)
+  }
+
+  const materializedArtifact = await materializeStudioArtifactExports(existingArtifact, { userId: uid, notebookId })
+  const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore((notebook.artifacts ?? []).map(candidate => (
+    candidate.id === artifactId ? materializedArtifact : candidate
+  )))
+  const storedArtifact = updatedArtifacts.find(candidate => candidate.id === artifactId) ?? materializedArtifact
+
+  await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
+
+  return { artifact: storedArtifact, artifacts: updatedArtifacts }
 }
