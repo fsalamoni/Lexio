@@ -9,14 +9,19 @@ import {
   FolderCog,
   Gavel,
   HelpCircle,
+  Image,
   ListChecks,
   Milestone,
+  Mic,
   MessagesSquare,
   PackageCheck,
   PenLine,
   Scale,
+  ScanEye,
+  ScanSearch,
   ShieldCheck,
   Table2,
+  Video,
 } from 'lucide-react'
 import {
   CHAT_ORCHESTRATOR_AGENT_DEFS,
@@ -46,6 +51,11 @@ const AGENT_ICONS: Record<string, ElementType> = {
   'file-text': FileText,
   'table-2': Table2,
   clapperboard: Clapperboard,
+  image: Image,
+  mic: Mic,
+  'scan-eye': ScanEye,
+  'scan-search': ScanSearch,
+  video: Video,
   download: Download,
 }
 

@@ -71,6 +71,10 @@ describe('user-scoped agent configuration coverage', () => {
       'chat_data_builder',
       'chat_media_director',
       'chat_multimodal_analysis',
+      'chat_image_evidence_specialist',
+      'chat_audio_evidence_specialist',
+      'chat_video_evidence_specialist',
+      'chat_multimodal_evidence_synthesizer',
       'chat_audio_transcription',
       'chat_export_packager',
     ])

@@ -26,6 +26,10 @@ export const CALLABLE_AGENT_KEYS = new Set<string>([
   'chat_document_composer',
   'chat_data_builder',
   'chat_media_director',
+  'chat_image_evidence_specialist',
+  'chat_audio_evidence_specialist',
+  'chat_video_evidence_specialist',
+  'chat_multimodal_evidence_synthesizer',
   'chat_export_packager',
 ])
 
@@ -44,7 +48,7 @@ function clip(text: string, max = 500): string {
 
 const callAgentSkill: Skill<{ agent_key?: string; task?: string }> = {
   name: 'call_agent',
-  description: 'Invoca um agente especialista para resolver uma subtarefa. Use para planejar (chat_planner), comprimir o histórico (chat_summarizer) ou redigir a resposta final (chat_writer).',
+  description: 'Invoca um agente especialista para resolver uma subtarefa. Use para planejar (chat_planner), analisar evidências multimodais, comprimir o histórico (chat_summarizer) ou redigir a resposta final (chat_writer).',
   argsHint: {
     agent_key: 'chave do agente (ex.: "chat_planner", "chat_writer")',
     task: 'instrução clara e autocontida do que o agente deve fazer',

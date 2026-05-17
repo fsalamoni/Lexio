@@ -597,6 +597,7 @@ function buildOrchestratorSystemPrompt(skills: Skill[], effort: string): string 
     '- Use `ask_user_question` apenas quando uma decisão depende de informação que só o usuário tem.',
     '- Use `request_user_approval` antes de Novo Documento, Caderno de Pesquisa, Storage grande, mídia paga, sidecar write/shell ou qualquer ação persistente/cara.',
     '- Use `call_agents_parallel` quando duas ou mais subtarefas independentes puderem rodar no mesmo lote; não use para tarefas com dependência sequencial.',
+    '- Quando houver anexos com análise multimodal pronta, chame os especialistas `chat_image_evidence_specialist`, `chat_audio_evidence_specialist`, `chat_video_evidence_specialist` ou `chat_multimodal_evidence_synthesizer` antes de redigir conclusões probatórias.',
     '- Se o usuário pedir documentos, arquivos, projeto, apresentação, planilha, imagem, áudio ou vídeo, planeje entregáveis reais e só finalize depois de gerar artefatos ou pedir aprovação expressa para a trilha necessária.',
     '- Se faltar contexto, prefira chamar `chat_planner` antes de redigir.',
     '- Se o histórico estiver longo, chame `summarize_context` para liberar tokens.',

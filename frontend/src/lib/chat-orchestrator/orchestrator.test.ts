@@ -154,6 +154,38 @@ describe('runChatTurn', () => {
     expect(events.some(e => e.type === 'clarification_request')).toBe(true)
   })
 
+  it('allows the orchestrator to call a multimodal evidence specialist', async () => {
+    const events: ChatTrailEvent[] = []
+    let attempt = 0
+    const llmCall = vi.fn(async () => {
+      attempt += 1
+      if (attempt === 1) {
+        return {
+          raw: JSON.stringify({
+            tool: 'call_agent',
+            args: {
+              agent_key: 'chat_image_evidence_specialist',
+              task: 'Analise o OCR do anexo e separe fatos observaveis de inferencias.',
+            },
+          }),
+          usage: null,
+        }
+      }
+      return {
+        raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# Evidencia analisada' } }),
+        usage: null,
+      }
+    })
+
+    const result = await runChatTurn(makeInput({ llmCall, onTrail: e => events.push(e) }))
+
+    expect(result.status).toBe('done')
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'agent_call', agent_key: 'chat_image_evidence_specialist' }),
+      expect.objectContaining({ type: 'agent_response', agent_key: 'chat_image_evidence_specialist' }),
+    ]))
+  })
+
   it('pauses the turn and emits approval_requested for side-effectful actions', async () => {
     const events: ChatTrailEvent[] = []
     const llmCall = vi.fn(async () => ({
