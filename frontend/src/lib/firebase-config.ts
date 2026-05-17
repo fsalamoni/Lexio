@@ -61,3 +61,22 @@ export function validateFirebaseWebConfig(config: {
   }
   return issues
 }
+
+export function validateFirestoreDatabaseRouting(config: {
+  databaseId?: string
+  basePath?: string
+  isProduction?: boolean
+}): string[] {
+  const issues: string[] = []
+  const databaseId = String(config.databaseId || '').trim() || '(default)'
+  const basePath = String(config.basePath || '/').trim() || '/'
+  const isFirebaseHostingBuild = config.isProduction === true && basePath !== '/Lexio/'
+
+  if (!['(default)', 'lexio-prod'].includes(databaseId)) {
+    issues.push(`VITE_FIRESTORE_DATABASE_ID (${databaseId}) não é um database Firestore conhecido.`)
+  }
+  if (isFirebaseHostingBuild && databaseId !== 'lexio-prod') {
+    issues.push(`Build de produção Firebase deve usar VITE_FIRESTORE_DATABASE_ID=lexio-prod; valor atual: ${databaseId}.`)
+  }
+  return issues
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveFirebaseAuthDomain, validateFirebaseWebConfig } from './firebase-config'
+import { resolveFirebaseAuthDomain, validateFirebaseWebConfig, validateFirestoreDatabaseRouting } from './firebase-config'
 
 describe('resolveFirebaseAuthDomain', () => {
   it('returns the configured auth domain as-is', () => {
@@ -37,5 +37,33 @@ describe('validateFirebaseWebConfig', () => {
     expect(issues.length).toBeGreaterThanOrEqual(2)
     expect(issues.join('\n')).toContain('AUTH_DOMAIN')
     expect(issues.join('\n')).toContain('STORAGE_BUCKET')
+  })
+})
+
+describe('validateFirestoreDatabaseRouting', () => {
+  it('accepts lexio-prod for Firebase Hosting production builds', () => {
+    expect(validateFirestoreDatabaseRouting({
+      databaseId: 'lexio-prod',
+      basePath: '/',
+      isProduction: true,
+    })).toEqual([])
+  })
+
+  it('rejects default database for Firebase Hosting production builds', () => {
+    const issues = validateFirestoreDatabaseRouting({
+      databaseId: '(default)',
+      basePath: '/',
+      isProduction: true,
+    })
+
+    expect(issues.join('\n')).toContain('lexio-prod')
+  })
+
+  it('allows GitHub Pages production builds to use the default database', () => {
+    expect(validateFirestoreDatabaseRouting({
+      databaseId: '(default)',
+      basePath: '/Lexio/',
+      isProduction: true,
+    })).toEqual([])
   })
 })

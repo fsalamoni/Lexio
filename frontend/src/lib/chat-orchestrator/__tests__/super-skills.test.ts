@@ -117,6 +117,47 @@ describe('generate_document', () => {
     expect(ctx.trail.some(e => e.type === 'agent_work_package')).toBe(true)
   })
 
+  it('emits a visible error when chat artifact persistence fails', async () => {
+    const persistWorkPackage = vi.fn(async () => {
+      throw new Error('Firestore offline')
+    })
+    const ctx = mockContext({ persistWorkPackage })
+
+    const result = await skill.run(
+      {
+        document_type: 'peticao_inicial',
+        title: 'Petição de Teste',
+        content: 'Fatos relevantes do caso...',
+        approved: true,
+      },
+      ctx,
+    )
+
+    expect(result.tool_message).toContain('gerado com sucesso')
+    expect(persistWorkPackage).toHaveBeenCalled()
+    expect(ctx.trail.some(e => e.type === 'agent_work_package')).toBe(true)
+    expect(ctx.trail.some(e => e.type === 'error' && e.message.includes('persistência remota falhou'))).toBe(true)
+  })
+
+  it('propagates aborts from chat artifact persistence', async () => {
+    const abortError = Object.assign(new Error('Cancelado pelo usuário'), { name: 'AbortError' })
+    const ctx = mockContext({
+      persistWorkPackage: vi.fn(async () => {
+        throw abortError
+      }),
+    })
+
+    await expect(skill.run(
+      {
+        document_type: 'peticao_inicial',
+        title: 'Petição cancelada',
+        content: 'Fatos relevantes do caso...',
+        approved: true,
+      },
+      ctx,
+    )).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('uses template_variant and legal_area when provided', async () => {
     const ctx = mockContext()
     const result = await skill.run(

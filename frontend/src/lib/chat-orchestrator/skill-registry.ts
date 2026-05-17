@@ -46,6 +46,16 @@ function clip(text: string, max = 500): string {
   return `${text.slice(0, max - 1)}…`
 }
 
+function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') return true
+  if (error instanceof Error && error.name === 'AbortError') return true
+  return false
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error || 'Erro desconhecido')
+}
+
 const callAgentSkill: Skill<{ agent_key?: string; task?: string }> = {
   name: 'call_agent',
   description: 'Invoca um agente especialista para resolver uma subtarefa. Use para planejar (chat_planner), analisar evidências multimodais, comprimir o histórico (chat_summarizer) ou redigir a resposta final (chat_writer).',
@@ -153,6 +163,7 @@ function normalizeParallelAgentCalls(calls: unknown, fanOut: number, sharedConte
   const accepted: Array<{ agentKey: string; task: string }> = []
   const messages: string[] = []
   const lockedAgents = new Set<string>()
+  const sharedContextText = clipOversizedParallelText(sharedContext.trim(), 12_000, 'Contexto compartilhado do lote', messages)
 
   for (const item of items) {
     if (accepted.length >= fanOut) {
@@ -165,7 +176,7 @@ function normalizeParallelAgentCalls(calls: unknown, fanOut: number, sharedConte
     }
     const record = item as Record<string, unknown>
     const agentKey = String(record.agent_key ?? '').trim()
-    const task = String(record.task ?? '').trim()
+    const task = clipOversizedParallelText(String(record.task ?? '').trim(), 8_000, `Tarefa de ${agentKey || 'agente vazio'}`, messages)
     if (!CALLABLE_AGENT_KEYS.has(agentKey)) {
       messages.push(`Agente "${agentKey || 'vazio'}" indisponível no lote.`)
       continue
@@ -181,13 +192,19 @@ function normalizeParallelAgentCalls(calls: unknown, fanOut: number, sharedConte
     lockedAgents.add(agentKey)
     accepted.push({
       agentKey,
-      task: sharedContext.trim()
-        ? [`Contexto compartilhado do lote:`, sharedContext.trim(), '', `Subtarefa específica:`, task].join('\n')
+      task: sharedContextText
+        ? [`Contexto compartilhado do lote:`, sharedContextText, '', `Subtarefa específica:`, task].join('\n')
         : task,
     })
   }
 
   return { accepted, messages: Array.from(new Set(messages)) }
+}
+
+function clipOversizedParallelText(value: string, max: number, label: string, messages: string[]): string {
+  if (value.length <= max) return value
+  messages.push(`${label} truncado para ${max} caracteres para preservar orçamento e paralelismo.`)
+  return value.slice(0, max)
 }
 
 async function runParallelAgentCall(call: { agentKey: string; task: string }, ctx: SkillContext): Promise<{ ok: boolean; agentKey: string; summary: string }> {
@@ -228,8 +245,8 @@ async function runParallelAgentCall(call: { agentKey: string; task: string }, ct
       summary: buildAgentToolMessage(call.agentKey, parsed.displayMarkdown, workPackage),
     }
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error
-    const message = error instanceof Error ? error.message : String(error)
+    if (isAbortError(error)) throw error
+    const message = getErrorMessage(error)
     ctx.emit({ type: 'error', message: `Falha em ${call.agentKey}: ${message}`, ts: nowIso() })
     return {
       ok: false,
@@ -268,7 +285,9 @@ async function prepareWorkPackageForDelivery(
         turnId: ctx.turnId,
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      if (isAbortError(error)) throw error
+      const message = getErrorMessage(error)
+      ctx.emit({ type: 'error', message: `Pacote de ${workPackage.agent_key} criado, mas a materialização dos exports falhou. Detalhe: ${message}`, ts: nowIso() })
       materialized = {
         ...workPackage,
         thought: {
@@ -284,7 +303,9 @@ async function prepareWorkPackageForDelivery(
     try {
       return await ctx.persistWorkPackage(materialized)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      if (isAbortError(error)) throw error
+      const message = getErrorMessage(error)
+      ctx.emit({ type: 'error', message: `Pacote de ${materialized.agent_key} criado, mas a persistência remota falhou. Detalhe: ${message}`, ts: nowIso() })
       return {
         ...materialized,
         thought: {

@@ -291,6 +291,10 @@ function isAbortError(err: unknown): boolean {
   return false
 }
 
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err || 'Erro desconhecido')
+}
+
 function normalizeSideEffectApproval(value: unknown): boolean {
   return value === true || String(value ?? '').trim().toLowerCase() === 'true'
 }
@@ -342,14 +346,24 @@ async function deliverWorkPackage(ctx: SkillContext, workPackage: ChatAgentWorkP
       conversationId: ctx.conversationId,
       turnId: ctx.turnId,
     })
-  } catch {
-    // The artifact metadata is still useful even if export materialization fails.
+  } catch (err) {
+    if (isAbortError(err)) throw err
+    ctx.emit({
+      type: 'error',
+      message: `Pacote de artefato criado, mas a materialização dos exports falhou. Detalhe: ${getErrorMessage(err)}`,
+      ts: nowIso(),
+    })
   }
   if (ctx.persistWorkPackage) {
     try {
       materialized = await ctx.persistWorkPackage(materialized)
-    } catch {
-      // best-effort; the trail still carries the package in the current turn.
+    } catch (err) {
+      if (isAbortError(err)) throw err
+      ctx.emit({
+        type: 'error',
+        message: `Pacote de artefato criado, mas a persistência remota falhou. Detalhe: ${getErrorMessage(err)}`,
+        ts: nowIso(),
+      })
     }
   }
   ctx.emit({ type: 'agent_work_package', package: materialized, ts: materialized.completed_at ?? nowIso() })

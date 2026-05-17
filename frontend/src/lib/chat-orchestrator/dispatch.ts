@@ -101,10 +101,11 @@ export interface DispatchSpecialistResult {
  */
 export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Promise<DispatchSpecialistResult> {
   const { agentKey, task, ctx, temperature = 0.4, maxTokens, onToken } = args
-  const model = ctx.models[agentKey]
-  if (!model) {
+  const resolvedModel = resolveSpecialistModel(agentKey, ctx.models)
+  if (!resolvedModel) {
     return { output: `Modelo do agente "${agentKey}" não está configurado em /settings.`, usage: null }
   }
+  const model = resolvedModel.model
 
   if (ctx.mock) {
     const fake = mockSpecialistOutput(agentKey, task)
@@ -119,7 +120,7 @@ export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Pro
   const startedAt = Date.now()
   let result: LLMResult
   try {
-    const fallbacks = ctx.fallbackModels?.[agentKey] ?? []
+    const fallbacks = ctx.fallbackModels?.[agentKey] ?? (resolvedModel.inheritedFrom ? ctx.fallbackModels?.[resolvedModel.inheritedFrom] : undefined) ?? []
     const callOptions = { signal: ctx.signal, onToken }
     result = fallbacks.length > 0
       ? await callLLMWithMessagesFallback(ctx.apiKey, messages, model, fallbacks, resolvedMaxTokens, temperature, callOptions)
@@ -146,6 +147,40 @@ export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Pro
   ctx.budget.recordUsage(usage)
 
   return { output: result.content, usage }
+}
+
+interface ResolvedSpecialistModel {
+  model: string
+  inheritedFrom?: string
+}
+
+const FALLBACK_AGENT_KEYS_BY_CATEGORY: Record<string, string[]> = {
+  extraction: ['chat_clarifier', 'chat_export_packager', 'chat_multimodal_analysis', 'chat_legal_researcher', 'chat_orchestrator'],
+  synthesis: ['chat_summarizer', 'chat_artifact_architect', 'chat_data_builder', 'chat_multimodal_analysis', 'chat_orchestrator'],
+  reasoning: ['chat_legal_researcher', 'chat_planner', 'chat_orchestrator', 'chat_writer'],
+  writing: ['chat_writer', 'chat_document_composer', 'chat_orchestrator'],
+}
+
+function resolveSpecialistModel(agentKey: string, models: Record<string, string>): ResolvedSpecialistModel | null {
+  const direct = normalizeModelId(models[agentKey])
+  if (direct) return { model: direct }
+
+  const def = CHAT_ORCHESTRATOR_AGENT_DEFS.find(agent => agent.key === agentKey)
+  const fallbackKeys = [
+    ...(def ? FALLBACK_AGENT_KEYS_BY_CATEGORY[def.agentCategory] ?? [] : []),
+    'chat_orchestrator',
+    'chat_writer',
+  ]
+  for (const fallbackKey of Array.from(new Set(fallbackKeys))) {
+    if (fallbackKey === agentKey) continue
+    const inherited = normalizeModelId(models[fallbackKey])
+    if (inherited) return { model: inherited, inheritedFrom: fallbackKey }
+  }
+  return null
+}
+
+function normalizeModelId(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 interface BuildUsageRecordArgs {

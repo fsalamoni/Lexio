@@ -8,7 +8,7 @@ import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
 import { getAuth, type Auth } from 'firebase/auth'
 import { getFirestore, type Firestore } from 'firebase/firestore'
 import { getStorage, type FirebaseStorage } from 'firebase/storage'
-import { resolveFirebaseAuthDomain, validateFirebaseWebConfig } from './firebase-config'
+import { resolveFirebaseAuthDomain, validateFirebaseWebConfig, validateFirestoreDatabaseRouting } from './firebase-config'
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -35,11 +35,21 @@ const configuredFirestoreDatabaseId = String(import.meta.env.VITE_FIRESTORE_DATA
 
 export const FIRESTORE_DATABASE_ID = configuredFirestoreDatabaseId || '(default)'
 
+const firestoreDatabaseIssues = validateFirestoreDatabaseRouting({
+  databaseId: FIRESTORE_DATABASE_ID,
+  basePath: import.meta.env.VITE_BASE_PATH,
+  isProduction: import.meta.env.PROD,
+})
+
+if (firestoreDatabaseIssues.length > 0) {
+  console.error('[Firebase Config] Invalid Firestore database routing:', firestoreDatabaseIssues.join(' | '))
+}
+
 if (forceDemoMode) {
   console.warn('[Firebase Config] VITE_FORCE_DEMO_MODE=true -> skipping Firebase initialization for local smoke/demo mode.')
 }
 
-export const IS_FIREBASE = !forceDemoMode && Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfigIssues.length === 0)
+export const IS_FIREBASE = !forceDemoMode && Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfigIssues.length === 0 && firestoreDatabaseIssues.length === 0)
 
 let _app: FirebaseApp | null = null
 let _auth: Auth | null = null

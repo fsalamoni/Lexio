@@ -199,6 +199,33 @@ describe('materializeChatAgentWorkPackageExports', () => {
     expect(result.artifacts?.[0]?.exports?.find(exportRef => exportRef.format === 'zip')).toMatchObject({ status: 'ready', extension: '.zip' })
   })
 
+  it('propagates aborted uploads instead of marking exports as failed', async () => {
+    const abortError = Object.assign(new Error('Cancelado pelo usuário'), { name: 'AbortError' })
+
+    await expect(materializeChatAgentWorkPackageExports({
+      ...basePackage,
+      artifacts: [
+        {
+          artifact_id: 'texto-abortado-v1',
+          logical_document_id: 'texto-abortado',
+          title: 'Parecer cancelado',
+          kind: 'legal_document',
+          format: 'markdown',
+          version: 1,
+          content_preview: '# Parecer\n\nConteúdo.',
+          exports: [{ label: 'Markdown', format: 'markdown', status: 'planned' }],
+        },
+      ],
+    }, {
+      userId: 'u1',
+      conversationId: 'conv-1',
+      turnId: 'turn-1',
+      uploadFile: vi.fn(async () => {
+        throw abortError
+      }),
+    })).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('materializes notebook studio artifact exports with notebook storage paths', async () => {
     const artifact: StudioArtifact = {
       id: 'art-1',

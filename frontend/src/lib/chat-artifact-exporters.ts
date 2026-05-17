@@ -54,6 +54,11 @@ interface ExportBlobResult {
 const EXPORT_UPLOAD_MAX_ATTEMPTS = 3
 const EXPORT_UPLOAD_TIMEOUT_MS = 45_000
 
+function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') return true
+  return error instanceof Error && error.name === 'AbortError'
+}
+
 export async function materializeChatAgentWorkPackageExports(
   workPackage: ChatAgentWorkPackage,
   options: MaterializeOptions,
@@ -162,6 +167,7 @@ async function materializeArtifactExports(
       if (!primaryDownloadUrl && exportRef.format === artifact.format) primaryDownloadUrl = stored.url
       if (!primaryStoragePath && exportRef.format === artifact.format) primaryStoragePath = stored.path
     } catch (error) {
+      if (isAbortError(error)) throw error
       exports.push({
         ...exportRef,
         status: 'failed',
@@ -661,6 +667,7 @@ async function uploadExportWithRetry<T>(operation: () => Promise<T>, maxAttempts
     try {
       return await withTimeout(operation(), EXPORT_UPLOAD_TIMEOUT_MS)
     } catch (error) {
+      if (isAbortError(error)) throw error
       lastError = error
       if (attempt >= maxAttempts || !isTransientExportError(error)) break
       await delay(Math.min(150 * attempt, 500))
