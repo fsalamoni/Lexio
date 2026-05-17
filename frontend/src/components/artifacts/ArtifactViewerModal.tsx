@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { StudioArtifact, StudioArtifactType } from '../../lib/firestore-service'
 import type { ChatArtifactExportRef } from '../../lib/firestore-types'
+import { auditNotebookArtifactBridge, type NotebookArtifactBridgeStatus } from '../../lib/notebook-artifact-bridge-audit'
 import { parseArtifactContent, type ParsedArtifact, type ParsedPresentationV2 } from './artifact-parsers'
 import {
   exportAsMarkdown,
@@ -387,6 +388,19 @@ function resolveStoredExportExtension(exportRef: ChatArtifactExportRef): string 
   return `.${exportRef.format}`
 }
 
+function getBridgeStatusLabel(status: NotebookArtifactBridgeStatus): string {
+  if (status === 'ready') return 'Bridge pronto'
+  if (status === 'partial') return 'Bridge parcial'
+  if (status === 'invalid') return 'Bridge inválido'
+  return 'Bridge requer ação'
+}
+
+function getBridgeStatusStyle(status: NotebookArtifactBridgeStatus): { background: string; color: string; borderColor: string } {
+  if (status === 'ready') return { background: 'rgba(5,150,105,0.08)', color: 'rgb(4,120,87)', borderColor: 'rgba(5,150,105,0.24)' }
+  if (status === 'partial') return { background: 'rgba(217,119,6,0.09)', color: 'rgb(180,83,9)', borderColor: 'rgba(217,119,6,0.26)' }
+  return { background: 'rgba(220,38,38,0.08)', color: 'rgb(185,28,28)', borderColor: 'rgba(220,38,38,0.24)' }
+}
+
 // ── Main Modal ──────────────────────────────────────────────────────────────
 
 interface ArtifactViewerModalProps {
@@ -422,6 +436,8 @@ export default function ArtifactViewerModal({
   const Icon = ARTIFACT_ICONS[artifact.type] || Sparkles
   const label = ARTIFACT_LABELS[artifact.type] || artifact.type
   const parsed = parseArtifactContent(artifact.type, artifact.content)
+  const bridgeAudit = auditNotebookArtifactBridge(artifact)
+  const bridgeStatusStyle = getBridgeStatusStyle(bridgeAudit.status)
   const presentationV2ExportReadiness = parsed.kind === 'presentation_v2'
     ? summarizePresentationV2ExportReadiness(parsed.data)
     : null
@@ -596,9 +612,18 @@ export default function ArtifactViewerModal({
             fontFamily: "var(--v2-font-sans, 'Inter', sans-serif)",
           }}
         >
-          <p className="text-xs" style={{ color: 'var(--v2-ink-faint)' }}>
-            {formatDate(artifact.created_at)}
-          </p>
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="text-xs" style={{ color: 'var(--v2-ink-faint)' }}>
+              {formatDate(artifact.created_at)}
+            </p>
+            <span
+              className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+              style={bridgeStatusStyle}
+              title={bridgeAudit.issues.length ? bridgeAudit.issues.join(', ') : 'parse, exports e mídia sem pendências detectadas'}
+            >
+              {getBridgeStatusLabel(bridgeAudit.status)}
+            </span>
+          </div>
 
           <div className="flex items-center gap-1">
             <CopyButton text={artifact.content} />

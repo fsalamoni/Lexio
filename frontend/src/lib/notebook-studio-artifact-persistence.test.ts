@@ -26,7 +26,7 @@ vi.mock('./chat-artifact-exporters', () => ({
   materializeStudioArtifactExports: (artifact: StudioArtifact, options: { userId: string; notebookId: string }) => exportMocks.materializeStudioArtifactExports(artifact, options),
 }))
 
-import { materializeExistingStudioArtifactExports, persistStudioArtifactToNotebook } from './notebook-studio-artifact-persistence'
+import { materializeExistingStudioArtifactExports, materializeStudioArtifactForNotebook, persistStudioArtifactToNotebook } from './notebook-studio-artifact-persistence'
 
 describe('persistStudioArtifactToNotebook', () => {
   beforeEach(() => {
@@ -116,6 +116,38 @@ describe('persistStudioArtifactToNotebook', () => {
       },
       executions: [],
     })).rejects.toThrow('Caderno missing')
+  })
+
+  it('materializes a newly generated notebook artifact before page persistence', async () => {
+    const artifact: StudioArtifact = {
+      id: 'audio-art',
+      type: 'audio_script',
+      title: 'Áudio com mídia inline',
+      content: JSON.stringify({
+        title: 'Áudio com mídia inline',
+        segments: [{ time: '00:00', type: 'narracao', text: 'Abertura.' }],
+        audioUrl: 'blob:local-audio',
+        audioStoragePath: 'notebook_media/user-1/nb-1/audio.mp3',
+      }),
+      format: 'json',
+      created_at: '2026-05-08T10:05:00.000Z',
+    }
+
+    const result = await materializeStudioArtifactForNotebook({
+      uid: 'user-1',
+      notebookId: 'nb-1',
+      artifact,
+    })
+
+    const sanitizedContent = JSON.parse(result.content) as Record<string, unknown>
+    expect(exportMocks.materializeStudioArtifactExports).toHaveBeenCalledWith(artifact, { userId: 'user-1', notebookId: 'nb-1' })
+    expect(result).toEqual(expect.objectContaining({
+      id: 'audio-art',
+      download_url: 'https://cdn.lexio.test/artifact.md',
+      exports: [expect.objectContaining({ status: 'ready', format: 'markdown' })],
+    }))
+    expect(sanitizedContent.audioUrl).toBeUndefined()
+    expect(sanitizedContent.audioStoragePath).toBe('notebook_media/user-1/nb-1/audio.mp3')
   })
 
   it('materializes exports for an existing notebook artifact and replaces it in place', async () => {

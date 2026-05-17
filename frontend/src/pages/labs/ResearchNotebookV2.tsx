@@ -54,7 +54,7 @@ import {
   sanitizePresentationV2DeckForFirestore,
   stringifyPresentationV2DeckForFirestore,
 } from '../../lib/presentation-v2-persistence'
-import { materializeExistingStudioArtifactExports } from '../../lib/notebook-studio-artifact-persistence'
+import { materializeExistingStudioArtifactExports, materializeStudioArtifactForNotebook } from '../../lib/notebook-studio-artifact-persistence'
 import {
   buildResearchNotebookWorkbenchPath,
   parseResearchNotebookV2Section,
@@ -1240,7 +1240,8 @@ export default function ResearchNotebookV2() {
     const notebookTopic = options?.notebookTopic ?? activeNotebook?.topic ?? artifact.title
     const notebookTitle = options?.notebookTitle ?? activeNotebook?.title ?? ''
     const freshNotebook = await getFreshNotebookOrThrow(notebookId)
-    const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore([...freshNotebook.artifacts, artifact])
+    const materializedArtifact = await materializeStudioArtifactForNotebook({ uid: userId, notebookId, artifact })
+    const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore([...freshNotebook.artifacts, materializedArtifact])
 
     const costKey: UsageFunctionKey = ARTIFACT_COST_KEY[artifact.type] ?? 'caderno_pesquisa'
     const newExecutions = executions.map((execution) =>
@@ -1285,11 +1286,11 @@ export default function ResearchNotebookV2() {
       syncRoute(notebookId, 'artifacts')
     }
 
-    if (artifact.type === 'documento' && IS_FIREBASE) {
+    if (materializedArtifact.type === 'documento' && IS_FIREBASE) {
       try {
         await saveNotebookDocumentToDocuments(userId, {
           topic: notebookTopic,
-          content: artifact.content,
+          content: materializedArtifact.content,
           notebookId,
           notebookTitle,
           llm_executions: newExecutions,

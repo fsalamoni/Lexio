@@ -26,6 +26,21 @@ export interface MaterializeExistingStudioArtifactExportsInput {
   artifactId: string
 }
 
+export interface MaterializeStudioArtifactForNotebookInput {
+  uid: string
+  notebookId: string
+  artifact: StudioArtifact
+}
+
+export async function materializeStudioArtifactForNotebook({
+  uid,
+  notebookId,
+  artifact,
+}: MaterializeStudioArtifactForNotebookInput): Promise<StudioArtifact> {
+  const materializedArtifact = await materializeStudioArtifactExports(artifact, { userId: uid, notebookId })
+  return sanitizePresentationV2ArtifactsForFirestore([materializedArtifact])[0] ?? materializedArtifact
+}
+
 export async function persistStudioArtifactToNotebook({
   uid,
   notebookId,
@@ -37,7 +52,7 @@ export async function persistStudioArtifactToNotebook({
     throw new Error(`Caderno ${notebookId} não encontrado ou inacessível.`)
   }
 
-  const materializedArtifact = await materializeStudioArtifactExports(artifact, { userId: uid, notebookId })
+  const materializedArtifact = await materializeStudioArtifactForNotebook({ uid, notebookId, artifact })
   const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore([...(notebook.artifacts ?? []), materializedArtifact])
   const costKey = ARTIFACT_COST_KEY[artifact.type] ?? 'caderno_pesquisa'
   const newExecutions = executions.map(execution => createUsageExecutionRecord({

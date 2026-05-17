@@ -51,7 +51,7 @@ import {
   createUsageExecutionRecord,
   type UsageFunctionKey,
 } from '../lib/cost-analytics'
-import { materializeExistingStudioArtifactExports } from '../lib/notebook-studio-artifact-persistence'
+import { materializeExistingStudioArtifactExports, materializeStudioArtifactForNotebook } from '../lib/notebook-studio-artifact-persistence'
 import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
 import {
   generateStructuredVisualArtifactMedia,
@@ -2780,7 +2780,8 @@ Instruções:
     const notebookTitle = options?.notebookTitle ?? activeNotebook?.title ?? ''
 
     const freshNotebook = await getFreshNotebookOrThrow(notebookId)
-    const updatedArtifacts = [...freshNotebook.artifacts, artifact]
+    const materializedArtifact = await materializeStudioArtifactForNotebook({ uid: userId, notebookId, artifact })
+    const updatedArtifacts = [...freshNotebook.artifacts, materializedArtifact]
 
     // Use the correct cost function key so video/audio/presentation costs
     // appear in their dedicated sections on the CostTokensPage
@@ -2830,11 +2831,11 @@ Instruções:
 
     // When the artifact is a formal document, persist it to the Documents page
     // so it appears alongside documents created via the NewDocument flow.
-    if (artifact.type === 'documento' && IS_FIREBASE) {
+    if (materializedArtifact.type === 'documento' && IS_FIREBASE) {
       try {
         await saveNotebookDocumentToDocuments(userId, {
           topic: notebookTopic,
-          content: artifact.content,
+          content: materializedArtifact.content,
           notebookId,
           notebookTitle,
           llm_executions: newExecutions,
