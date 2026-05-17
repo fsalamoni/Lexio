@@ -8,13 +8,17 @@ export interface CriticVerdict {
   shouldStop: boolean
 }
 
+export interface CriticOptions {
+  artifactAuditContext?: string
+}
+
 /**
  * Run the critic on the current draft. The orchestrator invokes this
  * automatically every `criticInterval` iterations (and not at all when the
  * effort is `rapido`). The result is also emitted as a `critic` trail
  * event so the UI can render the score inline.
  */
-export async function runCritic(draft: string, ctx: SkillContext): Promise<CriticVerdict> {
+export async function runCritic(draft: string, ctx: SkillContext, options: CriticOptions = {}): Promise<CriticVerdict> {
   const callEvent: ChatTrailEvent = {
     type: 'agent_call',
     agent_key: 'chat_critic',
@@ -23,8 +27,14 @@ export async function runCritic(draft: string, ctx: SkillContext): Promise<Criti
   }
   ctx.emit(callEvent)
 
+  const artifactContext = options.artifactAuditContext?.trim()
   const promptTask = `Avalie o rascunho abaixo. Responda APENAS com JSON válido no formato:
 {"score": <0-100>, "reasons": [<motivos curtos>], "should_stop": <true|false>}
+
+Regras de entrega material:
+- Prompt, descricao textual, Markdown, DOCX, PDF ou ZIP generico nao cumprem pedido de imagem/audio/video/formato nativo.
+- Se o pedido exige artifact literal, should_stop so pode ser true quando o artifact correto existir e estiver pronto para download/preview.
+${artifactContext ? `\nContexto de artifacts do turno:\n${artifactContext}\n` : ''}
 
 Rascunho:
 """

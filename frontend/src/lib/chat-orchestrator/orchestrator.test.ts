@@ -137,6 +137,21 @@ describe('runChatTurn', () => {
     expect(iterEvents).toHaveLength(3)
   })
 
+  it('stops repeating the exact same agent decision in a loop', async () => {
+    const events: ChatTrailEvent[] = []
+    const llmCall = vi.fn(async () => ({
+      raw: JSON.stringify({ tool: 'call_agent', args: { agent_key: 'chat_planner', task: 'plan' } }),
+      usage: null,
+    }))
+
+    const result = await runChatTurn(makeInput({ effort: 'rapido', llmCall, onTrail: e => events.push(e) }))
+
+    expect(result.status).toBe('done')
+    expect(llmCall).toHaveBeenCalledTimes(3)
+    expect(events.filter(e => e.type === 'agent_call' && e.agent_key === 'chat_planner')).toHaveLength(1)
+    expect(events.some(e => e.type === 'error' && e.message.includes('Loop de orquestração interrompido'))).toBe(true)
+  })
+
   it('pauses the turn with awaiting_user when the orchestrator asks a question', async () => {
     const events: ChatTrailEvent[] = []
     const llmCall = vi.fn(async () => ({
@@ -427,6 +442,7 @@ describe('runChatTurn', () => {
     expect(result.status).toBe('done')
     expect(result.assistant_markdown).toBe('# final')
     expect(events.filter(e => e.type === 'agent_call').map(e => e.agent_key)).toEqual(['chat_planner', 'chat_writer'])
+    expect(events.some(e => e.type === 'parallel_agents')).toBe(true)
     expect(events.filter(e => e.type === 'agent_response')).toHaveLength(2)
     expect(events.filter(e => e.type === 'agent_work_package')).toHaveLength(2)
   })

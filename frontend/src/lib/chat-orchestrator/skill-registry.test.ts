@@ -75,6 +75,8 @@ describe('chat orchestrator skill registry', () => {
     }, ctx)
 
     expect(result.tool_message).toContain('Contexto compartilhado do lote truncado para 12000 caracteres')
+    expect(ctx.trail.some(event => event.type === 'parallel_agents')).toBe(true)
+    expect(ctx.trail.some(event => event.type === 'super_skill_call' && event.skill === 'call_agents_parallel')).toBe(true)
     expect(ctx.trail.some(event => event.type === 'agent_call' && event.agent_key === 'chat_writer')).toBe(true)
   })
 })

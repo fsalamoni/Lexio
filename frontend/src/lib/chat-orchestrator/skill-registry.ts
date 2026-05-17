@@ -140,6 +140,20 @@ const callAgentsParallelSkill: Skill<{ calls?: ParallelAgentCall[]; shared_conte
       }
     }
 
+    ctx.emit({
+      type: 'parallel_agents',
+      calls: normalized.accepted.map(call => ({ agent_key: call.agentKey, task: clip(call.task, 240) })),
+      ts: nowIso(),
+    })
+    if (normalized.messages.length) {
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: 'call_agents_parallel',
+        result_summary: `Ajustes aplicados ao lote paralelo: ${normalized.messages.join(' ')}`,
+        ts: nowIso(),
+      })
+    }
+
     const results = await Promise.all(normalized.accepted.map(async call => runParallelAgentCall(call, ctx)))
     const successful = results.filter(result => result.ok)
     const failed = results.filter(result => !result.ok)
@@ -378,6 +392,10 @@ const critiqueDraftSkill: Skill<{ draft?: string }> = {
 
     const promptTask = `Avalie o rascunho abaixo. Responda APENAS com JSON válido no formato:
 {"score": <0-100>, "reasons": [<motivos curtos>], "should_stop": <true|false>}
+
+  Regras de entrega material:
+  - Prompt, descricao textual, Markdown, DOCX, PDF ou ZIP generico nao cumprem pedido de imagem/audio/video/formato nativo.
+  - Se o pedido exige artifact literal, should_stop so pode ser true quando o artifact correto existir e estiver pronto para download/preview.
 
 Rascunho:
 """

@@ -50,6 +50,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
   const allowedTools = skills.map(s => s.name)
   const latestArtifactsByLogicalId = new Map<string, { artifact: ChatArtifactRef; agentKey?: string }>()
   const expectedDeliverables = inferExpectedDeliverablesFromText(input.user_input)
+  const decisionLoopTracker = new Map<string, number>()
   const emitTrail = (event: ChatTrailEvent) => {
     collectLatestArtifacts(event, latestArtifactsByLogicalId)
     input.onTrail(event)
@@ -72,7 +73,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     mock: Boolean(input.mock),
   }
 
-  const systemPrompt = buildOrchestratorSystemPrompt(skills, input.effort)
+  const systemPrompt = buildOrchestratorSystemPrompt(skills, input.effort, expectedDeliverables)
   let history: OrchestratorMessage[] = [
     ...input.history.map(m => ({ role: m.role, content: m.content })),
     { role: 'user', content: renderCurrentTurnUserContent({ userInput: input.user_input, attachments: input.attachments, contextSources: input.contextSources }) },
@@ -137,6 +138,17 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       ...(decision.rationale ? { rationale: decision.rationale } : {}),
       ts: new Date().toISOString(),
     })
+
+    const loopCheck = recordDecisionAndDetectLoop(decisionLoopTracker, decision)
+    if (loopCheck.repeated) {
+      const message = loopCheck.exhausted
+        ? `Loop de orquestração interrompido: a decisão ${decision.tool} com os mesmos argumentos foi repetida ${loopCheck.count} vezes.`
+        : `Decisão repetida detectada (${decision.tool}). Escolha outra estratégia, ajuste os argumentos ou finalize com falha operacional clara.`
+      emitTrail({ type: 'error', message, ts: new Date().toISOString() })
+      history = appendToolMessage(history, message, 'decision_loop_guard')
+      if (loopCheck.exhausted) break
+      continue
+    }
 
     const skill = skillsByName.get(decision.tool)
     if (!skill) {
@@ -206,7 +218,9 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
           && i < preset.maxIterations
         ) {
           try {
-            const verdict = await runCritic(draft, ctx)
+            const verdict = await runCritic(draft, ctx, {
+              artifactAuditContext: buildArtifactAuditContext(expectedDeliverables, latestArtifactsByLogicalId.values()),
+            })
             if (verdict.shouldStop || verdict.score >= 75) {
               stopReason = verdict.shouldStop ? 'critic_stop' : 'final_answer'
               break
@@ -334,6 +348,34 @@ function upsertLatestArtifact(
   if (!current || artifact.version >= current.artifact.version) {
     latestArtifactsByLogicalId.set(artifact.logical_document_id, { artifact, agentKey })
   }
+}
+
+function recordDecisionAndDetectLoop(
+  decisionLoopTracker: Map<string, number>,
+  decision: OrchestratorDecision,
+): { repeated: boolean; exhausted: boolean; count: number } {
+  const key = buildDecisionLoopKey(decision)
+  const count = (decisionLoopTracker.get(key) ?? 0) + 1
+  decisionLoopTracker.set(key, count)
+  return {
+    repeated: count >= 2,
+    exhausted: count >= 3,
+    count,
+  }
+}
+
+function buildDecisionLoopKey(decision: OrchestratorDecision): string {
+  return `${decision.tool}:${stableStringify(decision.args)}`
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    const primitive = JSON.stringify(value)
+    return typeof primitive === 'string' ? primitive : String(value)
+  }
+  if (Array.isArray(value)) return `[${value.map(item => stableStringify(item)).join(',')}]`
+  const record = value as Record<string, unknown>
+  return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(',')}}`
 }
 
 function appendLatestArtifactSummary(
@@ -586,6 +628,35 @@ function appendMissingExpectedDeliverableNotice(markdown: string, missing: ChatE
   ].join('\n')
 }
 
+function buildArtifactAuditContext(
+  expectedDeliverables: ChatExpectedDeliverable[],
+  artifacts: Iterable<{ artifact: ChatArtifactRef; agentKey?: string }>,
+): string {
+  const lines: string[] = []
+  if (expectedDeliverables.length) {
+    lines.push('Entregaveis esperados neste turno:')
+    for (const expected of expectedDeliverables) {
+      lines.push(`- ${describeExpectedDeliverable(expected)}${expected.strict ? ' (obrigatorio/literal)' : ''}`)
+    }
+  }
+
+  const artifactLines = [...artifacts].map(({ artifact, agentKey }) => {
+    const readyExports = (artifact.exports ?? [])
+      .filter(exportRef => exportRef.status === 'ready' && exportRef.download_url)
+      .map(exportRef => exportRef.format.toUpperCase())
+      .join('/')
+    return `- ${artifact.title}: ${artifact.kind}/${artifact.format}${readyExports ? ` exports=${readyExports}` : ''}${agentKey ? ` via ${agentKey}` : ''}`
+  })
+  if (artifactLines.length) {
+    lines.push('Artifacts materiais ja criados:')
+    lines.push(...artifactLines)
+  } else {
+    lines.push('Artifacts materiais ja criados: nenhum.')
+  }
+
+  return lines.join('\n')
+}
+
 function buildDeliverableTitle(userInput: string): string {
   const clipped = userInput.replace(/\s+/g, ' ').trim().slice(0, 72)
   return clipped ? `Pacote de entrega - ${clipped}` : 'Pacote de entrega do chat'
@@ -694,15 +765,23 @@ async function forceFinalize(history: OrchestratorMessage[], ctx: SkillContext):
   }).displayMarkdown
 }
 
-function buildOrchestratorSystemPrompt(skills: Skill[], effort: string): string {
+function buildOrchestratorSystemPrompt(skills: Skill[], effort: string, expectedDeliverables: ChatExpectedDeliverable[]): string {
   const manifest = renderSkillsManifest(skills)
   const callable = listCallableAgentDescriptions()
     .map(a => `- \`${a.key}\` (${a.label}): ${a.description}`)
     .join('\n')
+  const expectedBlock = expectedDeliverables.length
+    ? [
+        '**Entregáveis detectados neste turno:**',
+        ...expectedDeliverables.map(item => `- ${describeExpectedDeliverable(item)}${item.strict ? ' — literal obrigatório, com preview/download quando aplicável' : ''}`),
+        '',
+      ]
+    : []
   return [
     'Você é o **Orquestrador** de uma trilha multiagente jurídica em pt-BR.',
     `Esforço atual da conversa: **${effort}**. Adapte o número de chamadas e a profundidade da resposta ao orçamento.`,
     '',
+    ...expectedBlock,
     '**Como você responde:** a cada iteração você emite EXATAMENTE um objeto JSON, sem prosa adicional, sem fences de markdown, sem comentários. O objeto tem o formato:',
     '```',
     '{"tool": "<nome>", "args": { ... }, "rationale": "<explicação curta opcional>"}',
@@ -720,6 +799,7 @@ function buildOrchestratorSystemPrompt(skills: Skill[], effort: string): string 
     '- Use `ask_user_question` apenas quando uma decisão depende de informação que só o usuário tem.',
     '- Use `request_user_approval` antes de Novo Documento, Caderno de Pesquisa, Storage grande, mídia paga, sidecar write/shell ou qualquer ação persistente/cara.',
     '- Use `call_agents_parallel` quando duas ou mais subtarefas independentes puderem rodar no mesmo lote; não use para tarefas com dependência sequencial.',
+    '- Se houver mais de um entregável/formato ou uma entrega material complexa, chame `call_agent` com `chat_artifact_architect` ou `chat_media_director` antes da execução para coordenar versões, formatos e agentes.',
     '- Quando houver anexos com análise multimodal pronta, chame os especialistas `chat_image_evidence_specialist`, `chat_audio_evidence_specialist`, `chat_video_evidence_specialist` ou `chat_multimodal_evidence_synthesizer` antes de redigir conclusões probatórias.',
     '- Se o usuário pedir documentos, arquivos, projeto, apresentação, planilha, imagem, áudio ou vídeo, planeje entregáveis reais e só finalize depois de gerar artefatos ou pedir aprovação expressa para a trilha necessária.',
     '- Para imagem, renderização, PNG, JPG, JPEG ou WebP, use `generate_image`; prompt para gerador externo não é imagem entregue.',
