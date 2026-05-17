@@ -12,6 +12,7 @@ import { Skeleton } from '../components/Skeleton'
 import { useAuth } from '../contexts/AuthContext'
 import { IS_FIREBASE } from '../lib/firebase'
 import {
+  backfillNotebookContentAcrossPlatform,
   backfillNotebookSearchMemoryAcrossPlatform,
   getCurrentUserId,
   getPlatformCostBreakdown,
@@ -34,6 +35,7 @@ import {
   type PlatformFunctionTargetAdherenceDailyPoint,
   type PlatformFunctionWindowComparisonRow,
   type PlatformExecutionStateWindowComparisonRow,
+  type NotebookContentBackfillReport,
   type NotebookSearchMemoryBackfillReport,
   type PlatformUsageRow,
 } from '../lib/firestore-service'
@@ -463,6 +465,8 @@ export default function PlatformAdminPanel() {
   const [loading, setLoading] = useState(true)
   const [backfillLoading, setBackfillLoading] = useState(false)
   const [backfillReport, setBackfillReport] = useState<NotebookSearchMemoryBackfillReport | null>(null)
+  const [contentBackfillLoading, setContentBackfillLoading] = useState(false)
+  const [contentBackfillReport, setContentBackfillReport] = useState<NotebookContentBackfillReport | null>(null)
   const [alertThresholds, setAlertThresholds] = useState<AlertThresholds>(DEFAULT_ALERT_THRESHOLDS)
   const [alertProfile, setAlertProfile] = useState<AlertProfile>('balanced')
   const [scaleProfile, setScaleProfile] = useState<ScaleProfile>('medium')
@@ -1800,6 +1804,24 @@ export default function PlatformAdminPanel() {
       toast.error('Erro ao executar rotina de backfill da memória dedicada')
     } finally {
       setBackfillLoading(false)
+    }
+  }
+
+  const runContentBackfill = async (dryRun: boolean) => {
+    setContentBackfillLoading(true)
+    try {
+      const report = await backfillNotebookContentAcrossPlatform({
+        dryRun,
+        maxNotebooks: 1200,
+        chunkSize: 200,
+      })
+      setContentBackfillReport(report)
+      toast.success(dryRun ? 'Diagnóstico de conteúdo concluído' : 'Backfill de conteúdo dedicado concluído')
+    } catch (error) {
+      console.error(error)
+      toast.error('Erro ao executar rotina de backfill de conteúdo dedicado')
+    } finally {
+      setContentBackfillLoading(false)
     }
   }
 
@@ -3209,6 +3231,74 @@ export default function PlatformAdminPanel() {
             </div>
           </div>
         )}
+
+        <div className="border-t border-[var(--v2-border)] pt-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="text-xs font-semibold text-[var(--v2-ink-strong)]">Backfill de Conteúdo Dedicado</h3>
+              <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
+                Migra mensagens e artefatos legados para `content/messages` e `content/artifacts`.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { void runContentBackfill(true) }}
+                disabled={contentBackfillLoading}
+                className={EXECUTIVE_PANEL_BUTTON}
+              >
+                Diagnóstico
+              </button>
+              <button
+                onClick={() => { void runContentBackfill(false) }}
+                disabled={contentBackfillLoading}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Executar backfill
+              </button>
+            </div>
+          </div>
+
+          {contentBackfillReport && (
+            <div className="mt-3 grid grid-cols-2 lg:grid-cols-8 gap-2">
+              <div className={EXECUTIVE_INSET_CARD}>
+                <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Modo</p>
+                <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{contentBackfillReport.dry_run ? 'Dry-run' : 'Write'}</p>
+              </div>
+              <div className={EXECUTIVE_INSET_CARD}>
+                <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Chunks</p>
+                <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(contentBackfillReport.chunks_processed)}</p>
+              </div>
+              <div className={EXECUTIVE_INSET_CARD}>
+                <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Tam. chunk</p>
+                <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(contentBackfillReport.chunk_size)}</p>
+              </div>
+              <div className={EXECUTIVE_INSET_CARD}>
+                <p className="text-[10px] uppercase tracking-wide text-[var(--v2-ink-faint)]">Escaneados</p>
+                <p className="text-sm font-semibold text-[var(--v2-ink-strong)]">{fmtInt(contentBackfillReport.scanned)}</p>
+              </div>
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-emerald-700">Migrados</p>
+                <p className="text-sm font-semibold text-emerald-800">{fmtInt(contentBackfillReport.migrated)}</p>
+              </div>
+              <div className="rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-sky-700">Já dedicado</p>
+                <p className="text-sm font-semibold text-sky-800">{fmtInt(contentBackfillReport.already_dedicated)}</p>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-amber-700">Sem legado</p>
+                <p className="text-sm font-semibold text-amber-800">{fmtInt(contentBackfillReport.empty_legacy)}</p>
+              </div>
+              <div className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-red-700">Falhas</p>
+                <p className="text-sm font-semibold text-red-800">{fmtInt(contentBackfillReport.failed)}</p>
+              </div>
+              <div className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-violet-700">Limite</p>
+                <p className="text-sm font-semibold text-violet-800">{contentBackfillReport.reached_limit ? 'atingido' : 'não'}</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="v2-panel p-5">

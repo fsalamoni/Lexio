@@ -31,6 +31,7 @@ Lexio user data is user-scoped under:
 /users/{uid}/acervo/{docId}
 /users/{uid}/research_notebooks/{notebookId}
 /users/{uid}/research_notebooks/{notebookId}/memory/{docId}
+/users/{uid}/research_notebooks/{notebookId}/content/{docId}
 /users/{uid}/sidecar_devices/{deviceId}
 /users/{uid}/chat_workspace_roots/{rootId}
 /users/{uid}/chat_conversations/{conversationId}
@@ -69,6 +70,7 @@ thesis_analysis_sessions
 acervo
 research_notebooks
 memory
+content
 chat_conversations
 turns
 sidecar_commands

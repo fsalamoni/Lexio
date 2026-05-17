@@ -1,4 +1,6 @@
 export const NOTEBOOK_SEARCH_MEMORY_DOC_ID = 'search_memory'
+export const NOTEBOOK_CONTENT_MESSAGES_DOC_ID = 'messages'
+export const NOTEBOOK_CONTENT_ARTIFACTS_DOC_ID = 'artifacts'
 
 export function normalizeFirestoreDocumentId(value: string): string {
   const trimmed = String(value || '').trim()
@@ -42,4 +44,8 @@ export function buildResearchNotebookDocPath(uid: string, notebookId: string): [
 
 export function buildNotebookSearchMemoryDocPath(uid: string, notebookId: string): [string, string, string, string, string, string] {
   return [...buildResearchNotebookDocPath(uid, notebookId), 'memory', NOTEBOOK_SEARCH_MEMORY_DOC_ID]
+}
+
+export function buildNotebookContentDocPath(uid: string, notebookId: string, contentDocId: string): [string, string, string, string, string, string] {
+  return [...buildResearchNotebookDocPath(uid, notebookId), 'content', normalizeFirestoreDocumentId(contentDocId)]
 }

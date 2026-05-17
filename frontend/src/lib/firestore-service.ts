@@ -461,7 +461,7 @@ export const saveNotebookDocumentToDocuments = documentsRepository.saveNotebookD
 
 // ── Research Notebook (Caderno de Pesquisa) repository facade ────────────────
 
-export type { NotebookSearchMemoryBackfillReport } from './modules/notebook'
+export type { NotebookContentBackfillReport, NotebookSearchMemoryBackfillReport } from './modules/notebook'
 
 const researchNotebookRepository = createResearchNotebookRepository({
   ensureFirestore,
@@ -474,6 +474,7 @@ const researchNotebookRepository = createResearchNotebookRepository({
 })
 
 export const backfillNotebookSearchMemoryAcrossPlatform = researchNotebookRepository.backfillNotebookSearchMemoryAcrossPlatform
+export const backfillNotebookContentAcrossPlatform = researchNotebookRepository.backfillNotebookContentAcrossPlatform
 export const listResearchNotebooks = researchNotebookRepository.listResearchNotebooks
 export const getResearchNotebook = researchNotebookRepository.getResearchNotebook
 export const createResearchNotebook = researchNotebookRepository.createResearchNotebook

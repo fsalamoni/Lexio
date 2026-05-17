@@ -104,6 +104,11 @@ service cloud.firestore {
         allow write: if isSelf(userId);
       }
 
+      match /research_notebooks/{notebookId}/content/{docId} {
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
+      }
+
       // ── /users/{userId}/sidecar_devices/{deviceId} ───────────────────
       // Locally paired helper devices. Owner can manage, admins read only
       // for operational diagnostics without receiving local credentials.
@@ -203,6 +208,10 @@ service cloud.firestore {
     }
 
     match /{path=**}/research_notebooks/{notebookId}/memory/{docId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/research_notebooks/{notebookId}/content/{docId} {
       allow read: if isAdmin();
     }
 

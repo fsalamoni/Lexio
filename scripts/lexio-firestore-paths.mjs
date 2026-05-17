@@ -21,6 +21,7 @@ export const LEXIO_USER_SUBCOLLECTIONS = new Set([
 
 export const LEXIO_NESTED_USER_SUBCOLLECTIONS = new Set([
   'memory',
+  'content',
   'turns',
   'workspace_bindings',
   'sidecar_commands',
@@ -35,6 +36,7 @@ export const LEXIO_COLLECTION_GROUPS = [
   'acervo',
   'research_notebooks',
   'memory',
+  'content',
   'sidecar_devices',
   'chat_workspace_roots',
   'chat_conversations',

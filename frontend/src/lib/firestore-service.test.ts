@@ -131,6 +131,7 @@ import {
   getCostBreakdown,
   getPlatformCostBreakdown,
   getPlatformOverview,
+  backfillNotebookContentAcrossPlatform,
   getResearchNotebook,
   invalidatePlatformAnalyticsCache,
   loadAdminClassificationTipos,
@@ -192,9 +193,9 @@ function stubStoredUserId(uid: string) {
   vi.stubGlobal('window', { localStorage })
 }
 
-function makeGetDocsSnapshot(items: Array<{ id: string; data: Record<string, unknown> }>) {
+function makeGetDocsSnapshot(items: Array<{ id: string; data: Record<string, unknown>; refPath?: string }>) {
   return {
-    docs: items.map(item => ({ id: item.id, ref: { path: `mock/${item.id}` }, data: () => item.data })),
+    docs: items.map(item => ({ id: item.id, ref: { path: item.refPath ?? `mock/${item.id}` }, data: () => item.data })),
     empty: items.length === 0,
   }
 }
@@ -337,6 +338,8 @@ describe('saveNotebookDocumentToDocuments', () => {
     mockGetDoc
       .mockResolvedValueOnce({ exists: () => true, id: 'nb-xyz', data: () => ({ title: 'Notebook' }) })
       .mockResolvedValueOnce({ exists: () => false, id: 'search_memory', data: () => ({}) })
+      .mockResolvedValueOnce({ exists: () => false, id: 'messages', data: () => ({}) })
+      .mockResolvedValueOnce({ exists: () => false, id: 'artifacts', data: () => ({}) })
 
     await getResearchNotebook(uid, 'projects/hocapp-44760/databases/(default)/documents/users/user-123/research_notebooks/nb-xyz')
 
@@ -344,12 +347,50 @@ describe('saveNotebookDocumentToDocuments', () => {
       { _fake: true },
       'users', uid, 'research_notebooks', 'nb-xyz',
     )
-    // getResearchNotebook now performs a second read for dedicated search memory.
-    expect(mockGetDoc).toHaveBeenCalledTimes(2)
+    // getResearchNotebook checks dedicated search memory and content docs.
+    expect(mockGetDoc).toHaveBeenCalledTimes(4)
     expect(mockDoc).toHaveBeenCalledWith(
       { _fake: true },
       'users', uid, 'research_notebooks', 'nb-xyz', 'memory', 'search_memory',
     )
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'research_notebooks', 'nb-xyz', 'content', 'messages',
+    )
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'research_notebooks', 'nb-xyz', 'content', 'artifacts',
+    )
+  })
+
+  it('rehydrates notebook messages and artifacts from dedicated content docs', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        id: 'nb-xyz',
+        data: () => ({
+          title: 'Notebook',
+          messages: [{ id: 'root-msg', role: 'user', content: 'root', created_at: '2026-05-08T10:00:00.000Z' }],
+          artifacts: [{ id: 'root-art', type: 'resumo', title: 'Root', content: 'root', format: 'markdown', created_at: '2026-05-08T10:00:00.000Z' }],
+        }),
+      })
+      .mockResolvedValueOnce({ exists: () => false, id: 'search_memory', data: () => ({}) })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        id: 'messages',
+        data: () => ({ messages: [{ id: 'full-msg', role: 'assistant', content: 'full message', created_at: '2026-05-08T10:01:00.000Z' }] }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        id: 'artifacts',
+        data: () => ({ artifacts: [{ id: 'full-art', type: 'documento', title: 'Full', content: 'full artifact', format: 'markdown', created_at: '2026-05-08T10:02:00.000Z' }] }),
+      })
+
+    const notebook = await getResearchNotebook(uid, 'nb-xyz')
+
+    expect(notebook?.messages?.[0]?.id).toBe('full-msg')
+    expect(notebook?.artifacts?.[0]?.id).toBe('full-art')
+    expect(mockSetDoc).not.toHaveBeenCalled()
   })
 
   it('normalizes a slash-delimited notebook path when updating a notebook', async () => {
@@ -375,11 +416,13 @@ describe('saveNotebookDocumentToDocuments', () => {
         data: () => ({ title: 'Notebook', sources: [] }),
       })
       .mockResolvedValueOnce({ exists: () => false, id: 'search_memory', data: () => ({}) })
+      .mockResolvedValueOnce({ exists: () => false, id: 'messages', data: () => ({}) })
+      .mockResolvedValueOnce({ exists: () => false, id: 'artifacts', data: () => ({}) })
 
     const result = await getResearchNotebook(uid, 'nb-xyz')
 
     expect(result?.id).toBe('nb-xyz')
-    expect(mockGetDoc).toHaveBeenCalledTimes(3)
+    expect(mockGetDoc).toHaveBeenCalledTimes(5)
     expect(mockGetIdToken).toHaveBeenCalledWith(true)
   })
 
@@ -415,6 +458,8 @@ describe('saveNotebookDocumentToDocuments', () => {
     })
 
     const payload = mockUpdateDoc.mock.calls[0][1]
+    const contentPayload = mockSetDoc.mock.calls[0][1]
+    expect(contentPayload.messages[0].content.length).toBe(oversizedContent.length)
     expect(payload.messages).toHaveLength(1)
     expect(payload.messages[0].id).toBe('msg-1')
     expect(payload.messages[0].content.length).toBeLessThan(oversizedContent.length)
@@ -436,6 +481,74 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(ids).not.toContain('msg-1')
     expect(ids).toContain('msg-5')
     expect(payload.messages.length).toBeLessThan(messages.length)
+  })
+
+  it('syncs full notebook messages and artifacts into dedicated content docs before fitting the root doc', async () => {
+    const messages = [{
+      id: 'msg-1',
+      role: 'user' as const,
+      content: 'Pergunta completa',
+      created_at: '2026-05-08T10:00:00.000Z',
+    }]
+    const artifacts = [{
+      id: 'art-1',
+      type: 'documento' as const,
+      title: 'Documento completo',
+      content: '# Documento completo',
+      format: 'markdown' as const,
+      created_at: '2026-05-08T10:01:00.000Z',
+    }]
+
+    await updateResearchNotebook(uid, 'nb-xyz', { messages, artifacts })
+
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/research_notebooks/nb-xyz/content/messages' },
+      expect.objectContaining({ messages }),
+      { merge: true },
+    )
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/research_notebooks/nb-xyz/content/artifacts' },
+      expect.objectContaining({ artifacts }),
+      { merge: true },
+    )
+    expect(mockUpdateDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/research_notebooks/nb-xyz' },
+      expect.objectContaining({ messages, artifacts }),
+    )
+  })
+
+  it('backfills legacy notebook messages and artifacts into dedicated content docs', async () => {
+    mockGetDocs.mockResolvedValueOnce(makeGetDocsSnapshot([
+      {
+        id: 'nb-legacy',
+        refPath: 'users/user-123/research_notebooks/nb-legacy',
+        data: {
+          title: 'Legacy notebook',
+          created_at: '2026-05-08T10:00:00.000Z',
+          messages: [{ id: 'msg-1', role: 'user', content: 'legacy', created_at: '2026-05-08T10:00:00.000Z' }],
+          artifacts: [{ id: 'art-1', type: 'resumo', title: 'Legacy', content: 'legacy', format: 'markdown', created_at: '2026-05-08T10:01:00.000Z' }],
+        },
+      },
+    ]))
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => false, id: 'messages', data: () => ({}) })
+      .mockResolvedValueOnce({ exists: () => false, id: 'artifacts', data: () => ({}) })
+    mockGetDocs.mockResolvedValueOnce(makeGetDocsSnapshot([]))
+
+    const report = await backfillNotebookContentAcrossPlatform({ chunkSize: 50 })
+
+    expect(report.scanned).toBe(1)
+    expect(report.migrated).toBe(1)
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/research_notebooks/nb-legacy/content/messages' },
+      expect.objectContaining({ messages: expect.any(Array) }),
+      { merge: true },
+    )
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/research_notebooks/nb-legacy/content/artifacts' },
+      expect.objectContaining({ artifacts: expect.any(Array) }),
+      { merge: true },
+    )
   })
 
   it('retries notebook dedicated memory sync after transient permission-denied', async () => {
@@ -479,12 +592,22 @@ describe('saveNotebookDocumentToDocuments', () => {
 
     mockDeleteDoc
       .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(permissionError)
       .mockResolvedValueOnce(undefined)
 
     await deleteResearchNotebook(uid, 'nb-xyz')
 
-    expect(mockDeleteDoc).toHaveBeenCalledTimes(3)
+    expect(mockDeleteDoc).toHaveBeenCalledTimes(5)
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'research_notebooks', 'nb-xyz', 'content', 'messages',
+    )
+    expect(mockDoc).toHaveBeenCalledWith(
+      { _fake: true },
+      'users', uid, 'research_notebooks', 'nb-xyz', 'content', 'artifacts',
+    )
     expect(mockDoc).toHaveBeenCalledWith(
       { _fake: true },
       'users', uid, 'research_notebooks', 'nb-xyz', 'memory', 'search_memory',

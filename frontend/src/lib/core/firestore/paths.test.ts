@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  NOTEBOOK_CONTENT_ARTIFACTS_DOC_ID,
+  NOTEBOOK_CONTENT_MESSAGES_DOC_ID,
   NOTEBOOK_SEARCH_MEMORY_DOC_ID,
+  buildNotebookContentDocPath,
   buildNotebookSearchMemoryDocPath,
   buildResearchNotebookDocPath,
   buildUserSubcollectionDocPath,
@@ -40,6 +43,22 @@ describe('core Firestore path helpers', () => {
       'n1',
       'memory',
       NOTEBOOK_SEARCH_MEMORY_DOC_ID,
+    ])
+    expect(buildNotebookContentDocPath('u1', '/users/u1/research_notebooks/n1', NOTEBOOK_CONTENT_MESSAGES_DOC_ID)).toEqual([
+      'users',
+      'u1',
+      'research_notebooks',
+      'n1',
+      'content',
+      NOTEBOOK_CONTENT_MESSAGES_DOC_ID,
+    ])
+    expect(buildNotebookContentDocPath('u1', '/users/u1/research_notebooks/n1', `content/${NOTEBOOK_CONTENT_ARTIFACTS_DOC_ID}`)).toEqual([
+      'users',
+      'u1',
+      'research_notebooks',
+      'n1',
+      'content',
+      NOTEBOOK_CONTENT_ARTIFACTS_DOC_ID,
     ])
   })
 })
