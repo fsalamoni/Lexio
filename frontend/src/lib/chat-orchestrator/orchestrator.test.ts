@@ -67,6 +67,13 @@ vi.mock('./dispatch', () => {
   }
 })
 
+vi.mock('../chat-artifact-storage', () => ({
+  uploadChatArtifactFile: vi.fn(async (args: { exportId: string }) => ({
+    url: `blob:mock/${args.exportId}`,
+    path: `mock/${args.exportId}`,
+  })),
+}))
+
 const baseModels: Record<string, string> = {
   chat_orchestrator: 'demo/orch',
   chat_planner: 'demo/plan',
@@ -252,6 +259,77 @@ describe('runChatTurn', () => {
     expect(result.assistant_markdown).toContain('Documentos e artefatos criados')
     expect(result.assistant_markdown).toContain('Minuta Principal')
     expect(result.assistant_markdown).toContain('DOCX (')
+  })
+
+  it('materializes a downloadable fallback bundle when a deliverable request has no artifacts', async () => {
+    const events: ChatTrailEvent[] = []
+    const llmCall = vi.fn(async () => ({
+      raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# Projeto\n\nDocumento consolidado.' } }),
+      usage: null,
+    })) satisfies OrchestratorLLMCall
+
+    const result = await runChatTurn(makeInput({
+      user_input: 'Faça um projeto e me entregue os documentos para baixar.',
+      llmCall,
+      onTrail: e => events.push(e),
+    }))
+
+    const packageEvents = events.filter(e => e.type === 'agent_work_package')
+    expect(packageEvents).toHaveLength(1)
+    const workPackage = packageEvents[0].type === 'agent_work_package' ? packageEvents[0].package : null
+    expect(workPackage?.agent_key).toBe('chat_export_packager')
+    const artifact = workPackage?.artifacts?.[0]
+    expect(artifact?.title).toContain('Pacote de entrega')
+    expect(artifact?.exports?.map(exportRef => exportRef.format)).toEqual(expect.arrayContaining(['markdown', 'docx', 'pdf', 'zip']))
+    expect(artifact?.exports?.every(exportRef => exportRef.status === 'ready')).toBe(true)
+    expect(result.assistant_markdown).toContain('Documentos e artefatos criados')
+    expect(result.assistant_markdown).toContain('Pacote de entrega')
+  })
+
+  it('does not create a fallback bundle when an existing artifact already has downloads', async () => {
+    const events: ChatTrailEvent[] = []
+    let attempt = 0
+    const llmCall = vi.fn(async () => {
+      attempt += 1
+      if (attempt === 1) {
+        return {
+          raw: JSON.stringify({ tool: 'call_agent', args: { agent_key: 'chat_writer', task: 'artifact-json' } }),
+          usage: null,
+        }
+      }
+      return {
+        raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# Concluído' } }),
+        usage: null,
+      }
+    })
+
+    await runChatTurn(makeInput({
+      user_input: 'Crie os documentos e me entregue para download.',
+      llmCall,
+      onTrail: e => events.push(e),
+    }))
+
+    const packageEvents = events.filter(e => e.type === 'agent_work_package')
+    expect(packageEvents).toHaveLength(1)
+    const workPackage = packageEvents[0].type === 'agent_work_package' ? packageEvents[0].package : null
+    expect(workPackage?.agent_key).toBe('chat_writer')
+  })
+
+  it('does not force a deliverable bundle for document analysis requests without an output signal', async () => {
+    const events: ChatTrailEvent[] = []
+    const llmCall = vi.fn(async () => ({
+      raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# Análise\n\nO documento foi analisado.' } }),
+      usage: null,
+    })) satisfies OrchestratorLLMCall
+
+    const result = await runChatTurn(makeInput({
+      user_input: 'Analise este documento e resuma os riscos principais.',
+      llmCall,
+      onTrail: e => events.push(e),
+    }))
+
+    expect(events.some(e => e.type === 'agent_work_package')).toBe(false)
+    expect(result.assistant_markdown).toBe('# Análise\n\nO documento foi analisado.')
   })
 
   it('runs independent specialists through a capped parallel batch', async () => {

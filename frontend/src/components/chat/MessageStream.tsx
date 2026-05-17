@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import {
   AlertCircle,
+  Archive,
   Bot,
   Brain,
   CheckCircle2,
@@ -9,17 +10,23 @@ import {
   Download,
   FileJson,
   FileText,
+  Image,
+  Music,
   GaugeCircle,
   HelpCircle,
   Hourglass,
   ListChecks,
   PackageCheck,
+  Presentation,
   Sparkles,
+  Table,
+  Upload as UploadIcon,
   User,
+  Video,
   Wrench,
 } from 'lucide-react'
 import clsx from 'clsx'
-import type { ChatAgentWorkPackage, ChatArtifactRef, ChatTrailEvent, ChatTurnData } from '../../lib/firestore-types'
+import type { ChatAgentWorkPackage, ChatArtifactRef, ChatTrailEvent, ChatTurnAttachment, ChatTurnData } from '../../lib/firestore-types'
 
 interface MessageStreamProps {
   turns: ChatTurnData[]
@@ -79,7 +86,7 @@ function TurnBlock({
 
   return (
     <div className="flex flex-col gap-3">
-      <UserBubble text={turn.user_input} />
+      <UserBubble text={turn.user_input} attachments={turn.input_attachments} />
       {showThoughtPanel && (
         <OrchestratorThinkingTimeline
           segments={thoughtSegments}
@@ -135,17 +142,51 @@ function collectThoughtSegments(trail: ChatTrailEvent[]): Array<{ text: string; 
   return segments.filter(segment => segment.text.trim())
 }
 
-function UserBubble({ text }: { text: string }) {
+function UserBubble({ text, attachments }: { text: string; attachments?: ChatTurnAttachment[] }) {
   return (
     <div className="flex items-start gap-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-600 text-white">
         <User className="h-4 w-4" />
       </div>
-      <div className="max-w-3xl whitespace-pre-wrap rounded-2xl bg-teal-50 px-4 py-2.5 text-sm text-[var(--v2-ink-strong)]">
-        {text}
+      <div className="max-w-3xl rounded-2xl bg-teal-50 px-4 py-2.5 text-sm text-[var(--v2-ink-strong)]">
+        <div className="whitespace-pre-wrap">{text}</div>
+        {attachments?.length ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {attachments.map(attachment => {
+              const Icon = getAttachmentIcon(attachment)
+              return (
+                <span
+                  key={attachment.attachment_id}
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-teal-200 bg-white/75 px-2 py-1 text-[11px] text-teal-800"
+                  title={`${attachment.filename} · ${formatBytes(attachment.size_bytes)}`}
+                >
+                  <Icon className="h-3 w-3 shrink-0" />
+                  <span className="max-w-[14rem] truncate font-medium">{attachment.filename}</span>
+                  <span className="shrink-0 opacity-75">{attachment.upload_status ?? attachment.extraction.status}</span>
+                </span>
+              )
+            })}
+          </div>
+        ) : null}
       </div>
     </div>
   )
+}
+
+function getAttachmentIcon(attachment: ChatTurnAttachment) {
+  if (attachment.kind === 'image') return Image
+  if (attachment.kind === 'audio') return Music
+  if (attachment.kind === 'video') return Video
+  if (attachment.kind === 'spreadsheet') return Table
+  if (attachment.kind === 'presentation') return Presentation
+  if (attachment.kind === 'archive') return Archive
+  return FileText
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function AssistantBubble({ markdown }: { markdown: string }) {
@@ -417,6 +458,27 @@ function describeEvent(event: ChatTrailEvent): {
   fullContent?: string
 } {
   switch (event.type) {
+    case 'attachment_upload_started':
+      return {
+        Icon: UploadIcon,
+        iconClass: 'text-teal-600',
+        title: `Anexo recebido: ${event.filename}`,
+        subtitle: `${formatBytes(event.size_bytes)} · salvando arquivo bruto`,
+      }
+    case 'attachment_processed':
+      return {
+        Icon: FileText,
+        iconClass: event.attachment.upload_status === 'failed' ? 'text-rose-600' : 'text-teal-600',
+        title: `Anexo processado: ${event.attachment.filename}`,
+        subtitle: `${event.attachment.kind} · ${event.attachment.extraction.status}${event.attachment.upload_status ? ` · ${event.attachment.upload_status}` : ''}`,
+      }
+    case 'attachment_failed':
+      return {
+        Icon: AlertCircle,
+        iconClass: 'text-rose-600',
+        title: `Falha no anexo: ${event.filename}`,
+        subtitle: event.message,
+      }
     case 'iteration_start':
       return { Icon: ListChecks, iconClass: 'text-indigo-500', title: `Iteração ${event.i}` }
     case 'decision':

@@ -10,8 +10,10 @@ import type {
   ChatEffortLevel,
   ChatAgentWorkPackage,
   ChatApprovalRequestData,
+  ChatContextSourceRef,
   ChatPendingQuestionData,
   ChatTrailEvent,
+  ChatTurnAttachment,
   ChatTurnStatus,
 } from '../firestore-types'
 import type { UsageExecutionRecord } from '../cost-analytics'
@@ -160,6 +162,12 @@ export interface RunChatTurnInput {
   llmCall?: OrchestratorLLMCall
   /** Force mock runtime regardless of environment. */
   mock?: boolean
+  /** Files and rich context blocks attached to this user turn. */
+  attachments?: ChatTurnAttachment[]
+  /** Resolved context sources that should be visible to the orchestrator. */
+  contextSources?: ChatContextSourceRef[]
+  /** Explicit release gate: the turn must create downloadable artifacts before finalizing. */
+  requireDeliverableBundle?: boolean
   /** Streaming callback: fires for each token delta produced by any specialist agent. */
   onAgentToken?: (agentKey: string, delta: string, total: string) => void
   /** Optional durable persistence hook; awaited before the runtime advances to the next iteration. */

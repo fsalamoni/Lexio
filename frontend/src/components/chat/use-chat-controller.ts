@@ -3,6 +3,7 @@ import type {
   ChatConversationData,
   ChatPendingQuestionData,
   ChatTrailEvent,
+  ChatTurnAttachment,
   ChatTurnData,
   ChatTurnStatus,
   ChatEffortLevel,
@@ -30,6 +31,9 @@ import {
   runChatTurn,
   type SkillContext,
 } from '../../lib/chat-orchestrator'
+import type { PreparedChatInputAttachment } from '../../lib/chat-attachment-ingestion'
+import { uploadChatInputAttachmentFile } from '../../lib/chat-input-storage'
+import { buildAttachmentContextSources, renderTurnUserContentForHistory } from '../../lib/chat-context-builder'
 import {
   buildPipelineFallbackResolver,
   CHAT_ORCHESTRATOR_AGENT_DEFS,
@@ -450,6 +454,12 @@ interface UseChatControllerArgs {
   conversationId: string | null
 }
 
+type ChatSendInput = string | {
+  text: string
+  attachments?: ChatTurnAttachment[]
+  attachmentFiles?: PreparedChatInputAttachment[]
+}
+
 /**
  * Hook tying the React surface to the orchestrator runtime. Owns:
  *   - loading the conversation + its turns
@@ -529,13 +539,17 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     return () => { cancelled = true }
   }, [conversationId, userId])
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (input: ChatSendInput) => {
     if (!conversationId) return
     if (!userId && IS_FIREBASE) return
     if (state.status === 'sending') return
 
-    const trimmed = text.trim()
+    const rawText = typeof input === 'string' ? input : input.text
+    let attachments = typeof input === 'string' ? [] : input.attachments ?? []
+    const attachmentFiles = typeof input === 'string' ? [] : input.attachmentFiles ?? []
+    const trimmed = rawText.trim() || (attachments.length ? 'Analise os anexos enviados.' : '')
     if (!trimmed) return
+    let contextSources = buildAttachmentContextSources(attachments)
 
     const pendingApproval = findLatestPendingApprovalTurn(state.turns)
     const approvalDecision = pendingApproval ? normalizeApprovalDecision(trimmed) : null
@@ -566,6 +580,8 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
       assistant_markdown: null,
       status: 'running',
       created_at: startedAt,
+      input_attachments: attachments.length ? attachments : undefined,
+      context_sources: contextSources.length ? contextSources : undefined,
     }
 
     if (IS_FIREBASE && userId) {
@@ -578,6 +594,8 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         turnId = await appendChatTurn(userId, conversationId, {
           conversation_id: conversationId,
           user_input: trimmed,
+          input_attachments: attachments.length ? attachments : undefined,
+          context_sources: contextSources.length ? contextSources : undefined,
           trail: [],
           assistant_markdown: null,
           status: 'running',
@@ -591,6 +609,36 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
           message: `Persistência inicial indisponível; seguindo em modo local. Detalhe: ${message}`,
           ts: new Date().toISOString(),
         })
+      }
+    }
+
+    if (attachments.length > 0 && attachmentFiles.length > 0) {
+      attachments = await materializeChatInputAttachmentUploads({
+        uid: userId ?? 'demo',
+        conversationId,
+        turnId,
+        attachments,
+        attachmentFiles,
+        events: initialTrail,
+      })
+      contextSources = buildAttachmentContextSources(attachments)
+      liveTurn.input_attachments = attachments.length ? attachments : undefined
+      liveTurn.context_sources = contextSources.length ? contextSources : undefined
+      if (IS_FIREBASE && userId) {
+        try {
+          await updateChatTurn(userId, conversationId, turnId, {
+            input_attachments: liveTurn.input_attachments,
+            context_sources: liveTurn.context_sources,
+            trail: compactChatTrailForPersistence(initialTrail),
+          })
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          initialTrail.push({
+            type: 'error',
+            message: `Anexos processados localmente, mas a atualização remota do turno falhou. Detalhe: ${message}`,
+            ts: new Date().toISOString(),
+          })
+        }
       }
     }
 
@@ -679,7 +727,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
 
     // Build prior history (concatenate previous turns).
     const history = state.turns.flatMap(turn => [
-      { role: 'user' as const, content: turn.user_input },
+      { role: 'user' as const, content: renderTurnUserContentForHistory(turn) },
       ...(turn.assistant_markdown ? [{ role: 'assistant' as const, content: turn.assistant_markdown }] : []),
     ])
 
@@ -691,6 +739,8 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         effort: state.effort,
         history,
         user_input: trimmed,
+        attachments,
+        contextSources,
         models,
         fallbackModels,
         apiKey,
@@ -838,6 +888,78 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
   }), [state, sendMessage, cancel, setEffort])
 
   return value
+}
+
+async function materializeChatInputAttachmentUploads(args: {
+  uid: string
+  conversationId: string
+  turnId: string
+  attachments: ChatTurnAttachment[]
+  attachmentFiles: PreparedChatInputAttachment[]
+  events: ChatTrailEvent[]
+}): Promise<ChatTurnAttachment[]> {
+  const candidatesById = new Map(args.attachmentFiles.map(candidate => [candidate.attachment.attachment_id, candidate]))
+  const uploaded: ChatTurnAttachment[] = []
+
+  for (const attachment of args.attachments) {
+    const candidate = candidatesById.get(attachment.attachment_id)
+    if (!candidate) {
+      uploaded.push({ ...attachment, upload_status: attachment.upload_status ?? 'skipped' })
+      continue
+    }
+
+    args.events.push({
+      type: 'attachment_upload_started',
+      attachment_id: attachment.attachment_id,
+      filename: attachment.filename,
+      size_bytes: attachment.size_bytes,
+      ts: new Date().toISOString(),
+    })
+
+    try {
+      const stored = await uploadChatInputAttachmentFile({
+        userId: args.uid,
+        conversationId: args.conversationId,
+        turnId: args.turnId,
+        attachmentId: attachment.attachment_id,
+        filename: attachment.filename,
+        file: candidate.file,
+      })
+      const next: ChatTurnAttachment = {
+        ...attachment,
+        upload_status: stored.status,
+        storage_path: stored.path,
+        download_url: stored.url || attachment.download_url,
+      }
+      uploaded.push(next)
+      args.events.push({
+        type: 'attachment_processed',
+        attachment: next,
+        ts: new Date().toISOString(),
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const next: ChatTurnAttachment = {
+        ...attachment,
+        upload_status: 'failed',
+        upload_error: message,
+        extraction: {
+          ...attachment.extraction,
+          error: [attachment.extraction.error, `Upload bruto: ${message}`].filter(Boolean).join(' | ') || undefined,
+        },
+      }
+      uploaded.push(next)
+      args.events.push({
+        type: 'attachment_failed',
+        attachment_id: attachment.attachment_id,
+        filename: attachment.filename,
+        message,
+        ts: new Date().toISOString(),
+      })
+    }
+  }
+
+  return uploaded
 }
 
 function mockModelMap(): Record<string, string> {

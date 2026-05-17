@@ -34,8 +34,38 @@ describe('MessageStream', () => {
             id: 'turn-1',
             conversation_id: 'conv-1',
             user_input: 'Preciso de um resumo.',
+            input_attachments: [
+              {
+                attachment_id: 'att-1',
+                filename: 'contrato.txt',
+                mime_type: 'text/plain',
+                extension: '.txt',
+                size_bytes: 24,
+                kind: 'document',
+                extraction: { status: 'ready', mode: 'text', text_preview: 'cláusula', text_char_count: 7, truncated: false },
+                created_at: '2026-05-08T10:00:00.000Z',
+              },
+            ],
             trail: [
               { type: 'orchestrator_thought', delta: 'Analisando', total: 'Analisando o pedido', ts: '2026-05-08T10:00:00.000Z' },
+              { type: 'attachment_upload_started', attachment_id: 'att-1', filename: 'contrato.txt', size_bytes: 24, ts: '2026-05-08T10:00:00.100Z' },
+              {
+                type: 'attachment_processed',
+                attachment: {
+                  attachment_id: 'att-1',
+                  filename: 'contrato.txt',
+                  mime_type: 'text/plain',
+                  extension: '.txt',
+                  size_bytes: 24,
+                  kind: 'document',
+                  upload_status: 'uploaded',
+                  storage_path: 'chat_inputs/user/conv/turn/att/contrato.txt',
+                  download_url: 'https://cdn.lexio.test/contrato.txt',
+                  extraction: { status: 'ready', mode: 'text', text_preview: 'cláusula', text_char_count: 7, truncated: false },
+                  created_at: '2026-05-08T10:00:00.000Z',
+                },
+                ts: '2026-05-08T10:00:00.200Z',
+              },
               { type: 'agent_call', agent_key: 'chat_planner', task: 'Planejar resposta', ts: '2026-05-08T10:00:01.000Z' },
               { type: 'agent_response', agent_key: 'chat_planner', output: 'Plano inicial', ts: '2026-05-08T10:00:02.000Z' },
               {
@@ -83,6 +113,10 @@ describe('MessageStream', () => {
     )
 
     expect(screen.getByText('Preciso de um resumo.')).toBeTruthy()
+    expect(screen.getByText('contrato.txt')).toBeTruthy()
+    expect(screen.getByText('ready')).toBeTruthy()
+    expect(screen.getByText(/anexo recebido/i)).toBeTruthy()
+    expect(screen.getByText(/anexo processado/i)).toBeTruthy()
     expect(screen.getByText(/pensamento do orquestrador/i)).toBeTruthy()
     expect(screen.getByText(/analisando o pedido/i)).toBeTruthy()
     expect(screen.getByText(/trilha de agentes/i)).toBeTruthy()

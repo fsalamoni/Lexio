@@ -198,6 +198,10 @@ const RTF_HEX_RE = /\\'[0-9a-f]{2}/gi
 
 /** Read a file as text with UTF-8 encoding, falling back to Latin-1 on decode issues. */
 function readFileAsText(file: File): Promise<string> {
+  if (typeof FileReader === 'undefined' && typeof file.text === 'function') {
+    return file.text().then(text => text.trim())
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => {

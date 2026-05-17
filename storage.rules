@@ -26,6 +26,12 @@ service firebase.storage {
         && request.resource.contentType.matches('text/.*|application/json|application/pdf|application/zip|application/vnd.openxmlformats-officedocument.wordprocessingml.document|application/vnd.openxmlformats-officedocument.presentationml.presentation|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|image/.*|audio/.*|video/.*');
     }
 
+    function isReasonableChatInputUpload() {
+      return request.resource != null
+        && request.resource.size < 50 * 1024 * 1024
+        && request.resource.contentType.matches('text/.*|application/json|application/xml|application/pdf|application/rtf|application/msword|application/vnd.openxmlformats-officedocument.wordprocessingml.document|application/vnd.ms-excel|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|application/vnd.oasis.opendocument.spreadsheet|application/vnd.ms-powerpoint|application/vnd.openxmlformats-officedocument.presentationml.presentation|application/zip|application/x-zip-compressed|application/x-rar-compressed|application/x-7z-compressed|image/.*|audio/.*|video/.*');
+    }
+
     match /research_notebooks/{userId}/{notebookId}/{mediaKind}/{fileName} {
       allow read: if isSelf(userId);
       allow write: if isSelf(userId) && isAllowedMediaKind(mediaKind) && isReasonableUpload();
@@ -34,6 +40,11 @@ service firebase.storage {
     match /chat_artifacts/{userId}/{conversationId}/{turnId}/{artifactId}/{fileName} {
       allow read: if isSelf(userId);
       allow write: if isSelf(userId) && isReasonableChatArtifactUpload();
+    }
+
+    match /chat_inputs/{userId}/{conversationId}/{turnId}/{attachmentId}/{fileName} {
+      allow read: if isSelf(userId);
+      allow write: if isSelf(userId) && isReasonableChatInputUpload();
     }
 
     match /{allPaths=**} {

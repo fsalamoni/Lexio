@@ -1,4 +1,4 @@
-import type { ChatArtifactRef, ChatTrailEvent } from '../firestore-types'
+import type { ChatAgentWorkPackage, ChatArtifactRef, ChatTrailEvent } from '../firestore-types'
 import { createBudget } from './budget'
 import { dispatchSpecialistAgent } from './dispatch'
 import { callOrchestratorLLM, appendToolMessage } from './orchestrator-llm'
@@ -7,6 +7,7 @@ import { buildSkillRegistry, listCallableAgentDescriptions } from './skill-regis
 import { OrchestratorDecisionParseError, parseOrchestratorDecision, renderSkillsManifest } from './tools-adapter'
 import { EFFORT_PRESETS } from './effort-presets'
 import { parseAgentOutputPackage } from './agent-output'
+import { renderCurrentTurnUserContent } from '../chat-context-builder'
 import type {
   OrchestratorDecision,
   OrchestratorMessage,
@@ -63,7 +64,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
   const systemPrompt = buildOrchestratorSystemPrompt(skills, input.effort)
   let history: OrchestratorMessage[] = [
     ...input.history.map(m => ({ role: m.role, content: m.content })),
-    { role: 'user', content: input.user_input },
+    { role: 'user', content: renderCurrentTurnUserContent({ userInput: input.user_input, attachments: input.attachments, contextSources: input.contextSources }) },
   ]
 
     let draft: string | null = null
@@ -250,6 +251,14 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     if (stopReason === 'max_iterations' && budget.exceeded()) stopReason = 'budget'
   }
 
+    await ensureRequiredDeliverableBundle({
+      input,
+      draft,
+      ctx,
+      latestArtifactsByLogicalId,
+      emitTrail,
+    })
+
     draft = appendLatestArtifactSummary(draft, latestArtifactsByLogicalId)
 
     const elapsedMs = Date.now() - startedAt
@@ -331,6 +340,130 @@ function formatExportStatus(status: string): string {
   if (status === 'failed') return 'falhou'
   if (status === 'unavailable') return 'indisponível'
   return status
+}
+
+async function ensureRequiredDeliverableBundle(args: {
+  input: RunChatTurnInput
+  draft: string
+  ctx: SkillContext
+  latestArtifactsByLogicalId: Map<string, { artifact: ChatArtifactRef; agentKey?: string }>
+  emitTrail: (event: ChatTrailEvent) => void
+}): Promise<void> {
+  const { input, draft, ctx, latestArtifactsByLogicalId, emitTrail } = args
+  if (!mustDeliverDownloadableBundle(input)) return
+  if (hasDownloadableArtifact(latestArtifactsByLogicalId)) return
+
+  const createdAt = new Date().toISOString()
+  const workPackage = buildFinalAnswerDeliverablePackage({ input, draft, createdAt })
+  let materialized = workPackage
+
+  try {
+    const { materializeChatAgentWorkPackageExports } = await import('../chat-artifact-exporters')
+    materialized = await materializeChatAgentWorkPackageExports(workPackage, {
+      userId: ctx.uid,
+      conversationId: ctx.conversationId,
+      turnId: ctx.turnId,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    materialized = {
+      ...workPackage,
+      thought: {
+        ...workPackage.thought,
+        summary: workPackage.thought?.summary || 'Pacote final criado a partir da resposta do chat.',
+        risks: [...(workPackage.thought?.risks ?? []), `Falha ao materializar exports finais: ${message}`].slice(0, 8),
+      },
+    }
+  }
+
+  if (ctx.persistWorkPackage) {
+    try {
+      materialized = await ctx.persistWorkPackage(materialized)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      materialized = {
+        ...materialized,
+        thought: {
+          ...materialized.thought,
+          summary: materialized.thought?.summary || 'Pacote final criado a partir da resposta do chat.',
+          risks: [...(materialized.thought?.risks ?? []), `Falha ao persistir pacote final: ${message}`].slice(0, 8),
+        },
+      }
+    }
+  }
+
+  emitTrail({
+    type: 'agent_work_package',
+    package: materialized,
+    ts: materialized.completed_at ?? new Date().toISOString(),
+  })
+}
+
+function mustDeliverDownloadableBundle(input: RunChatTurnInput): boolean {
+  if (input.requireDeliverableBundle) return true
+  return looksLikeDeliverableRequest(input.user_input)
+}
+
+function looksLikeDeliverableRequest(text: string): boolean {
+  const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const hasDownloadSignal = /\b(baixar|download|export(?:a|e|ar)|docx|pdf|zip|xlsx|csv|mp3|mp4)\b/.test(normalized)
+  const hasDeliveryVerb = /\b(entreg(?:a|ue|ar|avel|aveis)|disponibiliz(?:a|e|ar)|anex(?:a|e|ar))\b/.test(normalized)
+  const hasCreationVerb = /\b(fa(?:ca|zer)|crie|criar|gere|gerar|produza|produzir|elabore|elaborar|redija|redigir|monte|montar|prepare|preparar|construa|construir)\b/.test(normalized)
+  const hasDeliverableNoun = /\b(documentos?|arquivos?|projeto|peticao|parecer|relatorio|apresentacao|slides?|planilha|imagem|imagens|audio|video)\b/.test(normalized)
+  return hasDownloadSignal || ((hasDeliveryVerb || hasCreationVerb) && hasDeliverableNoun)
+}
+
+function hasDownloadableArtifact(latestArtifactsByLogicalId: Map<string, { artifact: ChatArtifactRef; agentKey?: string }>): boolean {
+  for (const { artifact } of latestArtifactsByLogicalId.values()) {
+    if (artifact.download_url) return true
+    if ((artifact.exports ?? []).some(exportRef => exportRef.status === 'ready' && Boolean(exportRef.download_url))) return true
+  }
+  return false
+}
+
+function buildFinalAnswerDeliverablePackage(args: { input: RunChatTurnInput; draft: string; createdAt: string }): ChatAgentWorkPackage {
+  const { input, draft, createdAt } = args
+  const title = buildDeliverableTitle(input.user_input)
+  const artifactId = `chat-final-deliverable-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return {
+    conversation_id: input.conversationId,
+    turn_id: input.turnId,
+    agent_key: 'chat_export_packager',
+    task: 'Materializar a resposta final do chat como pacote baixável porque o pedido exigia arquivos/entregáveis.',
+    thought: {
+      summary: 'Pacote final criado automaticamente a partir da resposta consolidada do orquestrador.',
+      decisions: ['Usar a resposta final como fonte canônica inicial.', 'Gerar formatos textuais baixáveis para impedir finalização sem entrega.'],
+      risks: ['Este pacote garante download imediato; pipelines específicos ainda podem produzir versões mais ricas após aprovação.'],
+      next_steps: ['Se o usuário pedir formato especializado, acionar a trilha correspondente com aprovação expressa.'],
+    },
+    result_markdown: draft,
+    artifacts: [
+      {
+        artifact_id: artifactId,
+        logical_document_id: 'chat-final-deliverable',
+        title,
+        kind: 'legal_document',
+        format: 'markdown',
+        version: 1,
+        summary: 'Pacote baixável gerado automaticamente a partir da resposta final do chat.',
+        content_preview: draft,
+        is_latest: true,
+        exports: [
+          { label: 'Markdown', format: 'markdown', status: 'planned' },
+          { label: 'DOCX', format: 'docx', status: 'planned' },
+          { label: 'PDF', format: 'pdf', status: 'planned' },
+          { label: 'ZIP', format: 'zip', status: 'planned' },
+        ],
+      },
+    ],
+    created_at: createdAt,
+    completed_at: createdAt,
+  }
+}
+
+function buildDeliverableTitle(userInput: string): string {
+  const clipped = userInput.replace(/\s+/g, ' ').trim().slice(0, 72)
+  return clipped ? `Pacote de entrega - ${clipped}` : 'Pacote de entrega do chat'
 }
 
 interface CallOrchestratorAndParseArgs {
@@ -462,6 +595,7 @@ function buildOrchestratorSystemPrompt(skills: Skill[], effort: string): string 
     '- Use `ask_user_question` apenas quando uma decisão depende de informação que só o usuário tem.',
     '- Use `request_user_approval` antes de Novo Documento, Caderno de Pesquisa, Storage grande, mídia paga, sidecar write/shell ou qualquer ação persistente/cara.',
     '- Use `call_agents_parallel` quando duas ou mais subtarefas independentes puderem rodar no mesmo lote; não use para tarefas com dependência sequencial.',
+    '- Se o usuário pedir documentos, arquivos, projeto, apresentação, planilha, imagem, áudio ou vídeo, planeje entregáveis reais e só finalize depois de gerar artefatos ou pedir aprovação expressa para a trilha necessária.',
     '- Se faltar contexto, prefira chamar `chat_planner` antes de redigir.',
     '- Se o histórico estiver longo, chame `summarize_context` para liberar tokens.',
     '- Antes de finalizar, se estiver inseguro, chame `critique_draft` com o rascunho atual.',

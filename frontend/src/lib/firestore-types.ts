@@ -1084,6 +1084,58 @@ export interface ChatArtifactExportRef {
   reason?: string
 }
 
+export type ChatAttachmentKind =
+  | 'document'
+  | 'image'
+  | 'spreadsheet'
+  | 'presentation'
+  | 'audio'
+  | 'video'
+  | 'archive'
+  | 'code'
+  | 'other'
+
+export interface ChatAttachmentExtraction {
+  status: 'pending' | 'ready' | 'partial' | 'failed' | 'unsupported'
+  mode: 'text' | 'structured_data' | 'image' | 'audio' | 'video' | 'binary' | 'unknown'
+  text_preview?: string
+  text_char_count?: number
+  truncated?: boolean
+  page_count?: number
+  pages_with_text?: number
+  sheet_count?: number
+  slide_count?: number
+  duration_seconds?: number
+  error?: string
+  processed_at?: string
+}
+
+export interface ChatTurnAttachment {
+  attachment_id: string
+  filename: string
+  mime_type: string
+  extension?: string
+  size_bytes: number
+  kind: ChatAttachmentKind
+  upload_status?: 'local' | 'uploaded' | 'failed' | 'skipped'
+  upload_error?: string
+  storage_path?: string
+  download_url?: string
+  extraction: ChatAttachmentExtraction
+  created_at: string
+}
+
+export interface ChatContextSourceRef {
+  source_id: string
+  source_type: 'attachment' | 'conversation' | 'search' | 'acervo' | 'notebook' | 'artifact'
+  title: string
+  attachment_id?: string
+  artifact_id?: string
+  summary?: string
+  citation_label?: string
+  confidence?: number
+}
+
 export interface ChatArtifactRef {
   artifact_id: string
   logical_document_id: string
@@ -1154,6 +1206,25 @@ export interface ChatArtifactExportData extends ChatArtifactExportRef {
  */
 export type ChatTrailEvent =
   | { type: 'iteration_start'; i: number; ts: string; elapsed_ms?: number; budget_used_ratio?: number }
+  | {
+      type: 'attachment_upload_started'
+      attachment_id: string
+      filename: string
+      size_bytes: number
+      ts: string
+    }
+  | {
+      type: 'attachment_processed'
+      attachment: ChatTurnAttachment
+      ts: string
+    }
+  | {
+      type: 'attachment_failed'
+      attachment_id: string
+      filename: string
+      message: string
+      ts: string
+    }
   | {
       type: 'orchestrator_thought'
       /** Partial / cumulative raw output from the orchestrator LLM as it streams. */
@@ -1300,6 +1371,8 @@ export interface ChatTurnData {
   id?: string
   conversation_id: string
   user_input: string
+  input_attachments?: ChatTurnAttachment[]
+  context_sources?: ChatContextSourceRef[]
   trail: ChatTrailEvent[]
   assistant_markdown: string | null
   status: ChatTurnStatus
