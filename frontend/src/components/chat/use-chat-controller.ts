@@ -759,6 +759,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
           apiKey,
           userInput: trimmed,
           model: resolveChatMultimodalModel(models),
+          audioTranscriptionModel: models.chat_audio_transcription,
           fallbackModels: fallbackModels.chat_multimodal_analysis ?? fallbackModels.chat_legal_researcher ?? fallbackModels.chat_orchestrator ?? [],
           signal: controller.signal,
           onTrail,

@@ -3,6 +3,7 @@ import type { ChatTurnAttachment } from './firestore-types'
 import {
   analyzeChatMultimodalAttachment,
   analyzeChatMultimodalAttachments,
+  CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES,
   CHAT_IMAGE_ANALYSIS_MAX_BYTES,
   CHAT_VIDEO_ANALYSIS_MAX_BYTES,
   resolveChatMultimodalMaxAttachments,
@@ -42,6 +43,25 @@ function videoAttachment(overrides: Partial<ChatTurnAttachment> = {}): ChatTurnA
       duration_seconds: 9,
       media_width: 1920,
       media_height: 1080,
+      processed_at: '2026-05-16T12:00:00.000Z',
+    },
+    ...overrides,
+  }
+}
+
+function audioAttachment(overrides: Partial<ChatTurnAttachment> = {}): ChatTurnAttachment {
+  return {
+    attachment_id: 'att-audio',
+    filename: 'depoimento.mp3',
+    mime_type: 'audio/mpeg',
+    extension: '.mp3',
+    size_bytes: 1024,
+    kind: 'audio',
+    created_at: '2026-05-16T12:00:00.000Z',
+    extraction: {
+      status: 'partial',
+      mode: 'audio',
+      duration_seconds: 32.4,
       processed_at: '2026-05-16T12:00:00.000Z',
     },
     ...overrides,
@@ -181,6 +201,92 @@ describe('chat multimodal analysis', () => {
     })
   })
 
+  it('turns audio attachments into transcript context', async () => {
+    const audioTranscriptionCall = vi.fn().mockResolvedValue({
+      text: 'Bom dia. Meu nome é Maria e confirmo o contrato número 123.',
+      model: 'openai/gpt-4o-mini-transcribe',
+      provider_id: 'openai',
+      provider_label: 'OpenAI',
+      duration_ms: 420,
+    })
+    const attachment = audioAttachment()
+
+    const result = await analyzeChatMultimodalAttachment({
+      file: new File(['audio'], 'depoimento.mp3', { type: 'audio/mpeg' }),
+      attachment,
+      apiKey: 'test-key',
+      userInput: 'Transcreva e destaque dados jurídicos.',
+      now: '2026-05-16T12:01:00.000Z',
+      audioTranscriptionCall,
+    })
+
+    expect(result.attachment.extraction).toMatchObject({
+      status: 'ready',
+      mode: 'audio',
+      analysis_model: 'openai/gpt-4o-mini-transcribe',
+      analysis_provider: 'OpenAI',
+    })
+    expect(result.attachment.extraction.text_preview).toContain('Análise multimodal do áudio')
+    expect(result.attachment.extraction.text_preview).toContain('contrato número 123')
+    expect(result.attachment.extraction.error).toBeUndefined()
+    expect(result.usage).toMatchObject({
+      source_type: 'chat_multimodal_analysis',
+      phase: 'chat_audio_transcription',
+      agent_name: 'Transcritor de áudio do chat',
+      model: 'openai/gpt-4o-mini-transcribe',
+      provider_id: 'openai',
+    })
+    expect(audioTranscriptionCall).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'openai/gpt-4o-mini-transcribe',
+      prompt: expect.stringContaining('Transcreva áudio em português brasileiro'),
+    }))
+  })
+
+  it('emits trail events while transcribing audio attachments in batch', async () => {
+    const events: unknown[] = []
+    const attachment = audioAttachment()
+    const result = await analyzeChatMultimodalAttachments({
+      attachments: [attachment],
+      attachmentFiles: [{ file: new File(['audio'], 'depoimento.mp3', { type: 'audio/mpeg' }), attachment }],
+      apiKey: 'test-key',
+      userInput: 'Transcreva.',
+      now: () => '2026-05-16T12:01:00.000Z',
+      onTrail: event => events.push(event),
+      audioTranscriptionCall: vi.fn().mockResolvedValue({
+        text: 'Audiência iniciada às 14h.',
+        model: 'openai/gpt-4o-mini-transcribe',
+        provider_label: 'OpenAI',
+      }),
+    })
+
+    expect(result.changed).toBe(true)
+    expect(result.attachments[0].extraction.status).toBe('ready')
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'multimodal_analysis_started', filename: 'depoimento.mp3', mode: 'audio', model: 'openai/gpt-4o-mini-transcribe' }),
+      expect.objectContaining({ type: 'multimodal_analysis_completed', filename: 'depoimento.mp3', mode: 'audio', model: 'openai/gpt-4o-mini-transcribe' }),
+    ]))
+  })
+
+  it('skips oversized audio with an explicit unsupported state', async () => {
+    const attachment = audioAttachment({ size_bytes: CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES + 1 })
+    const file = new File([new Uint8Array(CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES + 1)], 'grande.mp3', { type: 'audio/mpeg' })
+
+    const result = await analyzeChatMultimodalAttachment({
+      file,
+      attachment,
+      apiKey: 'test-key',
+      userInput: 'Transcreva.',
+      now: '2026-05-16T12:01:00.000Z',
+      audioTranscriptionCall: vi.fn(),
+    })
+
+    expect(result.skipped).toBe(true)
+    expect(result.attachment.extraction).toMatchObject({
+      status: 'unsupported',
+      mode: 'audio',
+    })
+  })
+
   it('turns sampled video frames into text context without persisting frame images', async () => {
     const llmCall = vi.fn().mockResolvedValue({
       content: 'Frame início: audiência em sala. OCR: Processo 0009999-11.2026.8.00.0000.',
@@ -217,6 +323,78 @@ describe('chat multimodal analysis', () => {
     expect(result.attachment.extraction.text_preview).not.toContain('data:image')
     const content = llmCall.mock.calls[0][0].messages[1].content as Array<{ type: string; image_url?: { url: string } }>
     expect(content.filter(part => part.type === 'image_url')).toHaveLength(3)
+  })
+
+  it('combines sampled video frames with audio-track transcription', async () => {
+    const llmCall = vi.fn().mockResolvedValue({
+      content: 'Frames: sala de reunião e contrato sobre a mesa.',
+      model: 'openai/gpt-4o-mini',
+      tokens_in: 220,
+      tokens_out: 60,
+      cost_usd: 0.004,
+      duration_ms: 300,
+      provider_label: 'OpenAI',
+    })
+    const audioTranscriptionCall = vi.fn().mockResolvedValue({
+      text: 'O locutor menciona a compra do armário e o valor de R$ 1.200,00.',
+      model: 'openai/gpt-4o-mini-transcribe',
+      provider_id: 'openai',
+      provider_label: 'OpenAI',
+      duration_ms: 500,
+    })
+
+    const result = await analyzeChatMultimodalAttachment({
+      file: new File(['video'], 'audiencia.mp4', { type: 'video/mp4' }),
+      attachment: videoAttachment(),
+      apiKey: 'test-key',
+      userInput: 'Analise este vídeo.',
+      now: '2026-05-16T12:01:00.000Z',
+      llmCall,
+      audioTranscriptionCall,
+      videoFrameExtractor: vi.fn().mockResolvedValue([
+        { label: 'início', timeSeconds: 0.5, dataUrl: 'data:image/jpeg;base64,frame-a' },
+      ]),
+    })
+
+    expect(result.attachment.extraction.text_preview).toContain('## Frames amostrados')
+    expect(result.attachment.extraction.text_preview).toContain('## Transcrição da faixa de áudio')
+    expect(result.attachment.extraction.text_preview).toContain('R$ 1.200,00')
+    expect(result.usageRecords?.map(record => record.phase)).toEqual([
+      'chat_video_audio_transcription',
+      'chat_multimodal_analysis',
+    ])
+    const textPart = llmCall.mock.calls[0][0].messages[1].content[0]
+    expect(textPart.text).toContain('Transcrição automática da faixa de áudio')
+    expect(audioTranscriptionCall).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('Este arquivo é um vídeo'),
+    }))
+  })
+
+  it('keeps a video audio transcript when frame extraction fails', async () => {
+    const result = await analyzeChatMultimodalAttachment({
+      file: new File(['video'], 'audiencia.mp4', { type: 'video/mp4' }),
+      attachment: videoAttachment(),
+      apiKey: 'test-key',
+      userInput: 'Transcreva o vídeo.',
+      now: '2026-05-16T12:01:00.000Z',
+      llmCall: vi.fn(),
+      audioTranscriptionCall: vi.fn().mockResolvedValue({
+        text: 'Áudio preservado mesmo sem frames.',
+        model: 'openai/gpt-4o-mini-transcribe',
+        provider_label: 'OpenAI',
+      }),
+      videoFrameExtractor: vi.fn().mockRejectedValue(new Error('canvas indisponível')),
+    })
+
+    expect(result.attachment.extraction).toMatchObject({
+      status: 'ready',
+      mode: 'video',
+      analysis_model: 'openai/gpt-4o-mini-transcribe',
+    })
+    expect(result.attachment.extraction.text_preview).toContain('Áudio preservado mesmo sem frames')
+    expect(result.attachment.extraction.text_preview).toContain('canvas indisponível')
+    expect(result.attachment.extraction.video_frame_count).toBeUndefined()
+    expect(result.usageRecords?.map(record => record.phase)).toEqual(['chat_video_audio_transcription'])
   })
 
   it('skips oversized videos with an explicit unsupported state', async () => {

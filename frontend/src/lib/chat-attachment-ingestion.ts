@@ -220,7 +220,9 @@ export async function prepareChatInputAttachment(
           duration_seconds: metadata.durationSeconds,
           media_width: metadata.width,
           media_height: metadata.height,
-          error: 'Transcrição automática ainda não está habilitada; o arquivo bruto fica disponível para análise multimodal futura.',
+          error: kind === 'audio'
+            ? 'Transcrição automática será tentada antes da resposta quando a análise multimodal estiver habilitada.'
+            : 'Amostragem automática de frames será tentada antes da resposta quando a análise multimodal estiver habilitada; transcrição integral do áudio do vídeo ainda não está habilitada.',
           processed_at: createdAt,
         },
       }

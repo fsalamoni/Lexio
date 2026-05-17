@@ -6,19 +6,32 @@ import {
   type ChatMessage,
   type LLMResult,
 } from './llm-client'
+import { resolveProviderCall } from './provider-credentials'
 import type { ChatTrailEvent, ChatTurnAttachment } from './firestore-types'
 import { extractChatVideoKeyframes, type ChatVideoKeyframe } from './chat-video-keyframes'
 
 export const DEFAULT_CHAT_IMAGE_ANALYSIS_MODEL = 'openai/gpt-4o-mini'
+export const DEFAULT_CHAT_AUDIO_TRANSCRIPTION_MODEL = 'openai/gpt-4o-mini-transcribe'
 export const CHAT_IMAGE_ANALYSIS_MAX_BYTES = 8 * 1024 * 1024
+export const CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES = 25 * 1024 * 1024
 export const CHAT_VIDEO_ANALYSIS_MAX_BYTES = 50 * 1024 * 1024
 export const MAX_CHAT_MULTIMODAL_TEXT_CHARS = 12_000
 export const DEFAULT_CHAT_MULTIMODAL_MAX_ATTACHMENTS = 4
 const HARD_CHAT_MULTIMODAL_MAX_ATTACHMENTS = 12
 
+export interface ChatAudioTranscriptionCallResult {
+  text: string
+  model: string
+  provider_id?: string
+  provider_label?: string
+  cost_usd?: number
+  duration_ms?: number
+}
+
 export interface ChatMultimodalAnalysisResult {
   attachment: ChatTurnAttachment
   usage?: UsageExecutionRecord
+  usageRecords?: UsageExecutionRecord[]
   skipped?: boolean
   reason?: string
 }
@@ -39,6 +52,14 @@ export interface AnalyzeChatMultimodalAttachmentArgs {
     fallbackModels: string[]
     signal?: AbortSignal
   }) => Promise<LLMResult>
+  audioTranscriptionModel?: string
+  audioTranscriptionCall?: (args: {
+    file: File
+    attachment: ChatTurnAttachment
+    model: string
+    prompt: string
+    signal?: AbortSignal
+  }) => Promise<ChatAudioTranscriptionCallResult>
   videoFrameExtractor?: (file: File) => Promise<ChatVideoKeyframe[]>
 }
 
@@ -53,6 +74,8 @@ export interface AnalyzeChatMultimodalAttachmentsArgs {
   onTrail?: (event: ChatTrailEvent) => void
   now?: () => string
   llmCall?: AnalyzeChatMultimodalAttachmentArgs['llmCall']
+  audioTranscriptionModel?: string
+  audioTranscriptionCall?: AnalyzeChatMultimodalAttachmentArgs['audioTranscriptionCall']
   maxAnalyzedAttachments?: number
 }
 
@@ -79,7 +102,7 @@ export async function analyzeChatMultimodalAttachments(
       continue
     }
 
-    const model = args.model ?? DEFAULT_CHAT_IMAGE_ANALYSIS_MODEL
+    const model = resolveAttachmentAnalysisModel(attachment, args.model, args.audioTranscriptionModel)
     if (analyzedAttachments >= maxAnalyzedAttachments) {
       args.onTrail?.({
         type: 'multimodal_analysis_skipped',
@@ -115,10 +138,13 @@ export async function analyzeChatMultimodalAttachments(
         signal: args.signal,
         now: args.now?.(),
         llmCall: args.llmCall,
+        audioTranscriptionModel: args.audioTranscriptionModel,
+        audioTranscriptionCall: args.audioTranscriptionCall,
       })
       attachments.push(result.attachment)
       changed = changed || result.attachment !== attachment
       if (result.usage) usageRecords.push(result.usage)
+      if (result.usageRecords?.length) usageRecords.push(...result.usageRecords)
       args.onTrail?.({
         type: 'multimodal_analysis_completed',
         attachment_id: attachment.attachment_id,
@@ -157,10 +183,11 @@ export function resolveChatMultimodalMaxAttachments(rawValue?: string | number):
 export async function analyzeChatMultimodalAttachment(
   args: AnalyzeChatMultimodalAttachmentArgs,
 ): Promise<ChatMultimodalAnalysisResult> {
-  if (args.attachment.kind !== 'image' && args.attachment.kind !== 'video') {
-    return { attachment: args.attachment, skipped: true, reason: 'Somente imagens e vídeos são analisados nesta etapa multimodal.' }
+  if (args.attachment.kind !== 'image' && args.attachment.kind !== 'audio' && args.attachment.kind !== 'video') {
+    return { attachment: args.attachment, skipped: true, reason: 'Somente imagens, áudios e vídeos são analisados nesta etapa multimodal.' }
   }
 
+  if (args.attachment.kind === 'audio') return analyzeAudioAttachment(args)
   if (args.attachment.kind === 'video') return analyzeVideoAttachment(args)
 
   if (args.file.size > CHAT_IMAGE_ANALYSIS_MAX_BYTES) {
@@ -236,6 +263,73 @@ export async function analyzeChatMultimodalAttachment(
   }
 }
 
+async function analyzeAudioAttachment(args: AnalyzeChatMultimodalAttachmentArgs): Promise<ChatMultimodalAnalysisResult> {
+  if (args.file.size > CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES) {
+    return {
+      attachment: {
+        ...args.attachment,
+        extraction: {
+          ...args.attachment.extraction,
+          status: 'unsupported',
+          mode: 'audio',
+          error: `Áudio acima do limite de ${Math.round(CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES / 1024 / 1024)} MB para transcrição automática.`,
+          processed_at: args.now ?? new Date().toISOString(),
+        },
+      },
+      skipped: true,
+      reason: 'Áudio acima do limite para transcrição automática.',
+    }
+  }
+
+  const model = args.audioTranscriptionModel ?? readEnvAudioTranscriptionModel() ?? DEFAULT_CHAT_AUDIO_TRANSCRIPTION_MODEL
+  const prompt = buildAudioTranscriptionPrompt(args.attachment, args.userInput)
+  const result = args.audioTranscriptionCall
+    ? await args.audioTranscriptionCall({ file: args.file, attachment: args.attachment, model, prompt, signal: args.signal })
+    : await transcribeChatAudioWithProvider({ file: args.file, model, prompt, signal: args.signal })
+  const content = result.text.trim()
+  if (!content) throw new Error('O transcritor de áudio não retornou texto.')
+
+  const text = normalizeAnalysisText(content, 'audio')
+  const truncated = text.length > MAX_CHAT_MULTIMODAL_TEXT_CHARS
+  const processedAt = args.now ?? new Date().toISOString()
+  const attachment: ChatTurnAttachment = {
+    ...args.attachment,
+    extraction: {
+      ...args.attachment.extraction,
+      status: truncated ? 'partial' : 'ready',
+      mode: 'audio',
+      text_preview: truncated ? text.slice(0, MAX_CHAT_MULTIMODAL_TEXT_CHARS) : text,
+      text_char_count: text.length,
+      truncated,
+      analysis_model: result.model,
+      analysis_provider: result.provider_label,
+      analysis_cost_usd: result.cost_usd,
+      analysis_tokens_in: undefined,
+      analysis_tokens_out: undefined,
+      error: undefined,
+      processed_at: processedAt,
+    },
+  }
+
+  return {
+    attachment,
+    usage: createUsageExecutionRecord({
+      source_type: 'chat_multimodal_analysis',
+      source_id: args.attachment.attachment_id,
+      created_at: processedAt,
+      phase: 'chat_audio_transcription',
+      agent_name: 'Transcritor de áudio do chat',
+      model: result.model,
+      provider_id: result.provider_id,
+      provider_label: result.provider_label,
+      requested_model: model,
+      resolved_model: result.model,
+      cost_usd: result.cost_usd,
+      duration_ms: result.duration_ms,
+    }),
+  }
+}
+
 async function analyzeVideoAttachment(args: AnalyzeChatMultimodalAttachmentArgs): Promise<ChatMultimodalAnalysisResult> {
   if (args.file.size > CHAT_VIDEO_ANALYSIS_MAX_BYTES) {
     return {
@@ -254,8 +348,17 @@ async function analyzeVideoAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
     }
   }
 
-  const frames = await (args.videoFrameExtractor ?? extractChatVideoKeyframes)(args.file)
-  if (!frames.length) {
+  let frames: ChatVideoKeyframe[] = []
+  let frameExtractionError: string | undefined
+  try {
+    frames = await (args.videoFrameExtractor ?? extractChatVideoKeyframes)(args.file)
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    frameExtractionError = error instanceof Error ? error.message : String(error)
+  }
+  const audioTrack = await transcribeVideoAudioTrack(args)
+  if (!frames.length && !audioTrack.text) {
+    const detail = [frameExtractionError, audioTrack.error].filter(Boolean).join('; ')
     return {
       attachment: {
         ...args.attachment,
@@ -263,7 +366,9 @@ async function analyzeVideoAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
           ...args.attachment.extraction,
           status: 'partial',
           mode: 'video',
-          error: 'Não foi possível extrair frames do vídeo neste navegador; metadados básicos foram preservados.',
+          error: detail
+            ? `Não foi possível extrair frames do vídeo nem transcrever a faixa de áudio. Detalhe: ${detail}`
+            : 'Não foi possível extrair frames do vídeo neste navegador; metadados básicos foram preservados.',
           processed_at: args.now ?? new Date().toISOString(),
         },
       },
@@ -274,14 +379,24 @@ async function analyzeVideoAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
 
   const model = args.model ?? DEFAULT_CHAT_IMAGE_ANALYSIS_MODEL
   const fallbackModels = normalizeFallbackModels(args.fallbackModels, model)
-  const messages = buildVideoAnalysisMessages(args.attachment, args.userInput, frames)
-  const result = args.llmCall
-    ? await args.llmCall({ apiKey: args.apiKey, messages, model, fallbackModels, signal: args.signal })
-    : await callLLMWithMessagesFallback(args.apiKey, messages, model, fallbackModels, 1800, 0.1, { signal: args.signal })
-  const content = result.content.trim()
-  if (!content) throw new Error('O modelo multimodal não retornou análise dos frames do vídeo.')
+  let result: LLMResult | undefined
+  let visualContent = ''
+  let visualError: string | undefined
+  if (frames.length) {
+    try {
+      const messages = buildVideoAnalysisMessages(args.attachment, args.userInput, frames, audioTrack.text)
+      result = args.llmCall
+        ? await args.llmCall({ apiKey: args.apiKey, messages, model, fallbackModels, signal: args.signal })
+        : await callLLMWithMessagesFallback(args.apiKey, messages, model, fallbackModels, 1800, 0.1, { signal: args.signal })
+      visualContent = result.content.trim()
+      if (!visualContent) throw new Error('O modelo multimodal não retornou análise dos frames do vídeo.')
+    } catch (error) {
+      if (!audioTrack.text) throw error
+      visualError = error instanceof Error ? error.message : String(error)
+    }
+  }
 
-  const text = normalizeAnalysisText(content, 'video')
+  const text = normalizeVideoAnalysisText(visualContent, audioTrack.text, visualError ?? frameExtractionError ?? audioTrack.error)
   const truncated = text.length > MAX_CHAT_MULTIMODAL_TEXT_CHARS
   const processedAt = args.now ?? new Date().toISOString()
   const attachment: ChatTurnAttachment = {
@@ -293,39 +408,46 @@ async function analyzeVideoAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
       text_preview: truncated ? text.slice(0, MAX_CHAT_MULTIMODAL_TEXT_CHARS) : text,
       text_char_count: text.length,
       truncated,
-      video_frame_count: frames.length,
-      video_frame_timestamps: frames.map(frame => frame.timeSeconds),
-      analysis_model: result.model,
-      analysis_provider: result.provider_label ?? result.operational?.providerLabel,
-      analysis_cost_usd: result.cost_usd,
-      analysis_tokens_in: result.tokens_in,
-      analysis_tokens_out: result.tokens_out,
+      video_frame_count: frames.length || undefined,
+      video_frame_timestamps: frames.length ? frames.map(frame => frame.timeSeconds) : undefined,
+      analysis_model: result?.model ?? audioTrack.model,
+      analysis_provider: result?.provider_label ?? result?.operational?.providerLabel ?? audioTrack.provider_label,
+      analysis_cost_usd: (result?.cost_usd ?? 0) + (audioTrack.cost_usd ?? 0),
+      analysis_tokens_in: result?.tokens_in,
+      analysis_tokens_out: result?.tokens_out,
       error: undefined,
       processed_at: processedAt,
     },
   }
 
+  const usageRecords = [
+    audioTrack.usage,
+    result
+      ? createUsageExecutionRecord({
+          source_type: 'chat_multimodal_analysis',
+          source_id: args.attachment.attachment_id,
+          created_at: processedAt,
+          phase: 'chat_multimodal_analysis',
+          agent_name: 'Analisador multimodal de anexos',
+          model: result.model,
+          provider_id: result.provider_id ?? result.operational?.providerId,
+          provider_label: result.provider_label ?? result.operational?.providerLabel,
+          requested_model: result.operational?.requestedModel ?? model,
+          resolved_model: result.operational?.resolvedModel ?? result.model,
+          tokens_in: result.tokens_in,
+          tokens_out: result.tokens_out,
+          cost_usd: result.cost_usd,
+          duration_ms: result.duration_ms,
+          retry_count: result.operational?.totalRetryCount ?? null,
+          used_fallback: result.operational?.fallbackUsed ?? null,
+          fallback_from: result.operational?.fallbackFrom ?? null,
+        })
+      : undefined,
+  ].filter((usage): usage is UsageExecutionRecord => Boolean(usage))
+
   return {
     attachment,
-    usage: createUsageExecutionRecord({
-      source_type: 'chat_multimodal_analysis',
-      source_id: args.attachment.attachment_id,
-      created_at: processedAt,
-      phase: 'chat_multimodal_analysis',
-      agent_name: 'Analisador multimodal de anexos',
-      model: result.model,
-      provider_id: result.provider_id ?? result.operational?.providerId,
-      provider_label: result.provider_label ?? result.operational?.providerLabel,
-      requested_model: result.operational?.requestedModel ?? model,
-      resolved_model: result.operational?.resolvedModel ?? result.model,
-      tokens_in: result.tokens_in,
-      tokens_out: result.tokens_out,
-      cost_usd: result.cost_usd,
-      duration_ms: result.duration_ms,
-      retry_count: result.operational?.totalRetryCount ?? null,
-      used_fallback: result.operational?.fallbackUsed ?? null,
-      fallback_from: result.operational?.fallbackFrom ?? null,
-    }),
+    usageRecords,
   }
 }
 
@@ -351,6 +473,15 @@ function readEnvMultimodalAttachmentLimit(): string | undefined {
   }
 }
 
+function readEnvAudioTranscriptionModel(): string | undefined {
+  try {
+    const raw = import.meta.env.VITE_CHAT_AUDIO_TRANSCRIPTION_MODEL as string | undefined
+    return raw?.trim() || undefined
+  } catch {
+    return undefined
+  }
+}
+
 function normalizeMultimodalAttachmentLimit(rawValue: unknown): number {
   const parsed = Number(rawValue)
   if (!Number.isFinite(parsed)) return DEFAULT_CHAT_MULTIMODAL_MAX_ATTACHMENTS
@@ -358,9 +489,35 @@ function normalizeMultimodalAttachmentLimit(rawValue: unknown): number {
 }
 
 function shouldAnalyzeAttachment(attachment: ChatTurnAttachment): boolean {
-  if (attachment.kind !== 'image' && attachment.kind !== 'video') return false
+  if (attachment.kind !== 'image' && attachment.kind !== 'audio' && attachment.kind !== 'video') return false
   if (attachment.extraction.status === 'ready' && attachment.extraction.text_preview) return false
   return attachment.extraction.status === 'pending' || attachment.extraction.status === 'partial' || attachment.extraction.status === 'failed'
+}
+
+function resolveAttachmentAnalysisModel(
+  attachment: ChatTurnAttachment,
+  imageVideoModel?: string,
+  audioModel?: string,
+): string {
+  if (attachment.kind === 'audio') return audioModel ?? readEnvAudioTranscriptionModel() ?? DEFAULT_CHAT_AUDIO_TRANSCRIPTION_MODEL
+  return imageVideoModel ?? DEFAULT_CHAT_IMAGE_ANALYSIS_MODEL
+}
+
+function buildAudioTranscriptionPrompt(attachment: ChatTurnAttachment, userInput: string): string {
+  return [
+    'Transcreva áudio em português brasileiro com vocabulário jurídico preservado.',
+    'Mantenha nomes próprios, datas, valores, números de processo e siglas com a maior fidelidade possível.',
+    'Quando houver baixa confiança, marque o trecho como [inaudível] ou [dúvida: ...].',
+    `Pedido do usuário: ${userInput}`,
+    `Arquivo: ${attachment.filename}`,
+  ].join('\n')
+}
+
+function buildVideoAudioTranscriptionPrompt(attachment: ChatTurnAttachment, userInput: string): string {
+  return [
+    buildAudioTranscriptionPrompt(attachment, userInput),
+    'Este arquivo é um vídeo; transcreva apenas a faixa falada/sonora quando houver áudio inteligível.',
+  ].join('\n')
 }
 
 function buildImageAnalysisMessages(attachment: ChatTurnAttachment, userInput: string, dataUrl: string): ChatMessage[] {
@@ -398,7 +555,12 @@ function buildImageAnalysisMessages(attachment: ChatTurnAttachment, userInput: s
   ]
 }
 
-function buildVideoAnalysisMessages(attachment: ChatTurnAttachment, userInput: string, frames: ChatVideoKeyframe[]): ChatMessage[] {
+function buildVideoAnalysisMessages(
+  attachment: ChatTurnAttachment,
+  userInput: string,
+  frames: ChatVideoKeyframe[],
+  audioTranscript?: string,
+): ChatMessage[] {
   const content: ChatMessageContentPart[] = [
     {
       type: 'text',
@@ -408,13 +570,16 @@ function buildVideoAnalysisMessages(attachment: ChatTurnAttachment, userInput: s
         `MIME: ${attachment.mime_type || 'desconhecido'}`,
         `Duração conhecida: ${attachment.extraction.duration_seconds ? `${attachment.extraction.duration_seconds}s` : 'não informada'}`,
         `Frames enviados: ${frames.map(frame => `${frame.label} ${frame.timeSeconds}s`).join('; ')}`,
+        audioTranscript ? 'Transcrição da faixa de áudio disponível abaixo e deve ser cruzada com os frames.' : '',
         '',
         'Analise os frames como amostras do vídeo. Produza:',
         '1. Descrição objetiva das cenas e objetos relevantes.',
         '2. OCR/texto visível em cada frame, com [ilegível] quando necessário.',
         '3. Pessoas, documentos, telas, placas, datas, valores ou números processuais aparentes.',
-        '4. Limites da análise: deixe claro que a avaliação usa frames amostrados, não transcrição integral.',
-      ].join('\n'),
+        '4. Quando houver transcrição, relacione falas relevantes aos dados visuais sem inventar sincronização exata.',
+        '5. Limites da análise: deixe claro que a avaliação usa frames amostrados e transcrição automática quando disponível.',
+        audioTranscript ? `\nTranscrição automática da faixa de áudio:\n${audioTranscript}` : '',
+      ].filter(Boolean).join('\n'),
     },
   ]
   for (const frame of frames) {
@@ -435,6 +600,131 @@ function buildVideoAnalysisMessages(attachment: ChatTurnAttachment, userInput: s
     },
     { role: 'user', content },
   ]
+}
+
+async function transcribeVideoAudioTrack(args: AnalyzeChatMultimodalAttachmentArgs): Promise<{
+  text?: string
+  model?: string
+  provider_label?: string
+  cost_usd?: number
+  usage?: UsageExecutionRecord
+  error?: string
+}> {
+  if (args.file.size > CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES || !isVideoAudioTranscriptionCandidate(args.attachment)) return {}
+
+  const model = args.audioTranscriptionModel ?? readEnvAudioTranscriptionModel() ?? DEFAULT_CHAT_AUDIO_TRANSCRIPTION_MODEL
+  const prompt = buildVideoAudioTranscriptionPrompt(args.attachment, args.userInput)
+  const processedAt = args.now ?? new Date().toISOString()
+  try {
+    const result = args.audioTranscriptionCall
+      ? await args.audioTranscriptionCall({ file: args.file, attachment: args.attachment, model, prompt, signal: args.signal })
+      : await transcribeChatAudioWithProvider({ file: args.file, model, prompt, signal: args.signal })
+    const text = result.text.trim()
+    if (!text) return { error: 'O transcritor não retornou fala detectável na faixa de áudio do vídeo.' }
+    return {
+      text,
+      model: result.model,
+      provider_label: result.provider_label,
+      cost_usd: result.cost_usd,
+      usage: createUsageExecutionRecord({
+        source_type: 'chat_multimodal_analysis',
+        source_id: args.attachment.attachment_id,
+        created_at: processedAt,
+        phase: 'chat_video_audio_transcription',
+        agent_name: 'Transcritor de áudio de vídeo do chat',
+        model: result.model,
+        provider_id: result.provider_id,
+        provider_label: result.provider_label,
+        requested_model: model,
+        resolved_model: result.model,
+        cost_usd: result.cost_usd,
+        duration_ms: result.duration_ms,
+      }),
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    return { error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function isVideoAudioTranscriptionCandidate(attachment: ChatTurnAttachment): boolean {
+  const mimeType = attachment.mime_type.toLowerCase()
+  const extension = attachment.extension?.toLowerCase() ?? ''
+  return mimeType === 'video/mp4' || mimeType === 'video/webm' || extension === '.mp4' || extension === '.webm'
+}
+
+async function transcribeChatAudioWithProvider(args: {
+  file: File
+  model: string
+  prompt: string
+  signal?: AbortSignal
+}): Promise<ChatAudioTranscriptionCallResult> {
+  const startedAt = performance.now()
+  const routeModel = normalizeAudioTranscriptionRouteModel(args.model)
+  const requestModel = extractProviderModelId(routeModel)
+  const resolved = await resolveProviderCall(routeModel)
+  if (resolved.provider.dialect !== 'openai-compatible') {
+    throw new Error(`Transcrição de áudio requer um provedor OpenAI-compatible; modelo configurado resolveu para ${resolved.provider.label}.`)
+  }
+
+  const formData = new FormData()
+  formData.append('file', args.file, args.file.name || 'audio')
+  formData.append('model', requestModel)
+  formData.append('response_format', 'json')
+  formData.append('language', 'pt')
+  if (args.prompt.trim()) formData.append('prompt', args.prompt.slice(0, 5000))
+
+  const headers: Record<string, string> = {}
+  if (resolved.provider.authHeader) {
+    headers[resolved.provider.authHeader] = `${resolved.provider.authPrefix ?? ''}${resolved.apiKey}`
+  }
+  if (resolved.provider.requiresDangerousBrowserHeader && resolved.provider.id === 'openai') {
+    headers['OpenAI-Beta'] = 'browser=dangerously-allow'
+  }
+
+  const response = await fetch(`${resolved.baseUrl.replace(/\/+$/, '')}/audio/transcriptions`, {
+    method: 'POST',
+    headers,
+    body: formData,
+    signal: args.signal,
+  })
+  const body = await response.text().catch(() => '')
+  if (!response.ok) {
+    throw new Error(`Falha na transcrição de áudio (${response.status}): ${extractAudioProviderError(body)}`)
+  }
+  const parsed = body ? JSON.parse(body) as Record<string, unknown> : {}
+  const text = typeof parsed.text === 'string' ? parsed.text : ''
+  return {
+    text,
+    model: routeModel,
+    provider_id: resolved.provider.id,
+    provider_label: resolved.provider.label,
+    duration_ms: Math.max(0, Math.round(performance.now() - startedAt)),
+  }
+}
+
+function normalizeAudioTranscriptionRouteModel(model: string): string {
+  const trimmed = model.trim() || DEFAULT_CHAT_AUDIO_TRANSCRIPTION_MODEL
+  return trimmed.includes('/') ? trimmed : `openai/${trimmed}`
+}
+
+function extractProviderModelId(routeModel: string): string {
+  return routeModel.split('/').filter(Boolean).pop() || routeModel
+}
+
+function extractAudioProviderError(body: string): string {
+  if (!body) return 'sem detalhes do provedor'
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>
+    const error = parsed.error
+    if (error && typeof error === 'object' && typeof (error as Record<string, unknown>).message === 'string') {
+      return (error as Record<string, unknown>).message as string
+    }
+    if (typeof parsed.message === 'string') return parsed.message
+  } catch {
+    // Fall through to raw body.
+  }
+  return body.slice(0, 600)
 }
 
 async function fileToImageDataUrl(file: File, fallbackMimeType: string): Promise<string> {
@@ -466,13 +756,27 @@ function normalizeFallbackModels(fallbackModels: string[] | undefined, model: st
   return candidates.filter((candidate, index) => candidate && candidate !== model && candidates.indexOf(candidate) === index)
 }
 
-function normalizeAnalysisText(content: string, subject: 'image' | 'video' = 'image'): string {
-  const label = subject === 'video' ? 'do vídeo' : 'da imagem'
+function normalizeAnalysisText(content: string, subject: 'image' | 'audio' | 'video' = 'image'): string {
+  const label = subject === 'video' ? 'do vídeo' : subject === 'audio' ? 'do áudio' : 'da imagem'
   return [
     `Análise multimodal ${label}:`,
     '',
     content.trim(),
   ].join('\n')
+}
+
+function normalizeVideoAnalysisText(visualContent: string, audioTranscript?: string, warning?: string): string {
+  const sections = ['Análise multimodal do vídeo:', '']
+  if (visualContent.trim()) {
+    sections.push('## Frames amostrados', '', visualContent.trim(), '')
+  }
+  if (audioTranscript?.trim()) {
+    sections.push('## Transcrição da faixa de áudio', '', audioTranscript.trim(), '')
+  }
+  if (warning?.trim()) {
+    sections.push('## Limites da análise', '', warning.trim(), '')
+  }
+  return sections.join('\n').trim()
 }
 
 function withFailedAnalysis(attachment: ChatTurnAttachment, message: string, processedAt: string): ChatTurnAttachment {

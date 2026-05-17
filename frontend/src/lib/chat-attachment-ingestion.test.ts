@@ -163,6 +163,37 @@ describe('chat attachment ingestion', () => {
       media_width: 1920,
       media_height: 1080,
     })
+    expect(attachment.extraction.error).toContain('Amostragem automática de frames')
+  })
+
+  it('marks audio metadata as ready for automatic transcription attempts', async () => {
+    const listeners = new Map<string, EventListener>()
+    const media = {
+      duration: 18.25,
+      preload: '',
+      src: '',
+      addEventListener: vi.fn((event: string, listener: EventListener) => listeners.set(event, listener)),
+      removeEventListener: vi.fn(),
+      load: vi.fn(() => listeners.get('loadedmetadata')?.(new Event('loadedmetadata'))),
+    } as unknown as HTMLAudioElement
+    vi.spyOn(document, 'createElement').mockReturnValue(media)
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:audio'),
+      revokeObjectURL: vi.fn(),
+    })
+
+    const attachment = await prepareChatInputAttachment(new File(['audio'], 'depoimento.mp3', { type: 'audio/mpeg' }), {
+      now: '2026-05-16T12:00:00.000Z',
+      attachmentId: 'att-audio',
+    })
+
+    expect(attachment.kind).toBe('audio')
+    expect(attachment.extraction).toMatchObject({
+      status: 'partial',
+      mode: 'audio',
+      duration_seconds: 18.25,
+    })
+    expect(attachment.extraction.error).toContain('Transcrição automática será tentada')
   })
 
   it('rejects empty files with a visible extraction error', async () => {

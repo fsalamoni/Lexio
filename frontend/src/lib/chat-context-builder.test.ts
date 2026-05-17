@@ -155,4 +155,38 @@ describe('chat context builder', () => {
     expect(rendered).toContain('Dimensões: 1920x1080')
     expect(rendered).toContain('Frames analisados: 3 (0.5s, 22.6s, 44.7s)')
   })
+
+  it('renders audio transcripts as attachment context', () => {
+    const audioAttachment: ChatTurnAttachment = {
+      attachment_id: 'att-audio',
+      filename: 'depoimento.mp3',
+      mime_type: 'audio/mpeg',
+      extension: '.mp3',
+      size_bytes: 2048,
+      kind: 'audio',
+      created_at: '2026-05-16T12:00:00.000Z',
+      extraction: {
+        status: 'ready',
+        mode: 'audio',
+        duration_seconds: 31.5,
+        analysis_model: 'openai/gpt-4o-mini-transcribe',
+        text_preview: 'Análise multimodal do áudio:\n\nAudiência iniciada às 14h.',
+        text_char_count: 58,
+        truncated: false,
+        processed_at: '2026-05-16T12:00:00.000Z',
+      },
+    }
+
+    const rendered = renderCurrentTurnUserContent({
+      userInput: 'Use o áudio como prova.',
+      attachments: [audioAttachment],
+      contextSources: buildAttachmentContextSources([audioAttachment]),
+    })
+
+    expect(rendered).toContain('Tipo: audio')
+    expect(rendered).toContain('Duração: 31.5s')
+    expect(rendered).toContain('Modelo de análise: openai/gpt-4o-mini-transcribe')
+    expect(rendered).toContain('Audiência iniciada às 14h')
+    expect(rendered).toContain('## Fontes de contexto vinculadas')
+  })
 })
