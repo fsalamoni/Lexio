@@ -74,6 +74,28 @@ export interface ProviderSettingEntry {
 
 export type ProviderSettingsMap = Record<string, ProviderSettingEntry>
 
+export type MultimodalModality = 'image' | 'audio' | 'video'
+
+export interface MultimodalModalityPolicy {
+  /** Whether this attachment/media modality can be processed automatically. */
+  enabled?: boolean
+  /** Maximum file size accepted for automatic processing, in MB. */
+  max_file_mb?: number
+  /** Empty/absent means any configured provider is allowed. */
+  allowed_provider_ids?: string[]
+  /** Providers that must never be used for this modality. */
+  blocked_provider_ids?: string[]
+}
+
+export interface MultimodalPolicyConfig {
+  /** Global kill switch for automatic multimodal processing. */
+  enabled?: boolean
+  /** Maximum number of multimodal attachments analyzed per chat turn. */
+  max_attachments_per_turn?: number
+  /** Per-modality limits and provider routing controls. */
+  modalities?: Partial<Record<MultimodalModality, MultimodalModalityPolicy>>
+}
+
 export interface UserSettingsData {
   legacy_migrated_at?: string
   api_keys?: Record<string, string>
@@ -86,6 +108,7 @@ export interface UserSettingsData {
    * has only OpenRouter configured (legacy default).
    */
   provider_settings?: ProviderSettingsMap
+  multimodal_policy?: MultimodalPolicyConfig
   last_jurisprudence_tribunal_aliases?: string[]
   model_catalog?: ModelOption[]
   agent_models?: Record<string, string>

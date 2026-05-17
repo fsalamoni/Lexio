@@ -40,6 +40,7 @@ import PresentationV2PipelineConfigCard from '../components/PresentationV2Pipeli
 import ChatOrchestratorConfigCard from '../components/ChatOrchestratorConfigCard'
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
+import MultimodalPolicyCard from '../components/admin/MultimodalPolicyCard'
 import RuntimeFeatureFlagsCard from '../components/admin/RuntimeFeatureFlagsCard'
 import ModelCatalogCard from '../components/ModelCatalogCard'
 import ProviderApiKeysCard from '../components/ProviderApiKeysCard'
@@ -939,6 +940,19 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <RuntimeFeatureFlagsCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_multimodal_policy"
+          title="Politica Multimodal"
+          icon={Shield}
+          iconColor="text-teal-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <MultimodalPolicyCard />
         </AdminCollapsibleSection>
       )}
 

@@ -54,6 +54,7 @@ import {
   loadChatOrchestratorModels,
   loadFallbackPriorityConfig,
 } from '../../lib/model-config'
+import { loadMultimodalPolicyRuntimeConfig, type MultimodalPolicyRuntimeConfig } from '../../lib/multimodal-policy'
 import { getOpenRouterKey } from '../../lib/generation-service'
 import { isEnabled } from '../../lib/feature-flags'
 import type { UsageExecutionRecord } from '../../lib/cost-analytics'
@@ -675,6 +676,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     // Build models map + API key (mock stays empty for demo).
     let models: Record<string, string> = {}
     let fallbackModels: Record<string, string[]> = {}
+    let multimodalRuntimeConfig: MultimodalPolicyRuntimeConfig | undefined
     let apiKey = ''
     try {
       if (mock) {
@@ -682,8 +684,13 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         fallbackModels = {}
         apiKey = 'demo'
       } else {
-        models = await loadChatOrchestratorModels(userId ?? undefined)
-        const fallbackConfig = await loadFallbackPriorityConfig(userId ?? undefined)
+        const [loadedModels, fallbackConfig, loadedMultimodalRuntime] = await Promise.all([
+          loadChatOrchestratorModels(userId ?? undefined),
+          loadFallbackPriorityConfig(userId ?? undefined),
+          loadMultimodalPolicyRuntimeConfig(userId ?? undefined),
+        ])
+        models = loadedModels
+        multimodalRuntimeConfig = loadedMultimodalRuntime
         const resolveFallbacks = buildPipelineFallbackResolver(CHAT_ORCHESTRATOR_AGENT_DEFS, fallbackConfig)
         fallbackModels = Object.fromEntries(
           Object.entries(models).map(([agentKey, model]) => [agentKey, resolveFallbacks(agentKey, model)]),
@@ -761,6 +768,9 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
           model: resolveChatMultimodalModel(models),
           audioTranscriptionModel: models.chat_audio_transcription,
           fallbackModels: fallbackModels.chat_multimodal_analysis ?? fallbackModels.chat_legal_researcher ?? fallbackModels.chat_orchestrator ?? [],
+          multimodalPolicy: multimodalRuntimeConfig?.policy,
+          modelCatalog: multimodalRuntimeConfig?.modelCatalog,
+          providerSettings: multimodalRuntimeConfig?.providerSettings,
           signal: controller.signal,
           onTrail,
         })

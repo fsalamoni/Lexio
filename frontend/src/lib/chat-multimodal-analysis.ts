@@ -7,17 +7,28 @@ import {
   type LLMResult,
 } from './llm-client'
 import { resolveProviderCall } from './provider-credentials'
-import type { ChatTrailEvent, ChatTurnAttachment } from './firestore-types'
+import type { ChatTrailEvent, ChatTurnAttachment, MultimodalModality, MultimodalPolicyConfig, ProviderSettingsMap } from './firestore-types'
 import { extractChatVideoKeyframes, type ChatVideoKeyframe } from './chat-video-keyframes'
+import {
+  DEFAULT_MULTIMODAL_FILE_LIMIT_MB,
+  DEFAULT_MULTIMODAL_MAX_ATTACHMENTS_PER_TURN,
+  HARD_MULTIMODAL_MAX_ATTACHMENTS_PER_TURN,
+  getMultimodalFileLimitBytes,
+  getMultimodalModalityBlockReason,
+  MULTIMODAL_MODALITY_LABELS,
+  normalizeMultimodalPolicyConfig,
+  selectMultimodalModelForPolicy,
+} from './multimodal-policy'
+import type { ModelOption } from './model-config'
 
 export const DEFAULT_CHAT_IMAGE_ANALYSIS_MODEL = 'openai/gpt-4o-mini'
 export const DEFAULT_CHAT_AUDIO_TRANSCRIPTION_MODEL = 'openai/gpt-4o-mini-transcribe'
-export const CHAT_IMAGE_ANALYSIS_MAX_BYTES = 8 * 1024 * 1024
-export const CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES = 25 * 1024 * 1024
-export const CHAT_VIDEO_ANALYSIS_MAX_BYTES = 50 * 1024 * 1024
+export const CHAT_IMAGE_ANALYSIS_MAX_BYTES = DEFAULT_MULTIMODAL_FILE_LIMIT_MB.image * 1024 * 1024
+export const CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES = DEFAULT_MULTIMODAL_FILE_LIMIT_MB.audio * 1024 * 1024
+export const CHAT_VIDEO_ANALYSIS_MAX_BYTES = DEFAULT_MULTIMODAL_FILE_LIMIT_MB.video * 1024 * 1024
 export const MAX_CHAT_MULTIMODAL_TEXT_CHARS = 12_000
-export const DEFAULT_CHAT_MULTIMODAL_MAX_ATTACHMENTS = 4
-const HARD_CHAT_MULTIMODAL_MAX_ATTACHMENTS = 12
+export const DEFAULT_CHAT_MULTIMODAL_MAX_ATTACHMENTS = DEFAULT_MULTIMODAL_MAX_ATTACHMENTS_PER_TURN
+const HARD_CHAT_MULTIMODAL_MAX_ATTACHMENTS = HARD_MULTIMODAL_MAX_ATTACHMENTS_PER_TURN
 
 export interface ChatAudioTranscriptionCallResult {
   text: string
@@ -61,6 +72,9 @@ export interface AnalyzeChatMultimodalAttachmentArgs {
     signal?: AbortSignal
   }) => Promise<ChatAudioTranscriptionCallResult>
   videoFrameExtractor?: (file: File) => Promise<ChatVideoKeyframe[]>
+  multimodalPolicy?: MultimodalPolicyConfig
+  modelCatalog?: ModelOption[]
+  providerSettings?: ProviderSettingsMap
 }
 
 export interface AnalyzeChatMultimodalAttachmentsArgs {
@@ -77,6 +91,9 @@ export interface AnalyzeChatMultimodalAttachmentsArgs {
   audioTranscriptionModel?: string
   audioTranscriptionCall?: AnalyzeChatMultimodalAttachmentArgs['audioTranscriptionCall']
   maxAnalyzedAttachments?: number
+  multimodalPolicy?: MultimodalPolicyConfig
+  modelCatalog?: ModelOption[]
+  providerSettings?: ProviderSettingsMap
 }
 
 export interface AnalyzeChatMultimodalAttachmentsResult {
@@ -90,7 +107,10 @@ export async function analyzeChatMultimodalAttachments(
 ): Promise<AnalyzeChatMultimodalAttachmentsResult> {
   const candidatesById = new Map(args.attachmentFiles.map(candidate => [candidate.attachment.attachment_id, candidate]))
   const usageRecords: UsageExecutionRecord[] = []
-  const maxAnalyzedAttachments = normalizeMultimodalAttachmentLimit(args.maxAnalyzedAttachments ?? readEnvMultimodalAttachmentLimit())
+  const policy = normalizeMultimodalPolicyConfig(args.multimodalPolicy)
+  const maxAnalyzedAttachments = normalizeMultimodalAttachmentLimit(
+    args.maxAnalyzedAttachments ?? args.multimodalPolicy?.max_attachments_per_turn ?? readEnvMultimodalAttachmentLimit(),
+  )
   let analyzedAttachments = 0
   let changed = false
 
@@ -102,7 +122,25 @@ export async function analyzeChatMultimodalAttachments(
       continue
     }
 
+    const modality = attachmentKindToMultimodalModality(attachment.kind)
     const model = resolveAttachmentAnalysisModel(attachment, args.model, args.audioTranscriptionModel)
+    const policyBlockReason = modality ? getMultimodalModalityBlockReason(policy, modality) : null
+    if (modality && policyBlockReason) {
+      const unsupported = withUnsupportedAnalysis(attachment, modality, policyBlockReason, args.now?.() ?? new Date().toISOString())
+      attachments.push(unsupported)
+      changed = true
+      args.onTrail?.({
+        type: 'multimodal_analysis_skipped',
+        attachment_id: attachment.attachment_id,
+        filename: attachment.filename,
+        mode: attachment.extraction.mode,
+        model,
+        reason: policyBlockReason,
+        ts: args.now?.() ?? new Date().toISOString(),
+      })
+      continue
+    }
+
     if (analyzedAttachments >= maxAnalyzedAttachments) {
       args.onTrail?.({
         type: 'multimodal_analysis_skipped',
@@ -117,13 +155,39 @@ export async function analyzeChatMultimodalAttachments(
       continue
     }
 
+    const selection = modality
+      ? selectMultimodalModelForPolicy({
+          model,
+          fallbackModels: args.fallbackModels,
+          modality,
+          policy,
+          modelCatalog: args.modelCatalog,
+          providerSettings: args.providerSettings,
+        })
+      : { model, fallbackModels: args.fallbackModels ?? [] }
+    if ('blockedReason' in selection && selection.blockedReason && modality) {
+      const unsupported = withUnsupportedAnalysis(attachment, modality, selection.blockedReason, args.now?.() ?? new Date().toISOString())
+      attachments.push(unsupported)
+      changed = true
+      args.onTrail?.({
+        type: 'multimodal_analysis_skipped',
+        attachment_id: attachment.attachment_id,
+        filename: attachment.filename,
+        mode: attachment.extraction.mode,
+        model,
+        reason: selection.blockedReason,
+        ts: args.now?.() ?? new Date().toISOString(),
+      })
+      continue
+    }
+
     analyzedAttachments += 1
     args.onTrail?.({
       type: 'multimodal_analysis_started',
       attachment_id: attachment.attachment_id,
       filename: attachment.filename,
       mode: attachment.extraction.mode,
-      model,
+      model: selection.model,
       ts: args.now?.() ?? new Date().toISOString(),
     })
 
@@ -133,28 +197,43 @@ export async function analyzeChatMultimodalAttachments(
         attachment,
         apiKey: args.apiKey,
         userInput: args.userInput,
-        model,
-        fallbackModels: args.fallbackModels,
+        model: selection.model,
+        fallbackModels: selection.fallbackModels,
         signal: args.signal,
         now: args.now?.(),
         llmCall: args.llmCall,
         audioTranscriptionModel: args.audioTranscriptionModel,
         audioTranscriptionCall: args.audioTranscriptionCall,
+        multimodalPolicy: policy,
+        modelCatalog: args.modelCatalog,
+        providerSettings: args.providerSettings,
       })
       attachments.push(result.attachment)
       changed = changed || result.attachment !== attachment
       if (result.usage) usageRecords.push(result.usage)
       if (result.usageRecords?.length) usageRecords.push(...result.usageRecords)
-      args.onTrail?.({
-        type: 'multimodal_analysis_completed',
-        attachment_id: attachment.attachment_id,
-        filename: attachment.filename,
-        mode: result.attachment.extraction.mode,
-        model: result.attachment.extraction.analysis_model ?? model,
-        status: result.attachment.extraction.status,
-        usage: result.usage,
-        ts: args.now?.() ?? new Date().toISOString(),
-      })
+      if (result.skipped) {
+        args.onTrail?.({
+          type: 'multimodal_analysis_skipped',
+          attachment_id: attachment.attachment_id,
+          filename: attachment.filename,
+          mode: result.attachment.extraction.mode,
+          model: result.attachment.extraction.analysis_model ?? selection.model,
+          reason: result.reason ?? result.attachment.extraction.error ?? 'Analise multimodal ignorada pela politica vigente.',
+          ts: args.now?.() ?? new Date().toISOString(),
+        })
+      } else {
+        args.onTrail?.({
+          type: 'multimodal_analysis_completed',
+          attachment_id: attachment.attachment_id,
+          filename: attachment.filename,
+          mode: result.attachment.extraction.mode,
+          model: result.attachment.extraction.analysis_model ?? selection.model,
+          status: result.attachment.extraction.status,
+          usage: result.usage,
+          ts: args.now?.() ?? new Date().toISOString(),
+        })
+      }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') throw error
       const message = error instanceof Error ? error.message : String(error)
@@ -183,14 +262,26 @@ export function resolveChatMultimodalMaxAttachments(rawValue?: string | number):
 export async function analyzeChatMultimodalAttachment(
   args: AnalyzeChatMultimodalAttachmentArgs,
 ): Promise<ChatMultimodalAnalysisResult> {
-  if (args.attachment.kind !== 'image' && args.attachment.kind !== 'audio' && args.attachment.kind !== 'video') {
+  const modality = attachmentKindToMultimodalModality(args.attachment.kind)
+  if (!modality) {
     return { attachment: args.attachment, skipped: true, reason: 'Somente imagens, áudios e vídeos são analisados nesta etapa multimodal.' }
+  }
+  const policy = normalizeMultimodalPolicyConfig(args.multimodalPolicy)
+  const modalityBlockReason = getMultimodalModalityBlockReason(policy, modality)
+  if (modalityBlockReason) {
+    return {
+      attachment: withUnsupportedAnalysis(args.attachment, modality, modalityBlockReason, args.now ?? new Date().toISOString()),
+      skipped: true,
+      reason: modalityBlockReason,
+    }
   }
 
   if (args.attachment.kind === 'audio') return analyzeAudioAttachment(args)
   if (args.attachment.kind === 'video') return analyzeVideoAttachment(args)
 
-  if (args.file.size > CHAT_IMAGE_ANALYSIS_MAX_BYTES) {
+  const maxImageBytes = getMultimodalFileLimitBytes(policy, 'image')
+  if (args.file.size > maxImageBytes) {
+    const maxImageMb = Math.round(maxImageBytes / 1024 / 1024)
     return {
       attachment: {
         ...args.attachment,
@@ -198,7 +289,7 @@ export async function analyzeChatMultimodalAttachment(
           ...args.attachment.extraction,
           status: 'unsupported',
           mode: 'image',
-          error: `Imagem acima do limite de ${Math.round(CHAT_IMAGE_ANALYSIS_MAX_BYTES / 1024 / 1024)} MB para análise multimodal automática.`,
+          error: `Imagem acima do limite de ${maxImageMb} MB para análise multimodal automática.`,
           processed_at: args.now ?? new Date().toISOString(),
         },
       },
@@ -208,12 +299,26 @@ export async function analyzeChatMultimodalAttachment(
   }
 
   const model = args.model ?? DEFAULT_CHAT_IMAGE_ANALYSIS_MODEL
-  const fallbackModels = normalizeFallbackModels(args.fallbackModels, model)
+  const selection = selectMultimodalModelForPolicy({
+    model,
+    fallbackModels: normalizeFallbackModels(args.fallbackModels, model, 'image', args),
+    modality: 'image',
+    policy,
+    modelCatalog: args.modelCatalog,
+    providerSettings: args.providerSettings,
+  })
+  if (selection.blockedReason) {
+    return {
+      attachment: withUnsupportedAnalysis(args.attachment, 'image', selection.blockedReason, args.now ?? new Date().toISOString()),
+      skipped: true,
+      reason: selection.blockedReason,
+    }
+  }
   const dataUrl = await fileToImageDataUrl(args.file, args.attachment.mime_type)
   const messages = buildImageAnalysisMessages(args.attachment, args.userInput, dataUrl)
   const result = args.llmCall
-    ? await args.llmCall({ apiKey: args.apiKey, messages, model, fallbackModels, signal: args.signal })
-    : await callLLMWithMessagesFallback(args.apiKey, messages, model, fallbackModels, 1600, 0.1, { signal: args.signal })
+    ? await args.llmCall({ apiKey: args.apiKey, messages, model: selection.model, fallbackModels: selection.fallbackModels, signal: args.signal })
+    : await callLLMWithMessagesFallback(args.apiKey, messages, selection.model, selection.fallbackModels, 1600, 0.1, { signal: args.signal })
   const content = result.content.trim()
   if (!content) throw new Error('O modelo multimodal não retornou análise da imagem.')
 
@@ -250,7 +355,7 @@ export async function analyzeChatMultimodalAttachment(
       model: result.model,
       provider_id: result.provider_id ?? result.operational?.providerId,
       provider_label: result.provider_label ?? result.operational?.providerLabel,
-      requested_model: result.operational?.requestedModel ?? model,
+      requested_model: result.operational?.requestedModel ?? selection.model,
       resolved_model: result.operational?.resolvedModel ?? result.model,
       tokens_in: result.tokens_in,
       tokens_out: result.tokens_out,
@@ -264,7 +369,10 @@ export async function analyzeChatMultimodalAttachment(
 }
 
 async function analyzeAudioAttachment(args: AnalyzeChatMultimodalAttachmentArgs): Promise<ChatMultimodalAnalysisResult> {
-  if (args.file.size > CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES) {
+  const policy = normalizeMultimodalPolicyConfig(args.multimodalPolicy)
+  const maxAudioBytes = getMultimodalFileLimitBytes(policy, 'audio')
+  if (args.file.size > maxAudioBytes) {
+    const maxAudioMb = Math.round(maxAudioBytes / 1024 / 1024)
     return {
       attachment: {
         ...args.attachment,
@@ -272,7 +380,7 @@ async function analyzeAudioAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
           ...args.attachment.extraction,
           status: 'unsupported',
           mode: 'audio',
-          error: `Áudio acima do limite de ${Math.round(CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES / 1024 / 1024)} MB para transcrição automática.`,
+          error: `Áudio acima do limite de ${maxAudioMb} MB para transcrição automática.`,
           processed_at: args.now ?? new Date().toISOString(),
         },
       },
@@ -282,10 +390,25 @@ async function analyzeAudioAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
   }
 
   const model = args.audioTranscriptionModel ?? readEnvAudioTranscriptionModel() ?? DEFAULT_CHAT_AUDIO_TRANSCRIPTION_MODEL
+  const selection = selectMultimodalModelForPolicy({
+    model,
+    fallbackModels: [],
+    modality: 'audio',
+    policy,
+    modelCatalog: args.modelCatalog,
+    providerSettings: args.providerSettings,
+  })
+  if (selection.blockedReason) {
+    return {
+      attachment: withUnsupportedAnalysis(args.attachment, 'audio', selection.blockedReason, args.now ?? new Date().toISOString()),
+      skipped: true,
+      reason: selection.blockedReason,
+    }
+  }
   const prompt = buildAudioTranscriptionPrompt(args.attachment, args.userInput)
   const result = args.audioTranscriptionCall
-    ? await args.audioTranscriptionCall({ file: args.file, attachment: args.attachment, model, prompt, signal: args.signal })
-    : await transcribeChatAudioWithProvider({ file: args.file, model, prompt, signal: args.signal })
+    ? await args.audioTranscriptionCall({ file: args.file, attachment: args.attachment, model: selection.model, prompt, signal: args.signal })
+    : await transcribeChatAudioWithProvider({ file: args.file, model: selection.model, prompt, signal: args.signal })
   const content = result.text.trim()
   if (!content) throw new Error('O transcritor de áudio não retornou texto.')
 
@@ -322,7 +445,7 @@ async function analyzeAudioAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
       model: result.model,
       provider_id: result.provider_id,
       provider_label: result.provider_label,
-      requested_model: model,
+      requested_model: selection.model,
       resolved_model: result.model,
       cost_usd: result.cost_usd,
       duration_ms: result.duration_ms,
@@ -331,7 +454,10 @@ async function analyzeAudioAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
 }
 
 async function analyzeVideoAttachment(args: AnalyzeChatMultimodalAttachmentArgs): Promise<ChatMultimodalAnalysisResult> {
-  if (args.file.size > CHAT_VIDEO_ANALYSIS_MAX_BYTES) {
+  const policy = normalizeMultimodalPolicyConfig(args.multimodalPolicy)
+  const maxVideoBytes = getMultimodalFileLimitBytes(policy, 'video')
+  if (args.file.size > maxVideoBytes) {
+    const maxVideoMb = Math.round(maxVideoBytes / 1024 / 1024)
     return {
       attachment: {
         ...args.attachment,
@@ -339,7 +465,7 @@ async function analyzeVideoAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
           ...args.attachment.extraction,
           status: 'unsupported',
           mode: 'video',
-          error: `Vídeo acima do limite de ${Math.round(CHAT_VIDEO_ANALYSIS_MAX_BYTES / 1024 / 1024)} MB para análise automática de frames.`,
+          error: `Vídeo acima do limite de ${maxVideoMb} MB para análise automática de frames.`,
           processed_at: args.now ?? new Date().toISOString(),
         },
       },
@@ -378,7 +504,21 @@ async function analyzeVideoAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
   }
 
   const model = args.model ?? DEFAULT_CHAT_IMAGE_ANALYSIS_MODEL
-  const fallbackModels = normalizeFallbackModels(args.fallbackModels, model)
+  const selection = selectMultimodalModelForPolicy({
+    model,
+    fallbackModels: normalizeFallbackModels(args.fallbackModels, model, 'video', args),
+    modality: 'video',
+    policy,
+    modelCatalog: args.modelCatalog,
+    providerSettings: args.providerSettings,
+  })
+  if (selection.blockedReason) {
+    return {
+      attachment: withUnsupportedAnalysis(args.attachment, 'video', selection.blockedReason, args.now ?? new Date().toISOString()),
+      skipped: true,
+      reason: selection.blockedReason,
+    }
+  }
   let result: LLMResult | undefined
   let visualContent = ''
   let visualError: string | undefined
@@ -386,8 +526,8 @@ async function analyzeVideoAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
     try {
       const messages = buildVideoAnalysisMessages(args.attachment, args.userInput, frames, audioTrack.text)
       result = args.llmCall
-        ? await args.llmCall({ apiKey: args.apiKey, messages, model, fallbackModels, signal: args.signal })
-        : await callLLMWithMessagesFallback(args.apiKey, messages, model, fallbackModels, 1800, 0.1, { signal: args.signal })
+        ? await args.llmCall({ apiKey: args.apiKey, messages, model: selection.model, fallbackModels: selection.fallbackModels, signal: args.signal })
+        : await callLLMWithMessagesFallback(args.apiKey, messages, selection.model, selection.fallbackModels, 1800, 0.1, { signal: args.signal })
       visualContent = result.content.trim()
       if (!visualContent) throw new Error('O modelo multimodal não retornou análise dos frames do vídeo.')
     } catch (error) {
@@ -432,7 +572,7 @@ async function analyzeVideoAttachment(args: AnalyzeChatMultimodalAttachmentArgs)
           model: result.model,
           provider_id: result.provider_id ?? result.operational?.providerId,
           provider_label: result.provider_label ?? result.operational?.providerLabel,
-          requested_model: result.operational?.requestedModel ?? model,
+          requested_model: result.operational?.requestedModel ?? selection.model,
           resolved_model: result.operational?.resolvedModel ?? result.model,
           tokens_in: result.tokens_in,
           tokens_out: result.tokens_out,
@@ -486,6 +626,10 @@ function normalizeMultimodalAttachmentLimit(rawValue: unknown): number {
   const parsed = Number(rawValue)
   if (!Number.isFinite(parsed)) return DEFAULT_CHAT_MULTIMODAL_MAX_ATTACHMENTS
   return Math.max(0, Math.min(HARD_CHAT_MULTIMODAL_MAX_ATTACHMENTS, Math.floor(parsed)))
+}
+
+function attachmentKindToMultimodalModality(kind: ChatTurnAttachment['kind']): MultimodalModality | null {
+  return kind === 'image' || kind === 'audio' || kind === 'video' ? kind : null
 }
 
 function shouldAnalyzeAttachment(attachment: ChatTurnAttachment): boolean {
@@ -610,15 +754,28 @@ async function transcribeVideoAudioTrack(args: AnalyzeChatMultimodalAttachmentAr
   usage?: UsageExecutionRecord
   error?: string
 }> {
-  if (args.file.size > CHAT_AUDIO_TRANSCRIPTION_MAX_BYTES || !isVideoAudioTranscriptionCandidate(args.attachment)) return {}
+  const policy = normalizeMultimodalPolicyConfig(args.multimodalPolicy)
+  const blockReason = getMultimodalModalityBlockReason(policy, 'audio')
+  if (blockReason) return { error: blockReason }
+  const maxAudioBytes = getMultimodalFileLimitBytes(policy, 'audio')
+  if (args.file.size > maxAudioBytes || !isVideoAudioTranscriptionCandidate(args.attachment)) return {}
 
   const model = args.audioTranscriptionModel ?? readEnvAudioTranscriptionModel() ?? DEFAULT_CHAT_AUDIO_TRANSCRIPTION_MODEL
+  const selection = selectMultimodalModelForPolicy({
+    model,
+    fallbackModels: [],
+    modality: 'audio',
+    policy,
+    modelCatalog: args.modelCatalog,
+    providerSettings: args.providerSettings,
+  })
+  if (selection.blockedReason) return { error: selection.blockedReason }
   const prompt = buildVideoAudioTranscriptionPrompt(args.attachment, args.userInput)
   const processedAt = args.now ?? new Date().toISOString()
   try {
     const result = args.audioTranscriptionCall
-      ? await args.audioTranscriptionCall({ file: args.file, attachment: args.attachment, model, prompt, signal: args.signal })
-      : await transcribeChatAudioWithProvider({ file: args.file, model, prompt, signal: args.signal })
+      ? await args.audioTranscriptionCall({ file: args.file, attachment: args.attachment, model: selection.model, prompt, signal: args.signal })
+      : await transcribeChatAudioWithProvider({ file: args.file, model: selection.model, prompt, signal: args.signal })
     const text = result.text.trim()
     if (!text) return { error: 'O transcritor não retornou fala detectável na faixa de áudio do vídeo.' }
     return {
@@ -635,7 +792,7 @@ async function transcribeVideoAudioTrack(args: AnalyzeChatMultimodalAttachmentAr
         model: result.model,
         provider_id: result.provider_id,
         provider_label: result.provider_label,
-        requested_model: model,
+        requested_model: selection.model,
         resolved_model: result.model,
         cost_usd: result.cost_usd,
         duration_ms: result.duration_ms,
@@ -747,13 +904,28 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
-function normalizeFallbackModels(fallbackModels: string[] | undefined, model: string): string[] {
+function normalizeFallbackModels(
+  fallbackModels: string[] | undefined,
+  model: string,
+  modality: MultimodalModality,
+  args: Pick<AnalyzeChatMultimodalAttachmentArgs, 'multimodalPolicy' | 'modelCatalog' | 'providerSettings'>,
+): string[] {
   const candidates = [
     ...(fallbackModels ?? []),
     DEFAULT_CHAT_IMAGE_ANALYSIS_MODEL,
     RELIABLE_TEXT_FALLBACK_MODEL,
   ]
-  return candidates.filter((candidate, index) => candidate && candidate !== model && candidates.indexOf(candidate) === index)
+  return candidates.filter((candidate, index) => {
+    if (!candidate || candidate === model || candidates.indexOf(candidate) !== index) return false
+    return !selectMultimodalModelForPolicy({
+      model: candidate,
+      fallbackModels: [],
+      modality,
+      policy: args.multimodalPolicy,
+      modelCatalog: args.modelCatalog,
+      providerSettings: args.providerSettings,
+    }).blockedReason
+  })
 }
 
 function normalizeAnalysisText(content: string, subject: 'image' | 'audio' | 'video' = 'image'): string {
@@ -787,6 +959,24 @@ function withFailedAnalysis(attachment: ChatTurnAttachment, message: string, pro
       status: 'failed',
       mode: attachment.extraction.mode || 'unknown',
       error: message,
+      processed_at: processedAt,
+    },
+  }
+}
+
+function withUnsupportedAnalysis(
+  attachment: ChatTurnAttachment,
+  modality: MultimodalModality,
+  message: string,
+  processedAt: string,
+): ChatTurnAttachment {
+  return {
+    ...attachment,
+    extraction: {
+      ...attachment.extraction,
+      status: 'unsupported',
+      mode: modality,
+      error: message || `Analise automatica de ${MULTIMODAL_MODALITY_LABELS[modality]} indisponivel pela politica vigente.`,
       processed_at: processedAt,
     },
   }

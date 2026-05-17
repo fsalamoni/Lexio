@@ -181,6 +181,72 @@ describe('chat multimodal analysis', () => {
     ]))
   })
 
+  it('skips disabled modalities from the multimodal policy before calling providers', async () => {
+    const events: unknown[] = []
+    const audioTranscriptionCall = vi.fn()
+    const attachment = audioAttachment()
+
+    const result = await analyzeChatMultimodalAttachments({
+      attachments: [attachment],
+      attachmentFiles: [{ file: new File(['audio'], 'depoimento.mp3', { type: 'audio/mpeg' }), attachment }],
+      apiKey: 'test-key',
+      userInput: 'Transcreva.',
+      now: () => '2026-05-16T12:01:00.000Z',
+      onTrail: event => events.push(event),
+      audioTranscriptionCall,
+      multimodalPolicy: {
+        modalities: {
+          audio: { enabled: false },
+        },
+      },
+    })
+
+    expect(audioTranscriptionCall).not.toHaveBeenCalled()
+    expect(result.changed).toBe(true)
+    expect(result.attachments[0].extraction).toMatchObject({
+      status: 'unsupported',
+      mode: 'audio',
+    })
+    expect(result.attachments[0].extraction.error).toContain('desativada')
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'multimodal_analysis_skipped', filename: 'depoimento.mp3' }),
+    ]))
+  })
+
+  it('uses provider policy to switch to an allowed multimodal fallback', async () => {
+    const llmCall = vi.fn().mockResolvedValue({
+      content: 'OCR: texto analisado pelo fallback permitido.',
+      model: 'openai/gpt-4o-mini',
+      tokens_in: 20,
+      tokens_out: 10,
+      cost_usd: 0.001,
+      duration_ms: 100,
+      provider_id: 'openai',
+      provider_label: 'OpenAI',
+    })
+    const attachment = imageAttachment()
+
+    const result = await analyzeChatMultimodalAttachments({
+      attachments: [attachment],
+      attachmentFiles: [{ file: new File(['img-data'], 'placa.png', { type: 'image/png' }), attachment }],
+      apiKey: 'test-key',
+      userInput: 'Leia a imagem.',
+      model: 'anthropic/claude-sonnet-4',
+      fallbackModels: ['openai/gpt-4o-mini'],
+      llmCall,
+      multimodalPolicy: {
+        modalities: {
+          image: { allowed_provider_ids: ['openai'] },
+        },
+      },
+    })
+
+    expect(result.attachments[0].extraction.status).toBe('ready')
+    expect(llmCall).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'openai/gpt-4o-mini',
+    }))
+  })
+
   it('skips oversized images with an explicit unsupported state', async () => {
     const attachment = imageAttachment({ size_bytes: CHAT_IMAGE_ANALYSIS_MAX_BYTES + 1 })
     const file = new File([new Uint8Array(CHAT_IMAGE_ANALYSIS_MAX_BYTES + 1)], 'grande.png', { type: 'image/png' })
@@ -199,6 +265,28 @@ describe('chat multimodal analysis', () => {
       status: 'unsupported',
       mode: 'image',
     })
+  })
+
+  it('uses multimodal policy file limits for image analysis', async () => {
+    const attachment = imageAttachment({ size_bytes: (2 * 1024 * 1024) + 1 })
+    const file = new File([new Uint8Array((2 * 1024 * 1024) + 1)], 'grande.png', { type: 'image/png' })
+
+    const result = await analyzeChatMultimodalAttachment({
+      file,
+      attachment,
+      apiKey: 'test-key',
+      userInput: 'Analise.',
+      now: '2026-05-16T12:01:00.000Z',
+      llmCall: vi.fn(),
+      multimodalPolicy: {
+        modalities: {
+          image: { max_file_mb: 2 },
+        },
+      },
+    })
+
+    expect(result.skipped).toBe(true)
+    expect(result.attachment.extraction.error).toContain('2 MB')
   })
 
   it('turns audio attachments into transcript context', async () => {
