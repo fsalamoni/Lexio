@@ -8,9 +8,9 @@ import { parseAgentOutputPackage } from './agent-output'
 import { EFFORT_PRESETS } from './effort-presets'
 
 /**
- * Agent keys callable through the `call_agent` skill. Every specialist
- * except the orchestrator itself (which drives the loop) and the critic
- * (invoked through `critique_draft` and the auto-critic) is callable.
+ * Agent keys callable through the `call_agent` skill. The orchestrator,
+ * critic, and preprocessing agents are intentionally excluded because they
+ * run through dedicated runtime paths.
  */
 export const CALLABLE_AGENT_KEYS = new Set<string>([
   'chat_planner',
@@ -50,7 +50,7 @@ const callAgentSkill: Skill<{ agent_key?: string; task?: string }> = {
   name: 'call_agent',
   description: 'Invoca um agente especialista para resolver uma subtarefa. Use para planejar (chat_planner), analisar evidências multimodais, comprimir o histórico (chat_summarizer) ou redigir a resposta final (chat_writer).',
   argsHint: {
-    agent_key: 'chave do agente (ex.: "chat_planner", "chat_writer")',
+    agent_key: 'chave do agente (ex.: "chat_planner", "chat_image_evidence_specialist", "chat_writer")',
     task: 'instrução clara e autocontida do que o agente deve fazer',
   },
   async run(args, ctx) {
