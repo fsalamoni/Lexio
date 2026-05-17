@@ -211,7 +211,15 @@ service cloud.firestore {
       allow read: if isAdmin();
     }
 
+    match /{path=**}/memory/{docId} {
+      allow read: if isAdmin();
+    }
+
     match /{path=**}/research_notebooks/{notebookId}/content/{docId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/content/{docId} {
       allow read: if isAdmin();
     }
 
