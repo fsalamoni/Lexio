@@ -288,7 +288,7 @@ describe('runChatTurn', () => {
 
     expect(result.status).toBe('done')
     expect(events.some(e => e.type === 'agent_work_package')).toBe(true)
-    expect(result.assistant_markdown).toContain('Documentos e artefatos criados')
+    expect(result.assistant_markdown).toContain('Documentos e artefatos do turno')
     expect(result.assistant_markdown).toContain('Minuta Principal')
     expect(result.assistant_markdown).toContain('DOCX (')
   })
@@ -314,8 +314,38 @@ describe('runChatTurn', () => {
     expect(artifact?.title).toContain('Pacote de entrega')
     expect(artifact?.exports?.map(exportRef => exportRef.format)).toEqual(expect.arrayContaining(['markdown', 'docx', 'pdf', 'zip']))
     expect(artifact?.exports?.every(exportRef => exportRef.status === 'ready')).toBe(true)
-    expect(result.assistant_markdown).toContain('Documentos e artefatos criados')
+    expect(result.assistant_markdown).toContain('Documentos e artefatos do turno')
     expect(result.assistant_markdown).toContain('Pacote de entrega')
+  })
+
+  it('does not satisfy a PNG/JPG image request with a markdown fallback package', async () => {
+    const events: ChatTrailEvent[] = []
+    const llmCall = vi.fn(async () => ({
+      raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: 'Segue um prompt para gerar a imagem em outra ferramenta.' } }),
+      usage: null,
+    })) satisfies OrchestratorLLMCall
+
+    const result = await runChatTurn(makeInput({
+      user_input: 'Eu quero a renderização do projeto em png ou jpg.',
+      llmCall,
+      onTrail: e => events.push(e),
+    }))
+
+    const packageEvents = events.filter(e => e.type === 'agent_work_package')
+    const guardPackage = packageEvents.find(e => e.type === 'agent_work_package' && e.package.agent_key === 'chat_deliverable_guard')
+    const exportPackage = packageEvents.find(e => e.type === 'agent_work_package' && e.package.agent_key === 'chat_export_packager')
+    expect(guardPackage?.type).toBe('agent_work_package')
+    if (guardPackage?.type === 'agent_work_package') {
+      expect(guardPackage.package.artifacts?.[0]).toEqual(expect.objectContaining({
+        kind: 'image',
+        format: 'png',
+      }))
+      expect(guardPackage.package.artifacts?.[0]?.exports?.map(exportRef => exportRef.format)).toEqual(['png', 'jpg'])
+      expect(guardPackage.package.artifacts?.[0]?.exports?.every(exportRef => exportRef.status === 'failed')).toBe(true)
+    }
+    expect(exportPackage).toBeUndefined()
+    expect(result.assistant_markdown).toContain('Entrega literal pendente')
+    expect(result.assistant_markdown).not.toContain('Pacote de entrega')
   })
 
   it('does not create a fallback bundle when an existing artifact already has downloads', async () => {

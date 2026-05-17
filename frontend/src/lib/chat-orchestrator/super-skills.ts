@@ -370,6 +370,247 @@ async function deliverWorkPackage(ctx: SkillContext, workPackage: ChatAgentWorkP
   return materialized
 }
 
+// ── Super-Skill: Gerar Imagem Literal ────────────────────────────────────────
+
+interface GenerateImageArgs {
+  prompt?: string
+  title?: string
+  aspect_ratio?: string
+  model?: string
+  negative_prompt?: string
+  approved?: boolean
+}
+
+const MOCK_IMAGE_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
+
+const generateImageSkill: Skill<GenerateImageArgs> = {
+  name: 'generate_image',
+  description:
+    'Gera uma imagem literal no chat e entrega arquivo nativo para preview e download. ' +
+    'Use quando o usuário pedir imagem, renderização, mockup visual, PNG, JPG, JPEG ou WebP. ' +
+    'Não use prompts para ferramentas externas como substituto da imagem gerada.',
+  argsHint: {
+    prompt: 'Descrição visual completa da imagem a gerar. Inclua contexto consolidado da conversa e especificações importantes.',
+    title: 'Título curto para o arquivo/imagem gerada.',
+    aspect_ratio: 'Proporção desejada. Ex.: 1:1, 4:3, 16:9, 9:16.',
+    model: 'Modelo opcional de imagem. Se omitido, usa o modelo padrão configurado no cliente de imagem.',
+    negative_prompt: 'Opcional: elementos a evitar na imagem.',
+    approved: 'true apenas depois de o usuário aprovar explicitamente a geração literal da imagem',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const prompt = String(args.prompt ?? '').trim()
+    const title = String(args.title ?? '').trim() || 'Imagem gerada pelo chat'
+    const aspectRatio = String(args.aspect_ratio ?? '').trim() || undefined
+    const model = String(args.model ?? '').trim() || undefined
+    const negativePrompt = String(args.negative_prompt ?? '').trim() || undefined
+
+    if (!prompt) {
+      return { tool_message: 'Erro: "prompt" é obrigatório para gerar imagem literal.' }
+    }
+
+    if (!normalizeSideEffectApproval(args.approved)) {
+      return requestApprovalForSkill(ctx, {
+        title: `Gerar imagem literal: ${clip(title, 80)}`,
+        summary: [
+          'O chat vai chamar um provedor de geração de imagem, salvar o arquivo no Storage e exibir a imagem literalmente na conversa.',
+          `Título: ${title}`,
+          aspectRatio ? `Proporção: ${aspectRatio}` : '',
+          model ? `Modelo: ${model}` : 'Modelo: padrão do cliente de imagem',
+        ].filter(Boolean).join('\n'),
+        riskLevel: 'medium',
+        permissions: ['write', 'network'],
+        resumeTool: 'generate_image',
+        resumeArgs: {
+          prompt,
+          title,
+          aspect_ratio: aspectRatio,
+          model,
+          negative_prompt: negativePrompt,
+          approved: true,
+        },
+      })
+    }
+
+    const artifactId = makeChatArtifactId('chat-image')
+    ctx.emit({
+      type: 'super_skill_call',
+      skill: 'generate_image',
+      args_summary: clip(prompt, 180),
+      result_summary: `Iniciando geração literal de imagem: ${clip(title, 100)}`,
+      ts: nowIso(),
+    })
+
+    try {
+      const imageResult = ctx.mock
+        ? { imageDataUrl: MOCK_IMAGE_DATA_URL, model: model || 'mock/image', cost_usd: 0, provider_id: 'mock', provider_label: 'Mock' }
+        : await import('../image-generation-client').then(module => module.generateImage({
+            apiKey: ctx.apiKey,
+            uid: ctx.uid,
+            prompt,
+            negativePrompt,
+            model,
+            aspectRatio,
+            signal: ctx.signal,
+          }))
+
+      const blob = await imageDataUrlToBlob(imageResult.imageDataUrl)
+      const mimeType = blob.type || inferImageMimeType(imageResult.imageDataUrl)
+      const format = inferImageArtifactFormat(mimeType)
+      const extension = imageExtensionForFormat(format)
+      const exportId = `${artifactId}-${format}`
+      const { uploadChatArtifactFile } = await import('../chat-artifact-storage')
+      const stored = await uploadChatArtifactFile({
+        userId: ctx.uid,
+        conversationId: ctx.conversationId,
+        turnId: ctx.turnId,
+        artifactId,
+        exportId,
+        title,
+        extension,
+        blob,
+      })
+
+      ctx.budget.recordUsage({
+        source_type: 'chat_orchestrator',
+        source_id: ctx.turnId,
+        created_at: nowIso(),
+        function_key: 'chat_orchestrator',
+        function_label: 'Orquestrador (Chat)',
+        phase: 'generate_image',
+        phase_label: 'Chat: generate_image',
+        agent_name: 'Gerador de Imagem',
+        model: imageResult.model,
+        model_label: imageResult.model,
+        total_tokens: 0,
+        cost_usd: imageResult.cost_usd,
+        duration_ms: 0,
+        execution_state: 'completed',
+      })
+
+      const readyExport: ChatArtifactExportRef = {
+        export_id: exportId,
+        label: format.toUpperCase(),
+        format,
+        status: 'ready',
+        mime_type: mimeType,
+        extension,
+        download_url: stored.url,
+        storage_path: stored.path,
+        attempt_count: 1,
+        last_attempt_at: nowIso(),
+      }
+      const artifact: ChatArtifactRef = {
+        artifact_id: artifactId,
+        logical_document_id: artifactId,
+        version: 1,
+        title,
+        kind: 'image',
+        format,
+        summary: `Imagem literal gerada pelo chat com ${imageResult.model}.`,
+        content_preview: stored.url || imageResult.imageDataUrl,
+        download_url: stored.url,
+        storage_path: stored.path,
+        mime_type: mimeType,
+        extension,
+        is_latest: true,
+        manifest_json: {
+          prompt,
+          negative_prompt: negativePrompt,
+          aspect_ratio: aspectRatio,
+          model: imageResult.model,
+          provider_id: imageResult.provider_id,
+          provider_label: imageResult.provider_label,
+          preview_url: stored.url,
+          storage_path: stored.path,
+        },
+        exports: [readyExport],
+      }
+
+      const workPackage = await deliverWorkPackage(ctx, {
+        conversation_id: ctx.conversationId,
+        turn_id: ctx.turnId,
+        agent_key: 'generate_image',
+        task: `Gerar imagem literal: ${title}`,
+        thought: {
+          summary: 'Imagem literal criada e persistida como artifact do chat.',
+          decisions: ['Usar skill direta de imagem em vez de entregar prompt textual.'],
+          next_steps: ['Exibir preview inline, permitir ampliar e baixar o arquivo nativo.'],
+        },
+        result_markdown: `Imagem literal gerada: ${title}.`,
+        artifacts: [artifact],
+        created_at: nowIso(),
+        completed_at: nowIso(),
+      })
+
+      const delivered = workPackage.artifacts?.[0]
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: 'generate_image',
+        result_summary: `Imagem pronta para preview/download: ${delivered?.download_url ? format.toUpperCase() : 'artifact registrado'}`,
+        ts: nowIso(),
+      })
+
+      return {
+        tool_message:
+          `Imagem literal gerada com sucesso.\n` +
+          `- Título: ${title}\n` +
+          `- Formato: ${format.toUpperCase()}\n` +
+          `- Modelo: ${imageResult.model}\n` +
+          `- O artifact de imagem foi registrado na trilha do chat com preview e download.`,
+      }
+    } catch (err) {
+      if (isAbortError(err)) throw err
+      const message = getErrorMessage(err)
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: 'generate_image',
+        result_summary: `Erro: ${message}`,
+        ts: nowIso(),
+      })
+      return {
+        tool_message:
+          `Falha operacional ao gerar imagem literal: ${message}. ` +
+          'Configure um provider/chave de imagem em Configurações ou tente novamente com outro modelo. Nao trate prompt textual como imagem entregue.',
+      }
+    }
+  },
+}
+
+async function imageDataUrlToBlob(dataUrl: string): Promise<Blob> {
+  if (typeof fetch === 'function') {
+    const response = await fetch(dataUrl)
+    if (!response.ok) throw new Error(`Falha ao converter imagem gerada em Blob: ${response.status}`)
+    return response.blob()
+  }
+
+  const match = /^data:([^;,]+);base64,(.+)$/i.exec(dataUrl)
+  if (!match) throw new Error('Resposta do provedor nao contem data URL de imagem valida.')
+  if (typeof atob !== 'function') throw new Error('Ambiente sem suporte para decodificar imagem base64.')
+  const binary = atob(match[2])
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return new Blob([bytes], { type: match[1] })
+}
+
+function inferImageMimeType(dataUrl: string): string {
+  const match = /^data:([^;,]+)/i.exec(dataUrl)
+  return match?.[1] || 'image/png'
+}
+
+function inferImageArtifactFormat(mimeType: string): 'png' | 'jpg' | 'jpeg' | 'webp' {
+  const normalized = mimeType.toLowerCase()
+  if (normalized.includes('webp')) return 'webp'
+  if (normalized.includes('jpeg') || normalized.includes('jpg')) return 'jpg'
+  return 'png'
+}
+
+function imageExtensionForFormat(format: 'png' | 'jpg' | 'jpeg' | 'webp'): string {
+  if (format === 'jpeg') return '.jpg'
+  return `.${format}`
+}
+
 // ── Super-Skill: Gerar Documento Jurídico ─────────────────────────────────────
 
 interface GenerateDocumentArgs {
@@ -1486,6 +1727,7 @@ const hybridSearchSkill: Skill<HybridSearchArgs> = {
  */
 export function buildSuperSkills(): Skill[] {
   return [
+    generateImageSkill,
     generateDocumentSkill,
     checkDocumentStatusSkill,
     searchJurisprudenceSkill,

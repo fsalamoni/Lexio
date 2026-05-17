@@ -1,4 +1,4 @@
-import type { ChatAgentWorkPackage, ChatArtifactRef, ChatTrailEvent } from '../firestore-types'
+import type { ChatAgentWorkPackage, ChatArtifactFormat, ChatArtifactRef, ChatTrailEvent } from '../firestore-types'
 import { createBudget } from './budget'
 import { dispatchSpecialistAgent } from './dispatch'
 import { callOrchestratorLLM, appendToolMessage } from './orchestrator-llm'
@@ -9,6 +9,15 @@ import { EFFORT_PRESETS } from './effort-presets'
 import { parseAgentOutputPackage } from './agent-output'
 import { renderCurrentTurnUserContent } from '../chat-context-builder'
 import { isEnabled } from '../feature-flags'
+import {
+  buildExpectedDeliverableFeedback,
+  describeExpectedDeliverable,
+  findUnsatisfiedExpectedDeliverables,
+  hasSatisfiedExpectedDeliverables,
+  inferExpectedDeliverablesFromText,
+  shouldUseTextFallbackForExpectedDeliverables,
+  type ChatExpectedDeliverable,
+} from '../chat-deliverable-contract'
 import type {
   OrchestratorDecision,
   OrchestratorMessage,
@@ -40,6 +49,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
   const llmCall = input.llmCall ?? callOrchestratorLLM
   const allowedTools = skills.map(s => s.name)
   const latestArtifactsByLogicalId = new Map<string, { artifact: ChatArtifactRef; agentKey?: string }>()
+  const expectedDeliverables = inferExpectedDeliverablesFromText(input.user_input)
   const emitTrail = (event: ChatTrailEvent) => {
     collectLatestArtifacts(event, latestArtifactsByLogicalId)
     input.onTrail(event)
@@ -73,6 +83,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     let consecutiveParseErrors = 0
     const startedAt = Date.now()
     let partialIterations = 0
+    let deliverableGuardRejections = 0
 
     for (let i = 1; i <= preset.maxIterations; i++) {
       if (input.signal.aborted) {
@@ -174,6 +185,16 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     }
 
       if (result.final_answer) {
+        const missingExpected = findUnsatisfiedExpectedDeliverables(expectedDeliverables, latestArtifactsByLogicalId.values())
+        if (missingExpected.length > 0 && i < preset.maxIterations && deliverableGuardRejections < 2) {
+          deliverableGuardRejections += 1
+          history = appendToolMessage(
+            history,
+            buildExpectedDeliverableFeedback(missingExpected),
+            'deliverable_compliance_feedback',
+          )
+          continue
+        }
         draft = result.final_answer
         partialIterations = i
         // Always attempt a critic pass before accepting the final answer.
@@ -256,9 +277,15 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       input,
       draft,
       ctx,
+      expectedDeliverables,
       latestArtifactsByLogicalId,
       emitTrail,
     })
+
+    const missingExpected = findUnsatisfiedExpectedDeliverables(expectedDeliverables, latestArtifactsByLogicalId.values())
+    if (missingExpected.length > 0) {
+      draft = appendMissingExpectedDeliverableNotice(draft, missingExpected)
+    }
 
     draft = appendLatestArtifactSummary(draft, latestArtifactsByLogicalId)
 
@@ -330,7 +357,7 @@ function appendLatestArtifactSummary(
   return [
     markdown.trimEnd(),
     '',
-    '## Documentos e artefatos criados',
+    '## Documentos e artefatos do turno',
     ...lines,
   ].join('\n')
 }
@@ -347,11 +374,41 @@ async function ensureRequiredDeliverableBundle(args: {
   input: RunChatTurnInput
   draft: string
   ctx: SkillContext
+  expectedDeliverables: ChatExpectedDeliverable[]
   latestArtifactsByLogicalId: Map<string, { artifact: ChatArtifactRef; agentKey?: string }>
   emitTrail: (event: ChatTrailEvent) => void
 }): Promise<void> {
-  const { input, draft, ctx, latestArtifactsByLogicalId, emitTrail } = args
-  if (!mustDeliverDownloadableBundle(input)) return
+  const { input, draft, ctx, expectedDeliverables, latestArtifactsByLogicalId, emitTrail } = args
+  if (!mustDeliverDownloadableBundle(input, expectedDeliverables)) return
+
+  if (expectedDeliverables.length > 0 && hasSatisfiedExpectedDeliverables(expectedDeliverables, latestArtifactsByLogicalId.values())) {
+    return
+  }
+
+  const missingExpected = findUnsatisfiedExpectedDeliverables(expectedDeliverables, latestArtifactsByLogicalId.values())
+  if (missingExpected.length > 0 && !shouldUseTextFallbackForExpectedDeliverables(expectedDeliverables)) {
+    const createdAt = new Date().toISOString()
+    let workPackage = buildMissingExpectedDeliverablePackage({ input, missing: missingExpected, createdAt })
+    if (ctx.persistWorkPackage) {
+      try {
+        workPackage = await ctx.persistWorkPackage(workPackage)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        workPackage = {
+          ...workPackage,
+          thought: {
+            ...workPackage.thought,
+            summary: workPackage.thought?.summary || 'Entrega literal ficou pendente.',
+            risks: [...(workPackage.thought?.risks ?? []), `Falha ao persistir bloqueio de entrega literal: ${message}`].slice(0, 8),
+          },
+        }
+      }
+    }
+    emitTrail({ type: 'agent_work_package', package: workPackage, ts: workPackage.completed_at ?? new Date().toISOString() })
+    emitTrail({ type: 'error', message: buildExpectedDeliverableFeedback(missingExpected), ts: new Date().toISOString() })
+    return
+  }
+
   if (hasDownloadableArtifact(latestArtifactsByLogicalId)) return
 
   const createdAt = new Date().toISOString()
@@ -400,18 +457,20 @@ async function ensureRequiredDeliverableBundle(args: {
   })
 }
 
-function mustDeliverDownloadableBundle(input: RunChatTurnInput): boolean {
+function mustDeliverDownloadableBundle(input: RunChatTurnInput, expectedDeliverables: ChatExpectedDeliverable[]): boolean {
   if (!isEnabled('FF_CHAT_DELIVERABLE_BUNDLE')) return false
   if (input.requireDeliverableBundle) return true
+  if (expectedDeliverables.length > 0) return true
   return looksLikeDeliverableRequest(input.user_input)
 }
 
 function looksLikeDeliverableRequest(text: string): boolean {
+  if (inferExpectedDeliverablesFromText(text).length > 0) return true
   const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  const hasDownloadSignal = /\b(baixar|download|export(?:a|e|ar)|docx|pdf|zip|xlsx|csv|mp3|mp4)\b/.test(normalized)
+  const hasDownloadSignal = /\b(baixar|download|export(?:a|e|ar)|docx|pdf|zip|xlsx|csv|mp3|mp4|png|jpe?g|webp|wav|webm)\b/.test(normalized)
   const hasDeliveryVerb = /\b(entreg(?:a|ue|ar|avel|aveis)|disponibiliz(?:a|e|ar)|anex(?:a|e|ar))\b/.test(normalized)
   const hasCreationVerb = /\b(fa(?:ca|zer)|crie|criar|gere|gerar|produza|produzir|elabore|elaborar|redija|redigir|monte|montar|prepare|preparar|construa|construir)\b/.test(normalized)
-  const hasDeliverableNoun = /\b(documentos?|arquivos?|projeto|peticao|parecer|relatorio|apresentacao|slides?|planilha|imagem|imagens|audio|video)\b/.test(normalized)
+  const hasDeliverableNoun = /\b(documentos?|arquivos?|projeto|peticao|parecer|relatorio|apresentacao|slides?|planilha|imagem|imagens|renderizacao|audio|video)\b/.test(normalized)
   return hasDownloadSignal || ((hasDeliveryVerb || hasCreationVerb) && hasDeliverableNoun)
 }
 
@@ -461,6 +520,70 @@ function buildFinalAnswerDeliverablePackage(args: { input: RunChatTurnInput; dra
     created_at: createdAt,
     completed_at: createdAt,
   }
+}
+
+function buildMissingExpectedDeliverablePackage(args: {
+  input: RunChatTurnInput
+  missing: ChatExpectedDeliverable[]
+  createdAt: string
+}): ChatAgentWorkPackage {
+  const { input, missing, createdAt } = args
+  return {
+    conversation_id: input.conversationId,
+    turn_id: input.turnId,
+    agent_key: 'chat_deliverable_guard',
+    task: 'Bloquear finalizacao falsa porque o pedido exigia artifact literal de tipo/formato especifico.',
+    thought: {
+      summary: 'Entrega literal pendente: o chat nao encontrou artifact pronto com o tipo/formato solicitado.',
+      decisions: ['Nao gerar pacote textual substituto para um pedido de midia/arquivo especifico.'],
+      risks: ['O usuario precisa configurar provider/chave, aprovar a skill adequada ou tentar novamente com rota literal disponivel.'],
+      next_steps: ['Acionar a skill correta, por exemplo generate_image para PNG/JPG, ou retornar falha operacional clara.'],
+    },
+    result_markdown: buildExpectedDeliverableFeedback(missing),
+    artifacts: missing.map((expected, index) => buildMissingExpectedArtifact(input, expected, index)),
+    created_at: createdAt,
+    completed_at: createdAt,
+  }
+}
+
+function buildMissingExpectedArtifact(input: RunChatTurnInput, expected: ChatExpectedDeliverable, index: number): ChatArtifactRef {
+  const format: ChatArtifactFormat = expected.accepted_formats[0] ?? 'other'
+  const reason = `${describeExpectedDeliverable(expected)} solicitado, mas nenhum artifact pronto desse tipo/formato foi produzido neste turno.`
+  return {
+    artifact_id: `missing-${expected.kind}-${Date.now()}-${index}`,
+    logical_document_id: `expected-${expected.kind}-${index}`,
+    version: 1,
+    title: `Entrega pendente - ${describeExpectedDeliverable(expected)}`,
+    kind: expected.kind,
+    format,
+    summary: reason,
+    content_preview: `Pedido original: ${input.user_input}`,
+    manifest_json: {
+      expected_kind: expected.kind,
+      accepted_formats: expected.accepted_formats,
+      reason,
+      strict: expected.strict,
+    },
+    is_latest: true,
+    exports: expected.accepted_formats.map(exportFormat => ({
+      label: exportFormat.toUpperCase(),
+      format: exportFormat,
+      status: 'failed' as const,
+      reason,
+    })),
+  }
+}
+
+function appendMissingExpectedDeliverableNotice(markdown: string, missing: ChatExpectedDeliverable[]): string {
+  if (!missing.length) return markdown
+  const lines = missing.map(item => `- ${describeExpectedDeliverable(item)}`)
+  return [
+    markdown.trimEnd(),
+    '',
+    '## Entrega literal pendente',
+    'O pedido ainda nao foi cumprido como arquivo literal do tipo/formato solicitado.',
+    ...lines,
+  ].join('\n')
 }
 
 function buildDeliverableTitle(userInput: string): string {
@@ -599,6 +722,8 @@ function buildOrchestratorSystemPrompt(skills: Skill[], effort: string): string 
     '- Use `call_agents_parallel` quando duas ou mais subtarefas independentes puderem rodar no mesmo lote; não use para tarefas com dependência sequencial.',
     '- Quando houver anexos com análise multimodal pronta, chame os especialistas `chat_image_evidence_specialist`, `chat_audio_evidence_specialist`, `chat_video_evidence_specialist` ou `chat_multimodal_evidence_synthesizer` antes de redigir conclusões probatórias.',
     '- Se o usuário pedir documentos, arquivos, projeto, apresentação, planilha, imagem, áudio ou vídeo, planeje entregáveis reais e só finalize depois de gerar artefatos ou pedir aprovação expressa para a trilha necessária.',
+    '- Para imagem, renderização, PNG, JPG, JPEG ou WebP, use `generate_image`; prompt para gerador externo não é imagem entregue.',
+    '- Se faltar provider/chave para mídia literal, finalize apenas com falha operacional acionável; não substitua o arquivo por Markdown, DOCX, PDF, ZIP ou descrição textual.',
     '- Se faltar contexto, prefira chamar `chat_planner` antes de redigir.',
     '- Se o histórico estiver longo, chame `summarize_context` para liberar tokens.',
     '- Antes de finalizar, se estiver inseguro, chame `critique_draft` com o rascunho atual.',

@@ -22,6 +22,8 @@ const generateAudioLiteralMediaMock = vi.fn()
 const runVideoGenerationPipelineMock = vi.fn()
 const uploadNotebookMediaArtifactMock = vi.fn()
 const persistStudioArtifactToNotebookMock = vi.fn()
+const generateImageMock = vi.fn()
+const uploadChatArtifactFileMock = vi.fn()
 
 vi.mock('../search-client', () => ({
   hybridSearch: (...args: unknown[]) => mockHybridSearch(...args),
@@ -55,6 +57,15 @@ vi.mock('../notebook-media-storage', () => ({
 
 vi.mock('../notebook-studio-artifact-persistence', () => ({
   persistStudioArtifactToNotebook: (...args: unknown[]) => persistStudioArtifactToNotebookMock(...args),
+}))
+
+vi.mock('../image-generation-client', () => ({
+  generateImage: (...args: unknown[]) => generateImageMock(...args),
+}))
+
+vi.mock('../chat-artifact-storage', () => ({
+  uploadChatArtifactFile: (...args: unknown[]) => uploadChatArtifactFileMock(...args),
+  uploadNotebookArtifactFile: vi.fn(),
 }))
 
 // Importa depois que o mock está instalado
@@ -152,11 +163,84 @@ describe('buildSuperSkills', () => {
     const skills = buildSuperSkills()
     const names = skills.map(s => s.name)
     expect(names).toContain('generate_document')
+    expect(names).toContain('generate_image')
     expect(names).toContain('check_document_status')
     expect(names).toContain('search_jurisprudence')
     expect(names).toContain('analyze_thesis')
     expect(names).toContain('generate_studio_artifact')
     expect(names).toContain('hybrid_search')
+  })
+})
+
+describe('generate_image skill', () => {
+  beforeEach(() => {
+    generateImageMock.mockReset().mockResolvedValue({
+      imageDataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+      model: 'openai/gpt-image-1',
+      cost_usd: 0.03,
+      provider_id: 'openai',
+      provider_label: 'OpenAI',
+    })
+    uploadChatArtifactFileMock.mockReset().mockResolvedValue({
+      url: 'https://storage.test/render.png',
+      path: 'chat_artifacts/test-user/conv-1/turn-1/render.png',
+    })
+  })
+
+  it('deve pedir aprovacao antes de gerar imagem literal', async () => {
+    const emit = vi.fn()
+    const ctx = mockContext({ emit })
+
+    const result = await findAndRunSkill('generate_image', {
+      prompt: 'Renderize o armario de TV em MDF branco.',
+      title: 'Render armario TV',
+    }, ctx)
+
+    expect(result.awaiting_user?.question).toContain('Gerar imagem literal')
+    expect(result.awaiting_user?.resume_tool).toBe('generate_image')
+    expect(emit.mock.calls.some(call => call[0].type === 'approval_requested')).toBe(true)
+  })
+
+  it('deve gerar artifact image com export PNG pronto quando aprovado', async () => {
+    const emit = vi.fn()
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({ apiKey: 'sk-test', emit, persistWorkPackage })
+
+    const result = await findAndRunSkill('generate_image', {
+      prompt: 'Renderize o armario de TV em MDF branco, vista frontal realista.',
+      title: 'Render armario TV',
+      aspect_ratio: '16:9',
+      approved: true,
+    }, ctx)
+
+    expect(result.tool_message).toContain('Imagem literal gerada com sucesso')
+    expect(generateImageMock).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: 'sk-test',
+      uid: 'test-user',
+      prompt: expect.stringContaining('Renderize o armario'),
+      aspectRatio: '16:9',
+    }))
+    expect(uploadChatArtifactFileMock).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'test-user',
+      conversationId: 'conv-1',
+      turnId: 'turn-1',
+      title: 'Render armario TV',
+      extension: '.png',
+      blob: expect.any(Blob),
+    }))
+    const workPackage = persistWorkPackage.mock.calls[0][0]
+    expect(workPackage.agent_key).toBe('generate_image')
+    expect(workPackage.artifacts[0]).toEqual(expect.objectContaining({
+      kind: 'image',
+      format: 'png',
+      download_url: 'https://storage.test/render.png',
+    }))
+    expect(workPackage.artifacts[0].exports[0]).toEqual(expect.objectContaining({
+      format: 'png',
+      status: 'ready',
+      download_url: 'https://storage.test/render.png',
+    }))
+    expect(emit.mock.calls.some(call => call[0].type === 'agent_work_package')).toBe(true)
   })
 })
 

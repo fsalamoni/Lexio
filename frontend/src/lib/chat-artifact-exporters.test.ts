@@ -199,6 +199,37 @@ describe('materializeChatAgentWorkPackageExports', () => {
     expect(result.artifacts?.[0]?.exports?.find(exportRef => exportRef.format === 'zip')).toMatchObject({ status: 'ready', extension: '.zip' })
   })
 
+  it('materializes native image exports from data URLs without default ZIP fallback', async () => {
+    const result = await materializeChatAgentWorkPackageExports({
+      ...basePackage,
+      artifacts: [
+        {
+          artifact_id: 'render-v1',
+          logical_document_id: 'render',
+          title: 'Render do projeto',
+          kind: 'image',
+          format: 'png',
+          version: 1,
+          content_preview: 'data:image/png;base64,iVBORw0KGgo=',
+        },
+      ],
+    }, {
+      userId: 'u1',
+      conversationId: 'conv-1',
+      turnId: 'turn-1',
+    })
+
+    const exports = result.artifacts?.[0]?.exports ?? []
+    expect(exports.map(exportRef => exportRef.format)).toEqual(['png'])
+    expect(exports[0]).toMatchObject({ status: 'ready', extension: '.png', mime_type: 'image/png' })
+    expect(storageMocks.uploadChatArtifactFile).toHaveBeenCalledWith(expect.objectContaining({
+      artifactId: 'render-v1',
+      exportId: 'render-v1-png',
+      extension: '.png',
+      blob: expect.any(Blob),
+    }))
+  })
+
   it('propagates aborted uploads instead of marking exports as failed', async () => {
     const abortError = Object.assign(new Error('Cancelado pelo usuário'), { name: 'AbortError' })
 

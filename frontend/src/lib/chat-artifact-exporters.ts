@@ -11,6 +11,7 @@ import { generateDocxBlob } from './docx-generator'
 import { uploadChatArtifactFile, uploadNotebookArtifactFile, type StoredChatArtifactFile } from './chat-artifact-storage'
 
 const TEXT_FORMATS = new Set<ChatArtifactFormat>(['markdown', 'txt', 'typescript', 'javascript', 'python'])
+const BINARY_FORMATS = new Set<ChatArtifactFormat>(['png', 'jpg', 'jpeg', 'webp', 'mp3', 'wav', 'mp4', 'webm'])
 const SUPPORTED_EXPORT_FORMATS = new Set<ChatArtifactFormat>([
   'markdown',
   'txt',
@@ -25,6 +26,14 @@ const SUPPORTED_EXPORT_FORMATS = new Set<ChatArtifactFormat>([
   'javascript',
   'python',
   'zip',
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'mp3',
+  'wav',
+  'mp4',
+  'webm',
 ])
 
 interface MaterializeOptions {
@@ -215,11 +224,20 @@ function normalizeRequestedExports(artifact: ChatArtifactRef): ChatArtifactExpor
   if (artifact.manifest_json && !byFormat.has('json')) {
     byFormat.set('json', { label: 'JSON', format: 'json', status: 'planned' })
   }
-  if (!byFormat.has('zip')) {
+  if (!byFormat.has('zip') && shouldAddDefaultZipExport(artifact)) {
     byFormat.set('zip', { label: 'ZIP', format: 'zip', status: 'planned' })
   }
 
   return [...byFormat.values()]
+}
+
+function shouldAddDefaultZipExport(artifact: ChatArtifactRef): boolean {
+  return artifact.kind === 'text'
+    || artifact.kind === 'legal_document'
+    || artifact.kind === 'code'
+    || artifact.kind === 'presentation'
+    || artifact.kind === 'spreadsheet'
+    || artifact.kind === 'data'
 }
 
 async function buildExportBlob(
@@ -258,6 +276,9 @@ async function buildExportBlob(
     const blob = await buildZipBlob(artifact, workPackage, text)
     return { blob, mimeType: 'application/zip', extension: '.zip' }
   }
+  if (BINARY_FORMATS.has(format)) {
+    return buildBinaryExportBlob(artifact, format)
+  }
   if (TEXT_FORMATS.has(format)) {
     const extension = format === 'markdown' ? '.md' : format === 'typescript' ? '.ts' : format === 'javascript' ? '.js' : format === 'python' ? '.py' : '.txt'
     const mime = format === 'markdown' ? 'text/markdown' : 'text/plain'
@@ -265,6 +286,78 @@ async function buildExportBlob(
   }
 
   throw new Error(`Formato ${format} ainda não possui exportador no chat.`)
+}
+
+async function buildBinaryExportBlob(artifact: ChatArtifactRef, format: ChatArtifactFormat): Promise<ExportBlobResult> {
+  const source = findBinaryArtifactSource(artifact)
+  if (!source) {
+    throw new Error(`Artifact ${artifact.artifact_id} não possui URL ou data URL para export ${format}.`)
+  }
+  const blob = await blobFromUrl(source)
+  const mimeType = blob.type || mimeTypeForBinaryFormat(format)
+  return {
+    blob: blob.type ? blob : new Blob([blob], { type: mimeType }),
+    mimeType,
+    extension: extensionForBinaryFormat(format),
+  }
+}
+
+function findBinaryArtifactSource(artifact: ChatArtifactRef): string | null {
+  const direct = [artifact.download_url, artifact.content_preview]
+    .map(value => String(value ?? '').trim())
+    .find(value => isFetchableBinarySource(value))
+  if (direct) return direct
+
+  const manifest = artifact.manifest_json ?? {}
+  const keys = [
+    'preview_url',
+    'image_url',
+    'imageUrl',
+    'imageDataUrl',
+    'renderedImageUrl',
+    'audio_url',
+    'audioUrl',
+    'video_url',
+    'videoUrl',
+    'download_url',
+    'downloadUrl',
+  ]
+  for (const key of keys) {
+    const value = manifest[key]
+    if (typeof value === 'string' && isFetchableBinarySource(value.trim())) return value.trim()
+  }
+  return null
+}
+
+function isFetchableBinarySource(value: string): boolean {
+  return /^data:(image|audio|video)\//i.test(value) || /^https?:\/\//i.test(value) || /^blob:/i.test(value)
+}
+
+async function blobFromUrl(url: string): Promise<Blob> {
+  if (typeof fetch !== 'function') {
+    throw new Error('Ambiente sem fetch para materializar arquivo binário.')
+  }
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar arquivo binário para export: HTTP ${response.status}`)
+  }
+  return response.blob()
+}
+
+function mimeTypeForBinaryFormat(format: ChatArtifactFormat): string {
+  if (format === 'png') return 'image/png'
+  if (format === 'jpg' || format === 'jpeg') return 'image/jpeg'
+  if (format === 'webp') return 'image/webp'
+  if (format === 'mp3') return 'audio/mpeg'
+  if (format === 'wav') return 'audio/wav'
+  if (format === 'mp4') return 'video/mp4'
+  if (format === 'webm') return 'video/webm'
+  return 'application/octet-stream'
+}
+
+function extensionForBinaryFormat(format: ChatArtifactFormat): string {
+  if (format === 'jpeg') return '.jpg'
+  return `.${format}`
 }
 
 async function buildPptxBlob(artifact: ChatArtifactRef, fallbackText: string): Promise<Blob> {

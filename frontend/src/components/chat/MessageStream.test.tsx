@@ -246,4 +246,65 @@ describe('MessageStream', () => {
       exportId: undefined,
     })
   })
+
+  it('renders image artifacts inline with enlarge modal and download', () => {
+    render(
+      <MessageStream
+        turns={[
+          {
+            id: 'turn-image',
+            conversation_id: 'conv-1',
+            user_input: 'Gere a renderização em PNG.',
+            trail: [
+              {
+                type: 'agent_work_package',
+                ts: '2026-05-08T10:00:00.000Z',
+                package: {
+                  conversation_id: 'conv-1',
+                  turn_id: 'turn-image',
+                  agent_key: 'generate_image',
+                  task: 'Gerar imagem literal',
+                  result_markdown: 'Imagem gerada.',
+                  artifacts: [
+                    {
+                      artifact_id: 'render-v1',
+                      logical_document_id: 'render-v1',
+                      version: 1,
+                      title: 'Render do armário de TV',
+                      kind: 'image',
+                      format: 'png',
+                      summary: 'Renderização literal pronta.',
+                      download_url: 'https://cdn.lexio.test/render.png',
+                      mime_type: 'image/png',
+                      extension: '.png',
+                      exports: [
+                        { label: 'PNG', format: 'png', status: 'ready', download_url: 'https://cdn.lexio.test/render.png' },
+                      ],
+                    },
+                  ],
+                  created_at: '2026-05-08T10:00:00.000Z',
+                },
+              },
+            ],
+            assistant_markdown: 'Imagem pronta.',
+            status: 'done',
+            created_at: '2026-05-08T10:00:00.000Z',
+          },
+        ]}
+        liveTurn={null}
+      />,
+    )
+
+    const image = screen.getByRole('img', { name: 'Render do armário de TV' })
+    expect(image.getAttribute('src')).toBe('https://cdn.lexio.test/render.png')
+    expect(screen.getAllByRole('link', { name: /png/i }).length).toBeGreaterThanOrEqual(1)
+
+    fireEvent.click(screen.getByRole('button', { name: /render do armário de tv/i }))
+
+    expect(screen.getByRole('dialog', { name: 'Render do armário de TV' })).toBeTruthy()
+    const downloadLinks = screen.getAllByRole('link', { name: /baixar/i })
+    expect(downloadLinks.some(link => link.getAttribute('href') === 'https://cdn.lexio.test/render.png')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: /fechar/i }))
+    expect(screen.queryByRole('dialog', { name: 'Render do armário de TV' })).toBeNull()
+  })
 })

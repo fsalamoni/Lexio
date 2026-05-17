@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   Archive,
@@ -358,10 +358,13 @@ function ThoughtList({ title, items }: { title: string; items?: string[] }) {
 function ArtifactCard({ artifact }: { artifact: ChatArtifactRef }) {
   const hasManifest = Boolean(artifact.manifest_json)
   const exports = artifact.exports ?? []
+  const preview = getArtifactPreview(artifact)
+  const [isPreviewOpen, setPreviewOpen] = useState(false)
+  const Icon = getArtifactCardIcon(artifact)
   return (
     <div className="rounded-md border border-[var(--v2-border)] bg-white px-3 py-2">
       <div className="flex items-start gap-2">
-        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-600" />
+        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-600" />
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-[var(--v2-ink-strong)]">{artifact.title}</div>
           <div className="text-[var(--v2-ink-muted)]">
@@ -371,7 +374,15 @@ function ArtifactCard({ artifact }: { artifact: ChatArtifactRef }) {
         </div>
       </div>
 
-      {artifact.content_preview && (
+      {preview && (
+        <ArtifactInlinePreview
+          preview={preview}
+          title={artifact.title}
+          onOpenImage={() => setPreviewOpen(true)}
+        />
+      )}
+
+      {artifact.content_preview && !isPreviewSource(artifact.content_preview) && (
         <div className="mt-2 whitespace-pre-wrap rounded bg-[rgba(15,23,42,0.04)] px-2 py-1.5 text-[var(--v2-ink-muted)]">
           {artifact.content_preview}
         </div>
@@ -421,8 +432,169 @@ function ArtifactCard({ artifact }: { artifact: ChatArtifactRef }) {
           ))}
         </div>
       )}
+
+      {preview?.kind === 'image' && isPreviewOpen && (
+        <ImagePreviewModal
+          title={artifact.title}
+          url={preview.url}
+          downloadUrl={preview.downloadUrl}
+          format={artifact.format.toUpperCase()}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
     </div>
   )
+}
+
+interface ArtifactPreview {
+  kind: 'image' | 'audio' | 'video'
+  url: string
+  downloadUrl?: string
+}
+
+function ArtifactInlinePreview({
+  preview,
+  title,
+  onOpenImage,
+}: {
+  preview: ArtifactPreview
+  title: string
+  onOpenImage: () => void
+}) {
+  if (preview.kind === 'image') {
+    return (
+      <button
+        type="button"
+        onClick={onOpenImage}
+        className="mt-2 block w-full overflow-hidden rounded-md border border-slate-200 bg-slate-50 text-left hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        title="Ampliar imagem"
+      >
+        <img
+          src={preview.url}
+          alt={title}
+          className="max-h-80 w-full object-contain bg-slate-100"
+          loading="lazy"
+        />
+      </button>
+    )
+  }
+
+  if (preview.kind === 'audio') {
+    return (
+      <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2">
+        <audio controls src={preview.url} className="w-full" aria-label={title} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-black">
+      <video controls src={preview.url} className="max-h-96 w-full" aria-label={title} />
+    </div>
+  )
+}
+
+function ImagePreviewModal({
+  title,
+  url,
+  downloadUrl,
+  format,
+  onClose,
+}: {
+  title: string
+  url: string
+  downloadUrl?: string
+  format: string
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-[var(--v2-ink-strong)]">{title}</div>
+            <div className="text-[11px] text-[var(--v2-ink-muted)]">{format}</div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {downloadUrl && (
+              <a
+                href={downloadUrl}
+                download
+                className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Baixar
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+        <div className="min-h-0 overflow-auto bg-slate-950 p-4">
+          <img src={url} alt={title} className="mx-auto max-h-[78vh] max-w-full object-contain" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function getArtifactPreview(artifact: ChatArtifactRef): ArtifactPreview | null {
+  if (artifact.kind !== 'image' && artifact.kind !== 'audio' && artifact.kind !== 'video') return null
+  const url = getPrimaryArtifactUrl(artifact)
+  if (!url) return null
+  return {
+    kind: artifact.kind,
+    url,
+    downloadUrl: getPrimaryDownloadUrl(artifact) ?? url,
+  }
+}
+
+function getPrimaryArtifactUrl(artifact: ChatArtifactRef): string | null {
+  const direct = [artifact.download_url, artifact.content_preview]
+    .map(value => String(value ?? '').trim())
+    .find(isPreviewSource)
+  if (direct) return direct
+  const exportUrl = (artifact.exports ?? [])
+    .find(exportRef => exportRef.status === 'ready' && exportRef.download_url)
+    ?.download_url
+  if (exportUrl) return exportUrl
+  return getManifestPreviewUrl(artifact)
+}
+
+function getPrimaryDownloadUrl(artifact: ChatArtifactRef): string | null {
+  if (artifact.download_url) return artifact.download_url
+  return (artifact.exports ?? [])
+    .find(exportRef => exportRef.status === 'ready' && exportRef.download_url)
+    ?.download_url ?? null
+}
+
+function getManifestPreviewUrl(artifact: ChatArtifactRef): string | null {
+  const manifest = artifact.manifest_json ?? {}
+  const keys = ['preview_url', 'image_url', 'imageUrl', 'imageDataUrl', 'renderedImageUrl', 'audioUrl', 'videoUrl', 'download_url', 'downloadUrl']
+  for (const key of keys) {
+    const value = manifest[key]
+    if (typeof value === 'string' && isPreviewSource(value.trim())) return value.trim()
+  }
+  return null
+}
+
+function isPreviewSource(value: string): boolean {
+  return /^data:(image|audio|video)\//i.test(value) || /^https?:\/\//i.test(value) || /^blob:/i.test(value)
+}
+
+function getArtifactCardIcon(artifact: ChatArtifactRef) {
+  if (artifact.kind === 'image') return Image
+  if (artifact.kind === 'audio') return Music
+  if (artifact.kind === 'video') return Video
+  if (artifact.kind === 'spreadsheet' || artifact.kind === 'data') return Table
+  if (artifact.kind === 'presentation') return Presentation
+  if (artifact.kind === 'code') return FileJson
+  return FileText
 }
 
 function DeliverablesPanel({

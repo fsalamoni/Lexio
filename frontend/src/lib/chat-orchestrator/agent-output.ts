@@ -40,7 +40,11 @@ const ARTIFACT_FORMAT_VALUES = new Set<ChatArtifactFormat>([
   'mp3',
   'mp4',
   'png',
+  'jpg',
+  'jpeg',
   'webp',
+  'wav',
+  'webm',
   'other',
 ])
 

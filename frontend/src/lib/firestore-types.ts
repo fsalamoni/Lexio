@@ -1098,7 +1098,11 @@ export type ChatArtifactFormat =
   | 'mp3'
   | 'mp4'
   | 'png'
+  | 'jpg'
+  | 'jpeg'
   | 'webp'
+  | 'wav'
+  | 'webm'
   | 'other'
 
 export interface ChatArtifactExportRef {
