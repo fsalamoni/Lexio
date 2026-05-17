@@ -87,7 +87,13 @@ vi.mock('../components/v2/V2PagePrimitives', () => ({
       <p>{description}</p>
     </div>
   ),
-  V2MetricGrid: () => <div data-testid="metric-grid" />,
+  V2MetricGrid: ({ items }: { items: Array<{ label: string; value: React.ReactNode }> }) => (
+    <div data-testid="metric-grid">
+      {items.map(item => (
+        <span key={item.label}>{item.label}: {item.value}</span>
+      ))}
+    </div>
+  ),
   V2PageHero: ({ title, description, actions, aside }: { title: string; description: string; actions?: React.ReactNode; aside?: React.ReactNode }) => (
     <div>
       <h1>{title}</h1>
@@ -122,6 +128,8 @@ function makeDocument(overrides: Record<string, unknown> = {}) {
     origem: 'workspace',
     notebook_id: null,
     notebook_title: null,
+    llm_executions: [],
+    generation_meta: null,
     metadata_: undefined,
     ...overrides,
   }
@@ -261,5 +269,29 @@ describe('DocumentDetail page', () => {
     expect(location.pathname).toBe('/documents/new')
     expect(location.params.get('request')).toBe('Pedido duplicado')
     expect(location.params.get('type')).toBe('parecer')
+  })
+
+  it('shows Firestore document bridge status and embedded execution metrics', async () => {
+    mocks.getDocumentMock.mockResolvedValue(makeDocument({
+      quality_score: 91,
+      request_context: { pipeline_version: 'v3' },
+      generation_meta: { pipeline_version: 'v3' },
+      llm_executions: [{
+        id: 'exec-1',
+        phase: 'v3_writer',
+        agent_name: 'Redator',
+        model: 'openai/gpt-4o',
+        tokens_in: 100,
+        tokens_out: 50,
+        cost_usd: 0.01,
+        duration_ms: 1200,
+        created_at: '2026-05-09T10:01:00.000Z',
+      }],
+    }))
+
+    renderPage()
+
+    expect(await screen.findByText('Bridge doc pronto')).toBeTruthy()
+    expect(await screen.findByText(/Agentes executados: 1/i)).toBeTruthy()
   })
 })

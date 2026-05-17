@@ -223,6 +223,7 @@ export interface DocumentData {
   llm_cost_usd?: number
   llm_executions?: UsageExecutionRecord[]
   usage_summary?: UsageSummary
+  generation_meta?: Record<string, unknown> | null
 }
 
 // ── Theses ───────────────────────────────────────────────────────────────────

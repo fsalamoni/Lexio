@@ -27,6 +27,7 @@ import { ModelsNotConfiguredError } from '../lib/model-config'
 import { generateAndDownloadDocx } from '../lib/docx-generator'
 import { DOCTYPE_LABELS, AREA_LABELS } from '../lib/constants'
 import { buildResearchNotebookWorkbenchPath } from '../lib/research-notebook-routes'
+import { auditDocumentBridge, type DocumentBridgeStatus } from '../lib/document-bridge-audit'
 import {
   buildWorkspaceDocumentEditPath,
   buildWorkspaceDocumentsPath,
@@ -58,6 +59,8 @@ interface DocumentData {
   origem?: string
   notebook_id?: string | null
   notebook_title?: string | null
+  llm_executions?: Execution[]
+  generation_meta?: Record<string, unknown> | null
   metadata_?: {
     rejection_reason?: string
     rejected_by_name?: string
@@ -92,6 +95,40 @@ function fmtModel(model: string | null): string {
   if (model.includes('sonnet')) return 'Sonnet'
   if (model.includes('opus')) return 'Opus'
   return model.split('/').pop() || model
+}
+
+function normalizeDocumentExecution(execution: Record<string, unknown>, index: number): Execution {
+  const phase = typeof execution.phase === 'string' ? execution.phase : 'unknown'
+  const agentName = typeof execution.agent_name === 'string' ? execution.agent_name : phase
+  return {
+    id: typeof execution.id === 'string' ? execution.id : `${phase}-${index}`,
+    agent_name: agentName,
+    phase,
+    model: typeof execution.model === 'string' ? execution.model : null,
+    tokens_in: typeof execution.tokens_in === 'number' ? execution.tokens_in : null,
+    tokens_out: typeof execution.tokens_out === 'number' ? execution.tokens_out : null,
+    cost_usd: typeof execution.cost_usd === 'number' ? execution.cost_usd : null,
+    duration_ms: typeof execution.duration_ms === 'number' ? execution.duration_ms : null,
+    created_at: typeof execution.created_at === 'string' ? execution.created_at : '',
+  }
+}
+
+function getDocumentBridgeStatusLabel(status: DocumentBridgeStatus): string {
+  switch (status) {
+    case 'ready': return 'Bridge doc pronto'
+    case 'partial': return 'Bridge doc parcial'
+    case 'needs_action': return 'Bridge doc requer acao'
+    case 'invalid': return 'Bridge doc invalido'
+  }
+}
+
+function getDocumentBridgeStatusStyle(status: DocumentBridgeStatus): string {
+  switch (status) {
+    case 'ready': return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    case 'partial': return 'border-amber-200 bg-amber-50 text-amber-700'
+    case 'needs_action': return 'border-rose-200 bg-rose-50 text-rose-700'
+    case 'invalid': return 'border-red-200 bg-red-50 text-red-700'
+  }
 }
 
 export default function DocumentDetail() {
@@ -166,6 +203,9 @@ export default function DocumentDetail() {
       getDocument(userId, id)
         .then(data => {
           if (data) {
+            const firestoreExecutions = Array.isArray(data.llm_executions)
+              ? data.llm_executions.map((execution, index) => normalizeDocumentExecution(execution as unknown as Record<string, unknown>, index))
+              : []
             const docData: DocumentData = {
               id: data.id ?? id,
               document_type_id: data.document_type_id,
@@ -183,9 +223,12 @@ export default function DocumentDetail() {
               origem: (data as any).origem ?? undefined,
               notebook_id: (data as any).notebook_id ?? null,
               notebook_title: (data as any).notebook_title ?? null,
+              llm_executions: firestoreExecutions,
+              generation_meta: data.generation_meta ?? null,
               metadata_: (data as any).metadata_ ?? undefined,
             }
             setDoc(docData)
+            setExecutions(firestoreExecutions)
             if (docData.status !== 'processando' && intervalRef.current) {
               clearInterval(intervalRef.current)
               intervalRef.current = null
@@ -229,7 +272,7 @@ export default function DocumentDetail() {
     }
   }, [doc])
 
-  // Load executions when document is complete (API mode only — Firebase stores in document itself)
+  // API mode loads executions from a side endpoint; Firebase loads document-embedded executions in fetchDoc.
   useEffect(() => {
     if (!id || !doc || doc.status !== 'concluido') return
     if (IS_FIREBASE) return // Executions not available in Firebase mode
@@ -427,6 +470,13 @@ export default function DocumentDetail() {
   const totalCost = executions.reduce((sum, e) => sum + (e.cost_usd || 0), 0)
   const totalDuration = executions.reduce((sum, e) => sum + (e.duration_ms || 0), 0)
   const totalWords = doc.texto_completo ? doc.texto_completo.split(/\s+/).filter(Boolean).length : 0
+  const documentBridgeAudit = auditDocumentBridge({
+    ...doc,
+    llm_executions: doc.llm_executions?.length ? doc.llm_executions : executions,
+  })
+  const bridgeTooltip = documentBridgeAudit.issues.length > 0
+    ? documentBridgeAudit.issues.join(', ')
+    : 'conteudo, origem, qualidade e execucoes sem pendencias detectadas'
 
   return (
     <div className="max-w-4xl space-y-6 v2-bridge-surface">
@@ -452,6 +502,13 @@ export default function DocumentDetail() {
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               <StatusBadge status={doc.status} />
+              <span
+                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${getDocumentBridgeStatusStyle(documentBridgeAudit.status)}`}
+                title={bridgeTooltip}
+                aria-label={bridgeTooltip}
+              >
+                {getDocumentBridgeStatusLabel(documentBridgeAudit.status)}
+              </span>
               {doc.quality_score != null && (
                 <span className={`text-lg font-bold ${
                   doc.quality_score >= 80 ? 'text-green-600'
