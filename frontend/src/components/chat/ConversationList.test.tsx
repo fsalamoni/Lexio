@@ -17,6 +17,7 @@ const chatMocks = vi.hoisted(() => ({
   listChatConversationsMock: vi.fn(),
   listChatTurnsMock: vi.fn(),
   renameChatConversationMock: vi.fn(),
+  updateChatConversationPreviewMock: vi.fn(),
 }))
 
 vi.mock('../../contexts/AuthContext', () => ({
@@ -31,6 +32,7 @@ vi.mock('../../lib/firestore-service', () => ({
   listChatConversations: (...args: unknown[]) => chatMocks.listChatConversationsMock(...args),
   listChatTurns: (...args: unknown[]) => chatMocks.listChatTurnsMock(...args),
   renameChatConversation: (...args: unknown[]) => chatMocks.renameChatConversationMock(...args),
+  updateChatConversationPreview: (...args: unknown[]) => chatMocks.updateChatConversationPreviewMock(...args),
 }))
 
 import ConversationList from './ConversationList'
@@ -69,6 +71,7 @@ describe('ConversationList', () => {
     chatMocks.deleteChatConversationMock.mockResolvedValue(undefined)
     chatMocks.listChatTurnsMock.mockResolvedValue({ items: [] })
     chatMocks.renameChatConversationMock.mockResolvedValue(undefined)
+    chatMocks.updateChatConversationPreviewMock.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -170,6 +173,49 @@ describe('ConversationList', () => {
 
     expect(await screen.findByRole('button', { name: 'Recupere o parecer administrativo' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Conversa recuperada' })).toBeNull()
+  })
+
+  it('shows generic Nova conversa placeholders with a title derived from preserved turns', async () => {
+    chatMocks.listChatConversationsMock.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'generic-with-turns',
+          title: 'Nova conversa',
+          last_preview: '',
+          effort: 'medio',
+          created_at: '2026-05-08T10:00:00.000Z',
+          updated_at: '2026-05-08T10:00:00.000Z',
+        },
+      ],
+    })
+    chatMocks.listChatTurnsMock.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'turn-1',
+          conversation_id: 'generic-with-turns',
+          user_input: 'Continue a análise da licitação emergencial',
+          assistant_markdown: 'Histórico preservado da contratação emergencial.',
+          trail: [],
+          status: 'done',
+          created_at: '2026-05-08T10:00:00.000Z',
+        },
+      ],
+    })
+
+    renderList({ activeId: null })
+
+    expect(await screen.findByRole('button', { name: 'Continue a análise da licitação emergencial' })).toBeTruthy()
+    expect(chatMocks.renameChatConversationMock).toHaveBeenCalledWith(
+      'user-1',
+      'generic-with-turns',
+      'Continue a análise da licitação emergencial',
+    )
+    expect(chatMocks.updateChatConversationPreviewMock).toHaveBeenCalledWith(
+      'user-1',
+      'generic-with-turns',
+      'Histórico preservado da contratação emergencial.',
+    )
+    expect(screen.getAllByRole('button', { name: 'Nova conversa' })).toHaveLength(1)
   })
 
   it('creates a new conversation and selects it', async () => {

@@ -64,6 +64,7 @@ import {
   deriveChatConversationTitleFromTurns,
   isArchivedChatConversation,
   isLegacyRecoveredConversation,
+  shouldRepairChatConversationFromTurns,
 } from '../../lib/chat-conversation-integrity'
 
 export interface ChatControllerState {
@@ -536,20 +537,21 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
           dispatch({ type: 'LOAD_ERROR', error: 'Conversa arquivada. O histórico permanece preservado.' })
           return
         }
-        if (isLegacyRecoveredConversation(conv)) {
-          if (turns.length === 0) {
-            if (cancelled) return
-            dispatch({ type: 'LOAD_ERROR', error: 'Conversa recuperada vazia ignorada. Nenhum histórico foi alterado.' })
-            return
-          }
+        if (shouldRepairChatConversationFromTurns(conv, turns)) {
           const repairedTitle = deriveChatConversationTitleFromTurns(turns)
           const repairedPreview = deriveChatConversationPreviewFromTurns(turns)
           await renameChatConversation(userId!, conversationId, repairedTitle)
           if (repairedPreview) {
             await updateChatConversationPreview(userId!, conversationId, repairedPreview)
           }
-          conv = { ...conv, title: repairedTitle, last_preview: repairedPreview }
+          conv = { ...conv, title: repairedTitle, last_preview: repairedPreview || conv.last_preview }
           notifyChatConversationUpserted(conversationId)
+        } else if (isLegacyRecoveredConversation(conv)) {
+          if (turns.length === 0) {
+            if (cancelled) return
+            dispatch({ type: 'LOAD_ERROR', error: 'Conversa recuperada vazia ignorada. Nenhum histórico foi alterado.' })
+            return
+          }
         }
         if (cancelled) return
         dispatch({ type: 'LOAD_SUCCESS', conversation: conv, turns })

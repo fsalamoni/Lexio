@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 
 import { normalizeFirestoreDocumentId } from '../../core/firestore'
+import { LEGACY_RECOVERED_CONVERSATION_TITLE } from '../../chat-conversation-integrity'
 import type {
   ChatAgentWorkPackage,
   ChatApprovalRequestData,
@@ -62,6 +63,10 @@ const MAX_APPROVAL_TITLE_CHARS = 160
 const MAX_APPROVAL_SUMMARY_CHARS = 2_000
 const MAX_APPROVAL_ACTOR_CHARS = 120
 const ALLOWED_APPROVAL_PERMISSIONS: ChatSidecarPermission[] = ['read', 'write', 'delete', 'rename', 'execute', 'network']
+
+function resolveConversationTitleForRepair(data: ChatConversationInput): string {
+  return data.title?.trim() || LEGACY_RECOVERED_CONVERSATION_TITLE
+}
 
 function chatConversationCollection(db: Firestore, uid: string) {
   return collection(db, 'users', uid, CHAT_CONVERSATIONS_COLLECTION)
@@ -305,7 +310,7 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     if (snap.exists()) {
       const existing = { id: snap.id, ...snap.data() } as ChatConversationData
       const patch = deps.stripUndefined({
-        ...(existing.title ? {} : { title: data.title?.trim() || 'Nova conversa' }),
+        ...(existing.title ? {} : { title: resolveConversationTitleForRepair(data) }),
         ...(existing.effort ? {} : { effort: data.effort ?? DEFAULT_CHAT_EFFORT }),
         ...(existing.created_at ? {} : { created_at: now }),
         ...(existing.updated_at ? {} : { updated_at: now }),
@@ -319,7 +324,7 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     }
 
     const created = deps.stripUndefined({
-      title: data.title?.trim() || 'Nova conversa',
+      title: resolveConversationTitleForRepair(data),
       effort: data.effort ?? DEFAULT_CHAT_EFFORT,
       sidecar_root_path: data.sidecar_root_path,
       last_preview: data.last_preview ?? '',

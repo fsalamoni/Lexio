@@ -1276,6 +1276,23 @@ describe('saveNotebookDocumentToDocuments', () => {
     )
   })
 
+  it('marks title-less chat conversation parent repairs as recovered instead of new', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => false, id: 'orphan-conv', data: () => ({}) })
+
+    const result = await ensureChatConversation(uid, 'orphan-conv')
+
+    expect(result.title).toBe('Conversa recuperada')
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { path: 'users/user-123/chat_conversations/orphan-conv' },
+      expect.objectContaining({
+        title: 'Conversa recuperada',
+        effort: 'medio',
+        last_preview: '',
+      }),
+      { merge: true },
+    )
+  })
+
   it('ensures the chat conversation parent before appending a turn', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => false, id: 'conv-1', data: () => ({}) })
     mockAddDoc.mockResolvedValueOnce({ id: 'turn-1' })

@@ -8,6 +8,7 @@ import {
   listChatConversations,
   listChatTurns,
   renameChatConversation,
+  updateChatConversationPreview,
 } from '../../lib/firestore-service'
 import { useAuth } from '../../contexts/AuthContext'
 import { IS_FIREBASE } from '../../lib/firebase'
@@ -16,6 +17,8 @@ import {
   deriveChatConversationTitleFromTurns,
   isArchivedChatConversation,
   isLegacyRecoveredConversation,
+  isGenericChatConversationPlaceholder,
+  shouldRepairChatConversationFromTurns,
 } from '../../lib/chat-conversation-integrity'
 
 interface ConversationListProps {
@@ -235,14 +238,25 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
 async function filterVisibleConversations(uid: string, conversations: ChatConversationData[]): Promise<ChatConversationData[]> {
   const candidates = conversations.filter(conversation => !isArchivedChatConversation(conversation))
   const checked = await Promise.all(candidates.map(async conversation => {
-    if (!conversation.id || !isLegacyRecoveredConversation(conversation)) return conversation
+    if (!conversation.id || !isGenericChatConversationPlaceholder(conversation)) return conversation
     try {
       const { items: turns } = await listChatTurns(uid, conversation.id)
-      if (turns.length === 0) return null
+      if (turns.length === 0) return isLegacyRecoveredConversation(conversation) ? null : conversation
+      if (!shouldRepairChatConversationFromTurns(conversation, turns)) return conversation
+      const repairedTitle = deriveChatConversationTitleFromTurns(turns)
+      const repairedPreview = deriveChatConversationPreviewFromTurns(turns)
+      try {
+        await renameChatConversation(uid, conversation.id, repairedTitle)
+        if (repairedPreview) {
+          await updateChatConversationPreview(uid, conversation.id, repairedPreview)
+        }
+      } catch {
+        // Keep the recovered view even if the metadata repair write is retried later.
+      }
       return {
         ...conversation,
-        title: deriveChatConversationTitleFromTurns(turns),
-        last_preview: deriveChatConversationPreviewFromTurns(turns) || conversation.last_preview,
+        title: repairedTitle,
+        last_preview: repairedPreview || conversation.last_preview,
       }
     } catch {
       return conversation

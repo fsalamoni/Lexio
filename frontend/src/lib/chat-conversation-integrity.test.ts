@@ -3,8 +3,10 @@ import type { ChatTurnData } from './firestore-types'
 import {
   deriveChatConversationPreviewFromTurns,
   deriveChatConversationTitleFromTurns,
+  isGenericChatConversationPlaceholder,
   isArchivedChatConversation,
   isLegacyRecoveredConversation,
+  shouldRepairChatConversationFromTurns,
 } from './chat-conversation-integrity'
 
 describe('chat conversation integrity helpers', () => {
@@ -14,6 +16,9 @@ describe('chat conversation integrity helpers', () => {
     expect(isLegacyRecoveredConversation({ title: 'Conversa recuperada', last_preview: '' })).toBe(true)
     expect(isLegacyRecoveredConversation({ title: 'Conversa recuperada', last_preview: 'Historico preservado' })).toBe(false)
     expect(isLegacyRecoveredConversation({ title: 'Parecer tributario', last_preview: '' })).toBe(false)
+    expect(isGenericChatConversationPlaceholder({ title: 'Nova conversa' })).toBe(true)
+    expect(isGenericChatConversationPlaceholder({ title: '   ' })).toBe(true)
+    expect(isGenericChatConversationPlaceholder({ title: 'Parecer tributario' })).toBe(false)
   })
 
   it('derives recovered metadata from preserved turns', () => {
@@ -40,5 +45,8 @@ describe('chat conversation integrity helpers', () => {
 
     expect(deriveChatConversationTitleFromTurns(turns)).toBe('Elabore um parecer sobre nepotismo.')
     expect(deriveChatConversationPreviewFromTurns(turns)).toBe('Conclusao refinada com fundamentos constitucionais.')
+    expect(shouldRepairChatConversationFromTurns({ title: 'Nova conversa' }, turns)).toBe(true)
+    expect(shouldRepairChatConversationFromTurns({ title: 'Conversa recuperada' }, turns)).toBe(true)
+    expect(shouldRepairChatConversationFromTurns({ title: 'Parecer manual' }, turns)).toBe(false)
   })
 })
