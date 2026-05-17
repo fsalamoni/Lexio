@@ -713,6 +713,13 @@ function describeEvent(event: ChatTrailEvent): {
         title: `Falha multimodal: ${event.filename}`,
         subtitle: event.message,
       }
+    case 'multimodal_analysis_skipped':
+      return {
+        Icon: AlertCircle,
+        iconClass: 'text-amber-600',
+        title: `Multimodal ignorado: ${event.filename}`,
+        subtitle: event.reason,
+      }
     case 'iteration_start':
       return { Icon: ListChecks, iconClass: 'text-indigo-500', title: `Iteração ${event.i}` }
     case 'decision':

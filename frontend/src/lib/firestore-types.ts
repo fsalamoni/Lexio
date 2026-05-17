@@ -1153,6 +1153,8 @@ export interface ChatAttachmentExtraction {
   duration_seconds?: number
   media_width?: number
   media_height?: number
+  video_frame_count?: number
+  video_frame_timestamps?: number[]
   analysis_model?: string
   analysis_provider?: string
   analysis_cost_usd?: number
@@ -1302,6 +1304,15 @@ export type ChatTrailEvent =
       mode: ChatAttachmentExtraction['mode']
       model: string
       message: string
+      ts: string
+    }
+  | {
+      type: 'multimodal_analysis_skipped'
+      attachment_id: string
+      filename: string
+      mode: ChatAttachmentExtraction['mode']
+      model: string
+      reason: string
       ts: string
     }
   | {

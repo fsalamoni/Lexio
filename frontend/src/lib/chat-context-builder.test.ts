@@ -139,6 +139,8 @@ describe('chat context builder', () => {
         duration_seconds: 45.2,
         media_width: 1920,
         media_height: 1080,
+        video_frame_count: 3,
+        video_frame_timestamps: [0.5, 22.6, 44.7],
         processed_at: '2026-05-16T12:00:00.000Z',
       },
     }
@@ -151,5 +153,6 @@ describe('chat context builder', () => {
 
     expect(rendered).toContain('Duração: 45.2s')
     expect(rendered).toContain('Dimensões: 1920x1080')
+    expect(rendered).toContain('Frames analisados: 3 (0.5s, 22.6s, 44.7s)')
   })
 })

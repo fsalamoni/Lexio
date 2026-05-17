@@ -66,6 +66,15 @@ describe('MessageStream', () => {
                 },
                 ts: '2026-05-08T10:00:00.200Z',
               },
+              {
+                type: 'multimodal_analysis_skipped',
+                attachment_id: 'att-1',
+                filename: 'contrato.txt',
+                mode: 'text',
+                model: 'openai/gpt-4o-mini',
+                reason: 'Limite de 1 anexo multimodal por turno atingido.',
+                ts: '2026-05-08T10:00:00.300Z',
+              },
               { type: 'agent_call', agent_key: 'chat_planner', task: 'Planejar resposta', ts: '2026-05-08T10:00:01.000Z' },
               { type: 'agent_response', agent_key: 'chat_planner', output: 'Plano inicial', ts: '2026-05-08T10:00:02.000Z' },
               {
@@ -117,6 +126,7 @@ describe('MessageStream', () => {
     expect(screen.getByText('ready')).toBeTruthy()
     expect(screen.getByText(/anexo recebido/i)).toBeTruthy()
     expect(screen.getByText(/anexo processado/i)).toBeTruthy()
+    expect(screen.getByText(/multimodal ignorado/i)).toBeTruthy()
     expect(screen.getByText(/pensamento do orquestrador/i)).toBeTruthy()
     expect(screen.getByText(/analisando o pedido/i)).toBeTruthy()
     expect(screen.getByText(/trilha de agentes/i)).toBeTruthy()
