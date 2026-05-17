@@ -66,4 +66,21 @@ describe('cost analytics coverage', () => {
     expect(breakdown.by_agent.find(item => item.label === 'Orquestrador do Pipeline')?.cost_usd).toBe(0)
     expect(breakdown.by_agent_function.find(item => item.key === 'document_generation_v3::Orquestrador do Pipeline')).toBeDefined()
   })
+
+  it('labels chat attachment, export and multimodal operational usage', () => {
+    const executions = [
+      createUsageExecutionRecord({ source_type: 'chat_attachment_ingestion', source_id: 'turn-1', phase: 'chat_attachment_ingestion', agent_name: 'Ingestor de anexos', model: 'browser/pptx-parser', cost_usd: 0 }),
+      createUsageExecutionRecord({ source_type: 'chat_export_materialization', source_id: 'turn-1', phase: 'chat_export_materialization', agent_name: 'Empacotador', model: 'browser/exporter', cost_usd: 0 }),
+      createUsageExecutionRecord({ source_type: 'chat_multimodal_analysis', source_id: 'turn-1', phase: 'chat_multimodal_analysis', agent_name: 'Analisador multimodal', model: 'openai/gpt-4o-mini', cost_usd: 0.01 }),
+    ]
+
+    const breakdown = buildCostBreakdown(executions)
+
+    expect(breakdown.by_function.map(item => item.label)).toEqual(expect.arrayContaining([
+      'Chat: Ingestão de anexos',
+      'Chat: Materialização de exports',
+      'Chat: Análise multimodal',
+    ]))
+    expect(breakdown.by_phase.find(item => item.key === 'chat_export_materialization')?.label).toBe('Chat: Materialização de exports')
+  })
 })

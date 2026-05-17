@@ -1076,12 +1076,57 @@ export interface ChatArtifactExportRef {
   export_id?: string
   label: string
   format: ChatArtifactFormat
-  status: 'planned' | 'ready' | 'failed' | 'unavailable'
+  status: 'planned' | 'retrying' | 'ready' | 'failed' | 'unavailable'
   mime_type?: string
   extension?: string
   download_url?: string
   storage_path?: string
   reason?: string
+  attempt_count?: number
+  last_attempt_at?: string
+}
+
+export interface ChatExportRetryState {
+  retry_id: string
+  artifact_id: string
+  logical_document_id: string
+  export_id?: string
+  format: ChatArtifactFormat
+  status: 'queued' | 'running' | 'ready' | 'failed'
+  requested_at: string
+  completed_at?: string
+  error?: string
+}
+
+export interface ChatDeliverableItem {
+  item_id: string
+  artifact_id: string
+  logical_document_id: string
+  title: string
+  kind: ChatArtifactKind
+  format: ChatArtifactFormat
+  version: number
+  source_agent_key?: string
+  summary?: string
+  primary_download_url?: string
+  exports: ChatArtifactExportRef[]
+  status: 'planned' | 'partial' | 'ready' | 'failed' | 'unavailable'
+  retry_state?: ChatExportRetryState
+}
+
+export interface ChatDeliverableBundle {
+  bundle_id: string
+  conversation_id: string
+  turn_id: string
+  title: string
+  status: 'planned' | 'partial' | 'ready' | 'failed' | 'unavailable'
+  items: ChatDeliverableItem[]
+  ready_count: number
+  failed_count: number
+  planned_count: number
+  unavailable_count: number
+  created_at: string
+  updated_at?: string
 }
 
 export type ChatAttachmentKind =
@@ -1305,6 +1350,22 @@ export type ChatTrailEvent =
       ts: string
     }
   | {
+      type: 'deliverable_bundle_ready'
+      bundle: ChatDeliverableBundle
+      ts: string
+    }
+  | {
+      type: 'export_retry_requested'
+      retry: ChatExportRetryState
+      ts: string
+    }
+  | {
+      type: 'export_retry_completed'
+      retry: ChatExportRetryState
+      export_ref?: ChatArtifactExportRef
+      ts: string
+    }
+  | {
       type: 'pipeline_progress'
       pipeline: string
       phase: string
@@ -1373,6 +1434,7 @@ export interface ChatTurnData {
   user_input: string
   input_attachments?: ChatTurnAttachment[]
   context_sources?: ChatContextSourceRef[]
+  deliverable_bundles?: ChatDeliverableBundle[]
   trail: ChatTrailEvent[]
   assistant_markdown: string | null
   status: ChatTurnStatus

@@ -8,6 +8,7 @@ import { OrchestratorDecisionParseError, parseOrchestratorDecision, renderSkills
 import { EFFORT_PRESETS } from './effort-presets'
 import { parseAgentOutputPackage } from './agent-output'
 import { renderCurrentTurnUserContent } from '../chat-context-builder'
+import { isEnabled } from '../feature-flags'
 import type {
   OrchestratorDecision,
   OrchestratorMessage,
@@ -400,6 +401,7 @@ async function ensureRequiredDeliverableBundle(args: {
 }
 
 function mustDeliverDownloadableBundle(input: RunChatTurnInput): boolean {
+  if (!isEnabled('FF_CHAT_DELIVERABLE_BUNDLE')) return false
   if (input.requireDeliverableBundle) return true
   return looksLikeDeliverableRequest(input.user_input)
 }

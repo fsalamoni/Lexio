@@ -36,6 +36,9 @@ interface ExportBlobResult {
   mimeType: string
 }
 
+const EXPORT_UPLOAD_MAX_ATTEMPTS = 3
+const EXPORT_UPLOAD_TIMEOUT_MS = 45_000
+
 export async function materializeChatAgentWorkPackageExports(
   workPackage: ChatAgentWorkPackage,
   options: MaterializeOptions,
@@ -72,16 +75,19 @@ async function materializeArtifactExports(
     try {
       const generated = await buildExportBlob(artifact, workPackage, exportRef.format)
       const exportId = exportRef.export_id || `${artifact.artifact_id}-${exportRef.format}`
-      const stored = await uploadChatArtifactFile({
-        userId: options.userId,
-        conversationId: options.conversationId,
-        turnId: options.turnId,
-        artifactId: artifact.artifact_id,
-        exportId,
-        title: artifact.title,
-        extension: generated.extension,
-        blob: generated.blob,
-      })
+      const attemptCount = (exportRef.attempt_count ?? 0) + 1
+      const stored = await uploadExportWithRetry(() => uploadChatArtifactFile({
+          userId: options.userId,
+          conversationId: options.conversationId,
+          turnId: options.turnId,
+          artifactId: artifact.artifact_id,
+          exportId,
+          title: artifact.title,
+          extension: generated.extension,
+          blob: generated.blob,
+        }),
+        EXPORT_UPLOAD_MAX_ATTEMPTS,
+      )
       const readyExport: ChatArtifactExportRef = {
         ...exportRef,
         export_id: exportId,
@@ -90,6 +96,8 @@ async function materializeArtifactExports(
         extension: generated.extension,
         download_url: stored.url,
         storage_path: stored.path,
+        attempt_count: attemptCount,
+        last_attempt_at: new Date().toISOString(),
       }
       exports.push(readyExport)
       if (!primaryDownloadUrl && exportRef.format === artifact.format) primaryDownloadUrl = stored.url
@@ -99,6 +107,8 @@ async function materializeArtifactExports(
         ...exportRef,
         status: 'failed',
         reason: error instanceof Error ? error.message : String(error),
+        attempt_count: (exportRef.attempt_count ?? 0) + 1,
+        last_attempt_at: new Date().toISOString(),
       })
     }
   }
@@ -556,4 +566,41 @@ function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+async function uploadExportWithRetry<T>(operation: () => Promise<T>, maxAttempts: number): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await withTimeout(operation(), EXPORT_UPLOAD_TIMEOUT_MS)
+    } catch (error) {
+      lastError = error
+      if (attempt >= maxAttempts || !isTransientExportError(error)) break
+      await delay(Math.min(150 * attempt, 500))
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Falha ao materializar export do chat.'))
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Tempo limite excedido ao enviar export para o Storage.')), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
+function isTransientExportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '')
+  return /timeout|tempo limite|network|rede|retry|429|5\d\d|tempor/i.test(message)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }

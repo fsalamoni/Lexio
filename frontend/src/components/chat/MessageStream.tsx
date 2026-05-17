@@ -18,6 +18,7 @@ import {
   ListChecks,
   PackageCheck,
   Presentation,
+  RefreshCw,
   Sparkles,
   Table,
   Upload as UploadIcon,
@@ -26,16 +27,28 @@ import {
   Wrench,
 } from 'lucide-react'
 import clsx from 'clsx'
-import type { ChatAgentWorkPackage, ChatArtifactRef, ChatTrailEvent, ChatTurnAttachment, ChatTurnData } from '../../lib/firestore-types'
+import type {
+  ChatAgentWorkPackage,
+  ChatArtifactExportRef,
+  ChatArtifactRef,
+  ChatDeliverableBundle,
+  ChatDeliverableItem,
+  ChatTrailEvent,
+  ChatTurnAttachment,
+  ChatTurnData,
+} from '../../lib/firestore-types'
+import { buildChatDeliverableBundleForTurn, type ChatExportRetryRequest } from '../../lib/chat-deliverable-bundles'
+import { isEnabled } from '../../lib/feature-flags'
 
 interface MessageStreamProps {
   turns: ChatTurnData[]
   liveTurn: ChatTurnData | null
   emptyState?: React.ReactNode
   onSendPendingAnswer?: (answer: string) => void
+  onRetryExport?: (request: ChatExportRetryRequest) => void
 }
 
-export default function MessageStream({ turns, liveTurn, emptyState, onSendPendingAnswer }: MessageStreamProps) {
+export default function MessageStream({ turns, liveTurn, emptyState, onSendPendingAnswer, onRetryExport }: MessageStreamProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -49,7 +62,13 @@ export default function MessageStream({ turns, liveTurn, emptyState, onSendPendi
   return (
     <div className="flex flex-col gap-6 overflow-y-auto overflow-x-hidden px-4 py-6 flex-1 min-h-0 chat-stream-scrollbar">
       {allTurns.map((turn, idx) => (
-        <TurnBlock key={turn.id ?? `t-${idx}`} turn={turn} live={turn === liveTurn} onSendPendingAnswer={onSendPendingAnswer} />
+        <TurnBlock
+          key={turn.id ?? `t-${idx}`}
+          turn={turn}
+          live={turn === liveTurn}
+          onSendPendingAnswer={onSendPendingAnswer}
+          onRetryExport={onRetryExport}
+        />
       ))}
       <div ref={bottomRef} />
     </div>
@@ -74,15 +93,20 @@ function TurnBlock({
   turn,
   live,
   onSendPendingAnswer,
+  onRetryExport,
 }: {
   turn: ChatTurnData
   live: boolean
   onSendPendingAnswer?: (answer: string) => void
+  onRetryExport?: (request: ChatExportRetryRequest) => void
 }) {
   const thoughtSegments = collectThoughtSegments(turn.trail)
   const trailWithoutThoughts = turn.trail.filter(e => e.type !== 'orchestrator_thought')
   const activeAgent = findActiveAgent(turn.trail)
   const showThoughtPanel = thoughtSegments.length > 0
+  const deliverablesEnabled = isEnabled('FF_CHAT_DELIVERABLE_BUNDLE')
+  const retryEnabled = isEnabled('FF_CHAT_EXPORT_RETRY')
+  const deliverableBundle = deliverablesEnabled ? (turn.deliverable_bundles?.[0] ?? buildChatDeliverableBundleForTurn(turn)) : null
 
   return (
     <div className="flex flex-col gap-3">
@@ -103,6 +127,12 @@ function TurnBlock({
         />
       )}
       {turn.assistant_markdown && <AssistantBubble markdown={turn.assistant_markdown} />}
+      {deliverableBundle && (
+        <DeliverablesPanel
+          bundle={deliverableBundle}
+          onRetryExport={retryEnabled ? onRetryExport : undefined}
+        />
+      )}
       {live && !turn.assistant_markdown && (
         <div className="flex items-center gap-2 text-xs text-[var(--v2-ink-faint)]">
           <Hourglass className="h-3.5 w-3.5 animate-pulse" />
@@ -386,13 +416,196 @@ function ArtifactCard({ artifact }: { artifact: ChatArtifactRef }) {
               key={`${artifact.artifact_id}-${exportRef.label}`}
               className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600"
             >
-              {exportRef.label}: {exportRef.status === 'ready' ? 'pronto' : exportRef.status === 'planned' ? 'planejado' : exportRef.status}
+              {exportRef.label}: {formatExportStatus(exportRef.status)}
             </span>
           ))}
         </div>
       )}
     </div>
   )
+}
+
+function DeliverablesPanel({
+  bundle,
+  onRetryExport,
+}: {
+  bundle: ChatDeliverableBundle
+  onRetryExport?: (request: ChatExportRetryRequest) => void
+}) {
+  const readyZipExports = bundle.items.flatMap(item =>
+    item.exports
+      .filter(exportRef => exportRef.format === 'zip' && exportRef.status === 'ready' && exportRef.download_url)
+      .map(exportRef => ({ item, exportRef })),
+  )
+
+  return (
+    <div className="ml-11 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+            <PackageCheck className="h-3.5 w-3.5" />
+            Arquivos gerados
+          </div>
+          <div className="mt-1 text-xs text-emerald-900">
+            {bundle.ready_count} prontos · {bundle.failed_count} falharam · {bundle.planned_count} pendentes
+          </div>
+        </div>
+        {readyZipExports.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {readyZipExports.map(({ item, exportRef }) => (
+              <a
+                key={`${item.item_id}-${exportRef.export_id ?? exportRef.label}-zip`}
+                href={exportRef.download_url}
+                download
+                className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                title={`Baixar ZIP de ${item.title}`}
+              >
+                <Download className="h-3 w-3" />
+                Baixar ZIP
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2">
+        {bundle.items.map(item => (
+          <DeliverableItemRow
+            key={item.item_id}
+            bundle={bundle}
+            item={item}
+            onRetryExport={onRetryExport}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function DeliverableItemRow({
+  bundle,
+  item,
+  onRetryExport,
+}: {
+  bundle: ChatDeliverableBundle
+  item: ChatDeliverableItem
+  onRetryExport?: (request: ChatExportRetryRequest) => void
+}) {
+  return (
+    <div className="rounded-xl border border-emerald-100 bg-white/80 px-3 py-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-[var(--v2-ink-strong)]">{item.title}</div>
+          <div className="text-[11px] text-[var(--v2-ink-muted)]">
+            {item.kind}/{item.format} · v{item.version}{item.source_agent_key ? ` · ${item.source_agent_key}` : ''}
+          </div>
+          {item.summary && <div className="mt-1 text-xs text-[var(--v2-ink-muted)]">{item.summary}</div>}
+        </div>
+        <StatusPill status={item.status} />
+      </div>
+
+      {item.exports.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {item.exports.map(exportRef => (
+            <ExportAction
+              key={`${item.item_id}-${exportRef.export_id ?? exportRef.label}-${exportRef.format}`}
+              turnId={bundle.turn_id}
+              artifactId={item.artifact_id}
+              exportRef={exportRef}
+              onRetryExport={onRetryExport}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ExportAction({
+  turnId,
+  artifactId,
+  exportRef,
+  onRetryExport,
+}: {
+  turnId: string
+  artifactId: string
+  exportRef: ChatArtifactExportRef
+  onRetryExport?: (request: ChatExportRetryRequest) => void
+}) {
+  if (exportRef.status === 'ready' && exportRef.download_url) {
+    return (
+      <a
+        href={exportRef.download_url}
+        download
+        className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+      >
+        <Download className="h-3 w-3" />
+        {exportRef.label}
+      </a>
+    )
+  }
+
+  const retryable = exportRef.status === 'failed' || exportRef.status === 'planned'
+  if (retryable) {
+    return (
+      <button
+        type="button"
+        onClick={() => onRetryExport?.({
+          turnId,
+          artifactId,
+          format: exportRef.format,
+          exportId: exportRef.export_id,
+        })}
+        disabled={!onRetryExport}
+        className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+        title={exportRef.reason || undefined}
+      >
+        <RefreshCw className="h-3 w-3" />
+        {exportRef.status === 'failed' ? `Tentar ${exportRef.label}` : `Gerar ${exportRef.label}`}
+      </button>
+    )
+  }
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600"
+      title={exportRef.reason || undefined}
+    >
+      {exportRef.label}: {formatExportStatus(exportRef.status)}
+    </span>
+  )
+}
+
+function StatusPill({ status }: { status: ChatDeliverableItem['status'] }) {
+  const className = status === 'ready'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    : status === 'partial'
+      ? 'border-amber-200 bg-amber-50 text-amber-700'
+      : status === 'failed'
+        ? 'border-rose-200 bg-rose-50 text-rose-700'
+        : 'border-slate-200 bg-slate-50 text-slate-600'
+  return (
+    <span className={clsx('rounded-full border px-2 py-0.5 text-[11px] font-semibold', className)}>
+      {formatDeliverableStatus(status)}
+    </span>
+  )
+}
+
+function formatDeliverableStatus(status: ChatDeliverableItem['status']): string {
+  if (status === 'ready') return 'pronto'
+  if (status === 'partial') return 'parcial'
+  if (status === 'failed') return 'falhou'
+  if (status === 'planned') return 'pendente'
+  return 'indisponivel'
+}
+
+function formatExportStatus(status: ChatArtifactExportRef['status']): string {
+  if (status === 'ready') return 'pronto'
+  if (status === 'planned') return 'planejado'
+  if (status === 'retrying') return 'gerando'
+  if (status === 'failed') return 'falhou'
+  if (status === 'unavailable') return 'indisponivel'
+  return status
 }
 
 /**
@@ -516,6 +729,27 @@ function describeEvent(event: ChatTrailEvent): {
         iconClass: 'text-indigo-600',
         title: `Export pronto: ${event.export_ref.label}`,
         subtitle: `${event.logical_document_id} · ${event.export_ref.format}`,
+      }
+    case 'deliverable_bundle_ready':
+      return {
+        Icon: PackageCheck,
+        iconClass: 'text-emerald-600',
+        title: `${event.bundle.title}: ${formatDeliverableStatus(event.bundle.status)}`,
+        subtitle: `${event.bundle.ready_count} prontos · ${event.bundle.failed_count} falharam · ${event.bundle.planned_count} pendentes`,
+      }
+    case 'export_retry_requested':
+      return {
+        Icon: RefreshCw,
+        iconClass: 'text-amber-600',
+        title: `Retry solicitado: ${event.retry.format.toUpperCase()}`,
+        subtitle: event.retry.logical_document_id,
+      }
+    case 'export_retry_completed':
+      return {
+        Icon: event.retry.status === 'ready' ? CheckCircle2 : AlertCircle,
+        iconClass: event.retry.status === 'ready' ? 'text-emerald-600' : 'text-rose-600',
+        title: event.retry.status === 'ready' ? `Export recuperado: ${event.retry.format.toUpperCase()}` : `Retry falhou: ${event.retry.format.toUpperCase()}`,
+        subtitle: event.retry.error,
       }
     case 'pipeline_progress':
       return {

@@ -35,6 +35,16 @@ import type { PreparedChatInputAttachment } from '../../lib/chat-attachment-inge
 import { uploadChatInputAttachmentFile } from '../../lib/chat-input-storage'
 import { buildAttachmentContextSources, renderTurnUserContentForHistory } from '../../lib/chat-context-builder'
 import {
+  appendOrReplaceBundleEvent,
+  buildChatDeliverableBundleForTurn,
+  buildRetryState,
+  findArtifactInWorkPackage,
+  findWorkPackageForExportRetry,
+  prepareWorkPackageForExportRetry,
+  replaceWorkPackageInTrail,
+  type ChatExportRetryRequest,
+} from '../../lib/chat-deliverable-bundles'
+import {
   buildPipelineFallbackResolver,
   CHAT_ORCHESTRATOR_AGENT_DEFS,
   loadChatOrchestratorModels,
@@ -69,6 +79,7 @@ type Action =
   | { type: 'TRAIL_APPEND'; event: ChatTrailEvent }
   | { type: 'RESOLVE_PENDING_TURN'; turnId: string; event: ChatTrailEvent; completedAt: string }
   | { type: 'COMMIT_TURN'; turn: ChatTurnData; status: ChatTurnStatus }
+  | { type: 'UPDATE_TURN'; turn: ChatTurnData }
   | { type: 'SEND_ERROR'; error: string }
   | { type: 'SET_EFFORT'; effort: ChatEffortLevel }
   | { type: 'SET_LAST_PREVIEW'; preview: string }
@@ -140,6 +151,12 @@ function reducer(state: ChatControllerState, action: Action): ChatControllerStat
         liveTurn: null,
         turns: [...state.turns, { ...action.turn, status: action.status }],
         status: action.status === 'awaiting_user' ? 'awaiting_user' : 'idle',
+      }
+    case 'UPDATE_TURN':
+      return {
+        ...state,
+        turns: state.turns.map(turn => turn.id === action.turn.id ? action.turn : turn),
+        liveTurn: state.liveTurn?.id === action.turn.id ? action.turn : state.liveTurn,
       }
     case 'SEND_ERROR':
       return {
@@ -773,7 +790,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         scheduled = null
       }
 
-      const completedTurn: ChatTurnData = {
+      let completedTurn: ChatTurnData = {
         ...liveTurn,
         id: turnId,
         trail: trailBuffer.slice(),
@@ -783,11 +800,13 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         llm_executions: result.llm_executions,
         completed_at: new Date().toISOString(),
       }
+      completedTurn = attachDeliverableBundleToTurn(completedTurn)
 
       if (IS_FIREBASE && userId) {
         try {
           await updateChatTurn(userId, conversationId, turnId, {
             trail: compactChatTrailForPersistence(completedTurn.trail),
+            deliverable_bundles: completedTurn.deliverable_bundles,
             assistant_markdown: completedTurn.assistant_markdown,
             status: completedTurn.status,
             pending_question: completedTurn.pending_question ?? null,
@@ -880,12 +899,98 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     }
   }, [conversationId, userId])
 
+  const retryExport = useCallback(async (request: ChatExportRetryRequest) => {
+    const turn = state.turns.find(candidate => candidate.id === request.turnId)
+    if (!turn) return
+    const workPackage = findWorkPackageForExportRetry(turn, request)
+    if (!workPackage) return
+    const artifact = findArtifactInWorkPackage(workPackage, request.artifactId)
+    if (!artifact) return
+
+    const retry = buildRetryState({
+      artifact,
+      format: request.format,
+      exportId: request.exportId,
+      status: 'running',
+    })
+    let nextTrail: ChatTrailEvent[] = [
+      ...turn.trail,
+      { type: 'export_retry_requested', retry, ts: retry.requested_at },
+    ]
+
+    const finish = async (updatedTurn: ChatTurnData) => {
+      if (IS_FIREBASE && userId && updatedTurn.id) {
+        await updateChatTurn(userId, updatedTurn.conversation_id, updatedTurn.id, {
+          trail: compactChatTrailForPersistence(updatedTurn.trail),
+          deliverable_bundles: updatedTurn.deliverable_bundles,
+        })
+      }
+      dispatch({ type: 'UPDATE_TURN', turn: updatedTurn })
+    }
+
+    try {
+      const preparedPackage = prepareWorkPackageForExportRetry(workPackage, request)
+      const { materializeChatAgentWorkPackageExports } = await import('../../lib/chat-artifact-exporters')
+      const materializedPackage = await materializeChatAgentWorkPackageExports(preparedPackage, {
+        userId: userId ?? 'demo',
+        conversationId: turn.conversation_id,
+        turnId: turn.id ?? request.turnId,
+      })
+      const persistedPackage = IS_FIREBASE && userId
+        ? await persistChatAgentWorkPackage(userId, turn.conversation_id, materializedPackage)
+        : materializedPackage
+      nextTrail = replaceWorkPackageInTrail(nextTrail, persistedPackage)
+
+      const updatedArtifact = findArtifactInWorkPackage(persistedPackage, request.artifactId)
+      const exportRef = updatedArtifact?.exports?.find(candidate =>
+        (request.exportId && candidate.export_id === request.exportId)
+        || (!request.exportId && candidate.format === request.format),
+      )
+      const retryCompleted = buildRetryState({
+        artifact: updatedArtifact ?? artifact,
+        format: request.format,
+        exportId: request.exportId ?? exportRef?.export_id,
+        status: exportRef?.status === 'ready' && exportRef.download_url ? 'ready' : 'failed',
+        error: exportRef?.status === 'ready' ? undefined : exportRef?.reason ?? 'O export nao retornou um download pronto.',
+      })
+      nextTrail = [
+        ...nextTrail,
+        {
+          type: 'export_retry_completed',
+          retry: { ...retryCompleted, retry_id: retry.retry_id, requested_at: retry.requested_at },
+          export_ref: exportRef,
+          ts: retryCompleted.completed_at ?? new Date().toISOString(),
+        },
+      ]
+      await finish(attachDeliverableBundleToTurn({ ...turn, trail: nextTrail }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const failedRetry = buildRetryState({
+        artifact,
+        format: request.format,
+        exportId: request.exportId,
+        status: 'failed',
+        error: message,
+      })
+      nextTrail = [
+        ...nextTrail,
+        {
+          type: 'export_retry_completed',
+          retry: { ...failedRetry, retry_id: retry.retry_id, requested_at: retry.requested_at },
+          ts: failedRetry.completed_at ?? new Date().toISOString(),
+        },
+      ]
+      await finish(attachDeliverableBundleToTurn({ ...turn, trail: nextTrail }))
+    }
+  }, [state.turns, userId])
+
   const value = useMemo(() => ({
     state,
     sendMessage,
+    retryExport,
     cancel,
     setEffort,
-  }), [state, sendMessage, cancel, setEffort])
+  }), [state, sendMessage, retryExport, cancel, setEffort])
 
   return value
 }
@@ -960,6 +1065,17 @@ async function materializeChatInputAttachmentUploads(args: {
   }
 
   return uploaded
+}
+
+function attachDeliverableBundleToTurn(turn: ChatTurnData): ChatTurnData {
+  const bundle = buildChatDeliverableBundleForTurn(turn)
+  if (!bundle) return { ...turn, deliverable_bundles: undefined }
+  const trail = appendOrReplaceBundleEvent(turn.trail, bundle)
+  return {
+    ...turn,
+    trail,
+    deliverable_bundles: [bundle],
+  }
 }
 
 function mockModelMap(): Record<string, string> {

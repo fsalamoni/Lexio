@@ -128,6 +128,38 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_PRESENTATION_V2_ENABLED',
     devToggleable: true,
   },
+  {
+    key: 'FF_CHAT_ATTACHMENTS',
+    label: 'Chat: Anexos',
+    description: 'Habilita upload, drag/drop, paste e ingestão de anexos no Chat Orquestrador',
+    defaultEnabled: true,
+    envVar: 'VITE_FF_CHAT_ATTACHMENTS',
+    devToggleable: true,
+  },
+  {
+    key: 'FF_CHAT_DELIVERABLE_BUNDLE',
+    label: 'Chat: Entregáveis Obrigatórios',
+    description: 'Exige e exibe pacote final de arquivos quando o usuário pede documentos/downloads',
+    defaultEnabled: true,
+    envVar: 'VITE_FF_CHAT_DELIVERABLE_BUNDLE',
+    devToggleable: true,
+  },
+  {
+    key: 'FF_CHAT_EXPORT_RETRY',
+    label: 'Chat: Retry de Exports',
+    description: 'Mostra ação de nova tentativa para exports planejados ou com falha no painel de arquivos gerados',
+    defaultEnabled: true,
+    envVar: 'VITE_FF_CHAT_EXPORT_RETRY',
+    devToggleable: true,
+  },
+  {
+    key: 'FF_CHAT_MULTIMODAL_ANALYSIS',
+    label: 'Chat: Análise Multimodal',
+    description: 'Reserva rollout para OCR, visão e transcrição de áudio/vídeo no Chat Orquestrador',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_MULTIMODAL_ANALYSIS',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────

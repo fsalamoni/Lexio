@@ -38,7 +38,7 @@ export default function Chat() {
   }
 
   const controller = useChatController({ conversationId: activeId })
-  const { state, sendMessage, cancel, setEffort } = controller
+  const { state, sendMessage, retryExport, cancel, setEffort } = controller
   const mock = isMockRuntimeActive()
   const busy = state.status === 'sending'
 
@@ -86,6 +86,7 @@ export default function Chat() {
                 liveTurn={state.liveTurn}
                 emptyState={<EmptyState demo={mock} />}
                 onSendPendingAnswer={sendMessage}
+                onRetryExport={retryExport}
               />
             )}
           </div>

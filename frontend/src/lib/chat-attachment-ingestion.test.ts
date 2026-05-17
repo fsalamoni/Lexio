@@ -1,3 +1,4 @@
+import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import {
   classifyChatAttachment,
@@ -102,6 +103,26 @@ describe('chat attachment ingestion', () => {
       sheet_count: 1,
     })
     expect(attachment.extraction.text_preview).toContain('Honorários | 1000')
+  })
+
+  it('extracts PPTX presentations into slide-aware text context', async () => {
+    const zip = new JSZip()
+    zip.file('ppt/slides/slide1.xml', '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:t>Tese principal</a:t><a:t>Fundamento legal</a:t></p:sld>')
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' })
+    const file = new File([blob], 'sustentacao.pptx', { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' })
+
+    const attachment = await prepareChatInputAttachment(file, {
+      now: '2026-05-16T12:00:00.000Z',
+      attachmentId: 'att-pptx',
+    })
+
+    expect(attachment.kind).toBe('presentation')
+    expect(attachment.extraction).toMatchObject({
+      status: 'ready',
+      mode: 'text',
+      slide_count: 1,
+    })
+    expect(attachment.extraction.text_preview).toContain('Tese principal')
   })
 
   it('rejects empty files with a visible extraction error', async () => {

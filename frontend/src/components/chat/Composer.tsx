@@ -7,6 +7,7 @@ import {
   prepareChatInputAttachmentCandidate,
   type PreparedChatInputAttachment,
 } from '../../lib/chat-attachment-ingestion'
+import { isEnabled } from '../../lib/feature-flags'
 
 const MAX_ATTACHMENTS_PER_TURN = 12
 
@@ -31,6 +32,7 @@ export default function Composer({ onSend, disabled, busy, placeholder }: Compos
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const attachmentsEnabled = isEnabled('FF_CHAT_ATTACHMENTS')
 
   // Auto-resize textarea up to ~10 lines.
   useEffect(() => {
@@ -43,7 +45,7 @@ export default function Composer({ onSend, disabled, busy, placeholder }: Compos
 
   const submit = () => {
     const trimmed = text.trim()
-    const attachments = attachmentEntries.map(entry => entry.attachment)
+    const attachments = attachmentsEnabled ? attachmentEntries.map(entry => entry.attachment) : []
     if ((!trimmed && attachments.length === 0) || disabled || processingAttachments) return
     onSend({
       text: trimmed || 'Analise os anexos enviados.',
@@ -63,6 +65,10 @@ export default function Composer({ onSend, disabled, busy, placeholder }: Compos
   }
 
   const handleFiles = async (files: FileList | File[]) => {
+    if (!attachmentsEnabled) {
+      setAttachmentError('Anexos do chat estão desabilitados nesta configuração.')
+      return
+    }
     const items = Array.from(files)
     if (!items.length) return
     const slots = Math.max(0, MAX_ATTACHMENTS_PER_TURN - attachmentEntries.length)
@@ -96,7 +102,7 @@ export default function Composer({ onSend, disabled, busy, placeholder }: Compos
   }
 
   const onDragOver = (event: DragEvent<HTMLDivElement>) => {
-    if (disabled) return
+    if (disabled || !attachmentsEnabled) return
     event.preventDefault()
     setDragging(true)
   }
@@ -107,21 +113,21 @@ export default function Composer({ onSend, disabled, busy, placeholder }: Compos
   }
 
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
-    if (disabled) return
+    if (disabled || !attachmentsEnabled) return
     event.preventDefault()
     setDragging(false)
     void handleFiles(event.dataTransfer.files)
   }
 
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (disabled) return
+    if (disabled || !attachmentsEnabled) return
     const files = Array.from(event.clipboardData.files ?? [])
     if (!files.length) return
     event.preventDefault()
     void handleFiles(files)
   }
 
-  const attachments = attachmentEntries.map(entry => entry.attachment)
+  const attachments = attachmentsEnabled ? attachmentEntries.map(entry => entry.attachment) : []
   const canSubmit = !disabled && !processingAttachments && Boolean(text.trim() || attachments.length)
 
   return (
@@ -134,17 +140,19 @@ export default function Composer({ onSend, disabled, busy, placeholder }: Compos
         dragging ? 'border-indigo-300 bg-indigo-50/40' : 'border-[var(--v2-border)]',
       )}
     >
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept={CHAT_ATTACHMENT_ACCEPTED_EXTENSIONS.join(',')}
-        className="hidden"
-        onChange={event => {
-          if (event.currentTarget.files) void handleFiles(event.currentTarget.files)
-          event.currentTarget.value = ''
-        }}
-      />
+      {attachmentsEnabled && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={CHAT_ATTACHMENT_ACCEPTED_EXTENSIONS.join(',')}
+          className="hidden"
+          onChange={event => {
+            if (event.currentTarget.files) void handleFiles(event.currentTarget.files)
+            event.currentTarget.value = ''
+          }}
+        />
+      )}
       <textarea
         ref={textareaRef}
         value={text}
@@ -194,16 +202,18 @@ export default function Composer({ onSend, disabled, busy, placeholder }: Compos
       )}
       <div className="mt-2 flex items-center justify-between gap-2 text-xs text-[var(--v2-ink-faint)]">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || processingAttachments}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Anexar arquivos"
-            title="Anexar arquivos"
-          >
-            {processingAttachments ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
-          </button>
+          {attachmentsEnabled && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled || processingAttachments}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Anexar arquivos"
+              title="Anexar arquivos"
+            >
+              {processingAttachments ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
+            </button>
+          )}
           <span>Enter envia · Shift+Enter quebra linha</span>
         </div>
         <button

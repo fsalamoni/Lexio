@@ -74,4 +74,53 @@ describe('chat context builder', () => {
     expect(rendered).toContain('custos.csv')
     expect(rendered).toContain('chat_inputs/u/c/t/att-1/custos.csv')
   })
+
+  it('renders generated deliverable bundles for follow-up turns', () => {
+    const turn: ChatTurnData = {
+      id: 'turn-2',
+      conversation_id: 'conv-1',
+      user_input: 'Gere os arquivos finais.',
+      trail: [],
+      assistant_markdown: '# Entrega pronta',
+      status: 'done',
+      created_at: '2026-05-16T12:00:00.000Z',
+      deliverable_bundles: [
+        {
+          bundle_id: 'bundle-1',
+          conversation_id: 'conv-1',
+          turn_id: 'turn-2',
+          title: 'Arquivos gerados',
+          status: 'partial',
+          ready_count: 1,
+          failed_count: 1,
+          planned_count: 0,
+          unavailable_count: 0,
+          created_at: '2026-05-16T12:00:00.000Z',
+          items: [
+            {
+              item_id: 'doc-v1',
+              artifact_id: 'doc-v1',
+              logical_document_id: 'doc',
+              title: 'Documento final',
+              kind: 'legal_document',
+              format: 'markdown',
+              version: 1,
+              status: 'partial',
+              exports: [
+                { label: 'DOCX', format: 'docx', status: 'ready', storage_path: 'chat_artifacts/u/c/t/doc/doc.docx' },
+                { label: 'PDF', format: 'pdf', status: 'failed', reason: 'Falha temporaria.' },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+
+    const rendered = renderTurnUserContentForHistory(turn)
+
+    expect(rendered).toContain('## Entregaveis gerados no turno')
+    expect(rendered).toContain('Documento final')
+    expect(rendered).toContain('DOCX em chat_artifacts/u/c/t/doc/doc.docx')
+    expect(rendered).toContain('PDF (Falha temporaria.)')
+  })
 })

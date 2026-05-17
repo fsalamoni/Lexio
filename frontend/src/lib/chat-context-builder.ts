@@ -1,4 +1,4 @@
-import type { ChatContextSourceRef, ChatTurnAttachment, ChatTurnData } from './firestore-types'
+import type { ChatContextSourceRef, ChatDeliverableBundle, ChatTurnAttachment, ChatTurnData } from './firestore-types'
 
 export function buildAttachmentContextSources(attachments: ChatTurnAttachment[]): ChatContextSourceRef[] {
   return attachments.map((attachment, index) => ({
@@ -13,11 +13,12 @@ export function buildAttachmentContextSources(attachments: ChatTurnAttachment[])
 }
 
 export function renderTurnUserContentForHistory(turn: ChatTurnData): string {
-  if (!turn.input_attachments?.length && !turn.context_sources?.length) return turn.user_input
+  if (!turn.input_attachments?.length && !turn.context_sources?.length && !turn.deliverable_bundles?.length) return turn.user_input
   return renderUserInputWithContext({
     userInput: turn.user_input,
     attachments: turn.input_attachments ?? [],
     contextSources: turn.context_sources ?? [],
+    deliverableBundles: turn.deliverable_bundles ?? [],
     attachmentHeading: '## Anexos do turno',
   })
 }
@@ -31,6 +32,7 @@ export function renderCurrentTurnUserContent(args: {
     userInput: args.userInput,
     attachments: args.attachments ?? [],
     contextSources: args.contextSources ?? [],
+    deliverableBundles: [],
     attachmentHeading: '## Anexos recebidos neste turno',
   })
 }
@@ -39,6 +41,7 @@ function renderUserInputWithContext(args: {
   userInput: string
   attachments: ChatTurnAttachment[]
   contextSources: ChatContextSourceRef[]
+  deliverableBundles: ChatDeliverableBundle[]
   attachmentHeading: string
 }): string {
   const sections = [args.userInput]
@@ -54,7 +57,33 @@ function renderUserInputWithContext(args: {
       sections.push(`- Fonte ${index + 1}: ${source.title} (${source.source_type})${source.summary ? ` - ${clip(source.summary, 900)}` : ''}`)
     })
   }
+  if (args.deliverableBundles.length) {
+    sections.push('', '## Entregaveis gerados no turno')
+    args.deliverableBundles.forEach(bundle => {
+      sections.push(renderDeliverableBundleForPrompt(bundle))
+    })
+  }
   return sections.join('\n')
+}
+
+function renderDeliverableBundleForPrompt(bundle: ChatDeliverableBundle): string {
+  const lines = [
+    `### ${bundle.title}`,
+    `Status: ${bundle.status}`,
+    `Exports: ${bundle.ready_count} prontos, ${bundle.failed_count} falharam, ${bundle.planned_count} pendentes, ${bundle.unavailable_count} indisponiveis`,
+  ]
+  bundle.items.forEach((item, index) => {
+    lines.push(`- Item ${index + 1}: ${item.title} (${item.kind}/${item.format}) v${item.version} - ${item.status}`)
+    const readyExports = item.exports.filter(exportRef => exportRef.status === 'ready' && (exportRef.download_url || exportRef.storage_path))
+    if (readyExports.length) {
+      lines.push(`  Downloads: ${readyExports.map(exportRef => `${exportRef.label}${exportRef.storage_path ? ` em ${exportRef.storage_path}` : ''}`).join('; ')}`)
+    }
+    const failedExports = item.exports.filter(exportRef => exportRef.status === 'failed')
+    if (failedExports.length) {
+      lines.push(`  Falhas: ${failedExports.map(exportRef => `${exportRef.label}${exportRef.reason ? ` (${exportRef.reason})` : ''}`).join('; ')}`)
+    }
+  })
+  return lines.join('\n')
 }
 
 function renderAttachmentForPrompt(attachment: ChatTurnAttachment, index: number): string {

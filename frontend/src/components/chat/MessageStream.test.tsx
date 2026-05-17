@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import MessageStream from './MessageStream'
@@ -123,7 +123,7 @@ describe('MessageStream', () => {
     expect(screen.getByText(/chama chat_planner/i)).toBeTruthy()
     expect(screen.getByText(/pacote de trabalho/i)).toBeTruthy()
     expect(screen.getByText(/pensamento do agente/i)).toBeTruthy()
-    expect(screen.getByText('Síntese do caso')).toBeTruthy()
+    expect(screen.getAllByText('Síntese do caso').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/documento json/i)).toBeTruthy()
     expect(screen.getByText(/DOCX: planejado/i)).toBeTruthy()
     expect(screen.getByText(/pergunta do orquestrador/i)).toBeTruthy()
@@ -174,5 +174,66 @@ describe('MessageStream', () => {
     expect(screen.getByText(/turno cancelado pelo usuário/i)).toBeTruthy()
     expect(screen.getByText(/erro ao executar este turno/i)).toBeTruthy()
     expect(screen.getByText(/agente "chat_writer" em execução/i)).toBeTruthy()
+  })
+
+  it('aggregates generated files and exposes retry for failed exports', () => {
+    const onRetryExport = vi.fn()
+    render(
+      <MessageStream
+        turns={[
+          {
+            id: 'turn-downloads',
+            conversation_id: 'conv-1',
+            user_input: 'Gere os documentos para baixar.',
+            trail: [
+              {
+                type: 'agent_work_package',
+                ts: '2026-05-08T10:00:00.000Z',
+                package: {
+                  conversation_id: 'conv-1',
+                  turn_id: 'turn-downloads',
+                  agent_key: 'chat_export_packager',
+                  task: 'Empacotar entrega',
+                  result_markdown: '# Entrega',
+                  artifacts: [
+                    {
+                      artifact_id: 'doc-v1',
+                      logical_document_id: 'doc',
+                      version: 1,
+                      title: 'Documento final',
+                      kind: 'legal_document',
+                      format: 'markdown',
+                      summary: 'Minuta consolidada.',
+                      exports: [
+                        { label: 'DOCX', format: 'docx', status: 'ready', download_url: 'https://cdn.lexio.test/doc.docx' },
+                        { label: 'PDF', format: 'pdf', status: 'failed', reason: 'Storage temporariamente indisponivel.' },
+                        { label: 'ZIP', format: 'zip', status: 'ready', download_url: 'https://cdn.lexio.test/doc.zip' },
+                      ],
+                    },
+                  ],
+                  created_at: '2026-05-08T10:00:00.000Z',
+                },
+              },
+            ],
+            assistant_markdown: '# Entrega pronta',
+            status: 'done',
+            created_at: '2026-05-08T10:00:00.000Z',
+          },
+        ]}
+        liveTurn={null}
+        onRetryExport={onRetryExport}
+      />,
+    )
+
+    expect(screen.getByText(/arquivos gerados/i)).toBeTruthy()
+    expect(screen.getByText(/2 prontos/i)).toBeTruthy()
+    expect(screen.getAllByRole('link', { name: /docx/i }).length).toBeGreaterThanOrEqual(1)
+    fireEvent.click(screen.getByRole('button', { name: /tentar pdf/i }))
+    expect(onRetryExport).toHaveBeenCalledWith({
+      turnId: 'turn-downloads',
+      artifactId: 'doc-v1',
+      format: 'pdf',
+      exportId: undefined,
+    })
   })
 })

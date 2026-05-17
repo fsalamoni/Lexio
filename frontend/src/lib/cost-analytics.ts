@@ -3,7 +3,7 @@ import { DOCTYPE_LABELS } from './constants'
 import { PROVIDERS, providerIdFromLabel } from './providers'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 
-export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator'
+export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator' | 'chat_attachment_ingestion' | 'chat_artifact_generation' | 'chat_export_materialization' | 'chat_multimodal_analysis'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -114,6 +114,10 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   presentation_pipeline: 'Pipeline de Apresentação',
   presentation_pipeline_v2: 'Gerador de Apresentação v2',
   chat_orchestrator: 'Orquestrador (Chat)',
+  chat_attachment_ingestion: 'Chat: Ingestão de anexos',
+  chat_artifact_generation: 'Chat: Geração de artefatos',
+  chat_export_materialization: 'Chat: Materialização de exports',
+  chat_multimodal_analysis: 'Chat: Análise multimodal',
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -258,6 +262,10 @@ const PHASE_LABELS: Record<string, string> = {
   chat_data_builder: 'Chat: Construtor de Dados',
   chat_media_director: 'Chat: Diretor de Mídia',
   chat_export_packager: 'Chat: Empacotador de Exports',
+  chat_attachment_ingestion: 'Chat: Ingestão de anexos',
+  chat_artifact_generation: 'Chat: Geração de artefatos',
+  chat_export_materialization: 'Chat: Materialização de exports',
+  chat_multimodal_analysis: 'Chat: Análise multimodal',
 }
 
 const STUDIO_ARTIFACT_LABELS: Record<string, string> = {

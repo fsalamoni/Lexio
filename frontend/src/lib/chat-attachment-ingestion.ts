@@ -6,6 +6,7 @@ import {
   SUPPORTED_TEXT_FILE_EXTENSIONS,
 } from './file-text-extractor'
 import { extractSpreadsheetTextWithMeta } from './spreadsheet-extractor'
+import { extractPresentationTextWithMeta } from './presentation-extractor'
 
 export const MAX_INLINE_CHAT_ATTACHMENT_TEXT_CHARS = 20_000
 export const MAX_CHAT_ATTACHMENT_SIZE_BYTES = 50 * 1024 * 1024
@@ -139,6 +140,36 @@ export async function prepareChatInputAttachment(
         extraction: {
           status: 'failed',
           mode: 'structured_data',
+          error: error instanceof Error ? error.message : String(error),
+          processed_at: createdAt,
+        },
+      }
+    }
+  }
+
+  if (kind === 'presentation' && extension === '.pptx') {
+    try {
+      const extracted = await extractPresentationTextWithMeta(file)
+      const text = extracted.text.trim()
+      const truncated = text.length > MAX_INLINE_CHAT_ATTACHMENT_TEXT_CHARS
+      return {
+        ...base,
+        extraction: {
+          status: text ? (truncated ? 'partial' : 'ready') : 'partial',
+          mode: 'text',
+          text_preview: truncated ? text.slice(0, MAX_INLINE_CHAT_ATTACHMENT_TEXT_CHARS) : text,
+          text_char_count: text.length,
+          truncated,
+          slide_count: extracted.slideCount,
+          processed_at: createdAt,
+        },
+      }
+    } catch (error) {
+      return {
+        ...base,
+        extraction: {
+          status: 'failed',
+          mode: 'text',
           error: error instanceof Error ? error.message : String(error),
           processed_at: createdAt,
         },

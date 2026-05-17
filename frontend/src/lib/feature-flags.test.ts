@@ -33,6 +33,13 @@ describe('feature-flags', () => {
     expect(getFlagState('FF_DOC_REDATOR_10K')).toEqual({ enabled: true, source: 'runtime' })
   })
 
+  it('registers chat rollout flags with conservative defaults where needed', () => {
+    expect(isEnabled('FF_CHAT_ATTACHMENTS')).toBe(true)
+    expect(isEnabled('FF_CHAT_DELIVERABLE_BUNDLE')).toBe(true)
+    expect(isEnabled('FF_CHAT_EXPORT_RETRY')).toBe(true)
+    expect(isEnabled('FF_CHAT_MULTIMODAL_ANALYSIS')).toBe(false)
+  })
+
   it('keeps session overrides above runtime overrides', () => {
     const storage = new Map<string, string>()
     vi.stubGlobal('sessionStorage', {
