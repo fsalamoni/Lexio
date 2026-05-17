@@ -23,7 +23,7 @@ vi.mock('./model-config', () => ({
 }))
 
 vi.mock('./image-generation-client', () => ({
-  DEFAULT_IMAGE_MODEL: 'google/gemini-2.5-flash-preview:image-output',
+  DEFAULT_IMAGE_MODEL: 'google/gemini-2.5-flash-image',
   blobToDataUrl: (...args: unknown[]) => blobToDataUrlMock(...args),
   generateImageViaOpenRouter: (...args: unknown[]) => generateImageViaOpenRouterMock(...args),
 }))
@@ -59,7 +59,7 @@ describe('runVideoGenerationPipeline', () => {
       video_narrador: 'openai/gpt-4.1-mini',
       video_revisor: 'openai/gpt-4.1-mini',
       video_clip_planner: 'openai/gpt-4.1-mini',
-      video_image_generator: 'google/gemini-2.5-flash-preview:image-output',
+      video_image_generator: 'google/gemini-2.5-flash-image',
       video_tts: 'openai/tts-1-hd',
     })
     validateScopedAgentModelsMock.mockResolvedValue(undefined)
@@ -166,7 +166,7 @@ describe('runVideoGenerationPipeline', () => {
 
     generateImageViaOpenRouterMock.mockResolvedValue({
       imageDataUrl: 'data:image/png;base64,AAA',
-      model: 'google/gemini-2.5-flash-preview:image-output',
+      model: 'google/gemini-2.5-flash-image',
       cost_usd: 0.002,
     })
     generateTTSViaOpenRouterMock.mockResolvedValue({

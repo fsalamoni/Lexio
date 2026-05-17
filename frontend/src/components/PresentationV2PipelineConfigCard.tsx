@@ -79,7 +79,7 @@ export default function PresentationV2PipelineConfigCard() {
                 A disponibilidade real depende de <strong>VITE_EXTERNAL_VIDEO_PROVIDER_*</strong> e é bloqueada no preflight quando o briefing exigir clipes.
               </p>
               <p className="mt-2">
-                <strong>Modelos multimodais padrao:</strong> <strong>Gerador de Imagens</strong> inicia com <strong>google/gemini-2.5-flash-preview:image-output</strong>
+                <strong>Modelos multimodais padrao:</strong> <strong>Gerador de Imagens</strong> inicia com <strong>google/gemini-2.5-flash-image</strong>
                 (provider Google no catalogo OpenRouter) e <strong>Narrador TTS</strong> inicia com <strong>openai/tts-1-hd</strong>
                 (provider OpenAI no catalogo OpenRouter). Os seletores dessa tela so exibem modelos do catalogo pessoal com capability compativel.
               </p>

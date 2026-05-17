@@ -14,12 +14,12 @@ describe('cost analytics coverage', () => {
 
   it('aggregates video, audio and presentation executions into the proper function breakdowns', () => {
     const executions = [
-      createUsageExecutionRecord({ source_type: 'video_pipeline', source_id: 'nb-1', phase: 'media_image_generation', agent_name: 'Gerador de Imagens', model: 'google/gemini-2.5-flash-preview:image-output', cost_usd: 0.02 }),
+      createUsageExecutionRecord({ source_type: 'video_pipeline', source_id: 'nb-1', phase: 'media_image_generation', agent_name: 'Gerador de Imagens', model: 'google/gemini-2.5-flash-image', cost_usd: 0.02 }),
       createUsageExecutionRecord({ source_type: 'video_pipeline', source_id: 'nb-1', phase: 'media_video_clip_generation', agent_name: 'Gerador de Clipes', model: 'external-provider/video', cost_usd: 0.07 }),
       createUsageExecutionRecord({ source_type: 'video_pipeline', source_id: 'nb-1', phase: 'media_video_render', agent_name: 'Renderizador de Vídeo', model: 'browser/video-webm', cost_usd: 0 }),
       createUsageExecutionRecord({ source_type: 'audio_pipeline', source_id: 'nb-1', phase: 'audio_literal_generation', agent_name: 'Narrador / TTS', model: 'openai/tts-1-hd', cost_usd: 0.015 }),
       createUsageExecutionRecord({ source_type: 'presentation_pipeline', source_id: 'nb-1', phase: 'pres_planejador', agent_name: 'Planejador de Apresentação', model: 'openai/gpt-4.1-mini', cost_usd: 0.004 }),
-      createUsageExecutionRecord({ source_type: 'presentation_pipeline', source_id: 'nb-1', phase: 'pres_image_generator', agent_name: 'Gerador de Imagens de Slides', model: 'google/gemini-2.5-flash-preview:image-output', cost_usd: 0.03 }),
+      createUsageExecutionRecord({ source_type: 'presentation_pipeline', source_id: 'nb-1', phase: 'pres_image_generator', agent_name: 'Gerador de Imagens de Slides', model: 'google/gemini-2.5-flash-image', cost_usd: 0.03 }),
       createUsageExecutionRecord({ source_type: 'presentation_pipeline', source_id: 'nb-1', phase: 'visual_artifact_render', agent_name: 'Renderizador Visual de Apresentação', model: 'browser/svg-render', cost_usd: 0 }),
     ]
 

@@ -50,7 +50,7 @@ describe('model-catalog user persistence', () => {
 
     expect(result).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        id: 'google/gemini-2.5-flash-preview:image-output',
+        id: 'google/gemini-2.5-flash-image',
         capabilities: ['image'],
       }),
       expect.objectContaining({
@@ -86,7 +86,7 @@ describe('model-catalog user persistence', () => {
 
     expect(result).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'custom/model' }),
-      expect.objectContaining({ id: 'google/gemini-2.5-flash-preview:image-output', capabilities: ['image'] }),
+      expect.objectContaining({ id: 'google/gemini-2.5-flash-image', capabilities: ['image'] }),
       expect.objectContaining({ id: 'openai/tts-1-hd', capabilities: ['audio'] }),
     ]))
     expect(saveUserSettingsMock).toHaveBeenCalledWith(
@@ -94,7 +94,7 @@ describe('model-catalog user persistence', () => {
       expect.objectContaining({
         model_catalog: expect.arrayContaining([
           expect.objectContaining({ id: 'custom/model' }),
-          expect.objectContaining({ id: 'google/gemini-2.5-flash-preview:image-output' }),
+          expect.objectContaining({ id: 'google/gemini-2.5-flash-image' }),
           expect.objectContaining({ id: 'openai/tts-1-hd' }),
         ]),
       }),
@@ -118,7 +118,7 @@ describe('model-catalog user persistence', () => {
           capabilities: ['text'],
         },
         {
-          id: 'google/gemini-2.5-flash-preview:image-output',
+          id: 'google/gemini-2.5-flash-image',
           label: 'Gemini 2.5 Flash Image',
           provider: 'Google',
           tier: 'balanced',
@@ -150,7 +150,7 @@ describe('model-catalog user persistence', () => {
 
     expect(result).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'custom/model' }),
-      expect.objectContaining({ id: 'google/gemini-2.5-flash-preview:image-output' }),
+      expect.objectContaining({ id: 'google/gemini-2.5-flash-image' }),
       expect.objectContaining({ id: 'openai/tts-1-hd' }),
     ]))
     expect(saveUserSettingsMock).not.toHaveBeenCalled()

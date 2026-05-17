@@ -82,7 +82,7 @@ vi.mock('../lib/media-capability-guidance', () => ({
         steps: [],
         recommendedModels: [
           { providerLabel: 'OpenAI direto', models: ['gpt-image-1'] },
-          { providerLabel: 'OpenRouter', models: ['google/gemini-2.5-flash-preview:image-output'] },
+          { providerLabel: 'OpenRouter', models: ['google/gemini-2.5-flash-image'] },
         ],
       }
     : null,

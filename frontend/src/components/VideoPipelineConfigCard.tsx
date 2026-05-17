@@ -81,7 +81,7 @@ export default function VideoPipelineConfigCard() {
                 custos em tokens antes de iniciar a produção.
               </p>
               <p className="mt-2">
-                <strong>Defaults multimodais:</strong> o <strong>Gerador de Imagens</strong> parte de <strong>google/gemini-2.5-flash-preview:image-output</strong>
+                <strong>Defaults multimodais:</strong> o <strong>Gerador de Imagens</strong> parte de <strong>google/gemini-2.5-flash-image</strong>
                 (provider Google no catalogo OpenRouter) e o <strong>Narrador / TTS</strong> parte de <strong>openai/tts-1-hd</strong>
                 (provider OpenAI no catalogo OpenRouter). Ambos ficam restritos a modelos do catalogo pessoal com capability compativel.
               </p>

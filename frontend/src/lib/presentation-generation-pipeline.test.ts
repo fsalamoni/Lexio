@@ -20,7 +20,7 @@ vi.mock('./model-config', () => ({
 }))
 
 vi.mock('./image-generation-client', () => ({
-  DEFAULT_IMAGE_MODEL: 'google/gemini-2.5-flash-preview:image-output',
+  DEFAULT_IMAGE_MODEL: 'google/gemini-2.5-flash-image',
   generateImageViaOpenRouter: (...args: unknown[]) => generateImageViaOpenRouterMock(...args),
 }))
 
@@ -39,13 +39,13 @@ describe('runPresentationGenerationPipeline', () => {
       pres_pesquisador: 'google/gemini-2.5-flash',
       pres_redator: 'anthropic/claude-sonnet-4',
       pres_designer: 'deepseek/deepseek-chat-v3-0324',
-      pres_image_generator: 'google/gemini-2.5-flash-preview:image-output',
+      pres_image_generator: 'google/gemini-2.5-flash-image',
       pres_revisor: 'openai/gpt-4o',
     })
     validateScopedAgentModelsMock.mockResolvedValue(undefined)
     generateImageViaOpenRouterMock.mockResolvedValue({
       imageDataUrl: 'data:image/png;base64,AAAA',
-      model: 'google/gemini-2.5-flash-preview:image-output',
+      model: 'google/gemini-2.5-flash-image',
       cost_usd: 0.02,
     })
     renderPresentationSlidePosterMock.mockResolvedValue({

@@ -19,8 +19,15 @@ const OPENROUTER_REFERER = typeof window !== 'undefined' && window.location?.ori
   ? window.location.origin
   : 'https://lexio.web.app'
 
-export const DEFAULT_IMAGE_MODEL = 'google/gemini-2.5-flash-preview:image-output'
-const OPENROUTER_IMAGE_MODEL_FALLBACKS = ['openai/gpt-image-1', 'black-forest-labs/flux-schnell']
+export const DEFAULT_IMAGE_MODEL = 'google/gemini-2.5-flash-image'
+const OPENROUTER_IMAGE_MODEL_FALLBACKS = [
+  'google/gemini-3.1-flash-image-preview',
+  'openai/gpt-5-image-mini',
+]
+const OPENROUTER_IMAGE_MODEL_REWRITES: Readonly<Record<string, string>> = Object.freeze({
+  'google/gemini-2.5-flash-preview:image-output': 'google/gemini-2.5-flash-image',
+  'black-forest-labs/flux-schnell': 'google/gemini-2.5-flash-image',
+})
 const unavailableOpenRouterImageModels = new Set<string>()
 const DIRECT_IMAGE_MODEL_FALLBACKS: Partial<Record<ResolvedProviderCall['provider']['id'], string[]>> = {
   openai: ['gpt-image-1'],
@@ -93,6 +100,10 @@ function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.map(value => value?.trim()).filter(Boolean) as string[]))
 }
 
+function rewriteOpenRouterImageModelId(model: string): string {
+  return OPENROUTER_IMAGE_MODEL_REWRITES[model] ?? model
+}
+
 function isRecoverableImageModelError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return /api error \(404\)/i.test(message)
@@ -106,7 +117,7 @@ function isRecoverableImageModelError(error: unknown): boolean {
 
 function buildImageModelCandidates(model: string, resolved: ResolvedProviderCall, preferOpenRouterKey: boolean): string[] {
   const candidates = preferOpenRouterKey || resolved.provider.dialect === 'openrouter'
-    ? uniqueStrings([model, ...OPENROUTER_IMAGE_MODEL_FALLBACKS])
+    ? uniqueStrings([model, ...OPENROUTER_IMAGE_MODEL_FALLBACKS].map(rewriteOpenRouterImageModelId))
     : uniqueStrings([
         normalizeModelForProvider(model, resolved.provider.id),
         ...(DIRECT_IMAGE_MODEL_FALLBACKS[resolved.provider.id] || []),
@@ -321,7 +332,7 @@ async function generateImageWithOpenAICompatible(
 }
 
 export async function generateImage(opts: ImageGenerationOptions): Promise<ImageGenerationResult> {
-  const model = opts.model || DEFAULT_IMAGE_MODEL
+  const model = rewriteOpenRouterImageModelId(opts.model || DEFAULT_IMAGE_MODEL)
   const uid = opts.uid ?? getCurrentUserId() ?? undefined
   const preferOpenRouterKey = isLikelyOpenRouterKey(opts.apiKey)
   let resolved: ResolvedProviderCall
@@ -580,7 +591,7 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
 // ── Available image models ──────────────────────────────────────────────────
 
 export const IMAGE_MODELS = [
-  { id: 'google/gemini-2.5-flash-preview:image-output', label: 'Gemini Flash Image', description: 'Rápido e barato, boa qualidade', tier: 'balanced' as const },
-  { id: 'black-forest-labs/flux-1.1-pro', label: 'Flux 1.1 Pro', description: 'Qualidade premium, fotorrealista', tier: 'premium' as const },
-  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell', description: 'Rápido, qualidade boa', tier: 'fast' as const },
+  { id: 'google/gemini-2.5-flash-image', label: 'Gemini 2.5 Flash Image', description: 'Rápido e barato, boa qualidade', tier: 'balanced' as const },
+  { id: 'google/gemini-3.1-flash-image-preview', label: 'Gemini 3.1 Flash Image Preview', description: 'Mais novo, rápido e com qualidade visual alta', tier: 'balanced' as const },
+  { id: 'openai/gpt-5-image-mini', label: 'GPT-5 Image Mini', description: 'Boa qualidade com custo reduzido', tier: 'balanced' as const },
 ] as const

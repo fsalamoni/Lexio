@@ -76,7 +76,7 @@ export const PRESENTATION_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     key: 'pres_image_generator',
     label: 'Gerador de Imagens de Slides',
     description: 'Gera imagens reais para os slides a partir das diretrizes visuais aprovadas no pipeline',
-    defaultModel: 'google/gemini-2.5-flash-preview:image-output',
+    defaultModel: 'google/gemini-2.5-flash-image',
     recommendedTier: 'balanced',
     icon: 'image-plus',
     agentCategory: 'synthesis',

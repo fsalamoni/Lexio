@@ -26,6 +26,39 @@ describe('image-generation-client', () => {
     vi.unstubAllGlobals()
   })
 
+  it('rewrites stale OpenRouter image model IDs before sending the request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: [
+                {
+                  type: 'image_url',
+                  image_url: { url: 'data:image/png;base64,AAAA' },
+                },
+              ],
+            },
+          },
+        ],
+        usage: { total_cost: 0.02 },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    resolveProviderCallMock.mockRejectedValue(new Error('Chave de API ausente para "Google AI".'))
+
+    const result = await generateImage({
+      apiKey: 'sk-or-v1-test',
+      prompt: 'Gerar imagem executiva',
+      model: 'black-forest-labs/flux-schnell',
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe(DEFAULT_IMAGE_MODEL)
+    expect(result.model).toBe(DEFAULT_IMAGE_MODEL)
+  })
+
   it('falls back to a safe OpenRouter image model when the preferred model returns 404', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
@@ -63,8 +96,8 @@ describe('image-generation-client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls[0][0]).toBe(openRouterChatCompletionsUrl)
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe(DEFAULT_IMAGE_MODEL)
-    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).model).toBe('openai/gpt-image-1')
-    expect(result.model).toBe('openai/gpt-image-1')
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).model).toBe('google/gemini-3.1-flash-image-preview')
+    expect(result.model).toBe('google/gemini-3.1-flash-image-preview')
   })
 
   it('skips OpenRouter image models that already failed with 404 in the current session', async () => {
@@ -108,8 +141,8 @@ describe('image-generation-client', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe('unavailable/image-model')
-    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).model).toBe('openai/gpt-image-1')
-    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body)).model).toBe('openai/gpt-image-1')
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).model).toBe('google/gemini-3.1-flash-image-preview')
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body)).model).toBe('google/gemini-3.1-flash-image-preview')
   })
 
   it('strips the provider prefix for direct OpenAI image generation', async () => {

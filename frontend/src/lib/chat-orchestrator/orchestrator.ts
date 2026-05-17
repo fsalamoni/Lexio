@@ -610,7 +610,7 @@ function buildMissingExpectedArtifact(input: RunChatTurnInput, expected: ChatExp
     exports: expected.accepted_formats.map(exportFormat => ({
       label: exportFormat.toUpperCase(),
       format: exportFormat,
-      status: 'failed' as const,
+      status: 'unavailable' as const,
       reason,
     })),
   }

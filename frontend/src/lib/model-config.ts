@@ -181,7 +181,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     capabilities: ['text', 'image'],
   },
   {
-    id: 'google/gemini-2.5-flash-preview:image-output',
+    id: 'google/gemini-2.5-flash-image',
     label: 'Gemini 2.5 Flash Image', provider: 'Google', tier: 'balanced',
     description: 'Gerador de imagens via OpenRouter para slides, ilustrações e fundos do estúdio',
     contextWindow: 1_000_000, inputCost: 0, outputCost: 0, isFree: false,
@@ -584,6 +584,8 @@ export const DEPRECATED_MODEL_REWRITES: Readonly<Record<string, string>> = Objec
   'google/gemini-2.0-flash-lite-001': 'google/gemini-2.5-flash-lite',
   'google/gemini-2.0-flash-lite': 'google/gemini-2.5-flash-lite',
   'google/gemini-2.0-flash:free': 'google/gemini-2.5-flash-lite:free',
+  'google/gemini-2.5-flash-preview:image-output': 'google/gemini-2.5-flash-image',
+  'black-forest-labs/flux-schnell': 'google/gemini-2.5-flash-image',
 })
 
 /**

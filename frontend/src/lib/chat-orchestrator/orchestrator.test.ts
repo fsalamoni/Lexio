@@ -356,7 +356,7 @@ describe('runChatTurn', () => {
         format: 'png',
       }))
       expect(guardPackage.package.artifacts?.[0]?.exports?.map(exportRef => exportRef.format)).toEqual(['png', 'jpg'])
-      expect(guardPackage.package.artifacts?.[0]?.exports?.every(exportRef => exportRef.status === 'failed')).toBe(true)
+      expect(guardPackage.package.artifacts?.[0]?.exports?.every(exportRef => exportRef.status === 'unavailable')).toBe(true)
     }
     expect(exportPackage).toBeUndefined()
     expect(result.assistant_markdown).toContain('Entrega literal pendente')

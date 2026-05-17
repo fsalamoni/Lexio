@@ -247,6 +247,61 @@ describe('MessageStream', () => {
     })
   })
 
+  it('does not expose export retry buttons for pending literal-delivery guard artifacts', () => {
+    const onRetryExport = vi.fn()
+    render(
+      <MessageStream
+        turns={[
+          {
+            id: 'turn-missing-image',
+            conversation_id: 'conv-1',
+            user_input: 'Faça a imagem do projeto.',
+            trail: [
+              {
+                type: 'agent_work_package',
+                ts: '2026-05-08T10:00:00.000Z',
+                package: {
+                  conversation_id: 'conv-1',
+                  turn_id: 'turn-missing-image',
+                  agent_key: 'chat_deliverable_guard',
+                  task: 'Bloquear finalizacao falsa',
+                  result_markdown: 'Entrega literal pendente.',
+                  artifacts: [
+                    {
+                      artifact_id: 'missing-image-1',
+                      logical_document_id: 'expected-image-0',
+                      version: 1,
+                      title: 'Entrega pendente - imagem (PNG/JPG/JPEG/WEBP)',
+                      kind: 'image',
+                      format: 'png',
+                      summary: 'imagem solicitada, mas nenhum artifact pronto desse tipo/formato foi produzido neste turno.',
+                      manifest_json: { expected_kind: 'image' },
+                      exports: [
+                        { label: 'PNG', format: 'png', status: 'unavailable', reason: 'Sem artifact de imagem pronto.' },
+                        { label: 'JPG', format: 'jpg', status: 'unavailable', reason: 'Sem artifact de imagem pronto.' },
+                      ],
+                    },
+                  ],
+                  created_at: '2026-05-08T10:00:00.000Z',
+                },
+              },
+            ],
+            assistant_markdown: 'Entrega literal pendente.',
+            status: 'done',
+            created_at: '2026-05-08T10:00:00.000Z',
+          },
+        ]}
+        liveTurn={null}
+        onRetryExport={onRetryExport}
+      />,
+    )
+
+    expect(screen.getByText(/2 indisponíveis/i)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /tentar png/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /tentar jpg/i })).toBeNull()
+    expect(onRetryExport).not.toHaveBeenCalled()
+  })
+
   it('renders image artifacts inline with enlarge modal and download', () => {
     render(
       <MessageStream

@@ -619,7 +619,7 @@ function DeliverablesPanel({
             Arquivos gerados
           </div>
           <div className="mt-1 text-xs text-emerald-900">
-            {bundle.ready_count} prontos · {bundle.failed_count} falharam · {bundle.planned_count} pendentes
+            {formatBundleCounts(bundle)}
           </div>
         </div>
         {readyZipExports.length > 0 && (
@@ -652,6 +652,16 @@ function DeliverablesPanel({
       </div>
     </div>
   )
+}
+
+function formatBundleCounts(bundle: ChatDeliverableBundle): string {
+  const parts = [
+    `${bundle.ready_count} prontos`,
+    `${bundle.failed_count} falharam`,
+    `${bundle.planned_count} pendentes`,
+  ]
+  if (bundle.unavailable_count > 0) parts.push(`${bundle.unavailable_count} indisponíveis`)
+  return parts.join(' · ')
 }
 
 function DeliverableItemRow({

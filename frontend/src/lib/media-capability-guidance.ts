@@ -34,7 +34,7 @@ const MEDIA_CAPABILITY_GUIDANCE: Partial<Record<ModelCapability, MediaCapability
       },
       {
         providerLabel: 'OpenRouter',
-        models: ['google/gemini-2.5-flash-preview:image-output', 'openai/gpt-image-1'],
+        models: ['google/gemini-2.5-flash-image', 'google/gemini-3.1-flash-image-preview'],
         detail: 'Entrada roteada pelo OpenRouter com provider final Google ou OpenAI.',
       },
     ],

@@ -123,7 +123,7 @@ export const PRESENTATION_V2_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     key: 'presentation_v2_image_generator',
     label: 'Gerador de Imagens',
     description: 'Gera imagens e fundos reais para os slides quando o plano multimodal pedir materialização visual',
-    defaultModel: 'google/gemini-2.5-flash-preview:image-output',
+    defaultModel: 'google/gemini-2.5-flash-image',
     recommendedTier: 'balanced',
     icon: 'image-plus',
     agentCategory: 'synthesis',
