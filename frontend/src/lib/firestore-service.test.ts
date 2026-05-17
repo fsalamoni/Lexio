@@ -402,6 +402,42 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(mockGetIdToken).toHaveBeenCalledWith(true)
   })
 
+  it('trims very large notebook message content before updating the root notebook doc', async () => {
+    const oversizedContent = 'x'.repeat(1_050_000)
+
+    await updateResearchNotebook(uid, 'nb-xyz', {
+      messages: [{
+        id: 'msg-1',
+        role: 'assistant',
+        content: oversizedContent,
+        created_at: '2026-05-08T10:00:00.000Z',
+      }],
+    })
+
+    const payload = mockUpdateDoc.mock.calls[0][1]
+    expect(payload.messages).toHaveLength(1)
+    expect(payload.messages[0].id).toBe('msg-1')
+    expect(payload.messages[0].content.length).toBeLessThan(oversizedContent.length)
+    expect(payload.messages[0].content.length).toBeGreaterThan(100)
+  })
+
+  it('keeps the newest notebook messages when a conversation exceeds the Firestore document budget', async () => {
+    const messages = Array.from({ length: 5 }, (_, index) => ({
+      id: `msg-${index + 1}`,
+      role: index % 2 === 0 ? 'user' as const : 'assistant' as const,
+      content: String(index + 1).repeat(260_000),
+      created_at: `2026-05-08T10:0${index}:00.000Z`,
+    }))
+
+    await updateResearchNotebook(uid, 'nb-xyz', { messages })
+
+    const payload = mockUpdateDoc.mock.calls[0][1]
+    const ids = payload.messages.map((message: { id: string }) => message.id)
+    expect(ids).not.toContain('msg-1')
+    expect(ids).toContain('msg-5')
+    expect(payload.messages.length).toBeLessThan(messages.length)
+  })
+
   it('retries notebook dedicated memory sync after transient permission-denied', async () => {
     const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
       code: 'firestore/permission-denied',

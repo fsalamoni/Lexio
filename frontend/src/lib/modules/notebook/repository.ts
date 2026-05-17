@@ -27,6 +27,7 @@ import type {
   NotebookJurisprudenceSemanticMemoryEntry,
   NotebookResearchAuditEntry,
   NotebookSavedSearchEntry,
+  NotebookMessage,
   NotebookSource,
   ResearchNotebookData,
 } from '../../firestore-types'
@@ -82,6 +83,7 @@ export type ResearchNotebookRepositoryDependencies = {
 
 const NOTEBOOK_MAX_DOC_BYTES = 950_000
 const MIN_SOURCE_TEXT_CHARS = 100
+const MIN_MESSAGE_CONTENT_CHARS = 120
 const NOTEBOOK_SEARCH_MEMORY_AUDIT_TTL_DAYS = 45
 const NOTEBOOK_SEARCH_MEMORY_MAX_AUDITS = 60
 const NOTEBOOK_SEARCH_MEMORY_MAX_SAVED_SEARCHES = 120
@@ -172,6 +174,49 @@ function fitExecutionsToFirestoreLimit(
   }
 
   return { executions: retained, truncated: retained.length < executions.length }
+}
+
+function fitMessagesToFirestoreLimit(
+  messages: NotebookMessage[],
+  otherDataEstimateBytes: number,
+): { messages: NotebookMessage[]; truncated: boolean } {
+  const totalBytes = estimateJsonBytes(messages) + otherDataEstimateBytes
+  if (totalBytes <= NOTEBOOK_MAX_DOC_BYTES) return { messages, truncated: false }
+
+  const retained = [...messages]
+  while (retained.length > 1 && estimateJsonBytes(retained) + otherDataEstimateBytes > NOTEBOOK_MAX_DOC_BYTES) {
+    retained.shift()
+  }
+
+  if (estimateJsonBytes(retained) + otherDataEstimateBytes <= NOTEBOOK_MAX_DOC_BYTES) {
+    console.warn(
+      `[Lexio] Notebook messages trimmed to fit Firestore 1 MB limit ` +
+      `(removed ${messages.length - retained.length} oldest messages; kept ${retained.length}/${messages.length} most recent messages).`,
+    )
+    return { messages: retained, truncated: true }
+  }
+
+  const budget = Math.max(NOTEBOOK_MAX_DOC_BYTES - otherDataEstimateBytes, 0)
+  const totalContentChars = retained.reduce((sum, message) => sum + message.content.length, 0)
+  if (totalContentChars === 0) return { messages: retained, truncated: true }
+
+  const metaOverhead = estimateJsonBytes(retained) - Math.ceil(totalContentChars * 1.1)
+  const availableForContent = Math.max(budget - metaOverhead, 0)
+  const ratio = availableForContent / Math.ceil(totalContentChars * 1.1)
+
+  const fittedMessages = retained.map(message => {
+    if (message.content.length === 0 || ratio >= 1) return message
+    const maxChars = Math.max(Math.floor(message.content.length * ratio), MIN_MESSAGE_CONTENT_CHARS)
+    if (maxChars >= message.content.length) return message
+    return { ...message, content: message.content.slice(0, maxChars) }
+  })
+
+  console.warn(
+    `[Lexio] Notebook message content trimmed to fit Firestore 1 MB limit ` +
+    `(estimated ${(totalBytes / 1024).toFixed(0)} KiB -> budget ${(NOTEBOOK_MAX_DOC_BYTES / 1024).toFixed(0)} KiB).`,
+  )
+
+  return { messages: fittedMessages, truncated: true }
 }
 
 function applyNotebookSearchMemoryRetention(
@@ -496,10 +541,15 @@ export function createResearchNotebookRepository(deps: ResearchNotebookRepositor
       created_at: now,
       updated_at: now,
     })
-    const otherBytes = estimateJsonBytes(baseMeta)
+    const { messages } = fitMessagesToFirestoreLimit(
+      baseMeta.messages ?? [],
+      estimateJsonBytes({ ...baseMeta, messages: [] }),
+    )
+    const withMessages = { ...baseMeta, messages }
+    const otherBytes = estimateJsonBytes(withMessages)
     const { sources } = fitSourcesToFirestoreLimit(data.sources ?? [], otherBytes)
 
-    const withSources = { ...baseMeta, sources }
+    const withSources = { ...withMessages, sources }
     const { executions: llm_executions } = fitExecutionsToFirestoreLimit(
       withSources.llm_executions ?? [],
       estimateJsonBytes({ ...withSources, llm_executions: [] }),
@@ -543,7 +593,7 @@ export function createResearchNotebookRepository(deps: ResearchNotebookRepositor
         }
       : rest
 
-    if (rootPayload.sources || rootPayload.llm_executions) {
+    if (rootPayload.sources || rootPayload.messages || rootPayload.llm_executions) {
       const snapshot = await deps.withFirestoreRetry(() => getDoc(ref), 'updateResearchNotebook.read')
       const existing = snapshot.exists() ? snapshot.data() : {}
       const now = new Date().toISOString()
@@ -554,6 +604,13 @@ export function createResearchNotebookRepository(deps: ResearchNotebookRepositor
         const { sources: _sources, ...mergedMeta } = merged
         const { sources } = fitSourcesToFirestoreLimit(rootPayload.sources, estimateJsonBytes(mergedMeta))
         fittedPayload = { ...fittedPayload, sources }
+      }
+
+      if (rootPayload.messages) {
+        const merged = { ...existing, ...fittedPayload, updated_at: now }
+        const { messages: _messages, ...mergedMeta } = merged
+        const { messages } = fitMessagesToFirestoreLimit(rootPayload.messages, estimateJsonBytes(mergedMeta))
+        fittedPayload = { ...fittedPayload, messages }
       }
 
       if (rootPayload.llm_executions) {
