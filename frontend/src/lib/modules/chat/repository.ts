@@ -23,6 +23,7 @@ import type {
   ChatArtifactVersionData,
   ChatConversationData,
   ChatEffortLevel,
+  ChatSidecarPermission,
   ChatSidecarAuditEntryData,
   ChatSidecarCommandData,
   ChatSidecarDeviceData,
@@ -56,6 +57,11 @@ const CHAT_ARTIFACTS_SUBCOLLECTION = 'artifacts'
 const CHAT_ARTIFACT_VERSIONS_SUBCOLLECTION = 'artifact_versions'
 const CHAT_ARTIFACT_EXPORTS_SUBCOLLECTION = 'artifact_exports'
 const DEFAULT_CHAT_EFFORT: ChatEffortLevel = 'medio'
+const MAX_APPROVAL_COMMAND_IDS = 25
+const MAX_APPROVAL_TITLE_CHARS = 160
+const MAX_APPROVAL_SUMMARY_CHARS = 2_000
+const MAX_APPROVAL_ACTOR_CHARS = 120
+const ALLOWED_APPROVAL_PERMISSIONS: ChatSidecarPermission[] = ['read', 'write', 'delete', 'rename', 'execute', 'network']
 
 function chatConversationCollection(db: Firestore, uid: string) {
   return collection(db, 'users', uid, CHAT_CONVERSATIONS_COLLECTION)
@@ -88,6 +94,78 @@ function userSubcollection(db: Firestore, uid: string, name: string) {
 
 function userSubcollectionDoc(db: Firestore, uid: string, name: string, documentId: string) {
   return doc(db, 'users', uid, name, normalizeFirestoreDocumentId(documentId))
+}
+
+function sanitizeChatApprovalRequestData(
+  data: Omit<ChatApprovalRequestData, 'id' | 'conversation_id' | 'created_at' | 'updated_at' | 'status'> & { status?: ChatApprovalRequestData['status'] },
+): Omit<ChatApprovalRequestData, 'id' | 'conversation_id' | 'created_at' | 'updated_at'> {
+  return {
+    command_ids: normalizeApprovalCommandIds(data.command_ids),
+    status: normalizeApprovalStatus(data.status),
+    title: clipApprovalText(data.title, MAX_APPROVAL_TITLE_CHARS) || 'Aprovar ação do chat',
+    summary: clipApprovalText(data.summary, MAX_APPROVAL_SUMMARY_CHARS) || 'O orquestrador precisa de aprovação explícita para prosseguir.',
+    risk_level: normalizeApprovalRisk(data.risk_level),
+    requested_permissions: normalizeApprovalPermissions(data.requested_permissions),
+    expires_at: normalizeOptionalIsoLike(data.expires_at),
+    decided_at: normalizeOptionalIsoLike(data.decided_at),
+    decided_by: clipApprovalText(data.decided_by, MAX_APPROVAL_ACTOR_CHARS) || undefined,
+  }
+}
+
+function sanitizeChatApprovalUpdateData(data: Partial<ChatApprovalRequestData>): Partial<ChatApprovalRequestData> {
+  return {
+    command_ids: data.command_ids ? normalizeApprovalCommandIds(data.command_ids) : undefined,
+    status: data.status ? normalizeApprovalStatus(data.status) : undefined,
+    title: data.title != null ? (clipApprovalText(data.title, MAX_APPROVAL_TITLE_CHARS) || undefined) : undefined,
+    summary: data.summary != null ? (clipApprovalText(data.summary, MAX_APPROVAL_SUMMARY_CHARS) || undefined) : undefined,
+    risk_level: data.risk_level ? normalizeApprovalRisk(data.risk_level) : undefined,
+    requested_permissions: data.requested_permissions ? normalizeApprovalPermissions(data.requested_permissions) : undefined,
+    expires_at: normalizeOptionalIsoLike(data.expires_at),
+    decided_at: normalizeOptionalIsoLike(data.decided_at),
+    decided_by: data.decided_by != null ? (clipApprovalText(data.decided_by, MAX_APPROVAL_ACTOR_CHARS) || undefined) : undefined,
+  }
+}
+
+function normalizeApprovalCommandIds(value: unknown): string[] {
+  const raw = Array.isArray(value) ? value : []
+  const unique = new Set<string>()
+  for (const item of raw) {
+    const normalized = normalizeFirestoreDocumentId(String(item || '').trim())
+    if (normalized) unique.add(normalized)
+    if (unique.size >= MAX_APPROVAL_COMMAND_IDS) break
+  }
+  return [...unique]
+}
+
+function normalizeApprovalStatus(value: unknown): ChatApprovalRequestData['status'] {
+  if (value === 'approved' || value === 'rejected' || value === 'expired' || value === 'cancelled') return value
+  return 'pending'
+}
+
+function normalizeApprovalRisk(value: unknown): ChatApprovalRequestData['risk_level'] {
+  if (value === 'low' || value === 'medium' || value === 'high') return value
+  return 'medium'
+}
+
+function normalizeApprovalPermissions(value: unknown): ChatSidecarPermission[] {
+  const raw = Array.isArray(value) ? value : []
+  const normalized = raw
+    .map(item => String(item || '').trim().toLowerCase())
+    .filter((item): item is ChatSidecarPermission => ALLOWED_APPROVAL_PERMISSIONS.includes(item as ChatSidecarPermission))
+  return normalized.length ? [...new Set(normalized)] : ['network']
+}
+
+function normalizeOptionalIsoLike(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  return clipApprovalText(trimmed, 64)
+}
+
+function clipApprovalText(value: unknown, maxChars: number): string {
+  const text = String(value ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (text.length <= maxChars) return text
+  return `${text.slice(0, Math.max(0, maxChars - 15)).trimEnd()}...[truncado]`
 }
 
 function chatConversationSubcollection(db: Firestore, uid: string, conversationId: string, name: string) {
@@ -656,10 +734,11 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     const effectiveUid = await deps.resolveEffectiveUid(uid, 'createChatApprovalRequest')
     const now = new Date().toISOString()
     await ensureChatConversation(effectiveUid, conversationId)
+    const approval = sanitizeChatApprovalRequestData(data)
     const sanitized = deps.stripUndefined({
-      ...data,
+      ...approval,
       conversation_id: normalizeFirestoreDocumentId(conversationId),
-      status: data.status ?? 'pending',
+      status: approval.status ?? 'pending',
       created_at: now,
       updated_at: now,
     })
@@ -682,10 +761,11 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     void id
     void conversation_id
     void created_at
+    const sanitizedRest = sanitizeChatApprovalUpdateData(rest)
     await deps.withFirestoreRetry(
       () => updateDoc(
         chatConversationSubcollectionDoc(db, effectiveUid, conversationId, CHAT_APPROVALS_SUBCOLLECTION, approvalId),
-        deps.stripUndefined({ ...rest, updated_at: new Date().toISOString() }),
+        deps.stripUndefined({ ...sanitizedRest, updated_at: new Date().toISOString() }),
       ),
       'updateChatApprovalRequest.update',
     )

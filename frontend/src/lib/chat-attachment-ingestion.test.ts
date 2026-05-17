@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
+
 import JSZip from 'jszip'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   classifyChatAttachment,
   isAcceptedChatAttachment,
@@ -9,6 +11,11 @@ import {
 } from './chat-attachment-ingestion'
 
 describe('chat attachment ingestion', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
   it('classifies common multimodal attachment types', () => {
     expect(classifyChatAttachment(new File(['x'], 'contrato.pdf', { type: 'application/pdf' }))).toBe('document')
     expect(classifyChatAttachment(new File(['x'], 'dados.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))).toBe('spreadsheet')
@@ -123,6 +130,39 @@ describe('chat attachment ingestion', () => {
       slide_count: 1,
     })
     expect(attachment.extraction.text_preview).toContain('Tese principal')
+  })
+
+  it('adds browser media metadata for audio/video attachments when available', async () => {
+    const listeners = new Map<string, EventListener>()
+    const media = {
+      duration: 45.2,
+      videoWidth: 1920,
+      videoHeight: 1080,
+      preload: '',
+      src: '',
+      addEventListener: vi.fn((event: string, listener: EventListener) => listeners.set(event, listener)),
+      removeEventListener: vi.fn(),
+      load: vi.fn(() => listeners.get('loadedmetadata')?.(new Event('loadedmetadata'))),
+    } as unknown as HTMLVideoElement
+    vi.spyOn(document, 'createElement').mockReturnValue(media)
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:video'),
+      revokeObjectURL: vi.fn(),
+    })
+
+    const attachment = await prepareChatInputAttachment(new File(['video'], 'audiencia.mp4', { type: 'video/mp4' }), {
+      now: '2026-05-16T12:00:00.000Z',
+      attachmentId: 'att-video',
+    })
+
+    expect(attachment.kind).toBe('video')
+    expect(attachment.extraction).toMatchObject({
+      status: 'partial',
+      mode: 'video',
+      duration_seconds: 45.2,
+      media_width: 1920,
+      media_height: 1080,
+    })
   })
 
   it('rejects empty files with a visible extraction error', async () => {

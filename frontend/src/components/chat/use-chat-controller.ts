@@ -35,6 +35,10 @@ import type { PreparedChatInputAttachment } from '../../lib/chat-attachment-inge
 import { uploadChatInputAttachmentFile } from '../../lib/chat-input-storage'
 import { buildAttachmentContextSources, renderTurnUserContentForHistory } from '../../lib/chat-context-builder'
 import {
+  analyzeChatMultimodalAttachments,
+  resolveChatMultimodalModel,
+} from '../../lib/chat-multimodal-analysis'
+import {
   appendOrReplaceBundleEvent,
   buildChatDeliverableBundleForTurn,
   buildRetryState,
@@ -51,6 +55,8 @@ import {
   loadFallbackPriorityConfig,
 } from '../../lib/model-config'
 import { getOpenRouterKey } from '../../lib/generation-service'
+import { isEnabled } from '../../lib/feature-flags'
+import type { UsageExecutionRecord } from '../../lib/cost-analytics'
 import { useAuth } from '../../contexts/AuthContext'
 import { IS_FIREBASE } from '../../lib/firebase'
 import {
@@ -742,6 +748,57 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
       schedulePersist()
     }
 
+    const multimodalExecutions: UsageExecutionRecord[] = []
+    if (!mock && isEnabled('FF_CHAT_MULTIMODAL_ANALYSIS') && attachments.length > 0 && attachmentFiles.length > 0) {
+      try {
+        const analysis = await analyzeChatMultimodalAttachments({
+          attachments,
+          attachmentFiles,
+          apiKey,
+          userInput: trimmed,
+          model: resolveChatMultimodalModel(models),
+          fallbackModels: fallbackModels.chat_multimodal_analysis ?? fallbackModels.chat_legal_researcher ?? fallbackModels.chat_orchestrator ?? [],
+          signal: controller.signal,
+          onTrail,
+        })
+        if (analysis.changed) {
+          attachments = analysis.attachments
+          contextSources = buildAttachmentContextSources(attachments)
+          liveTurn.input_attachments = attachments.length ? attachments : undefined
+          liveTurn.context_sources = contextSources.length ? contextSources : undefined
+          dispatch({ type: 'UPDATE_TURN', turn: { ...liveTurn, trail: trailBuffer.slice() } })
+          if (IS_FIREBASE && userId) {
+            try {
+              await updateChatTurn(userId, conversationId, turnId, {
+                input_attachments: liveTurn.input_attachments,
+                context_sources: liveTurn.context_sources,
+                trail: compactChatTrailForPersistence(trailBuffer),
+              })
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err)
+              onTrail({
+                type: 'error',
+                message: `Análise multimodal concluída localmente, mas a atualização remota falhou. Detalhe: ${message}`,
+                ts: new Date().toISOString(),
+              })
+            }
+          }
+        }
+        multimodalExecutions.push(...analysis.usageRecords)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          onTrail({ type: 'error', message: 'Análise multimodal cancelada pelo usuário.', ts: new Date().toISOString() })
+        } else {
+          onTrail({
+            type: 'error',
+            message: `Análise multimodal dos anexos indisponível; seguindo com o arquivo bruto e o contexto já extraído. Detalhe: ${message}`,
+            ts: new Date().toISOString(),
+          })
+        }
+      }
+    }
+
     // Build prior history (concatenate previous turns).
     const history = state.turns.flatMap(turn => [
       { role: 'user' as const, content: renderTurnUserContentForHistory(turn) },
@@ -797,7 +854,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         assistant_markdown: result.assistant_markdown,
         status: result.status,
         pending_question: result.pending_question ?? null,
-        llm_executions: result.llm_executions,
+        llm_executions: [...multimodalExecutions, ...result.llm_executions],
         completed_at: new Date().toISOString(),
       }
       completedTurn = attachDeliverableBundleToTurn(completedTurn)
@@ -831,7 +888,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         }
       }
 
-      dispatch({ type: 'COMMIT_TURN', turn: { ...completedTurn, trail: trailBuffer.slice() }, status: result.status })
+      dispatch({ type: 'COMMIT_TURN', turn: completedTurn, status: result.status })
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         const cancelledTurn: ChatTurnData = {
@@ -864,6 +921,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         trail: [...trailBuffer, errorEvent],
         assistant_markdown: buildRuntimeFallbackAnswer(trimmed, message),
         status: 'done',
+        llm_executions: multimodalExecutions.length ? multimodalExecutions : undefined,
         completed_at: completedAt,
       }
       if (IS_FIREBASE && userId) {
@@ -872,6 +930,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
             status: 'done',
             trail: compactChatTrailForPersistence(failedTurn.trail),
             assistant_markdown: failedTurn.assistant_markdown,
+            llm_executions: failedTurn.llm_executions,
             completed_at: failedTurn.completed_at,
           })
         } catch {

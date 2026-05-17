@@ -155,6 +155,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     description: 'Rápido e econômico — substitui o legado Gemini 2.0 Flash (descontinuado)',
     contextWindow: 1_000_000, inputCost: 0.30, outputCost: 2.50, isFree: false,
     agentFit: { extraction: 9, synthesis: 6, reasoning: 6, writing: 6 },
+    capabilities: ['text', 'image'],
   },
   {
     id: 'google/gemini-2.5-flash-lite',
@@ -169,6 +170,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     description: 'Equilíbrio ideal — contexto gigante com raciocínio aprimorado',
     contextWindow: 1_000_000, inputCost: 0.15, outputCost: 0.60, isFree: false,
     agentFit: { extraction: 8, synthesis: 7, reasoning: 7, writing: 7 },
+    capabilities: ['text', 'image'],
   },
   {
     id: 'google/gemini-2.5-pro-preview',
@@ -176,6 +178,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     description: 'Premium — raciocínio avançado com contexto de 1M tokens',
     contextWindow: 1_000_000, inputCost: 1.25, outputCost: 10.00, isFree: false,
     agentFit: { extraction: 7, synthesis: 9, reasoning: 9, writing: 8 },
+    capabilities: ['text', 'image'],
   },
   {
     id: 'google/gemini-2.5-flash-preview:image-output',
@@ -193,6 +196,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     description: 'Versão leve e econômica do GPT-4o',
     contextWindow: 128_000, inputCost: 0.15, outputCost: 0.60, isFree: false,
     agentFit: { extraction: 8, synthesis: 5, reasoning: 5, writing: 5 },
+    capabilities: ['text', 'image'],
   },
   {
     id: 'openai/gpt-4.1-nano',
@@ -214,6 +218,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     description: 'Modelo multimodal equilibrado da OpenAI',
     contextWindow: 128_000, inputCost: 2.50, outputCost: 10.00, isFree: false,
     agentFit: { extraction: 8, synthesis: 8, reasoning: 8, writing: 8 },
+    capabilities: ['text', 'image'],
   },
   {
     id: 'openai/gpt-4.1',

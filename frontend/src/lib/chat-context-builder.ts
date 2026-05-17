@@ -99,6 +99,12 @@ function renderAttachmentForPrompt(attachment: ChatTurnAttachment, index: number
   if (attachment.extraction.mode) lines.push(`Modo: ${attachment.extraction.mode}`)
   if (attachment.extraction.page_count) lines.push(`Páginas: ${attachment.extraction.page_count}`)
   if (attachment.extraction.sheet_count) lines.push(`Abas: ${attachment.extraction.sheet_count}`)
+  if (attachment.extraction.slide_count) lines.push(`Slides: ${attachment.extraction.slide_count}`)
+  if (attachment.extraction.duration_seconds) lines.push(`Duração: ${attachment.extraction.duration_seconds}s`)
+  if (attachment.extraction.media_width && attachment.extraction.media_height) {
+    lines.push(`Dimensões: ${attachment.extraction.media_width}x${attachment.extraction.media_height}`)
+  }
+  if (attachment.extraction.analysis_model) lines.push(`Modelo de análise: ${attachment.extraction.analysis_model}`)
   if (attachment.extraction.text_preview) {
     lines.push('', 'Texto extraído:', clip(attachment.extraction.text_preview, 12_000))
   } else if (attachment.extraction.error || attachment.upload_error) {

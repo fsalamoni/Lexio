@@ -1151,6 +1151,13 @@ export interface ChatAttachmentExtraction {
   sheet_count?: number
   slide_count?: number
   duration_seconds?: number
+  media_width?: number
+  media_height?: number
+  analysis_model?: string
+  analysis_provider?: string
+  analysis_cost_usd?: number
+  analysis_tokens_in?: number
+  analysis_tokens_out?: number
   error?: string
   processed_at?: string
 }
@@ -1267,6 +1274,33 @@ export type ChatTrailEvent =
       type: 'attachment_failed'
       attachment_id: string
       filename: string
+      message: string
+      ts: string
+    }
+  | {
+      type: 'multimodal_analysis_started'
+      attachment_id: string
+      filename: string
+      mode: ChatAttachmentExtraction['mode']
+      model: string
+      ts: string
+    }
+  | {
+      type: 'multimodal_analysis_completed'
+      attachment_id: string
+      filename: string
+      mode: ChatAttachmentExtraction['mode']
+      model: string
+      status: ChatAttachmentExtraction['status']
+      usage?: UsageExecutionRecord
+      ts: string
+    }
+  | {
+      type: 'multimodal_analysis_failed'
+      attachment_id: string
+      filename: string
+      mode: ChatAttachmentExtraction['mode']
+      model: string
       message: string
       ts: string
     }

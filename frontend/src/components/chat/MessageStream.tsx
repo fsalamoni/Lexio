@@ -692,6 +692,27 @@ function describeEvent(event: ChatTrailEvent): {
         title: `Falha no anexo: ${event.filename}`,
         subtitle: event.message,
       }
+    case 'multimodal_analysis_started':
+      return {
+        Icon: Sparkles,
+        iconClass: 'text-fuchsia-600',
+        title: `Análise multimodal: ${event.filename}`,
+        subtitle: `${event.mode} · ${event.model}`,
+      }
+    case 'multimodal_analysis_completed':
+      return {
+        Icon: CheckCircle2,
+        iconClass: 'text-emerald-600',
+        title: `Multimodal concluído: ${event.filename}`,
+        subtitle: `${event.status} · ${event.model}`,
+      }
+    case 'multimodal_analysis_failed':
+      return {
+        Icon: AlertCircle,
+        iconClass: 'text-rose-600',
+        title: `Falha multimodal: ${event.filename}`,
+        subtitle: event.message,
+      }
     case 'iteration_start':
       return { Icon: ListChecks, iconClass: 'text-indigo-500', title: `Iteração ${event.i}` }
     case 'decision':

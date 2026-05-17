@@ -1673,6 +1673,36 @@ describe('saveNotebookDocumentToDocuments', () => {
     }))
   })
 
+  it('normalizes oversized chat approval payloads before writing to Firestore', async () => {
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      id: 'conv-1',
+      data: () => ({ title: 'Chat', effort: 'medio', created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T11:00:00.000Z' }),
+    })
+    mockAddDoc.mockResolvedValueOnce({ id: 'approval-safe' })
+
+    const approvalId = await createChatApprovalRequest(uid, 'conv-1', {
+      command_ids: [...Array.from({ length: 40 }, (_, index) => `cmd/${index}`), 'cmd/1'],
+      title: `Executar ação\n${'x'.repeat(260)}`,
+      summary: 's'.repeat(2300),
+      risk_level: 'invalid-risk',
+      requested_permissions: ['read', 'ROOT', 'network', 'read', 'delete_all'],
+      status: 'unexpected-status',
+      decided_by: 'agent\nwith-control-chars',
+    } as never)
+
+    expect(approvalId).toBe('approval-safe')
+    const payload = mockAddDoc.mock.calls[mockAddDoc.mock.calls.length - 1]?.[1] as Record<string, unknown>
+    expect(payload.command_ids).toHaveLength(25)
+    expect(payload.command_ids).toContain('1')
+    expect(String(payload.title).length).toBeLessThanOrEqual(160)
+    expect(String(payload.summary).length).toBeLessThanOrEqual(2000)
+    expect(payload.risk_level).toBe('medium')
+    expect(payload.status).toBe('pending')
+    expect(payload.requested_permissions).toEqual(['read', 'network'])
+    expect(payload.decided_by).toBe('agent with-control-chars')
+  })
+
   it('retries sidecar command writes after transient permission-denied', async () => {
     const permissionError = Object.assign(new Error('Missing or insufficient permissions.'), {
       code: 'firestore/permission-denied',

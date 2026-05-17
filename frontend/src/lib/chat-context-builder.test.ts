@@ -123,4 +123,33 @@ describe('chat context builder', () => {
     expect(rendered).toContain('DOCX em chat_artifacts/u/c/t/doc/doc.docx')
     expect(rendered).toContain('PDF (Falha temporaria.)')
   })
+
+  it('renders media metadata as attachment context', () => {
+    const mediaAttachment: ChatTurnAttachment = {
+      attachment_id: 'att-video',
+      filename: 'audiencia.mp4',
+      mime_type: 'video/mp4',
+      extension: '.mp4',
+      size_bytes: 1234,
+      kind: 'video',
+      created_at: '2026-05-16T12:00:00.000Z',
+      extraction: {
+        status: 'partial',
+        mode: 'video',
+        duration_seconds: 45.2,
+        media_width: 1920,
+        media_height: 1080,
+        processed_at: '2026-05-16T12:00:00.000Z',
+      },
+    }
+
+    const rendered = renderCurrentTurnUserContent({
+      userInput: 'Analise o vídeo.',
+      attachments: [mediaAttachment],
+      contextSources: [],
+    })
+
+    expect(rendered).toContain('Duração: 45.2s')
+    expect(rendered).toContain('Dimensões: 1920x1080')
+  })
 })

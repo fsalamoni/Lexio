@@ -179,6 +179,17 @@ export const CHAT_ORCHESTRATOR_AGENT_DEFS: AgentModelDef[] = [
     bestModelNote: 'Roteamento multimodal e planejamento de produção. Premium: Claude Sonnet, Gemini Pro, GPT-4o. Baratos: Gemini Flash, DeepSeek V3.',
   },
   {
+    key: 'chat_multimodal_analysis',
+    label: 'Analisador Multimodal',
+    description: 'Lê imagens anexadas, extrai OCR visual e resume evidências em contexto textual antes da trilha principal',
+    defaultModel: 'openai/gpt-4o-mini',
+    recommendedTier: 'balanced',
+    icon: 'scan-eye',
+    agentCategory: 'extraction',
+    requiredCapability: 'image',
+    bestModelNote: 'OCR e visão de anexos. Use modelos com entrada de imagem: GPT-4o Mini/GPT-4o, Claude Sonnet multimodal ou Gemini 2.5 Flash/Pro quando disponíveis no catálogo pessoal.',
+  },
+  {
     key: 'chat_export_packager',
     label: 'Empacotador de Exports',
     description: 'Valida formatos finais, nomes de arquivo, downloads e pacote de entrega exibido ao usuário',

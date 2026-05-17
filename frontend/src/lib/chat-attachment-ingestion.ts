@@ -7,6 +7,7 @@ import {
 } from './file-text-extractor'
 import { extractSpreadsheetTextWithMeta } from './spreadsheet-extractor'
 import { extractPresentationTextWithMeta } from './presentation-extractor'
+import { extractChatMediaMetadata } from './chat-media-metadata'
 
 export const MAX_INLINE_CHAT_ATTACHMENT_TEXT_CHARS = 20_000
 export const MAX_CHAT_ATTACHMENT_SIZE_BYTES = 50 * 1024 * 1024
@@ -201,6 +202,34 @@ export async function prepareChatInputAttachment(
         extraction: {
           status: 'failed',
           mode: kind === 'spreadsheet' ? 'structured_data' : 'text',
+          error: error instanceof Error ? error.message : String(error),
+          processed_at: createdAt,
+        },
+      }
+    }
+  }
+
+  if (kind === 'audio' || kind === 'video') {
+    try {
+      const metadata = await extractChatMediaMetadata(file, kind)
+      return {
+        ...base,
+        extraction: {
+          status: metadata.durationSeconds || metadata.width || metadata.height ? 'partial' : 'pending',
+          mode: kind,
+          duration_seconds: metadata.durationSeconds,
+          media_width: metadata.width,
+          media_height: metadata.height,
+          error: 'Transcrição automática ainda não está habilitada; o arquivo bruto fica disponível para análise multimodal futura.',
+          processed_at: createdAt,
+        },
+      }
+    } catch (error) {
+      return {
+        ...base,
+        extraction: {
+          status: 'pending',
+          mode: kind,
           error: error instanceof Error ? error.message : String(error),
           processed_at: createdAt,
         },
