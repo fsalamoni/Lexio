@@ -2,7 +2,7 @@
  * Thesis analysis pipeline definition.
  *
  * This mirrors the lightweight phase contract used by Document v3, but keeps
- * the existing five Banco de Teses agents. The UI still consumes the simpler
+ * the current Banco de Teses workflow. The UI still consumes the simpler
  * AgentProgress shape from thesis-analyzer.ts; this file documents phase
  * ownership and gives tests/configuration a stable source of truth.
  */
@@ -43,14 +43,6 @@ export const THESIS_PIPELINE_STAGES: ThesisPipelineStage[] = [
     modelKey: 'thesis_pipeline_orchestrator',
   },
   {
-    key: 'thesis_catalogador',
-    label: 'Catalogador',
-    description: 'Inventaria teses existentes e identifica grupos similares',
-    phase: 'inventario',
-    modelKey: 'thesis_catalogador',
-    parallel: true,
-  },
-  {
     key: 'thesis_curador',
     label: 'Curador de Lacunas',
     description: 'Extrai novas teses de documentos de acervo ainda não analisados',
@@ -61,7 +53,7 @@ export const THESIS_PIPELINE_STAGES: ThesisPipelineStage[] = [
   {
     key: 'thesis_analista',
     label: 'Analista de Redundâncias',
-    description: 'Analisa profundamente os grupos apontados pelo Catalogador',
+    description: 'Analisa profundamente os grupos apontados pelo inventário local',
     phase: 'redundancia',
     modelKey: 'thesis_analista',
   },

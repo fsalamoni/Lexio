@@ -1,12 +1,12 @@
 /**
- * Thesis Bank Analyzer — 5-agent pipeline for manual thesis curation.
+ * Thesis Bank Analyzer — resilient thesis curation pipeline.
  *
  * Pipeline:
- *   1. Catalogador   — inventory & similarity clustering of existing theses
- *   2. Analista      — deep analysis: duplicates / complementary / contradictory
- *   3. Compilador    — draft compiled thesis for each merge group
- *   4. Curador       — extract new theses from unanalyzed acervo documents
- *   5. Revisor Final — rank, annotate and produce the final suggestion list
+ *   1. Inventário local — deterministic similarity clustering of existing theses
+ *   2. Analista        — deep analysis: duplicates / complementary / contradictory
+ *   3. Compilador      — draft compiled thesis for each merge group
+ *   4. Curador         — extract new theses from unanalyzed acervo documents
+ *   5. Revisor Final   — rank, annotate and produce the final suggestion list
  *
  * The pipeline is user-triggered (never automatic) and produces a list of
  * AnalysisSuggestion objects that the user can accept, modify or reject.
@@ -90,7 +90,7 @@ export interface ThesisAnalysisResult {
 export type ProgressCallback = (agents: AgentProgress[]) => void
 
 export interface ThesisAnalysisPipelineMeta {
-  pipeline_version: 'thesis_parallel_v1'
+  pipeline_version: 'thesis_parallel_v1' | 'thesis_parallel_v2'
   phase_durations_ms: Record<string, number>
   total_agent_duration_ms: number
   wall_clock_ms: number
@@ -116,7 +116,6 @@ const DEFAULT_THESIS_COMPILADOR_BATCH_CONCURRENCY = 2
 const MAX_THESIS_COMPILADOR_BATCH_CONCURRENCY = 4
 const CATALOGUE_SUMMARY_CHARS = 120
 const CURADOR_DOC_EXCERPT_CHARS = 1200
-const MAX_CATALOGUE_PROMPT_CHARS = 18_000
 const MAX_CURADOR_DOC_PROMPT_CHARS = 3_600
 const MAX_CURADOR_CATALOGUE_PROMPT_CHARS = 3_000
 const MAX_THEMATIC_GAPS_FOR_CURADOR = 8
@@ -125,6 +124,19 @@ const ANALISTA_THESIS_CONTENT_CHARS = 500
 const COMPILADOR_THESIS_CONTENT_CHARS = 900
 const MAX_REVISOR_SUGGESTIONS = 30
 const REVISOR_CREATE_SUMMARY_CHARS = 160
+const LOW_QUALITY_MIN_CONTENT_CHARS = 180
+const LOW_QUALITY_MIN_KEYWORDS = 8
+const LOCAL_SIMILARITY_TITLE_THRESHOLD = 0.6
+const LOCAL_SIMILARITY_KEYWORD_THRESHOLD = 0.45
+const LOCAL_SIMILARITY_CROSS_THRESHOLD = 0.72
+const SIMILARITY_STOP_WORDS = new Set([
+  'a', 'ao', 'aos', 'as', 'ate', 'com', 'como', 'contra', 'cujos', 'cujas', 'da', 'das', 'de', 'dela', 'dele',
+  'deles', 'delas', 'do', 'dos', 'e', 'ela', 'ele', 'em', 'entre', 'essa', 'esse', 'esta', 'este', 'foi', 'ha',
+  'ja', 'mais', 'mas', 'mesmo', 'muito', 'na', 'nas', 'no', 'nos', 'o', 'os', 'ou', 'para', 'pela', 'pelas',
+  'pelo', 'pelos', 'por', 'qual', 'quando', 'que', 'quem', 'se', 'sem', 'ser', 'seu', 'seus', 'sua', 'suas',
+  'sobre', 'sob', 'tambem', 'tem', 'texto', 'uma', 'umas', 'uns', 'conteudo', 'conteudos',
+  'juridico', 'juridica', 'juridicos', 'juridicas', 'resumo', 'robusto', 'robusta', 'tese', 'teses',
+])
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -271,28 +283,148 @@ function withReliableTextFallback(primaryModel: string, fallbackModels: readonly
   return candidates
 }
 
-// ── Agent 1: Catalogador ──────────────────────────────────────────────────────
+function normalizeSimilarityText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
-const CATALOGADOR_SYSTEM = `Você é um Catalogador especializado em bancos de teses jurídicas.
-Sua tarefa é:
-1. Analisar o inventário completo de teses.
-2. Identificar GRUPOS de teses similares ou potencialmente redundantes (2+ teses por grupo).
-3. Identificar teses de baixa qualidade isoladas (score < 50 ou conteúdo muito genérico).
-4. Identificar LACUNAS temáticas importantes que estão ausentes no banco.
+function tokenizeSimilarityText(value: string): string[] {
+  return normalizeSimilarityText(value)
+    .split(' ')
+    .filter(token => token.length >= 4 && !SIMILARITY_STOP_WORDS.has(token))
+}
 
-Retorne APENAS um JSON válido com esta estrutura:
-{
-  "similar_groups": [
-    {
-      "ids": ["id1","id2"],
-      "titles": ["título1","título2"],
-      "reason": "motivo da similaridade"
+function uniqueTokens(tokens: string[]): string[] {
+  return [...new Set(tokens)]
+}
+
+function jaccardSimilarity(tokensA: string[], tokensB: string[]): number {
+  const setA = new Set(tokensA)
+  const setB = new Set(tokensB)
+  if (setA.size === 0 || setB.size === 0) return 0
+  let intersection = 0
+  for (const token of setA) {
+    if (setB.has(token)) intersection += 1
+  }
+  const union = setA.size + setB.size - intersection
+  return union > 0 ? intersection / union : 0
+}
+
+function buildLocalCatalogueResult(theses: ThesisData[]): {
+  similar_groups: Array<{ ids: string[]; titles: string[]; reason: string }>
+  low_quality_ids: string[]
+  thematic_gaps: string[]
+  catalogue_summary: string
+} {
+  const indexed = theses
+    .filter((thesis): thesis is ThesisData & { id: string } => Boolean(thesis.id))
+    .map(thesis => {
+      const titleTokens = uniqueTokens(tokenizeSimilarityText(thesis.title))
+      const summaryTokens = uniqueTokens(tokenizeSimilarityText(thesis.summary ?? ''))
+      const contentTokens = uniqueTokens(tokenizeSimilarityText(thesis.content.slice(0, 800)))
+      const tagTokens = uniqueTokens((thesis.tags ?? []).flatMap(tag => tokenizeSimilarityText(tag)))
+      const keywordTokens = uniqueTokens([...titleTokens, ...summaryTokens, ...contentTokens, ...tagTokens])
+      const normalizedTitle = normalizeSimilarityText(thesis.title)
+      const titleLooksGeneric = /^(nova\s+tese|tese|teste|rascunho|modelo)(\s|$)/.test(normalizedTitle)
+      const lowQuality = thesis.content.trim().length < LOW_QUALITY_MIN_CONTENT_CHARS
+        || (keywordTokens.length < LOW_QUALITY_MIN_KEYWORDS && thesis.summary.trim().length < 60)
+        || (titleLooksGeneric && thesis.content.trim().length < 320)
+
+      return {
+        thesis,
+        titleTokens,
+        keywordTokens,
+        normalizedTitle,
+        lowQuality,
+      }
+    })
+
+  const parent = new Map(indexed.map(item => [item.thesis.id, item.thesis.id]))
+  const find = (id: string): string => {
+    const current = parent.get(id) ?? id
+    if (current === id) return current
+    const root = find(current)
+    parent.set(id, root)
+    return root
+  }
+  const union = (leftId: string, rightId: string) => {
+    const leftRoot = find(leftId)
+    const rightRoot = find(rightId)
+    if (leftRoot !== rightRoot) parent.set(rightRoot, leftRoot)
+  }
+
+  for (let leftIndex = 0; leftIndex < indexed.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < indexed.length; rightIndex += 1) {
+      const left = indexed[leftIndex]
+      const right = indexed[rightIndex]
+      const sameArea = left.thesis.legal_area_id === right.thesis.legal_area_id
+      const titleScore = jaccardSimilarity(left.titleTokens, right.titleTokens)
+      const keywordScore = jaccardSimilarity(left.keywordTokens, right.keywordTokens)
+      const titleContained = Boolean(
+        left.normalizedTitle
+        && right.normalizedTitle
+        && (
+          left.normalizedTitle.includes(right.normalizedTitle)
+          || right.normalizedTitle.includes(left.normalizedTitle)
+        ),
+      )
+
+      const similar = (sameArea && (titleContained || titleScore >= LOCAL_SIMILARITY_TITLE_THRESHOLD))
+        || (sameArea && keywordScore >= LOCAL_SIMILARITY_KEYWORD_THRESHOLD)
+        || (titleScore >= LOCAL_SIMILARITY_CROSS_THRESHOLD && keywordScore >= 0.3)
+
+      if (similar) union(left.thesis.id, right.thesis.id)
     }
-  ],
-  "low_quality_ids": ["id3"],
-  "thematic_gaps": ["lacuna1","lacuna2"],
-  "catalogue_summary": "resumo em 2-3 frases"
-}`
+  }
+
+  const groupsByRoot = new Map<string, typeof indexed>()
+  for (const item of indexed) {
+    const root = find(item.thesis.id)
+    const group = groupsByRoot.get(root) ?? []
+    group.push(item)
+    groupsByRoot.set(root, group)
+  }
+
+  const similarGroups = [...groupsByRoot.values()]
+    .filter(group => group.length > 1)
+    .map(group => {
+      const sharedKeywords = group.reduce<string[]>((shared, item, index) => {
+        if (index === 0) return item.keywordTokens
+        return shared.filter(token => item.keywordTokens.includes(token))
+      }, [])
+      return {
+        ids: group.map(item => item.thesis.id),
+        titles: group.map(item => item.thesis.title),
+        reason: sharedKeywords.length > 0
+          ? `Vocabulário central compartilhado: ${sharedKeywords.slice(0, 4).join(', ')}.`
+          : 'Teses do mesmo tema com alta proximidade lexical em título, resumo e conteúdo.',
+      }
+    })
+    .sort((left, right) => right.ids.length - left.ids.length)
+
+  const groupedIds = new Set(similarGroups.flatMap(group => group.ids))
+  const lowQualityIds = indexed
+    .filter(item => item.lowQuality && !groupedIds.has(item.thesis.id))
+    .map(item => item.thesis.id)
+
+  const catalogueSummary = [
+    `${indexed.length} tese(s) inventariadas localmente.`,
+    similarGroups.length > 0 ? `${similarGroups.length} grupo(s) candidato(s) à análise aprofundada.` : 'Nenhum grupo redundante evidente identificado localmente.',
+    lowQualityIds.length > 0 ? `${lowQualityIds.length} tese(s) isolada(s) com baixa densidade argumentativa.` : null,
+  ].filter(Boolean).join(' ')
+
+  return {
+    similar_groups: similarGroups,
+    low_quality_ids: lowQualityIds,
+    thematic_gaps: [],
+    catalogue_summary: catalogueSummary,
+  }
+}
 
 // ── Agent 2: Analista de Redundâncias ─────────────────────────────────────────
 
@@ -403,7 +535,7 @@ function agentErrorMessage(err: unknown): string {
 
 
 /**
- * Run the 5-agent thesis analysis pipeline.
+ * Run the thesis analysis pipeline.
  *
  * @param apiKey      OpenRouter API key
  * @param theses      All theses from the user's bank
@@ -534,21 +666,7 @@ export async function analyzeThesisBank(
     'running',
   )
 
-  const fullCatalogue = thesesToCatalogueEntries(theses)
-  const {
-    items: thesesForCatalogue,
-    omittedCount: omittedThesesFromCatalogue,
-  } = takeItemsWithinCharBudget(
-    fullCatalogue,
-    entry => compactJson(entry),
-    MAX_CATALOGUE_PROMPT_CHARS,
-  )
-  if (omittedThesesFromCatalogue > 0) {
-    limitNotes.push(
-      `${omittedThesesFromCatalogue} tese(s) ficaram fora do prompt do Catalogador para respeitar o limite de contexto do provedor.`,
-    )
-  }
-  const catalogue = thesesForCatalogue
+  const catalogue = thesesToCatalogueEntries(theses)
 
   const { items: docsForCurador, omittedCount: omittedDocsFromCurador } = takeItemsWithinCharBudget(
     acervoDocs,
@@ -641,52 +759,7 @@ export async function analyzeThesisBank(
     ? trackPhase('curadoria_acervo', runCurador)
     : null
 
-  // ── Agent 1: Catalogador ─────────────────────────────────────────────────────
-
-  notify('thesis_catalogador', 'running', 'Catalogando teses existentes...', 'waiting_io')
-
-  let catalogueResult: {
-    similar_groups?: Array<{ ids: string[]; titles: string[]; reason: string }>
-    low_quality_ids?: string[]
-    thematic_gaps?: string[]
-    catalogue_summary?: string
-  } = {}
-
-  try {
-    const res = await trackPhase('inventario', async () => callLLMWithFallback(
-      apiKey,
-      CATALOGADOR_SYSTEM,
-      `Inventário de ${catalogue.length} teses jurídicas:\n${compactJson(catalogue)}`,
-      modelMap['thesis_catalogador'],
-      resolveAgentFallbacks('thesis_catalogador', modelMap['thesis_catalogador']),
-      3000,
-      0.1,
-    ))
-    recordAgentDuration(res)
-    llmExecutions.push(createUsageExecutionRecord({
-      source_type: 'thesis_analysis',
-      source_id: sessionId,
-      created_at: now,
-      phase: 'thesis_catalogador',
-      agent_name: 'Catalogador',
-      model: res.model,
-      provider_id: res.provider_id ?? res.operational?.providerId,
-      provider_label: res.provider_label ?? res.operational?.providerLabel,
-      requested_model: res.operational?.requestedModel,
-      resolved_model: res.operational?.resolvedModel,
-      tokens_in: res.tokens_in,
-      tokens_out: res.tokens_out,
-      cost_usd: res.cost_usd,
-      duration_ms: res.duration_ms,
-      ...buildExecutionTelemetry(res),
-    }))
-    catalogueResult = parseJsonObject(res.content) as typeof catalogueResult
-    notify('thesis_catalogador', 'done', `${catalogueResult.similar_groups?.length ?? 0} grupos identificados`)
-  } catch (err) {
-    notify('thesis_catalogador', 'error', `Catalogador: ${agentErrorMessage(err)}`)
-    console.warn('Catalogador failed:', err)
-    catalogueResult = { similar_groups: [], low_quality_ids: [], thematic_gaps: [], catalogue_summary: '' }
-  }
+  const catalogueResult = await trackPhase('inventario', async () => buildLocalCatalogueResult(theses))
 
   const similarGroups = catalogueResult.similar_groups ?? []
   thematicGaps = catalogueResult.thematic_gaps ?? []
@@ -755,7 +828,7 @@ export async function analyzeThesisBank(
     analysisMergeGroups = []
   }
 
-  // Build delete suggestions from low-quality candidates flagged by Catalogador
+  // Build delete suggestions from low-quality candidates flagged by the local inventory
   const deleteCandidates = (catalogueResult.low_quality_ids ?? [])
     .map(id => thesisById.get(id))
     .filter((t): t is ThesisData => !!t)
@@ -1148,7 +1221,7 @@ export async function analyzeThesisBank(
 
   const wallClockMs = Date.now() - wallClockStart
   const pipelineMeta: ThesisAnalysisPipelineMeta = {
-    pipeline_version: 'thesis_parallel_v1',
+    pipeline_version: 'thesis_parallel_v2',
     phase_durations_ms: phaseDurationsMs,
     total_agent_duration_ms: totalAgentDurationMs,
     wall_clock_ms: wallClockMs,

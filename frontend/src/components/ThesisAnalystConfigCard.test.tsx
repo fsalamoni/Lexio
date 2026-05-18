@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import ThesisAnalystConfigCard from './ThesisAnalystConfigCard'
 
 vi.mock('../lib/model-config', () => ({
-  THESIS_ANALYST_AGENT_DEFS: Array.from({ length: 5 }, (_, index) => ({ key: `thesis-${index}` })),
+  THESIS_ANALYST_AGENT_DEFS: Array.from({ length: 4 }, (_, index) => ({ key: `thesis-${index}` })),
   getDefaultThesisAnalystModelMap: vi.fn(),
   loadThesisAnalystModels: vi.fn(),
   resetThesisAnalystModels: vi.fn(),
@@ -30,12 +30,12 @@ afterEach(() => {
 })
 
 describe('ThesisAnalystConfigCard', () => {
-  it('wires the thesis pipeline metadata and parallel-track guidance into the shared config card', () => {
+  it('wires the thesis pipeline metadata and local-inventory guidance into the shared config card', () => {
     render(<ThesisAnalystConfigCard />)
 
     expect(screen.getByText('Carregando configuração do Analista de Teses...')).toBeTruthy()
     expect(screen.getByText('Pipeline de Análise de Teses')).toBeTruthy()
-    expect(screen.getByText('5 agentes · trilhas paralelas · acionado manualmente')).toBeTruthy()
+    expect(screen.getByText('4 agentes LLM · inventário local · trilhas paralelas')).toBeTruthy()
     expect(screen.getByText(/Recomendação:/)).toBeTruthy()
     expect(screen.getByText('✦ Grátis')).toBeTruthy()
   })

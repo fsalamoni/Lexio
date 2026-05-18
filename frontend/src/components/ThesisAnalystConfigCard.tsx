@@ -6,7 +6,6 @@ import {
   FlaskConical,
   RefreshCw,
   Scale,
-  Search,
 } from 'lucide-react'
 import {
   THESIS_ANALYST_AGENT_DEFS,
@@ -21,7 +20,6 @@ import AgentModelConfigCard, {
 } from './AgentModelConfigCard'
 
 const AGENT_ICONS: Record<string, ElementType> = {
-  'search': Search,
   'scale': Scale,
   'refresh-cw': RefreshCw,
   'book-open': BookOpen,
@@ -38,17 +36,17 @@ export default function ThesisAnalystConfigCard() {
           id: 'thesis-analyst',
           title: 'Pipeline de Análise de Teses',
           titleIcon: FlaskConical,
-          subtitle: '5 agentes · trilhas paralelas · acionado manualmente',
+          subtitle: '4 agentes LLM · inventário local · trilhas paralelas',
           agents: THESIS_ANALYST_AGENT_DEFS,
           tone: V2_AGENT_CONFIG_TONES.teal,
           showIndex: true,
           afterContent: (
             <div className={`${V2_AGENT_CONFIG_INFO_BOX_BASE} ${V2_AGENT_CONFIG_TONES.teal.infoBox}`}>
               <p>
-                <strong>💡 Recomendação:</strong> O <strong>Catalogador</strong> e o <strong>Curador</strong> iniciam
-                trilhas paralelas para reduzir latência. O Catalogador pode usar um modelo rápido (Haiku,
-                Flash); o <strong>Compilador</strong> e o <strong>Revisor</strong> se beneficiam de modelos
-                equilibrados ou premium, pois consolidam e validam as sugestões finais. Modelos
+                <strong>💡 Recomendação:</strong> O inventário inicial agora é local e resiliente. Use um modelo
+                forte no <strong>Analista</strong> para validar os grupos detectados; o <strong>Compilador</strong>,
+                o <strong>Curador</strong> e o <strong>Revisor</strong> se beneficiam de modelos equilibrados ou
+                premium, pois consolidam, expandem e validam as sugestões finais. Modelos
                 <strong> ✦ Grátis</strong> continuam úteis para reduzir custos.
               </p>
             </div>
