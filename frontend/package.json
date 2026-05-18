@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node ../scripts/run-frontend-vite-build.mjs",
     "build:smoke": "vite build --mode smoke",
     "audit:baseline": "node ../scripts/lexio-platform-audit-baseline.mjs",
     "audit:deep": "node ../scripts/lexio-platform-audit-deep-sweep.mjs",
