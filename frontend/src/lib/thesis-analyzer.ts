@@ -12,7 +12,7 @@
  * AnalysisSuggestion objects that the user can accept, modify or reject.
  */
 
-import { callLLMWithFallback, TransientLLMError, type LLMResult } from './llm-client'
+import { callLLMWithFallback, RELIABLE_TEXT_FALLBACK_MODEL, TransientLLMError, type LLMResult } from './llm-client'
 import { type ThesisData, type AcervoDocumentData } from './firestore-service'
 import { buildUsageSummary, createUsageExecutionRecord, type UsageExecutionRecord, type UsageSummary } from './cost-analytics'
 import { type ThesisAnalystModelMap, validateModelMap, THESIS_ANALYST_AGENT_DEFS, buildPipelineFallbackResolver, loadFallbackPriorityConfig } from './model-config'
@@ -262,6 +262,15 @@ function takeItemsWithinCharBudget<T>(
   }
 }
 
+function withReliableTextFallback(primaryModel: string, fallbackModels: readonly string[]): string[] {
+  const candidates = [...fallbackModels]
+  const reliableFallback = RELIABLE_TEXT_FALLBACK_MODEL.trim()
+  if (reliableFallback && reliableFallback !== primaryModel && !candidates.includes(reliableFallback)) {
+    candidates.push(reliableFallback)
+  }
+  return candidates
+}
+
 // ── Agent 1: Catalogador ──────────────────────────────────────────────────────
 
 const CATALOGADOR_SYSTEM = `Você é um Catalogador especializado em bancos de teses jurídicas.
@@ -439,6 +448,8 @@ export async function analyzeThesisBank(
 
   const fallbackConfig = await trackPhase('config', async () => loadFallbackPriorityConfig().catch(() => ({})))
   const resolveFb = buildPipelineFallbackResolver(THESIS_ANALYST_AGENT_DEFS, fallbackConfig)
+  const resolveAgentFallbacks = (agentKey: string, primaryModel: string): string[] =>
+    withReliableTextFallback(primaryModel, resolveFb(agentKey, primaryModel))
 
   const analysisRuntimeHints = getRuntimeConcurrencyHints()
   const analysisConcurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
@@ -593,7 +604,7 @@ export async function analyzeThesisBank(
           CURADOR_SYSTEM,
           `Documentos do acervo não analisados:\n\n${docsText}${gapsText}${catalogueText}`,
           modelMap['thesis_curador'],
-          resolveFb('thesis_curador', modelMap['thesis_curador']),
+          resolveAgentFallbacks('thesis_curador', modelMap['thesis_curador']),
           3500,
           0.2,
         )
@@ -647,7 +658,7 @@ export async function analyzeThesisBank(
       CATALOGADOR_SYSTEM,
       `Inventário de ${catalogue.length} teses jurídicas:\n${compactJson(catalogue)}`,
       modelMap['thesis_catalogador'],
-      resolveFb('thesis_catalogador', modelMap['thesis_catalogador']),
+      resolveAgentFallbacks('thesis_catalogador', modelMap['thesis_catalogador']),
       3000,
       0.1,
     ))
@@ -712,7 +723,7 @@ export async function analyzeThesisBank(
         ANALISTA_SYSTEM,
         `Grupos de teses para análise profunda:\n${compactJson(groupsWithContent)}`,
         modelMap['thesis_analista'],
-        resolveFb('thesis_analista', modelMap['thesis_analista']),
+        resolveAgentFallbacks('thesis_analista', modelMap['thesis_analista']),
         4000,
         0.1,
       ))
@@ -804,7 +815,7 @@ export async function analyzeThesisBank(
           COMPILADOR_SYSTEM,
           `Compile as seguintes ${groupTheses.length} teses jurídicas em uma única tese superior:\n\n${versionsText}`,
           modelMap['thesis_compilador'],
-          resolveFb('thesis_compilador', modelMap['thesis_compilador']),
+          resolveAgentFallbacks('thesis_compilador', modelMap['thesis_compilador']),
           2500,
           0.15,
         )
@@ -936,7 +947,7 @@ export async function analyzeThesisBank(
         REVISOR_SYSTEM,
         `Banco atual: ${theses.length} teses. Revisar até ${revisorPayload.length} sugestões priorizadas.\n\nSugestões para revisão:\n${compactJson(revisorPayload)}`,
         modelMap['thesis_revisor'],
-        resolveFb('thesis_revisor', modelMap['thesis_revisor']),
+        resolveAgentFallbacks('thesis_revisor', modelMap['thesis_revisor']),
         4000,
         0.1,
       ))
@@ -985,7 +996,7 @@ export async function analyzeThesisBank(
           'Você corrige saídas JSON inválidas. Retorne APENAS um objeto JSON válido, sem markdown, sem comentários e sem texto fora do JSON.',
           `A saída abaixo deveria ser um objeto JSON válido no formato {"executive_summary":"...","suggestions":[...]}. Corrija somente a sintaxe e preserve os campos úteis.\n\n${res.content.slice(0, 12_000)}`,
           modelMap['thesis_revisor'],
-          resolveFb('thesis_revisor', modelMap['thesis_revisor']),
+          resolveAgentFallbacks('thesis_revisor', modelMap['thesis_revisor']),
           2500,
           0,
         ))

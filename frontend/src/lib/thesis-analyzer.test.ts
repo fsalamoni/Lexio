@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const callLLMMock = vi.fn()
+const resolveFallbackModelsMock = vi.fn(() => [])
 
 vi.mock('./llm-client', async () => {
   const actual = await vi.importActual<typeof import('./llm-client')>('./llm-client')
@@ -26,7 +27,7 @@ vi.mock('./model-config', () => {
         if (!modelMap[agent.key]) throw new Error(`Missing model for ${agent.key}`)
       }
     },
-    buildPipelineFallbackResolver: () => () => [],
+    buildPipelineFallbackResolver: () => resolveFallbackModelsMock,
     loadFallbackPriorityConfig: async () => ({}),
   }
 })
@@ -170,6 +171,7 @@ describe('analyzeThesisBank parallel pipeline', () => {
     vi.clearAllMocks()
     vi.unstubAllEnvs()
     vi.spyOn(console, 'warn').mockImplementation(() => {})
+    resolveFallbackModelsMock.mockReturnValue([])
   })
 
   afterEach(() => {
@@ -423,5 +425,14 @@ describe('analyzeThesisBank parallel pipeline', () => {
     expect(result.pipeline_meta?.agent_failures).toEqual([
       expect.objectContaining({ key: 'thesis_catalogador' }),
     ])
+  })
+
+  it('appends the reliable fallback model after user-configured thesis fallbacks', async () => {
+    resolveFallbackModelsMock.mockReturnValue(['user/fallback-model'])
+
+    await analyzeThesisBank('sk-test', [thesis('t1', 'Tese 1')], [], modelMap)
+
+    expect(callLLMMock).toHaveBeenCalled()
+    expect(callLLMMock.mock.calls[0][4]).toEqual(['user/fallback-model', 'google/gemini-2.5-flash'])
   })
 })
