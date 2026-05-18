@@ -158,6 +158,18 @@ export function getLLMOperationalUsageMeta(result: Pick<LLMResult, 'operational'
   }
 }
 
+function tryParseJsonObject<T extends Record<string, unknown>>(
+  raw: string,
+  contextLabel: string,
+): { ok: true; value: T } | { ok: false } {
+  try {
+    return { ok: true, value: JSON.parse(extractJsonPayload(raw)) as T }
+  } catch (error) {
+    console.warn(`[${contextLabel}] Invalid JSON response:`, error, 'Raw:', raw.slice(0, 300))
+    return { ok: false }
+  }
+}
+
 function getDocumentAgentModelsCacheKey(uid?: string): string {
   return `${DOCUMENT_AGENT_MODELS_CACHE_KEY}:${uid || 'anonymous'}`
 }
@@ -660,14 +672,8 @@ export async function generateAcervoEmenta(
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere a ementa e keywords para este documento.`
 
   const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, fallbackList, 1000, 0.1)
-
-  let jsonStr = result.content.trim()
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (jsonMatch) jsonStr = jsonMatch[1].trim()
-  const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
-  if (braceMatch) jsonStr = braceMatch[0]
-
-  const parsed = JSON.parse(jsonStr)
+  const parsedResult = tryParseJsonObject<Record<string, unknown>>(result.content, 'Acervo Ementa')
+  const parsed = parsedResult.ok ? parsedResult.value : {}
 
   const ementaParts = [
     `Tipo: ${parsed.tipo || 'N/A'}`,
@@ -808,14 +814,8 @@ export async function generateAcervoTags(
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere as tags de classificação para este documento.`
 
   const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, fallbackList, 800, 0.1)
-
-  let jsonStr = result.content.trim()
-  const jsonMatch = jsonStr.match(/\`\`\`(?:json)?\s*([\s\S]*?)\`\`\`/)
-  if (jsonMatch) jsonStr = jsonMatch[1].trim()
-  const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
-  if (braceMatch) jsonStr = braceMatch[0]
-
-  const parsed = JSON.parse(jsonStr)
+  const parsedResult = tryParseJsonObject<Record<string, unknown>>(result.content, 'Acervo Classificador')
+  const parsed = parsedResult.ok ? parsedResult.value : {}
 
   const validNaturezas: NaturezaValue[] = ['consultivo', 'executorio', 'transacional', 'negocial', 'doutrinario', 'decisorio']
   const natureza: NaturezaValue = validNaturezas.includes(parsed.natureza) ? parsed.natureza : 'consultivo'
@@ -1563,15 +1563,12 @@ export async function generateDocument(
             )
             reportStageResult('acervo_buscador', 'Busca no acervo concluída.', 10, buscadorResult)
 
-            try {
-              let jsonStr = buscadorResult.content.trim()
-              const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
-              if (jsonMatch) jsonStr = jsonMatch[1].trim()
-              const braceMatch = jsonStr.match(/\{[\s\S]*\}/)
-              if (braceMatch) jsonStr = braceMatch[0]
-
-              const parsed = JSON.parse(jsonStr)
-              const allSelected = parsed.selected || []
+            const parsedBuscador = tryParseJsonObject<{ selected?: Array<{ id: string; score?: number; reason?: string }> }>(
+              buscadorResult.content,
+              'Acervo Buscador',
+            )
+            if (parsedBuscador.ok) {
+              const allSelected = parsedBuscador.value.selected || []
               console.log(`[Acervo Buscador] LLM selected ${allSelected.length} from ${preFiltered.length} candidates:`,
                 allSelected.map((s: { id: string; score?: number; reason?: string }) =>
                   `${s.id.slice(0, 8)}... (score: ${s.score}, ${s.reason?.slice(0, 50)})`,
@@ -1581,8 +1578,16 @@ export async function generateDocument(
                 .filter((s: { score?: number }) => (s.score ?? 0) >= 0.15)
                 .slice(0, MAX_ACERVO_SELECTED_DOCS)
                 .map((s: { id: string }) => s.id)
-            } catch (parseErr) {
-              console.warn('[Acervo Buscador] Parse error:', parseErr, 'Raw:', buscadorResult.content.slice(0, 300))
+            } else {
+              selectedIds = preFiltered.slice(0, MAX_ACERVO_SELECTED_DOCS).map(d => d.id)
+              reportProgress(
+                'acervo_buscador',
+                `Buscador retornou JSON inválido; usando ${selectedIds.length} documento(s) do pré-filtro determinístico.`,
+                10,
+                modelAcervoBuscador,
+                'Fallback local após resposta inválida do Buscador',
+                'running',
+              )
             }
           } else {
             selectedIds = preFiltered.slice(0, MAX_ACERVO_SELECTED_DOCS).map(d => d.id)

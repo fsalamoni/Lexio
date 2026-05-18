@@ -343,7 +343,8 @@ describe('analyzeThesisBank parallel pipeline', () => {
     expect(curadorPrompts[0].length).toBeLessThan(9000)
     expect(curadorPrompts[0]).toContain('[doc-0.pdf]')
     expect(curadorPrompts[0]).toContain('[doc-1.pdf]')
-    expect(curadorPrompts[0]).not.toContain('[doc-2.pdf]')
+    expect(curadorPrompts[0]).toContain('[doc-2.pdf]')
+    expect(curadorPrompts[0]).not.toContain('[doc-3.pdf]')
   })
 
   it('parses common Revisor JSON trailing-comma responses without an LLM repair pass', async () => {
@@ -408,5 +409,20 @@ describe('analyzeThesisBank parallel pipeline', () => {
       status: 'done',
       executionState: 'completed',
     })
+  })
+
+  it('reports partial completion when no suggestions are generated because an agent failed', async () => {
+    callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => {
+      if (model === 'catalogador-model') throw new Error('provider quota exceeded')
+      return responseForModel(model)
+    })
+
+    const result = await analyzeThesisBank('sk-test', [thesis('t1', 'Tese 1')], [], modelMap)
+
+    expect(result.suggestions).toHaveLength(0)
+    expect(result.executive_summary).toContain('concluída parcialmente')
+    expect(result.pipeline_meta?.agent_failures).toEqual([
+      expect.objectContaining({ key: 'thesis_catalogador' }),
+    ])
   })
 })

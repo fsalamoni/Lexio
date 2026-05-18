@@ -102,17 +102,23 @@ export interface ThesisAnalysisPipelineMeta {
   runtime_cap: number
   runtime_detail: string
   compilador_runtime_detail?: string
+  theses_considered_count?: number
+  docs_considered_count?: number
+  docs_considered_ids?: string[]
+  mark_analyzed_doc_ids?: string[]
+  limit_notes?: string[]
+  agent_failures?: Array<{ key: string; label: string; message?: string }>
 }
 
 const DEFAULT_THESIS_ANALYSIS_PARALLEL_LIMIT = 2
 const MAX_THESIS_ANALYSIS_PARALLEL_LIMIT = 3
 const DEFAULT_THESIS_COMPILADOR_BATCH_CONCURRENCY = 2
 const MAX_THESIS_COMPILADOR_BATCH_CONCURRENCY = 4
-const MAX_THESES_FOR_CATALOGUE = 80
 const CATALOGUE_SUMMARY_CHARS = 120
-const MAX_CURADOR_DOCS = 2
 const CURADOR_DOC_EXCERPT_CHARS = 1200
-const MAX_CATALOGUE_ENTRIES_FOR_CURADOR = 24
+const MAX_CATALOGUE_PROMPT_CHARS = 18_000
+const MAX_CURADOR_DOC_PROMPT_CHARS = 3_600
+const MAX_CURADOR_CATALOGUE_PROMPT_CHARS = 3_000
 const MAX_THEMATIC_GAPS_FOR_CURADOR = 8
 const MAX_ANALISTA_GROUPS = 10
 const ANALISTA_THESIS_CONTENT_CHARS = 500
@@ -228,6 +234,32 @@ function thesesToCatalogueEntries(theses: ThesisData[]): Array<{
 /** Extract a short but meaningful excerpt from an acervo document. */
 function acervoExcerpt(doc: AcervoDocumentData, maxChars = 3000): string {
   return `[${doc.filename}]\n${(doc.text_content ?? '').slice(0, maxChars)}`
+}
+
+function takeItemsWithinCharBudget<T>(
+  items: T[],
+  render: (item: T) => string,
+  budgetChars: number,
+): { items: T[]; omittedCount: number } {
+  if (budgetChars <= 0 || items.length === 0) {
+    return { items: [], omittedCount: items.length }
+  }
+
+  const selected: T[] = []
+  let usedChars = 0
+
+  for (const item of items) {
+    const rendered = render(item)
+    const projectedChars = usedChars + rendered.length + (selected.length > 0 ? 6 : 0)
+    if (selected.length > 0 && projectedChars > budgetChars) break
+    selected.push(item)
+    usedChars = projectedChars
+  }
+
+  return {
+    items: selected,
+    omittedCount: Math.max(0, items.length - selected.length),
+  }
 }
 
 // ── Agent 1: Catalogador ──────────────────────────────────────────────────────
@@ -394,6 +426,7 @@ export async function analyzeThesisBank(
   let totalAgentDurationMs = 0
   let compiladorParallelLimit = 1
   let compiladorRuntimeDetail: string | undefined
+  const limitNotes: string[] = []
 
   const trackPhase = async <T,>(phaseKey: string, fn: () => Promise<T>): Promise<T> => {
     const startedAt = Date.now()
@@ -490,10 +523,32 @@ export async function analyzeThesisBank(
     'running',
   )
 
-  const thesesForCatalogue = theses.slice(0, MAX_THESES_FOR_CATALOGUE)
-  const catalogue = thesesToCatalogueEntries(thesesForCatalogue)
+  const fullCatalogue = thesesToCatalogueEntries(theses)
+  const {
+    items: thesesForCatalogue,
+    omittedCount: omittedThesesFromCatalogue,
+  } = takeItemsWithinCharBudget(
+    fullCatalogue,
+    entry => compactJson(entry),
+    MAX_CATALOGUE_PROMPT_CHARS,
+  )
+  if (omittedThesesFromCatalogue > 0) {
+    limitNotes.push(
+      `${omittedThesesFromCatalogue} tese(s) ficaram fora do prompt do Catalogador para respeitar o limite de contexto do provedor.`,
+    )
+  }
+  const catalogue = thesesForCatalogue
 
-  const docsForCurador = acervoDocs.slice(0, MAX_CURADOR_DOCS)
+  const { items: docsForCurador, omittedCount: omittedDocsFromCurador } = takeItemsWithinCharBudget(
+    acervoDocs,
+    doc => acervoExcerpt(doc, CURADOR_DOC_EXCERPT_CHARS),
+    MAX_CURADOR_DOC_PROMPT_CHARS,
+  )
+  if (omittedDocsFromCurador > 0) {
+    limitNotes.push(
+      `${omittedDocsFromCurador} documento(s) do acervo ficaram para uma próxima rodada por limite de contexto do Curador.`,
+    )
+  }
   const newThesisProposals: Array<{
     title: string; content: string; summary: string
     legal_area_id: string; tags?: string[]; quality_score?: number
@@ -514,8 +569,21 @@ export async function analyzeThesisBank(
         const gapsText = thematicGaps.length > 0
           ? `\n\nLACUNAS TEMÁTICAS IDENTIFICADAS (priorize teses que preencham estas lacunas):\n${thematicGaps.slice(0, MAX_THEMATIC_GAPS_FOR_CURADOR).map((g, i) => `${i + 1}. ${g.slice(0, 180)}`).join('\n')}`
           : ''
-        const catalogueText = catalogue.length > 0
-          ? `\n\nBANCO ATUAL (resumo compacto para evitar duplicidades):\n${compactJson(catalogue.slice(0, MAX_CATALOGUE_ENTRIES_FOR_CURADOR))}`
+        const {
+          items: catalogueForCurador,
+          omittedCount: omittedCatalogueEntriesForCurador,
+        } = takeItemsWithinCharBudget(
+          catalogue,
+          entry => compactJson(entry),
+          MAX_CURADOR_CATALOGUE_PROMPT_CHARS,
+        )
+        if (omittedCatalogueEntriesForCurador > 0) {
+          limitNotes.push(
+            `${omittedCatalogueEntriesForCurador} tese(s) do banco ficaram fora do contexto do Curador para caber na janela do modelo.`,
+          )
+        }
+        const catalogueText = catalogueForCurador.length > 0
+          ? `\n\nBANCO ATUAL (resumo compacto para evitar duplicidades):\n${compactJson(catalogueForCurador)}`
           : ''
 
         notify('thesis_curador', 'running', 'Curador aguardando resposta do modelo...', 'waiting_io')
@@ -1049,9 +1117,23 @@ export async function analyzeThesisBank(
       notify('thesis_revisor', 'done', `${finalSuggestions.length} sugestões finalizadas com revisão local`)
     }
   } else {
-    notify('thesis_revisor', 'done', 'Nenhuma sugestão gerada')
-    executiveSummary = 'O banco de teses está bem estruturado. Nenhuma ação necessária no momento.'
+    const failedAgents = agents.filter(agent => agent.status === 'error')
+    notify(
+      'thesis_revisor',
+      'done',
+      failedAgents.length > 0 ? 'Nenhuma sugestão gerada; revise as falhas acima.' : 'Nenhuma sugestão gerada',
+    )
+    executiveSummary = failedAgents.length > 0
+      ? 'A análise foi concluída parcialmente, mas alguns agentes falharam. Revise as mensagens de erro e execute uma nova rodada para processar o restante.'
+      : 'O banco de teses está bem estruturado. Nenhuma ação necessária no momento.'
   }
+
+  const failedAgents = agents
+    .filter(agent => agent.status === 'error')
+    .map(agent => ({ key: agent.key, label: agent.label, message: agent.message }))
+  const markAnalyzedDocIds = failedAgents.some(agent => agent.key === 'thesis_curador')
+    ? []
+    : docsForCurador.map(doc => doc.id).filter((id): id is string => Boolean(id))
 
   const wallClockMs = Date.now() - wallClockStart
   const pipelineMeta: ThesisAnalysisPipelineMeta = {
@@ -1067,6 +1149,12 @@ export async function analyzeThesisBank(
     runtime_cap: analysisConcurrencyDiagnostics.runtimeCap,
     runtime_detail: analysisRuntimeDetail,
     compilador_runtime_detail: compiladorRuntimeDetail,
+    theses_considered_count: catalogue.length,
+    docs_considered_count: docsForCurador.length,
+    docs_considered_ids: docsForCurador.map(doc => doc.id).filter((id): id is string => Boolean(id)),
+    mark_analyzed_doc_ids: markAnalyzedDocIds,
+    limit_notes: limitNotes,
+    agent_failures: failedAgents,
   }
 
   llmExecutions.unshift(createOrchestratorUsageExecution({
