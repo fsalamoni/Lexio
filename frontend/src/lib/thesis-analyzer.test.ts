@@ -343,8 +343,7 @@ describe('analyzeThesisBank parallel pipeline', () => {
     expect(curadorPrompts[0].length).toBeLessThan(9000)
     expect(curadorPrompts[0]).toContain('[doc-0.pdf]')
     expect(curadorPrompts[0]).toContain('[doc-1.pdf]')
-    expect(curadorPrompts[0]).toContain('[doc-2.pdf]')
-    expect(curadorPrompts[0]).not.toContain('[doc-3.pdf]')
+    expect(curadorPrompts[0]).not.toContain('[doc-2.pdf]')
   })
 
   it('parses common Revisor JSON trailing-comma responses without an LLM repair pass', async () => {

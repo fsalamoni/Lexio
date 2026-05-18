@@ -672,7 +672,15 @@ export async function generateAcervoEmenta(
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere a ementa e keywords para este documento.`
 
   const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, fallbackList, 1000, 0.1)
-  const parsedResult = tryParseJsonObject<Record<string, unknown>>(result.content, 'Acervo Ementa')
+  const parsedResult = tryParseJsonObject<{
+    tipo?: string
+    assunto?: string
+    sintese?: string
+    areas?: string[]
+    topicos?: string[]
+    conclusao?: string
+    keywords?: string[]
+  }>(result.content, 'Acervo Ementa')
   const parsed = parsedResult.ok ? parsedResult.value : {}
 
   const ementaParts = [
@@ -814,11 +822,20 @@ export async function generateAcervoTags(
   const userPrompt = `Arquivo: ${filename}\n\n<texto>\n${sourceText}\n</texto>\n\nGere as tags de classificação para este documento.`
 
   const result = await callLLMWithFallback(apiKey, systemPrompt, userPrompt, model, fallbackList, 800, 0.1)
-  const parsedResult = tryParseJsonObject<Record<string, unknown>>(result.content, 'Acervo Classificador')
+  const parsedResult = tryParseJsonObject<{
+    natureza?: NaturezaValue
+    area_direito?: string[]
+    assuntos?: string[]
+    tipo_documento?: string
+    contexto?: string[]
+  }>(result.content, 'Acervo Classificador')
   const parsed = parsedResult.ok ? parsedResult.value : {}
 
   const validNaturezas: NaturezaValue[] = ['consultivo', 'executorio', 'transacional', 'negocial', 'doutrinario', 'decisorio']
-  const natureza: NaturezaValue = validNaturezas.includes(parsed.natureza) ? parsed.natureza : 'consultivo'
+  const naturezaCandidate = parsed.natureza
+  const natureza: NaturezaValue = naturezaCandidate && validNaturezas.includes(naturezaCandidate)
+    ? naturezaCandidate
+    : 'consultivo'
 
   const llm_execution = createUsageExecutionRecord({
     source_type: 'acervo_classificador',
