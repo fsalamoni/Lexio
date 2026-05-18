@@ -27,6 +27,7 @@ import {
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 import { THESIS_PIPELINE_STAGES } from './thesis-pipeline'
 import { createOrchestratorUsageExecution, resolveOrchestratorModel } from './pipeline-orchestrator'
+import { humanizeError } from './error-humanizer'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -526,12 +527,14 @@ Estrutura obrigatória:
 function agentErrorMessage(err: unknown): string {
   if (err instanceof TypeError) return 'Erro de rede (tente novamente)'
   if (err instanceof TransientLLMError) return 'Erro transitório do LLM (tente novamente)'
+  if (err instanceof SyntaxError) return 'Resposta inválida do modelo (JSON malformado)'
   if (err instanceof Error) {
     if (err.name === 'ModelUnavailableError') return 'Modelo indisponível'
     if (err.message.includes('tempo limite')) return 'Tempo limite excedido'
     if (err.message.includes('empty response')) return 'Resposta vazia do LLM'
   }
-  return 'Falha inesperada'
+  const humanized = humanizeError(err)
+  return humanized.title || 'Falha inesperada'
 }
 
 
@@ -771,6 +774,7 @@ export async function analyzeThesisBank(
 
   // Build full-content view for all theses in groups
   const thesisById = new Map(theses.filter(t => t.id).map(t => [t.id!, t]))
+  const thesisIds = new Set(thesisById.keys())
   const groupsWithContent = similarGroups.slice(0, MAX_ANALISTA_GROUPS).map(group => ({
     ...group,
     theses_content: group.ids
@@ -780,6 +784,66 @@ export async function analyzeThesisBank(
       })
       .filter((x): x is { id: string; title: string; content: string } => x !== null),
   }))
+
+  const normalizeClassification = (value: unknown): 'duplicate' | 'complementary' | 'contradictory' | 'keep_separate' => {
+    const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
+    if (normalized.startsWith('du')) return 'duplicate'
+    if (normalized.startsWith('com')) return 'complementary'
+    if (normalized.startsWith('con')) return 'contradictory'
+    if (normalized.startsWith('keep')) return 'keep_separate'
+    return 'keep_separate'
+  }
+
+  const normalizeMergeAction = (value: unknown, classification: ReturnType<typeof normalizeClassification>): 'merge' | 'keep' | 'flag' => {
+    const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
+    if (normalized === 'merge' || normalized === 'keep' || normalized === 'flag') return normalized
+    if (classification === 'duplicate' || classification === 'complementary') return 'merge'
+    if (classification === 'contradictory') return 'flag'
+    return 'keep'
+  }
+
+  const normalizeMergeGroups = (
+    analysis: unknown,
+  ): Array<{
+    group_ids: string[]
+    classification: string
+    action: string
+    reasoning: string
+    merge_value: number
+  }> => {
+    if (!Array.isArray(analysis)) return []
+    return analysis
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null
+        const raw = entry as Record<string, unknown>
+        const groupIds = Array.isArray(raw.group_ids)
+          ? raw.group_ids.filter((id): id is string => typeof id === 'string' && thesisIds.has(id))
+          : []
+        if (groupIds.length < 2) return null
+        const classification = normalizeClassification(raw.classification)
+        const action = normalizeMergeAction(raw.action, classification)
+        const mergeValueRaw = typeof raw.merge_value === 'number' ? raw.merge_value : Number(raw.merge_value)
+        const mergeValue = Number.isFinite(mergeValueRaw) ? Math.max(1, Math.min(10, Math.round(mergeValueRaw))) : 5
+        return {
+          group_ids: [...new Set(groupIds)],
+          classification,
+          action,
+          reasoning: typeof raw.reasoning === 'string' ? raw.reasoning : 'Classificação normalizada após validação local.',
+          merge_value: mergeValue,
+        }
+      })
+      .filter((group): group is NonNullable<typeof group> => group !== null)
+  }
+
+  const buildLocalAnalistaFallback = () => normalizeMergeGroups(
+    groupsWithContent.map(group => ({
+      group_ids: group.ids,
+      classification: 'complementary',
+      action: 'merge',
+      reasoning: 'Fallback local aplicado com base no inventário determinístico para manter continuidade da análise.',
+      merge_value: 6,
+    })),
+  )
 
   let analysisMergeGroups: Array<{
     group_ids: string[]
@@ -819,8 +883,50 @@ export async function analyzeThesisBank(
         duration_ms: res.duration_ms,
         ...buildExecutionTelemetry(res),
       }))
-      const parsed = parseJsonObject(res.content) as { analysis?: typeof analysisMergeGroups }
-      analysisMergeGroups = (parsed.analysis ?? []).filter(g => g.action === 'merge')
+      let parsedAnalysis: unknown
+      try {
+        const parsed = parseJsonObject(res.content) as { analysis?: unknown }
+        parsedAnalysis = parsed.analysis ?? []
+      } catch (parseError) {
+        console.warn('Analista retornou JSON inválido; solicitando reparo:', parseError)
+        notify('thesis_analista', 'running', 'Analista corrigindo JSON retornado...', 'waiting_io')
+        try {
+          const repair = await trackPhase('redundancia_repair', async () => callLLMWithFallback(
+            apiKey,
+            'Você corrige saídas JSON inválidas do Analista de redundâncias. Retorne APENAS um objeto JSON válido, sem markdown, sem comentários e sem texto fora do JSON.',
+            `A saída abaixo deveria ser um objeto JSON válido no formato {"analysis":[...]}. Corrija somente a sintaxe e preserve os campos úteis.\n\n${res.content.slice(0, 12_000)}`,
+            modelMap['thesis_analista'],
+            resolveAgentFallbacks('thesis_analista', modelMap['thesis_analista']),
+            2200,
+            0,
+          ))
+          recordAgentDuration(repair)
+          llmExecutions.push(createUsageExecutionRecord({
+            source_type: 'thesis_analysis',
+            source_id: sessionId,
+            created_at: now,
+            phase: 'thesis_analista_repair',
+            agent_name: 'Analista de Redundâncias (reparo JSON)',
+            model: repair.model,
+            provider_id: repair.provider_id ?? repair.operational?.providerId,
+            provider_label: repair.provider_label ?? repair.operational?.providerLabel,
+            requested_model: repair.operational?.requestedModel,
+            resolved_model: repair.operational?.resolvedModel,
+            tokens_in: repair.tokens_in,
+            tokens_out: repair.tokens_out,
+            cost_usd: repair.cost_usd,
+            duration_ms: repair.duration_ms,
+            ...buildExecutionTelemetry(repair),
+          }))
+          const repaired = parseJsonObject(repair.content) as { analysis?: unknown }
+          parsedAnalysis = repaired.analysis ?? []
+        } catch (repairError) {
+          console.warn('Analista JSON repair failed; applying deterministic local fallback:', repairError)
+          limitNotes.push('Analista retornou JSON inválido em todas as tentativas; fallback determinístico local aplicado para manter a continuidade.')
+          parsedAnalysis = buildLocalAnalistaFallback()
+        }
+      }
+      analysisMergeGroups = normalizeMergeGroups(parsedAnalysis).filter(g => g.action === 'merge')
     }
     notify('thesis_analista', 'done', `${analysisMergeGroups.length} grupos a compilar`)
   } catch (err) {
@@ -982,7 +1088,7 @@ export async function analyzeThesisBank(
     ...deleteCandidates.map(t => ({
       temp_id: uid4(),
       type: 'delete' as SuggestionType,
-      source: 'catalogador',
+      source: 'inventario_local',
       data: { id: t.id, title: t.title, summary: t.summary, reason: 'Baixa qualidade ou conteúdo genérico' },
     })),
     ...newThesisProposals.map(p => ({

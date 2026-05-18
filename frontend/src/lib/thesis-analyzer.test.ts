@@ -326,6 +326,38 @@ describe('analyzeThesisBank parallel pipeline', () => {
     expect(result.llm_executions.map(execution => execution.phase)).toContain('thesis_revisor_repair')
   })
 
+  it('repairs malformed Analista JSON before continuing the pipeline', async () => {
+    callLLMMock.mockImplementation(async (_apiKey, system: string, _prompt, model: string) => {
+      if (model === 'analista-model' && !String(system).includes('corrige saídas JSON inválidas do Analista')) {
+        return llmResult(`{
+  "analysis": [
+    {
+      "group_ids": ["t1","t2"],
+      "classification": "du`, model, 20)
+      }
+      if (model === 'analista-model' && String(system).includes('corrige saídas JSON inválidas do Analista')) {
+        return llmResult(JSON.stringify({
+          analysis: [
+            {
+              group_ids: ['t1', 't2'],
+              classification: 'duplicate',
+              action: 'merge',
+              reasoning: 'JSON reparado com sucesso.',
+              merge_value: 8,
+            },
+          ],
+        }), model, 20)
+      }
+      return responseForModel(model)
+    })
+
+    const result = await runDefaultAnalysis()
+
+    const systems = callLLMMock.mock.calls.map(call => String(call[1]))
+    expect(systems.some(system => system.includes('corrige saídas JSON inválidas do Analista'))).toBe(true)
+    expect(result.llm_executions.map(execution => execution.phase)).toContain('thesis_analista_repair')
+  })
+
   it('compacts the Curador prompt to avoid provider prompt-token limits', async () => {
     const curadorPrompts: string[] = []
     const largeTheses = Array.from({ length: 120 }, (_, index) => thesis(`t${index}`, `Tese extensa ${index}`))
