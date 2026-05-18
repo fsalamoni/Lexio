@@ -302,6 +302,26 @@ async function persistResolvedApprovalReply(args: {
   dispatch({ type: 'COMMIT_TURN', turn, status: 'done' })
 }
 
+export async function resolveApprovalResumeRuntime(args: {
+  userId: string | null
+  mock: boolean
+}): Promise<Pick<SkillContext, 'models' | 'apiKey'>> {
+  const { userId, mock } = args
+  if (mock) {
+    return {
+      models: mockModelMap(),
+      apiKey: 'demo',
+    }
+  }
+
+  const [models, apiKey] = await Promise.all([
+    loadChatOrchestratorModels(userId ?? undefined),
+    getOpenRouterKey(userId ?? undefined).catch(() => ''),
+  ])
+
+  return { models, apiKey }
+}
+
 async function runApprovedResumeTool(args: {
   conversationId: string
   userId: string | null
@@ -313,14 +333,6 @@ async function runApprovedResumeTool(args: {
 }): Promise<void> {
   const { conversationId, userId, effort, userInput, pendingQuestion, resolutionEvent, dispatch } = args
   const mock = isMockRuntimeActive()
-  let resumeApiKey = mock ? 'demo' : ''
-  if (!mock) {
-    try {
-      resumeApiKey = await getOpenRouterKey(userId ?? undefined)
-    } catch {
-      resumeApiKey = ''
-    }
-  }
   let turnId = `local-${Date.now()}`
   const startedAt = new Date().toISOString()
   const trailBuffer: ChatTrailEvent[] = [resolutionEvent]
@@ -369,6 +381,7 @@ async function runApprovedResumeTool(args: {
     if (!skill) {
       throw new Error(`Continuação aprovada não encontrada: ${pendingQuestion.resume_tool}`)
     }
+    const { models: resumeModels, apiKey: resumeApiKey } = await resolveApprovalResumeRuntime({ userId, mock })
     const controller = new AbortController()
     const ctx: SkillContext = {
       uid: userId ?? 'demo',
@@ -379,7 +392,7 @@ async function runApprovedResumeTool(args: {
       budget: createApprovalResumeBudget(),
       signal: controller.signal,
       emit: onTrail,
-      models: mock ? mockModelMap() : {},
+      models: resumeModels,
       apiKey: resumeApiKey,
       mock,
       persistWorkPackage: IS_FIREBASE && userId
