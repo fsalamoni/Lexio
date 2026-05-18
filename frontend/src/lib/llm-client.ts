@@ -178,6 +178,12 @@ function isTransientUpstreamResponse(status: number, errorBody: string): boolean
   return false
 }
 
+function isRecoverableProviderQuotaResponse(status: number, errorBody: string): boolean {
+  if (status !== 403) return false
+  const message = extractProviderErrorMessage(errorBody)
+  return /key limit exceeded|monthly limit/i.test(message)
+}
+
 function extractProviderErrorMessage(errorBody: string): string {
   if (!errorBody) return ''
   try {
@@ -438,10 +444,20 @@ interface ProviderRequestPlan {
   parseResponse: (raw: string) => { content: string; tokensIn: number; tokensOut: number; cost?: number }
 }
 
+const DIRECT_PROVIDER_MODEL_PREFIX_ALIASES: Partial<Record<ProviderDefinition['id'], string[]>> = {
+  xai: ['x-ai'],
+}
+
 function normalizeModelForDirectProvider(model: string, providerId: ProviderDefinition['id']): string {
   if (providerId === 'openrouter') return model
-  const prefix = `${providerId}/`
-  return model.startsWith(prefix) ? model.slice(prefix.length) : model
+  const prefixes = [providerId, ...(DIRECT_PROVIDER_MODEL_PREFIX_ALIASES[providerId] ?? [])]
+  for (const prefixCandidate of prefixes) {
+    const prefix = `${prefixCandidate}/`
+    if (model.startsWith(prefix)) {
+      return model.slice(prefix.length)
+    }
+  }
+  return model
 }
 
 function buildOpenRouterPlan(
@@ -715,6 +731,9 @@ async function executeChatCompletionStreaming(
     if (isModelUnavailableResponse(response.status, errorBody)) {
       throw new ModelUnavailableError(model)
     }
+    if (isRecoverableProviderQuotaResponse(response.status, errorBody)) {
+      throw new TransientLLMError(`${resolved.provider.label} API error ${response.status}: ${errorBody.slice(0, 300)}`)
+    }
     if (isTransientUpstreamResponse(response.status, errorBody)) {
       throw new TransientLLMError(`${resolved.provider.label} API error ${response.status}: ${errorBody.slice(0, 300)}`)
     }
@@ -855,6 +874,9 @@ async function executeChatCompletion(
     if (!response.ok) {
       if (isModelUnavailableResponse(response.status, errorBody)) {
         throw new ModelUnavailableError(model)
+      }
+      if (isRecoverableProviderQuotaResponse(response.status, errorBody)) {
+        throw new TransientLLMError(`${resolved.provider.label} API error ${response.status}: ${errorBody.slice(0, 300)}`)
       }
       if (isTransientUpstreamResponse(response.status, errorBody)) {
         throw new TransientLLMError(`${resolved.provider.label} API error ${response.status}: ${errorBody.slice(0, 300)}`)

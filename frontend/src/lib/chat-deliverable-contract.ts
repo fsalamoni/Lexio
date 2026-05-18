@@ -98,7 +98,7 @@ export function inferExpectedDeliverablesFromText(text: string): ChatExpectedDel
     })
   }
 
-  if (/\b(documentos?|arquivos?|relatorio|relatorios|parecer|peticao|contestacao|recurso|docx|pdf)\b/.test(normalized)) {
+  if (isTextualDocumentRequest(normalized)) {
     expected.push({
       kind: 'legal_document',
       accepted_formats: pickFormats(normalized, DOCUMENT_FORMATS, DOCUMENT_FORMATS),
@@ -166,6 +166,19 @@ export function buildExpectedDeliverableFeedback(missing: ChatExpectedDeliverabl
 
 function normalizeForIntent(text: string): string {
   return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+function isTextualDocumentRequest(normalized: string): boolean {
+  if (/\b(relatorio|relatorios|parecer|peticao|contestacao|recurso|minuta|minutas|docx|markdown|txt)\b/.test(normalized)) {
+    return true
+  }
+
+  if (/\b(fa(?:ca|zer)|crie|criar|gere|gerar|produza|produzir|elabore|elaborar|redija|redigir|monte|montar|prepare|preparar|construa|construir)\s+(?:um|uma|o|os|a|as)?\s*(?:novo|nova|novos|novas)?\s*(documentos?|arquivos?)\b/.test(normalized)) {
+    return true
+  }
+
+  return /\b(documentos?|arquivos?)\b/.test(normalized)
+    && /\b(entreg(?:a|ue|ar|avel|aveis)|disponibiliz(?:a|e|ar)|anex(?:a|e|ar)|baixar|download|export(?:a|e|ar))\b/.test(normalized)
 }
 
 function pickFormats(normalized: string, candidates: ChatArtifactFormat[], fallback: ChatArtifactFormat[]): ChatArtifactFormat[] {

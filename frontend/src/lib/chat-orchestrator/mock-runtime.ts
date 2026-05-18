@@ -1,5 +1,6 @@
 import type { OrchestratorLLMCall, OrchestratorMessage } from './types'
 import { IS_FIREBASE } from '../firebase'
+import { inferExpectedDeliverablesFromText } from '../chat-deliverable-contract'
 
 /**
  * Returns true when the chat must run against the in-memory mock instead of
@@ -23,6 +24,18 @@ export const mockOrchestratorLLM: OrchestratorLLMCall = async (params) => {
   const { history } = params
   const step = countToolMessages(history)
   const userInput = lastUserMessage(history)
+  const artifactDecision = buildMockArtifactDecision(userInput)
+
+  if (artifactDecision) {
+    if (step === 0) return jsonDecision(artifactDecision)
+    return jsonDecision({
+      tool: 'submit_final_answer',
+      args: {
+        markdown: buildDemoFinal(userInput, 'O runtime mock acionou a skill de artefato correspondente ao pedido e materializou a entrega localmente.'),
+      },
+      rationale: 'Encerrar o turno depois de simular o artefato solicitado.',
+    })
+  }
 
   switch (step) {
     case 0: {
@@ -85,11 +98,97 @@ function jsonDecision(payload: { tool: string; args: Record<string, unknown>; ra
   }
 }
 
-function buildDemoFinal(userInput: string): string {
+function buildMockArtifactDecision(userInput: string): { tool: string; args: Record<string, unknown>; rationale: string } | null {
+  const primary = inferExpectedDeliverablesFromText(userInput)[0]
+  if (!primary) return null
+
+  if (primary.kind === 'image') {
+    return {
+      tool: 'generate_image',
+      args: {
+        prompt: userInput,
+        title: buildMockTitle('Imagem literal', userInput),
+        aspect_ratio: inferAspectRatio(userInput),
+        approved: true,
+      },
+      rationale: 'Pedido exige imagem literal; o mock deve acionar a skill real de imagem.',
+    }
+  }
+
+  if (primary.kind === 'presentation') {
+    return {
+      tool: 'generate_studio_artifact',
+      args: {
+        artifact_type: 'apresentacao_v2',
+        topic: userInput,
+        notebook_title: buildMockTitle('Apresentacao', userInput),
+        images: true,
+        approved: true,
+      },
+      rationale: 'Pedido exige apresentação; o mock deve acionar o Estúdio.',
+    }
+  }
+
+  if (primary.kind === 'spreadsheet') {
+    return {
+      tool: 'generate_studio_artifact',
+      args: {
+        artifact_type: 'tabela_dados',
+        topic: userInput,
+        notebook_title: buildMockTitle('Tabela de dados', userInput),
+        approved: true,
+      },
+      rationale: 'Pedido exige artefato tabular; o mock deve acionar o Estúdio.',
+    }
+  }
+
+  if (primary.kind === 'legal_document') {
+    return {
+      tool: 'generate_document',
+      args: {
+        document_type: inferMockDocumentType(userInput),
+        title: buildMockTitle('Documento', userInput),
+        description: 'Documento gerado em modo demo para validar a trilha de artefato.',
+        content: userInput,
+        approved: true,
+      },
+      rationale: 'Pedido exige documento; o mock deve acionar o pipeline documental.',
+    }
+  }
+
+  return null
+}
+
+function inferMockDocumentType(userInput: string): string {
+  const normalized = userInput.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (/\bpeticao\b/.test(normalized)) return 'peticao_inicial'
+  if (/\bcontestacao\b/.test(normalized)) return 'contestacao'
+  if (/\brecurso\b/.test(normalized)) return 'recurso'
+  if (/\bsentenca\b/.test(normalized)) return 'sentenca'
+  if (/\bacao\s+civil\s+publica\b/.test(normalized)) return 'acao_civil_publica'
+  if (/\bmandado\s+de\s+seguranca\b/.test(normalized)) return 'mandado_seguranca'
+  if (/\bhabeas\s+corpus\b/.test(normalized)) return 'habeas_corpus'
+  if (/\bagravo\b/.test(normalized)) return 'agravo'
+  if (/\bembargos\b/.test(normalized)) return 'embargos_declaracao'
+  return 'parecer'
+}
+
+function inferAspectRatio(userInput: string): string | undefined {
+  const match = userInput.match(/\b(1:1|4:3|3:4|16:9|9:16)\b/)
+  return match?.[1]
+}
+
+function buildMockTitle(prefix: string, userInput: string): string {
+  const clipped = userInput.replace(/\s+/g, ' ').trim().slice(0, 72)
+  return clipped ? `${prefix} - ${clipped}` : prefix
+}
+
+function buildDemoFinal(userInput: string, note?: string): string {
   return [
     '# Resposta (modo demo)',
     '',
     'Esta é uma resposta gerada pelo runtime mock do Chat. Nenhuma chamada real foi feita à OpenRouter — toda a trilha acima foi simulada localmente.',
+    ...(note ? ['', note] : []),
     '',
     '**Pedido recebido:**',
     `> ${userInput.slice(0, 600)}`,

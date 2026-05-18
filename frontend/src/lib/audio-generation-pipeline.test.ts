@@ -124,13 +124,29 @@ describe('runAudioGenerationPipeline', () => {
   it('generates literal audio inside the audio pipeline module', async () => {
     const result = await generateAudioLiteralMedia({
       apiKey: 'key',
+      uid: 'user-1',
       rawScriptContent: '{"title":"Teste"}',
     })
 
     expect(result.mimeType).toBe('audio/mpeg')
     expect(result.execution.phase).toBe('audio_literal_generation')
     expect(result.execution.agent_name).toBe('Narrador / TTS')
+    expect(validateScopedAgentModelsMock).toHaveBeenCalledWith('audio_pipeline_models', { audio_narrador: 'openai/tts-1-hd' }, 'user-1')
+    expect(synthesizeAudioFromScriptMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'openai/tts-1-hd',
+    }))
     expect(synthesizeAudioFromScriptMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks literal audio when a different TTS model is requested', async () => {
+    await expect(generateAudioLiteralMedia({
+      apiKey: 'key',
+      uid: 'user-1',
+      rawScriptContent: '{"title":"Teste"}',
+      model: 'google/gemini-2.5-flash',
+    })).rejects.toThrow('deve usar exatamente o modelo configurado para o agente "Narrador / TTS"')
+
+    expect(synthesizeAudioFromScriptMock).not.toHaveBeenCalled()
   })
 
   it('surfaces a helpful error when an audio stage returns invalid JSON', async () => {

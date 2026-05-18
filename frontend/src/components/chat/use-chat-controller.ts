@@ -313,6 +313,14 @@ async function runApprovedResumeTool(args: {
 }): Promise<void> {
   const { conversationId, userId, effort, userInput, pendingQuestion, resolutionEvent, dispatch } = args
   const mock = isMockRuntimeActive()
+  let resumeApiKey = mock ? 'demo' : ''
+  if (!mock) {
+    try {
+      resumeApiKey = await getOpenRouterKey(userId ?? undefined)
+    } catch {
+      resumeApiKey = ''
+    }
+  }
   let turnId = `local-${Date.now()}`
   const startedAt = new Date().toISOString()
   const trailBuffer: ChatTrailEvent[] = [resolutionEvent]
@@ -366,12 +374,13 @@ async function runApprovedResumeTool(args: {
       uid: userId ?? 'demo',
       conversationId,
       turnId,
+      userInput,
       effort,
       budget: createApprovalResumeBudget(),
       signal: controller.signal,
       emit: onTrail,
       models: mock ? mockModelMap() : {},
-      apiKey: mock ? 'demo' : '',
+      apiKey: resumeApiKey,
       mock,
       persistWorkPackage: IS_FIREBASE && userId
         ? workPackage => persistChatAgentWorkPackage(userId, conversationId, workPackage)
@@ -1167,6 +1176,13 @@ function mockModelMap(): Record<string, string> {
     chat_document_composer: 'demo/document-composer',
     chat_data_builder: 'demo/data-builder',
     chat_media_director: 'demo/media-director',
+    chat_image_generator: 'demo/image-generator',
+    chat_multimodal_analysis: 'demo/multimodal-analysis',
+    chat_image_evidence_specialist: 'demo/image-evidence-specialist',
+    chat_audio_evidence_specialist: 'demo/audio-evidence-specialist',
+    chat_video_evidence_specialist: 'demo/video-evidence-specialist',
+    chat_multimodal_evidence_synthesizer: 'demo/multimodal-evidence-synthesizer',
+    chat_audio_transcription: 'demo/audio-transcription',
     chat_export_packager: 'demo/export-packager',
   }
 }

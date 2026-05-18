@@ -91,6 +91,7 @@ function mockContext(overrides: Partial<SkillContext> = {}): SkillContext {
     uid: 'test-user',
     conversationId: 'conv-1',
     turnId: 'turn-1',
+    userInput: 'Pedido de teste',
     effort: 'medio',
     budget: createBudgetTracker(),
     emit: vi.fn(),
@@ -189,7 +190,10 @@ describe('generate_image skill', () => {
 
   it('deve pedir aprovacao antes de gerar imagem literal', async () => {
     const emit = vi.fn()
-    const ctx = mockContext({ emit })
+    const ctx = mockContext({
+      emit,
+      models: { chat_image_generator: 'openai/gpt-image-1' },
+    })
 
     const result = await findAndRunSkill('generate_image', {
       prompt: 'Renderize o armario de TV em MDF branco.',
@@ -204,7 +208,12 @@ describe('generate_image skill', () => {
   it('deve gerar artifact image com export PNG pronto quando aprovado', async () => {
     const emit = vi.fn()
     const persistWorkPackage = vi.fn(async packageData => packageData)
-    const ctx = mockContext({ apiKey: 'sk-test', emit, persistWorkPackage })
+    const ctx = mockContext({
+      apiKey: 'sk-test',
+      emit,
+      persistWorkPackage,
+      models: { chat_image_generator: 'openai/gpt-image-1' },
+    })
 
     const result = await findAndRunSkill('generate_image', {
       prompt: 'Renderize o armario de TV em MDF branco, vista frontal realista.',
@@ -229,7 +238,7 @@ describe('generate_image skill', () => {
       blob: expect.any(Blob),
     }))
     const workPackage = persistWorkPackage.mock.calls[0][0]
-    expect(workPackage.agent_key).toBe('generate_image')
+    expect(workPackage.agent_key).toBe('chat_image_generator')
     expect(workPackage.artifacts[0]).toEqual(expect.objectContaining({
       kind: 'image',
       format: 'png',
@@ -241,6 +250,57 @@ describe('generate_image skill', () => {
       download_url: 'https://storage.test/render.png',
     }))
     expect(emit.mock.calls.some(call => call[0].type === 'agent_work_package')).toBe(true)
+  })
+
+  it('deve bloquear override de modelo diferente do configurado para o agente', async () => {
+    const ctx = mockContext({
+      apiKey: 'sk-test',
+      models: { chat_image_generator: 'openai/gpt-image-1' },
+    })
+
+    const result = await findAndRunSkill('generate_image', {
+      prompt: 'Renderize uma capa editorial jurídica.',
+      title: 'Capa editorial',
+      model: 'google/gemini-2.5-flash-image',
+      approved: true,
+    }, ctx)
+
+    expect(result.tool_message).toContain('deve usar exatamente o modelo configurado pelo usuário')
+    expect(generateImageMock).not.toHaveBeenCalled()
+  })
+
+  it('deve gerar imagem em modo mock sem depender de fetch(data:)', async () => {
+    const fetchSpy = typeof fetch === 'function'
+      ? vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+          throw new Error(`fetch nao deveria ser chamado para ${String(input)}`)
+        })
+      : null
+    const emit = vi.fn()
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({
+      emit,
+      mock: true,
+      persistWorkPackage,
+      models: { chat_image_generator: 'mock/image' },
+    })
+
+    try {
+      const result = await findAndRunSkill('generate_image', {
+        prompt: 'Renderize um painel jurídico em modo demo.',
+        title: 'Painel demo',
+        approved: true,
+      }, ctx)
+
+      expect(result.tool_message).toContain('Imagem literal gerada com sucesso')
+      expect(uploadChatArtifactFileMock).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Painel demo',
+        extension: '.png',
+        blob: expect.any(Blob),
+      }))
+      expect(fetchSpy).not.toHaveBeenCalled()
+    } finally {
+      fetchSpy?.mockRestore()
+    }
   })
 })
 

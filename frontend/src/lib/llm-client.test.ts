@@ -51,6 +51,18 @@ function insufficientCreditsResponse(affordableTokens = 6352) {
   )
 }
 
+function monthlyLimitResponse() {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: 'Key limit exceeded (monthly limit). Manage it using https://openrouter.ai/workspaces/default/keys/test',
+        code: 403,
+      },
+    }),
+    { status: 403, headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
 function successResponse(content: string) {
   return new Response(
     JSON.stringify({
@@ -329,6 +341,22 @@ describe('llm-client', () => {
       expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toMatchObject({ model: 'gpt-4o-mini' })
     })
 
+    it('strips legacy x-ai prefixes for direct xAI text requests', async () => {
+      vi.spyOn(providerCredentials, 'resolveProviderCall').mockResolvedValue({
+        provider: PROVIDERS.xai,
+        apiKey: 'xai-test',
+        baseUrl: PROVIDERS.xai.baseUrl,
+      })
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(successResponse('ok from direct xai'))
+
+      const result = await callLLM('sk-or-test', 'system', 'user', 'x-ai/grok-4.20-multi-agent')
+
+      expect(result.content).toBe('ok from direct xai')
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(fetchSpy.mock.calls[0]?.[0]).toBe('https://api.x.ai/v1/chat/completions')
+      expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toMatchObject({ model: 'grok-4.20-multi-agent' })
+    })
+
     it('strips the provider prefix for direct Anthropic text requests', async () => {
       vi.spyOn(providerCredentials, 'resolveProviderCall').mockResolvedValue({
         provider: PROVIDERS.anthropic,
@@ -372,6 +400,49 @@ describe('llm-client', () => {
       const secondBody = JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body)) as { max_tokens: number }
       expect(firstBody.max_tokens).toBe(9000)
       expect(secondBody.max_tokens).toBe(6352)
+    })
+
+    it('treats OpenRouter monthly key limits as recoverable and uses fallback models', async () => {
+      vi.spyOn(providerCredentials, 'resolveProviderCall').mockImplementation(async (model: string) => {
+        if (model === 'x-ai/grok-4.20-multi-agent') {
+          return {
+            provider: PROVIDERS.openrouter,
+            apiKey: 'sk-or-test',
+            baseUrl: PROVIDERS.openrouter.baseUrl,
+          }
+        }
+
+        if (model === 'deepseek/deepseek-v4-pro') {
+          return {
+            provider: PROVIDERS.deepseek,
+            apiKey: 'sk-deepseek-test',
+            baseUrl: PROVIDERS.deepseek.baseUrl,
+          }
+        }
+
+        throw new Error(`unexpected model ${model}`)
+      })
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(monthlyLimitResponse())
+        .mockResolvedValueOnce(successResponse('ok after fallback'))
+
+      const result = await callLLMWithMessagesFallback(
+        'sk-or-test',
+        [{ role: 'user', content: 'Generate an image brief.' }],
+        'x-ai/grok-4.20-multi-agent',
+        ['deepseek/deepseek-v4-pro'],
+      )
+
+      expect(result.content).toBe('ok after fallback')
+      expect(result.provider_id).toBe('deepseek')
+      expect(result.operational).toMatchObject({
+        fallbackUsed: true,
+        fallbackFrom: 'x-ai/grok-4.20-multi-agent',
+      })
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+      expect(fetchSpy.mock.calls[1]?.[0]).toBe('https://api.deepseek.com/v1/chat/completions')
+      expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toMatchObject({ model: 'deepseek-v4-pro' })
     })
   })
 })

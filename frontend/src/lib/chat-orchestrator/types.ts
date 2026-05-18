@@ -64,6 +64,7 @@ export interface SkillContext {
   uid: string
   conversationId: string
   turnId: string
+  userInput: string
   effort: ChatEffortLevel
   budget: BudgetTracker
   signal: AbortSignal

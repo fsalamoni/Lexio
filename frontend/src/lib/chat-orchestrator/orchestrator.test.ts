@@ -227,6 +227,36 @@ describe('runChatTurn', () => {
     expect(approvalEvent).toMatchObject({ type: 'approval_requested', title: 'Gerar Novo Documento', risk_level: 'medium' })
   })
 
+  it('carries resume metadata when request_user_approval is used for generate_image', async () => {
+    const llmCall = vi.fn(async () => ({
+      raw: JSON.stringify({
+        tool: 'request_user_approval',
+        args: {
+          title: 'Gerar imagem da plataforma',
+          summary: 'Criar uma imagem literal em PNG.',
+          action: 'generate_image',
+          risk_level: 'low',
+          requested_permissions: ['execute'],
+        },
+      }),
+      usage: null,
+    })) satisfies OrchestratorLLMCall
+
+    const result = await runChatTurn(makeInput({
+      user_input: 'Crie uma imagem da plataforma jurídica em PNG.',
+      llmCall,
+    }))
+
+    expect(result.status).toBe('awaiting_user')
+    expect(result.pending_question).toMatchObject({
+      resume_tool: 'generate_image',
+      resume_args: {
+        prompt: 'Crie uma imagem da plataforma jurídica em PNG.',
+        approved: true,
+      },
+    })
+  })
+
   it('throws AbortError when the signal is already aborted', async () => {
     const ac = new AbortController()
     ac.abort()

@@ -34,7 +34,7 @@ import {
 } from './model-config'
 import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
 import { createOrchestratorUsageExecution, resolveOrchestratorModel } from './pipeline-orchestrator'
-import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL, blobToDataUrl } from './image-generation-client'
+import { generateImageViaOpenRouter, blobToDataUrl } from './image-generation-client'
 import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import type { VideoPipelineProgressMeta } from './video-pipeline-progress'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
@@ -1487,7 +1487,18 @@ REQUISITOS OBRIGATÓRIOS:
   // Scenes without clips (if Step 9 was skipped) fall back to single images.
   //
   if (wantMedia && scenes.length > 0 && checkpoint.completedStep < 10) {
-    const imageModel = input.imageModel || models.video_image_generator || DEFAULT_IMAGE_MODEL
+    const configuredImageModel = String(models.video_image_generator ?? '').trim()
+    if (!configuredImageModel) {
+      throw new Error('Nenhum modelo configurado para o agente "Gerador de Imagens" do pipeline de vídeo. Configure esse agente em Configurações antes de gerar mídia visual.')
+    }
+    const requestedImageModel = String(input.imageModel ?? '').trim()
+    if (requestedImageModel && requestedImageModel !== configuredImageModel) {
+      throw new Error(
+        `O pipeline de vídeo deve usar exatamente o modelo configurado para o agente "Gerador de Imagens" (${configuredImageModel}). ` +
+        `A chamada pediu "${requestedImageModel}", o que foi bloqueado para evitar desvio da configuração do agente.`,
+      )
+    }
+    const imageModel = configuredImageModel
     const imageConcurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
       envValue: import.meta.env.VITE_VIDEO_IMAGE_BATCH_CONCURRENCY as string | undefined,
       fallback: DEFAULT_IMAGE_BATCH_CONCURRENCY,

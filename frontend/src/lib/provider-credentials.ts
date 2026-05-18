@@ -39,6 +39,10 @@ interface SettingsBundle {
   catalog: ModelOption[]
 }
 
+const PROVIDER_PREFIX_ALIASES: Record<string, ProviderId> = {
+  'x-ai': 'xai',
+}
+
 function findProviderInSavedModels(
   modelId: string,
   providerSettings: ProviderSettingsMap,
@@ -55,6 +59,11 @@ function findProviderInSavedModels(
 
 function findProviderByPrefix(modelId: string): ProviderId | null {
   const firstSegment = modelId.split('/')[0]?.trim().toLowerCase()
+  const aliasedProvider = firstSegment ? PROVIDER_PREFIX_ALIASES[firstSegment] : undefined
+  if (aliasedProvider) {
+    return aliasedProvider
+  }
+
   if (firstSegment && firstSegment in PROVIDERS) {
     return firstSegment as ProviderId
   }
@@ -134,6 +143,13 @@ export function resolveProviderForModel(
   const fromCatalog = catalog.find(m => m.id === modelId)
   if (fromCatalog) {
     if (fromCatalog.providerId) {
+      if (fromCatalog.providerId === 'openrouter') {
+        const promotedProvider = promoteLegacyCatalogProvider(modelId, providerSettings, apiKeys)
+        if (promotedProvider) {
+          return promotedProvider
+        }
+      }
+
       return fromCatalog.providerId as ProviderId
     }
 

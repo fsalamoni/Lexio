@@ -1,6 +1,6 @@
 import { parseArtifactContent } from './artifact-parsers'
 import { formatCostBadge } from './currency-utils'
-import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL } from './image-generation-client'
+import { generateImageViaOpenRouter } from './image-generation-client'
 import { callLLMWithFallback, type LLMResult } from './llm-client'
 import {
   buildPipelineFallbackResolver,
@@ -258,7 +258,10 @@ export async function generatePresentationMediaAssets(
 
   const models = await loadPresentationPipelineModels()
   await validateScopedAgentModels('presentation_pipeline_models', models)
-  const imageModel = models.pres_image_generator || DEFAULT_IMAGE_MODEL
+  const imageModel = String(models.pres_image_generator ?? '').trim()
+  if (!imageModel) {
+    throw new Error('Nenhum modelo configurado para o agente "Gerador de Imagens de Slides". Configure esse agente em Configurações antes de gerar mídia da apresentação.')
+  }
   const runtimeHints = getRuntimeConcurrencyHints()
   const imageConcurrencyDiagnostics = resolveAdaptiveConcurrencyWithDiagnostics({
     envValue: import.meta.env.VITE_PRESENTATION_IMAGE_BATCH_CONCURRENCY as string | undefined,

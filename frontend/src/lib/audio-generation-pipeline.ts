@@ -2,7 +2,6 @@ import { parseArtifactContent } from './artifact-parsers'
 import { formatCostBadge } from './currency-utils'
 import { callLLMWithFallback, type LLMResult } from './llm-client'
 import { synthesizeAudioFromScript } from './notebook-audio-pipeline'
-import { DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import {
   AUDIO_PIPELINE_AGENT_DEFS,
   buildPipelineFallbackResolver,
@@ -276,13 +275,28 @@ export async function generateAudioLiteralMedia(
   input: {
     apiKey: string
     rawScriptContent: string
+    uid?: string
     voice?: string
     model?: string
   },
   onProgress?: StudioProgressCallback,
 ): Promise<AudioLiteralGenerationResult> {
-  const models = await loadAudioPipelineModels()
-  const ttsModel = input.model || models.audio_narrador || DEFAULT_OPENROUTER_TTS_MODEL
+  const models = await loadAudioPipelineModels(input.uid)
+  const configuredTtsModel = String(models.audio_narrador ?? '').trim()
+  if (!configuredTtsModel) {
+    throw new Error('Nenhum modelo configurado para o agente "Narrador / TTS" do pipeline de áudio. Configure esse agente em Configurações antes de gerar áudio literal.')
+  }
+
+  const requestedModel = String(input.model ?? '').trim()
+  if (requestedModel && requestedModel !== configuredTtsModel) {
+    throw new Error(
+      `O áudio literal deve usar exatamente o modelo configurado para o agente "Narrador / TTS" (${configuredTtsModel}). ` +
+      `A chamada pediu "${requestedModel}", o que foi bloqueado para evitar desvio da configuração do agente.`,
+    )
+  }
+
+  await validateScopedAgentModels('audio_pipeline_models', { audio_narrador: configuredTtsModel }, input.uid)
+  const ttsModel = configuredTtsModel
   const startedAt = Date.now()
   onProgress?.(1, 1, 'Gerando áudio literal…', {
     executionState: 'waiting_io',

@@ -97,6 +97,31 @@ function makeChatArtifactId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function resolveStrictConfiguredModel(
+  configuredModel: string | undefined,
+  requestedModel: string | undefined,
+  agentLabel: string,
+  settingsLabel: string,
+): { model?: string; error?: string } {
+  const normalizedConfigured = String(configuredModel ?? '').trim()
+  if (!normalizedConfigured) {
+    return {
+      error: `Erro: nenhum modelo configurado para o agente "${agentLabel}". Configure esse agente em ${settingsLabel} antes de gerar o artefato.`,
+    }
+  }
+
+  const normalizedRequested = String(requestedModel ?? '').trim()
+  if (normalizedRequested && normalizedRequested !== normalizedConfigured) {
+    return {
+      error:
+        `Erro: o agente "${agentLabel}" deve usar exatamente o modelo configurado pelo usuário (${normalizedConfigured}). ` +
+        `A chamada pediu "${normalizedRequested}", o que foi bloqueado para evitar desvio da configuração do agente.`,
+    }
+  }
+
+  return { model: normalizedConfigured }
+}
+
 function mapStudioArtifactKind(artifactType: StudioArtifactType): ChatArtifactKind {
   if (artifactType === 'apresentacao' || artifactType === 'apresentacao_v2') return 'presentation'
   if (artifactType === 'audio_script') return 'audio'
@@ -401,12 +426,23 @@ const generateImageSkill: Skill<GenerateImageArgs> = {
     const prompt = String(args.prompt ?? '').trim()
     const title = String(args.title ?? '').trim() || 'Imagem gerada pelo chat'
     const aspectRatio = String(args.aspect_ratio ?? '').trim() || undefined
-    const model = String(args.model ?? '').trim() || undefined
+    const requestedModel = String(args.model ?? '').trim() || undefined
     const negativePrompt = String(args.negative_prompt ?? '').trim() || undefined
 
     if (!prompt) {
       return { tool_message: 'Erro: "prompt" é obrigatório para gerar imagem literal.' }
     }
+
+    const resolvedModel = resolveStrictConfiguredModel(
+      ctx.models.chat_image_generator,
+      requestedModel,
+      'Gerador de Imagem Literal',
+      'Configurações > Orquestrador (Chat)',
+    )
+    if (!resolvedModel.model) {
+      return { tool_message: resolvedModel.error || 'Erro: modelo de imagem indisponível.' }
+    }
+    const model = resolvedModel.model
 
     if (!normalizeSideEffectApproval(args.approved)) {
       return requestApprovalForSkill(ctx, {
@@ -415,7 +451,7 @@ const generateImageSkill: Skill<GenerateImageArgs> = {
           'O chat vai chamar um provedor de geração de imagem, salvar o arquivo no Storage e exibir a imagem literalmente na conversa.',
           `Título: ${title}`,
           aspectRatio ? `Proporção: ${aspectRatio}` : '',
-          model ? `Modelo: ${model}` : 'Modelo: padrão do cliente de imagem',
+          `Modelo do agente: ${model}`,
         ].filter(Boolean).join('\n'),
         riskLevel: 'medium',
         permissions: ['write', 'network'],
@@ -529,7 +565,7 @@ const generateImageSkill: Skill<GenerateImageArgs> = {
       const workPackage = await deliverWorkPackage(ctx, {
         conversation_id: ctx.conversationId,
         turn_id: ctx.turnId,
-        agent_key: 'generate_image',
+        agent_key: 'chat_image_generator',
         task: `Gerar imagem literal: ${title}`,
         thought: {
           summary: 'Imagem literal criada e persistida como artifact do chat.',
@@ -577,21 +613,24 @@ const generateImageSkill: Skill<GenerateImageArgs> = {
 }
 
 async function imageDataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const match = /^data:([^;,]+);base64,(.+)$/i.exec(dataUrl)
+  if (match) {
+    if (typeof atob !== 'function') throw new Error('Ambiente sem suporte para decodificar imagem base64.')
+    const binary = atob(match[2])
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index)
+    }
+    return new Blob([bytes], { type: match[1] })
+  }
+
   if (typeof fetch === 'function') {
     const response = await fetch(dataUrl)
     if (!response.ok) throw new Error(`Falha ao converter imagem gerada em Blob: ${response.status}`)
     return response.blob()
   }
 
-  const match = /^data:([^;,]+);base64,(.+)$/i.exec(dataUrl)
-  if (!match) throw new Error('Resposta do provedor nao contem data URL de imagem valida.')
-  if (typeof atob !== 'function') throw new Error('Ambiente sem suporte para decodificar imagem base64.')
-  const binary = atob(match[2])
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index)
-  }
-  return new Blob([bytes], { type: match[1] })
+  throw new Error('Resposta do provedor nao contem data URL de imagem valida.')
 }
 
 function inferImageMimeType(dataUrl: string): string {

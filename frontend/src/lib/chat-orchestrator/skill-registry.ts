@@ -471,6 +471,8 @@ const requestUserApprovalSkill: Skill<{
   title?: string
   summary?: string
   action?: string
+  resume_tool?: string
+  resume_args?: Record<string, unknown>
   risk_level?: 'low' | 'medium' | 'high'
   requested_permissions?: string[]
   estimated_cost?: string
@@ -482,6 +484,8 @@ const requestUserApprovalSkill: Skill<{
     title: 'título curto da ação que será aprovada',
     summary: 'resumo claro do que será criado, alterado, custo/tempo estimado e destino',
     action: 'ação pretendida (ex.: generate_document_v3, run_notebook_studio, export_media)',
+    resume_tool: 'tool a executar depois da aprovação, quando a retomada precisar ser explícita',
+    resume_args: 'args para a tool retomada; use approved: true quando aplicável',
     risk_level: 'low | medium | high',
     requested_permissions: 'permissões necessárias: read, write, delete, rename, execute, network',
     estimated_cost: 'estimativa textual de custo, se houver',
@@ -499,6 +503,19 @@ const requestUserApprovalSkill: Skill<{
       ? args.risk_level
       : 'medium'
     const requestedPermissions = normalizeRequestedPermissions(args.requested_permissions)
+    const explicitResumeTool = typeof args.resume_tool === 'string' ? args.resume_tool.trim() : ''
+    const explicitResumeArgs = isPlainObject(args.resume_args) ? { ...args.resume_args } : undefined
+    const action = typeof args.action === 'string' ? args.action.trim() : ''
+    const resumeTool = explicitResumeTool || (action === 'generate_image' ? 'generate_image' : undefined)
+    const resumeArgs = resumeTool === 'generate_image'
+      ? {
+          prompt: typeof explicitResumeArgs?.prompt === 'string' && explicitResumeArgs.prompt.trim().length > 0
+            ? explicitResumeArgs.prompt
+            : ctx.userInput,
+          ...explicitResumeArgs,
+          approved: true,
+        }
+      : explicitResumeArgs
     let approvalId = `local-${Date.now()}`
 
     if (ctx.createApprovalRequest) {
@@ -531,9 +548,19 @@ const requestUserApprovalSkill: Skill<{
 
     return {
       tool_message: `Aguardando aprovação do usuário (${approvalId}): ${title}`,
-      awaiting_user: { question, options: ['aprovar', 'rejeitar', 'ajustar'], approval_id: approvalId },
+      awaiting_user: {
+        question,
+        options: ['aprovar', 'rejeitar', 'ajustar'],
+        approval_id: approvalId,
+        resume_tool: resumeTool,
+        resume_args: resumeArgs,
+      },
     }
   },
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function normalizeRequestedPermissions(value: unknown): Array<'read' | 'write' | 'delete' | 'rename' | 'execute' | 'network'> {

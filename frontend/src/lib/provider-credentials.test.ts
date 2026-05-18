@@ -74,6 +74,20 @@ describe('resolveProviderForModel', () => {
     ).toBe('openai')
   })
 
+  it('promotes explicit OpenRouter catalog entries to the direct provider when a direct key is configured', () => {
+    const catalog = [
+      mkModel({
+        id: 'deepseek/deepseek-v4-pro',
+        providerId: 'openrouter',
+        provider: 'DeepSeek',
+      }),
+    ]
+
+    expect(
+      resolveProviderForModel('deepseek/deepseek-v4-pro', catalog, {}, { deepseek_api_key: 'deepseek-test' }),
+    ).toBe('deepseek')
+  })
+
   it('finds provider by saved_models when model is not in catalog', () => {
     const providerSettings: ProviderSettingsMap = {
       elevenlabs: {
@@ -87,6 +101,12 @@ describe('resolveProviderForModel', () => {
 
   it('uses provider prefix only as last-resort for uncatalogued models', () => {
     expect(resolveProviderForModel('qwen/qwen3-235b-a22b')).toBe('qwen')
+  })
+
+  it('maps x-ai model prefixes to the direct xAI provider', () => {
+    expect(
+      resolveProviderForModel('x-ai/grok-4.20-multi-agent', [], {}, { xai_api_key: 'xai-test' }),
+    ).toBe('xai')
   })
 
   it('routes NVIDIA catalog entries to the direct NVIDIA provider', () => {

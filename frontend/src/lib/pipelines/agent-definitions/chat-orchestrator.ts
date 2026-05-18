@@ -179,6 +179,17 @@ export const CHAT_ORCHESTRATOR_AGENT_DEFS: AgentModelDef[] = [
     bestModelNote: 'Roteamento multimodal e planejamento de produção. Premium: Claude Sonnet, Gemini Pro, GPT-4o. Baratos: Gemini Flash, DeepSeek V3.',
   },
   {
+    key: 'chat_image_generator',
+    label: 'Gerador de Imagem Literal',
+    description: 'Gera imagens literais do chat e produz arquivos PNG/JPG/WEBP diretamente a partir do modelo configurado para essa função',
+    defaultModel: '',
+    recommendedTier: 'balanced',
+    icon: 'image',
+    agentCategory: 'synthesis',
+    requiredCapability: 'image',
+    bestModelNote: 'Use apenas modelos com geração nativa de imagem no catálogo pessoal, como Gemini Flash Image, GPT Image ou equivalentes suportados pelo provedor direto.',
+  },
+  {
     key: 'chat_multimodal_analysis',
     label: 'Analisador Multimodal',
     description: 'Lê imagens e frames de vídeos anexados, extrai OCR visual e resume evidências em contexto textual antes da trilha principal',

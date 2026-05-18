@@ -1,7 +1,7 @@
 import { callLLMWithFallback, callLLMWithMessagesFallback, type LLMResult } from './llm-client'
 import { formatCostBadge } from './currency-utils'
 import { loadModelCatalog } from './model-catalog'
-import { generateImageViaOpenRouter, DEFAULT_IMAGE_MODEL } from './image-generation-client'
+import { generateImageViaOpenRouter } from './image-generation-client'
 import { generateTTS, DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import { isExternalVideoProviderConfigured, requestExternalVideoClip } from './external-video-provider'
 import {
@@ -2005,7 +2005,10 @@ export async function generatePresentationV2MediaAssets(
   const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
   const resolveFallback = buildPipelineFallbackResolver(PRESENTATION_V2_PIPELINE_AGENT_DEFS, fallbackConfig)
   await validateScopedAgentModels('presentation_v2_pipeline_models', omitInactiveMediaModels(models, ['presentation_v2_image_generator']))
-  const imageModel = models.presentation_v2_image_generator || DEFAULT_IMAGE_MODEL
+  const imageModel = String(models.presentation_v2_image_generator ?? '').trim()
+  if (!imageModel) {
+    throw new Error('Nenhum modelo configurado para o agente "Gerador de Imagens Multimodais". Configure esse agente em Configurações antes de gerar mídia da apresentação v2.')
+  }
   const deck = parsed.data.deck
   const presentation = parsed.data.presentation
   const focusedSlideNumbers = new Set((options.slideNumbers || []).filter(Number.isFinite))
