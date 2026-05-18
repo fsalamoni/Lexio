@@ -326,13 +326,14 @@ function buildLocalCatalogueResult(theses: ThesisData[]): {
     .map(thesis => {
       const titleTokens = uniqueTokens(tokenizeSimilarityText(thesis.title))
       const summaryTokens = uniqueTokens(tokenizeSimilarityText(thesis.summary ?? ''))
+      const summaryText = thesis.summary?.trim() ?? ''
       const contentTokens = uniqueTokens(tokenizeSimilarityText(thesis.content.slice(0, 800)))
       const tagTokens = uniqueTokens((thesis.tags ?? []).flatMap(tag => tokenizeSimilarityText(tag)))
       const keywordTokens = uniqueTokens([...titleTokens, ...summaryTokens, ...contentTokens, ...tagTokens])
       const normalizedTitle = normalizeSimilarityText(thesis.title)
       const titleLooksGeneric = /^(nova\s+tese|tese|teste|rascunho|modelo)(\s|$)/.test(normalizedTitle)
       const lowQuality = thesis.content.trim().length < LOW_QUALITY_MIN_CONTENT_CHARS
-        || (keywordTokens.length < LOW_QUALITY_MIN_KEYWORDS && thesis.summary.trim().length < 60)
+        || (keywordTokens.length < LOW_QUALITY_MIN_KEYWORDS && summaryText.length < 60)
         || (titleLooksGeneric && thesis.content.trim().length < 320)
 
       return {

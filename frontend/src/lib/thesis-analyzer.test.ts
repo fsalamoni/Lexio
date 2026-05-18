@@ -415,16 +415,21 @@ describe('analyzeThesisBank parallel pipeline', () => {
 
   it('reports partial completion when no suggestions are generated because an agent failed', async () => {
     callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => {
-      if (model === 'curador-model') throw new Error('provider quota exceeded')
+      if (model === 'analista-model') throw new Error('provider quota exceeded')
       return responseForModel(model)
     })
 
-    const result = await analyzeThesisBank('sk-test', [thesis('t1', 'Tese 1')], [acervoDoc('doc-1')], modelMap)
+    const result = await analyzeThesisBank(
+      'sk-test',
+      [thesis('t1', 'Tese 1'), thesis('t2', 'Tese 2')],
+      [],
+      modelMap,
+    )
 
     expect(result.suggestions).toHaveLength(0)
     expect(result.executive_summary).toContain('concluída parcialmente')
     expect(result.pipeline_meta?.agent_failures).toEqual([
-      expect.objectContaining({ key: 'thesis_curador' }),
+      expect.objectContaining({ key: 'thesis_analista' }),
     ])
   })
 
