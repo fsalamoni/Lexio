@@ -8,6 +8,8 @@ describe('cost analytics coverage', () => {
     expect(getPhaseLabel('studio_roteirista_audio_script')).toBe('Estúdio: Roteirista · Resumo em Áudio')
     expect(getPhaseLabel('redacao')).toBe('Redação')
     expect(getPhaseLabel('v3_pipeline_orchestrator')).toBe('V3: Orquestrador do Pipeline')
+    expect(getPhaseLabel('thesis_catalogador')).toBe('Teses: Inventário Local (legado Catalogador)')
+    expect(getPhaseLabel('thesis_analista_repair')).toBe('Analista de Redundâncias (reparo JSON)')
     expect(getPhaseLabel('pres_image_generator')).toBe('Apresentação: Gerador de Imagens')
     expect(getPhaseLabel('media_video_clip_generation')).toBe('Vídeo: Geração de Clipes por Partes')
   })
