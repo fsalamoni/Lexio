@@ -7,6 +7,7 @@ import { buildSkillRegistry, listCallableAgentDescriptions } from './skill-regis
 import { OrchestratorDecisionParseError, parseOrchestratorDecision, renderSkillsManifest } from './tools-adapter'
 import { EFFORT_PRESETS } from './effort-presets'
 import { parseAgentOutputPackage } from './agent-output'
+import { isOperationalFailureMarkdown } from './operational-failure'
 import { renderCurrentTurnUserContent } from '../chat-context-builder'
 import { isEnabled } from '../feature-flags'
 import {
@@ -198,7 +199,12 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
 
       if (result.final_answer) {
         const missingExpected = findUnsatisfiedExpectedDeliverables(expectedDeliverables, latestArtifactsByLogicalId.values())
-        if (missingExpected.length > 0 && i < preset.maxIterations && deliverableGuardRejections < 2) {
+        if (
+          missingExpected.length > 0
+          && i < preset.maxIterations
+          && deliverableGuardRejections < 2
+          && !isOperationalFailureMarkdown(result.final_answer)
+        ) {
           deliverableGuardRejections += 1
           history = appendToolMessage(
             history,

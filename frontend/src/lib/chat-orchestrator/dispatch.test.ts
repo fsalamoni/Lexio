@@ -76,4 +76,26 @@ describe('dispatchSpecialistAgent', () => {
       expect.any(Object),
     )
   })
+
+  it('returns actionable operational failure markdown when the provider rejects the call', async () => {
+    llmMocks.callLLMWithMessages.mockRejectedValue(
+      new Error('OpenRouter API error 403: {"error":{"message":"Key limit exceeded (monthly limit).","code":403}}'),
+    )
+
+    const ctx = mockContext({
+      models: {
+        chat_writer: 'openrouter/test-writer',
+      },
+    })
+
+    const result = await dispatchSpecialistAgent({
+      agentKey: 'chat_writer',
+      task: 'Redija a resposta final.',
+      ctx,
+    })
+
+    expect(result.usage).toBeNull()
+    expect(result.output).toContain('## Falha operacional')
+    expect(result.output).toContain('Limite mensal da chave do provedor atingido')
+  })
 })

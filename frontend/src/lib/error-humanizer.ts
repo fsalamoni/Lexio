@@ -9,6 +9,13 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string; suggestion?: str
   { pattern: /timeout|ETIMEDOUT|ECONNABORTED/i, message: 'A operação demorou demais', suggestion: 'O servidor não respondeu a tempo. Tente novamente em alguns instantes.' },
   { pattern: /ECONNREFUSED/i, message: 'Servidor indisponível', suggestion: 'O serviço está temporariamente fora do ar. Tente novamente em alguns minutos.' },
 
+  // LLM/API specific (must come before generic HTTP status patterns)
+  { pattern: /key limit exceeded|monthly limit/i, message: 'Limite mensal da chave do provedor atingido', suggestion: 'A chave atual atingiu sua cota mensal. Troque a chave em Configurações > Provedores de IA ou ajuste o limite no provedor.' },
+  { pattern: /quota|billing|insufficient.*funds|more credits|can only afford/i, message: 'Créditos do provedor esgotados', suggestion: 'Verifique o saldo da sua chave de API nas configurações ou reduza o volume da solicitação.' },
+  { pattern: /context.*length|token.*limit|max.*tokens/i, message: 'Texto muito longo para o modelo', suggestion: 'Reduza o tamanho da solicitação ou use um modelo com janela maior.' },
+  { pattern: /invalid.*api.*key|authentication.*failed/i, message: 'Chave de API inválida', suggestion: 'Verifique suas chaves em Configurações > Chaves de API.' },
+  { pattern: /content.*filter|safety|moderation/i, message: 'Conteúdo bloqueado pelo provedor', suggestion: 'Reformule sua solicitação para evitar filtros de segurança.' },
+
   // HTTP status errors
   { pattern: /401|unauthorized/i, message: 'Sessão expirada', suggestion: 'Faça login novamente para continuar.' },
   { pattern: /403|forbidden/i, message: 'Acesso negado', suggestion: 'Você não tem permissão para realizar esta ação.' },
@@ -19,12 +26,6 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string; suggestion?: str
   { pattern: /500|internal\s*server/i, message: 'Erro interno do servidor', suggestion: 'O problema é do nosso lado. Tente novamente em instantes.' },
   { pattern: /502|bad\s*gateway/i, message: 'Servidor temporariamente indisponível', suggestion: 'O serviço está sendo reiniciado. Tente em alguns segundos.' },
   { pattern: /503|service\s*unavailable/i, message: 'Serviço indisponível', suggestion: 'O servidor está sobrecarregado ou em manutenção.' },
-
-  // LLM/API specific
-  { pattern: /quota|billing|insufficient.*funds|more credits|can only afford/i, message: 'Créditos do provedor esgotados', suggestion: 'Verifique o saldo da sua chave de API nas configurações ou reduza o volume da solicitação.' },
-  { pattern: /context.*length|token.*limit|max.*tokens/i, message: 'Texto muito longo para o modelo', suggestion: 'Reduza o tamanho da solicitação ou use um modelo com janela maior.' },
-  { pattern: /invalid.*api.*key|authentication.*failed/i, message: 'Chave de API inválida', suggestion: 'Verifique suas chaves em Configurações > Chaves de API.' },
-  { pattern: /content.*filter|safety|moderation/i, message: 'Conteúdo bloqueado pelo provedor', suggestion: 'Reformule sua solicitação para evitar filtros de segurança.' },
 
   // Firebase specific
   { pattern: /permission.*denied|missing or insufficient permissions|PERMISSION_DENIED/i, message: 'Permissão negada', suggestion: 'Verifique se sua conta tem acesso a este recurso.' },

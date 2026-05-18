@@ -3,6 +3,7 @@ import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import type { UsageExecutionRecord } from '../cost-analytics'
 import type { SkillContext } from './types'
 import { CHAT_AGENT_PACKAGE_PROMPT } from './agent-output'
+import { buildOperationalFailureMarkdown } from './operational-failure'
 
 /**
  * Specialist prompts. Discipline borrowed from SalomoneIA's specialist
@@ -127,8 +128,13 @@ export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Pro
       : await callLLMWithMessages(ctx.apiKey, messages, model, resolvedMaxTokens, temperature, callOptions)
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
-    const message = err instanceof Error ? err.message : String(err)
-    return { output: `Erro ao chamar ${agentKey}: ${message}`, usage: null }
+    return {
+      output: buildOperationalFailureMarkdown(
+        `Nao foi possível executar o agente ${agentKey}.`,
+        err,
+      ),
+      usage: null,
+    }
   }
 
   const usage = buildUsageRecord({

@@ -2,6 +2,7 @@ import { callLLMWithMessages, callLLMWithMessagesFallback } from '../llm-client'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import type { UsageExecutionRecord } from '../cost-analytics'
 import type { OrchestratorLLMCall, OrchestratorMessage } from './types'
+import { buildOperationalFailureMarkdown } from './operational-failure'
 
 /**
  * Default LLM bridge used by the orchestrator loop. Tests inject a
@@ -40,14 +41,18 @@ export const callOrchestratorLLM: OrchestratorLLMCall = async (params) => {
       : await callLLMWithMessages(apiKey, messages, model, perCallTokenCap, 0.2, llmOptions)
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
-    const message = err instanceof Error ? err.message : String(err)
     // Surface a synthetic forced-finalisation so the loop terminates
     // cleanly instead of bubbling the exception to the UI.
     return {
       raw: JSON.stringify({
         tool: 'submit_final_answer',
-        args: { markdown: `Erro ao consultar o orquestrador: ${message}.` },
-        rationale: 'Falha na chamada LLM.',
+        args: {
+          markdown: buildOperationalFailureMarkdown(
+            'Nao foi possível consultar o orquestrador para continuar a trilha.',
+            err,
+          ),
+        },
+        rationale: 'Falha operacional do provedor LLM.',
       }),
       usage: null,
     }

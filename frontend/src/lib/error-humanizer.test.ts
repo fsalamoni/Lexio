@@ -38,6 +38,11 @@ describe('error-humanizer', () => {
     expect(result.title).toBe('Créditos do provedor esgotados')
   })
 
+  it('handles OpenRouter monthly key limits before generic 403 handling', () => {
+    const result = humanizeError(new Error('OpenRouter API error 403: {"error":{"message":"Key limit exceeded (monthly limit). Manage it using https://openrouter.ai/workspaces/default/keys/...","code":403}}'))
+    expect(result.title).toBe('Limite mensal da chave do provedor atingido')
+  })
+
   it('handles OpenRouter credit-limit wording', () => {
     const result = humanizeError(new Error('OpenRouter API error 402: {"error":{"message":"This request requires more credits, or fewer max_tokens. You requested up to 9000 tokens, but can only afford 6352."}}'))
     expect(result.title).toBe('Créditos do provedor esgotados')

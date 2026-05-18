@@ -19,6 +19,8 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
+const forceDemoMode = import.meta.env.VITE_FORCE_DEMO_MODE === 'true'
+
 const firebaseConfigIssues = validateFirebaseWebConfig({
   projectId: firebaseConfig.projectId,
   authDomain: firebaseConfig.authDomain,
@@ -26,11 +28,9 @@ const firebaseConfigIssues = validateFirebaseWebConfig({
   appId: firebaseConfig.appId,
 })
 
-if (firebaseConfigIssues.length > 0) {
+if (!forceDemoMode && firebaseConfigIssues.length > 0) {
   console.error('[Firebase Config] Invalid production configuration:', firebaseConfigIssues.join(' | '))
 }
-
-const forceDemoMode = import.meta.env.VITE_FORCE_DEMO_MODE === 'true'
 const configuredFirestoreDatabaseId = String(import.meta.env.VITE_FIRESTORE_DATABASE_ID || '').trim()
 
 export const FIRESTORE_DATABASE_ID = configuredFirestoreDatabaseId || '(default)'
@@ -41,7 +41,7 @@ const firestoreDatabaseIssues = validateFirestoreDatabaseRouting({
   isProduction: import.meta.env.PROD,
 })
 
-if (firestoreDatabaseIssues.length > 0) {
+if (!forceDemoMode && firestoreDatabaseIssues.length > 0) {
   console.error('[Firebase Config] Invalid Firestore database routing:', firestoreDatabaseIssues.join(' | '))
 }
 

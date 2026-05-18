@@ -363,6 +363,37 @@ describe('runChatTurn', () => {
     expect(result.assistant_markdown).not.toContain('Pacote de entrega')
   })
 
+  it('does not re-loop when the final answer is already an actionable operational failure for a literal image request', async () => {
+    const events: ChatTrailEvent[] = []
+    const llmCall = vi.fn(async () => ({
+      raw: JSON.stringify({
+        tool: 'submit_final_answer',
+        args: {
+          markdown: [
+            '## Falha operacional',
+            'Nao foi possível gerar a imagem literal solicitada.',
+            '',
+            '- Motivo: Limite mensal da chave do provedor atingido',
+            '- Ação sugerida: Troque a chave em Configurações > Provedores de IA ou ajuste o limite no provedor.',
+          ].join('\n'),
+        },
+      }),
+      usage: null,
+    })) satisfies OrchestratorLLMCall
+
+    const result = await runChatTurn(makeInput({
+      user_input: 'Gere a imagem do projeto para mim em PNG.',
+      llmCall,
+      onTrail: e => events.push(e),
+    }))
+
+    expect(result.status).toBe('done')
+    expect(llmCall).toHaveBeenCalledTimes(1)
+    expect(result.assistant_markdown).toContain('## Falha operacional')
+    expect(result.assistant_markdown).toContain('Entrega literal pendente')
+    expect(events.some(e => e.type === 'error' && e.message.includes('Loop de orquestração interrompido'))).toBe(false)
+  })
+
   it('does not create a fallback bundle when an existing artifact already has downloads', async () => {
     const events: ChatTrailEvent[] = []
     let attempt = 0
