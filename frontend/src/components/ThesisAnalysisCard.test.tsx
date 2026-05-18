@@ -86,8 +86,8 @@ describe('ThesisAnalysisCard', () => {
     thesisAnalysisMocks.loadThesisAnalystModels.mockResolvedValue({ analyst: 'model-1' })
     thesisAnalysisMocks.analyzeThesisBank.mockImplementation(async (_apiKey, _theses, _docs, _modelMap, onProgress) => {
       onProgress([
-        { key: 'catalogador', label: 'Catalogador', status: 'done', executionState: 'completed', message: 'Catálogo consolidado' },
-        { key: 'compilador', label: 'Compilador', status: 'done', executionState: 'completed', message: 'Sugestões geradas' },
+        { key: 'thesis_analista', label: 'Analista de Redundâncias', status: 'done', executionState: 'completed', message: 'Grupos confirmados' },
+        { key: 'thesis_compilador', label: 'Compilador', status: 'done', executionState: 'completed', message: 'Sugestões geradas' },
       ])
       return {
         created_at: '2026-05-09T12:00:00.000Z',

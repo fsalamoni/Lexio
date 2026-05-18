@@ -3,7 +3,7 @@
  *
  * Responsibilities:
  * 1. Show summary: "X documentos analisados / Y documentos novos (não analisados)"
- * 2. Button "Analisar Teses" to trigger the 5-agent analysis pipeline
+ * 2. Button "Analisar Teses" to trigger the thesis analysis pipeline
  * 3. Live progress panel during analysis (one row per agent)
  * 4. Suggestion panel: list of AnalysisSuggestion items with Accept / Modify / Reject
  * 5. Persist last session metadata to Firestore on completion
@@ -556,7 +556,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
           </div>
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Análise do Banco de Teses</h3>
-            <p className="text-xs text-gray-500">Pipeline de curação com 5 agentes especializados</p>
+            <p className="text-xs text-gray-500">Pipeline com inventário local e 4 agentes LLM especializados</p>
           </div>
         </div>
         <button
@@ -708,7 +708,7 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
       <AgentTrailProgressModal
         isOpen={running || agentProgress.length > 0}
         title="Trilha de Análise do Banco de Teses"
-        subtitle="Pipeline paralelo de 5 agentes"
+        subtitle="Pipeline paralelo de 4 agentes LLM + inventário local"
         currentMessage={currentAgentMessage}
         percent={analysisPercent}
         steps={agentProgress.map(agent => ({

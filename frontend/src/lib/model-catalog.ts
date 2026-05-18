@@ -520,7 +520,7 @@ export async function fetchProviderModels(
 // ── Best-agent recommendation ─────────────────────────────────────────────────
 
 const CATEGORY_AGENTS: Record<AgentCategory, string[]> = {
-  extraction: ['Triagem', 'Buscador', 'Fact-Checker', 'Catalogador'],
+  extraction: ['Triagem', 'Buscador', 'Fact-Checker'],
   synthesis:  ['Compilador', 'Revisor', 'Moderador', 'Curador'],
   reasoning:  ['Pesquisador', 'Jurista', 'Adv. do Diabo', 'Jurista v2', 'Analista'],
   writing:    ['Redator'],

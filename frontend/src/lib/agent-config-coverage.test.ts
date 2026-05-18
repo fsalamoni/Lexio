@@ -155,7 +155,6 @@ describe('user-scoped agent configuration coverage', () => {
 
     expect(AGENT_CONFIG_DEFS.thesis_analyst_models.map(agent => agent.key)).toEqual([
       'thesis_pipeline_orchestrator',
-      'thesis_catalogador',
       'thesis_analista',
       'thesis_compilador',
       'thesis_curador',

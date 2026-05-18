@@ -3,11 +3,11 @@ import type { AgentModelDef } from '../../model-config'
 // ── Thesis Analyst Agent Definitions ─────────────────────────────────────────
 
 /**
- * Five-agent pipeline for the manual "Analisar Teses" feature.
+ * Thesis analysis pipeline for the manual "Analisar Teses" feature.
  *
  * Execution topology:
- *  Track A: Catalogador → Analista → Compilador
- *  Track B: Curador de Lacunas, started in parallel when runtime limits allow
+ *  Local inventory → Analista → Compilador
+ *  Curador de Lacunas in parallel when runtime limits allow
  *  Final: Revisor, after both tracks finish
  */
 export const THESIS_ANALYST_AGENT_DEFS: AgentModelDef[] = [
@@ -22,18 +22,9 @@ export const THESIS_ANALYST_AGENT_DEFS: AgentModelDef[] = [
     requiredCapability: 'text',
   },
   {
-    key: 'thesis_catalogador',
-    label: 'Catalogador',
-    description: 'Faz inventário das teses existentes e agrupa candidatas a duplicatas ou compilação',
-    defaultModel: '',
-    recommendedTier: 'fast',
-    icon: 'search',
-    agentCategory: 'extraction',
-  },
-  {
     key: 'thesis_analista',
     label: 'Analista de Redundâncias',
-    description: 'Analisa profundamente cada grupo, identificando duplicatas, complementares e contradições',
+    description: 'Analisa profundamente os grupos similares detectados localmente, identificando duplicatas, complementares e contradições',
     defaultModel: '',
     recommendedTier: 'balanced',
     icon: 'scale',

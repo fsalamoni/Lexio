@@ -13,7 +13,6 @@ vi.mock('./llm-client', async () => {
 
 vi.mock('./model-config', () => {
   const agentDefs = [
-    { key: 'thesis_catalogador', label: 'Catalogador', agentCategory: 'extraction' },
     { key: 'thesis_analista', label: 'Analista de Redundâncias', agentCategory: 'reasoning' },
     { key: 'thesis_compilador', label: 'Compilador', agentCategory: 'synthesis' },
     { key: 'thesis_curador', label: 'Curador de Lacunas', agentCategory: 'synthesis' },
@@ -36,7 +35,6 @@ import { analyzeThesisBank } from './thesis-analyzer'
 import type { AcervoDocumentData, ThesisData } from './firestore-types'
 
 const modelMap = {
-  thesis_catalogador: 'catalogador-model',
   thesis_analista: 'analista-model',
   thesis_compilador: 'compilador-model',
   thesis_curador: 'curador-model',
@@ -75,14 +73,14 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function thesis(id: string, title: string): ThesisData {
+function thesis(id: string, title: string, topic = 'inadimplemento contratual bancário'): ThesisData {
   return {
     id,
     title,
-    content: `${title}. Conteúdo jurídico robusto. `.repeat(20),
-    summary: `Resumo de ${title}`,
+    content: `${title}. ${topic}. Responsabilidade civil e perdas e danos pelo inadimplemento. `.repeat(12),
+    summary: `Resumo sobre ${topic}.`,
     legal_area_id: 'civil',
-    tags: ['civil'],
+    tags: ['civil', ...topic.split(' ').slice(0, 3)],
     usage_count: 0,
     source_type: 'manual',
     created_at: '2026-01-01T00:00:00.000Z',
@@ -103,19 +101,18 @@ function acervoDoc(id: string): AcervoDocumentData {
 }
 
 function responseForModel(model: string) {
-  if (model === 'catalogador-model') {
-    return llmResult(JSON.stringify({
-      similar_groups: [{ ids: ['t1', 't2'], titles: ['Tese 1', 'Tese 2'], reason: 'Sobreposição argumentativa.' }],
-      low_quality_ids: [],
-      thematic_gaps: ['Responsabilidade pré-contratual'],
-      catalogue_summary: 'Banco compacto.',
-    }), model, 120)
-  }
-
   if (model === 'analista-model') {
-    return llmResult(JSON.stringify([
-      { group_ids: ['t1', 't2'], analysis: 'Há redundância relevante.', recommendation: 'merge', confidence: 0.91 },
-    ]), model, 80)
+    return llmResult(JSON.stringify({
+      analysis: [
+        {
+          group_ids: ['t1', 't2'],
+          classification: 'complementary',
+          action: 'merge',
+          reasoning: 'Há redundância relevante com argumentos complementares.',
+          merge_value: 9,
+        },
+      ],
+    }), model, 80)
   }
 
   if (model === 'compilador-model') {
@@ -160,7 +157,10 @@ function responseForModel(model: string) {
 async function runDefaultAnalysis() {
   return analyzeThesisBank(
     'sk-test',
-    [thesis('t1', 'Tese 1'), thesis('t2', 'Tese 2')],
+    [
+      thesis('t1', 'Inadimplemento contratual em contratos bancários'),
+      thesis('t2', 'Responsabilidade por inadimplemento contratual bancário'),
+    ],
     [acervoDoc('doc-1')],
     modelMap,
   )
@@ -181,12 +181,12 @@ describe('analyzeThesisBank parallel pipeline', () => {
 
   it('starts Curador before the bank track completes when parallelism is available', async () => {
     vi.stubEnv('VITE_THESIS_ANALYSIS_PARALLEL_LIMIT', '2')
-    const catalogador = deferred<ReturnType<typeof llmResult>>()
+    const analista = deferred<ReturnType<typeof llmResult>>()
     const starts: string[] = []
 
     callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => {
       starts.push(model)
-      if (model === 'catalogador-model') return catalogador.promise
+      if (model === 'analista-model') return analista.promise
       return responseForModel(model)
     })
 
@@ -196,7 +196,7 @@ describe('analyzeThesisBank parallel pipeline', () => {
     expect(starts).toContain('curador-model')
     expect(starts.indexOf('curador-model')).toBeLessThan(starts.indexOf('analista-model') === -1 ? Number.POSITIVE_INFINITY : starts.indexOf('analista-model'))
 
-    catalogador.resolve(responseForModel('catalogador-model'))
+    analista.resolve(responseForModel('analista-model'))
     const result = await analysisPromise
 
     expect(result.pipeline_meta?.parallel_limit).toBe(2)
@@ -246,7 +246,7 @@ describe('analyzeThesisBank parallel pipeline', () => {
     const result = await runDefaultAnalysis()
 
     expect(result.pipeline_meta).toMatchObject({
-      pipeline_version: 'thesis_parallel_v1',
+      pipeline_version: 'thesis_parallel_v2',
       parallel_limit: expect.any(Number),
       compilador_parallel_limit: expect.any(Number),
       wall_clock_ms: expect.any(Number),
@@ -293,7 +293,7 @@ describe('analyzeThesisBank parallel pipeline', () => {
     )
 
     expect(progressSnapshots.some(snapshot =>
-      snapshot.some(agent => agent.key === 'thesis_catalogador' && agent.executionState === 'waiting_io'),
+      snapshot.some(agent => agent.key === 'thesis_analista' && agent.executionState === 'waiting_io'),
     )).toBe(true)
 
     const finalSnapshot = progressSnapshots[progressSnapshots.length - 1]
@@ -403,8 +403,9 @@ describe('analyzeThesisBank parallel pipeline', () => {
       },
     )
 
-    expect(result.suggestions).toHaveLength(1)
-    expect(result.suggestions[0]).toMatchObject({ type: 'create', title: 'Nova tese: Nova tese do acervo' })
+    expect(result.suggestions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'create', title: 'Nova tese: Nova tese do acervo' }),
+    ]))
     const finalSnapshot = progressSnapshots[progressSnapshots.length - 1]
     expect(finalSnapshot.find(agent => agent.key === 'thesis_revisor')).toMatchObject({
       status: 'done',
@@ -414,25 +415,43 @@ describe('analyzeThesisBank parallel pipeline', () => {
 
   it('reports partial completion when no suggestions are generated because an agent failed', async () => {
     callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => {
-      if (model === 'catalogador-model') throw new Error('provider quota exceeded')
+      if (model === 'analista-model') throw new Error('provider quota exceeded')
       return responseForModel(model)
     })
 
-    const result = await analyzeThesisBank('sk-test', [thesis('t1', 'Tese 1')], [], modelMap)
+    const result = await analyzeThesisBank(
+      'sk-test',
+      [thesis('t1', 'Tese 1'), thesis('t2', 'Tese 2')],
+      [],
+      modelMap,
+    )
 
     expect(result.suggestions).toHaveLength(0)
     expect(result.executive_summary).toContain('concluída parcialmente')
     expect(result.pipeline_meta?.agent_failures).toEqual([
-      expect.objectContaining({ key: 'thesis_catalogador' }),
+      expect.objectContaining({ key: 'thesis_analista' }),
     ])
   })
 
   it('appends the reliable fallback model after user-configured thesis fallbacks', async () => {
     resolveFallbackModelsMock.mockReturnValue(['user/fallback-model'])
 
-    await analyzeThesisBank('sk-test', [thesis('t1', 'Tese 1')], [], modelMap)
+    await analyzeThesisBank(
+      'sk-test',
+      [thesis('t1', 'Tema bancário A'), thesis('t2', 'Tema bancário B')],
+      [],
+      modelMap,
+    )
 
     expect(callLLMMock).toHaveBeenCalled()
     expect(callLLMMock.mock.calls[0][4]).toEqual(['user/fallback-model', 'google/gemini-2.5-flash'])
+  })
+
+  it('does not require or call a dedicated Catalogador model anymore', async () => {
+    callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => responseForModel(model))
+
+    await runDefaultAnalysis()
+
+    expect(callLLMMock.mock.calls.map(call => call[3])).not.toContain('catalogador-model')
   })
 })
