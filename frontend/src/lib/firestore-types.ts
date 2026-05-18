@@ -293,6 +293,12 @@ export interface ThesisAnalysisSessionData {
     runtime_cap?: number
     runtime_detail?: string | null
     compilador_runtime_detail?: string | null
+    theses_considered_count?: number
+    docs_considered_count?: number
+    docs_considered_ids?: string[]
+    mark_analyzed_doc_ids?: string[]
+    limit_notes?: string[]
+    agent_failures?: Array<{ key: string; label: string; message?: string }>
     runtime_diagnostics?: Record<string, unknown>
   }
 }

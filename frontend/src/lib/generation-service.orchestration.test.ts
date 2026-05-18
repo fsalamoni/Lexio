@@ -103,7 +103,7 @@ vi.mock('./feature-flags', () => ({
   isTruthyFlag: (value?: string) => ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase()),
 }))
 
-import { generateDocument } from './generation-service'
+import { generateAcervoEmenta, generateAcervoTags, generateDocument } from './generation-service'
 
 function llmResult(content: string, model: string) {
   return {
@@ -329,5 +329,84 @@ describe('generateDocument parallel pesquisador orchestration', () => {
     expect(pesquisadorPrompts[0]).not.toContain('<documento_base_acervo>')
     expect(pesquisadorPrompts[1]).toContain('<documento_base_acervo>')
     expect(pesquisadorPrompts[1]).toContain('Base revisada com pontos [COMPLEMENTAR].')
+  })
+
+  it('falls back to the deterministic acervo selection when the Buscador returns invalid JSON', async () => {
+    const callOrder: string[] = []
+
+    hoisted.callLLMWithFallbackMock.mockImplementation(async (...args: unknown[]) => {
+      const model = String(args[3])
+
+      switch (model) {
+        case 'triagem-model':
+          return llmResult(JSON.stringify({ tema: 'Nepotismo', palavras_chave: ['nepotismo'] }), model)
+        case 'acervo-buscador-model':
+          callOrder.push('acervo_buscador:start')
+          return llmResult('```json\n{"selected":[}\n```', model)
+        case 'acervo-compilador-model':
+          callOrder.push('acervo_compilador:start')
+          return llmResult('Base compilada do acervo.', model)
+        case 'acervo-revisor-model':
+          callOrder.push('acervo_revisor:start')
+          return llmResult('Base revisada com pontos [COMPLEMENTAR].', model)
+        case 'pesquisador-model':
+          return llmResult('Pesquisa concluída.', model)
+        case 'jurista-model':
+          return llmResult('Teses iniciais.', model)
+        case 'advogado-diabo-model':
+          return llmResult('Criticas relevantes.', model)
+        case 'jurista-v2-model':
+          return llmResult('Teses refinadas.', model)
+        case 'fact-checker-model':
+          return llmResult('Citações verificadas.', model)
+        case 'moderador-model':
+          return llmResult('Plano final.', model)
+        case 'redator-model':
+          return llmResult('Documento final completo. '.repeat(120), model)
+        default:
+          throw new Error(`Modelo inesperado no teste: ${model}`)
+      }
+    })
+
+    await generateDocument(
+      'user-1',
+      'doc-1',
+      'parecer',
+      'Preciso de um parecer sobre nepotismo em contratacao temporaria.',
+      ['administrative'],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    )
+
+    expect(callOrder).toContain('acervo_buscador:start')
+    expect(callOrder).toContain('acervo_compilador:start')
+  })
+
+  it('keeps acervo helpers resilient when the provider returns malformed JSON', async () => {
+    hoisted.callLLMWithFallbackMock
+      .mockResolvedValueOnce(llmResult('saida invalida', 'ementa-model'))
+      .mockResolvedValueOnce(llmResult('saida invalida', 'classificador-model'))
+
+    const ementa = await generateAcervoEmenta(
+      'sk-or-v1-test',
+      'parecer-nepotismo.docx',
+      'Texto jurídico relevante.',
+      'ementa-model',
+    )
+    const tags = await generateAcervoTags(
+      'sk-or-v1-test',
+      'parecer-nepotismo.docx',
+      'Texto jurídico relevante.',
+      'classificador-model',
+    )
+
+    expect(ementa.ementa).toContain('Tipo: N/A')
+    expect(ementa.keywords).toEqual(expect.arrayContaining(['parecer-nepotismo']))
+    expect(tags.natureza).toBe('consultivo')
+    expect(tags.area_direito).toEqual([])
+    expect(tags.assuntos).toEqual([])
   })
 })

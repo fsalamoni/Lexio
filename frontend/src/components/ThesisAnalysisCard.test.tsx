@@ -116,7 +116,7 @@ describe('ThesisAnalysisCard', () => {
         ],
         usage_summary: {},
         llm_executions: [],
-        pipeline_meta: {},
+        pipeline_meta: { mark_analyzed_doc_ids: ['doc-1', 'doc-2'], agent_failures: [] },
       }
     })
 
@@ -149,5 +149,47 @@ describe('ThesisAnalysisCard', () => {
       expect(thesisAnalysisMocks.toast.success).toHaveBeenCalledWith('Sugestão aplicada com sucesso')
       expect(screen.getByText('Aplicado com sucesso')).toBeTruthy()
     })
+  })
+
+  it('does not mark acervo docs as analyzed when the Curador track fails', async () => {
+    thesisAnalysisMocks.loadApiKeyValues.mockResolvedValue({ openrouter_api_key: 'sk-test-key' })
+    thesisAnalysisMocks.getAcervoAnalysisStatus
+      .mockResolvedValueOnce({ analyzed_count: 12, unanalyzed_count: 2, unanalyzed_docs: [{ id: 'doc-1' }, { id: 'doc-2' }] })
+      .mockResolvedValueOnce({ analyzed_count: 12, unanalyzed_count: 2, unanalyzed_docs: [{ id: 'doc-1' }, { id: 'doc-2' }] })
+    thesisAnalysisMocks.getLastThesisAnalysisSession.mockResolvedValue(null)
+    thesisAnalysisMocks.listTheses.mockResolvedValue({ items: [{ id: 'thesis-1', title: 'Tese atual' }] })
+    thesisAnalysisMocks.loadThesisAnalystModels.mockResolvedValue({ analyst: 'model-1' })
+    thesisAnalysisMocks.analyzeThesisBank.mockResolvedValue({
+      created_at: '2026-05-09T12:00:00.000Z',
+      total_theses_analyzed: 1,
+      total_docs_analyzed: 1,
+      new_doc_count: 2,
+      executive_summary: 'A análise foi concluída parcialmente.',
+      suggestions: [],
+      usage_summary: {},
+      llm_executions: [],
+      pipeline_meta: {
+        mark_analyzed_doc_ids: [],
+        agent_failures: [{ key: 'thesis_curador', label: 'Curador de Lacunas', message: 'Erro transitório do LLM (tente novamente)' }],
+      },
+    })
+
+    render(<ThesisAnalysisCard onThesesChanged={vi.fn()} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Análise do Banco de Teses')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Analisar Teses/i }))
+
+    await waitFor(() => {
+      expect(thesisAnalysisMocks.analyzeThesisBank).toHaveBeenCalled()
+      expect(thesisAnalysisMocks.toast.warning).toHaveBeenCalledWith(
+        'Análise concluída com falhas parciais',
+        'Alguns agentes falharam. Revise a trilha exibida e execute nova rodada para concluir o restante.',
+      )
+    })
+
+    expect(thesisAnalysisMocks.markAcervoDocumentsAnalyzed).not.toHaveBeenCalled()
   })
 })

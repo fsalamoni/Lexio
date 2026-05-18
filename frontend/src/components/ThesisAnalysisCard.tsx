@@ -375,9 +375,9 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
       }
       setSuggestionStates(states)
 
-      // Mark analyzed docs in Firestore (non-critical — don't abort analysis if this fails)
-      if (unanalyzedDocs.length > 0) {
-        const analyzedDocIds = unanalyzedDocs.map(d => d.id).filter((id): id is string => !!id)
+      // Mark only the docs effectively processed by the Curador (non-critical).
+      const analyzedDocIds = analysis.pipeline_meta?.mark_analyzed_doc_ids ?? []
+      if (analyzedDocIds.length > 0) {
         try {
           await withTransientFirebaseAuthRetry(() => markAcervoDocumentsAnalyzed(userId, analyzedDocIds))
         } catch {
@@ -421,6 +421,13 @@ export default function ThesisAnalysisCard({ onThesesChanged }: ThesisAnalysisCa
       }
 
       await loadStats()
+
+      if (analysis.pipeline_meta?.agent_failures?.length) {
+        toast.warning(
+          'Análise concluída com falhas parciais',
+          'Alguns agentes falharam. Revise a trilha exibida e execute nova rodada para concluir o restante.',
+        )
+      }
 
       if (analysis.suggestions.length === 0) {
         toast.success('Análise concluída', 'Nenhuma ação necessária no momento.')
