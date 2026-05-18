@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const callLLMMock = vi.fn()
-const resolveFallbackModelsMock = vi.fn(() => [])
+const resolveFallbackModelsMock = vi.fn<() => string[]>(() => [])
 
 vi.mock('./llm-client', async () => {
   const actual = await vi.importActual<typeof import('./llm-client')>('./llm-client')
