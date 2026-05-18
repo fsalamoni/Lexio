@@ -48,6 +48,32 @@ describe('resolveProviderForModel', () => {
     expect(resolveProviderForModel('anthropic/claude-sonnet-4', catalog)).toBe('openrouter')
   })
 
+  it('promotes legacy catalog entries to the provider that owns the saved model catalog entry', () => {
+    const catalog = [mkModel({ id: 'google/gemini-2.5-flash', providerId: undefined, provider: '' })]
+    const providerSettings: ProviderSettingsMap = {
+      google: {
+        enabled: true,
+        saved_models: [
+          mkModel({
+            id: 'google/gemini-2.5-flash',
+            providerId: 'google',
+            provider: 'Google AI',
+          }),
+        ],
+      },
+    }
+
+    expect(resolveProviderForModel('google/gemini-2.5-flash', catalog, providerSettings)).toBe('google')
+  })
+
+  it('promotes legacy catalog entries to the prefixed provider when a direct key is configured', () => {
+    const catalog = [mkModel({ id: 'openai/gpt-4o-mini', providerId: undefined, provider: '' })]
+
+    expect(
+      resolveProviderForModel('openai/gpt-4o-mini', catalog, {}, { openai_api_key: 'sk-test' }),
+    ).toBe('openai')
+  })
+
   it('finds provider by saved_models when model is not in catalog', () => {
     const providerSettings: ProviderSettingsMap = {
       elevenlabs: {

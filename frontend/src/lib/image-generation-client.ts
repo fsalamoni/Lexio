@@ -115,15 +115,15 @@ function isRecoverableImageModelError(error: unknown): boolean {
     || /modalit(?:y|ies)/i.test(message)
 }
 
-function buildImageModelCandidates(model: string, resolved: ResolvedProviderCall, preferOpenRouterKey: boolean): string[] {
-  const candidates = preferOpenRouterKey || resolved.provider.dialect === 'openrouter'
+function buildImageModelCandidates(model: string, resolved: ResolvedProviderCall, useLegacyOpenRouterFallback: boolean): string[] {
+  const candidates = useLegacyOpenRouterFallback || resolved.provider.dialect === 'openrouter'
     ? uniqueStrings([model, ...OPENROUTER_IMAGE_MODEL_FALLBACKS].map(rewriteOpenRouterImageModelId))
     : uniqueStrings([
         normalizeModelForProvider(model, resolved.provider.id),
         ...(DIRECT_IMAGE_MODEL_FALLBACKS[resolved.provider.id] || []),
       ])
 
-  if (preferOpenRouterKey || resolved.provider.dialect === 'openrouter') {
+  if (useLegacyOpenRouterFallback || resolved.provider.dialect === 'openrouter') {
     const availableCandidates = candidates.filter(candidate => !unavailableOpenRouterImageModels.has(candidate))
     return availableCandidates.length > 0 ? availableCandidates : candidates
   }
@@ -335,11 +335,13 @@ export async function generateImage(opts: ImageGenerationOptions): Promise<Image
   const model = rewriteOpenRouterImageModelId(opts.model || DEFAULT_IMAGE_MODEL)
   const uid = opts.uid ?? getCurrentUserId() ?? undefined
   const preferOpenRouterKey = isLikelyOpenRouterKey(opts.apiKey)
+  let useLegacyOpenRouterFallback = false
   let resolved: ResolvedProviderCall
   try {
     resolved = await resolveProviderCall(model, uid)
   } catch (error) {
     if (!preferOpenRouterKey) throw error
+    useLegacyOpenRouterFallback = true
     resolved = {
       provider: {
         id: 'openrouter',
@@ -352,13 +354,13 @@ export async function generateImage(opts: ImageGenerationOptions): Promise<Image
     }
   }
 
-  const candidateModels = buildImageModelCandidates(model, resolved, preferOpenRouterKey)
+  const candidateModels = buildImageModelCandidates(model, resolved, useLegacyOpenRouterFallback)
   let lastError: unknown = null
 
   for (let index = 0; index < candidateModels.length; index++) {
     const candidateModel = candidateModels[index]
     try {
-      if (preferOpenRouterKey || resolved.provider.dialect === 'openrouter') {
+      if (useLegacyOpenRouterFallback || resolved.provider.dialect === 'openrouter') {
         const openrouterApiKey = preferOpenRouterKey ? opts.apiKey as string : resolved.apiKey
         return await generateImageWithOpenRouter({
           ...opts,
@@ -389,7 +391,7 @@ export async function generateImage(opts: ImageGenerationOptions): Promise<Image
       if (index >= candidateModels.length - 1 || !isRecoverableImageModelError(error)) {
         throw error
       }
-      if (preferOpenRouterKey || resolved.provider.dialect === 'openrouter') {
+      if (useLegacyOpenRouterFallback || resolved.provider.dialect === 'openrouter') {
         unavailableOpenRouterImageModels.add(candidateModel)
       }
       console.warn(`[ImageGen] Modelo ${candidateModel} indisponível; tentando fallback ${candidateModels[index + 1]}.`)

@@ -145,7 +145,7 @@ describe('image-generation-client', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body)).model).toBe('google/gemini-3.1-flash-image-preview')
   })
 
-  it('strips the provider prefix for direct OpenAI image generation', async () => {
+  it('keeps direct OpenAI image generation even when the legacy key looks like OpenRouter', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -167,6 +167,7 @@ describe('image-generation-client', () => {
     })
 
     await generateImage({
+      apiKey: 'sk-or-v1-legacy',
       prompt: 'Gerar imagem institucional',
       model: 'openai/gpt-image-1',
     })

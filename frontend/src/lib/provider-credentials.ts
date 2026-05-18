@@ -39,6 +39,52 @@ interface SettingsBundle {
   catalog: ModelOption[]
 }
 
+function findProviderInSavedModels(
+  modelId: string,
+  providerSettings: ProviderSettingsMap,
+): ProviderId | null {
+  for (const [pid, entry] of Object.entries(providerSettings)) {
+    if (!entry?.saved_models) continue
+    if (entry.saved_models.some(model => model.id === modelId)) {
+      return pid as ProviderId
+    }
+  }
+
+  return null
+}
+
+function findProviderByPrefix(modelId: string): ProviderId | null {
+  const firstSegment = modelId.split('/')[0]?.trim().toLowerCase()
+  if (firstSegment && firstSegment in PROVIDERS) {
+    return firstSegment as ProviderId
+  }
+
+  return null
+}
+
+function hasConfiguredDirectApiKey(providerId: ProviderId, apiKeys: Record<string, string>): boolean {
+  if (providerId === 'openrouter' || providerId === 'ollama') return false
+  return Boolean(apiKeys[apiKeyFieldForProvider(providerId)]?.trim())
+}
+
+function promoteLegacyCatalogProvider(
+  modelId: string,
+  providerSettings: ProviderSettingsMap,
+  apiKeys: Record<string, string>,
+): ProviderId | null {
+  const savedModelProvider = findProviderInSavedModels(modelId, providerSettings)
+  if (savedModelProvider && savedModelProvider !== 'openrouter') {
+    return savedModelProvider
+  }
+
+  const prefixedProvider = findProviderByPrefix(modelId)
+  if (prefixedProvider && hasConfiguredDirectApiKey(prefixedProvider, apiKeys)) {
+    return prefixedProvider
+  }
+
+  return null
+}
+
 export function normalizeProviderBaseUrl(provider: ProviderDefinition, baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '')
   if (!trimmed) return provider.baseUrl
@@ -83,6 +129,7 @@ export function resolveProviderForModel(
   modelId: string,
   catalog: ModelOption[] = [],
   providerSettings: ProviderSettingsMap = {},
+  apiKeys: Record<string, string> = {},
 ): ProviderId {
   const fromCatalog = catalog.find(m => m.id === modelId)
   if (fromCatalog) {
@@ -99,21 +146,27 @@ export function resolveProviderForModel(
 
     // Legacy personal catalogs (seeded from AVAILABLE_MODELS) did not store a
     // dispatch provider; those entries historically route through OpenRouter.
+    // When the same model is now owned by a direct provider catalog, or the
+    // prefixed provider already has a configured direct key, prefer that
+    // provider at execution time instead of pinning the request to OpenRouter.
+    const promotedProvider = promoteLegacyCatalogProvider(modelId, providerSettings, apiKeys)
+    if (promotedProvider) {
+      return promotedProvider
+    }
+
     return 'openrouter'
   }
 
   // Then check provider-specific saved catalogs.
-  for (const [pid, entry] of Object.entries(providerSettings)) {
-    if (!entry?.saved_models) continue
-    if (entry.saved_models.some(m => m.id === modelId)) {
-      return pid as ProviderId
-    }
+  const savedModelProvider = findProviderInSavedModels(modelId, providerSettings)
+  if (savedModelProvider) {
+    return savedModelProvider
   }
 
   // Last-resort heuristic for uncatalogued/direct model ids.
-  const firstSegment = modelId.split('/')[0]?.trim().toLowerCase()
-  if (firstSegment && firstSegment in PROVIDERS) {
-    return firstSegment as ProviderId
+  const prefixedProvider = findProviderByPrefix(modelId)
+  if (prefixedProvider) {
+    return prefixedProvider
   }
 
   return 'openrouter'
@@ -134,7 +187,7 @@ export async function resolveProviderCall(
   uid?: string,
 ): Promise<ResolvedProviderCall> {
   const bundle = await loadSettingsBundle(uid)
-  const providerId = resolveProviderForModel(modelId, bundle.catalog, bundle.providerSettings)
+  const providerId = resolveProviderForModel(modelId, bundle.catalog, bundle.providerSettings, bundle.apiKeys)
   const provider = PROVIDERS[providerId]
   if (!provider) {
     throw new Error(`Provedor desconhecido para o modelo "${modelId}".`)

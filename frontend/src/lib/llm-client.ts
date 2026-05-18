@@ -438,6 +438,12 @@ interface ProviderRequestPlan {
   parseResponse: (raw: string) => { content: string; tokensIn: number; tokensOut: number; cost?: number }
 }
 
+function normalizeModelForDirectProvider(model: string, providerId: ProviderDefinition['id']): string {
+  if (providerId === 'openrouter') return model
+  const prefix = `${providerId}/`
+  return model.startsWith(prefix) ? model.slice(prefix.length) : model
+}
+
 function buildOpenRouterPlan(
   resolved: ResolvedProviderCall,
   messages: ChatMessage[],
@@ -466,6 +472,7 @@ function buildOpenAICompatiblePlan(
   maxTokens: number,
   temperature: number,
 ): ProviderRequestPlan {
+  const normalizedModel = normalizeModelForDirectProvider(model, resolved.provider.id)
   const url = `${resolved.baseUrl.replace(/\/+$/, '')}/chat/completions`
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -480,7 +487,7 @@ function buildOpenAICompatiblePlan(
   return {
     url,
     headers,
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+    body: JSON.stringify({ model: normalizedModel, messages, max_tokens: maxTokens, temperature }),
     parseResponse: parseOpenAIChatResponse,
   }
 }
@@ -492,6 +499,7 @@ function buildAnthropicPlan(
   maxTokens: number,
   temperature: number,
 ): ProviderRequestPlan {
+  const normalizedModel = normalizeModelForDirectProvider(model, resolved.provider.id)
   const url = `${resolved.baseUrl.replace(/\/+$/, '')}/v1/messages`
   // Anthropic separates the system prompt from the messages list.
   const systemMessages = messages
@@ -512,7 +520,7 @@ function buildAnthropicPlan(
     url,
     headers,
     body: JSON.stringify({
-      model,
+      model: normalizedModel,
       messages: conversation,
       system: systemMessages || undefined,
       max_tokens: maxTokens,

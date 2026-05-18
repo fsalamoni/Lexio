@@ -7,6 +7,8 @@ import {
   RELIABLE_TEXT_FALLBACK_MODEL,
   TransientLLMError,
 } from './llm-client'
+import * as providerCredentials from './provider-credentials'
+import { PROVIDERS } from './providers'
 
 function unavailableModelResponse() {
   return new Response(
@@ -57,6 +59,19 @@ function successResponse(content: string) {
         prompt_tokens: 11,
         completion_tokens: 22,
         cost: 0.0001,
+      },
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
+function anthropicSuccessResponse(content: string) {
+  return new Response(
+    JSON.stringify({
+      content: [{ type: 'text', text: content }],
+      usage: {
+        input_tokens: 11,
+        output_tokens: 22,
       },
     }),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -296,6 +311,38 @@ describe('llm-client', () => {
 
       expect(result.content).toBe('{"quality":{"score":84}}')
       expect(fetchSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('strips the provider prefix for direct OpenAI-compatible text requests', async () => {
+      vi.spyOn(providerCredentials, 'resolveProviderCall').mockResolvedValue({
+        provider: PROVIDERS.openai,
+        apiKey: 'sk-openai-test',
+        baseUrl: PROVIDERS.openai.baseUrl,
+      })
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(successResponse('ok from direct openai'))
+
+      const result = await callLLM('sk-or-test', 'system', 'user', 'openai/gpt-4o-mini')
+
+      expect(result.content).toBe('ok from direct openai')
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(fetchSpy.mock.calls[0]?.[0]).toBe('https://api.openai.com/v1/chat/completions')
+      expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toMatchObject({ model: 'gpt-4o-mini' })
+    })
+
+    it('strips the provider prefix for direct Anthropic text requests', async () => {
+      vi.spyOn(providerCredentials, 'resolveProviderCall').mockResolvedValue({
+        provider: PROVIDERS.anthropic,
+        apiKey: 'sk-ant-test',
+        baseUrl: PROVIDERS.anthropic.baseUrl,
+      })
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(anthropicSuccessResponse('ok from direct anthropic'))
+
+      const result = await callLLM('sk-or-test', 'system', 'user', 'anthropic/claude-sonnet-4')
+
+      expect(result.content).toBe('ok from direct anthropic')
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(fetchSpy.mock.calls[0]?.[0]).toBe('https://api.anthropic.com/v1/messages')
+      expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toMatchObject({ model: 'claude-sonnet-4' })
     })
 
     it('does not retry timeout on the same model, surfacing TransientLLMError immediately', async () => {
