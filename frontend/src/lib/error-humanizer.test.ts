@@ -40,7 +40,8 @@ describe('error-humanizer', () => {
 
   it('handles OpenRouter monthly key limits before generic 403 handling', () => {
     const result = humanizeError(new Error('OpenRouter API error 403: {"error":{"message":"Key limit exceeded (monthly limit). Manage it using https://openrouter.ai/workspaces/default/keys/...","code":403}}'))
-    expect(result.title).toBe('Limite mensal da chave do provedor atingido')
+    expect(result.title).toBe('Limite mensal da chave atingido (não é falta de saldo)')
+    expect(result.detail).toContain('limite de gasto mensal independente do saldo')
   })
 
   it('handles OpenRouter credit-limit wording', () => {

@@ -123,6 +123,11 @@ const MAX_THEMATIC_GAPS_FOR_CURADOR = 8
 const MAX_ANALISTA_GROUPS = 10
 const ANALISTA_THESIS_CONTENT_CHARS = 500
 const COMPILADOR_THESIS_CONTENT_CHARS = 900
+// Compiled legal theses can run to ~5k chars (title + full content + summary
+// + tags + quality_score), so the model needs enough budget to emit a
+// complete JSON object. 2500 was too tight and produced truncated payloads
+// that the parser could not recover.
+const COMPILADOR_MAX_TOKENS = 4000
 const MAX_REVISOR_SUGGESTIONS = 30
 const REVISOR_CREATE_SUMMARY_CHARS = 160
 const LOW_QUALITY_MIN_CONTENT_CHARS = 180
@@ -528,8 +533,15 @@ function agentErrorMessage(err: unknown): string {
   if (err instanceof TypeError) return 'Erro de rede (tente novamente)'
   if (err instanceof TransientLLMError) {
     const message = err.message
-    if (/key limit|monthly limit|quota|insufficient.*credit|more credits|can only afford/i.test(message)) {
-      return 'Limite de créditos do provedor atingido — troque a chave ou modelo em Configurações'
+    if (/key limit|monthly limit/i.test(message)) {
+      // OpenRouter exposes a per-key monthly spend cap that is independent
+      // of the account balance — the user can still have credits but the
+      // specific key has hit its own ceiling. Be explicit so the user does
+      // not look for a non-existent billing problem.
+      return 'Limite mensal da chave atingido (não é falta de saldo) — ajuste o limite da chave no painel do provedor (openrouter.ai/settings/keys) ou use outra chave'
+    }
+    if (/insufficient.*credit|more credits|can only afford|quota/i.test(message)) {
+      return 'Créditos do provedor esgotados — adicione saldo ou troque a chave em Configurações'
     }
     if (/timed out|timeout|tempo limite/i.test(message)) {
       return 'Tempo limite excedido (tente novamente)'
@@ -1031,7 +1043,7 @@ export async function analyzeThesisBank(
           `Compile as seguintes ${groupTheses.length} teses jurídicas em uma única tese superior:\n\n${versionsText}`,
           modelMap['thesis_compilador'],
           resolveAgentFallbacks('thesis_compilador', modelMap['thesis_compilador']),
-          2500,
+          COMPILADOR_MAX_TOKENS,
           0.15,
         )
         recordAgentDuration(res)
@@ -1052,13 +1064,48 @@ export async function analyzeThesisBank(
           duration_ms: res.duration_ms,
           ...buildExecutionTelemetry(res, compiladorRuntimeUsageMeta),
         }))
-        const compiled = parseJsonObject(res.content) as {
+        type CompiledThesis = {
           title: string
           content: string
           summary: string
           legal_area_id: string
           tags?: string[]
           quality_score?: number
+        }
+        let compiled: CompiledThesis
+        try {
+          compiled = parseJsonObject(res.content) as CompiledThesis
+        } catch (parseError) {
+          console.warn(`Compilador returned invalid JSON for group ${groupIndex + 1}; requesting repair pass:`, parseError)
+          notify('thesis_compilador', 'running', `Compilador corrigindo JSON do grupo ${groupIndex + 1}/${analysisMergeGroups.length}...`, 'waiting_io')
+          const repair = await callLLMWithFallback(
+            apiKey,
+            'Você corrige saídas JSON inválidas do Compilador de teses jurídicas. Retorne APENAS um objeto JSON válido, sem markdown, sem comentários e sem texto fora do JSON.',
+            `A saída abaixo deveria ser um objeto JSON válido com os campos {"title","content","summary","legal_area_id","tags","quality_score"}. Corrija a sintaxe, preserve os campos úteis e, se algum campo estiver truncado, conclua-o de forma consistente.\n\n${res.content.slice(0, 12_000)}`,
+            modelMap['thesis_compilador'],
+            resolveAgentFallbacks('thesis_compilador', modelMap['thesis_compilador']),
+            COMPILADOR_MAX_TOKENS,
+            0,
+          )
+          recordAgentDuration(repair)
+          llmExecutions.push(createUsageExecutionRecord({
+            source_type: 'thesis_analysis',
+            source_id: sessionId,
+            created_at: now,
+            phase: 'thesis_compilador_repair',
+            agent_name: 'Compilador (reparo JSON)',
+            model: repair.model,
+            provider_id: repair.provider_id ?? repair.operational?.providerId,
+            provider_label: repair.provider_label ?? repair.operational?.providerLabel,
+            requested_model: repair.operational?.requestedModel,
+            resolved_model: repair.operational?.resolvedModel,
+            tokens_in: repair.tokens_in,
+            tokens_out: repair.tokens_out,
+            cost_usd: repair.cost_usd,
+            duration_ms: repair.duration_ms,
+            ...buildExecutionTelemetry(repair, compiladorRuntimeUsageMeta),
+          }))
+          compiled = parseJsonObject(repair.content) as CompiledThesis
         }
         compiledGroupsByIndex[groupIndex] = {
           source_ids: group.group_ids,
@@ -1240,11 +1287,14 @@ export async function analyzeThesisBank(
 
       // Map Revisor output back to AnalysisSuggestion, preserving compiled content
       finalSuggestions = (parsed.suggestions ?? []).map(s => {
-        // Enrich with the original compiled thesis data if available
+        // Enrich with the original compiled thesis data if available.
+        // LLMs frequently drop the temp_id we send in the payload, so we
+        // also fall back to matching by suggestion type + affected_thesis_ids.
         const original = rawSuggestions.find(r => r.temp_id === s.temp_id)
         let proposedThesis = s.proposed_thesis
+        const suggestionType = (s.type ?? original?.type) as SuggestionType | undefined
 
-        if (!proposedThesis && original?.type === 'merge') {
+        if (!proposedThesis && (original?.type === 'merge' || suggestionType === 'merge')) {
           const cg = compiledGroups.find(c =>
             c.source_ids.some(id => s.affected_thesis_ids?.includes(id))
           )
