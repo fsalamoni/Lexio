@@ -303,6 +303,55 @@ describe('analyzeThesisBank parallel pipeline', () => {
     })
   })
 
+  it('always finalizes the orchestrator badge (never stuck at "running") on a successful run', async () => {
+    const progressSnapshots: Array<Array<{ key: string; status: string; message?: string }>> = []
+
+    callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => responseForModel(model))
+
+    await analyzeThesisBank(
+      'sk-test',
+      [thesis('t1', 'Tese 1'), thesis('t2', 'Tese 2')],
+      [acervoDoc('doc-1')],
+      modelMap,
+      (agents) => {
+        progressSnapshots.push(agents.map(agent => ({ key: agent.key, status: agent.status, message: agent.message })))
+      },
+    )
+
+    const finalSnapshot = progressSnapshots[progressSnapshots.length - 1]
+    const orchestrator = finalSnapshot.find(agent => agent.key === 'thesis_pipeline_orchestrator')
+    expect(orchestrator?.status).toBe('done')
+    expect(orchestrator?.message).toContain('Pipeline concluído')
+  })
+
+  it('still finalizes the orchestrator when downstream LLM calls keep failing (no hung "running" state)', async () => {
+    const progressSnapshots: Array<Array<{ key: string; status: string; message?: string }>> = []
+
+    // Every LLM call fails with the same quota error as the production
+    // scenario. The pipeline degrades through local fallbacks, and the
+    // orchestrator must still be marked terminal so the UI moves on.
+    callLLMMock.mockImplementation(async () => {
+      const { TransientLLMError } = await import('./llm-client')
+      throw new TransientLLMError('OpenRouter API error 403: Key limit exceeded (monthly limit)')
+    })
+
+    await analyzeThesisBank(
+      'sk-test',
+      [thesis('t1', 'Tese 1'), thesis('t2', 'Tese 2')],
+      [acervoDoc('doc-1')],
+      modelMap,
+      (agents) => {
+        progressSnapshots.push(agents.map(agent => ({ key: agent.key, status: agent.status, message: agent.message })))
+      },
+    )
+
+    const finalSnapshot = progressSnapshots[progressSnapshots.length - 1]
+    const orchestrator = finalSnapshot.find(agent => agent.key === 'thesis_pipeline_orchestrator')
+    // The orchestrator must reach a terminal state, never stay running/pending.
+    expect(orchestrator?.status).toBe('done')
+    expect(orchestrator?.message).toContain('fallback')
+  })
+
   it('keeps the Revisor JSON repair pass working', async () => {
     callLLMMock.mockImplementation(async (_apiKey, system: string, _prompt, model: string) => {
       if (model === 'revisor-model' && !String(system).includes('corrige saídas JSON')) {
@@ -361,7 +410,7 @@ describe('analyzeThesisBank parallel pipeline', () => {
   it('compacts the Curador prompt to avoid provider prompt-token limits', async () => {
     const curadorPrompts: string[] = []
     const largeTheses = Array.from({ length: 120 }, (_, index) => thesis(`t${index}`, `Tese extensa ${index}`))
-    const largeDocs = Array.from({ length: 5 }, (_, index) => ({
+    const largeDocs = Array.from({ length: 8 }, (_, index) => ({
       ...acervoDoc(`doc-${index}`),
       text_content: `Documento ${index}. ${'Fundamentação jurídica detalhada. '.repeat(500)}`,
     }))
@@ -374,10 +423,15 @@ describe('analyzeThesisBank parallel pipeline', () => {
     await analyzeThesisBank('sk-test', largeTheses, largeDocs, modelMap)
 
     expect(curadorPrompts).toHaveLength(1)
-    expect(curadorPrompts[0].length).toBeLessThan(9000)
+    // The Curador budget was raised so the model gets richer context, but
+    // the compaction still bounds the prompt — we never want to dump the
+    // entire acervo into a single call.
+    expect(curadorPrompts[0].length).toBeLessThan(40_000)
     expect(curadorPrompts[0]).toContain('[doc-0.pdf]')
     expect(curadorPrompts[0]).toContain('[doc-1.pdf]')
-    expect(curadorPrompts[0]).not.toContain('[doc-2.pdf]')
+    // The largest tail docs are still trimmed when they would blow the
+    // per-call budget.
+    expect(curadorPrompts[0]).not.toContain('[doc-7.pdf]')
   })
 
   it('parses common Revisor JSON trailing-comma responses without an LLM repair pass', async () => {

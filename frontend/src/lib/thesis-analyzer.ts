@@ -115,21 +115,36 @@ const DEFAULT_THESIS_ANALYSIS_PARALLEL_LIMIT = 2
 const MAX_THESIS_ANALYSIS_PARALLEL_LIMIT = 3
 const DEFAULT_THESIS_COMPILADOR_BATCH_CONCURRENCY = 2
 const MAX_THESIS_COMPILADOR_BATCH_CONCURRENCY = 4
-const CATALOGUE_SUMMARY_CHARS = 120
-const CURADOR_DOC_EXCERPT_CHARS = 1200
-const MAX_CURADOR_DOC_PROMPT_CHARS = 3_600
-const MAX_CURADOR_CATALOGUE_PROMPT_CHARS = 3_000
-const MAX_THEMATIC_GAPS_FOR_CURADOR = 8
-const MAX_ANALISTA_GROUPS = 10
-const ANALISTA_THESIS_CONTENT_CHARS = 500
-const COMPILADOR_THESIS_CONTENT_CHARS = 900
-// Compiled legal theses can run to ~5k chars (title + full content + summary
-// + tags + quality_score), so the model needs enough budget to emit a
-// complete JSON object. 2500 was too tight and produced truncated payloads
-// that the parser could not recover.
-const COMPILADOR_MAX_TOKENS = 4000
+const CATALOGUE_SUMMARY_CHARS = 200
+// Budgets were tightened originally for cost control but the user feedback
+// is clear: every thesis in the bank should be reachable, the compiled
+// theses should be substantially richer than each source, and the agents
+// must not run out of tokens mid-JSON. Modern OpenRouter-backed models
+// (Sonnet/Gemini Pro/GPT-4o) all comfortably handle the prompt sizes
+// implied by these limits.
+const CURADOR_DOC_EXCERPT_CHARS = 3_000
+const MAX_CURADOR_DOC_PROMPT_CHARS = 12_000
+const MAX_CURADOR_CATALOGUE_PROMPT_CHARS = 8_000
+const MAX_CURADOR_MAX_TOKENS = 6_000
+const MAX_THEMATIC_GAPS_FOR_CURADOR = 12
+// The Analista is called once with all similar groups in a single prompt;
+// 50 groups handles even very large thesis banks (≈100–500 entries) while
+// staying well under the context window of every supported model.
+const MAX_ANALISTA_GROUPS = 50
+const ANALISTA_THESIS_CONTENT_CHARS = 1_500
+const ANALISTA_MAX_TOKENS = 8_000
+const ANALISTA_REPAIR_MAX_TOKENS = 4_000
+const COMPILADOR_THESIS_CONTENT_CHARS = 2_500
+// Compiled legal theses can run to 6–8k chars (title + full content +
+// summary + tags + quality_score), so the model needs enough budget to
+// emit a complete JSON object AND make the result substantially more
+// robust than any individual source. Previous 4000 ceiling truncated
+// detailed compilations mid-JSON.
+const COMPILADOR_MAX_TOKENS = 8_000
 const MAX_REVISOR_SUGGESTIONS = 30
-const REVISOR_CREATE_SUMMARY_CHARS = 160
+const REVISOR_MAX_TOKENS = 8_000
+const REVISOR_REPAIR_MAX_TOKENS = 4_500
+const REVISOR_CREATE_SUMMARY_CHARS = 240
 const LOW_QUALITY_MIN_CONTENT_CHARS = 180
 const LOW_QUALITY_MIN_KEYWORDS = 8
 const LOCAL_SIMILARITY_TITLE_THRESHOLD = 0.6
@@ -458,21 +473,25 @@ Retorne APENAS um JSON válido com esta estrutura:
 // ── Agent 3: Compilador ───────────────────────────────────────────────────────
 
 const COMPILADOR_SYSTEM = `Você é um Compilador Jurídico de alta precisão.
-Sua tarefa é receber duas ou mais teses jurídicas e criar UMA ÚNICA tese superior que:
-- Preserve TODOS os argumentos únicos de cada versão
-- Elimine redundâncias e repetições
-- Organize o conteúdo de forma lógica e progressiva
-- Use linguagem jurídica formal e precisa
-- Seja mais completa que qualquer versão individual
+Sua tarefa é receber duas ou mais teses jurídicas e produzir UMA ÚNICA tese superior — substancialmente MAIS ROBUSTA do que qualquer versão individual.
+
+DIRETRIZES OBRIGATÓRIAS:
+- Preserve TODOS os argumentos únicos de cada versão (não descarte nada relevante)
+- Elimine redundâncias e repetições sem reduzir o conteúdo argumentativo
+- Estruture a tese em parágrafos lógicos, com transições claras (mínimo 3 parágrafos densos)
+- Use linguagem jurídica formal, precisa e técnica
+- Cite fundamentos legais (artigos, súmulas, princípios), jurisprudência e doutrina sempre que presentes nas fontes
+- A tese compilada deve ser MAIS LONGA e MAIS DETALHADA do que cada fonte isolada — agregue valor, não apenas sintetize
+- "quality_score" deve refletir a robustez do resultado: ≥85 para compilações completas e bem fundamentadas
 
 Retorne APENAS um JSON válido com esta estrutura:
 {
-  "title": "título da tese compilada (máx 120 chars)",
-  "content": "conteúdo completo e estruturado da tese compilada",
-  "summary": "resumo em 1-2 frases",
+  "title": "título da tese compilada (máx 140 chars)",
+  "content": "conteúdo completo e estruturado da tese compilada (parágrafos densos, com fundamentos legais e doutrinários)",
+  "summary": "resumo executivo em 2-3 frases destacando o cerne do argumento",
   "legal_area_id": "área do direito",
-  "tags": ["tag1","tag2"],
-  "quality_score": 85
+  "tags": ["tag1","tag2","tag3"],
+  "quality_score": 88
 }`
 
 // ── Agent 4: Curador de Lacunas ───────────────────────────────────────────────
@@ -694,6 +713,22 @@ export async function analyzeThesisBank(
     'running',
   )
 
+  // Belt-and-suspenders for the orchestrator badge: every exit path —
+  // normal return, downstream throw, even a synchronous assertion deep in
+  // the helpers — must put the orchestrator in a terminal state so the UI
+  // never gets stuck on "running".
+  const finalizeOrchestrator = (status: 'done' | 'error', message: string) => {
+    const current = agents.find(a => a.key === 'thesis_pipeline_orchestrator')
+    if (!current || current.status === 'done' || current.status === 'error') return
+    notify(
+      'thesis_pipeline_orchestrator',
+      status,
+      message,
+      status === 'done' ? 'completed' : 'failed',
+    )
+  }
+
+  try {
   const catalogue = thesesToCatalogueEntries(theses)
 
   const { items: docsForCurador, omittedCount: omittedDocsFromCurador } = takeItemsWithinCharBudget(
@@ -753,7 +788,7 @@ export async function analyzeThesisBank(
           `Documentos do acervo não analisados:\n\n${docsText}${gapsText}${catalogueText}`,
           modelMap['thesis_curador'],
           resolveAgentFallbacks('thesis_curador', modelMap['thesis_curador']),
-          3500,
+          MAX_CURADOR_MAX_TOKENS,
           0.2,
         )
         recordAgentDuration(res)
@@ -896,7 +931,7 @@ export async function analyzeThesisBank(
         `Grupos de teses para análise profunda:\n${compactJson(groupsWithContent)}`,
         modelMap['thesis_analista'],
         resolveAgentFallbacks('thesis_analista', modelMap['thesis_analista']),
-        4000,
+        ANALISTA_MAX_TOKENS,
         0.1,
       ))
       recordAgentDuration(res)
@@ -931,7 +966,7 @@ export async function analyzeThesisBank(
             `A saída abaixo deveria ser um objeto JSON válido no formato {"analysis":[...]}. Corrija somente a sintaxe e preserve os campos úteis.\n\n${res.content.slice(0, 12_000)}`,
             modelMap['thesis_analista'],
             resolveAgentFallbacks('thesis_analista', modelMap['thesis_analista']),
-            2200,
+            ANALISTA_REPAIR_MAX_TOKENS,
             0,
           ))
           recordAgentDuration(repair)
@@ -1210,7 +1245,7 @@ export async function analyzeThesisBank(
         `Banco atual: ${theses.length} teses. Revisar até ${revisorPayload.length} sugestões priorizadas.\n\nSugestões para revisão:\n${compactJson(revisorPayload)}`,
         modelMap['thesis_revisor'],
         resolveAgentFallbacks('thesis_revisor', modelMap['thesis_revisor']),
-        4000,
+        REVISOR_MAX_TOKENS,
         0.1,
       ))
       recordAgentDuration(res)
@@ -1259,7 +1294,7 @@ export async function analyzeThesisBank(
           `A saída abaixo deveria ser um objeto JSON válido no formato {"executive_summary":"...","suggestions":[...]}. Corrija somente a sintaxe e preserve os campos úteis.\n\n${res.content.slice(0, 12_000)}`,
           modelMap['thesis_revisor'],
           resolveAgentFallbacks('thesis_revisor', modelMap['thesis_revisor']),
-          2500,
+          REVISOR_REPAIR_MAX_TOKENS,
           0,
         ))
         recordAgentDuration(repair)
@@ -1447,6 +1482,17 @@ export async function analyzeThesisBank(
     runtimeCap: analysisConcurrencyDiagnostics.runtimeCap,
   }))
 
+  // The orchestrator must NEVER hang. Compute the final status from the
+  // child agents so the UI can move past the "running" indicator even when
+  // some agents had to fall back to the local inventory.
+  const nonOrchestratorAgents = agents.filter(a => a.key !== 'thesis_pipeline_orchestrator')
+  const successCount = nonOrchestratorAgents.filter(a => a.status === 'done').length
+  const orchestratorErrorCount = nonOrchestratorAgents.filter(a => a.status === 'error').length
+  const orchestratorSummary = orchestratorErrorCount > 0
+    ? `Pipeline concluído com fallback: ${successCount}/${nonOrchestratorAgents.length} agentes OK, ${orchestratorErrorCount} contornado(s)`
+    : `Pipeline concluído com sucesso: ${successCount}/${nonOrchestratorAgents.length} agentes`
+  finalizeOrchestrator('done', orchestratorSummary)
+
   return {
     session_id: sessionId,
     created_at: now,
@@ -1458,6 +1504,20 @@ export async function analyzeThesisBank(
     usage_summary: buildUsageSummary(llmExecutions),
     llm_executions: llmExecutions,
     pipeline_meta: pipelineMeta,
+  }
+  } catch (err) {
+    // Unexpected throw (corrupted firestore data, parser blow-up, an
+    // assertion deep in a helper, …). Mark the orchestrator as failed so
+    // the UI moves past "running" and the user sees a clear message
+    // instead of a stuck spinner. Other in-flight agents are flushed to
+    // "error" by the calling component so users always get closure here.
+    const reason = err instanceof DOMException && err.name === 'AbortError'
+      ? 'Operação cancelada pelo usuário'
+      : err instanceof Error
+        ? humanizeError(err).title
+        : 'Pipeline interrompido por erro inesperado'
+    finalizeOrchestrator('error', `Pipeline interrompido: ${reason}`)
+    throw err
   }
 }
 
