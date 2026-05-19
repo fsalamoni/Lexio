@@ -526,7 +526,19 @@ Estrutura obrigatória:
 
 function agentErrorMessage(err: unknown): string {
   if (err instanceof TypeError) return 'Erro de rede (tente novamente)'
-  if (err instanceof TransientLLMError) return 'Erro transitório do LLM (tente novamente)'
+  if (err instanceof TransientLLMError) {
+    const message = err.message
+    if (/key limit|monthly limit|quota|insufficient.*credit|more credits|can only afford/i.test(message)) {
+      return 'Limite de créditos do provedor atingido — troque a chave ou modelo em Configurações'
+    }
+    if (/timed out|timeout|tempo limite/i.test(message)) {
+      return 'Tempo limite excedido (tente novamente)'
+    }
+    if (/rate.?limit|too many requests|429/i.test(message)) {
+      return 'Limite de requisições do provedor — aguarde e tente novamente'
+    }
+    return 'Erro transitório do LLM (tente novamente)'
+  }
   if (err instanceof SyntaxError) return 'Resposta inválida do modelo (JSON malformado)'
   if (err instanceof Error) {
     if (err.name === 'ModelUnavailableError') return 'Modelo indisponível'
@@ -688,6 +700,8 @@ export async function analyzeThesisBank(
   }> = []
   let thematicGaps: string[] = []
 
+  let curadorFailure: unknown = null
+
   const runCurador = async (): Promise<void> => {
     notify(
       'thesis_curador',
@@ -751,12 +765,20 @@ export async function analyzeThesisBank(
         const proposals = parseJsonArray(res.content) as typeof newThesisProposals
         newThesisProposals.push(...proposals.filter(p => p.title && p.content))
       } catch (err) {
-        notify('thesis_curador', 'error', `Curador: ${agentErrorMessage(err)}`)
+        curadorFailure = err
         console.warn('Curador failed:', err)
       }
     }
 
-    notify('thesis_curador', 'done', `${newThesisProposals.length} novas teses propostas`)
+    if (curadorFailure) {
+      const reason = agentErrorMessage(curadorFailure)
+      notify('thesis_curador', 'error', `Curador: ${reason}`)
+      limitNotes.push(
+        `Curador falhou (${reason}); novas teses do acervo não foram propostas nesta rodada.`,
+      )
+    } else {
+      notify('thesis_curador', 'done', `${newThesisProposals.length} novas teses propostas`)
+    }
   }
 
   const curadorPromise = analysisParallelLimit > 1
@@ -930,9 +952,22 @@ export async function analyzeThesisBank(
     }
     notify('thesis_analista', 'done', `${analysisMergeGroups.length} grupos a compilar`)
   } catch (err) {
-    notify('thesis_analista', 'error', `Analista: ${agentErrorMessage(err)}`)
+    const reason = agentErrorMessage(err)
     console.warn('Analista failed:', err)
-    analysisMergeGroups = []
+    const localFallback = buildLocalAnalistaFallback().filter(g => g.action === 'merge')
+    analysisMergeGroups = localFallback
+    if (localFallback.length > 0) {
+      limitNotes.push(
+        `Analista falhou (${reason}); fallback determinístico local aplicado com ${localFallback.length} grupo(s) de mesclagem do inventário.`,
+      )
+      notify(
+        'thesis_analista',
+        'error',
+        `Analista: ${reason} — usando inventário local (${localFallback.length} grupo(s))`,
+      )
+    } else {
+      notify('thesis_analista', 'error', `Analista: ${reason}`)
+    }
   }
 
   // Build delete suggestions from low-quality candidates flagged by the local inventory

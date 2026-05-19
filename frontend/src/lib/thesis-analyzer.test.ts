@@ -445,9 +445,9 @@ describe('analyzeThesisBank parallel pipeline', () => {
     })
   })
 
-  it('reports partial completion when no suggestions are generated because an agent failed', async () => {
+  it('falls back to the local inventory when the Analista LLM fails so merge candidates are preserved', async () => {
     callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => {
-      if (model === 'analista-model') throw new Error('provider quota exceeded')
+      if (model === 'analista-model') throw new Error('Key limit exceeded (monthly limit)')
       return responseForModel(model)
     })
 
@@ -458,11 +458,77 @@ describe('analyzeThesisBank parallel pipeline', () => {
       modelMap,
     )
 
-    expect(result.suggestions).toHaveLength(0)
-    expect(result.executive_summary).toContain('concluída parcialmente')
-    expect(result.pipeline_meta?.agent_failures).toEqual([
-      expect.objectContaining({ key: 'thesis_analista' }),
-    ])
+    // Analista failure is still recorded in agent_failures for transparency.
+    expect(result.pipeline_meta?.agent_failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'thesis_analista' }),
+      ]),
+    )
+    // The local deterministic fallback note is published so the user knows
+    // the pipeline degraded gracefully.
+    expect(result.pipeline_meta?.limit_notes).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('fallback determinístico local'),
+      ]),
+    )
+    // Despite the Analista LLM being down, the downstream Compilador + Revisor
+    // still produce suggestions thanks to the local clustering.
+    expect(result.suggestions.length).toBeGreaterThan(0)
+  })
+
+  it('surfaces the Curador LLM failure in agent_failures and limit_notes instead of silently dropping it', async () => {
+    callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => {
+      if (model === 'curador-model') throw new Error('Key limit exceeded (monthly limit)')
+      return responseForModel(model)
+    })
+
+    const result = await analyzeThesisBank(
+      'sk-test',
+      [thesis('t1', 'Tese 1'), thesis('t2', 'Tese 2')],
+      [acervoDoc('doc-1')],
+      modelMap,
+    )
+
+    expect(result.pipeline_meta?.agent_failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'thesis_curador' }),
+      ]),
+    )
+    expect(result.pipeline_meta?.limit_notes).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Curador falhou'),
+      ]),
+    )
+    // When Curador fails, its docs must not be marked as analyzed so the user
+    // can retry them in a future round.
+    expect(result.pipeline_meta?.mark_analyzed_doc_ids).toEqual([])
+  })
+
+  it('translates OpenRouter quota errors into a clear actionable agent message', async () => {
+    const progressSnapshots: Array<Array<{ key: string; status: string; message?: string }>> = []
+
+    callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => {
+      if (model === 'analista-model') {
+        const { TransientLLMError } = await import('./llm-client')
+        throw new TransientLLMError('OpenRouter API error 403: {"error":{"message":"Key limit exceeded (monthly limit)"}}')
+      }
+      return responseForModel(model)
+    })
+
+    await analyzeThesisBank(
+      'sk-test',
+      [thesis('t1', 'Tese 1'), thesis('t2', 'Tese 2')],
+      [],
+      modelMap,
+      (agents) => {
+        progressSnapshots.push(agents.map(agent => ({ key: agent.key, status: agent.status, message: agent.message })))
+      },
+    )
+
+    const finalSnapshot = progressSnapshots[progressSnapshots.length - 1]
+    const analista = finalSnapshot.find(agent => agent.key === 'thesis_analista')
+    expect(analista?.status).toBe('error')
+    expect(analista?.message).toContain('Limite de créditos do provedor atingido')
   })
 
   it('appends the reliable fallback model after user-configured thesis fallbacks', async () => {
