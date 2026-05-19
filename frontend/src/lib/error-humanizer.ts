@@ -10,7 +10,7 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string; suggestion?: str
   { pattern: /ECONNREFUSED/i, message: 'Servidor indisponível', suggestion: 'O serviço está temporariamente fora do ar. Tente novamente em alguns minutos.' },
 
   // LLM/API specific (must come before generic HTTP status patterns)
-  { pattern: /key limit exceeded|monthly limit/i, message: 'Limite mensal da chave do provedor atingido', suggestion: 'A chave atual atingiu sua cota mensal. Troque a chave em Configurações > Provedores de IA ou ajuste o limite no provedor.' },
+  { pattern: /key limit exceeded|monthly limit/i, message: 'Limite mensal da chave atingido (não é falta de saldo)', suggestion: 'Cada chave de API pode ter um limite de gasto mensal independente do saldo da conta. Aumente o limite da chave no painel do provedor (ex.: openrouter.ai/settings/keys) ou troque para outra chave.' },
   { pattern: /quota|billing|insufficient.*funds|more credits|can only afford/i, message: 'Créditos do provedor esgotados', suggestion: 'Verifique o saldo da sua chave de API nas configurações ou reduza o volume da solicitação.' },
   { pattern: /context.*length|token.*limit|max.*tokens/i, message: 'Texto muito longo para o modelo', suggestion: 'Reduza o tamanho da solicitação ou use um modelo com janela maior.' },
   { pattern: /invalid.*api.*key|authentication.*failed/i, message: 'Chave de API inválida', suggestion: 'Verifique suas chaves em Configurações > Chaves de API.' },

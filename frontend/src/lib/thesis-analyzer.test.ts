@@ -504,13 +504,13 @@ describe('analyzeThesisBank parallel pipeline', () => {
     expect(result.pipeline_meta?.mark_analyzed_doc_ids).toEqual([])
   })
 
-  it('translates OpenRouter quota errors into a clear actionable agent message', async () => {
+  it('translates OpenRouter per-key monthly limits into a clear actionable agent message (not a billing scare)', async () => {
     const progressSnapshots: Array<Array<{ key: string; status: string; message?: string }>> = []
 
     callLLMMock.mockImplementation(async (_apiKey, _system, _prompt, model: string) => {
       if (model === 'analista-model') {
         const { TransientLLMError } = await import('./llm-client')
-        throw new TransientLLMError('OpenRouter API error 403: {"error":{"message":"Key limit exceeded (monthly limit)"}}')
+        throw new TransientLLMError('OpenRouter API error 403: {"error":{"message":"Key limit exceeded (monthly limit). Manage it using https://openrouter.ai/workspaces/default/keys/...","code":403}}')
       }
       return responseForModel(model)
     })
@@ -528,7 +528,63 @@ describe('analyzeThesisBank parallel pipeline', () => {
     const finalSnapshot = progressSnapshots[progressSnapshots.length - 1]
     const analista = finalSnapshot.find(agent => agent.key === 'thesis_analista')
     expect(analista?.status).toBe('error')
-    expect(analista?.message).toContain('Limite de créditos do provedor atingido')
+    // Message must make clear the issue is the key's monthly limit, not a
+    // missing balance, and must point at the provider dashboard.
+    expect(analista?.message).toContain('Limite mensal da chave atingido')
+    expect(analista?.message).toContain('não é falta de saldo')
+    expect(analista?.message).toContain('openrouter.ai/settings/keys')
+  })
+
+  it('repairs truncated Compilador JSON via a second LLM pass instead of dropping the merge group', async () => {
+    let compiladorCallCount = 0
+    callLLMMock.mockImplementation(async (_apiKey, system: string, _prompt, model: string) => {
+      if (model === 'compilador-model') {
+        compiladorCallCount += 1
+        if (!String(system).includes('corrige saídas JSON inválidas do Compilador')) {
+          // First pass: return truncated JSON like an over-tight max_tokens
+          // would cause in production.
+          return llmResult('{ "title": "A rachadinha como improbidade administrativa", "content": "Conteúdo que termina no meio sem fech', model, 60)
+        }
+        // Repair pass: return a valid object.
+        return llmResult(JSON.stringify({
+          title: 'A rachadinha como improbidade administrativa',
+          content: 'Conteúdo compilado completo após reparo.',
+          summary: 'Síntese reparada.',
+          legal_area_id: 'administrative',
+          tags: ['improbidade'],
+          quality_score: 84,
+        }), model, 60)
+      }
+      if (model === 'revisor-model') {
+        // Return a merge suggestion that points at the same thesis IDs so the
+        // proposed_thesis enrichment can attach the repaired compiled content.
+        return llmResult(JSON.stringify({
+          executive_summary: 'Sugestões revisadas após reparo.',
+          suggestions: [{
+            type: 'merge',
+            priority: 'high',
+            impact_score: 8,
+            title: 'Mesclar rachadinha',
+            description: 'Mesclar versões similares.',
+            rationale: 'Compilação reparada.',
+            affected_thesis_ids: ['t1', 't2'],
+            affected_thesis_titles: ['Tese 1', 'Tese 2'],
+          }],
+        }), model, 60)
+      }
+      return responseForModel(model)
+    })
+
+    const result = await runDefaultAnalysis()
+
+    // Compilador was called twice for the same group: the original truncated
+    // response plus the repair pass.
+    expect(compiladorCallCount).toBeGreaterThanOrEqual(2)
+    expect(result.llm_executions.map(execution => execution.phase)).toContain('thesis_compilador_repair')
+    // The merge suggestion is preserved with the repaired compiled thesis
+    // attached as proposed_thesis content.
+    const mergeSuggestion = result.suggestions.find(s => s.type === 'merge')
+    expect(mergeSuggestion?.proposed_thesis?.content).toContain('reparo')
   })
 
   it('appends the reliable fallback model after user-configured thesis fallbacks', async () => {

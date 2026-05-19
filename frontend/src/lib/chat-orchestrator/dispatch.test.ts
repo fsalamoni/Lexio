@@ -96,6 +96,6 @@ describe('dispatchSpecialistAgent', () => {
 
     expect(result.usage).toBeNull()
     expect(result.output).toContain('## Falha operacional')
-    expect(result.output).toContain('Limite mensal da chave do provedor atingido')
+    expect(result.output).toContain('Limite mensal da chave atingido')
   })
 })
