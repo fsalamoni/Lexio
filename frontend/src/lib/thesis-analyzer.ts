@@ -127,11 +127,15 @@ const MAX_CURADOR_DOC_PROMPT_CHARS = 12_000
 const MAX_CURADOR_CATALOGUE_PROMPT_CHARS = 8_000
 const MAX_CURADOR_MAX_TOKENS = 6_000
 const MAX_THEMATIC_GAPS_FOR_CURADOR = 12
-// The Analista is called once with all similar groups in a single prompt;
-// 50 groups handles even very large thesis banks (≈100–500 entries) while
-// staying well under the context window of every supported model.
+// The Analista is invoked once with the entire bank catalogue plus the
+// local-clustering hints. The 50-group cap bounds the "deep content" view
+// (which carries 1500-char content excerpts), but the catalogue view is
+// always the full bank so the LLM can find redundancies the lexical
+// inventory missed (semantic similarity, different vocabulary, etc.).
 const MAX_ANALISTA_GROUPS = 50
 const ANALISTA_THESIS_CONTENT_CHARS = 1_500
+const ANALISTA_CATALOGUE_PREVIEW_CHARS = 280
+const MAX_ANALISTA_CATALOGUE_PROMPT_CHARS = 30_000
 const ANALISTA_MAX_TOKENS = 8_000
 const ANALISTA_REPAIR_MAX_TOKENS = 4_000
 const COMPILADOR_THESIS_CONTENT_CHARS = 2_500
@@ -450,21 +454,33 @@ function buildLocalCatalogueResult(theses: ThesisData[]): {
 
 // ── Agent 2: Analista de Redundâncias ─────────────────────────────────────────
 
-const ANALISTA_SYSTEM = `Você é um Analista Jurídico especializado em identificar redundâncias em bancos de teses.
-Para cada grupo de teses fornecido, analise profundamente o conteúdo completo e classifique:
-- "duplicate": teses que dizem exatamente o mesmo — mesclar em uma
-- "complementary": teses que se complementam — mesclar preservando ambas as perspectivas
-- "contradictory": teses com posições opostas — manter separadas ou discutir
-- "keep_separate": teses apenas superficialmente similares — manter como estão
+const ANALISTA_SYSTEM = `Você é um Analista Jurídico Sênior especializado em curadoria de bancos de teses.
+
+MISSÃO: examinar TODO o banco fornecido para identificar redundâncias e oportunidades de consolidação. Não dependa apenas dos grupos sugeridos pelo inventário local — o inventário usa similaridade léxica e pode perder grupos com terminologia diferente para o mesmo argumento jurídico. Você deve usar similaridade SEMÂNTICA.
+
+Identifique:
+1. GRUPOS DE MESCLAGEM (action="merge"): 2+ teses que tratam do mesmo argumento jurídico
+   - "duplicate": dizem exatamente o mesmo — mesclar em uma
+   - "complementary": se complementam — mesclar preservando ambas as perspectivas
+2. POSIÇÕES OPOSTAS (action="flag", classification="contradictory"): teses com argumentos antagônicos sobre o mesmo tema
+3. SUPERFICIALMENTE SIMILARES (action="keep", classification="keep_separate"): parecem mas tratam de questões distintas — manter separadas
+
+REGRAS DE OURO:
+- Use similaridade SEMÂNTICA: teses sobre o mesmo argumento com palavras diferentes DEVEM ser detectadas
+- VALIDE os grupos sugeridos pelo inventário local (descarte falsos positivos onde o conteúdo é diferente)
+- IDENTIFIQUE grupos ADICIONAIS que o inventário pode ter perdido — examine o catálogo completo
+- Priorize mesclagens onde a consolidação resulta em uma tese MAIS robusta
+- "merge_value" 1-10 reflete o valor da consolidação (10 = altamente valiosa)
+- Cada tese só pode estar em UM grupo de mesclagem
 
 Retorne APENAS um JSON válido com esta estrutura:
 {
   "analysis": [
     {
-      "group_ids": ["id1","id2"],
+      "group_ids": ["id1","id2","id3"],
       "classification": "duplicate|complementary|contradictory|keep_separate",
       "action": "merge|keep|flag",
-      "reasoning": "justificativa técnica detalhada",
+      "reasoning": "justificativa técnica detalhada explicando por que esse agrupamento é (ou não é) válido",
       "merge_value": 8
     }
   ]
@@ -519,13 +535,15 @@ Retorne APENAS um JSON array com esta estrutura:
 // ── Agent 5: Revisor Final ────────────────────────────────────────────────────
 
 const REVISOR_SYSTEM = `Você é o Revisor Final do processo de análise do banco de teses jurídicas.
-Recebe sugestões brutas e deve:
-1. Validar cada sugestão (descartar as de baixo valor ou incoerentes)
-2. Enriquecer as justificativas com contexto jurídico
-3. Atribuir priority: "high" | "medium" | "low"
-4. Atribuir impact_score 1-10
-5. Ordenar do mais para o menos impactante
-6. Escrever executive_summary em 3-5 frases
+Recebe sugestões brutas (mesclagens, exclusões, criação de novas teses) e deve:
+1. Validar cada sugestão (descartar as de baixo valor, incoerentes ou que mesclam teses não relacionadas)
+2. PRIORIZAR mesclagens valiosas — elas consolidam o banco e melhoram a qualidade global
+3. Enriquecer as justificativas com contexto jurídico técnico
+4. Atribuir priority: "high" | "medium" | "low"
+5. Atribuir impact_score 1-10 (10 = altíssimo valor)
+6. Ordenar do mais para o menos impactante
+7. Escrever executive_summary em 3-5 frases destacando o estado do banco e as principais ações
+8. CRÍTICO: eco-replicar o "temp_id" exatamente como recebido em cada sugestão — esse campo vincula a sugestão ao conteúdo compilado pelo Compilador
 
 IMPORTANTE: Responda EXCLUSIVAMENTE com um bloco \`\`\`json ... \`\`\` sem nenhum texto antes ou depois.
 Estrutura obrigatória:
@@ -533,18 +551,18 @@ Estrutura obrigatória:
 {
   "suggestions": [
     {
-      "temp_id": "mesmo temp_id recebido",
+      "temp_id": "exatamente o mesmo temp_id recebido na entrada",
       "type": "merge|delete|create|improve",
       "priority": "high|medium|low",
       "impact_score": 8,
       "title": "título da sugestão",
-      "description": "descrição concisa",
-      "rationale": "justificativa jurídica",
-      "affected_thesis_ids": ["id1"],
-      "affected_thesis_titles": ["título1"]
+      "description": "descrição concisa do que vai acontecer",
+      "rationale": "justificativa jurídica técnica detalhada",
+      "affected_thesis_ids": ["id1","id2"],
+      "affected_thesis_titles": ["título1","título2"]
     }
   ],
-  "executive_summary": "resumo executivo"
+  "executive_summary": "resumo executivo do estado do banco e ações recomendadas"
 }
 \`\`\``
 
@@ -839,7 +857,7 @@ export async function analyzeThesisBank(
 
   // ── Agent 2: Analista ────────────────────────────────────────────────────────
 
-  notify('thesis_analista', 'running', 'Analisando redundâncias nos grupos...', 'running')
+  notify('thesis_analista', 'running', 'Analisando banco de teses para redundâncias semânticas...', 'running')
 
   // Build full-content view for all theses in groups
   const thesisById = new Map(theses.filter(t => t.id).map(t => [t.id!, t]))
@@ -853,6 +871,36 @@ export async function analyzeThesisBank(
       })
       .filter((x): x is { id: string; title: string; content: string } => x !== null),
   }))
+
+  // Build a compact view of the ENTIRE bank so the Analista can detect
+  // redundancies the lexical inventory missed (different vocabulary for
+  // the same legal argument, semantic equivalence, etc.). This is what
+  // makes the Analista actually *do* work even when local clustering
+  // returns nothing.
+  const analistaBankEntries = theses
+    .filter((t): t is ThesisData & { id: string } => Boolean(t.id))
+    .map(t => ({
+      id: t.id,
+      title: t.title.slice(0, 180),
+      area: t.legal_area_id,
+      summary: t.summary?.slice(0, 220) ?? '',
+      preview: t.content.slice(0, ANALISTA_CATALOGUE_PREVIEW_CHARS),
+      tags: (t.tags ?? []).slice(0, 6),
+    }))
+
+  const {
+    items: bankEntriesForAnalista,
+    omittedCount: omittedAnalistaBankEntries,
+  } = takeItemsWithinCharBudget(
+    analistaBankEntries,
+    entry => compactJson(entry),
+    MAX_ANALISTA_CATALOGUE_PROMPT_CHARS,
+  )
+  if (omittedAnalistaBankEntries > 0) {
+    limitNotes.push(
+      `${omittedAnalistaBankEntries} tese(s) ficaram fora do contexto do Analista por limite de janela; rode novamente ou aumente o catálogo.`,
+    )
+  }
 
   const normalizeClassification = (value: unknown): 'duplicate' | 'complementary' | 'contradictory' | 'keep_separate' => {
     const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
@@ -922,13 +970,28 @@ export async function analyzeThesisBank(
     merge_value: number
   }> = []
 
+  const analistaPromptBody = [
+    `BANCO ATUAL — ${bankEntriesForAnalista.length} tese(s) para análise semântica completa:`,
+    compactJson(bankEntriesForAnalista),
+    '',
+    groupsWithContent.length > 0
+      ? `GRUPOS CANDIDATOS SUGERIDOS PELO INVENTÁRIO LOCAL (validar cada um e encontrar grupos ADICIONAIS que o inventário pode ter perdido):\n${compactJson(groupsWithContent)}`
+      : 'O inventário local não identificou grupos por similaridade lexical. Você DEVE analisar o catálogo acima usando similaridade semântica e identificar teses que tratam do mesmo argumento jurídico com vocabulário diferente. Não devolva um array vazio sem antes examinar cada tese.',
+  ].join('\n')
+
+  // The Analista now ALWAYS runs when there are 2+ theses in the bank, so
+  // it can find semantic redundancies even when local clustering returned
+  // nothing. This is the fix for "the pipeline ran fast — the agents
+  // didn't even move".
+  const shouldInvokeAnalista = bankEntriesForAnalista.length >= 2
+
   try {
-    if (groupsWithContent.length > 0) {
+    if (shouldInvokeAnalista) {
       notify('thesis_analista', 'running', 'Analista aguardando resposta do modelo...', 'waiting_io')
       const res = await trackPhase('redundancia', async () => callLLMWithFallback(
         apiKey,
         ANALISTA_SYSTEM,
-        `Grupos de teses para análise profunda:\n${compactJson(groupsWithContent)}`,
+        analistaPromptBody,
         modelMap['thesis_analista'],
         resolveAgentFallbacks('thesis_analista', modelMap['thesis_analista']),
         ANALISTA_MAX_TOKENS,

@@ -641,6 +641,71 @@ describe('analyzeThesisBank parallel pipeline', () => {
     expect(mergeSuggestion?.proposed_thesis?.content).toContain('reparo')
   })
 
+  it('invokes the Analista with the FULL bank catalogue even when local clustering returns no groups (so the agents actually move)', async () => {
+    // Build two theses that are SEMANTICALLY similar but lexically very
+    // different. The local Jaccard cluster will not catch them, but the
+    // Analista now sees the full bank and can spot the redundancy.
+    const semanticallySimilar: ThesisData[] = [
+      {
+        id: 'sa',
+        title: 'A reserva do possível como limite à efetividade dos direitos sociais',
+        content: 'A teoria da reserva do possível constitui limite à concretização dos direitos sociais constitucionalmente assegurados. '.repeat(8),
+        summary: 'Limites orçamentários à efetivação de direitos.',
+        legal_area_id: 'constitutional',
+        tags: ['direitos sociais', 'orçamento'],
+        usage_count: 0,
+        source_type: 'manual',
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'sb',
+        title: 'O mínimo existencial diante de restrições financeiras estatais',
+        content: 'Ainda que existam contingências financeiras, o Estado não pode se eximir de garantir o mínimo existencial. '.repeat(8),
+        summary: 'Garantia do mínimo existencial mesmo com escassez de recursos.',
+        legal_area_id: 'civil',
+        tags: ['mínimo existencial', 'estado'],
+        usage_count: 0,
+        source_type: 'manual',
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]
+
+    const analistaPrompts: string[] = []
+    callLLMMock.mockImplementation(async (_apiKey, _system, prompt: string, model: string) => {
+      if (model === 'analista-model') analistaPrompts.push(prompt)
+      return responseForModel(model)
+    })
+
+    await analyzeThesisBank('sk-test', semanticallySimilar, [], modelMap)
+
+    // The Analista MUST have been invoked even though the local lexical
+    // inventory could not cluster these two theses together.
+    expect(analistaPrompts).toHaveLength(1)
+    // The Analista prompt must carry the full bank context — both thesis
+    // titles must be present so the model can find the redundancy.
+    expect(analistaPrompts[0]).toContain('BANCO ATUAL')
+    expect(analistaPrompts[0]).toContain('reserva do possível')
+    expect(analistaPrompts[0]).toContain('mínimo existencial')
+    // And the Analista is explicitly told the lexical inventory found
+    // nothing so it must work semantically.
+    expect(analistaPrompts[0]).toContain('similaridade semântica')
+  })
+
+  it('keeps shipping the local cluster hints to the Analista when they exist (validation pass)', async () => {
+    // The default test setup has t1 and t2 that DO cluster locally.
+    const analistaPrompts: string[] = []
+    callLLMMock.mockImplementation(async (_apiKey, _system, prompt: string, model: string) => {
+      if (model === 'analista-model') analistaPrompts.push(prompt)
+      return responseForModel(model)
+    })
+
+    await runDefaultAnalysis()
+
+    expect(analistaPrompts).toHaveLength(1)
+    expect(analistaPrompts[0]).toContain('BANCO ATUAL')
+    expect(analistaPrompts[0]).toContain('GRUPOS CANDIDATOS')
+  })
+
   it('appends the reliable fallback model after user-configured thesis fallbacks', async () => {
     resolveFallbackModelsMock.mockReturnValue(['user/fallback-model'])
 
