@@ -291,12 +291,14 @@ export const CHAT_ORCHESTRATOR_AGENT_DEFS: AgentModelDef[] = [
   {
     key: 'chat_video_generator',
     label: 'Gerador de Vídeo Literal',
-    description: 'Gera clipes de vídeo literais para artefatos do chat a partir do modelo configurado para essa função (geração literal disponível na Fase 2)',
+    description: 'Gera vídeo literal por IA para artefatos do chat, solicitando clipes reais a um provedor de vídeo (Veo, Kling, Wan, Sora, Runway e similares) e entregando o MP4 com player e download',
     defaultModel: '',
-    recommendedTier: 'balanced',
+    recommendedTier: 'premium',
     icon: 'video',
     agentCategory: 'synthesis',
     requiredCapability: 'video',
-    bestModelNote: 'Reserve um modelo com geração nativa de vídeo no catálogo pessoal. O orquestrador só aciona geração literal de vídeo na Fase 2; por ora o slot mantém a configuração pronta.',
+    configurationMode: 'external-provider',
+    configurationHint: 'Gerido por VITE_EXTERNAL_VIDEO_PROVIDER_*; aponte o endpoint para um agregador de vídeo real (ex.: fal.ai, Replicate, Veo) capaz de receber prompt e devolver URL final ou job_id/poll_url. O modelo de vídeo específico pode ser informado na chamada generate_video.',
+    bestModelNote: 'Reservado para provedores de geração de vídeo real. Quando o provedor não estiver configurado, o chat finaliza com falha operacional acionável em vez de substituir por slideshow.',
   },
 ]

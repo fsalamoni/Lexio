@@ -1137,6 +1137,268 @@ const generatePresentationSkill: Skill<GeneratePresentationArgs> = {
   },
 }
 
+// ── Super-Skill: Gerar Vídeo Literal ─────────────────────────────────────────
+
+interface GenerateVideoArgs {
+  prompt?: string
+  title?: string
+  duration_seconds?: number | string
+  aspect_ratio?: string
+  model?: string
+  approved?: boolean
+}
+
+function inferVideoArtifactFormat(mimeType?: string): 'mp4' | 'webm' {
+  return String(mimeType ?? '').toLowerCase().includes('webm') ? 'webm' : 'mp4'
+}
+
+const generateVideoSkill: Skill<GenerateVideoArgs> = {
+  name: 'generate_video',
+  description:
+    'Gera vídeo literal por IA no chat — um clipe real produzido por um modelo de geração de vídeo ' +
+    '(Veo, Kling, Wan, Sora, Runway e similares) — e entrega arquivo MP4 nativo para preview e download. ' +
+    'Use quando o usuário pedir vídeo, clipe, animação ou MP4. ' +
+    'Nunca entregue roteiro, slideshow ou descrição textual como substituto do vídeo gerado.',
+  argsHint: {
+    prompt: 'Descrição visual completa do vídeo: cena, sujeitos, movimento de câmera, estilo e ritmo.',
+    title: 'Título curto para o arquivo de vídeo gerado.',
+    duration_seconds: 'Duração alvo do clipe em segundos (padrão 8; faixa típica 4–20 conforme o modelo).',
+    aspect_ratio: 'Proporção desejada. Ex.: 16:9, 9:16, 1:1.',
+    model: 'Opcional: modelo de vídeo específico hospedado pelo provedor configurado (ex.: veo-3, kling-2.5, wan-2.5).',
+    approved: 'true apenas depois de o usuário aprovar explicitamente a geração literal de vídeo',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const prompt = String(args.prompt ?? '').trim()
+    const title = String(args.title ?? '').trim() || 'Vídeo gerado pelo chat'
+    const aspectRatio = String(args.aspect_ratio ?? '').trim() || '16:9'
+    const requestedModel = String(args.model ?? '').trim() || undefined
+    const durationSeconds = clampNumber(args.duration_seconds, 8, 2, 30)
+
+    if (!prompt) {
+      return { tool_message: 'Erro: "prompt" é obrigatório para gerar vídeo literal.' }
+    }
+
+    const { getExternalVideoProviderDiagnostics, isExternalVideoProviderConfigured } = await import('../external-video-provider')
+    if (!ctx.mock && !isExternalVideoProviderConfigured()) {
+      const diagnostics = getExternalVideoProviderDiagnostics()
+      return {
+        tool_message:
+          'Falha operacional: nenhum provedor de geração de vídeo real está configurado. ' +
+          'Configure VITE_EXTERNAL_VIDEO_PROVIDER e VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT apontando para um ' +
+          'agregador de vídeo real (ex.: fal.ai, Replicate, Veo) capaz de receber um prompt e devolver o MP4. ' +
+          (diagnostics.blockingErrors.length > 0 ? `Detalhe: ${diagnostics.blockingErrors.join(' ')} ` : '') +
+          'Não substitua o vídeo por roteiro, slideshow ou descrição textual.',
+      }
+    }
+
+    if (!normalizeSideEffectApproval(args.approved)) {
+      return requestApprovalForSkill(ctx, {
+        title: `Gerar vídeo literal: ${clip(title, 80)}`,
+        summary: [
+          'O chat vai solicitar um clipe de vídeo real a um provedor de geração de vídeo por IA, salvar o arquivo no Storage e exibir o player na conversa.',
+          `Título: ${title}`,
+          `Duração alvo: ${durationSeconds}s`,
+          `Proporção: ${aspectRatio}`,
+          requestedModel ? `Modelo de vídeo: ${requestedModel}` : 'Modelo de vídeo: padrão do provedor',
+        ].filter(Boolean).join('\n'),
+        riskLevel: 'high',
+        permissions: ['write', 'network'],
+        resumeTool: 'generate_video',
+        resumeArgs: {
+          prompt,
+          title,
+          duration_seconds: durationSeconds,
+          aspect_ratio: aspectRatio,
+          model: requestedModel,
+          approved: true,
+        },
+      })
+    }
+
+    const artifactId = makeChatArtifactId('chat-video')
+    ctx.emit({
+      type: 'super_skill_call',
+      skill: 'generate_video',
+      args_summary: clip(prompt, 180),
+      result_summary: `Iniciando geração literal de vídeo: ${clip(title, 100)}`,
+      ts: nowIso(),
+    })
+
+    try {
+      const { uploadChatArtifactFile } = await import('../chat-artifact-storage')
+      let videoUrl: string
+      let mimeType = 'video/mp4'
+      let storagePath: string | undefined
+      let providerLabel = 'mock'
+
+      if (ctx.mock) {
+        const stored = await uploadChatArtifactFile({
+          userId: ctx.uid,
+          conversationId: ctx.conversationId,
+          turnId: ctx.turnId,
+          artifactId,
+          exportId: `${artifactId}-mp4`,
+          title,
+          extension: '.mp4',
+          blob: new Blob(['mock-video'], { type: 'video/mp4' }),
+        })
+        videoUrl = stored.url
+        storagePath = stored.path
+      } else {
+        const { requestExternalVideoClip } = await import('../external-video-provider')
+        const clipResult = await requestExternalVideoClip({
+          prompt,
+          durationSeconds,
+          aspectRatio,
+          model: requestedModel,
+          signal: ctx.signal,
+        })
+        if (!clipResult?.url) {
+          return {
+            tool_message:
+              'Falha operacional: o provedor de vídeo não retornou um arquivo final. ' +
+              'Tente novamente ou verifique o endpoint/modelo do provedor de vídeo.',
+          }
+        }
+        mimeType = clipResult.mimeType || 'video/mp4'
+        providerLabel = clipResult.provider
+        // Persist the clip in our Storage for a durable download; if the
+        // provider URL cannot be fetched (CORS, expiry), keep it directly.
+        videoUrl = clipResult.url
+        try {
+          const response = await fetch(clipResult.url, { signal: ctx.signal })
+          if (response.ok) {
+            const blob = await response.blob()
+            const stored = await uploadChatArtifactFile({
+              userId: ctx.uid,
+              conversationId: ctx.conversationId,
+              turnId: ctx.turnId,
+              artifactId,
+              exportId: `${artifactId}-${inferVideoArtifactFormat(mimeType)}`,
+              title,
+              extension: `.${inferVideoArtifactFormat(mimeType)}`,
+              blob,
+            })
+            if (stored.url) {
+              videoUrl = stored.url
+              storagePath = stored.path
+            }
+          }
+        } catch (fetchErr) {
+          if (isAbortError(fetchErr)) throw fetchErr
+          // Provider URL kept as-is — still a real, playable video.
+        }
+      }
+
+      const format = inferVideoArtifactFormat(mimeType)
+      const extension = `.${format}`
+      const exportId = `${artifactId}-${format}`
+
+      ctx.budget.recordUsage({
+        source_type: 'chat_orchestrator',
+        source_id: ctx.turnId,
+        created_at: nowIso(),
+        function_key: 'chat_orchestrator',
+        function_label: 'Orquestrador (Chat)',
+        phase: 'generate_video',
+        phase_label: 'Chat: generate_video',
+        agent_name: 'Gerador de Vídeo Literal',
+        model: requestedModel || providerLabel,
+        model_label: requestedModel || providerLabel,
+        total_tokens: 0,
+        cost_usd: 0,
+        duration_ms: 0,
+        execution_state: 'completed',
+      })
+
+      const readyExport: ChatArtifactExportRef = {
+        export_id: exportId,
+        label: format.toUpperCase(),
+        format,
+        status: 'ready',
+        mime_type: mimeType,
+        extension,
+        download_url: videoUrl,
+        storage_path: storagePath,
+        attempt_count: 1,
+        last_attempt_at: nowIso(),
+      }
+      const artifact: ChatArtifactRef = {
+        artifact_id: artifactId,
+        logical_document_id: artifactId,
+        version: 1,
+        title,
+        kind: 'video',
+        format,
+        summary: `Vídeo literal gerado por IA no chat (${durationSeconds}s, provedor ${providerLabel}).`,
+        content_preview: videoUrl,
+        download_url: videoUrl,
+        storage_path: storagePath,
+        mime_type: mimeType,
+        extension,
+        is_latest: true,
+        manifest_json: {
+          prompt,
+          duration_seconds: durationSeconds,
+          aspect_ratio: aspectRatio,
+          model: requestedModel,
+          provider: providerLabel,
+          videoUrl,
+          storage_path: storagePath,
+        },
+        exports: [readyExport],
+      }
+
+      await deliverWorkPackage(ctx, {
+        conversation_id: ctx.conversationId,
+        turn_id: ctx.turnId,
+        agent_key: 'chat_video_generator',
+        task: `Gerar vídeo literal: ${title}`,
+        thought: {
+          summary: 'Vídeo literal gerado por um provedor de geração de vídeo por IA e persistido como artifact do chat.',
+          decisions: ['Solicitar clipe real ao provedor de vídeo em vez de entregar roteiro ou slideshow.'],
+          next_steps: ['Reproduzir o player de vídeo inline e permitir o download do arquivo nativo.'],
+        },
+        result_markdown: `Vídeo literal gerado: ${title}.`,
+        artifacts: [artifact],
+        created_at: nowIso(),
+        completed_at: nowIso(),
+      })
+
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: 'generate_video',
+        result_summary: `Vídeo pronto para preview/download: ${format.toUpperCase()} (${durationSeconds}s)`,
+        ts: nowIso(),
+      })
+
+      return {
+        tool_message:
+          `Vídeo literal gerado com sucesso.\n` +
+          `- Título: ${title}\n` +
+          `- Duração: ${durationSeconds}s\n` +
+          `- Formato: ${format.toUpperCase()}\n` +
+          `- Provedor: ${providerLabel}${requestedModel ? ` · modelo ${requestedModel}` : ''}\n` +
+          `- O artifact de vídeo foi registrado na trilha do chat com player e download.`,
+      }
+    } catch (err) {
+      if (isAbortError(err)) throw err
+      const message = getErrorMessage(err)
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: 'generate_video',
+        result_summary: `Erro: ${message}`,
+        ts: nowIso(),
+      })
+      return {
+        tool_message:
+          `Falha operacional ao gerar vídeo literal: ${message}. ` +
+          'Verifique o provedor de vídeo configurado ou tente novamente. Não substitua o vídeo por roteiro ou slideshow.',
+      }
+    }
+  },
+}
+
 // ── Super-Skill: Gerar Documento Jurídico ─────────────────────────────────────
 
 interface GenerateDocumentArgs {
@@ -2268,6 +2530,7 @@ export function buildSuperSkills(): Skill[] {
   return [
     generateImageSkill,
     generateAudioSkill,
+    generateVideoSkill,
     generatePresentationSkill,
     generateDocumentSkill,
     checkDocumentStatusSkill,

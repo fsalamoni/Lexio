@@ -68,6 +68,25 @@ vi.mock('../chat-artifact-storage', () => ({
   uploadNotebookArtifactFile: vi.fn(),
 }))
 
+const requestExternalVideoClipMock = vi.fn()
+const isExternalVideoProviderConfiguredMock = vi.fn(() => true)
+
+vi.mock('../external-video-provider', () => ({
+  requestExternalVideoClip: (...args: unknown[]) => requestExternalVideoClipMock(...args),
+  isExternalVideoProviderConfigured: () => isExternalVideoProviderConfiguredMock(),
+  getExternalVideoProviderDiagnostics: () => ({
+    configured: false,
+    provider: 'none',
+    hasApiKey: false,
+    pollIntervalMs: 4000,
+    pollTimeoutMs: 180000,
+    usingExternalEnvKeys: false,
+    usingLegacyEnvKeys: false,
+    warnings: [],
+    blockingErrors: [],
+  }),
+}))
+
 // Importa depois que o mock está instalado
 import { buildSuperSkills } from './super-skills'
 import type { BudgetTracker, Skill, SkillContext, SkillResult } from './types'
@@ -172,11 +191,113 @@ describe('buildSuperSkills', () => {
     expect(names).toContain('hybrid_search')
   })
 
-  it('deve incluir as super-skills literais de áudio e apresentação', () => {
+  it('deve incluir as super-skills literais de áudio, vídeo e apresentação', () => {
     const skills = buildSuperSkills()
     const names = skills.map(s => s.name)
     expect(names).toContain('generate_audio')
+    expect(names).toContain('generate_video')
     expect(names).toContain('generate_presentation')
+  })
+})
+
+describe('generate_video skill', () => {
+  beforeEach(() => {
+    requestExternalVideoClipMock.mockReset()
+    isExternalVideoProviderConfiguredMock.mockReset().mockReturnValue(true)
+    uploadChatArtifactFileMock.mockReset().mockResolvedValue({
+      url: 'https://storage.test/video.mp4',
+      path: 'chat_artifacts/test-user/conv-1/turn-1/video.mp4',
+    })
+  })
+
+  it('deve exigir o argumento prompt', async () => {
+    const ctx = mockContext()
+    const result = await findAndRunSkill('generate_video', { title: 'Sem prompt' }, ctx)
+    expect(result.tool_message).toContain('"prompt"')
+    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+  })
+
+  it('deve retornar falha operacional quando nenhum provedor de vídeo está configurado', async () => {
+    isExternalVideoProviderConfiguredMock.mockReturnValue(false)
+    const ctx = mockContext()
+    const result = await findAndRunSkill('generate_video', {
+      prompt: 'Plano aberto de um tribunal ao amanhecer.',
+      approved: true,
+    }, ctx)
+    expect(result.tool_message).toContain('Falha operacional')
+    expect(result.tool_message).toContain('VITE_EXTERNAL_VIDEO_PROVIDER')
+    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+  })
+
+  it('deve pedir aprovação antes de gerar vídeo literal', async () => {
+    const emit = vi.fn()
+    const ctx = mockContext({ emit })
+    const result = await findAndRunSkill('generate_video', {
+      prompt: 'Câmera em travelling por uma biblioteca jurídica.',
+      title: 'Clipe biblioteca',
+    }, ctx)
+    expect(result.awaiting_user?.resume_tool).toBe('generate_video')
+    expect(emit.mock.calls.some(call => call[0].type === 'approval_requested')).toBe(true)
+    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+  })
+
+  it('deve gerar artifact de vídeo em modo mock quando aprovado', async () => {
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({ mock: true, persistWorkPackage })
+    const result = await findAndRunSkill('generate_video', {
+      prompt: 'Animação curta de um martelo de juiz.',
+      title: 'Clipe martelo',
+      approved: true,
+    }, ctx)
+    expect(result.tool_message).toContain('Vídeo literal gerado com sucesso')
+    const workPackage = persistWorkPackage.mock.calls[0][0]
+    expect(workPackage.agent_key).toBe('chat_video_generator')
+    expect(workPackage.artifacts[0]).toEqual(expect.objectContaining({ kind: 'video', format: 'mp4' }))
+  })
+
+  it('deve solicitar clipe real ao provedor e encaminhar o modelo de vídeo', async () => {
+    requestExternalVideoClipMock.mockResolvedValue({
+      url: 'https://provider.test/clip.mp4',
+      mimeType: 'video/mp4',
+      provider: 'fal',
+    })
+    const fetchSpy = typeof fetch === 'function'
+      ? vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('CORS bloqueado no teste'))
+      : null
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({ apiKey: 'sk-test', persistWorkPackage })
+
+    try {
+      const result = await findAndRunSkill('generate_video', {
+        prompt: 'Plano cinematográfico de uma audiência.',
+        title: 'Clipe audiência',
+        duration_seconds: 8,
+        model: 'veo-3',
+        approved: true,
+      }, ctx)
+
+      expect(result.tool_message).toContain('Vídeo literal gerado com sucesso')
+      expect(requestExternalVideoClipMock).toHaveBeenCalledWith(expect.objectContaining({
+        prompt: expect.stringContaining('audiência'),
+        durationSeconds: 8,
+        model: 'veo-3',
+      }))
+      const workPackage = persistWorkPackage.mock.calls[0][0]
+      expect(workPackage.artifacts[0]).toEqual(expect.objectContaining({ kind: 'video' }))
+      // fetch falhou (CORS), então o artifact mantém a URL do provedor
+      expect(workPackage.artifacts[0].download_url).toBe('https://provider.test/clip.mp4')
+    } finally {
+      fetchSpy?.mockRestore()
+    }
+  })
+
+  it('deve propagar AbortError do provedor de vídeo', async () => {
+    requestExternalVideoClipMock.mockRejectedValueOnce(new DOMException('cancelado', 'AbortError'))
+    const ctx = mockContext({ apiKey: 'sk-test' })
+    await expect(findAndRunSkill('generate_video', {
+      prompt: 'Clipe a cancelar.',
+      approved: true,
+    }, ctx)).rejects.toThrow()
   })
 })
 
