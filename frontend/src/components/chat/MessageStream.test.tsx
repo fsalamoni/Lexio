@@ -5,6 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import MessageStream from './MessageStream'
 
+// The heavy rich-viewer chunk is lazy-loaded; mock it with a marker so the
+// inline-viewer wiring is asserted without pulling the charts/d3 bundle.
+vi.mock('./ChatArtifactRichViewer', () => ({
+  default: ({ studioType }: { studioType: string }) => (
+    <div data-testid="rich-viewer">rich:{studioType}</div>
+  ),
+}))
+
 describe('MessageStream', () => {
   beforeEach(() => {
     HTMLElement.prototype.scrollIntoView = vi.fn()
@@ -361,5 +369,100 @@ describe('MessageStream', () => {
     expect(downloadLinks.some(link => link.getAttribute('href') === 'https://cdn.lexio.test/render.png')).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: /fechar/i }))
     expect(screen.queryByRole('dialog', { name: 'Render do armário de TV' })).toBeNull()
+  })
+
+  it('renders the rich inline viewer for a structured presentation artifact', async () => {
+    render(
+      <MessageStream
+        turns={[
+          {
+            id: 'turn-deck',
+            conversation_id: 'conv-1',
+            user_input: 'Monte uma apresentação.',
+            trail: [
+              {
+                type: 'agent_work_package',
+                ts: '2026-05-08T10:00:00.000Z',
+                package: {
+                  conversation_id: 'conv-1',
+                  turn_id: 'turn-deck',
+                  agent_key: 'chat_presentation_designer',
+                  task: 'Gerar apresentação',
+                  result_markdown: 'Deck gerado.',
+                  artifacts: [
+                    {
+                      artifact_id: 'deck-v1',
+                      logical_document_id: 'deck-v1',
+                      version: 1,
+                      title: 'Deck de audiência',
+                      kind: 'presentation',
+                      format: 'json',
+                      content_preview: '{"schemaVersion":"presentation_v2.1","slides":[]}',
+                      manifest_json: { artifact_type: 'apresentacao_v2' },
+                    },
+                  ],
+                  created_at: '2026-05-08T10:00:00.000Z',
+                },
+              },
+            ],
+            assistant_markdown: 'Apresentação pronta.',
+            status: 'done',
+            created_at: '2026-05-08T10:00:00.000Z',
+          },
+        ]}
+        liveTurn={null}
+      />,
+    )
+
+    const viewer = await screen.findByTestId('rich-viewer')
+    expect(viewer.textContent).toBe('rich:apresentacao_v2')
+  })
+
+  it('renders a code viewer with language label and copy button for code artifacts', () => {
+    render(
+      <MessageStream
+        turns={[
+          {
+            id: 'turn-code',
+            conversation_id: 'conv-1',
+            user_input: 'Escreva uma função.',
+            trail: [
+              {
+                type: 'agent_work_package',
+                ts: '2026-05-08T10:00:00.000Z',
+                package: {
+                  conversation_id: 'conv-1',
+                  turn_id: 'turn-code',
+                  agent_key: 'chat_code_writer',
+                  task: 'Gerar código',
+                  result_markdown: 'Código gerado.',
+                  artifacts: [
+                    {
+                      artifact_id: 'code-v1',
+                      logical_document_id: 'code-v1',
+                      version: 1,
+                      title: 'Função utilitária',
+                      kind: 'code',
+                      format: 'typescript',
+                      content_preview: 'export const soma = (a: number, b: number) => a + b',
+                    },
+                  ],
+                  created_at: '2026-05-08T10:00:00.000Z',
+                },
+              },
+            ],
+            assistant_markdown: 'Código pronto.',
+            status: 'done',
+            created_at: '2026-05-08T10:00:00.000Z',
+          },
+        ]}
+        liveTurn={null}
+      />,
+    )
+
+    expect(screen.getByText('export const soma = (a: number, b: number) => a + b')).toBeTruthy()
+    expect(screen.getByText('TypeScript')).toBeTruthy()
+    expect(screen.getByText('Copiar')).toBeTruthy()
+    expect(screen.queryByTestId('rich-viewer')).toBeNull()
   })
 })
