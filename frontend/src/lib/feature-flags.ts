@@ -160,6 +160,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_CHAT_MULTIMODAL_ANALYSIS',
     devToggleable: true,
   },
+  {
+    key: 'FF_CHAT_ARTIFACT_VIEWERS',
+    label: 'Chat: Viewers de Artefatos',
+    description: 'Renderiza viewers ricos inline (apresentação, mapa mental, infográfico, tabela, quiz, flashcards, código) nos artefatos do chat',
+    defaultEnabled: true,
+    envVar: 'VITE_FF_CHAT_ARTIFACT_VIEWERS',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────

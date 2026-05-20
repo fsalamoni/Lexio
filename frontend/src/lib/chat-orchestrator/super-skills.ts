@@ -650,6 +650,493 @@ function imageExtensionForFormat(format: 'png' | 'jpg' | 'jpeg' | 'webp'): strin
   return `.${format}`
 }
 
+// ── Super-Skill: Gerar Áudio Literal ─────────────────────────────────────────
+
+interface GenerateAudioArgs {
+  script?: string
+  text?: string
+  title?: string
+  voice?: string
+  model?: string
+  approved?: boolean
+}
+
+function inferAudioArtifactFormat(mimeType?: string): 'mp3' | 'wav' | 'webm' {
+  const normalized = String(mimeType ?? '').toLowerCase()
+  if (normalized.includes('wav')) return 'wav'
+  if (normalized.includes('webm')) return 'webm'
+  return 'mp3'
+}
+
+const generateAudioSkill: Skill<GenerateAudioArgs> = {
+  name: 'generate_audio',
+  description:
+    'Gera áudio literal (narração/locução por TTS) no chat e entrega arquivo MP3/WAV nativo para preview e download. ' +
+    'Use quando o usuário pedir áudio, narração, podcast, locução, MP3 ou WAV. ' +
+    'Não entregue um roteiro textual como substituto do áudio gerado.',
+  argsHint: {
+    script: 'Texto/roteiro completo a ser narrado. Aceita texto simples ou roteiro estruturado.',
+    title: 'Título curto para o arquivo de áudio gerado.',
+    voice: 'Opcional: voz desejada, quando suportada pelo modelo configurado.',
+    model: 'Opcional. Se informado, deve ser exatamente o modelo configurado para o agente Gerador de Áudio Literal.',
+    approved: 'true apenas depois de o usuário aprovar explicitamente a geração literal de áudio',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const script = String(args.script ?? args.text ?? '').trim()
+    const title = String(args.title ?? '').trim() || 'Áudio gerado pelo chat'
+    const voice = String(args.voice ?? '').trim() || undefined
+    const requestedModel = String(args.model ?? '').trim() || undefined
+
+    if (!script) {
+      return { tool_message: 'Erro: "script" (ou "text") é obrigatório para gerar áudio literal.' }
+    }
+
+    const resolvedModel = resolveStrictConfiguredModel(
+      ctx.models.chat_audio_generator,
+      requestedModel,
+      'Gerador de Áudio Literal',
+      'Configurações > Orquestrador (Chat)',
+    )
+    if (!resolvedModel.model) {
+      return { tool_message: resolvedModel.error || 'Erro: modelo de áudio indisponível.' }
+    }
+    const model = resolvedModel.model
+
+    if (!normalizeSideEffectApproval(args.approved)) {
+      return requestApprovalForSkill(ctx, {
+        title: `Gerar áudio literal: ${clip(title, 80)}`,
+        summary: [
+          'O chat vai sintetizar áudio literal (TTS), salvar o arquivo no Storage e exibir o player na conversa.',
+          `Título: ${title}`,
+          voice ? `Voz: ${voice}` : '',
+          `Modelo do agente: ${model}`,
+        ].filter(Boolean).join('\n'),
+        riskLevel: 'medium',
+        permissions: ['write', 'network'],
+        resumeTool: 'generate_audio',
+        resumeArgs: { script, title, voice, model, approved: true },
+      })
+    }
+
+    const artifactId = makeChatArtifactId('chat-audio')
+    ctx.emit({
+      type: 'super_skill_call',
+      skill: 'generate_audio',
+      args_summary: clip(script, 180),
+      result_summary: `Iniciando geração literal de áudio: ${clip(title, 100)}`,
+      ts: nowIso(),
+    })
+
+    try {
+      const audio = ctx.mock
+        ? { blob: new Blob(['mock-audio'], { type: 'audio/mpeg' }), mimeType: 'audio/mpeg', model, costUsd: 0 }
+        : await import('../audio-generation-pipeline').then(async module => {
+            const result = await module.generateAudioLiteralMedia({
+              apiKey: ctx.apiKey,
+              uid: ctx.uid,
+              rawScriptContent: script,
+              voice,
+              ttsModelOverride: model,
+            })
+            return {
+              blob: result.audioBlob,
+              mimeType: result.mimeType,
+              model: result.execution.model || model,
+              costUsd: result.execution.cost_usd ?? 0,
+            }
+          })
+
+      const format = inferAudioArtifactFormat(audio.mimeType)
+      const extension = inferAudioExtensionFromMimeType(audio.mimeType)
+      const exportId = `${artifactId}-${format}`
+      const { uploadChatArtifactFile } = await import('../chat-artifact-storage')
+      const stored = await uploadChatArtifactFile({
+        userId: ctx.uid,
+        conversationId: ctx.conversationId,
+        turnId: ctx.turnId,
+        artifactId,
+        exportId,
+        title,
+        extension,
+        blob: audio.blob,
+      })
+
+      ctx.budget.recordUsage({
+        source_type: 'chat_orchestrator',
+        source_id: ctx.turnId,
+        created_at: nowIso(),
+        function_key: 'chat_orchestrator',
+        function_label: 'Orquestrador (Chat)',
+        phase: 'generate_audio',
+        phase_label: 'Chat: generate_audio',
+        agent_name: 'Gerador de Áudio Literal',
+        model: audio.model,
+        model_label: audio.model,
+        total_tokens: 0,
+        cost_usd: audio.costUsd,
+        duration_ms: 0,
+        execution_state: 'completed',
+      })
+
+      const readyExport: ChatArtifactExportRef = {
+        export_id: exportId,
+        label: format.toUpperCase(),
+        format,
+        status: 'ready',
+        mime_type: audio.mimeType,
+        extension,
+        download_url: stored.url,
+        storage_path: stored.path,
+        attempt_count: 1,
+        last_attempt_at: nowIso(),
+      }
+      const artifact: ChatArtifactRef = {
+        artifact_id: artifactId,
+        logical_document_id: artifactId,
+        version: 1,
+        title,
+        kind: 'audio',
+        format,
+        summary: `Áudio literal gerado pelo chat com ${audio.model}.`,
+        content_preview: stored.url,
+        download_url: stored.url,
+        storage_path: stored.path,
+        mime_type: audio.mimeType,
+        extension,
+        is_latest: true,
+        manifest_json: {
+          voice,
+          model: audio.model,
+          audioUrl: stored.url,
+          storage_path: stored.path,
+        },
+        exports: [readyExport],
+      }
+
+      await deliverWorkPackage(ctx, {
+        conversation_id: ctx.conversationId,
+        turn_id: ctx.turnId,
+        agent_key: 'chat_audio_generator',
+        task: `Gerar áudio literal: ${title}`,
+        thought: {
+          summary: 'Áudio literal sintetizado por TTS e persistido como artifact do chat.',
+          decisions: ['Usar skill direta de áudio em vez de entregar roteiro textual.'],
+          next_steps: ['Reproduzir o player inline e permitir o download do arquivo nativo.'],
+        },
+        result_markdown: `Áudio literal gerado: ${title}.`,
+        artifacts: [artifact],
+        created_at: nowIso(),
+        completed_at: nowIso(),
+      })
+
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: 'generate_audio',
+        result_summary: `Áudio pronto para preview/download: ${format.toUpperCase()}`,
+        ts: nowIso(),
+      })
+
+      return {
+        tool_message:
+          `Áudio literal gerado com sucesso.\n` +
+          `- Título: ${title}\n` +
+          `- Formato: ${format.toUpperCase()}\n` +
+          `- Modelo: ${audio.model}\n` +
+          `- O artifact de áudio foi registrado na trilha do chat com player e download.`,
+      }
+    } catch (err) {
+      if (isAbortError(err)) throw err
+      const message = getErrorMessage(err)
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: 'generate_audio',
+        result_summary: `Erro: ${message}`,
+        ts: nowIso(),
+      })
+      return {
+        tool_message:
+          `Falha operacional ao gerar áudio literal: ${message}. ` +
+          'Configure um modelo de áudio para o agente Gerador de Áudio Literal em Configurações ou tente novamente. Não trate um roteiro textual como áudio entregue.',
+      }
+    }
+  },
+}
+
+// ── Super-Skill: Gerar Apresentação Literal ──────────────────────────────────
+
+interface GeneratePresentationArgs extends GenerateStudioArtifactArgs {
+  generate_slide_images?: boolean | string
+  title?: string
+  model?: string
+}
+
+function mergeRenderedSlideImages(deckContent: string, slideImages: Map<number, string>): string {
+  if (slideImages.size === 0) return deckContent
+  try {
+    const deck = JSON.parse(deckContent) as Record<string, unknown>
+    const applyTo = (slides: unknown) => {
+      if (!Array.isArray(slides)) return
+      for (const slide of slides) {
+        if (!slide || typeof slide !== 'object') continue
+        const record = slide as Record<string, unknown>
+        const number = Number(record.number)
+        const url = Number.isFinite(number) ? slideImages.get(number) : undefined
+        if (url) record.renderedImageUrl = url
+      }
+    }
+    applyTo(deck.slides)
+    const nested = deck.presentation
+    if (nested && typeof nested === 'object') {
+      applyTo((nested as Record<string, unknown>).slides)
+    }
+    return JSON.stringify(deck, null, 2)
+  } catch {
+    return deckContent
+  }
+}
+
+const generatePresentationSkill: Skill<GeneratePresentationArgs> = {
+  name: 'generate_presentation',
+  description:
+    'Gera uma apresentação literal (deck de slides) no chat, com estrutura completa e, quando aprovado, ' +
+    'visuais renderizados de cada slide. Use quando o usuário pedir apresentação, deck, slides ou PPTX. ' +
+    'Entrega o artefato pronto para visualização inline e export PPTX.',
+  argsHint: {
+    topic: 'Tema central da apresentação.',
+    title: 'Título do deck.',
+    slide_count: 'Número de slides entre 3 e 24.',
+    audience: 'Público-alvo do deck.',
+    objective: 'Objetivo narrativo ou decisão buscada.',
+    depth: 'executiva, intermediaria, profunda ou tecnica.',
+    instructions: 'Instruções customizadas de tom, formato ou foco.',
+    legal_area: 'Área jurídica opcional para enriquecer o prompt.',
+    generate_slide_images: 'true (padrão) para renderizar os visuais literais dos slides; false para deck somente textual.',
+    model: 'Opcional. Se informado, deve ser o modelo configurado para o agente Designer de Apresentação.',
+    approved: 'true apenas depois de o usuário aprovar explicitamente a geração da apresentação',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const topic = String(args.topic ?? '').trim()
+    const title = String(args.title ?? '').trim() || (topic ? `Apresentação — ${topic}` : 'Apresentação gerada pelo chat')
+    const instructions = String(args.instructions ?? '').trim()
+    const legalArea = String(args.legal_area ?? '').trim()
+    const generateSlideImages = toBoolean(args.generate_slide_images, true)
+    const requestedModel = String(args.model ?? '').trim() || undefined
+
+    if (!topic) {
+      return { tool_message: 'Erro: "topic" é obrigatório para gerar uma apresentação.' }
+    }
+
+    // The presentation designer model is only required when literal slide
+    // visuals are requested; a text-only deck does not need an image model.
+    let designerModel = ''
+    if (generateSlideImages) {
+      const resolvedModel = resolveStrictConfiguredModel(
+        ctx.models.chat_presentation_designer,
+        requestedModel,
+        'Designer de Apresentação',
+        'Configurações > Orquestrador (Chat)',
+      )
+      if (!resolvedModel.model) {
+        return { tool_message: resolvedModel.error || 'Erro: modelo de imagem para slides indisponível.' }
+      }
+      designerModel = resolvedModel.model
+    }
+
+    if (!normalizeSideEffectApproval(args.approved)) {
+      return requestApprovalForSkill(ctx, {
+        title: `Gerar apresentação: ${clip(title, 80)}`,
+        summary: [
+          'O chat vai gerar um deck de slides e, quando habilitado, renderizar os visuais literais de cada slide.',
+          `Título: ${title}`,
+          `Tema: ${topic}`,
+          generateSlideImages ? `Visuais dos slides: sim (modelo ${designerModel})` : 'Visuais dos slides: não (deck textual)',
+        ].filter(Boolean).join('\n'),
+        riskLevel: 'medium',
+        permissions: ['write', 'network'],
+        resumeTool: 'generate_presentation',
+        resumeArgs: { ...args, topic, title, generate_slide_images: generateSlideImages, model: designerModel || undefined, approved: true },
+      })
+    }
+
+    const artifactId = makeChatArtifactId('chat-presentation')
+    ctx.emit({
+      type: 'super_skill_call',
+      skill: 'generate_presentation',
+      args_summary: clip(topic, 180),
+      result_summary: `Iniciando geração de apresentação: ${clip(title, 100)}`,
+      ts: nowIso(),
+    })
+
+    try {
+      let deckContent: string
+      const slideImages = new Map<number, string>()
+
+      if (ctx.mock) {
+        deckContent = buildMockPresentationV2Content(topic, 'Apresentação')
+      } else {
+        if (!ctx.apiKey?.trim()) {
+          return { tool_message: 'Erro: nenhuma chave OpenRouter disponível. Configure sua chave em Configurações antes de gerar a apresentação.' }
+        }
+        const pipelineInput = {
+          apiKey: ctx.apiKey,
+          uid: ctx.uid,
+          topic,
+          description: instructions,
+          sourceContext: String(args.source_context ?? '').trim() || topic,
+          conversationContext: String(args.conversation_context ?? '').trim() || `Solicitação feita pelo Chat Orquestrador na conversa ${ctx.conversationId}.`,
+          customInstructions: instructions,
+          artifactType: 'apresentacao_v2' as StudioArtifactType,
+          artifactLabel: 'Apresentação',
+          legalArea: legalArea || undefined,
+          presentationV2Briefing: buildPresentationV2Briefing(args, topic, instructions),
+        }
+        const deckResult = await import('../presentation-generation-pipeline-v2').then(module =>
+          module.runPresentationGenerationPipelineV2(pipelineInput, (step, totalSteps, phase, meta) => ctx.emit({
+            type: 'pipeline_progress',
+            pipeline: 'presentation_v2',
+            phase,
+            progress: meta?.progressPercent ?? Math.round((step / Math.max(totalSteps, 1)) * 100),
+            artifact_id: artifactId,
+            ts: nowIso(),
+          }), ctx.signal),
+        )
+        deckContent = deckResult.content
+        deckResult.executions.forEach(execution => ctx.budget.recordUsage({
+          total_tokens: (execution.tokens_in ?? 0) + (execution.tokens_out ?? 0),
+          cost_usd: execution.cost_usd,
+          model: execution.model,
+          agent_name: execution.agent_name,
+          phase: execution.phase,
+        }))
+
+        if (generateSlideImages) {
+          try {
+            const { uploadChatArtifactFile } = await import('../chat-artifact-storage')
+            const media = await import('../presentation-generation-pipeline-v2').then(module =>
+              module.generatePresentationV2MediaAssets(
+                { apiKey: ctx.apiKey, uid: ctx.uid, topic, description: instructions },
+                deckContent,
+                (step, totalSteps, phase) => ctx.emit({
+                  type: 'pipeline_progress',
+                  pipeline: 'presentation_v2_media',
+                  phase,
+                  progress: Math.round((step / Math.max(totalSteps, 1)) * 100),
+                  artifact_id: artifactId,
+                  ts: nowIso(),
+                }),
+                ctx.signal,
+                { imageModelOverride: designerModel },
+              ),
+            )
+            for (const visual of media.slideVisuals) {
+              const stored = await uploadChatArtifactFile({
+                userId: ctx.uid,
+                conversationId: ctx.conversationId,
+                turnId: ctx.turnId,
+                artifactId,
+                exportId: `${artifactId}-slide-${visual.slideNumber}`,
+                title: `${title}-slide-${visual.slideNumber}`,
+                extension: visual.extension,
+                blob: visual.blob,
+              })
+              if (stored.url) slideImages.set(visual.slideNumber, stored.url)
+            }
+            media.executions.forEach(execution => ctx.budget.recordUsage({
+              total_tokens: (execution.tokens_in ?? 0) + (execution.tokens_out ?? 0),
+              cost_usd: execution.cost_usd,
+              model: execution.model,
+              agent_name: execution.agent_name,
+              phase: execution.phase,
+            }))
+          } catch (mediaErr) {
+            if (isAbortError(mediaErr)) throw mediaErr
+            // Slide visuals are best-effort: deliver the textual deck even
+            // when the image step fails so the user still gets a deck.
+            ctx.emit({
+              type: 'super_skill_call',
+              skill: 'generate_presentation',
+              result_summary: `Visuais dos slides indisponíveis (${getErrorMessage(mediaErr)}); deck textual entregue.`,
+              ts: nowIso(),
+            })
+          }
+        }
+      }
+
+      const finalDeck = mergeRenderedSlideImages(deckContent, slideImages)
+
+      const artifact: ChatArtifactRef = {
+        artifact_id: artifactId,
+        logical_document_id: artifactId,
+        version: 1,
+        title,
+        kind: 'presentation',
+        format: 'json',
+        summary: `Apresentação literal gerada pelo chat${slideImages.size > 0 ? ` com ${slideImages.size} slide(s) renderizado(s)` : ''}.`,
+        content_preview: finalDeck,
+        is_latest: true,
+        manifest_json: {
+          topic,
+          artifact_type: 'apresentacao_v2',
+          rendered_slide_count: slideImages.size,
+          designer_model: designerModel || null,
+        },
+        exports: [
+          { label: 'JSON', format: 'json', status: 'planned' },
+          { label: 'PPTX', format: 'pptx', status: 'planned' },
+          { label: 'PDF', format: 'pdf', status: 'planned' },
+          { label: 'ZIP', format: 'zip', status: 'planned' },
+        ],
+      }
+
+      await deliverWorkPackage(ctx, {
+        conversation_id: ctx.conversationId,
+        turn_id: ctx.turnId,
+        agent_key: 'chat_presentation_designer',
+        task: `Gerar apresentação: ${title}`,
+        thought: {
+          summary: 'Apresentação literal gerada e registrada como artifact do chat.',
+          decisions: ['Gerar o deck v2 e renderizar os visuais literais dos slides quando aprovado.'],
+          next_steps: ['Abrir o viewer inline da apresentação e exportar em PPTX.'],
+        },
+        result_markdown: `Apresentação literal gerada: ${title}.`,
+        artifacts: [artifact],
+        created_at: nowIso(),
+        completed_at: nowIso(),
+      })
+
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: 'generate_presentation',
+        result_summary: `Apresentação pronta${slideImages.size > 0 ? ` (${slideImages.size} slide[s] visual[is])` : ''}.`,
+        ts: nowIso(),
+      })
+
+      return {
+        tool_message:
+          `Apresentação literal gerada com sucesso.\n` +
+          `- Título: ${title}\n` +
+          `- Slides com visual renderizado: ${slideImages.size}\n` +
+          (designerModel ? `- Modelo de visuais: ${designerModel}\n` : '') +
+          `- O artifact de apresentação foi registrado na trilha do chat com viewer inline e export PPTX.`,
+      }
+    } catch (err) {
+      if (isAbortError(err)) throw err
+      const message = getErrorMessage(err)
+      ctx.emit({
+        type: 'super_skill_call',
+        skill: 'generate_presentation',
+        result_summary: `Erro: ${message}`,
+        ts: nowIso(),
+      })
+      return {
+        tool_message:
+          `Falha operacional ao gerar apresentação: ${message}. ` +
+          'Configure os modelos do Chat em Configurações ou tente novamente.',
+      }
+    }
+  },
+}
+
 // ── Super-Skill: Gerar Documento Jurídico ─────────────────────────────────────
 
 interface GenerateDocumentArgs {
@@ -1398,15 +1885,28 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
         content = result.content
         const executions = [...result.executions]
         if (artifactType === 'audio_script' && shouldGenerateLiteralAudio) {
+          // The literal audio is governed by the chat's own capability-restricted
+          // agent (chat_audio_generator), keeping this route consistent with the
+          // dedicated generate_audio skill.
+          const audioModel = resolveStrictConfiguredModel(
+            ctx.models.chat_audio_generator,
+            String(args.tts_model ?? '').trim() || undefined,
+            'Gerador de Áudio Literal',
+            'Configurações > Orquestrador (Chat)',
+          )
+          if (!audioModel.model) {
+            return { tool_message: audioModel.error || 'Erro: modelo de áudio indisponível para gerar o áudio literal.' }
+          }
           const [{ generateAudioLiteralMedia }, { uploadNotebookMediaArtifact }] = await Promise.all([
             import('../audio-generation-pipeline'),
             import('../notebook-media-storage'),
           ])
           const synthesis = await generateAudioLiteralMedia({
             apiKey: ctx.apiKey,
+            uid: ctx.uid,
             rawScriptContent: content,
             voice: String(args.voice ?? '').trim() || undefined,
-            model: String(args.tts_model ?? '').trim() || undefined,
+            ttsModelOverride: audioModel.model,
           }, (step, totalSteps, phase, meta) => ctx.emit({
             type: 'pipeline_progress',
             pipeline: 'audio_literal',
@@ -1767,6 +2267,8 @@ const hybridSearchSkill: Skill<HybridSearchArgs> = {
 export function buildSuperSkills(): Skill[] {
   return [
     generateImageSkill,
+    generateAudioSkill,
+    generatePresentationSkill,
     generateDocumentSkill,
     checkDocumentStatusSkill,
     searchJurisprudenceSkill,

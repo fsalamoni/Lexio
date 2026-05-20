@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   Archive,
@@ -36,9 +36,51 @@ import type {
   ChatTrailEvent,
   ChatTurnAttachment,
   ChatTurnData,
+  StudioArtifactType,
 } from '../../lib/firestore-types'
 import { buildChatDeliverableBundleForTurn, type ChatExportRetryRequest } from '../../lib/chat-deliverable-bundles'
 import { isEnabled } from '../../lib/feature-flags'
+
+// Heavy viewer chunk (charts/d3) — loaded only when a structured artifact
+// is actually rendered, keeping the chat route's initial bundle lean.
+const ChatArtifactRichViewer = lazy(() => import('./ChatArtifactRichViewer'))
+
+/** Studio artifact types that have a rich inline viewer. */
+const RICH_VIEWER_STUDIO_TYPES = new Set<StudioArtifactType>([
+  'resumo', 'relatorio', 'documento', 'guia_estruturado',
+  'apresentacao', 'apresentacao_v2', 'mapa_mental', 'cartoes_didaticos',
+  'infografico', 'teste', 'tabela_dados', 'audio_script', 'video_script',
+])
+
+/**
+ * Maps a chat artifact to the StudioArtifactType whose rich viewer should
+ * render it. Prefers the explicit `manifest_json.artifact_type` written by
+ * the studio/presentation skills, then falls back to the artifact `kind`.
+ * Returns `null` when no rich viewer applies (image/audio/video/code have
+ * their own rendering paths).
+ */
+function mapChatArtifactToStudioType(artifact: ChatArtifactRef): StudioArtifactType | null {
+  const declared = artifact.manifest_json?.artifact_type
+  if (typeof declared === 'string' && RICH_VIEWER_STUDIO_TYPES.has(declared as StudioArtifactType)) {
+    return declared as StudioArtifactType
+  }
+  switch (artifact.kind) {
+    case 'presentation':
+      return 'apresentacao_v2'
+    case 'spreadsheet':
+      return 'tabela_dados'
+    default:
+      return null
+  }
+}
+
+const CODE_LANGUAGE_LABELS: Record<string, string> = {
+  typescript: 'TypeScript',
+  javascript: 'JavaScript',
+  python: 'Python',
+  json: 'JSON',
+  html: 'HTML',
+}
 
 interface MessageStreamProps {
   turns: ChatTurnData[]
@@ -361,6 +403,14 @@ function ArtifactCard({ artifact }: { artifact: ChatArtifactRef }) {
   const preview = getArtifactPreview(artifact)
   const [isPreviewOpen, setPreviewOpen] = useState(false)
   const Icon = getArtifactCardIcon(artifact)
+
+  const viewersEnabled = isEnabled('FF_CHAT_ARTIFACT_VIEWERS')
+  const rawContent = String(artifact.content_preview ?? '')
+  const hasRawText = Boolean(rawContent.trim()) && !isPreviewSource(rawContent)
+  const studioType = viewersEnabled ? mapChatArtifactToStudioType(artifact) : null
+  const isCodeArtifact = viewersEnabled && artifact.kind === 'code' && hasRawText
+  const showRichViewer = Boolean(studioType) && hasRawText && !isCodeArtifact
+
   return (
     <div className="rounded-md border border-[var(--v2-border)] bg-white px-3 py-2">
       <div className="flex items-start gap-2">
@@ -382,9 +432,32 @@ function ArtifactCard({ artifact }: { artifact: ChatArtifactRef }) {
         />
       )}
 
-      {artifact.content_preview && !isPreviewSource(artifact.content_preview) && (
+      {isCodeArtifact && <ArtifactCodeViewer code={rawContent} format={artifact.format} />}
+
+      {showRichViewer && studioType && (
+        <Suspense
+          fallback={
+            <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-3 text-center text-[11px] text-[var(--v2-ink-faint)]">
+              Carregando visualização…
+            </div>
+          }
+        >
+          <ChatArtifactRichViewer artifact={artifact} studioType={studioType} />
+        </Suspense>
+      )}
+
+      {hasRawText && showRichViewer && (
+        <details className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+          <summary className="cursor-pointer select-none font-semibold text-slate-700">Ver conteúdo bruto</summary>
+          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-[11px] leading-4 text-slate-700">
+            {rawContent}
+          </pre>
+        </details>
+      )}
+
+      {hasRawText && !showRichViewer && !isCodeArtifact && (
         <div className="mt-2 whitespace-pre-wrap rounded bg-[rgba(15,23,42,0.04)] px-2 py-1.5 text-[var(--v2-ink-muted)]">
-          {artifact.content_preview}
+          {rawContent}
         </div>
       )}
 
@@ -442,6 +515,37 @@ function ArtifactCard({ artifact }: { artifact: ChatArtifactRef }) {
           onClose={() => setPreviewOpen(false)}
         />
       )}
+    </div>
+  )
+}
+
+function ArtifactCodeViewer({ code, format }: { code: string; format: string }) {
+  const [copied, setCopied] = useState(false)
+  const language = CODE_LANGUAGE_LABELS[format] ?? format.toUpperCase()
+  const handleCopy = () => {
+    if (!navigator.clipboard) return
+    void navigator.clipboard.writeText(code)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => { /* clipboard indisponível — ignora */ })
+  }
+  return (
+    <div className="mt-2 overflow-hidden rounded-md border border-slate-700 bg-slate-900">
+      <div className="flex items-center justify-between border-b border-slate-700 px-3 py-1.5">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-300">{language}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="rounded border border-slate-600 bg-slate-800 px-2 py-0.5 text-[11px] font-semibold text-slate-200 hover:bg-slate-700"
+        >
+          {copied ? 'Copiado' : 'Copiar'}
+        </button>
+      </div>
+      <pre className="max-h-96 overflow-auto px-3 py-2 text-[12px] leading-5 text-slate-100">
+        <code>{code}</code>
+      </pre>
     </div>
   )
 }

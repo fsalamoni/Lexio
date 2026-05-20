@@ -278,25 +278,46 @@ export async function generateAudioLiteralMedia(
     uid?: string
     voice?: string
     model?: string
+    /**
+     * Chat-orchestrator override: when set, the TTS model is driven by the
+     * chat's own `chat_audio_generator` agent (capability-restricted to
+     * `audio`) instead of the Research Notebook's
+     * `audio_pipeline_models.audio_narrador`. The Research Notebook studio
+     * path never passes this, so its behaviour is byte-for-byte unchanged.
+     */
+    ttsModelOverride?: string
   },
   onProgress?: StudioProgressCallback,
 ): Promise<AudioLiteralGenerationResult> {
-  const models = await loadAudioPipelineModels(input.uid)
-  const configuredTtsModel = String(models.audio_narrador ?? '').trim()
-  if (!configuredTtsModel) {
-    throw new Error('Nenhum modelo configurado para o agente "Narrador / TTS" do pipeline de áudio. Configure esse agente em Configurações antes de gerar áudio literal.')
+  const override = String(input.ttsModelOverride ?? '').trim()
+  let ttsModel: string
+  let agentName = 'Narrador / TTS'
+
+  if (override) {
+    // Chat path — governed by the chat_audio_generator agent.
+    await validateScopedAgentModels('chat_orchestrator_models', { chat_audio_generator: override }, input.uid)
+    ttsModel = override
+    agentName = 'Gerador de Áudio Literal'
+  } else {
+    // Research Notebook studio path — unchanged.
+    const models = await loadAudioPipelineModels(input.uid)
+    const configuredTtsModel = String(models.audio_narrador ?? '').trim()
+    if (!configuredTtsModel) {
+      throw new Error('Nenhum modelo configurado para o agente "Narrador / TTS" do pipeline de áudio. Configure esse agente em Configurações antes de gerar áudio literal.')
+    }
+
+    const requestedModel = String(input.model ?? '').trim()
+    if (requestedModel && requestedModel !== configuredTtsModel) {
+      throw new Error(
+        `O áudio literal deve usar exatamente o modelo configurado para o agente "Narrador / TTS" (${configuredTtsModel}). ` +
+        `A chamada pediu "${requestedModel}", o que foi bloqueado para evitar desvio da configuração do agente.`,
+      )
+    }
+
+    await validateScopedAgentModels('audio_pipeline_models', { audio_narrador: configuredTtsModel }, input.uid)
+    ttsModel = configuredTtsModel
   }
 
-  const requestedModel = String(input.model ?? '').trim()
-  if (requestedModel && requestedModel !== configuredTtsModel) {
-    throw new Error(
-      `O áudio literal deve usar exatamente o modelo configurado para o agente "Narrador / TTS" (${configuredTtsModel}). ` +
-      `A chamada pediu "${requestedModel}", o que foi bloqueado para evitar desvio da configuração do agente.`,
-    )
-  }
-
-  await validateScopedAgentModels('audio_pipeline_models', { audio_narrador: configuredTtsModel }, input.uid)
-  const ttsModel = configuredTtsModel
   const startedAt = Date.now()
   onProgress?.(1, 1, 'Gerando áudio literal…', {
     executionState: 'waiting_io',
@@ -313,7 +334,7 @@ export async function generateAudioLiteralMedia(
     ...synthesis,
     execution: {
       phase: 'audio_literal_generation',
-      agent_name: 'Narrador / TTS',
+      agent_name: agentName,
       model: synthesis.model || ttsModel,
       provider_id: synthesis.provider_id ?? null,
       provider_label: synthesis.provider_label ?? null,
