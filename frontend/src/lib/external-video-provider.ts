@@ -12,6 +12,13 @@ export interface ExternalVideoClipRequest {
   aspectRatio?: string
   sceneNumber?: number
   partNumber?: number
+  /**
+   * Optional video model identifier forwarded to the provider. Aggregator
+   * endpoints (fal.ai, Replicate, …) host many video models behind one
+   * endpoint, so this lets the caller pick a specific model (Veo, Kling,
+   * Wan, …) without changing the configured endpoint.
+   */
+  model?: string
   signal?: AbortSignal
 }
 
@@ -628,6 +635,7 @@ export async function requestExternalVideoClip(
     scene_number: req.sceneNumber,
     part_number: req.partNumber,
     provider: cfg.provider,
+    ...(req.model?.trim() ? { model: req.model.trim() } : {}),
   })
 
   let response: Response | null = null
