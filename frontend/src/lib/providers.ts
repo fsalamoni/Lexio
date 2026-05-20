@@ -35,18 +35,21 @@ export type ProviderId =
   | 'perplexity'
   | 'ollama'
   | 'elevenlabs'
+  | 'fal'
 
 /**
  * Payload dialect understood by the underlying API. Most providers in the
  * market expose an OpenAI-compatible chat completions endpoint, so the same
  * request body works. Anthropic uses its own /v1/messages format; ElevenLabs
- * is audio-only; Ollama mirrors OpenAI's chat API on port 11434.
+ * is audio-only; fal.ai is video-only (queue-based generation); Ollama
+ * mirrors OpenAI's chat API on port 11434.
  */
 export type ProviderDialect =
   | 'openai-compatible' // POST chat/completions, OpenAI body
   | 'anthropic'         // POST v1/messages, Anthropic body
   | 'openrouter'        // POST openrouter chat/completions
   | 'audio-only'        // ElevenLabs / dedicated TTS providers
+  | 'video-only'        // fal.ai / dedicated video-generation providers
   | 'ollama'            // local ollama daemon
 
 export type ProviderCapability = 'text' | 'image' | 'audio' | 'video'
@@ -605,6 +608,35 @@ export const PROVIDERS: Record<ProviderId, ProviderDefinition> = {
       { id: 'eleven_flash_v2_5', label: 'Eleven Flash v2.5', tier: 'fast', capabilities: ['audio'] },
     ],
   },
+  fal: {
+    id: 'fal',
+    label: 'fal.ai (Vídeo)',
+    color: 'bg-fuchsia-100 text-fuchsia-700',
+    description: 'Geração de vídeo real por IA — Veo, Kling, Wan, Hailuo, LTX e similares.',
+    consoleUrl: 'https://fal.ai/dashboard/keys',
+    keyPrefix: '',
+    guide: [
+      'Crie uma conta em fal.ai',
+      'Acesse Dashboard → Keys → Add key',
+      'Copie a chave e cole aqui',
+      'O endpoint de geração de vídeo é configurado pelo operador em VITE_EXTERNAL_VIDEO_PROVIDER_*',
+    ],
+    dialect: 'video-only',
+    baseUrl: 'https://queue.fal.run',
+    modelsListUrl: '',
+    modelsListShape: 'static',
+    capabilities: ['video'],
+    authHeader: 'Authorization',
+    authPrefix: 'Key ',
+    staticModels: [
+      { id: 'fal-ai/veo3', label: 'Google Veo 3', tier: 'premium', capabilities: ['video'] },
+      { id: 'fal-ai/veo3/fast', label: 'Google Veo 3 Fast', tier: 'balanced', capabilities: ['video'] },
+      { id: 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video', label: 'Kling 2.5 Turbo Pro', tier: 'premium', capabilities: ['video'] },
+      { id: 'fal-ai/minimax/hailuo-02/standard/text-to-video', label: 'MiniMax Hailuo 02', tier: 'balanced', capabilities: ['video'] },
+      { id: 'fal-ai/wan/v2.2-a14b/text-to-video', label: 'Wan 2.2 A14B', tier: 'balanced', capabilities: ['video'] },
+      { id: 'fal-ai/ltx-video-13b-distilled', label: 'LTX Video 13B', tier: 'fast', capabilities: ['video'] },
+    ],
+  },
 }
 
 /** Ordered list used by the Admin UI when rendering provider cards. */
@@ -626,6 +658,7 @@ export const PROVIDER_ORDER: ProviderId[] = [
   'perplexity',
   'ollama',
   'elevenlabs',
+  'fal',
 ]
 
 export function getProvider(id: ProviderId): ProviderDefinition {

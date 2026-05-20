@@ -1164,28 +1164,40 @@ const generateVideoSkill: Skill<GenerateVideoArgs> = {
     title: 'Título curto para o arquivo de vídeo gerado.',
     duration_seconds: 'Duração alvo do clipe em segundos (padrão 8; faixa típica 4–20 conforme o modelo).',
     aspect_ratio: 'Proporção desejada. Ex.: 16:9, 9:16, 1:1.',
-    model: 'Opcional: modelo de vídeo específico hospedado pelo provedor configurado (ex.: veo-3, kling-2.5, wan-2.5).',
+    model: 'Opcional. Se informado, deve ser exatamente o modelo configurado para o agente Gerador de Vídeo Literal.',
     approved: 'true apenas depois de o usuário aprovar explicitamente a geração literal de vídeo',
   },
   async run(args, ctx): Promise<SkillResult> {
     const prompt = String(args.prompt ?? '').trim()
     const title = String(args.title ?? '').trim() || 'Vídeo gerado pelo chat'
     const aspectRatio = String(args.aspect_ratio ?? '').trim() || '16:9'
-    const requestedModel = String(args.model ?? '').trim() || undefined
     const durationSeconds = clampNumber(args.duration_seconds, 8, 2, 30)
 
     if (!prompt) {
       return { tool_message: 'Erro: "prompt" é obrigatório para gerar vídeo literal.' }
     }
 
+    // The video model is picked by the user from the capability-restricted
+    // catalog of the chat_video_generator agent.
+    const resolvedModel = resolveStrictConfiguredModel(
+      ctx.models.chat_video_generator,
+      String(args.model ?? '').trim() || undefined,
+      'Gerador de Vídeo Literal',
+      'Configurações > Orquestrador (Chat)',
+    )
+    if (!resolvedModel.model) {
+      return { tool_message: resolvedModel.error || 'Erro: modelo de vídeo indisponível.' }
+    }
+    const videoModel = resolvedModel.model
+
     const { getExternalVideoProviderDiagnostics, isExternalVideoProviderConfigured } = await import('../external-video-provider')
     if (!ctx.mock && !isExternalVideoProviderConfigured()) {
       const diagnostics = getExternalVideoProviderDiagnostics()
       return {
         tool_message:
-          'Falha operacional: nenhum provedor de geração de vídeo real está configurado. ' +
-          'Configure VITE_EXTERNAL_VIDEO_PROVIDER e VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT apontando para um ' +
-          'agregador de vídeo real (ex.: fal.ai, Replicate, Veo) capaz de receber um prompt e devolver o MP4. ' +
+          'Falha operacional: o endpoint do provedor de geração de vídeo não está configurado. ' +
+          'O modelo de vídeo está escolhido, mas o operador precisa configurar VITE_EXTERNAL_VIDEO_PROVIDER e ' +
+          'VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT apontando para o endpoint do agregador de vídeo (ex.: fal.ai). ' +
           (diagnostics.blockingErrors.length > 0 ? `Detalhe: ${diagnostics.blockingErrors.join(' ')} ` : '') +
           'Não substitua o vídeo por roteiro, slideshow ou descrição textual.',
       }
@@ -1199,7 +1211,7 @@ const generateVideoSkill: Skill<GenerateVideoArgs> = {
           `Título: ${title}`,
           `Duração alvo: ${durationSeconds}s`,
           `Proporção: ${aspectRatio}`,
-          requestedModel ? `Modelo de vídeo: ${requestedModel}` : 'Modelo de vídeo: padrão do provedor',
+          `Modelo de vídeo: ${videoModel}`,
         ].filter(Boolean).join('\n'),
         riskLevel: 'high',
         permissions: ['write', 'network'],
@@ -1209,7 +1221,7 @@ const generateVideoSkill: Skill<GenerateVideoArgs> = {
           title,
           duration_seconds: durationSeconds,
           aspect_ratio: aspectRatio,
-          model: requestedModel,
+          model: videoModel,
           approved: true,
         },
       })
@@ -1250,7 +1262,7 @@ const generateVideoSkill: Skill<GenerateVideoArgs> = {
           prompt,
           durationSeconds,
           aspectRatio,
-          model: requestedModel,
+          model: videoModel,
           signal: ctx.signal,
         })
         if (!clipResult?.url) {
@@ -1303,8 +1315,8 @@ const generateVideoSkill: Skill<GenerateVideoArgs> = {
         phase: 'generate_video',
         phase_label: 'Chat: generate_video',
         agent_name: 'Gerador de Vídeo Literal',
-        model: requestedModel || providerLabel,
-        model_label: requestedModel || providerLabel,
+        model: videoModel,
+        model_label: videoModel,
         total_tokens: 0,
         cost_usd: 0,
         duration_ms: 0,
@@ -1341,7 +1353,7 @@ const generateVideoSkill: Skill<GenerateVideoArgs> = {
           prompt,
           duration_seconds: durationSeconds,
           aspect_ratio: aspectRatio,
-          model: requestedModel,
+          model: videoModel,
           provider: providerLabel,
           videoUrl,
           storage_path: storagePath,
@@ -1378,7 +1390,7 @@ const generateVideoSkill: Skill<GenerateVideoArgs> = {
           `- Título: ${title}\n` +
           `- Duração: ${durationSeconds}s\n` +
           `- Formato: ${format.toUpperCase()}\n` +
-          `- Provedor: ${providerLabel}${requestedModel ? ` · modelo ${requestedModel}` : ''}\n` +
+          `- Modelo: ${videoModel} · provedor: ${providerLabel}\n` +
           `- O artifact de vídeo foi registrado na trilha do chat com player e download.`,
       }
     } catch (err) {

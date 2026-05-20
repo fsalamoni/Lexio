@@ -217,9 +217,19 @@ describe('generate_video skill', () => {
     expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
   })
 
-  it('deve retornar falha operacional quando nenhum provedor de vídeo está configurado', async () => {
+  it('deve retornar erro acionável quando o agente de vídeo não está configurado', async () => {
+    const ctx = mockContext({ models: {} })
+    const result = await findAndRunSkill('generate_video', {
+      prompt: 'Plano aberto de um tribunal ao amanhecer.',
+      approved: true,
+    }, ctx)
+    expect(result.tool_message).toContain('Gerador de Vídeo Literal')
+    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+  })
+
+  it('deve retornar falha operacional quando o endpoint de vídeo não está configurado', async () => {
     isExternalVideoProviderConfiguredMock.mockReturnValue(false)
-    const ctx = mockContext()
+    const ctx = mockContext({ models: { chat_video_generator: 'fal-ai/veo3' } })
     const result = await findAndRunSkill('generate_video', {
       prompt: 'Plano aberto de um tribunal ao amanhecer.',
       approved: true,
@@ -231,7 +241,7 @@ describe('generate_video skill', () => {
 
   it('deve pedir aprovação antes de gerar vídeo literal', async () => {
     const emit = vi.fn()
-    const ctx = mockContext({ emit })
+    const ctx = mockContext({ emit, models: { chat_video_generator: 'fal-ai/veo3' } })
     const result = await findAndRunSkill('generate_video', {
       prompt: 'Câmera em travelling por uma biblioteca jurídica.',
       title: 'Clipe biblioteca',
@@ -243,7 +253,7 @@ describe('generate_video skill', () => {
 
   it('deve gerar artifact de vídeo em modo mock quando aprovado', async () => {
     const persistWorkPackage = vi.fn(async packageData => packageData)
-    const ctx = mockContext({ mock: true, persistWorkPackage })
+    const ctx = mockContext({ mock: true, persistWorkPackage, models: { chat_video_generator: 'mock/video-generator' } })
     const result = await findAndRunSkill('generate_video', {
       prompt: 'Animação curta de um martelo de juiz.',
       title: 'Clipe martelo',
@@ -255,7 +265,7 @@ describe('generate_video skill', () => {
     expect(workPackage.artifacts[0]).toEqual(expect.objectContaining({ kind: 'video', format: 'mp4' }))
   })
 
-  it('deve solicitar clipe real ao provedor e encaminhar o modelo de vídeo', async () => {
+  it('deve solicitar clipe real ao provedor encaminhando o modelo de vídeo escolhido', async () => {
     requestExternalVideoClipMock.mockResolvedValue({
       url: 'https://provider.test/clip.mp4',
       mimeType: 'video/mp4',
@@ -265,14 +275,13 @@ describe('generate_video skill', () => {
       ? vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('CORS bloqueado no teste'))
       : null
     const persistWorkPackage = vi.fn(async packageData => packageData)
-    const ctx = mockContext({ apiKey: 'sk-test', persistWorkPackage })
+    const ctx = mockContext({ apiKey: 'sk-test', persistWorkPackage, models: { chat_video_generator: 'fal-ai/veo3' } })
 
     try {
       const result = await findAndRunSkill('generate_video', {
         prompt: 'Plano cinematográfico de uma audiência.',
         title: 'Clipe audiência',
         duration_seconds: 8,
-        model: 'veo-3',
         approved: true,
       }, ctx)
 
@@ -280,7 +289,7 @@ describe('generate_video skill', () => {
       expect(requestExternalVideoClipMock).toHaveBeenCalledWith(expect.objectContaining({
         prompt: expect.stringContaining('audiência'),
         durationSeconds: 8,
-        model: 'veo-3',
+        model: 'fal-ai/veo3',
       }))
       const workPackage = persistWorkPackage.mock.calls[0][0]
       expect(workPackage.artifacts[0]).toEqual(expect.objectContaining({ kind: 'video' }))
@@ -293,7 +302,7 @@ describe('generate_video skill', () => {
 
   it('deve propagar AbortError do provedor de vídeo', async () => {
     requestExternalVideoClipMock.mockRejectedValueOnce(new DOMException('cancelado', 'AbortError'))
-    const ctx = mockContext({ apiKey: 'sk-test' })
+    const ctx = mockContext({ apiKey: 'sk-test', models: { chat_video_generator: 'fal-ai/veo3' } })
     await expect(findAndRunSkill('generate_video', {
       prompt: 'Clipe a cancelar.',
       approved: true,

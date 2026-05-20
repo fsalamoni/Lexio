@@ -587,6 +587,7 @@ function buildPlan(
     case 'openai-compatible':
       return buildOpenAICompatiblePlan(resolved, messages, model, maxTokens, temperature)
     case 'audio-only':
+    case 'video-only':
       throw new Error(`Provedor "${resolved.provider.label}" não suporta chamadas de texto.`)
   }
 }
