@@ -1993,7 +1993,7 @@ export async function generatePresentationV2MediaAssets(
   rawPresentationContent: string,
   onProgress?: StudioProgressCallback,
   signal?: AbortSignal,
-  options: { slideNumbers?: number[] } = {},
+  options: { slideNumbers?: number[]; imageModelOverride?: string } = {},
 ): Promise<PresentationV2MediaGenerationResult> {
   throwIfAborted(signal)
   const parsed = parseArtifactContent('apresentacao_v2', rawPresentationContent)
@@ -2004,10 +2004,21 @@ export async function generatePresentationV2MediaAssets(
   const models = await loadPresentationV2PipelineModels(input.uid)
   const fallbackConfig = await loadFallbackPriorityConfig().catch(() => ({}))
   const resolveFallback = buildPipelineFallbackResolver(PRESENTATION_V2_PIPELINE_AGENT_DEFS, fallbackConfig)
-  await validateScopedAgentModels('presentation_v2_pipeline_models', omitInactiveMediaModels(models, ['presentation_v2_image_generator']))
-  const imageModel = String(models.presentation_v2_image_generator ?? '').trim()
-  if (!imageModel) {
-    throw new Error('Nenhum modelo configurado para o agente "Gerador de Imagens Multimodais". Configure esse agente em Configurações antes de gerar mídia da apresentação v2.')
+  // Chat-orchestrator override: when set, the slide visuals are driven by the
+  // chat's own `chat_presentation_designer` agent (capability-restricted to
+  // `image`) instead of `presentation_v2_pipeline_models.presentation_v2_image_generator`.
+  // The Research Notebook studio path never passes this, so it is unchanged.
+  const imageModelOverride = String(options.imageModelOverride ?? '').trim()
+  let imageModel: string
+  if (imageModelOverride) {
+    await validateScopedAgentModels('chat_orchestrator_models', { chat_presentation_designer: imageModelOverride }, input.uid)
+    imageModel = imageModelOverride
+  } else {
+    await validateScopedAgentModels('presentation_v2_pipeline_models', omitInactiveMediaModels(models, ['presentation_v2_image_generator']))
+    imageModel = String(models.presentation_v2_image_generator ?? '').trim()
+    if (!imageModel) {
+      throw new Error('Nenhum modelo configurado para o agente "Gerador de Imagens Multimodais". Configure esse agente em Configurações antes de gerar mídia da apresentação v2.')
+    }
   }
   const deck = parsed.data.deck
   const presentation = parsed.data.presentation

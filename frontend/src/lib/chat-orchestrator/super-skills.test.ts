@@ -171,6 +171,147 @@ describe('buildSuperSkills', () => {
     expect(names).toContain('generate_studio_artifact')
     expect(names).toContain('hybrid_search')
   })
+
+  it('deve incluir as super-skills literais de áudio e apresentação', () => {
+    const skills = buildSuperSkills()
+    const names = skills.map(s => s.name)
+    expect(names).toContain('generate_audio')
+    expect(names).toContain('generate_presentation')
+  })
+})
+
+describe('generate_audio skill', () => {
+  beforeEach(() => {
+    generateAudioLiteralMediaMock.mockReset().mockResolvedValue({
+      audioBlob: new Blob(['audio'], { type: 'audio/mpeg' }),
+      mimeType: 'audio/mpeg',
+      chunkCount: 1,
+      segmentCount: 1,
+      execution: { phase: 'audio_literal_generation', agent_name: 'Gerador de Áudio Literal', model: 'openai/tts-1-hd', cost_usd: 0.02 },
+    })
+    uploadChatArtifactFileMock.mockReset().mockResolvedValue({
+      url: 'https://storage.test/audio.mp3',
+      path: 'chat_artifacts/test-user/conv-1/turn-1/audio.mp3',
+    })
+  })
+
+  it('deve exigir o argumento script', async () => {
+    const ctx = mockContext({ models: { chat_audio_generator: 'openai/tts-1-hd' } })
+    const result = await findAndRunSkill('generate_audio', { title: 'Sem texto' }, ctx)
+    expect(result.tool_message).toContain('"script"')
+    expect(generateAudioLiteralMediaMock).not.toHaveBeenCalled()
+  })
+
+  it('deve retornar erro acionável quando o agente de áudio não está configurado', async () => {
+    const ctx = mockContext({ models: {} })
+    const result = await findAndRunSkill('generate_audio', {
+      script: 'Boa tarde, este é o resumo do caso.',
+      approved: true,
+    }, ctx)
+    expect(result.tool_message).toContain('Gerador de Áudio Literal')
+    expect(generateAudioLiteralMediaMock).not.toHaveBeenCalled()
+  })
+
+  it('deve pedir aprovação antes de gerar áudio literal', async () => {
+    const emit = vi.fn()
+    const ctx = mockContext({ emit, models: { chat_audio_generator: 'openai/tts-1-hd' } })
+    const result = await findAndRunSkill('generate_audio', {
+      script: 'Resumo do parecer em áudio.',
+      title: 'Resumo em áudio',
+    }, ctx)
+    expect(result.awaiting_user?.resume_tool).toBe('generate_audio')
+    expect(emit.mock.calls.some(call => call[0].type === 'approval_requested')).toBe(true)
+    expect(generateAudioLiteralMediaMock).not.toHaveBeenCalled()
+  })
+
+  it('deve gerar artifact de áudio com export MP3 pronto quando aprovado', async () => {
+    const emit = vi.fn()
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({
+      apiKey: 'sk-test',
+      emit,
+      persistWorkPackage,
+      models: { chat_audio_generator: 'openai/tts-1-hd' },
+    })
+
+    const result = await findAndRunSkill('generate_audio', {
+      script: 'Bom dia. Este é o resumo executivo do parecer.',
+      title: 'Resumo do parecer',
+      voice: 'alloy',
+      approved: true,
+    }, ctx)
+
+    expect(result.tool_message).toContain('Áudio literal gerado com sucesso')
+    expect(generateAudioLiteralMediaMock).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: 'sk-test',
+      uid: 'test-user',
+      rawScriptContent: expect.stringContaining('resumo executivo'),
+      ttsModelOverride: 'openai/tts-1-hd',
+    }))
+    const workPackage = persistWorkPackage.mock.calls[0][0]
+    expect(workPackage.agent_key).toBe('chat_audio_generator')
+    expect(workPackage.artifacts[0]).toEqual(expect.objectContaining({ kind: 'audio', format: 'mp3' }))
+    expect(workPackage.artifacts[0].exports[0]).toEqual(expect.objectContaining({ format: 'mp3', status: 'ready' }))
+  })
+
+  it('deve propagar AbortError', async () => {
+    generateAudioLiteralMediaMock.mockRejectedValueOnce(new DOMException('cancelado', 'AbortError'))
+    const ctx = mockContext({ apiKey: 'sk-test', models: { chat_audio_generator: 'openai/tts-1-hd' } })
+    await expect(findAndRunSkill('generate_audio', {
+      script: 'Texto a narrar.',
+      approved: true,
+    }, ctx)).rejects.toThrow()
+  })
+})
+
+describe('generate_presentation skill', () => {
+  it('deve exigir o argumento topic', async () => {
+    const ctx = mockContext({ models: { chat_presentation_designer: 'google/gemini-2.5-flash-image' } })
+    const result = await findAndRunSkill('generate_presentation', { title: 'Sem tema' }, ctx)
+    expect(result.tool_message).toContain('"topic"')
+  })
+
+  it('deve retornar erro acionável quando o designer de apresentação não está configurado', async () => {
+    const ctx = mockContext({ models: {} })
+    const result = await findAndRunSkill('generate_presentation', {
+      topic: 'Tese de improbidade administrativa',
+      approved: true,
+    }, ctx)
+    expect(result.tool_message).toContain('Designer de Apresentação')
+  })
+
+  it('deve pedir aprovação antes de gerar a apresentação', async () => {
+    const emit = vi.fn()
+    const ctx = mockContext({ emit, models: { chat_presentation_designer: 'google/gemini-2.5-flash-image' } })
+    const result = await findAndRunSkill('generate_presentation', {
+      topic: 'Estratégia de defesa',
+    }, ctx)
+    expect(result.awaiting_user?.resume_tool).toBe('generate_presentation')
+    expect(emit.mock.calls.some(call => call[0].type === 'approval_requested')).toBe(true)
+  })
+
+  it('deve gerar artifact de apresentação em modo mock quando aprovado', async () => {
+    const emit = vi.fn()
+    const persistWorkPackage = vi.fn(async packageData => packageData)
+    const ctx = mockContext({
+      mock: true,
+      emit,
+      persistWorkPackage,
+      models: { chat_presentation_designer: 'mock/presentation-designer' },
+    })
+
+    const result = await findAndRunSkill('generate_presentation', {
+      topic: 'Estratégia de audiência',
+      title: 'Deck de audiência',
+      generate_slide_images: false,
+      approved: true,
+    }, ctx)
+
+    expect(result.tool_message).toContain('Apresentação literal gerada com sucesso')
+    const workPackage = persistWorkPackage.mock.calls[0][0]
+    expect(workPackage.agent_key).toBe('chat_presentation_designer')
+    expect(workPackage.artifacts[0]).toEqual(expect.objectContaining({ kind: 'presentation', format: 'json' }))
+  })
 })
 
 describe('generate_image skill', () => {
@@ -659,7 +800,12 @@ describe('generate_studio_artifact skill', () => {
   it('deve usar pipeline dedicado de áudio e persistir MP3 quando solicitado', async () => {
     const emit = vi.fn()
     const persistWorkPackage = vi.fn(async packageData => packageData)
-    const ctx = mockContext({ apiKey: 'key', emit, persistWorkPackage })
+    const ctx = mockContext({
+      apiKey: 'key',
+      emit,
+      persistWorkPackage,
+      models: { chat_audio_generator: 'openai/tts-1-hd' },
+    })
 
     const result = await findAndRunSkill('generate_studio_artifact', {
       artifact_type: 'audio_script',
@@ -678,7 +824,7 @@ describe('generate_studio_artifact skill', () => {
       ctx.signal,
     )
     expect(generateAudioLiteralMediaMock).toHaveBeenCalledWith(
-      expect.objectContaining({ model: 'openai/tts-1-hd', rawScriptContent: expect.stringContaining('Resumo em Áudio') }),
+      expect.objectContaining({ ttsModelOverride: 'openai/tts-1-hd', rawScriptContent: expect.stringContaining('Resumo em Áudio') }),
       expect.any(Function),
     )
     expect(uploadNotebookMediaArtifactMock).toHaveBeenCalledWith(

@@ -1197,6 +1197,9 @@ function mockModelMap(): Record<string, string> {
     chat_multimodal_evidence_synthesizer: 'demo/multimodal-evidence-synthesizer',
     chat_audio_transcription: 'demo/audio-transcription',
     chat_export_packager: 'demo/export-packager',
+    chat_audio_generator: 'demo/audio-generator',
+    chat_presentation_designer: 'demo/presentation-designer',
+    chat_video_generator: 'demo/video-generator',
   }
 }
 
