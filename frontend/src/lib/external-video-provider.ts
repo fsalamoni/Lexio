@@ -719,6 +719,48 @@ function getFalMimeType(payload: ExternalVideoResponsePayload): string {
 }
 
 /**
+ * fal.ai hosts text-to-video and image-to-video as distinct route ids. Given a
+ * configured model id and the desired generation mode, returns the matching
+ * route. Known models use an explicit mapping; unknown ids fall back to a
+ * suffix heuristic; when nothing applies the id is returned unchanged so
+ * text-to-video keeps working.
+ *
+ * Image-to-video chaining is what lets each clip continue visually from the
+ * last frame of the previous one.
+ */
+export function resolveFalVideoModelVariant(modelId: string, mode: 'text' | 'image'): string {
+  const id = String(modelId || '').trim().replace(/^\/+/, '')
+  if (!id) return modelId
+
+  // [textToVideo, imageToVideo] for the documented fal.ai video models.
+  const KNOWN_VARIANTS: ReadonlyArray<readonly [string, string]> = [
+    ['fal-ai/veo3', 'fal-ai/veo3/image-to-video'],
+    ['fal-ai/veo3/fast', 'fal-ai/veo3/fast/image-to-video'],
+    ['fal-ai/kling-video/v2.5-turbo/pro/text-to-video', 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video'],
+    ['fal-ai/wan/v2.2-a14b/text-to-video', 'fal-ai/wan/v2.2-a14b/image-to-video'],
+    ['fal-ai/minimax/hailuo-02/standard/text-to-video', 'fal-ai/minimax/hailuo-02/standard/image-to-video'],
+    ['fal-ai/ltx-video-13b-distilled', 'fal-ai/ltx-video-13b-distilled/image-to-video'],
+  ]
+  for (const [textId, imageId] of KNOWN_VARIANTS) {
+    if (id === textId || id === imageId) {
+      return mode === 'image' ? imageId : textId
+    }
+  }
+
+  // Heuristic for uncatalogued ids: fal routes consistently end with the mode.
+  const hasImageSuffix = /\/image-to-video$/.test(id)
+  const hasTextSuffix = /\/text-to-video$/.test(id)
+  if (mode === 'image') {
+    if (hasImageSuffix) return id
+    if (hasTextSuffix) return id.replace(/\/text-to-video$/, '/image-to-video')
+    return `${id}/image-to-video`
+  }
+  if (hasTextSuffix) return id
+  if (hasImageSuffix) return id.replace(/\/image-to-video$/, '/text-to-video')
+  return id
+}
+
+/**
  * Native fal.ai queue client for literal video generation.
  *
  * fal.ai exposes every hosted video model (Veo, Kling, Wan, Hailuo, LTX, …)
@@ -730,7 +772,11 @@ function getFalMimeType(payload: ExternalVideoResponsePayload): string {
  * Unlike `requestExternalVideoClip` (operator-configured proxy endpoint via
  * env vars), this path is fully user-configurable: the user only needs a
  * fal.ai API key saved in Configurações → Provedores de IA and a video model
- * picked for the chat agent.
+ * picked for the agent.
+ *
+ * When `imageUrl` is supplied the request becomes an image-to-video call: fal
+ * conditions the first frame on that image, which is how consecutive clips are
+ * chained into a continuous sequence.
  */
 export async function requestFalVideoClip(input: {
   apiKey: string
@@ -738,6 +784,7 @@ export async function requestFalVideoClip(input: {
   model: string
   prompt: string
   aspectRatio?: string
+  imageUrl?: string
   signal?: AbortSignal
 }): Promise<ExternalVideoClipResult> {
   const base = (input.baseUrl || 'https://queue.fal.run').replace(/\/+$/, '')
@@ -750,6 +797,7 @@ export async function requestFalVideoClip(input: {
   const body = JSON.stringify({
     prompt: input.prompt,
     aspect_ratio: input.aspectRatio || '16:9',
+    ...(input.imageUrl?.trim() ? { image_url: input.imageUrl.trim() } : {}),
   })
 
   let submitResponse: Response | null = null

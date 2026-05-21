@@ -22,6 +22,7 @@ import type {
   VideoClip,
   NarrationSegment,
 } from '../../lib/video-generation-pipeline'
+import VideoSequencePlayer from './VideoSequencePlayer'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -568,6 +569,14 @@ export default function VideoStudioEditor({
   )
 
   const isDirty = localSnapshot !== productionSnapshot
+
+  // Every generated clip across all scenes, ordered for back-to-back playback.
+  const allSequenceClips = useMemo(
+    () => localSceneAssets
+      .flatMap(asset => asset.videoClips || [])
+      .filter(clip => Boolean(clip.url)),
+    [localSceneAssets],
+  )
 
   useEffect(() => {
     if (isDirty && productionSnapshot !== lastSavedSnapshotRef.current) return
@@ -1135,6 +1144,19 @@ export default function VideoStudioEditor({
                   </div>
                 )
               })()}
+            </div>
+          ) : allSequenceClips.length > 0 ? (
+            /* Full-video overview — plays every part back-to-back */
+            <div className="space-y-3">
+              <VideoSequencePlayer
+                clips={allSequenceClips}
+                title={`Vídeo completo: ${production.title}`}
+              />
+              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-center">
+                <p className="text-xs text-gray-400">
+                  Clique em um segmento na timeline ou em uma cena para editar os detalhes.
+                </p>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center py-12">

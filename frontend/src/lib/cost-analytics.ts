@@ -206,6 +206,7 @@ const PHASE_LABELS: Record<string, string> = {
   video_narrador: 'Vídeo: Narrador',
   video_revisor: 'Vídeo: Revisor Final',
   video_clip_planner: 'Vídeo: Planejador de Clips',
+  video_clip_generator: 'Vídeo: Gerador de Clipes de Vídeo',
   clip_subdivision: 'Vídeo: Subdivisão de Clips',
   media_image_generation: 'Vídeo: Geração de Imagens',
   media_tts_generation: 'Vídeo: Narração TTS',

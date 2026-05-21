@@ -33,7 +33,7 @@ vi.mock('./tts-client', () => ({
   generateTTSViaOpenRouter: (...args: unknown[]) => generateTTSViaOpenRouterMock(...args),
 }))
 
-import { runVideoGenerationPipeline, type VideoCheckpoint } from './video-generation-pipeline'
+import { estimateVideoGenerationCost, runVideoGenerationPipeline, type VideoCheckpoint } from './video-generation-pipeline'
 
 function llmResult(content: string, model: string) {
   return {
@@ -59,6 +59,7 @@ describe('runVideoGenerationPipeline', () => {
       video_narrador: 'openai/gpt-4.1-mini',
       video_revisor: 'openai/gpt-4.1-mini',
       video_clip_planner: 'openai/gpt-4.1-mini',
+      video_clip_generator: '',
       video_image_generator: 'google/gemini-2.5-flash-image',
       video_tts: 'openai/tts-1-hd',
     })
@@ -394,5 +395,32 @@ describe('runVideoGenerationPipeline', () => {
     expect(generateTTSViaOpenRouterMock).toHaveBeenCalledTimes(1)
     expect(result.package.narration[0].generatedAudioUrl).toBe('data:audio/mpeg;base64,AAAB')
     expect(result.checkpoint?.completedStep).toBe(11)
+  })
+})
+
+describe('estimateVideoGenerationCost', () => {
+  it('prices real AI video clips as a distinct, dominant media line item', () => {
+    const estimate = estimateVideoGenerationCost('x'.repeat(6000))
+
+    const videoLine = estimate.mediaBreakdown.find(item => item.type === 'video')
+    const imageLine = estimate.mediaBreakdown.find(item => item.type === 'image')
+    const ttsLine = estimate.mediaBreakdown.find(item => item.type === 'tts')
+
+    expect(videoLine).toBeDefined()
+    expect(imageLine).toBeDefined()
+    expect(ttsLine).toBeDefined()
+    // Real video clips cost ~$0.30 each — far above the ~$0.002 clip image.
+    expect(videoLine!.estimatedCostUsd).toBeCloseTo(estimate.estimatedClips * 0.3, 5)
+    expect(videoLine!.estimatedCostUsd).toBeGreaterThan(imageLine!.estimatedCostUsd * 10)
+    expect(estimate.mediaCostUsd).toBeCloseTo(
+      videoLine!.estimatedCostUsd + imageLine!.estimatedCostUsd + ttsLine!.estimatedCostUsd,
+      5,
+    )
+  })
+
+  it('omits media costs entirely when includeMedia is false', () => {
+    const estimate = estimateVideoGenerationCost('x'.repeat(3000), false)
+    expect(estimate.mediaBreakdown).toHaveLength(0)
+    expect(estimate.mediaCostUsd).toBe(0)
   })
 })

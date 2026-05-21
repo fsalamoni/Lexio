@@ -133,6 +133,17 @@ export const VIDEO_PIPELINE_AGENT_DEFS: AgentModelDef[] = [
     bestModelNote: 'Chamado uma vez por cena. Precisa gerar prompts visuais detalhados. Baratos e rápidos: Gemini 2.5 Flash ($0.15), GPT-4o Mini ($0.15), DeepSeek V3 ($0.27). Grátis: Gemini 2.0 Flash:free, Llama 3.3 70B:free, Qwen3 30B:free.',
   },
   {
+    key: 'video_clip_generator',
+    label: 'Gerador de Clipes de Vídeo',
+    description: 'Gera clipes de vídeo reais por IA para cada parte das cenas, encadeando cada clipe ao último quadro do anterior (image-to-video) para continuidade visual entre as partes',
+    defaultModel: '',
+    recommendedTier: 'premium',
+    icon: 'video',
+    agentCategory: 'synthesis',
+    requiredCapability: 'video',
+    bestModelNote: 'Gera vídeo real por IA. Escolha um modelo de vídeo do provedor fal.ai no catálogo pessoal (Veo 3, Kling 2.5, Wan 2.2, Hailuo 02, LTX Video) e salve sua chave fal.ai em Configurações → Provedores de IA — caminho recomendado, sem variáveis de ambiente. Quando vazio, a geração de clipes recai no provedor externo (VITE_EXTERNAL_VIDEO_PROVIDER_*) ou no renderer local do navegador.',
+  },
+  {
     key: 'video_image_generator',
     label: 'Gerador de Imagens',
     description: 'Gera imagens reais para cada cena do vídeo usando IA generativa (modalities: image)',

@@ -112,6 +112,7 @@ describe('user-scoped agent configuration coverage', () => {
       'video_narrador',
       'video_revisor',
       'video_clip_planner',
+      'video_clip_generator',
       'video_image_generator',
       'video_tts',
     ]))
@@ -163,5 +164,13 @@ describe('user-scoped agent configuration coverage', () => {
       'thesis_curador',
       'thesis_revisor',
     ])
+  })
+
+  it('restricts the real video clip generator to models with the video capability', () => {
+    const clipGenerator = AGENT_CONFIG_DEFS.video_pipeline_models.find(
+      agent => agent.key === 'video_clip_generator',
+    )
+    expect(clipGenerator).toBeDefined()
+    expect(clipGenerator?.requiredCapability).toBe('video')
   })
 })
