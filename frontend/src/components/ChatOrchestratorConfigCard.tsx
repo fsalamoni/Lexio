@@ -106,12 +106,26 @@ export default function ChatOrchestratorConfigCard() {
       showIndex: true,
       afterContent: (
         <div className={`${V2_AGENT_CONFIG_INFO_BOX_BASE} ${V2_AGENT_CONFIG_TONES.purple.infoBox}`}>
-          <p>
+          <p className="mb-2">
             <strong>🎨 Geração literal:</strong> estes agentes produzem artefatos reais — imagem,
             áudio, apresentação e vídeo — visualizáveis e baixáveis no próprio chat. O catálogo de
             cada um é <strong>restrito a modelos aptos</strong> à função: o Gerador de Imagem só
-            lista modelos de imagem, o de Áudio só modelos de TTS, o de Vídeo só modelos de vídeo
-            (provedor fal.ai). Configure um modelo compatível em cada um para habilitar a geração.
+            lista modelos de imagem, o de Áudio só modelos de TTS e o de Vídeo só modelos de vídeo.
+          </p>
+          <p className="mb-2">
+            <strong>🖼️ Imagem / 🔊 Áudio:</strong> selecione um modelo do seu catálogo pessoal com a
+            capacidade correta (ex.: Gemini Flash Image, GPT Image; OpenAI TTS, ElevenLabs). Se o
+            seletor estiver vazio, ative o provedor correspondente em <strong>Configurações →
+            Provedores de IA</strong> e adicione o modelo ao catálogo.
+          </p>
+          <p>
+            <strong>🎬 Vídeo (passo a passo):</strong> a geração de vídeo real usa o provedor{' '}
+            <strong>fal.ai</strong>, que hospeda Veo, Kling, Wan, Hailuo e LTX. (1) Em{' '}
+            <strong>Configurações → Provedores de IA</strong>, ative <strong>"fal.ai (Vídeo)"</strong>{' '}
+            e cole sua chave de API (fal.ai/dashboard/keys). (2) Adicione um modelo de vídeo ao seu
+            catálogo. (3) Aqui no <strong>Gerador de Vídeo Literal</strong>, escolha esse modelo.
+            (4) Peça um vídeo no chat — o clipe MP4 é gerado, salvo e exibido com player e download.
+            Nenhuma variável de ambiente é necessária: basta a sua chave fal.ai.
           </p>
         </div>
       ),
