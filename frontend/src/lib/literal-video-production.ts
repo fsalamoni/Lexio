@@ -1,12 +1,19 @@
 import { formatCostBadge } from './currency-utils'
 import { generateImageViaOpenRouter } from './image-generation-client'
-import { requestExternalVideoClip } from './external-video-provider'
+import {
+  requestExternalVideoClip,
+  requestFalVideoClip,
+  resolveFalVideoModelVariant,
+  type ExternalVideoClipResult,
+} from './external-video-provider'
 import { loadVideoPipelineModels } from './model-config'
+import { resolveProviderCall } from './provider-credentials'
 import { formatSecondsToMMSS } from './time-format'
 import { generateTTSViaOpenRouter, DEFAULT_OPENROUTER_TTS_MODEL } from './tts-client'
 import { createVideoRenderScopeLabel } from './video-generation-pipeline'
 import type { VideoPipelineProgressMeta } from './video-pipeline-progress'
 import type {
+  DesignGuide,
   LiteralGenerationEvent,
   LiteralGenerationState,
   LiteralSceneCheckpoint,
@@ -52,6 +59,13 @@ const MIN_SOUNDTRACK_DURATION_SECONDS = 1
 const INT16_PCM_MIN = -0x8000
 const INT16_PCM_MAX = 0x7fff
 const DEFAULT_SCENE_CLIP_DURATION_SECONDS = 8
+/**
+ * Indicative price of one real AI-generated video clip (fal.ai, ~8s, 720p).
+ * Used for cost telemetry on clips produced through the fal provider. The
+ * browser renderer and env-configured provider report zero (unknown) cost.
+ */
+const REAL_VIDEO_CLIP_COST_USD = 0.3
+const LAST_FRAME_EXTRACTION_TIMEOUT_MS = 8000
 const MAX_LITERAL_STEP_ATTEMPTS = 3
 const MAX_LITERAL_EVENT_LOG = 120
 const MIN_RENDER_WIDTH = 160
@@ -103,6 +117,8 @@ interface RenderByScopeOptions {
 
 interface LiteralMediaGenerationOptions {
   signal?: AbortSignal
+  /** Resolves the video provider credentials deterministically for this user. */
+  uid?: string
 }
 
 interface PreparedSceneTiming {
@@ -194,9 +210,48 @@ function prepareTimings(production: VideoProductionPackage): PreparedSceneTiming
   })
 }
 
-function buildLiteralClipPrompt(scene: VideoScene, clipNumber: number): string {
+/**
+ * Renders the production design guide as an explicit, literal clause appended
+ * to every clip prompt. Injecting the exact palette hex codes, style and
+ * recurring identity keeps every generated clip on-model.
+ */
+function buildDesignGuideClause(designGuide?: DesignGuide): string {
+  if (!designGuide) return ''
+  const parts: string[] = []
+  if (designGuide.colorPalette?.length) {
+    parts.push(`Strict color palette — use these exact hex values: ${designGuide.colorPalette.join(', ')}.`)
+  }
+  if (designGuide.style?.trim()) {
+    parts.push(`Visual style applied identically to every shot: ${designGuide.style.trim()}.`)
+  }
+  if (designGuide.characterDescriptions?.length) {
+    const characters = designGuide.characterDescriptions
+      .map(character => `${character.name}: ${character.description}`)
+      .join('; ')
+    parts.push(`Recurring characters kept consistent: ${characters}.`)
+  }
+  if (designGuide.recurringElements?.length) {
+    parts.push(`Recurring visual elements present across shots: ${designGuide.recurringElements.join(', ')}.`)
+  }
+  return parts.join(' ')
+}
+
+export function buildLiteralClipPrompt(
+  scene: VideoScene,
+  clipNumber: number,
+  designGuide?: DesignGuide,
+  hasPreviousFrame = false,
+): string {
+  const designClause = buildDesignGuideClause(designGuide)
+  const continuityClause = hasPreviousFrame
+    ? 'This clip is a direct continuation of the previous clip: start exactly from the supplied last frame and keep the same camera, motion, subjects, wardrobe and lighting with no visual reset or hard cut.'
+    : ''
   const plannedClip = scene.clips?.find(clip => clip.clipNumber === clipNumber)
-  if (!plannedClip) return scene.videoPrompt || scene.imagePrompt || scene.visual
+  if (!plannedClip) {
+    return [scene.videoPrompt || scene.imagePrompt || scene.visual, designClause, continuityClause]
+      .filter(Boolean)
+      .join(' ')
+  }
 
   return [
     scene.videoPrompt,
@@ -205,6 +260,8 @@ function buildLiteralClipPrompt(scene: VideoScene, clipNumber: number): string {
     plannedClip.motionDescription ? `Camera and motion: ${plannedClip.motionDescription}.` : '',
     `Transition to next beat: ${plannedClip.transition || scene.transition || 'cut'}.`,
     `Maintain absolute continuity with the rest of scene ${scene.number}: same characters, wardrobe, palette, lighting, setting, and chronology.`,
+    designClause,
+    continuityClause,
   ].filter(Boolean).join(' ')
 }
 
@@ -518,6 +575,197 @@ async function remoteVideoToBlob(url: string): Promise<Blob> {
     throw new Error(`Falha ao baixar vídeo gerado (${response.status}) em ${url}`)
   }
   return response.blob()
+}
+
+function externalProviderClip(
+  providerResult: ExternalVideoClipResult,
+  providerBlob: Blob,
+  part: ScenePartTiming,
+): VideoClipAsset {
+  return {
+    sceneNumber: part.sceneNumber,
+    partNumber: part.partNumber,
+    startTime: part.startTime,
+    endTime: part.endTime,
+    duration: part.duration,
+    url: blobToObjectUrl(providerBlob),
+    mimeType: providerResult.mimeType || 'video/mp4',
+    generatedAt: new Date().toISOString(),
+    source: 'generated',
+    generationEngine: 'external-provider',
+    providerName: providerResult.provider,
+    providerJobId: providerResult.jobId,
+    blob: providerBlob,
+  }
+}
+
+/**
+ * Builds the cost/telemetry record for a generated clip. Clips produced
+ * through the fal provider carry a realistic per-clip video cost; the env
+ * provider and browser renderer report zero (unknown / no external billing).
+ */
+export function buildClipExecution(clip: VideoClipAsset, startedAt: number): VideoGenerationStepExecution {
+  const isFalClip = clip.generationEngine === 'external-provider' && clip.providerName === 'fal'
+  const model = clip.generationEngine === 'external-provider'
+    ? `${clip.providerName || 'external-provider'}/${clip.mimeType}`
+    : `browser/${clip.mimeType}`
+  return makeExecution(
+    'media_video_clip_generation',
+    model,
+    performance.now() - startedAt,
+    isFalClip ? REAL_VIDEO_CLIP_COST_USD : 0,
+    'waiting_io',
+    isFalClip ? 'fal' : null,
+    isFalClip ? 'fal.ai (Vídeo)' : null,
+  )
+}
+
+/**
+ * Extracts the last visible frame of a video clip as a JPEG data URL. This
+ * frame seeds the next clip's image-to-video call so consecutive parts form a
+ * continuous sequence. Any failure resolves to `null` — continuity gracefully
+ * degrades to text-only, the run never aborts.
+ */
+async function extractLastFrameDataUrl(blob: Blob | null | undefined): Promise<string | null> {
+  if (!blob) return null
+  if (typeof window === 'undefined' || typeof document === 'undefined') return null
+
+  let objectUrl: string | null = null
+  try {
+    objectUrl = URL.createObjectURL(blob)
+    const video = document.createElement('video')
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+    video.crossOrigin = 'anonymous'
+
+    return await new Promise<string | null>(resolve => {
+      let settled = false
+      const finish = (value: string | null) => {
+        if (settled) return
+        settled = true
+        resolve(value)
+      }
+      const drawFrame = () => {
+        try {
+          const canvas = document.createElement('canvas')
+          canvas.width = video.videoWidth || 1280
+          canvas.height = video.videoHeight || 720
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            finish(null)
+            return
+          }
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          finish(canvas.toDataURL('image/jpeg', 0.82))
+        } catch {
+          finish(null)
+        }
+      }
+      video.onseeked = drawFrame
+      video.onloadeddata = () => {
+        // WebM blobs from MediaRecorder frequently report Infinity/NaN
+        // duration; seeking to a very large time forces the browser to clamp
+        // to the real end and emit `seeked`.
+        const duration = video.duration
+        const seekTarget = Number.isFinite(duration) && duration > 0
+          ? Math.max(0, duration - 0.05)
+          : 1e7
+        try {
+          video.currentTime = seekTarget
+        } catch {
+          drawFrame()
+        }
+      }
+      video.onerror = () => finish(null)
+      setTimeout(() => finish(null), LAST_FRAME_EXTRACTION_TIMEOUT_MS)
+      video.src = objectUrl as string
+    })
+  } catch {
+    return null
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
+}
+
+/** Resolves a usable Blob for a clip, fetching from its URL when needed. */
+async function clipToBlob(clip: VideoClipAsset | null | undefined): Promise<Blob | null> {
+  if (!clip) return null
+  if (clip.blob) return clip.blob
+  if (!clip.url) return null
+  try {
+    return await remoteVideoToBlob(clip.url)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Finds the clip that immediately precedes (sceneNumber, partNumber) across the
+ * whole production, so a single-part regeneration can still chain from the
+ * previous part — even across scene boundaries.
+ */
+function findPreviousClipAsset(
+  production: VideoProductionPackage,
+  sceneNumber: number,
+  partNumber: number,
+): VideoClipAsset | null {
+  const ordered = (production.sceneAssets || [])
+    .flatMap(asset => asset.videoClips || [])
+    .filter(clip => Boolean(clip.blob) || Boolean(clip.url))
+    .sort((left, right) => left.sceneNumber - right.sceneNumber || left.partNumber - right.partNumber)
+
+  let previous: VideoClipAsset | null = null
+  for (const clip of ordered) {
+    const isBeforeTarget = clip.sceneNumber < sceneNumber
+      || (clip.sceneNumber === sceneNumber && clip.partNumber < partNumber)
+    if (!isBeforeTarget) break
+    previous = clip
+  }
+  return previous
+}
+
+/**
+ * Generates a real AI video clip through the fal.ai provider using the user's
+ * own fal.ai key (resolved via `resolveProviderCall`). When a previous frame is
+ * supplied the call runs in image-to-video mode, chaining the clip to the prior
+ * part. Returns `null` when the agent is unconfigured or the resolved provider
+ * is not fal — the caller then falls back to the env provider / browser
+ * renderer. Abort errors propagate so cancellation stays responsive.
+ */
+async function generateClipViaFal(input: {
+  part: ScenePartTiming
+  prompt: string
+  previousFrameDataUrl: string | null
+  videoModel: string
+  uid?: string
+  signal?: AbortSignal
+}): Promise<VideoClipAsset | null> {
+  const videoModel = input.videoModel?.trim()
+  if (!videoModel) return null
+
+  try {
+    const resolved = await resolveProviderCall(videoModel, input.uid)
+    if (resolved.provider.id !== 'fal') return null
+
+    const mode: 'text' | 'image' = input.previousFrameDataUrl ? 'image' : 'text'
+    const providerResult = await requestFalVideoClip({
+      apiKey: resolved.apiKey,
+      baseUrl: resolved.baseUrl,
+      model: resolveFalVideoModelVariant(videoModel, mode),
+      prompt: input.prompt,
+      aspectRatio: '16:9',
+      imageUrl: input.previousFrameDataUrl ?? undefined,
+      signal: input.signal,
+    })
+    if (!providerResult?.url) return null
+
+    const providerBlob = await remoteVideoToBlob(providerResult.url)
+    return externalProviderClip(providerResult, providerBlob, input.part)
+  } catch (error) {
+    if (input.signal?.aborted) throw error
+    return null
+  }
 }
 
 function chooseImageModel(model?: string): string | undefined {
@@ -1005,8 +1253,10 @@ export async function generateLiteralVideoClipAsset(
   production: VideoProductionPackage,
   sceneNumber: number,
   partNumber: number,
+  uid?: string,
   signal?: AbortSignal,
 ): Promise<LiteralClipGenerationResult> {
+  void apiKey
   assertNotCancelled(signal)
 
   const models = await loadVideoPipelineModels()
@@ -1026,11 +1276,37 @@ export async function generateLiteralVideoClipAsset(
 
   const sceneAsset = (production.sceneAssets || []).find(item => item.sceneNumber === sceneNumber) || { sceneNumber }
   const plannedClipImage = getPlannedClipImage(scene, partNumber)
-  const literalClipPrompt = buildLiteralClipPrompt(scene, partNumber)
+
+  // Seed the previous frame from the part that precedes this one so a single
+  // regenerated clip still continues the sequence visually.
+  const previousClip = findPreviousClipAsset(production, sceneNumber, partNumber)
+  const previousFrameDataUrl = previousClip
+    ? await extractLastFrameDataUrl(await clipToBlob(previousClip))
+    : null
+
+  const literalClipPrompt = buildLiteralClipPrompt(
+    scene,
+    partNumber,
+    production.designGuide,
+    Boolean(previousFrameDataUrl),
+  )
   const startedAt = performance.now()
   let clip: VideoClipAsset | null = null
 
+  // Tier 1 — real AI video via the user's fal.ai key.
   if (literalClipPrompt) {
+    clip = await generateClipViaFal({
+      part,
+      prompt: literalClipPrompt,
+      previousFrameDataUrl,
+      videoModel: models.video_clip_generator || '',
+      uid,
+      signal,
+    })
+  }
+
+  // Tier 2 — operator-configured external video provider.
+  if (!clip && literalClipPrompt) {
     try {
       const providerResult = await requestExternalVideoClip({
         prompt: literalClipPrompt,
@@ -1040,30 +1316,16 @@ export async function generateLiteralVideoClipAsset(
         aspectRatio: '16:9',
         signal,
       })
-
       if (providerResult?.url) {
         const providerBlob = await remoteVideoToBlob(providerResult.url)
-        clip = {
-          sceneNumber: part.sceneNumber,
-          partNumber: part.partNumber,
-          startTime: part.startTime,
-          endTime: part.endTime,
-          duration: part.duration,
-          url: blobToObjectUrl(providerBlob),
-          mimeType: providerResult.mimeType || 'video/mp4',
-          generatedAt: new Date().toISOString(),
-          source: 'generated',
-          generationEngine: 'external-provider',
-          providerName: providerResult.provider,
-          providerJobId: providerResult.jobId,
-          blob: providerBlob,
-        }
+        clip = externalProviderClip(providerResult, providerBlob, part)
       }
     } catch {
       // Fallback to local browser render when the external provider fails.
     }
   }
 
+  // Tier 3 — local browser renderer.
   if (!clip) {
     clip = await renderSceneClip(
       scene,
@@ -1103,17 +1365,13 @@ export async function generateLiteralVideoClipAsset(
     nextSceneAssets.push(mergedSceneAsset)
   }
 
-  const executionModel = clip.generationEngine === 'external-provider'
-    ? `${clip.providerName || 'external-provider'}/${clip.mimeType}`
-    : `browser/${clip.mimeType}`
-
   return {
     production: {
       ...production,
       sceneAssets: nextSceneAssets,
     },
     clip,
-    execution: makeExecution('media_video_clip_generation', executionModel, performance.now() - startedAt),
+    execution: buildClipExecution(clip, startedAt),
   }
 }
 
@@ -1127,6 +1385,7 @@ export async function generateLiteralMediaAssets(
   const executions: VideoGenerationStepExecution[] = []
   const errors: string[] = []
   const signal = options?.signal
+  const uid = options?.uid
   const models = await loadVideoPipelineModels()
   const clipDurationSeconds = Math.max(1, production.sceneClipDurationSeconds || DEFAULT_SCENE_CLIP_DURATION_SECONDS)
   const timings = prepareTimings(production)
@@ -1362,6 +1621,9 @@ export async function generateLiteralMediaAssets(
   onProgress?.(3, 4, 'media_video_clip_generation', 'Gerando clipes por partes das cenas')
   literalState.phase = 'clip_generation'
   touchLiteralState(literalState)
+  // Threaded across scenes: the last frame of each produced clip seeds the
+  // next clip's image-to-video call, chaining the whole video into a sequence.
+  let previousFrameDataUrl: string | null = null
   for (let index = 0; index < production.scenes.length; index++) {
     assertNotCancelled(signal)
     const scene = production.scenes[index]
@@ -1380,8 +1642,13 @@ export async function generateLiteralMediaAssets(
 
     for (const part of parts) {
       assertNotCancelled(signal)
-      const hasClip = existingClips.some(clip => clip.partNumber === part.partNumber && Boolean(clip.url))
-      if (hasClip) continue
+      const existingPart = existingClips.find(clip => clip.partNumber === part.partNumber && Boolean(clip.url))
+      if (existingPart) {
+        // Resuming from a checkpoint: keep the frame chain seeded from this clip.
+        const resumedFrame = await extractLastFrameDataUrl(await clipToBlob(existingPart))
+        if (resumedFrame) previousFrameDataUrl = resumedFrame
+        continue
+      }
 
       onProgress?.(
         3,
@@ -1395,11 +1662,29 @@ export async function generateLiteralMediaAssets(
         const startedAt = performance.now()
         updateSceneCheckpoint(literalState, scene.number, { clipsAttempts: attempt })
         try {
-          let clip = null as VideoClipAsset | null
+          let clip: VideoClipAsset | null = null
           const plannedClipImage = getPlannedClipImage(scene, part.partNumber)
-          const literalClipPrompt = buildLiteralClipPrompt(scene, part.partNumber)
+          const literalClipPrompt = buildLiteralClipPrompt(
+            scene,
+            part.partNumber,
+            production.designGuide,
+            Boolean(previousFrameDataUrl),
+          )
 
+          // Tier 1 — real AI video via the user's fal.ai key.
           if (literalClipPrompt) {
+            clip = await generateClipViaFal({
+              part,
+              prompt: literalClipPrompt,
+              previousFrameDataUrl,
+              videoModel: models.video_clip_generator || '',
+              uid,
+              signal,
+            })
+          }
+
+          // Tier 2 — operator-configured external video provider.
+          if (!clip && literalClipPrompt) {
             try {
               const providerResult = await requestExternalVideoClip({
                 prompt: literalClipPrompt,
@@ -1411,27 +1696,14 @@ export async function generateLiteralMediaAssets(
               })
               if (providerResult?.url) {
                 const providerBlob = await remoteVideoToBlob(providerResult.url)
-                clip = {
-                  sceneNumber: part.sceneNumber,
-                  partNumber: part.partNumber,
-                  startTime: part.startTime,
-                  endTime: part.endTime,
-                  duration: part.duration,
-                  url: blobToObjectUrl(providerBlob),
-                  mimeType: providerResult.mimeType || 'video/mp4',
-                  generatedAt: new Date().toISOString(),
-                  source: 'generated',
-                  generationEngine: 'external-provider',
-                  providerName: providerResult.provider,
-                  providerJobId: providerResult.jobId,
-                  blob: providerBlob,
-                }
+                clip = externalProviderClip(providerResult, providerBlob, part)
               }
             } catch {
               // Fallback para render local quando provedor externo falha.
             }
           }
 
+          // Tier 3 — local browser renderer.
           if (!clip) {
             clip = await renderSceneClip(
               scene,
@@ -1451,18 +1723,29 @@ export async function generateLiteralMediaAssets(
           if (clip) {
             existingClips.push(clip)
             sceneAsset.videoClips = [...existingClips].sort((a, b) => a.partNumber - b.partNumber)
-            executions.push(makeExecution('media_video_clip_generation', `browser/${clip.mimeType}`, performance.now() - startedAt))
+            executions.push(buildClipExecution(clip, startedAt))
+
+            // Seed the next clip's image-to-video call from this clip's last frame.
+            const nextFrame = await extractLastFrameDataUrl(clip.blob)
+            if (nextFrame) previousFrameDataUrl = nextFrame
+
+            const usedLocalFallback = clip.generationEngine === 'browser-local'
+            const engineLabel = clip.providerName === 'fal'
+              ? 'fal.ai'
+              : clip.generationEngine === 'external-provider'
+                ? (clip.providerName || 'provedor-externo')
+                : 'renderer-local'
             onProgress?.(
               3,
               4,
               'media_video_clip_generation',
-              'Gerador de Clipes',
+              'Gerador de Clipes de Vídeo',
               buildLiteralProgressMeta({
-                stageMeta: `${clip.generationEngine === 'external-provider' ? (clip.providerName || 'provedor-externo') : 'renderer-local'} • cena ${scene.number} parte ${part.partNumber} • ${Math.max(1, Math.round((performance.now() - startedAt) / 1000))}s${clip.generationEngine === 'external-provider' ? ' • fallback externo' : ''}`,
+                stageMeta: `${engineLabel} • cena ${scene.number} parte ${part.partNumber} • ${Math.max(1, Math.round((performance.now() - startedAt) / 1000))}s${usedLocalFallback ? ' • fallback local' : ''}`,
                 durationMs: performance.now() - startedAt,
                 retryCount: attempt > 1 ? attempt - 1 : 0,
-                usedFallback: clip.generationEngine === 'external-provider',
-                fallbackFrom: clip.generationEngine === 'external-provider' ? 'browser-renderer' : undefined,
+                usedFallback: usedLocalFallback,
+                fallbackFrom: usedLocalFallback ? 'fal.ai' : undefined,
               }),
             )
             updateSceneCheckpoint(literalState, scene.number, {

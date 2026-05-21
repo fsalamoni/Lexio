@@ -2008,6 +2008,7 @@ export default function ResearchNotebookV2() {
           const persisted = await handleSaveVideoStudioToNotebook(partialProduction, { silent: true, syncEditorState: false })
           setVideoProduction(normalizeVideoProductionPackage(persisted))
         },
+        { uid: userId ?? undefined },
       )
 
       await appendNotebookExecutions(notebookId, 'video_pipeline', media.executions)
@@ -7443,7 +7444,7 @@ Instruções:
                 }
 
                 const { generateLiteralVideoClipAsset } = await loadLiteralVideoRuntime()
-                const result = await generateLiteralVideoClipAsset(apiKey, currentProduction, sceneNumber, clipNumber)
+                const result = await generateLiteralVideoClipAsset(apiKey, currentProduction, sceneNumber, clipNumber, userId ?? undefined)
                 const persisted = await handleSaveVideoStudioToNotebook(result.production, { silent: true, syncEditorState: false })
 
                 await appendNotebookExecutions(activeNotebook.id, 'video_pipeline', [result.execution])

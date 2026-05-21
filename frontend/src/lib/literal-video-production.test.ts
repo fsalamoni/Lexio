@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getDefaultVideoRenderPresets, resolveVideoRenderPreset } from './literal-video-production'
+import {
+  buildClipExecution,
+  buildLiteralClipPrompt,
+  getDefaultVideoRenderPresets,
+  resolveVideoRenderPreset,
+} from './literal-video-production'
+import type { DesignGuide, VideoClipAsset, VideoScene } from './video-generation-pipeline'
 
 describe('literal-video-production presets', () => {
   it('returns cloned default presets so callers cannot mutate the shared defaults', () => {
@@ -47,5 +53,76 @@ describe('literal-video-production presets', () => {
 
     const defaultChoice = resolveVideoRenderPreset(undefined, undefined)
     expect(defaultChoice.id).toBe('render-standard-720p')
+  })
+})
+
+describe('buildLiteralClipPrompt', () => {
+  const designGuide: DesignGuide = {
+    colorPalette: ['#1a1a2e', '#e94560'],
+    fontFamily: 'Inter',
+    style: 'Cinemático sóbrio',
+    characterDescriptions: [{ name: 'Ana', description: 'advogada de terno azul' }],
+    recurringElements: ['logotipo no canto inferior'],
+  }
+  const scene: VideoScene = {
+    number: 1,
+    timeStart: '00:00',
+    timeEnd: '00:08',
+    duration: 8,
+    narration: 'Narração da cena',
+    visual: 'Visual da cena',
+    imagePrompt: 'image prompt',
+    videoPrompt: 'Plano aberto do tribunal',
+    transition: 'cut',
+    soundtrack: '',
+    clips: [],
+  }
+
+  it('injects the exact design-guide palette and recurring identity into the prompt', () => {
+    const prompt = buildLiteralClipPrompt(scene, 1, designGuide, false)
+    expect(prompt).toContain('#1a1a2e')
+    expect(prompt).toContain('#e94560')
+    expect(prompt).toContain('Cinemático sóbrio')
+    expect(prompt).toContain('Ana')
+    expect(prompt).toContain('logotipo no canto inferior')
+  })
+
+  it('adds an explicit continuity clause only when chaining from a previous frame', () => {
+    const withFrame = buildLiteralClipPrompt(scene, 1, designGuide, true)
+    const withoutFrame = buildLiteralClipPrompt(scene, 1, designGuide, false)
+    expect(withFrame).toContain('continuation of the previous clip')
+    expect(withoutFrame).not.toContain('continuation of the previous clip')
+  })
+})
+
+describe('buildClipExecution', () => {
+  const baseClip: VideoClipAsset = {
+    sceneNumber: 1,
+    partNumber: 1,
+    startTime: 0,
+    endTime: 8,
+    duration: 8,
+    url: 'blob:clip',
+    mimeType: 'video/mp4',
+    generatedAt: '2026-05-21T00:00:00.000Z',
+  }
+
+  it('attributes a real video cost and the fal provider id to fal clips', () => {
+    const execution = buildClipExecution(
+      { ...baseClip, generationEngine: 'external-provider', providerName: 'fal' },
+      performance.now() - 1000,
+    )
+    expect(execution.phase).toBe('media_video_clip_generation')
+    expect(execution.cost_usd).toBeGreaterThan(0)
+    expect(execution.provider_id).toBe('fal')
+  })
+
+  it('reports zero cost for browser-rendered fallback clips', () => {
+    const execution = buildClipExecution(
+      { ...baseClip, generationEngine: 'browser-local', providerName: 'browser-renderer' },
+      performance.now(),
+    )
+    expect(execution.cost_usd).toBe(0)
+    expect(execution.provider_id).toBeNull()
   })
 })

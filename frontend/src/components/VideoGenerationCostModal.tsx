@@ -304,7 +304,11 @@ export default function VideoGenerationCostModal({
                     {estimate.mediaBreakdown.map((item) => (
                       <div key={item.type} className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border text-xs">
                         <div className="flex items-center gap-2">
-                          {item.type === 'image' ? <Image className="w-3.5 h-3.5 text-rose-500" /> : <Volume2 className="w-3.5 h-3.5 text-violet-500" />}
+                          {item.type === 'video'
+                            ? <Film className="w-3.5 h-3.5 text-rose-500" />
+                            : item.type === 'image'
+                              ? <Image className="w-3.5 h-3.5 text-amber-500" />
+                              : <Volume2 className="w-3.5 h-3.5 text-violet-500" />}
                           <span className="font-medium text-gray-700">{item.label}</span>
                           <span className="text-gray-400">({item.count} itens)</span>
                         </div>
@@ -320,8 +324,8 @@ export default function VideoGenerationCostModal({
                 <Layers className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div className="text-xs text-blue-800">
                   <p className="font-semibold mb-1">Pipeline de 11 Etapas</p>
-                  <p>Planejador → Roteirista → Diretor → Storyboarder → Designer → Compositor → Narrador → Revisor → <strong>Clips por Cena</strong> → <strong>Imagens IA</strong> → <strong>Narração TTS</strong></p>
-                  <p className="mt-1 text-blue-600">Cada cena é subdividida em clips sequenciais (~8s cada). Imagens e narração são geradas automaticamente para cada clip.</p>
+                  <p>Planejador → Roteirista → Diretor → Storyboarder → Designer → Compositor → Narrador → Revisor → <strong>Clips por Cena</strong> → <strong>Vídeo Real IA</strong> → <strong>Narração TTS</strong></p>
+                  <p className="mt-1 text-blue-600">Cada cena é subdividida em clipes sequenciais (~8s cada). Cada clipe é um <strong>vídeo real gerado por IA</strong> (fal.ai) e é encadeado ao último quadro do clipe anterior — o custo dos clipes de vídeo é o componente dominante da geração.</p>
                 </div>
               </div>
             </>

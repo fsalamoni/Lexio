@@ -9,7 +9,7 @@ const videoPipelineMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/model-config', () => ({
-  VIDEO_PIPELINE_AGENT_DEFS: Array.from({ length: 11 }, (_, index) => ({ key: `video-${index}` })),
+  VIDEO_PIPELINE_AGENT_DEFS: Array.from({ length: 12 }, (_, index) => ({ key: `video-${index}` })),
   getDefaultVideoPipelineModelMap: vi.fn(),
   loadVideoPipelineModels: vi.fn(),
   resetVideoPipelineModels: vi.fn(),
@@ -59,8 +59,9 @@ describe('VideoPipelineConfigCard', () => {
 
     expect(screen.getByText('Carregando configuração do Gerador de Vídeo...')).toBeTruthy()
     expect(screen.getByText('Trilha Multiagente de Vídeo')).toBeTruthy()
-    expect(screen.getByText('11 agentes configuráveis · criação de vídeo profissional')).toBeTruthy()
+    expect(screen.getByText('12 agentes configuráveis · criação de vídeo profissional')).toBeTruthy()
     expect(screen.getByText(/15\+ minutos/)).toBeTruthy()
+    expect(screen.getAllByText(/Gerador de Clipes de Vídeo/).length).toBeGreaterThan(0)
     expect(screen.getByText(/Etapas literais de vídeo:/)).toBeTruthy()
     expect(screen.getByText(/Provedor: /)).toBeTruthy()
     expect(screen.getByText(/Endpoint: https:\/\/fal.ai\/api/)).toBeTruthy()

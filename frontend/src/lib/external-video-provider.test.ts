@@ -4,6 +4,8 @@ import {
   checkExternalVideoProviderHealth,
   getExternalVideoProviderDiagnostics,
   requestExternalVideoClip,
+  requestFalVideoClip,
+  resolveFalVideoModelVariant,
 } from './external-video-provider'
 
 describe('external-video-provider', () => {
@@ -142,6 +144,65 @@ describe('external-video-provider', () => {
     expect(result?.url).toBe('https://cdn.example/veo-123.mp4')
     expect(result?.jobId).toBe(operationName)
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('maps known fal models between text-to-video and image-to-video routes', () => {
+    expect(resolveFalVideoModelVariant('fal-ai/veo3', 'text')).toBe('fal-ai/veo3')
+    expect(resolveFalVideoModelVariant('fal-ai/veo3', 'image')).toBe('fal-ai/veo3/image-to-video')
+    expect(resolveFalVideoModelVariant('fal-ai/veo3/image-to-video', 'text')).toBe('fal-ai/veo3')
+    expect(resolveFalVideoModelVariant('fal-ai/kling-video/v2.5-turbo/pro/text-to-video', 'image'))
+      .toBe('fal-ai/kling-video/v2.5-turbo/pro/image-to-video')
+    expect(resolveFalVideoModelVariant('fal-ai/wan/v2.2-a14b/text-to-video', 'image'))
+      .toBe('fal-ai/wan/v2.2-a14b/image-to-video')
+    expect(resolveFalVideoModelVariant('fal-ai/minimax/hailuo-02/standard/text-to-video', 'image'))
+      .toBe('fal-ai/minimax/hailuo-02/standard/image-to-video')
+  })
+
+  it('applies a suffix heuristic for uncatalogued fal model ids', () => {
+    expect(resolveFalVideoModelVariant('fal-ai/custom-model', 'text')).toBe('fal-ai/custom-model')
+    expect(resolveFalVideoModelVariant('fal-ai/custom-model', 'image')).toBe('fal-ai/custom-model/image-to-video')
+    expect(resolveFalVideoModelVariant('fal-ai/custom/text-to-video', 'image')).toBe('fal-ai/custom/image-to-video')
+    expect(resolveFalVideoModelVariant('fal-ai/custom/image-to-video', 'text')).toBe('fal-ai/custom/text-to-video')
+    expect(resolveFalVideoModelVariant('', 'image')).toBe('')
+  })
+
+  it('includes image_url in the fal request body for image-to-video chaining', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(
+      JSON.stringify({ video: { url: 'https://fal.media/clip.mp4', content_type: 'video/mp4' } }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await requestFalVideoClip({
+      apiKey: 'fal-key',
+      baseUrl: 'https://queue.fal.run',
+      model: 'fal-ai/veo3/image-to-video',
+      prompt: 'Continua a cena do tribunal',
+      imageUrl: 'data:image/jpeg;base64,AAA',
+    })
+
+    expect(result.url).toBe('https://fal.media/clip.mp4')
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+    expect(body.image_url).toBe('data:image/jpeg;base64,AAA')
+    expect(body.prompt).toBe('Continua a cena do tribunal')
+  })
+
+  it('omits image_url from the fal request body for text-to-video requests', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(
+      JSON.stringify({ video: { url: 'https://fal.media/clip.mp4' } }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await requestFalVideoClip({
+      apiKey: 'fal-key',
+      baseUrl: 'https://queue.fal.run',
+      model: 'fal-ai/veo3',
+      prompt: 'Abertura da cena',
+    })
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+    expect(body.image_url).toBeUndefined()
   })
 
   it('health check marks auth failure as actionable warning', async () => {

@@ -391,6 +391,12 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 // ── Cost Estimation ───────────────────────────────────────────────────────────
 
 /**
+ * Indicative price of one real AI-generated video clip (fal.ai, ~8s, 720p).
+ * Real video is the dominant cost of the literal video stage.
+ */
+const REAL_VIDEO_CLIP_COST_USD = 0.3
+
+/**
  * Estimates the token cost for generating a full video from a script.
  * Based on average token usage per agent in the pipeline.
  */
@@ -446,12 +452,14 @@ export function estimateVideoGenerationCost(scriptContent: string, includeMedia 
   let mediaCostUsd = 0
 
   if (includeMedia) {
+    const videoClipCost = estimatedClips * REAL_VIDEO_CLIP_COST_USD // real AI video per clip (fal.ai)
     const imageCost = estimatedClips * 0.002   // ~$0.002 per clip image (Gemini Flash)
     const ttsCost = estimatedScenes * 0.005    // ~$0.005 per narration segment (TTS-HD)
-    mediaCostUsd = imageCost + ttsCost
+    mediaCostUsd = videoClipCost + imageCost + ttsCost
 
     mediaBreakdown.push(
-      { type: 'clips', label: `Imagens de Clips (~${clipsPerScene}/cena)`, count: estimatedClips, estimatedCostUsd: imageCost },
+      { type: 'video', label: `Clipes de Vídeo Real (~${clipsPerScene}/cena)`, count: estimatedClips, estimatedCostUsd: videoClipCost },
+      { type: 'image', label: `Imagens de Clips (~${clipsPerScene}/cena)`, count: estimatedClips, estimatedCostUsd: imageCost },
       { type: 'tts', label: 'Narração TTS', count: estimatedScenes, estimatedCostUsd: ttsCost },
     )
   }

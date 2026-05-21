@@ -74,11 +74,18 @@ export default function VideoPipelineConfigCard() {
             <div className={`${V2_AGENT_CONFIG_INFO_BOX_BASE} ${V2_AGENT_CONFIG_TONES.rose.infoBox}`}>
               <p>
                 <strong>💡 Informações:</strong> O pipeline suporta vídeos de <strong>15+ minutos</strong>,
-                dividindo inteligentemente em segmentos. Esta configuração já cobre o planejamento textual,
-                o <strong>planejador de clips</strong>, o <strong>gerador de imagens</strong> e o <strong>TTS</strong>.
-                A geração de clipes e o render final acontecem na etapa literal dedicada, usando o provedor
-                externo configurado ou o fallback local do navegador. O <strong>Planejador</strong> estima
-                custos em tokens antes de iniciar a produção.
+                dividindo inteligentemente em segmentos. O <strong>Gerador de Clipes de Vídeo</strong> produz
+                <strong> vídeo real por IA</strong> para cada parte das cenas e encadeia cada clipe ao último
+                quadro do anterior (image-to-video), mantendo continuidade visual entre as partes. O{' '}
+                <strong>Planejador</strong> estima custos antes de iniciar a produção.
+              </p>
+              <p className="mt-2">
+                <strong>Como ativar o vídeo real (recomendado):</strong> escolha um modelo de vídeo do provedor{' '}
+                <strong>fal.ai</strong> (Veo 3, Kling 2.5, Wan 2.2, Hailuo 02, LTX Video) no agente{' '}
+                <strong>Gerador de Clipes de Vídeo</strong> e salve sua chave fal.ai em{' '}
+                <strong>Configurações → Provedores de IA</strong> — sem variáveis de ambiente. Sem essa
+                configuração, a geração de clipes recai, nesta ordem, no provedor externo por variáveis de
+                ambiente e depois no renderer local do navegador.
               </p>
               <p className="mt-2">
                 <strong>Defaults multimodais:</strong> o <strong>Gerador de Imagens</strong> parte de <strong>google/gemini-2.5-flash-image</strong>
@@ -98,6 +105,12 @@ export default function VideoPipelineConfigCard() {
               <strong>renderização final</strong>, com rastreamento nas fases{' '}
               <strong>media_video_clip_generation</strong>, <strong>media_soundtrack_generation</strong> e{' '}
               <strong>media_video_render</strong>.
+            </p>
+            <p className="mt-2">
+              <strong>Fallback de 3 níveis para os clipes:</strong> (1) vídeo real fal.ai com a sua chave —
+              caminho recomendado, configurado no agente <strong>Gerador de Clipes de Vídeo</strong>; (2)
+              provedor externo por variáveis de ambiente; (3) renderer local do navegador. A geração nunca
+              é interrompida — se um nível falha, o próximo assume.
             </p>
           </div>
 
@@ -135,6 +148,10 @@ export default function VideoPipelineConfigCard() {
               Poll: {providerDiagnostics.pollIntervalMs}ms · Timeout: {Math.round(providerDiagnostics.pollTimeoutMs / 1000)}s
             </p>
             <div className="rounded-[0.9rem] border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.58)] p-2 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
+              <p className="mb-1 text-[var(--v2-ink-faint)]">
+                Fallback opcional (nível 2). O caminho recomendado é o provedor <strong>fal.ai</strong> com a sua
+                chave no agente <strong>Gerador de Clipes de Vídeo</strong> — não exige nenhuma variável de ambiente.
+              </p>
               <p><strong>Env vars esperadas:</strong> VITE_EXTERNAL_VIDEO_PROVIDER, VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT, VITE_EXTERNAL_VIDEO_PROVIDER_API_KEY, VITE_EXTERNAL_VIDEO_PROVIDER_STATUS_ENDPOINT.</p>
               <p className="mt-1"><strong>Contrato do endpoint:</strong> POST JSON com prompt, duration_seconds, aspect_ratio, scene_number, part_number e provider; responda com url/video_url/output_url ou com job_id/poll_url para polling posterior.</p>
             </div>
