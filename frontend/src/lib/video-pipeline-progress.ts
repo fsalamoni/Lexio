@@ -70,8 +70,8 @@ const VIDEO_PIPELINE_STAGE_ALIASES: Record<string, VideoPipelineStage> = {
   },
   media_video_clip_generation: {
     key: 'video_clip_planner',
-    label: 'Gerador de Clipes',
-    description: 'Gera clipes literais por parte de cada cena.',
+    label: 'Gerador de Clipes de Vídeo',
+    description: 'Gera clipes de vídeo reais por IA para cada parte, encadeados ao quadro anterior.',
     category: 'media',
   },
   media_soundtrack_generation: {
