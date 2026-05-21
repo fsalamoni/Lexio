@@ -69,10 +69,13 @@ vi.mock('../chat-artifact-storage', () => ({
 }))
 
 const requestExternalVideoClipMock = vi.fn()
+const requestFalVideoClipMock = vi.fn()
 const isExternalVideoProviderConfiguredMock = vi.fn(() => true)
+const resolveProviderCallMock = vi.fn()
 
 vi.mock('../external-video-provider', () => ({
   requestExternalVideoClip: (...args: unknown[]) => requestExternalVideoClipMock(...args),
+  requestFalVideoClip: (...args: unknown[]) => requestFalVideoClipMock(...args),
   isExternalVideoProviderConfigured: () => isExternalVideoProviderConfiguredMock(),
   getExternalVideoProviderDiagnostics: () => ({
     configured: false,
@@ -85,6 +88,10 @@ vi.mock('../external-video-provider', () => ({
     warnings: [],
     blockingErrors: [],
   }),
+}))
+
+vi.mock('../provider-credentials', () => ({
+  resolveProviderCall: (...args: unknown[]) => resolveProviderCallMock(...args),
 }))
 
 // Importa depois que o mock está instalado
@@ -203,6 +210,8 @@ describe('buildSuperSkills', () => {
 describe('generate_video skill', () => {
   beforeEach(() => {
     requestExternalVideoClipMock.mockReset()
+    requestFalVideoClipMock.mockReset()
+    resolveProviderCallMock.mockReset()
     isExternalVideoProviderConfiguredMock.mockReset().mockReturnValue(true)
     uploadChatArtifactFileMock.mockReset().mockResolvedValue({
       url: 'https://storage.test/video.mp4',
@@ -214,7 +223,7 @@ describe('generate_video skill', () => {
     const ctx = mockContext()
     const result = await findAndRunSkill('generate_video', { title: 'Sem prompt' }, ctx)
     expect(result.tool_message).toContain('"prompt"')
-    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+    expect(requestFalVideoClipMock).not.toHaveBeenCalled()
   })
 
   it('deve retornar erro acionável quando o agente de vídeo não está configurado', async () => {
@@ -224,19 +233,20 @@ describe('generate_video skill', () => {
       approved: true,
     }, ctx)
     expect(result.tool_message).toContain('Gerador de Vídeo Literal')
-    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+    expect(requestFalVideoClipMock).not.toHaveBeenCalled()
   })
 
-  it('deve retornar falha operacional quando o endpoint de vídeo não está configurado', async () => {
+  it('deve retornar falha operacional quando não há chave fal.ai nem endpoint externo', async () => {
     isExternalVideoProviderConfiguredMock.mockReturnValue(false)
+    resolveProviderCallMock.mockRejectedValue(new Error('Chave de API ausente para "fal.ai (Vídeo)".'))
     const ctx = mockContext({ models: { chat_video_generator: 'fal-ai/veo3' } })
     const result = await findAndRunSkill('generate_video', {
       prompt: 'Plano aberto de um tribunal ao amanhecer.',
       approved: true,
     }, ctx)
     expect(result.tool_message).toContain('Falha operacional')
-    expect(result.tool_message).toContain('VITE_EXTERNAL_VIDEO_PROVIDER')
-    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+    expect(result.tool_message).toContain('fal.ai')
+    expect(requestFalVideoClipMock).not.toHaveBeenCalled()
   })
 
   it('deve pedir aprovação antes de gerar vídeo literal', async () => {
@@ -248,7 +258,7 @@ describe('generate_video skill', () => {
     }, ctx)
     expect(result.awaiting_user?.resume_tool).toBe('generate_video')
     expect(emit.mock.calls.some(call => call[0].type === 'approval_requested')).toBe(true)
-    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+    expect(requestFalVideoClipMock).not.toHaveBeenCalled()
   })
 
   it('deve gerar artifact de vídeo em modo mock quando aprovado', async () => {
@@ -265,9 +275,14 @@ describe('generate_video skill', () => {
     expect(workPackage.artifacts[0]).toEqual(expect.objectContaining({ kind: 'video', format: 'mp4' }))
   })
 
-  it('deve solicitar clipe real ao provedor encaminhando o modelo de vídeo escolhido', async () => {
-    requestExternalVideoClipMock.mockResolvedValue({
-      url: 'https://provider.test/clip.mp4',
+  it('deve gerar vídeo real via fal.ai nativo usando a chave do usuário e o modelo escolhido', async () => {
+    resolveProviderCallMock.mockResolvedValue({
+      provider: { id: 'fal', label: 'fal.ai (Vídeo)' },
+      apiKey: 'fal-user-key',
+      baseUrl: 'https://queue.fal.run',
+    })
+    requestFalVideoClipMock.mockResolvedValue({
+      url: 'https://v3.fal.media/files/clip.mp4',
       mimeType: 'video/mp4',
       provider: 'fal',
     })
@@ -286,22 +301,29 @@ describe('generate_video skill', () => {
       }, ctx)
 
       expect(result.tool_message).toContain('Vídeo literal gerado com sucesso')
-      expect(requestExternalVideoClipMock).toHaveBeenCalledWith(expect.objectContaining({
-        prompt: expect.stringContaining('audiência'),
-        durationSeconds: 8,
+      expect(requestFalVideoClipMock).toHaveBeenCalledWith(expect.objectContaining({
+        apiKey: 'fal-user-key',
+        baseUrl: 'https://queue.fal.run',
         model: 'fal-ai/veo3',
+        prompt: expect.stringContaining('audiência'),
       }))
+      expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
       const workPackage = persistWorkPackage.mock.calls[0][0]
       expect(workPackage.artifacts[0]).toEqual(expect.objectContaining({ kind: 'video' }))
       // fetch falhou (CORS), então o artifact mantém a URL do provedor
-      expect(workPackage.artifacts[0].download_url).toBe('https://provider.test/clip.mp4')
+      expect(workPackage.artifacts[0].download_url).toBe('https://v3.fal.media/files/clip.mp4')
     } finally {
       fetchSpy?.mockRestore()
     }
   })
 
   it('deve propagar AbortError do provedor de vídeo', async () => {
-    requestExternalVideoClipMock.mockRejectedValueOnce(new DOMException('cancelado', 'AbortError'))
+    resolveProviderCallMock.mockResolvedValue({
+      provider: { id: 'fal', label: 'fal.ai (Vídeo)' },
+      apiKey: 'fal-user-key',
+      baseUrl: 'https://queue.fal.run',
+    })
+    requestFalVideoClipMock.mockRejectedValueOnce(new DOMException('cancelado', 'AbortError'))
     const ctx = mockContext({ apiKey: 'sk-test', models: { chat_video_generator: 'fal-ai/veo3' } })
     await expect(findAndRunSkill('generate_video', {
       prompt: 'Clipe a cancelar.',

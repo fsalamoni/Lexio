@@ -697,3 +697,136 @@ export async function requestExternalVideoClip(
     jobId: getJobId(finalPayload) || getJobId(payload),
   }
 }
+
+// ── Native fal.ai client ──────────────────────────────────────────────────────
+
+function getFalResultUrl(payload: ExternalVideoResponsePayload): string | undefined {
+  const video = payload.video && typeof payload.video === 'object'
+    ? payload.video as Record<string, unknown>
+    : undefined
+  const fromVideo = typeof video?.url === 'string' ? video.url : undefined
+  const candidate = fromVideo || getResultUrl(payload)
+  return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate.trim() : undefined
+}
+
+function getFalMimeType(payload: ExternalVideoResponsePayload): string {
+  const video = payload.video && typeof payload.video === 'object'
+    ? payload.video as Record<string, unknown>
+    : undefined
+  const contentType = (typeof video?.content_type === 'string' ? video.content_type : undefined)
+    || (typeof payload.mime_type === 'string' ? payload.mime_type : undefined)
+  return contentType && contentType.trim().length > 0 ? contentType.trim() : 'video/mp4'
+}
+
+/**
+ * Native fal.ai queue client for literal video generation.
+ *
+ * fal.ai exposes every hosted video model (Veo, Kling, Wan, Hailuo, LTX, …)
+ * behind one queue protocol:
+ *   POST {baseUrl}/{model}  → { request_id, status_url, response_url }
+ *   GET  {status_url}       → { status: IN_QUEUE | IN_PROGRESS | COMPLETED }
+ *   GET  {response_url}     → { video: { url } }
+ *
+ * Unlike `requestExternalVideoClip` (operator-configured proxy endpoint via
+ * env vars), this path is fully user-configurable: the user only needs a
+ * fal.ai API key saved in Configurações → Provedores de IA and a video model
+ * picked for the chat agent.
+ */
+export async function requestFalVideoClip(input: {
+  apiKey: string
+  baseUrl: string
+  model: string
+  prompt: string
+  aspectRatio?: string
+  signal?: AbortSignal
+}): Promise<ExternalVideoClipResult> {
+  const base = (input.baseUrl || 'https://queue.fal.run').replace(/\/+$/, '')
+  const model = input.model.replace(/^\/+/, '')
+  const submitUrl = `${base}/${model}`
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Key ${input.apiKey}`,
+  }
+  const body = JSON.stringify({
+    prompt: input.prompt,
+    aspect_ratio: input.aspectRatio || '16:9',
+  })
+
+  let submitResponse: Response | null = null
+  let submitPayload: ExternalVideoResponsePayload = {}
+  for (let attempt = 1; attempt <= MAX_PROVIDER_REQUEST_ATTEMPTS; attempt++) {
+    assertNotAborted(input.signal)
+    submitResponse = await fetch(submitUrl, { method: 'POST', headers, body, signal: input.signal })
+    const parsed = await parseResponsePayload(submitResponse)
+    submitPayload = parsed.payload
+    if (submitResponse.ok) break
+    if (attempt >= MAX_PROVIDER_REQUEST_ATTEMPTS || !isRetryableStatusCode(submitResponse.status)) {
+      throw new Error(`fal.ai recusou a geração de vídeo (${submitResponse.status}): ${getPayloadError(submitPayload, parsed.text || '')}`)
+    }
+    await sleep(nextBackoffMs(attempt, parseRetryAfterMs(submitResponse.headers.get('Retry-After'))), input.signal)
+  }
+  if (!submitResponse || !submitResponse.ok) {
+    throw new Error('fal.ai não aceitou a solicitação de vídeo após múltiplas tentativas.')
+  }
+
+  // Some fal models return the result inline on submit.
+  const inlineUrl = getFalResultUrl(submitPayload)
+  if (inlineUrl) {
+    return { url: inlineUrl, mimeType: getFalMimeType(submitPayload), provider: 'fal' }
+  }
+
+  const statusUrl = typeof submitPayload.status_url === 'string' ? submitPayload.status_url : undefined
+  const responseUrl = typeof submitPayload.response_url === 'string' ? submitPayload.response_url : undefined
+  if (!statusUrl && !responseUrl) {
+    throw new Error('fal.ai não retornou URL de resultado nem handle de fila para o vídeo.')
+  }
+
+  // Poll the queue until the job completes.
+  const startedAt = Date.now()
+  let attempt = 0
+  let completed = !statusUrl
+  while (statusUrl && Date.now() - startedAt < DEFAULT_POLL_TIMEOUT_MS) {
+    assertNotAborted(input.signal)
+    attempt += 1
+    const statusResponse = await fetch(statusUrl, { method: 'GET', headers, signal: input.signal })
+    if (statusResponse.ok) {
+      const { payload } = await parseResponsePayload(statusResponse)
+      const directUrl = getFalResultUrl(payload)
+      if (directUrl) {
+        return { url: directUrl, mimeType: getFalMimeType(payload), provider: 'fal' }
+      }
+      const status = getStatusValue(payload)
+      if (isFailedStatus(status)) {
+        throw new Error(`fal.ai falhou ao gerar o vídeo: ${getPayloadError(payload, '')}`)
+      }
+      if (isCompletedStatus(status)) {
+        completed = true
+        break
+      }
+    } else if (!isRetryableStatusCode(statusResponse.status)) {
+      const text = await statusResponse.text().catch(() => 'erro desconhecido')
+      throw new Error(`fal.ai status erro (${statusResponse.status}): ${text}`)
+    }
+    await sleep(Math.max(DEFAULT_POLL_INTERVAL_MS, nextBackoffMs(attempt)), input.signal)
+  }
+
+  if (!completed) {
+    throw new Error(`fal.ai não concluiu o vídeo dentro do tempo limite (${Math.round(DEFAULT_POLL_TIMEOUT_MS / 1000)}s).`)
+  }
+
+  if (responseUrl) {
+    const resultResponse = await fetch(responseUrl, { method: 'GET', headers, signal: input.signal })
+    if (!resultResponse.ok) {
+      const text = await resultResponse.text().catch(() => 'erro desconhecido')
+      throw new Error(`fal.ai erro ao buscar o vídeo final (${resultResponse.status}): ${text}`)
+    }
+    const { payload } = await parseResponsePayload(resultResponse)
+    const url = getFalResultUrl(payload)
+    if (url) {
+      return { url, mimeType: getFalMimeType(payload), provider: 'fal' }
+    }
+    throw new Error(`fal.ai concluiu mas não retornou o arquivo de vídeo: ${getPayloadError(payload, '')}`)
+  }
+
+  throw new Error('fal.ai concluiu a fila mas não forneceu o endpoint do resultado.')
+}

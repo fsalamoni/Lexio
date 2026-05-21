@@ -1190,19 +1190,6 @@ const generateVideoSkill: Skill<GenerateVideoArgs> = {
     }
     const videoModel = resolvedModel.model
 
-    const { getExternalVideoProviderDiagnostics, isExternalVideoProviderConfigured } = await import('../external-video-provider')
-    if (!ctx.mock && !isExternalVideoProviderConfigured()) {
-      const diagnostics = getExternalVideoProviderDiagnostics()
-      return {
-        tool_message:
-          'Falha operacional: o endpoint do provedor de geração de vídeo não está configurado. ' +
-          'O modelo de vídeo está escolhido, mas o operador precisa configurar VITE_EXTERNAL_VIDEO_PROVIDER e ' +
-          'VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT apontando para o endpoint do agregador de vídeo (ex.: fal.ai). ' +
-          (diagnostics.blockingErrors.length > 0 ? `Detalhe: ${diagnostics.blockingErrors.join(' ')} ` : '') +
-          'Não substitua o vídeo por roteiro, slideshow ou descrição textual.',
-      }
-    }
-
     if (!normalizeSideEffectApproval(args.approved)) {
       return requestApprovalForSkill(ctx, {
         title: `Gerar vídeo literal: ${clip(title, 80)}`,
@@ -1257,19 +1244,60 @@ const generateVideoSkill: Skill<GenerateVideoArgs> = {
         videoUrl = stored.url
         storagePath = stored.path
       } else {
-        const { requestExternalVideoClip } = await import('../external-video-provider')
-        const clipResult = await requestExternalVideoClip({
-          prompt,
-          durationSeconds,
-          aspectRatio,
-          model: videoModel,
-          signal: ctx.signal,
-        })
+        // Resolve the video provider for the chosen model. fal.ai models run
+        // through the native fal client with the user's own fal.ai key — no
+        // env vars needed. Any other model falls back to the operator-managed
+        // external video endpoint (VITE_EXTERNAL_VIDEO_PROVIDER_*).
+        const {
+          isExternalVideoProviderConfigured,
+          requestExternalVideoClip,
+          requestFalVideoClip,
+        } = await import('../external-video-provider')
+
+        let resolvedProvider: { providerId: string; apiKey: string; baseUrl: string } | null = null
+        try {
+          const { resolveProviderCall } = await import('../provider-credentials')
+          const resolved = await resolveProviderCall(videoModel, ctx.uid)
+          resolvedProvider = { providerId: resolved.provider.id, apiKey: resolved.apiKey, baseUrl: resolved.baseUrl }
+        } catch (resolveErr) {
+          if (isAbortError(resolveErr)) throw resolveErr
+          resolvedProvider = null
+        }
+
+        let clipResult
+        if (resolvedProvider?.providerId === 'fal') {
+          clipResult = await requestFalVideoClip({
+            apiKey: resolvedProvider.apiKey,
+            baseUrl: resolvedProvider.baseUrl,
+            model: videoModel,
+            prompt,
+            aspectRatio,
+            signal: ctx.signal,
+          })
+        } else if (isExternalVideoProviderConfigured()) {
+          clipResult = await requestExternalVideoClip({
+            prompt,
+            durationSeconds,
+            aspectRatio,
+            model: videoModel,
+            signal: ctx.signal,
+          })
+        } else {
+          return {
+            tool_message:
+              'Falha operacional: o provedor de geração de vídeo não está configurado. ' +
+              'Para o modelo escolhido, salve sua chave de API fal.ai em Configurações → Provedores de IA ' +
+              '(o provedor "fal.ai (Vídeo)") — é o caminho recomendado e acessível, sem variáveis de ambiente. ' +
+              'Alternativamente, um operador pode configurar VITE_EXTERNAL_VIDEO_PROVIDER_* para um endpoint externo. ' +
+              'Não substitua o vídeo por roteiro, slideshow ou descrição textual.',
+          }
+        }
+
         if (!clipResult?.url) {
           return {
             tool_message:
               'Falha operacional: o provedor de vídeo não retornou um arquivo final. ' +
-              'Tente novamente ou verifique o endpoint/modelo do provedor de vídeo.',
+              'Tente novamente ou verifique a chave/modelo do provedor de vídeo.',
           }
         }
         mimeType = clipResult.mimeType || 'video/mp4'
