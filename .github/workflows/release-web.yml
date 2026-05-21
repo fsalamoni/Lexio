@@ -8,11 +8,6 @@ on:
         required: true
         type: boolean
         default: true
-      deploy_github_pages:
-        description: Deploy to GitHub Pages (/Lexio)
-        required: true
-        type: boolean
-        default: true
       deploy_redesign_v2:
         description: Deploy redesign V2 Firebase site
         required: true
@@ -21,7 +16,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
   id-token: write
 
 concurrency:
@@ -41,13 +35,6 @@ jobs:
     uses: ./.github/workflows/firebase-deploy.yml
     secrets: inherit
 
-  deploy-pages:
-    name: Deploy GitHub Pages
-    needs: quality-gates
-    if: ${{ inputs.deploy_github_pages }}
-    uses: ./.github/workflows/deploy-pages.yml
-    secrets: inherit
-
   deploy-redesign-v2:
     name: Deploy Firebase redesign V2
     needs: quality-gates
@@ -62,12 +49,10 @@ jobs:
     needs:
       - quality-gates
       - deploy-firebase
-      - deploy-pages
       - deploy-redesign-v2
     steps:
       - name: Print release outcome
         run: |
           echo "quality-gates=${{ needs.quality-gates.result }}"
           echo "deploy-firebase=${{ needs.deploy-firebase.result }}"
-          echo "deploy-pages=${{ needs.deploy-pages.result }}"
           echo "deploy-redesign-v2=${{ needs.deploy-redesign-v2.result }}"
